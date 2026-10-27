@@ -304,6 +304,8 @@ export interface LutEffect {
   /** A `.cube` file, relative to the scene file. */
   src: string;
   amount?: Num;
+  /** How a colour between two grid points is blended. Default 'trilinear'. */
+  interpolation?: 'trilinear' | 'tetrahedral';
 }
 export interface GrainEffect {
   type: 'grain';
@@ -730,6 +732,15 @@ export interface GlslBlend {
   color: [number, number, number, number];
 }
 
+export interface GlslDepth {
+  /** `NEVER`, `LESS`, `EQUAL`, `LEQUAL`, `GREATER`, `NOTEQUAL`, `GEQUAL` or `ALWAYS`. */
+  func: string;
+  mask: boolean;
+  /** `depthRange`, each within 0 to 1. */
+  near: number;
+  far: number;
+}
+
 export interface GlslDraw {
   program: string;
   mode: 'points' | 'triangles' | 'triangleStrip' | 'triangleFan';
@@ -747,6 +758,10 @@ export interface GlslDraw {
   blend?: GlslBlend;
   colorMask?: [boolean, boolean, boolean, boolean];
   cull?: { face: string; front: string };
+  /** The depth test, when it was on and the buffer drawn into has a depth buffer (`depthFunc`, `depthMask`, `depthRange`). */
+  depth?: GlslDepth;
+  /** `polygonOffset(factor, units)` with `POLYGON_OFFSET_FILL` on; only with `depth`. */
+  polygonOffset?: { factor: number; units: number };
   /** The id of the target texture it draws into; the drawing buffer without one. */
   target?: string;
 }
@@ -780,7 +795,8 @@ export interface GlslUpload {
   premultiply?: boolean;
 }
 
-export type GlslOp = { op: 'clear'; color: [number, number, number, number]; target?: string } | ({ op: 'draw' } & GlslDraw) | ({ op: 'blit' } & GlslBlit) | ({ op: 'upload' } & GlslUpload);
+/** `clear`: the colour (`COLOR_BUFFER_BIT`), the depth buffer (`DEPTH_BUFFER_BIT`, to `depth`), or both. */
+export type GlslOp = { op: 'clear'; color?: [number, number, number, number]; depth?: number; target?: string } | ({ op: 'draw' } & GlslDraw) | ({ op: 'blit' } & GlslBlit) | ({ op: 'upload' } & GlslUpload);
 
 /** What a WebGL context did: the programs, data and calls of a `glsl` layer. */
 export interface GlslContent {

@@ -28,6 +28,7 @@ Upstream: crates.io `stylo` 0.22.0 (`servo/stylo`, commit `34d25f741765a0bdb894f
 - `properties/shorthands.rs`, `properties/shorthands.toml`: the `container` shorthand uses `servo_pref` instead of `engine = "gecko"`.
 - `properties/longhands.toml`: `text-anchor`, `shape-rendering`, `paint-order`, `clip-rule` and `dominant-baseline` lose `engine = "gecko"`, so the Servo build parses and computes them; the SVG painter reads them from the cascade (`paint/svg/serialize.rs`).
 - `properties/properties.mako.rs`: new `ComputedValues::same_values_except(other, except)`, used by `IslandCache` to repaint transform-only edits.
+- `properties/longhands.toml`: `offset-path`, `offset-distance`, `offset-rotate`, `offset-anchor` and `offset-position` lose `engine = "gecko"` / `servo_pref`, so the Servo build parses and computes them; `crates/dom/src/motion.rs` follows the path.
 
 Drop when a stylo release parses `@container` without Gecko and computes the SVG properties above in its Servo build. `same_values_except` can move to `kinetograph-dom`.
 
@@ -44,6 +45,14 @@ Upstream: crates.io `blitz-dom` 0.3.0-beta.3 (`DioxusLabs/blitz`, commit `5890fa
 - `src/layout/inline.rs`: an inline box measured in `ComputeSize` mode that comes back without baselines is laid out in `PerformLayout` mode to get them, because taffy's size-only cache hit keeps no baselines.
 
 Drop when Blitz answers container queries and restyles a `style` change on its own element, and when taffy's measure cache keeps baselines.
+
+## parley 0.12.0
+
+Upstream: crates.io `parley` 0.12.0 (`linebender/parley`). Licence: Apache-2.0 OR MIT. An inline box (an `inline-block`) ahead of any text ignored `white-space: nowrap` on its container, because the line breaker took the wrap mode only from text atoms, so a nowrap row of inline-blocks wrapped.
+
+- `src/layout/line_break.rs`: `BreakLines::new` starts the line's wrap mode from the root style.
+
+Only this file differs from upstream 0.12.0 (5 added lines). Upstream it, then drop the copy when Parley's inline boxes follow the container's `text-wrap-mode`.
 
 ## rive (rive-rs and the C++ it builds)
 

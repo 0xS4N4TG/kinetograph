@@ -18,3 +18,4 @@ license = "PolyForm-Small-Business-1.0.0"
 blitz-dom = { path = "vendor/blitz-dom" }
 stylo = { path = "vendor/stylo" }
 fontique = { path = "vendor/fontique" }
+parley = { path = "vendor/parley" }

@@ -14,7 +14,7 @@ use crate::scene::{
     AlignContent, Datamosh, Hold, AlignItems, AlignSelf, BlendMode, Channel, Clip, DitherMode, DotOrder, DotShape,
     Effect, Extend, FillRule, Fit, FlexBasis, FlexDirection, FlexWrap, Geometry, GlyphRun,
     Gradient, GradientGeometry, HalftoneShape, ImageLayer, JustifyContent, Layer, LayerKind,
-    Layout, LayoutItem, MAX_DITHER_LEVELS, MAX_SHADOW_SIZE, MIN_DITHER_LEVELS, MaskMode, MatteMode,
+    Layout, LayoutItem, LutInterpolation, MAX_DITHER_LEVELS, MAX_SHADOW_SIZE, MIN_DITHER_LEVELS, MaskMode, MatteMode,
     NoiseChannels, Paint, Position, SampleChange, Scene, Shadow, ShapeLayer, Spacing, Stop,
     StrokeCap, StrokeJoin, TextAlign, TextPaintOrder, Transform, Turbulence, TurbulenceKind, Units, changes_by_id,
 };
@@ -255,6 +255,7 @@ pub enum ResolvedEffect {
     Lut {
         src: String,
         amount: f32,
+        interpolation: LutInterpolation,
     },
     Grain(ResolvedGrain),
     Dither(ResolvedDither),
@@ -568,6 +569,8 @@ pub struct ResolvedGradient {
     /// Takes the gradient's space (after `units`) to the painted layer's
     /// (`Gradient::transform`).
     pub transform: Affine,
+    /// Stops blend without premultiplying alpha (`Gradient::unpremultiplied`).
+    pub unpremultiplied: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1424,6 +1427,7 @@ pub(crate) fn resolve_gradient(g: &Gradient, f: f64) -> ResolvedGradient {
         extend: g.extend,
         units: g.units,
         transform: g.transform.map_or(Affine::IDENTITY, Affine::new),
+        unpremultiplied: g.unpremultiplied,
     }
 }
 
@@ -1546,9 +1550,14 @@ fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
             stops: resolve_stops(stops, f),
             amount: amount.at(f).clamp(0.0, 1.0) as f32,
         }),
-        Effect::Lut { src, amount } => ResolvedEffect::Lut {
+        Effect::Lut {
+            src,
+            amount,
+            interpolation,
+        } => ResolvedEffect::Lut {
             src: src.clone(),
             amount: amount.at(f).clamp(0.0, 1.0) as f32,
+            interpolation: *interpolation,
         },
         Effect::Grain {
             amount,
@@ -1986,7 +1995,7 @@ mod tests {
         );
         assert!(matches!(
             &effects[0],
-            ResolvedEffect::Lut { src, amount } if src == "a.cube" && *amount == 0.0
+            ResolvedEffect::Lut { src, amount, .. } if src == "a.cube" && *amount == 0.0
         ));
         assert!(matches!(&effects[1], ResolvedEffect::Lut { amount, .. } if *amount == 1.0));
         let effects = effects_at(

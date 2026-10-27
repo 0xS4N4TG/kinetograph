@@ -436,6 +436,8 @@ impl Emitter<'_> {
             .map(|s| json!({"offset": s.offset().get(), "color": hex(s.color(), s.opacity().get() * opacity)}))
             .collect();
         v["stops"] = Value::Array(stops);
+        // SVG blends stops without premultiplying alpha, unlike CSS.
+        v["unpremultiplied"] = json!(true);
         v["extend"] = json!(match g.spread_method() {
             usvg::SpreadMethod::Pad => "pad",
             usvg::SpreadMethod::Reflect => "reflect",

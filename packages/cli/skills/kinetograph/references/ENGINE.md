@@ -591,8 +591,9 @@ blurred from real pixels) and `blendSpace` (always `"srgb"`: **the scene that ho
   after fallback is reported by the painter (`font-family`, "no glyph for U+XXXX ...") and by `inspect` (`missingChars`).
   The fallback covers symbols, arrows, maths and monochrome emoji, applied one character at a time to HTML text, SVG
   `<text>`, text layers, Text3D and canvas `fillText`. CJK, Arabic and other scripts are not bundled: load a font that
-  has them (`doctor` and `--strict` report the code point until then). `monospace` falls back to a proportional face
-  unless a monospace font is registered (`@remotion/google-fonts/JetBrainsMono`). `/docs/known-issues/`.
+  has them (`doctor` and `--strict` report the code point until then). `monospace` and `ui-monospace` use a
+  registered fixed-pitch font (the `post` table's flag) if there is one, else the bundled JetBrains Mono Regular
+  (`fallback_fonts::monospace_face`, SIL OFL 1.1; bold and italic are synthesised). `/docs/known-issues/`.
 - SVG files as pictures: `<Img src={staticFile('a.svg')}>`, `<img src>`, `background-image: url(a.svg)`, `image` layers
   and `data:` URLs draw natively (`crates/core/src/svg_picture.rs`), sized from the file's `width`, `height` and
   `viewBox` (300 x 150 with none) and painted at the size they are drawn at. Text inside such a picture is left out and
@@ -749,7 +750,7 @@ than 16 off); a frame drawn alone, in sequence and by two workers has one hash.
 ### Not drawn (reported as `Unsupported`, `audit.rs`)
 
 `image-rendering`, `background-attachment: fixed`, `box-decoration-break: clone`, non-horizontal
-`writing-mode`, multi-column, the old `clip`, `offset-path`, `list-style-image`,
+`writing-mode`, multi-column, the old `clip`, `list-style-image`,
 form controls, iframes, `evenodd` clip paths, `shape()`,
 `mask-composite` other than add, `backdrop-filter` functions other than `blur()`, a `margin-box` clip reference, a
 `conic-gradient` in a colour space other than sRGB, remote URLs, fonts that are not project font files, inside list
@@ -979,7 +980,7 @@ without a context is painted only from the lines. Reproduce: a `div` with text `
 (`paint/grade.rs`) pushes `{"type": "colorGrade", ..., "box": <content box>}` first on the group's effects.
 `crates/core/src/grade.rs` normalises it and builds the 1024 x 3 RGBA8 table of curves, hue curves and secondaries the way
 HyperFrames does (8-bit rounding included); `shaders/color_grade.wgsl` is HyperFrames' fragment shader in one pass: primary grade, wheels, RGB
-curves, hue curves, secondaries, `.cube` LUT (3D texture, shared with the `lut` effect's upload), the mix by `intensity`, grain, vignette. The
+curves, hue curves, secondaries, `.cube` LUT (3D texture, shared with the `lut` effect's upload; its trilinear blend is HyperFrames' own and stays, the `lut` effect's `interpolation: 'tetrahedral'` is not used here), the mix by `intensity`, grain, vignette. The
 vignette and grain are laid out on `box` in layer space, with HyperFrames' bottom-up `gl_FragCoord`. The grain seed is
 `hash(element id | src | tag:index) + floor(time * 60)`, computed in TS, so a frame does not depend on the frames before it. A
 layer with this effect leaves Skia's path (`own_gaps`) for the wgpu compositor. A LUT path is resolved by the painter against the project

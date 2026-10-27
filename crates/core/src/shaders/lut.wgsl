@@ -17,7 +17,7 @@
 struct Params {
     domain_min: vec4<f32>,
     domain_max: vec4<f32>,
-    // x: points per axis, y: amount
+    // x: points per axis, y: amount, z: 1 for tetrahedral, 0 for trilinear
     info: vec4<f32>,
 }
 
@@ -48,6 +48,49 @@ fn grid(base: vec3<i32>, offset: vec3<i32>) -> vec3<f32> {
     return textureLoad(lut, base + offset, 0).rgb;
 }
 
+// Four corners of the cell, walked from (0,0,0) to (1,1,1) in the order of
+// the fractions, largest first: one of the six tetrahedra that share that
+// diagonal. The weights are 1 - the largest, the gaps between the sorted
+// fractions, and the smallest.
+fn tetrahedral(base: vec3<i32>, f: vec3<f32>) -> vec3<f32> {
+    let c000 = grid(base, vec3<i32>(0, 0, 0));
+    let c111 = grid(base, vec3<i32>(1, 1, 1));
+    var p1: vec3<f32>;
+    var p2: vec3<f32>;
+    var w: vec3<f32>;
+    if f.x > f.y {
+        if f.y > f.z {
+            p1 = grid(base, vec3<i32>(1, 0, 0));
+            p2 = grid(base, vec3<i32>(1, 1, 0));
+            w = vec3<f32>(f.x, f.y, f.z);
+        } else if f.x > f.z {
+            p1 = grid(base, vec3<i32>(1, 0, 0));
+            p2 = grid(base, vec3<i32>(1, 0, 1));
+            w = vec3<f32>(f.x, f.z, f.y);
+        } else {
+            p1 = grid(base, vec3<i32>(0, 0, 1));
+            p2 = grid(base, vec3<i32>(1, 0, 1));
+            w = vec3<f32>(f.z, f.x, f.y);
+        }
+    } else {
+        if f.z > f.y {
+            p1 = grid(base, vec3<i32>(0, 0, 1));
+            p2 = grid(base, vec3<i32>(0, 1, 1));
+            w = vec3<f32>(f.z, f.y, f.x);
+        } else if f.z > f.x {
+            p1 = grid(base, vec3<i32>(0, 1, 0));
+            p2 = grid(base, vec3<i32>(0, 1, 1));
+            w = vec3<f32>(f.y, f.z, f.x);
+        } else {
+            p1 = grid(base, vec3<i32>(0, 1, 0));
+            p2 = grid(base, vec3<i32>(1, 1, 0));
+            w = vec3<f32>(f.y, f.x, f.z);
+        }
+    }
+    // w is the fractions sorted, largest first.
+    return c000 * (1.0 - w.x) + p1 * (w.x - w.y) + p2 * (w.y - w.z) + c111 * w.z;
+}
+
 fn lookup(rgb: vec3<f32>) -> vec3<f32> {
     let size = i32(params.info.x);
     let unit = clamp(
@@ -60,6 +103,9 @@ fn lookup(rgb: vec3<f32>) -> vec3<f32> {
     // cell, so the corner never leaves the table.
     let base = min(vec3<i32>(floor(at)), vec3<i32>(size - 2));
     let f = at - vec3<f32>(base);
+    if params.info.z > 0.5 {
+        return clamp(tetrahedral(base, f), vec3<f32>(0.0), vec3<f32>(1.0));
+    }
     let c00 = mix(grid(base, vec3<i32>(0, 0, 0)), grid(base, vec3<i32>(1, 0, 0)), f.x);
     let c10 = mix(grid(base, vec3<i32>(0, 1, 0)), grid(base, vec3<i32>(1, 1, 0)), f.x);
     let c01 = mix(grid(base, vec3<i32>(0, 0, 1)), grid(base, vec3<i32>(1, 0, 1)), f.x);
