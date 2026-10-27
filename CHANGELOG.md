@@ -3,6 +3,12 @@
 All notable changes to Kinetograph. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kinetograph is in beta, so APIs can still change between versions.
 
+## Unreleased
+
+### Added
+
+- WebGL depth test: `enable(gl.DEPTH_TEST)`, `depthFunc`, `depthMask`, `depthRange`, `clearDepth`, `clear(DEPTH_BUFFER_BIT)` and `polygonOffset` are drawn, on the canvas (the `depth` context attribute) and on a framebuffer with a depth renderbuffer (`renderbufferStorage`, `framebufferRenderbuffer`). The HyperFrames composition `code-slice-hero` now renders all 240 frames in `doctor`. A colour or stencil renderbuffer, a depth texture and the stencil test are still reported. See `/docs/known-issues/#webgl`.
+
 ## 0.2.0 (2026-10-27)
 
 ### Added

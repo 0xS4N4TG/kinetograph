@@ -491,7 +491,7 @@ Nobody writes this by hand: `<GlslShader>` and `glslShader()` make it from a fra
 | `programs` | `{}` | By id: `vertex` and `fragment` (GLSL ES 100, or 300 es with `#version 300 es`) and the `attributes` (name to location) the link gave the vertex shader. |
 | `buffers` | `{}` | By id: base64 bytes. |
 | `textures` | `{}` | By id: `src` (a picture file of the scene or a `data:` URL) or `pixels` (base64 straight-alpha RGBA8 with `width` and `height`), `flipY`, `premultiply` (as `UNPACK_FLIP_Y_WEBGL` and `UNPACK_PREMULTIPLY_ALPHA_WEBGL` were when it was uploaded) and `mipmaps` (`generateMipmap` was called). `target: true` with `width` and `height` and no pixels is a framebuffer's texture (below). |
-| `ops` | `[]` | In order. A `clear` (`color`: r, g, b, a) of the drawing buffer throws away every draw to the drawing buffer before it (unless a `blit` reads the drawing buffer in between). A `draw` runs one program. Both take an optional `target`, the id of a target texture to go to instead of the drawing buffer. A `blit` (`blitFramebuffer`) copies `from` `[x0, y0, x1, y1]` of `src` (a target texture, or the drawing buffer without one) over `to` of `target` (same), `linear` for `LINEAR`, with the `scissor` if the test was on; reversed corners mirror. An `upload` (`texSubImage2D`) writes `pixels` (base64 straight-alpha RGBA8, `width` x `height`, `flipY` and `premultiply` as the unpack flags were) at `x`, `y` of a target texture, in order with the draws. |
+| `ops` | `[]` | In order. A `clear` (`color`: r, g, b, a, and `depth`: the value the depth buffer is cleared to; either or both) of the drawing buffer that takes the colour throws away every draw to the drawing buffer before it (unless a `blit` reads the drawing buffer in between, or the draws tested depth and the clear leaves the depth buffer). A `draw` runs one program. Both take an optional `target`, the id of a target texture to go to instead of the drawing buffer. A `blit` (`blitFramebuffer`) copies `from` `[x0, y0, x1, y1]` of `src` (a target texture, or the drawing buffer without one) over `to` of `target` (same), `linear` for `LINEAR`, with the `scissor` if the test was on; reversed corners mirror. An `upload` (`texSubImage2D`) writes `pixels` (base64 straight-alpha RGBA8, `width` x `height`, `flipY` and `premultiply` as the unpack flags were) at `x`, `y` of a target texture, in order with the draws. |
 | `premultipliedAlpha`, `alpha` | `true` | The context's attributes of those names: what the buffer holds is read as premultiplied (or straight) colour; `alpha: false` makes it opaque. |
 
 A `draw` carries `program`, `mode` (`points`, `triangles`, `triangleStrip`, `triangleFan`), `first` and `count`,
@@ -502,7 +502,9 @@ attribute that advances for each instance), `uniforms` by name
 (a list of calls: `kind` `f`, `i` or `m` for column-major matrices, `value`, and `index` for an element of an array),
 `units` (the texture units by number, each with its `texture` and the `min`, `mag`, `wrapS` and `wrapT` it was set
 to, as the GL names), `viewport`, `scissor` (both with y up from the bottom row, as GL's), `blend` (the factors,
-equations and colour), `colorMask` and `cull`.
+equations and colour), `colorMask`, `cull`, `depth` (the depth test: `func`, the GL name of `depthFunc`; `mask`;
+`near` and `far` of `depthRange`; absent when the test was off or the buffer has no depth) and `polygonOffset`
+(`factor`, `units`; only with `depth`).
 
 How it is drawn:
 
@@ -512,6 +514,12 @@ How it is drawn:
   wgpu's 0..w, so the shaders mean what they mean in a browser. Arrays of scalars and of `vec2`, `bool` and `mat2`
   uniforms travel packed (naga and Metal lay them out differently). A shader naga cannot read fails when the scene
   loads, with the line of the page's source (`layer "sky": glsl program "p": fragment shader: 3:15: ...`).
+- A draw with `depth` is tested against a 32-bit float depth buffer that belongs to the target it draws into (the drawing
+  buffer, or a target texture), 1 until cleared and not carried from one frame to the next. Window depth is clip
+  depth taken from -w..w to 0..1 and then through `near` and `far`; `polygonOffset` moves it by `factor` times the
+  slope plus `units` steps of the buffer. A draw without `depth` neither tests nor writes. `NEVER`, `LESS`, `EQUAL`,
+  `LEQUAL`, `GREATER`, `NOTEQUAL`, `GEQUAL` and `ALWAYS` are all drawn. A draw with `depth` and one without go in
+  separate render passes, which share the depth buffer.
 - Drawing is into an 8-bit RGBA buffer, blended in it as GL does (on sRGB-encoded values, with the factors and the
   colour mask), not in linear light. The buffer is then placed under the layer's transform and converted to linear
   light like a picture is. The first frame costs the compile of each program; every later frame reuses the pipeline.
@@ -532,7 +540,7 @@ volume is not drawn, and culling does not apply. `gl_VertexID` is the vertex's n
 point's number in a draw of points; `gl_InstanceID` the instance's. Instanced points are not drawn.
 
 Not drawn, and reported as `unsupported:` with what to do instead (never accepted and ignored):
-renderbuffers, depth and stencil attachments, the depth and stencil tests, `readPixels`, lines, instanced points, a
+colour and stencil renderbuffers, depth and stencil textures as attachments, the stencil test, `readPixels`, lines, instanced points, a
 `vertexAttribDivisor` above 1, integer and constant (`vertexAttrib`) attributes, cube map, 3D and array textures, float and sRGB textures,
 texture levels other than 0 (call `generateMipmap`), uniform blocks and struct uniforms, several colour outputs (so
 one colour attachment), a framebuffer texture that is not RGBA or holds uploaded pixels, a texture read in the vertex

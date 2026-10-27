@@ -877,3 +877,193 @@ fn instanced_draws_advance_attributes_with_a_divisor_per_instance_and_count_gl_i
     assert_eq!(px(&frame, 4, 4)[..3], [0, 0, 0]);
     assert_eq!(px(&frame, 12, 12)[..3], [0, 0, 0]);
 }
+
+// ---- the depth test ----
+
+const Z_VERTEX: &str = "attribute vec2 a_pos; uniform float u_z; varying vec2 v_uv; \
+    void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, u_z, 1.0); }";
+const RED: [f64; 4] = [1.0, 0.0, 0.0, 1.0];
+const GREEN: [f64; 4] = [0.0, 1.0, 0.0, 1.0];
+const BLUE: [f64; 4] = [0.0, 0.0, 1.0, 1.0];
+
+fn depth_state(func: &str, mask: bool, near: f64, far: f64) -> String {
+    format!(r#""depth": {{"func": "{func}", "mask": {mask}, "near": {near}, "far": {far}}}"#)
+}
+
+/// A draw of the quad at clip depth `z` (window depth `(z + 1) / 2`) in `color`, with `state`.
+fn z_draw(z: f64, color: [f64; 4], state: &str) -> String {
+    let uniforms = uniforms(&[("u_z", "f", &[z]), ("u_color", "f", &color)]);
+    draw(&if state.is_empty() { uniforms } else { format!("{uniforms}, {state}") })
+}
+
+fn z_layer(extra_content: &str, draws: &[String]) -> Frame {
+    render(&layer_with_vertex(
+        Z_VERTEX,
+        &[("p", FILL), ("s", SHOW)],
+        "",
+        extra_content,
+        &ops(draws),
+    ))
+}
+
+fn centre(frame: &Frame) -> [u8; 4] {
+    px(frame, 8, 8)
+}
+
+#[test]
+fn the_depth_test_keeps_the_nearer_draw_in_any_order() {
+    let less = depth_state("LESS", true, 0.0, 1.0);
+    // Red is nearer than green, drawn first or last; blue is nearer than both.
+    let a = z_layer("", &[z_draw(-0.5, RED, &less), z_draw(0.5, GREEN, &less)]);
+    let b = z_layer("", &[z_draw(0.5, GREEN, &less), z_draw(-0.5, RED, &less)]);
+    assert_eq!(centre(&a), [255, 0, 0, 255]);
+    assert_eq!(centre(&b), [255, 0, 0, 255]);
+    let c = z_layer(
+        "",
+        &[z_draw(0.0, RED, &less), z_draw(0.5, GREEN, &less), z_draw(-0.9, BLUE, &less)],
+    );
+    assert_eq!(centre(&c), [0, 0, 255, 255]);
+    // The same draws with no depth test are painter's order.
+    let d = z_layer("", &[z_draw(-0.5, RED, ""), z_draw(0.5, GREEN, "")]);
+    assert_eq!(centre(&d), [0, 255, 0, 255]);
+}
+
+#[test]
+fn each_depth_function_passes_the_draws_it_should() {
+    // Red is stored at window depth 0.5 (ALWAYS, so it is drawn); green is tried at 0.25, 0.5 and 0.75.
+    let table: [(&str, [bool; 3]); 8] = [
+        ("NEVER", [false, false, false]),
+        ("LESS", [true, false, false]),
+        ("EQUAL", [false, true, false]),
+        ("LEQUAL", [true, true, false]),
+        ("GREATER", [false, false, true]),
+        ("NOTEQUAL", [true, false, true]),
+        ("GEQUAL", [false, true, true]),
+        ("ALWAYS", [true, true, true]),
+    ];
+    for (func, passes) in table {
+        for (z, pass) in [-0.5, 0.0, 0.5].into_iter().zip(passes) {
+            let frame = z_layer(
+                "",
+                &[
+                    z_draw(0.0, RED, &depth_state("ALWAYS", true, 0.0, 1.0)),
+                    z_draw(z, GREEN, &depth_state(func, true, 0.0, 1.0)),
+                ],
+            );
+            let want = if pass { [0, 255, 0, 255] } else { [255, 0, 0, 255] };
+            assert_eq!(centre(&frame), want, "{func} at z = {z}");
+        }
+    }
+}
+
+#[test]
+fn a_draw_with_the_depth_mask_off_tests_but_writes_no_depth() {
+    // Red tests against the cleared depth but leaves it at 1, so the farther green passes too.
+    let frame = z_layer(
+        "",
+        &[
+            z_draw(-0.5, RED, &depth_state("LESS", false, 0.0, 1.0)),
+            z_draw(0.5, GREEN, &depth_state("LESS", true, 0.0, 1.0)),
+        ],
+    );
+    assert_eq!(centre(&frame), [0, 255, 0, 255]);
+}
+
+#[test]
+fn clear_depth_resets_the_depth_buffer_to_its_value_and_a_colour_clear_leaves_it() {
+    let less = depth_state("LESS", true, 0.0, 1.0);
+    // A depth clear to 1 lets a farther draw pass again.
+    let frame = z_layer(
+        "",
+        &[
+            z_draw(-0.5, RED, &less),
+            r#"{"op": "clear", "depth": 1}"#.into(),
+            z_draw(0.5, GREEN, &less),
+        ],
+    );
+    assert_eq!(centre(&frame), [0, 255, 0, 255]);
+    // A depth clear to 0.25 stops a draw at window depth 0.5 and lets one at 0.125 in.
+    let stopped = z_layer(
+        "",
+        &[
+            r#"{"op": "clear", "color": [0, 0, 0, 1], "depth": 0.25}"#.into(),
+            z_draw(0.0, RED, &less),
+        ],
+    );
+    assert_eq!(centre(&stopped), [0, 0, 0, 255]);
+    let passed = z_layer(
+        "",
+        &[
+            r#"{"op": "clear", "color": [0, 0, 0, 1], "depth": 0.25}"#.into(),
+            z_draw(-0.75, GREEN, &less),
+        ],
+    );
+    assert_eq!(centre(&passed), [0, 255, 0, 255]);
+    // A colour clear alone clears the picture, not the depth: the farther draw fails against red's depth.
+    let frame = z_layer(
+        "",
+        &[
+            z_draw(-0.5, RED, &less),
+            r#"{"op": "clear", "color": [0, 0, 1, 1]}"#.into(),
+            z_draw(0.5, GREEN, &less),
+        ],
+    );
+    assert_eq!(centre(&frame), [0, 0, 255, 255]);
+}
+
+#[test]
+fn depth_range_maps_the_window_depth() {
+    // Red at clip depth 0 with the range 0..0.2 is at window depth 0.1, nearer than green at 0.25.
+    let frame = z_layer(
+        "",
+        &[
+            z_draw(0.0, RED, &depth_state("LESS", true, 0.0, 0.2)),
+            z_draw(-0.5, GREEN, &depth_state("LESS", true, 0.0, 1.0)),
+        ],
+    );
+    assert_eq!(centre(&frame), [255, 0, 0, 255]);
+}
+
+#[test]
+fn a_polygon_offset_pulls_a_coplanar_draw_through() {
+    // Two draws at one depth: LESS refuses the second, unless a negative offset moves it nearer.
+    let offset = r#""polygonOffset": {"factor": -1, "units": -1}"#;
+    let less = depth_state("LESS", true, 0.0, 1.0);
+    let plain = z_layer("", &[z_draw(0.0, RED, &less), z_draw(0.0, GREEN, &less)]);
+    assert_eq!(centre(&plain), [255, 0, 0, 255]);
+    let pulled = z_layer(
+        "",
+        &[z_draw(0.0, RED, &less), z_draw(0.0, GREEN, &format!("{less}, {offset}"))],
+    );
+    assert_eq!(centre(&pulled), [0, 255, 0, 255]);
+}
+
+#[test]
+fn a_target_has_a_depth_buffer_of_its_own() {
+    let less = depth_state("LESS", true, 0.0, 1.0);
+    let into_rt = |z: f64, color: [f64; 4], state: &str| {
+        let uniforms = uniforms(&[("u_z", "f", &[z]), ("u_color", "f", &color)]);
+        draw_with("p", Some(("rt", 8)), &format!("{uniforms}, {state}"))
+    };
+    // The blue draw is farther than the red one in the target, so red shows on the canvas.
+    let frame = z_layer(
+        &targets(&[("rt", 8)]),
+        &[
+            into_rt(-0.5, RED, &less),
+            into_rt(0.5, BLUE, &less),
+            draw_with("s", None, &sampling("rt")),
+        ],
+    );
+    near(px(&frame, 8, 8), [255, 0, 0, 255], 2);
+    // A depth clear of the target alone lets the farther draw in.
+    let frame = z_layer(
+        &targets(&[("rt", 8)]),
+        &[
+            into_rt(-0.5, RED, &less),
+            r#"{"op": "clear", "depth": 1, "target": "rt"}"#.into(),
+            into_rt(0.5, BLUE, &less),
+            draw_with("s", None, &sampling("rt")),
+        ],
+    );
+    near(px(&frame, 8, 8), [0, 0, 255, 255], 2);
+}
