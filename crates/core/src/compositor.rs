@@ -94,7 +94,7 @@ use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use glam::DMat3;
+use glam::{DMat3, DVec3};
 use kurbo::{Affine, Rect};
 use wgpu::{self, util::DeviceExt};
 
@@ -1667,20 +1667,37 @@ impl Compositor {
         if src.bounds.is_empty() {
             return src;
         }
+        let target = self.warp_cut(&src, h, &[]);
+        self.release(src);
+        target
+    }
+
+    /// `warp`, keeping `src`, of only the texels of `src` that every one of
+    /// `cuts` keeps (`(a, b, c)` keeps the texels `(u, v)` with `a u + b v +
+    /// c >= 0`; at most `MAX_WARP_CUTS`, the rest are not applied). The
+    /// result is a new texture.
+    pub fn warp_cut(&mut self, src: &Tex, h: DMat3, cuts: &[DVec3]) -> Tex {
         let region = bounds::warped(h, src.bounds).unwrap_or(self.whole());
-        let scratch = self.full_copy(&src);
-        let input = scratch.as_ref().unwrap_or(&src);
+        let scratch = self.full_copy(src);
+        let input = scratch.as_ref().unwrap_or(src);
         let target = self.target_full(region);
-        self.run_filtered_pass(
-            &self.warp,
-            &input.view,
-            &floats(&warp_values(h.inverse())),
-            &target,
+        let mut params = floats(&warp_values(h.inverse()));
+        let cuts = &cuts[..cuts.len().min(MAX_WARP_CUTS)];
+        params.extend(
+            [cuts.len() as u32, 0, 0, 0]
+                .iter()
+                .flat_map(|v| v.to_le_bytes()),
         );
+        for i in 0..MAX_WARP_CUTS {
+            let l = cuts
+                .get(i)
+                .map_or([0.0; 4], |l| [l.x as f32, l.y as f32, l.z as f32, 0.0]);
+            params.extend(floats(&l));
+        }
+        self.run_filtered_pass(&self.warp, &input.view, &params, &target);
         if let Some(scratch) = scratch {
             self.release(scratch);
         }
-        self.release(src);
         target
     }
 
@@ -3485,6 +3502,9 @@ fn halftone_values(halftone: &ResolvedHalftone, layer_matrix: Affine) -> [f32; 2
 
 /// The inverse of a warp's homography as `shaders/warp.wgsl` reads it: its
 /// three rows, each padded to four floats.
+/// How many cuts `Compositor::warp_cut` applies (`MAX_CUTS` in `shaders/warp.wgsl`).
+pub const MAX_WARP_CUTS: usize = 16;
+
 fn warp_values(inverse: DMat3) -> [f32; 12] {
     let mut values = [0.0; 12];
     for (i, row) in [inverse.row(0), inverse.row(1), inverse.row(2)]

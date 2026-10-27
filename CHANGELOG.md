@@ -21,6 +21,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Fixed
 
+- `transform-style: preserve-3d` planes that cross each other intersect, as in Chrome: the layers of a 3D context are ordered by a BSP tree of their planes and a plane another crosses is cut where they meet, each piece in its own place in the order (two cards pushed through each other, a card flip, a cube; 0.65 mean levels from Chrome for Testing). Parallel planes are ordered by their planes rather than their centres, so a tilted stack of cards no longer puts a farther card in front.
 - A `display: inline-block` element that is also a stacking context (a `transform`, `opacity`, `position: relative`, ...) is drawn once. It came out as two identical layers (`$0.0.1` and `$0.0.1~2`), so its anti-aliased edges and translucent fills were doubled.
 - `background-repeat: space` and `round` with any number of tiles: past 150 tiles of a gradient or a picture the tile is drawn once and the paint repeats it at its exact period, gaps included, as Chrome's pattern shader does. `space` with thousands of gradient tiles used to warn and draw nothing, and `round` drifted by up to a tile.
 - `backdrop-filter: blur()` reads only the backdrop inside the element's border box, mirrored past its edges, as Chrome does; it used to blur in what lay around the box.

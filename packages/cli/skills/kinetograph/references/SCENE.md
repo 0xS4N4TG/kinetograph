@@ -1955,12 +1955,15 @@ layers inside a preserve3d group are warped even when they have no 3D transform 
 them.
 
 **Depth sorting.** The layers a preserve3d group draws (its children, and recursively the children of preserve3d
-groups nested in it, which sort together with them) are painted in **painter's order**: farthest first, by the `z` of
-each layer's centre after its placement (before the camera's perspective, which does not change the order along a
-line of sight). A layer's centre is the middle of its box (the box an `inset` clip uses: a shape's, image's, noise's or
-mesh's width by height, a text layer's layout box, a path's bounding box), or its position `(x, y)` (where its anchor
-lands) for a group without a `layout`, which has no box. The sort is stable: layers at the same depth (within 1/1024 of a pixel) keep
-their document order. Only preserve3d groups sort. Every other list, a preserve3d group's parent and the children of an
+groups nested in it, which sort together with them) are painted back to front as a BSP tree of their planes orders them,
+which is how Chrome orders the layers of a 3D rendering context (`crates/core/src/bsp.rs`). Each layer is a plane: its
+box (the box an `inset` clip uses: a shape's, image's, noise's or mesh's width by height, a text layer's layout box, a
+path's bounding box; for a group, its children's boxes together), moved by its placement. A plane that another crosses
+is cut along the line where they meet, and each piece takes its own place in the order, so two cards pushed through each
+other intersect: each is in front where it is nearer. The layer is drawn and warped once and blended piece by piece.
+Planes that only touch (the faces of a cube) are not cut. The planes are put in the tree in painter's order (farthest
+first by the `z` of each layer's centre after its placement, document order for ties within 1/1024 of a pixel), and
+planes in one plane keep that order. Only preserve3d groups sort. Every other list, a preserve3d group's parent and the children of an
 ordinary group inside it included, keeps document order; an ordinary group inside a preserve3d group is one layer to sort,
 at its position, and is drawn as a flat picture. The group as a whole is drawn at its place in its parent's list, so
 siblings above and below it stay above and below.
@@ -1976,9 +1979,8 @@ Rules:
   modes, effects, clips and masks like any layer; each is applied to the layer flat, before it is warped. A matte
   source cannot have `rotateX`, `rotateY` or `z` itself: the matte moves with the layer it cuts.
 - A `backdropBlur` child blurs the canvas as painted so far, in depth order.
-- Sorting only orders whole layers. There is no depth buffer, so two layers that cross each other (a card pushed through
-  another) do not intersect: one is entirely over the other, and a layer that is large and tilted can be sorted wrong
-  against a small one in front of part of it.
+- A layer's plane is its box; what it paints past its box (a shadow, a glow) is in the piece of the plane it lies in,
+  but does not make the box cross another plane.
 - A preserve3d group scaled to nothing draws nothing. Its `scale` enlarges its children in the plane only, not in
   depth (see above).
 
@@ -2237,10 +2239,11 @@ numbers. Blurs, colour filters and everything inside one layer are unchanged. Th
   Overlapping patches blend in document order without depth.
 - `cornerPin` needs a box (no groups), costs one pass each, and warps with bilinear sampling like the 3D transforms (no
   mipmaps). It cannot bring in pixels from beyond the texture (canvas plus margin).
-- 3D is a warp of a flat layer, not a 3D renderer: no depth buffer, no intersecting layers, no lighting, one scene
+- 3D is a warp of a flat layer, not a 3D renderer: no depth buffer (the layers of a preserve3d group that cross are cut
+  where they meet, see [preserve3d groups](#preserve3d-groups)), no lighting, one scene
   camera, no mipmaps (see [3D transforms and the camera](#3d-transforms-and-the-camera)), and a layer that hangs off the
   canvas is cut at the canvas edge (plus margin) before it is turned.
-- A `preserve3d` group sorts whole layers by the depth of their centre (painter's order); it cannot have effects, a
+- A `preserve3d` group orders its layers by a BSP tree of their planes and cuts the ones that cross; it cannot have effects, a
   clip, a mask, a matte or a blend mode, and multiplies its `opacity` into its children instead of fading them as one
   picture (see [preserve3d groups](#preserve3d-groups)).
 - `motionBlur` averages 2 to 64 equally weighted samples of the shutter (no sample-weighting curve, no random

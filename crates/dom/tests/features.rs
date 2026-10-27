@@ -480,6 +480,45 @@ macro_rules! close_case {
     };
 }
 
+// Two planes that cross, a cube and a card turned past edge-on, in one
+// preserve-3d context each: drawn in pieces, back to front, as Chrome's BSP
+// tree orders them.
+close_case!(preserve_3d_crossing, 480, 200, 1.5, {
+    r#"<div style="position:absolute;left:20px;top:20px;width:160px;height:160px;perspective:600px">
+<div style="position:relative;width:160px;height:160px;transform-style:preserve-3d;transform:rotateY(25deg) rotateX(-20deg)">
+<div style="position:absolute;left:20px;top:30px;width:120px;height:100px;background:rgba(220,40,40,.85)"></div>
+<div style="position:absolute;left:20px;top:30px;width:120px;height:100px;background:rgba(40,90,220,.85);transform:rotateY(70deg)"></div>
+<div style="position:absolute;left:20px;top:30px;width:120px;height:100px;background:rgba(40,170,60,.85);transform:rotateX(60deg)"></div>
+</div></div>
+<div style="position:absolute;left:200px;top:40px;width:120px;height:120px;perspective:500px">
+<div style="position:relative;width:100px;height:100px;margin:10px;transform-style:preserve-3d;transform:rotateX(-25deg) rotateY(38deg)">
+<div style="position:absolute;width:100px;height:100px;background:#e55;transform:translateZ(50px)"></div>
+<div style="position:absolute;width:100px;height:100px;background:#5b5;transform:rotateY(90deg) translateZ(50px)"></div>
+<div style="position:absolute;width:100px;height:100px;background:#55e;transform:rotateY(180deg) translateZ(50px)"></div>
+<div style="position:absolute;width:100px;height:100px;background:#ee5;transform:rotateY(-90deg) translateZ(50px)"></div>
+<div style="position:absolute;width:100px;height:100px;background:#5ee;transform:rotateX(90deg) translateZ(50px)"></div>
+<div style="position:absolute;width:100px;height:100px;background:#e5e;transform:rotateX(-90deg) translateZ(50px)"></div>
+</div></div>
+<div style="position:absolute;left:340px;top:30px;width:120px;height:140px;perspective:400px">
+<div style="position:relative;width:120px;height:140px;transform-style:preserve-3d;transform:rotateY(150deg)">
+<div style="position:absolute;inset:0;background:#c63;backface-visibility:hidden">front</div>
+<div style="position:absolute;inset:0;background:#36c;backface-visibility:hidden;transform:rotateY(180deg)">back</div>
+</div></div>"#
+        .to_string()
+});
+
+// Parallel cards in a turned stack, where the middle of the farther card is
+// nearer the eye than the middle of the nearer one: ordered by their planes.
+close_case!(preserve_3d_tilted_stack, 480, 270, 1.0, {
+    r#"<div style="position:absolute;left:0;top:0;width:480px;height:270px;perspective:700px">
+<div style="position:absolute;left:115px;top:212px;width:0;height:0;transform-style:preserve-3d;transform:rotateX(24deg) rotateY(40deg)">
+<div style="position:absolute;left:-44px;top:-19px;width:88px;height:54px;border-radius:8px;background:#f4a460;transform:translateZ(30px)"></div>
+<div style="position:absolute;left:8px;top:-15px;width:88px;height:54px;border-radius:8px;background:#e8c76a;transform:translateZ(60px)"></div>
+<div style="position:absolute;left:-10px;top:-37px;width:88px;height:54px;border-radius:8px;background:#e06050;transform:translateZ(-60px)"></div>
+</div></div>"#
+        .to_string()
+});
+
 // An inline-block that is a stacking context is painted once, from its line.
 close_case!(inline_block_stacking_context, 320, 120, 1.0, {
     r#"<div style="font-size:40px">ab</div>

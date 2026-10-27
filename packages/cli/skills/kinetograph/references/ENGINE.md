@@ -760,7 +760,9 @@ markers in the bundled bullet font.
 
 Each case renders the same HTML in our painter and in Chrome for Testing 154 (a test oracle only) and prints the mean
 per-pixel largest-channel difference (0 to 255) over the whole picture; text and anti-aliasing differ by design.
-With `blendSpace: srgb`: blend modes 0.35, clip paths 0.21, preserve-3d cubes and backface 0.22, paint order 0.17,
+With `blendSpace: srgb`: blend modes 0.35, clip paths 0.21, preserve-3d cubes and backface 0.22 (crossing planes, a
+cube and a flipped card 0.68), backdrop blur 0.27 (mirrored in the box, up to 300 px), drop shadow 600 px and blur
+600 px 0.93, paint order 0.17,
 clipped positioned boxes 0.16, transforms 0.28, tiled backgrounds 0.38, shadows 0.55, filters 1.1, lists and outline
 1.3, gradients 1.6, border images 2.6, borders 3.6 (dotted dot spacing), `background-clip: text` 5.0 (synthetic bold),
 text 13 (Chrome's heavier text rendering), masks 22 (Chrome blocks a `file:` mask picture, so the other three agree).
