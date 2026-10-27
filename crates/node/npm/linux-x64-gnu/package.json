@@ -14,7 +14,11 @@
     "bin/ffmpeg",
     "bin/SOURCES.txt",
     "FFMPEG-LICENSE.md",
-    "COPYING.GPLv2"
+    "COPYING.GPLv2",
+    "CERES-LICENSE",
+    "EIGEN-COPYING.BSD",
+    "EIGEN-COPYING.MPL2",
+    "LIBMV-LICENSE"
   ],
   "description": "Node-API addon exposing the Kinetograph renderer",
   "keywords": [
