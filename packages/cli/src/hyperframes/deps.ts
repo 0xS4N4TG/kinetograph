@@ -120,7 +120,7 @@ export const activeLockFile = (): string | null => active?.path ?? null;
 function lockDownload(url: string, bytes: Uint8Array, update: boolean, final: string): void {
   if (active === null) return;
   if (!update) {
-    const mismatch = lockMismatch(active.lock, url, bytes);
+    const mismatch = lockMismatch(active.lock, url, bytes, final);
     if (mismatch !== null) throw new CliError('LOCK_MISMATCH', mismatch);
   }
   const entry = { sha256: sha256Hex(bytes), size: bytes.length, ...(final !== url ? { final } : {}) };
@@ -169,11 +169,30 @@ function cachedFinal(file: string): string | null {
 }
 
 /**
- * The URL a downloaded data file or module really came from: where its request ended after redirects (the cache's record,
- * else the lock's), or `url` itself. A browser resolves a module's relative imports and `import.meta.url` against this.
+ * The URL a downloaded data file or module really came from: where its request ended after redirects, as the downloader
+ * recorded beside the cached file, or `url` itself. A browser resolves a module's relative imports and `import.meta.url`
+ * against this. The lock's `final` never steers resolution (it is project data anyone can edit): it is only compared with
+ * the cache's record, and a difference is an error. A record that is not https, or leaves the default hosts and the
+ * requested URL's host without the lock pinning it, is ignored.
  */
 export function finalUrlOf(url: string): string {
-  return cachedFinal(dataCachePath(url)) ?? active?.lock.files[url]?.final ?? url;
+  const recorded = cachedFinal(dataCachePath(url));
+  const locked = active?.lock.files[url];
+  if (locked && (locked.final ?? url) !== (recorded ?? url)) {
+    throw new CliError(
+      'LOCK_MISMATCH',
+      `${url} was downloaded with a redirect to ${recorded ?? url} but ${active!.path} locked it at ${locked.final ?? url}. Run \`kinetograph fetch-deps <entry> --update\` to download it again and update the lock.`,
+    );
+  }
+  if (recorded === null) return url;
+  let parsed: URL;
+  try {
+    parsed = new URL(recorded);
+  } catch {
+    return url;
+  }
+  const trusted = DEFAULT_ALLOWED_HOSTS.includes(parsed.hostname) || parsed.hostname === new URL(url).hostname || locked?.final === recorded;
+  return parsed.protocol === 'https:' && trusted ? recorded : url;
 }
 
 /** The hash `fetch-deps` stored beside a cached file. */

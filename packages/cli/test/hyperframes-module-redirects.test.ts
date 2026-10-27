@@ -14,6 +14,7 @@ import { buildPlan } from '../src/hyperframes/plan.js';
 const ROUTES: Record<string, { status: number; location?: string; body?: string }> = {
   '/a/start.js': { status: 302, location: '/b/real/main.js' },
   '/b/real/main.js': { status: 200, body: 'import { x } from "./dep.js";\nwindow.fromDep = x;\nwindow.moduleUrl = import.meta.url;\n' },
+  '/b/real/other.js': { status: 200, body: 'import { x } from "./dep.js";\nwindow.fromDep = x;\n' },
   '/b/real/dep.js': { status: 200, body: 'export const x = "dep from b/real";\n' },
   // What a browser would never ask for: a relative import resolved against the requested URL.
   '/a/dep.js': { status: 200, body: 'export const x = "WRONG: dep from a";\n' },
@@ -99,12 +100,51 @@ describe('a module whose download was redirected', () => {
     expect(sandbox.moduleUrl).toBe('https://esm.sh/b/real/main.js');
   });
 
-  it('keeps the final URL when the lock is the only record (cache metadata lost)', async () => {
+  it('never takes the final URL from the lock: a tampered one is a mismatch, not a base', async () => {
     await prefetchHyperframes(index, { fetchImpl: localFetch });
-    rmSync(`${dataCachePath('https://esm.sh/a/start.js')}.final`);
-    useLockFile(join(dir, 'kinetograph.lock.json'));
-    expect(finalUrlOf('https://esm.sh/a/start.js')).toBe('https://esm.sh/b/real/main.js');
-    expect(finalUrlOf('https://esm.sh/b/real/dep.js')).toBe('https://esm.sh/b/real/dep.js');
+    useLockFile(null);
+    const lockFile = join(dir, 'kinetograph.lock.json');
+    const lock = JSON.parse(readFileSync(lockFile, 'utf8'));
+    lock.files['https://esm.sh/a/start.js'].final = 'https://esm.sh/evil/';
+    writeFileSync(lockFile, JSON.stringify(lock));
+    // Resolution stops rather than resolve imports against the lock's value.
+    await expect(buildPlan(index)).rejects.toThrow(/locked it at https:\/\/esm\.sh\/evil\//);
+    useLockFile(lockFile);
+    expect(() => finalUrlOf('https://esm.sh/a/start.js')).toThrow(/kinetograph fetch-deps/);
+    // A download of it again sees a different redirect target than the lock pins.
+    rmSync(join(dir, 'cache'), { recursive: true, force: true });
+    const again = await prefetchHyperframes(index, { fetchImpl: localFetch });
+    expect(again.files.find((f) => f.url === 'https://esm.sh/a/start.js')?.code).toBe('LOCK_MISMATCH');
+  });
+
+  it('ignores a cache record that is not https', async () => {
+    await prefetchHyperframes(index, { fetchImpl: localFetch });
+    useLockFile(null);
+    writeFileSync(`${dataCachePath('https://esm.sh/a/start.js')}.final`, 'http://esm.sh/b/real/main.js\n');
+    expect(finalUrlOf('https://esm.sh/a/start.js')).toBe('https://esm.sh/a/start.js');
+    writeFileSync(`${dataCachePath('https://esm.sh/a/start.js')}.final`, 'https://elsewhere.example/main.js\n');
+    expect(finalUrlOf('https://esm.sh/a/start.js')).toBe('https://esm.sh/a/start.js');
+  });
+
+  it('pins the redirect target like the bytes: a server that redirects elsewhere is a LOCK_MISMATCH, and --update accepts it', async () => {
+    await prefetchHyperframes(index, { fetchImpl: localFetch });
+    useLockFile(null);
+    rmSync(join(dir, 'cache'), { recursive: true, force: true });
+    const original = ROUTES['/a/start.js']!;
+    ROUTES['/a/start.js'] = { status: 302, location: '/b/real/other.js' };
+    try {
+      const refused = await prefetchHyperframes(index, { fetchImpl: localFetch });
+      const entry = refused.files.find((f) => f.url === 'https://esm.sh/a/start.js');
+      expect(entry?.status).toBe('failed');
+      expect(entry?.code).toBe('LOCK_MISMATCH');
+      expect(entry?.error).toMatch(/redirected to https:\/\/esm\.sh\/b\/real\/other\.js.*locked it at https:\/\/esm\.sh\/b\/real\/main\.js/);
+      useLockFile(null);
+      const accepted = await prefetchHyperframes(index, { fetchImpl: localFetch, update: true });
+      expect(accepted.files.filter((f) => f.status === 'failed')).toEqual([]);
+      expect(readLock(join(dir, 'kinetograph.lock.json')).files['https://esm.sh/a/start.js']?.final).toBe('https://esm.sh/b/real/other.js');
+    } finally {
+      ROUTES['/a/start.js'] = original;
+    }
   });
 
   it('records no final URL for a download that was not redirected', async () => {

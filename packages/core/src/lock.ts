@@ -69,10 +69,17 @@ export function recordInLock(path: string, url: string, entry: LockEntry): void 
   writeLock(path, lock);
 }
 
-/** Why `bytes` are not what the lock recorded for `url`, or null when they are (or the lock has no entry). */
-export function lockMismatch(lock: Lock, url: string, bytes: Uint8Array): string | null {
+/**
+ * Why `bytes` are not what the lock recorded for `url`, or null when they are (or the lock has no entry). `final`, when
+ * given, is where the request ended after redirects: the lock pins that too, so a server that sends the request somewhere
+ * else is a mismatch even when the bytes are the same.
+ */
+export function lockMismatch(lock: Lock, url: string, bytes: Uint8Array, final?: string): string | null {
   const entry = lock.files[url];
   if (!entry) return null;
+  if (final !== undefined && (entry.final ?? url) !== final) {
+    return `${url} was redirected to ${final} but ${LOCK_FILE_NAME} locked it at ${entry.final ?? url}: the redirect target changed since it was locked. Run \`kinetograph fetch-deps <entry> --update\` to accept the new one`;
+  }
   const got = sha256Hex(bytes);
   if (got === entry.sha256) return null;
   return `${url} does not match ${LOCK_FILE_NAME} (locked sha256 ${entry.sha256.slice(0, 12)}…, got ${got.slice(0, 12)}…): it changed since it was locked. Run \`kinetograph fetch-deps <entry> --update\` to accept the new file`;
