@@ -11,7 +11,7 @@
 // `WebGLUnsupportedError` whose message starts with "unsupported:" and says what to do instead; a call is never
 // accepted and then ignored where it would change the picture.
 
-import type { CanvasSource, GlslContent, GlslDraw, GlslLayer, GlslOp, GlslSampler, GlslTexture, GlslUniform } from './types.js';
+import type { CanvasSource, GlslContent, GlslDraw, GlslLayer, GlslOp, GlslOutput, GlslPatch, GlslSampler, GlslStencil, GlslStencilFace, GlslTexture, GlslUniform } from './types.js';
 import { CANVAS_SOURCE, pictureOf, type CanvasPicture } from './canvas.js';
 
 /** The method a picture of another layer answers a texture upload with (`layerPicture`). */
@@ -260,6 +260,38 @@ export const GL = {
   VENDOR: 0x1f00,
   RENDERER: 0x1f01,
   VERSION: 0x1f02,
+  KEEP: 0x1e00,
+  REPLACE: 0x1e01,
+  INCR: 0x1e02,
+  DECR: 0x1e03,
+  INVERT: 0x150a,
+  INCR_WRAP: 0x8507,
+  DECR_WRAP: 0x8508,
+  STENCIL_CLEAR_VALUE: 0xb91,
+  STENCIL_FUNC: 0xb92,
+  STENCIL_VALUE_MASK: 0xb93,
+  STENCIL_FAIL: 0xb94,
+  STENCIL_PASS_DEPTH_FAIL: 0xb95,
+  STENCIL_PASS_DEPTH_PASS: 0xb96,
+  STENCIL_REF: 0xb97,
+  STENCIL_WRITEMASK: 0xb98,
+  STENCIL_BACK_FUNC: 0x8800,
+  STENCIL_BACK_FAIL: 0x8801,
+  STENCIL_BACK_PASS_DEPTH_FAIL: 0x8802,
+  STENCIL_BACK_PASS_DEPTH_PASS: 0x8803,
+  STENCIL_BACK_REF: 0x8ca3,
+  STENCIL_BACK_VALUE_MASK: 0x8ca4,
+  STENCIL_BACK_WRITEMASK: 0x8ca5,
+  STENCIL_INDEX8: 0x8d48,
+  FRAMEBUFFER_INCOMPLETE_DIMENSIONS: 0x8cd9,
+  FRAMEBUFFER_UNSUPPORTED: 0x8cdd,
+  RENDERBUFFER_BINDING: 0x8ca7,
+  RENDERBUFFER_WIDTH: 0x8d42,
+  RENDERBUFFER_HEIGHT: 0x8d43,
+  RENDERBUFFER_INTERNAL_FORMAT: 0x8d44,
+  FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE: 0x8cd0,
+  FRAMEBUFFER_ATTACHMENT_OBJECT_NAME: 0x8cd1,
+  FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL: 0x8cd2,
 } as const;
 
 /** What WebGL 2 adds that a recorded context takes. */
@@ -299,7 +331,41 @@ export const GL2 = {
   UNSIGNED_INT_VEC4: 0x8dc8,
   FLOAT_MAT2x3: 0x8b65,
   SAMPLER_3D: 0x8b5f,
+  COLOR: 0x1800,
+  DEPTH: 0x1801,
+  STENCIL: 0x1802,
+  UNSIGNED_INT_24_8: 0x84fa,
+  FLOAT_32_UNSIGNED_INT_24_8_REV: 0x8dad,
+  READ_BUFFER: 0xc02,
+  TEXTURE_BASE_LEVEL: 0x813c,
+  TEXTURE_MAX_LEVEL: 0x813d,
+  COLOR_ATTACHMENT1: 0x8ce1,
+  COLOR_ATTACHMENT2: 0x8ce2,
+  COLOR_ATTACHMENT3: 0x8ce3,
+  COLOR_ATTACHMENT4: 0x8ce4,
+  COLOR_ATTACHMENT5: 0x8ce5,
+  COLOR_ATTACHMENT6: 0x8ce6,
+  COLOR_ATTACHMENT7: 0x8ce7,
+  COLOR_ATTACHMENT8: 0x8ce8,
+  COLOR_ATTACHMENT9: 0x8ce9,
+  COLOR_ATTACHMENT10: 0x8cea,
+  COLOR_ATTACHMENT11: 0x8ceb,
+  COLOR_ATTACHMENT12: 0x8cec,
+  COLOR_ATTACHMENT13: 0x8ced,
+  COLOR_ATTACHMENT14: 0x8cee,
+  COLOR_ATTACHMENT15: 0x8cef,
+  DRAW_BUFFER0: 0x8825,
+  DRAW_BUFFER1: 0x8826,
+  DRAW_BUFFER2: 0x8827,
+  DRAW_BUFFER3: 0x8828,
+  DRAW_BUFFER4: 0x8829,
+  DRAW_BUFFER5: 0x882a,
+  DRAW_BUFFER6: 0x882b,
+  DRAW_BUFFER7: 0x882c,
 } as const;
+
+/** How many colour outputs a draw writes (`MAX_DRAW_BUFFERS`, `MAX_COLOR_ATTACHMENTS`): the colour attachments a render pass takes. */
+const MAX_DRAW_BUFFERS = 8;
 
 // ---- objects ----
 
@@ -340,26 +406,47 @@ export class WebGLTexture extends WebGLObject {
   blank = false;
   /** The `version` at which a framebuffer last drew in it: until it is specified again, it is a render target. */
   drawnAt = -1;
+  /** The mip levels it has storage for (`texStorage2D`, or `texImage2D` of an empty level): what a framebuffer can draw in. */
+  levels = 1;
+  /** `texSubImage2D` calls since it was specified that its pixels here cannot take: pictures over parts of it, in order. */
+  patches: GlslPatch[] = [];
   min: number = GL.NEAREST_MIPMAP_LINEAR;
   mag: number = GL.LINEAR;
   wrapS: number = GL.REPEAT;
   wrapT: number = GL.REPEAT;
+  /** `TEXTURE_MAX_LEVEL`: the last level sampling reads. */
+  maxLevel = 1000;
   version = 0;
   snapshot: { version: number; id: string; json: GlslTexture } | null = null;
 }
+/** What an attachment point of a framebuffer holds: a level of a texture, or a renderbuffer. */
+export type WebGLAttachment = { texture: WebGLTexture; level: number } | { renderbuffer: WebGLRenderbuffer };
+
 export class WebGLFramebuffer extends WebGLObject {
-  /** The texture attached to COLOR_ATTACHMENT0. */
-  color: WebGLTexture | null = null;
-  /** The renderbuffer attached to DEPTH_ATTACHMENT or DEPTH_STENCIL_ATTACHMENT: it gives the framebuffer a depth buffer. */
-  depth: WebGLRenderbuffer | null = null;
+  /** What COLOR_ATTACHMENT0 and up hold. */
+  readonly colors: (WebGLAttachment | null)[] = [];
+  /** DEPTH_ATTACHMENT and STENCIL_ATTACHMENT; DEPTH_STENCIL_ATTACHMENT puts one image in both. */
+  depth: WebGLAttachment | null = null;
+  stencil: WebGLAttachment | null = null;
+  /** `drawBuffers`: what output `i` of a fragment shader is written to, COLOR_ATTACHMENTi or NONE. */
+  drawBuffers: number[] = [GL.COLOR_ATTACHMENT0];
+  /** `readBuffer`: the colour attachment `blitFramebuffer` reads. */
+  readBuffer: number = GL.COLOR_ATTACHMENT0;
   /** Bound at least once, as `isFramebuffer` asks. */
   bound = false;
+  /** The texture attached to COLOR_ATTACHMENT0. */
+  get color(): WebGLTexture | null {
+    const a = this.colors[0];
+    return a !== null && a !== undefined && 'texture' in a ? a.texture : null;
+  }
 }
 export class WebGLRenderbuffer extends WebGLObject {
   /** The internal format `renderbufferStorage` gave it; null before. */
   format: number | null = null;
   width = 0;
   height = 0;
+  /** Changes with each `renderbufferStorage`, which makes it a new, empty image. */
+  version = 0;
 }
 export class WebGLVertexArrayObject extends WebGLObject {
   readonly attributes: VertexAttribute[] = [];
@@ -609,8 +696,50 @@ const DEPTH_FUNCS: Record<number, string> = {
   [GL.ALWAYS]: 'ALWAYS',
 };
 
-/** What a renderbuffer can hold here: a depth buffer (the stencil half of a combined format is not drawn). */
-const DEPTH_FORMATS = new Set<number>([GL.DEPTH_COMPONENT16, GL.DEPTH_STENCIL, GL2.DEPTH_COMPONENT24, GL2.DEPTH_COMPONENT32F, GL2.DEPTH24_STENCIL8, GL2.DEPTH32F_STENCIL8]);
+/** The stencil operations, by the name the recording uses. */
+const STENCIL_OPS: Record<number, string> = {
+  [GL.KEEP]: 'KEEP',
+  [GL.ZERO]: 'ZERO',
+  [GL.REPLACE]: 'REPLACE',
+  [GL.INCR]: 'INCR',
+  [GL.DECR]: 'DECR',
+  [GL.INVERT]: 'INVERT',
+  [GL.INCR_WRAP]: 'INCR_WRAP',
+  [GL.DECR_WRAP]: 'DECR_WRAP',
+};
+
+/** What an image of an internal format can be: colour, a depth buffer, a stencil buffer, or both of those. */
+type ImageKind = 'color' | 'depth' | 'stencil' | 'depthStencil';
+const DEPTH_ONLY = new Set<number>([GL.DEPTH_COMPONENT, GL.DEPTH_COMPONENT16, GL2.DEPTH_COMPONENT24, GL2.DEPTH_COMPONENT32F]);
+const DEPTH_AND_STENCIL = new Set<number>([GL.DEPTH_STENCIL, GL2.DEPTH24_STENCIL8, GL2.DEPTH32F_STENCIL8]);
+/** The colour formats of a renderbuffer; each is drawn as RGBA8. */
+const COLOR_RENDERBUFFER = new Set<number>([GL.RGBA4, GL.RGB5_A1, GL.RGB565, GL2.RGBA8]);
+
+function kindOf(format: number): ImageKind {
+  if (DEPTH_ONLY.has(format)) return 'depth';
+  if (DEPTH_AND_STENCIL.has(format)) return 'depthStencil';
+  if (format === GL.STENCIL_INDEX8) return 'stencil';
+  return 'color';
+}
+
+/** One face's stencil state: `stencilFunc`, `stencilOp` and `stencilMask`, as GL keeps them. */
+interface StencilState {
+  func: number;
+  ref: number;
+  valueMask: number;
+  fail: number;
+  zfail: number;
+  zpass: number;
+  writeMask: number;
+}
+
+function newStencil(): StencilState {
+  return { func: GL.ALWAYS, ref: 0, valueMask: 0x7fffffff, fail: GL.KEEP, zfail: GL.KEEP, zpass: GL.KEEP, writeMask: 0x7fffffff };
+}
+
+/** The bits of the stencil buffers here. */
+const STENCIL_BITS = 8;
+const STENCIL_MAX = (1 << STENCIL_BITS) - 1;
 
 interface BlendState {
   srcRgb: number;
@@ -623,7 +752,6 @@ interface BlendState {
 }
 
 const UNSUPPORTED_CAPS = new Map<number, string>([
-  [GL.STENCIL_TEST, 'the stencil test'],
   [GL.SAMPLE_ALPHA_TO_COVERAGE, 'alpha to coverage'],
   [GL.SAMPLE_COVERAGE, 'sample coverage'],
 ]);
@@ -633,6 +761,12 @@ const POINT_SIZE_MAX = 511;
 
 /** Formats of a texture that colour cannot be drawn into. */
 const NOT_RENDERABLE = new Set<number>([GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA, GL.DEPTH_COMPONENT]);
+
+/** Whether an op goes to the canvas: its drawing buffer, or its depth and stencil buffer. */
+function isCanvasOp(op: GlslOp): boolean {
+  if (op.op === 'upload') return false;
+  return op.target === undefined && (op.op === 'blit' || (op.outputs === undefined && op.depthStencil === undefined));
+}
 
 /**
  * `WebGLRenderingContext` (and, with `version: 2`, the `WebGL2RenderingContext` calls shader pages use) as a recorder.
@@ -665,6 +799,11 @@ export class WebGLContext {
   private clearDepthValue = 1;
   private depthRangeValue: [number, number] = [0, 1];
   private polygonOffsetValue: [number, number] = [0, 0];
+  private stencilFront: StencilState = newStencil();
+  private stencilBack: StencilState = newStencil();
+  private clearStencilValue = 0;
+  /** `drawBuffers` of the canvas: BACK, or NONE. */
+  private canvasDrawBuffer: number = GL.BACK;
   private renderbuffer: WebGLRenderbuffer | null = null;
   private viewportBox: [number, number, number, number] | null = null;
   private scissorBox: [number, number, number, number] | null = null;
@@ -706,6 +845,8 @@ export class WebGLContext {
     return {
       premultipliedAlpha: this.attributes.premultipliedAlpha,
       alpha: this.attributes.alpha,
+      ...(this.attributes.depth ? {} : { depth: false }),
+      ...(this.attributes.stencil ? { stencil: true } : {}),
       programs: Object.fromEntries(this.programs),
       buffers: Object.fromEntries(this.buffers),
       textures: Object.fromEntries(this.textures),
@@ -776,11 +917,13 @@ export class WebGLContext {
     return e;
   }
   getSupportedExtensions(): string[] {
-    return ['OES_standard_derivatives'];
+    return this.version === 1 ? ['OES_standard_derivatives', 'WEBGL_depth_texture'] : ['OES_standard_derivatives'];
   }
   getExtension(name: string): object | null {
-    // Derivatives are always available in the translated shaders.
-    return name === 'OES_standard_derivatives' ? { FRAGMENT_SHADER_DERIVATIVE_HINT_OES: 0x8b8b } : null;
+    // Derivatives are always available in the translated shaders, and depth textures (core in WebGL 2) in the replay.
+    if (name === 'OES_standard_derivatives') return { FRAGMENT_SHADER_DERIVATIVE_HINT_OES: 0x8b8b };
+    if (name === 'WEBGL_depth_texture' && this.version === 1) return { UNSIGNED_INT_24_8_WEBGL: GL2.UNSIGNED_INT_24_8 };
+    return null;
   }
   getParameter(pname: number): unknown {
     switch (pname) {
@@ -874,7 +1017,53 @@ export class WebGLContext {
         return this.polygonOffsetValue[0];
       case GL.POLYGON_OFFSET_UNITS:
         return this.polygonOffsetValue[1];
+      case GL.STENCIL_FUNC:
+        return this.stencilFront.func;
+      case GL.STENCIL_REF:
+        return this.stencilFront.ref;
+      case GL.STENCIL_VALUE_MASK:
+        return this.stencilFront.valueMask;
+      case GL.STENCIL_FAIL:
+        return this.stencilFront.fail;
+      case GL.STENCIL_PASS_DEPTH_FAIL:
+        return this.stencilFront.zfail;
+      case GL.STENCIL_PASS_DEPTH_PASS:
+        return this.stencilFront.zpass;
+      case GL.STENCIL_WRITEMASK:
+        return this.stencilFront.writeMask;
+      case GL.STENCIL_BACK_FUNC:
+        return this.stencilBack.func;
+      case GL.STENCIL_BACK_REF:
+        return this.stencilBack.ref;
+      case GL.STENCIL_BACK_VALUE_MASK:
+        return this.stencilBack.valueMask;
+      case GL.STENCIL_BACK_FAIL:
+        return this.stencilBack.fail;
+      case GL.STENCIL_BACK_PASS_DEPTH_FAIL:
+        return this.stencilBack.zfail;
+      case GL.STENCIL_BACK_PASS_DEPTH_PASS:
+        return this.stencilBack.zpass;
+      case GL.STENCIL_BACK_WRITEMASK:
+        return this.stencilBack.writeMask;
+      case GL.STENCIL_CLEAR_VALUE:
+        return this.clearStencilValue;
+      case GL.RENDERBUFFER_BINDING:
+        return this.renderbuffer;
+      case GL2.MAX_DRAW_BUFFERS:
+      case GL2.MAX_COLOR_ATTACHMENTS:
+        if (this.version === 2) return MAX_DRAW_BUFFERS;
+        this.fail(GL.INVALID_ENUM);
+        return null;
+      case GL2.READ_BUFFER:
+        if (this.version === 2) return this.readFramebuffer === null ? GL.BACK : this.readFramebuffer.readBuffer;
+        this.fail(GL.INVALID_ENUM);
+        return null;
       default:
+        if (this.version === 2 && pname >= GL2.DRAW_BUFFER0 && pname < GL2.DRAW_BUFFER0 + MAX_DRAW_BUFFERS) {
+          const i = pname - GL2.DRAW_BUFFER0;
+          if (this.drawFramebuffer === null) return i === 0 ? this.canvasDrawBuffer : GL.NONE;
+          return this.drawFramebuffer.drawBuffers[i] ?? GL.NONE;
+        }
         this.fail(GL.INVALID_ENUM);
         return null;
     }
@@ -902,8 +1091,8 @@ export class WebGLContext {
   }
 
   /**
-   * Copies a rectangle of the read framebuffer over one of the draw framebuffer (the canvas, or a texture drawn in):
-   * the colour only, as depth and stencil buffers do not exist here.
+   * Copies a rectangle of the read framebuffer over one of the draw framebuffer (the canvas, or what a framebuffer
+   * draws in): the colour of the read buffer into each draw buffer, and the depth and the stencil buffer.
    */
   blitFramebuffer(sx0: number, sy0: number, sx1: number, sy1: number, dx0: number, dy0: number, dx1: number, dy1: number, mask: number, filter: number): void {
     if (this.version !== 2) return this.fail(GL.INVALID_OPERATION);
@@ -913,27 +1102,79 @@ export class WebGLContext {
     const draw = this.drawFramebuffer;
     if (read !== null && this.statusOf(read) !== GL.FRAMEBUFFER_COMPLETE) return this.fail(GL.INVALID_FRAMEBUFFER_OPERATION);
     if (this.framebufferIncomplete()) return;
-    if (!(mask & GL.COLOR_BUFFER_BIT)) return;
+    // Depth and stencil are copied texel for texel.
+    if (mask & (GL.DEPTH_BUFFER_BIT | GL.STENCIL_BUFFER_BIT) && filter !== GL.NEAREST) return this.fail(GL.INVALID_OPERATION);
     const rects = [sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1].map(Number);
     if (rects.some((v) => !Number.isFinite(v))) return this.fail(GL.INVALID_VALUE);
-    if ((read?.color ?? null) === (draw?.color ?? null)) return this.fail(GL.INVALID_OPERATION);
-    const source = read?.color ?? null;
-    if (source !== null && !source.blank && source.drawnAt !== source.version) {
-      throw new WebGLUnsupportedError('blitFramebuffer from a texture that holds uploaded pixels; draw into it, or sample it');
-    }
-    this.begin();
-    const src = source === null ? undefined : this.registerTarget(source);
-    const target = this.targetId();
     const [fx0, fy0, fx1, fy1, tx0, ty0, tx1, ty1] = rects.map(Math.trunc);
-    this.ops.push({
-      op: 'blit',
-      ...(src === undefined ? {} : { src }),
-      ...(target === undefined ? {} : { target }),
-      from: [fx0!, fy0!, fx1!, fy1!],
-      to: [tx0!, ty0!, tx1!, ty1!],
-      ...(filter === GL.LINEAR ? { linear: true } : {}),
+    // With `antialias` the canvas is multisampled, as in a browser: nothing is blitted into it, and it is read only
+    // into a rectangle of its own bounds.
+    if (this.attributes.antialias) {
+      if (draw === null) return this.fail(GL.INVALID_OPERATION);
+      if (read === null && (fx0 !== tx0 || fy0 !== ty0 || fx1 !== tx1 || fy1 !== ty1)) return this.fail(GL.INVALID_OPERATION);
+    }
+    const geometry = {
+      from: [fx0!, fy0!, fx1!, fy1!] as [number, number, number, number],
+      to: [tx0!, ty0!, tx1!, ty1!] as [number, number, number, number],
       ...(this.caps.scissor ? { scissor: this.scissorBox ?? this.viewportNow() } : {}),
-    });
+    };
+
+    // Colour: the read buffer (nothing when it is NONE or empty) into each draw buffer.
+    let source: WebGLAttachment | 'canvas' | null = null;
+    let dests: (WebGLAttachment | 'canvas')[] = [];
+    if (mask & GL.COLOR_BUFFER_BIT) {
+      source = read === null ? 'canvas' : read.readBuffer === GL.NONE ? null : (read.colors[read.readBuffer - GL.COLOR_ATTACHMENT0] ?? null);
+      dests = draw === null ? ['canvas'] : this.outputsOf(draw).filter((a): a is WebGLAttachment => a !== null);
+      const sameAs = (d: WebGLAttachment | 'canvas') => d === source || (d !== 'canvas' && source !== null && source !== 'canvas' && WebGLContext.same(d, source));
+      if (source !== null && dests.some(sameAs)) return this.fail(GL.INVALID_OPERATION);
+      if (source !== null && source !== 'canvas' && 'texture' in source) {
+        const t = source.texture;
+        if (!t.blank && t.drawnAt !== t.version) throw new WebGLUnsupportedError('blitFramebuffer from a texture that holds uploaded pixels; draw into it, or sample it');
+      }
+    }
+    // Depth and stencil: what both framebuffers have, of one format.
+    const has = (kind: ImageKind | null, aspect: 'depth' | 'stencil') => kind === aspect || kind === 'depthStencil';
+    const readKind = this.depthStencilKind(read);
+    const drawKind = this.depthStencilKind(draw);
+    const depth = (mask & GL.DEPTH_BUFFER_BIT) !== 0 && has(readKind, 'depth') && has(drawKind, 'depth');
+    const stencil = (mask & GL.STENCIL_BUFFER_BIT) !== 0 && has(readKind, 'stencil') && has(drawKind, 'stencil');
+    const readDs = read === null ? 'canvas' : WebGLContext.depthStencilOf(read);
+    const drawDs = draw === null ? 'canvas' : WebGLContext.depthStencilOf(draw);
+    if (depth || stencil) {
+      if (this.depthStencilFormat(read) !== this.depthStencilFormat(draw)) return this.fail(GL.INVALID_OPERATION);
+      const one = readDs === drawDs || (readDs !== 'canvas' && drawDs !== 'canvas' && WebGLContext.same(readDs, drawDs));
+      if (one) return this.fail(GL.INVALID_OPERATION);
+    }
+
+    this.begin();
+    if (source !== null) {
+      const read = source === 'canvas' ? {} : { src: this.attachmentId(source), ...('texture' in source && source.level > 0 ? { srcLevel: source.level } : {}) };
+      for (const d of dests) {
+        const written = d === 'canvas' ? {} : this.outputOf(d);
+        this.ops.push({ op: 'blit', ...read, ...written, ...geometry, ...(filter === GL.LINEAR ? { linear: true } : {}) });
+      }
+    }
+    if (depth || stencil) {
+      const aspect = depth && stencil ? 'depthStencil' : depth ? 'depth' : 'stencil';
+      this.ops.push({
+        op: 'blit',
+        aspect,
+        ...(readDs === 'canvas' || readDs === null ? {} : { src: this.attachmentId(readDs) }),
+        ...(drawDs === 'canvas' || drawDs === null ? {} : { target: this.attachmentId(drawDs) }),
+        ...geometry,
+      });
+    }
+  }
+
+  /** The internal format of a framebuffer's depth and stencil buffer (the canvas's for null), which a blit must match. */
+  private depthStencilFormat(framebuffer: WebGLFramebuffer | null): number {
+    if (framebuffer === null) {
+      const { depth, stencil } = this.attributes;
+      return depth && stencil ? GL2.DEPTH24_STENCIL8 : depth ? GL2.DEPTH_COMPONENT24 : GL.STENCIL_INDEX8;
+    }
+    const a = WebGLContext.depthStencilOf(framebuffer);
+    const format = a === null ? 0 : this.imageOf(a).format;
+    return format === GL.DEPTH_STENCIL ? GL2.DEPTH24_STENCIL8 : format;
   }
 
   // ---- state ----
@@ -1009,7 +1250,9 @@ export class WebGLContext {
   clearDepth(depth: number): void {
     this.clearDepthValue = Math.min(1, Math.max(0, Number(depth)));
   }
-  clearStencil(): void {}
+  clearStencil(s: number): void {
+    this.clearStencilValue = Math.trunc(Number(s)) | 0;
+  }
   depthFunc(func: number): void {
     if (DEPTH_FUNCS[func] === undefined) return this.fail(GL.INVALID_ENUM);
     this.depthFuncValue = func;
@@ -1026,9 +1269,34 @@ export class WebGLContext {
   polygonOffset(factor: number, units: number): void {
     this.polygonOffsetValue = [Number(factor), Number(units)];
   }
-  stencilFunc(): void {}
-  stencilOp(): void {}
-  stencilMask(): void {}
+  stencilFunc(func: number, ref: number, mask: number): void {
+    this.stencilFuncSeparate(GL.FRONT_AND_BACK, func, ref, mask);
+  }
+  stencilFuncSeparate(face: number, func: number, ref: number, mask: number): void {
+    if (DEPTH_FUNCS[func] === undefined) return this.fail(GL.INVALID_ENUM);
+    for (const s of this.faces(face)) Object.assign(s, { func, ref: Math.trunc(Number(ref)) | 0, valueMask: Number(mask) >>> 0 });
+  }
+  stencilOp(fail: number, zfail: number, zpass: number): void {
+    this.stencilOpSeparate(GL.FRONT_AND_BACK, fail, zfail, zpass);
+  }
+  stencilOpSeparate(face: number, fail: number, zfail: number, zpass: number): void {
+    if ([fail, zfail, zpass].some((op) => STENCIL_OPS[op] === undefined)) return this.fail(GL.INVALID_ENUM);
+    for (const s of this.faces(face)) Object.assign(s, { fail, zfail, zpass });
+  }
+  stencilMask(mask: number): void {
+    this.stencilMaskSeparate(GL.FRONT_AND_BACK, mask);
+  }
+  stencilMaskSeparate(face: number, mask: number): void {
+    for (const s of this.faces(face)) s.writeMask = Number(mask) >>> 0;
+  }
+  /** The faces a `*Separate` call names; none, with INVALID_ENUM, for another value. */
+  private faces(face: number): StencilState[] {
+    if (face === GL.FRONT) return [this.stencilFront];
+    if (face === GL.BACK) return [this.stencilBack];
+    if (face === GL.FRONT_AND_BACK) return [this.stencilFront, this.stencilBack];
+    this.fail(GL.INVALID_ENUM);
+    return [];
+  }
   lineWidth(): void {}
   cullFace(mode: number): void {
     if (mode !== GL.FRONT && mode !== GL.BACK && mode !== GL.FRONT_AND_BACK) return this.fail(GL.INVALID_ENUM);
@@ -1039,39 +1307,101 @@ export class WebGLContext {
     this.frontFaceMode = mode;
   }
 
-  /** Whether the framebuffer drawn into has a depth buffer: the canvas's `depth` attribute, or a renderbuffer attached to the framebuffer. */
+  /** Whether the framebuffer drawn into has a depth buffer: the canvas's `depth` attribute, or a depth attachment. */
   private hasDepth(): boolean {
-    return this.drawFramebuffer === null ? this.attributes.depth : this.drawFramebuffer.depth !== null;
+    const kind = this.depthStencilKind(this.drawFramebuffer);
+    return kind === 'depth' || kind === 'depthStencil';
+  }
+  /** Whether it has a stencil buffer: the canvas's `stencil` attribute, or a stencil attachment. */
+  private hasStencil(): boolean {
+    const kind = this.depthStencilKind(this.drawFramebuffer);
+    return kind === 'stencil' || kind === 'depthStencil';
   }
 
   clear(mask: number): void {
     if (mask & ~(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT | GL.STENCIL_BUFFER_BIT)) return this.fail(GL.INVALID_VALUE);
-    // The depth is cleared only where there is a depth buffer, and as far as depthMask lets it be written.
+    // The depth and stencil buffers are cleared only where there are such buffers, as far as their masks let them be written.
     const color = (mask & GL.COLOR_BUFFER_BIT) !== 0;
     const depth = (mask & GL.DEPTH_BUFFER_BIT) !== 0 && this.hasDepth() && this.depthMaskValue;
-    if (!color && !depth) return;
+    const stencilMask = this.stencilFront.writeMask & STENCIL_MAX;
+    const stencil = (mask & GL.STENCIL_BUFFER_BIT) !== 0 && this.hasStencil() && stencilMask !== 0;
+    if (!color && !depth && !stencil) return;
     if (this.caps.scissor) throw new WebGLUnsupportedError('clear with the scissor test on; draw a quad over the box instead');
     if (color && this.colorMaskState.some((on) => !on)) throw new WebGLUnsupportedError('clear with a colour mask');
+    if (stencil && stencilMask !== STENCIL_MAX) throw new WebGLUnsupportedError('clearing the stencil buffer through a stencilMask other than 0 or 0xff');
     if (this.framebufferIncomplete()) return;
-    this.begin();
-    const target = this.targetId();
-    const op: GlslOp = {
-      op: 'clear',
+    this.pushClear({
       ...(color ? { color: [...this.clearColorValue] as [number, number, number, number] } : {}),
       ...(depth ? { depth: this.clearDepthValue } : {}),
-      ...(target === undefined ? {} : { target }),
-    };
-    if (target !== undefined) {
+      ...(stencil ? { stencil: this.clearStencilValue & STENCIL_MAX } : {}),
+    }, color);
+  }
+
+  /**
+   * WebGL 2's `clearBufferfv`, `clearBufferiv`, `clearBufferuiv` and `clearBufferfi`: one draw buffer's colour, or the
+   * depth or stencil buffer, to the value given (masks apply, as for `clear`).
+   */
+  clearBufferfv(buffer: number, drawbuffer: number, values: ArrayLike<number>, srcOffset = 0): void {
+    this.clearBuffer(buffer, drawbuffer, Array.from(values).slice(srcOffset).map(Number));
+  }
+  clearBufferiv(buffer: number, drawbuffer: number, values: ArrayLike<number>, srcOffset = 0): void {
+    this.clearBuffer(buffer, drawbuffer, Array.from(values).slice(srcOffset).map(Number));
+  }
+  clearBufferuiv(buffer: number, drawbuffer: number, values: ArrayLike<number>, srcOffset = 0): void {
+    this.clearBuffer(buffer, drawbuffer, Array.from(values).slice(srcOffset).map(Number));
+  }
+  clearBufferfi(buffer: number, drawbuffer: number, depth: number, stencil: number): void {
+    if (buffer !== GL.DEPTH_STENCIL) return this.fail(GL.INVALID_ENUM);
+    this.clearBuffer(GL2.DEPTH, drawbuffer, [depth]);
+    this.clearBuffer(GL2.STENCIL, drawbuffer, [stencil]);
+  }
+  private clearBuffer(buffer: number, drawbuffer: number, values: number[]): void {
+    if (this.version !== 2) return this.fail(GL.INVALID_OPERATION);
+    if (buffer === GL2.COLOR) {
+      if (!(drawbuffer >= 0 && drawbuffer < MAX_DRAW_BUFFERS) || values.length < 4) return this.fail(GL.INVALID_VALUE);
+      if (this.caps.scissor) throw new WebGLUnsupportedError('clearBuffer with the scissor test on; draw a quad over the box instead');
+      if (this.colorMaskState.some((on) => !on)) throw new WebGLUnsupportedError('clear with a colour mask');
+      if (this.framebufferIncomplete()) return;
+      const framebuffer = this.drawFramebuffer;
+      const output = framebuffer === null ? (drawbuffer === 0 ? 'canvas' : null) : (this.outputsOf(framebuffer)[drawbuffer] ?? null);
+      if (output === null) return;
+      const color = values.slice(0, 4).map((v) => Math.min(1, Math.max(0, v))) as [number, number, number, number];
+      this.pushClear({ color }, true, output === 'canvas' ? undefined : [output]);
+      return;
+    }
+    if (drawbuffer !== 0 || values.length < 1) return this.fail(GL.INVALID_VALUE);
+    if (buffer !== GL2.DEPTH && buffer !== GL2.STENCIL) return this.fail(GL.INVALID_ENUM);
+    const depth = buffer === GL2.DEPTH && this.hasDepth() && this.depthMaskValue;
+    const stencilMask = this.stencilFront.writeMask & STENCIL_MAX;
+    const stencil = buffer === GL2.STENCIL && this.hasStencil() && stencilMask !== 0;
+    if (!depth && !stencil) return;
+    if (this.caps.scissor) throw new WebGLUnsupportedError('clearBuffer with the scissor test on; draw a quad over the box instead');
+    if (stencil && stencilMask !== STENCIL_MAX) throw new WebGLUnsupportedError('clearing the stencil buffer through a stencilMask other than 0 or 0xff');
+    if (this.framebufferIncomplete()) return;
+    this.pushClear(depth ? { depth: Math.min(1, Math.max(0, values[0]!)) } : { stencil: Math.trunc(values[0]!) & STENCIL_MAX }, false, []);
+  }
+
+  /**
+   * Records a clear of the bound draw framebuffer (of `outputs` instead of its draw buffers, when given). Everything
+   * drawn to the canvas before it is gone with it, when the clear takes the colour and what the draws left in the
+   * depth and stencil buffers matters no more; what went to framebuffers stays, as later draws may read it. (A blit
+   * that reads the canvas keeps them: the replay drops what no blit reads.)
+   */
+  private pushClear(values: { color?: [number, number, number, number]; depth?: number; stencil?: number }, color: boolean, outputs?: (WebGLAttachment | null)[]): void {
+    this.begin();
+    const where = this.dest(values.depth !== undefined || values.stencil !== undefined, outputs);
+    if (where === null) return;
+    const op: GlslOp = { op: 'clear', ...values, ...where };
+    if (!isCanvasOp(op)) {
       this.ops.push(op);
       return;
     }
-    // Everything drawn to the canvas before it is gone with it, when the clear takes the colour and what the draws
-    // left in the depth buffer matters no more; what went to textures stays, as later draws may read it.
-    // (A blit that reads the canvas keeps them: the replay drops what no blit reads.)
+    const canvas = this.ops.filter(isCanvasOp);
     const read = this.ops.some((o) => o.op === 'blit' && o.src === undefined);
-    const tested = this.ops.some((o) => o.op === 'draw' && o.target === undefined && o.depth !== undefined);
-    const gone = color && (depth || !tested) && !read;
-    this.ops = [...(gone ? this.ops.filter((o) => o.target !== undefined) : this.ops), op];
+    const tested = canvas.some((o) => (o.op === 'draw' && o.depth !== undefined) || (o.op === 'blit' && (o.aspect === 'depth' || o.aspect === 'depthStencil')));
+    const stenciled = canvas.some((o) => (o.op === 'draw' && o.stencil !== undefined) || (o.op === 'blit' && (o.aspect === 'stencil' || o.aspect === 'depthStencil')));
+    const gone = color && (values.depth !== undefined || !tested) && (values.stencil !== undefined || !stenciled) && !read;
+    this.ops = [...(gone ? this.ops.filter((o) => !isCanvasOp(o)) : this.ops), op];
   }
 
   // ---- shaders and programs ----
@@ -1317,6 +1647,8 @@ export class WebGLContext {
     texture.src = src;
     texture.pixels = null;
     texture.layer = null;
+    texture.levels = 1;
+    texture.patches = [];
     texture.uploaded = true;
     texture.blank = false;
     texture.version += 1;
@@ -1481,6 +1813,15 @@ export class WebGLContext {
         if (WRAPS[param] === undefined) return this.fail(GL.INVALID_ENUM);
         texture.wrapT = param;
         break;
+      case GL2.TEXTURE_MAX_LEVEL:
+        if (this.version !== 2) return this.fail(GL.INVALID_ENUM);
+        if (!(param >= 0)) return this.fail(GL.INVALID_VALUE);
+        texture.maxLevel = Math.trunc(param);
+        break;
+      case GL2.TEXTURE_BASE_LEVEL:
+        if (this.version !== 2) return this.fail(GL.INVALID_ENUM);
+        if (param !== 0) throw new WebGLUnsupportedError('a TEXTURE_BASE_LEVEL other than 0');
+        break;
       default:
         // Anisotropy, level of detail and the like: not drawn.
         if (pname !== 0x84fe) throw new WebGLUnsupportedError(`texParameter 0x${pname.toString(16)}`);
@@ -1492,7 +1833,7 @@ export class WebGLContext {
   generateMipmap(target: number): void {
     const texture = this.bound(target);
     if (texture === null) return;
-    if (!texture.uploaded) return this.fail(GL.INVALID_OPERATION);
+    if (!texture.uploaded || kindOf(texture.format) !== 'color') return this.fail(GL.INVALID_OPERATION);
     if (texture.drawnAt === texture.version) throw new WebGLUnsupportedError('generateMipmap of a texture a framebuffer drew in; sample it with LINEAR or NEAREST');
     texture.mipmaps = true;
     texture.version += 1;
@@ -1552,11 +1893,17 @@ export class WebGLContext {
     if (sized.includes(internalformat as never)) throw new WebGLUnsupportedError(`the internal format 0x${internalformat.toString(16)}; use RGBA`);
   }
 
+  /** Makes `texture` an empty depth (or depth and stencil) texture of this size: a framebuffer draws in it, and draws sample its depth. */
+  private specifyDepth(texture: WebGLTexture, internalformat: number, width: number, height: number, source: unknown): void {
+    if (source !== null && source !== undefined) throw new WebGLUnsupportedError('a depth texture with pixels; give it null and draw its depth');
+    Object.assign(texture, { width, height, pixels: null, src: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: false, format: internalformat, blank: true, levels: 1, patches: [] });
+    texture.version += 1;
+  }
+
   /** `texImage2D(target, level, internalformat, width, height, border, format, type, pixels)` or `(…, internalformat, format, type, source)`. */
   texImage2D(target: number, level: number, internalformat: number, ...rest: unknown[]): void {
     const texture = this.bound(target);
     if (texture === null) return;
-    if (level !== 0) throw new WebGLUnsupportedError('texture levels above 0; call generateMipmap');
     let width: number;
     let height: number;
     let format: number;
@@ -1568,6 +1915,22 @@ export class WebGLContext {
       [format, type, source] = rest as [number, number, unknown];
       width = height = 0;
     }
+    if (level !== 0) {
+      // An empty level of a texture: storage a framebuffer can draw in.
+      const empty = rest.length >= 6 && (source === null || source === undefined);
+      if (!empty) throw new WebGLUnsupportedError('texture levels above 0 with pixels; call generateMipmap');
+      if (!(level > 0 && level < 16)) return this.fail(GL.INVALID_VALUE);
+      if (texture.width === 0 || !texture.blank || internalformat !== texture.format || kindOf(internalformat) !== 'color') {
+        throw new WebGLUnsupportedError('a texture level above 0 of a texture that is not an empty RGBA one (specify level 0 with null first)');
+      }
+      if (width !== Math.max(1, texture.width >> level) || height !== Math.max(1, texture.height >> level)) {
+        throw new WebGLUnsupportedError(`a texture level ${level} of ${width} x ${height}; level ${level} of a ${texture.width} x ${texture.height} texture is ${Math.max(1, texture.width >> level)} x ${Math.max(1, texture.height >> level)}`);
+      }
+      texture.levels = Math.max(texture.levels, level + 1);
+      texture.version += 1;
+      return;
+    }
+    if (kindOf(internalformat) !== 'color') return this.specifyDepth(texture, internalformat, width, height, source);
     this.checkTextureType(type, internalformat);
     texture.flipY = this.flipY;
     texture.premultiply = this.premultiply;
@@ -1576,6 +1939,8 @@ export class WebGLContext {
     texture.uploaded = true;
     texture.version += 1;
     texture.format = internalformat;
+    texture.levels = 1;
+    texture.patches = [];
     if (rest.length >= 6) {
       texture.src = null;
       texture.width = width;
@@ -1598,70 +1963,85 @@ export class WebGLContext {
     this.texImage2D(target, level, internalformat, format, type, elementImage);
   }
 
+  /**
+   * A picture over a rectangle of level 0. Into a texture a framebuffer draws in it is an op after the draws before
+   * it; into an uploaded texture whose pixels are here it edits them; anything else (an image file, a layer, a
+   * texture made from one) is a patch the renderer lays over the texture's picture.
+   */
   texSubImage2D(target: number, level: number, xoffset: number, yoffset: number, ...rest: unknown[]): void {
     const texture = this.bound(target);
     if (texture === null) return;
     if (level !== 0) throw new WebGLUnsupportedError('texSubImage2D above level 0; call generateMipmap');
-    // A texture a framebuffer draws in is written by an op, after what was drawn before; any other is edited here.
-    const drawnIn = texture.drawnAt === texture.version;
-    if (!drawnIn && texture.pixels === null) throw new WebGLUnsupportedError('texSubImage2D into a texture made from an image file or a layer; upload the whole picture with texImage2D');
+    if (kindOf(texture.format) !== 'color') throw new WebGLUnsupportedError('texSubImage2D into a depth texture; draw its depth');
     let width: number;
     let height: number;
-    let format: number;
-    let pixels: Uint8Array;
+    let part: { pixels: Uint8Array } | { src: string } | { layer: string };
     if (rest.length >= 5) {
+      let format: number;
       let type: number;
       let source: unknown;
       [width, height, format, type, source] = rest as [number, number, number, number, ArrayBufferView];
       this.checkTextureType(type, GL.RGBA);
-      pixels = this.rgbaOf(width, height, format, source as ArrayBufferView);
+      part = { pixels: this.rgbaOf(width, height, format, source as ArrayBufferView) };
     } else {
-      const picture = pictureOf(rest[2]);
-      if (picture === null) throw new WebGLUnsupportedError('texSubImage2D from this source; use a canvas, ImageData or an array of pixels');
-      const s = picture.source;
-      if (s.kind === 'pixels') {
-        pixels = new Uint8Array(Buffer.from(s.data, 'base64'));
-      } else if (s.kind === 'canvas') {
-        const drawn = this.options.rasterize?.(s) ?? null;
-        if (drawn === null) throw new WebGLUnsupportedError('texSubImage2D from a canvas here (the pixels of a canvas need the addon)');
-        pixels = drawn;
+      const layer = (rest[2] as { [LAYER_SOURCE]?: () => { id: string; width: number; height: number } } | null | undefined)?.[LAYER_SOURCE]?.();
+      if (layer !== undefined) {
+        part = { layer: layer.id };
+        width = layer.width;
+        height = layer.height;
       } else {
-        throw new WebGLUnsupportedError('texSubImage2D from an image file or a layer; upload the whole picture with texImage2D');
+        const picture = pictureOf(rest[2]);
+        if (picture === null) throw new WebGLUnsupportedError('texSubImage2D from this source; use an image, a canvas, ImageData or an array of pixels');
+        const s = picture.source;
+        if (s.kind === 'pixels') {
+          part = { pixels: new Uint8Array(Buffer.from(s.data, 'base64')) };
+        } else if (s.kind === 'canvas') {
+          const drawn = this.options.rasterize?.(s) ?? null;
+          if (drawn === null) throw new WebGLUnsupportedError('texSubImage2D from a canvas here (the pixels of a canvas need the addon)');
+          part = { pixels: drawn };
+        } else if (s.kind === 'src') {
+          part = { src: s.src };
+        } else {
+          throw new WebGLUnsupportedError('a texture from a layer picture outside layerPicture()');
+        }
+        width = picture.width;
+        height = picture.height;
       }
-      width = picture.width;
-      height = picture.height;
     }
     if (xoffset < 0 || yoffset < 0 || xoffset + width > texture.width || yoffset + height > texture.height) return this.fail(GL.INVALID_VALUE);
-    if (drawnIn) {
+    const flags = { ...(this.flipY ? { flipY: true } : {}), ...(this.premultiply ? { premultiply: true } : {}) };
+    const json = 'pixels' in part ? { pixels: toBase64(part.pixels) } : part;
+    if (texture.drawnAt === texture.version) {
       this.begin();
-      this.ops.push({
-        op: 'upload',
-        target: this.registerTarget(texture),
-        x: xoffset,
-        y: yoffset,
-        width,
-        height,
-        pixels: toBase64(pixels),
-        ...(this.flipY ? { flipY: true } : {}),
-        ...(this.premultiply ? { premultiply: true } : {}),
-      });
+      this.ops.push({ op: 'upload', target: this.registerTarget(texture), x: xoffset, y: yoffset, width, height, ...json, ...flags });
       return;
     }
-    const held = texture.pixels!;
-    for (let y = 0; y < height; y += 1) {
-      held.set(pixels.subarray(y * width * 4, (y + 1) * width * 4), ((yoffset + y) * texture.width + xoffset) * 4);
+    // Pixels over pixels held here, unflipped and premultiplied alike, are written in place.
+    const inPlace = texture.pixels !== null && texture.patches.length === 0 && !texture.flipY && !this.flipY && texture.premultiply === this.premultiply;
+    if ('pixels' in part && inPlace) {
+      const held = texture.pixels!;
+      for (let y = 0; y < height; y += 1) {
+        held.set(part.pixels.subarray(y * width * 4, (y + 1) * width * 4), ((yoffset + y) * texture.width + xoffset) * 4);
+      }
+    } else {
+      texture.patches.push({ x: xoffset, y: yoffset, width, height, ...json, ...flags });
     }
     texture.blank = false;
     texture.version += 1;
   }
 
-  /** WebGL 2's `texStorage2D`: a texture of this size, empty. */
+  /** WebGL 2's `texStorage2D`: a texture of this size, empty, with `levels` mip levels. */
   texStorage2D(target: number, levels: number, internalformat: number, width: number, height: number): void {
     const texture = this.bound(target);
     if (texture === null) return;
+    if (!(levels >= 1 && levels <= 16)) return this.fail(GL.INVALID_VALUE);
+    if (kindOf(internalformat) !== 'color') {
+      if (levels > 1) throw new WebGLUnsupportedError('a depth texture of more than one level');
+      return this.specifyDepth(texture, internalformat, width, height, null);
+    }
     this.checkTextureType(GL.UNSIGNED_BYTE, internalformat);
-    if (levels > 1) throw new WebGLUnsupportedError('texStorage2D with more than one level; call generateMipmap');
-    Object.assign(texture, { width, height, pixels: new Uint8Array(width * height * 4), src: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: false, format: internalformat, blank: true });
+    // Its upper levels are mipmaps of the empty level 0 until a framebuffer draws in them.
+    Object.assign(texture, { width, height, pixels: new Uint8Array(width * height * 4), src: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: levels > 1, format: internalformat, blank: true, levels, patches: [] });
     texture.version += 1;
   }
 
@@ -1698,9 +2078,11 @@ export class WebGLContext {
 
   // ---- framebuffers ----
   //
-  // A framebuffer draws into the RGBA texture attached to COLOR_ATTACHMENT0, which later draws sample (multi-pass
-  // shaders). The texture starts the frame transparent black: a frame is a function of its own calls, so what an
-  // earlier frame left in it does not carry over. Depth, stencil and renderbuffer attachments are not drawn.
+  // A framebuffer draws into what is attached to it: colour attachments (an RGBA texture's level, or a colour
+  // renderbuffer), which `drawBuffers` maps the fragment shader's outputs to, and a depth, stencil or depth-and-stencil
+  // buffer (a renderbuffer, or a depth texture later draws can sample). Each is a target of the recording, by an id
+  // that changes when it is specified again. A target starts the frame empty: a frame is a function of its own calls,
+  // so what an earlier frame left in it does not carry over.
 
   createFramebuffer(): WebGLFramebuffer {
     return new WebGLFramebuffer();
@@ -1735,24 +2117,43 @@ export class WebGLContext {
     if (read) this.readFramebuffer = framebuffer;
   }
 
-  framebufferTexture2D(target: number, attachment: number, textarget: number, texture: WebGLTexture | null, level: number): void {
+  /** The framebuffer an attaching call changes, or null with the error it sets. */
+  private attachingTo(target: number): WebGLFramebuffer | null {
     const { draw, read } = this.framebufferSides(target);
-    if (!draw && !read) return this.fail(GL.INVALID_ENUM);
-    if (attachment === GL.DEPTH_ATTACHMENT || attachment === GL.STENCIL_ATTACHMENT || attachment === GL.DEPTH_STENCIL_ATTACHMENT) {
-      if (texture !== null) throw new WebGLUnsupportedError('a depth or stencil texture; attach a depth renderbuffer instead (a depth texture cannot be sampled here)');
-      return;
-    }
-    if (attachment !== GL.COLOR_ATTACHMENT0) {
-      if (this.version === 2 && attachment > GL.COLOR_ATTACHMENT0 && attachment < GL.COLOR_ATTACHMENT0 + 16) throw new WebGLUnsupportedError('several colour outputs');
-      return this.fail(GL.INVALID_ENUM);
+    if (!draw && !read) {
+      this.fail(GL.INVALID_ENUM);
+      return null;
     }
     const framebuffer = draw ? this.drawFramebuffer : this.readFramebuffer;
-    if (framebuffer === null) return this.fail(GL.INVALID_OPERATION);
+    if (framebuffer === null) this.fail(GL.INVALID_OPERATION);
+    return framebuffer;
+  }
+
+  /** Puts `image` at the attachment point `attachment`, or sets INVALID_ENUM when there is no such point. */
+  private attach(framebuffer: WebGLFramebuffer, attachment: number, image: WebGLAttachment | null): void {
+    const colors = this.version === 2 ? MAX_DRAW_BUFFERS : 1;
+    if (attachment >= GL.COLOR_ATTACHMENT0 && attachment < GL.COLOR_ATTACHMENT0 + colors) {
+      framebuffer.colors[attachment - GL.COLOR_ATTACHMENT0] = image;
+    } else if (attachment === GL.DEPTH_ATTACHMENT) {
+      framebuffer.depth = image;
+    } else if (attachment === GL.STENCIL_ATTACHMENT) {
+      framebuffer.stencil = image;
+    } else if (attachment === GL.DEPTH_STENCIL_ATTACHMENT) {
+      framebuffer.depth = image;
+      framebuffer.stencil = image;
+    } else {
+      this.fail(GL.INVALID_ENUM);
+    }
+  }
+
+  framebufferTexture2D(target: number, attachment: number, textarget: number, texture: WebGLTexture | null, level: number): void {
+    const framebuffer = this.attachingTo(target);
+    if (framebuffer === null) return;
     if (texture !== null) {
       if (textarget !== GL.TEXTURE_2D) return this.fail(GL.INVALID_OPERATION);
-      if (level !== 0) throw new WebGLUnsupportedError('a framebuffer attached to a texture level above 0');
+      if (!(level >= 0) || (this.version === 1 && level !== 0)) return this.fail(GL.INVALID_VALUE);
     }
-    framebuffer.color = texture;
+    this.attach(framebuffer, attachment, texture === null ? null : { texture, level: Math.trunc(level) });
   }
 
   checkFramebufferStatus(target: number): number {
@@ -1765,53 +2166,218 @@ export class WebGLContext {
     return framebuffer === null ? GL.FRAMEBUFFER_COMPLETE : this.statusOf(framebuffer);
   }
 
+  /** An attached image: its size, its internal format, and whether it has been specified. */
+  private imageOf(a: WebGLAttachment): { width: number; height: number; format: number; specified: boolean } {
+    if ('renderbuffer' in a) {
+      const r = a.renderbuffer;
+      return { width: r.width, height: r.height, format: r.format ?? 0, specified: r.format !== null && !r.deleted };
+    }
+    const t = a.texture;
+    return {
+      width: Math.max(1, t.width >> a.level),
+      height: Math.max(1, t.height >> a.level),
+      format: t.format,
+      specified: t.uploaded && !t.deleted && a.level < t.levels && t.width > 0 && t.height > 0,
+    };
+  }
+
+  private static same(a: WebGLAttachment | null, b: WebGLAttachment | null): boolean {
+    if (a === null || b === null) return a === b;
+    if ('renderbuffer' in a) return 'renderbuffer' in b && a.renderbuffer === b.renderbuffer;
+    return 'texture' in b && a.texture === b.texture && a.level === b.level;
+  }
+
   private statusOf(framebuffer: WebGLFramebuffer): number {
-    const texture = framebuffer.color;
-    if (texture === null) return GL.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
-    // Not specified yet, empty, or of a format colour cannot be drawn in.
-    if (!texture.uploaded || texture.width === 0 || texture.height === 0 || NOT_RENDERABLE.has(texture.format)) return GL.FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+    const colors = framebuffer.colors.filter((a): a is WebGLAttachment => a !== null && a !== undefined);
+    const all = [...colors, ...[framebuffer.depth, framebuffer.stencil].filter((a): a is WebGLAttachment => a !== null)];
+    if (all.length === 0) return GL.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
+    for (const a of all) {
+      const image = this.imageOf(a);
+      if (!image.specified || image.width === 0 || image.height === 0) return GL.FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+    }
+    // Colour attachments of a colour format, a depth attachment with depth, a stencil one with stencil.
+    for (const a of colors) {
+      const format = this.imageOf(a).format;
+      if (kindOf(format) !== 'color' || ('texture' in a && NOT_RENDERABLE.has(format))) return GL.FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+    }
+    const depth = framebuffer.depth === null ? null : kindOf(this.imageOf(framebuffer.depth).format);
+    if (depth !== null && depth !== 'depth' && depth !== 'depthStencil') return GL.FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+    const stencil = framebuffer.stencil === null ? null : kindOf(this.imageOf(framebuffer.stencil).format);
+    if (stencil !== null && stencil !== 'stencil' && stencil !== 'depthStencil') return GL.FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+    // A depth buffer and a stencil buffer are one image, as WebGL 2 has it (WebGL 1 says unsupported for two).
+    if (framebuffer.depth !== null && framebuffer.stencil !== null && !WebGLContext.same(framebuffer.depth, framebuffer.stencil)) return GL.FRAMEBUFFER_UNSUPPORTED;
+    if (this.version === 1) {
+      const sizes = new Set(all.map((a) => `${this.imageOf(a).width}x${this.imageOf(a).height}`));
+      if (sizes.size > 1) return GL.FRAMEBUFFER_INCOMPLETE_DIMENSIONS;
+    }
     return GL.FRAMEBUFFER_COMPLETE;
+  }
+
+  /** The colour attachments the outputs of a fragment shader go to (null for NONE), as `drawBuffers` says. */
+  private outputsOf(framebuffer: WebGLFramebuffer): (WebGLAttachment | null)[] {
+    return framebuffer.drawBuffers.map((b, i) => (b === GL.NONE ? null : (framebuffer.colors[i] ?? null)));
+  }
+
+  /** The depth or stencil buffer of a framebuffer (one image when it has both). */
+  private static depthStencilOf(framebuffer: WebGLFramebuffer): WebGLAttachment | null {
+    return framebuffer.depth ?? framebuffer.stencil;
+  }
+
+  /** What the depth and stencil buffer of a framebuffer (the canvas for null) holds, or null when it has none. */
+  private depthStencilKind(framebuffer: WebGLFramebuffer | null): ImageKind | null {
+    if (framebuffer === null) {
+      const { depth, stencil } = this.attributes;
+      return depth && stencil ? 'depthStencil' : depth ? 'depth' : stencil ? 'stencil' : null;
+    }
+    const a = WebGLContext.depthStencilOf(framebuffer);
+    return a === null ? null : kindOf(this.imageOf(a).format);
   }
 
   /**
    * Whether the bound framebuffer cannot be drawn into: an incomplete one sets INVALID_FRAMEBUFFER_OPERATION and the
-   * call does nothing. A complete one whose texture cannot be drawn here throws.
+   * call does nothing. A complete one that cannot be drawn here throws.
    */
   private framebufferIncomplete(): boolean {
     const framebuffer = this.drawFramebuffer;
-    if (framebuffer === null) return false;
+    if (framebuffer === null) {
+      if (this.canvasDrawBuffer === GL.NONE) throw new WebGLUnsupportedError('drawBuffers([NONE]) on the canvas; turn the colour off with colorMask');
+      return false;
+    }
     if (this.statusOf(framebuffer) !== GL.FRAMEBUFFER_COMPLETE) {
       this.fail(GL.INVALID_FRAMEBUFFER_OPERATION);
       return true;
     }
-    const texture = framebuffer.color!;
-    if (texture.format !== GL.RGBA && texture.format !== GL2.RGBA8) {
-      throw new WebGLUnsupportedError(`drawing into a texture of internal format 0x${texture.format.toString(16)}; allocate it as RGBA`);
+    const drawn = [...this.outputsOf(framebuffer), WebGLContext.depthStencilOf(framebuffer)].filter((a): a is WebGLAttachment => a !== null);
+    for (const a of drawn) {
+      if (!('texture' in a)) continue;
+      const texture = a.texture;
+      if (kindOf(texture.format) !== 'color') continue;
+      if (texture.format !== GL.RGBA && texture.format !== GL2.RGBA8) {
+        throw new WebGLUnsupportedError(`drawing into a texture of internal format 0x${texture.format.toString(16)}; allocate it as RGBA`);
+      }
+      if (!texture.blank) throw new WebGLUnsupportedError('drawing into a texture that holds uploaded pixels; allocate it with texImage2D(..., null)');
     }
-    if (!texture.blank) throw new WebGLUnsupportedError('drawing into a texture that holds uploaded pixels; allocate it with texImage2D(..., null)');
+    const sizes = new Set(drawn.map((a) => `${this.imageOf(a).width}x${this.imageOf(a).height}`));
+    if (sizes.size > 1) throw new WebGLUnsupportedError('attachments of different sizes in one framebuffer; give them one size');
     return false;
   }
 
   /** A texture a framebuffer draws in, as the recording names it: its size, by an id that changes when it is specified again. */
   private registerTarget(texture: WebGLTexture): string {
     const id = `f${texture.id}.${texture.version}`;
-    this.textures.set(id, { target: true, width: texture.width, height: texture.height });
+    const kind = kindOf(texture.format);
+    this.textures.set(id, {
+      target: true,
+      width: texture.width,
+      height: texture.height,
+      ...(kind === 'color' ? {} : { format: kind }),
+      // WebGL 1 samples a depth texture as luminance (WEBGL_depth_texture), WebGL 2 as red.
+      ...(kind !== 'color' && this.version === 1 ? { luminance: true } : {}),
+      ...(texture.levels > 1 ? { levels: texture.levels } : {}),
+    });
     return id;
   }
 
-  /** The target the bound framebuffer's draws and clears go to; undefined for the canvas. Call it once the draw is certain. */
-  private targetId(): string | undefined {
-    const texture = this.drawFramebuffer?.color;
-    if (texture === null || texture === undefined) return undefined;
-    texture.drawnAt = texture.version;
-    return this.registerTarget(texture);
+  /** The target an attachment is in the recording; a texture drawn in is a render target from now on. */
+  private attachmentId(a: WebGLAttachment): string {
+    if ('texture' in a) {
+      a.texture.drawnAt = a.texture.version;
+      return this.registerTarget(a.texture);
+    }
+    const r = a.renderbuffer;
+    const id = `r${r.id}.${r.version}`;
+    const kind = kindOf(r.format ?? 0);
+    this.textures.set(id, { target: true, width: r.width, height: r.height, ...(kind === 'color' ? {} : { format: kind }) });
+    return id;
+  }
+
+  private outputOf(a: WebGLAttachment): GlslOutput {
+    const target = this.attachmentId(a);
+    return 'texture' in a && a.level > 0 ? { target, level: a.level } : { target };
+  }
+
+  /**
+   * Where the ops of the bound draw framebuffer go, as the fields of an op: nothing for the canvas, and for a
+   * framebuffer its colour outputs (`outputs`, or these instead) and its depth or stencil buffer (when
+   * `withDepthStencil`). Null when that leaves nothing to draw in. Call it once the op is certain: the textures it
+   * names are render targets from then on.
+   */
+  private dest(withDepthStencil = true, outputs?: (WebGLAttachment | null)[]): Pick<GlslDraw, 'target' | 'level' | 'outputs' | 'depthStencil'> | null {
+    const framebuffer = this.drawFramebuffer;
+    if (framebuffer === null) return {};
+    const list = [...(outputs ?? this.outputsOf(framebuffer))];
+    while (list.length > 0 && list.at(-1) === null) list.pop();
+    const ds = withDepthStencil ? WebGLContext.depthStencilOf(framebuffer) : null;
+    if (list.length === 0 && ds === null) return null;
+    const out: Pick<GlslDraw, 'target' | 'level' | 'outputs' | 'depthStencil'> = {};
+    if (list.length === 1 && list[0] !== null) Object.assign(out, this.outputOf(list[0]!));
+    else if (list.length > 0) out.outputs = list.map((a) => (a === null ? null : this.outputOf(a)));
+    if (ds !== null) out.depthStencil = this.attachmentId(ds);
+    return out;
+  }
+
+  /** WebGL 2's `drawBuffers`: output `i` goes to COLOR_ATTACHMENTi, or nowhere (NONE); the canvas takes BACK or NONE. */
+  drawBuffers(buffers: number[]): void {
+    const list = Array.from(buffers, Number);
+    if (this.drawFramebuffer === null) {
+      if (list.length !== 1 || (list[0] !== GL.BACK && list[0] !== GL.NONE)) return this.fail(GL.INVALID_OPERATION);
+      this.canvasDrawBuffer = list[0]!;
+      return;
+    }
+    if (list.length > MAX_DRAW_BUFFERS) return this.fail(GL.INVALID_VALUE);
+    if (list.some((b, i) => b !== GL.NONE && b !== GL.COLOR_ATTACHMENT0 + i)) return this.fail(GL.INVALID_OPERATION);
+    this.drawFramebuffer.drawBuffers = list;
+  }
+
+  /** WebGL 2's `readBuffer`: the colour attachment `blitFramebuffer` reads (BACK for the canvas), or NONE. */
+  readBuffer(src: number): void {
+    const framebuffer = this.readFramebuffer;
+    if (framebuffer === null) {
+      if (src !== GL.BACK && src !== GL.NONE) return this.fail(GL.INVALID_OPERATION);
+      return;
+    }
+    if (src !== GL.NONE && !(src >= GL.COLOR_ATTACHMENT0 && src < GL.COLOR_ATTACHMENT0 + MAX_DRAW_BUFFERS)) return this.fail(GL.INVALID_OPERATION);
+    framebuffer.readBuffer = src;
+  }
+
+  /** WebGL 2's `invalidateFramebuffer`: the contents may be dropped, and keeping them is one of the allowed results. */
+  invalidateFramebuffer(): void {}
+  invalidateSubFramebuffer(): void {}
+
+  getFramebufferAttachmentParameter(target: number, attachment: number, pname: number): unknown {
+    const framebuffer = this.attachingTo(target);
+    if (framebuffer === null) return null;
+    const a =
+      attachment >= GL.COLOR_ATTACHMENT0 && attachment < GL.COLOR_ATTACHMENT0 + MAX_DRAW_BUFFERS
+        ? (framebuffer.colors[attachment - GL.COLOR_ATTACHMENT0] ?? null)
+        : attachment === GL.DEPTH_ATTACHMENT || attachment === GL.DEPTH_STENCIL_ATTACHMENT
+          ? framebuffer.depth
+          : attachment === GL.STENCIL_ATTACHMENT
+            ? framebuffer.stencil
+            : undefined;
+    if (a === undefined) {
+      this.fail(GL.INVALID_ENUM);
+      return null;
+    }
+    switch (pname) {
+      case GL.FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE:
+        return a === null ? GL.NONE : 'texture' in a ? GL.TEXTURE : GL.RENDERBUFFER;
+      case GL.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME:
+        return a === null ? null : 'texture' in a ? a.texture : a.renderbuffer;
+      case GL.FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL:
+        if (a !== null && 'texture' in a) return a.level;
+        this.fail(GL.INVALID_ENUM);
+        return null;
+      default:
+        this.fail(GL.INVALID_ENUM);
+        return null;
+    }
   }
 
   // ---- renderbuffers ----
   //
-  // A renderbuffer is a depth buffer for a framebuffer: `renderbufferStorage` with a depth format, attached with
-  // `framebufferRenderbuffer`. The stencil half of a combined format is kept apart and not drawn. A colour
-  // renderbuffer is refused: render to a texture.
+  // A renderbuffer is an image a framebuffer draws in and no draw samples: colour (RGBA4, RGB565, RGB5_A1 and RGBA8,
+  // each drawn as RGBA8), depth, stencil, or depth and stencil.
 
   createRenderbuffer(): WebGLRenderbuffer {
     return new WebGLRenderbuffer();
@@ -1834,33 +2400,50 @@ export class WebGLContext {
     if (!(width >= 0 && height >= 0)) return this.fail(GL.INVALID_VALUE);
     const renderbuffer = this.renderbuffer;
     if (renderbuffer === null) return this.fail(GL.INVALID_OPERATION);
-    if (!DEPTH_FORMATS.has(internalformat)) throw new WebGLUnsupportedError('a colour or stencil renderbuffer; render to a texture (only depth renderbuffers are drawn)');
+    const v2 = this.version === 2;
+    const v2only = [GL2.RGBA8, GL2.DEPTH_COMPONENT24, GL2.DEPTH_COMPONENT32F, GL2.DEPTH24_STENCIL8, GL2.DEPTH32F_STENCIL8] as number[];
+    const known = kindOf(internalformat) !== 'color' || COLOR_RENDERBUFFER.has(internalformat);
+    if (internalformat === GL.DEPTH_COMPONENT) return this.fail(GL.INVALID_ENUM);
+    if (!known || (!v2 && v2only.includes(internalformat))) {
+      if (v2 && internalformat === GL2.SRGB8_ALPHA8) throw new WebGLUnsupportedError('an SRGB8_ALPHA8 renderbuffer; use RGBA8');
+      return this.fail(GL.INVALID_ENUM);
+    }
     renderbuffer.format = internalformat;
     renderbuffer.width = Math.trunc(width);
     renderbuffer.height = Math.trunc(height);
+    renderbuffer.version += 1;
+  }
+  /** WebGL 2's multisampled storage; with 0 samples it is `renderbufferStorage`. */
+  renderbufferStorageMultisample(target: number, samples: number, internalformat: number, width: number, height: number): void {
+    if (this.version !== 2) return this.fail(GL.INVALID_OPERATION);
+    if (samples > 0) throw new WebGLUnsupportedError('a multisampled renderbuffer; use renderbufferStorage (edges are not multisampled)');
+    this.renderbufferStorage(target, internalformat, width, height);
+  }
+  getRenderbufferParameter(target: number, pname: number): number | null {
+    if (target !== GL.RENDERBUFFER) {
+      this.fail(GL.INVALID_ENUM);
+      return null;
+    }
+    const r = this.renderbuffer;
+    if (r === null) {
+      this.fail(GL.INVALID_OPERATION);
+      return null;
+    }
+    if (pname === GL.RENDERBUFFER_WIDTH) return r.width;
+    if (pname === GL.RENDERBUFFER_HEIGHT) return r.height;
+    if (pname === GL.RENDERBUFFER_INTERNAL_FORMAT) return r.format ?? GL.RGBA4;
+    this.fail(GL.INVALID_ENUM);
+    return null;
   }
   framebufferRenderbuffer(target: number, attachment: number, renderbufferTarget: number, renderbuffer: WebGLRenderbuffer | null): void {
-    const { draw, read } = this.framebufferSides(target);
-    if (!draw && !read) return this.fail(GL.INVALID_ENUM);
     if (renderbufferTarget !== GL.RENDERBUFFER) return this.fail(GL.INVALID_ENUM);
-    const framebuffer = draw ? this.drawFramebuffer : this.readFramebuffer;
-    if (framebuffer === null) return this.fail(GL.INVALID_OPERATION);
-    if (attachment === GL.DEPTH_ATTACHMENT || attachment === GL.DEPTH_STENCIL_ATTACHMENT) {
-      framebuffer.depth = renderbuffer;
-      return;
-    }
-    if (attachment === GL.STENCIL_ATTACHMENT || attachment === GL.COLOR_ATTACHMENT0) {
-      if (renderbuffer !== null) throw new WebGLUnsupportedError('a colour or stencil renderbuffer; render to a texture (only depth renderbuffers are drawn)');
-      return;
-    }
-    this.fail(GL.INVALID_ENUM);
+    const framebuffer = this.attachingTo(target);
+    if (framebuffer === null) return;
+    this.attach(framebuffer, attachment, renderbuffer === null ? null : { renderbuffer });
   }
 
-  // ---- unsupported objects ----
+  // ---- instanced drawing ----
 
-  drawBuffers(buffers: number[]): void {
-    if (buffers.length !== 1 || (buffers[0] !== GL.BACK && buffers[0] !== GL.COLOR_ATTACHMENT0)) throw new WebGLUnsupportedError('several colour outputs');
-  }
   drawArraysInstanced(mode: number, first: number, count: number, instances: number): void {
     if (!(first >= 0 && count >= 0 && instances >= 0)) return this.fail(GL.INVALID_VALUE);
     this.draw(mode, first, count, null, instances);
@@ -1895,8 +2478,14 @@ export class WebGLContext {
     if (program === null) return this.fail(GL.INVALID_OPERATION);
     const named = modes[mode];
     if (named === undefined) throw new WebGLUnsupportedError('drawing lines; draw triangles (points are drawn)');
-    if (this.caps.stencil) throw new WebGLUnsupportedError('drawing with the stencil test on');
     if (this.framebufferIncomplete()) return;
+    // WebGL refuses a stencil test whose faces differ in the reference or the masks.
+    const stencilTest = this.caps.stencil && this.hasStencil();
+    const [front, back] = [this.stencilFront, this.stencilBack];
+    const ref = (s: StencilState) => Math.min(Math.max(s.ref, 0), STENCIL_MAX);
+    if (stencilTest && (ref(front) !== ref(back) || (front.valueMask & STENCIL_MAX) !== (back.valueMask & STENCIL_MAX) || (front.writeMask & STENCIL_MAX) !== (back.writeMask & STENCIL_MAX))) {
+      return this.fail(GL.INVALID_OPERATION);
+    }
     if (instances === 0) return;
     if (named === 'points' && instances !== 1) throw new WebGLUnsupportedError('instanced points; draw the points with one drawArrays');
     this.begin();
@@ -1945,13 +2534,15 @@ export class WebGLContext {
     for (const [name, calls] of program.uniforms) {
       draw.uniforms[name] = calls.map((c): GlslUniform => ({ kind: c.kind, value: [...c.value], ...(c.index === 0 ? {} : { index: c.index }) }));
     }
+    const fb = this.drawFramebuffer;
+    const attached = fb === null ? [] : [...fb.colors, fb.depth, fb.stencil].flatMap((a) => (a !== null && a !== undefined && 'texture' in a ? [a.texture] : []));
     for (const d of program.uniformDeclarations) {
       if (d.type === 'samplerCube') throw new WebGLUnsupportedError(`the sampler "${d.name}" is a samplerCube; only sampler2D is available`);
       if (d.type !== 'sampler2D') continue;
       const unit = program.uniforms.get(d.name)?.at(-1)?.value[0] ?? 0;
       const texture = this.units.get(unit);
       // Reading what the draw writes is undefined; WebGL refuses it.
-      if (texture !== undefined && texture === this.drawFramebuffer?.color) return this.fail(GL.INVALID_OPERATION);
+      if (texture !== undefined && attached.includes(texture)) return this.fail(GL.INVALID_OPERATION);
       if (texture !== undefined && draw.units[String(unit)] === undefined) draw.units[String(unit)] = this.samplerOf(texture);
     }
 
@@ -1978,9 +2569,14 @@ export class WebGLContext {
       const [factor, units] = this.polygonOffsetValue;
       if (this.caps.polygonOffset && named !== 'points' && (factor !== 0 || units !== 0)) draw.polygonOffset = { factor, units };
     }
-    const target = this.targetId();
-    if (target !== undefined) draw.target = target;
-    this.ops.push({ op: 'draw', ...draw });
+    if (stencilTest) {
+      const face = (s: StencilState): GlslStencilFace => ({ func: DEPTH_FUNCS[s.func]!, fail: STENCIL_OPS[s.fail]!, zfail: STENCIL_OPS[s.zfail]!, zpass: STENCIL_OPS[s.zpass]! });
+      const stencil: GlslStencil = { ref: ref(front), valueMask: front.valueMask & STENCIL_MAX, writeMask: front.writeMask & STENCIL_MAX, front: face(front), back: face(back) };
+      draw.stencil = stencil;
+    }
+    const where = this.dest(draw.depth !== undefined || draw.stencil !== undefined);
+    if (where === null) return;
+    this.ops.push({ op: 'draw', ...draw, ...where });
   }
 
   private bufferId(buffer: WebGLBuffer): string {
@@ -1995,8 +2591,17 @@ export class WebGLContext {
 
   /** The texture's state at this draw: its pixels (once, by id) and how this unit samples it. */
   private samplerOf(texture: WebGLTexture): GlslSampler {
-    const id = texture.drawnAt === texture.version ? this.registerTarget(texture) : this.uploadedId(texture);
-    return { texture: id, min: FILTERS[texture.min]!, mag: FILTERS[texture.mag]!, wrapS: WRAPS[texture.wrapS]!, wrapT: WRAPS[texture.wrapT]! };
+    // A depth texture is a render target from the start: its depth is drawn, never uploaded.
+    const target = texture.drawnAt === texture.version || kindOf(texture.format) !== 'color';
+    const id = target ? this.registerTarget(texture) : this.uploadedId(texture);
+    return {
+      texture: id,
+      min: FILTERS[texture.min]!,
+      mag: FILTERS[texture.mag]!,
+      wrapS: WRAPS[texture.wrapS]!,
+      wrapT: WRAPS[texture.wrapT]!,
+      ...(texture.maxLevel < 1000 ? { maxLevel: texture.maxLevel } : {}),
+    };
   }
 
   /** An uploaded texture in the recording: its pixels, once, by an id of what they are. */
@@ -2012,6 +2617,7 @@ export class WebGLContext {
         ...(texture.flipY ? { flipY: true } : {}),
         ...(texture.premultiply ? { premultiply: true } : {}),
         ...(texture.mipmaps ? { mipmaps: true } : {}),
+        ...(texture.patches.length > 0 ? { patches: [...texture.patches] } : {}),
       };
       texture.snapshot = { version: texture.version, id: `t${hashOf(JSON.stringify(json))}`, json };
     }

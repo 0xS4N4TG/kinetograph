@@ -64,6 +64,13 @@ pub struct GlslContent {
     /// opaque.
     #[serde(default = "yes")]
     pub alpha: bool,
+    /// The context's `depth` attribute: whether the drawing buffer has a depth
+    /// buffer.
+    #[serde(default = "yes")]
+    pub depth: bool,
+    /// The context's `stencil` attribute: whether it has a stencil buffer.
+    #[serde(default)]
+    pub stencil: bool,
     /// By id.
     #[serde(default)]
     pub programs: BTreeMap<String, GlslProgram>,
@@ -117,11 +124,70 @@ pub struct GlslTexture {
     /// `generateMipmap` was called after the upload.
     #[serde(default)]
     pub mipmaps: bool,
-    /// A framebuffer's texture: `width` x `height`, transparent black, with no
-    /// `src` or `pixels`. The ops that name it as their `target` draw into it,
-    /// and later draws sample what they left.
+    /// A render target (a framebuffer's texture or renderbuffer): `width` x
+    /// `height`, empty, with no `src` or `pixels`. The ops that name it draw
+    /// into it, and later draws sample what they left.
     #[serde(default)]
     pub target: bool,
+    /// What a target holds: colour (RGBA8) without one.
+    pub format: Option<TargetFormat>,
+    /// The mip levels of a colour target; an op's `level` draws into one.
+    #[serde(default = "one")]
+    pub levels: u32,
+    /// A depth texture of a WebGL 1 context, which samples it as (d, d, d,
+    /// 1); WebGL 2 samples (d, 0, 0, 1).
+    #[serde(default)]
+    pub luminance: bool,
+    /// `texSubImage2D` of pictures over parts of an uploaded texture, in order.
+    #[serde(default)]
+    pub patches: Vec<GlslPatch>,
+}
+
+/// What a depth or stencil target holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TargetFormat {
+    Depth,
+    Stencil,
+    DepthStencil,
+}
+
+impl TargetFormat {
+    pub fn has_depth(self) -> bool {
+        matches!(self, TargetFormat::Depth | TargetFormat::DepthStencil)
+    }
+    pub fn has_stencil(self) -> bool {
+        matches!(self, TargetFormat::Stencil | TargetFormat::DepthStencil)
+    }
+}
+
+/// A picture laid over a rectangle of a texture (`texSubImage2D`). Its rows
+/// count as the texture's: the first is GL's bottom one.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GlslPatch {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+    /// One of these: a picture file (or `data:` URL), base64 RGBA8 (straight
+    /// alpha), or a child of the shader group.
+    pub src: Option<String>,
+    pub pixels: Option<String>,
+    pub layer: Option<String>,
+    #[serde(default)]
+    pub flip_y: bool,
+    #[serde(default)]
+    pub premultiply: bool,
+}
+
+/// A colour attachment an op draws into: a target and its mip level.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GlslOutput {
+    pub target: String,
+    #[serde(default)]
+    pub level: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -129,11 +195,18 @@ pub struct GlslTexture {
 pub enum GlslOp {
     /// `clear` of the drawing buffer or of the target texture `target` names:
     /// its colour with this clear colour (`COLOR_BUFFER_BIT`), its depth
-    /// buffer to this value (`DEPTH_BUFFER_BIT`), or both.
+    /// buffer to this value (`DEPTH_BUFFER_BIT`), its stencil buffer
+    /// (`STENCIL_BUFFER_BIT`), or several; where, as a draw says it.
+    #[serde(rename_all = "camelCase")]
     Clear {
         color: Option<[f64; 4]>,
         depth: Option<f64>,
+        stencil: Option<u32>,
         target: Option<String>,
+        #[serde(default)]
+        level: u32,
+        outputs: Option<Vec<Option<GlslOutput>>>,
+        depth_stencil: Option<String>,
     },
     Draw(Box<GlslDraw>),
     /// `blitFramebuffer`: a rectangle of one buffer copied over a rectangle of
@@ -142,6 +215,62 @@ pub enum GlslOp {
     /// `texSubImage2D` into a target texture: pixels written over a rectangle
     /// of what the ops before it left there.
     Upload(Box<GlslUpload>),
+}
+
+/// Where an op draws (the fields of a draw or a clear): the drawing buffer
+/// when none is given, else a framebuffer's attachments. `target` (at
+/// `level`) is output 0's colour attachment; `outputs` those of outputs 0 and
+/// up when there are several (or none), `None` for NONE; `depth_stencil` the
+/// framebuffer's depth or stencil buffer.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct GlslDest<'a> {
+    pub target: Option<&'a str>,
+    pub level: u32,
+    pub outputs: Option<&'a [Option<GlslOutput>]>,
+    pub depth_stencil: Option<&'a str>,
+}
+
+impl<'a> GlslDest<'a> {
+    /// Whether the op goes to a framebuffer rather than the drawing buffer.
+    pub fn is_framebuffer(&self) -> bool {
+        self.target.is_some() || self.outputs.is_some() || self.depth_stencil.is_some()
+    }
+
+    /// The colour attachments of outputs 0 and up: the drawing buffer's one
+    /// (`None` as the id) for the canvas.
+    pub fn colors(&self) -> Vec<Option<(Option<&'a str>, u32)>> {
+        match (self.outputs, self.target) {
+            (Some(outputs), _) => outputs
+                .iter()
+                .map(|o| o.as_ref().map(|o| (Some(o.target.as_str()), o.level)))
+                .collect(),
+            (None, Some(target)) => vec![Some((Some(target), self.level))],
+            (None, None) if self.depth_stencil.is_some() => Vec::new(),
+            (None, None) => vec![Some((None, 0))],
+        }
+    }
+}
+
+impl GlslOp {
+    /// Where a clear or a draw goes; `None` for the other ops.
+    pub fn dest(&self) -> Option<GlslDest<'_>> {
+        match self {
+            GlslOp::Clear {
+                target,
+                level,
+                outputs,
+                depth_stencil,
+                ..
+            } => Some(GlslDest {
+                target: target.as_deref(),
+                level: *level,
+                outputs: outputs.as_deref(),
+                depth_stencil: depth_stencil.as_deref(),
+            }),
+            GlslOp::Draw(d) => Some(d.dest()),
+            GlslOp::Blit(_) | GlslOp::Upload(_) => None,
+        }
+    }
 }
 
 /// `texSubImage2D(TEXTURE_2D, 0, x, y, ...)` of a texture a framebuffer
@@ -156,8 +285,11 @@ pub struct GlslUpload {
     pub y: u32,
     pub width: u32,
     pub height: u32,
-    /// Base64 RGBA8, straight alpha, `width * height * 4` bytes.
-    pub pixels: String,
+    /// One of these: base64 RGBA8 (straight alpha, `width * height * 4`
+    /// bytes), a picture file, or a child of the shader group.
+    pub pixels: Option<String>,
+    pub src: Option<String>,
+    pub layer: Option<String>,
     /// `UNPACK_FLIP_Y_WEBGL` was set.
     #[serde(default)]
     pub flip_y: bool,
@@ -166,15 +298,23 @@ pub struct GlslUpload {
     pub premultiply: bool,
 }
 
-/// `blitFramebuffer(from..., to..., COLOR_BUFFER_BIT, filter)` between the
-/// drawing buffer and the target textures.
+/// `blitFramebuffer(from..., to..., mask, filter)` between the drawing buffer
+/// and the targets: of colour, from the read buffer to one draw buffer; or,
+/// with `aspect`, of the depth and stencil buffers, which `src` and `target`
+/// then name.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GlslBlit {
-    /// The target texture read; the drawing buffer without one.
+    /// The target read; the drawing buffer without one.
     pub src: Option<String>,
-    /// The target texture written; the drawing buffer without one.
+    #[serde(default)]
+    pub src_level: u32,
+    /// The target written; the drawing buffer without one.
     pub target: Option<String>,
+    #[serde(default)]
+    pub level: u32,
+    /// Depth and stencil instead of colour.
+    pub aspect: Option<BlitAspect>,
     /// `x0, y0, x1, y1` of the source, y up from the bottom row. A reversed
     /// pair of corners mirrors.
     pub from: [i32; 4],
@@ -185,6 +325,24 @@ pub struct GlslBlit {
     pub linear: bool,
     /// `x, y, width, height` of the scissor test, if it was on.
     pub scissor: Option<[i32; 4]>,
+}
+
+/// What a depth-and-stencil blit copies.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BlitAspect {
+    Depth,
+    Stencil,
+    DepthStencil,
+}
+
+impl BlitAspect {
+    pub fn depth(self) -> bool {
+        matches!(self, BlitAspect::Depth | BlitAspect::DepthStencil)
+    }
+    pub fn stencil(self) -> bool {
+        matches!(self, BlitAspect::Stencil | BlitAspect::DepthStencil)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
@@ -280,6 +438,8 @@ pub struct GlslSampler {
     pub wrap_s: String,
     #[serde(default = "repeat")]
     pub wrap_t: String,
+    /// `TEXTURE_MAX_LEVEL`, when it was set: the last level sampling reads.
+    pub max_level: Option<u32>,
 }
 
 fn linear_min() -> String {
@@ -328,6 +488,31 @@ pub struct GlslDepth {
     pub far: f64,
 }
 
+/// One face's stencil test: `stencilFuncSeparate` and `stencilOpSeparate`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GlslStencilFace {
+    /// A depth function's name.
+    pub func: String,
+    /// `KEEP`, `ZERO`, `REPLACE`, `INCR`, `DECR`, `INVERT`, `INCR_WRAP` or
+    /// `DECR_WRAP`.
+    pub fail: String,
+    pub zfail: String,
+    pub zpass: String,
+}
+
+/// The stencil test of a draw. WebGL refuses a draw whose faces differ in the
+/// reference or the masks, so they are one for both, as in wgpu.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GlslStencil {
+    pub r#ref: u32,
+    pub value_mask: u32,
+    pub write_mask: u32,
+    pub front: GlslStencilFace,
+    pub back: GlslStencilFace,
+}
+
 /// `polygonOffset(factor, units)` with `POLYGON_OFFSET_FILL` on.
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -368,9 +553,25 @@ pub struct GlslDraw {
     /// The depth test, if it was on and the buffer drawn into has depth.
     pub depth: Option<GlslDepth>,
     pub polygon_offset: Option<GlslPolygonOffset>,
-    /// The target texture the draw renders to; the drawing buffer without
-    /// one.
+    /// The stencil test, if it was on and the buffer drawn into has stencil.
+    pub stencil: Option<GlslStencil>,
+    /// Where it draws (`GlslDest`).
     pub target: Option<String>,
+    #[serde(default)]
+    pub level: u32,
+    pub outputs: Option<Vec<Option<GlslOutput>>>,
+    pub depth_stencil: Option<String>,
+}
+
+impl GlslDraw {
+    pub fn dest(&self) -> GlslDest<'_> {
+        GlslDest {
+            target: self.target.as_deref(),
+            level: self.level,
+            outputs: self.outputs.as_deref(),
+            depth_stencil: self.depth_stencil.as_deref(),
+        }
+    }
 }
 
 fn one() -> u32 {
@@ -384,8 +585,12 @@ fn all_true() -> [bool; 4] {
 // ---- source rewriting ----
 
 /// The largest point WebGL draws here (`ALIASED_POINT_SIZE_RANGE` is 1 to this):
-/// a larger `gl_PointSize` is drawn at this.
+/// a larger `gl_PointSize` is drawn at this. Chrome on Apple silicon (ANGLE on
+/// Metal) reports the same range.
 pub const MAX_POINT_SIZE: f32 = 511.0;
+
+/// The colour outputs a fragment shader can have (`MAX_DRAW_BUFFERS`).
+pub const MAX_DRAW_BUFFERS: u32 = 8;
 
 /// The location a point's `gl_PointCoord` travels at: the last of the 16
 /// a vertex stage can write.
@@ -580,6 +785,8 @@ struct Rewritten {
     attributes: Vec<(String, u32, Option<u32>)>,
     /// The varyings this stage declared, with their locations.
     varyings: Vec<(String, u32, String)>,
+    /// The locations of the fragment shader's outputs.
+    outputs: Vec<u32>,
     uses_frag_coord: bool,
     uses_point_coord: bool,
 }
@@ -657,6 +864,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         packed: Vec::new(),
         attributes: Vec::new(),
         varyings: Vec::new(),
+        outputs: Vec::new(),
         uses_frag_coord: false,
         uses_point_coord: false,
     };
@@ -1056,7 +1264,15 @@ fn rewrite_chunk(
                     k += 1;
                     continue;
                 }
-                if let Some(new) = rename(w, prev, samplers, Mode { fragment, points: ctx.points }) {
+                if let Some(new) = rename(
+                    w,
+                    prev,
+                    samplers,
+                    Mode {
+                        fragment,
+                        points: ctx.points,
+                    },
+                ) {
                     if w == "gl_FragCoord" {
                         r.uses_frag_coord = true;
                     }
@@ -1206,7 +1422,7 @@ fn declaration(
                         k += 1;
                         break;
                     }
-                } else {
+                } else if d > 0 {
                     inner.push_str(t);
                 }
                 k += 1;
@@ -1415,19 +1631,24 @@ fn declaration(
             }
         }
         "out" => {
-            // A fragment output: one colour attachment.
+            // A fragment output: the colour attachment `drawBuffers` maps its
+            // location to.
             for (name, array) in declared.names {
                 if array.is_some() {
                     return Err(unsupported(format!("`{name}`: an array output")));
                 }
                 let at = declared.location.unwrap_or(0);
-                if at != 0 {
-                    return Err(unsupported(
-                        "several colour outputs (only location 0 is drawn)",
-                    ));
+                if at >= MAX_DRAW_BUFFERS {
+                    return Err(unsupported(format!(
+                        "`{name}`: an output at location {at} (there are {MAX_DRAW_BUFFERS} draw buffers)"
+                    )));
                 }
+                if r.outputs.contains(&at) {
+                    return Err(format!("two outputs at location {at}"));
+                }
+                r.outputs.push(at);
                 *ctx.has_out = true;
-                text_out.push_str(&format!("layout(location=0) out {ty} {name}; "));
+                text_out.push_str(&format!("layout(location={at}) out {ty} {name}; "));
             }
         }
         _ => {
@@ -1490,6 +1711,9 @@ pub struct Stage {
     pub samplers: Vec<SamplerBinding>,
     /// Attribute name, location, float components.
     pub attributes: Vec<(String, u32, Option<u32>)>,
+    /// The locations the fragment shader writes colour at (empty for the
+    /// vertex stage).
+    pub outputs: Vec<u32>,
     pub uses_frag_coord: bool,
     /// The offset of the drawing buffer's height (the fragment stage's).
     pub fbh_offset: Option<u32>,
@@ -1614,12 +1838,17 @@ fn parse_stage(stage: ShaderStage, r: Rewritten) -> std::result::Result<Stage, S
             .iter()
             .any(|(_, gv)| gv.binding.as_ref().is_some_and(|b| b.binding == s.texture))
     });
+    let outputs = match stage {
+        ShaderStage::Fragment if r.outputs.is_empty() => vec![0],
+        _ => r.outputs,
+    };
     Ok(Stage {
         module,
         stage,
         uniforms,
         uniform_size,
         samplers,
+        outputs,
         attributes: r.attributes,
         uses_frag_coord: r.uses_frag_coord,
         fbh_offset,
@@ -1819,8 +2048,27 @@ pub fn decode_texture(
     texture: &GlslTexture,
     base_dir: &std::path::Path,
 ) -> std::result::Result<(Vec<u8>, u32, u32), String> {
+    if texture.src.is_none() && texture.pixels.is_none() {
+        return Err("a texture has either a src or pixels (or, in a group, a layer)".into());
+    }
+    decode_picture(
+        texture.src.as_deref(),
+        texture.pixels.as_deref(),
+        (texture.width, texture.height),
+        base_dir,
+    )
+}
+
+/// The straight RGBA8 pixels and size of a picture file (or `data:` URL)
+/// `src`, or of the base64 bytes `pixels` of a picture of `size`.
+pub fn decode_picture(
+    src: Option<&str>,
+    pixels: Option<&str>,
+    (w, h): (u32, u32),
+    base_dir: &std::path::Path,
+) -> std::result::Result<(Vec<u8>, u32, u32), String> {
     use base64::Engine as _;
-    match (&texture.src, &texture.pixels) {
+    match (src, pixels) {
         (Some(src), None) => {
             let decoded = if let Some(bytes) = crate::scene::data_uri_bytes(src) {
                 image::load_from_memory(&bytes)
@@ -1838,7 +2086,6 @@ pub fn decode_texture(
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(pixels)
                 .map_err(|e| format!("a texture's pixels are not base64: {e}"))?;
-            let (w, h) = (texture.width, texture.height);
             if w == 0 || h == 0 || bytes.len() != w as usize * h as usize * 4 {
                 return Err(format!(
                     "a texture of {w} x {h} needs {} bytes of RGBA, got {}",
@@ -1848,7 +2095,26 @@ pub fn decode_texture(
             }
             Ok((bytes, w, h))
         }
-        _ => Err("a texture has either a src or pixels (or, in a group, a layer)".into()),
+        _ => Err("a picture has either a src or pixels".into()),
+    }
+}
+
+/// Straight RGBA8 rows of `width` as an upload with these flags leaves them:
+/// turned over (`UNPACK_FLIP_Y_WEBGL`), and colour times alpha
+/// (`UNPACK_PREMULTIPLY_ALPHA_WEBGL`).
+pub fn unpack(rgba: &mut Vec<u8>, width: u32, flip_y: bool, premultiply: bool) {
+    if flip_y && width > 0 {
+        let row = width as usize * 4;
+        *rgba = rgba.chunks(row).rev().flatten().copied().collect();
+    }
+    if premultiply {
+        let (pixels, _) = rgba.as_chunks_mut::<4>();
+        for px in pixels {
+            let a = u32::from(px[3]);
+            for c in &mut px[..3] {
+                *c = ((u32::from(*c) * a + 127) / 255) as u8;
+            }
+        }
     }
 }
 

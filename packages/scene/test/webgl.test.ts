@@ -88,7 +88,7 @@ describe('the recording WebGL context', () => {
   });
 
   it('records blitFramebuffer between the canvas and a texture drawn in, keeping the canvas ops a blit reads', () => {
-    const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+    const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2, attributes: { antialias: false } });
     const texture = gl.createTexture();
     gl.bindTexture(GL.TEXTURE_2D, texture);
     gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 8, 4, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
@@ -111,6 +111,23 @@ describe('the recording WebGL context', () => {
     // Reading and writing the same buffer is refused, as GL refuses it.
     gl.blitFramebuffer(0, 0, 1, 1, 0, 0, 1, 1, GL.COLOR_BUFFER_BIT, GL.NEAREST);
     expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+
+    // An antialiased canvas is multisampled, as in Chrome: it takes no blit, and gives one only of its own bounds.
+    const aa = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+    const fb = aa.createFramebuffer();
+    aa.bindFramebuffer(GL.FRAMEBUFFER, fb);
+    aa.bindTexture(GL.TEXTURE_2D, aa.createTexture());
+    aa.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 8, 4, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+    aa.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, aa.getParameter(GL.TEXTURE_BINDING_2D) as never, 0);
+    aa.bindFramebuffer(GL2.READ_FRAMEBUFFER, null);
+    aa.blitFramebuffer(0, 0, 8, 4, 8, 0, 0, 4, GL.COLOR_BUFFER_BIT, GL.NEAREST);
+    expect(aa.getError()).toBe(GL.INVALID_OPERATION);
+    aa.blitFramebuffer(0, 0, 8, 4, 0, 0, 8, 4, GL.COLOR_BUFFER_BIT, GL.NEAREST);
+    expect(aa.getError()).toBe(GL.NO_ERROR);
+    aa.bindFramebuffer(GL2.READ_FRAMEBUFFER, fb);
+    aa.bindFramebuffer(GL2.DRAW_FRAMEBUFFER, null);
+    aa.blitFramebuffer(0, 0, 8, 4, 0, 0, 8, 4, GL.COLOR_BUFFER_BIT, GL.NEAREST);
+    expect(aa.getError()).toBe(GL.INVALID_OPERATION);
   });
 
   it('records instanced draws with the attributes that advance per instance', () => {
@@ -203,12 +220,10 @@ describe('the recording WebGL context', () => {
       }
       throw new Error('did not throw');
     };
-    gl.enable(GL.STENCIL_TEST);
-    expect(refused(() => gl.drawArrays(GL.TRIANGLES, 0, 3))).toMatch(/^unsupported:.*stencil/);
-    gl.disable(GL.STENCIL_TEST);
     expect(refused(() => gl.drawArrays(GL.LINES, 0, 2))).toMatch(/^unsupported:.*lines/);
-    gl.bindRenderbuffer(GL.RENDERBUFFER, gl.createRenderbuffer());
-    expect(refused(() => gl.renderbufferStorage(GL.RENDERBUFFER, GL.RGBA4, 4, 4))).toMatch(/^unsupported:.*colour.*renderbuffer/);
+    const gl2 = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+    gl2.bindRenderbuffer(GL.RENDERBUFFER, gl2.createRenderbuffer());
+    expect(refused(() => gl2.renderbufferStorageMultisample(GL.RENDERBUFFER, 4, GL2.RGBA8, 4, 4))).toMatch(/^unsupported:.*multisampled/);
     expect(refused(() => gl.readPixels())).toMatch(/^unsupported:/);
     expect(refused(() => gl.bindTexture(GL.TEXTURE_CUBE_MAP, gl.createTexture()))).toMatch(/cube/);
     expect(refused(() => gl.drawArraysInstanced(GL.POINTS, 0, 3, 4))).toMatch(/instanced points/);
@@ -508,9 +523,12 @@ describe('the recording WebGL context', () => {
     it('says unsupported for what a render target here cannot be', () => {
       const { gl } = setup();
       const { framebuffer, texture } = attach(gl, 4, 2);
-      expect(refused(() => gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.TEXTURE_2D, texture, 0))).toMatch(/^unsupported:.*depth/);
-      expect(refused(() => gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 1))).toMatch(/level/);
-      expect(refused(() => gl.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.RENDERBUFFER, gl.createRenderbuffer()))).toMatch(/renderbuffer/);
+      // A colour texture is not a depth buffer; WebGL 1 attaches level 0 only.
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.TEXTURE_2D, texture, 0);
+      expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.TEXTURE_2D, null, 0);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 1);
+      expect(gl.getError()).toBe(GL.INVALID_VALUE);
 
       // Pixels from the page, or a format other than RGBA, cannot be drawn over.
       const specify = (internalformat: number, data: Uint8Array | null) => {
@@ -544,6 +562,237 @@ describe('the recording WebGL context', () => {
       expect(ops.map((op) => op.op)).toEqual(['draw', 'upload']);
       expect(ops[1]).toMatchObject({ op: 'upload', x: 1, y: 1, width: 2, height: 1, flipY: true });
       expect((ops[1] as { target: string }).target).toBe((ops[0] as { target: string }).target);
+    });
+  });
+
+  describe('stencil, several outputs, depth textures and renderbuffers', () => {
+    /** A WebGL 2 context like `setup`'s, with these context attributes. */
+    function setup2(attributes: { stencil?: boolean; depth?: boolean; antialias?: boolean } = {}) {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2, attributes });
+      const program = gl.createProgram();
+      for (const [type, source] of [[GL.VERTEX_SHADER, VERTEX], [GL.FRAGMENT_SHADER, FRAGMENT]] as const) {
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source);
+        gl.attachShader(program, shader);
+      }
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      gl.bindBuffer(GL.ARRAY_BUFFER, gl.createBuffer());
+      gl.bufferData(GL.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1]), GL.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, GL.FLOAT, false, 0, 0);
+      return { gl, program };
+    }
+    const draws = (gl: WebGLContext) => gl.content().ops.flatMap((op) => (op.op === 'draw' ? [op] : []));
+    function texture(gl: WebGLContext, internalformat: number, format: number, type: number, width = 4, height = 2) {
+      const t = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, t);
+      gl.texImage2D(GL.TEXTURE_2D, 0, internalformat, width, height, 0, format, type, null);
+      gl.bindTexture(GL.TEXTURE_2D, null);
+      return t;
+    }
+    function renderbuffer(gl: WebGLContext, format: number, width = 4, height = 2) {
+      const r = gl.createRenderbuffer();
+      gl.bindRenderbuffer(GL.RENDERBUFFER, r);
+      gl.renderbufferStorage(GL.RENDERBUFFER, format, width, height);
+      return r;
+    }
+
+    it('records the stencil test with each draw where the buffer drawn into has a stencil buffer', () => {
+      const { gl } = setup2({ stencil: true });
+      expect(gl.content().stencil).toBe(true);
+      gl.enable(GL.STENCIL_TEST);
+      gl.stencilFunc(GL.EQUAL, 3, 0xff);
+      gl.stencilOpSeparate(GL.BACK, GL.KEEP, GL.INCR, GL.DECR_WRAP);
+      gl.stencilOpSeparate(GL.FRONT, GL.ZERO, GL.KEEP, GL.REPLACE);
+      gl.clearStencil(2);
+      gl.clear(GL.COLOR_BUFFER_BIT | GL.STENCIL_BUFFER_BIT);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.content().ops[0]).toMatchObject({ op: 'clear', stencil: 2 });
+      expect(draws(gl)[0]!.stencil).toEqual({
+        ref: 3,
+        valueMask: 0xff,
+        writeMask: 0xff,
+        front: { func: 'EQUAL', fail: 'ZERO', zfail: 'KEEP', zpass: 'REPLACE' },
+        back: { func: 'EQUAL', fail: 'KEEP', zfail: 'INCR', zpass: 'DECR_WRAP' },
+      });
+      expect(gl.getParameter(GL.STENCIL_BACK_PASS_DEPTH_PASS)).toBe(GL.DECR_WRAP);
+
+      // Faces that differ in the reference or a mask: WebGL refuses the draw.
+      gl.stencilFuncSeparate(GL.BACK, GL.EQUAL, 4, 0xff);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+      expect(draws(gl)).toHaveLength(1);
+
+      // Without a stencil buffer the test passes and nothing is recorded.
+      const plain = setup2().gl;
+      plain.enable(GL.STENCIL_TEST);
+      plain.clear(GL.STENCIL_BUFFER_BIT);
+      plain.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(plain.content().ops.map((o) => o.op)).toEqual(['draw']);
+      expect(draws(plain)[0]!.stencil).toBeUndefined();
+    });
+
+    it('gives a framebuffer a depth and stencil buffer that ops name, shared by framebuffers that attach it', () => {
+      const { gl } = setup2();
+      const colour = texture(gl, GL.RGBA, GL.RGBA, GL.UNSIGNED_BYTE);
+      const ds = renderbuffer(gl, GL2.DEPTH24_STENCIL8);
+      const a = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, a);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, colour, 0);
+      gl.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_STENCIL_ATTACHMENT, GL.RENDERBUFFER, ds);
+      expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_COMPLETE);
+      gl.enable(GL.DEPTH_TEST);
+      gl.enable(GL.STENCIL_TEST);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      const [draw] = draws(gl);
+      expect(draw!.depthStencil).toMatch(/^r/);
+      expect(gl.content().textures[draw!.depthStencil!]).toEqual({ target: true, width: 4, height: 2, format: 'depthStencil' });
+      expect(draw!.depth).toBeDefined();
+      expect(draw!.stencil).toBeDefined();
+
+      // A colour-only clear leaves it out; a depth clear names it.
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      gl.clear(GL.DEPTH_BUFFER_BIT);
+      const [colorClear, depthClear] = gl.content().ops.slice(1);
+      expect(colorClear).not.toHaveProperty('depthStencil');
+      expect(depthClear).toMatchObject({ op: 'clear', depth: 1, depthStencil: draw!.depthStencil });
+
+      // A depth renderbuffer and a stencil one are two images: unsupported, as in WebGL.
+      gl.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, renderbuffer(gl, GL.DEPTH_COMPONENT16));
+      gl.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.STENCIL_ATTACHMENT, GL.RENDERBUFFER, renderbuffer(gl, GL.STENCIL_INDEX8));
+      expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_UNSUPPORTED);
+    });
+
+    it('maps the outputs of a fragment shader to colour attachments with drawBuffers', () => {
+      const { gl } = setup2();
+      const [a, b] = [texture(gl, GL2.RGBA8, GL.RGBA, GL.UNSIGNED_BYTE), texture(gl, GL2.RGBA8, GL.RGBA, GL.UNSIGNED_BYTE)];
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, a, 0);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL2.COLOR_ATTACHMENT1, GL.TEXTURE_2D, b, 0);
+      // Output 0 alone, by default.
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      gl.drawBuffers([GL.COLOR_ATTACHMENT0, GL2.COLOR_ATTACHMENT1]);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      gl.drawBuffers([GL.NONE, GL2.COLOR_ATTACHMENT1]);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      const [one, both, clear] = gl.content().ops as Array<{ target?: string; outputs?: unknown[] }>;
+      expect(one!.target).toBeDefined();
+      expect(one!.outputs).toBeUndefined();
+      expect(both!.outputs).toEqual([{ target: one!.target }, { target: expect.stringMatching(/^f/) }]);
+      expect(clear!.outputs).toEqual([null, (both!.outputs as unknown[])[1]]);
+      expect(gl.getParameter(GL2.DRAW_BUFFER0 + 1)).toBe(GL2.COLOR_ATTACHMENT1);
+      // Output i goes to COLOR_ATTACHMENTi or nowhere.
+      gl.drawBuffers([GL2.COLOR_ATTACHMENT1]);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+      // clearBuffer clears one draw buffer.
+      gl.clearBufferfv(GL2.COLOR, 1, [1, 0, 0, 1]);
+      expect(gl.content().ops.at(-1)).toEqual({ op: 'clear', color: [1, 0, 0, 1], target: (both!.outputs as Array<{ target: string }>)[1]!.target });
+    });
+
+    it('draws into a depth texture, and a later draw samples it as a target', () => {
+      const { gl, program } = setup2();
+      const colour = texture(gl, GL.RGBA, GL.RGBA, GL.UNSIGNED_BYTE);
+      const depth = texture(gl, GL2.DEPTH_COMPONENT24, GL.DEPTH_COMPONENT, GL.UNSIGNED_INT);
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, colour, 0);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.TEXTURE_2D, depth, 0);
+      gl.enable(GL.DEPTH_TEST);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      // Sampling it while it is attached is a feedback loop.
+      gl.bindTexture(GL.TEXTURE_2D, depth);
+      gl.uniform1i(gl.getUniformLocation(program, 'tex'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      const [into, onCanvas] = draws(gl);
+      expect(into!.depthStencil).toBe(onCanvas!.units['0']!.texture);
+      expect(gl.content().textures[into!.depthStencil!]).toMatchObject({ target: true, format: 'depth' });
+      // A depth texture has no pixels to give.
+      gl.bindTexture(GL.TEXTURE_2D, depth);
+      expect(() => gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
+    });
+
+    it('draws into a colour renderbuffer and into a level of a texture', () => {
+      const { gl } = setup2();
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, fb);
+      gl.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.RENDERBUFFER, renderbuffer(gl, GL.RGBA4));
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      const t = texture(gl, GL.RGBA, GL.RGBA, GL.UNSIGNED_BYTE, 8, 8);
+      gl.bindTexture(GL.TEXTURE_2D, t);
+      gl.texImage2D(GL.TEXTURE_2D, 1, GL.RGBA, 4, 4, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+      expect(() => gl.texImage2D(GL.TEXTURE_2D, 2, GL.RGBA, 3, 3, 0, GL.RGBA, GL.UNSIGNED_BYTE, null)).toThrow(/level 2/);
+      gl.bindTexture(GL.TEXTURE_2D, null);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, t, 1);
+      expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_COMPLETE);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      const [rb, level] = draws(gl);
+      expect(rb!.target).toMatch(/^r/);
+      expect(gl.content().textures[rb!.target!]).toEqual({ target: true, width: 4, height: 2 });
+      expect(level!.level).toBe(1);
+      expect(gl.content().textures[level!.target!]).toEqual({ target: true, width: 8, height: 8, levels: 2 });
+      // A level that has no storage is an incomplete attachment.
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, t, 2);
+      expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
+    });
+
+    it('blits depth and stencil between buffers of one format, texel for texel', () => {
+      const { gl } = setup2({ stencil: true, antialias: false });
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, fb);
+      gl.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.RENDERBUFFER, renderbuffer(gl, GL2.RGBA8, 8, 4));
+      gl.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_STENCIL_ATTACHMENT, GL.RENDERBUFFER, renderbuffer(gl, GL2.DEPTH24_STENCIL8, 8, 4));
+      gl.bindFramebuffer(GL2.DRAW_FRAMEBUFFER, null);
+      // LINEAR is refused for depth and stencil.
+      gl.blitFramebuffer(0, 0, 8, 4, 0, 0, 8, 4, GL.DEPTH_BUFFER_BIT, GL.LINEAR);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+      gl.blitFramebuffer(0, 0, 8, 4, 0, 0, 8, 4, GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT | GL.STENCIL_BUFFER_BIT, GL.NEAREST);
+      const [colour, ds] = gl.content().ops as Array<{ op: string; aspect?: string; src?: string; target?: string }>;
+      expect(colour).toMatchObject({ op: 'blit', src: expect.stringMatching(/^r/) });
+      expect(colour!.aspect).toBeUndefined();
+      expect(ds).toMatchObject({ op: 'blit', aspect: 'depthStencil', src: expect.stringMatching(/^r/) });
+      expect(ds!.target).toBeUndefined();
+      // A canvas without stencil has another format: refused.
+      const { gl: other } = setup2({ antialias: false });
+      other.bindFramebuffer(GL.FRAMEBUFFER, other.createFramebuffer());
+      other.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_STENCIL_ATTACHMENT, GL.RENDERBUFFER, renderbuffer(other, GL2.DEPTH24_STENCIL8, 8, 4));
+      other.bindFramebuffer(GL2.DRAW_FRAMEBUFFER, null);
+      other.blitFramebuffer(0, 0, 8, 4, 0, 0, 8, 4, GL.DEPTH_BUFFER_BIT, GL.NEAREST);
+      expect(other.getError()).toBe(GL.INVALID_OPERATION);
+    });
+
+    it('lays texSubImage2D of a picture file or a layer over a texture as a patch, and into a target as an upload', () => {
+      const { gl, program } = setup2();
+      const t = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, t);
+      gl.textureFromSource(t, 'base.png');
+      t.width = 8;
+      t.height = 8;
+      gl.texSubImage2D(GL.TEXTURE_2D, 0, 2, 2, GL.RGBA, GL.UNSIGNED_BYTE, layerPicture('child', 4, 4));
+      gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array([1, 2, 3, 4]));
+      gl.uniform1i(gl.getUniformLocation(program, 'tex'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      const stored = gl.content().textures[draws(gl)[0]!.units['0']!.texture]!;
+      expect(stored.src).toBe('base.png');
+      expect(stored.patches).toEqual([
+        { x: 2, y: 2, width: 4, height: 4, layer: 'child' },
+        { x: 0, y: 0, width: 1, height: 1, pixels: Buffer.from([1, 2, 3, 4]).toString('base64') },
+      ]);
+
+      // Into a texture a framebuffer drew in: an op after the draws.
+      const target = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, target);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 8, 8, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, gl.createFramebuffer());
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, target, 0);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      gl.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, GL.RGBA, GL.UNSIGNED_BYTE, layerPicture('child', 4, 4));
+      expect(gl.content().ops.at(-1)).toMatchObject({ op: 'upload', x: 0, y: 0, width: 4, height: 4, layer: 'child', flipY: true });
     });
   });
 

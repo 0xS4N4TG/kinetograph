@@ -92,7 +92,11 @@ impl Compositor {
         self.drawing_buffer(size);
         // The earlier layers' passes read the drawing buffer; they run before this one overwrites it.
         self.submit();
-        let initial = if content.alpha { [0.0; 4] } else { [0.0, 0.0, 0.0, 1.0] };
+        let initial = if content.alpha {
+            [0.0; 4]
+        } else {
+            [0.0, 0.0, 0.0, 1.0]
+        };
         let drawn = self.webgpu_replay(recording, initial, size, base_dir, layers);
         if let Err(message) = drawn {
             self.webgpu_warn(&message);
@@ -136,7 +140,10 @@ impl Compositor {
         if recording.passes.iter().map(commands).sum::<usize>() > MAX_COMMANDS {
             return Err(format!("more than {MAX_COMMANDS} commands in a frame"));
         }
-        if self.glsl.webgpu.pipelines.len() > MAX_CACHED || self.glsl.webgpu.compute.len() > MAX_CACHED || self.glsl.webgpu.modules.len() > MAX_CACHED {
+        if self.glsl.webgpu.pipelines.len() > MAX_CACHED
+            || self.glsl.webgpu.compute.len() > MAX_CACHED
+            || self.glsl.webgpu.modules.len() > MAX_CACHED
+        {
             self.glsl.webgpu.pipelines.clear();
             self.glsl.webgpu.compute.clear();
             self.glsl.webgpu.modules.clear();
@@ -218,8 +225,15 @@ impl Compositor {
         // Textures: empty (zero), the steps fill them. A storage binding only where the recording has one, and only
         // where the format has it.
         let storage = !recording.compute_pipelines.is_empty()
-            || recording.layouts.values().flatten().any(|l| l.ty == "storage-texture")
-            || recording.modules.values().any(|m| m.contains("texture_storage_"));
+            || recording
+                .layouts
+                .values()
+                .flatten()
+                .any(|l| l.ty == "storage-texture")
+            || recording
+                .modules
+                .values()
+                .any(|m| m.contains("texture_storage_"));
         for (id, t) in &recording.textures {
             let format = texture_format(&t.format)?;
             let mut usage = wgpu::TextureUsages::TEXTURE_BINDING
@@ -230,7 +244,9 @@ impl Compositor {
                 usage |= wgpu::TextureUsages::STORAGE_BINDING;
             }
             // A format keeps to the usages it has (rgba32float cannot be blended, rgba8unorm-srgb is not a storage format).
-            usage &= format.guaranteed_format_features(device.features()).allowed_usages;
+            usage &= format
+                .guaranteed_format_features(device.features())
+                .allowed_usages;
             res.textures.insert(
                 id,
                 device.create_texture(&wgpu::TextureDescriptor {
@@ -280,8 +296,28 @@ impl Compositor {
         // Bind groups, as the passes bind them.
         for step in &recording.passes {
             let groups: Vec<&String> = match step {
-                Step::Render(pass) => pass.commands.iter().filter_map(|c| if let Command::Bind { group, .. } = c { Some(group) } else { None }).collect(),
-                Step::Compute(pass) => pass.commands.iter().filter_map(|c| if let wg::ComputeCommand::Bind { group, .. } = c { Some(group) } else { None }).collect(),
+                Step::Render(pass) => pass
+                    .commands
+                    .iter()
+                    .filter_map(|c| {
+                        if let Command::Bind { group, .. } = c {
+                            Some(group)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect(),
+                Step::Compute(pass) => pass
+                    .commands
+                    .iter()
+                    .filter_map(|c| {
+                        if let wg::ComputeCommand::Bind { group, .. } = c {
+                            Some(group)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect(),
                 _ => continue,
             };
             for group in groups {
@@ -292,7 +328,13 @@ impl Compositor {
             }
         }
 
-        let canvas_view = self.glsl.target.as_ref().expect("made by webgpu_draw").view.clone();
+        let canvas_view = self
+            .glsl
+            .target
+            .as_ref()
+            .expect("made by webgpu_draw")
+            .view
+            .clone();
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("webgpu"),
         });
@@ -303,37 +345,77 @@ impl Compositor {
         }));
         for step in &recording.passes {
             match step {
-                Step::Render(pass) => self.webgpu_pass(&mut encoder, recording, &res, pass, &canvas_view, size)?,
+                Step::Render(pass) => {
+                    self.webgpu_pass(&mut encoder, recording, &res, pass, &canvas_view, size)?
+                }
                 Step::Compute(pass) => webgpu_compute(&mut encoder, &res, pass)?,
                 Step::WriteBuffer(w) => {
-                    let buffer = res.gpu_buffers.get(w.buffer.as_str()).ok_or("a write into a buffer that was not made")?;
-                    let bytes = decode_blob(recording.blobs.get(&w.data).ok_or("data that is not in the recording")?)?;
+                    let buffer = res
+                        .gpu_buffers
+                        .get(w.buffer.as_str())
+                        .ok_or("a write into a buffer that was not made")?;
+                    let bytes = decode_blob(
+                        recording
+                            .blobs
+                            .get(&w.data)
+                            .ok_or("data that is not in the recording")?,
+                    )?;
                     if !bytes.is_empty() {
-                        let staging = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: Some("webgpu buffer write"),
-                            contents: &bytes,
-                            usage: wgpu::BufferUsages::COPY_SRC,
-                        });
-                        encoder.copy_buffer_to_buffer(&staging, 0, buffer, w.offset, bytes.len() as u64);
+                        let staging =
+                            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                                label: Some("webgpu buffer write"),
+                                contents: &bytes,
+                                usage: wgpu::BufferUsages::COPY_SRC,
+                            });
+                        encoder.copy_buffer_to_buffer(
+                            &staging,
+                            0,
+                            buffer,
+                            w.offset,
+                            bytes.len() as u64,
+                        );
                     }
                 }
                 Step::CopyBuffer(c) => {
-                    let from = res.gpu_buffers.get(c.from.as_str()).ok_or("a copy from a buffer that was not made")?;
-                    let to = res.gpu_buffers.get(c.to.as_str()).ok_or("a copy into a buffer that was not made")?;
+                    let from = res
+                        .gpu_buffers
+                        .get(c.from.as_str())
+                        .ok_or("a copy from a buffer that was not made")?;
+                    let to = res
+                        .gpu_buffers
+                        .get(c.to.as_str())
+                        .ok_or("a copy into a buffer that was not made")?;
                     if c.size > 0 {
                         encoder.copy_buffer_to_buffer(from, c.from_offset, to, c.to_offset, c.size);
                     }
                 }
                 Step::ClearBuffer(c) => {
-                    let buffer = res.gpu_buffers.get(c.buffer.as_str()).ok_or("a clear of a buffer that was not made")?;
+                    let buffer = res
+                        .gpu_buffers
+                        .get(c.buffer.as_str())
+                        .ok_or("a clear of a buffer that was not made")?;
                     if c.size > 0 {
                         encoder.clear_buffer(buffer, c.offset, Some(c.size));
                     }
                 }
-                Step::Upload(upload) => self.webgpu_upload(&mut encoder, recording, &res, upload, size, base_dir, layers)?,
+                Step::Upload(upload) => self.webgpu_upload(
+                    &mut encoder,
+                    recording,
+                    &res,
+                    upload,
+                    size,
+                    base_dir,
+                    layers,
+                )?,
                 Step::Copy(copy) => {
-                    let from = res.textures.get(copy.from.texture.as_str()).ok_or("a copy from a texture that was not made")?;
-                    let to = res.textures.get(copy.to.texture.as_str()).ok_or("a copy to a texture that was not made")?;
+                    let from = res
+                        .textures
+                        .get(copy.from.texture.as_str())
+                        .ok_or("a copy from a texture that was not made")?;
+                    let to = res
+                        .textures
+                        .get(copy.to.texture.as_str())
+                        .ok_or("a copy to a texture that was not made")?;
                     encoder.copy_texture_to_texture(
                         texel_info(from, copy.from.mip, copy.from.x, copy.from.y),
                         texel_info(to, copy.to.mip, copy.to.x, copy.to.y),
@@ -358,8 +440,14 @@ impl Compositor {
         let (view, bounds) = match &pass.target {
             None => (canvas_view.clone(), canvas_size),
             Some(target) => {
-                let texture = res.textures.get(target.texture.as_str()).ok_or("a pass into a texture that was not made")?;
-                let described = recording.textures.get(&target.texture).ok_or("a pass into a texture that is not in the recording")?;
+                let texture = res
+                    .textures
+                    .get(target.texture.as_str())
+                    .ok_or("a pass into a texture that was not made")?;
+                let described = recording
+                    .textures
+                    .get(&target.texture)
+                    .ok_or("a pass into a texture that is not in the recording")?;
                 let view = texture.create_view(&wgpu::TextureViewDescriptor {
                     base_mip_level: target.mip,
                     mip_level_count: Some(1),
@@ -391,47 +479,101 @@ impl Compositor {
         for command in &pass.commands {
             match command {
                 Command::Pipeline { id } => {
-                    let pipeline = res.pipelines.get(&(id.as_str(), canvas)).ok_or("a pipeline that was not made")?;
+                    let pipeline = res
+                        .pipelines
+                        .get(&(id.as_str(), canvas))
+                        .ok_or("a pipeline that was not made")?;
                     rp.set_pipeline(pipeline);
                     has_pipeline = true;
                 }
-                Command::Bind { index, group, offsets } => {
-                    let group = res.groups.get(group.as_str()).ok_or("a bind group that was not made")?;
+                Command::Bind {
+                    index,
+                    group,
+                    offsets,
+                } => {
+                    let group = res
+                        .groups
+                        .get(group.as_str())
+                        .ok_or("a bind group that was not made")?;
                     rp.set_bind_group(*index, group, offsets);
                 }
-                Command::Vertex { slot, buffer, offset, size } => {
+                Command::Vertex {
+                    slot,
+                    buffer,
+                    offset,
+                    size,
+                } => {
                     let b = buffer_in(res, buffer)?;
                     rp.set_vertex_buffer(*slot, slice(b, *offset, *size, 4)?);
                 }
-                Command::Index { buffer, format, offset, size } => {
+                Command::Index {
+                    buffer,
+                    format,
+                    offset,
+                    size,
+                } => {
                     let b = buffer_in(res, buffer)?;
                     let format = match format.as_str() {
                         "uint16" => wgpu::IndexFormat::Uint16,
                         "uint32" => wgpu::IndexFormat::Uint32,
                         other => return Err(format!("index format {other}")),
                     };
-                    index_size = Some(if format == wgpu::IndexFormat::Uint16 { 2 } else { 4 });
+                    index_size = Some(if format == wgpu::IndexFormat::Uint16 {
+                        2
+                    } else {
+                        4
+                    });
                     rp.set_index_buffer(slice(b, *offset, *size, index_size.unwrap_or(4))?, format);
                 }
-                Command::Draw { vertices, instances, first, first_instance } => {
+                Command::Draw {
+                    vertices,
+                    instances,
+                    first,
+                    first_instance,
+                } => {
                     if !has_pipeline {
                         return Err("draw before setPipeline".into());
                     }
                     check_count(*vertices, *instances)?;
-                    rp.draw(*first..first.saturating_add(*vertices), *first_instance..first_instance.saturating_add(*instances));
+                    rp.draw(
+                        *first..first.saturating_add(*vertices),
+                        *first_instance..first_instance.saturating_add(*instances),
+                    );
                 }
-                Command::DrawIndexed { indices, instances, first, base, first_instance } => {
+                Command::DrawIndexed {
+                    indices,
+                    instances,
+                    first,
+                    base,
+                    first_instance,
+                } => {
                     if !has_pipeline || index_size.is_none() {
                         return Err("drawIndexed before setPipeline and setIndexBuffer".into());
                     }
                     check_count(*indices, *instances)?;
-                    rp.draw_indexed(*first..first.saturating_add(*indices), *base, *first_instance..first_instance.saturating_add(*instances));
+                    rp.draw_indexed(
+                        *first..first.saturating_add(*indices),
+                        *base,
+                        *first_instance..first_instance.saturating_add(*instances),
+                    );
                 }
-                Command::Viewport { x, y, width, height, min_depth, max_depth } => {
+                Command::Viewport {
+                    x,
+                    y,
+                    width,
+                    height,
+                    min_depth,
+                    max_depth,
+                } => {
                     check_viewport([*x, *y, *width, *height, *min_depth, *max_depth])?;
                     rp.set_viewport(*x, *y, *width, *height, *min_depth, *max_depth);
                 }
-                Command::Scissor { x, y, width, height } => {
+                Command::Scissor {
+                    x,
+                    y,
+                    width,
+                    height,
+                } => {
                     check_scissor(bounds, *x, *y, *width, *height)?;
                     rp.set_scissor_rect(*x, *y, *width, *height);
                 }
@@ -456,20 +598,37 @@ impl Compositor {
         if u.width == 0 || u.height == 0 {
             return Ok(());
         }
-        let texture = res.textures.get(u.texture.as_str()).ok_or("an upload into a texture that was not made")?;
-        let described = recording.textures.get(&u.texture).ok_or("an upload into a texture that is not in the recording")?;
-        let texel = wg::texel_bytes(&described.format).ok_or("an upload into a texture of an unknown format")?;
+        let texture = res
+            .textures
+            .get(u.texture.as_str())
+            .ok_or("an upload into a texture that was not made")?;
+        let described = recording
+            .textures
+            .get(&u.texture)
+            .ok_or("an upload into a texture that is not in the recording")?;
+        let texel = wg::texel_bytes(&described.format)
+            .ok_or("an upload into a texture of an unknown format")?;
         let bytes = match &u.source {
             Source::Layer(id) => {
                 // The child's picture, already turned over and premultiplied the way this upload asks.
                 let key = input_key(id, u.flip_y, u.premultiply);
-                let from = layers.get(&key).ok_or_else(|| format!("the layer {id:?} was not drawn, or is not a child of this group"))?;
+                let from = layers.get(&key).ok_or_else(|| {
+                    format!("the layer {id:?} was not drawn, or is not a child of this group")
+                })?;
                 if !matches!(described.format.as_str(), "rgba8unorm" | "rgba8unorm-srgb") {
-                    return Err(format!("a layer copied into a texture of format {}; use rgba8unorm", described.format));
+                    return Err(format!(
+                        "a layer copied into a texture of format {}; use rgba8unorm",
+                        described.format
+                    ));
                 }
                 // A turned-over picture counts its rows from the other end.
                 let sy = if u.flip_y {
-                    size.1.checked_sub(u.sy.checked_add(u.height).ok_or("a layer rectangle overflows")?).ok_or("a layer rectangle is outside the layer")?
+                    size.1
+                        .checked_sub(
+                            u.sy.checked_add(u.height)
+                                .ok_or("a layer rectangle overflows")?,
+                        )
+                        .ok_or("a layer rectangle is outside the layer")?
                 } else {
                     u.sy
                 };
@@ -482,18 +641,36 @@ impl Compositor {
                 return Ok(());
             }
             Source::Raw(id) => {
-                let bytes = decode_blob(recording.blobs.get(id).ok_or("data that is not in the recording")?)?;
+                let bytes = decode_blob(
+                    recording
+                        .blobs
+                        .get(id)
+                        .ok_or("data that is not in the recording")?,
+                )?;
                 let want = wg::packed_len(u.width, u.height, texel)?;
                 if bytes.len() != want {
-                    return Err(format!("an upload of {} x {} texels needs {want} bytes, the recording holds {}", u.width, u.height, bytes.len()));
+                    return Err(format!(
+                        "an upload of {} x {} texels needs {want} bytes, the recording holds {}",
+                        u.width,
+                        u.height,
+                        bytes.len()
+                    ));
                 }
                 bytes
             }
             Source::Pixels { id, width, height } => {
-                let all = decode_blob(recording.blobs.get(id).ok_or("pixels that are not in the recording")?)?;
+                let all = decode_blob(
+                    recording
+                        .blobs
+                        .get(id)
+                        .ok_or("pixels that are not in the recording")?,
+                )?;
                 let want = wg::packed_len(*width, *height, 4)?;
                 if all.len() != want {
-                    return Err(format!("pixels of {width} x {height} need {want} bytes, the recording holds {}", all.len()));
+                    return Err(format!(
+                        "pixels of {width} x {height} need {want} bytes, the recording holds {}",
+                        all.len()
+                    ));
                 }
                 picture_pixels(&all, (*width, *height), u, described)?
             }
@@ -506,12 +683,18 @@ impl Compositor {
                 picture_pixels(&picture.rgba, (picture.width, picture.height), u, described)?
             }
         };
-        let (padded, bytes_per_row) = pad_rows(&bytes, (u.width as usize) * texel as usize, u.height as usize)?;
-        let staging = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("webgpu upload"),
-            contents: &padded,
-            usage: wgpu::BufferUsages::COPY_SRC,
-        });
+        let (padded, bytes_per_row) = pad_rows(
+            &bytes,
+            (u.width as usize) * texel as usize,
+            u.height as usize,
+        )?;
+        let staging = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("webgpu upload"),
+                contents: &padded,
+                usage: wgpu::BufferUsages::COPY_SRC,
+            });
         encoder.copy_buffer_to_texture(
             wgpu::TexelCopyBufferInfo {
                 buffer: &staging,
@@ -529,33 +712,32 @@ impl Compositor {
 
     /// A picture file (or `data:` URL) decoded, kept while it is used.
     fn webgpu_picture(&mut self, src: &str, base_dir: &Path) -> Fail<Arc<Picture>> {
-        let stamp = if src.starts_with("data:") { String::new() } else { file_stamp(&base_dir.join(src)) };
+        let stamp = if src.starts_with("data:") {
+            String::new()
+        } else {
+            file_stamp(&base_dir.join(src))
+        };
         let key = format!("{src}|{stamp}");
         if let Some(p) = self.glsl.webgpu.pictures.get(&key) {
             return Ok(p.clone());
         }
-        let texture = GlslTexture {
-            src: Some(src.to_string()),
-            pixels: None,
-            layer: None,
-            width: 0,
-            height: 0,
-            flip_y: false,
-            premultiply: false,
-            mipmaps: false,
-            target: false,
-        };
-        let (rgba, width, height) = gl::decode_texture(&texture, base_dir)?;
+        let (rgba, width, height) = gl::decode_picture(Some(src), None, (0, 0), base_dir)?;
         let limit = self.device.limits().max_texture_dimension_2d;
         if width > limit || height > limit {
-            return Err(format!("a {width} x {height} picture; the device holds {limit} across"));
+            return Err(format!(
+                "a {width} x {height} picture; the device holds {limit} across"
+            ));
         }
         if self.glsl.webgpu.picture_bytes + rgba.len() > MAX_PICTURE_BYTES {
             self.glsl.webgpu.pictures.clear();
             self.glsl.webgpu.picture_bytes = 0;
         }
         self.glsl.webgpu.picture_bytes += rgba.len();
-        let picture = Arc::new(Picture { rgba, width, height });
+        let picture = Arc::new(Picture {
+            rgba,
+            width,
+            height,
+        });
         self.glsl.webgpu.pictures.insert(key, picture.clone());
         Ok(picture)
     }
@@ -569,9 +751,18 @@ impl Compositor {
             }
             crate::video::init();
             let path = base_dir.join(src);
-            let info = crate::video::probe(&path).map_err(|e| format!("video {}: {e}", path.display()))?;
-            let decoder = VideoDecoder::open(&path, info.clone()).map_err(|e| format!("video {}: {e}", path.display()))?;
-            self.glsl.webgpu.videos.insert(src.to_string(), Clip { info, decoder, last: None });
+            let info =
+                crate::video::probe(&path).map_err(|e| format!("video {}: {e}", path.display()))?;
+            let decoder = VideoDecoder::open(&path, info.clone())
+                .map_err(|e| format!("video {}: {e}", path.display()))?;
+            self.glsl.webgpu.videos.insert(
+                src.to_string(),
+                Clip {
+                    info,
+                    decoder,
+                    last: None,
+                },
+            );
         }
         let clip = self.glsl.webgpu.videos.get_mut(src).expect("opened above");
         let at = clip.info.media_time(time, clip.info.duration);
@@ -580,7 +771,10 @@ impl Compositor {
         {
             return Ok(picture.clone());
         }
-        let image = clip.decoder.picture(at.ts).map_err(|e| format!("video {src:?} at {time:.3} s: {e}"))?;
+        let image = clip
+            .decoder
+            .picture(at.ts)
+            .map_err(|e| format!("video {src:?} at {time:.3} s: {e}"))?;
         let picture = Arc::new(Picture {
             rgba: image.data.data().to_vec(),
             width: image.width,
@@ -619,28 +813,46 @@ impl Compositor {
             anisotropy_clamp: s.max_anisotropy.unwrap_or(1).clamp(1, 16) as u16,
             ..Default::default()
         });
-        self.glsl.webgpu.samplers.insert(id.to_string(), sampler.clone());
+        self.glsl
+            .webgpu
+            .samplers
+            .insert(id.to_string(), sampler.clone());
         sampler
     }
 
     fn webgpu_module(&mut self, recording: &WebGpuContent, id: &str) -> Fail<wgpu::ShaderModule> {
-        let code = recording.modules.get(id).ok_or_else(|| format!("module {id} is not in the recording"))?;
+        let code = recording
+            .modules
+            .get(id)
+            .ok_or_else(|| format!("module {id} is not in the recording"))?;
         if let Some(m) = self.glsl.webgpu.modules.get(code) {
             return Ok(m.clone());
         }
-        let module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("webgpu"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Owned(code.clone())),
-        });
-        self.glsl.webgpu.modules.insert(code.clone(), module.clone());
+        let module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("webgpu"),
+                source: wgpu::ShaderSource::Wgsl(Cow::Owned(code.clone())),
+            });
+        self.glsl
+            .webgpu
+            .modules
+            .insert(code.clone(), module.clone());
         Ok(module)
     }
 
-    fn webgpu_layout(&mut self, recording: &WebGpuContent, id: &str) -> Fail<wgpu::BindGroupLayout> {
+    fn webgpu_layout(
+        &mut self,
+        recording: &WebGpuContent,
+        id: &str,
+    ) -> Fail<wgpu::BindGroupLayout> {
         if let Some(l) = self.glsl.webgpu.layouts.get(id) {
             return Ok(l.clone());
         }
-        let entries = recording.layouts.get(id).ok_or_else(|| format!("bind group layout {id} is not in the recording"))?;
+        let entries = recording
+            .layouts
+            .get(id)
+            .ok_or_else(|| format!("bind group layout {id} is not in the recording"))?;
         let mut made = Vec::with_capacity(entries.len());
         for e in entries {
             let mut visibility = wgpu::ShaderStages::empty();
@@ -655,8 +867,14 @@ impl Compositor {
             }
             let ty = match e.ty.as_str() {
                 "uniform" => buffer_binding(wgpu::BufferBindingType::Uniform, e.dynamic_offset),
-                "storage" => buffer_binding(wgpu::BufferBindingType::Storage { read_only: false }, e.dynamic_offset),
-                "read-only-storage" => buffer_binding(wgpu::BufferBindingType::Storage { read_only: true }, e.dynamic_offset),
+                "storage" => buffer_binding(
+                    wgpu::BufferBindingType::Storage { read_only: false },
+                    e.dynamic_offset,
+                ),
+                "read-only-storage" => buffer_binding(
+                    wgpu::BufferBindingType::Storage { read_only: true },
+                    e.dynamic_offset,
+                ),
                 "storage-texture" => wgpu::BindingType::StorageTexture {
                     access: match e.access.as_deref().unwrap_or("write-only") {
                         "write-only" => wgpu::StorageTextureAccess::WriteOnly,
@@ -664,13 +882,19 @@ impl Compositor {
                         "read-write" => wgpu::StorageTextureAccess::ReadWrite,
                         other => return Err(format!("storage texture access {other}")),
                     },
-                    format: texture_format(e.format.as_deref().ok_or("a storage texture without a format")?)?,
+                    format: texture_format(
+                        e.format
+                            .as_deref()
+                            .ok_or("a storage texture without a format")?,
+                    )?,
                     view_dimension: wgpu::TextureViewDimension::D2,
                 },
                 "texture" => wgpu::BindingType::Texture {
                     sample_type: match e.sample_type.as_deref().unwrap_or("float") {
                         "float" => wgpu::TextureSampleType::Float { filterable: true },
-                        "unfilterable-float" => wgpu::TextureSampleType::Float { filterable: false },
+                        "unfilterable-float" => {
+                            wgpu::TextureSampleType::Float { filterable: false }
+                        }
                         "sint" => wgpu::TextureSampleType::Sint,
                         "uint" => wgpu::TextureSampleType::Uint,
                         other => return Err(format!("texture sample type {other}")),
@@ -678,11 +902,13 @@ impl Compositor {
                     view_dimension: wgpu::TextureViewDimension::D2,
                     multisampled: false,
                 },
-                "sampler" => wgpu::BindingType::Sampler(match e.sampler_type.as_deref().unwrap_or("filtering") {
-                    "filtering" => wgpu::SamplerBindingType::Filtering,
-                    "non-filtering" => wgpu::SamplerBindingType::NonFiltering,
-                    other => return Err(format!("sampler binding type {other}")),
-                }),
+                "sampler" => wgpu::BindingType::Sampler(
+                    match e.sampler_type.as_deref().unwrap_or("filtering") {
+                        "filtering" => wgpu::SamplerBindingType::Filtering,
+                        "non-filtering" => wgpu::SamplerBindingType::NonFiltering,
+                        other => return Err(format!("sampler binding type {other}")),
+                    },
+                ),
                 other => return Err(format!("binding type {other}")),
             };
             made.push(wgpu::BindGroupLayoutEntry {
@@ -692,20 +918,33 @@ impl Compositor {
                 count: None,
             });
         }
-        let layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("webgpu"),
-            entries: &made,
-        });
-        self.glsl.webgpu.layouts.insert(id.to_string(), layout.clone());
+        let layout = self
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("webgpu"),
+                entries: &made,
+            });
+        self.glsl
+            .webgpu
+            .layouts
+            .insert(id.to_string(), layout.clone());
         Ok(layout)
     }
 
-    fn webgpu_pipeline(&mut self, recording: &WebGpuContent, id: &str, canvas: bool) -> Fail<wgpu::RenderPipeline> {
+    fn webgpu_pipeline(
+        &mut self,
+        recording: &WebGpuContent,
+        id: &str,
+        canvas: bool,
+    ) -> Fail<wgpu::RenderPipeline> {
         let key = format!("{id}|{}", u8::from(canvas));
         if let Some(p) = self.glsl.webgpu.pipelines.get(&key) {
             return Ok(p.clone());
         }
-        let spec = recording.pipelines.get(id).ok_or_else(|| format!("pipeline {id} is not in the recording"))?;
+        let spec = recording
+            .pipelines
+            .get(id)
+            .ok_or_else(|| format!("pipeline {id} is not in the recording"))?;
         let vertex = self.webgpu_module(recording, &spec.vertex.module)?;
         let fragment = match &spec.fragment {
             Some(f) => Some(self.webgpu_module(recording, &f.module)?),
@@ -718,11 +957,14 @@ impl Compositor {
                     .map(|l| self.webgpu_layout(recording, l))
                     .collect::<Fail<_>>()?;
                 let refs: Vec<Option<&wgpu::BindGroupLayout>> = layouts.iter().map(Some).collect();
-                Some(self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("webgpu"),
-                    bind_group_layouts: &refs,
-                    immediate_size: 0,
-                }))
+                Some(
+                    self.device
+                        .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                            label: Some("webgpu"),
+                            bind_group_layouts: &refs,
+                            immediate_size: 0,
+                        }),
+                )
             }
             None => None,
         };
@@ -788,89 +1030,131 @@ impl Compositor {
             "triangle-strip" => wgpu::PrimitiveTopology::TriangleStrip,
             other => return Err(format!("topology {other}")),
         };
-        let pipeline = self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("webgpu"),
-            layout: layout.as_ref(),
-            vertex: wgpu::VertexState {
-                module: &vertex,
-                entry_point: spec.vertex.entry_point.as_deref(),
-                compilation_options: Default::default(),
-                buffers: &buffers,
-            },
-            fragment: match (&spec.fragment, &fragment) {
-                (Some(f), Some(module)) => Some(wgpu::FragmentState {
-                    module,
-                    entry_point: f.entry_point.as_deref(),
+        let pipeline = self
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("webgpu"),
+                layout: layout.as_ref(),
+                vertex: wgpu::VertexState {
+                    module: &vertex,
+                    entry_point: spec.vertex.entry_point.as_deref(),
                     compilation_options: Default::default(),
-                    targets: &targets,
-                }),
-                _ => None,
-            },
-            primitive: wgpu::PrimitiveState {
-                topology,
-                strip_index_format: match p.strip_index_format.as_deref() {
-                    Some("uint16") => Some(wgpu::IndexFormat::Uint16),
-                    Some("uint32") => Some(wgpu::IndexFormat::Uint32),
+                    buffers: &buffers,
+                },
+                fragment: match (&spec.fragment, &fragment) {
+                    (Some(f), Some(module)) => Some(wgpu::FragmentState {
+                        module,
+                        entry_point: f.entry_point.as_deref(),
+                        compilation_options: Default::default(),
+                        targets: &targets,
+                    }),
                     _ => None,
                 },
-                front_face: if p.front_face == "cw" { wgpu::FrontFace::Cw } else { wgpu::FrontFace::Ccw },
-                cull_mode: match p.cull_mode.as_str() {
-                    "front" => Some(wgpu::Face::Front),
-                    "back" => Some(wgpu::Face::Back),
-                    _ => None,
+                primitive: wgpu::PrimitiveState {
+                    topology,
+                    strip_index_format: match p.strip_index_format.as_deref() {
+                        Some("uint16") => Some(wgpu::IndexFormat::Uint16),
+                        Some("uint32") => Some(wgpu::IndexFormat::Uint32),
+                        _ => None,
+                    },
+                    front_face: if p.front_face == "cw" {
+                        wgpu::FrontFace::Cw
+                    } else {
+                        wgpu::FrontFace::Ccw
+                    },
+                    cull_mode: match p.cull_mode.as_str() {
+                        "front" => Some(wgpu::Face::Front),
+                        "back" => Some(wgpu::Face::Back),
+                        _ => None,
+                    },
+                    ..Default::default()
                 },
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
+            });
         self.glsl.webgpu.pipelines.insert(key, pipeline.clone());
         Ok(pipeline)
     }
 
-    fn webgpu_compute_pipeline(&mut self, recording: &WebGpuContent, id: &str) -> Fail<wgpu::ComputePipeline> {
+    fn webgpu_compute_pipeline(
+        &mut self,
+        recording: &WebGpuContent,
+        id: &str,
+    ) -> Fail<wgpu::ComputePipeline> {
         if let Some(p) = self.glsl.webgpu.compute.get(id) {
             return Ok(p.clone());
         }
-        let spec = recording.compute_pipelines.get(id).ok_or_else(|| format!("compute pipeline {id} is not in the recording"))?;
+        let spec = recording
+            .compute_pipelines
+            .get(id)
+            .ok_or_else(|| format!("compute pipeline {id} is not in the recording"))?;
         let module = self.webgpu_module(recording, &spec.module)?;
         let layout = match &spec.layout {
             Some(ids) => {
-                let layouts: Vec<wgpu::BindGroupLayout> = ids.iter().map(|l| self.webgpu_layout(recording, l)).collect::<Fail<_>>()?;
+                let layouts: Vec<wgpu::BindGroupLayout> = ids
+                    .iter()
+                    .map(|l| self.webgpu_layout(recording, l))
+                    .collect::<Fail<_>>()?;
                 let refs: Vec<Option<&wgpu::BindGroupLayout>> = layouts.iter().map(Some).collect();
-                Some(self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("webgpu compute"),
-                    bind_group_layouts: &refs,
-                    immediate_size: 0,
-                }))
+                Some(
+                    self.device
+                        .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                            label: Some("webgpu compute"),
+                            bind_group_layouts: &refs,
+                            immediate_size: 0,
+                        }),
+                )
             }
             None => None,
         };
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("webgpu compute"),
-            layout: layout.as_ref(),
-            module: &module,
-            entry_point: spec.entry_point.as_deref(),
-            compilation_options: Default::default(),
-            cache: None,
-        });
-        self.glsl.webgpu.compute.insert(id.to_string(), pipeline.clone());
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("webgpu compute"),
+                layout: layout.as_ref(),
+                module: &module,
+                entry_point: spec.entry_point.as_deref(),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+        self.glsl
+            .webgpu
+            .compute
+            .insert(id.to_string(), pipeline.clone());
         Ok(pipeline)
     }
 
-    fn webgpu_bind_group(&mut self, recording: &WebGpuContent, id: &str, res: &Resources<'_>) -> Fail<wgpu::BindGroup> {
-        let spec = recording.bind_groups.get(id).ok_or_else(|| format!("bind group {id} is not in the recording"))?;
+    fn webgpu_bind_group(
+        &mut self,
+        recording: &WebGpuContent,
+        id: &str,
+        res: &Resources<'_>,
+    ) -> Fail<wgpu::BindGroup> {
+        let spec = recording
+            .bind_groups
+            .get(id)
+            .ok_or_else(|| format!("bind group {id} is not in the recording"))?;
         let layout = if let Some(rest) = spec.layout.strip_prefix("auto:") {
-            let (pipeline, index) = rest.rsplit_once(':').ok_or("a malformed automatic layout")?;
+            let (pipeline, index) = rest
+                .rsplit_once(':')
+                .ok_or("a malformed automatic layout")?;
             let index: u32 = index.parse().map_err(|_| "a malformed automatic layout")?;
             // The layout is the pipeline's whichever target it draws into.
-            match res.pipelines.get(&(pipeline, true)).or_else(|| res.pipelines.get(&(pipeline, false))) {
+            match res
+                .pipelines
+                .get(&(pipeline, true))
+                .or_else(|| res.pipelines.get(&(pipeline, false)))
+            {
                 Some(p) => p.get_bind_group_layout(index),
                 None => match res.compute.get(pipeline) {
                     Some(p) => p.get_bind_group_layout(index),
-                    None => return Err(format!("the bind group {id} uses the layout of a pipeline no pass sets")),
+                    None => {
+                        return Err(format!(
+                            "the bind group {id} uses the layout of a pipeline no pass sets"
+                        ));
+                    }
                 },
             }
         } else {
@@ -881,7 +1165,10 @@ impl Compositor {
         for e in &spec.entries {
             views.push(match &e.texture {
                 Some(v) => {
-                    let texture = res.textures.get(v.id.as_str()).ok_or_else(|| format!("texture {} was not made", v.id))?;
+                    let texture = res
+                        .textures
+                        .get(v.id.as_str())
+                        .ok_or_else(|| format!("texture {} was not made", v.id))?;
                     Some(texture.create_view(&wgpu::TextureViewDescriptor {
                         base_mip_level: v.base_mip,
                         mip_level_count: Some(v.mips),
@@ -903,9 +1190,16 @@ impl Compositor {
             } else if let Some(view) = view {
                 wgpu::BindingResource::TextureView(view)
             } else if let Some(sampler) = &e.sampler {
-                wgpu::BindingResource::Sampler(res.samplers.get(sampler.as_str()).ok_or_else(|| format!("sampler {sampler} was not made"))?)
+                wgpu::BindingResource::Sampler(
+                    res.samplers
+                        .get(sampler.as_str())
+                        .ok_or_else(|| format!("sampler {sampler} was not made"))?,
+                )
             } else {
-                return Err(format!("binding {} of the bind group {id} holds nothing", e.binding));
+                return Err(format!(
+                    "binding {} of the bind group {id} holds nothing",
+                    e.binding
+                ));
             };
             entries.push(wgpu::BindGroupEntry {
                 binding: e.binding,
@@ -921,7 +1215,11 @@ impl Compositor {
 }
 
 /// One compute pass: the pipeline, the bind groups and the dispatches, in order.
-fn webgpu_compute(encoder: &mut wgpu::CommandEncoder, res: &Resources<'_>, pass: &wg::ComputePass) -> Fail<()> {
+fn webgpu_compute(
+    encoder: &mut wgpu::CommandEncoder,
+    res: &Resources<'_>,
+    pass: &wg::ComputePass,
+) -> Fail<()> {
     let mut cp = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
         label: Some("webgpu compute"),
         timestamp_writes: None,
@@ -930,11 +1228,22 @@ fn webgpu_compute(encoder: &mut wgpu::CommandEncoder, res: &Resources<'_>, pass:
     for command in &pass.commands {
         match command {
             wg::ComputeCommand::Pipeline { id } => {
-                cp.set_pipeline(res.compute.get(id.as_str()).ok_or("a compute pipeline that was not made")?);
+                cp.set_pipeline(
+                    res.compute
+                        .get(id.as_str())
+                        .ok_or("a compute pipeline that was not made")?,
+                );
                 has_pipeline = true;
             }
-            wg::ComputeCommand::Bind { index, group, offsets } => {
-                let group = res.groups.get(group.as_str()).ok_or("a bind group that was not made")?;
+            wg::ComputeCommand::Bind {
+                index,
+                group,
+                offsets,
+            } => {
+                let group = res
+                    .groups
+                    .get(group.as_str())
+                    .ok_or("a bind group that was not made")?;
                 cp.set_bind_group(*index, group, offsets);
             }
             wg::ComputeCommand::Dispatch { x, y, z } => {
@@ -973,7 +1282,12 @@ fn extent(width: u32, height: u32) -> wgpu::Extent3d {
     }
 }
 
-fn texel_info(texture: &wgpu::Texture, mip_level: u32, x: u32, y: u32) -> wgpu::TexelCopyTextureInfo<'_> {
+fn texel_info(
+    texture: &wgpu::Texture,
+    mip_level: u32,
+    x: u32,
+    y: u32,
+) -> wgpu::TexelCopyTextureInfo<'_> {
     wgpu::TexelCopyTextureInfo {
         texture,
         mip_level,
@@ -1024,15 +1338,33 @@ fn texture_format(name: &str) -> Fail<wgpu::TextureFormat> {
 /// Bytes from a recording's base64, refusing what could not fit the frame's texture memory anyway.
 fn decode_blob(base64: &str) -> Fail<Vec<u8>> {
     if (base64.len() / 4) as u64 * 3 > wg::MAX_TEXTURE_BYTES {
-        return Err(format!("{} bytes of data in a frame; the textures may hold {}", base64.len() / 4 * 3, wg::MAX_TEXTURE_BYTES));
+        return Err(format!(
+            "{} bytes of data in a frame; the textures may hold {}",
+            base64.len() / 4 * 3,
+            wg::MAX_TEXTURE_BYTES
+        ));
     }
-    base64::engine::general_purpose::STANDARD.decode(base64).map_err(|e| format!("data that is not base64: {e}"))
+    base64::engine::general_purpose::STANDARD
+        .decode(base64)
+        .map_err(|e| format!("data that is not base64: {e}"))
 }
 
 /// What an upload from a picture of `picture` pixels writes: the rectangle `sx`, `sy` of it, turned over when asked,
 /// multiplied by its alpha when asked, and in the byte order of the texture's format.
-fn picture_pixels(rgba: &[u8], picture: (u32, u32), u: &wg::Upload, texture: &wg::Texture) -> Fail<Vec<u8>> {
-    wg::rect_in("an upload from a picture", picture, u.sx, u.sy, u.width, u.height)?;
+fn picture_pixels(
+    rgba: &[u8],
+    picture: (u32, u32),
+    u: &wg::Upload,
+    texture: &wg::Texture,
+) -> Fail<Vec<u8>> {
+    wg::rect_in(
+        "an upload from a picture",
+        picture,
+        u.sx,
+        u.sy,
+        u.width,
+        u.height,
+    )?;
     if rgba.len() != wg::packed_len(picture.0, picture.1, 4)? {
         return Err("a picture's pixels are not its width x height x 4 bytes".into());
     }
@@ -1094,8 +1426,14 @@ fn swap_red_blue(rgba: &mut [u8]) {
 fn pad_rows(bytes: &[u8], row: usize, height: usize) -> Fail<(Vec<u8>, u32)> {
     let align = ROW_ALIGN as usize;
     let padded = row.checked_add(align - 1).ok_or("a row's size overflows")? / align * align;
-    let total = padded.checked_mul(height).ok_or("an upload's size overflows")?;
-    if bytes.len() != row.checked_mul(height).ok_or("an upload's size overflows")? {
+    let total = padded
+        .checked_mul(height)
+        .ok_or("an upload's size overflows")?;
+    if bytes.len()
+        != row
+            .checked_mul(height)
+            .ok_or("an upload's size overflows")?
+    {
         return Err("an upload does not hold width x height texels".into());
     }
     let mut out = vec![0u8; total];
@@ -1107,12 +1445,20 @@ fn pad_rows(bytes: &[u8], row: usize, height: usize) -> Fail<(Vec<u8>, u32)> {
 
 /// A buffer of the recording, whether the page's bytes made it or the GPU writes it.
 fn buffer_in<'a>(res: &'a Resources<'_>, id: &str) -> Fail<&'a wgpu::Buffer> {
-    res.buffers.get(id).or_else(|| res.gpu_buffers.get(id)).ok_or_else(|| format!("buffer {id} is not in the recording"))
+    res.buffers
+        .get(id)
+        .or_else(|| res.gpu_buffers.get(id))
+        .ok_or_else(|| format!("buffer {id} is not in the recording"))
 }
 
 /// A range of a buffer to bind. wgpu panics on an empty slice, so it is refused here, with offsets that are not
 /// aligned (`align`: 4 for a vertex buffer, the index size for an index buffer).
-fn slice(buffer: &wgpu::Buffer, offset: u64, size: Option<u64>, align: u64) -> Fail<wgpu::BufferSlice<'_>> {
+fn slice(
+    buffer: &wgpu::Buffer,
+    offset: u64,
+    size: Option<u64>,
+    align: u64,
+) -> Fail<wgpu::BufferSlice<'_>> {
     let end = checked_range(buffer.size(), offset, size, align)?;
     Ok(buffer.slice(offset..end))
 }
@@ -1120,17 +1466,23 @@ fn slice(buffer: &wgpu::Buffer, offset: u64, size: Option<u64>, align: u64) -> F
 /// The end of the range `offset` and `size` name in a buffer of `length` bytes, if it is a range wgpu accepts.
 fn checked_range(length: u64, offset: u64, size: Option<u64>, align: u64) -> Fail<u64> {
     if !offset.is_multiple_of(align) {
-        return Err(format!("the offset {offset} of a bound buffer is not a multiple of {align}"));
+        return Err(format!(
+            "the offset {offset} of a bound buffer is not a multiple of {align}"
+        ));
     }
     let end = match size {
         Some(s) => offset.checked_add(s).ok_or("a buffer range overflows")?,
         None => length,
     };
     if offset >= end {
-        return Err(format!("the range {offset}..{end} of a bound buffer is empty"));
+        return Err(format!(
+            "the range {offset}..{end} of a bound buffer is empty"
+        ));
     }
     if end > length {
-        return Err(format!("the range {offset}..{end} is outside a buffer of {length} bytes"));
+        return Err(format!(
+            "the range {offset}..{end} is outside a buffer of {length} bytes"
+        ));
     }
     Ok(end)
 }
@@ -1146,14 +1498,22 @@ fn check_scissor(bounds: (u32, u32), x: u32, y: u32, width: u32, height: u32) ->
 /// A viewport has finite numbers and a size.
 fn check_viewport(v: [f32; 6]) -> Fail<()> {
     if !v.iter().all(|n| n.is_finite()) || v[2] <= 0.0 || v[3] <= 0.0 {
-        return Err(format!("setViewport({}, {}, {}, {}, {}, {}) is not a viewport", v[0], v[1], v[2], v[3], v[4], v[5]));
+        return Err(format!(
+            "setViewport({}, {}, {}, {}, {}, {}) is not a viewport",
+            v[0], v[1], v[2], v[3], v[4], v[5]
+        ));
     }
     Ok(())
 }
 
 fn check_count(vertices: u32, instances: u32) -> Fail<()> {
-    if vertices > MAX_VERTICES || instances > MAX_VERTICES || u64::from(vertices) * u64::from(instances) > u64::from(MAX_VERTICES) {
-        return Err(format!("a draw of {vertices} vertices and {instances} instances is too large"));
+    if vertices > MAX_VERTICES
+        || instances > MAX_VERTICES
+        || u64::from(vertices) * u64::from(instances) > u64::from(MAX_VERTICES)
+    {
+        return Err(format!(
+            "a draw of {vertices} vertices and {instances} instances is too large"
+        ));
     }
     Ok(())
 }
@@ -1247,22 +1607,58 @@ mod tests {
     fn an_empty_misaligned_or_outside_range_is_refused_not_a_panic() {
         assert_eq!(checked_range(64, 0, None, 4), Ok(64));
         assert_eq!(checked_range(64, 16, Some(16), 4), Ok(32));
-        assert!(checked_range(64, 64, None, 4).unwrap_err().contains("empty"));
-        assert!(checked_range(64, 8, Some(0), 4).unwrap_err().contains("empty"));
-        assert!(checked_range(64, 2, Some(8), 4).unwrap_err().contains("multiple of 4"));
+        assert!(
+            checked_range(64, 64, None, 4)
+                .unwrap_err()
+                .contains("empty")
+        );
+        assert!(
+            checked_range(64, 8, Some(0), 4)
+                .unwrap_err()
+                .contains("empty")
+        );
+        assert!(
+            checked_range(64, 2, Some(8), 4)
+                .unwrap_err()
+                .contains("multiple of 4")
+        );
         assert!(checked_range(64, 2, Some(8), 2).is_ok());
-        assert!(checked_range(64, 1, Some(8), 2).unwrap_err().contains("multiple of 2"));
-        assert!(checked_range(64, 60, Some(8), 4).unwrap_err().contains("outside"));
-        assert!(checked_range(64, 8, Some(u64::MAX), 4).unwrap_err().contains("overflows"));
+        assert!(
+            checked_range(64, 1, Some(8), 2)
+                .unwrap_err()
+                .contains("multiple of 2")
+        );
+        assert!(
+            checked_range(64, 60, Some(8), 4)
+                .unwrap_err()
+                .contains("outside")
+        );
+        assert!(
+            checked_range(64, 8, Some(u64::MAX), 4)
+                .unwrap_err()
+                .contains("overflows")
+        );
     }
 
     #[test]
     fn a_scissor_and_a_viewport_are_checked_against_the_attachment() {
         assert!(check_scissor((8, 4), 0, 0, 8, 4).is_ok());
         assert!(check_scissor((8, 4), 7, 3, 1, 1).is_ok());
-        assert!(check_scissor((8, 4), 7, 3, 2, 1).unwrap_err().contains("outside"));
-        assert!(check_scissor((8, 4), 0, 0, 0, 1).unwrap_err().contains("empty"));
-        assert!(check_scissor((8, 4), u32::MAX, 0, 2, 1).unwrap_err().contains("overflows"));
+        assert!(
+            check_scissor((8, 4), 7, 3, 2, 1)
+                .unwrap_err()
+                .contains("outside")
+        );
+        assert!(
+            check_scissor((8, 4), 0, 0, 0, 1)
+                .unwrap_err()
+                .contains("empty")
+        );
+        assert!(
+            check_scissor((8, 4), u32::MAX, 0, 2, 1)
+                .unwrap_err()
+                .contains("overflows")
+        );
         assert!(check_viewport([0.0, 0.0, 8.0, 4.0, 0.0, 1.0]).is_ok());
         assert!(check_viewport([0.0, 0.0, 0.0, 4.0, 0.0, 1.0]).is_err());
         assert!(check_viewport([f32::NAN, 0.0, 8.0, 4.0, 0.0, 1.0]).is_err());
@@ -1272,7 +1668,12 @@ mod tests {
     #[test]
     fn rows_are_padded_to_the_copy_alignment_and_only_whole_uploads_are_padded() {
         // Two texels of 4 bytes a row: 8 bytes, padded to 256.
-        let (padded, row) = pad_rows(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], 8, 2).unwrap();
+        let (padded, row) = pad_rows(
+            &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            8,
+            2,
+        )
+        .unwrap();
         assert_eq!(row, 256);
         assert_eq!(padded.len(), 512);
         assert_eq!(&padded[..8], &[1, 2, 3, 4, 5, 6, 7, 8]);
@@ -1280,15 +1681,30 @@ mod tests {
         assert!(padded[8..256].iter().all(|b| *b == 0));
         // A row of exactly 256 bytes needs none.
         assert_eq!(pad_rows(&[0; 512], 256, 2).unwrap().1, 256);
-        assert!(pad_rows(&[0; 7], 8, 1).unwrap_err().contains("width x height"));
-        assert!(pad_rows(&[], usize::MAX, 2).unwrap_err().contains("overflows"));
+        assert!(
+            pad_rows(&[0; 7], 8, 1)
+                .unwrap_err()
+                .contains("width x height")
+        );
+        assert!(
+            pad_rows(&[], usize::MAX, 2)
+                .unwrap_err()
+                .contains("overflows")
+        );
     }
 
     #[test]
     fn a_picture_is_cropped_turned_over_premultiplied_and_swizzled_in_that_order() {
         // 2 x 2: red, green / blue, half-transparent white.
-        let rgba = [255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 128];
-        let texture = |format: &str| wg::Texture { width: 4, height: 4, mips: 1, format: format.into() };
+        let rgba = [
+            255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 128,
+        ];
+        let texture = |format: &str| wg::Texture {
+            width: 4,
+            height: 4,
+            mips: 1,
+            format: format.into(),
+        };
         let upload = |x, y, w, h, flip_y, premultiply| wg::Upload {
             texture: "t".into(),
             mip: 0,
@@ -1303,20 +1719,80 @@ mod tests {
             premultiply,
         };
         // The bottom row only.
-        assert_eq!(picture_pixels(&rgba, (2, 2), &upload(0, 1, 2, 1, false, false), &texture("rgba8unorm")).unwrap(), rgba[8..]);
+        assert_eq!(
+            picture_pixels(
+                &rgba,
+                (2, 2),
+                &upload(0, 1, 2, 1, false, false),
+                &texture("rgba8unorm")
+            )
+            .unwrap(),
+            rgba[8..]
+        );
         // The right column, turned over: white then green.
         assert_eq!(
-            picture_pixels(&rgba, (2, 2), &upload(1, 0, 1, 2, true, false), &texture("rgba8unorm")).unwrap(),
+            picture_pixels(
+                &rgba,
+                (2, 2),
+                &upload(1, 0, 1, 2, true, false),
+                &texture("rgba8unorm")
+            )
+            .unwrap(),
             [255, 255, 255, 128, 0, 255, 0, 255]
         );
         // Premultiplied: 255 * 128 / 255 rounds to 128.
-        assert_eq!(picture_pixels(&rgba, (2, 2), &upload(1, 1, 1, 1, false, true), &texture("rgba8unorm")).unwrap(), [128, 128, 128, 128]);
+        assert_eq!(
+            picture_pixels(
+                &rgba,
+                (2, 2),
+                &upload(1, 1, 1, 1, false, true),
+                &texture("rgba8unorm")
+            )
+            .unwrap(),
+            [128, 128, 128, 128]
+        );
         // bgra puts blue first.
-        assert_eq!(picture_pixels(&rgba, (2, 2), &upload(0, 0, 1, 1, false, false), &texture("bgra8unorm")).unwrap(), [0, 0, 255, 255]);
+        assert_eq!(
+            picture_pixels(
+                &rgba,
+                (2, 2),
+                &upload(0, 0, 1, 1, false, false),
+                &texture("bgra8unorm")
+            )
+            .unwrap(),
+            [0, 0, 255, 255]
+        );
         // Outside the picture, or with pixels that are not the size it says, is an error and not an index panic.
-        assert!(picture_pixels(&rgba, (2, 2), &upload(1, 1, 2, 1, false, false), &texture("rgba8unorm")).unwrap_err().contains("outside"));
-        assert!(picture_pixels(&rgba[..12], (2, 2), &upload(0, 0, 1, 1, false, false), &texture("rgba8unorm")).unwrap_err().contains("not its width"));
-        assert!(picture_pixels(&rgba, (2, 2), &upload(u32::MAX, 0, 2, 1, false, false), &texture("rgba8unorm")).unwrap_err().contains("overflows"));
+        assert!(
+            picture_pixels(
+                &rgba,
+                (2, 2),
+                &upload(1, 1, 2, 1, false, false),
+                &texture("rgba8unorm")
+            )
+            .unwrap_err()
+            .contains("outside")
+        );
+        assert!(
+            picture_pixels(
+                &rgba[..12],
+                (2, 2),
+                &upload(0, 0, 1, 1, false, false),
+                &texture("rgba8unorm")
+            )
+            .unwrap_err()
+            .contains("not its width")
+        );
+        assert!(
+            picture_pixels(
+                &rgba,
+                (2, 2),
+                &upload(u32::MAX, 0, 2, 1, false, false),
+                &texture("rgba8unorm")
+            )
+            .unwrap_err()
+            .contains("overflows")
+        );
     }
 
     #[test]
@@ -1329,11 +1805,20 @@ mod tests {
 
     #[test]
     fn the_formats_the_page_names_map_to_the_device_and_others_are_refused() {
-        assert_eq!(texture_format("bgra8unorm-srgb"), Ok(wgpu::TextureFormat::Bgra8UnormSrgb));
-        assert_eq!(texture_format("rgba16float"), Ok(wgpu::TextureFormat::Rgba16Float));
+        assert_eq!(
+            texture_format("bgra8unorm-srgb"),
+            Ok(wgpu::TextureFormat::Bgra8UnormSrgb)
+        );
+        assert_eq!(
+            texture_format("rgba16float"),
+            Ok(wgpu::TextureFormat::Rgba16Float)
+        );
         assert!(texture_format("depth24plus").is_err());
         for name in wg::TEXTURE_FORMATS.replace(" and ", ", ").split(", ") {
-            assert!(wg::texel_bytes(name).is_some() && texture_format(name).is_ok(), "{name}");
+            assert!(
+                wg::texel_bytes(name).is_some() && texture_format(name).is_ok(),
+                "{name}"
+            );
         }
     }
 }
