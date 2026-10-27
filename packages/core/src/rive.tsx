@@ -4,6 +4,7 @@
 // Remotion. A frame is played from the file's start to the frame's time, never from what was played before, with the
 // state machine inputs given for each frame up to it.
 
+import { statSync } from 'node:fs';
 import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useReducer, useRef, type ForwardedRef, type ReactNode } from 'react';
 import { addonFunction, getDomEnvironment, hasAddonFunction, resolveProjectFile } from '@kinetographdev/compat/dom';
 import type { CanvasCommand } from '@kinetographdev/scene';
@@ -50,7 +51,10 @@ export interface RemotionRiveCanvasProps {
   style?: Record<string, string | number | undefined>;
   /** Called with the file (its artboards, animations and state machines) when the canvas renders. */
   onLoad?: (file: RiveFile) => void;
-  /** Called for each asset of the file: decode bytes into it (`asset.decode(bytes)`) and answer true, or answer false. */
+  /**
+   * Called once per file for each asset: decode bytes into it (`asset.decode(bytes)`) and answer true, or answer false.
+   * One that answers true and decodes later holds the frame until it does.
+   */
   assetLoader?: (asset: RiveFileAsset, bytes: Uint8Array) => boolean;
   effects?: EffectsProp;
   effectsOutputSize?: EffectsOutputSize | null;
@@ -267,18 +271,40 @@ function chosen<T extends { name: string }>(list: T[], select: string | number |
 
 // ---- assets given by `assetLoader` ----
 
-/** The bytes `assetLoader` gave a file's assets, by file name, once its promises settled. Kept per file and loader. */
-const given = new WeakMap<object, Map<string, { assets: Record<string, string>; pending: Promise<void> | null }>>();
+interface LoadedAssets {
+  /** By file name, base64; replaced by a new object when the loader's later work settles, so memos see it. */
+  assets: Record<string, string>;
+  /** Settles when every asset the loader answered true for has been decoded (or its decode promise failed). */
+  pending: Promise<void> | null;
+}
 
-function runLoader(src: string, info: FileInfo, loader: NonNullable<RemotionRiveCanvasProps['assetLoader']>) {
-  let perFile = given.get(loader);
-  if (!perFile) given.set(loader, (perFile = new Map()));
-  const known = perFile.get(src);
+/**
+ * What `assetLoader` gave a file's assets, kept by the file (path and modification time) and the loader's source text:
+ * an inline arrow is a new function every render, and the same code for the same file gives the same assets.
+ */
+const given = new Map<string, LoadedAssets>();
+
+function runLoader(src: string, info: FileInfo, loader: NonNullable<RemotionRiveCanvasProps['assetLoader']>): LoadedAssets {
+  let stamp = '';
+  try {
+    stamp = String(statSync(src).mtimeMs);
+  } catch {
+    // A missing file fails in the addon, with its name.
+  }
+  const key = `${src}\u0000${stamp}\u0000${String(loader)}`;
+  const known = given.get(key);
   if (known) return known;
   const assets: Record<string, string> = {};
-  const promises: Promise<unknown>[] = [];
+  const waits: Promise<void>[] = [];
   for (const asset of info.assets) {
-    const use = (bytes: Uint8Array) => void (assets[asset.uniqueFilename] = Buffer.from(bytes).toString('base64'));
+    // Settles when the asset gets its bytes: a loader that answers true and decodes later (after a fetch, or a
+    // `decodeImage` promise) is waited for by that call itself, never by a timer (a render's timers are the frame's).
+    let decoded!: () => void;
+    const done = new Promise<void>((resolve) => (decoded = resolve));
+    const use = (bytes: Uint8Array) => {
+      assets[asset.uniqueFilename] = Buffer.from(bytes).toString('base64');
+      decoded();
+    };
     const proxy: RiveFileAsset = {
       name: asset.name,
       fileExtension: asset.fileExtension,
@@ -292,17 +318,17 @@ function runLoader(src: string, info: FileInfo, loader: NonNullable<RemotionRive
       setFont: (font) => use(font.bytes),
       setAudioSource: (audio) => use(audio.bytes),
     };
-    // A loader that answers true and has not decoded yet does so in a promise: wait for what it queued.
     const answer = loader(proxy, new Uint8Array(0));
-    if (answer && assets[asset.uniqueFilename] === undefined) promises.push(new Promise((resolve) => setTimeout(resolve, 0)));
+    if (answer && assets[asset.uniqueFilename] === undefined) waits.push(done);
   }
-  const entry: { assets: Record<string, string>; pending: Promise<void> | null } = { assets, pending: null };
-  if (promises.length > 0) {
-    entry.pending = Promise.all(promises).then(() => {
+  const entry: LoadedAssets = { assets: { ...assets }, pending: null };
+  if (waits.length > 0) {
+    entry.pending = Promise.all(waits).then(() => {
+      entry.assets = { ...assets };
       entry.pending = null;
     });
   }
-  perFile.set(src, entry);
+  given.set(key, entry);
   return entry;
 }
 
@@ -360,7 +386,7 @@ function Content(props: RemotionRiveCanvasProps, ref: ForwardedRef<RiveCanvasRef
   const loaded = assetLoader && bare ? runLoader(file, bare, assetLoader) : null;
   useLayoutEffect(() => {
     if (!loaded?.pending) return;
-    const handle = delayRender(`<RemotionRiveCanvas> assetLoader of ${src}`);
+    const handle = delayRender(`<RemotionRiveCanvas> assetLoader of ${src}: waiting for it to decode the assets it answered true for`);
     void loaded.pending.then(() => {
       rerender();
       continueRender(handle);

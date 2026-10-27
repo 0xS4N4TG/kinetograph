@@ -6,7 +6,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { setDomEnvironment } from '@kinetographdev/compat/dom';
-import { RemotionRiveCanvas, type RemotionRiveCanvasProps, type RiveCanvasRef, type RiveFile } from '../src/rive.js';
+import { RemotionRiveCanvas, decodeImage, type RemotionRiveCanvasProps, type RiveCanvasRef, type RiveFile } from '../src/rive.js';
+import { resetRenderState } from '../src/assets.js';
+import { Composition, registerRoot, resetCompositions } from '../src/compositions.js';
+import { installDeterminism, resetVirtualClock, uninstallDeterminism } from '../src/determinism.js';
+import { createFrameRenderer } from '../src/frame-loop.js';
 import { tinted } from './effect-fixtures.js';
 import { clearReportedUnsupported, reportedUnsupported } from '../src/unsupported.js';
 import { renderDom } from './dom-harness.js';
@@ -141,5 +145,51 @@ describe('RemotionRiveCanvas', () => {
     expect(canvases.some((c) => c.commands.some((op: any) => op.op === 'clip'))).toBe(true);
     expect(canvases.some((c) => c.commands.some((op: any) => op.op === 'image'))).toBe(true);
     expect(reportedUnsupported()).toEqual([]);
+  });
+});
+
+describe('RemotionRiveCanvas in the frame loop', () => {
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64');
+
+  beforeEach(() => {
+    resetCompositions();
+    resetRenderState();
+    resetVirtualClock();
+    installDeterminism();
+  });
+  afterEach(() => {
+    uninstallDeterminism();
+    resetRenderState();
+  });
+
+  it('holds the frame for a loader that decodes later, as Rive documents it, and draws what it decoded', async () => {
+    let calls = 0;
+    // An inline arrow, a new function every render: the file and the loader's code key what it gave.
+    function Clip() {
+      return (
+        <RemotionRiveCanvas
+          src="walle.riv"
+          assetLoader={(asset) => {
+            calls += 1;
+            if (!asset.isImage) return false;
+            void Promise.resolve()
+              .then(() => decodeImage(PNG))
+              .then((image) => asset.setRenderImage(image));
+            return true;
+          }}
+        />
+      );
+    }
+    registerRoot(() => <Composition id="R" component={Clip} width={64} height={64} fps={30} durationInFrames={10} />);
+    setDomEnvironment({ baseDir: join(import.meta.dirname, 'fixtures/media') });
+    const r = createFrameRenderer('R');
+    const images = (layers: any[]): number =>
+      layers.reduce((n, l) => n + (l.commands ?? []).filter((c: any) => c.op === 'image').length + images(l.children ?? []), 0);
+    const first = await r.renderFrame(0);
+    expect(images(first.scene.layers)).toBeGreaterThan(0);
+    const second = await r.renderFrame(1);
+    expect(images(second.scene.layers)).toBe(images(first.scene.layers));
+    // Both pictures of the file were asked for once, not again on the next frame.
+    expect(calls).toBe(2);
   });
 });
