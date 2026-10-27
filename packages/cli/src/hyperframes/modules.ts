@@ -169,6 +169,26 @@ function withImportMeta(code: string, url: string): string {
   return code.replace(/\bimport\.meta\.url\b/g, quoted).replace(/\bimport\.meta\b/g, `({ url: ${quoted} })`);
 }
 
+/**
+ * An `import(` whose argument is not a plain string: esbuild cannot bundle what is only known at run time, so the call is
+ * handed to the host (`dynamic.ts`) with the module's URL, which resolves the specifier from there. A string literal is
+ * bundled as before. Found by text, so an `import(` inside a string or comment is rewritten too, which does no harm.
+ */
+const COMPUTED_IMPORT = /(?<![.\w$])import\s*\(\s*(?!(?:'[^'\\\n]*'|"[^"\\\n]*"|`[^`$\\]*`)\s*[,)])/;
+export const DYNAMIC_IMPORT = Symbol.for('kinetograph.import');
+const hasComputedImport = (code: string): boolean => COMPUTED_IMPORT.test(code);
+
+/** `code` as the bundle reads it: computed imports go to the host, `import.meta` is the module's URL. */
+function prepare(code: string, url: string, state: PluginState): string {
+  let out = code;
+  if (hasComputedImport(out)) {
+    state.computed = true;
+    const call = `(globalThis[Symbol.for('kinetograph.import')] ?? ((_from, specifier) => import(specifier)))(${JSON.stringify(url)}, `;
+    out = out.replace(new RegExp(COMPUTED_IMPORT.source, 'g'), () => call);
+  }
+  return withImportMeta(out, url);
+}
+
 const loaderFor = (url: string): 'js' | 'json' | 'empty' => {
   const path = parseUrl(url)?.pathname ?? url;
   if (/\.json$/i.test(path)) return 'json';
@@ -187,6 +207,10 @@ interface PluginState {
   missing: string[];
   /** Set when a script's `integrity` did not match. */
   integrityFailed: boolean;
+  /** Set when a module of the graph has an `import()` of a specifier built at run time. */
+  computed: boolean;
+  /** The local files the graph read (an edit to one changes the bundle). */
+  inputs: Set<string>;
 }
 
 /** Whether the file at `path` is inside `root` once symlinks are resolved. */
@@ -251,7 +275,7 @@ function modulePlugin(state: PluginState): Plugin {
         return { text: readFileSync(found.file, 'utf8') };
       };
 
-      b.onLoad({ filter: /.*/, namespace: INLINE }, () => ({ contents: withImportMeta(state.script.code ?? '', state.script.base), loader: 'js' }));
+      b.onLoad({ filter: /.*/, namespace: INLINE }, () => ({ contents: prepare(state.script.code ?? '', state.script.base, state), loader: 'js' }));
       b.onLoad({ filter: /.*/, namespace: REMOTE }, async (args) => {
         const got = await text(args.path);
         if ('errors' in got) return got;
@@ -264,7 +288,7 @@ function modulePlugin(state: PluginState): Plugin {
           }
         }
         // A redirected download is based at where it ended, as in a browser: its relative imports and `import.meta.url`.
-        return { contents: withImportMeta(got.text, finalUrlOf(args.path)), loader: loaderFor(args.path), pluginData: { noShim: true } };
+        return { contents: prepare(got.text, finalUrlOf(args.path), state), loader: loaderFor(args.path), pluginData: { noShim: true } };
       });
       b.onLoad({ filter: /.*/, namespace: GSAP }, async (args) => {
         // The module itself is read through the cache (and walked for its imports) like any other.
@@ -283,8 +307,8 @@ function modulePlugin(state: PluginState): Plugin {
       // A local module: `import.meta.url` is its file URL.
       b.onLoad({ filter: /\.[cm]?[jt]s$/ }, (args) => {
         const code = readFileSync(args.path, 'utf8');
-        if (!code.includes('import.meta')) return undefined;
-        return { contents: withImportMeta(code, pathToFileURL(args.path).href), loader: /\.[cm]?ts$/.test(args.path) ? 'ts' : 'js' };
+        if (!code.includes('import.meta') && !hasComputedImport(code)) return undefined;
+        return { contents: prepare(code, pathToFileURL(args.path).href, state), loader: /\.[cm]?ts$/.test(args.path) ? 'ts' : 'js' };
       });
     },
   };
@@ -303,9 +327,51 @@ async function bundle(state: PluginState, format: 'iife' | 'esm'): Promise<strin
     platform: 'browser',
     target: 'es2022',
     logLevel: 'silent',
+    metafile: true,
     plugins: [modulePlugin(state)],
   });
+  // Inputs of the local files (a remote module is `kinetograph-module-url:https://...`); paths are relative to the cwd.
+  for (const input of Object.keys(result.metafile.inputs)) if (!/^[a-z][a-z0-9-]*:/i.test(input) || /^[a-z]:[\\/]/i.test(input)) state.inputs.add(resolvePath(input));
   return result.outputFiles[0]!.text;
+}
+
+export interface BundledModule {
+  code: string;
+  fetched: FetchedDep[];
+  /** A module of the graph has an `import()` of a specifier built at run time (see `dynamic.ts`). */
+  computed: boolean;
+  /** The local files the bundle read. */
+  inputs: string[];
+}
+
+/**
+ * The module `specifier` names, imported at run time by the module at `referrer` (a URL), as a script that leaves its
+ * namespace in `globalThis[slot]` when it has run (an async function: top-level `await` works). Reads the cache only, unless `fetch` is given, which downloads what is not there.
+ */
+export async function bundleDynamicImport(
+  specifier: string,
+  /** The global symbol the bundle leaves the module's namespace in when it runs. */
+  slot: symbol,
+  referrer: string,
+  root: string,
+  map: ImportMap,
+  fetch: FetchOptions | null,
+): Promise<{ code: string; fetched: FetchedDep[]; missing: string[] }> {
+  const script: ModuleScript = {
+    code: `import * as ns from ${JSON.stringify(specifier)};\nglobalThis[Symbol.for(${JSON.stringify(Symbol.keyFor(slot))})] = ns;\n`,
+    file: referrer,
+    base: referrer,
+    scope: null,
+    sourceFile: null,
+    root,
+  };
+  const state: PluginState = { script, map, fetch, fetched: [], missing: [], integrityFailed: false, computed: false, inputs: new Set() };
+  try {
+    return { code: `(async () => {\n${await bundle(state, 'esm')}\n})();`, fetched: state.fetched, missing: state.missing };
+  } catch (error) {
+    const errors = (error as { errors?: Message[] }).errors ?? [];
+    throw Object.assign(new Error(errors.length > 0 ? errors.map(messageText).join('\n') : error instanceof Error ? error.message : String(error)), { missing: state.missing, code: state.integrityFailed ? 'INTEGRITY_MISMATCH' : undefined });
+  }
 }
 
 /**
@@ -313,16 +379,17 @@ async function bundle(state: PluginState, format: 'iife' | 'esm'): Promise<strin
  * runtime does not wait for (it runs to its first `await` at once). The build reads the cache only, unless `fetch` is given
  * (the pre-download step), which downloads what is not there.
  */
-export async function bundleModuleScript(script: ModuleScript, map: ImportMap, fetch: FetchOptions | null = null): Promise<{ code: string; fetched: FetchedDep[] }> {
-  const state: PluginState = { script, map, fetch, fetched: [], missing: [], integrityFailed: false };
+export async function bundleModuleScript(script: ModuleScript, map: ImportMap, fetch: FetchOptions | null = null): Promise<BundledModule> {
+  const state: PluginState = { script, map, fetch, fetched: [], missing: [], integrityFailed: false, computed: false, inputs: new Set() };
+  const done = (code: string): BundledModule => ({ code, fetched: state.fetched, computed: state.computed, inputs: [...state.inputs] });
   try {
-    return { code: await bundle(state, 'iife'), fetched: state.fetched };
+    return done(await bundle(state, 'iife'));
   } catch (error) {
     const errors = (error as { errors?: Message[] }).errors ?? [];
     if (errors.some((e) => /top-level await/i.test(e.text))) {
       try {
         const esm = await bundle(state, 'esm');
-        return { code: `(async () => {\n${esm}\n})();`, fetched: state.fetched };
+        return done(`(async () => {\n${esm}\n})();`);
       } catch (again) {
         throw failure(script, state, (again as { errors?: Message[] }).errors ?? [], again);
       }
@@ -331,10 +398,13 @@ export async function bundleModuleScript(script: ModuleScript, map: ImportMap, f
   }
 }
 
+/** What a module that does not match the lock, or was redirected somewhere else than the lock pins, fails with. */
+const LOCK_MISMATCH_TEXT = /does not match kinetograph\.lock\.json|locked it at/;
+
 function failure(script: ModuleScript, state: PluginState, errors: Message[], fallback: unknown): CliError {
   const text = errors.length > 0 ? errors.map(messageText).join('\n') : fallback instanceof Error ? fallback.message : String(fallback);
   const message = `${script.file}: the module script's imports could not be bundled:\n${text}`;
-  return new CliError(state.integrityFailed ? 'INTEGRITY_MISMATCH' : state.missing.length > 0 ? 'SCRIPT_NOT_AVAILABLE' : 'MODULE_BUNDLE_FAILED', message);
+  return new CliError(state.integrityFailed ? 'INTEGRITY_MISMATCH' : LOCK_MISMATCH_TEXT.test(text) ? 'LOCK_MISMATCH' : state.missing.length > 0 ? 'SCRIPT_NOT_AVAILABLE' : 'MODULE_BUNDLE_FAILED', message);
 }
 
 /**
@@ -342,15 +412,23 @@ function failure(script: ModuleScript, state: PluginState, errors: Message[], fa
  * downloaded and locked. A script that cannot be bundled is a failed entry (its imports of the graph that were reached are
  * kept); the render reports it.
  */
-export async function fetchModuleGraph(modules: ModuleScript[], map: ImportMap, options: FetchOptions): Promise<FetchedDep[]> {
+export async function fetchModuleGraph(
+  modules: ModuleScript[],
+  map: ImportMap,
+  options: FetchOptions,
+  /** Told what the graphs hold: the local files they read, and whether any has an `import()` of a computed specifier. */
+  info: { inputs: Set<string>; computed: boolean } = { inputs: new Set(), computed: false },
+): Promise<FetchedDep[]> {
   const results: FetchedDep[] = [];
   const seen = new Set<string>();
   for (const script of modules) {
     try {
-      const { fetched } = await bundleModuleScript(script, map, options);
+      const { fetched, inputs, computed } = await bundleModuleScript(script, map, options);
+      for (const input of inputs) info.inputs.add(input);
+      info.computed ||= computed;
       for (const f of fetched) if (!seen.has(f.url)) (seen.add(f.url), results.push(f));
     } catch (error) {
-      results.push({ url: script.file, file: '', status: 'failed', error: error instanceof Error ? error.message : String(error) });
+      results.push({ url: script.file, file: '', status: 'failed', error: error instanceof Error ? error.message : String(error), ...(error instanceof CliError ? { code: error.code } : {}) });
     }
   }
   return results;

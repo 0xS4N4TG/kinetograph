@@ -20,7 +20,7 @@ export {
   MutationObserverShim,
 } from './observers.js';
 export { deliverMediaEvents } from './media-events.js';
-export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf, setRemoteFiles, setRefusedFetchHandler, whenFetchesSettle } from './web.js';
+export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf, setRemoteFiles, setRefusedFetchHandler, whenFetchesSettle, trackPending } from './web.js';
 export { setPathMeasure } from './geometry.js';
 export { canvasEnvironment, rasterizeCanvas, webgpuDeviceInfo, canvasCommandsOf, withCanvasCommands, resetCanvasStates, setCanvasFonts, CanvasSurface } from './canvas.js';
 export type { PathMeasure } from './geometry.js';

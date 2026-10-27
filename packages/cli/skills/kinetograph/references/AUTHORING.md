@@ -1416,7 +1416,7 @@ its own; `--update` downloads again and rewrites the lock, the way to accept a f
 stops the run). https only; `--allow-host a.com,b.com` adds hosts, `--url` adds a file a scan missed, `--max-media-mb N`;
 each file is hash-checked against the cache and the lock on every read. `<script type="importmap">` and
 `<script type="module">` (inline or `src`, relative or CDN imports, bare names through the map) are bundled into classic
-scripts that run after the page's classic scripts. A Remotion project's remote `<Img>`, `<Video>` and CSS `url()` files are
+scripts that run after the page's classic scripts (an `import()` of a computed specifier is answered from the cache at run time; the pre-pass runs the first frames to find them, so keep them to what frame 0 or a few sampled frames ask for, or expect a note and a one-time download in the render). A Remotion project's remote `<Img>`, `<Video>` and CSS `url()` files are
 found by scanning its bundle, downloaded the same way and locked in the same file; one first requested during a render is
 fetched once, added to the lock and noted. Three.js is unsupported and reported. Full list:
 `/docs/compat/#hyperframes-projects`, `/docs/known-issues/#hyperframes-projects`.
