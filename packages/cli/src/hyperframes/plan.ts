@@ -203,19 +203,22 @@ class Builder {
       const code = textOf(el);
       this.scanDataUrls(code, null);
       if (/\bTHREE\.(WebGLRenderer|Scene|PerspectiveCamera)\b/.test(code)) this.usesThree = true;
-      this.modules.push({ code, file: ctx.file, base: pathToFileURL(ctx.file).href, scope: ctx.scope, sourceFile: ctx.scope !== null ? ctx.file : null });
+      this.modules.push({ code, file: ctx.file, base: pathToFileURL(ctx.file).href, scope: ctx.scope, sourceFile: ctx.scope !== null ? ctx.file : null, root: this.root });
       return;
     }
     if (/^https?:\/\//i.test(src) || src.startsWith('//')) {
       const url = normalizeUrl(src);
       if (THREE_URL.test(url)) this.usesThree = true;
-      this.modules.push({ code: null, file: url, base: url, scope: null, sourceFile: null });
+      const integrity = attrOf(el, 'integrity');
+      if (integrity) this.scriptIntegrity[url] = integrity;
+      this.modules.push({ code: null, file: url, base: url, scope: null, sourceFile: null, root: this.root, ...(integrity ? { integrity } : {}) });
       return;
     }
     const path = this.asset(src, ctx).split(/[?#]/)[0]!;
     if (!existsSync(path)) throw new CliError('SCRIPT_NOT_FOUND', `${ctx.file}: <script type="module" src="${src}"> was not found beside ${ctx.file} or in ${this.root}`);
     this.files.add(path);
-    this.modules.push({ code: null, file: path, base: pathToFileURL(path).href, scope: null, sourceFile: null });
+    this.checkIntegrity(el, path, path);
+    this.modules.push({ code: null, file: path, base: pathToFileURL(path).href, scope: null, sourceFile: null, root: this.root });
   }
 
   /**
@@ -639,7 +642,7 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
         const bundled = await bundleModuleScript(module, builder.importMap);
         builder.scripts.push({ code: bundled.code, file: module.file, scope: module.scope, sourceFile: module.sourceFile });
       } catch (error) {
-        if (error instanceof CliError && error.code === 'SCRIPT_NOT_AVAILABLE') throw error;
+        if (error instanceof CliError && (error.code === 'SCRIPT_NOT_AVAILABLE' || error.code === 'INTEGRITY_MISMATCH')) throw error;
         builder.note(error instanceof Error ? error.message : String(error));
       }
     }

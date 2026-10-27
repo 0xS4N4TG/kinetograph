@@ -7,10 +7,11 @@
 // longest key first, and a key ending in `/` as a prefix.
 
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
+import { relative, resolve as resolvePath, isAbsolute } from 'node:path';
 import { build, type Message, type Plugin } from 'esbuild';
 import { CliError } from '../errors.js';
-import { fetchCdnData, resolveCdnData, type FetchedDep, type FetchOptions } from './deps.js';
+import { fetchCdnData, resolveCdnData, verifyIntegrity, type FetchedDep, type FetchOptions } from './deps.js';
 
 /** A `<script type="importmap">`: bare names and prefixes to URLs, and per-referrer overrides. Every value is an absolute URL. */
 export interface ImportMap {
@@ -29,6 +30,10 @@ export interface ModuleScript {
   /** The composition it belongs to (see `HfScript`), and that composition's file. */
   scope: string | null;
   sourceFile: string | null;
+  /** The project's directory: a local module must be inside it. */
+  root: string;
+  /** The script tag's `integrity`, checked against the bytes of a `src` module. */
+  integrity?: string;
 }
 
 export const emptyImportMap = (): ImportMap => ({ imports: {}, scopes: {} });
@@ -180,6 +185,20 @@ interface PluginState {
   fetched: FetchedDep[];
   /** URLs that are not in the cache. */
   missing: string[];
+  /** Set when a script's `integrity` did not match. */
+  integrityFailed: boolean;
+}
+
+/** Whether the file at `path` is inside `root` once symlinks are resolved. */
+function insideRoot(path: string, root: string): boolean {
+  try {
+    const rel = relative(realpathSync(root), realpathSync(path));
+    return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  } catch {
+    // A file that is not there: the lexical position decides, and esbuild reports the missing file.
+    const rel = relative(resolvePath(root), resolvePath(path));
+    return !rel.startsWith('..') && !isAbsolute(rel);
+  }
 }
 
 function modulePlugin(state: PluginState): Plugin {
@@ -190,7 +209,9 @@ function modulePlugin(state: PluginState): Plugin {
         if (args.kind === 'entry-point') {
           // The synthetic entry: the inline script, or the script's URL / file.
           if (args.path === INLINE_ENTRY) return { path: state.script.file, namespace: INLINE, sideEffects: true };
-          return /^https:/i.test(args.path) ? { path: args.path, namespace: REMOTE, sideEffects: true } : { path: args.path, sideEffects: true };
+          if (/^https:/i.test(args.path)) return { path: args.path, namespace: REMOTE, sideEffects: true };
+          if (!insideRoot(args.path, state.script.root)) return { errors: [{ text: `${args.path} is outside the project (${state.script.root}): it is not loaded` }] };
+          return { path: args.path, sideEffects: true };
         }
         const referrer =
           args.namespace === REMOTE || args.namespace === GSAP ? args.importer : args.namespace === INLINE ? state.script.base : pathToFileURL(args.importer).href;
@@ -201,8 +222,15 @@ function modulePlugin(state: PluginState): Plugin {
           return { errors: [{ text: error instanceof Error ? error.message : String(error) }] };
         }
         if (!args.pluginData?.noShim && isGsap(args.path, target) && /^https:/i.test(target)) return { path: target, namespace: GSAP };
+        const fromRemote = args.namespace === REMOTE || args.namespace === GSAP;
         if (/^https:/i.test(target)) return { path: target, namespace: REMOTE, sideEffects: true };
-        if (/^file:/i.test(target)) return { path: fileURLToPath(target), sideEffects: true };
+        // A remote module imports https URLs only: it cannot pull a file of this machine into the bundle.
+        if (fromRemote) return { errors: [{ text: `${args.path} (imported by the remote module ${referrer}) resolves to ${target}: a remote module may only import https: URLs` }] };
+        if (/^file:/i.test(target)) {
+          const file = fileURLToPath(target);
+          if (!insideRoot(file, state.script.root)) return { errors: [{ text: `${target} (imported by ${referrer}) is outside the project (${state.script.root}): it is not loaded` }] };
+          return { path: file, sideEffects: true };
+        }
         return { errors: [{ text: `${target} (imported by ${referrer}) is not an https: or file: URL: it is not loaded` }] };
       });
 
@@ -227,6 +255,14 @@ function modulePlugin(state: PluginState): Plugin {
       b.onLoad({ filter: /.*/, namespace: REMOTE }, async (args) => {
         const got = await text(args.path);
         if ('errors' in got) return got;
+        if (args.path === state.script.file && state.script.integrity) {
+          try {
+            verifyIntegrity(Buffer.from(got.text), state.script.integrity, args.path);
+          } catch (error) {
+            state.integrityFailed = true;
+            return { errors: [{ text: error instanceof Error ? error.message : String(error) }] };
+          }
+        }
         return { contents: withImportMeta(got.text, args.path), loader: loaderFor(args.path), pluginData: { noShim: true } };
       });
       b.onLoad({ filter: /.*/, namespace: GSAP }, async (args) => {
@@ -277,7 +313,7 @@ async function bundle(state: PluginState, format: 'iife' | 'esm'): Promise<strin
  * (the pre-download step), which downloads what is not there.
  */
 export async function bundleModuleScript(script: ModuleScript, map: ImportMap, fetch: FetchOptions | null = null): Promise<{ code: string; fetched: FetchedDep[] }> {
-  const state: PluginState = { script, map, fetch, fetched: [], missing: [] };
+  const state: PluginState = { script, map, fetch, fetched: [], missing: [], integrityFailed: false };
   try {
     return { code: await bundle(state, 'iife'), fetched: state.fetched };
   } catch (error) {
@@ -297,7 +333,7 @@ export async function bundleModuleScript(script: ModuleScript, map: ImportMap, f
 function failure(script: ModuleScript, state: PluginState, errors: Message[], fallback: unknown): CliError {
   const text = errors.length > 0 ? errors.map(messageText).join('\n') : fallback instanceof Error ? fallback.message : String(fallback);
   const message = `${script.file}: the module script's imports could not be bundled:\n${text}`;
-  return new CliError(state.missing.length > 0 ? 'SCRIPT_NOT_AVAILABLE' : 'MODULE_BUNDLE_FAILED', message);
+  return new CliError(state.integrityFailed ? 'INTEGRITY_MISMATCH' : state.missing.length > 0 ? 'SCRIPT_NOT_AVAILABLE' : 'MODULE_BUNDLE_FAILED', message);
 }
 
 /**
