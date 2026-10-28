@@ -19,17 +19,24 @@ fn mtl_ptr<T: ?Sized>(r: &T) -> *mut c_void {
 }
 
 impl Native {
-    /// A Graphite context on `device`'s Metal device and `queue`'s command queue.
-    pub(super) fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<(Native, graphite::Context)> {
+    /// A Graphite context on `device`'s Metal device and `queue`'s command queue; `Err` says why there is none.
+    pub(super) fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<(Native, graphite::Context), String> {
         // SAFETY: the raw device and queue stay alive as long as the wgpu ones, which the renderer holds.
         let (dev, q) = unsafe {
-            let d = device.as_hal::<Metal>()?;
-            let q = queue.as_hal::<Metal>()?;
+            let (Some(d), Some(q)) = (device.as_hal::<Metal>(), queue.as_hal::<Metal>()) else {
+                return Err("wgpu is not running on a Metal device, and Skia's GPU backend here is Metal".to_string());
+            };
             (mtl_ptr(&**d.raw_device()), mtl_ptr(q.as_raw()))
         };
         let backend = unsafe { graphite::mtl::BackendContext::new(dev, q) };
-        let ctx = graphite::mtl::context_factory::make_metal(&backend, None)?;
-        Some((Native, ctx))
+        let ctx = graphite::mtl::context_factory::make_metal(&backend, None)
+            .ok_or_else(|| "Skia's Graphite could not make a Metal context on this device".to_string())?;
+        Ok((Native, ctx))
+    }
+
+    /// Why Skia's GPU backend failed at `step` once its context had started.
+    pub(super) fn explain(_: &wgpu::Device, step: &str) -> String {
+        format!("Skia's Graphite on Metal: {step}")
     }
 
     /// `device.create_texture(desc)`: Metal needs nothing more of a texture Skia draws to.

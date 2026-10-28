@@ -55,6 +55,7 @@ use ash::vk::{self, Handle};
 use skia_safe::gpu::{self, graphite, vk as skvk};
 use wgpu::hal::api::Vulkan;
 
+use super::vk_report::{self, FormatCaps, VulkanReport};
 use super::Role;
 use crate::compositor::Tex;
 
@@ -80,50 +81,29 @@ pub(super) struct Native {
 }
 
 impl Native {
-    /// A Graphite context on `device`'s Vulkan device and `queue`'s queue.
-    pub(super) fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<(Native, graphite::Context)> {
+    /// A Graphite context on `device`'s Vulkan device and `queue`'s queue; `Err` says why there is none (`vk_report`).
+    pub(super) fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<(Native, graphite::Context), String> {
+        // SAFETY: the handles are used only while `device` is alive.
+        let Some(report) = (unsafe { gather(device) }) else {
+            return Err(vk_report::not_vulkan());
+        };
         // SAFETY: the raw handles stay alive as long as the wgpu device and queue, which the renderer holds, and the
         // Graphite context is dropped before them (`SkiaBackend` is a field of the renderer, which owns both).
-        let ctx = unsafe {
-            let d = device.as_hal::<Vulkan>()?;
-            let q = queue.as_hal::<Vulkan>()?;
-            let shared = d.shared_instance();
-            let entry = shared.entry();
-            let instance = shared.raw_instance();
-            let physical = d.raw_physical_device();
-            let properties = instance.get_physical_device_properties(physical);
-            // Skia asks for the functions of every version it is allowed to use; the loader gives a device only the
-            // ones up to the version the instance was made for. `instance_api_version()` is the loader's version, not
-            // that one: wgpu-hal creates its VkInstance with at most Vulkan 1.3 (Instance::init), so on a 1.4 loader
-            // Skia would ask for 1.4 functions the device never gets and fail to start (issue #1). If wgpu-hal raises
-            // its cap, raise this one with it.
-            let api = shared.instance_api_version().min(properties.api_version).min(vk::API_VERSION_1_3);
-            let instance_extensions: Vec<&str> = shared.extensions().iter().filter_map(|e| e.to_str().ok()).collect();
-            let device_extensions: Vec<&str> = d.enabled_device_extensions().iter().filter_map(|e| e.to_str().ok()).collect();
-            let resolver = |of: gpu::vk::GetProcOf| -> *const c_void {
-                match of {
-                    gpu::vk::GetProcOf::Instance(inst, name) => entry
-                        .get_instance_proc_addr(vk::Instance::from_raw(inst as u64), name)
-                        .map_or(std::ptr::null(), |f| f as *const c_void),
-                    gpu::vk::GetProcOf::Device(dev, name) => instance
-                        .get_device_proc_addr(vk::Device::from_raw(dev as u64), name)
-                        .map_or(std::ptr::null(), |f| f as *const c_void),
-                }
-            };
-            let backend = skvk::BackendContext::new_builder(
-                instance.handle().as_raw() as skvk::Instance,
-                physical.as_raw() as skvk::PhysicalDevice,
-                d.raw_device().handle().as_raw() as skvk::Device,
-                (q.as_raw().as_raw() as skvk::Queue, d.queue_family_index() as usize),
-                &resolver,
-                Some(skvk::Version::from(api)),
-            )
-            .with_extensions(&instance_extensions, &device_extensions)
-            .build();
-            // Skia resolves every function it needs here, so `resolver` and `backend` are not needed after.
-            graphite::vk::context_factory::make_vulkan(&backend, None)?
-        };
-        Some((Native::touch(device), ctx))
+        let made = unsafe { make_context(device, queue) };
+        match made {
+            Some(ctx) => Ok((Native::touch(device), ctx)),
+            None => Err(report.explain("Graphite's Vulkan context factory returned nothing, and it does not say why")),
+        }
+    }
+
+    /// Why Skia's GPU backend failed at `step` once its context had started, for the one-time warning: the device,
+    /// the driver and anything missing from what Graphite is known to need.
+    pub(super) fn explain(device: &wgpu::Device, step: &str) -> String {
+        // SAFETY: as in `new`.
+        match unsafe { gather(device) } {
+            Some(report) => report.explain(step),
+            None => format!("{} ({step})", vk_report::not_vulkan()),
+        }
     }
 
     fn touch(device: &wgpu::Device) -> Native {
@@ -383,4 +363,142 @@ unsafe fn make_image(device: &wgpu::Device, desc: &wgpu::TextureDescriptor<'_>) 
     drop(hal);
     // SAFETY: `texture` is from this device, made as `desc` says, and not yet used (so not initialised).
     Some(unsafe { device.create_texture_from_hal::<Vulkan>(texture, desc, wgpu::TextureUses::UNINITIALIZED) })
+}
+
+/// Graphite's context on `device`'s Vulkan device and `queue`'s queue; `None` if Graphite refuses them.
+///
+/// # Safety
+///
+/// The context must be dropped before `device` and `queue` (it keeps their raw handles).
+unsafe fn make_context(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<graphite::Context> {
+    // SAFETY: as the caller promises.
+    unsafe {
+        let d = device.as_hal::<Vulkan>()?;
+        let q = queue.as_hal::<Vulkan>()?;
+        let shared = d.shared_instance();
+        let entry = shared.entry();
+        let instance = shared.raw_instance();
+        let physical = d.raw_physical_device();
+        let properties = instance.get_physical_device_properties(physical);
+        // Skia asks for the functions of every version it is allowed to use; the loader gives a device only the
+        // ones up to the version the instance was made for. `instance_api_version()` is the loader's version, not
+        // that one: wgpu-hal creates its VkInstance with at most Vulkan 1.3 (Instance::init), so on a 1.4 loader
+        // Skia would ask for 1.4 functions the device never gets and fail to start (issue #1). If wgpu-hal raises
+        // its cap, raise this one with it.
+        let api = shared.instance_api_version().min(properties.api_version).min(vk::API_VERSION_1_3);
+        let instance_extensions: Vec<&str> = shared.extensions().iter().filter_map(|e| e.to_str().ok()).collect();
+        let device_extensions: Vec<&str> = d.enabled_device_extensions().iter().filter_map(|e| e.to_str().ok()).collect();
+        let resolver = |of: gpu::vk::GetProcOf| -> *const c_void {
+            match of {
+                gpu::vk::GetProcOf::Instance(inst, name) => entry
+                    .get_instance_proc_addr(vk::Instance::from_raw(inst as u64), name)
+                    .map_or(std::ptr::null(), |f| f as *const c_void),
+                gpu::vk::GetProcOf::Device(dev, name) => instance
+                    .get_device_proc_addr(vk::Device::from_raw(dev as u64), name)
+                    .map_or(std::ptr::null(), |f| f as *const c_void),
+            }
+        };
+        let backend = skvk::BackendContext::new_builder(
+            instance.handle().as_raw() as skvk::Instance,
+            physical.as_raw() as skvk::PhysicalDevice,
+            d.raw_device().handle().as_raw() as skvk::Device,
+            (q.as_raw().as_raw() as skvk::Queue, d.queue_family_index() as usize),
+            &resolver,
+            Some(skvk::Version::from(api)),
+        )
+        .with_extensions(&instance_extensions, &device_extensions)
+        .build();
+        // Skia resolves every function it needs here, so `resolver` and `backend` are not needed after.
+        graphite::vk::context_factory::make_vulkan(&backend, None)
+    }
+}
+
+/// The Vulkan 1.1 core functions Graphite loads on top of 1.0 (instance level, then device level), for `gather` to
+/// check by name.
+const INSTANCE_FUNCTIONS_1_1: [&std::ffi::CStr; 4] = [
+    c"vkGetPhysicalDeviceProperties2",
+    c"vkGetPhysicalDeviceFeatures2",
+    c"vkGetPhysicalDeviceFormatProperties2",
+    c"vkGetPhysicalDeviceMemoryProperties2",
+];
+const DEVICE_FUNCTIONS_1_1: [&std::ffi::CStr; 4] =
+    [c"vkGetImageMemoryRequirements2", c"vkGetBufferMemoryRequirements2", c"vkBindImageMemory2", c"vkBindBufferMemory2"];
+
+/// What can be learned about `device`'s GPU for `VulkanReport`: its name and driver, the versions, the 1.1 functions that
+/// do not resolve and what the two formats Skia draws to can do. `None` if wgpu's device is not a Vulkan one.
+///
+/// # Safety
+///
+/// Only calls Vulkan with handles of `device`, which the caller keeps alive.
+unsafe fn gather(device: &wgpu::Device) -> Option<VulkanReport> {
+    let d = unsafe { device.as_hal::<Vulkan>() }?;
+    let shared = d.shared_instance();
+    Some(unsafe {
+        gather_from(shared.entry(), shared.raw_instance(), d.raw_physical_device(), d.raw_device().handle(), shared.instance_api_version())
+    })
+}
+
+/// `gather` on the raw handles.
+///
+/// # Safety
+///
+/// `instance`, `physical` and `device` are live handles of each other.
+unsafe fn gather_from(
+    entry: &ash::Entry,
+    instance: &ash::Instance,
+    physical: vk::PhysicalDevice,
+    device: vk::Device,
+    instance_api: u32,
+) -> VulkanReport {
+    let properties = unsafe { instance.get_physical_device_properties(physical) };
+    // The same cap `Native::new` gives Skia.
+    let api_used = instance_api.min(properties.api_version).min(vk::API_VERSION_1_3);
+    let device_name = properties.device_name_as_c_str().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    // VkPhysicalDeviceDriverProperties is core in 1.2, and properties2 core in 1.1 (instance and device).
+    let mut driver = String::new();
+    if instance_api >= vk::API_VERSION_1_1 && properties.api_version >= vk::API_VERSION_1_2 {
+        let mut driver_properties = vk::PhysicalDeviceDriverProperties::default();
+        let mut properties2 = vk::PhysicalDeviceProperties2::default().push_next(&mut driver_properties);
+        unsafe { instance.get_physical_device_properties2(physical, &mut properties2) };
+        let name = driver_properties.driver_name_as_c_str().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let info = driver_properties.driver_info_as_c_str().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        driver = [name, info].into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join(" ");
+    }
+    let mut missing_functions = Vec::new();
+    if api_used >= vk::API_VERSION_1_1 {
+        for name in INSTANCE_FUNCTIONS_1_1 {
+            if unsafe { entry.get_instance_proc_addr(instance.handle(), name.as_ptr()) }.is_none() {
+                missing_functions.push(name.to_string_lossy().into_owned());
+            }
+        }
+        for name in DEVICE_FUNCTIONS_1_1 {
+            if unsafe { instance.get_device_proc_addr(device, name.as_ptr()) }.is_none() {
+                missing_functions.push(name.to_string_lossy().into_owned());
+            }
+        }
+    }
+    let usage = vk::ImageUsageFlags::COLOR_ATTACHMENT
+        | vk::ImageUsageFlags::INPUT_ATTACHMENT
+        | vk::ImageUsageFlags::SAMPLED
+        | vk::ImageUsageFlags::TRANSFER_SRC
+        | vk::ImageUsageFlags::TRANSFER_DST;
+    let formats = [("R8G8B8A8_UNORM", vk::Format::R8G8B8A8_UNORM), ("R16G16B16A16_SFLOAT", vk::Format::R16G16B16A16_SFLOAT)]
+        .into_iter()
+        .map(|(name, format)| {
+            let features = unsafe { instance.get_physical_device_format_properties(physical, format) }.optimal_tiling_features;
+            let target_usage_ok = unsafe {
+                instance.get_physical_device_image_format_properties(
+                    physical,
+                    format,
+                    vk::ImageType::TYPE_2D,
+                    vk::ImageTiling::OPTIMAL,
+                    usage,
+                    vk::ImageCreateFlags::empty(),
+                )
+            }
+            .is_ok();
+            FormatCaps { name, features: features.as_raw(), target_usage_ok }
+        })
+        .collect();
+    VulkanReport { device: device_name, driver, device_api: properties.api_version, instance_api, api_used, missing_functions, formats }
 }

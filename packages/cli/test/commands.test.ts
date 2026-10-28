@@ -161,6 +161,23 @@ describe('compositions, effects, doctor', () => {
   it('reports the addon when given no entry (the compat report is in doctor.test.ts)', async () => {
     const r = await cli('doctor', '--json');
     expect(r.json.addon).toEqual({ loaded: true, version: '0.0.0-test' });
+    // On the GPU there is nothing to explain.
+    expect(r.json).toMatchObject({ renderer: 'Skia GPU (Metal)', rendererReason: null });
+    expect(r.text).not.toContain('why not the GPU');
+  });
+
+  it('says why the renderer fell back to the CPU, in the text and in --json', async () => {
+    const reason = 'Skia\'s Graphite cannot use the Vulkan device Intel(R) Graphics (MTL), Mesa 24.2.1, Vulkan 1.3.274: R8G8B8A8_UNORM images lack the format features COLOR_ATTACHMENT_BLEND';
+    class CpuRenderer {
+      backend = () => 'Skia CPU (GPU unusable)';
+      backendReason = () => reason;
+    }
+    setNativeForTests(fakeNative({ Renderer: CpuRenderer }).native);
+    const json = await cli('doctor', '--json');
+    expect(json.json).toMatchObject({ renderer: 'Skia CPU (GPU unusable)', rendererReason: reason });
+    const text = await cli('doctor');
+    expect(text.text).toContain('renderer: Skia CPU (GPU unusable)');
+    expect(text.text).toContain(`why not the GPU: ${reason}`);
   });
 });
 
