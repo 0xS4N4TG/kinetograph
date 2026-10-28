@@ -4,6 +4,7 @@
 
 import { relativePath } from '@/lib/agent-message';
 import type { InspectLayer } from '@/lib/inspect';
+import { displayName } from '@/lib/names';
 
 export interface Rect {
   x: number;
@@ -81,11 +82,12 @@ const snippet = (text: string, max = 30) => {
 /** The name to show for a layer: its label, else its text, its file, an id the author chose, or its kind. Never a tree path. */
 export function layerName(layer: InspectLayer): string {
   const { label } = layer as Extras;
-  if (typeof label === 'string' && label !== '') return label;
-  if (layer.text?.text) return `${capital(layer.type)} “${snippet(layer.text.text)}”`;
-  if (layer.src) return `${capital(layer.type)} ${layer.src.split('/').pop()}`;
-  if (!layer.id.startsWith('$')) return layer.id;
-  return capital(layer.type);
+  // A text or a picture says which it is; a label, a chosen id or the kind is numbered among its siblings ("Card 2").
+  if (typeof label !== 'string' || label === '') {
+    if (layer.text?.text) return `${capital(layer.type)} “${snippet(layer.text.text)}”`;
+    if (layer.src) return `${capital(layer.type)} ${layer.src.split('/').pop()}`;
+  }
+  return displayName(layer as InspectLayer & { label?: string; ordinal?: number });
 }
 
 /** The position in the project's source that made the layer, when the studio knows it. */

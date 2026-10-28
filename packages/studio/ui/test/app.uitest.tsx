@@ -218,6 +218,16 @@ describe('timeline', () => {
     expect(screen.getAllByTestId('component-row').map((r) => r.querySelector('[data-testid="row-select"]')!.textContent)).toContain('title-group');
   });
 
+  it('shows a picture of the first frame on clips wide enough for one, from the build it was drawn for', async () => {
+    const { user } = await start();
+    await user.click(await screen.findByRole('button', { name: 'Expand Scene' }));
+    const thumbs = within(screen.getByTestId('timeline')).getAllByTestId('bar-thumbnail');
+    expect(thumbs.length).toBeGreaterThan(0);
+    const src = thumbs[0]!.getAttribute('src')!;
+    expect(src).toMatch(/^\/api\/thumbnail\?comp=[^&]+&frame=\d+&height=48&build=\d+$/);
+    expect(thumbs[0]).toHaveAttribute('loading', 'lazy');
+  });
+
   it('plain names by default; Show details adds kind tags and the pieces, and is remembered', async () => {
     const { user } = await start();
     await user.click(await screen.findByRole('button', { name: 'Expand Scene' }));

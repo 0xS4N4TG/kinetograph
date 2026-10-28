@@ -44,7 +44,8 @@ const hostConfig = {
   getRootHostContext: () => 'skia',
   getChildHostContext: (parent: string) => parent,
   createInstance(type: string, props: Record<string, unknown>): SkiaNode {
-    return { type, props: normalizeProps(props), children: [] };
+    // Props are read when the frame is drawn, after the effects ran, so a shared value set in an effect is seen.
+    return { type, props, children: [] };
   },
   createTextInstance(text: string): never {
     throw new Error(`Raw text "${text}" cannot be drawn inside a Skia <Canvas>; use <Text text="…" font={…} />`);
@@ -66,7 +67,7 @@ const hostConfig = {
   removeChildFromContainer: (container: Container, child: SkiaNode) => void remove(container.children, child),
   clearContainer: (container: Container) => void (container.children = []),
   commitUpdate(instance: SkiaNode, _type: string, _prev: unknown, next: Record<string, unknown>) {
-    instance.props = normalizeProps(next);
+    instance.props = next;
   },
   commitTextUpdate: () => {},
   resetTextContent: () => {},
@@ -129,6 +130,11 @@ const reconciler = (Reconciler as unknown as (config: object) => Reconciler.Reco
   hostConfig,
 );
 
+/** A node with its props as the addon reads them. */
+function normalized(node: SkiaNode): SkiaNode {
+  return { type: node.type, props: normalizeProps(node.props), children: node.children.map(normalized) };
+}
+
 /** Passes that flush effects and the updates they cause; more than this means an effect keeps updating state. */
 const MAX_SETTLE_PASSES = 100;
 
@@ -149,8 +155,7 @@ export function renderNodes(element: ReactNode): SkiaNode[] {
     reconciler.updateContainerSync(element, root, null, null);
     settle();
     if (failure !== undefined) throw failure.value;
-    // Unmounting empties the container's list; the nodes themselves stay.
-    return [...container.children];
+    return container.children.map(normalized);
   } finally {
     reconciler.updateContainerSync(null, root, null, null);
     settle();

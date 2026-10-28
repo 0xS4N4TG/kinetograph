@@ -26,7 +26,7 @@ pub mod state_machine;
 pub use crate::{
     artboard::components,
     artboard::Artboard,
-    file::{Error, File},
+    file::{AssetKind, AssetRequest, Error, File},
     instantiate::{Handle, Instantiate},
     linear_animation::{Direction, LinearAnimation, Loop},
     scene::{Scene, Viewport},

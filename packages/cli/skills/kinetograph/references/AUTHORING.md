@@ -909,17 +909,25 @@ drawn natively with Skia.
 |---|---|
 | `src` | a `.riv` path or `staticFile(...)`; a URL is an error (a frame must not depend on the network) |
 | `artboard`, `animation` | by name or position; the default artboard and its first animation (else its default state machine) when left out |
-| `stateMachine` | not in Remotion's props: plays a state machine instead, from its start with its inputs at their defaults, stepped at 1/60 s |
+| `stateMachine` | not in Remotion's props: plays a state machine instead, from its start, stepped at 1/60 s |
+| `stateMachineInputs` | not in Remotion's props: the machine's inputs, `{ name: true \| false \| number \| 'fire' }` from the start, or `(frame) => ({ ... })` for each frame; a change is set at its frame's time as the machine is replayed, a trigger fires on each frame whose value is `true` or `'fire'`; an unknown name or a value of the wrong type is an error naming the input |
 | `fit`, `alignment` | as Remotion's: `contain`, `cover`, `fill`, `fit-width`, `fit-height`, `none`, `scale-down`; nine alignments |
 | `from`, `durationInFrames`, `name` | as `<Sequence>`'s |
 | `className`, `style` | on the `<canvas>`, which is as large as the composition |
-| `ref` | the four getters answer `null` (the runtime is in the addon) |
-| `onLoad`, `assetLoader`, `effects`, `effectsOutputSize` | reported as unsupported (a warning; `--strict` fails) |
+| `ref` | `getCanvas()` is the `<canvas>` element, `getArtboard()` the artboard played (`name`, `width`, `height`, `bounds`, its animations and state machines by index or name), `getAnimationInstance()` the animation (or state machine) and its `time` at the frame; `getRenderer()` is `null` (the drawing is the canvas's commands) |
+| `onLoad` | called with the file (`artboardCount()`, `artboardByIndex`, `artboardByName`, `defaultArtboard()`, the same objects as `getArtboard`) when the canvas renders |
+| `assetLoader` | `(asset, bytes) => boolean`, called once per file for each asset (`name`, `uniqueFilename`, `fileExtension`, `cdnUuid`, `isImage`, `isFont`, `isAudio`; `bytes` is empty): `asset.decode(bytes)`, or `asset.setRenderImage(await decodeImage(bytes))` / `setFont(await decodeFont(bytes))` (both exported), uses those bytes; a promise is waited for (`delayRender`) |
+| `effects`, `effectsOutputSize` | run over the canvas as for `<AnimatedImage>` (§7.5) |
+| `enableRiveAssetCdn` | accepted; an asset on Rive's CDN is not fetched |
 
 A frame is played from the file's start to `frame / fps`, never from what was played before, so a frame is a pure function
-of the file and the frame number. Pictures embedded in a file are decoded and written as PNGs under
-`~/.cache/kinetograph/rive` for the commands to name; fonts embedded in the file are shaped by the runtime. The test file
-`crates/rive/tests/assets/volume_bars.riv` is from `rive-app/rive-runtime` (MIT).
+of the file, the inputs given for each frame up to it and the frame number. Pictures embedded in a file are decoded and
+written as PNGs under `~/.cache/kinetograph/rive` for the commands to name; fonts embedded in the file are shaped by the
+runtime. An asset outside the file (a referenced picture or font) is what `assetLoader` gave for it, else the file of its
+name beside the `.riv` (`name-id.ext`, as the Rive editor exports referenced assets, or the asset's own name); one found
+in neither (an asset on Rive's CDN) is reported (a warning; `--strict` fails) and what uses it is drawn without it.
+`riveInfo` in the addon describes a file. The test files under `crates/rive/tests/assets` are from
+`rive-app/rive-runtime` (MIT).
 
 ### 7.7 `@remotion/skia` and `@shopify/react-native-skia`
 
@@ -973,6 +981,49 @@ Fonts are files, as everywhere: `matchFont` and `Paragraph` find only fonts regi
 (no system fonts, so text is the same on every machine); `useFont(staticFile('a.ttf'), size)` reads a file. Pictures are
 read from the project or its `public` directory. Everything a render reads is read when the frame is drawn.
 
+Also drawn, each frame-pure:
+
+- **Reanimated values.** `react-native-reanimated` maps to `@kinetographdev/core/skia/reanimated`: `useSharedValue`,
+  `useDerivedValue` (worked out each time it is read), `makeMutable`, `isSharedValue`, `useAnimatedReaction`,
+  `useFrameCallback` (called once for the frame, with its time), `runOnJS`/`runOnUI`, `interpolate`, `Extrapolation`,
+  `interpolateColor`, `Easing`. A shared value is a prop's value when the frame is drawn, after the effects ran. Every frame
+  renders the tree afresh, so a value lives for one frame: drive it from `useCurrentFrame()`. `withTiming`, `withSpring`,
+  `withDecay`, `withRepeat`, `withDelay` and `withSequence` run on the wall clock: the value jumps to its end and it is
+  reported. RN-Skia's `useClock` (the frame's time in ms), `usePathInterpolation`, `useVectorInterpolation`,
+  `usePathValue`, `useRectBuffer` and `useRSXformBuffer` work on them.
+- **`FitBox`**, `fitbox(fit, src, dst, rotation?)`, `rect2rect`, `fitRects`.
+- **Offscreen drawing.** `Skia.Surface.Make(w, h)` and `MakeOffscreen(w, h)` give a canvas whose
+  `makeImageSnapshot(bounds?)` is an `SkImage`; `drawAsImage(element, size)` and `drawAsPicture(element, bounds?)` draw
+  Skia components into one. The addon rasterises them on the CPU when they are drawn, so they are the same on every
+  machine (RN-Skia's offscreen surface is a GPU one).
+- **Data and pictures.** `Skia.Data.fromBytes`, `fromBase64` and `fromURI` (a project file or a `data:` URI; a URL is an
+  error), `Skia.Image.MakeImageFromEncoded(data)` (null if it is not a picture), `Skia.Image.MakeImage(info, data,
+  bytesPerRow)` (`ColorType` `RGBA_8888`, `BGRA_8888`, `Alpha_8`, `Gray_8`, `RGBA_F16`, `RGBA_F32`; `AlphaType`), and on
+  an `SkImage` `readPixels`, `encodeToBytes`/`encodeToBase64` (PNG), `makeShaderOptions`, `makeShaderCubic`. Bytes go
+  to the addon once (`putData`) and a tree names them by their content.
+- **Typefaces.** `Skia.Typeface.MakeFreeTypeFaceFromData(data)`, `Skia.Font(typeface, size)`, `Skia.FontMgr.System()`
+  (`countFamilies`, `getFamilyName`, `matchFamilyStyle`: the registered fonts), `Skia.TypefaceFontProvider.Make()`
+  (`registerFont(typeface, family)`, for `Skia.ParagraphBuilder.Make(style, provider)`), `useTypeface`, `useFonts`.
+  `Skia.Font()` without a typeface uses the first registered font (or the built-in fallback) and is reported.
+- **Animated pictures.** `useAnimatedImageValue(source, paused?)` is the GIF or WebP frame for the time of the frame
+  being rendered, looping by the file's frame durations (the first frame while `paused`); `useAnimatedImage` and
+  `Skia.AnimatedImage.MakeAnimatedImageFromEncoded` give an `SkAnimatedImage` (`getFrameCount`, `decodeNextFrame`,
+  `currentFrameDuration`, `getCurrentFrame`). Frames are decoded once.
+- **Paragraph measurement.** After `paragraph.layout(width)`: `getHeight`, `getMaxWidth`, `getLongestLine`,
+  `getMinIntrinsicWidth`, `getMaxIntrinsicWidth`, the baselines, `didExceedMaxLines`, `getLineMetrics`,
+  `getRectsForRange`, `getGlyphPositionAtCoordinate`, measured by Skia's text layout with the paragraph's fonts;
+  `paragraph.paint(canvas, x, y)` on a recording canvas.
+- **Paints with shaders and filters.** `Skia.Shader.*` (the gradients, `MakeTurbulence`, `MakeFractalNoise`,
+  `MakeBlend`, `MakeColor`), `effect.makeShader(uniforms)` and `makeShaderWithChildren`, `Skia.ColorFilter.*`,
+  `Skia.ImageFilter.*` (`MakeBlur`, `MakeOffset`, `MakeDropShadow(Only)`, `MakeErode`, `MakeDilate`, `MakeColorFilter`,
+  `MakeShader`, `MakeCompose`, `MakeBlend`, `MakeDisplacementMap` of a `MakeShader`, `MakeRuntimeShader`),
+  `Skia.MaskFilter.MakeBlur` and `Skia.PathEffect.*` set on a `Skia.Paint()` draw as the matching JSX children do. A drop
+  shadow blurs by its x sigma.
+- **Text in an SVG.** `ImageSVG` draws `<text>` with the registered fonts: for each `font-family` the SVG names, the
+  first family of its list that is registered, else the built-in fallback font (a generic family such as `sans-serif`
+  goes to the fallback silently; a named family that is not registered is reported). Characters the font lacks are not
+  drawn.
+
 `Atlas` is `canvas.drawAtlas` (`colorBlendMode` combines a sprite, the source, with its colour, the destination; default
 `dstOver`), `Patch` is `drawPatch` (corners clockwise from the top left, `c1` the control point on the edge that arrives
 at the corner and `c2` on the one that leaves it), `Glyphs` and `TextBlob` draw glyphs of a registered font, `Picture` is
@@ -980,11 +1031,22 @@ recorded again by Skia's own recorder and drawn once, whatever paints are declar
 DOM: an SVG with a size of its own is fitted whole and centred into `width` by `height`, one sized by percentages is laid
 out in them. An SVG has no system fonts, so its `<text>` is left out and reported (a warning; `--strict` fails).
 
-Not provided (an import of one fails the bundle, naming the export): Reanimated
-values and hooks (`useSharedValue`, `useDerivedValue`, `useClock`; a Remotion project drives props from the frame),
-`FitBox`/`fitbox`/`rect2rect`, `Skia.Surface`/`Offscreen`/`makeImageFromView`, `Skia.Image.*` and `Skia.Data.*` factories,
-`Skia.SVG.MakeFromData`, `Skia.Typeface`/`FontMgr`, `useVideo`, animated images, `Paragraph` measurement, a `Skia.Paint()` with a
-shader or filter set on it (use the JSX children), touch handling.
+- **Video.** `useVideo(source, { paused, looping, seek, playbackSpeed })` gives `currentFrame` (a shared value of the
+  picture the file shows at the frame's time, times `playbackSpeed`, from `seek` ms, looping unless `looping: false`;
+  `seek` while `paused`), `currentTime` (ms), `duration` (ms), `framerate`, `size` and `rotation`. The picture is decoded
+  by the engine's video decoder on the CPU (`readCanvasPicture`, as `onVideoFrame` frames are read). Its sound is not
+  played (a `volume` above 0 is reported): add an `<Audio>` of the file.
+
+Not provided (an import of one fails the bundle, naming the export): `makeImageFromView` and
+`Skia.Image.MakeImageFromViewTag` (there are no React Native views), `Skia.SVG.MakeFromData`, touch handling, and
+Reanimated's `Animated` components.
+
+**Why the CPU.** Drawing `@remotion/skia` through the main renderer's Skia (Graphite on Metal) was measured and not done:
+skia-safe 0.153.3 publishes no prebuilt Skia with `graphite`, `metal`, `textlayout` and `svg` together (the main renderer's
+build is `graphite-metal-pdf`, the addon's `textlayout-svg-webp`), so it would mean compiling Skia from source on every
+platform; GPU rasterising does not give the same pixels as Skia's CPU rasteriser, nor the same pixels on every machine;
+and at 1920 x 1080 a busy canvas costs the CPU addon 9.9 ms a frame to draw, read back and hash, plus 8.0 ms to write a new
+PNG (0.39 MB).
 
 ## 8. `@kinetographdev/audio` (stream 5)
 
@@ -1294,6 +1356,17 @@ rendered, so a whole timeline is the union over frames; two entries with one `ke
   arrives is dropped without a reply (latest wins).
 - **Timeline.** `/api/timeline` runs the JS stage for every frame of the composition (no addon) and returns the
   union of `sequences` and each layer's frame ranges, cached per (buildId, composition, props).
+- **Thumbnails.** `/api/thumbnail` draws a small JPEG of a frame for the timeline's clips through the preview worker,
+  one at a time and only once no preview frame has been asked for in 250 ms, so playback and scrubbing never wait for
+  one. Thumbnails are kept (400, by the build they were drawn from, composition, frame, props and size). The answer's
+  `X-Build` is the build drawn; when it is the `build` the address names, the answer is `immutable`, else `no-store`
+  (the project was rebuilt while it waited).
+- **Chat.** The server keeps the conversation with the coding agent (the user's messages, what the agent sent, the
+  permissions answered). When the window that began it closes, the agent waits 30 s (`agentReclaimMs`) for it to come
+  back: the next window to connect takes it over and is sent `agent.history`, which the chat replays. Starting over,
+  choosing another agent, or a window that does not come back drops it. At most 5,000 records and 4 MB are kept
+  (streamed text is one record per paragraph); past that whole turns go from the start, so a replay begins at one of
+  the user's messages.
 - **Names and source.** The studio bundles a project with esbuild's dev JSX transform, so each Sequence and layer
   (`/api/timeline`, `/api/inspect`) can carry optional `label` (a person's name for it: the Sequence `name`, the
   element `id`, `Component · “text…”`, the tag and class, or its kind), `component` (the nearest user component) and
@@ -1310,6 +1383,7 @@ The routes and messages are typed in `packages/studio/src/protocol.ts`; that fil
 | `GET /api/frame?comp&frame&scale&format&props` | the image (`Content-Type` its mime, headers `X-Build`, `X-Frame`) |
 | `GET /api/inspect?comp&frame&props` | `InspectResult` (§3) |
 | `GET /api/timeline?comp&props` | `TimelineData` |
+| `GET /api/thumbnail?comp&frame&height&build&props` | a JPEG `height` px tall (8 to 120), drawn when the preview is idle |
 | `GET /api/renders` | `RenderJob[]`, oldest first |
 | `POST /api/renders` (`RenderRequest`) | `RenderJob`, status 201 |
 | `DELETE /api/renders/:id` | `RenderJob` (cancelled; a finished job is left as it is) |
@@ -1333,7 +1407,9 @@ server through one client module (`src/api.ts`), so tests swap in a mock server.
   toggle, a frame counter and timecode, and the fps the preview actually reaches. Playing paces frames at the
   composition's fps and skips frames the server cannot keep up with; it never shows a frame older than the last.
 - Timeline: one row per Sequence (nested under its parent, labelled with `name`) and layer rows below, a playhead,
-  a ruler in frames; clicking a row selects that layer in the scene tree.
+  a ruler in frames; clicking a row selects that layer in the scene tree. A clip at least 64 px wide shows a picture of
+  its first frame (`/api/thumbnail`, loaded lazily). Siblings that share a name are numbered ("Card", "Card 2", "Card 3")
+  in the timeline, the scene tree, the preview and the chat's context.
 - Scene tree: the `InspectResult` of the current frame; selecting a layer shows its resolved fields.
 - Props panel: a form for the composition's `defaultProps` (strings, numbers, booleans, colours as text; nested
   objects as JSON); an edit re-renders the preview with the new `props`; reset restores the defaults.

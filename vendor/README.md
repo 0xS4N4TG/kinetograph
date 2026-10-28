@@ -63,6 +63,7 @@ Upstream: `rive-app/rive-rs` at `3d26aa1c3865260e5ef9751ad0172dcc197ff8eb`, with
 - `rive-rs/src/artboard/mod.rs`, `src/state_machine/mod.rs`: `'_` on five returned types, so `cargo clippy -D warnings` passes.
 - `rive-rs/src/lib.rs`, `src/file.rs`: no `vello` module; `Error` implements `core::error::Error`.
 - `rive-rs/src/ffi.cpp`, `src/ffi.rs`, `src/scene.rs`: new `Scene::view_transform` for any fit and alignment.
+- `rive-rs/src/ffi.cpp`, `src/ffi.rs`, `src/file.rs`, `src/lib.rs`: new `File::new_with_assets` (a `FileAssetLoader` that asks a Rust closure for each asset's bytes while the file is imported, for referenced pictures and fonts) and `File::describe` (the artboards, animations, state machines and inputs as JSON).
 
 Drop when a rive-rs release builds. Then replace this directory with a dependency on it.
 

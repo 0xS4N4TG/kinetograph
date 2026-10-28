@@ -59,7 +59,23 @@ pub struct Ctx<'a> {
     pub unsupported: Vec<Unsupported>,
 }
 
-impl Ctx<'_> {
+impl<'a> Ctx<'a> {
+    /// A context that draws `canvas` with a paint stack of its own.
+    pub fn new(canvas: &'a Canvas, assets: &'a mut Assets, base_dir: PathBuf) -> Self {
+        Ctx {
+            canvas,
+            assets,
+            base_dir,
+            paints: vec![default_paint()],
+            declared: Vec::new(),
+            color_filters: Vec::new(),
+            shaders: Vec::new(),
+            image_filters: Vec::new(),
+            path_effects: Vec::new(),
+            unsupported: Vec::new(),
+        }
+    }
+
     pub fn paint(&self) -> &Paint {
         self.paints.last().expect("the paint stack is never empty")
     }
@@ -113,24 +129,7 @@ pub fn render(
     );
     let mut surface = surfaces::raster(&info, None, None)
         .ok_or_else(|| Error("no surface of that size".into()))?;
-    let unsupported = {
-        let mut ctx = Ctx {
-            canvas: surface.canvas(),
-            assets,
-            base_dir,
-            paints: vec![default_paint()],
-            declared: Vec::new(),
-            color_filters: Vec::new(),
-            shaders: Vec::new(),
-            image_filters: Vec::new(),
-            path_effects: Vec::new(),
-            unsupported: Vec::new(),
-        };
-        for child in nodes {
-            visit(&mut ctx, node(child)?)?;
-        }
-        ctx.unsupported
-    };
+    let unsupported = draw_nodes(surface.canvas(), nodes, assets, base_dir)?;
     // Skia draws premultiplied; the canvas layer takes straight alpha.
     let straight = ImageInfo::new(
         (width as i32, height as i32),
@@ -148,6 +147,20 @@ pub fn render(
         rgba,
         unsupported,
     })
+}
+
+/// Draws `nodes` onto `canvas` with a paint stack of their own; answers what was left out.
+pub fn draw_nodes(
+    canvas: &Canvas,
+    nodes: &[Value],
+    assets: &mut Assets,
+    base_dir: PathBuf,
+) -> Result<Vec<Unsupported>, Error> {
+    let mut ctx = Ctx::new(canvas, assets, base_dir);
+    for child in nodes {
+        visit(&mut ctx, node(child)?)?;
+    }
+    Ok(ctx.unsupported)
 }
 
 const COLOR_FILTERS: &[&str] = &[
@@ -175,6 +188,9 @@ const IMAGE_FILTERS: &[&str] = &[
     "MorphologyImageFilter",
     "BlendImageFilter",
     "RuntimeShaderImageFilter",
+    // What `Skia.ImageFilter.MakeShader` and `MakeColorFilter` make (no JSX of RN-Skia's makes these two).
+    "ShaderImageFilter",
+    "ColorFilterImageFilter",
 ];
 const SHADERS: &[&str] = &[
     "Shader",

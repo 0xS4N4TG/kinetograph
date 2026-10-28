@@ -29,6 +29,7 @@ fn play(time: f64) -> Play {
         height: SIZE as f32,
         fit: Fit::Contain,
         alignment: Alignment::default(),
+        inputs: Vec::new(),
     }
 }
 

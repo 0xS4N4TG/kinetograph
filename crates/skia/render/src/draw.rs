@@ -4,13 +4,17 @@
 use serde_json::Value;
 use skia_safe::vertices::VertexMode;
 use skia_safe::{
-    BlendMode, Canvas, CubicResampler, FilterMode, Image, MipmapMode, Paint, Point, RRect, Rect,
-    SamplingOptions, Vertices, canvas::SrcRectConstraint,
+    AlphaType, BlendMode, Canvas, ColorType, CubicResampler, FilterMode, Image, ImageInfo,
+    MipmapMode, Paint, Point, RRect, Rect, SamplingOptions, Vertices, canvas::SrcRectConstraint,
+    images, surfaces,
 };
 
 use crate::enums;
+use std::path::PathBuf;
+
+use crate::assets::Assets;
 use crate::render::{Ctx, Node, default_paint};
-use crate::value::{Props, rect_of, rrect_of};
+use crate::value::{Props, err, rect_of, rrect_of};
 use crate::{Error, compound, text};
 
 pub fn draw(ctx: &mut Ctx, n: Node) -> Result<(), Error> {
@@ -178,14 +182,180 @@ fn draw_path(canvas: &Canvas, props: Props, paint: &Paint) -> Result<(), Error> 
 
 // ---- images ----
 
-/// The picture of an `image` prop (`{ src }`), read once.
+/// The picture of an `image` prop. A picture is one of
+///
+/// - `{ src }`: a file, read once; with `frame` (an index) or `time` (milliseconds, looping) it is that frame of an
+///   animated GIF or WebP;
+/// - `{ data }`: encoded bytes kept with `putData` (`Skia.Image.MakeImageFromEncoded`), with `frame` or `time` too;
+/// - `{ pixels, width, height, colorType, alphaType, rowBytes }`: raw pixels kept with `putData` (`Skia.Image.MakeImage`);
+/// - `{ picture, width, height }`: a recorded picture drawn into a picture of that size (a surface's snapshot);
+/// - `{ nodes, width, height }`: a tree drawn into a picture of that size (`drawAsImage`).
 pub fn image_of(ctx: &mut Ctx, v: &Value) -> Result<Image, Error> {
-    let src = v
-        .get("src")
-        .and_then(Value::as_str)
-        .ok_or_else(|| Error("an image needs a src".into()))?;
-    let path = ctx.file(src);
-    ctx.assets.image(&path)
+    let p = Props(v);
+    if p.has("frame") || p.has("time") {
+        let path = p.str("src").map(|src| ctx.file(src));
+        let animation = ctx.assets.animation(path.as_deref(), p.str("data"))?;
+        let index = match p.f32("frame")? {
+            Some(frame) => (frame.max(0.0) as usize).min(animation.frames.len() - 1),
+            None => animation.index_at(f64::from(p.f32_or("time", 0.0)?)),
+        };
+        return Ok(animation.frames[index].clone());
+    }
+    if let Some(src) = p.str("src") {
+        let path = ctx.file(src);
+        return ctx.assets.image(&path);
+    }
+    if let Some(id) = p.str("data") {
+        return ctx.assets.data_image(id);
+    }
+    let size = || -> Result<(i32, i32), Error> {
+        match (p.f32("width")?, p.f32("height")?) {
+            (Some(w), Some(h)) if (1.0..=16384.0).contains(&w) && (1.0..=16384.0).contains(&h) => {
+                Ok((w as i32, h as i32))
+            }
+            _ => err("a picture needs a width and a height of 1 to 16384 pixels"),
+        }
+    };
+    if let Some(id) = p.str("pixels") {
+        let (width, height) = size()?;
+        let color_type = match p.str("colorType").unwrap_or("rgba8888") {
+            "rgba8888" => ColorType::RGBA8888,
+            "bgra8888" => ColorType::BGRA8888,
+            "alpha8" => ColorType::Alpha8,
+            "gray8" => ColorType::Gray8,
+            "rgbaf16" => ColorType::RGBAF16,
+            "rgbaf32" => ColorType::RGBAF32,
+            other => return err(format!("unknown colour type {other:?}")),
+        };
+        let alpha_type = match p.str("alphaType").unwrap_or("unpremul") {
+            "opaque" => AlphaType::Opaque,
+            "premul" => AlphaType::Premul,
+            "unpremul" => AlphaType::Unpremul,
+            other => return err(format!("unknown alpha type {other:?}")),
+        };
+        let info = ImageInfo::new((width, height), color_type, alpha_type, None);
+        let row_bytes = match p.f32("rowBytes")? {
+            Some(n) => n as usize,
+            None => info.min_row_bytes(),
+        };
+        let data = ctx.assets.data(id)?;
+        if data.len() < info.compute_byte_size(row_bytes) {
+            return err(format!(
+                "the pixels are {} bytes, a {width} x {height} picture needs {}",
+                data.len(),
+                info.compute_byte_size(row_bytes)
+            ));
+        }
+        return images::raster_from_data(&info, data, row_bytes)
+            .ok_or_else(|| Error("the pixels could not be made into a picture".into()));
+    }
+    if p.has("picture") || p.has("nodes") {
+        let (width, height) = size()?;
+        let info = ImageInfo::new(
+            (width, height),
+            ColorType::RGBA8888,
+            AlphaType::Premul,
+            None,
+        );
+        let mut surface = surfaces::raster(&info, None, None)
+            .ok_or_else(|| Error("no surface of that size".into()))?;
+        if let Some(picture) = p.get("picture") {
+            let recorded = crate::compound::record(ctx, picture)?;
+            surface.canvas().draw_picture(&recorded, None, None);
+        } else {
+            let nodes = p.array("nodes").map(Vec::as_slice).unwrap_or_default();
+            let left_out = crate::render::draw_nodes(
+                surface.canvas(),
+                nodes,
+                ctx.assets,
+                ctx.base_dir.clone(),
+            )?;
+            for item in left_out {
+                if !ctx.unsupported.contains(&item) {
+                    ctx.unsupported.push(item);
+                }
+            }
+        }
+        return Ok(surface.image_snapshot());
+    }
+    err("an image needs a src, data, pixels, a picture or nodes")
+}
+
+/// What `SkImage` and `SkAnimatedImage` answer about a picture (`{ image, call }`): `size` is `{ width, height }`,
+/// `frames` is `{ count, durations }` (milliseconds) of an animated one.
+pub fn image_call(assets: &mut Assets, base_dir: PathBuf, request: &Value) -> Result<Value, Error> {
+    let call = Props(request).str("call").unwrap_or("size");
+    let held = request
+        .get("image")
+        .ok_or_else(|| Error("an image call needs an image".into()))?;
+    if call == "frames" {
+        let p = Props(held);
+        let path = p.str("src").map(|src| base_dir.join(src));
+        let animation = assets.animation(path.as_deref(), p.str("data"))?;
+        return Ok(serde_json::json!({
+            "count": animation.frames.len(),
+            "durations": animation.durations,
+        }));
+    }
+    let image = with_image(assets, base_dir, held, |image| Ok(image.clone()))?;
+    match call {
+        "size" => Ok(serde_json::json!({ "width": image.width(), "height": image.height() })),
+        other => err(format!("unknown image call {other:?}")),
+    }
+}
+
+/// The bytes of a picture (`{ image, format }`): `rgba` is its pixels, straight alpha, row after row; `png` is a PNG.
+pub fn image_bytes(
+    assets: &mut Assets,
+    base_dir: PathBuf,
+    request: &Value,
+) -> Result<Vec<u8>, Error> {
+    let held = request
+        .get("image")
+        .ok_or_else(|| Error("an image call needs an image".into()))?;
+    let format = Props(request).str("format").unwrap_or("rgba");
+    with_image(assets, base_dir, held, |image| {
+        let (w, h) = (image.width(), image.height());
+        match format {
+            "rgba" => {
+                let info = ImageInfo::new((w, h), ColorType::RGBA8888, AlphaType::Unpremul, None);
+                let mut rgba = vec![0u8; w as usize * h as usize * 4];
+                if !image.read_pixels(
+                    &info,
+                    &mut rgba,
+                    w as usize * 4,
+                    (0, 0),
+                    skia_safe::image::CachingHint::Allow,
+                ) {
+                    return err("the picture's pixels could not be read");
+                }
+                Ok(rgba)
+            }
+            "png" => {
+                let raster = image
+                    .make_raster_image(None, None)
+                    .unwrap_or_else(|| image.clone());
+                skia_safe::png_encoder::encode_image(None, &raster, &Default::default())
+                    .map(|d| d.as_bytes().to_vec())
+                    .ok_or_else(|| Error("the picture could not be encoded".into()))
+            }
+            other => err(format!("unknown picture format {other:?}")),
+        }
+    })
+}
+
+/// Runs `f` on the picture `held` names, made in a context of its own.
+fn with_image<T>(
+    assets: &mut Assets,
+    base_dir: PathBuf,
+    held: &Value,
+    f: impl FnOnce(&Image) -> Result<T, Error>,
+) -> Result<T, Error> {
+    let mut surface = surfaces::raster_n32_premul((1, 1))
+        .ok_or_else(|| Error("no surface could be made".into()))?;
+    let mut ctx = Ctx::new(surface.canvas(), assets, base_dir);
+    let image = image_of(&mut ctx, held)?;
+    f(&image)
 }
 
 pub fn sampling_of(props: Props) -> Result<SamplingOptions, Error> {

@@ -250,6 +250,50 @@ describe('the agent over the studio server', () => {
     client.close();
   });
 
+  it('keeps the conversation when its window reloads, and replays it to the window that comes back', async () => {
+    const { dir, entry } = writeProject('reload');
+    const server = await start(entry, { agent: command, agentCwd: dir });
+    const first = await Client.connect(server);
+    first.send({ type: 'agent.prompt', text: 'hello again', context: '', chips: ['Title'] });
+    await first.waitForMessage('agent', (m) => m.event.kind === 'done');
+    first.close();
+    await new Promise((r) => setTimeout(r, 100));
+
+    const reloaded = await Client.connect(server);
+    const replay: any = await reloaded.waitForMessage('agent.history', () => true);
+    const items = replay.message.items as any[];
+    expect(items[0]).toEqual({ kind: 'user', text: 'hello again', chips: ['Title'] });
+    expect(items.some((i) => i.kind === 'event' && i.event.kind === 'message' && i.event.text.includes('hello again'))).toBe(true);
+    expect(items.at(-1)).toMatchObject({ kind: 'event', event: { kind: 'done' } });
+    // It owns the conversation now: it can go on with it.
+    reloaded.send({ type: 'agent.prompt', text: 'and more', context: '' });
+    await reloaded.waitForMessage('agent', (m) => m.event.kind === 'message' && m.event.text.includes('and more'));
+    expect(reloaded.messages('agent').some((m: any) => m.event.kind === 'error')).toBe(false);
+    // Starting over drops what was kept.
+    reloaded.send({ type: 'agent.reset' });
+    await new Promise((r) => setTimeout(r, 100));
+    reloaded.close();
+    await new Promise((r) => setTimeout(r, 100));
+    const after = await Client.connect(server);
+    const again: any = await after.waitForMessage('agent.history', () => true);
+    expect(again.message.items).toEqual([]);
+    after.close();
+  });
+
+  it('stops the agent and forgets the conversation when its window does not come back', async () => {
+    const { dir, entry } = writeProject('gone');
+    const server = await start(entry, { agent: command, agentCwd: dir, agentReclaimMs: 100 });
+    const first = await Client.connect(server);
+    first.send({ type: 'agent.prompt', text: 'bye', context: '' });
+    await first.waitForMessage('agent', (m) => m.event.kind === 'done');
+    first.close();
+    await new Promise((r) => setTimeout(r, 400));
+    const later = await Client.connect(server);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(later.messages('agent.history')).toEqual([]);
+    later.close();
+  });
+
   it('refuses an agent command that is not on offer', async () => {
     const { dir, entry } = writeProject('agent2');
     const server = await start(entry, { agent: command, agentCwd: dir });

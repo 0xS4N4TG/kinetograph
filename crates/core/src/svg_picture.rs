@@ -102,7 +102,7 @@ impl Picture {
             tiny_skia::Transform::from_scale(width as f32 / nw as f32, height as f32 / nh as f32);
         resvg::render(&self.tree, scale, &mut pixmap.as_mut());
         let mut rgba = pixmap.take();
-        for px in rgba.chunks_exact_mut(4) {
+        for px in rgba.as_chunks_mut::<4>().0 {
             // tiny-skia keeps premultiplied alpha.
             let a = u32::from(px[3]);
             if a != 0 && a != 255 {
