@@ -5,7 +5,7 @@ description: Which FFmpeg Kinetograph links, which one it runs as a separate pro
 
 Kinetograph uses FFmpeg for two jobs: decoding the video and audio you put in a scene, and encoding the frames it renders. Two different FFmpeg builds do that work, and they are under different licences. This page says which is which.
 
-This is a description of how the software is built, not legal advice. If your product ships video encoded with H.264 or H.265, you should also read your obligations under the GPL and the patent pools below.
+This is a description of how the software is built, not legal advice.
 
 ## The two builds
 
@@ -16,8 +16,6 @@ This is a description of how the software is built, not legal advice. If your pr
 | Built by | `scripts/build-ffmpeg.sh` | `scripts/build-ffmpeg-gpl.sh` |
 | Encoders | VideoToolbox (macOS), OpenH264 (macOS, Linux), Media Foundation (Windows), NVENC, libvpx (macOS, Linux), ProRes, AAC, GIF | libx264, libx265, libvpx, AAC |
 | Used for | All decoding, and the default encoding | `libx264` and `libx265` only |
-
-The addon itself is under the [PolyForm Small Business licence](https://github.com/0xS4N4TG/kinetograph/blob/main/LICENSE.md). Linking an LGPL library into it is fine, so long as you can replace that library. The build script is public, and you can rebuild the addon against your own FFmpeg.
 
 Libx264 and libx265 are GPL, and a GPL library cannot be linked into a PolyForm program. So the addon never links them. The GPL `ffmpeg` is a separate executable that the addon starts as a child process. The addon sends it raw pictures on a pipe and reads a video file back. The two programs share no memory and no code, which is the usual line between "linking" and "aggregating" under the GPL. The PolyForm licence does not cover `bin/ffmpeg`, and the GPL does not cover the addon.
 
@@ -51,7 +49,3 @@ If you do not want the GPL program in your install, delete `bin/ffmpeg` from the
 ## Windows
 
 The Windows package's GPL program is built with MinGW-w64 gcc rather than MSVC. It is a separate executable, so its C runtime does not have to match the addon's.
-
-## Patents
-
-H.264 and H.265 are covered by patent pools that are separate from any copyright licence. Neither the GPL nor this project grants a patent licence for them. The OpenH264 build in the addon is compiled from source, so Cisco's patent grant, which covers only the binaries Cisco distributes, does not apply to it either. If you distribute H.264 or H.265 commercially, arranging patent licences is your responsibility.
