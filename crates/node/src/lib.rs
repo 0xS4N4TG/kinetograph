@@ -781,6 +781,13 @@ impl Renderer {
         Ok(self.shared.lock().backend_description())
     }
 
+    /// Why Skia draws on the CPU when the GPU could not be used: the device, the driver and what it lacks. `null`
+    /// when it draws on the GPU, or the CPU was chosen with KINETOGRAPH_SKIA_CPU=1.
+    #[napi]
+    pub fn backend_reason(&self) -> Result<Option<String>> {
+        Ok(self.shared.lock().backend_fallback_reason())
+    }
+
     /// One frame as a PNG.
     #[napi]
     pub fn still(

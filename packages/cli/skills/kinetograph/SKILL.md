@@ -184,9 +184,11 @@ issue as a `compat` warning (it does not fail), but only for the frames it sampl
 
 One line each; the pointer has the detail. `kinetograph doctor` alone lists the renderer and what this install can do.
 
-- **Encoders.** `--encoder libx264|libx265` run in the bundled GPL `ffmpeg` program (`KINETOGRAPH_FFMPEG=/path` uses
-  another); H.264 defaults to libx264 off macOS hardware; VP9 on macOS and Linux; `--crf`, `--video-bitrate`.
-  AUTHORING.md §9 (render flags), `/docs/ffmpeg-license/`.
+- **Encoders.** The built-in ffmpeg does all decoding and encodes with what it has. Any encoder it lacks runs in an
+  external `ffmpeg` program: the bundled GPL one (`libx264`, `libx265`), or your own. `KINETOGRAPH_FFMPEG=$(which ffmpeg)`
+  makes your system ffmpeg's encoders available, including `h264_vaapi`, `hevc_vaapi`, `h264_qsv` and `hevc_qsv` for Intel
+  and AMD GPUs on Linux (`--encoder` only; never the default). H.264 defaults to libx264 off macOS hardware; VP9 on macOS
+  and Linux; `--crf`, `--video-bitrate`. AUTHORING.md §9 (render flags), `/docs/ffmpeg-license/`.
 - **SVG files as pictures.** `<Img src={staticFile('a.svg')}>`, `<img>`, `background-image`, `data:` URLs; text inside
   an SVG picture is not drawn (warned). ENGINE.md "SVG files as pictures".
 - **Scene colours** take any CSS colour (`white`, `rgb()`, `hsl()`, `oklch()`, ...), not only hex. SCENE.md, top.

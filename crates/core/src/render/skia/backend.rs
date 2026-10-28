@@ -61,6 +61,8 @@ pub(in super::super) struct SkiaBackend {
     rec: Option<Rc<RefCell<graphite::Recorder>>>,
     /// `KINETOGRAPH_SKIA_CPU` was set when the backend started.
     cpu_forced: bool,
+    /// Why the GPU backend did not start (`start_gpu`'s error), if it was tried and failed.
+    fallback: Option<String>,
     tr: Translator,
     /// Frames take the targets in turn, so that a frame is not drawn into the texture the one before is still being
     /// read from.
@@ -100,11 +102,13 @@ fn cpu_forced() -> bool {
 
 /// Graphite on `device`'s GPU device and `queue`'s command queue, with two recorders (the frame's and the one for the
 /// layers the wgpu path asks for), if Skia can start there and draw into the textures wgpu makes of both formats it
-/// draws to. `None` if there is no such GPU API (a Metal or Vulkan device) or the driver lacks what Graphite needs.
-fn start_gpu(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<(Gpu, graphite::Recorder)> {
+/// draws to. `Err` says why not: there is no such GPU API (a Metal or Vulkan device) or the driver lacks what Graphite
+/// needs (`vk_report.rs` names what, on Vulkan).
+fn start_gpu(device: &wgpu::Device, queue: &wgpu::Queue) -> std::result::Result<(Gpu, graphite::Recorder), String> {
     let (native, mut ctx) = Native::new(device, queue)?;
-    let mut rec = ctx.make_recorder(None)?;
-    let raster = ctx.make_recorder(None)?;
+    let no_recorder = || Native::explain(device, "Graphite made a context but no recorder");
+    let mut rec = ctx.make_recorder(None).ok_or_else(no_recorder)?;
+    let raster = ctx.make_recorder(None).ok_or_else(no_recorder)?;
     // A texture of each format, wrapped as Graphite wraps the real ones: refused by a driver that cannot be drawn to.
     for (format, color_type, space) in [
         (wgpu::TextureFormat::Rgba8Unorm, ColorType::RGBA8888, ColorSpace::new_srgb()),
@@ -123,10 +127,11 @@ fn start_gpu(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<(Gpu, graphit
                 view_formats: &[],
             },
         );
-        let bt = Native::backend_texture(device, &texture, (16, 16), Role::Target)?;
-        graphite::surfaces::wrap_backend_texture(&mut rec, &bt, color_type, Some(space), None)?;
+        let step = |what: &str| Native::explain(device, &format!("{what} a {format:?} texture it draws to"));
+        let bt = Native::backend_texture(device, &texture, (16, 16), Role::Target).ok_or_else(|| step("the texture is not usable as"))?;
+        graphite::surfaces::wrap_backend_texture(&mut rec, &bt, color_type, Some(space), None).ok_or_else(|| step("Graphite refused to wrap"))?;
     }
-    Some((Gpu { native, ctx, rec: Rc::new(RefCell::new(raster)) }, rec))
+    Ok((Gpu { native, ctx, rec: Rc::new(RefCell::new(raster)) }, rec))
 }
 
 /// A Skia backend on `device`'s GPU device and `queue`'s command queue; if Skia's GPU backend cannot start on this
@@ -134,9 +139,16 @@ fn start_gpu(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<(Gpu, graphit
 /// one that draws with Skia's CPU backend instead, and says so once.
 pub(in super::super) fn init(device: &wgpu::Device, queue: &wgpu::Queue, scene: &Scene) -> Result<SkiaBackend> {
     let forced = cpu_forced();
-    let started = if forced { None } else { start_gpu(device, queue) };
+    let (started, fallback) = if forced {
+        (None, None)
+    } else {
+        match start_gpu(device, queue) {
+            Ok(started) => (Some(started), None),
+            Err(why) => (None, Some(why)),
+        }
+    };
     if started.is_none() {
-        warn_cpu(forced);
+        warn_cpu(forced, fallback.as_deref());
     }
     let (gpu, rec) = match started {
         Some((gpu, rec)) => (Some(gpu), Some(Rc::new(RefCell::new(rec)))),
@@ -162,19 +174,24 @@ pub(in super::super) fn init(device: &wgpu::Device, queue: &wgpu::Queue, scene: 
         std::fs::OpenOptions::new().create(true).append(true).open(format!("{dir}/hash-{}-{n}.txt", std::process::id())).ok()
     });
     let inner = Inner { gpu, tr: None, tr_frame: u64::MAX, frame: 0, target: None };
-    Ok(SkiaBackend { _device: device.clone(), inner: Some(inner), rec, cpu_forced: forced, tr, targets: Vec::new(), next_target: 0, in_flight: VecDeque::new(), stats_file, frame: 0, hash_file, started: VecDeque::new() })
+    Ok(SkiaBackend { _device: device.clone(), inner: Some(inner), rec, cpu_forced: forced, fallback, tr, targets: Vec::new(), next_target: 0, in_flight: VecDeque::new(), stats_file, frame: 0, hash_file, started: VecDeque::new() })
+}
+
+/// The line that tells Skia draws on the CPU: because it was asked to, or `why` the GPU could not be used.
+fn cpu_notice(forced: bool, why: Option<&str>) -> String {
+    match (forced, why) {
+        (true, _) => "kinetograph: drawing with Skia on the CPU (KINETOGRAPH_SKIA_CPU is set)".to_string(),
+        (false, Some(why)) => format!(
+            "kinetograph: drawing with Skia on the CPU, not the GPU: {why}. `kinetograph doctor` shows this again; KINETOGRAPH_SKIA_CPU=1 chooses the CPU on purpose"
+        ),
+        (false, None) => "kinetograph: drawing with Skia on the CPU; no GPU Skia can use".to_string(),
+    }
 }
 
 /// Tells, once per process, that Skia draws on the CPU.
-fn warn_cpu(forced: bool) {
+fn warn_cpu(forced: bool, why: Option<&str>) {
     static SAID: std::sync::Once = std::sync::Once::new();
-    SAID.call_once(|| {
-        if forced {
-            eprintln!("kinetograph: drawing with Skia on the CPU (KINETOGRAPH_SKIA_CPU is set)");
-        } else {
-            eprintln!("kinetograph: drawing with Skia on the CPU; no GPU Skia can use");
-        }
-    });
+    SAID.call_once(|| eprintln!("{}", cpu_notice(forced, why)));
 }
 
 /// Makes `tr` draw with Graphite: images are uploaded by `rec` and the wgpu path's textures are wrapped by it.
@@ -205,6 +222,8 @@ impl SkiaBackend {
             format!("Skia GPU ({api})")
         } else if self.cpu_forced {
             "Skia CPU (KINETOGRAPH_SKIA_CPU=1)".to_string()
+        } else if self.fallback.is_some() {
+            "Skia CPU (GPU unusable)".to_string()
         } else {
             "Skia CPU (no GPU found)".to_string()
         }
@@ -212,6 +231,12 @@ impl SkiaBackend {
 }
 
 impl Renderer {
+    /// Why Skia draws on the CPU although it was not asked to: the device, the driver and what the GPU lacks (`None`
+    /// when it draws on the GPU or the CPU was chosen with `KINETOGRAPH_SKIA_CPU=1`). For `doctor`.
+    pub fn backend_fallback_reason(&self) -> Option<String> {
+        self.skia.as_ref().and_then(|sk| sk.fallback.clone())
+    }
+
     /// Which renderer draws the 2D layers, for `kinetograph render`, `still` and `doctor` to say.
     pub fn backend_description(&self) -> String {
         self.skia.as_ref().map_or_else(|| "Skia".to_string(), |sk| sk.describe())
@@ -699,5 +724,21 @@ impl Renderer {
             }
             None => Ok(tex),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cpu_notice;
+
+    #[test]
+    fn the_cpu_notice_gives_the_reason_the_gpu_was_not_used() {
+        let why = "Skia's Graphite cannot use the Vulkan device Intel(R) Graphics (MTL), Mesa 24.2.1, Vulkan 1.3.274: R8G8B8A8_UNORM images lack the format features COLOR_ATTACHMENT_BLEND";
+        let text = cpu_notice(false, Some(why));
+        assert!(text.contains(why) && text.contains("not the GPU") && text.contains("doctor"), "{text}");
+        // Asked for on purpose: no reason to give.
+        assert!(cpu_notice(true, Some(why)).contains("KINETOGRAPH_SKIA_CPU is set"));
+        assert!(!cpu_notice(true, Some(why)).contains(why));
+        assert!(cpu_notice(false, None).contains("no GPU Skia can use"));
     }
 }

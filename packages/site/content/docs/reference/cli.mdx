@@ -73,7 +73,7 @@ npx kinetograph render <entry> -o <output.mp4> [options]
 | `--draft` | Half size, for a quick look. The same as `--scale 0.5`. |
 | `--scale <n>` | Output size multiplier, above 0 and at most 8. `0.5` renders 1080p as 540p, and `2` renders it as 4K. Each side rounds down to an even number. |
 | `--concurrency <n>` | Frames drawn at once, in worker threads. The default is half the cores, at most 4. `1` draws every frame in the main thread. A `.json` scene is drawn whole. |
-| `--encoder <name>` | The ffmpeg encoder to use, in place of the default. `libx264` and `libx265` run in a separate ffmpeg program, the one bundled in the platform package or the one `KINETOGRAPH_FFMPEG` names. See [FFmpeg licence](/docs/ffmpeg-license/). |
+| `--encoder <name>` | The ffmpeg encoder to use, in place of the default. Any encoder the built-in ffmpeg lacks runs in a separate ffmpeg program: the one bundled in the platform package, or the one `KINETOGRAPH_FFMPEG` names. So `KINETOGRAPH_FFMPEG=$(which ffmpeg)` lets you use your system ffmpeg's encoders: `libx264`, and on Intel and AMD GPUs under Linux `h264_vaapi`, `hevc_vaapi`, `h264_qsv` and `hevc_qsv` (see [Known issues](/docs/known-issues/)). Decoding always uses the built-in ffmpeg. See [FFmpeg licence](/docs/ffmpeg-license/). |
 | `--codec <name>` | `h264` (default), `h265`, `prores`, `vp9` or `gif`. A `.webm` path defaults to `vp9`, and a `.gif` path to `gif`. |
 | `--crf <n>` | Constant quality. Lower is better. For h264 and h265 the range is 0 to 51, and for vp9 it is 0 to 63. Not with `--video-bitrate`. |
 | `--video-bitrate <rate>` | A bit rate, such as `8M` or `2500k`. Not with `--crf`. |
@@ -231,7 +231,7 @@ npx kinetograph doctor
 |---|---|
 | `--range <a..b>` | Frames to check. The default is all of them. |
 
-With no entry, `doctor` prints the Node version, the platform and whether the addon loaded.
+With no entry, `doctor` prints the Node version, the platform, whether the addon loaded and which renderer draws (`renderer`). If Skia is on the CPU because the GPU could not be used, `rendererReason` (`why not the GPU:` in the text) says why: the device, the driver and what it lacks.
 
 ## studio
 

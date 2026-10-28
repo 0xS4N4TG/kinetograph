@@ -22,6 +22,7 @@ enum Role {
     Sampled,
 }
 
+mod vk_report;
 #[cfg(target_os = "macos")]
 mod metal;
 #[cfg(target_os = "macos")]

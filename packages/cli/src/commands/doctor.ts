@@ -96,18 +96,23 @@ function installReport(): { data: object; text: string } {
     addon = { loaded: false, error: error instanceof CliError ? error.message : String(error) };
   }
   let renderer: string | null = null;
+  // Why Skia is on the CPU when the GPU could not be used (the device, the driver and what it lacks), else null.
+  let rendererReason: string | null = null;
   if (addon.loaded) {
     try {
-      renderer = newRenderer().backend();
+      const started = newRenderer();
+      renderer = started.backend();
+      rendererReason = started.backendReason();
     } catch {
       // No renderer could start (no GPU and no CPU fallback): said below.
     }
   }
-  const data = { node: process.version, platform: `${process.platform}-${process.arch}`, addon, renderer };
+  const data = { node: process.version, platform: `${process.platform}-${process.arch}`, addon, renderer, rendererReason };
   const text = [
     `node ${data.node} on ${data.platform}`,
     addon.loaded ? `addon: loaded, version ${addon.version}` : `addon: NOT loaded: ${addon.error}`,
     addon.loaded ? `renderer: ${renderer ?? 'could not start'}` : 'renderer: unknown (no addon)',
+    ...(rendererReason === null ? [] : [`why not the GPU: ${rendererReason}`]),
     'kinetograph doctor <entry> reports what a project holds that the engine cannot draw',
   ].join('\n');
   return { data, text };

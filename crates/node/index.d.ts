@@ -15,6 +15,11 @@ export declare class Renderer {
   constructor(options?: RendererOptions | undefined | null)
   /** Which renderer draws: "Skia GPU (Metal)", "Skia CPU (no GPU found)" or "Skia CPU (KINETOGRAPH_SKIA_CPU=1)". */
   backend(): string
+  /**
+   * Why Skia draws on the CPU when the GPU could not be used: the device, the driver and what it lacks. `null`
+   * when it draws on the GPU, or the CPU was chosen with KINETOGRAPH_SKIA_CPU=1.
+   */
+  backendReason(): string | null
   /** One frame as a PNG. */
   still(sceneJson: string, frame: number, baseDir?: string | undefined | null): Buffer
   /**

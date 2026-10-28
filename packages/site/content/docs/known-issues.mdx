@@ -43,6 +43,24 @@ Each item says what doesn't work and what you see instead. For what does work, s
 
 `@remotion/webcodecs` is Remotion's wrapper around the browser's WebCodecs API, which encodes and decodes video and audio frames. Its encode and decode functions, and the box tree and sample callbacks of `@remotion/media-parser`, throw `UnsupportedApiError`. They need a video decoder and encoder in the addon, which is not built. Normal `<Video>` and `<Audio>` are not affected.
 
+### Hardware encoding on Intel and AMD GPUs (Linux)
+
+The ffmpeg built into the addon has no VAAPI or Quick Sync encoders, so `--encoder h264_vaapi` used to fail with `this ffmpeg has no encoder called "h264_vaapi"`. They now run in your system's ffmpeg, as `libx264` does:
+
+```sh
+KINETOGRAPH_FFMPEG=$(which ffmpeg) npx kinetograph render scene.json -o out.mp4 --encoder h264_vaapi
+```
+
+`h264_vaapi`, `hevc_vaapi`, `h264_qsv` and `hevc_qsv` are supported this way, for 4:2:0 pictures (`yuv420p`, and `yuv420p10le` for `hevc_*`). They are never the default, so a Linux machine with a GPU still renders with `libopenh264` unless you ask. Before an encoder is accepted, a four-picture test encode must open; if it does not, the error shows what ffmpeg said and the usual fix (the driver package, membership of the `render` group, `vainfo`). VAAPI uses the first `/dev/dri/renderD*`; set `KINETOGRAPH_VAAPI_DEVICE=/dev/dri/renderD129` to use another GPU.
+
+- The output depends on the GPU and driver, unlike `libx264`'s, so the same project can encode to different bytes on two machines. `--crf N` is mapped to the encoder's constant quality (VAAPI `-qp`, Quick Sync `-global_quality`), which is the same scale as a CRF but not the same picture quality.
+- Not in the addon's own ffmpeg because linking libva would stop the addon loading on any machine without `libva.so.2`. A way to do it without that risk (loading libva at run time) is written up in `docs/proposals/linux-hw-encode-linked.md` in the repository.
+- Verified by unit tests of the command lines and a stand-in ffmpeg. The first run against real Intel and AMD hardware is still to come: if one fails on yours, the error text and `ffmpeg -encoders | grep -E 'vaapi|qsv'` are what to report.
+
+### Skia on the CPU when the GPU is Vulkan (Linux, Windows)
+
+Skia's Graphite draws on the GPU through Vulkan. When it cannot start on a device, drawing falls back to Skia's CPU backend, which draws the same scene more slowly and with slightly different anti-aliasing. The one-time warning, and `kinetograph doctor` (also `--json`, as `rendererReason`), now say why: the GPU and driver, and which Vulkan version, function or image-format usage is missing. For example `Skia's Graphite cannot use the Vulkan device Intel(R) Graphics (MTL), Mesa 24.2.1, Vulkan 1.3.274: R8G8B8A8_UNORM images lack the format features COLOR_ATTACHMENT_BLEND`. When every check passes and Graphite still refuses, the message says so rather than naming a cause. An Intel Arc (Meteor Lake) machine that falls back is the case this was written for; send the line it prints. `KINETOGRAPH_SKIA_CPU=1` chooses the CPU on purpose.
+
 ### HyperFrames projects
 
 - **Three.js.** Not drawn. A page that loads Three.js is reported on every frame.

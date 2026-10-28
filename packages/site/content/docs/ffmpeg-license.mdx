@@ -44,7 +44,7 @@ The configure options and the pinned refs are in [`scripts/build-ffmpeg-gpl.sh`]
 
 ## Using your own ffmpeg, or none
 
-Set `KINETOGRAPH_FFMPEG` to the path of any `ffmpeg` program and Kinetograph will run that for the encoders the addon lacks, in place of `bin/ffmpeg`. Without it, Kinetograph looks for the package's `bin/ffmpeg`, then for an `ffmpeg` on your `PATH` that lists `libx264`.
+The ffmpeg built into the addon does all the decoding and encodes with the encoders it has. Any other encoder runs in an external `ffmpeg` program, and that need not be `bin/ffmpeg`: set `KINETOGRAPH_FFMPEG` to the path of any `ffmpeg` (for example `KINETOGRAPH_FFMPEG=$(which ffmpeg)`) and Kinetograph runs your system ffmpeg for the encoders the addon lacks. That is the way to use `libx264` from your own build, or `h264_vaapi`, `hevc_vaapi`, `h264_qsv` and `hevc_qsv` on Intel and AMD GPUs. Each encoder is looked up in your program first, then in the package's `bin/ffmpeg`, then in an `ffmpeg` on your `PATH` that lists `libx264` (or the VAAPI or Quick Sync encoder you asked for).
 
 If you do not want the GPL program in your install, delete `bin/ffmpeg` from the platform package. Renders then use the addon's own encoders: VideoToolbox on macOS, OpenH264 on macOS and Linux, Media Foundation on Windows. `--encoder libx264` and `--encoder libx265` then fail with an error that names the missing encoder, unless `KINETOGRAPH_FFMPEG` or your `PATH` supplies one.
 
