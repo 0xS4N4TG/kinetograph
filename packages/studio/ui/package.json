@@ -1,6 +1,6 @@
 {
   "name": "@kinetographdev/studio-ui",
-  "version": "0.2.0",
+  "version": "0.2.5",
   "private": true,
   "description": "The studio's browser UI (packages/cli/skills/kinetograph/references/AUTHORING.md §11.6): React, Vite, Tailwind CSS, shadcn/ui",
   "license": "PolyForm-Small-Business-1.0.0",
