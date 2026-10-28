@@ -267,19 +267,10 @@ impl<'a> Painter<'a> {
         if kind == "glsl" && drawn.get("webgpu").is_some() {
             self.webgpu_report(node, &mut drawn);
         }
-        if kind == "canvas" {
-            let mut urls = Vec::new();
-            url_filters(&drawn, &mut urls);
-            for url in urls {
-                self.report(
-                    node,
-                    "filter",
-                    url,
-                    "a url() filter is not drawn on a canvas",
-                );
-            }
-        }
         let id = self.layer_id(node, kind);
+        if kind == "canvas" {
+            self.canvas_url_filters(node, &mut drawn, (width, height), &id);
+        }
         let mut layer = Layer::new(&id, kind)
             .set("width", num(width))
             .set("height", num(height));
@@ -539,16 +530,73 @@ impl<'a> Painter<'a> {
     }
 }
 
-/// The `url()` filters among a canvas's commands, also inside the canvases
-/// they draw: the context wrote them in `unsupportedFilter` because it could
-/// not have the renderer draw them.
-fn url_filters(commands: &Value, out: &mut Vec<String>) {
-    for command in commands.as_array().into_iter().flatten() {
-        if let Some(url) = command.get("unsupportedFilter").and_then(Value::as_str) {
-            out.push(url.to_string());
-        }
-        if let Some(inner) = command.pointer("/source/commands") {
-            url_filters(inner, out);
+impl<'a> Painter<'a> {
+    /// The `url()` filters of a canvas's commands of `size` (also of the
+    /// canvases they draw or fill with): one that names an SVG `<filter>` of
+    /// the document becomes that filter's graph, for the canvas's box, as
+    /// Chrome applies it; one that names nothing is reported, and the canvas
+    /// draws without it.
+    fn canvas_url_filters(
+        &mut self,
+        node: &'a Node,
+        commands: &mut Value,
+        size: (f64, f64),
+        id: &str,
+    ) {
+        let path = self.path_of(node);
+        for command in commands.as_array_mut().into_iter().flatten() {
+            for f in command
+                .get_mut("filter")
+                .and_then(Value::as_array_mut)
+                .into_iter()
+                .flatten()
+            {
+                if f.get("type").and_then(Value::as_str) != Some("url") {
+                    continue;
+                }
+                let url = f
+                    .get("url")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                match super::svg::filter_graph(
+                    self.doc,
+                    self.req,
+                    &url,
+                    [0.0, 0.0, size.0, size.1],
+                    &format!("{id}.filter"),
+                    &path,
+                ) {
+                    Some(fe) => {
+                        let mut graph = fe.effect;
+                        if let Some(o) = graph.as_object_mut() {
+                            o.remove("type");
+                        }
+                        *f = json!({ "type": "graph", "graph": graph });
+                        self.unsupported.extend(fe.unsupported);
+                    }
+                    None => self.report(
+                        node,
+                        "filter",
+                        &url,
+                        "a url() filter names no <filter> of the document; the canvas draws without it",
+                    ),
+                }
+            }
+            // A canvas drawn in it, or that a pattern repeats.
+            for at in ["/source", "/paint/source"] {
+                let Some(source) = command.pointer_mut(at) else {
+                    continue;
+                };
+                if source.get("kind").and_then(Value::as_str) != Some("canvas") {
+                    continue;
+                }
+                let side = |k: &str| source.get(k).and_then(Value::as_f64).unwrap_or(0.0);
+                let inner_size = (side("width"), side("height"));
+                if let Some(inner) = source.get_mut("commands") {
+                    self.canvas_url_filters(node, inner, inner_size, id);
+                }
+            }
         }
     }
 }

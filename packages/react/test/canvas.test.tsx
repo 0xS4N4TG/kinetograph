@@ -50,7 +50,7 @@ describe('<Canvas>', () => {
     });
   });
 
-  it('writes shadows and filters on the commands and reports a url() filter, which is not drawn', () => {
+  it('writes shadows and filters on the commands and reports a url() filter, which a <Canvas> has no page to find', () => {
     const root = createSceneRoot();
     const tree = root.render(
       <TimelineContext.Provider value={timeline(0)}>
@@ -70,8 +70,7 @@ describe('<Canvas>', () => {
     root.unmount();
     expect(canvasOf(tree.layers[0]).commands![0]).toMatchObject({
       shadow: { color: '#00000080', blur: 6 },
-      filter: [{ type: 'blur', radius: 2 }],
-      unsupportedFilter: 'url(#rough)',
+      filter: [{ type: 'url', url: 'url(#rough)' }, { type: 'blur', radius: 2 }],
     });
     expect(tree.unsupported).toEqual([
       { path: expect.stringContaining('<Canvas>'), element: 'Canvas', property: 'filter', value: 'url(#rough)', reason: expect.stringContaining('url()') },

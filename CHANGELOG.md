@@ -26,6 +26,19 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 - Motion-blur sub-frames sample GSAP tweens that play by themselves at the sub-frame's time, with their `onUpdate`. They were at the frame's own state in every sub-frame, so they were not blurred. A blurred render's frames equal an unblurred render's, and a frame alone equals the frame in sequence.
 - An SVG element's `getBoundingClientRect` is what Chrome for Testing gives: the `<svg>`'s `preserveAspectRatio` (`none`, `slice`, the alignments), a CSS `transform` with its `transform-origin`, and nested `<svg>` viewports are now in it. Strokes, markers and filters stay out of it, as in Chrome.
+
+### Added
+
+- WebGL framebuffers do what Three.js's renderer needs of them, drawn natively and checked against Chrome for Testing: the stencil test (`stencilFunc`, `stencilOp`, `stencilMask` and their `Separate` forms, `clearStencil`, the canvas's `stencil` attribute, stencil renderbuffers); several colour outputs (`COLOR_ATTACHMENT1` to 7, `drawBuffers`, `clearBuffer*`, `layout(location = n)` outputs); depth and depth-and-stencil textures as attachments, sampled as Chrome samples them; colour, depth and stencil renderbuffers, one depth buffer shared by the framebuffers that attach it; a texture level above 0 as a target, with `TEXTURE_MAX_LEVEL`; `blitFramebuffer` of depth and stencil; and `texSubImage2D` from an image or a layer, into a texture drawn in or one made from a file.
+- Canvas 2D `url()` filters: `ctx.filter = 'url(#id)'` draws the SVG `<filter>` of the page it names, in its place in the filter list, as Chrome does.
+
+### Fixed
+
+- A canvas pattern of another canvas covers any number of tiles (it stopped at 10,000), and a pattern of a canvas pass's child is drawn (it was left out).
+- Canvas `ctx.filter = 'drop-shadow(...)'` blurs by its length as the standard deviation, as Chrome does; it was halved.
+- `isPointInStroke` takes the line width, caps, joins, miter limit and dashes into account, in the current transform, as Chrome does.
+- Explicit `layout(location = n)` on a WebGL shader's inputs and outputs is honoured; the translator dropped it.
+- With the default `antialias`, `blitFramebuffer` into a WebGL canvas, or out of it into a rectangle of another size, sets `INVALID_OPERATION`, as Chrome's multisampled canvas does.
 - An `<svg>` with a `<foreignObject>` that holds a block element (`<div>`, `<p>`) is drawn: the whole `<svg>` used to go missing, with nothing for `doctor` to say. The HTML in a `<foreignObject>` is laid out as a block box of the object's `width` and `height` (the attributes, or CSS), painted by the HTML painter (text, backgrounds, borders, flex, nested SVG), cut to the box by its `overflow`, and carried through the SVG's `viewBox`, transforms, opacity and clip. What cannot be drawn is reported by `doctor` per frame (a percentage size, HTML in a clip path), and the shapes beside it are drawn. Mermaid 12's default HTML labels draw as a result: flowchart, class, state and ER diagrams.
 - An inline element that holds a block (`<span><p>text</p></span>`) paints its text; the painter left it out, in HTML and in a `<foreignObject>`.
 - `display: table-cell` on an element that is no table part, and `display: table` on one with no table parts, are a block as wide as its content (or the `width` given), as the anonymous table boxes of CSS 2.2 section 17.2.1 make them; they used to fill the line, or hold nothing. Libraries centre labels with them.

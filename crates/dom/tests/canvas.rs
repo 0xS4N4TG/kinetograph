@@ -86,6 +86,12 @@ fn canvas_effects() {
 }
 
 #[test]
+fn canvas_patterns() {
+    // A pattern of a canvas over 16,000 tiles, in a stroke and in text, and repeating along x under a transform.
+    run("canvas_patterns", "", None, 6.0);
+}
+
+#[test]
 fn canvas_scaled() {
     // The bitmap is 100 x 50; CSS makes it 200 x 100 with rounded corners. Chrome stretches the bitmap, which blurs
     // it; the engine draws the commands at the size of the box, so edges are sharp (hence the higher limit).
@@ -175,32 +181,58 @@ fn a_canvas_without_a_size_is_300_by_150() {
 }
 
 #[test]
-fn a_url_filter_on_a_canvas_is_reported_where_it_is_not_drawn() {
-    // One on a command, the same on another, one inside a canvas the first draws.
+fn a_url_filter_on_a_canvas_is_the_pages_filter_or_is_reported() {
+    // One on a command, the same on another, one inside a canvas the first draws; the page has only #rough.
     let commands = r##"[
-        {"op":"fill","path":"M0 0H5V5Z","paint":{"type":"color","color":"#ff0000"},"unsupportedFilter":"url(#rough)"},
-        {"op":"fill","path":"M0 0H5V5Z","paint":{"type":"color","color":"#ff0000"},"unsupportedFilter":"url(#rough)"},
+        {"op":"fill","path":"M0 0H5V5Z","paint":{"type":"color","color":"#ff0000"},"filter":[{"type":"url","url":"url(#rough)"}]},
+        {"op":"fill","path":"M0 0H5V5Z","paint":{"type":"color","color":"#ff0000"},"filter":[{"type":"url","url":"url(#rough)"}]},
         {"op":"image","source":{"kind":"canvas","width":5,"height":5,"commands":[
-          {"op":"fill","path":"M0 0H5V5Z","paint":{"type":"color","color":"#ff0000"},"unsupportedFilter":"url(#inner)"}]},
+          {"op":"fill","path":"M0 0H5V5Z","paint":{"type":"color","color":"#ff0000"},"filter":[{"type":"url","url":"url(#inner)"}]}]},
          "dx":0,"dy":0,"dw":5,"dh":5}]"##
         .replace('\n', "");
     let body = format!(
-        "<canvas id=\"c\" width=\"50\" height=\"20\" data-kg-canvas='{commands}' style=\"display:block\"></canvas>"
+        "<svg width=\"0\" height=\"0\" style=\"position:absolute\"><filter id=\"rough\"><feGaussianBlur stdDeviation=\"2\"/></filter></svg>\
+         <canvas id=\"c\" width=\"50\" height=\"20\" data-kg-canvas='{commands}' style=\"display:block\"></canvas>"
     );
     let out = paintkit::paint_html(&paintkit::page(&body), 200, 100);
-    let mut urls: Vec<_> = out
+    let urls: Vec<_> = out
         .unsupported
         .iter()
         .map(|u| (u.property.as_deref(), u.value.as_deref()))
         .collect();
-    urls.sort();
+    assert_eq!(urls, [(Some("filter"), Some("url(#inner)"))]);
+    let canvas = find(&out.layers, "c").expect("a canvas layer");
+    let filter = &canvas["commands"][0]["filter"][0];
+    assert_eq!(filter["type"], "graph");
     assert_eq!(
-        urls,
-        [
-            (Some("filter"), Some("url(#inner)")),
-            (Some("filter"), Some("url(#rough)"))
-        ]
+        filter["graph"]["primitives"][0]["primitive"],
+        "feGaussianBlur"
     );
+    assert_eq!(
+        canvas["commands"][2]["source"]["commands"][0]["filter"][0]["type"],
+        "url"
+    );
+}
+
+#[test]
+fn canvas_url_filter() {
+    // `ctx.filter = 'url(#id)'` with SVG filters of the page: a blur, a flood in objectBoundingBox units (whose box
+    // is the canvas), and a colour matrix after a blur() in one list, against Chrome's.
+    let (body, (w, h)) = page("canvas_url_filter", "");
+    let svg = "<svg width=\"0\" height=\"0\" style=\"position:absolute\">\
+        <filter id=\"soft\"><feGaussianBlur stdDeviation=\"3\"/></filter>\
+        <filter id=\"tint\" x=\"0.1\" y=\"0.2\" width=\"0.5\" height=\"0.6\"><feFlood flood-color=\"#2a9d8f\" flood-opacity=\"0.6\"/>\
+          <feComposite in2=\"SourceGraphic\" operator=\"over\"/></filter>\
+        <filter id=\"swap\" color-interpolation-filters=\"sRGB\"><feColorMatrix type=\"matrix\" \
+          values=\"0 0 1 0 0  0 1 0 0 0  1 0 0 0 0  0 0 0 1 0\"/></filter></svg>";
+    let body = format!("{svg}{body}");
+    let (out, frame, diff) = paintkit::compare("canvas_url_filter", &body, w, h);
+    assert!(out.unsupported.is_empty(), "{:?}", out.unsupported);
+    paintkit::check_golden("canvas_url_filter", &frame);
+    println!("canvas_url_filter: {diff:?}");
+    if let Some(d) = diff {
+        assert!(d.mean < 3.0, "{d:?}");
+    }
 }
 
 /// The layer called `id`, anywhere in `layers`.
