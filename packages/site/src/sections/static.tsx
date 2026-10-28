@@ -16,8 +16,8 @@ export function Start() {
         <div>
           <Heading lines={['three commands to a film.']} hot="commands" tag="TRK 06  0.95" className="text-[clamp(32px,3.6vw,52px)]" />
           <p className={`${body} mt-10 max-w-[40ch]`}>
-            You need Node 22 or later and a GPU that wgpu supports, such as Metal on a Mac. It needs no display, so it runs
-            on a server too. Rendering video needs FFmpeg.
+            You need Node 22 or later. It uses the GPU when there is one (Metal, Vulkan or D3D12) and draws on the CPU
+            otherwise. It needs no display, so it runs on a server too, and the npm package carries FFmpeg.
           </p>
         </div>
         <ol className="space-y-9">

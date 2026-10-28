@@ -1,16 +1,25 @@
 ---
 title: Installation
-description: Build Kinetograph from a clone and check that the native addon loads.
+description: Install Kinetograph from npm, or build it from a clone, and check that the native addon loads.
 ---
 
-Kinetograph is not on npm yet. Build it from a clone of the repository.
+## From npm
 
-## What you need
+```sh
+npm install kinetograph
+```
+
+You need Node.js 22 or newer. The native addon comes as a prebuilt package for macOS (arm64), Linux (x64, glibc) and Windows (x64), and it carries FFmpeg, so nothing else is installed. Kinetograph uses the GPU when there is one (Metal on macOS, Vulkan on Linux, D3D12 on Windows) and draws on the CPU otherwise. No window or display is needed, so it runs on a server or in CI.
+
+Then [check the install](#check-the-install).
+
+## From source
+
+### What you need
 
 - Node.js 22 or newer.
 - A Rust toolchain from rustup. Use the stable channel. The addon is built with it.
 - The FFmpeg development libraries, pkg-config and libclang. The addon links FFmpeg, so the build needs them.
-- A GPU that wgpu supports. On macOS that means Metal. No window or display is needed.
 
 Install the system libraries:
 
@@ -25,7 +34,7 @@ export PATH="$HOME/.cargo/bin:/opt/homebrew/opt/rustup/bin:$PATH"
 
 The GPU tests, the golden images and the benchmarks run on an Apple M4 Mac. The Linux and Windows builds are set up in CI.
 
-## Build
+### Build
 
 From the repository root:
 
@@ -48,20 +57,21 @@ npm run build:release -w @kinetographdev/native
 npx kinetograph doctor
 ```
 
-With no entry, `doctor` prints the Node version, the platform and whether the addon loaded:
+With no entry, `doctor` prints the Node version, the platform, whether the addon loaded and which renderer draws:
 
 ```text
 node v22.x.x on darwin-arm64
 addon: loaded, version 0.2.5
+renderer: Skia GPU (Metal)
 kinetograph doctor <entry> reports what a project holds that the engine cannot draw
 ```
 
-If the addon line says `NOT loaded`, the text after it gives the reason.
+If the addon line says `NOT loaded`, the text after it gives the reason. If the renderer is Skia on the CPU because the GPU could not be used, `doctor` says why.
 
 `npx kinetograph --version` prints the package version.
 
 ## Run the CLI
 
-From the repository root, `npx kinetograph <command>` runs the CLI. Without `npx`, run `node packages/cli/dist/cli.js <command>`. The [CLI reference](/docs/reference/cli/) lists every command.
+`npx kinetograph <command>` runs the CLI. In a clone, run it from the repository root. Without `npx`, run `node packages/cli/dist/cli.js <command>`. The [CLI reference](/docs/reference/cli/) lists every command.
 
 Projects inside the repository resolve the `@kinetographdev/*` packages from the workspace. The next page writes a first project: [First video](/docs/getting-started/first-video/).

@@ -26,6 +26,8 @@ Commands that open a project take two more options:
 
 These commands open a project: `still`, `render`, `strip`, `onion`, `inspect`, `lint`, `bench`, `audio analyze`, `snapshot` and `doctor`.
 
+An entry is a Remotion-shaped TSX, TS or JS file, a `.json` scene, or an HTML page: its `index.html`, or the directory that holds it. HyperFrames projects are HTML pages, so they render as they are; see [HyperFrames projects](/docs/compat/#hyperframes-projects).
+
 ### Frames and ranges
 
 - A frame is a whole number from 0.
@@ -249,6 +251,22 @@ npx kinetograph studio <entry>
 | `--props <json>` | Input props, merged over each composition's `defaultProps`. |
 
 The studio is the `@kinetographdev/studio` package. The command loads it by name, so it must be installed next to `kinetograph`. Stop the studio with Ctrl-C.
+
+## fetch-deps
+
+Downloads what a project loads from the web (CDN scripts, ES modules, remote pictures, media, Google Fonts) into the local cache and pins each file in `kinetograph.lock.json` beside the entry. `render`, `still`, `doctor` and `studio` do the same download first, so this is for doing it ahead of time, such as in CI or when building an image. `--offline` on those commands never downloads, and a file that is not cached is then an error.
+
+```sh
+npx kinetograph fetch-deps index.html
+npx kinetograph fetch-deps index.html --update
+```
+
+| Option | Meaning |
+|---|---|
+| `--allow-host <host>` | Also download from this host (comma-separated for several). By default only `cdn.jsdelivr.net`, `unpkg.com`, `cdnjs.cloudflare.com` and `esm.sh`. |
+| `--url <url>` | Also download this URL (comma-separated for several): a file the page fetches that the scan of its scripts did not find. `doctor` names the ones a render refused. |
+| `--update` | Download everything again and rewrite `kinetograph.lock.json`, to accept a file that changed upstream. |
+| `--max-media-mb <n>` | The most megabytes of one remote video or audio file to download. The default is 500. |
 
 ## mcp
 

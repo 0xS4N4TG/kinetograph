@@ -10,6 +10,7 @@
   <a href="#rendered-with-kinetograph">Examples</a> ·
   <a href="#the-editor">Editor</a> ·
   <a href="#projects-in-tsx">Get started</a> ·
+  <a href="#html-pages-and-hyperframes-projects">HTML and HyperFrames</a> ·
   <a href="packages/cli/skills/kinetograph/references/ENGINE.md">The engine</a> ·
   <a href="packages/site/content/docs/guides/agents.mdx">Use with agents</a>
 </p>
@@ -17,6 +18,8 @@
 You (or an agent) write a video in TypeScript with Remotion's API, CSS, SVG, Canvas 2D, WebGL shaders and Web Audio;
 Node runs the code; a Rust GPU compositor, loaded into Node as an N-API addon, draws every frame. Existing Remotion
 projects render as they are: `remotion` and `@remotion/*` imports resolve to Kinetograph's own implementation of them.
+A video can also be a plain HTML page, and [HyperFrames](https://github.com/heygen-com/hyperframes) projects render as
+they are too, GSAP timelines included: `npx kinetograph render index.html -o out.mp4`.
 
 **The film above is 1,184 frames of 1080p video, sound included, rendered in 26 seconds on a laptop.** It is one
 TypeScript project in [`examples/launch`](examples/launch).
@@ -166,6 +169,37 @@ A project imports from `remotion` and `@remotion/*` as it would for Remotion (th
 `npx kinetograph mcp` serves the same commands over MCP; [Use with agents](packages/site/content/docs/guides/agents.mdx)
 has the client setup and the agent skill. `npm test` runs the CPU tests; the GPU ones run with
 `KINETOGRAPH_GPU_TESTS=1`.
+
+## HTML pages and HyperFrames projects
+
+A video can be an HTML page instead of a TSX project, and a HyperFrames project renders as it is, with no rewrite and
+no browser. The root element gives the size and length; GSAP timelines registered in `window.__timelines` are paused
+and seeked to each frame's time:
+
+```html
+<div id="root" data-composition-id="hello" data-width="1280" data-height="720" data-duration="2">
+  <div id="title">Hello, Kinetograph</div>
+  <div id="bar"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script>
+  const tl = gsap.timeline({ paused: true });
+  tl.to('#bar', { width: 640, duration: 1, ease: 'none' });
+  window.__timelines = { hello: tl };
+</script>
+```
+
+```sh
+npx kinetograph still index.html 15 -o frame.png   # the same commands as for a TSX project
+npx kinetograph render index.html -o out.mp4       # or the directory that holds index.html
+npx kinetograph fetch-deps index.html              # download what the page loads (CDN scripts, modules, media) ahead of time
+```
+
+`still`, `strip`, `inspect`, `lint`, `doctor`, `studio` and `render` all take the page. A render downloads what the page
+loads from the web first and pins it in `kinetograph.lock.json`; `--offline` never downloads. Clips (`data-start`,
+`data-duration`), nested compositions (`data-composition-src`), `<video>` and `<audio>`, `data-fx-chain` audio effects and
+`data-color-grading` work as in HyperFrames: the details are under "HyperFrames projects" on the kinetograph site's
+compatibility page (`/docs/compat/#hyperframes-projects`).
 
 ## Build from source
 
