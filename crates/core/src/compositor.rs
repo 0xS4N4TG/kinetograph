@@ -272,6 +272,8 @@ pub struct Compositor {
     layout: wgpu::BindGroupLayout,
     /// Skia's sRGB-encoded premultiplied output to linear light.
     to_linear_premul: wgpu::RenderPipeline,
+    /// Linear premultiplied to sRGB-encoded premultiplied, for a backdrop blurred in sRGB.
+    to_srgb_premul: wgpu::RenderPipeline,
     copy: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
     /// Up to `BLEND_SLOTS` blends in one pass (`shaders/blend_many.wgsl`),
@@ -598,6 +600,7 @@ impl Compositor {
             margin,
             srgb_blend: false,
             to_linear_premul: pipeline(&shader, "fs_to_linear_premul", LINEAR_FORMAT),
+            to_srgb_premul: pipeline(&shader, "fs_to_srgb_premul", LINEAR_FORMAT),
             copy: pipeline(&shader, "fs_copy", LINEAR_FORMAT),
             blend: pipeline(&shader, "fs_blend", LINEAR_FORMAT),
             blend_many,
@@ -670,6 +673,7 @@ impl Compositor {
         let c = &compositor;
         compositor.names = [
             (&c.to_linear_premul, "to linear premul"),
+            (&c.to_srgb_premul, "to sRGB premul"),
             (&c.copy, "copy"),
             (&c.blend, "blend"),
             (&c.blend_many, "blend many"),
@@ -1393,7 +1397,24 @@ impl Compositor {
             // Nothing of it is kept: `src` over nothing is `src`.
             return src;
         }
-        let blurred = self.target(frost);
+        // In a scene that blends in sRGB the backdrop is blurred on its
+        // sRGB-encoded values, as CSS's backdrop-filter and Skia blur it, and
+        // taken back to linear light after.
+        let encoded = self.srgb_blend.then(|| {
+            let mut encoded = self.target_full(backdrop.bounds);
+            encoded.bounds = backdrop.bounds;
+            self.pass(
+                &self.to_srgb_premul,
+                backdrop.input(),
+                backdrop.input(),
+                0.0,
+                0,
+                &encoded,
+            );
+            encoded
+        });
+        let backdrop = encoded.as_ref().unwrap_or(backdrop);
+        let mut blurred = self.target(frost);
         let encoder = self
             .pending
             .get_mut()
@@ -1423,6 +1444,19 @@ impl Compositor {
                 backdrop.bounds,
                 blurred.bounds,
             );
+        }
+        if let Some(encoded) = encoded {
+            self.release(encoded);
+            let linear = self.target(frost);
+            self.pass(
+                &self.to_linear_premul,
+                blurred.input(),
+                blurred.input(),
+                0.0,
+                0,
+                &linear,
+            );
+            self.release(std::mem::replace(&mut blurred, linear));
         }
         // The matte pass with opacity 1 and alpha mode multiplies its first
         // input by the alpha of its second. `src` is blended over the result

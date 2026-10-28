@@ -93,6 +93,9 @@ pub struct Translator {
     held: Vec<Tex>,
     /// The pictures of a canvas pass's children while its commands are drawn (`raster_canvas_pass`).
     layer_pics: Option<LayerPictures>,
+    /// The canvas's save count before each layer of the frame `save_layer_with` made, innermost last; those restored
+    /// since are dropped by `in_skia_layer`.
+    layer_saves: Vec<usize>,
     /// A fallback failed (`Renderer::skia_fallback`'s error), reported by `draw_scene`'s caller.
     pub error: Option<crate::error::Error>,
 }
@@ -202,6 +205,7 @@ impl Translator {
             rec: None,
             held: Vec::new(),
             layer_pics: None,
+            layer_saves: Vec::new(),
             error: None,
         }
     }
@@ -265,6 +269,7 @@ impl Translator {
         canvas.save();
         canvas.translate((margin as f32, margin as f32));
         self.host = host;
+        self.layer_saves.clear();
         self.draw_layers(canvas, &scene.layers, 1.0);
         self.host = std::ptr::null_mut();
         canvas.restore();
@@ -608,7 +613,17 @@ impl Translator {
         if let Some(bd) = backdrop {
             rec = rec.backdrop(bd);
         }
+        self.layer_saves.push(canvas.save_count());
         canvas.save_layer(&rec);
+    }
+
+    /// Whether `canvas` draws into a layer `save_layer_with` made, not straight into the frame's surface.
+    fn in_skia_layer(&mut self, canvas: &Canvas) -> bool {
+        let count = canvas.save_count();
+        while self.layer_saves.last().is_some_and(|&s| s >= count) {
+            self.layer_saves.pop();
+        }
+        !self.layer_saves.is_empty()
     }
 
     fn apply_clip(&mut self, canvas: &Canvas, layer: &ResolvedLayer) {
@@ -2107,7 +2122,24 @@ impl Translator {
         ]);
         // SAFETY: `host` is the renderer `draw_scene` was given; this translator is not part of it.
         let host = unsafe { &mut *self.host };
-        let tex = match host.skia_fallback(layer, siblings, parent) {
+        // A layer that blurs its backdrop sees what Skia has drawn so far: the frame's surface, flushed to its texture.
+        // Inside a layer of Skia's own (a group's opacity, blend or effects) the backdrop is that layer, which only Skia
+        // holds: left out.
+        let backdrop = if !crate::render::uses_backdrop(siblings, layer) {
+            None
+        } else if self.in_skia_layer(canvas) {
+            self.stats.approx("backdrop of a GPU-drawn layer in a Skia layer (left out)");
+            None
+        } else {
+            match host.skia_backdrop(canvas, self.rec.as_ref(), &self.held) {
+                Ok(tex) => Some(tex),
+                Err(e) => {
+                    self.error = Some(e);
+                    return;
+                }
+            }
+        };
+        let tex = match host.skia_fallback(layer, siblings, parent, backdrop) {
             Ok(Some(tex)) => tex,
             Ok(None) => return,
             Err(e) => {

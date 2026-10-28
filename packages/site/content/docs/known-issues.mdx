@@ -109,6 +109,7 @@ It sees only its own layer, runs one pass, has no other texture, and takes `f32`
 
 - A `box-shadow` blur above about 200 px is a true Gaussian here; Chrome approximates very wide box shadows and draws them fainter. `filter: blur()`, `drop-shadow()` and `backdrop-filter: blur()` match Chrome up to its own limit of 532 px, and past it, as Chrome draws them 532 px wide.
 - A margin makes room for at most `3 * 128` px past the canvas edge for a scene `glow`, shadow or canvas-mode `backdropBlur`: a wider one is drawn as wide, but content further off the canvas than that does not reach in. CSS `backdrop-filter` reads only its own box, so it needs no margin.
+- A `backdrop-filter` in a `preserve-3d` context that sits inside an element drawn as one group (an ancestor with `opacity` below 1, a `filter`, a `mask`, `mix-blend-mode` or `isolation: isolate`) blurs only what its own 3D context drew before it, not the rest of that group. Chrome blurs everything the group drew before it. The frame reports it as approximated.
 
 ### SVG
 
