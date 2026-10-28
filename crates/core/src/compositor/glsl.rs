@@ -54,6 +54,7 @@ const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 /// What draws go to: the drawing buffer, or a framebuffer's texture.
 struct Target {
     size: (u32, u32),
+    format: wgpu::TextureFormat,
     view: wgpu::TextureView,
     // Kept alive with its view.
     _texture: wgpu::Texture,
@@ -241,6 +242,7 @@ impl Compositor {
             });
             self.glsl.inputs[n] = Some(Target {
                 size,
+                format: wgpu::TextureFormat::Rgba8Unorm,
                 view: texture.create_view(&wgpu::TextureViewDescriptor::default()),
                 _texture: texture,
             });
@@ -311,9 +313,10 @@ impl Compositor {
         target.view.clone()
     }
 
-    /// The drawing buffer, made when there is none of `size`.
-    fn drawing_buffer(&mut self, size: (u32, u32)) {
-        if self.glsl.target.as_ref().is_none_or(|t| t.size != size) {
+    /// The drawing buffer, made when there is none of `size` and `format` (Rgba8 for WebGL and an 8-bit WebGPU canvas,
+    /// Rgba16Float for an `rgba16float` one).
+    fn drawing_buffer(&mut self, size: (u32, u32), format: wgpu::TextureFormat) {
+        if self.glsl.target.as_ref().is_none_or(|t| t.size != size || t.format != format) {
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("glsl drawing buffer"),
                 size: wgpu::Extent3d {
@@ -324,13 +327,14 @@ impl Compositor {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
+                format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                     | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
             self.glsl.target = Some(Target {
                 size,
+                format,
                 view: texture.create_view(&wgpu::TextureViewDescriptor::default()),
                 _texture: texture,
             });
@@ -346,7 +350,7 @@ impl Compositor {
         base_dir: &Path,
         inputs: &HashMap<String, wgpu::TextureView>,
     ) -> Result<()> {
-        self.drawing_buffer(size);
+        self.drawing_buffer(size, wgpu::TextureFormat::Rgba8Unorm);
 
         // Everything drawn to the drawing buffer before its last clear is gone
         // with it, unless a blit reads the drawing buffer in between. A
@@ -639,6 +643,7 @@ impl Compositor {
                 id,
                 Target {
                     size: (width, height),
+                    format: wgpu::TextureFormat::Rgba8Unorm,
                     view: texture.create_view(&wgpu::TextureViewDescriptor::default()),
                     _texture: texture,
                 },
@@ -1455,6 +1460,10 @@ impl Compositor {
             self.height as f32,
             f32::from(u8::from(content.premultiplied_alpha)),
             f32::from(u8::from(!content.alpha)),
+            f32::from(u8::from(content.webgpu.as_ref().is_some_and(|w| w.display_p3()))),
+            0.0,
+            0.0,
+            0.0,
         ]);
         let bytes: Vec<u8> = params.iter().flat_map(|f| f.to_le_bytes()).collect();
 

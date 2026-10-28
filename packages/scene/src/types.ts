@@ -1112,6 +1112,10 @@ export interface WebGpuContent {
   notes?: string[];
   /** What the frame reads that earlier frames made (state a page carries), so that the frame is not the same alone as in a sequence. */
   impure?: string[];
+  /** The canvas's `format` when it is `rgba16float` (drawn at half-float precision); 8-bit otherwise. */
+  canvasFormat?: 'rgba16float';
+  /** The canvas's `colorSpace` when it is `display-p3` (converted to the video's sRGB primaries); `srgb` otherwise. */
+  colorSpace?: 'display-p3';
 }
 
 export interface GlslLayer extends LayerBase, Partial<GlslContent> {
@@ -1258,6 +1262,21 @@ export interface Model3D extends Placement3D, Shadowing3D {
   /** A clip that is over starts again (default true); `false` holds its last pose. */
   loop?: boolean;
 }
+/**
+ * A bevel round extruded text or a path, as three.js's `ExtrudeGeometry` makes it (`bevelThickness`, `bevelSize`,
+ * `bevelOffset`, `bevelSegments`), in world units.
+ */
+export interface Bevel3D {
+  /** How far each cap stands beyond the walls. Default: a quarter of `depth`. */
+  thickness?: number;
+  /** How far the walls stand out from the outline. Default: the thickness. */
+  size?: number;
+  /** Moves the whole bevel out from the outline (in, when negative). Default 0. */
+  offset?: number;
+  /** Flat bands the rounded edge is cut into, 1 to 32. Default 3. */
+  segments?: number;
+}
+
 export interface Text3D extends Placement3D, Shadowing3D {
   type: 'text';
   id?: string;
@@ -1271,6 +1290,8 @@ export interface Text3D extends Placement3D, Shadowing3D {
   /** Default `center`. */
   align?: 'left' | 'center' | 'right';
   lineHeight?: number;
+  /** Rounds the letters' edges. */
+  bevel?: Bevel3D;
   material?: Material3D;
 }
 export interface Extrude3D extends Placement3D, Shadowing3D {
@@ -1282,6 +1303,8 @@ export interface Extrude3D extends Placement3D, Shadowing3D {
   size?: number;
   depth?: number;
   fillRule?: 'nonzero' | 'evenodd';
+  /** Rounds the shape's edges. */
+  bevel?: Bevel3D;
   material?: Material3D;
 }
 export interface Group3D extends Placement3D {

@@ -676,8 +676,8 @@ not checked for uniqueness).
 |---|---|---|
 | `mesh` | `geometry`, `material` | A primitive. |
 | `model` | `src`, `material`, `animation`, `time`, `loop` | A glTF 2.0 file (`.gltf` with its files, or `.glb`), relative to the scene. With a `material` it replaces every material of the file. With an `animation` (a clip's name, or its position in the file) the model is posed by that clip; see [glTF](#3d-gltf). |
-| `text` | `text`, `font`, `size` (em in world units, 1), `depth` (0.2), `align` (`center`), `lineHeight` | Text from the scene's `fonts`, shaped by the text engine and extruded `depth` along z, centred on the origin (the block of text, whatever the alignment of its lines). `\n` breaks lines. |
-| `extrude` | `path`, `size` (1), `depth` (0.2), `fillRule` | SVG path data, extruded. y points down as in SVG; it comes out upright, centred, its longer side `size` long. Holes stay holes. |
+| `text` | `text`, `font`, `size` (em in world units, 1), `depth` (0.2), `align` (`center`), `lineHeight`, `bevel` | Text from the scene's `fonts`, shaped by the text engine and extruded `depth` along z, centred on the origin (the block of text, whatever the alignment of its lines). `\n` breaks lines. |
+| `extrude` | `path`, `size` (1), `depth` (0.2), `fillRule`, `bevel` | SVG path data, extruded. y points down as in SVG; it comes out upright, centred, its longer side `size` long. Holes stay holes. |
 | `group` | `children` | Objects that move together. |
 
 `mesh`, `model`, `text` and `extrude` also take `castShadow` and `receiveShadow` (both false; see [shadows](#3d-shadows)).
@@ -742,17 +742,28 @@ plus GGX specular per light, and the environment if there is one.
     and added; for a mesh with no normals the flat ones are made again from the moved positions. Tangent displacements
     are not read. The weights come from the clip, else the node's, else the mesh's.
   - **Skins.** A mesh on a node with a skin is moved by the skin's joints, each vertex by up to 4 of them
-    (`JOINTS_0`, `WEIGHTS_0`; the weights are made to sum to 1) through the joint matrices
+    (`JOINTS_0`, `WEIGHTS_0`; the weights are made to sum to 1, and a vertex whose weights are all 0, which glTF
+    forbids, follows its first listed joint alone, as three.js's `normalizeSkinWeights` makes it) through the joint matrices
     `world(joint) * inverseBind(joint)`, so an animated character deforms. The mesh node's own transform does not apply
     to a skinned mesh, as the glTF spec says. Normals are turned by the same blend. Morph targets are applied before the
     skin.
-  - Morphs and skins are done on the CPU, once for each frame a deformed model's pose changes (a model with no clip is
-    deformed once and kept); the result is drawn like any mesh, so it takes lights, shadows and the environment.
-  - **Normal and metallic-roughness maps** (texture coordinate set 0) are drawn: the normal map's tangent frame comes
-    from screen-space derivatives, so the mesh needs no tangents; its `scale` is kept; the metallic-roughness texture's
-    blue and green multiply the metallic and roughness factors. All textures repeat (glTF samplers are not read).
-  - **Not read**, and reported: textures other than the base colour (normal, occlusion, metallic-roughness, emissive), a
-    base colour texture on a texture coordinate set above 0, `alphaMode: MASK` (drawn opaque), primitives that are not
+  - Morphs and skins are done on the GPU: each frame a compute pass (`shaders/scene3d_deform.wgsl`) moves the mesh's
+    vertices by the pose's morph weights and joint matrices into a vertex buffer the frame draws, so it takes lights,
+    shadows and the environment like any mesh. The mesh, its targets and its joints are uploaded once; a frame uploads
+    only the weights and the matrices. A 204,800-vertex skinned and morphing model draws a 1080p frame in 3 to 5 ms on
+    the M4, where deforming it on the CPU took 10 to 12 ms, and four of them in 9 to 15 ms against about 30
+    (`tests/scene3d_bench.rs`, two rounds each on a shared machine). The box a deformed part is
+    sorted and shadow-fitted by is worked out from its joints' boxes, so it holds every vertex without reading them back.
+    A part whose data is more than the device lets one storage buffer hold (128 MiB at the default limits: a rig of 100
+    morph targets on 60,000 vertices is 144 MB) is deformed on the CPU instead, the same sums each frame, so nothing is
+    left out.
+  - **Normal, metallic-roughness, occlusion and emissive maps** (texture coordinate set 0) are drawn: the normal map's
+    tangent frame comes from screen-space derivatives, so the mesh needs no tangents; its `scale` is kept; the
+    metallic-roughness texture's blue and green multiply the metallic and roughness factors; the occlusion texture's red,
+    at its `strength` (`1 + strength * (red - 1)`), darkens the light from all around (the ambient lights and the
+    environment) and not the lights that have a direction, as glTF says; the emissive texture (sRGB) multiplies the
+    emissive factor. All textures repeat (glTF samplers are not read).
+  - **Not read**, and reported: a texture on a texture coordinate set above 0, `alphaMode: MASK` (drawn opaque), primitives that are not
     lists of triangles (points, lines, strips and fans are left out), more than 4 joints a vertex (`JOINTS_1` is
     dropped), scenes other than the default, and every glTF extension the file lists in `extensionsUsed` (this includes
     `KHR_texture_transform` and `KHR_materials_*`). Cameras and lights in the file are not read and not reported. Each
@@ -762,20 +773,26 @@ plus GGX specular per light, and the environment if there is one.
   objects with `castShadow` seen along the light, fitted automatically to their boxes (so the map's resolution follows
   the scene's size, and a ground plane that only receives does not stretch it). The objects with `receiveShadow` are
   dimmed in the light by what the map says is in the way, with a 3 x 3 percentage-closer filter; the light's own
-  diffuse and specular are dimmed, ambient light is not. At most 4 lights cast shadows, and at most 8 maps are made (a point light takes 6). `shadow` holds `mapSize` (the
+  diffuse and specular are dimmed, ambient light is not. Every light may cast shadows (8 lights, so up to 48 maps: a point light takes 6). The maps are the layers of one depth texture array as big as the largest `mapSize` (a smaller map uses a corner of its layer), so a scene's maps may hold at most 1 GiB: 48 maps of 2048 or 16 of 4096 fit, and a scene over it is refused when it loads, naming the size to lower. A 1080p frame of 25 casters draws in 3 to 4 ms on the M4 with 4 directional lights at 2048 (as with the separate maps before), 5.3 ms with 8, and 10 to 13 ms with 8 point lights at 1024 (48 maps) (`tests/scene3d_bench.rs`). `shadow` holds `mapSize` (the
   side in texels, 64 to 4096, default 2048), `bias` (1) and `normalBias` (1.5), both in texels of the fitted map (so a
   setting does not depend on the scene's scale; raise them if a surface speckles itself, lower them if a shadow
   detaches from its object), and `radius` (1), half the width of the soft edge in texels (0 is the hardest the map's
   resolution allows). Every face of a caster is drawn into the map, translucent objects included as if opaque; a
-  surface beyond the casters' far end is lit unless something is in front of it. Point lights cast no shadows, and
+  surface beyond the casters' far end is lit unless something is in front of it. An ambient light casts no shadows, and
   nothing shadows an ambient or `unlit` surface. The map is a pure function of the frame: nothing in it depends on the
   camera, so a camera move does not make it shimmer.
-- **Extrusion.** Walls are smooth where neighbouring edges bend by less than 40 degrees and hard beyond. No bevel.
+- **Extrusion.** Walls are smooth where neighbouring edges bend by less than 40 degrees and hard beyond.
+  `bevel` rounds the edges as three.js's `ExtrudeGeometry` does (`bevelThickness`, `bevelSize`, `bevelOffset`,
+  `bevelSegments`): `{ "thickness", "size", "offset", "segments" }` in world units, defaults a quarter of `depth`, the
+  thickness, 0 and 3 (1 to 32). Each cap stands `thickness` beyond the walls (so the object is `depth + 2 * thickness`
+  deep), the walls stand `size` out from the outline (letters get bolder, holes smaller) and `offset` moves both; the
+  edge between is a quarter of an ellipse in `segments` flat bands, smooth along the outline. A corner grows at most 4
+  times `size` (a miter limit), and a concave curve tighter than the bevel folds over itself, as in three.js.
 - **Determinism.** The frame is a pure function of the scene, its fonts and the files it names. Meshes of text and paths
   are built once per distinct spec and kept.
 - **Files.** Models and textures are read when the renderer is built, like images; a bad one is an error naming it.
   Text must use a key of the scene's `fonts`, checked when the scene loads.
-- **Not drawn (v1).** Occlusion and emissive maps, bevels, post effects
+- **Not drawn (v1).** Post effects
   beyond the layer's own effects, and more than 8 lights.
 - Counts nothing in the [margin](#canvas-margin).
 
