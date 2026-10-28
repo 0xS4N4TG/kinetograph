@@ -423,7 +423,7 @@ impl Translator {
                     return None;
                 }
             },
-            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } => return None,
+            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } | CanvasSource::Video { .. } => return None,
         };
         if !(width > 0.0 && height > 0.0 && width.is_finite() && height.is_finite()) {
             return None;
@@ -441,7 +441,7 @@ impl Translator {
                 let sampling = SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None);
                 self.draw_layer_picture(tile, id, bounds, &Paint::default(), sampling);
             }
-            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } => {}
+            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } | CanvasSource::Video { .. } => {}
         }
         let picture = recorder.finish_recording_as_picture(Some(&bounds))?;
         // Outside a pattern that does not repeat the canvas draws nothing.
