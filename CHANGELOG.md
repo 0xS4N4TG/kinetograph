@@ -27,6 +27,8 @@ Kinetograph is in beta, so APIs can still change between versions.
 - Motion-blur sub-frames sample GSAP tweens that play by themselves at the sub-frame's time, with their `onUpdate`. They were at the frame's own state in every sub-frame, so they were not blurred. A blurred render's frames equal an unblurred render's, and a frame alone equals the frame in sequence.
 - An SVG element's `getBoundingClientRect` is what Chrome for Testing gives: the `<svg>`'s `preserveAspectRatio` (`none`, `slice`, the alignments), a CSS `transform` with its `transform-origin`, and nested `<svg>` viewports are now in it. Strokes, markers and filters stay out of it, as in Chrome.
 
+### Added
+
 - WebGL framebuffers do what Three.js's renderer needs of them, drawn natively and checked against Chrome for Testing: the stencil test (`stencilFunc`, `stencilOp`, `stencilMask` and their `Separate` forms, `clearStencil`, the canvas's `stencil` attribute, stencil renderbuffers); several colour outputs (`COLOR_ATTACHMENT1` to 7, `drawBuffers`, `clearBuffer*`, `layout(location = n)` outputs); depth and depth-and-stencil textures as attachments, sampled as Chrome samples them; colour, depth and stencil renderbuffers, one depth buffer shared by the framebuffers that attach it; a texture level above 0 as a target, with `TEXTURE_MAX_LEVEL`; `blitFramebuffer` of depth and stencil; and `texSubImage2D` from an image or a layer, into a texture drawn in or one made from a file.
 - Canvas 2D `url()` filters: `ctx.filter = 'url(#id)'` draws the SVG `<filter>` of the page it names, in its place in the filter list, as Chrome does.
 
