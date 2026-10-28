@@ -145,7 +145,13 @@ fn gl_vertex_id_counts_from_the_first_vertex_of_the_draw() {
             "attributes": {}, "viewport": [0, 0, 16, 16]}}"#,
         quad_attributes()
     );
-    let frame = render(&layer_with_vertex(vertex, &[("p", fragment)], "", "", &draw));
+    let frame = render(&layer_with_vertex(
+        vertex,
+        &[("p", fragment)],
+        "",
+        "",
+        &draw,
+    ));
     near(px(&frame, 0, 0), [96, 0, 0, 255], 14);
     near(px(&frame, 15, 15), [127, 0, 0, 255], 14);
     near(px(&frame, 15, 0), [159, 0, 0, 255], 14);
@@ -220,8 +226,16 @@ fn a_point_centred_outside_the_clip_volume_is_not_drawn_and_gl_vertex_id_is_its_
         &points_draw(1, 2, ""),
     );
     let frame = render(&layer);
-    assert_eq!(px(&frame, 15, 8)[..3], [0, 0, 0], "the point centred at x = 1.1 draws nothing");
-    assert_eq!(px(&frame, 8, 8)[..3], [0, 0, 0], "point 0 is before `first`");
+    assert_eq!(
+        px(&frame, 15, 8)[..3],
+        [0, 0, 0],
+        "the point centred at x = 1.1 draws nothing"
+    );
+    assert_eq!(
+        px(&frame, 8, 8)[..3],
+        [0, 0, 0],
+        "point 0 is before `first`"
+    );
     near(px(&frame, 3, 3), [127, 0, 0, 255], 2);
 }
 
@@ -742,7 +756,13 @@ fn red_and_blue() -> Vec<String> {
 fn a_blit_copies_the_drawing_buffer_into_a_texture_as_it_was() {
     // Copied, then the drawing buffer is cleared: the texture still has the picture, upright.
     let mut all = red_and_blue();
-    all.push(blit_op(None, Some("t"), [0, 0, 16, 16], [0, 0, 16, 16], false));
+    all.push(blit_op(
+        None,
+        Some("t"),
+        [0, 0, 16, 16],
+        [0, 0, 16, 16],
+        false,
+    ));
     all.push(r#"{"op": "clear", "color": [0, 0, 0, 1]}"#.into());
     all.push(draw_in("s", [0, 0, 16, 16], &sampling("t")));
     let frame = render(&layer_of(
@@ -761,10 +781,20 @@ fn a_blit_mirrors_and_stretches_by_its_rectangles() {
     // The picture mirrored into the texture: red is then on its right, blue at its lower left.
     // The texture's right half is shrunk by LINEAR into the buffer's lower left quadrant.
     let mut all = red_and_blue();
-    all.push(blit_op(None, Some("t"), [0, 0, 16, 16], [16, 0, 0, 16], false));
+    all.push(blit_op(
+        None,
+        Some("t"),
+        [0, 0, 16, 16],
+        [16, 0, 0, 16],
+        false,
+    ));
     all.push(r#"{"op": "clear", "color": [0, 1, 0, 1]}"#.into());
     all.push(blit_op(Some("t"), None, [8, 0, 16, 16], [0, 0, 8, 8], true));
-    let frame = render(&layer_of(&[("f", FILL)], &targets(&[("t", 16)]), &ops(&all)));
+    let frame = render(&layer_of(
+        &[("f", FILL)],
+        &targets(&[("t", 16)]),
+        &ops(&all),
+    ));
     near(px(&frame, 3, 12), [255, 0, 0, 255], 2);
     near(px(&frame, 3, 9), [255, 0, 0, 255], 2);
     assert_eq!(px(&frame, 12, 12), [0, 255, 0, 255]);
@@ -805,7 +835,11 @@ fn an_upload_writes_pixels_over_what_the_target_holds_at_its_offset() {
         upload_op("t", [2, 3], [2, 2], &red, ""),
     ];
     all.push(draw_in("s", [0, 0, 16, 16], &sampling("t")));
-    let frame = render(&layer_of(&[("s", SHOW)], &targets(&[("t", 16)]), &ops(&all)));
+    let frame = render(&layer_of(
+        &[("s", SHOW)],
+        &targets(&[("t", 16)]),
+        &ops(&all),
+    ));
     // GL's rows 3 and 4 of the texture are the canvas's rows 12 and 11.
     assert_eq!(px(&frame, 2, 12), [255, 0, 0, 255]);
     assert_eq!(px(&frame, 3, 11), [255, 0, 0, 255]);
@@ -821,12 +855,21 @@ fn an_upload_honours_flip_y_and_premultiply_and_keeps_its_place_among_draws() {
     let all = vec![
         r#"{"op": "clear", "color": [0, 0, 0, 1], "target": "t"}"#.to_string(),
         upload_op("t", [0, 0], [1, 2], &patch, r#", "flipY": true"#),
-        upload_op("t", [1, 0], [1, 1], &[255, 255, 255, 128], r#", "premultiply": true"#),
+        upload_op(
+            "t",
+            [1, 0],
+            [1, 1],
+            &[255, 255, 255, 128],
+            r#", "premultiply": true"#,
+        ),
         // Drawn after the uploads, over the lower half only.
         draw_in(
             "f",
             [0, 0, 16, 16],
-            &format!(r#""scissor": [2, 0, 14, 16], {}"#, fill([1.0, 1.0, 0.0, 1.0])),
+            &format!(
+                r#""scissor": [2, 0, 14, 16], {}"#,
+                fill([1.0, 1.0, 0.0, 1.0])
+            ),
         )
         .replace(r#""viewport""#, r#""target": "t", "viewport""#),
         draw_in("s", [0, 0, 16, 16], &sampling("t")),
@@ -1054,15 +1097,21 @@ fn a_polygon_offset_pulls_a_coplanar_draw_through() {
 }
 
 #[test]
-fn a_target_has_a_depth_buffer_of_its_own() {
+fn a_framebuffer_tests_against_its_own_depth_buffer() {
     let less = depth_state("LESS", true, 0.0, 1.0);
     let into_rt = |z: f64, color: [f64; 4], state: &str| {
         let uniforms = uniforms(&[("u_z", "f", &[z]), ("u_color", "f", &color)]);
-        draw_with("p", Some(("rt", 8)), &format!("{uniforms}, {state}"))
+        draw_with(
+            "p",
+            Some(("rt", 8)),
+            &format!(r#"{uniforms}, {state}, "depthStencil": "rtd""#),
+        )
     };
+    let textures = r#", "textures": {"rt": {"target": true, "width": 8, "height": 8},
+        "rtd": {"target": true, "width": 8, "height": 8, "format": "depth"}}"#;
     // The blue draw is farther than the red one in the target, so red shows on the canvas.
     let frame = z_layer(
-        &targets(&[("rt", 8)]),
+        textures,
         &[
             into_rt(-0.5, RED, &less),
             into_rt(0.5, BLUE, &less),
@@ -1072,10 +1121,10 @@ fn a_target_has_a_depth_buffer_of_its_own() {
     near(px(&frame, 8, 8), [255, 0, 0, 255], 2);
     // A depth clear of the target alone lets the farther draw in.
     let frame = z_layer(
-        &targets(&[("rt", 8)]),
+        textures,
         &[
             into_rt(-0.5, RED, &less),
-            r#"{"op": "clear", "depth": 1, "target": "rt"}"#.into(),
+            r#"{"op": "clear", "depth": 1, "target": "rt", "depthStencil": "rtd"}"#.into(),
             into_rt(0.5, BLUE, &less),
             draw_with("s", None, &sampling("rt")),
         ],
@@ -1128,4 +1177,284 @@ fn a_program_with_ten_attributes_draws() {
     let frame = render(&layer);
     near(px(&frame, 15, 8), [250, 0, 0, 255], 12);
     near(px(&frame, 0, 8), [5, 0, 0, 255], 12);
+}
+
+// ---- stencil, several outputs, depth textures, levels, depth and stencil blits ----
+
+/// The quad at the depth `u_z` (clip space), in GLSL ES 3.00.
+const QUAD_VERTEX_ES3_Z: &str = "#version 300 es\nin vec2 a_pos; out vec2 v_uv; uniform float u_z; \
+    void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, u_z, 1.0); }";
+const FILL_ES3: &str = "#version 300 es\nprecision mediump float; uniform vec4 u_color; out vec4 o; \
+    void main() { o = u_color; }";
+const SHOW_ES3: &str = "#version 300 es\nprecision highp float; in vec2 v_uv; uniform highp sampler2D u_tex; \
+    uniform float u_lod; out vec4 o; void main() { o = textureLod(u_tex, v_uv, u_lod); }";
+
+/// A layer of ES 3.00 programs (`programs`: id and fragment shader) on the `u_z` quad.
+fn layer_es3(programs: &[(&str, &str)], extra_content: &str, ops: &str) -> String {
+    layer_with_vertex(QUAD_VERTEX_ES3_Z, programs, "", extra_content, ops)
+}
+
+/// A stencil test that does `zpass` on both faces with `func` against `reference`.
+fn stencil(func: &str, reference: u32, zpass: &str) -> String {
+    format!(
+        r#""stencil": {{"ref": {reference}, "valueMask": 255, "writeMask": 255,
+            "front": {{"func": "{func}", "fail": "KEEP", "zfail": "KEEP", "zpass": "{zpass}"}},
+            "back": {{"func": "{func}", "fail": "KEEP", "zfail": "KEEP", "zpass": "{zpass}"}}}}"#
+    )
+}
+
+/// The uniforms of `FILL_ES3` on the quad at `z`.
+fn z_fill(z: f64, color: [f64; 4]) -> String {
+    uniforms(&[("u_z", "f", &[z]), ("u_color", "f", &color)])
+}
+
+/// A draw of `SHOW_ES3` over `viewport` of the drawing buffer, reading level `lod` of `texture`.
+fn show_level(texture: &str, viewport: [i32; 4], lod: f64) -> String {
+    draw_in(
+        "s3",
+        viewport,
+        &format!(
+            "{}, {}",
+            uniforms(&[("u_tex", "i", &[0.0]), ("u_lod", "f", &[lod])]),
+            unit(texture)
+        ),
+    )
+}
+
+/// A depth test with GL's defaults but `func`.
+fn depth(func: &str) -> String {
+    format!(r#""depth": {{"func": "{func}", "mask": true, "near": 0, "far": 1}}"#)
+}
+
+#[test]
+fn the_stencil_test_keeps_a_draw_where_an_earlier_one_marked_the_buffer() {
+    // The left half marks the stencil with 1; a green quad over everything passes only there.
+    let all = ops(&[
+        r#"{"op": "clear", "color": [0, 0, 0, 1], "stencil": 0}"#.to_string(),
+        draw_in(
+            "f",
+            [0, 0, 8, 16],
+            &format!(
+                "{}, {}",
+                z_fill(0.0, [0.0, 0.0, 1.0, 1.0]),
+                stencil("ALWAYS", 1, "REPLACE")
+            ),
+        ),
+        draw_in(
+            "f",
+            [0, 0, 16, 16],
+            &format!(
+                "{}, {}",
+                z_fill(0.0, [0.0, 1.0, 0.0, 1.0]),
+                stencil("EQUAL", 1, "KEEP")
+            ),
+        ),
+    ]);
+    let frame = render(&layer_es3(&[("f", FILL_ES3)], r#", "stencil": true"#, &all));
+    assert_eq!(px(&frame, 3, 8), [0, 255, 0, 255]);
+    assert_eq!(px(&frame, 12, 8), [0, 0, 0, 255]);
+
+    // A framebuffer's stencil renderbuffer does the same, upside down as a framebuffer is.
+    let textures = r#", "textures": {"c": {"target": true, "width": 16, "height": 16},
+        "s": {"target": true, "width": 16, "height": 16, "format": "stencil"}}"#;
+    let fb = r#""target": "c", "depthStencil": "s""#;
+    let all = ops(&[
+        format!(r#"{{"op": "clear", "color": [0, 0, 0, 1], "stencil": 0, {fb}}}"#),
+        draw_in(
+            "f",
+            [0, 0, 16, 8],
+            &format!(
+                "{}, {}, {fb}",
+                z_fill(0.0, [0.0, 0.0, 1.0, 1.0]),
+                stencil("ALWAYS", 7, "REPLACE")
+            ),
+        ),
+        draw_in(
+            "f",
+            [0, 0, 16, 16],
+            &format!(
+                "{}, {}, {fb}",
+                z_fill(0.0, [1.0, 0.0, 0.0, 1.0]),
+                stencil("NOTEQUAL", 7, "KEEP")
+            ),
+        ),
+        show_level("c", [0, 0, 16, 16], 0.0),
+    ]);
+    let frame = render(&layer_es3(
+        &[("f", FILL_ES3), ("s3", SHOW_ES3)],
+        textures,
+        &all,
+    ));
+    // GL's lower half (marked) keeps its blue; the upper half turns red.
+    assert_eq!(px(&frame, 8, 12), [0, 0, 255, 255]);
+    assert_eq!(px(&frame, 8, 3), [255, 0, 0, 255]);
+}
+
+#[test]
+fn a_draw_writes_each_output_to_its_attachment() {
+    let mrt = "#version 300 es\nprecision mediump float; layout(location = 0) out vec4 a; \
+        layout(location = 1) out vec4 b; void main() { a = vec4(1.0, 0.0, 0.0, 1.0); b = vec4(0.0, 0.0, 1.0, 1.0); }";
+    let textures = r#", "textures": {"a": {"target": true, "width": 16, "height": 16},
+        "b": {"target": true, "width": 16, "height": 16}}"#;
+    for (outputs, left) in [
+        (r#"[{"target": "a"}, {"target": "b"}]"#, [255, 0, 0, 255]),
+        // NONE for output 0: only b is written, and a shows the black behind the layer.
+        (r#"[null, {"target": "b"}]"#, [0, 0, 0, 255]),
+    ] {
+        let all = ops(&[
+            draw_in(
+                "m",
+                [0, 0, 16, 16],
+                &format!(r#"{}, "outputs": {outputs}"#, z_fill(0.0, [0.0; 4])),
+            ),
+            show_level("a", [0, 0, 8, 16], 0.0),
+            show_level("b", [8, 0, 8, 16], 0.0),
+        ]);
+        let frame = render(&layer_es3(&[("m", mrt), ("s3", SHOW_ES3)], textures, &all));
+        assert_eq!(px(&frame, 3, 8), left, "{outputs}");
+        assert_eq!(px(&frame, 12, 8), [0, 0, 255, 255], "{outputs}");
+    }
+}
+
+#[test]
+fn a_depth_texture_is_drawn_into_and_sampled_as_its_depth() {
+    // A quad at z 0.5 (depth 0.75) into the depth texture, which the canvas then samples as (d, 0, 0, 1);
+    // one nothing drew into holds 1, as a browser's new depth texture does.
+    let textures = r#", "textures": {"c": {"target": true, "width": 16, "height": 16},
+        "d": {"target": true, "width": 16, "height": 16, "format": "depth"},
+        "e": {"target": true, "width": 16, "height": 16, "format": "depthStencil"}}"#;
+    let all = ops(&[
+        draw_in(
+            "f",
+            [0, 0, 16, 16],
+            &format!(
+                r#"{}, {}, "target": "c", "depthStencil": "d""#,
+                z_fill(0.5, [0.0, 1.0, 0.0, 1.0]),
+                depth("ALWAYS")
+            ),
+        ),
+        show_level("d", [0, 0, 8, 16], 0.0),
+        show_level("e", [8, 0, 8, 16], 0.0),
+    ]);
+    let frame = render(&layer_es3(
+        &[("f", FILL_ES3), ("s3", SHOW_ES3)],
+        textures,
+        &all,
+    ));
+    near(px(&frame, 3, 8), [191, 0, 0, 255], 1);
+    assert_eq!(px(&frame, 12, 8), [255, 0, 0, 255]);
+}
+
+#[test]
+fn a_level_of_a_texture_is_a_target_and_sampled_at_that_level() {
+    let textures =
+        r#", "textures": {"t": {"target": true, "width": 16, "height": 16, "levels": 3}}"#;
+    let all = ops(&[
+        draw_in(
+            "f",
+            [0, 0, 16, 16],
+            &format!(r#"{}, "target": "t""#, z_fill(0.0, [1.0, 0.0, 0.0, 1.0])),
+        ),
+        draw_in(
+            "f",
+            [0, 0, 8, 8],
+            &format!(
+                r#"{}, "target": "t", "level": 1"#,
+                z_fill(0.0, [0.0, 1.0, 0.0, 1.0])
+            ),
+        ),
+        show_level("t", [0, 0, 8, 16], 0.0),
+        // With a filter that reads mipmaps (else the base level is all GL samples), and TEXTURE_MAX_LEVEL at its
+        // last level (else three levels of a 16 x 16 texture are incomplete, and it samples black).
+        show_level("t", [8, 0, 8, 16], 1.0).replace(
+            r#""min": "NEAREST""#,
+            r#""maxLevel": 2, "min": "NEAREST_MIPMAP_NEAREST""#,
+        ),
+    ]);
+    let frame = render(&layer_es3(
+        &[("f", FILL_ES3), ("s3", SHOW_ES3)],
+        textures,
+        &all,
+    ));
+    assert_eq!(px(&frame, 3, 8), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 12, 8), [0, 255, 0, 255]);
+}
+
+#[test]
+fn a_blit_copies_depth_and_stencil_into_the_drawing_buffer() {
+    // A framebuffer's depth-and-stencil buffer gets depth 0.75 and stencil 5 in its left half, and is blitted to
+    // the canvas whole. On the canvas a red quad at depth 0.9 is behind the copied depth on the left and in front
+    // of the cleared 1 on the right; a green one at depth 0.5 that tests EQUAL 5 shows only on the left.
+    let textures = r#", "textures": {"c": {"target": true, "width": 16, "height": 16},
+        "ds": {"target": true, "width": 16, "height": 16, "format": "depthStencil"}}"#;
+    let fb = r#""target": "c", "depthStencil": "ds""#;
+    let all = ops(&[
+        draw_in(
+            "f",
+            [0, 0, 8, 16],
+            &format!(
+                "{}, {}, {}, {fb}",
+                z_fill(0.5, [0.0; 4]),
+                depth("ALWAYS"),
+                stencil("ALWAYS", 5, "REPLACE")
+            ),
+        ),
+        r#"{"op": "clear", "color": [0, 0, 0, 1], "depth": 1, "stencil": 0}"#.to_string(),
+        r#"{"op": "blit", "aspect": "depthStencil", "src": "ds", "from": [0, 0, 16, 16], "to": [0, 0, 16, 16]}"#
+            .to_string(),
+        draw_in("f", [0, 0, 16, 16], &format!("{}, {}", z_fill(0.8, [1.0, 0.0, 0.0, 1.0]), depth("LESS"))),
+        draw_in(
+            "f",
+            [0, 0, 16, 16],
+            &format!(
+                "{}, {}, {}",
+                z_fill(0.0, [0.0, 1.0, 0.0, 1.0]),
+                depth("LESS"),
+                stencil("EQUAL", 5, "KEEP")
+            ),
+        ),
+    ]);
+    let frame = render(&layer_es3(
+        &[("f", FILL_ES3)],
+        &format!(r#", "stencil": true{textures}"#),
+        &all,
+    ));
+    assert_eq!(px(&frame, 3, 8), [0, 255, 0, 255]);
+    assert_eq!(px(&frame, 12, 8), [255, 0, 0, 255]);
+}
+
+/// A PNG of `w` x `h` pixels of one colour, as a `data:` URL.
+fn png_url(w: u32, h: u32, rgba: [u8; 4]) -> String {
+    let img = image::RgbaImage::from_pixel(w, h, image::Rgba(rgba));
+    let mut bytes = Vec::new();
+    img.write_to(
+        &mut std::io::Cursor::new(&mut bytes),
+        image::ImageFormat::Png,
+    )
+    .unwrap();
+    format!("data:image/png;base64,{}", b64(&bytes))
+}
+
+#[test]
+fn tex_sub_image_2d_lays_a_picture_file_over_a_target_and_over_a_file_texture() {
+    let red = png_url(16, 16, [255, 0, 0, 255]);
+    let blue = png_url(8, 16, [0, 0, 255, 255]);
+    let textures = format!(
+        r#", "textures": {{"t": {{"target": true, "width": 16, "height": 16}},
+            "f": {{"src": "{red}", "patches": [{{"x": 8, "y": 0, "width": 8, "height": 16, "src": "{blue}"}}]}}}}"#
+    );
+    let all = ops(&[
+        r#"{"op": "clear", "color": [0, 1, 0, 1], "target": "t"}"#.to_string(),
+        format!(
+            r#"{{"op": "upload", "target": "t", "x": 0, "y": 0, "width": 8, "height": 16, "src": "{blue}"}}"#
+        ),
+        show_level("t", [0, 0, 8, 16], 0.0),
+        show_level("f", [8, 0, 8, 16], 0.0),
+    ]);
+    let frame = render(&layer_es3(&[("s3", SHOW_ES3)], &textures, &all));
+    // The target: blue on its left half, the clear's green on its right; the file texture: red, then blue.
+    assert_eq!(px(&frame, 1, 8), [0, 0, 255, 255]);
+    assert_eq!(px(&frame, 6, 8), [0, 255, 0, 255]);
+    assert_eq!(px(&frame, 9, 8), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 14, 8), [0, 0, 255, 255]);
 }

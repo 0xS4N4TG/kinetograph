@@ -35,7 +35,7 @@ import { renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
 import { resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
 import { realTimers, resetVirtualClock, runAnimationFrames, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
-import { gsapIsLoaded, setGsapTime } from './gsap-clock.js';
+import { endGsapSamples, gsapIsLoaded, sampleGsapAt, setGsapTime } from './gsap-clock.js';
 import { takePageErrors } from './page-errors.js';
 import { clearReportedUnsupported, reportedUnsupported } from './unsupported.js';
 
@@ -222,11 +222,16 @@ class Renderer implements FrameRenderer {
         }
         // The clock sits on the sub-frame, but timers and Math.random() stay with the frame.
         setVirtualFrame(time, config.fps, { seedFrame: frame, fireTimers: false });
+        // GSAP's root clock at the sub-frame, before the render (a component may read a tweened value as it renders)
+        // and again after it (over what the render wrote), as a frame moves it before and after its own render.
+        sampleGsapAt(time / config.fps);
         const live = this.scene!;
         const tree = await this.settle(live, () => this.update(live, this.element(component, config, time)), false);
         treesAt.set(time, tree.layers);
       }
       this.subFrameLayers = null;
+      // GSAP goes back to the frame's own time, as the frames after this one expect to find it.
+      endGsapSamples();
       // The sub-frames' islands were drawn while the next sub-frames rendered.
       for (const [time, tree] of treesAt) if (tree !== main.layers) treesAt.set(time, finishIslands(tree));
       setVirtualFrame(frame, config.fps, { fireTimers: false });
@@ -328,6 +333,10 @@ class Renderer implements FrameRenderer {
       // GSAP renders what the frame's own render made (a `from()` is drawn lazily, on the next tick) at the frame's time.
       setGsapTime(virtualNow() / 1000);
       await tick();
+    } else if (read) {
+      // A motion-blur sub-frame: what plays on GSAP's root clock is shown at the sub-frame's time (undone after the
+      // last one, by `endGsapSamples`).
+      sampleGsapAt(virtualNow() / 1000);
     }
     const tree = read ? scene.snapshot() : null;
     const failure = renderFailure();

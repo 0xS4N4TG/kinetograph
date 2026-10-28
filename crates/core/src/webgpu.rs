@@ -55,6 +55,25 @@ pub struct WebGpuContent {
     /// drawn alone, or by another worker, as in a sequence.
     #[serde(default)]
     pub impure: Vec<String>,
+    /// `rgba16float` when the canvas is configured so: its drawing buffer holds half floats. None: 8 bits a channel.
+    #[serde(default)]
+    pub canvas_format: Option<String>,
+    /// `display-p3` when the canvas is configured so: its values are Display P3, converted to the video's sRGB
+    /// primaries when it is placed. None: sRGB.
+    #[serde(default)]
+    pub color_space: Option<String>,
+}
+
+impl WebGpuContent {
+    /// Whether the canvas's drawing buffer holds half floats.
+    pub fn wide_canvas(&self) -> bool {
+        self.canvas_format.as_deref() == Some("rgba16float")
+    }
+
+    /// Whether the canvas's values are Display P3.
+    pub fn display_p3(&self) -> bool {
+        self.color_space.as_deref() == Some("display-p3")
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -658,8 +677,15 @@ pub fn parse(code: &str) -> Result<naga::Module, String> {
     Ok(module)
 }
 
-/// The most texture memory one frame's recording may ask for, all mip levels together.
-pub const MAX_TEXTURE_BYTES: u64 = 512 << 20;
+/// The most texture memory one frame's recording may ask for, all mip levels together, on a device whose 2D textures are
+/// at most `max_dim` across: three of the biggest textures it allows (`rgba32float` with every level, a third over
+/// `max_dim^2 * 16` bytes), 4 GiB at the default 8192. WebGPU has no such cap (Chrome made 4 GiB of 8192 x 8192 textures
+/// on the M4 with no error, and one `rgba32float` 8192 x 8192 texture with its levels, 1.33 GiB, which the old 512 MiB cap
+/// refused); the engine keeps one because each render worker makes a frame's textures anew, and a page that asks for
+/// more than a few of the biggest textures in one frame would take the machine's memory with it.
+pub fn max_texture_bytes(max_dim: u32) -> u64 {
+    64 * u64::from(max_dim) * u64::from(max_dim)
+}
 /// The most memory the buffers the GPU writes may hold together.
 pub const MAX_GPU_BUFFER_BYTES: u64 = 1 << 30;
 /// The most steps (passes, uploads, copies) a recording may hold.
@@ -891,8 +917,15 @@ pub fn validate_with(content: &WebGpuContent, limits: &Limits) -> Result<(), Str
         let bytes = texture_bytes(texture, max_dim).map_err(|e| format!("texture {id}: {e}"))?;
         total = total.checked_add(bytes).ok_or("the textures together overflow")?;
     }
-    if total > MAX_TEXTURE_BYTES {
-        return Err(format!("the frame's textures hold {total} bytes, over the cap of {MAX_TEXTURE_BYTES}"));
+    let cap = max_texture_bytes(max_dim);
+    if total > cap {
+        return Err(format!("the frame's textures hold {total} bytes, over the cap of {cap}"));
+    }
+    if let Some(format) = content.canvas_format.as_deref().filter(|f| *f != "rgba16float") {
+        return Err(format!("a canvas of format {format}; the canvas formats are rgba8unorm, bgra8unorm and rgba16float"));
+    }
+    if let Some(space) = content.color_space.as_deref().filter(|s| *s != "display-p3") {
+        return Err(format!("a canvas colorSpace {space}; the colour spaces are srgb and display-p3"));
     }
     let mut gpu_total = 0u64;
     for (id, buffer) in &content.gpu_buffers {
@@ -1320,13 +1353,33 @@ mod tests {
 
     #[test]
     fn the_frames_textures_are_capped() {
+        // Three of the biggest textures the device allows, rgba32float with all 14 levels: 4 GiB at 8192.
+        assert_eq!(max_texture_bytes(8192), 4 << 30);
+        assert_eq!(max_texture_bytes(16384), 16 << 30);
         let mut c = WebGpuContent::default();
-        // Each is 8192 x 8192 x 4 = 256 MiB: two fit the cap of 512 MiB only without their levels.
-        c.textures.insert("a".into(), texture(8192, 8192, 1, "rgba8unorm"));
-        c.textures.insert("b".into(), texture(8192, 8192, 1, "rgba8unorm"));
+        for id in ["a", "b", "c"] {
+            c.textures.insert(id.into(), texture(8192, 8192, 14, "rgba32float"));
+        }
+        // One of them alone is 1.33 GiB, which the old cap of 512 MiB refused.
         assert!(validate(&c, 8192).is_ok());
-        c.textures.insert("c".into(), texture(8192, 8192, 1, "rgba8unorm"));
-        assert!(validate(&c, 8192).unwrap_err().contains("over the cap"));
+        c.textures.insert("d".into(), texture(8192, 8192, 1, "rgba32float"));
+        assert!(validate(&c, 8192).unwrap_err().contains("over the cap of 4294967296"));
+        // A smaller device, a smaller cap.
+        c.textures.remove("d");
+        assert!(validate(&c, 4096).is_err());
+    }
+
+    #[test]
+    fn only_the_canvas_formats_and_colour_spaces_drawn_are_taken() {
+        let mut c = WebGpuContent { canvas_format: Some("rgba16float".into()), color_space: Some("display-p3".into()), ..Default::default() };
+        assert!(validate(&c, 8192).is_ok());
+        assert!(c.wide_canvas() && c.display_p3());
+        c.canvas_format = Some("rgba32float".into());
+        assert!(validate(&c, 8192).unwrap_err().contains("a canvas of format rgba32float"));
+        c.canvas_format = None;
+        c.color_space = Some("rec2020".into());
+        assert!(validate(&c, 8192).unwrap_err().contains("colorSpace rec2020"));
+        assert!(!WebGpuContent::default().wide_canvas());
     }
 
     #[test]

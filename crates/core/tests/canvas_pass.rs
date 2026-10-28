@@ -169,3 +169,20 @@ fn a_layer_texture_uploaded_premultiplied_has_its_colour_times_its_alpha() {
     near(px(&render(&half(r#"{"layer": "a"}"#)), 8, 3), [255, 0, 0, 255], 1);
     near(px(&render(&half(r#"{"layer": "a", "premultiply": true}"#)), 8, 3), [128, 0, 0, 255], 2);
 }
+
+#[test]
+fn a_pattern_of_a_childs_picture_repeats_it() {
+    // The child is the left half in red; the pattern halves the 16 x 16 picture and repeats it, so red and empty
+    // alternate every 4 pixels.
+    let fill = r##"{"op": "fill", "path": "M0 0L16 0L16 16L0 16Z", "paint": {"type": "pattern",
+        "source": {"kind": "layer", "id": "a", "width": 16, "height": 16}, "repeatX": true, "repeatY": true,
+        "m": [0.5, 0, 0, 0.5, 0, 0]}}"##;
+    let frame = render(&pass(
+        &[rect("a", 8, 16, "#ff0000", "")],
+        &[fill.to_string()],
+    ));
+    near(px(&frame, 1, 8), [255, 0, 0, 255], 1);
+    assert_eq!(px(&frame, 5, 8), [0, 0, 0, 255]);
+    near(px(&frame, 9, 3), [255, 0, 0, 255], 1);
+    assert_eq!(px(&frame, 14, 12), [0, 0, 0, 255]);
+}

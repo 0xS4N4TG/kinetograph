@@ -10,14 +10,20 @@
                      one corner (the flat normals follow).
     skin.glb         a bar of two segments skinned to two joints, and the clip
                      "bend" (the upper joint turns 90 degrees about z in 1 s).
+    unweighted.glb   skin.glb with the top two vertices' skin weights all 0.
     unsupported.glb  what the loader reports and does not read: a points
-                     primitive, an occlusion texture, alphaMode MASK and the
+                     primitive, a texture on the second set of texture
+                     coordinates, alphaMode MASK and the
                      extension KHR_materials_clearcoat.
 
     maps.glb         four 4 x 4 quads in a 2 x 2 grid, for the normal and metallic-roughness
                      textures: top left has a normal map (1x1, tilted toward +x and +y) and
                      top right has none; bottom left is metallic 1 with a texture whose blue
                      (metallic) is 0, bottom right is metallic 1 with no texture.
+    occlusion.glb    the same grid, white and fully rough, for the occlusion and emissive
+                     textures: top left has an occlusion texture of 0 (strength 1), top right
+                     the same at strength 0.5; bottom left is black with a red emissive
+                     texture under an emissive factor of 1; bottom right has no maps.
 
     python3 make_anim.py
 """
@@ -263,6 +269,56 @@ g.write(
     ],
 )
 
+# --- unweighted.glb ------------------------------------------------------------
+# skin.glb with the top two vertices' weights all 0 (joints (1, 0, 0, 0)), which glTF forbids and files have.
+g = Glb()
+pos = g.accessor(bar, "VEC3", target=34962, bounds=True)
+nrm = g.accessor([(0.0, 0.0, 1.0)] * 6, "VEC3", target=34962)
+idx = g.accessor([0, 1, 3, 0, 3, 2, 2, 3, 5, 2, 5, 4], "SCALAR", USHORT, target=34963)
+joints = g.accessor([(0, 0, 0, 0)] * 2 + [(0, 1, 0, 0)] * 2 + [(1, 0, 0, 0)] * 2, "VEC4", UBYTE, target=34962)
+weights = g.accessor(
+    [(1.0, 0.0, 0.0, 0.0)] * 2 + [(0.5, 0.5, 0.0, 0.0)] * 2 + [(0.0, 0.0, 0.0, 0.0)] * 2,
+    "VEC4",
+    target=34962,
+)
+inverse_bind = g.accessor(
+    [
+        (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+        (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 1.0),
+    ],
+    "MAT4",
+)
+g.write(
+    "unweighted.glb",
+    scene=0,
+    scenes=[{"nodes": [0, 2]}],
+    nodes=[
+        {"name": "base", "children": [1]},
+        {"name": "tip", "translation": [0, 1, 0]},
+        {"name": "bar", "mesh": 0, "skin": 0},
+    ],
+    meshes=[
+        {
+            "primitives": [
+                {
+                    "attributes": {"POSITION": pos, "NORMAL": nrm, "JOINTS_0": joints, "WEIGHTS_0": weights},
+                    "indices": idx,
+                    "material": 0,
+                }
+            ]
+        }
+    ],
+    materials=[{"doubleSided": True}],
+    skins=[{"joints": [0, 1], "inverseBindMatrices": inverse_bind, "skeleton": 0}],
+    animations=[
+        {
+            "name": "bend",
+            "samplers": [sampler(g, [0.0, 1.0], [quat_z(0), quat_z(90)], "VEC4")],
+            "channels": [{"sampler": 0, "target": {"node": 1, "path": "rotation"}}],
+        }
+    ],
+)
+
 # --- unsupported.glb -----------------------------------------------------------
 g = Glb()
 
@@ -299,7 +355,8 @@ g.write(
             ]
         }
     ],
-    materials=[{"alphaMode": "MASK", "alphaCutoff": 0.5, "occlusionTexture": {"index": 0}}],
+    materials=[{"alphaMode": "MASK", "alphaCutoff": 0.5,
+                "pbrMetallicRoughness": {"baseColorTexture": {"index": 0, "texCoord": 1}}}],
     textures=[{"source": 0}],
     images=[{"bufferView": image, "mimeType": "image/png"}],
     extensionsUsed=["KHR_materials_clearcoat"],
@@ -359,5 +416,43 @@ g.write(
     images=[
         {"bufferView": normal_image, "mimeType": "image/png"},
         {"bufferView": rough_image, "mimeType": "image/png"},
+    ],
+)
+
+# --- occlusion.glb -------------------------------------------------------------
+g = Glb()
+pos = g.accessor(quad_pos, "VEC3", target=34962, bounds=True)
+nrm = g.accessor([(0.0, 0.0, 1.0)] * 4, "VEC3", target=34962)
+uv = g.accessor(quad_uv, "VEC2", target=34962)
+idx = g.accessor([0, 1, 2, 0, 2, 3], "SCALAR", component=USHORT, target=34963)
+dark_image = g.view(png1([0, 255, 255]))
+red_image = g.view(png1([255, 0, 0]))
+spot = {"POSITION": pos, "NORMAL": nrm, "TEXCOORD_0": uv}
+rough = {"metallicFactor": 0, "roughnessFactor": 1}
+g.write(
+    "occlusion.glb",
+    scene=0,
+    scenes=[{"nodes": [0, 1, 2, 3]}],
+    nodes=[
+        {"mesh": 0, "translation": [-3, 3, 0]},
+        {"mesh": 1, "translation": [3, 3, 0]},
+        {"mesh": 2, "translation": [-3, -3, 0]},
+        {"mesh": 3, "translation": [3, -3, 0]},
+    ],
+    meshes=[
+        {"primitives": [{"attributes": spot, "indices": idx, "material": m}]}
+        for m in (0, 1, 2, 3)
+    ],
+    materials=[
+        {"pbrMetallicRoughness": rough, "occlusionTexture": {"index": 0}},
+        {"pbrMetallicRoughness": rough, "occlusionTexture": {"index": 0, "strength": 0.5}},
+        {"pbrMetallicRoughness": dict(rough, baseColorFactor=[0, 0, 0, 1]),
+         "emissiveFactor": [1, 1, 1], "emissiveTexture": {"index": 1}},
+        {"pbrMetallicRoughness": rough},
+    ],
+    textures=[{"source": 0}, {"source": 1}],
+    images=[
+        {"bufferView": dark_image, "mimeType": "image/png"},
+        {"bufferView": red_image, "mimeType": "image/png"},
     ],
 )

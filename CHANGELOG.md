@@ -13,6 +13,33 @@ Kinetograph is in beta, so APIs can still change between versions.
 - `drawImage` of a `<video>` element (the frame at its `currentTime`; HyperFrames pages set it from the timeline) on Canvas 2D, and the canvas source `{ "kind": "video" }` in a `canvas` layer (SCENE.md, "canvas").
 - `getImageData` and `texImage2D` of a canvas that holds one plain `drawImage` of a picture file or a video frame are answered on the CPU from the decoder's cache (the addon's `readCanvasPicture`), with no GPU: 0.7 ms against 3.3 ms for a held 1080p frame, and 39 ms against 101 ms for the first call. Anything else is drawn by the renderer as before.
 
+- The Web Animations API on the frame clock: `element.animate()`, `KeyframeEffect`, `Animation` (`currentTime`, `startTime`, `playbackRate`, `play`, `pause`, `finish`, `cancel`, `reverse`, `updatePlaybackRate`, `commitStyles`, `ready`, `finished`, `onfinish`, `oncancel`), `getAnimations()` and `document.timeline`, with `cubic-bezier()`, `steps()` and `linear()` easing and the `add` and `accumulate` composite modes. Values mix as Chrome mixes them (legacy colours in sRGB with premultiplied alpha, others in Oklab; transform lists by function or by matrix); 27 cases match Chrome for Testing 154. Motion now runs `opacity`, transforms, `filter`, `clipPath` and colours on it, as in a browser, instead of its JavaScript fallback: its values match Chrome's to 0.0005, springs and `oklch()` colours included. A frame alone still equals the frame in sequence and at any concurrency.
+- A warning, once per render (`render`, `still`, `doctor`), when a GSAP tween plays on GSAP's root clock rather than on a paused timeline seeked to the frame: Kinetograph renders it the same alone and in sequence, but Remotion's and HyperFrames' own renderers do not.
+- 3D: glTF occlusion and emissive textures are drawn as glTF 2.0 specifies (occlusion at its `strength` darkens the ambient light and the environment, not the lights with a direction; the emissive texture multiplies the emissive factor). They were reported and left out.
+- 3D: `bevel` on `text` and `extrude` objects (`<Text3D bevel>`, `<Extrude bevel>`): `{ thickness, size, offset, segments }`, as three.js's `ExtrudeGeometry` bevel options.
+- 3D: morph targets and skins are deformed on the GPU, in a compute pass each frame, instead of on the CPU. A 204,800-vertex skinned, morphing model draws a 1080p frame in 3 to 5 ms on the M4 against 10 to 12 ms (four of them: 9 to 15 ms against about 30). A part with more data than one storage buffer may hold (a big morph rig) is deformed on the CPU as before. A vertex whose skin weights are all 0 follows its first joint, as three.js does, instead of collapsing to the origin.
+- 3D: every light may cast shadows. The maps are layers of one depth texture array (up to 48, a point light taking 6), within 1 GiB; the limits of 4 shadow lights and 8 maps are gone.
+- WebGPU: an `rgba16float` canvas is drawn at half-float precision into the compositor, and a `display-p3` `colorSpace` is converted to sRGB primaries. Both were reported and drawn as 8-bit sRGB. The output stays SDR, so values outside 0 to 1 are clipped; `toneMapping: 'extended'` is drawn as standard and reported.
+- WebGPU: a frame may hold 4 GiB of textures, three of the biggest textures the device's limits allow, instead of 512 MiB, which refused a single `rgba32float` 8192 x 8192 texture with its levels. Chrome on the M4 made 4 GiB of textures without an error.
+
+### Fixed
+
+- Motion-blur sub-frames sample GSAP tweens that play by themselves at the sub-frame's time, with their `onUpdate`. They were at the frame's own state in every sub-frame, so they were not blurred. A blurred render's frames equal an unblurred render's, and a frame alone equals the frame in sequence.
+- An SVG element's `getBoundingClientRect` is what Chrome for Testing gives: the `<svg>`'s `preserveAspectRatio` (`none`, `slice`, the alignments), a CSS `transform` with its `transform-origin`, and nested `<svg>` viewports are now in it. Strokes, markers and filters stay out of it, as in Chrome.
+
+### Added
+
+- WebGL framebuffers do what Three.js's renderer needs of them, drawn natively and checked against Chrome for Testing: the stencil test (`stencilFunc`, `stencilOp`, `stencilMask` and their `Separate` forms, `clearStencil`, the canvas's `stencil` attribute, stencil renderbuffers); several colour outputs (`COLOR_ATTACHMENT1` to 7, `drawBuffers`, `clearBuffer*`, `layout(location = n)` outputs); depth and depth-and-stencil textures as attachments, sampled as Chrome samples them; colour, depth and stencil renderbuffers, one depth buffer shared by the framebuffers that attach it; a texture level above 0 as a target, with `TEXTURE_MAX_LEVEL`; `blitFramebuffer` of depth and stencil; and `texSubImage2D` from an image or a layer, into a texture drawn in or one made from a file.
+- Canvas 2D `url()` filters: `ctx.filter = 'url(#id)'` draws the SVG `<filter>` of the page it names, in its place in the filter list, as Chrome does.
+
+### Fixed
+
+- A canvas pattern of another canvas covers any number of tiles (it stopped at 10,000), and a pattern of a canvas pass's child is drawn (it was left out).
+- Canvas `ctx.filter = 'drop-shadow(...)'` blurs by its length as the standard deviation, as Chrome does; it was halved.
+- `isPointInStroke` takes the line width, caps, joins, miter limit and dashes into account, in the current transform, as Chrome does.
+- Explicit `layout(location = n)` on a WebGL shader's inputs and outputs is honoured; the translator dropped it.
+- With the default `antialias`, `blitFramebuffer` into a WebGL canvas, or out of it into a rectangle of another size, sets `INVALID_OPERATION`, as Chrome's multisampled canvas does.
+
 ### Changed
 
 - Blurs take any radius: `blur`, `backdropBlur`, `glow` and a shadow's `blur` are clamped at 16384 instead of 512 (blur) and 128 (the others). Each image of a blur's pyramid holds only what the blur draws in it, so a 1000 px blur needs about the memory of a 128 px one (22 MB on 1080p, where it used to be 579 MB), and no blur texture is larger than the device allows (8192 px a side): a mirrored backdrop blur whose canvas, the box and three radii each way, would be larger is drawn shrunk and enlarged after. The canvas margin still makes room for a radius of at most 128.
@@ -34,6 +61,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - `monospace` and `ui-monospace` text is set in a bundled JetBrains Mono (Regular, SIL OFL 1.1, 92 KB) when the project registers no fixed-pitch font, so code blocks (Shiki, Code Hike) line up instead of falling back to a proportional face. A registered monospace font still wins.
 - SVG `<linearGradient>` and `<radialGradient>` blend their stops without premultiplying alpha, as Chrome does: a stop going from opaque red to `rgba(0,0,255,0)` passes through purple and fades out, where it used to fade to clear red. CSS gradients still blend premultiplied.
 - A `<canvas>` a frame draws on, on the React path, starts that frame empty, as the docs say (one nobody draws on in a frame keeps its pixels, so a canvas drawn once in `useEffect(..., [])` still shows). It kept its pixels from the frame before, so `still 45` (or a render worker that starts mid-way) drew a different picture from frame 45 of a full render. A plain HTML page still keeps its canvas between frames.
+
 ### Added
 
 - `studio` downloads what an edit newly needs without a restart: the step before frame 0 runs again when any file of the project (the page, the compositions it mounts, the local modules it imports) changed, after a short wait for a save that touches several files, and fetches only what is not cached. A dependency added in a sub-composition or in a local module is there on the next rebuild.
@@ -60,6 +88,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 ### Fixed
 
 - `white-space: nowrap` keeps inline-blocks on one line when no text comes before them (a row of `inline-block` tiles in an absolutely positioned box without a width used to wrap). Parley took the wrap mode from the last text only; it is now vendored (`vendor/parley`) and starts from the container's.
+
 ### Added
 
 - WebGL depth test: `enable(gl.DEPTH_TEST)`, `depthFunc`, `depthMask`, `depthRange`, `clearDepth`, `clear(DEPTH_BUFFER_BIT)` and `polygonOffset` are drawn, on the canvas (the `depth` context attribute) and on a framebuffer with a depth renderbuffer (`renderbufferStorage`, `framebufferRenderbuffer`). The HyperFrames composition `code-slice-hero` now renders all 240 frames in `doctor`. A colour or stencil renderbuffer, a depth texture and the stencil test are still reported. See `/docs/known-issues/#webgl`.
@@ -67,6 +96,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A script's writes to an element's classes and data attributes reach the page: `svgElement.className.baseVal = 'on'`, `classList.replace()`, `classList.value` and `element.dataset.key = 'x'` (and `delete element.dataset.key`) were lost, so a selector that read them never matched. A class or attribute added to an SVG shape between frames already restyled it; tests now cover that for a class added, removed or toggled, `setAttribute`, the `style` attribute, a sibling's class, `:nth-child` after a node is inserted, and a rule inside `@media`.
 
 ## 0.2.0 (2026-10-27)
+
 ### Added
 
 - HyperFrames' `effects` in `data-color-grading` are drawn: blur, bloom, kuwahara, chromaBleed, pixelate, halftone, twoInkPrint, ascii, dither, monoScreen, scanlines, chromaticAberration, crtCurvature, digitalGlitch, tapeDamage, filmArtifacts, engraving and crosshatch, with all 64 controls, the `palette`, the presets' own effect values and the tweened `--hf-color-grading-blur|bloom|kuwahara|pixelate|ascii|dither`. They are no longer reported as not drawn. See `/docs/compat/#hyperframes-projects`.

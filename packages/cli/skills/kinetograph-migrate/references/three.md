@@ -19,8 +19,8 @@ Details: `../kinetograph/references/AUTHORING.md` section 6.6 and `../kinetograp
 | `<mesh><boxGeometry/><meshStandardMaterial color/></mesh>` | `<Mesh geometry={{ kind: 'box' }} material={{ color, roughness, metallic }} />`; kinds: `box`, `sphere`, `plane`, `cylinder`, `torus` |
 | `useGLTF` / `<primitive object>` / `GLTFLoader` | `<Model src={staticFile('a.glb')} />`; `animation` and `time` pose a clip |
 | `<group>` | `<Group3D>` |
-| `<Text>` from drei, `TextGeometry` | `<Text3D font size depth>text</Text3D>`; register the font first |
-| `ExtrudeGeometry` from an SVG path | `<Extrude path size depth>` |
+| `<Text>` from drei, `TextGeometry` | `<Text3D font size depth>text</Text3D>`; register the font first. `bevelEnabled` with `bevelThickness`, `bevelSize`, `bevelOffset`, `bevelSegments` is `bevel={{ thickness, size, offset, segments }}` |
+| `ExtrudeGeometry` from an SVG path | `<Extrude path size depth>`, with `bevel={{ thickness, size, offset, segments }}` for its bevel options |
 | `<Environment files>` (HDRI) | `environment` prop of `<Scene3D>`: an equirectangular `.hdr`, `.png` or `.jpg` |
 | `useFrame((s, dt) => ...)`, `useThree` | not needed: compute from `useCurrentFrame()` and pass plain props |
 | rotation in radians | `rotation` is in **degrees**: multiply by `180 / Math.PI` |
@@ -92,7 +92,7 @@ animate `scale` instead). The light moved from `position` `[3, 4, 5]` aimed at t
 ```
 
 `robot.glb` goes in `public/` next to the entry. Run `kinetograph doctor`: a model that uses a glTF feature the layer
-does not read (for example `KHR_materials_clearcoat`, bevels, GPU skinning, occlusion and emissive maps) is listed with
+does not read (for example `KHR_materials_clearcoat` or a second set of texture coordinates) is listed with
 the feature name. Those are drawn without the feature. Say so in the report.
 
 ## Light values
@@ -109,4 +109,4 @@ over. Tune from a `still`, and say in the report that the lighting is approximat
 - Shaders (`shaderMaterial`, `extend`, custom GLSL), postprocessing (`@react-three/postprocessing`) and physics have no
   scene3d equivalent. Approximate with materials and the effects list on the `<Scene3D>` (`glow`, `blur`, `grain`,
   `chromaticAberration`), or leave them out. Report it. Do not bring `three` into the render path.
-- At most 4 lights cast shadows. Do not rely on `preserve-3d` for crossing planes.
+- Every light may cast shadows, within 1 GiB of shadow maps (48 maps of 2048). Do not rely on `preserve-3d` for crossing planes.

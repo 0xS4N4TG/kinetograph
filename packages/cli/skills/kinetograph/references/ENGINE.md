@@ -220,7 +220,16 @@ until the tree changes (`generation`: bumped by every commit, before layout effe
   `document.querySelector/getElementById/…` search every root.
 - SVG: `getTotalLength`, `getPointAtLength` and `getBBox` of `path`, `rect`, `circle`, `ellipse`, `line`, `polyline`,
   `polygon` use the path functions of `@kinetographdev/core/paths` (handed over by `web/install`); a group's `getBBox` is
-  the union of its children's, with their `transform` attributes applied.
+  the union of its children's, with their transforms applied (a nested `<svg>`: its viewport). An SVG element's
+  `getBoundingClientRect` is its `getBBox` through its transforms (the CSS `transform` about its `transform-origin`
+  wins over the attribute), the nested `<svg>` viewports and the outer `<svg>`'s `viewBox` and `preserveAspectRatio`,
+  placed at the outer `<svg>`'s box, as Chrome gives it (no stroke, marker or filter; `compat/src/shim/svg-transform.ts`).
+- The Web Animations API (`compat/src/shim/animations.ts`): `element.animate()`, `KeyframeEffect`, `Animation`,
+  `getAnimations()`, `document.timeline` (whose time is the virtual clock). What the animations of an element give is
+  worked out when its props are read (`propsWithOverlay`, over the inline style, as the cascade's animation origin), so
+  a motion-blur sub-frame sees its own time; `setVirtualFrame` touches the animated elements' readback and, on a frame,
+  runs `tickAnimations` (pending play and pause tasks, finished state, events) before the animation-frame callbacks.
+  Values are mixed in `css-interpolate.ts` and `css-color.ts`; easing in `easing.ts`.
 - `ResizeObserver` and `IntersectionObserver` deliver after React's work is done and layout is settled: a callback that
   sets state makes the root render again before the frame is emitted; resize observers fire when the border-box
   size differs from the last one delivered (an element that is 0 by 0 is not reported first, as in the spec), and
@@ -655,9 +664,14 @@ group that carries the clip. A canvas nothing was drawn on draws nothing and is 
 `crates/dom/tests/canvas.rs` are Canvas 2D scripts (`tests/canvas/*.js`) that Chrome runs and the engine draws from
 the recorded commands (`node crates/dom/tools/canvas-cases.mjs` makes the `.json` files): paths 0.35, gradients, a
 clip, composite operations, nested canvases and text 1.96, a stretched rounded canvas 3.4, shadows (soft, hard, under a
-transform and an alpha) and each `filter` function 0.80 mean levels from Chrome. A command that carries a `url()`
-filter (`unsupportedFilter`, which the context writes because the renderer does not draw it) is reported as an
-unsupported `filter` of the canvas, also when it is inside a canvas the first draws.
+transform and an alpha) and each `filter` function 0.56 (`drop-shadow()`'s blur length is the deviation, as Chrome draws it), patterns of a canvas (16,000 tiles, a stroke, text) 3.3
+(text in Chrome's fallback font, as in the paint case) and `url()` filters 1.4 mean levels from Chrome. A pattern of a
+canvas, or of a canvas pass's child, is one recorded tile (`PictureRecorder`) that a Skia picture shader repeats, so the
+tile count does not matter. A `url()` filter is written by the context in its place in the list (`{ type: "url" }`);
+`replaced.rs` looks the id up with the SVG painter's `filter_graph` (the `<filter>` anywhere in the document, the canvas's
+box as the box its fractions are of) and puts the graph in (`{ type: "graph" }`), also inside the canvases a command
+draws or repeats; one that names nothing stays, is reported as an unsupported `filter` of the canvas, and is drawn
+without. The Skia canvas path runs a graph with `filter_graph` like a layer's, in order with the other functions.
 
 A canvas with a WebGL context is the same with `data-kg-webgl` and a `glsl` layer (SCENE.md, "glsl"). The core
 translates each program once (`crates/core/src/glsl.rs`: a token-level rewrite of GLSL ES 100 and 300 es to the Vulkan
@@ -667,14 +681,33 @@ not keep the uniform array strides), and `compositor/glsl.rs` replays the draws 
 uniform block, and Metal packs arrays of floats and `vec2`s tighter than the block's 16 bytes an element, so those
 travel as `vec4`s; bools are not allowed in a block, so they travel as ints; wgpu bounds each vertex by a whole stride
 from the start of its binding, so an interleaved attribute's offset goes in the vertex, not in the binding.
-A framebuffer's texture is a second kind of target: the replay makes one render pass for each run of draws to the same
-target, in the order recorded. GL's rows count up from the bottom and a texture's first row is its bottom one, so a
-program that draws into a texture is translated upside down (`flip_y`: the vertex shader negates `gl_Position.y`,
-`gl_FragCoord.y` is wgpu's own) with the viewport, scissor and front face turned to match, and sampling needs
-nothing. A frame starts every target zeroed (wgpu's lazy clear), so a target is a function of the frame's own ops.
-`crates/dom/tests/webgl.rs` runs four cases (`tests/webgl/*.js`; `node crates/dom/tools/webgl-cases.mjs` records
-them) in Chrome for Testing on SwiftShader and natively: gradient 0.004, noise 0.0, texture sampling 0.05 and two
-render-to-texture passes 0.002 mean levels from Chrome, none more than 1 level off.
+What a framebuffer draws into is a second kind of target: colour (Rgba8, with mip levels when the texture has storage
+for them; a colour renderbuffer is one too) or a depth, stencil or depth-and-stencil buffer (`Depth32Float`,
+`Stencil8`, `Depth24PlusStencil8`, which is 32-bit float depth with 8 bits of stencil on Apple GPUs). An op names its
+colour attachment for each fragment output and its depth-and-stencil target (`GlslDest`), and the replay makes one
+render pass for each run of ops to the same attachments, in the order recorded; a pass has the depth-and-stencil
+attachment when an op in it tests or clears depth or stencil, and the pipeline's targets follow the pass's
+attachments (an output with no attachment is dropped by wgpu, an attachment the shader does not write gets an empty
+write mask). wgpu takes one stencil reference and one pair of masks for both faces, which is exactly what WebGL
+allows (it refuses a draw whose faces differ). GL's rows count up from the bottom and a texture's first row is its
+bottom one, so a program that draws into a framebuffer is translated upside down (`flip_y`: the vertex shader negates
+`gl_Position.y`, `gl_FragCoord.y` is wgpu's own) with the viewport, scissor and front face turned to match, and
+sampling needs nothing. A frame starts every colour target zeroed (wgpu's lazy clear) and every depth target at 1 and
+stencil 0 (a clear pass before the others, what Chrome's new depth textures and renderbuffers hold, measured), so a
+target is a function of the frame's own ops. A depth texture a draw samples is copied first into an `R32Float`
+texture (`shaders/glsl_depth_colour.wgsl`) so it reads `(d, 0, 0, 1)` as WebGL 2 does in Chrome (Metal would give
+`(d, d, d, 1)` from the depth texture itself), or into an `Rgba32Float` one as `(d, d, d, 1)` for WebGL 1's
+`WEBGL_depth_texture` (Chrome, measured); the copy is made before the pass and reused until something draws into the
+depth target again. A depth and stencil blit (`shaders/glsl_ds_copy.wgsl`) writes `frag_depth` from the source, and
+the stencil, which a fragment shader cannot write, by one draw that zeroes it and eight that each set one bit with a
+write mask of that bit, discarding where the source lacks it. `texSubImage2D` of a picture file is decoded and written
+like pixels; of a layer, a `copy_texture_to_texture` from the child's picture; over an uploaded texture, the texture
+carries `patches` that are laid over its picture (on the CPU, or on the GPU when a layer is among them).
+`crates/dom/tests/webgl.rs` runs eight cases (`tests/webgl/*.js`; `node crates/dom/tools/webgl-cases.mjs` records
+them, with the context attributes of a case's second line) in Chrome for Testing on SwiftShader and natively:
+gradient 0.004, noise 0.0, texture sampling 0.05, two render-to-texture passes 0.002, several outputs 0.52, a depth
+texture 0.06, renderbuffers with a colour, depth and stencil blit and a level 1 target 0.60, none more than 1 level
+off, and the stencil test 0.85 (five edge pixels of the stars, where the two rasterisers round differently).
 Points, instancing and the copies between buffers are made of the same pieces (`tests/glsl.rs` pins each). A point is
 one instance of a six-vertex quad: its attributes advance for each instance (indexed points gather them in the order
 of the list first), and the vertex shader's wrapper places the quad after `main` ran, `gl_PointSize` pixels across in
@@ -706,14 +739,18 @@ exception). Each step carries its own tables; the canvas's recording is the unio
 order and data (`blobs`) by content hash. Pictures are not decoded on the JS side: an upload names a file, a video file and
 time (`VIDEO_FRAME` on the `<video>`, read at `currentTime`), a layer of the shader group, or pixels of an `ImageData` or a
 rasterised canvas. `webgpu::validate` (core) bounds-checks every texture size, level, origin and rectangle and the frame's
-texture memory (512 MiB, 4096 steps) before anything is made; the JS side checks the same at the call. `compositor/glsl/webgpu.rs`
+texture memory (`webgpu::max_texture_bytes`: three of the biggest textures the device allows, 4 GiB at the default
+8192 limit, which Chrome on the M4 also gives a page; 4096 steps) before anything is made; the JS side checks the same at the call. `compositor/glsl/webgpu.rs`
 makes textures from the table, replays steps in order into one command buffer (an upload is a staging buffer copy, so it is
 ordered with the passes), decodes pictures (kept by file) and video frames (`VideoDecoder::picture` at
 `VideoInfo::media_time`, the same pictures a video layer shows), copies a layer from the group's input texture, and makes the pipelines
 (kept by id), builds the buffers from the recording and replays the passes in a command buffer of its own, inside a
-validation error scope, into the Rgba8 drawing buffer that `glsl_blit.wgsl` places (a bgra8 canvas is the same colours; the
-buffer is flushed first because earlier glsl layers' place passes read it). The dom painter reads every module with naga
-(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (query sets, bundles, depth, multisampling, readback, `rgba16float` canvas range), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
+validation error scope, into the drawing buffer that `glsl_blit.wgsl` places: Rgba8 (a bgra8 canvas is the same colours),
+or Rgba16Float for an `rgba16float` canvas, whose half floats reach the linear compositor; a `display-p3` canvas is decoded
+and turned into sRGB primaries there (values clipped to 0..1 first, as the standard tone mapping does, and colours outside
+sRGB clipped at the video's encode, the output being SDR). The buffer is flushed first because earlier glsl layers' place
+passes read it. The dom painter reads every module with naga
+(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (query sets, bundles, depth, multisampling, readback, `extended` tone mapping), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
 A module wgpu then refuses is a warning on stderr and a transparent canvas, never a panic.
 
 WebGPU compute. `createComputePipeline` and `createComputePipelineAsync` record a `computePipelines` entry (module, entry point,
