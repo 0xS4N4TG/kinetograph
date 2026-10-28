@@ -59,7 +59,9 @@ const PROBED: [&str; 3] = ["h264_mf", "h264_nvenc", "h264_amf"];
 /// lists h264_nvenc on a machine with no NVIDIA GPU), so they count only if a small test encoder opens.
 pub fn has_linked_encoder(name: &str) -> bool {
     init();
-    if encoder::find_by_name(name).is_none() {
+    // The Intel and AMD GPU encoders need a hardware device and an upload filter that `VideoEncoder` does not set up:
+    // the external ffmpeg drives them, whatever the linked one lists.
+    if external::is_hardware(name) || encoder::find_by_name(name).is_none() {
         return false;
     }
     !PROBED.contains(&name) || opens(name)
@@ -97,6 +99,29 @@ fn opens(name: &str) -> bool {
     ok
 }
 
+/// Why there is no usable encoder called `name`, and what to do: the message of every "no such encoder" refusal.
+pub fn unavailable(name: &str) -> String {
+    unavailable_message(name, external::availability(name))
+}
+
+fn unavailable_message(name: &str, external: external::Availability) -> String {
+    match (external::is_hardware(name), external) {
+        (true, external::Availability::Failed { program, reason }) => format!(
+            "{} lists the encoder {name:?}, but it does not open on this machine: {reason}",
+            program.display()
+        ),
+        (true, _) => format!(
+            "this ffmpeg has no encoder called {name:?}: the ffmpeg linked into Kinetograph is LGPL-only and has no \
+             Intel or AMD GPU encoders. Use your system's ffmpeg for them: set KINETOGRAPH_FFMPEG=/usr/bin/ffmpeg (its \
+             `ffmpeg -encoders` must list {name})"
+        ),
+        (false, _) => format!(
+            "this ffmpeg has no encoder called {name:?} that opens here (see `ffmpeg -encoders`); for one the linked \
+             ffmpeg lacks, set KINETOGRAPH_FFMPEG to an ffmpeg program that has it"
+        ),
+    }
+}
+
 /// The H.264 encoder to use when none is asked for: `H264_FALLBACKS` in order.
 fn default_h264(has: &impl Fn(&str) -> bool) -> Option<&'static str> {
     H264_FALLBACKS.into_iter().find(|name| has(name))
@@ -114,9 +139,7 @@ pub fn select_encoder(
         return if has(name) {
             Ok(name.to_string())
         } else {
-            Err(format!(
-                "this ffmpeg has no encoder called {name:?} that opens here (see `ffmpeg -encoders`)"
-            ))
+            Err(unavailable(name))
         };
     }
     if macos && has(VIDEOTOOLBOX) {
@@ -237,6 +260,9 @@ impl Codec {
         let id = match name {
             "libx264" => codec::Id::H264,
             "libx265" => codec::Id::HEVC,
+            // The Intel and AMD GPU encoders only the external ffmpeg drives.
+            "h264_vaapi" | "h264_qsv" => codec::Id::H264,
+            "hevc_vaapi" | "hevc_qsv" => codec::Id::HEVC,
             _ => encoder::find_by_name(name)?.id(),
         };
         [
@@ -462,6 +488,14 @@ fn is_videotoolbox(encoder: &str) -> bool {
     encoder.ends_with("_videotoolbox")
 }
 
+/// Whether `encoder` can take `pix`: the VAAPI and Quick Sync encoders (`external::HARDWARE`) take 4:2:0 only, 8-bit,
+/// and HEVC also 10-bit (Intel's GPUs have no H.264 10-bit encoder). Anything else is not limited here.
+fn hardware_takes(encoder: &str, pix: Pix) -> bool {
+    !external::is_hardware(encoder)
+        || pix == Pix::Yuv420p
+        || (pix == Pix::Yuv420p10 && encoder.starts_with("hevc"))
+}
+
 /// A CRF as VideoToolbox's 0 to 100 quality (`-q:v`): 51 is the worst a CRF goes, 0 the best, mapped in a line.
 /// CRF 18 comes to 65 and CRF 23 to 55.
 pub fn crf_to_quality(crf: f64) -> u32 {
@@ -487,9 +521,7 @@ pub fn resolve(
         (Some(codec), _) => codec,
         (None, Some(name)) => {
             if !has(name) {
-                return Err(format!(
-                    "this ffmpeg has no encoder called {name:?} (see `ffmpeg -encoders`)"
-                ));
+                return Err(unavailable(name));
             }
             Codec::of_encoder(name).ok_or_else(|| {
                 format!("{name:?} is not an encoder of a codec render writes (h264, h265, prores, vp9, gif)")
@@ -631,14 +663,23 @@ pub fn resolve(
     let encoder = match settings.encoder.as_deref() {
         Some(name) => {
             if !has(name) {
-                return Err(format!(
-                    "this ffmpeg has no encoder called {name:?} that opens here (see `ffmpeg -encoders`)"
-                ));
+                return Err(unavailable(name));
             }
             if Codec::of_encoder(name) != Some(codec) {
                 return Err(format!(
                     "encoder {name:?} does not write {}: pick one that does, or change --codec",
                     codec.name()
+                ));
+            }
+            if !hardware_takes(name, wanted) {
+                return Err(format!(
+                    "{name} takes {}, not {}: use a software encoder for other pixel formats",
+                    if name.starts_with("hevc") {
+                        "only yuv420p or yuv420p10le"
+                    } else {
+                        "only yuv420p"
+                    },
+                    wanted.name()
                 ));
             }
             if is_videotoolbox(name) && codec != Codec::ProRes && wanted != Pix::Yuv420p {
@@ -1734,6 +1775,122 @@ mod tests {
         // Neither linked nor external: the existing error.
         let msg = select_encoder(Some("libx264"), false, |_| false).unwrap_err();
         assert!(msg.contains("\"libx264\""), "{msg}");
+    }
+
+    #[test]
+    fn the_gpu_encoders_write_their_codec_and_take_420_only() {
+        let has = |name: &str| {
+            matches!(
+                name,
+                "h264_vaapi" | "hevc_vaapi" | "h264_qsv" | "hevc_qsv" | "aac"
+            )
+        };
+        let plan = |encoder: &str, pixel_format: Option<&str>, crf: Option<f64>| {
+            resolve(
+                &Settings {
+                    encoder: Some(encoder.into()),
+                    pixel_format: pixel_format.map(str::to_string),
+                    crf,
+                    ..Settings::default()
+                },
+                Path::new("out.mp4"),
+                false,
+                has,
+            )
+        };
+        for (encoder, codec) in [
+            ("h264_vaapi", Codec::H264),
+            ("h264_qsv", Codec::H264),
+            ("hevc_vaapi", Codec::H265),
+            ("hevc_qsv", Codec::H265),
+        ] {
+            let r = plan(encoder, None, Some(20.0)).unwrap();
+            assert_eq!(
+                (r.codec, r.pix, r.quality),
+                (codec, Pix::Yuv420p, Quality::Crf(20.0))
+            );
+        }
+        // 10-bit: HEVC only (no Intel GPU encodes H.264 10-bit).
+        assert_eq!(
+            plan("hevc_vaapi", Some("yuv420p10le"), None).unwrap().pix,
+            Pix::Yuv420p10
+        );
+        assert_eq!(
+            plan("hevc_qsv", Some("yuv420p10le"), None).unwrap().pix,
+            Pix::Yuv420p10
+        );
+        for (encoder, pix) in [
+            ("h264_vaapi", "yuv420p10le"),
+            ("h264_qsv", "yuv420p10le"),
+            ("hevc_vaapi", "yuv444p"),
+            ("hevc_qsv", "yuv422p10le"),
+            ("h264_vaapi", "yuv422p"),
+        ] {
+            let msg = plan(encoder, Some(pix), None).unwrap_err();
+            assert!(
+                msg.contains(encoder) && msg.contains(pix) && msg.contains("software"),
+                "{msg}"
+            );
+        }
+        // The codec flag must agree, and --crf is checked like any H.264 one.
+        assert!(
+            resolve(
+                &Settings {
+                    encoder: Some("h264_vaapi".into()),
+                    codec: Some(Codec::H265),
+                    ..Settings::default()
+                },
+                Path::new("out.mp4"),
+                false,
+                has
+            )
+            .unwrap_err()
+            .contains("does not write h265")
+        );
+        assert!(
+            plan("h264_qsv", None, Some(52.0))
+                .unwrap_err()
+                .contains("between 0 and 51")
+        );
+        // The linked ffmpeg never drives them, whatever it lists.
+        assert!(!has_linked_encoder("h264_vaapi") && !has_linked_encoder("hevc_qsv"));
+    }
+
+    #[test]
+    fn a_missing_encoder_says_how_to_use_the_system_ffmpeg() {
+        use external::Availability::{Failed, Missing, Ready};
+        let msg = unavailable_message("libx265", Missing);
+        assert!(
+            msg.contains("\"libx265\"") && msg.contains("KINETOGRAPH_FFMPEG"),
+            "{msg}"
+        );
+        assert!(unavailable_message("nope", Ready).contains("KINETOGRAPH_FFMPEG"));
+        let msg = unavailable_message("h264_vaapi", Missing);
+        assert!(
+            msg.contains("\"h264_vaapi\"")
+                && msg.contains("LGPL")
+                && msg.contains("KINETOGRAPH_FFMPEG=/usr/bin/ffmpeg"),
+            "{msg}"
+        );
+        // Listed but not opening: ffmpeg's own words and the fix come through, and the env var is not blamed.
+        let failed = Failed {
+            program: "/usr/bin/ffmpeg".into(),
+            reason: "Failed to initialise VAAPI connection\nFix: install intel-media-va-driver"
+                .into(),
+        };
+        let msg = unavailable_message("h264_vaapi", failed);
+        assert!(
+            msg.contains("/usr/bin/ffmpeg lists")
+                && msg.contains("does not open")
+                && msg.contains("intel-media-va-driver"),
+            "{msg}"
+        );
+        // The same wording reaches `select_encoder`.
+        let msg = select_encoder(Some("h264_qsv"), false, |_| false).unwrap_err();
+        assert!(
+            msg.contains("\"h264_qsv\"") && msg.contains("KINETOGRAPH_FFMPEG"),
+            "{msg}"
+        );
     }
 
     #[test]
