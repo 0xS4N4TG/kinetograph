@@ -74,6 +74,44 @@ npx kinetograph render examples/hello/index.tsx -o out/hello.mp4
 
 `render` prints the frame count, the encoder and the time it took. Add `--json` to get one JSON object instead.
 
+## The same video as an HTML page
+
+A video can also be an HTML page, written as for [HyperFrames](https://github.com/heygen-com/hyperframes). Save this as `index.html`:
+
+```html
+<!doctype html>
+<html>
+<head>
+<style>
+  body { margin: 0; background: #14171f; font-family: Inter; }
+  #title { position: absolute; left: 320px; top: 200px; color: #fff; font-size: 96px; }
+  #bar { position: absolute; left: 320px; top: 340px; height: 12px; width: 0; border-radius: 6px; background: #f6c177; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+</head>
+<body>
+<div id="root" data-composition-id="hello" data-width="1280" data-height="720" data-duration="2">
+  <div id="title">Hello, Kinetograph</div>
+  <div id="bar"></div>
+</div>
+<script>
+  const tl = gsap.timeline({ paused: true });
+  tl.to('#bar', { width: 640, duration: 1, ease: 'none' });
+  window.__timelines = { hello: tl };
+</script>
+</body>
+</html>
+```
+
+The root element gives the size and the length in seconds (30 fps). The GSAP timeline in `window.__timelines` is paused and seeked to each frame's time. `still`, `strip`, `inspect`, `lint`, `doctor`, `studio` and `render` take the page as they take a TSX entry:
+
+```sh
+npx kinetograph still index.html 15 -o out/hello-15.png
+npx kinetograph render index.html -o out/hello-html.mp4
+```
+
+The first render downloads GSAP from the CDN and pins it in `kinetograph.lock.json`; `npx kinetograph fetch-deps index.html` does that download on its own. [HyperFrames projects](/docs/compat/#hyperframes-projects) lists what a page can use.
+
 ## Next steps
 
 - [Authoring](/docs/guides/authoring/) covers the elements, effects and Remotion APIs a project can use.

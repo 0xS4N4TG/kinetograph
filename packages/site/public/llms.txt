@@ -31,7 +31,7 @@ Then add the MCP server so each CLI command is a tool: `npx kinetograph mcp` (st
 
 ## HTML pages and HyperFrames projects
 
-`render`, `still`, `doctor` and `studio` take an HTML page as it is: `npx kinetograph render index.html -o out.mp4`
+Every command that opens a project (`still`, `strip`, `inspect`, `lint`, `doctor`, `studio`, `render`) takes an HTML page as it is: `npx kinetograph render index.html -o out.mp4`
 (or the page's directory). There is no rewrite and nothing runs in a browser.
 
 - Size and length come from the root element: `data-composition-id`, `data-width`, `data-height` and `data-duration`
@@ -41,7 +41,7 @@ Then add the MCP server so each CLI command is a tool: `npx kinetograph mcp` (st
   number. Scripts run as in a browser.
 - `<video>` is decoded frame-accurately; `<audio>` and unmuted video are mixed, with `data-volume`, fades and
   `data-fx-chain` audio effects. `data-color-grading` runs on `<video>`, `<img>` and `<canvas>`.
-- A render first downloads what the page loads from the web (CDN scripts, ES modules, media, pictures) and pins
+- A render first downloads what the page loads from the web (CDN scripts, ES modules, media, pictures, Google Fonts) and pins
   it in `kinetograph.lock.json`; `--offline` never downloads, and `fetch-deps` does the download on its own.
 - [HyperFrames](https://github.com/heygen-com/hyperframes) projects use this format, so they render unchanged. Full
   details: /docs/compat/#hyperframes-projects
