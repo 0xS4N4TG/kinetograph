@@ -10,3 +10,4 @@ export * from './motion.js';
 export * from './canvas.js';
 export * from './webgl.js';
 export * from './webgpu.js';
+export * from './video-frame.js';

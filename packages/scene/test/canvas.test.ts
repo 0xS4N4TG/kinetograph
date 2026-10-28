@@ -9,6 +9,7 @@ import {
   Path2D,
   toSceneColor,
   unsupportedFilters,
+  VideoFramePicture,
   type CanvasCommand,
   type CanvasContext2D,
 } from '../src/index.js';
@@ -524,6 +525,29 @@ describe('gradients and patterns', () => {
     expect(() => pattern.setTransform({ a: NaN })).toThrow(TypeError);
     expect(() => ctx.createPattern(image, 'sideways')).toThrow(/not valid/);
     expect(() => ctx.createPattern({}, 'repeat')).toThrow(/picture/);
+  });
+});
+
+describe('drawImage of a video frame', () => {
+  it('names the file and the instant in all three forms, with the crop and the scale', () => {
+    const ctx = make({ width: 64, height: 36 });
+    const frame = new VideoFramePicture('/p/clip.mp4', 0.5, 64, 36, 2);
+    ctx.drawImage(frame, 1, 2);
+    ctx.drawImage(frame, 0, 0, 16, 9);
+    ctx.drawImage(frame, 8, 4, 32, 18, 0, 0, 64, 36);
+    const source = { kind: 'video', src: '/p/clip.mp4', time: 0.5, end: 2 };
+    expect(ctx.commands).toMatchObject([
+      { op: 'image', source, dx: 1, dy: 2, dw: 64, dh: 36 },
+      { op: 'image', source, dx: 0, dy: 0, dw: 16, dh: 9 },
+      { op: 'image', source, sx: 8, sy: 4, sw: 32, sh: 18, dx: 0, dy: 0, dw: 64, dh: 36 },
+    ]);
+  });
+
+  it('makes a pattern of a frame', () => {
+    const ctx = make();
+    ctx.fillStyle = ctx.createPattern(new VideoFramePicture('/p/clip.mp4', 0, 8, 8), 'repeat')!;
+    ctx.fillRect(0, 0, 5, 5);
+    expect(ctx.commands).toMatchObject([{ paint: { type: 'pattern', source: { kind: 'video', src: '/p/clip.mp4', time: 0 } } }]);
   });
 });
 

@@ -58,7 +58,7 @@ One thing to know: a `width` tween that starts from `0` on an element whose inli
 npm install @kinetographdev/motion motion
 ```
 
-The engine already runs `requestAnimationFrame` on the frame's clock and catches it up over skipped frames, so Motion's own loop gives the same frame in a still, in order and in parallel. The plugin makes that explicit, keeps the same project right under Remotion, and adds a way that does not use a frame loop at all.
+The engine already runs `requestAnimationFrame` and the Web Animations API on the frame's clock and catches them up over skipped frames, so Motion's own loop gives the same frame in a still, in order and in parallel. Outside `MotionFrame`, Motion plays `opacity`, transforms, `filter`, `clipPath` and colours on the Web Animations API, as it does in Chrome, and the values match Chrome's. The plugin makes that explicit, keeps the same project right under Remotion, and adds a way that does not use a frame loop at all.
 
 ```tsx
 import { MotionFrame, useAnimateAt, useMotionTime, useSpringAt } from '@kinetographdev/motion';
