@@ -51,9 +51,13 @@ An entry is a project file (`.tsx`, `.ts`, `.jsx`, `.js`) or a `.json` scene (re
 
 ## A project
 
+A new project imports the API from `@kinetographdev/core`, which comes with `kinetograph`; never install
+`remotion` (`@remotion/*` imports such as the font loaders are mapped too). An existing Remotion project keeps its `remotion` and `@remotion/*` imports, which map onto the same code.
+The entry must call `registerRoot`; a file that only exports a component is not an entry.
+
 ```tsx
 import { AbsoluteFill, Composition, Layer, Rect, Text, interpolate, registerRoot, spring,
-         useCurrentFrame, useVideoConfig, dropShadow, linearGradient, registerFont, staticFile } from 'remotion';
+         useCurrentFrame, useVideoConfig, dropShadow, linearGradient, registerFont, staticFile } from '@kinetographdev/core';
 
 registerFont({ family: 'DM Sans', path: staticFile('DMSans-Medium.ttf') }); // fonts BEFORE any text is measured
 

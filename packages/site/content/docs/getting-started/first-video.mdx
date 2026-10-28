@@ -7,12 +7,11 @@ This page makes a two-second title card. It needs Kinetograph installed: see [In
 
 ## Write the project
 
-Make a folder in the repository, such as `examples/hello`, and save this as `index.tsx` in it:
+Make a folder, run `npm install kinetograph` in it, and save this as `index.tsx` there. `registerRoot`, `Composition` and the rest of the API come from `@kinetographdev/core`, which `npm install kinetograph` brings with it. Remotion is not installed and not needed: an `@remotion/*` import, such as the font loader below, is mapped onto Kinetograph's own code. The `kinetograph` package itself is the CLI, so importing `registerRoot` from it fails.
 
 ```tsx
 import React from 'react';
-import { AbsoluteFill, Composition, interpolate, registerRoot, useCurrentFrame } from 'remotion';
-import { Rect, Text } from '@kinetographdev/core';
+import { AbsoluteFill, Composition, Rect, Text, interpolate, registerRoot, useCurrentFrame } from '@kinetographdev/core';
 import { loadFont } from '@remotion/google-fonts/Inter';
 
 const { fontFamily } = loadFont('normal', { weights: ['400'] });

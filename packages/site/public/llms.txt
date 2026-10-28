@@ -3,7 +3,8 @@
 > A blazingly fast programmatic video engine, made for agents, with no browser in it. Write a video in TypeScript with
 > Remotion's API, or as a plain HTML page (HyperFrames projects render as they are), with CSS, SVG, Canvas 2D, WebGL
 > fragment shaders, GSAP and Web Audio; Node runs the code; a Rust GPU compositor (an N-API addon on wgpu) draws every
-> frame. `remotion` and `@remotion/*` imports resolve to Kinetograph's own implementation.
+> frame. A new project imports from `@kinetographdev/core` (it comes with `npm install kinetograph`; Remotion is not
+> installed); `remotion` and `@remotion/*` imports in an existing project resolve to the same code.
 
 ## If you are an agent: install the skills first
 

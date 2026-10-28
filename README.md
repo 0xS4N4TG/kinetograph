@@ -164,8 +164,8 @@ npx kinetograph render examples/rajz-cards/index.tsx -o out/rajz-cards.mp4
 npx kinetograph inspect examples/rajz-cards/index.tsx --frame 60 --json
 ```
 
-A project imports from `remotion` and `@remotion/*` as it would for Remotion (the CLI maps them onto
-`@kinetographdev/core`) and from `@kinetographdev/core` for the native elements and effects. Every command takes `--json`;
+A new project imports the API from `@kinetographdev/core`, which comes with `npm install kinetograph`; Remotion is
+not installed. A Remotion project keeps its `remotion` and `@remotion/*` imports, which the CLI maps onto the same code. Every command takes `--json`;
 `npx kinetograph mcp` serves the same commands over MCP; [Use with agents](packages/site/content/docs/guides/agents.mdx)
 has the client setup and the agent skill. `npm test` runs the CPU tests; the GPU ones run with
 `KINETOGRAPH_GPU_TESTS=1`.
