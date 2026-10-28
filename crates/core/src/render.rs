@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime};
 
-use glam::{DMat3, DMat4, DVec3};
+use glam::{DMat3, DMat4, DVec3, DVec4};
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
 use kurbo::{Affine, BezPath, Ellipse, Point, Rect, RoundedRect, Shape};
 use peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
@@ -13,9 +13,10 @@ use peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
 use crate::blur::MIN_RADIUS;
 use crate::bounds::{self, PixelRect};
 use crate::box_shadow::BoxShadow;
+use crate::bsp;
 use crate::cache::{self, Inputs, LayerCache};
 use crate::canvas;
-use crate::compositor::{BLEND_SLOTS, BlendLayer, Compositor, Readback, Tex};
+use crate::compositor::{BLEND_SLOTS, BlendLayer, Compositor, MAX_WARP_CUTS, Readback, Tex};
 use crate::error::{Error, Result};
 use crate::gif::{Gif, Gifs, gif_sources, open_gif};
 use crate::lottie::{Lottie, Lotties, lottie_sources, open_lottie};
@@ -839,15 +840,17 @@ impl Renderer {
 
     /// Draws a `preserve3d` group: its children, and those of the preserve3d
     /// groups nested in it, go straight onto `canvas` with their combined 3D
-    /// placements, farthest first (`warp::sort_far_to_near`), the group's own
-    /// opacity multiplied into each. `parent` is the group's parent's flat
-    /// matrix.
+    /// placements, back to front as a BSP tree of their planes orders them
+    /// (`bsp.rs`), the group's own opacity multiplied into each. A layer whose
+    /// plane another crosses is drawn and warped once and blended piece by
+    /// piece, each piece in its own place in the order. `parent` is the
+    /// group's parent's flat matrix.
     fn draw_preserve3d(
         &mut self,
         group: &ResolvedLayer,
         children: &[ResolvedLayer],
         parent: Affine,
-        mut canvas: Tex,
+        canvas: Tex,
         below: Option<&Tex>,
     ) -> Result<Tex> {
         let space = Space3d {
@@ -857,32 +860,190 @@ impl Renderer {
             opacity: group.opacity,
         };
         let mut items = Vec::new();
-        collect_preserve3d(children, space, &mut |l| self.layer_box(l), &mut items)?;
+        collect_preserve3d(children, space, &mut |l| self.plane_extent(l), &mut items)?;
         warp::sort_far_to_near(&mut items, |item| item.depth);
+        let pieces = preserve3d_pieces(&items, self.projection, self.whole_rect());
+        // The flat picture of each layer drawn in pieces, until its last.
+        let mut flat: Vec<Option<Option<Flat>>> = (0..items.len()).map(|_| None).collect();
         self.cache_path.push(group.id.clone());
-        for item in items {
-            // One at a time: each is placed in 3D and blended before the next.
-            let mut pending = Vec::new();
-            let drawn = self.draw_layer(
-                item.layer,
-                item.siblings,
-                item.flat_parent,
-                Some(item.placement),
-                item.opacity,
-                canvas,
-                below,
-                &mut pending,
-            );
-            canvas = match drawn {
-                Ok(canvas) => self.blend_pending(canvas, &mut pending),
-                Err(e) => {
-                    self.cache_path.pop();
-                    return Err(e);
-                }
-            };
+        let drawn = self.draw_pieces(&items, &pieces, &mut flat, canvas, below);
+        for f in flat.into_iter().flatten().flatten() {
+            self.compositor.release(f.tex);
         }
         self.cache_path.pop();
+        drawn
+    }
+
+    /// The pieces of `draw_preserve3d`, in order, onto `canvas`. A layer
+    /// that is one piece is drawn as any placed layer is; one cut in pieces is
+    /// drawn flat once (kept in `flat` until its last piece) and warped piece
+    /// by piece, each warp drawing only what the piece's cuts keep.
+    fn draw_pieces<'a>(
+        &mut self,
+        items: &[DepthItem<'a>],
+        pieces: &[bsp::Piece],
+        flat: &mut [Option<Option<Flat>>],
+        mut canvas: Tex,
+        below: Option<&Tex>,
+    ) -> Result<Tex> {
+        let mut left = vec![0usize; items.len()];
+        let mut most_cuts = vec![0usize; items.len()];
+        for piece in pieces {
+            left[piece.item] += 1;
+            most_cuts[piece.item] = most_cuts[piece.item].max(piece.cuts.len());
+        }
+        for piece in pieces {
+            let item = &items[piece.item];
+            left[piece.item] -= 1;
+            if piece.cuts.is_empty() && flat[piece.item].is_none() {
+                // One at a time: each is placed in 3D and blended before the next.
+                let mut pending = Vec::new();
+                let drawn = self.draw_layer(
+                    item.layer,
+                    item.siblings,
+                    item.flat_parent,
+                    Some(item.placement),
+                    item.opacity,
+                    canvas,
+                    below,
+                    &mut pending,
+                )?;
+                canvas = self.blend_pending(drawn, &mut pending);
+                continue;
+            }
+            if flat[piece.item].is_none() {
+                flat[piece.item] = Some(self.flat_texture(item, &canvas, below)?);
+            }
+            if let Some(Some(f)) = &flat[piece.item] {
+                // The cuts are lines of the layer's flat space, and the flat
+                // picture is drawn `shift` from where it belongs.
+                let cuts: Vec<bsp::Cut> = piece
+                    .cuts
+                    .iter()
+                    .map(|c| bsp::Cut {
+                        line: DVec3::new(
+                            c.line.x,
+                            c.line.y,
+                            c.line.z - c.line.x * f.shift.0 - c.line.y * f.shift.1,
+                        ),
+                        strict: c.strict,
+                    })
+                    .collect();
+                // A piece takes its cuts in the warp, where each pixel samples
+                // the plane. When a piece of the layer has more than one warp
+                // takes, all its pieces are cut before the warp instead, at
+                // texel centres, so that they still share their edges.
+                let cut = if most_cuts[piece.item] <= MAX_WARP_CUTS {
+                    self.timed(Stage::Composite, |s| {
+                        s.compositor.warp_cut(&f.tex, f.h, &cuts)
+                    })
+                } else {
+                    self.timed(Stage::Composite, |s| {
+                        let kept = s.compositor.cut(&f.tex, &cuts);
+                        let warped = s.compositor.warp_cut(&kept, f.h, &[]);
+                        s.compositor.release(kept);
+                        warped
+                    })
+                };
+                let opacity = item.layer.opacity * item.opacity;
+                let mut pending = vec![Pending::new(
+                    Waiting::Loose(cut),
+                    opacity,
+                    item.layer.blend_mode,
+                )];
+                canvas = self.blend_pending(canvas, &mut pending);
+            }
+            if left[piece.item] == 0
+                && let Some(Some(f)) = flat[piece.item].take()
+            {
+                self.compositor.release(f.tex);
+            }
+        }
         Ok(canvas)
+    }
+
+    /// A layer of a preserve3d group drawn flat, for warping piece by piece
+    /// (`draw_pieces`): what `layer_final_texture` warps, without the layer
+    /// cache. `None` if it is seen edge on or from behind with its back
+    /// hidden.
+    fn flat_texture(
+        &mut self,
+        item: &DepthItem<'_>,
+        canvas: &Tex,
+        below: Option<&Tex>,
+    ) -> Result<Option<Flat>> {
+        let placement = item.placement;
+        let Some(h) = warp::plane_homography(self.projection, placement.parent, placement.world)
+        else {
+            return Ok(None);
+        };
+        if placement.backface_hidden && h.determinant() < 0.0 {
+            return Ok(None);
+        }
+        let needs_backdrop = uses_backdrop(item.siblings, item.layer);
+        let combined = match below {
+            Some(below) if needs_backdrop => {
+                Some(self.timed(Stage::Composite, |s| s.compositor.over(below, canvas)))
+            }
+            _ => None,
+        };
+        let backdrop = needs_backdrop.then(|| combined.as_ref().unwrap_or(canvas));
+        let shift = if backdrop.is_none() {
+            self.source_shift(&placement)
+        } else {
+            (0.0, 0.0)
+        };
+        let drawn = self.layer_texture(
+            item.layer,
+            item.siblings,
+            shifted(shift, item.flat_parent),
+            backdrop,
+            None,
+        );
+        if let Some(combined) = combined {
+            self.compositor.release(combined);
+        }
+        let h = h * DMat3::from_cols(
+            DVec3::new(1.0, 0.0, 0.0),
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(-shift.0, -shift.1, 1.0),
+        );
+        Ok(Some(Flat {
+            tex: drawn?,
+            h,
+            shift,
+        }))
+    }
+
+    /// The padded canvas as a rectangle of its pixels.
+    fn whole_rect(&self) -> Rect {
+        let w = self.whole();
+        Rect::new(
+            f64::from(w.x0),
+            f64::from(w.y0),
+            f64::from(w.x1),
+            f64::from(w.y1),
+        )
+    }
+
+    /// The box of a layer's plane in its own space, which decides what other
+    /// planes of a preserve3d group cut it: its own box, or a group's
+    /// children's boxes together. `None` when nothing in it has one.
+    fn plane_extent(&mut self, layer: &ResolvedLayer) -> Result<Option<Rect>> {
+        if let Some(b) = self.layer_box(layer)? {
+            return Ok(Some(b));
+        }
+        let ResolvedKind::Group { children, .. } = &layer.kind else {
+            return Ok(None);
+        };
+        let mut out: Option<Rect> = None;
+        for child in children {
+            if let Some(b) = self.plane_extent(child)? {
+                let b = bounds::transformed(child.transform.matrix(), b);
+                out = Some(out.map_or(b, |o| o.union(b)));
+            }
+        }
+        Ok(out)
     }
 
     /// Draws one layer of `siblings` for `canvas`: its own pixels
@@ -1722,6 +1883,15 @@ impl Renderer {
 
 }
 
+/// A layer of a preserve3d group drawn flat for warping piece by piece:
+/// drawn `shift` pixels right and down of where it belongs, and `h` the warp
+/// of that picture into place.
+struct Flat {
+    tex: Tex,
+    h: DMat3,
+    shift: (f64, f64),
+}
+
 /// How a layer is moved in 3D: `world` is its `W` (see `warp.rs`; inside a
 /// `preserve3d` group, the accumulated one), acting on the plane of the
 /// space whose flat matrix is `parent`.
@@ -1762,6 +1932,8 @@ struct DepthItem<'a> {
     opacity: f32,
     /// What it is sorted by: the z of the layer's centre once placed.
     depth: f64,
+    /// Its box in its own space (`Renderer::plane_extent`), if it has one.
+    extent: Option<Rect>,
 }
 
 /// Lists the layers a `preserve3d` group draws: its `children`, with those of
@@ -1805,7 +1977,8 @@ fn collect_preserve3d<'a>(
             collect_preserve3d(inner, inner_space, layer_box, out)?;
             continue;
         }
-        let local = match layer_box(child)? {
+        let extent = layer_box(child)?;
+        let local = match extent {
             Some(b) => b.center(),
             None => Point::new(child.transform.anchor_x, child.transform.anchor_y),
         };
@@ -1821,9 +1994,72 @@ fn collect_preserve3d<'a>(
             },
             opacity: space.opacity,
             depth: warp::depth(&world, (centre.x, centre.y)),
+            extent,
         });
     }
     Ok(())
+}
+
+/// The pieces `items` are painted in, back to front (`bsp::paint_order`):
+/// each item's plane is its box (or, without one, the whole canvas `whole`)
+/// in the flat space of the padded canvas, moved into 3D by its placement and
+/// seen through `projection`.
+fn preserve3d_pieces(items: &[DepthItem<'_>], projection: DMat4, whole: Rect) -> Vec<bsp::Piece> {
+    let planes: Vec<bsp::Plane> = items
+        .iter()
+        .map(|item| {
+            let parent = item.placement.parent;
+            let to_world = if warp::invertible(parent) {
+                warp::flat(parent) * item.placement.world * warp::flat(parent.inverse())
+            } else {
+                DMat4::ZERO
+            };
+            let flat = item.flat_parent * item.layer.transform.matrix();
+            let corners = match item.extent {
+                Some(b) => [
+                    flat * Point::new(b.x0, b.y0),
+                    flat * Point::new(b.x1, b.y0),
+                    flat * Point::new(b.x1, b.y1),
+                    flat * Point::new(b.x0, b.y1),
+                ],
+                None => [
+                    Point::new(whole.x0, whole.y0),
+                    Point::new(whole.x1, whole.y0),
+                    Point::new(whole.x1, whole.y1),
+                    Point::new(whole.x0, whole.y1),
+                ],
+            };
+            bsp::Plane {
+                to_world,
+                corners: corners.map(|p| [p.x, p.y]),
+            }
+        })
+        .collect();
+    bsp::paint_order(&planes, eye_of(projection))
+}
+
+/// Where the camera `projection` looks from, in homogeneous coordinates: the
+/// point it sends to `w = 0` at the origin (`(0, 0, 1, 0)`, from far along
+/// +z, for no camera). The null vector of its x, y and w rows.
+fn eye_of(projection: DMat4) -> DVec4 {
+    let m = projection.transpose();
+    let rows = [m.x_axis, m.y_axis, m.w_axis];
+    let minor = |skip: usize| {
+        let cols: Vec<usize> = (0..4).filter(|c| *c != skip).collect();
+        let at = |r: usize, c: usize| rows[r][cols[c]];
+        DMat3::from_cols(
+            DVec3::new(at(0, 0), at(1, 0), at(2, 0)),
+            DVec3::new(at(0, 1), at(1, 1), at(2, 1)),
+            DVec3::new(at(0, 2), at(1, 2), at(2, 2)),
+        )
+        .determinant()
+    };
+    let e = DVec4::new(minor(0), -minor(1), minor(2), -minor(3));
+    if e.w < 0.0 || (e.w == 0.0 && e.z < 0.0) {
+        -e
+    } else {
+        e
+    }
 }
 
 /// How many half stroke widths past the path a stroke finished as `style`
@@ -2190,7 +2426,7 @@ fn needs_box(effects: &[ResolvedEffect]) -> bool {
 fn has_backdrop_blur(effects: &[ResolvedEffect]) -> bool {
     effects
         .iter()
-        .any(|e| matches!(e, ResolvedEffect::BackdropBlur { radius } if *radius >= MIN_RADIUS))
+        .any(|e| matches!(e, ResolvedEffect::BackdropBlur { radius, .. } if *radius >= MIN_RADIUS))
 }
 
 /// Whether drawing `layer` looks at what is behind it: it blurs the backdrop,
@@ -2866,15 +3102,49 @@ mod tests {
         let mut items = Vec::new();
         collect_preserve3d(children, space, &mut test_box, &mut items).unwrap();
         warp::sort_far_to_near(&mut items, |i| i.depth);
-        let order = items
+        let pieces = preserve3d_pieces(&items, DMat4::IDENTITY, Rect::new(0.0, 0.0, 400.0, 300.0));
+        let order = pieces
             .iter()
-            .map(|i| (i.layer.id.clone(), i.opacity))
+            .map(|p| (items[p.item].layer.id.clone(), items[p.item].opacity))
             .collect();
         (order, items)
     }
 
     fn ids(order: &[(String, f32)]) -> Vec<&str> {
         order.iter().map(|(id, _)| id.as_str()).collect()
+    }
+
+    #[test]
+    fn crossing_cards_are_painted_in_pieces() {
+        // Two cards about the same middle, one turned a quarter about y: it
+        // crosses the other, half behind and half in front.
+        let layers = resolve_layers(&format!(
+            r#"[{{"id": "g", "type": "group", "preserve3d": true,
+                 "transform": {{"x": 200, "y": 150}}, "children": [{}, {}]}}]"#,
+            card("flat", r#"{"anchorX": 10, "anchorY": 5}"#),
+            card("turned", r#"{"anchorX": 10, "anchorY": 5, "rotateY": 90}"#),
+        ));
+        let (order, _) = painting_order(&layers);
+        let order = ids(&order);
+        assert_eq!(order.len(), 3, "{order:?}");
+        assert_eq!(order.iter().filter(|id| **id == "turned").count(), 2);
+        assert_eq!(order[1], "flat");
+    }
+
+    #[test]
+    fn the_eye_is_where_the_camera_looks_from() {
+        assert_eq!(eye_of(DMat4::IDENTITY), DVec4::new(0.0, 0.0, 1.0, 0.0));
+        let camera = crate::resolve::ResolvedCamera {
+            x: 100.0,
+            y: 50.0,
+            perspective: 800.0,
+        };
+        let e = eye_of(warp::projection(Some(&camera), 10));
+        let e = e / e.w;
+        assert!(
+            e.abs_diff_eq(DVec4::new(110.0, 60.0, 800.0, 1.0), 1e-9),
+            "{e:?}"
+        );
     }
 
     #[test]

@@ -244,8 +244,8 @@ describe('filter', () => {
     expect(command.filter).toEqual([{ type: 'blur', radius: 2 }]);
   });
 
-  it('writes drop-shadow with a deviation of half its blur and the colour either side', () => {
-    expect(written('drop-shadow(4px 6px 8px red)')).toEqual({ filter: [{ type: 'dropShadow', x: 4, y: 6, blur: 4, color: '#ff0000' }], a: undefined });
+  it('writes drop-shadow with its blur as the deviation, as Chrome draws it, and the colour either side', () => {
+    expect(written('drop-shadow(4px 6px 8px red)')).toEqual({ filter: [{ type: 'dropShadow', x: 4, y: 6, blur: 8, color: '#ff0000' }], a: undefined });
     expect(written('drop-shadow(rgba(0, 0, 255, 0.5) -2px 3px)')).toEqual({ filter: [{ type: 'dropShadow', x: -2, y: 3, blur: 0, color: '#0000ff80' }], a: undefined });
     expect(written('drop-shadow(1px 1px)')).toEqual({ filter: [{ type: 'dropShadow', x: 1, y: 1, blur: 0, color: '#000000' }], a: undefined });
   });
@@ -281,14 +281,13 @@ describe('filter', () => {
     expect(ctx.commands).toHaveLength(1);
   });
 
-  it('keeps a url() as valid and not drawn, and says so on the command', () => {
+  it('keeps a url() in its place in the list, for the page to find the <filter> it names', () => {
     const ctx = make();
     ctx.filter = 'url(#rough) blur(2px)';
     expect(ctx.filter).toBe('url(#rough) blur(2px)');
     ctx.fillRect(0, 0, 5, 5);
-    const command = only(ctx) as { filter?: unknown; unsupportedFilter?: string };
-    expect(command.filter).toEqual([{ type: 'blur', radius: 2 }]);
-    expect(command.unsupportedFilter).toBe('url(#rough)');
+    const command = only(ctx) as { filter?: unknown };
+    expect(command.filter).toEqual([{ type: 'url', url: 'url(#rough)' }, { type: 'blur', radius: 2 }]);
     expect(unsupportedFilters(ctx.commands)).toEqual(['url(#rough)']);
   });
 

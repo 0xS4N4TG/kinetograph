@@ -55,6 +55,23 @@ interface GradientBase {
    *  `gradientTransform`. `[1, 0, 0, k, 0, cy * (1 - k)]` squashes a radial gradient about `(cx, cy)` into an ellipse.
    *  Not animated. */
   transform?: [number, number, number, number, number, number];
+  /** Paint the gradient in one tile and repeat it (`background-repeat` of a gradient): the gradient's coordinates are
+   *  the tile's, `(0, 0)` at its corner. */
+  tile?: GradientTile;
+}
+/** A gradient's tile: `width` x `height` with its top-left corner at `(x, y)` in the painted layer's space, repeated
+ *  every `width + spaceX` (`height + spaceY`) along the axes that repeat; along the others there is the one tile. */
+export interface GradientTile {
+  /** Default 0. */
+  x?: Num;
+  y?: Num;
+  width: Num;
+  height: Num;
+  /** The gap between tiles. Default 0. */
+  spaceX?: Num;
+  spaceY?: Num;
+  repeatX?: boolean;
+  repeatY?: boolean;
 }
 export interface LinearGradient extends GradientBase {
   type: 'linear';
@@ -79,8 +96,9 @@ export interface ConicGradient extends GradientBase {
 }
 export type Gradient = LinearGradient | RadialGradient | ConicGradient;
 /** A picture as a paint, once or tiled (`background-image: url()` with `background-repeat`): drawn `width` x `height`
- *  with its top-left corner at `(x, y)` in the painted layer's space, repeated along the axes that repeat; along the
- *  others its edge pixels are held, so cut the shape to the tile. `src` is a PNG, JPEG or GIF file or a `data:` URL. */
+ *  with its top-left corner at `(x, y)` in the painted layer's space, repeated along the axes that repeat, `spaceX`
+ *  (`spaceY`) apart; along the others its edge pixels are held, so cut the shape to the tile (with a space, there is
+ *  the one copy). `src` is a PNG, JPEG or GIF file or a `data:` URL. */
 export interface ImagePaint {
   type: 'image';
   src: string;
@@ -92,6 +110,9 @@ export interface ImagePaint {
   height: Num;
   repeatX?: boolean;
   repeatY?: boolean;
+  /** The gap between copies along an axis that repeats (`background-repeat: space`). Default 0. */
+  spaceX?: Num;
+  spaceY?: Num;
 }
 /** A colour string, a gradient or a picture: a shape's `fill` and a text layer's `color`. */
 export type Paint = ColorString | Gradient | ImagePaint;
@@ -235,6 +256,9 @@ export interface BlurEffect {
 export interface BackdropBlurEffect {
   type: 'backdropBlur';
   radius: Num;
+  /** `mirror`: read only the backdrop inside the layer's box, mirrored past its edges, as a browser's
+   *  `backdrop-filter` does. Default `canvas`: the canvas around the layer. */
+  edgeMode?: 'canvas' | 'mirror';
 }
 export interface GlowEffect {
   type: 'glow';
@@ -652,8 +676,12 @@ export type CanvasFilterFn =
   | { type: 'blur'; radius: number }
   | { type: 'brightness' | 'contrast' | 'grayscale' | 'invert' | 'saturate' | 'sepia'; amount: number }
   | { type: 'hueRotate'; angle: number }
-  /** `blur` is the standard deviation, half the CSS length. */
-  | { type: 'dropShadow'; x: number; y: number; blur: number; color: string };
+  /** `blur` is the standard deviation: the CSS length, as for `blur()`. */
+  | { type: 'dropShadow'; x: number; y: number; blur: number; color: string }
+  /** `url(#id)`: an SVG `<filter>` of the page, which the page's painter puts in as `graph`; drawn without when there is none. */
+  | { type: 'url'; url: string }
+  /** The SVG filter a `url()` names, as the `filterGraph` effect spells it (without its `type`). */
+  | { type: 'graph'; graph: Record<string, unknown> };
 
 /**
  * What every drawing command is drawn with; the defaults are the identity, 1 and `source-over`, no shadow and no
@@ -669,8 +697,6 @@ export interface CanvasState {
   shadow?: CanvasShadow;
   /** `filter`, in order; `opacity()` is in `a`. */
   filter?: CanvasFilterFn[];
-  /** The `url()` references in the `filter`, which are not drawn: the host reports them. */
-  unsupportedFilter?: string;
 }
 
 export interface CanvasLine {
@@ -750,8 +776,58 @@ export interface GlslTexture {
   premultiply?: boolean;
   /** `generateMipmap` was called. */
   mipmaps?: boolean;
-  /** A framebuffer's texture: `width` by `height`, drawn into by the ops that name it as their `target`. */
+  /**
+   * A render target: `width` by `height`, empty, drawn into by the ops that name it (a framebuffer's texture or
+   * renderbuffer). Later draws sample what they left.
+   */
   target?: boolean;
+  /** What a target holds: colour (RGBA8, the default), or a depth, stencil or depth-and-stencil buffer. */
+  format?: 'depth' | 'stencil' | 'depthStencil';
+  /** The mip levels of a colour target (default 1): an op's `level` draws into one. */
+  levels?: number;
+  /** A depth texture of a WebGL 1 context: sampled as (d, d, d, 1), where WebGL 2 samples (d, 0, 0, 1). */
+  luminance?: boolean;
+  /** `texSubImage2D` of pictures over parts of the texture, in order, after `src`, `pixels` or `layer`. */
+  patches?: GlslPatch[];
+}
+
+/** A picture over a rectangle of a texture (`texSubImage2D`): rows counted as the texture's, the first GL's bottom one. */
+export interface GlslPatch {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** One of: a picture file, base64 RGBA8 (straight alpha), or a child of the shader group. */
+  src?: string;
+  pixels?: string;
+  layer?: string;
+  flipY?: boolean;
+  premultiply?: boolean;
+}
+
+/** A colour attachment an op draws into: a target texture (or renderbuffer), and its mip level. */
+export interface GlslOutput {
+  target: string;
+  level?: number;
+}
+
+/** What one face of a polygon does in the stencil test (`stencilFuncSeparate`, `stencilOpSeparate`). */
+export interface GlslStencilFace {
+  /** `NEVER`, `LESS`, `EQUAL`, `LEQUAL`, `GREATER`, `NOTEQUAL`, `GEQUAL` or `ALWAYS`. */
+  func: string;
+  /** `KEEP`, `ZERO`, `REPLACE`, `INCR`, `DECR`, `INVERT`, `INCR_WRAP` or `DECR_WRAP`. */
+  fail: string;
+  zfail: string;
+  zpass: string;
+}
+
+/** The stencil test of a draw; WebGL refuses a draw whose faces differ in the reference or the masks. */
+export interface GlslStencil {
+  ref: number;
+  valueMask: number;
+  writeMask: number;
+  front: GlslStencilFace;
+  back: GlslStencilFace;
 }
 
 export interface GlslAttribute {
@@ -779,6 +855,8 @@ export interface GlslSampler {
   mag: string;
   wrapS: string;
   wrapT: string;
+  /** `TEXTURE_MAX_LEVEL`, when it was set: the last level read, so fewer levels can be complete. */
+  maxLevel?: number;
 }
 
 export interface GlslBlend {
@@ -821,16 +899,31 @@ export interface GlslDraw {
   depth?: GlslDepth;
   /** `polygonOffset(factor, units)` with `POLYGON_OFFSET_FILL` on; only with `depth`. */
   polygonOffset?: { factor: number; units: number };
-  /** The id of the target texture it draws into; the drawing buffer without one. */
+  /** The stencil test, when it was on and the buffer drawn into has a stencil buffer. */
+  stencil?: GlslStencil;
+  /**
+   * Where it draws, as for every op: the canvas when none of `target`, `outputs` and `depthStencil` is given. `target`
+   * is the colour attachment of output 0 (at `level`); `outputs` the attachments of outputs 0 and up when there are
+   * several (or none), null where `drawBuffers` says NONE; `depthStencil` the framebuffer's depth or stencil buffer.
+   */
   target?: string;
+  level?: number;
+  outputs?: (GlslOutput | null)[];
+  depthStencil?: string;
 }
 
-/** `blitFramebuffer` (COLOR_BUFFER_BIT): a rectangle of one buffer over a rectangle of another. */
+/**
+ * `blitFramebuffer`: a rectangle of one buffer over a rectangle of another. Of colour (COLOR_BUFFER_BIT), from the read
+ * buffer to one draw buffer; or with `aspect`, of the depth and stencil buffers, which `src` and `target` then name.
+ */
 export interface GlslBlit {
-  /** The target texture read; the drawing buffer without one. */
+  /** The target read; the drawing buffer without one. */
   src?: string;
-  /** The target texture written; the drawing buffer without one. */
+  srcLevel?: number;
+  /** The target written; the drawing buffer without one. */
   target?: string;
+  level?: number;
+  aspect?: 'depth' | 'stencil' | 'depthStencil';
   /** `x0, y0, x1, y1` of the source, y up from the bottom row; reversed corners mirror. */
   from: [number, number, number, number];
   to: [number, number, number, number];
@@ -848,19 +941,33 @@ export interface GlslUpload {
   y: number;
   width: number;
   height: number;
-  /** Base64 RGBA8, straight alpha. */
-  pixels: string;
+  /** One of: base64 RGBA8 (straight alpha), a picture file, or a child of the shader group. */
+  pixels?: string;
+  src?: string;
+  layer?: string;
   flipY?: boolean;
   premultiply?: boolean;
 }
 
-/** `clear`: the colour (`COLOR_BUFFER_BIT`), the depth buffer (`DEPTH_BUFFER_BIT`, to `depth`), or both. */
-export type GlslOp = { op: 'clear'; color?: [number, number, number, number]; depth?: number; target?: string } | ({ op: 'draw' } & GlslDraw) | ({ op: 'blit' } & GlslBlit) | ({ op: 'upload' } & GlslUpload);
+/**
+ * `clear` (and `clearBuffer*`): the colour of the buffers drawn into (`COLOR_BUFFER_BIT`), the depth buffer
+ * (`DEPTH_BUFFER_BIT`, to `depth`), the stencil buffer (`STENCIL_BUFFER_BIT`, to `stencil`), or several. Where it
+ * clears is given as for a draw.
+ */
+export type GlslOp =
+  | { op: 'clear'; color?: [number, number, number, number]; depth?: number; stencil?: number; target?: string; level?: number; outputs?: (GlslOutput | null)[]; depthStencil?: string }
+  | ({ op: 'draw' } & GlslDraw)
+  | ({ op: 'blit' } & GlslBlit)
+  | ({ op: 'upload' } & GlslUpload);
 
 /** What a WebGL context did: the programs, data and calls of a `glsl` layer. */
 export interface GlslContent {
   premultipliedAlpha?: boolean;
   alpha?: boolean;
+  /** The context's `depth` attribute (default true): whether the drawing buffer has a depth buffer. */
+  depth?: boolean;
+  /** The context's `stencil` attribute (default false): whether the drawing buffer has a stencil buffer. */
+  stencil?: boolean;
   programs: Record<string, GlslProgram>;
   /** Base64 bytes. */
   buffers: Record<string, string>;
@@ -1088,6 +1195,10 @@ export interface WebGpuContent {
   notes?: string[];
   /** What the frame reads that earlier frames made (state a page carries), so that the frame is not the same alone as in a sequence. */
   impure?: string[];
+  /** The canvas's `format` when it is `rgba16float` (drawn at half-float precision); 8-bit otherwise. */
+  canvasFormat?: 'rgba16float';
+  /** The canvas's `colorSpace` when it is `display-p3` (converted to the video's sRGB primaries); `srgb` otherwise. */
+  colorSpace?: 'display-p3';
 }
 
 export interface GlslLayer extends LayerBase, Partial<GlslContent> {
@@ -1234,6 +1345,21 @@ export interface Model3D extends Placement3D, Shadowing3D {
   /** A clip that is over starts again (default true); `false` holds its last pose. */
   loop?: boolean;
 }
+/**
+ * A bevel round extruded text or a path, as three.js's `ExtrudeGeometry` makes it (`bevelThickness`, `bevelSize`,
+ * `bevelOffset`, `bevelSegments`), in world units.
+ */
+export interface Bevel3D {
+  /** How far each cap stands beyond the walls. Default: a quarter of `depth`. */
+  thickness?: number;
+  /** How far the walls stand out from the outline. Default: the thickness. */
+  size?: number;
+  /** Moves the whole bevel out from the outline (in, when negative). Default 0. */
+  offset?: number;
+  /** Flat bands the rounded edge is cut into, 1 to 32. Default 3. */
+  segments?: number;
+}
+
 export interface Text3D extends Placement3D, Shadowing3D {
   type: 'text';
   id?: string;
@@ -1247,6 +1373,8 @@ export interface Text3D extends Placement3D, Shadowing3D {
   /** Default `center`. */
   align?: 'left' | 'center' | 'right';
   lineHeight?: number;
+  /** Rounds the letters' edges. */
+  bevel?: Bevel3D;
   material?: Material3D;
 }
 export interface Extrude3D extends Placement3D, Shadowing3D {
@@ -1258,6 +1386,8 @@ export interface Extrude3D extends Placement3D, Shadowing3D {
   size?: number;
   depth?: number;
   fillRule?: 'nonzero' | 'evenodd';
+  /** Rounds the shape's edges. */
+  bevel?: Bevel3D;
   material?: Material3D;
 }
 export interface Group3D extends Placement3D {

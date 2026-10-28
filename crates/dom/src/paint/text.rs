@@ -404,7 +404,10 @@ impl<'a> Painter<'a> {
                 s.dy,
                 s.blur / 2.0,
             ));
-            self.note_reach(s.dx.abs().max(s.dy.abs()) + 3.0 * s.blur / 2.0);
+            self.note_reach(
+                s.dx.abs().max(s.dy.abs())
+                    + 3.0 * (s.blur / 2.0).min(kinetograph_core::scene::MAX_MARGIN_BLUR),
+            );
         }
         out.push(make(
             self,

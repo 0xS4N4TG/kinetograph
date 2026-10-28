@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { setDomAddon, setDomEnvironment, resetStylesheets, registerStylesheet } from '@kinetographdev/compat/dom';
-import { installDomGlobals, resetObservers } from '@kinetographdev/compat/shim';
+import { installDomGlobals, resetObservers, setPathMeasure } from '@kinetographdev/compat/shim';
 import { createSceneRoot, Layer, Rect, SequenceHost, TimelineContext } from '../src/index.js';
 import { timeline } from './harness.js';
 
@@ -164,5 +164,84 @@ describe.skipIf(addon === null)('readback with the addon', () => {
     setDomAddon(addon);
     expect(calls).toBe(1);
     expect(seen).toEqual(['block', '0.5', '80px', '4px', 'static']);
+  });
+
+  // Chrome for Testing 154's getBoundingClientRect for the same page (body margin 0): the geometry box through the
+  // transforms (the corners of the box, so a rotated circle is the rotated square around it), the CSS transform, the
+  // `viewBox` with its `preserveAspectRatio`, and nested `<svg>` viewports. Strokes, markers and filters are not in it.
+  it("measures SVG shapes as Chrome's getBoundingClientRect does", async () => {
+    // The path maths core hands the shim (packages/core/src/web-install.ts).
+    const paths = (await import('@kinetographdev/core/paths' as string)) as Parameters<typeof setPathMeasure>[0] & object;
+    setPathMeasure({ getLength: paths.getLength, getPointAtLength: paths.getPointAtLength, getBoundingBox: paths.getBoundingBox });
+    const chrome: Record<string, number[]> = {
+      stroke: [15, 27, 30, 40],
+      filter: [15, 27, 30, 40],
+      rot: [5.2513, 22.2513, 49.4975, 49.4975],
+      circlerot: [77.6795, 29.6795, 54.641, 54.641],
+      curve: [15, 34.5, 85, 52.5],
+      g: [10, 12, 55, 55],
+      line: [15, 97, 140, 0],
+      marked: [15, 17, 40, 0],
+      css: [25, 47, 60, 80],
+      vb: [65, 117, 20, 30],
+      vbnone: [25, 217, 40, 30],
+      vbslice: [25, 327, 40, 60],
+      inner: [129, 411, 8, 12],
+      nested: [129, 411, 8, 12],
+    };
+    const seen: Record<string, number[]> = {};
+    function Probe() {
+      useLayoutEffect(() => {
+        const doc = (globalThis as any).document;
+        for (const id of Object.keys(chrome)) {
+          const r = doc.getElementById(id).getBoundingClientRect();
+          seen[id] = [r.x, r.y, r.width, r.height].map((v: number) => Math.round(v * 1e4) / 1e4);
+        }
+      }, []);
+      return (
+        <div style={{ position: 'absolute', left: 5, top: 7 }}>
+          <svg width={200} height={100} style={{ display: 'block' }}>
+            <defs>
+              <filter id="f">
+                <feGaussianBlur stdDeviation={5} />
+              </filter>
+              <marker id="m" markerWidth={10} markerHeight={10} refX={0} refY={5}>
+                <rect width={10} height={10} />
+              </marker>
+            </defs>
+            <rect id="stroke" x={10} y={20} width={30} height={40} stroke="black" strokeWidth={10} fill="red" />
+            <rect id="filter" x={10} y={20} width={30} height={40} filter="url(#f)" />
+            <rect id="rot" x={10} y={20} width={30} height={40} transform="rotate(45 25 40)" />
+            <circle id="circlerot" cx={100} cy={50} r={20} transform="rotate(30 100 50)" />
+            <path id="curve" d="M10 80 C 40 10, 65 10, 95 80" stroke="black" strokeWidth={6} fill="none" />
+            <g id="g" transform="translate(5 5)">
+              <rect x={0} y={0} width={10} height={10} stroke="black" strokeWidth={4} />
+              <circle cx={50} cy={50} r={5} />
+            </g>
+            <line id="line" x1={10} y1={90} x2={150} y2={90} stroke="black" strokeWidth={8} strokeLinecap="square" />
+            <polyline id="marked" points="10,10 50,10" stroke="black" markerEnd="url(#m)" />
+            <rect id="css" x={10} y={20} width={30} height={40} style={{ transform: 'scale(2)', transformOrigin: '0 0' }} />
+          </svg>
+          <svg width={200} height={100} viewBox="0 0 100 100" style={{ display: 'block' }}>
+            <rect id="vb" x={10} y={10} width={20} height={30} stroke="black" strokeWidth={10} />
+          </svg>
+          <svg width={200} height={100} viewBox="0 0 100 100" preserveAspectRatio="none" style={{ display: 'block' }}>
+            <rect id="vbnone" x={10} y={10} width={20} height={30} />
+          </svg>
+          <svg width={200} height={100} viewBox="0 0 100 100" preserveAspectRatio="xMinYMin slice" style={{ display: 'block' }}>
+            <rect id="vbslice" x={10} y={10} width={20} height={30} />
+            <svg id="inner" x={50} y={50} width={40} height={20} viewBox="0 0 10 10">
+              <rect id="nested" x={1} y={1} width={2} height={3} />
+            </svg>
+          </svg>
+        </div>
+      );
+    }
+    render(<Probe />).unmount();
+    setPathMeasure(null);
+    const wrong = Object.entries(chrome)
+      .filter(([id, want]) => want.some((v, i) => Math.abs(seen[id]![i]! - v) >= 0.01))
+      .map(([id, want]) => `${id}: ${seen[id]} vs Chrome ${want}`);
+    expect(wrong).toEqual([]);
   });
 });

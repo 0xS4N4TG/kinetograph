@@ -18,6 +18,7 @@ import type {
   GlslPass,
   GlslTextureOptions,
   CharStyle,
+  Bevel3D,
   Clip,
   ColorString,
   DatamoshJson,
@@ -291,6 +292,8 @@ export interface Text3DProps extends Drawn3DProps {
   depth?: number;
   align?: 'left' | 'center' | 'right';
   lineHeight?: number;
+  /** Rounds the letters' edges, as three.js's `bevelThickness`, `bevelSize`, `bevelOffset` and `bevelSegments`. */
+  bevel?: Bevel3D;
   material?: Material3D;
 }
 export interface ExtrudeProps extends Drawn3DProps {
@@ -300,6 +303,8 @@ export interface ExtrudeProps extends Drawn3DProps {
   size?: number;
   depth?: number;
   fillRule?: 'nonzero' | 'evenodd';
+  /** Rounds the shape's edges, as three.js's `bevelThickness`, `bevelSize`, `bevelOffset` and `bevelSegments`. */
+  bevel?: Bevel3D;
   material?: Material3D;
 }
 export interface Group3DProps extends Object3DProps {

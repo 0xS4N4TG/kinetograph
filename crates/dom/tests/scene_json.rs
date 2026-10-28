@@ -431,7 +431,8 @@ fn filters_become_effects_in_order_and_opacity_folds_into_the_group() {
         .map(|e| e["type"].as_str().unwrap())
         .collect();
     assert_eq!(types, ["blur", "saturate", "dropShadow"]);
-    assert_eq!(g["effects"][2]["blur"], 3);
+    // Chrome blurs a drop-shadow by its blur length as the deviation.
+    assert_eq!(g["effects"][2]["blur"], 6);
     assert_eq!(g["opacity"], 0.5);
 }
 

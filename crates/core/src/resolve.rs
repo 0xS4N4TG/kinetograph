@@ -230,9 +230,12 @@ pub enum ResolvedEffect {
     Blur {
         radius: f32,
     },
-    /// Standard deviation in pixels of the blur applied to the backdrop.
+    /// Standard deviation in pixels of the blur applied to the backdrop;
+    /// `mirror`: only the backdrop inside the layer's box, mirrored past its
+    /// edges (`scene::BackdropEdge::Mirror`).
     BackdropBlur {
         radius: f32,
+        mirror: bool,
     },
     Glow(ResolvedGlow),
     /// The red channel is read `amount` pixels along `angle` degrees
@@ -421,7 +424,7 @@ pub struct ResolvedGlow {
 pub struct ResolvedShadow {
     pub x: f32,
     pub y: f32,
-    /// Standard deviation of the blur, 0..=`MAX_SHADOW_SIZE`.
+    /// Standard deviation of the blur, 0..=`MAX_BLUR_RADIUS`.
     pub blur: f32,
     /// Growth of the shadow, -`MAX_SHADOW_SIZE`..=`MAX_SHADOW_SIZE`; negative
     /// shrinks it.
@@ -554,6 +557,22 @@ pub struct ResolvedImagePaint {
     pub height: f64,
     pub repeat_x: bool,
     pub repeat_y: bool,
+    /// The gap between copies along a direction that repeats.
+    pub space_x: f64,
+    pub space_y: f64,
+}
+
+/// `scene::Tile` at one frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedTile {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub space_x: f64,
+    pub space_y: f64,
+    pub repeat_x: bool,
+    pub repeat_y: bool,
 }
 
 /// A gradient at one frame, in the space of whatever it paints.
@@ -571,6 +590,8 @@ pub struct ResolvedGradient {
     pub transform: Affine,
     /// Stops blend without premultiplying alpha (`Gradient::unpremultiplied`).
     pub unpremultiplied: bool,
+    /// Painted in one tile, repeated (`Gradient::tile`).
+    pub tile: Option<ResolvedTile>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -603,13 +624,12 @@ pub enum ResolvedGradientGeometry {
     },
 }
 
-/// Largest radius of the backdrop blur and the glow; bigger values are clamped.
-pub const MAX_BLUR_RADIUS: f64 = 128.0;
-
-/// Largest radius of the `blur` effect; bigger values are clamped. The blur works on
-/// a copy of the layer `3 * radius` larger on every side (shrunk by levels), so this
-/// bounds its memory too.
-pub const MAX_LAYER_BLUR_RADIUS: f64 = 512.0;
+/// Largest radius of a blur (the `blur`, `backdropBlur` and `glow` effects, a
+/// shadow's blur); bigger values are clamped. Only to keep the numbers of a
+/// blur's textures in range: a blur this wide spreads anything on a canvas of
+/// at most `MAX_SIDE` pixels to much less than a level, and no texture of a
+/// blur is larger than `MAX_SIDE` at any radius (`blur.rs`).
+pub const MAX_BLUR_RADIUS: f64 = 16384.0;
 
 /// Largest glow intensity; bigger values are clamped.
 pub const MAX_GLOW_INTENSITY: f64 = 4.0;
@@ -1328,6 +1348,8 @@ fn resolve_paint(paint: &Paint, f: f64) -> ResolvedPaint {
             height: i.height.at(f).max(0.0),
             repeat_x: i.repeat_x,
             repeat_y: i.repeat_y,
+            space_x: i.space_x.at(f).max(0.0),
+            space_y: i.space_y.at(f).max(0.0),
         }),
     }
 }
@@ -1428,6 +1450,16 @@ pub(crate) fn resolve_gradient(g: &Gradient, f: f64) -> ResolvedGradient {
         units: g.units,
         transform: g.transform.map_or(Affine::IDENTITY, Affine::new),
         unpremultiplied: g.unpremultiplied,
+        tile: g.tile.as_ref().map(|t| ResolvedTile {
+            x: t.x.at(f),
+            y: t.y.at(f),
+            width: t.width.at(f).max(0.0),
+            height: t.height.at(f).max(0.0),
+            space_x: t.space_x.at(f).max(0.0),
+            space_y: t.space_y.at(f).max(0.0),
+            repeat_x: t.repeat_x,
+            repeat_y: t.repeat_y,
+        }),
     }
 }
 
@@ -1509,10 +1541,11 @@ fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
     let f = clock.t;
     match effect {
         Effect::Blur { radius } => ResolvedEffect::Blur {
-            radius: radius.at(f).clamp(0.0, MAX_LAYER_BLUR_RADIUS) as f32,
-        },
-        Effect::BackdropBlur { radius } => ResolvedEffect::BackdropBlur {
             radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
+        },
+        Effect::BackdropBlur { radius, edge_mode } => ResolvedEffect::BackdropBlur {
+            radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
+            mirror: *edge_mode == crate::scene::BackdropEdge::Mirror,
         },
         Effect::Glow {
             radius,
@@ -1683,7 +1716,7 @@ fn resolve_shadow(s: &Shadow, f: f64) -> ResolvedShadow {
     ResolvedShadow {
         x: s.x.at(f) as f32,
         y: s.y.at(f) as f32,
-        blur: s.blur.at(f).clamp(0.0, MAX_SHADOW_SIZE) as f32,
+        blur: s.blur.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
         spread: s.spread.at(f).clamp(-MAX_SHADOW_SIZE, MAX_SHADOW_SIZE) as f32,
         color: s.color,
     }
@@ -1835,7 +1868,7 @@ mod tests {
             panic!("not a drop shadow");
         };
         assert_eq!((drop.x, drop.y), (5.0, -3.0));
-        assert_eq!((drop.blur, drop.spread), (128.0, -128.0));
+        assert_eq!((drop.blur, drop.spread), (200.0, -128.0));
         assert_eq!(drop.color, crate::color::Color::parse("#ff000080").unwrap());
         let ResolvedEffect::InsetShadow(inset) = effects[1] else {
             panic!("not an inset shadow");
@@ -1862,10 +1895,12 @@ mod tests {
             5,
         );
         assert!(
-            matches!(effects[..], [ResolvedEffect::BackdropBlur { radius }] if radius == 128.0)
+            matches!(effects[..], [ResolvedEffect::BackdropBlur { radius, mirror: false }] if radius == 200.0)
         );
         let effects = effects_at(r#"[{"type": "backdropBlur", "radius": -3}]"#, 0);
-        assert!(matches!(effects[..], [ResolvedEffect::BackdropBlur { radius }] if radius == 0.0));
+        assert!(
+            matches!(effects[..], [ResolvedEffect::BackdropBlur { radius, .. }] if radius == 0.0)
+        );
     }
 
     #[test]
@@ -1879,7 +1914,7 @@ mod tests {
         let ResolvedEffect::Glow(first) = effects[0] else {
             panic!("not a glow");
         };
-        assert_eq!((first.radius, first.intensity), (128.0, 4.0));
+        assert_eq!((first.radius, first.intensity), (150.0, 4.0));
         assert_eq!(first.color, Some(Color::parse("#ff0000").unwrap()));
         let ResolvedEffect::Glow(second) = effects[1] else {
             panic!("not a glow");
