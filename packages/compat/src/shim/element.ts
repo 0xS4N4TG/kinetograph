@@ -32,7 +32,7 @@ import { AnimationShim, animationsOf, documentTimeline, KeyframeEffectShim, setA
 import { cssTransformMatrix, IDENTITY, mapBox, mulAffine, parseViewBox, svgLength, viewBoxMatrix, type Affine } from './svg-transform.js';
 import { parseHtmlFragment } from '../request/html.js';
 import { attributeMapOf, AttrShim, type NamedNodeMapShim } from './attributes.js';
-import { bodyHost, pageViewport, effectiveParentOf, headHost, htmlHost, overlayOf, propsWithOverlay, rawParentOf, setRawParent, type BoxInfo, type HostElement, type Readback } from './host.js';
+import { bodyHost, pageDocument, pageViewport, effectiveParentOf, headHost, htmlHost, overlayOf, propsWithOverlay, rawParentOf, setRawParent, type BoxInfo, type HostElement, type Readback } from './host.js';
 import { matches, queryAll, type SelectorContext } from './selector.js';
 import {
   clearChildren,
@@ -614,7 +614,7 @@ export class DomElement extends DomNodeBase {
   }
   /** The element this one hangs from: a DOM element, `body` at the top of a root, `html` above `body` and `head`. */
   private domParent(): HostElement | null {
-    if (this.host === htmlHost) return null;
+    if (this.host === htmlHost || this.host === pageDocument()?.html) return null;
     if (this.host === bodyHost || this.host === headHost) return htmlHost;
     const parent = effectiveParentOf(this.host);
     if (parent !== null) return isDomElement(parent.type) || isFillLayer(parent) ? parent : null;
@@ -625,7 +625,7 @@ export class DomElement extends DomNodeBase {
     return this.wrap(this.domParent());
   }
   get parentNode(): DomElement | Document | null {
-    if (this.host === htmlHost) return (globalThis as { document?: Document }).document ?? null;
+    if (this.host === htmlHost || this.host === pageDocument()?.html) return (globalThis as { document?: Document }).document ?? null;
     const root = documentOfRoot.get(this.host);
     if (root !== undefined) return root as Document;
     const parent = effectiveParentOf(this.host);
@@ -1093,26 +1093,27 @@ export class DomElement extends DomNodeBase {
    * (GSAP re-parents an element whose `offsetParent` is null, to measure it).
    */
   get offsetParent(): DomElement | null {
-    if (this.host === htmlHost || this.host === bodyHost || this.box() === null) return null;
+    const page = pageDocument();
+    if (this.host === htmlHost || this.host === bodyHost || this.host === page?.html || this.host === page?.body || this.box() === null) return null;
     if (this.readback.computed(this.host, 'position') === 'fixed') return null;
     for (let h = this.readback.parent(this.host); h !== null; h = this.readback.parent(h)) {
       const position = this.readback.computed(h, 'position');
       if (position !== null && position !== 'static') return this.wrap(h);
     }
-    return this.wrap(bodyHost);
+    return this.wrap(pageDocument()?.body ?? bodyHost);
   }
   get offsetLeft(): number {
     const box = this.box();
     if (box === null) return 0;
     const parent = this.offsetParent?.host;
-    const origin = parent && parent !== bodyHost ? this.readback.box(parent) : null;
+    const origin = parent && parent !== bodyHost && parent !== pageDocument()?.body ? this.readback.box(parent) : null;
     return Math.round(box.x - (origin?.x ?? 0));
   }
   get offsetTop(): number {
     const box = this.box();
     if (box === null) return 0;
     const parent = this.offsetParent?.host;
-    const origin = parent && parent !== bodyHost ? this.readback.box(parent) : null;
+    const origin = parent && parent !== bodyHost && parent !== pageDocument()?.body ? this.readback.box(parent) : null;
     return Math.round(box.y - (origin?.y ?? 0));
   }
   get clientWidth(): number {

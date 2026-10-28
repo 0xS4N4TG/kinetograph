@@ -4,7 +4,8 @@
 // colour (what its framebuffers hold) into a texture the main pass reads.
 //
 //   fs_blur:      one direction of a 25-tap Gaussian (the blur effect, radius step / 12 a tap), or one of the two
-//                 passes of the bloom: thresholded 9-tap Gaussian, the first reading the picture.
+//                 passes of the bloom: a 9-tap Gaussian at half size into a half-size texture, the first reading the
+//                 picture and keeping what is above the threshold, the second reading the first.
 //   fs_moments:   the Kuwahara filter's first pass: the mean and mean square of the colour along a row.
 //   fs_kuwahara:  its second: the four quadrants' means and variances, weighted by how flat each is.
 //
@@ -15,7 +16,7 @@ struct Params {
     // x0, y0, x1, y1: the layer's bounds in canvas pixels.
     bounds: vec4<f32>,
     // x, y: the direction of the pass. z: the step in canvas pixels. w: 0 for the blur, 1 for the bloom's first pass
-    // (thresholded), 2 for its second.
+    // (thresholded), 2 for its second (both write a half-size texture).
     pass_a: vec4<f32>,
     // x: 1 when `tex_a` holds straight sRGB colour already. y: the Kuwahara radius in pixels. z: its sharpness.
     // w: its saturation.
@@ -88,25 +89,48 @@ fn blur_read(pos: vec2<f32>) -> vec4<f32> {
     return c;
 }
 
-// The bloom's reader: the colour above the threshold, with an alpha of 1.
+// A texel of the half-size bloom texture `tex_a`, clamped to its edge.
+fn half_texel(xy: vec2<i32>) -> vec4<f32> {
+    return textureLoad(tex_a, clamp(xy, vec2<i32>(0), place.a.zw - vec2<i32>(1)), 0);
+}
+
+// Bilinear read of the half-size bloom texture at the canvas pixel `pos` (its texel i covers canvas pixels 2i, 2i + 1
+// from its origin), clamped to its edge, as a linear-filtered framebuffer texture is read.
+fn half_bilinear(pos: vec2<f32>) -> vec4<f32> {
+    let q = (pos - vec2<f32>(place.a.xy)) * 0.5 - vec2<f32>(0.5);
+    let i = floor(q);
+    let f = q - i;
+    let xy = vec2<i32>(i);
+    let a = half_texel(xy);
+    let b = half_texel(xy + vec2<i32>(1, 0));
+    let c = half_texel(xy + vec2<i32>(0, 1));
+    let d = half_texel(xy + vec2<i32>(1, 1));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+// The bloom's reader: the first pass reads the picture and keeps the colour above the threshold (after the filter, as
+// HyperFrames' shader thresholds what its texture read returns); the second reads the first's half-size texture.
 fn bloom_read(pos: vec2<f32>) -> vec4<f32> {
-    let c = read_bilinear(pos);
-    var rgb = c.rgb;
-    if params.pass_a.w < 1.5 {
-        let luminance = dot(rgb, vec3<f32>(0.299, 0.587, 0.114));
-        if luminance <= 0.5 {
-            rgb = vec3<f32>(0.0);
-        }
+    if params.pass_a.w > 1.5 {
+        return vec4<f32>(half_bilinear(pos).rgb, 1.0);
+    }
+    var rgb = read_bilinear(pos).rgb;
+    let luminance = dot(rgb, vec3<f32>(0.299, 0.587, 0.114));
+    if luminance <= 0.5 {
+        rgb = vec3<f32>(0.0);
     }
     return vec4<f32>(rgb, 1.0);
 }
 
 @fragment
 fn fs_blur(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let pos = canvas_pos(p);
+    var pos = canvas_pos(p);
     let dir = params.pass_a.xy;
     let step_px = dir * params.pass_a.z;
     if params.pass_a.w > 0.5 {
+        // The bloom runs at half size, as HyperFrames' does: texel i of the target is canvas pixels 2i and 2i + 1 from
+        // its origin, so its centre reads the corner the four share (their mean, through the bilinear read).
+        pos = vec2<f32>(place.target_origin.xy) + p.xy * 2.0;
         var bloom = bloom_read(pos) * 0.227027;
         bloom += bloom_read(pos + step_px) * 0.1945946;
         bloom += bloom_read(pos - step_px) * 0.1945946;

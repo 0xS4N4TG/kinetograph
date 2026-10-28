@@ -6,6 +6,9 @@ import type { AudioBuffer, OfflineAudioContext } from 'node-web-audio-api';
 import type { AudioClipTimeline } from './clips.js';
 import { shiftPitch } from './pitch.js';
 import { registeredCallbacks } from './registry.js';
+import { parseFxChain, type FxChain } from './hf-fx/chain.js';
+import { parseFxLanes, parseVolumeLane, volumeEnvelope, type Lane } from './hf-fx/automation.js';
+import { chainTailSeconds, MAX_TAIL_SECONDS, runFxChain } from './hf-fx/graph.js';
 
 export interface AudioPcm {
   sampleRate: number;
@@ -60,24 +63,45 @@ export async function renderAudio(options: {
     }
   }
 
+  const load = bufferLoader(ctx, options);
+  // The clips of HyperFrames elements with effects are mixed after this context, through their chains.
+  const fx = planHfFx(clips);
+  for (const clip of clips) {
+    if (fx.routed.has(clip)) continue;
+    const buffer = await load(clip);
+    if (buffer) scheduleClip(ctx, buffer, clip, { fps, first, last, timeOf });
+  }
+
+  const rendered = await ctx.startRendering();
+  const channels: Float32Array[] = [];
+  for (let c = 0; c < rendered.numberOfChannels; c++) channels.push(rendered.getChannelData(c));
+  if (fx.tracks.length > 0 || fx.master !== null) await mixHfFx(fx, channels, { fps, first, last, sampleRate, load });
+  return { sampleRate: rendered.sampleRate, channels };
+}
+
+/** Each clip's sound as a buffer, decoded once per file (and per pitch for `toneFrequency`); null for a video without sound. */
+function bufferLoader(
+  ctx: OfflineAudioContext,
+  options: { baseDir?: string; decodeAudio?: DecodeAudio; resolveSource?: (src: string) => string | Promise<string> },
+): (clip: AudioClipTimeline) => Promise<AudioBuffer | null> {
   const decoded = new Map<string, AudioBuffer>();
   // The sound of a video file, by path; null for a file with none.
   const videoSound = new Map<string, AudioBuffer | null>();
   // `toneFrequency`: a file's sound shifted once per pitch.
   const pitched = new Map<string, AudioBuffer>();
-  for (const clip of clips) {
+  return async (clip) => {
     const source = clip.video || !options.resolveSource ? clip.src : await options.resolveSource(clip.src);
     const path = resolve(options.baseDir ?? process.cwd(), source);
     let buffer: AudioBuffer | null | undefined;
     if (clip.video) {
       // A muted video's file is never opened for its sound.
-      if (clip.muted || clip.volumes.size === 0) continue;
+      if (clip.muted || clip.volumes.size === 0) return null;
       buffer = videoSound.get(path);
       if (buffer === undefined) {
         buffer = await decodeVideoSound(ctx, clip.src, options.baseDir, options.decodeAudio ?? addonDecodeAudio());
         videoSound.set(path, buffer);
       }
-      if (buffer === null) continue;
+      if (buffer === null) return null;
     } else {
       buffer = decoded.get(path);
       if (!buffer) {
@@ -95,13 +119,181 @@ export async function renderAudio(options: {
       }
       buffer = shifted;
     }
-    scheduleClip(ctx, buffer, clip, { fps, first, last, timeOf });
+    return buffer;
+  };
+}
+
+// ---- HyperFrames' audio effects (AUTHORING.md §6.4; hf-fx/) ----
+
+interface FxTrack {
+  fx: NonNullable<AudioClipTimeline['hfFx']>;
+  clips: AudioClipTimeline[];
+  chain: FxChain | null;
+  lanes: Lane[];
+}
+interface FxGroup {
+  chain: FxChain;
+  lanes: Lane[];
+  /** A new reader of the group's fader at composition seconds (read forwards). */
+  fader: () => (t: number) => number;
+}
+interface FxPlan {
+  /** The clips that play into a chain rather than straight into the mix. */
+  routed: Set<AudioClipTimeline>;
+  tracks: FxTrack[];
+  groups: Map<string, FxGroup>;
+  master: FxChain | null;
+}
+
+/** Reads the chains and lanes. An unreadable one stops the mix, as it stops HyperFrames' render (audioMixer.ts). */
+function planHfFx(clips: AudioClipTimeline[]): FxPlan {
+  const plan: FxPlan = { routed: new Set(), tracks: [], groups: new Map(), master: null };
+  const byTrack = new Map<string, FxTrack>();
+  const read = <T>(what: string, run: () => T): T => {
+    try {
+      return run();
+    } catch (error) {
+      throw new Error(`the audio effects of ${what} cannot be read: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+  };
+  for (const clip of clips) {
+    const fx = clip.hfFx;
+    if (!fx) continue;
+    if (fx.master !== null && plan.master === null) plan.master = read('the root composition (the master bus)', () => parseFxChain(fx.master!));
+    if (fx.chain === null && fx.group === null) continue;
+    plan.routed.add(clip);
+    let track = byTrack.get(fx.track);
+    if (!track) {
+      const chain = fx.chain === null ? null : read(`#${fx.track}`, () => parseFxChain(fx.chain!));
+      const lanes = chain !== null && fx.automation ? read(`#${fx.track}`, () => parseFxLanes(fx.automation!, chain)) : [];
+      track = { fx, clips: [], chain, lanes };
+      byTrack.set(fx.track, track);
+      plan.tracks.push(track);
+      const bus = fx.group;
+      if (bus) {
+        let group = plan.groups.get(bus.id);
+        if (!group) {
+          const groupChain = read(`group #${bus.id}`, () => parseFxChain(bus.chain));
+          const groupLanes = bus.automation ? read(`group #${bus.id}`, () => parseFxLanes(bus.automation!, groupChain)) : [];
+          const lane = bus.automation ? parseVolumeLane(bus.automation) : null;
+          group = { chain: groupChain, lanes: groupLanes, fader: () => volumeEnvelope(lane, bus.volume) };
+          plan.groups.set(bus.id, group);
+        }
+      }
+    }
+    track.clips.push(clip);
+  }
+  return plan;
+}
+
+/** The least and greatest of `values`, without spreading them into arguments (a long render has more frames than a call takes). */
+export function extent(values: Iterable<number>): [number, number] {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of values) {
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+  return [lo, hi];
+}
+
+/**
+ * Adds `planes` (from sample `at` of `into`) times one gain per frame of `gains` (frame → gain), the planes starting at
+ * frame `start`: each frame's gain held for the frame, the first frame's before it, and after the last frame `after`
+ * until `afterUntil` seconds, then 0. A missing channel of `planes` repeats its last.
+ */
+function addFrameGains(
+  into: Float32Array[],
+  planes: Float32Array[],
+  at: number,
+  clock: { start: number; fps: number; sampleRate: number },
+  gains: Map<number, number>,
+  after: number,
+  afterUntil: number,
+): void {
+  const { start, fps, sampleRate } = clock;
+  const [firstFrame, lastFrame] = extent(gains.keys());
+  into.forEach((target, c) => {
+    const plane = planes[Math.min(c, planes.length - 1)]!;
+    const n = Math.min(plane.length, target.length - at);
+    let frame = Number.NaN;
+    let gain = 0;
+    for (let i = 0; i < n; i++) {
+      const t = start / fps + i / sampleRate;
+      const f = Math.floor(t * fps + 1e-9);
+      if (f !== frame || f > lastFrame) {
+        frame = f;
+        gain = f > lastFrame ? (t < afterUntil ? after : 0) : (gains.get(Math.max(f, firstFrame)) ?? 0);
+      }
+      target[at + i]! += plane[i]! * gain;
+    }
+  });
+}
+
+/**
+ * Plays each HyperFrames element with effects through its chain, each group with effects through its bus, and the mix
+ * through the master bus, into `channels`, as HyperFrames' render does (engine/audioMixer.ts): the element's sound at
+ * `pre` from its first sample, its chain with its `fx.*` lanes on the element's clock, then its `volume` (after `end`,
+ * `after`, for as long as the chain's tail); a group's members summed, its chain with its lanes on composition time,
+ * then its fader (`data-volume` times its `volume` lane on composition time, so it holds through the gaps between
+ * members); and the master chain over the whole mix. Each pass hands its input to the next and keeps no copy of it.
+ */
+async function mixHfFx(
+  plan: FxPlan,
+  channels: Float32Array[],
+  range: { fps: number; first: number; last: number; sampleRate: number; load: (clip: AudioClipTimeline) => Promise<AudioBuffer | null> },
+): Promise<void> {
+  const { fps, first, last, sampleRate, load } = range;
+  const total = channels[0]!.length;
+  const { OfflineAudioContext } = await import('node-web-audio-api');
+  const sums = new Map<FxGroup, Float32Array[]>();
+  for (const group of plan.groups.values()) sums.set(group, channels.map(() => new Float32Array(total)));
+
+  for (const track of plan.tracks) {
+    const volumes = new Map<number, number>();
+    for (const clip of track.clips) for (const [f, v] of clip.volumes) volumes.set(f, v);
+    if (volumes.size === 0) continue;
+    const [firstFrame, lastFrame] = extent(volumes.keys());
+    const start = Math.max(first, firstFrame);
+    const at = Math.round(((start - first) / fps) * sampleRate);
+    // The element's sound runs until its end and the longest tail after it, at most.
+    const until = Math.max(track.fx.end, (lastFrame + 1) / fps) + MAX_TAIL_SECONDS;
+    const length = Math.min(total - at, Math.ceil((until - start / fps) * sampleRate));
+    if (start > last || length <= 0) continue;
+    // The element's sound alone, from its first frame in the range, at `pre`.
+    const ctx = new OfflineAudioContext(channels.length, length, sampleRate);
+    for (const clip of track.clips) {
+      const buffer = await load(clip);
+      const dry = { ...clip, volumes: new Map([...clip.volumes.keys()].map((f): [number, number] => [f, track.fx.pre])) };
+      if (buffer) scheduleClip(ctx, buffer, dry, { fps, first: start, last, timeOf: (frame) => (frame - start) / fps });
+    }
+    const rendered = await ctx.startRendering();
+    let planes: Float32Array[] = [];
+    for (let c = 0; c < rendered.numberOfChannels; c++) planes.push(rendered.getChannelData(c));
+    let tail = 0;
+    if (track.chain !== null) {
+      planes = await runFxChain(planes, sampleRate, track.chain, track.lanes, { scheduledAt: 0, elapsed: start / fps - track.fx.start });
+      tail = chainTailSeconds(track.chain, track.lanes);
+    }
+    const group = track.fx.group ? plan.groups.get(track.fx.group.id) : undefined;
+    addFrameGains(group ? sums.get(group)! : channels, planes, at, { start, fps, sampleRate }, volumes, track.fx.after, track.fx.end + tail);
   }
 
-  const rendered = await ctx.startRendering();
-  const channels: Float32Array[] = [];
-  for (let c = 0; c < rendered.numberOfChannels; c++) channels.push(Float32Array.from(rendered.getChannelData(c)));
-  return { sampleRate: rendered.sampleRate, channels };
+  for (const group of plan.groups.values()) {
+    const sum = sums.get(group)!;
+    sums.delete(group);
+    const planes = await runFxChain(sum, sampleRate, group.chain, group.lanes, { scheduledAt: 0, elapsed: first / fps });
+    channels.forEach((target, c) => {
+      const plane = planes[Math.min(c, planes.length - 1)]!;
+      const fader = group.fader();
+      for (let i = 0; i < target.length; i++) target[i]! += plane[i]! * fader(first / fps + i / sampleRate);
+    });
+  }
+
+  if (plan.master !== null) {
+    const mastered = await runFxChain(channels.splice(0), sampleRate, plan.master, [], { scheduledAt: 0, elapsed: first / fps });
+    channels.push(...mastered);
+  }
 }
 
 /**

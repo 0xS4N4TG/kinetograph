@@ -23,7 +23,6 @@ import { bundledUses, emptyUse, finishUse, noteCss, noteFamilyValue, noteInline 
 import {
   extractGoogleFontImports,
   parseGoogleFontsUrl,
-  rewriteDocumentSelectors,
   scopeToComposition,
   type GoogleFontRequest,
 } from './css.js';
@@ -158,7 +157,8 @@ class Builder {
     const type = (attrOf(el, 'type') ?? '').trim().toLowerCase();
     if (type === 'importmap') {
       if (attrOf(el, 'src') !== null) {
-        this.note(`${ctx.file}: an import map with a src is not read: put its JSON inside the tag`);
+        // Chrome does not load an external import map: it never fetches the file, so the imports it names fail.
+        this.note(`${ctx.file}: an import map with a src is ignored, as browsers ignore it (external import maps are not supported): put its JSON inside the tag`);
         return;
       }
       const problems: string[] = [];
@@ -331,7 +331,8 @@ class Builder {
     const taken = extractGoogleFontImports(text);
     this.fonts.push(...taken.fonts);
     let css = this.localizeCss(absolutizeUrls(taken.css, ctx.dir));
-    css = ctx.scope === null ? rewriteDocumentSelectors(css) : scopeToComposition(css, ctx.scope, ctx.rootId);
+    // The page's own rules stay as written: its `html` and `body` are the document's (core hyperframes/runtime.tsx).
+    if (ctx.scope !== null) css = scopeToComposition(css, ctx.scope, ctx.rootId);
     if (css.trim() === '') return;
     noteCss(this.fontUse, css);
     this.stylesheets.push({ css, file });

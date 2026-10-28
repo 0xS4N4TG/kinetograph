@@ -15,7 +15,7 @@ import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas
 import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, installDocumentMembers } from './document.js';
 import { AttrShim, NamedNodeMapShim } from './attributes.js';
 import { DomElement, DomFragment, DomNodeBase, DomText, domElementFor, domTextFor, isDomElementShim, selectorContextOf, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
-import { bodyHost, headHost, htmlHost, setPageViewport } from './host.js';
+import { bodyHost, headHost, htmlHost, pageDocument, setPageViewport } from './host.js';
 import { collectionOf, HTMLCollection, NodeList, nodeListOf } from './lists.js';
 import { RangeShim } from './range.js';
 import { CSSRuleShim, CSSStyleDeclarationShim, CSSStyleSheetShim } from './stylesheet.js';
@@ -414,9 +414,11 @@ function documentQuery(selector: string, first: boolean): DomElement[] {
   const head = domElementFor(headHost);
   // `html`, `head` and `body` are matched themselves (`document.querySelector('body')`, which d3's `select('body')` calls):
   // an element's own `querySelector` looks only below it.
+  // A page's own `html` and `body` (`setPageDocument`) are found in the body's tree instead.
+  const page = pageDocument() !== null;
   const matching = (element: DomElement): boolean => element.matches(selector);
   const html = domElementFor(htmlHost);
-  if (matching(html)) {
+  if (!page && matching(html)) {
     out.push(html);
     if (first) return out;
   }
@@ -430,7 +432,7 @@ function documentQuery(selector: string, first: boolean): DomElement[] {
   }
   // `body` next: it holds what a script appended to it outside any React root, as well as the roots' own top level.
   const body = domElementFor(bodyHost);
-  if (matching(body)) {
+  if (!page && matching(body)) {
     out.push(body);
     if (first) return out;
   }
@@ -647,12 +649,12 @@ export function installDomGlobals(): void {
   define(doc, 'getAnimations', () => animationsOf(null));
   // The document's own elements are real ones: a script's `document.head.prepend(style)` and `document.body.append(canvas)`
   // put nodes into the tree that is drawn (`head`'s `<style>`s are stylesheets; `body` is the top level of the root).
-  const html = domElementFor(htmlHost);
-  define(doc, 'documentElement', html);
-  define(doc, 'body', domElementFor(bodyHost));
+  // A page's own `<html>` and `<body>` (`setPageDocument`) take their place while one is set.
+  defineGetter(doc, 'documentElement', () => domElementFor(pageDocument()?.html ?? htmlHost));
+  defineGetter(doc, 'body', () => domElementFor(pageDocument()?.body ?? bodyHost));
   define(doc, 'defaultView', g);
   define(doc, 'head', domElementFor(headHost));
-  define(doc, 'scrollingElement', html);
+  defineGetter(doc, 'scrollingElement', () => domElementFor(pageDocument()?.html ?? htmlHost));
   // A node a script makes belongs to no tree until it is put in one (a canvas drawn on before then keeps what it drew).
   define(doc, 'createElement', (tag: string) => domElementFor(createHostElement(String(tag))));
   define(doc, 'createElementNS', (ns: string, tag: string) => domElementFor(createHostElement(String(tag), String(ns) === 'http://www.w3.org/2000/svg')));

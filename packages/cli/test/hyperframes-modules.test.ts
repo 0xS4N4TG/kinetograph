@@ -195,6 +195,22 @@ describe('module scripts', () => {
     expect(plan.notes.join('\n')).toMatch(/bare specifier "unmapped"/);
   });
 
+  it('ignores an import map with a src, as Chrome does, and says so', async () => {
+    // Chrome for Testing 152 never requests the file and leaves a bare import the map would have mapped unresolved.
+    writeFileSync(join(dir, 'map.json'), '{"imports":{"lib":"./js/twice.js"}}');
+    writeFileSync(
+      index,
+      `<html><head><script type="importmap" src="map.json">{"imports":{"lib":"./js/twice.js"}}</script></head>
+<body><div data-composition-id="main" data-duration="1"></div><script type="module">import { twice } from "lib"; window.x = twice("a");</script></body></html>`,
+    );
+    const { plan, importMap } = await buildPlan(index);
+    expect(importMap.imports).toEqual({});
+    expect(plan.scripts).toHaveLength(0);
+    const notes = plan.notes.join('\n');
+    expect(notes).toMatch(/import map with a src is ignored, as browsers ignore it/);
+    expect(notes).toMatch(/bare specifier "lib"/);
+  });
+
   it('the cache must still match the lock', async () => {
     await prefetchHyperframes(index, { fetchImpl: fakeFetch });
     useLockFile(null);

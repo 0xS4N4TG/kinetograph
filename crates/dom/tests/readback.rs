@@ -354,3 +354,57 @@ fn computed_styles() {
     assert_eq!(c, ["40px", "700", "rgb(255, 0, 0)"]);
     assert!(readback::computed_style(&island, "$9", &[]).is_none());
 }
+
+#[test]
+fn a_page_island_is_the_document_html_and_body_included() {
+    // A HyperFrames page: the tree's root is an `<html>` with a `<body>`, which become the document's own.
+    let root = el_attrs(
+        "html",
+        "$0",
+        json!({ "class": "theme" }),
+        "--from-attr: 7px",
+        vec![el_attrs(
+            "body",
+            "$0.0",
+            json!({ "class": "dark" }),
+            "",
+            vec![
+                el("div", "$0.0.0", "", vec![]),
+                el("p", "$0.0.1", "", vec![text("x")]),
+            ],
+        )],
+    );
+    let mut req = request(root);
+    req["stylesheets"] = json!([":root { font-size: 10px; --gap: 3px } \
+         html.theme > body.dark { color: rgb(0, 255, 0); padding-left: var(--gap) } \
+         body > div { width: 5rem; height: var(--from-attr) } \
+         html { background: rgb(1, 2, 3) }"]);
+    let island = resolve(&req);
+    let get = |path: &str, props: &[&str]| {
+        readback::computed_style(
+            &island,
+            path,
+            &props.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+        )
+        .unwrap()
+    };
+    // `:root` and `html` are the page's `html`; `html > body` its body; `rem` counts the root's font size.
+    assert_eq!(
+        get("$0", &["font-size", "background-color"]),
+        ["10px", "rgb(1, 2, 3)"]
+    );
+    assert_eq!(
+        get("$0.0", &["color", "padding-left"]),
+        ["rgb(0, 255, 0)", "3px"]
+    );
+    assert_eq!(
+        get("$0.0.0", &["width", "height", "color"]),
+        ["50px", "7px", "rgb(0, 255, 0)"]
+    );
+    // The body's box is the page's: at the origin, the composition's width.
+    let boxes = readback::layout_boxes(&island);
+    let body = boxes["$0.0"];
+    assert_eq!((body.x, body.y, body.width), (0.0, 0.0, 1000.0));
+    let div = boxes["$0.0.0"];
+    assert_eq!((div.x, div.width), (3.0, 50.0));
+}

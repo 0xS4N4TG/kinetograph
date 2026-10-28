@@ -165,6 +165,21 @@ export function currentBodyRoot(): Readback | null {
   return bodyRoot;
 }
 
+/**
+ * A page's own `<html>` and `<body>` (a HyperFrames page, built in the root's tree): while one is set they are
+ * `document.documentElement` and `document.body`, `html` is `:root` and has no parent element, and the island
+ * lays them out as the document's own (crates/dom document.rs). `bodyHost` still holds the root's top level.
+ */
+let page: { html: HostElement; body: HostElement } | null = null;
+
+export function setPageDocument(html: HostElement | null, body: HostElement | null): void {
+  page = html !== null && body !== null ? { html, body } : null;
+}
+
+export function pageDocument(): { html: HostElement; body: HostElement } | null {
+  return page;
+}
+
 /** `document.head`, `document.documentElement` and `document.body` as host elements (`body` holds the root's top level). */
 export const headHost: HostElement = { kind: 'element', type: 'head', props: {}, children: [] };
 export const bodyHost = { kind: 'element', type: 'body', props: {}, get children() { return bodyChildren(); } } as HostElement;

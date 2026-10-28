@@ -53,7 +53,7 @@ export interface HfPlan {
   fps: number;
   /** The root's `data-duration` in seconds, or null: then the timelines and the media say. */
   durationSeconds: number | null;
-  /** Attributes of `<html>` and `<body>`, which become two wrapper elements around the document's body (`kg-hf-html`, `kg-hf-body`). */
+  /** Attributes of `<html>` and `<body>`, which the runtime gives the page's own `html` and `body` (`setPageDocument`). */
   htmlAttrs: [string, string][];
   bodyAttrs: [string, string][];
   body: HfNode[];

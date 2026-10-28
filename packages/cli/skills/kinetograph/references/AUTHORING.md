@@ -644,8 +644,26 @@ interface AudioClipJson {
   muted: boolean;        // `muted`, or inside a <Freeze>
   video?: boolean;       // the sound of a <Video> (§11.3)
   toneFrequency?: number; // left out when 1
+  hfFx?: HfAudioFxJson;  // a HyperFrames element's audio effects (below); `volume` is then the gain after its chain
+}
+
+interface HfAudioFxJson {
+  track: string;         // the element: its clips are one input to its chain
+  start: number;         // composition seconds of the element's time 0 (the clock of its lanes)
+  end: number;           // composition seconds it ends at; an effect tail plays on, at most 5 s
+  chain: string | null;  // its data-fx-chain, or null without an effect in the path
+  automation: string | null; // its data-automation (the fx.* lanes)
+  pre: number;           // the gain ahead of the chain (data-volume when the chain has effects)
+  after: number;         // the gain after the chain from `end` on (0 after a fade-out)
+  group: { id: string; chain: string; automation: string | null; volume: number } | null; // its <hf-audio-group> bus, when that has effects: fader = volume x its volume lane, on composition time
+  master: string | null; // the root composition's data-fx-chain, run over the whole mix
 }
 ```
+
+`hfFx` is set by the HyperFrames runtime (`<Audio hfFx={(frame) => ...}>`, internal). The mixer (§8) plays each
+element with effects on its own: its sound at `pre`, through its chain in an `OfflineAudioContext` of
+node-web-audio-api with its lanes on its clock, then `volume` per frame; a group's members summed through the group's
+chain and fader (held between its members, as HyperFrames bakes it); the master chain over the sum (`packages/audio/src/hf-fx/`, ported from HyperFrames, Apache-2.0).
 
 `toneFrequency` is Remotion's prop of `<Audio>` and `<Video>`: the pitch is multiplied by it (0.01 to 2, anything
 else throws) and the speed is not. The mixer shifts each file once per value: a WSOLA time stretch by the factor

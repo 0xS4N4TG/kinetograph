@@ -1538,6 +1538,36 @@ export interface AudioClipJson {
   video?: boolean;
   /** Remotion's `toneFrequency`: the pitch times this (0.01 to 2), the length unchanged. Left out when it is 1. */
   toneFrequency?: number;
+  /**
+   * The audio effects of a HyperFrames media element (`data-fx-chain` on it, on its `<hf-audio-group>` and on the
+   * composition root). With it, `volume` is the gain after the element's own chain.
+   */
+  hfFx?: HfAudioFxJson;
+}
+
+/** AUTHORING.md §6.4: a HyperFrames element's effects, as the mix runs them (HyperFrames' engine/audioMixer.ts). */
+export interface HfAudioFxJson {
+  /** The element. Its clips (a speed-ramped file plays as several) are one input to its chain. */
+  track: string;
+  /** Composition seconds at which the element's own time 0 falls: the clock of its lanes. */
+  start: number;
+  /** Composition seconds at which the element ends; an effect tail plays on after it, at most 5 s. */
+  end: number;
+  /** The element's `data-fx-chain`, or null when it has no effect in the path. */
+  chain: string | null;
+  /** The element's `data-automation`, whose `fx.*` lanes drive its chain. */
+  automation: string | null;
+  /** The gain ahead of the chain (`data-volume` when the chain has effects, else 1). */
+  pre: number;
+  /** The gain after the chain from `end` on (the volume lane's last value, 0 after a fade-out). */
+  after: number;
+  /**
+   * The `<hf-audio-group>` bus the element plays into, when the group has effects: its chain, its `data-automation`
+   * (lanes on composition time) and its `data-volume`. Its fader is `volume` times its `volume` lane.
+   */
+  group: { id: string; chain: string; automation: string | null; volume: number } | null;
+  /** The master bus: the root composition's `data-fx-chain`, run over the whole mix. */
+  master: string | null;
 }
 
 /** Something compat mode cannot draw (kinetograph site, /docs/compat/); a frame holding one is drawn without it or approximated. */

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { HfNode } from '@kinetographdev/core/hyperframes';
 import { buildPlan } from '../src/hyperframes/plan.js';
-import { parseGoogleFontsUrl, rewriteDocumentSelectors, scopeToComposition } from '../src/hyperframes/css.js';
+import { parseGoogleFontsUrl, scopeToComposition } from '../src/hyperframes/css.js';
 import { FONT_ALIASES, parseFamilyList } from '../src/hyperframes/fonts.js';
 import { resolveEntry } from '../src/hyperframes/entry.js';
 
@@ -55,7 +55,8 @@ describe('the HyperFrames sample project', () => {
     expect(find(host.children, (n) => attr(n, 'class') === 'headline')).not.toBeNull();
     const css = plan.stylesheets.map((s) => s.css).join('\n');
     expect(css).toContain('[data-composition-id="nyt-chart"] .headline');
-    expect(css).toContain('.kg-hf-body');
+    // The page's own `body` rule is kept as written: the page's body is the document's.
+    expect(css).toMatch(/(^|\n)\s*body \{/);
     // The scripts: the library, the page's own, the composition's (scoped to it).
     expect(plan.scripts.map((s) => s.scope)).toEqual([null, 'nyt-chart', null]);
   });
@@ -162,11 +163,6 @@ describe('CSS rewriting', () => {
     expect(css).not.toContain('[data-composition-id="k"] from');
   });
 
-  it('maps the page html and body to the wrapper elements', () => {
-    expect(rewriteDocumentSelectors('html, body { a: 1 } body .x { b: 2 } .body { c: 3 }')).toBe(
-      '.kg-hf-html, .kg-hf-body { a: 1 } .kg-hf-body .x { b: 2 } .body { c: 3 }',
-    );
-  });
 
   it('reads the families and weights of a Google Fonts URL', () => {
     expect(parseGoogleFontsUrl('https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Inter:ital,wght@0,400;1,700&family=Roboto')).toEqual([

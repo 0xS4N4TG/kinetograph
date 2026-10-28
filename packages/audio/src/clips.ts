@@ -1,8 +1,10 @@
-import type { AudioClipJson } from '@kinetographdev/scene';
+import type { AudioClipJson, HfAudioFxJson } from '@kinetographdev/scene';
 
 export interface AudioClipTimeline extends Omit<AudioClipJson, 'volume'> {
   /** frame → volume */
   volumes: Map<number, number>;
+  /** A HyperFrames element's effects. */
+  hfFx?: HfAudioFxJson;
 }
 
 /**
@@ -10,6 +12,7 @@ export interface AudioClipTimeline extends Omit<AudioClipJson, 'volume'> {
  * sound of the same `<Video>`) while its `id` and its fixed fields (`src`, `from`, trims, rate, `loop`, `video`, `toneFrequency`) stay
  * the same; if one of those changes, the clip from that frame on is a new timeline, since it no longer plays one continuous file. A frame the clip is muted in
  * (`muted`, or inside a `<Freeze>`) gets volume 0, and `muted` on the result is true only if every frame was muted.
+ * A HyperFrames element's `hfFx` is a fixed field too.
  * A frame the clip is absent from has no entry, which the mix plays as silence.
  */
 export function joinClips(frames: { frame: number; audio: AudioClipJson[] }[]): AudioClipTimeline[] {
@@ -27,6 +30,7 @@ export function joinClips(frames: { frame: number; audio: AudioClipJson[] }[]): 
         clip.loop,
         clip.video === true,
         clip.toneFrequency ?? 1,
+        clip.hfFx ?? null,
       ]);
       let timeline = timelines.get(key);
       if (!timeline) {
@@ -42,6 +46,7 @@ export function joinClips(frames: { frame: number; audio: AudioClipJson[] }[]): 
           ...(clip.toneFrequency !== undefined && clip.toneFrequency !== 1 ? { toneFrequency: clip.toneFrequency } : {}),
           muted: true,
           volumes: new Map(),
+          ...(clip.hfFx ? { hfFx: clip.hfFx } : {}),
         };
         timelines.set(key, timeline);
       }
@@ -51,3 +56,4 @@ export function joinClips(frames: { frame: number; audio: AudioClipJson[] }[]): 
   }
   return [...timelines.values()];
 }
+
