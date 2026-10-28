@@ -2,9 +2,8 @@
 //! Stylo and laid out by taffy and Parley through Blitz's DOM, then painted as
 //! Kinetograph scene layers by our own compositor.
 //!
-//! Ownership (packages/cli/skills/kinetograph/references/ENGINE.md §3): `request`, `document`, `fonts`, `net`, `ua`
-//! and `readback` are stream 1's; `paint` is stream 2's; `paint::svg` is
-//! stream 3's.
+//! `request`, `document`, `fonts`, `net`, `ua` and `readback` build and read the document; `paint` paints its boxes;
+//! `paint::svg` paints inline SVG and SVG filters.
 
 pub mod clamp;
 pub mod collapse;

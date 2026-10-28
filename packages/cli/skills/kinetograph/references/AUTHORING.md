@@ -1,39 +1,29 @@
-# Authoring contract (Phases 3 and 4)
+# Authoring contract
 
-Written 2026-10-14 by the Phase 3 orchestrator. This is the contract the five Phase 3 streams build against:
-the package layout, the addon's JS API, the authoring API, and how
-every element and helper maps to `SCENE.md` JSON. A stream that needs another stream's API codes against this file
-and the typed stubs committed with it, never against the other branch. Changes to this file go through the
-orchestrator.
+The package layout, the addon's JS API, the authoring API, and how
+every element and helper maps to `SCENE.md` JSON.
 
-## 1. Layout and ownership
+## 1. Layout
 
 npm workspaces (root `package.json`), ESM TypeScript 5.9, Node 22+. Each package builds `src/` to `dist/` with `tsc`
 and tests `test/` with vitest 5 (`*.test.ts`, `*.test.tsx`); the addon's CPU tests are `node --test`. Workspace packages import each other by package name (resolved through `dist/`), so build
 before testing. Relative imports carry `.js` extensions (`moduleResolution: NodeNext`).
 
-| Path | Package | Owner | What |
-|---|---|---|---|
-| `crates/node` | `@kinetographdev/native` | stream 1 `feat/napi-addon` | napi-rs addon over `kinetograph-core` and the `kinetograph-cli` encoder (§3) |
-| `crates/core`, `crates/cli` | Rust | stream 1 (renderer reuse, `inspect.rs`, encoder) and stream 4 (scene features) | §4 |
-| `packages/scene` | `@kinetographdev/scene` | stream 3 `feat/reconciler` | TS types of the whole SCENE.md schema, effect and paint helpers, motion-blur JSON helpers (§5) |
-| `packages/react` | `@kinetographdev/react` | stream 3 | `react-reconciler` host config, native elements, `TimelineContext` (§6) |
-| `packages/core` | `@kinetographdev/core` | stream 2 `feat/remotion-shim` | Remotion core API, frame loop, determinism shim, the pure-TS Remotion packages as subpaths (§7) |
-| `packages/audio` | `@kinetographdev/audio` | stream 5 `feat/cli-audio-mcp` | `onFrame`, offline mix through `node-web-audio-api`, loudness analysis (§8) |
-| `packages/cli` | `kinetograph` (bin `kinetograph`) | stream 5 | the CLI commands, the MCP server, project bundling (§9) |
-| `spikes/three-dawn` | not a workspace | stream 5 | spike 2 (§9) |
-| stream 4 `feat/layout-glyphs` | Rust only | stream 4 | flex layout, per-character text, Lottie and the smaller scene additions of §4 |
+| Path | Package | What |
+|---|---|---|
+| `crates/node` | `@kinetographdev/native` | napi-rs addon over `kinetograph-core` and the `kinetograph-cli` encoder (§3) |
+| `crates/core`, `crates/cli` | Rust | scene features, renderer reuse, `inspect.rs`, the encoder (§4) |
+| `packages/scene` | `@kinetographdev/scene` | TS types of the whole SCENE.md schema, effect and paint helpers, motion-blur JSON helpers (§5) |
+| `packages/react` | `@kinetographdev/react` | `react-reconciler` host config, native elements, `TimelineContext` (§6) |
+| `packages/core` | `@kinetographdev/core` | Remotion core API, frame loop, determinism shim, the pure-TS Remotion packages as subpaths (§7) |
+| `packages/audio` | `@kinetographdev/audio` | `onFrame`, offline mix through `node-web-audio-api`, loudness analysis (§8) |
+| `packages/cli` | `kinetograph` (bin `kinetograph`) | the CLI commands, the MCP server, project bundling (§9) |
 
 Dependencies point one way: `scene` ← `react` ← `core`; `cli` uses `core`, `audio`, `native`; `core` uses `native` only
 for text measurement (`layout-utils`). `react` and `react-reconciler` are peer dependencies of `@kinetographdev/react` and
 `@kinetographdev/core`, so a project has one React.
 
-Files committed by the orchestrator with this contract are stubs: exported names and types are final, bodies throw
-`not implemented`. Each stream replaces the bodies in the packages it owns and may add exports; it does not rename or
-remove exports, and does not edit another stream's files. `packages/react/src/timeline.ts` is complete and belongs to
-the orchestrator.
-
-The determinism rules in CLAUDE.md hold everywhere: rendering is a pure function of (project, frame); nothing
+These determinism rules hold everywhere: rendering is a pure function of (project, frame); nothing
 reads the wall clock (benchmarks aside) or calls an unseeded random generator; fonts are registered before any text is
 measured; Remotion APIs are written from Remotion's documentation, never from its source.
 
@@ -52,13 +42,13 @@ kinetograph render src/index.tsx -o out.mp4
   cli: after the last frame, mixes audio (onFrame synth + <Audio> clips) and passes the PCM to writer.finish()
 ```
 
-A `.json` scene (the Phase 1–2 format) skips the JS stages: the CLI hands the file's text to the addon.
+A `.json` scene (the scene format) skips the JS stages: the CLI hands the file's text to the addon.
 
 Each frame's scene is a complete SCENE.md document whose `durationInFrames` is the composition's and whose numbers are
 the values at that frame, and it is rendered *at that frame number* (so `grain`, `dither` and shaders see the real
 frame). Keyframe lists remain legal in it.
 
-## 3. `@kinetographdev/native` (stream 1)
+## 3. `@kinetographdev/native`
 
 `crates/node`, built with `@napi-rs/cli` (`npm run build` debug, `npm run build:release` for benchmarks). `napi build`
 generates the loader `index.js` and `index.d.ts` from `src/lib.rs`; both are committed. The scaffold's `src/lib.rs`
@@ -187,9 +177,9 @@ Tests that open a GPU are skipped unless `KINETOGRAPH_GPU_TESTS=1` (set on the M
 
 ## 4. Scene additions in the Rust core
 
-All additions keep old scenes rendering byte for byte. SCENE.md is updated by the stream that adds each one.
+All additions keep old scenes rendering byte for byte.
 
-### 4.1 Flex layout (stream 4, taffy)
+### 4.1 Flex layout (taffy)
 
 A `group` may have `layout`; any layer may have `layoutItem`. Field names and values are CSS's.
 
@@ -240,10 +230,10 @@ Numbers in both are animatable. Semantics:
 - A group with `layout` has a box: `(0, 0, width, height)` of its computed size, so `inset` clips, `sweep`
   dot matrices, `cornerPin` and box-unit gradients work on it.
 - `inspect` and everything downstream (bounds, cache, margins) see the laid-out transform.
-- Stream 4 exposes the layout-aware resolve as `Scene::resolve_with_text(&self, frame: u32, text: &mut TextEngine)
+- The layout-aware resolve is `Scene::resolve_with_text(&self, frame: u32, text: &mut TextEngine)
   -> Result<ResolvedScene>`; `Renderer` and `inspect` use it.
 
-### 4.2 Transform origin (stream 4)
+### 4.2 Transform origin
 
 `transform.originX`, `transform.originY` (animatable, default `0`): a point of the layer's box as a fraction of its
 size. Like CSS's `transform-origin`, it moves the pivot and not the layer: with `(ox, oy)` the origin in pixels the
@@ -252,10 +242,10 @@ or scale the layer sits where it would without an origin, and `0.5, 0.5` scales 
 knowing its size. `(ox, oy)` is measured from the box's top-left corner, which for a path is its bounding box's,
 not `0, 0` (fixed on the M4: a path at x 300–360 with origin `0.5` turned about x 30). The 3D turn uses the same
 pivot. A layer without a box (a group without `layout`) ignores them.
-(Changed at stream 4's merge from "added to the anchor", which would have moved every layer given `origin: 'center'`
+(Not "added to the anchor", which would move every layer given `origin: 'center'`
 by half its size; see SCENE.md, Transform origin.)
 
-### 4.3 Text: `align` and per-character styles (stream 4)
+### 4.3 Text: `align` and per-character styles
 
 - `align`: `left` (default), `center`, `right`. Lines align within `maxWidth`, or within the widest line without it.
 - `chars`: an array with one entry per Unicode code point of `text` (JavaScript `Array.from(text)`, so `\n` has an
@@ -274,7 +264,7 @@ by half its size; see SCENE.md, Transform origin.)
   past the end of the text are ignored. The text box (for `inset`, layout, `sweep`) is the box without the offsets.
   Glyph positions are what `layoutText` returns; `charIndex` in it indexes `chars`.
 
-### 4.4 Lottie (stream 4, dotlottie-rs at a pinned git tag)
+### 4.4 Lottie (dotlottie-rs at a pinned git tag)
 
 ```json
 { "id": "confetti", "type": "lottie", "src": "anims/confetti.json", "width": 400, "height": 400, "time": 1.2, "loop": true }
@@ -290,7 +280,7 @@ by half its size; see SCENE.md, Transform origin.)
 Rasterised by ThorVG's CPU renderer at the pixel size the layer is drawn at, uploaded and drawn like an image. Pure
 function of `time`: expressions that use randomness must be seeded. Counts nothing in the margin.
 
-### 4.5 Smaller additions (stream 4)
+### 4.5 Smaller additions
 
 - **Images**: `width` and `height` become optional: both left out is the file's pixel size, one left out keeps the
   aspect ratio. `fit`: `fill` (default, stretch to the box, as now), `contain`, `cover` (centred; `cover` is cut to
@@ -309,7 +299,7 @@ function of `time`: expressions that use randomness must be seeded. Counts nothi
   that sub-frame, a group optionally keeping its children. It is what the authoring layer emits for motion blur
   (§5.3); a scene with `frames` still loads.
 
-### 4.6 Renderer reuse and inspect (stream 1)
+### 4.6 Renderer reuse and inspect
 
 - `Renderer` gets a way to take a new `Scene` while keeping its device, queue, Skia context, compositor pipelines
   and layer cache: fonts, images, LUTs and shader pipelines are loaded only when the new scene has ones not seen yet;
@@ -324,7 +314,7 @@ function of `time`: expressions that use randomness must be seeded. Counts nothi
 - `kinetograph-cli`'s `render` takes a `Scene` (not only a path) so the addon can drive it, and the encoder can mux an
   AAC audio stream from PCM.
 
-## 5. `@kinetographdev/scene` (stream 3)
+## 5. `@kinetographdev/scene`
 
 Pure TypeScript, no dependencies.
 
@@ -378,7 +368,7 @@ attachMotionFrames(layers: LayerJson[], frame: number, treesAt: ReadonlyMap<numb
 //   the same as whole copies in motionBlur.frames
 ```
 
-## 6. `@kinetographdev/react` (stream 3)
+## 6. `@kinetographdev/react`
 
 ### 6.1 Root
 
@@ -397,7 +387,7 @@ export function createSceneRoot(): SceneRoot;
 One root per composition, kept across frames like a Remotion tab keeps its page. The reconciler emits plain
 SCENE.md JSON objects; it never resolves time itself.
 
-### 6.2 Timeline context (`timeline.ts`, orchestrator's)
+### 6.2 Timeline context (`timeline.ts`)
 
 ```ts
 export interface VideoConfig { id: string; width: number; height: number; fps: number; durationInFrames: number;
@@ -674,7 +664,7 @@ the same file and value always give the same sound. A change of `toneFrequency` 
 A clip appears in the tree of every frame it plays in; the CLI joins them by `id` into one clip with a volume per
 frame (§8).
 
-## 7. `@kinetographdev/core` (stream 2)
+## 7. `@kinetographdev/core`
 
 ### 7.1 Remotion core API
 
@@ -1066,7 +1056,7 @@ platform; GPU rasterising does not give the same pixels as Skia's CPU rasteriser
 and at 1920 x 1080 a busy canvas costs the CPU addon 9.9 ms a frame to draw, read back and hash, plus 8.0 ms to write a new
 PNG (0.39 MB).
 
-## 8. `@kinetographdev/audio` (stream 5)
+## 8. `@kinetographdev/audio`
 
 ```ts
 export type OnFrameCallback = (ctx: OfflineAudioContext, time: number) => void;
@@ -1093,7 +1083,7 @@ the range with `time = (frame - first) / fps`, plays each clip (decoded with `de
 loop and a gain stepped per frame, and returns the mix. Loudness follows ITU-R BS.1770-4 (K-weighting, gating) and
 true peak uses 4x oversampling.
 
-## 9. `kinetograph` CLI and MCP (stream 5)
+## 9. `kinetograph` CLI and MCP
 
 `npx kinetograph <command> <entry> …`; `<entry>` is a project file (`.tsx`, `.ts`, `.jsx`, `.js`) or a `.json` scene.
 Every command takes `--json` (one JSON object on stdout; errors as `{ "error": { "code", "message" } }` and exit code
@@ -1109,7 +1099,7 @@ Every command takes `--json` (one JSON object on stdout; errors as `{ "error": {
 | `inspect <entry> [--frame N]` | `InspectResult` |
 | `lint <entry>` | text overflowing its box or the canvas, layers off the canvas, overlapping text, missing fonts or assets, type errors (`type-error`, no frame), with frame and layer id |
 | `check <entry>` | `tsc --noEmit` on the project (the nearest `tsconfig.json`, else the entry alone): `{ ok, checked, tsconfig, errors, diagnostics: [{ file, line, column, code, message }] }`, exit 1 on errors. Rendering never type-checks (esbuild strips types), so this is how an agent sees a misspelled prop that §6.3 would otherwise ignore |
-| `bench <entry> [--frame N --runs K \| --range a..b]` | stages: `js` (renderFrame), `stringify`, then the addon's (`handoff`, `resolve`, `raster`, `composite`, `readback`), `total`. Spike 1 |
+| `bench <entry> [--frame N --runs K \| --range a..b]` | stages: `js` (renderFrame), `stringify`, then the addon's (`handoff`, `resolve`, `raster`, `composite`, `readback`), `total` |
 | `audio analyze <entry> [--range]` | `AudioAnalysis` per Sequence-free whole and per `--scenes` (frame ranges `a..b`, as `--range`; each scene is reported in both units: `fromFrame`/`toFrame` and `from`/`to` in seconds) |
 | `snapshot <entry> [--frames 0,30,60] [--update]` | compares PNGs in `__snapshots__/` next to the entry, max channel difference 2 |
 | `effects` | `effectCatalog` |
@@ -1207,43 +1197,31 @@ runs the CLI as a child process with `--json`, so the server process never insta
 `strip` and `onion` also return the PNG as image content. An agent skill (`packages/cli/skills/kinetograph/SKILL.md`) explains the
 loop: write TSX, `still`/`strip`, `inspect`/`lint`, fix, `render`.
 
-Spike 2 (`spikes/three-dawn`, its own `package.json`, not a workspace): renders a torus knot built in code and a glTF
-model (made in the script with `GLTFExporter`, then loaded with `GLTFLoader`, so no third-party asset) with Three.js
-`WebGPURenderer` on the `webgpu` package (Dawn) in Node, headless, asserts the backend is WebGPU (not the WebGL
-fallback), writes PNGs and prints timings as JSON. Run on the M4.
-
 ## 10. Testing
 
-- Cloud (CPU only): `cargo build`, `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`,
+- Without a GPU: `cargo build`, `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`,
   `cargo test --lib`, `npm ci`, `npm run build`, `npm test`. Never the integration tests in `crates/core/tests/`,
   `still`, `render` or `bench`, nothing that opens a GPU, never `UPDATE_GOLDEN`.
 - GPU tests in TS are skipped unless `KINETOGRAPH_GPU_TESTS=1`.
-- Rust scene additions get test scenes in `crates/core/tests/scenes/` and golden entries; the goldens are made on the
-  M4.
+- Rust scene additions get test scenes in `crates/core/tests/scenes/` and golden entries; the goldens are made on an
+  Apple M4.
 - Values that must match Remotion (`random` bit-exact; `interpolate`, `spring`, `Easing`, `interpolateColors`,
   `noise*`) are tested against fixtures recorded from the published `remotion` packages, run as black boxes in a
   scratch directory outside the repo (never added as dependencies, never read). The fixture file says how it was
   recorded.
 - `@kinetographdev/react` has snapshot tests of the emitted JSON; `@kinetographdev/core` renders small compositions to
   `FrameResult`s and checks them; the CLI's GPU-free paths (bundling, `compositions`, `inspect`, `lint`, `effects`,
-  argument parsing) are tested in the cloud.
+  argument parsing) are tested without a GPU.
 
-## 11. Phase 4: video layers and the studio
+## 11. Video layers and the studio
 
-Written 2026-10-15 by the Phase 4 orchestrator. §1's rules hold:
-the stubs committed with this section have final names and types; streams fill the bodies, may add exports, and do
-not edit another stream's files. `packages/studio/src/protocol.ts` is complete and belongs to the orchestrator.
-
-| Path | Owner | What |
-|---|---|---|
-| `crates/core` (`video.rs`, `gif.rs`, scene, resolve, render, inspect), `crates/core/tests/` | stream 1 `feat/video-layers` | the `video` and `gif` layers of SCENE.md; `ffmpeg-next` 9 becomes a dependency of `kinetograph-core`, and `image` gets its `gif` feature |
-| `crates/node/src/media.rs` | stream 1 | `probeMedia`, `decodeAudio` (§11.2) |
-| `packages/react` (`<Video>`, `<OffthreadVideo>`, `<Gif>`), `packages/core` (`/gif`, `/media-utils`), `packages/audio` (video sound) | stream 2 `feat/video-elements` | §11.3 |
-| `crates/node/src/preview.rs`, `packages/studio/src/` but `protocol.ts`, the CLI's `studio` command, `kg-sequence` in `packages/react` and its use in `packages/core` | stream 3 `feat/studio-server` | §11.2 `preview`, §11.4, §11.5 |
-| `packages/studio/ui` | stream 4 `feat/studio-ui` | §11.6 |
-
-`crates/node/src/lib.rs` declares the new exports with their final signatures, calling `media.rs` and `preview.rs`,
-whose committed bodies return a `not implemented` error; `index.d.ts` is regenerated from it.
+| Path | What |
+|---|---|
+| `crates/core` (`video.rs`, `gif.rs`, scene, resolve, render, inspect), `crates/core/tests/` | the `video` and `gif` layers of SCENE.md; `ffmpeg-next` 9 becomes a dependency of `kinetograph-core`, and `image` gets its `gif` feature |
+| `crates/node/src/media.rs` | `probeMedia`, `decodeAudio` (§11.2) |
+| `packages/react` (`<Video>`, `<OffthreadVideo>`, `<Gif>`), `packages/core` (`/gif`, `/media-utils`), `packages/audio` (video sound) | §11.3 |
+| `crates/node/src/preview.rs`, `packages/studio/src/` but `protocol.ts`, the CLI's `studio` command, `kg-sequence` in `packages/react` and its use in `packages/core` | §11.2 `preview`, §11.4, §11.5 |
+| `packages/studio/ui` | §11.6 |
 
 ### 11.1 Scene: `video` and `gif` layers
 
@@ -1314,7 +1292,7 @@ Errors are §3's codes: a bad `scale`, `format` or `quality` is `INVALID_ARG`. A
 wins where its form differs from this sketch: there a `null` above is an absent field, and the string unions are
 `string`.
 
-### 11.3 `<Video>`, `<OffthreadVideo>`, `<Gif>` (stream 2)
+### 11.3 `<Video>`, `<OffthreadVideo>`, `<Gif>`
 
 Written from Remotion's documented props. Exported from `@kinetographdev/react` and re-exported by `@kinetographdev/core`
 (so `remotion`'s `Video` and `OffthreadVideo` resolve to them); `<OffthreadVideo>` is the same component.
@@ -1348,7 +1326,7 @@ durationInSeconds, width, height, aspectRatio, isRemote: false, fps }>`. Both re
 in as it does `layoutText`: `setMediaProbe(native.probeMedia)` from `@kinetographdev/core/media-utils`, which the CLI's
 synthetic entry re-exports next to `setLayoutText`.
 
-### 11.4 Timeline data (stream 3)
+### 11.4 Timeline data
 
 `<Sequence>` (and so `Series`, `Loop` and `TransitionSeries`) records itself in the tree whether or not it is
 showing, as a `kg-sequence` host element:
@@ -1370,7 +1348,7 @@ are not showing take no place in the index path, a showing one takes the place i
 `layout="none"` passes its children's places to its parent. Sequences of a Sequence that is not showing are not
 rendered, so a whole timeline is the union over frames; two entries with one `key` are one.
 
-### 11.5 The studio server (stream 3)
+### 11.5 The studio server
 
 `kinetograph studio <entry> [--port 3000] [--host 127.0.0.1] [--no-open] [--props <json>]` (the CLI command loads
 `@kinetographdev/studio` with a dynamic import) calls `startStudio({ entry, port, host, open, props })` from
@@ -1426,7 +1404,7 @@ The routes and messages are typed in `packages/studio/src/protocol.ts`; that fil
 `{ error: StudioError }` with status 400 (`INVALID_ARG`), 404 (`NOT_FOUND`: route, composition or job), 409
 (`BUILD`: no good build yet) or 500 (anything else, with the addon's or CLI's code).
 
-### 11.6 The studio UI (stream 4)
+### 11.6 The studio UI
 
 `packages/studio/ui` (`@kinetographdev/studio-ui`, private): React 19 + Vite, Tailwind CSS v4 utilities only (no
 hand-written CSS beyond the Tailwind entry and shadcn's theme variables), shadcn/ui components (default style, zinc

@@ -1,4 +1,4 @@
-//! The painter (packages/cli/skills/kinetograph/references/ENGINE.md §4, stream 2): a styled, laid-out Blitz document
+//! The painter (packages/cli/skills/kinetograph/references/ENGINE.md §4): a styled, laid-out Blitz document
 //! walked in CSS paint order and written as scene layers.
 //!
 //! Layout is Blitz's (Stylo styles, taffy boxes, Parley lines); everything

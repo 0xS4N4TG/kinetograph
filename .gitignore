@@ -39,3 +39,6 @@ examples/launch/tools/narration/*.log
 
 # Machine-specific paths (private corpus location): local only
 CLAUDE.local.md
+
+# The narration voice with its model name (narrate.py reads it); kept off the repo.
+examples/launch/tools/narration/voice.local.json

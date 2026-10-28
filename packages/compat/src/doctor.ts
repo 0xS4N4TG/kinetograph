@@ -1,5 +1,5 @@
 // `@kinetographdev/compat/doctor` (kinetograph site, /docs/compat/): the report `kinetograph
-// doctor` prints, built from each frame's unsupported items. Stream 4.
+// doctor` prints, built from each frame's unsupported items.
 
 import type { Unsupported } from './types.js';
 

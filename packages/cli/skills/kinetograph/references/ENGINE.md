@@ -1,41 +1,38 @@
-# The full engine (Phase 6)
+# The DOM engine
 
-Decided 2026-10-15 (approved by the user the same day): compat mode stops
-parsing CSS in TypeScript. A DOM island is handed to Rust, styled by Stylo, laid out by taffy and Parley through
+Compat mode does not parse CSS in TypeScript. A DOM island is handed to Rust, styled by Stylo, laid out by taffy and Parley through
 Blitz's DOM (`blitz-dom` 0.3.0-beta.3, which uses the same Parley 0.12 and taffy 0.15 as the core), and painted by our
-own compositor. Blitz's painter (`blitz-paint`) is not used. No Chrome in the render path, ever (the Phase 5
-Chrome fallback was removed on 2026-10-16); Chrome for Testing is used only by tests and tools to make reference
+own compositor. Blitz's painter (`blitz-paint`) is not used. No Chrome in the render path, ever; Chrome for Testing is used only by tests and tools to make reference
 images.
 
 Success, measured on the M4:
 - The tiny-agent episode 13 papercut project (`$KINETOGRAPH_CORPUS/tiny-agent/episodes/13-mods/papercut/src/index.ts`,
-  `ModsPapercut`, 988 frames) renders with every frame native, today 0 of 988.
+  `ModsPapercut`, 988 frames) renders with every frame native.
 - Each frame looks like Chrome's: the golden cases and `scripts/corpus.mjs --reference` against Chrome and Remotion references within a per-pixel threshold (text and
   anti-aliasing differ; byte equality is not the goal).
-- `cargo test`, clippy, fmt and every npm suite pass; `bench` does not regress against `feat/remotion-compat`.
+- `cargo test`, clippy, fmt and every npm suite pass; `bench` does not regress.
 
 ## 1. Pipeline
 
 ```
 React tree (DOM host elements + native kg-* ones)
   emit (packages/react/src/emit.ts), per frame: each outermost run of DOM nodes is an island
-    TS  (stream 4): DomNode tree → IslandRequest JSON: tags, attributes, style as CSS text, stylesheets, time
+    TS (runtime): DomNode tree → IslandRequest JSON: tags, attributes, style as CSS text, stylesheets, time
     addon renderDomIsland(json)  (crates/node/src/dom.rs)
-      Rust (stream 1): IslandRequest → blitz_dom::BaseDocument; fonts, images; resolve(time): Stylo + layout
-      Rust (stream 2): paint(doc) → scene layers in CSS paint order; core gains what boxes need
-      Rust (stream 3): <svg> subtrees and filter graphs → scene layers and a filterGraph effect
+      Rust (document): IslandRequest → blitz_dom::BaseDocument; fonts, images; resolve(time): Stylo + layout
+      Rust (paint): paint(doc) → scene layers in CSS paint order; core gains what boxes need
+      Rust (svg): <svg> subtrees and filter graphs → scene layers and a filterGraph effect
     → IslandOutput JSON: layers, unsupported, camera
   frame loop, render: every frame is drawn by the addon; unsupported items are warned about, `--strict` fails (the Remotion compatibility docs, `/docs/compat/`)
 ```
 
 Readback (`getBoundingClientRect`, `offsetWidth`, `getComputedStyle`, `ResizeObserver`) goes through the same
-document: `domLayoutBoxes(json)` in the addon (stream 1) answers for the island's current host tree; the TS DOM shim
-(stream 4) calls it lazily and caches by tree generation.
+document: `domLayoutBoxes(json)` in the addon answers for the island's current host tree; the TS DOM shim
+calls it lazily and caches by tree generation.
 
 ## 2. The contract
 
-`crates/dom/src/request.rs` is the contract and is owned by the orchestrator: streams may add optional fields;
-changing an existing one goes through the orchestrator. In short:
+`crates/dom/src/request.rs` is the contract. In short:
 
 - `IslandRequest { root: DomNode, stylesheets, viewport, fonts, baseDir, publicDir?, time, path, history? }` (`history`: earlier tree states, for CSS transitions, §7.12).
 - `DomNode` = `element { tag, path, attrs, style, children }` | `text { text }` | `native { path, width?, height? }`.
@@ -44,7 +41,7 @@ changing an existing one goes through the orchestrator. In short:
   A `{"type": "native", "path", "x", "y", "width", "height"}` layer marks where a native element's layers go.
 - Layer ids: derived from the node's explicit `id` attribute if it is a valid layer id, else its `path`, with the
   suffixes the painter needs (`.bg`, `.border`, `.text`, …), unique per island.
-- Addon functions (stream 1): `renderDomIsland(requestJson: string, pass?: number): string` and
+- Addon functions: `renderDomIsland(requestJson: string, pass?: number): string` and
   `domLayoutBoxes(requestJson: string): string` → `{ [path]: { x, y, width, height, rect: {x,y,width,height},
   client: {width,height}, scroll: {width,height} } }` (offset box in island coordinates; `rect` is the transformed
   bounding box, as `getBoundingClientRect` gives).
@@ -56,24 +53,17 @@ changing an existing one goes through the orchestrator. In short:
   `startDomIsland(requestJson, pass): number` queues a render behind the ones before it and `finishDomIsland(ticket)`
   waits for its output, so a sub-frame's islands are drawn while the next sub-frame renders.
 
-## 3. Streams and ownership
+## 3. Code areas
 
-Each stream works on its own branch off `feat/full-engine`, in its own worktree, and commits often (Conventional
-Commits). The orchestrator merges them into `feat/full-engine`.
+| Area | Covers |
+|---|---|
+| front | `crates/dom/src/{lib.rs,document.rs,fonts.rs,net.rs,readback.rs}` and new non-paint modules; `crates/dom/Cargo.toml`; `crates/node/src/dom.rs` and the addon exports; CSS animation clock; UA stylesheet |
+| paint | `crates/dom/src/paint/**` except `svg/`; core additions for boxes: 2D/3D matrices per layer, per-element `perspective`/`preserve-3d`/`backface-visibility`, tiled and sized background images, `background-blend-mode`, `mix-blend-mode` and `isolation` on any layer, per-side borders and border styles, `border-image`, inset and outer shadows of any shape, `text-shadow`, every CSS filter function, `backdrop-filter`, `mask-*`, every `clip-path`, glyph runs from Blitz's Parley layouts |
+| svg | `crates/dom/src/paint/svg/**`; core additions for SVG: stroke dashes, caps, joins, miter limit, markers, patterns, SVG masks and clip paths, and the `filterGraph` effect (all `fe*` primitives); the lookup the box painter calls for `filter: url(#id)` |
+| runtime | `packages/**`: DomNode → IslandRequest (React style serialization, `className`, `<style>`, `.css` imports as text), switch `mapDomIsland` to the addon, readback DOM shim and the `useLayoutEffect` measure loop, frame-driven CSS animation time, web APIs (`Image`, `fetch` of project files, `requestAnimationFrame`, `matchMedia`, `window.inner*`), doctor wiring, the episode 13 corpus harness |
+| perf | compositor internals only: one to-linear pass per Vello page, merged blends of layers that do not overlap, closed-form inset shadows for rect shapes, anything else `bench --passes` shows; output byte-identical |
 
-| Stream | Branch | Owns |
-|---|---|---|
-| 1 front | `engine/front` | `crates/dom/src/{lib.rs,document.rs,fonts.rs,net.rs,readback.rs}` and new non-paint modules; `crates/dom/Cargo.toml`; `crates/node/src/dom.rs` and the addon exports; CSS animation clock; UA stylesheet |
-| 2 paint | `engine/paint` | `crates/dom/src/paint/**` except `svg/`; core additions for boxes: 2D/3D matrices per layer, per-element `perspective`/`preserve-3d`/`backface-visibility`, tiled and sized background images, `background-blend-mode`, `mix-blend-mode` and `isolation` on any layer, per-side borders and border styles, `border-image`, inset and outer shadows of any shape, `text-shadow`, every CSS filter function, `backdrop-filter`, `mask-*`, every `clip-path`, glyph runs from Blitz's Parley layouts |
-| 3 svg | `engine/svg` | `crates/dom/src/paint/svg/**`; core additions for SVG: stroke dashes, caps, joins, miter limit, markers, patterns, SVG masks and clip paths, and the `filterGraph` effect (all `fe*` primitives); the lookup stream 2 calls for `filter: url(#id)` |
-| 4 runtime | `engine/runtime` | `packages/**`: DomNode → IslandRequest (React style serialization, `className`, `<style>`, `.css` imports as text), switch `mapDomIsland` to the addon, readback DOM shim and the `useLayoutEffect` measure loop, frame-driven CSS animation time, web APIs (`Image`, `fetch` of project files, `requestAnimationFrame`, `matchMedia`, `window.inner*`), doctor wiring, the episode 13 corpus harness |
-| 5 perf | `perf/gpu-passes` (from `perf/gpu-pass-timing`) | compositor internals only: one to-linear pass per Vello page, merged blends of layers that do not overlap, closed-form inset shadows for rect shapes, anything else `bench --passes` shows; output byte-identical |
-
-Shared files (`crates/core/src/scene.rs`, `compositor.rs`, `packages/cli/skills/kinetograph/references/SCENE.md`, `crates/node/src/lib.rs`): add new
-items in new places (new enum variants, new functions), do not reorder or reformat existing ones. The orchestrator
-resolves merge conflicts.
-
-## 4. Painting (stream 2)
+## 4. Painting
 
 Walk the laid-out document in CSS paint order (stacking contexts, `z-index`, positioned, floats, inline), as CSS 2.1
 Appendix E says. Each box becomes the fewest layers that draw it: a group for a stacking context (opacity, transform,
@@ -81,7 +71,7 @@ filter, blend, isolation, clip, mask), and inside it background, border, content
 Parley layouts Blitz made, so lines break where Blitz measured. Images and video keep the core's image and video
 layers. Anything not drawn as Chrome would draw it is an `Unsupported` item, never silently wrong.
 
-## 5. SVG (stream 3)
+## 5. SVG
 
 An `<svg>` element is a replaced box; its subtree is painted as path layers (usvg may be used to resolve shapes,
 `use`, gradients, patterns, text to paths), with Stylo's computed values for presentation properties. Filters
@@ -89,19 +79,17 @@ become one `filterGraph` effect: the primitives, their inputs (`SourceGraphic`, 
 `filterUnits`/`primitiveUnits`, and regions. Seeded turbulence and displacement already exist as effects; reuse their
 shaders.
 
-## 6. Rules for every stream
+## 6. Rules
 
 - Rendering is a pure function of (project, frame). No system fonts, no network, no wall clock.
 - Reimplement from the specs (CSS, SVG, Filter Effects, Compositing); do not copy Chromium or Remotion source.
 - Every feature gets a test: unit tests on the CPU side, and a golden for anything drawn (`crates/core/tests/golden`
   or a new `crates/dom/tests/golden`), checked by eye against Chrome's rendering of the same HTML.
 - Build with the rustup toolchain: `export PATH=$HOME/.cargo/bin:/opt/homebrew/opt/rustup/bin:$PATH`.
-- Disk is tight (about 35 GB free): all worktrees share `CARGO_TARGET_DIR=<main checkout>/target`; never
-  `cargo clean`.
 
-## 9. Stream 3 notes (SVG)
+## 9. Notes: SVG
 
-Two functions in `crates/dom/src/paint/svg/mod.rs` are what the box painter (stream 2) calls. Both take the
+Two functions in `crates/dom/src/paint/svg/mod.rs` are what the box painter calls. Both take the
 styled, laid-out `BaseDocument` and the `IslandRequest` (for fonts and asset directories).
 
 ```rust
@@ -128,11 +116,11 @@ pub fn filter_graph(doc: &BaseDocument, request: &IslandRequest, fragment: &str,
 - Both return `Unsupported` items for what they could not draw as Chrome would.
 - The `filterGraph` effect is documented in `packages/cli/skills/kinetograph/references/SCENE.md` ("filterGraph").
 
-## 7. Stream 1 notes (front: Blitz document, fonts, files, animations, readback)
+## 7. Notes: front (Blitz document, fonts, files, animations, readback)
 
-## 10. Stream 4 notes (runtime)
+## 10. Notes: runtime
 
-What the TypeScript side does around the addon, as built on `engine/runtime`. Code is under `packages/compat`,
+What the TypeScript side does around the addon. Code is under `packages/compat`,
 `packages/react`, `packages/core` and `packages/cli`.
 
 ### 10.1 The request
@@ -180,7 +168,7 @@ What the TypeScript side does around the addon, as built on `engine/runtime`. Co
   is part of the same `div` tree. Without this, `justifyContent` and `alignItems` on a fill would not place its DOM
   children.
 - One call per island per frame: the frame loop renders with `SceneRoot.update` and emits once, with `snapshot()`.
-- `KINETOGRAPH_DOM_MAPPER=legacy` selects the Phase 5 TypeScript mapping (`compat/src/dom/legacy.ts`, `compat/src/css`)
+- `KINETOGRAPH_DOM_MAPPER=legacy` selects the older TypeScript mapping (`compat/src/dom/legacy.ts`, `compat/src/css`)
   until it is removed.
 
 ### 10.2 `.css` imports
@@ -299,9 +287,9 @@ what is left after anti-aliasing and text rasterisation); it writes `out/corpus/
 
 First run, then the current one. Both: `node scripts/corpus.mjs --reference --every 30` (33 sampled frames of 988).
 
-**Current**: the four streams merged (`feat/full-engine`), after the fixes below. About 63 s for the whole run.
+**Current**: after the fixes below. About 63 s for the whole run.
 
-The first run after the merge was worse than `engine/runtime` had measured (5 312 576 pixels more than 48 levels apart
+The first run with all parts together was worse than the runtime part alone had measured (5 312 576 pixels more than 48 levels apart
 against 2 470 423): whole props were missing (the barrier arm with the DELETE GUARD sign, the file cards, the toothed
 chute, the trench coat's badges) and a `</>` strip sat on the whole of one scene. Causes, all found from the pictures
 (`doctor` reports nothing for them):
@@ -321,7 +309,7 @@ chute, the trench coat's badges) and a `</>` strip sat on the whole of one scene
    blended with the page: the red marker ring came out nearly black. `needs_no_buffer` now sees a blend passed through a
    pass-through group.
 
-The `native` placeholder was not the cause: stream 2's content-box version (`replaced.rs`) is the same box as stream 4's
+The `native` placeholder was not the cause: the painter's content-box version (`replaced.rs`) is the same box as the TypeScript side's
 for a `kg-*` element without padding, and it comes before the empty-box return, so zero-size natives (`Sequence`,
 `Camera`) still get one.
 
@@ -329,10 +317,10 @@ for a `kg-*` element without padding, and it comes before the empty-box return, 
   unsupported item on any frame yet.
 - **Against the real Remotion render** (`out/mods-papercut.mp4` in the project; same sources and frame count; H.264, so
   a few levels of noise everywhere): mean difference 3.1 to 15.3 levels (median 3.8), PSNR 17.8 to 33.6 dB, 2919 to
-  353 257 pixels (0.1% to 17%) more than 48 levels apart, **1 276 162 summed** over the 33 frames (2 470 423 on
-  `engine/runtime`, 5 312 576 right after the merge). Best: frames 840 (2919), 150 to 450 and 630 to 810 (4 to 14
+  353 257 pixels (0.1% to 17%) more than 48 levels apart, **1 276 162 summed** over the 33 frames (2 470 423 with the runtime part
+  alone, 5 312 576 on the first run with all parts). Best: frames 840 (2919), 150 to 450 and 630 to 810 (4 to 14
   thousand). Worst: 600 (353 257), 0, 90, 120 and 480 to 570 (56 to 118 thousand). Those are the frames with a 3D
-  camera. Both leftovers are fixed (`fix/corpus-leftovers`), **291 511 summed** now (mean 3.1 to 5.5 levels, PSNR 27.6 to
+  camera. Both leftovers are fixed, **291 511 summed** now (mean 3.1 to 5.5 levels, PSNR 27.6 to
   33.6 dB, 2909 to 23 969 pixels a frame):
 
   | frame | 0 | 60 | 90 | 120 | 480 | 510 | 540 | 570 | 600 |
@@ -365,9 +353,9 @@ for a `kg-*` element without padding, and it comes before the empty-box return, 
   480 KB of answer); frames 500 to 520: 133 ms, 84 ms in Rust. Rust is about 65%; React in development mode is about
   25 ms of the rest (`NODE_ENV=production` would save roughly half of that, at the price of React's minified error
   messages, so it is not set). Drawing a corpus frame on the GPU takes 5 to 10 s (6661 layers at frame 30): the
-  compositor's, not this stream's.
+  compositor's.
 
-**First run** (`engine/paint@6fa5b1c`, same placeholder patch): native 988 of 988; mean 4.2 to 28 levels, PSNR 15.8 to
+**First run** (same placeholder patch): native 988 of 988; mean 4.2 to 28 levels, PSNR 15.8 to
 29.0 dB, 8755 to 384 196 pixels more than 48 apart, 3 559 263 summed.
 
 `domLayoutBoxes` answers `{ [path]: ElementBox }` for every element and native placeholder (`display: none` and
@@ -427,7 +415,7 @@ a parsed sheet belongs to its document's lock, so it needs a persistent document
 islands for it. Chrome is for the tools only; the engine never starts one.
 
 - **The papercut corpus**: 40 islands sampled from the 988 frames of episode 13 (791 elements): 2 differ by more than
-  1 px, the worst by 1.3 px (a text width: Chrome's "Claude" is 289.7 px wide, Parley's 290.7).
+  1 px, the worst by 1.3 px (a text width: 289.7 px in Chrome, 290.7 in Parley).
 - **The zoo** (48 islands, 363 elements: margins and collapsing, headings/lists/`pre`, inline text and inline-blocks,
   text properties (letter/word-spacing, `nowrap`+ellipsis, `pre-wrap`, rtl, justify, `text-wrap: balance`, Inter/
   Archivo/JetBrains Mono), flex row/column/nested/wrap, grid (areas, auto-fill, `minmax`, spans, dense, alignment),
@@ -448,7 +436,7 @@ islands for it. Chrome is for the tools only; the engine never starts one.
   box in `domLayoutBoxes` (the TypeScript shim answers `getBBox`); form controls (`button`, `input`) have Gecko's
   default size, not Chrome's; text widths differ from Chrome's by up to 1.5 px on a long line (Parley against Skia).
 
-### 7.11 Notes for the other streams
+### 7.11 Notes for painter code
 
 - Find an element's path from a node with `data-kg-path`, or the maps in `IslandDocument`; the painter receives only
   `&BaseDocument`, so use the attribute (the island root is the element whose `data-kg-path` equals `request.path`).
@@ -459,13 +447,13 @@ islands for it. Chrome is for the tools only; the engine never starts one.
   `document.documentElement` and `document.body` with them (`setPageDocument`).
 - Image pixels come from `node.element_data().special_data` (`SpecialElementData::Image`) and `background_images` /
   `mask_images` as Blitz fills them; the pixel `Arc` is shared across frames.
-- `tests/common/mod.rs` (JSON request helpers, `bounds`) is meant to be shared: stream 2's golden tests can use it.
+- `tests/common/mod.rs` (JSON request helpers, `bounds`) is meant to be shared: the painter's golden tests can use it.
 
 What to fix first, from the pictures (not from `doctor`, which has nothing yet): `filter: url(#...)` on the tape banners
 and signs (the text is clipped to the filter region, "DELET" and "GUAR"; fixed, see 10.5), the SVG filters (`rough`, `torn`), the grain
 texture and multiply blend of the paper, and the rip transition's clip.
 
-What is drawn (stream 3, as built):
+What is drawn:
 
 - **SVG** (`paint_svg`): usvg resolves the subtree (shapes, `use`/`symbol`, nested `<svg>` with `viewBox` and
   `preserveAspectRatio`, gradients with `gradientTransform` and focus, text to paths with the request's fonts only,
@@ -517,7 +505,7 @@ What is drawn (stream 3, as built):
 
 ### 7.12 CSS gaps: line clamp, floats, tables, containers, transitions
 
-Branch `feat/css-gaps` (2026-10-16). All of it is checked against Chrome for Testing 154 as an oracle (golden cases in
+All of it is checked against Chrome for Testing 154 as an oracle (golden cases in
 `crates/dom/tests/features.rs`, numbers from `getBoundingClientRect` in `crates/dom/tests/css_gaps.rs`).
 
 **Two vendored crates** (`vendor/README.md` has the details and how to drop each patch):
@@ -586,7 +574,7 @@ alone, backwards, out of order: the same mid-transition values). `@starting-styl
 (Stylo does not apply starting styles to a first style computation in this build), and a transition that is running when
 the style stops declaring one is not cancelled.
 
-## 8. Stream 2 notes (paint)
+## 8. Notes: paint
 
 `crates/dom/src/paint/` turns a styled, laid-out Blitz document into scene layers. `paint(doc, request)` returns the
 `IslandOutput`: `layers`, `unsupported`, `camera` (never set: perspective is folded into matrices), and two new
@@ -824,7 +812,7 @@ The same cases blended in linear light were 3 to 15 times worse for anything tra
 
 `TextLayer.runs` / `boxWidth` / `boxHeight`, `Transform.matrix` / `backfaceHidden`, `Paint::Image`, scene
 `blendSpace` (all in packages/cli/skills/kinetograph/references/SCENE.md, "Boxes from the DOM painter"), `data:` URLs as image sources, `Gradient.transform`
-(stream 3's, also used here). Core goldens are unchanged byte for byte.
+(also used here). Core goldens are unchanged byte for byte.
 
 ### Known gaps and findings
 
@@ -837,7 +825,7 @@ The same cases blended in linear light were 3 to 15 times worse for anything tra
 - A hoisted z-index context inside a context that Blitz does not know (`mix-blend-mode` only) is listed in the nearest
   context Blitz does know.
 
-## 11. Stream 5 notes
+## 11. Notes: compositor performance
 
 > **History.** This section and section 12 were written when Vello drew the 2D layers: its pages, to-linear passes,
 > vendored patches and numbers describe that renderer, which has been removed (Oct 2026). Skia (Graphite on Metal, or
@@ -848,10 +836,10 @@ The same cases blended in linear light were 3 to 15 times worse for anything tra
 > reported. In an sRGB scene the compositor blurs a backdrop on its sRGB-encoded values, as Skia and Chrome do. The
 > compositor passes, the layer cache and frame reuse below still apply.
 
-Branch `perf/gpu-passes` (from `perf/gpu-pass-timing`, `feat/full-engine` merged in). Compositor internals only; every
+Compositor internals only; every
 change below draws the same bytes as the build before it, checked on 34 scenes (`crates/core/tests/scenes`,
 `examples`, the S04 JSON port, all frames; `examples/frame_hashes.rs` prints a hash per frame) against the build
-before the stream, and by the goldens.
+before these changes, and by the goldens.
 
 ### Results (M4, 2026-10-15)
 
@@ -861,7 +849,7 @@ machine; mins and medians of 4 rounds):
 | | min | median |
 |---|---|---|
 | Remotion 4.0.530, `--gl=angle`, on AC power | 8.86 s | 8.96 s |
-| Kinetograph before the stream | 2.68 s | 2.72 s |
+| Kinetograph before | 2.68 s | 2.72 s |
 | Kinetograph after | **1.25 s** | **1.28 s** |
 | speedup against Remotion | 7.1x | 7.0x |
 
@@ -929,16 +917,15 @@ blur or a spread, and groups with `displace` + `dropShadow` (full-canvas filtere
 
 ### The papercut frame (episode 13, frame 30, 6,828 layers)
 
-Scene JSON from `engine/runtime`'s CLI (`source.frame(30).sceneJson`), measured with `engine/runtime` merged into a
-scratch branch of this one. `frame_hashes --no-cache`, ms a frame, load 5: **990 before the clip and page-blend work
-(which is this stream's S04 work already on it) to 500**, same bytes (hash `b9f451ea436b688e`). The "5 to 10 s" stream 4
-saw was a frame on a machine with a load average of 20–30 from other jobs; at load 1 the frame took 1.4 s before this
+Scene JSON from the CLI (`source.frame(30).sceneJson`). `frame_hashes --no-cache`, ms a frame, load 5: **990 before the clip and page-blend work
+(the S04 work already on it) to 500**, same bytes (hash `b9f451ea436b688e`). The "5 to 10 s" seen
+earlier was a frame on a machine with a load average of 20–30 from other jobs; at load 1 the frame took 1.4 s before this
 work. Where the time went: 1,098 layers have a clip, and each had a Vello render of its own over the whole canvas and
 a mask pass (1,098 extra renders, 80% of the main thread); 3,749 to-linear passes, 1,803 blends; 9,135 passes in all,
 4,615 now. The deepest stack of leaf boxes at one pixel is 404, so there are about 450 Vello pages however they are
 packed.
 
-What the painter could change (stream 2, `crates/dom/src/paint`), in order of what it saves:
+What the painter could change (`crates/dom/src/paint`), in order of what it saves:
 
 1. **Inset box shadows are emitted as a ring path with a clip** (`...insetshadow0`: an outer rectangle 2 px past the
    box, an inner rounded rectangle for the hole, clipped to the padding box): 962 of the frame's 4,847 leaves, each
@@ -950,7 +937,7 @@ What the painter could change (stream 2, `crates/dom/src/paint`), in order of wh
 3. **Per-element clips that equal the layer's own box** (the 260 `M0 0 L60 0 L60 18 L0 18 Z` clips on rings) are the
    same shape as the ring's hole boundary and could go with item 1.
 
-**Tried (`fix/corpus-leftovers`, same frame 30, M4, load 5 to 10; `frame_hashes --no-cache --times 0 5`, ms a frame
+**Tried (same frame 30, M4, load 5 to 10; `frame_hashes --no-cache --times 0 5`, ms a frame
 over six frames, min of interleaved runs, two series run at different loads):**
 
 | | ms a frame | groups | shapes | picture |
@@ -981,7 +968,7 @@ over six frames, min of interleaved runs, two series run at different loads):**
   800 leaves did not cut the time. The next measurement should be a profile of `start_frame`, not another painter
   change.
 
-## 12. Incremental frames (`perf/incremental`, 2026-10-22)
+## 12. Incremental frames
 
 Goal: stop redoing what did not change between frames. What was found, measured on the M4 with `KINETOGRAPH_PROFILE`
 (per-frame stage rows; `n_*` are the DOM island thread's stages, `cache_hits`/`cache_misses` the layer cache's):
@@ -1047,7 +1034,7 @@ layer with this effect leaves Skia's path (`own_gaps`) for the wgpu compositor. 
 
 **Readback caching.** `domComputedStyle` and `domLayoutBoxes` (`crates/node/src/dom.rs`, `with_readback_island`) keep the island of
 the last call per island thread: the same request text is answered from the kept document (no parse, no restyle); a changed
-one is edited to the new tree through `IslandCache` (`changes`/`apply`), as motion-blur samples are. `claude-exchange` frame 0:
+one is edited to the new tree through `IslandCache` (`changes`/`apply`), as motion-blur samples are. A chat-exchange scene's frame 0:
 12.5 s before, 1.7 s after (release build), same pixels.
 
 ## 14. Motion tracking (`crates/libmv-sys`, `crates/track`)

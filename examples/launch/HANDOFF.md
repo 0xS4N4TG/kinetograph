@@ -11,9 +11,7 @@ Where the two differ, this file is newer.
 
 ## Working rules for this film
 
-- **Who does what:** Opus writes the film code. A Haiku 5.5 (high) agent runs the shell work: renders, stills, ffmpeg,
-  TTS, ASR, tracking and downloads.
-- **Checking:** look at every still yourself. Never take an agent's description of an image as the check.
+- **Checking:** look at every still. A description of an image is not a check.
 - **Where things go:**
   - Renders and stills go to `examples/launch/out/`, which is gitignored, never the scratchpad.
   - Raw downloads go to `out/sources/`.
@@ -191,8 +189,9 @@ Line 7's N is the measured render time of the finished v3 picture (see "Order of
 
 - **One file:** the narration is ONE take, played as ONE audio file, never cut or re-spaced. The picture is timed to the
   take, not the take to the picture.
-- **Tooling:** generate with `tools/narration` (`take.json`, `voice.json`) and narrate.py, using Qwen3-TTS from
-  `qwen3-tts-local`, `HF_HUB_OFFLINE=1`.
+- **Tooling:** generate with `tools/narration` (`take.json`, `voice.json`) and narrate.py, with `HF_HUB_OFFLINE=1`.
+  The voice model's name is in the untracked `tools/narration/voice.local.json` (a full copy of `voice.json` with
+  `clone_model`).
   - `voice.json`'s `ref_audio` holds a literal `$KINETOGRAPH_CORPUS/…`, which narrate.py doesn't expand. Run with a
     scratchpad copy that has the absolute path.
 - **Pick:** make 5 or more takes and pick on all of these:
@@ -213,7 +212,7 @@ Line 7's N is the measured render time of the finished v3 picture (see "Order of
 
 ## Order of work
 
-1. **Assets:** a Haiku agent downloads and cuts them, and Opus checks each one:
+1. **Assets:** download and cut them, then check each one:
    - the leader recut
    - the Muybridge scan
    - the glass prints and posters

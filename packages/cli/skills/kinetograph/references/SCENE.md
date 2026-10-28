@@ -1,7 +1,7 @@
 # Scene format
 
 A scene is one JSON file. The renderer is a pure function of (scene, frame): the same scene and frame always give the
-same pixels. Phase 3's reconciler will emit this same shape from React.
+same pixels. The React reconciler emits this same shape.
 
 ```json
 {

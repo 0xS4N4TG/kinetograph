@@ -22,7 +22,7 @@ export const SERIF = loadSerif('normal', { weights: ['400'] }).fontFamily;
 export const MONO = makeGoogleFont('JetBrains Mono').loadFont('normal', { weights: ['400', '500'] }).fontFamily;
 
 // ---- the numbers on the speed slide ----
-// Never write a number here that was not measured. Source: the Phase 3 go/no-go
+// Never write a number here that was not measured. Source: the go/no-go benchmark
 // (Remotion 9.2-9.5 s, TSX port 2.86-2.92 s, 3.2x). The pair
 // below is the faster end of both ranges, which is also where the 3.2x headline
 // comes from.

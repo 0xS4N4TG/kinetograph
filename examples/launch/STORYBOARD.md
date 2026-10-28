@@ -82,7 +82,7 @@ Visual storyboard: `storyboard.html` beside this file.
 
 ## Decided (2026-10-17)
 
-- VO: the Tiny Agent narrator (Qwen3-TTS clone). The whole script is read in one take and cut into lines at its own
+- VO: the Tiny Agent narrator (a cloned voice). The whole script is read in one take and cut into lines at its own
   pauses, so the voice keeps one pitch and energy arc; gaps between lines are lengthened only where the picture needs time.
 - A motion-graphics run between shots 7 and 8 (`act2-mg.tsx`, about 11 s), one engine API per piece, on the VO's list
   "real 3D, isometric scenes, WebGL shaders, canvas, even glass that bends the light":

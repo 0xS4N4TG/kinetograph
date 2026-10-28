@@ -1,4 +1,4 @@
-// The types compat mode's streams share (kinetograph site, /docs/compat/). Owned by the orchestrator.
+// The types compat mode's streams share (kinetograph site, /docs/compat/).
 
 import type { CameraJson, LayerJson, Unsupported } from '@kinetographdev/scene';
 
