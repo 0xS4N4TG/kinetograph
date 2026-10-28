@@ -1,6 +1,6 @@
 // CSS of a HyperFrames page, rewritten for the engine: a mounted composition's rules are scoped to the composition
-// (HyperFrames scopes them the same way, so two compositions can both style `.title`), the page's `html` and `body`
-// rules apply to the two wrapper elements the runtime builds, and Google Fonts imports become font loads.
+// (HyperFrames scopes them the same way, so two compositions can both style `.title`), and Google Fonts imports become
+// font loads. The page's own rules are kept as written: its `html` and `body` are the document's.
 
 import postcss, { type AtRule, type Node, type Rule } from 'postcss';
 
@@ -60,13 +60,6 @@ export function scopeToComposition(css: string, compositionId: string, rootId?: 
     if (own.test(rewritten)) return rewritten.replace(timing, '');
     return `${scope} ${rewritten}`;
   });
-}
-
-/** The page's own `html` and `body` selectors, which match the runtime's wrapper elements. */
-export function rewriteDocumentSelectors(css: string): string {
-  return rewriteRules(css, (selector) =>
-    selector.replace(/(^|[\s>+~,(])(html|body)(?![\w-])/gi, (_m, before: string, tag: string) => `${before}.kg-hf-${tag.toLowerCase()}`),
-  );
 }
 
 export interface GoogleFontRequest {

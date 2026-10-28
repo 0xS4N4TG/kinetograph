@@ -134,7 +134,9 @@ fn diff(a: &[[u8; 3]], b: &[[u8; 3]]) -> (i32, f64) {
 fn rgb_of(frame: &Frame) -> Vec<[u8; 3]> {
     frame
         .rgba
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|p| [p[0], p[1], p[2]])
         .collect()
 }

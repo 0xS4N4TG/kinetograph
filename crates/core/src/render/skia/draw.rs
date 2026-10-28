@@ -93,6 +93,9 @@ pub struct Translator {
     held: Vec<Tex>,
     /// The pictures of a canvas pass's children while its commands are drawn (`raster_canvas_pass`).
     layer_pics: Option<LayerPictures>,
+    /// The canvas's save count before each layer of the frame `save_layer_with` made, innermost last; those restored
+    /// since are dropped by `in_skia_layer`.
+    layer_saves: Vec<usize>,
     /// A fallback failed (`Renderer::skia_fallback`'s error), reported by `draw_scene`'s caller.
     pub error: Option<crate::error::Error>,
 }
@@ -202,6 +205,7 @@ impl Translator {
             rec: None,
             held: Vec::new(),
             layer_pics: None,
+            layer_saves: Vec::new(),
             error: None,
         }
     }
@@ -265,6 +269,7 @@ impl Translator {
         canvas.save();
         canvas.translate((margin as f32, margin as f32));
         self.host = host;
+        self.layer_saves.clear();
         self.draw_layers(canvas, &scene.layers, 1.0);
         self.host = std::ptr::null_mut();
         canvas.restore();
@@ -608,7 +613,17 @@ impl Translator {
         if let Some(bd) = backdrop {
             rec = rec.backdrop(bd);
         }
+        self.layer_saves.push(canvas.save_count());
         canvas.save_layer(&rec);
+    }
+
+    /// Whether `canvas` draws into a layer `save_layer_with` made, not straight into the frame's surface.
+    fn in_skia_layer(&mut self, canvas: &Canvas) -> bool {
+        let count = canvas.save_count();
+        while self.layer_saves.last().is_some_and(|&s| s >= count) {
+            self.layer_saves.pop();
+        }
+        !self.layer_saves.is_empty()
     }
 
     fn apply_clip(&mut self, canvas: &Canvas, layer: &ResolvedLayer) {
@@ -877,9 +892,12 @@ impl Translator {
                         filter = image_filters::blur((sg, sg), TileMode::Decal, filter.take(), None);
                     }
                 }
-                ResolvedEffect::BackdropBlur { radius } => {
+                ResolvedEffect::BackdropBlur { radius, mirror } => {
                     let sg = radius / s;
-                    backdrop = image_filters::blur((sg, sg), TileMode::Clamp, None, None);
+                    // Mirrored: only the backdrop inside the layer's box, mirrored past its edges.
+                    let input = if *mirror { self.layer_box(layer).and_then(|b| image_filters::crop(b, TileMode::Mirror, None)) } else { None };
+                    let tile = if *mirror { TileMode::Decal } else { TileMode::Clamp };
+                    backdrop = image_filters::blur((sg, sg), tile, input, None);
                 }
                 ResolvedEffect::DropShadow(sh) => {
                     let sg = sh.blur / s;
@@ -1371,9 +1389,22 @@ impl Translator {
                 let a = p.alpha_f();
                 p.set_color4f(Color4f::new(c.r, c.g, c.b, c.a * a), None);
             }
-            ResolvedPaint::Gradient(g) => {
-                p.set_shader(gradient_shader_for(g, layer_box, self.linear()));
-            }
+            ResolvedPaint::Gradient(g) => match &g.tile {
+                Some(t) => {
+                    // The gradient in one tile, repeated with the gaps: a picture shader, as Chrome tiles a gradient.
+                    let cell = Rect::from_wh(t.width as f32, t.height as f32);
+                    let mut fill = Paint::default();
+                    fill.set_anti_alias(true);
+                    fill.set_shader(gradient_shader_for(g, Some(cell), self.linear()));
+                    let shader = tile_shader(cell, (t.x, t.y), (t.space_x, t.space_y), (t.repeat_x, t.repeat_y), |c| {
+                        c.draw_rect(cell, &fill);
+                    });
+                    set_tile_shader(p, shader);
+                }
+                None => {
+                    p.set_shader(gradient_shader_for(g, layer_box, self.linear()));
+                }
+            },
             ResolvedPaint::Image(i) => {
                 let img = if crate::svg_picture::is_svg(&i.src) {
                     let (w, h) = (i.width, i.height);
@@ -1385,10 +1416,20 @@ impl Translator {
                     self.stats.no("image paint (file)");
                     return;
                 };
+                let sampling = SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None);
+                if (i.repeat_x && i.space_x > 0.0) || (i.repeat_y && i.space_y > 0.0) {
+                    // Copies apart: the picture in one tile, repeated with the gaps.
+                    let cell = Rect::from_wh(i.width as f32, i.height as f32);
+                    let shader = tile_shader(cell, (i.x, i.y), (i.space_x, i.space_y), (i.repeat_x, i.repeat_y), |c| {
+                        c.draw_image_rect_with_sampling_options(&img, None, cell, sampling, &Paint::default());
+                    });
+                    set_tile_shader(p, shader);
+                    return;
+                }
                 let tile = |r: bool| if r { TileMode::Repeat } else { TileMode::Clamp };
                 let local = Matrix::translate((i.x as f32, i.y as f32))
                     * Matrix::scale((i.width as f32 / img.width() as f32, i.height as f32 / img.height() as f32));
-                p.set_shader(img.to_shader((tile(i.repeat_x), tile(i.repeat_y)), SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None), &local));
+                p.set_shader(img.to_shader((tile(i.repeat_x), tile(i.repeat_y)), sampling, &local));
             }
         }
     }
@@ -2081,7 +2122,24 @@ impl Translator {
         ]);
         // SAFETY: `host` is the renderer `draw_scene` was given; this translator is not part of it.
         let host = unsafe { &mut *self.host };
-        let tex = match host.skia_fallback(layer, siblings, parent) {
+        // A layer that blurs its backdrop sees what Skia has drawn so far: the frame's surface, flushed to its texture.
+        // Inside a layer of Skia's own (a group's opacity, blend or effects) the backdrop is that layer, which only Skia
+        // holds: left out.
+        let backdrop = if !crate::render::uses_backdrop(siblings, layer) {
+            None
+        } else if self.in_skia_layer(canvas) {
+            self.stats.approx("backdrop of a GPU-drawn layer in a Skia layer (left out)");
+            None
+        } else {
+            match host.skia_backdrop(canvas, self.rec.as_ref(), &self.held) {
+                Ok(tex) => Some(tex),
+                Err(e) => {
+                    self.error = Some(e);
+                    return;
+                }
+            }
+        };
+        let tex = match host.skia_fallback(layer, siblings, parent, backdrop) {
             Ok(Some(tex)) => tex,
             Ok(None) => return,
             Err(e) => {
@@ -2236,4 +2294,31 @@ impl Translator {
     pub fn raster_pop(&mut self, canvas: &Canvas) {
         canvas.restore();
     }
+}
+
+/// `shader` as `p`'s paint, or nothing painted when there is none (a tile of no size).
+fn set_tile_shader(p: &mut Paint, shader: Option<skia_safe::Shader>) {
+    match shader {
+        Some(shader) => {
+            p.set_shader(shader);
+        }
+        None => {
+            p.set_alpha_f(0.0);
+        }
+    }
+}
+
+/// A shader of what `draw` paints in `cell` (a tile at the origin), moved to `at` and repeated every cell plus `space`
+/// along the axes that `repeat` (once along the others): a picture shader, which keeps a fractional period exact.
+fn tile_shader(cell: Rect, at: (f64, f64), space: (f64, f64), repeat: (bool, bool), draw: impl FnOnce(&Canvas)) -> Option<skia_safe::Shader> {
+    if cell.is_empty() {
+        return None;
+    }
+    let mut recorder = skia_safe::PictureRecorder::new();
+    draw(recorder.begin_recording(cell, false));
+    let picture = recorder.finish_recording_as_picture(Some(&cell))?;
+    let period = Rect::from_wh(cell.width() + space.0 as f32, cell.height() + space.1 as f32);
+    let mode = |r: bool| if r { TileMode::Repeat } else { TileMode::Decal };
+    let local = Matrix::translate((at.0 as f32, at.1 as f32));
+    Some(picture.to_shader((mode(repeat.0), mode(repeat.1)), skia_safe::FilterMode::Linear, &local, &period))
 }

@@ -166,6 +166,7 @@ export function App({ api }: { api: StudioApi }) {
               player={player}
               selectedLayers={studio.selectedLayers}
               onSelectLayers={pickLayers}
+              thumbnailUrl={studio.thumbnailUrl}
             />
           </ResizablePanel>
         </ResizablePanelGroup>

@@ -92,10 +92,10 @@ describe('<Scene3D>', () => {
     const layer = only(
       <Scene3D width={100} height={100}>
         <Model src="media/gem.glb" material={{ color: '#f4a261' }} scale={[1, 2, 1]} />
-        <Text3D font="DM Sans" size={1.2} depth={0.4} align="left" lineHeight={1.1}>
+        <Text3D font="DM Sans" size={1.2} depth={0.4} align="left" lineHeight={1.1} bevel={{ thickness: 0.05, segments: 2 }}>
           Hi {3}
         </Text3D>
-        <Extrude path="M0 0H10V10Z" fillRule="evenodd" size={2} />
+        <Extrude path="M0 0H10V10Z" fillRule="evenodd" size={2} bevel={{ size: 0.1 }} />
         <Group3D position={[1, 0, 0]} visible={false}>
           <Mesh geometry={{ kind: 'torus' }} />
         </Group3D>
@@ -103,8 +103,8 @@ describe('<Scene3D>', () => {
     );
     expect(layer.objects).toEqual([
       { type: 'model', src: 'media/gem.glb', material: { color: '#f4a261' }, scale: [1, 2, 1] },
-      { type: 'text', text: 'Hi 3', font: 'DM Sans', size: 1.2, depth: 0.4, align: 'left', lineHeight: 1.1 },
-      { type: 'extrude', path: 'M0 0H10V10Z', size: 2, fillRule: 'evenodd' },
+      { type: 'text', text: 'Hi 3', font: 'DM Sans', size: 1.2, depth: 0.4, align: 'left', lineHeight: 1.1, bevel: { thickness: 0.05, segments: 2 } },
+      { type: 'extrude', path: 'M0 0H10V10Z', size: 2, fillRule: 'evenodd', bevel: { size: 0.1 } },
       { type: 'group', children: [{ type: 'mesh', geometry: { kind: 'torus' } }], position: [1, 0, 0], visible: false },
     ]);
   });

@@ -10,6 +10,7 @@ import { cliVersion, CliError } from 'kinetograph';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { REAL_ENGINE_FILE } from './worker-client.js';
 import { AgentBridge } from './agent-bridge.js';
+import { ChatLog } from './chat-log.js';
 import { isInside } from './agent-fs.js';
 import { availableAgents } from './agent-presets.js';
 import { openBrowser } from './open-browser.js';
@@ -18,6 +19,7 @@ import {
   encodeFrameMessage,
   type AgentClientMessage,
   type AgentInfo,
+  type ChatRecord,
   type ClientMessage,
   type CompositionInfo,
   type FrameHeader,
@@ -36,6 +38,14 @@ import type { StudioOptions, StudioServer } from './index.js';
 /** The least time between two progress messages for a job (at most 10 a second). */
 const PROGRESS_INTERVAL_MS = 100;
 const MAX_BODY_BYTES = 1 << 20;
+/** How long a conversation waits for the window that began it to come back (a reload). */
+const RECLAIM_MS = 30_000;
+/** A thumbnail is drawn only once no preview frame was asked for in this long (ms): playback is never kept waiting. */
+const THUMB_IDLE_MS = 250;
+/** Thumbnails kept, the least recently used dropped first. */
+const THUMB_CACHE = 400;
+/** The tallest thumbnail, px. */
+const THUMB_MAX_HEIGHT = 120;
 
 interface FrameParams {
   comp: string;
@@ -123,16 +133,29 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       ? 'The coding agent is off because the studio can be reached from other computers. Start it with --allow-remote-agent if you really want it on.'
       : null;
   let owner: WebSocket | null = null;
+  const reclaimMs = options.agentReclaimMs ?? RECLAIM_MS;
+  // The conversation, kept here so that a window that reloads gets it back. When the window that began it closes, the
+  // agent waits RECLAIM_MS for it to come back (a reload) before it stops and the conversation is dropped.
+  const chat = new ChatLog();
+  let orphaned: NodeJS.Timeout | null = null;
+  const keep = (record: ChatRecord): void => chat.push(record);
+  const endConversation = (): void => {
+    if (orphaned) clearTimeout(orphaned);
+    orphaned = null;
+    chat.clear();
+  };
   const bridge = new AgentBridge({
     cwd: agentCwd,
     allowed: agents.map((a) => a.command),
     command: options.agent ?? agents[0]?.command ?? null,
     // The state of the agent goes to every window; what it says and asks goes to the window that owns the conversation.
     emit: (event) => {
-      if (event.kind === 'status') broadcast({ type: 'agent', event });
-      else if (owner) send(owner, { type: 'agent', event });
+      if (event.kind === 'status') return broadcast({ type: 'agent', event });
+      if (event.kind !== 'thought') keep({ kind: 'event', event });
+      if (owner) send(owner, { type: 'agent', event });
     },
-    hasViewer: () => owner !== null && owner.readyState === owner.OPEN,
+    // A permission asked while the window reloads waits for it to come back.
+    hasViewer: () => (owner !== null && owner.readyState === owner.OPEN) || orphaned !== null,
     version: cliVersion(),
   });
   const tokenOk = (given: string | null | undefined): boolean => {
@@ -154,8 +177,115 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     return found;
   }
 
-  async function renderFrame(params: FrameParams): Promise<{ header: Omit<FrameHeader, 'requestId'>; image: Uint8Array }> {
+  // ---- thumbnails ----
+  // Small frames for the timeline's clips, drawn at low priority: one at a time, and only while no preview frame has
+  // been asked for in THUMB_IDLE_MS, so they never wait in front of playback or scrubbing. Kept by build, composition,
+  // frame, props and size.
+
+  let previewsBusy = 0;
+  let lastPreviewAt = 0;
+  /** By `build` + `what`: the build the picture was drawn from, never the one asked for. */
+  const thumbs = new Map<string, Thumb>();
+  /** A thumbnail and the build it was drawn from. */
+  interface Thumb {
+    image: Uint8Array;
+    build: number;
+  }
+  interface ThumbJob {
+    /** The thumbnail's key without the build: `|comp|frame|scale|props`. */
+    what: string;
+    params: FrameParams;
+    done(thumb: Thumb | null, error?: unknown): void;
+    gone: boolean;
+  }
+  const thumbQueue: ThumbJob[] = [];
+  let thumbRunning = false;
+  let thumbTimer: NodeJS.Timeout | null = null;
+  /** For tests and the measurement: thumbnails drawn so far. */
+  let thumbsDrawn = 0;
+
+  const notePreview = (busy: number): void => {
+    previewsBusy += busy;
+    lastPreviewAt = Date.now();
+  };
+
+  function pumpThumbs(): void {
+    if (thumbRunning || thumbTimer) return;
+    while (thumbQueue.length > 0 && thumbQueue[0]!.gone) thumbQueue.shift();
+    const job = thumbQueue[0];
+    if (!job) return;
+    const wait = previewsBusy > 0 ? THUMB_IDLE_MS : lastPreviewAt + THUMB_IDLE_MS - Date.now();
+    if (wait > 0) {
+      thumbTimer = setTimeout(() => {
+        thumbTimer = null;
+        pumpThumbs();
+      }, wait);
+      thumbTimer.unref();
+      return;
+    }
+    thumbQueue.shift();
+    thumbRunning = true;
+    void renderFrame(job.params, false).then(
+      ({ header, image }) => {
+        thumbsDrawn += 1;
+        // Kept under the build it was drawn from: a rebuild during the idle wait does not put the new picture under
+        // the old build's address.
+        const thumb = { image, build: header.buildId };
+        const key = `${header.buildId}${job.what}`;
+        thumbs.delete(key);
+        thumbs.set(key, thumb);
+        while (thumbs.size > THUMB_CACHE) thumbs.delete(thumbs.keys().next().value!);
+        // Every request for the same thumbnail that waited gets it.
+        for (const other of thumbQueue) if (other.what === job.what && !other.gone) other.done(thumb);
+        job.done(thumb);
+      },
+      (error: unknown) => job.done(null, error),
+    ).finally(() => {
+      thumbRunning = false;
+      pumpThumbs();
+    });
+  }
+
+  function thumbnail(params: FrameParams, onGone: (listen: () => void) => void): Promise<Thumb> {
+    const what = `|${params.comp}|${params.frame}|${params.scale}|${JSON.stringify(params.props)}`;
+    const key = `${project.buildId}${what}`;
+    const kept = thumbs.get(key);
+    if (kept) {
+      thumbs.delete(key);
+      thumbs.set(key, kept);
+      return Promise.resolve(kept);
+    }
+    return new Promise((resolve, reject) => {
+      const job: ThumbJob = {
+        what,
+        params,
+        gone: false,
+        done: (thumb, error) => {
+          job.gone = true;
+          if (thumb) resolve(thumb);
+          else reject(error);
+        },
+      };
+      // A thumbnail scrolled out of sight before it was drawn is not drawn.
+      onGone(() => {
+        if (!job.gone) job.gone = true;
+      });
+      thumbQueue.push(job);
+      pumpThumbs();
+    });
+  }
+
+  async function renderFrame(params: FrameParams, preview = true): Promise<{ header: Omit<FrameHeader, 'requestId'>; image: Uint8Array }> {
     known(params.comp);
+    if (preview) notePreview(1);
+    try {
+      return await renderFrameNow(params);
+    } finally {
+      if (preview) notePreview(-1);
+    }
+  }
+
+  async function renderFrameNow(params: FrameParams): Promise<{ header: Omit<FrameHeader, 'requestId'>; image: Uint8Array }> {
     const { result, buildId } = await project.call<PreviewReply>({
       op: 'preview',
       comp: params.comp,
@@ -276,6 +406,32 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       });
       return void res.end(Buffer.from(image.buffer, image.byteOffset, image.byteLength));
     }
+    if (method === 'GET' && path === '/api/thumbnail') {
+      const comp = known(q.get('comp') ?? '');
+      const height = Math.min(THUMB_MAX_HEIGHT, Math.max(8, Math.round(number(q.get('height')) ?? 48)));
+      const params = frameParams({
+        comp: comp.id,
+        frame: number(q.get('frame')),
+        scale: Math.min(1, height / comp.height),
+        format: 'jpeg',
+        props: queryProps(q.get('props')),
+      });
+      const asked = number(q.get('build'));
+      const { image, build } = await thumbnail(params, (listen) => res.once('close', listen));
+      if (res.destroyed) return;
+      res.writeHead(200, {
+        'Content-Type': 'image/jpeg',
+        'Content-Length': image.length,
+        'X-Build': String(build),
+        // The address names the build (`build`): when the picture is of that build it never changes; one of another
+        // build (the project was rebuilt meanwhile, or no build was named) is not kept by the browser.
+        'Cache-Control': asked === build ? 'private, max-age=31536000, immutable' : 'no-store',
+      });
+      return void res.end(Buffer.from(image.buffer, image.byteOffset, image.byteLength));
+    }
+    if (method === 'GET' && path === '/api/thumbnail/stats') {
+      return json(res, 200, { drawn: thumbsDrawn, queued: thumbQueue.filter((j) => !j.gone).length, kept: thumbs.size });
+    }
     if (method === 'GET' && path === '/api/inspect') {
       const comp = q.get('comp') ?? '';
       const frame = number(q.get('frame')) ?? 0;
@@ -393,19 +549,24 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         if (message.image !== undefined && (typeof message.image.data !== 'string' || typeof message.image.mimeType !== 'string')) {
           return bad('The picture is not valid.');
         }
+        keep({ kind: 'user', text: message.text, chips: Array.isArray(message.chips) ? message.chips.filter((c): c is string => typeof c === 'string') : [] });
         void bridge.prompt(message.text, typeof message.context === 'string' ? message.context : '', message.image);
         return;
       case 'agent.cancel':
         void bridge.cancel();
         return;
-      case 'agent.permission':
-        bridge.answerPermission(String(message.id), typeof message.optionId === 'string' ? message.optionId : null);
+      case 'agent.permission': {
+        const optionId = typeof message.optionId === 'string' ? message.optionId : null;
+        keep({ kind: 'answer', id: String(message.id), optionId });
+        bridge.answerPermission(String(message.id), optionId);
         return;
+      }
       case 'agent.select':
-        void bridge.select(typeof message.command === 'string' ? message.command : null);
+        // Cleared once the old conversation has stopped, so what stopping it said is not kept either.
+        void bridge.select(typeof message.command === 'string' ? message.command : null).finally(endConversation);
         return;
       case 'agent.reset':
-        void bridge.reset();
+        void bridge.reset().finally(endConversation);
         return;
       default:
         return bad('unknown agent message');
@@ -417,10 +578,17 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     frameState.set(ws, { busy: false });
     ws.on('close', () => {
       sockets.delete(ws);
-      // The conversation belongs to the window that began it: when that goes, the agent stops.
+      // The conversation belongs to the window that began it: when that goes and does not come back (a reload does),
+      // the agent stops.
       if (owner === ws) {
         owner = null;
-        void bridge.reset();
+        if (orphaned) clearTimeout(orphaned);
+        orphaned = setTimeout(() => {
+          orphaned = null;
+          if (owner !== null) return;
+          void bridge.reset().finally(endConversation);
+        }, reclaimMs);
+        orphaned.unref();
       }
     });
     ws.on('error', () => ws.terminate());
@@ -450,6 +618,13 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     });
     send(ws, { type: 'hello', version: cliVersion(), buildId: project.buildId, buildError: project.buildError });
     bridge.announce();
+    // A window that comes while the conversation's window is gone (it reloaded) takes the conversation over.
+    if (orphaned !== null && !agentOff) {
+      clearTimeout(orphaned);
+      orphaned = null;
+      owner = ws;
+      send(ws, { type: 'agent.history', items: chat.records });
+    }
   });
 
   project.on('reload', (buildId) => broadcast({ type: 'reload', buildId }));

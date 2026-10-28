@@ -5,7 +5,7 @@ import type { ArtifactRecord, CompositionInfo, FrameRenderer } from '@kinetograp
 import type { AudioClipJson, LayerName, SequenceJson, Unsupported } from '@kinetographdev/scene';
 import { bundleProject, type UnsupportedImport } from './bundle.js';
 import { CliError } from './errors.js';
-import { installDynamicImport } from './hyperframes/dynamic.js';
+import { installDynamicImport, installRemotePictures } from './hyperframes/dynamic.js';
 import { isHyperframesEntry, resolveEntry } from './hyperframes/entry.js';
 import { LABEL_FONT_PATH } from './scenes.js';
 import { modelNotes } from './model-notes.js';
@@ -40,7 +40,7 @@ export interface FrameOutput {
   sequences?: SequenceJson[];
   /** Layer id to name and source; only in the studio's builds. */
   names?: Record<string, LayerName>;
-  /** What the engine cannot draw on this frame (kinetograph site, /docs/compat/); none for a scene file. */
+  /** What the engine cannot draw on this frame (kinetograph site, /docs/compat/); for a scene file, its unknown keys. */
   unsupported?: Unsupported[];
   /** ms spent in `renderFrame` and in `JSON.stringify` (0 for a scene file), for `bench`. */
   jsMs: number;
@@ -144,6 +144,8 @@ async function loadProject(
   process.setSourceMapsEnabled(true);
   // A HyperFrames page's `import()` of a specifier built at run time is answered by the host.
   if (isHyperframesEntry(entry)) installDynamicImport();
+  // ... and so is a remote picture a script sets at run time, from the pre-download cache.
+  if (isHyperframesEntry(entry)) installRemotePictures();
   // Set before the import: a staticFile() call made while the project loads (a font, a module-level constant) runs
   // before setPublicDir below can.
   const publicDir = publicDirOf(entry);
@@ -196,6 +198,13 @@ function sceneComposition(file: string, text: string): CompositionInfo {
   };
 }
 
+/** The keys of a scene file the format does not read, as unsupported content named by its JSON path. */
+export function sceneUnknownKeys(text: string): Unsupported[] {
+  return native()
+    .sceneUnknownKeys(text)
+    .map((key) => ({ path: key, element: 'scene', property: key, value: null, reason: 'not a key of the scene format, so it is ignored (a misspelt name?)' }));
+}
+
 export async function openSource(entry: string, options: OpenOptions = {}): Promise<Source> {
   const absolute = requireEntry(entry);
   const baseDir = dirname(absolute);
@@ -204,12 +213,15 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
 
   if (isSceneFile(absolute)) {
     const text = readFileSync(absolute, 'utf8');
+    const composition = sceneComposition(absolute, text);
+    // A key the format does not read is ignored; it is said on every frame, so `--strict` fails on it.
+    const unknown = sceneUnknownKeys(text);
     return {
       kind: 'scene',
       entry: absolute,
       baseDir,
-      composition: sceneComposition(absolute, text),
-      frame: async () => ({ sceneJson: text, audio: [], sequences: [], unsupported: notes(text), jsMs: 0, stringifyMs: 0 }),
+      composition,
+      frame: async () => ({ sceneJson: text, audio: [], sequences: [], unsupported: [...notes(text), ...unknown], jsMs: 0, stringifyMs: 0 }),
       dispose: () => {},
     };
   }

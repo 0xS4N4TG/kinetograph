@@ -41,6 +41,18 @@ pub fn path_call(request: &Value) -> Result<Value, Error> {
             skia_safe::op(&path, &other, op)
         }
         "simplify" => skia_safe::simplify(&path),
+        // Skia's `interpolate`: `weight` 1 is this path, 0 is `other`; both need the same verbs and points.
+        "interpolate" | "interpolatable" => {
+            let other = path_of(
+                request
+                    .get("other")
+                    .ok_or_else(|| Error("interpolate needs another path".into()))?,
+            )?;
+            if call == "interpolatable" {
+                return Ok(json!({ "interpolatable": path.is_interpolatable(&other) }));
+            }
+            path.interpolate(&other, p.f32_or("weight", 0.0)?)
+        }
         "trim" => {
             let mode = if p.bool("complement") == Some(true) {
                 trim_path_effect::Mode::Inverted

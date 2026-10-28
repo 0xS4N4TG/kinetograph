@@ -349,10 +349,10 @@ impl<'a> Painter<'a> {
                 ),
             }
         }
+        let sigma = chrome_sigma(sigma);
         if sigma <= 0.0 {
             return None;
         }
-        self.note_reach(3.0 * sigma);
         let shape = self.region_shape(
             &format!("{id}.backdrop"),
             geom.border_box(),
@@ -360,7 +360,9 @@ impl<'a> Painter<'a> {
             json!("#00000000"),
         );
         let mut shape = shape;
-        shape["effects"] = json!([{ "type": "backdropBlur", "radius": num(sigma) }]);
+        // Chrome reads the backdrop inside the border box only, mirrored past its edges.
+        shape["effects"] =
+            json!([{ "type": "backdropBlur", "radius": num(sigma), "edgeMode": "mirror" }]);
         Some(shape)
     }
 
@@ -374,7 +376,8 @@ impl<'a> Painter<'a> {
     ) {
         use style::values::generics::effects::Filter as F;
         match f {
-            F::Blur(r) => out.push(json!({ "type": "blur", "radius": num(f64::from(r.0.px())) })),
+            F::Blur(r) => out
+                .push(json!({ "type": "blur", "radius": num(chrome_sigma(f64::from(r.0.px()))) })),
             F::Brightness(a) => {
                 out.push(json!({ "type": "brightness", "amount": num4(f64::from(a.0)) }))
             }
@@ -398,7 +401,9 @@ impl<'a> Painter<'a> {
                 out.push(json!({
                     "type": "dropShadow",
                     "x": num(f64::from(s.horizontal.px())), "y": num(f64::from(s.vertical.px())),
-                    "blur": num(f64::from(s.blur.0.px()) / 2.0), "color": hex(&color),
+                    // Chrome takes the blur length as the standard deviation
+                    // itself (not half of it, as for `box-shadow`).
+                    "blur": num(chrome_sigma(f64::from(s.blur.0.px()))), "color": hex(&color),
                 }));
             }
             // `url()` filters are not parsed by this Stylo (see `shim`).
@@ -548,4 +553,13 @@ impl<'a> Painter<'a> {
             self.unsupported.extend(fe.unsupported);
         }
     }
+}
+
+/// The largest standard deviation Chrome blurs by (Skia's limit): a wider
+/// `blur()`, `drop-shadow()` or backdrop blur is drawn as this wide.
+pub const CHROME_MAX_SIGMA: f64 = 532.0;
+
+/// A CSS filter blur's standard deviation as Chrome draws it.
+fn chrome_sigma(sigma: f64) -> f64 {
+    sigma.min(CHROME_MAX_SIGMA)
 }

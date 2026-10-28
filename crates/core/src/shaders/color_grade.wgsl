@@ -560,8 +560,22 @@ fn sample_kuwahara(uv: vec2<f32>) -> vec3<f32> {
     return extra_bilinear(kuwahara_tex, params.kuwahara_place, canvas_of_uv(edge_uv(clamp_uv(uv)))).rgb;
 }
 
+// The bloom texture is half size (grade_prepass.wgsl): texel i covers canvas pixels 2i and 2i + 1 from its origin. It is
+// read clamped to its edge, as HyperFrames reads its bloom framebuffer.
+fn bloom_texel(xy: vec2<i32>) -> vec4<f32> {
+    return textureLoad(bloom_tex, clamp(xy, vec2<i32>(0), vec2<i32>(params.bloom_place.zw) - vec2<i32>(1)), 0);
+}
+
 fn sample_bloom(uv: vec2<f32>) -> vec3<f32> {
-    return extra_bilinear(bloom_tex, params.bloom_place, canvas_of_uv(edge_uv(clamp_uv(uv)))).rgb;
+    let q = (canvas_of_uv(edge_uv(clamp_uv(uv))) - params.bloom_place.xy) * 0.5 - vec2<f32>(0.5);
+    let i = floor(q);
+    let f = q - i;
+    let xy = vec2<i32>(i);
+    let a = bloom_texel(xy);
+    let b = bloom_texel(xy + vec2<i32>(1, 0));
+    let c = bloom_texel(xy + vec2<i32>(0, 1));
+    let d = bloom_texel(xy + vec2<i32>(1, 1));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y).rgb;
 }
 
 fn sample_prepared(uv: vec2<f32>) -> vec4<f32> {

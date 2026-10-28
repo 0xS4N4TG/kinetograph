@@ -101,6 +101,7 @@ use wgpu::{self, util::DeviceExt};
 use crate::blur::{self, Blur};
 use crate::bounds::{self, PixelRect};
 use crate::box_shadow::BoxShadow;
+use crate::bsp::Cut;
 use crate::color::ColorMatrix;
 use crate::error::{Error, Result};
 use crate::grade::{self, ResolvedColorGrade};
@@ -271,6 +272,8 @@ pub struct Compositor {
     layout: wgpu::BindGroupLayout,
     /// Skia's sRGB-encoded premultiplied output to linear light.
     to_linear_premul: wgpu::RenderPipeline,
+    /// Linear premultiplied to sRGB-encoded premultiplied, for a backdrop blurred in sRGB.
+    to_srgb_premul: wgpu::RenderPipeline,
     copy: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
     /// Up to `BLEND_SLOTS` blends in one pass (`shaders/blend_many.wgsl`),
@@ -597,6 +600,7 @@ impl Compositor {
             margin,
             srgb_blend: false,
             to_linear_premul: pipeline(&shader, "fs_to_linear_premul", LINEAR_FORMAT),
+            to_srgb_premul: pipeline(&shader, "fs_to_srgb_premul", LINEAR_FORMAT),
             copy: pipeline(&shader, "fs_copy", LINEAR_FORMAT),
             blend: pipeline(&shader, "fs_blend", LINEAR_FORMAT),
             blend_many,
@@ -669,6 +673,7 @@ impl Compositor {
         let c = &compositor;
         compositor.names = [
             (&c.to_linear_premul, "to linear premul"),
+            (&c.to_srgb_premul, "to sRGB premul"),
             (&c.copy, "copy"),
             (&c.blend, "blend"),
             (&c.blend_many, "blend many"),
@@ -1284,9 +1289,9 @@ impl Compositor {
                     src = self.blur_layer(src, radius);
                 }
                 ResolvedEffect::Blur { .. } => {}
-                ResolvedEffect::BackdropBlur { radius } if radius >= blur::MIN_RADIUS => {
+                ResolvedEffect::BackdropBlur { radius, mirror } if radius >= blur::MIN_RADIUS => {
                     if let Some(backdrop) = backdrop {
-                        src = self.backdrop_blur(src, radius, backdrop, coverage);
+                        src = self.backdrop_blur(src, radius, backdrop, coverage, mirror);
                     }
                 }
                 ResolvedEffect::BackdropBlur { .. } => {}
@@ -1374,14 +1379,16 @@ impl Compositor {
     }
 
     /// Puts the blurred `backdrop` under `src`, kept to where `coverage`'s
-    /// alpha is (`src`'s own alpha if none). `src` goes back to the pool; the
-    /// result is a new texture.
+    /// alpha is (`src`'s own alpha if none). With `mirror`, only the backdrop
+    /// inside that box is read, mirrored past its edges. `src` goes back to
+    /// the pool; the result is a new texture.
     fn backdrop_blur(
         &mut self,
         src: Tex,
         radius: f32,
         backdrop: &Tex,
         coverage: Option<&Tex>,
+        mirror: bool,
     ) -> Tex {
         // The blurred backdrop is kept to the box of what keeps it, and
         // is only worked out there.
@@ -1390,21 +1397,67 @@ impl Compositor {
             // Nothing of it is kept: `src` over nothing is `src`.
             return src;
         }
-        let blurred = self.target(frost);
-        let size = (self.width, self.height);
-        self.blur.run(
-            &self.device,
-            self.pending
-                .get_mut()
-                .get_or_insert_with(|| self.device.create_command_encoder(&Default::default())),
-            self.uniforms.get_mut(),
-            backdrop.input(),
-            blurred.input(),
-            size,
-            radius,
-            backdrop.bounds,
-            blurred.bounds,
-        );
+        // In a scene that blends in sRGB the backdrop is blurred on its
+        // sRGB-encoded values, as CSS's backdrop-filter and Skia blur it, and
+        // taken back to linear light after.
+        let encoded = self.srgb_blend.then(|| {
+            let mut encoded = self.target_full(backdrop.bounds);
+            encoded.bounds = backdrop.bounds;
+            self.pass(
+                &self.to_srgb_premul,
+                backdrop.input(),
+                backdrop.input(),
+                0.0,
+                0,
+                &encoded,
+            );
+            encoded
+        });
+        let backdrop = encoded.as_ref().unwrap_or(backdrop);
+        let mut blurred = self.target(frost);
+        let encoder = self
+            .pending
+            .get_mut()
+            .get_or_insert_with(|| self.device.create_command_encoder(&Default::default()));
+        if mirror {
+            // Mirrored at the box itself; past what the backdrop holds it is
+            // transparent.
+            self.blur.run_mirrored(
+                &self.device,
+                encoder,
+                self.uniforms.get_mut(),
+                backdrop.input(),
+                backdrop.bounds,
+                blurred.input(),
+                frost,
+                radius,
+            );
+        } else {
+            self.blur.run(
+                &self.device,
+                encoder,
+                self.uniforms.get_mut(),
+                backdrop.input(),
+                blurred.input(),
+                (self.width, self.height),
+                radius,
+                backdrop.bounds,
+                blurred.bounds,
+            );
+        }
+        if let Some(encoded) = encoded {
+            self.release(encoded);
+            let linear = self.target(frost);
+            self.pass(
+                &self.to_linear_premul,
+                blurred.input(),
+                blurred.input(),
+                0.0,
+                0,
+                &linear,
+            );
+            self.release(std::mem::replace(&mut blurred, linear));
+        }
         // The matte pass with opacity 1 and alpha mode multiplies its first
         // input by the alpha of its second. `src` is blended over the result
         // in place, so the texture holds its box as well as the frost.
@@ -1627,21 +1680,57 @@ impl Compositor {
         if src.bounds.is_empty() {
             return src;
         }
-        let region = bounds::warped(h, src.bounds).unwrap_or(self.whole());
-        let scratch = self.full_copy(&src);
-        let input = scratch.as_ref().unwrap_or(&src);
-        let target = self.target_full(region);
-        self.run_filtered_pass(
-            &self.warp,
-            &input.view,
-            &floats(&warp_values(h.inverse())),
-            &target,
+        let target = self.warp_cut(&src, h, &[]);
+        self.release(src);
+        target
+    }
+
+    /// `warp`, keeping `src`, of only the texels of `src` that every one of
+    /// `cuts` keeps (`bsp::Cut`, in the texels of `src`), tested where each
+    /// pixel samples the plane. At most `MAX_WARP_CUTS` (one pass); `cut`
+    /// takes any number. The result is a new texture.
+    pub fn warp_cut(&mut self, src: &Tex, h: DMat3, cuts: &[Cut]) -> Tex {
+        assert!(
+            cuts.len() <= MAX_WARP_CUTS,
+            "{} cuts in one warp",
+            cuts.len()
         );
+        let region = bounds::warped(h, src.bounds).unwrap_or(self.whole());
+        let scratch = self.full_copy(src);
+        let input = scratch.as_ref().unwrap_or(src);
+        let target = self.target_full(region);
+        let mut params = floats(&warp_values(h.inverse()));
+        params.extend(
+            [cuts.len() as u32, 0, 0, 0]
+                .iter()
+                .flat_map(|v| v.to_le_bytes()),
+        );
+        for i in 0..MAX_WARP_CUTS {
+            let l = cuts.get(i).map_or([0.0; 4], |c| {
+                let strict = if c.strict { 1.0 } else { 0.0 };
+                [c.line.x as f32, c.line.y as f32, c.line.z as f32, strict]
+            });
+            params.extend(floats(&l));
+        }
+        self.run_filtered_pass(&self.warp, &input.view, &params, &target);
         if let Some(scratch) = scratch {
             self.release(scratch);
         }
-        self.release(src);
         target
+    }
+
+    /// The texels of `src` that every one of `cuts` keeps (tested at texel
+    /// centres), as a new texture: `MAX_WARP_CUTS` at a time, as warps that
+    /// do not move anything.
+    pub fn cut(&mut self, src: &Tex, cuts: &[Cut]) -> Tex {
+        let mut out: Option<Tex> = None;
+        for chunk in cuts.chunks(MAX_WARP_CUTS) {
+            let next = self.warp_cut(out.as_ref().unwrap_or(src), DMat3::IDENTITY, chunk);
+            if let Some(done) = out.replace(next) {
+                self.release(done);
+            }
+        }
+        out.unwrap_or_else(|| self.warp_cut(src, DMat3::IDENTITY, &[]))
     }
 
     /// Displaces `src` by turbulence noise in the layer's space
@@ -1928,24 +2017,49 @@ impl Compositor {
         previous.expect("at least one round")
     }
 
-    /// The bloom effect: what is above the threshold, blurred (HyperFrames does it at half size; this at full size
-    /// with the step doubled, the same reach).
+    /// The bloom effect: what is above the threshold, blurred, at half size as HyperFrames does it (a texel is two
+    /// canvas pixels a side; the colour grade reads it back with a bilinear filter). The step is in canvas pixels.
     fn grade_bloom(&mut self, src: &Tex, radius: f32, scale: f32, bounds: [f32; 4]) -> Tex {
         let step = radius * scale / 2.0;
-        let horizontal = self.grade_prepass(
-            0,
-            src,
-            src,
-            prepass_params(bounds, [1.0, 0.0, step, 1.0], [0.0; 4], 0.0),
+        let horizontal = self.half_target(src.bounds);
+        let vertical = self.half_target(src.bounds);
+        let params = prepass_params(bounds, [1.0, 0.0, step, 1.0], [0.0; 4], 0.0);
+        self.run_pass(
+            &self.grade_blur,
+            src.input(),
+            src.input(),
+            &floats(&params),
+            &horizontal,
         );
-        let vertical = self.grade_prepass(
-            0,
-            &horizontal,
-            &horizontal,
-            prepass_params(bounds, [0.0, 1.0, step, 2.0], [1.0, 0.0, 0.0, 0.0], 0.0),
+        let params = prepass_params(bounds, [0.0, 1.0, step, 2.0], [1.0, 0.0, 0.0, 0.0], 0.0);
+        self.run_pass(
+            &self.grade_blur,
+            horizontal.input(),
+            horizontal.input(),
+            &floats(&params),
+            &vertical,
         );
         self.release(horizontal);
         vertical
+    }
+
+    /// A texture at half the size of `region` (rounded up), whose texel (0, 0) covers the region's top left 2 x 2
+    /// canvas pixels. Its `bounds` are its own texels from the origin, which is what a pass over it draws.
+    fn half_target(&mut self, region: PixelRect) -> Tex {
+        let region = region.intersect(self.whole());
+        let size = [
+            region.width().max(1).div_ceil(2),
+            region.height().max(1).div_ceil(2),
+        ];
+        let mut tex = self.acquire_sized(size);
+        tex.origin = [region.x0, region.y0];
+        tex.bounds = PixelRect::new(
+            region.x0,
+            region.y0,
+            region.x0 + size[0] as i32,
+            region.y0 + size[1] as i32,
+        );
+        tex
     }
 
     /// The Kuwahara effect: the moments along each row, then the four quadrants weighed by how flat they are.
@@ -3444,6 +3558,9 @@ fn halftone_values(halftone: &ResolvedHalftone, layer_matrix: Affine) -> [f32; 2
 
 /// The inverse of a warp's homography as `shaders/warp.wgsl` reads it: its
 /// three rows, each padded to four floats.
+/// How many cuts `Compositor::warp_cut` applies in one pass (`MAX_CUTS` in `shaders/warp.wgsl`).
+pub const MAX_WARP_CUTS: usize = 16;
+
 fn warp_values(inverse: DMat3) -> [f32; 12] {
     let mut values = [0.0; 12];
     for (i, row) in [inverse.row(0), inverse.row(1), inverse.row(2)]

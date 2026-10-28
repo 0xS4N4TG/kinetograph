@@ -135,6 +135,10 @@ export class MockServer implements StudioApi {
     return cancelled;
   }
 
+  thumbnailUrl(comp: string, frame: number, height: number, build: number): string {
+    return `/api/thumbnail?comp=${comp}&frame=${frame}&height=${height}&build=${build}`;
+  }
+
   connect(handlers: SocketHandlers): StudioSocket {
     this.handlers = handlers;
     this.connections++;

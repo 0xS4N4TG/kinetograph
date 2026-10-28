@@ -1,0 +1,31 @@
+<!doctype html>
+<html class="theme" lang="en" style="--accent: rgb(220, 40, 40)">
+<head><meta charset="utf-8"><style>
+:root { --size: 40px; font-size: 20px; }
+html { background: rgb(20, 30, 60); }
+html > body { margin: 0; color: rgb(0, 200, 0); font-family: Inter, sans-serif; }
+html.theme body.dark .box { background: var(--accent); }
+.box { position: absolute; left: 10px; top: 10px; width: 5rem; height: var(--size); }
+.inh { position: absolute; left: 10px; top: 90px; font-size: 2rem; }
+#probe { position: absolute; left: 200px; top: 10px; width: 50px; height: 50px; }
+#probe2 { position: absolute; left: 200px; top: 80px; width: 50px; height: 50px; }
+#probe3 { position: absolute; left: 260px; top: 80px; width: 50px; height: 50px; }
+body > .appended { background: rgb(255, 255, 0); }
+</style></head>
+<body class="dark">
+<div id="root" data-composition-id="main" data-width="320" data-height="180" data-start="0" data-duration="1">
+  <div class="box"></div>
+  <div class="inh">Hello</div>
+  <div id="probe"></div><div id="probe2"></div><div id="probe3"></div>
+</div>
+<script>
+  document.getElementById('probe').style.background = getComputedStyle(document.body).color;
+  document.documentElement.style.setProperty('--size', '60px');
+  document.getElementById('probe2').style.background = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  document.getElementById('probe3').style.background = document.querySelector('body').classList.contains('dark') && document.querySelector(':root').classList.contains('theme') ? 'rgb(0, 120, 255)' : 'rgb(255, 0, 255)';
+  const extra = document.createElement('div');
+  extra.className = 'appended';
+  extra.style.cssText = 'position: absolute; left: 280px; top: 10px; width: 20px; height: 20px';
+  document.body.appendChild(extra);
+</script>
+</body></html>

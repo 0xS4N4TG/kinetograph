@@ -481,6 +481,24 @@ impl<R: Renderer> RendererEntries<R> {
     };
 }
 
+/// Kinetograph: called for each asset while a file is imported (`rive_rs_file_new_with_assets`).
+pub type AssetCallback = unsafe extern "C" fn(
+    context: *mut core::ffi::c_void,
+    kind: u8,
+    unique_filename: *const u8,
+    unique_filename_len: usize,
+    name: *const u8,
+    name_len: usize,
+    extension: *const u8,
+    extension_len: usize,
+    cdn_uuid: *const u8,
+    cdn_uuid_len: usize,
+    in_band: *const u8,
+    in_band_len: usize,
+    data: *mut *const u8,
+    len: *mut usize,
+) -> bool;
+
 extern "C" {
     #[allow(improper_ctypes)]
     pub fn rive_rs_file_new(
@@ -490,6 +508,21 @@ extern "C" {
         result: *mut FileResult,
         factory: *mut *mut Factory,
     ) -> *const File;
+    #[allow(improper_ctypes)]
+    pub fn rive_rs_file_new_with_assets(
+        data: *const u8,
+        len: usize,
+        entries: *const (),
+        result: *mut FileResult,
+        factory: *mut *mut Factory,
+        context: *mut core::ffi::c_void,
+        callback: AssetCallback,
+    ) -> *const File;
+    pub fn rive_rs_file_describe(
+        file: *const File,
+        write: unsafe extern "C" fn(context: *mut core::ffi::c_void, text: *const u8, len: usize),
+        context: *mut core::ffi::c_void,
+    );
     pub fn rive_rs_file_release(file: *const File, factory: *mut Factory);
     pub fn rive_rs_instantiate_artboard(
         file: *const File,

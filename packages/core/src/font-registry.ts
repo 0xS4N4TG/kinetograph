@@ -46,6 +46,11 @@ export function setFallbackFont(path: string | null): void {
   generation++;
 }
 
+/** The file of the built-in fallback font, or null when the host gave none. */
+export function getFallbackFont(): string | null {
+  return fallbackPath;
+}
+
 /** fontKey → absolute path, every font registered (the built-in fallback alone when there is none). */
 export function getFonts(): Record<string, string> {
   if (fonts.size === 0 && fallbackPath !== null) return { [FALLBACK_FONT_KEY]: fallbackPath };

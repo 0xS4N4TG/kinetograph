@@ -2,7 +2,7 @@
 // heygen-com/hyperframes; packages/core/src/audioAutomation.ts, speedRamp.ts, runtime/audioAutomationVolume.ts). A lane
 // is a list of breakpoints `{ t, v, curve?, viaX?, viaY? }` with `t` in seconds from the clip's start. Two lanes change a
 // clip here: `volume` (a gain on the clip) and `rate` (a speed multiplier: a speed ramp). Lanes that drive an audio
-// effect (`fx.<node>.<param>`) are read and ignored, as the effects are.
+// effect (`fx.<node>.<param>`) are read by the mix with the effects (@kinetographdev/audio, hf-fx/automation.ts).
 //
 // Everything is a pure function of the attribute text and a time, so a frame is a function of its number.
 

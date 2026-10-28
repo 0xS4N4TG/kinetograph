@@ -1,15 +1,36 @@
 // `@remotion/skia` and `@shopify/react-native-skia` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.7): the components of RN-Skia's `<Canvas>`
-// drawn by real Skia, in the optional `@kinetographdev/skia` addon, with its CPU rasteriser.
+// drawn by real Skia, in the optional `@kinetographdev/skia` addon, with its CPU rasteriser. `react-native-reanimated`
+// is `./reanimated.js` (its shared values are what RN-Skia animates with).
 
 export { Canvas, SkiaCanvas, useCanvasRef, type CanvasProps } from './canvas.js';
 export * from './components.js';
-export { matchFont, useFont, useImage, useSVG, type FontStyleDescription } from './hooks.js';
+export { matchFont, useFont, useFonts, useImage, useSVG, useTypeface, type FontStyleDescription } from './hooks.js';
+export {
+  useAnimatedImage,
+  useAnimatedImageValue,
+  useClock,
+  usePathInterpolation,
+  usePathValue,
+  useRectBuffer,
+  useRSXformBuffer,
+  useVectorInterpolation,
+} from './animation.js';
+export { drawAsImage, drawAsPicture, SkSurface } from './surface.js';
+export { useVideo, type UseVideoOptions, type UseVideoResult } from './video.js';
+export { AlphaType, ColorType, SkAnimatedImage, SkData, SkFontMgr, SkTypefaceFontProvider, type ImageInfo } from './data.js';
+export { SkRuntimeShaderBuilder } from './factories.js';
+export { isSharedValue, makeMutable, type SharedValue } from './shared-value.js';
 export {
   BlendMode,
   ClipOp,
   createPicture,
   PointMode,
   BlurStyle,
+  FilterMode,
+  MipmapMode,
+  SkTypeface,
+  type SkDeclaration,
+  type LineMetrics,
   FillType,
   PathOp,
   PaintStyle,

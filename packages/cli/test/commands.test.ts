@@ -213,6 +213,21 @@ describe('still', () => {
   });
 });
 
+describe('a scene file with keys the format does not read', () => {
+  it('warns with the JSON path of each, on every frame, and --strict fails', async () => {
+    setNativeForTests(fakeNative({ sceneUnknownKeys: () => ['bogusTop', 'layers[0].wibble'] }).native);
+    const file = sceneFile();
+    const r = await cli('still', file, '0', '-o', join(scratch(), 'u.png'));
+    expect(r.code).toBe(0);
+    expect(r.err).toContain('scene { layers[0].wibble }: not a key of the scene format, so it is ignored (a misspelt name?) (frame 0)');
+    expect(r.err).toContain('scene { bogusTop }');
+    const strict = await cli('still', file, '0', '-o', join(scratch(), 'v.png'), '--strict', '--json');
+    expect(strict.code).toBe(1);
+    expect(strict.json.error.code).toBe('UNSUPPORTED_CONTENT');
+    expect(strict.json.error.message).toContain('layers[0].wibble');
+  });
+});
+
 describe('check', () => {
   it('lists type errors with file and position, and exits 1', async () => {
     const dir = scratch();

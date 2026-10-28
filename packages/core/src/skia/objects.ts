@@ -4,7 +4,7 @@
 
 import { getDomEnvironment, resolveProjectFile } from '@kinetographdev/compat/dom';
 import { fontKey } from '@kinetographdev/scene';
-import { getFonts } from '../font-registry.js';
+import { getFallbackFont, getFonts } from '../font-registry.js';
 import { skiaAddon } from './addon.js';
 import { plain, toColor, type SkColor } from './values.js';
 
@@ -272,6 +272,19 @@ export class SkPath {
     return this.become(this.call('simplify'));
   }
 
+  /** Skia's `interpolate`: `weight` 1 is this path, 0 is `end`; null when the two do not have the same verbs and points. */
+  interpolate(end: SkPath, weight: number): SkPath | null {
+    if (!this.isInterpolatable(end)) return null;
+    const made = this.call('interpolate', { other: end.toJSON(), weight });
+    const path = SkPath.fromSvg(made.d);
+    path.fill = made.fillType;
+    return path;
+  }
+
+  isInterpolatable(other: SkPath): boolean {
+    return JSON.parse(skiaAddon().pathCall(JSON.stringify({ call: 'interpolatable', path: this.toJSON(), other: other.toJSON() }))).interpolatable;
+  }
+
   /** Combines with `other` by `op`, in place. */
   op(other: SkPath, op: (typeof PathOp)[keyof typeof PathOp]): this {
     return this.become(this.call('op', { other: other.toJSON(), op }));
@@ -313,10 +326,67 @@ export class SkPath {
 
 // ---- paints ----
 
-/** `Skia.Paint()`: the paint props of a `<Paint>` node. Shaders and filters are children of the node in this port. */
+/** A shader, colour filter, image filter, mask filter or path effect made with `Skia.*`: the declaration node it is. */
+export interface SkDeclaration {
+  toJSON(): DeclarationNode;
+}
+export interface DeclarationNode {
+  type: string;
+  props: Record<string, unknown>;
+  children: DeclarationNode[];
+}
+
+/** `Skia.Paint()`: the paint props of a `<Paint>` node; a shader or filter set on it is a child of the node. */
 export class SkPaint {
   private props: Record<string, unknown> = {};
   private rgba: [number, number, number, number] = [0, 0, 0, 1];
+  private declared: Partial<Record<'shader' | 'colorFilter' | 'imageFilter' | 'maskFilter' | 'pathEffect', SkDeclaration | null>> = {};
+
+  /** A paint with the same props and declarations. */
+  copy(): SkPaint {
+    const paint = new SkPaint();
+    paint.props = { ...this.props };
+    paint.rgba = [...this.rgba];
+    paint.declared = { ...this.declared };
+    return paint;
+  }
+  reset(): void {
+    this.props = {};
+    this.rgba = [0, 0, 0, 1];
+    this.declared = {};
+  }
+  getColor(): Float32Array {
+    return Float32Array.from(this.rgba);
+  }
+  getAlphaf(): number {
+    return this.rgba[3];
+  }
+  getStrokeWidth(): number {
+    return (this.props.strokeWidth as number | undefined) ?? 0;
+  }
+  getStrokeMiter(): number {
+    return (this.props.strokeMiter as number | undefined) ?? 4;
+  }
+  setShader(shader: SkDeclaration | null): this {
+    this.declared.shader = shader;
+    return this;
+  }
+  setColorFilter(filter: SkDeclaration | null): this {
+    this.declared.colorFilter = filter;
+    return this;
+  }
+  setImageFilter(filter: SkDeclaration | null): this {
+    this.declared.imageFilter = filter;
+    return this;
+  }
+  setMaskFilter(filter: SkDeclaration | null): this {
+    this.declared.maskFilter = filter;
+    return this;
+  }
+  setPathEffect(effect: SkDeclaration | null): this {
+    this.declared.pathEffect = effect;
+    return this;
+  }
 
   setColor(color: SkColor): this {
     this.rgba = toColor(color);
@@ -361,28 +431,96 @@ export class SkPaint {
     return this;
   }
 
-  toJSON(): { type: 'Paint'; props: Record<string, unknown>; children: [] } {
-    return { type: 'Paint', props: this.props, children: [] };
+  toJSON(): { type: 'Paint'; props: Record<string, unknown>; children: DeclarationNode[] } {
+    const children = Object.values(this.declared)
+      .filter((d): d is SkDeclaration => d !== null && d !== undefined)
+      .map((d) => d.toJSON());
+    return { type: 'Paint', props: this.props, children };
   }
 }
 
 // ---- pictures, fonts, effects ----
 
-/** A picture read from a file. */
+/**
+ * A picture: a file (`{ src }`), encoded bytes (`{ data }`), raw pixels (`{ pixels, ... }`), a frame of an animated
+ * one (`frame`/`time`), a surface's snapshot (`{ picture, width, height }`) or a drawn element (`{ nodes, ... }`); the
+ * addon makes it when it is drawn (crates/skia/render/src/draw.rs `image_of`).
+ */
 export class SkImage {
   constructor(
-    readonly src: string,
+    private readonly source: Record<string, unknown>,
     private readonly size: { width: number; height: number },
   ) {}
+  /** The file of a picture read from one. */
+  get src(): string | undefined {
+    return typeof this.source.src === 'string' ? this.source.src : undefined;
+  }
   width(): number {
     return this.size.width;
   }
   height(): number {
     return this.size.height;
   }
-  toJSON(): { src: string } {
-    return { src: this.src };
+  getImageInfo(): { width: number; height: number; colorType: number; alphaType: number } {
+    return { width: this.size.width, height: this.size.height, colorType: 4, alphaType: 3 };
   }
+  private bytes(format: 'rgba' | 'png'): Uint8Array {
+    return new Uint8Array(skiaAddon().imageBytes(JSON.stringify({ image: this.toJSON(), format, baseDir: getDomEnvironment().baseDir ?? '' })));
+  }
+  /** The pixels, RGBA with straight alpha, row after row; `srcX`, `srcY` and `imageInfo` choose a part of them. */
+  readPixels(srcX = 0, srcY = 0, imageInfo?: { width: number; height: number }): Uint8Array {
+    const all = this.bytes('rgba');
+    const { width, height } = this.size;
+    const w = Math.max(0, Math.min(imageInfo?.width ?? width, width - srcX));
+    const h = Math.max(0, Math.min(imageInfo?.height ?? height, height - srcY));
+    if (srcX === 0 && srcY === 0 && w === width && h === height) return all;
+    const out = new Uint8Array(w * h * 4);
+    for (let row = 0; row < h; row += 1) {
+      const from = ((srcY + row) * width + srcX) * 4;
+      out.set(all.subarray(from, from + w * 4), row * w * 4);
+    }
+    return out;
+  }
+  /** The picture as a PNG (the format RN-Skia uses by default). */
+  encodeToBytes(): Uint8Array {
+    return this.bytes('png');
+  }
+  encodeToBase64(): string {
+    return Buffer.from(this.encodeToBytes()).toString('base64');
+  }
+  /** Every picture here is in memory already. */
+  makeNonTextureImage(): SkImage {
+    return this;
+  }
+  /** An image shader of this picture: `makeShaderOptions(tx, ty, filterMode, mipmapMode, localMatrix?)`. */
+  makeShaderOptions(tx: string, ty: string, filter: unknown, mipmap: unknown, localMatrix?: SkMatrix): SkDeclaration {
+    return imageShader(this, tx, ty, { filter: filterName(filter), mipmap: mipmapName(mipmap) }, localMatrix);
+  }
+  /** An image shader of this picture with cubic sampling `B`, `C`. */
+  makeShaderCubic(tx: string, ty: string, B: number, C: number, localMatrix?: SkMatrix): SkDeclaration {
+    return imageShader(this, tx, ty, { B, C }, localMatrix);
+  }
+  toJSON(): Record<string, unknown> {
+    return this.source;
+  }
+}
+
+/** RN-Skia's `FilterMode` and `MipmapMode` as the strings the addon reads (their numbers are accepted too). */
+export const FilterMode = { Nearest: 'nearest', Linear: 'linear' } as const;
+export const MipmapMode = { None: 'none', Nearest: 'nearest', Linear: 'linear' } as const;
+const filterName = (f: unknown): string => (f === 0 || f === 'nearest' ? 'nearest' : 'linear');
+const mipmapName = (m: unknown): string => (m === 1 || m === 'nearest' ? 'nearest' : m === 2 || m === 'linear' ? 'linear' : 'none');
+
+function imageShader(image: SkImage, tx: string, ty: string, sampling: Record<string, unknown>, localMatrix?: SkMatrix): SkDeclaration {
+  const props: Record<string, unknown> = { image: image.toJSON(), tx: tileName(tx), ty: tileName(ty), sampling };
+  if (localMatrix) props.matrix = localMatrix.toJSON();
+  return { toJSON: () => ({ type: 'ImageShader', props, children: [] }) };
+}
+
+/** RN-Skia's `TileMode` names; its numbers (`Clamp` 0 to `Decal` 3) are accepted too. */
+export function tileName(mode: unknown): string {
+  if (typeof mode === 'number') return ['clamp', 'repeat', 'mirror', 'decal'][mode] ?? 'clamp';
+  return typeof mode === 'string' ? mode : 'clamp';
 }
 
 export interface FontMetrics {
@@ -391,12 +529,39 @@ export interface FontMetrics {
   leading: number;
 }
 
-/** A font file at a size. */
-export class SkFont {
+/** Where a typeface comes from: a font file, or font bytes kept with `Skia.Data`. */
+export type FontFace = { file: string } | { data: string };
+
+/** A typeface: `Skia.Typeface.MakeFreeTypeFaceFromData`, or a registered font (`Skia.FontMgr.System().matchFamilyStyle`). */
+export class SkTypeface {
   constructor(
-    readonly file: string,
-    private size: number,
+    readonly face: FontFace,
+    readonly familyName = '',
   ) {}
+  getFamilyName(): string {
+    return this.familyName;
+  }
+  toJSON(): FontFace {
+    return this.face;
+  }
+}
+
+/** A font file (or font data) at a size. */
+export class SkFont {
+  readonly face: FontFace;
+  constructor(
+    face: string | FontFace,
+    private size: number,
+  ) {
+    this.face = typeof face === 'string' ? { file: face } : face;
+  }
+  /** The font file, for a font read from one. */
+  get file(): string | undefined {
+    return 'file' in this.face ? this.face.file : undefined;
+  }
+  getTypeface(): SkTypeface {
+    return new SkTypeface(this.face);
+  }
 
   private measured(text: string) {
     return JSON.parse(
@@ -426,8 +591,8 @@ export class SkFont {
   getMetrics(): FontMetrics {
     return this.measured('').metrics;
   }
-  toJSON(): { file: string; size: number } {
-    return { file: this.file, size: this.size };
+  toJSON(): FontFace & { size: number } {
+    return { ...this.face, size: this.size };
   }
 }
 
@@ -445,6 +610,26 @@ export class SkRuntimeEffect {
   }
   getUniformName(index: number): string {
     return this.info.uniforms[index]![0];
+  }
+  /** The flat list of uniform floats, in the order the SkSL declares them, as the named values a `<Shader>` takes. */
+  namedUniforms(values: ArrayLike<number>): Record<string, number[]> {
+    const out: Record<string, number[]> = {};
+    let at = 0;
+    for (const [name, floats] of this.info.uniforms) {
+      out[name] = Array.from({ length: floats }, (_, i) => Number(values[at + i] ?? 0));
+      at += floats;
+    }
+    return out;
+  }
+  /** `effect.makeShader(uniforms, localMatrix?)`: the effect as a shader. */
+  makeShader(uniforms: ArrayLike<number> = [], localMatrix?: SkMatrix): SkDeclaration {
+    return this.makeShaderWithChildren(uniforms, [], localMatrix);
+  }
+  /** `effect.makeShaderWithChildren(uniforms, children, localMatrix?)`: with the child shaders the SkSL names. */
+  makeShaderWithChildren(uniforms: ArrayLike<number>, children: SkDeclaration[], localMatrix?: SkMatrix): SkDeclaration {
+    const props: Record<string, unknown> = { source: this.toJSON(), uniforms: this.namedUniforms(uniforms) };
+    if (localMatrix) props.matrix = localMatrix.toJSON();
+    return { toJSON: () => ({ type: 'Shader', props, children: children.map((c) => c.toJSON()) }) };
   }
   toJSON(): { sksl: string } {
     return { sksl: this.sksl };
@@ -563,6 +748,17 @@ export class SkRecordingCanvas {
   drawPicture(picture: SkPicture): this {
     return this.record('drawPicture', { picture });
   }
+  drawParagraph(paragraph: SkParagraph, x: number, y: number): this {
+    const width = paragraph.getLayoutWidth();
+    return this.record('drawParagraph', { paragraph, x, y, ...(Number.isFinite(width) ? { width } : {}) });
+  }
+  /** The canvas's transform and clip are its own: nothing reads them back here. */
+  getSaveCount(): number {
+    return this.ops.filter((o) => o.op === 'save').length - this.ops.filter((o) => o.op === 'restore').length + 1;
+  }
+  clear(color: SkColor): this {
+    return this.drawColor(color, 'src');
+  }
   drawAtlas(
     image: SkImage,
     sprites: SkRect[],
@@ -649,8 +845,11 @@ export class SkSVG {
   height(): number {
     return this.size.height;
   }
-  toJSON(): { svg: string } {
-    return { svg: this.source };
+  /** The SVG, with the fonts its text may use: the registered ones and the fallback (there are no system fonts). */
+  toJSON(): { svg: string; fonts?: { family: string; file: string }[]; fallback?: { file: string } } {
+    if (!this.source.includes('<text')) return { svg: this.source };
+    const fallback = getFallbackFont();
+    return { svg: this.source, fonts: paragraphFonts(), ...(fallback !== null ? { fallback: { file: fallback } } : {}) };
   }
 }
 
@@ -666,8 +865,9 @@ export function parseSvg(source: string): SkSVG | null {
 // ---- paragraphs ----
 
 export interface SkParagraphStyle {
-  textAlign?: 'left' | 'right' | 'center' | 'justify' | 'start' | 'end';
+  textAlign?: 'left' | 'right' | 'center' | 'justify' | 'start' | 'end' | number;
   maxLines?: number;
+  ellipsis?: string;
   textStyle?: Record<string, unknown>;
 }
 
@@ -676,10 +876,19 @@ function paragraphFonts(): { family: string; file: string }[] {
   return Object.entries(getFonts()).map(([key, file]) => ({ family: key.split(':')[0]!, file }));
 }
 
-/** `Skia.ParagraphBuilder.Make(style)`: records the operations, which the addon replays with Skia's text layout. */
+/** RN-Skia's `TextAlign` numbers (`Left` 0 to `End` 5), as the names the addon reads. */
+const TEXT_ALIGN = ['left', 'right', 'center', 'justify', 'start', 'end'];
+
+/** A paragraph font: a family and the file (or font data) of one of its faces. */
+export type ParagraphFont = { family: string } & FontFace;
+
+/** `Skia.ParagraphBuilder.Make(style, fontProvider?)`: records the operations, which the addon replays with Skia's text layout. */
 export class SkParagraphBuilder {
   private ops: Record<string, unknown>[] = [];
-  constructor(private style: SkParagraphStyle) {}
+  constructor(
+    private style: SkParagraphStyle,
+    private readonly fonts?: () => ParagraphFont[],
+  ) {}
 
   pushStyle(style: Record<string, unknown>): this {
     this.ops.push({ type: 'pushStyle', style: styleOf(style) });
@@ -693,27 +902,140 @@ export class SkParagraphBuilder {
     this.ops.push({ type: 'pop' });
     return this;
   }
+  addPlaceholder(): this {
+    return this;
+  }
+  reset(): void {
+    this.ops = [];
+  }
   build(): SkParagraph {
-    return new SkParagraph(paragraphFonts(), { ...this.style, textStyle: this.style.textStyle ? styleOf(this.style.textStyle) : undefined }, [...this.ops]);
+    const style: Record<string, unknown> = { ...this.style, textStyle: this.style.textStyle ? styleOf(this.style.textStyle) : undefined };
+    if (typeof style.textAlign === 'number') style.textAlign = TEXT_ALIGN[style.textAlign] ?? 'left';
+    return new SkParagraph(this.fonts ? this.fonts() : paragraphFonts(), style, [...this.ops]);
   }
 }
 
-/** A text style with its colours as the addon reads them. */
+/** RN-Skia's `TextDecoration` numbers (`Underline` 1, `Overline` 2, `LineThrough` 4) as the names the addon reads. */
+const DECORATION: Record<number, string> = { 0: 'none', 1: 'underline', 2: 'overline', 4: 'lineThrough' };
+
+/** A text style with its colours and enums as the addon reads them. */
 function styleOf(style: Record<string, unknown>): Record<string, unknown> {
   const out = { ...style };
   for (const key of ['color', 'decorationColor']) if (out[key] !== undefined) out[key] = toColor(out[key]);
+  if (typeof out.decoration === 'number') out.decoration = DECORATION[out.decoration] ?? 'none';
+  if (out.fontStyle && typeof out.fontStyle === 'object') {
+    const fs = out.fontStyle as Record<string, unknown>;
+    out.fontStyle = { ...fs, ...(typeof fs.slant === 'number' ? { slant: ['upright', 'italic', 'oblique'][fs.slant] } : {}) };
+  }
   return out;
 }
 
+/** One line of a laid-out paragraph, as `getLineMetrics()` answers. */
+export interface LineMetrics {
+  startIndex: number;
+  endIndex: number;
+  endExcludingWhitespaces: number;
+  endIncludingNewline: number;
+  isHardBreak: boolean;
+  ascent: number;
+  descent: number;
+  height: number;
+  width: number;
+  left: number;
+  baseline: number;
+  lineNumber: number;
+}
+
+interface ParagraphLayout {
+  height: number;
+  maxWidth: number;
+  longestLine: number;
+  minIntrinsicWidth: number;
+  maxIntrinsicWidth: number;
+  alphabeticBaseline: number;
+  ideographicBaseline: number;
+  didExceedMaxLines: boolean;
+  lines: LineMetrics[];
+  ranges: (SkRect & { direction: 'ltr' | 'rtl' })[][];
+  points: { position: number; affinity: 'upstream' | 'downstream' }[];
+  placeholders: SkRect[];
+}
+
+/**
+ * A built paragraph. `layout(width)` lays it out as Skia's text layout does when it is drawn, and the measurements
+ * (`getHeight()`, `getLineMetrics()`, ...) are Skia's for that width, with the registered fonts.
+ */
 export class SkParagraph {
+  private width = Infinity;
+  private measured: ParagraphLayout | null = null;
   constructor(
-    private readonly fonts: { family: string; file: string }[],
+    private readonly fonts: ParagraphFont[],
     private readonly style: Record<string, unknown>,
     private readonly ops: Record<string, unknown>[],
   ) {}
-  /** The layout happens when the paragraph is drawn, at the width of the `<Paragraph>`. */
-  layout(_width: number): void {}
-  toJSON(): { fonts: { family: string; file: string }[]; style: Record<string, unknown>; ops: Record<string, unknown>[] } {
+
+  private measure(extra: { ranges?: [number, number][]; points?: SkPoint[] } = {}): ParagraphLayout {
+    const width = Number.isFinite(this.width) ? this.width : 1e9;
+    return JSON.parse(
+      skiaAddon().measureParagraph(JSON.stringify({ paragraph: this.toJSON(), width, baseDir: getDomEnvironment().baseDir ?? '', ...extra })),
+    ) as ParagraphLayout;
+  }
+  private get layoutResult(): ParagraphLayout {
+    this.measured ??= this.measure();
+    return this.measured;
+  }
+
+  layout(width: number): void {
+    if (width !== this.width) this.measured = null;
+    this.width = width;
+  }
+  /** The width it was laid out at (what a `<Paragraph>` without `width` uses). */
+  getLayoutWidth(): number {
+    return this.width;
+  }
+  getHeight(): number {
+    return this.layoutResult.height;
+  }
+  getMaxWidth(): number {
+    return this.layoutResult.maxWidth;
+  }
+  getLongestLine(): number {
+    return this.layoutResult.longestLine;
+  }
+  getMinIntrinsicWidth(): number {
+    return this.layoutResult.minIntrinsicWidth;
+  }
+  getMaxIntrinsicWidth(): number {
+    return this.layoutResult.maxIntrinsicWidth;
+  }
+  getAlphabeticBaseline(): number {
+    return this.layoutResult.alphabeticBaseline;
+  }
+  getIdeographicBaseline(): number {
+    return this.layoutResult.ideographicBaseline;
+  }
+  didExceedMaxLines(): boolean {
+    return this.layoutResult.didExceedMaxLines;
+  }
+  getLineMetrics(): LineMetrics[] {
+    return this.layoutResult.lines;
+  }
+  /** The boxes of the text from `start` to `end` (UTF-16 offsets). */
+  getRectsForRange(start: number, end: number): (SkRect & { direction: 'ltr' | 'rtl' })[] {
+    return this.measure({ ranges: [[start, end]] }).ranges[0] ?? [];
+  }
+  /** The text offset nearest to (x, y). */
+  getGlyphPositionAtCoordinate(x: number, y: number): number {
+    return this.measure({ points: [{ x, y }] }).points[0]?.position ?? 0;
+  }
+  getRectsForPlaceholders(): SkRect[] {
+    return this.layoutResult.placeholders;
+  }
+  /** Draws it on a recording canvas (`Skia.PictureRecorder`, a surface) at (x, y), at the width it was laid out at. */
+  paint(canvas: SkRecordingCanvas, x: number, y: number): void {
+    canvas.drawParagraph(this, x, y);
+  }
+  toJSON(): { fonts: ParagraphFont[]; style: Record<string, unknown>; ops: Record<string, unknown>[] } {
     return { fonts: this.fonts, style: this.style, ops: this.ops };
   }
 }

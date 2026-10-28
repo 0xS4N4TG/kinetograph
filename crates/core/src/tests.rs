@@ -107,23 +107,19 @@ fn builtin_shaders_declare_the_bindings_of_their_bind_group_layouts() {
         vec![(0, 0), (0, 1), (0, 2), (1, 0)]
     );
     assert_eq!(declared_bindings("mesh.wgsl"), vec![(0, 0)]);
-    // The 3D layer's: the frame with its four shadow maps and their sampler,
-    // the environment's two cube maps and their sampler, the draw (a dynamic
-    // offset), the texture and its sampler; its shadow pass's: the light's
-    // matrix and the draw; and the environment bake's: the pass's parameters
-    // and sampler, the picture, the sky.
+    // The 3D layer's: the frame with its array of shadow maps and their
+    // sampler, the environment's two cube maps and their sampler, the draw (a
+    // dynamic offset), the base colour texture and its sampler, then the
+    // normal, metallic-roughness, occlusion and emissive maps; its shadow
+    // pass's: the light's matrix and the draw; its deform pass's: the
+    // parameters, the rest vertices, targets, joints, weights, joint matrices
+    // and the vertices it writes; and the environment bake's: the pass's
+    // parameters and sampler, the picture, the sky.
     assert_eq!(
         declared_bindings("scene3d.wgsl"),
         vec![
             (0, 0),
             (0, 1),
-            (0, 2),
-            (0, 3),
-            (0, 4),
-            (0, 5),
-            (0, 6),
-            (0, 7),
-            (0, 8),
             (0, 9),
             (0, 10),
             (0, 11),
@@ -132,8 +128,14 @@ fn builtin_shaders_declare_the_bindings_of_their_bind_group_layouts() {
             (2, 0),
             (2, 1),
             (2, 2),
-            (2, 3)
+            (2, 3),
+            (2, 4),
+            (2, 5)
         ]
+    );
+    assert_eq!(
+        declared_bindings("scene3d_deform.wgsl"),
+        (0..7).map(|b| (0, b)).collect::<Vec<_>>()
     );
     assert_eq!(
         declared_bindings("scene3d_shadow.wgsl"),

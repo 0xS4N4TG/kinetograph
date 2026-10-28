@@ -27,6 +27,34 @@ export function getDomEnvironment(): DomEnvironment {
   return { baseDir: process.env.KINETOGRAPH_BASE_DIR ?? process.cwd(), ...(publicDir ? { publicDir } : {}) };
 }
 
+// ---- the document's URL ----
+
+/** The document's URL (`location.href`): a URL a script reads back from `src` or `href` is resolved against it. */
+export const DOCUMENT_URL = 'http://localhost/';
+
+/** `value` resolved against the document's URL, as HTML reflects a URL attribute; the value itself when it does not parse. */
+export function resolveDocumentUrl(value: string): string {
+  try {
+    return new URL(value, DOCUMENT_URL).href;
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * The project path a URL of the document's own origin names (`http://localhost/img/a%20b.png` is `img/a b.png`), so
+ * `new Image().src = el.src` and `fetch(el.src)` read the project file as a browser reads its server's; null for any other.
+ */
+export function sameOriginPath(url: string): string | null {
+  if (!url.toLowerCase().startsWith(DOCUMENT_URL)) return null;
+  const path = url.slice(DOCUMENT_URL.length).split(/[?#]/)[0]!;
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
 // ---- remote files ----
 
 type RemoteResolver = (url: string) => string | null;
@@ -117,6 +145,11 @@ export function parseFontFaces(css: string): CssFontFace[] {
 
 const registeredFaces = new Set<string>();
 const seenSheets = new Set<string>();
+
+/** How many `@font-face` rules have been registered: a request built before one was has a stale font list. */
+export function fontFacesRegistered(): number {
+  return registeredFaces.size;
+}
 
 /** Registers the `@font-face` files of `css` through the handler (once per rule). */
 function registerFontFaces(css: string): void {

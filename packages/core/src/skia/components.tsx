@@ -115,3 +115,81 @@ export function Mask({ children, mask, mode = 'alpha', clip = true }: SkiaNodePr
     createElement(Group, { blendMode: 'srcIn' }, children),
   );
 }
+
+// ---- fitting ----
+
+type Fit = 'cover' | 'contain' | 'fill' | 'fitHeight' | 'fitWidth' | 'none' | 'scaleDown';
+interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** RN-Skia's `fitRects`: the part of `src` shown and where it goes in `dst`, as `<Image fit>` places a picture. */
+export function fitRects(fit: Fit, src: Rect, dst: Rect): { src: Rect; dst: Rect } {
+  const [iw, ih, ow, oh] = [src.width, src.height, dst.width, dst.height];
+  let s: [number, number];
+  let d: [number, number];
+  if (iw <= 0 || ih <= 0 || ow <= 0 || oh <= 0) {
+    s = [0, 0];
+    d = [0, 0];
+  } else if (fit === 'fill') {
+    s = [iw, ih];
+    d = [ow, oh];
+  } else if (fit === 'cover') {
+    s = ow / oh > iw / ih ? [iw, (iw * oh) / ow] : [(ih * ow) / oh, ih];
+    d = [ow, oh];
+  } else if (fit === 'fitWidth') {
+    s = [iw, (iw * oh) / ow];
+    d = [ow, (s[1] * ow) / s[0]];
+  } else if (fit === 'fitHeight') {
+    s = [(ih * ow) / oh, ih];
+    d = [(s[0] * oh) / s[1], oh];
+  } else if (fit === 'none') {
+    s = [Math.min(iw, ow), Math.min(ih, oh)];
+    d = s;
+  } else if (fit === 'scaleDown') {
+    const aspect = iw / ih;
+    s = [iw, ih];
+    d = [iw, ih];
+    if (d[1] > oh) d = [oh * aspect, oh];
+    if (d[0] > ow) d = [ow, ow / aspect];
+  } else {
+    s = [iw, ih];
+    d = ow / oh > iw / ih ? [(iw * oh) / ih, oh] : [ow, (ih * ow) / iw];
+  }
+  const inscribe = ([w, h]: [number, number], r: Rect): Rect => ({ x: r.x + (r.width - w) / 2, y: r.y + (r.height - h) / 2, width: w, height: h });
+  return { src: inscribe(s, src), dst: inscribe(d, dst) };
+}
+
+/** RN-Skia's `rect2rect`: the transform that maps `src` onto `dst`. */
+export function rect2rect(src: Rect, dst: Rect): Record<string, number>[] {
+  const scaleX = dst.width / src.width;
+  const scaleY = dst.height / src.height;
+  return [{ translateX: dst.x - src.x * scaleX }, { translateY: dst.y - src.y * scaleY }, { scaleX }, { scaleY }];
+}
+
+/** RN-Skia's `fitbox`: the transform that fits `src` into `dst` by `fit`, turned by `rotation` degrees (0, 90, 180, 270). */
+export function fitbox(fit: Fit, src: Rect, dst: Rect, rotation: 0 | 90 | 180 | 270 = 0): Record<string, number>[] {
+  const turned = rotation === 90 || rotation === 270;
+  const box = turned ? { x: src.x, y: src.y, width: src.height, height: src.width } : src;
+  const fitted = fitRects(fit, box, dst);
+  const out = rect2rect(fitted.src, fitted.dst);
+  if (rotation === 0) return out;
+  const from = { x: src.x + src.width / 2, y: src.y + src.height / 2 };
+  const to = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  return [
+    ...out,
+    { translateX: to.x },
+    { translateY: to.y },
+    { rotate: (rotation * Math.PI) / 180 },
+    { translateX: -from.x },
+    { translateY: -from.y },
+  ];
+}
+
+/** Its children scaled and moved so that `src` fits into `dst` by `fit` (default `contain`), as RN-Skia's `<FitBox>`. */
+export function FitBox({ fit = 'contain', src, dst, children }: { fit?: Fit; src: Rect; dst: Rect; children?: ReactNode }): ReactElement {
+  return createElement(Group_, { transform: fitbox(fit, src, dst) }, children);
+}

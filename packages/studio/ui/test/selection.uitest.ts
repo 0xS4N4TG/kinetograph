@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildChatContext } from '../src/lib/chat-context';
-import { emptyChat, reduceChat, addUserMessage, answerPermission } from '../src/lib/chat';
+import { emptyChat, reduceChat, addUserMessage, answerPermission, replayChat } from '../src/lib/chat';
 import { hitTest, type InspectLayer } from '../src/lib/inspect';
 import {
   boxResult,
@@ -69,6 +69,8 @@ describe('names', () => {
     expect(layerName(scene[1]!.children![1]!)).toBe('Image logo.png');
     expect(layerName(scene[0]!)).toBe('bg');
     expect(layerName(scene[1]!)).toBe('Group');
+    expect(layerName({ ...scene[1]!, ordinal: 2 } as InspectLayer)).toBe('Group 2');
+    expect(layerName({ ...scene[1]!.children![0]!, label: 'Card', ordinal: 3 } as InspectLayer)).toBe('Card 3');
   });
 
   it('writes a chip with the frame and the source position when it is known', () => {
@@ -144,5 +146,19 @@ describe('the chat list', () => {
     expect(s.items.at(-1)).toMatchObject({ kind: 'agent', text: 'Done' });
     s = reduceChat(s, { kind: 'status', status: 'busy', command: 'x', image: true });
     expect(s).toMatchObject({ status: 'busy', command: 'x', image: true });
+  });
+
+  it('replays the conversation the server kept onto the chat of a reloaded window, keeping the status', () => {
+    const busy = reduceChat(addUserMessage(emptyChat, 'old', []), { kind: 'status', status: 'busy', command: 'x', image: false });
+    const s = replayChat(busy, [
+      { kind: 'user', text: 'make it red', chips: ['Title'] },
+      { kind: 'event', event: { kind: 'message', text: 'Sure' } },
+      { kind: 'event', event: { kind: 'permission', id: '1', title: 'Write', files: [], options: [{ id: 'y', name: 'Allow', kind: 'allow_once' }] } },
+      { kind: 'answer', id: '1', optionId: 'y' },
+    ]);
+    expect(s.items.map((i) => i.kind)).toEqual(['user', 'agent', 'permission']);
+    expect(s.items[0]).toMatchObject({ text: 'make it red', chips: ['Title'] });
+    expect(s.items[2]).toMatchObject({ answered: 'y' });
+    expect(s.status).toBe('busy');
   });
 });

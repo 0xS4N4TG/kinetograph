@@ -63,6 +63,12 @@ export interface Overlay {
 
 const overlays = new WeakMap<object, Overlay>();
 
+/** What the running Web Animations give an element's style (animations.ts), laid over everything else. */
+let animatedStyle: ((host: HostElement) => Map<string, string> | null) | null = null;
+export function setAnimatedStyleSource(source: ((host: HostElement) => Map<string, string> | null) | null): void {
+  animatedStyle = source;
+}
+
 export function overlayOf(host: object, create: boolean): Overlay | undefined {
   let overlay = overlays.get(host);
   if (overlay === undefined && create) {
@@ -78,13 +84,17 @@ export function overlayOf(host: object, create: boolean): Overlay | undefined {
  */
 export function propsWithOverlay(host: HostElement): Record<string, any> {
   const overlay = overlays.get(host);
-  if (overlay === undefined || (overlay.style.size === 0 && overlay.attrs.size === 0)) return host.props;
+  const animated = animatedStyle === null ? null : animatedStyle(host);
+  if (animated === null && (overlay === undefined || (overlay.style.size === 0 && overlay.attrs.size === 0))) return host.props;
   const props: Record<string, any> = { ...host.props };
-  if (overlay.style.size > 0) {
+  if ((overlay !== undefined && overlay.style.size > 0) || animated !== null) {
     const style: Record<string, unknown> = typeof props.style === 'object' && props.style !== null ? { ...props.style } : {};
-    for (const [name, value] of overlay.style) style[name] = value;
+    if (overlay !== undefined) for (const [name, value] of overlay.style) style[name] = value;
+    // The Web Animations API's values win over the inline style, as the animation origin of the cascade does.
+    if (animated !== null) for (const [name, value] of animated) style[name] = value;
     props.style = style;
   }
+  if (overlay === undefined) return props;
   for (const [name, value] of overlay.attrs) {
     if (name === 'class') props.className = value ?? undefined;
     else if (value === null) delete props[name];
@@ -153,6 +163,21 @@ export function bodyChildren(): DomNode[] {
 
 export function currentBodyRoot(): Readback | null {
   return bodyRoot;
+}
+
+/**
+ * A page's own `<html>` and `<body>` (a HyperFrames page, built in the root's tree): while one is set they are
+ * `document.documentElement` and `document.body`, `html` is `:root` and has no parent element, and the island
+ * lays them out as the document's own (crates/dom document.rs). `bodyHost` still holds the root's top level.
+ */
+let page: { html: HostElement; body: HostElement } | null = null;
+
+export function setPageDocument(html: HostElement | null, body: HostElement | null): void {
+  page = html !== null && body !== null ? { html, body } : null;
+}
+
+export function pageDocument(): { html: HostElement; body: HostElement } | null {
+  return page;
 }
 
 /** `document.head`, `document.documentElement` and `document.body` as host elements (`body` holds the root's top level). */

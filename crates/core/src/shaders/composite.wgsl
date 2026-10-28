@@ -52,6 +52,17 @@ fn fs_to_linear_premul(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32
     return vec4<f32>(srgb_to_linear(c.rgb / c.a) * c.a, c.a);
 }
 
+// Linear premultiplied -> sRGB-encoded premultiplied, for a pass that works on sRGB-encoded values
+// (`Compositor::backdrop_blur` in a scene that blends in sRGB); `fs_to_linear_premul` takes it back.
+@fragment
+fn fs_to_srgb_premul(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
+    let c = load_a(canvas_xy(p));
+    if c.a <= 0.0 {
+        return vec4<f32>(0.0);
+    }
+    return vec4<f32>(linear_to_srgb(c.rgb / c.a) * c.a, c.a);
+}
+
 // Skia's output when it drew in linear light (`render/skia.rs`): already what the canvas holds.
 @fragment
 fn fs_copy(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {

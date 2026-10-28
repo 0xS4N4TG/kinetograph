@@ -12,6 +12,10 @@
 //! Remotion's root `div` is. Percentages, `auto` margins and
 //! absolute positions of the island root resolve against the composition.
 //!
+//! A tree whose root is an `<html>` (a HyperFrames page) is the whole page:
+//! its `html` and `body` are the document's own, with the `<style>`s in a
+//! `<head>` put first in its `html`, and no container.
+//!
 //! A document is built per call and resolved at the request's time, so a frame
 //! is a pure function of its request.
 
@@ -161,6 +165,11 @@ fn add_stylesheets(
     })
 }
 
+/// Whether the island's tree is a whole page: an `<html>` element at its root.
+fn is_page(root: &DomNode) -> bool {
+    matches!(root, DomNode::Element { tag, .. } if tag.eq_ignore_ascii_case("html"))
+}
+
 /// Builds a document for `request`'s page with `root` as the island's tree.
 fn build_root(
     request: &IslandRequest,
@@ -187,6 +196,33 @@ fn build_root(
     // The painter's mirror properties do not inherit.
     crate::paint::register_properties(&mut doc);
     let mut paths = BTreeMap::new();
+    // A page (a tree whose root is an `<html>`, as a HyperFrames page is) is the document itself: its `html` and `body`
+    // are the document's, so `:root`, `html > body`, `rem` and the canvas background are those of a browser's page.
+    if is_page(root) {
+        let (html, starting) = {
+            let mut m = doc.mutate();
+            let html = build_node(&mut m, root, false, &mut paths).expect("an html element");
+            let head = element(&mut m, "head", false, vec![]);
+            let starting = add_stylesheets(&mut m, head, request, with_starting);
+            m.prepend_nodes(html, &[head]);
+            let document = m.doc.root_node().id;
+            m.append_children(document, &[html]);
+            (html, starting)
+        };
+        let node_paths = paths.iter().map(|(p, id)| (*id, p.clone())).collect();
+        return Ok((
+            IslandDocument {
+                doc,
+                paths,
+                node_paths,
+                container: html,
+                root: Some(html),
+                starting,
+                missing: Vec::new(),
+            },
+            files,
+        ));
+    }
     let (container, root, starting) = {
         let mut m = doc.mutate();
         let html = element(&mut m, "html", false, vec![]);
@@ -764,7 +800,19 @@ fn diff(
             let not_script =
                 |c: &&DomNode| !matches!(c, DomNode::Element { tag, .. } if tag == "script");
             let wanted: Vec<&DomNode> = children.iter().filter(not_script).collect();
-            if node.children.len() != wanted.len() {
+            // A page's `html` holds the `head` of stylesheets the document was built with, which the tree does not.
+            let have: Vec<NodeId> = node
+                .children
+                .iter()
+                .copied()
+                .filter(|&c| {
+                    tag != "html"
+                        || !doc.get_node(c).is_some_and(|n| {
+                            n.data.is_element_with_tag_name(&LocalName::from("head"))
+                        })
+                })
+                .collect();
+            if have.len() != wanted.len() {
                 return false;
             }
             let old: Vec<&DomNode> = old_children
@@ -776,8 +824,7 @@ fn diff(
                 Vec::new()
             };
             let is_style = tag == "style";
-            node.children
-                .iter()
+            have.iter()
                 .enumerate()
                 .zip(wanted)
                 .all(|((i, &child), want)| match (is_style, want) {

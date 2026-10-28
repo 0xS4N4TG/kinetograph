@@ -5,6 +5,8 @@
 
 import { attributesOf } from '../request/attrs.js';
 import { cssPropertyName, styleToCss } from '../request/style.js';
+import { resolveDocumentUrl } from '../environment.js';
+import { srcsetCandidate } from '../request/srcset.js';
 import { isDomElement, isSvgTag } from '../request/tags.js';
 import type { DomNode } from '../types.js';
 import { addonFunction, hasAddonFunction } from '../addon.js';
@@ -26,9 +28,11 @@ import {
 import { isKnownCssProperty } from './css-names.js';
 import { collectionOf, nodeListOf, type HTMLCollection, type NodeList } from './lists.js';
 import { GEOMETRY_TAGS, pathMeasure, shapePath } from './geometry.js';
+import { AnimationShim, animationsOf, documentTimeline, KeyframeEffectShim, setAnimationTargetResolver, type AnimationTimelineShim } from './animations.js';
+import { cssTransformMatrix, IDENTITY, mapBox, mulAffine, parseViewBox, svgLength, viewBoxMatrix, type Affine } from './svg-transform.js';
 import { parseHtmlFragment } from '../request/html.js';
 import { attributeMapOf, AttrShim, type NamedNodeMapShim } from './attributes.js';
-import { bodyHost, pageViewport, effectiveParentOf, headHost, htmlHost, overlayOf, propsWithOverlay, rawParentOf, setRawParent, type BoxInfo, type HostElement, type Readback } from './host.js';
+import { bodyHost, pageDocument, pageViewport, effectiveParentOf, headHost, htmlHost, overlayOf, propsWithOverlay, rawParentOf, setRawParent, type BoxInfo, type HostElement, type Readback } from './host.js';
 import { matches, queryAll, type SelectorContext } from './selector.js';
 import {
   clearChildren,
@@ -267,6 +271,8 @@ export function hostOf(value: unknown): HostElement | null {
   return value instanceof DomElement ? value.host : null;
 }
 
+setAnimationTargetResolver(hostOf);
+
 export function isDomElementShim(value: unknown): value is DomElement {
   return value instanceof DomElement;
 }
@@ -314,6 +320,17 @@ function documentPosition(a: Positioned, b: unknown): number {
 }
 
 const TEXT_TAGS = new Set(['text', 'tspan']);
+/** The HTML elements whose IDL attribute of each name reflects the content attribute (HTML, "reflect"). */
+const REFLECTED: Record<string, Set<string>> = {
+  src: new Set(['img', 'video', 'audio', 'source', 'track', 'script', 'iframe', 'embed', 'input']),
+  srcset: new Set(['img', 'source']),
+  sizes: new Set(['img', 'source']),
+  alt: new Set(['img', 'area', 'input']),
+  poster: new Set(['video']),
+  href: new Set(['a', 'area', 'link', 'base']),
+};
+/** The SVG elements whose `href` is an SVGAnimatedString. */
+const SVG_HREF_TAGS = new Set(['a', 'image', 'use', 'linearGradient', 'radialGradient', 'pattern', 'textPath', 'feImage', 'filter', 'mpath', 'script']);
 
 /**
  * The registered font that measures text asking for `key`: that one, else the built-in fallback, else whichever is
@@ -597,7 +614,7 @@ export class DomElement extends DomNodeBase {
   }
   /** The element this one hangs from: a DOM element, `body` at the top of a root, `html` above `body` and `head`. */
   private domParent(): HostElement | null {
-    if (this.host === htmlHost) return null;
+    if (this.host === htmlHost || this.host === pageDocument()?.html) return null;
     if (this.host === bodyHost || this.host === headHost) return htmlHost;
     const parent = effectiveParentOf(this.host);
     if (parent !== null) return isDomElement(parent.type) || isFillLayer(parent) ? parent : null;
@@ -608,7 +625,7 @@ export class DomElement extends DomNodeBase {
     return this.wrap(this.domParent());
   }
   get parentNode(): DomElement | Document | null {
-    if (this.host === htmlHost) return (globalThis as { document?: Document }).document ?? null;
+    if (this.host === htmlHost || this.host === pageDocument()?.html) return (globalThis as { document?: Document }).document ?? null;
     const root = documentOfRoot.get(this.host);
     if (root !== undefined) return root as Document;
     const parent = effectiveParentOf(this.host);
@@ -977,38 +994,92 @@ export class DomElement extends DomNodeBase {
     return this.box() === null && this.svgClientRect() === null ? [] : [this.getBoundingClientRect()];
   }
   /**
-   * The rect of an SVG shape inside an `<svg>` (the layout has no boxes for them): its `getBBox` through its transforms and its
-   * `<svg>`'s `viewBox`, placed at the `<svg>`'s box. Null for anything else.
+   * The rect of an SVG element inside an `<svg>` (the layout has no boxes for them), as Chrome's
+   * `getBoundingClientRect` gives it: its `getBBox` (geometry only: no stroke, marker or filter) through its
+   * transforms, the nested `<svg>` viewports around it and the outer `<svg>`'s `viewBox` and `preserveAspectRatio`,
+   * placed at the outer `<svg>`'s box. A box through a rotation is the box around its corners. Null for anything else.
    */
   private svgClientRect(): DOMRectShim | null {
-    const owner = this.ownerSVGElement;
-    if (owner === null) return null;
-    const svg = owner.box();
-    const ctm = this.getCTM();
-    if (ctm === null) return null;
-    const b = this.getBBox();
+    if (this.ownerSVGElement === null) return null;
+    let m: Affine = IDENTITY;
+    let outer: HostElement | null = null;
+    for (let h: HostElement | null = this.host; h !== null; h = this.readback.parent(h)) {
+      if (h.type === 'svg' && this.svgParentOf(h) === null) {
+        outer = h;
+        break;
+      }
+      m = mulAffine(this.svgLocalTransform(h), m);
+    }
+    if (outer === null) return null;
+    const svgElement = domElementFor(outer, this.readback);
+    const svg = svgElement.box();
     // An `<svg>` no layout reaches (one a script made to measure text in, and has not shown) is measured in its own
     // user units: where a browser, which lays every element out, would say the same for an `<svg>` with no size.
-    let scale = 1;
-    let ox = 0;
-    let oy = 0;
     if (svg !== null) {
-      const view = (owner.getAttribute('viewBox') ?? '').split(/[\s,]+/).map(Number);
-      const [vx, vy, vw, vh] = view.length === 4 && view.every(Number.isFinite) && view[2]! > 0 && view[3]! > 0 ? view : [0, 0, svg.width, svg.height];
-      scale = Math.min(svg.width / vw!, svg.height / vh!);
-      ox = svg.rect.x + (svg.width - vw! * scale) / 2 - vx! * scale;
-      oy = svg.rect.y + (svg.height - vh! * scale) / 2 - vy! * scale;
+      const view = parseViewBox(svgElement.getAttribute('viewBox'));
+      if (view !== null) m = mulAffine(viewBoxMatrix(view, svgElement.getAttribute('preserveAspectRatio'), svg.width, svg.height), m);
+      m = mulAffine([1, 0, 0, 1, svg.rect.x, svg.rect.y], m);
     }
-    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
-    for (const [px, py] of [[b.x, b.y], [b.x + b.width, b.y], [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]] as const) {
-      const x = ox + (ctm.a * px + ctm.c * py + ctm.e) * scale;
-      const y = oy + (ctm.b * px + ctm.d * py + ctm.f) * scale;
-      x1 = Math.min(x1, x);
-      y1 = Math.min(y1, y);
-      x2 = Math.max(x2, x);
-      y2 = Math.max(y2, y);
+    const b = this.getBBox();
+    const r = mapBox(m, b.x, b.y, b.width, b.height);
+    return new DOMRectShim(r.x, r.y, r.width, r.height);
+  }
+  /** The nearest `<svg>` above `h`, or null (an outer `<svg>`, or HTML in a `foreignObject`). */
+  private svgParentOf(h: HostElement): HostElement | null {
+    for (let p = this.readback.parent(h); p !== null; p = this.readback.parent(p)) {
+      if (p.type === 'svg') return p;
+      if (p.type === 'foreignObject') return null;
     }
-    return new DOMRectShim(x1, y1, x2 - x1, y2 - y1);
+    return null;
+  }
+  /** The size of the viewport an `<svg>` makes: its box for an outer one, else its `width` and `height` (100% by
+   *  default) against the user space around it. */
+  private svgViewportSize(svg: HostElement): { width: number; height: number } {
+    const parent = this.svgParentOf(svg);
+    if (parent === null) {
+      const box = domElementFor(svg, this.readback).box();
+      return { width: box?.width ?? 0, height: box?.height ?? 0 };
+    }
+    const room = this.svgUserSize(parent);
+    const el = domElementFor(svg, this.readback);
+    return { width: svgLength(el.getAttribute('width') ?? '100%', room.width), height: svgLength(el.getAttribute('height') ?? '100%', room.height) };
+  }
+  /** The size of an `<svg>`'s user space: its `viewBox`, else its viewport. */
+  private svgUserSize(svg: HostElement): { width: number; height: number } {
+    const view = parseViewBox(domElementFor(svg, this.readback).getAttribute('viewBox'));
+    return view !== null ? { width: view[2], height: view[3] } : this.svgViewportSize(svg);
+  }
+  /**
+   * The matrix from `h`'s user space to its parent's: a nested `<svg>`'s position and `viewBox`, else the CSS
+   * `transform` about its `transform-origin` (with `transform-box` the box percentages are of), which wins over the
+   * `transform` attribute, as in a browser.
+   */
+  private svgLocalTransform(h: HostElement): Affine {
+    const el = domElementFor(h, this.readback);
+    if (h.type === 'svg') {
+      const parent = this.svgParentOf(h);
+      if (parent === null) return IDENTITY;
+      const room = this.svgUserSize(parent);
+      const place: Affine = [1, 0, 0, 1, svgLength(el.getAttribute('x') ?? '0', room.width), svgLength(el.getAttribute('y') ?? '0', room.height)];
+      const view = parseViewBox(el.getAttribute('viewBox'));
+      if (view === null) return place;
+      const size = this.svgViewportSize(h);
+      return mulAffine(place, viewBoxMatrix(view, el.getAttribute('preserveAspectRatio'), size.width, size.height));
+    }
+    const css = this.readback.computed(h, 'transform');
+    if (css !== null && css !== 'none' && css !== '') {
+      let box = { x: 0, y: 0, width: 0, height: 0 };
+      if ((this.readback.computed(h, 'transform-box') ?? '').startsWith('fill-box')) {
+        const b = el.getBBox();
+        box = { x: b.x, y: b.y, width: b.width, height: b.height };
+      } else {
+        const viewport = this.svgParentOf(h);
+        if (viewport !== null) box = { x: 0, y: 0, ...this.svgUserSize(viewport) };
+      }
+      const m = cssTransformMatrix(css, this.readback.computed(h, 'transform-origin'), box);
+      if (m !== null) return m;
+    }
+    return affineOf(el.getAttribute('transform'));
   }
   get offsetWidth(): number {
     return Math.round(this.box()?.width ?? 0);
@@ -1022,26 +1093,27 @@ export class DomElement extends DomNodeBase {
    * (GSAP re-parents an element whose `offsetParent` is null, to measure it).
    */
   get offsetParent(): DomElement | null {
-    if (this.host === htmlHost || this.host === bodyHost || this.box() === null) return null;
+    const page = pageDocument();
+    if (this.host === htmlHost || this.host === bodyHost || this.host === page?.html || this.host === page?.body || this.box() === null) return null;
     if (this.readback.computed(this.host, 'position') === 'fixed') return null;
     for (let h = this.readback.parent(this.host); h !== null; h = this.readback.parent(h)) {
       const position = this.readback.computed(h, 'position');
       if (position !== null && position !== 'static') return this.wrap(h);
     }
-    return this.wrap(bodyHost);
+    return this.wrap(pageDocument()?.body ?? bodyHost);
   }
   get offsetLeft(): number {
     const box = this.box();
     if (box === null) return 0;
     const parent = this.offsetParent?.host;
-    const origin = parent && parent !== bodyHost ? this.readback.box(parent) : null;
+    const origin = parent && parent !== bodyHost && parent !== pageDocument()?.body ? this.readback.box(parent) : null;
     return Math.round(box.x - (origin?.x ?? 0));
   }
   get offsetTop(): number {
     const box = this.box();
     if (box === null) return 0;
     const parent = this.offsetParent?.host;
-    const origin = parent && parent !== bodyHost ? this.readback.box(parent) : null;
+    const origin = parent && parent !== bodyHost && parent !== pageDocument()?.body ? this.readback.box(parent) : null;
     return Math.round(box.y - (origin?.y ?? 0));
   }
   get clientWidth(): number {
@@ -1088,14 +1160,100 @@ export class DomElement extends DomNodeBase {
     this.setAttribute('height', String(Math.max(0, Math.floor(Number(value)) || 0)));
     if (this.host.type === 'canvas') resetCanvasOf(this.host);
   }
+  // The IDL attributes a script commonly assigns (`img.src = url`) reflect their content attribute, as in a browser: the
+  // property reads and writes the attribute, so what a script sets is drawn like markup. On an element that has no such
+  // attribute the name is an ordinary property of the object (`div.src = x` is an expando, not an attribute).
   get src(): string {
+    return this.reflectedUrl('src');
+  }
+  set src(value: string) {
+    this.reflect('src', value);
+  }
+  get srcset(): string {
+    return this.reflected('srcset');
+  }
+  set srcset(value: string) {
+    this.reflect('srcset', value);
+  }
+  get sizes(): string {
+    return this.reflected('sizes');
+  }
+  set sizes(value: string) {
+    this.reflect('sizes', value);
+  }
+  get alt(): string {
+    return this.reflected('alt');
+  }
+  set alt(value: string) {
+    this.reflect('alt', value);
+  }
+  get poster(): string {
+    return this.reflectedUrl('poster');
+  }
+  set poster(value: string) {
+    this.reflect('poster', value);
+  }
+  /** The URL that is drawn: the `srcset` candidate a browser at device pixel ratio 1 takes, else `src`. */
+  get currentSrc(): string {
+    if (!REFLECTED.src!.has(this.host.type)) return undefined as never;
+    const src = this.getAttribute('src') ?? undefined;
+    const srcset = this.getAttribute('srcset');
+    const sizes = this.getAttribute('sizes') ?? undefined;
+    const viewport = { width: Number((globalThis as { innerWidth?: number }).innerWidth) || 1920, height: Number((globalThis as { innerHeight?: number }).innerHeight) || 1080 };
+    const chosen = (srcset !== null ? srcsetCandidate(srcset, src, sizes, viewport) : null) ?? src;
+    return chosen === undefined ? '' : resolveDocumentUrl(chosen);
+  }
+  /**
+   * `href`: a string on an HTML `<a>`, `<area>`, `<link>`, `<base>`; an SVGAnimatedString on the SVG elements that link
+   * (`image.href.baseVal = url`), whose `baseVal` reads `href`, else the older `xlink:href`.
+   */
+  get href(): string | { baseVal: string; animVal: string } {
+    if (this.inSvg && SVG_HREF_TAGS.has(this.host.type)) {
+      const element = this;
+      const read = (): string => element.getAttribute('href') ?? element.getAttribute('xlink:href') ?? '';
+      return {
+        get baseVal(): string {
+          return read();
+        },
+        set baseVal(next: string) {
+          element.setAttribute('href', next);
+        },
+        get animVal(): string {
+          return read();
+        },
+      };
+    }
+    return this.reflectedUrl('href');
+  }
+  set href(value: string) {
+    // An SVGAnimatedString is read-only: only its `baseVal` writes.
+    if (this.inSvg && SVG_HREF_TAGS.has(this.host.type)) return;
+    this.reflect('href', value);
+  }
+  // Unset on an element without the attribute it is `undefined`; once set, the own property shadows this accessor.
+  private reflected(name: string): string {
+    if (!REFLECTED[name]!.has(this.host.type)) return undefined as never;
+    return this.getAttribute(name) ?? '';
+  }
+  /** A URL attribute: '' when absent, else resolved against the document's URL (`getAttribute` keeps it as written). */
+  private reflectedUrl(name: string): string {
+    if (!REFLECTED[name]!.has(this.host.type)) return undefined as never;
+    const value = this.getAttribute(name);
+    return value === null ? '' : resolveDocumentUrl(value);
+  }
+  /** The `src` attribute as written: what the engine reads files by. */
+  private get rawSrc(): string {
     return this.getAttribute('src') ?? '';
   }
+  private reflect(name: string, value: unknown): void {
+    if (REFLECTED[name]!.has(this.host.type)) this.setAttribute(name, value);
+    else Object.defineProperty(this, name, { value, writable: true, enumerable: true, configurable: true });
+  }
   get naturalWidth(): number {
-    return this.host.type === 'img' ? imageSize(this.src)?.width ?? 0 : 0;
+    return this.host.type === 'img' ? imageSize(this.rawSrc)?.width ?? 0 : 0;
   }
   get naturalHeight(): number {
-    return this.host.type === 'img' ? imageSize(this.src)?.height ?? 0 : 0;
+    return this.host.type === 'img' ? imageSize(this.rawSrc)?.height ?? 0 : 0;
   }
   get complete(): boolean {
     return true;
@@ -1103,7 +1261,7 @@ export class DomElement extends DomNodeBase {
   // `<video>` and `<audio>`: what the file's header says, and a player that is always ready and never plays.
   private media(): { width: number; height: number; durationInSeconds: number } | null {
     if (this.host.type !== 'video' && this.host.type !== 'audio') return null;
-    const file = projectFileOf(this.src);
+    const file = projectFileOf(this.rawSrc);
     if (file === null || !hasAddonFunction('probeMedia')) return null;
     try {
       return addonFunction('probeMedia')(file);
@@ -1150,7 +1308,7 @@ export class DomElement extends DomNodeBase {
    */
   [VIDEO_FRAME](): VideoFrameSource | null {
     if (this.host.type !== 'video') return null;
-    const file = projectFileOf(this.src);
+    const file = projectFileOf(this.rawSrc);
     const size = this.media();
     if (file === null || size === null) return null;
     return { src: file, time: Number.isFinite(this.currentTime) && this.currentTime > 0 ? this.currentTime : 0, width: size.width, height: size.height };
@@ -1158,7 +1316,7 @@ export class DomElement extends DomNodeBase {
   /** What `drawImage` reads of this element: a canvas's commands, an image's file, a video's frame. */
   [CANVAS_SOURCE](): CanvasPicture | null {
     if (this.host.type === 'canvas') return canvasPictureOf(this.host, { width: this.width, height: this.height });
-    if (this.host.type === 'img') return pictureOfImage(this.src);
+    if (this.host.type === 'img') return pictureOfImage(this.rawSrc);
     if (this.host.type === 'video') {
       // The frame at `currentTime`, as the renderer's decoder gives it.
       const frame = this[VIDEO_FRAME]();
@@ -1208,7 +1366,7 @@ export class DomElement extends DomNodeBase {
       if (!this.inSvg && child.host.type !== 'svg') continue;
       const b = child.getBBox();
       if (b.width === 0 && b.height === 0 && !GEOMETRY_TAGS.has(child.host.type) && child.children.length === 0) continue;
-      const t = affineOf(child.getAttribute('transform'));
+      const t = this.inSvg ? this.svgLocalTransform(child.host) : affineOf(child.getAttribute('transform'));
       for (const [px, py] of [[b.x, b.y], [b.x + b.width, b.y], [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]] as const) {
         const x = t[0] * px + t[2] * py + t[4];
         const y = t[1] * px + t[3] * py + t[5];
@@ -1413,11 +1571,17 @@ export class DomElement extends DomNodeBase {
   focus(): void {}
   blur(): void {}
   click(): void {}
-  animate(): never {
-    throw new Error('element.animate() is not supported: animate with the frame number, or with CSS keyframes, which follow the frame clock');
+  /** The Web Animations API on the virtual clock (animations.ts): a `KeyframeEffect` on this element, played. */
+  animate(keyframes: unknown, options?: number | (Record<string, unknown> & { id?: string; timeline?: AnimationTimelineShim | null })): AnimationShim {
+    const effect = new KeyframeEffectShim(this, keyframes, options as number | undefined);
+    const timeline = typeof options === 'object' && options !== null && 'timeline' in options ? (options.timeline ?? null) : documentTimeline;
+    const animation = new AnimationShim(effect, timeline);
+    if (typeof options === 'object' && options !== null && options.id !== undefined) animation.id = String(options.id);
+    animation.play();
+    return animation;
   }
-  getAnimations(): [] {
-    return [];
+  getAnimations(options?: { subtree?: boolean }): AnimationShim[] {
+    return animationsOf(this.host, options?.subtree === true);
   }
 }
 

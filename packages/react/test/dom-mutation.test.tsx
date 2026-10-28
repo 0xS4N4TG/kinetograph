@@ -206,6 +206,100 @@ describe('a script putting nodes into the tree', () => {
   });
 });
 
+describe('IDL attributes a script assigns', () => {
+  it('reflect their content attribute, as in a browser, so what a script sets is drawn', () => {
+    const seen: Record<string, unknown> = {};
+    function Probe() {
+      const ref = useRef<any>(null);
+      useLayoutEffect(() => {
+        const [img, video, link, svg, div] = ref.current.children;
+        img.src = 'a.png';
+        img.srcset = 'b.png 2x';
+        img.alt = 'A';
+        img.width = 40.7;
+        video.poster = 'p.png';
+        video.src = 'v.mp4';
+        link.href = 'https://x.test/';
+        const image = svg.firstChild;
+        image.href.baseVal = 'i.png';
+        // An SVGAnimatedString is not written by assigning to it.
+        image.href = 'ignored.png';
+        div.src = 'expando';
+        seen.img = [img.getAttribute('src'), img.getAttribute('srcset'), img.getAttribute('alt'), img.getAttribute('width'), img.src, img.alt, img.currentSrc];
+        seen.video = [video.getAttribute('poster'), video.getAttribute('src'), video.poster];
+        seen.link = [link.getAttribute('href'), link.href];
+        seen.image = [image.getAttribute('href'), image.href.baseVal, image.href.animVal];
+        seen.div = [div.getAttribute('src'), div.src, g.document.createElement('span').src];
+        // As Chrome for Testing answers: absent is '', empty is the document's URL, a value that does not parse is kept.
+        const make = (tag: string, name: string, value?: string) => {
+          const e = g.document.createElement(tag);
+          if (value !== undefined) e.setAttribute(name, value);
+          return e[name];
+        };
+        seen.urls = [
+          make('img', 'src'),
+          make('img', 'src', ''),
+          make('img', 'src', 'a b.png?x=1#h'),
+          make('img', 'src', 'https://x.test/a.png'),
+          make('img', 'src', 'http://[bad'),
+          make('img', 'src', '/root.png'),
+          make('a', 'href'),
+          make('a', 'href', 'page.html'),
+          make('link', 'href', 's.css'),
+          make('source', 'src', 'v.mp4'),
+        ];
+        // A resolved URL read back and set again is the same project file.
+        const copy = g.document.createElement('img');
+        copy.src = img.src;
+        seen.copy = copy.getAttribute('src');
+        seen.parses = new URL(link.href).href;
+        seen.outer = img.outerHTML;
+        // `xlink:href` answers when there is no `href`.
+        const old = g.document.createElementNS('http://www.w3.org/2000/svg', 'image');
+        svg.append(old);
+        old.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', 'x.png');
+        old.removeAttribute('href');
+        seen.xlink = old.href.baseVal;
+      }, []);
+      return (
+        <div ref={ref}>
+          <img />
+          <video />
+          <a />
+          <svg>
+            <image />
+          </svg>
+          <div />
+        </div>
+      );
+    }
+    render(<Probe />).root.unmount();
+    // `src` is the 1x candidate when the srcset has none.
+    // getAttribute keeps the value as written; the property is the URL resolved against the document's (`location`).
+    expect(seen.img).toEqual(['a.png', 'b.png 2x', 'A', '40', 'http://localhost/a.png', 'A', 'http://localhost/a.png']);
+    expect(seen.video).toEqual(['p.png', 'v.mp4', 'http://localhost/p.png']);
+    expect(seen.link).toEqual(['https://x.test/', 'https://x.test/']);
+    expect(seen.image).toEqual(['i.png', 'i.png', 'i.png']);
+    expect(seen.div).toEqual([null, 'expando', undefined]);
+    expect(seen.outer).toBe('<img src="a.png" srcset="b.png 2x" alt="A" width="40">');
+    expect(seen.xlink).toBe('x.png');
+    expect(seen.urls).toEqual([
+      '',
+      'http://localhost/',
+      'http://localhost/a%20b.png?x=1#h',
+      'https://x.test/a.png',
+      'http://[bad',
+      'http://localhost/root.png',
+      '',
+      'http://localhost/page.html',
+      'http://localhost/s.css',
+      'http://localhost/v.mp4',
+    ]);
+    expect(seen.copy).toBe('http://localhost/a.png');
+    expect(seen.parses).toBe('https://x.test/');
+  });
+});
+
 describe('element.style reads like the CSSOM', () => {
   it('gives a zero length back with its unit, so a library animating from 0 keeps px', () => {
     // anime.js takes the unit of `width: [0, 100]` from the value it reads; a bare `0` made it write `55.5` (invalid CSS).

@@ -2,10 +2,13 @@
 // tags, attributes, `style` as CSS text, text, and native `kg-*` elements as boxes. Pure: no addon, no clock.
 
 import type { DomNode } from '../types.js';
-import { resolveRemoteAsset } from '../environment.js';
+import { resolveRemoteAsset, sameOriginPath } from '../environment.js';
 import { attributesOf, styleOf } from './attrs.js';
 import { parseHtmlFragment } from './html.js';
+import { srcsetCandidate } from './srcset.js';
 import { isDomElement } from './tags.js';
+
+export { parseSrcset, sourceSize, srcsetCandidate } from './srcset.js';
 
 /** `DomNode` of `crates/dom/src/request.rs`. */
 export type RequestNode =
@@ -111,6 +114,9 @@ export function buildIslandRequest(root: ElementNode, options: BuildOptions): Bu
   // Each remote URL is looked up once per request.
   const remote = new Map<string, string | null>();
   const local = (url: string): string | null => {
+    // A URL of the document's own origin (a script copied a resolved `el.src`) is the project file it names.
+    const own = sameOriginPath(url);
+    if (own !== null) return own;
     if (!remote.has(url)) remote.set(url, resolveRemoteAsset(url));
     return remote.get(url) ?? null;
   };
@@ -126,6 +132,11 @@ export function buildIslandRequest(root: ElementNode, options: BuildOptions): Bu
         const css = options.readStylesheet?.(href) ?? null;
         if (css !== null) extra.push(css);
       }
+    }
+    // An `<img srcset>` is drawn as a browser at device pixel ratio 1 chooses: the candidate stands in for `src`.
+    if (node.type === 'img' && attrs.srcset !== undefined) {
+      const chosen = srcsetCandidate(attrs.srcset, attrs.src, attrs.sizes, options.viewport);
+      if (chosen !== null) attrs.src = chosen;
     }
     if (FILE_ELEMENTS.has(node.type)) {
       for (const name of FILE_ATTRIBUTES) {

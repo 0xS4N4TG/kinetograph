@@ -151,8 +151,20 @@ fn parse_frame(frame: i64) -> Result<u32, String> {
     u32::try_from(frame).map_err(|_| format!("frame {frame} is out of range: frames start at 0"))
 }
 
+/// Says on stderr which keys of the scene file the format does not read: serde
+/// skips them, so a misspelt name would otherwise change nothing silently.
+fn warn_unknown_keys(scene_path: &Path) {
+    let Ok(json) = std::fs::read_to_string(scene_path) else {
+        return;
+    };
+    for key in kinetograph_core::scene_keys::unknown_keys(&json) {
+        eprintln!("warning: {key}: not a key of the scene format, so it is ignored");
+    }
+}
+
 fn still(scene_path: &Path, frame: i64, output: &Path) -> Result<Output, String> {
     let scene = Scene::load(scene_path).map_err(|e| e.to_string())?;
+    warn_unknown_keys(scene_path);
     let frame = parse_frame(frame)?;
 
     let started = Instant::now();
@@ -190,6 +202,7 @@ fn render_video(
     // (a log) gets a line about every tenth of the way.
     let tty = std::io::stderr().is_terminal();
     let mut next_line = 0;
+    warn_unknown_keys(scene);
     let summary = render(
         &RenderRequest {
             scene,

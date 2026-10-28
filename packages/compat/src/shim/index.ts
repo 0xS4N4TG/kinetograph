@@ -4,7 +4,7 @@
 export { DOMRectShim, DomElement, DomText, domElementFor, domNodeFor, hostOf, isDomElementShim, computedStyleOf, selectorContextOf, affineOf } from './element.js';
 export type { CSSStyleDeclarationShim } from './element.js';
 export type { BoxInfo, HostElement, Overlay, Readback, Rect } from './host.js';
-export { overlayOf, propsWithOverlay, rawParentOf, setRawParent, effectiveParentOf, headHost, bodyHost } from './host.js';
+export { overlayOf, propsWithOverlay, rawParentOf, setRawParent, effectiveParentOf, headHost, bodyHost, setPageDocument, pageDocument } from './host.js';
 export { recordMutation, isRecordingMutations, setMutationSink, insertChild, removeChild } from './tree.js';
 export type { HostMutation } from './tree.js';
 export { RangeShim } from './range.js';
@@ -22,6 +22,7 @@ export {
 export { deliverMediaEvents } from './media-events.js';
 export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf, setRemoteFiles, setRefusedFetchHandler, whenFetchesSettle, trackPending } from './web.js';
 export { setPathMeasure } from './geometry.js';
+export { animationClockMoved, animationsPending, resetAnimations, setAnimationClock, tickAnimations } from './animations.js';
 export { canvasEnvironment, rasterizeCanvas, webgpuDeviceInfo, canvasCommandsOf, withCanvasCommands, resetCanvasStates, setCanvasFonts, CanvasSurface } from './canvas.js';
 export type { PathMeasure } from './geometry.js';
 export { imageSizeOfBytes } from './image-size.js';

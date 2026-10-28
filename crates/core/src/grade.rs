@@ -320,6 +320,20 @@ fn one() -> f64 {
 }
 
 impl ColorGrade {
+    /// How far from a pixel, in layer units, the grade can read the picture: the CRT warp moves a point of the box by
+    /// up to `curvature / 2` (its strength) times the box's size on each axis, so a box that hangs off the canvas
+    /// needs that much of itself kept past the canvas edge (`Scene::margin`). 0 without the warp or without a `box`.
+    pub fn reach(&self) -> f64 {
+        let crt = self
+            .effects
+            .get("crtCurvature")
+            .map_or(0.0, |v| limited(*v, 0.0, 1.0));
+        match self.rect {
+            Some([_, _, w, h]) if crt > 0.0 => crt * 0.5 * w.abs().max(h.abs()),
+            _ => 0.0,
+        }
+    }
+
     /// What is wrong with the effect, if anything.
     pub fn validate(&self, layer: &str) -> Result<()> {
         let fail = |what: String| Err(Error::Scene(format!("layer {layer:?}: colorGrade {what}")));

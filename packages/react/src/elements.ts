@@ -12,12 +12,14 @@ import { createElement, Fragment, useEffect, type ReactNode } from 'react';
 import { resolveRemoteAsset } from '@kinetographdev/compat/dom';
 import type {
   AudioClipJson,
+  HfAudioFxJson,
   BlendMode,
   CanvasContext2D,
   CanvasPass,
   GlslPass,
   GlslTextureOptions,
   CharStyle,
+  Bevel3D,
   Clip,
   ColorString,
   DatamoshJson,
@@ -291,6 +293,8 @@ export interface Text3DProps extends Drawn3DProps {
   depth?: number;
   align?: 'left' | 'center' | 'right';
   lineHeight?: number;
+  /** Rounds the letters' edges, as three.js's `bevelThickness`, `bevelSize`, `bevelOffset` and `bevelSegments`. */
+  bevel?: Bevel3D;
   material?: Material3D;
 }
 export interface ExtrudeProps extends Drawn3DProps {
@@ -300,6 +304,8 @@ export interface ExtrudeProps extends Drawn3DProps {
   size?: number;
   depth?: number;
   fillRule?: 'nonzero' | 'evenodd';
+  /** Rounds the shape's edges, as three.js's `bevelThickness`, `bevelSize`, `bevelOffset` and `bevelSegments`. */
+  bevel?: Bevel3D;
   material?: Material3D;
 }
 export interface Group3DProps extends Object3DProps {
@@ -327,6 +333,8 @@ export interface AudioProps {
   muted?: boolean;
   /** The pitch times this, 0.01 to 2 (Remotion's); the speed is unchanged. */
   toneFrequency?: number;
+  /** A HyperFrames element's effects at the clip's own frame (the HyperFrames runtime sets it; AUTHORING.md §6.4). */
+  hfFx?: (frame: number) => HfAudioFxJson;
 }
 
 /** `toneFrequency` as a clip field: left out when it is 1 (or not given), so clips without it are as before. */
@@ -522,6 +530,7 @@ export function Audio(props: AudioProps) {
     loop: props.loop ?? false,
     muted: (props.muted ?? false) || timeline.frozen,
     ...toneOf(`<Audio src="${props.src}">`, props.toneFrequency),
+    ...(props.hfFx ? { hfFx: props.hfFx(timeline.frame) } : {}),
   };
   return createElement('kg-audio', { id: props.id, clip });
 }
