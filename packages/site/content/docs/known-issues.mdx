@@ -59,22 +59,19 @@ Each item says what doesn't work and what you see instead. For what does work, s
 
 ### Canvas 2D
 
-- A pattern of a canvas, used for a stroke or for text, is drawn transparent.
-- Pattern fills work, up to 10,000 tiles.
-- `isPointInStroke` ignores caps, joins and dashes.
-- `url()` filters are reported and not drawn.
-- Shadow and filter images are capped at 50 million pixels per canvas layer per frame. A frame past that is an error.
+- A `url()` filter is drawn when it names an SVG `<filter>` of the page. On a `<Canvas>` component, which has no page, or when nothing has that id, it is reported and the rest of the filter list is drawn.
+- `isPointInStroke` agrees with Chrome's on straight edges. Along a curve, a point within a tenth of a pixel of the edge can get the other answer, because Chrome approximates the curve's outline.
 
 ### WebGL
 
 Every frame starts with an empty canvas and blank framebuffer textures, also for a context made with `preserveDrawingBuffer`, because a frame is a function of its own number. A frame that draws nothing draws nothing, where a browser would keep the last picture. Each item below needs new GPU work.
 
-- Not supported: colour and stencil renderbuffers; a depth or stencil texture as an attachment; the stencil test; `COLOR_ATTACHMENT1` and up; a texture level above 0 as a target; targets that are not RGBA or that hold uploaded pixels; `generateMipmap` on a texture drawn into; `LINES`, `LINE_STRIP` and `LINE_LOOP`; instanced points; a `vertexAttribDivisor` above 1; cube, 3D and float textures; and multisampled edges.
+- Not supported: multisampled renderbuffers (`renderbufferStorageMultisample` with samples above 0); targets that are not RGBA or that hold uploaded pixels; attachments of different sizes in one framebuffer; `generateMipmap` on a texture drawn into; a `TEXTURE_BASE_LEVEL` other than 0; `LINES`, `LINE_STRIP` and `LINE_LOOP`; instanced points; a `vertexAttribDivisor` above 1; cube, 3D and float textures; `sampler2DShadow`; and multisampled edges.
 - `readPixels` is refused by design.
-- The depth test is drawn on the canvas (the `depth` context attribute, on by default) and on a framebuffer with a depth renderbuffer, with `depthFunc`, `depthMask`, `depthRange`, `clearDepth` and `polygonOffset`. The depth buffer holds 32-bit floats where a browser's holds 24 bits, so two surfaces closer than about 6e-8 of the depth range can order differently, and `polygonOffset`'s `units` are whole steps of that float buffer, truncated to an integer. A renderbuffer is its framebuffer's own: two framebuffers sharing one do not share depth. A canvas made with `depth: false` has no depth buffer, so the test always passes.
-- Points are drawn as squares of `gl_PointSize` pixels with `gl_PointCoord`, at most 511 pixels across (`ALIASED_POINT_SIZE_RANGE` is 1 to 511). `gl_VertexID` in a vertex shader that draws points is the point's index, but with `drawElements` it is the position in the index list, not the index.
-- `blitFramebuffer` copies the colour only (a `DEPTH_BUFFER_BIT` in the mask is ignored), and refuses to read and write one buffer.
-- `texSubImage2D` into a texture a framebuffer drew in is supported from a canvas, `ImageData` or an array of pixels; from an image file it is not.
+- The depth and stencil tests are drawn, on the canvas (its `depth` and `stencil` attributes) and on framebuffers, with every function and operation. The depth buffer holds 32-bit floats where a browser's holds 24 bits, so two surfaces closer than about 6e-8 of the depth range can order differently, and `polygonOffset`'s `units` are whole steps of that float buffer, truncated to an integer. A canvas made with `depth: false` has no depth buffer, so the test always passes.
+- A depth texture is sampled `NEAREST`, whatever filter it is given.
+- Points are drawn as squares of `gl_PointSize` pixels with `gl_PointCoord`, at most 511 pixels across (`ALIASED_POINT_SIZE_RANGE` is 1 to 511, as Chrome reports on Apple silicon). `gl_VertexID` in a vertex shader that draws points is the point's index, but with `drawElements` it is the position in the index list, not the index.
+- `texSubImage2D` over a texture that had `generateMipmap` makes its mipmaps again from the new picture; Chrome keeps the old levels until the next `generateMipmap`.
 
 ### WebGPU
 

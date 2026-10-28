@@ -8,7 +8,6 @@ use crate::canvas::{
     CanvasBlend, CanvasCap, CanvasJoin, CanvasOp, CanvasPaint, CanvasSource, CanvasTextAlign, CanvasBaseline, DrawState,
     FillOp, FilterFn, ImageOp, LineStyle, StrokeOp, TextOp,
 };
-use skia_safe::path_utils::fill_path_with_paint;
 
 fn sk_composite(b: CanvasBlend) -> SkBlend {
     match b {
@@ -177,7 +176,7 @@ impl Translator {
     /// command's alpha and composite operation, as the canvas does.
     fn canvas_with_effects(&mut self, canvas: &Canvas, size: (f64, f64), op: &CanvasOp, state: &DrawState, comp: Comp) {
         let b = Rect::new(0.0, 0.0, size.0 as f32, size.1 as f32);
-        let filter = self.canvas_filter(&state.filter);
+        let filter = self.canvas_filter(&state.filter, size);
         if let Some(sh) = &state.shadow {
             let sg = (sh.blur / 2.0).clamp(0.0, crate::scene::MAX_SHADOW_SIZE) as f32;
             let f = image_filters::drop_shadow_only((sh.x as f32, sh.y as f32), (sg, sg), color4(sh.color), None, filter.clone(), None);
@@ -202,9 +201,15 @@ impl Translator {
         }
     }
 
-    /// A `filter` list as one image filter, in the pixels of the space the canvas is drawn in.
-    fn canvas_filter(&mut self, filter: &[FilterFn]) -> Option<ImageFilter> {
+    /// A `filter` list as one image filter, in the pixels of the space the canvas is drawn in: `size` is the canvas's,
+    /// the box an SVG filter's `objectBoundingBox` units are fractions of.
+    fn canvas_filter(&mut self, filter: &[FilterFn], size: (f64, f64)) -> Option<ImageFilter> {
         let mut out: Option<ImageFilter> = None;
+        for f in filter {
+            if let FilterFn::Url { url } = f {
+                self.stats.no(&format!("canvas filter {url} (no such <filter> in the document)"));
+            }
+        }
         for e in crate::canvas::filter_effects(filter, Affine::IDENTITY) {
             match e {
                 ResolvedEffect::Blur { radius } => {
@@ -229,6 +234,10 @@ impl Translator {
                     let input = out.take();
                     let shadow = image_filters::drop_shadow_only((sh.x, sh.y), (sh.blur, sh.blur), color4(sh.color), None, input.clone(), None);
                     out = image_filters::merge([shadow, input], None);
+                }
+                ResolvedEffect::FilterGraph(g) => {
+                    let canvas_box = Rect::new(0.0, 0.0, size.0 as f32, size.1 as f32);
+                    out = self.filter_graph(&g, out.take(), 1.0, Some(canvas_box));
                 }
                 other => self.stats.no(&format!("canvas filter {}", effect_name(&other))),
             }
@@ -265,10 +274,6 @@ impl Translator {
         if let Some(l) = line {
             stroke_style(&mut p, l);
         }
-        if let CanvasPaint::Pattern { source: CanvasSource::Canvas { width, height, commands }, repeat_x, repeat_y, m } = paint {
-            self.canvas_tiles(canvas, path, &p, line.is_some(), (*width, *height), commands, (*repeat_x, *repeat_y), m.map_or(Affine::IDENTITY, Affine::new), comp);
-            return;
-        }
         if !self.canvas_ink(&mut p, paint) {
             return;
         }
@@ -303,6 +308,9 @@ impl Translator {
             // The scene's conic angle runs from 12 o'clock, the canvas's from 3.
             CanvasPaint::Conic { x, y, angle, stops } => {
                 gradient(ResolvedGradientGeometry::Conic { cx: *x, cy: *y, angle: angle.to_degrees() + 90.0 }, stops)
+            }
+            CanvasPaint::Pattern { source: source @ (CanvasSource::Canvas { .. } | CanvasSource::Layer { .. }), repeat_x, repeat_y, m } => {
+                self.picture_pattern(source, (*repeat_x, *repeat_y), m.map_or(Affine::IDENTITY, Affine::new))
             }
             CanvasPaint::Pattern { source, repeat_x, repeat_y, m } => {
                 let img = self.canvas_picture(source);
@@ -374,14 +382,9 @@ impl Translator {
                 self.images.insert(key, img.clone());
                 img
             }
-            // A canvas is drawn, not sampled; a canvas pass's layers are pictures only to the wgpu path that draws that group.
-            // A canvas is drawn, not sampled; a canvas pass's layer is drawn through `draw_layer_picture`, which a
-            // pattern cannot use.
-            CanvasSource::Layer { .. } => {
-                self.stats.no("canvas pattern of a layer picture");
-                None
-            }
-            CanvasSource::Canvas { .. } => None,
+            // A canvas is drawn, not sampled, and a canvas pass's child is drawn through `draw_layer_picture` (a pattern
+            // of either is a picture shader, `picture_pattern`).
+            CanvasSource::Layer { .. } | CanvasSource::Canvas { .. } => None,
         }
     }
 
@@ -407,68 +410,43 @@ impl Translator {
         self.stats.draws += 1;
     }
 
-    /// A pattern of another canvas: the area of `path` (its outline when stroked) is clipped and the canvas drawn once
-    /// per tile it covers.
-    #[allow(clippy::too_many_arguments)]
-    fn canvas_tiles(
-        &mut self,
-        canvas: &Canvas,
-        path: &Path,
-        style: &Paint,
-        stroked: bool,
-        (width, height): (f64, f64),
-        commands: &[CanvasOp],
-        (repeat_x, repeat_y): (bool, bool),
-        base: Affine,
-        comp: Comp,
-    ) {
-        if !(width > 0.0 && height > 0.0 && width.is_finite() && height.is_finite()) {
-            return;
-        }
-        let det = base.determinant();
-        if det == 0.0 || !det.is_finite() {
-            return;
-        }
-        let cover = if stroked {
-            let mut pb = PathBuilder::new();
-            if fill_path_with_paint(path, style, &mut pb, None, Some(canvas.local_to_device_as_3x3())) { pb.detach() } else { path.clone() }
-        } else {
-            path.clone()
+    /// A pattern of another canvas or of a canvas pass's child, as a picture shader: the tile is recorded once (the
+    /// canvas's commands, or the child's picture) and Skia repeats it as far as the shape reaches, however many
+    /// tiles that is. `m` takes the pattern's space to the command's.
+    fn picture_pattern(&mut self, source: &CanvasSource, (repeat_x, repeat_y): (bool, bool), m: Affine) -> Option<Shader> {
+        let (width, height) = match source {
+            CanvasSource::Canvas { width, height, .. } => (*width, *height),
+            CanvasSource::Layer { .. } => match &self.layer_pics {
+                Some(p) => p.size,
+                None => {
+                    self.stats.no("canvas layer picture (outside a canvas pass)");
+                    return None;
+                }
+            },
+            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } => return None,
         };
-        let bb = cover.bounds();
-        let tile_bbox = base.inverse().transform_rect_bbox(kurbo::Rect::new(
-            bb.left as f64,
-            bb.top as f64,
-            bb.right as f64,
-            bb.bottom as f64,
-        ));
-        let xs = if repeat_x { (tile_bbox.x0 / width).floor() as i64..(tile_bbox.x1 / width).ceil() as i64 } else { 0..1 };
-        let ys = if repeat_y { (tile_bbox.y0 / height).floor() as i64..(tile_bbox.y1 / height).ceil() as i64 } else { 0..1 };
-        let tiles = i128::from((xs.end - xs.start).max(0)) * i128::from((ys.end - ys.start).max(0));
-        if tiles > 10_000 {
-            self.stats.no("canvas pattern of more than 10000 tiles");
-            return;
+        if !(width > 0.0 && height > 0.0 && width.is_finite() && height.is_finite()) {
+            return None;
         }
-        canvas.save();
-        canvas.clip_path(&cover, ClipOp::Intersect, true);
-        let layer = comp.blend != SkBlend::SrcOver;
-        if layer {
-            let mut p = Paint::default();
-            p.set_blend_mode(comp.blend);
-            self.save_layer(canvas, Some(*bb), &p, None);
+        let det = m.determinant();
+        if det == 0.0 || !det.is_finite() {
+            return None;
         }
-        for j in ys {
-            for i in xs.clone() {
-                canvas.save();
-                canvas.concat(&mat(base * Affine::translate((i as f64 * width, j as f64 * height))));
-                self.canvas_nested(canvas, (width, height), commands, comp.alpha, SkBlend::SrcOver);
-                canvas.restore();
+        let bounds = Rect::new(0.0, 0.0, width as f32, height as f32);
+        let mut recorder = skia_safe::PictureRecorder::new();
+        let tile = recorder.begin_recording(bounds, false);
+        match source {
+            CanvasSource::Canvas { commands, .. } => self.canvas_nested(tile, (width, height), commands, 1.0, SkBlend::SrcOver),
+            CanvasSource::Layer { id } => {
+                let sampling = SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None);
+                self.draw_layer_picture(tile, id, bounds, &Paint::default(), sampling);
             }
+            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } => {}
         }
-        if layer {
-            canvas.restore();
-        }
-        canvas.restore();
+        let picture = recorder.finish_recording_as_picture(Some(&bounds))?;
+        // Outside a pattern that does not repeat the canvas draws nothing.
+        let mode = |r: bool| if r { TileMode::Repeat } else { TileMode::Decal };
+        Some(picture.to_shader((mode(repeat_x), mode(repeat_y)), skia_safe::FilterMode::Linear, Some(&mat(m)), Some(&bounds)))
     }
 
     fn canvas_image(&mut self, canvas: &Canvas, op: &ImageOp, comp: Comp) {

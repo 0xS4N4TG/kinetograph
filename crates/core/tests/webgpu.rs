@@ -385,3 +385,39 @@ fn a_display_p3_canvas_is_converted_to_srgb_primaries() {
     let red = filled("rgba8unorm", [1.0, 0.0, 0.0, 1.0], json!({"colorSpace": "display-p3"}), 1.0);
     assert_eq!(px(&red, 8, 8), [255, 0, 0, 255]);
 }
+
+#[test]
+fn a_webgl_layer_after_an_rgba16float_webgpu_layer_of_its_size_draws_into_an_rgba8_buffer() {
+    // The two share the drawing buffer when they are one size; the WebGL pipelines are Rgba8, so the buffer is made
+    // again for the WebGL layer rather than kept at the WebGPU layer's Rgba16Float.
+    let module = present("", "return vec4f(1.0, 0.0, 0.0, 1.0);");
+    let mut pipeline = render_pipeline();
+    pipeline["fragment"]["targets"][0]["format"] = json!("rgba16float");
+    let wide = json!({
+        "modules": {"mr": module},
+        "pipelines": {"rp": pipeline},
+        "canvasFormat": "rgba16float",
+        "passes": [{"k": "render", "clear": [0, 0, 0, 1], "commands": [
+            {"c": "pipeline", "id": "rp"},
+            {"c": "draw", "vertices": 3, "instances": 1, "first": 0, "firstInstance": 0}]}],
+    });
+    let quad: Vec<u8> = [-1.0f32, -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0]
+        .iter()
+        .flat_map(|f| f.to_le_bytes())
+        .collect();
+    let webgl = json!({"id": "gl", "type": "glsl", "width": 16, "height": 16,
+        "programs": {"p": {
+            "vertex": "attribute vec2 a_pos; void main() { gl_Position = vec4(a_pos * vec2(0.5, 1.0) - vec2(0.5, 0.0), 0.0, 1.0); }",
+            "fragment": "precision mediump float; void main() { gl_FragColor = vec4(0.0, 0.0, 1.0, 1.0); }",
+            "attributes": {"a_pos": 0}}},
+        "buffers": {"quad": b64(&quad)},
+        "ops": [{"op": "draw", "program": "p", "mode": "triangles", "first": 0, "count": 6, "viewport": [0, 0, 16, 16],
+                 "attributes": {"a_pos": {"buffer": "quad", "size": 2, "type": "f32"}}}]});
+    let layers = json!([{"id": "g", "type": "glsl", "width": 16, "height": 16, "webgpu": wide}, webgl]);
+    let scene = json!({"width": 16, "height": 16, "fps": 30, "durationInFrames": 1, "background": "#000000", "layers": layers});
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let frame = render_still(Scene::from_json(&scene.to_string(), base).unwrap(), 0).unwrap();
+    // WebGL's blue on the left half over the WebGPU layer's red, which shows on the right.
+    assert_eq!(px(&frame, 3, 8), [0, 0, 255, 255]);
+    assert_eq!(px(&frame, 12, 8), [255, 0, 0, 255]);
+}
