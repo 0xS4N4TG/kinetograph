@@ -1,6 +1,6 @@
 {
   "name": "@kinetographdev/p5-brush",
-  "version": "0.2.0",
+  "version": "0.2.5",
   "description": "p5.brush for Kinetograph: a canvas that reseeds the brush and redraws from the frame number",
   "license": "PolyForm-Small-Business-1.0.0",
   "repository": {

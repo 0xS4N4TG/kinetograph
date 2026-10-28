@@ -4,7 +4,7 @@ members = ["crates/core", "crates/cli", "crates/node", "crates/dom", "crates/riv
 exclude = ["phase0"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.5"
 edition = "2024"
 license = "PolyForm-Small-Business-1.0.0"
 

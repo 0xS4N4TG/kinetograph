@@ -91,7 +91,7 @@ see is what renders.
 
 ## Status
 
-**Beta, version 0.2.0.** It works and renders real projects, but APIs can still change between versions and some
+**Beta, version 0.2.5.** It works and renders real projects, but APIs can still change between versions and some
 features are missing. The core renderer, effects, authoring layer, studio, Remotion compatibility on a native DOM
 engine (CSS, SVG, Canvas 2D, WebGL fragment shaders) and an own 3D layer are built. The papercut test project renders
 all 988 of its frames natively. What is left is listed under known issues on the kinetograph site
@@ -100,9 +100,10 @@ all 988 of its frames natively. What is left is listed under known issues on the
 - [The DOM engine](packages/cli/skills/kinetograph/references/ENGINE.md), and Remotion compatibility on the kinetograph site (`/docs/compat/`)
 - [Authoring contract](packages/cli/skills/kinetograph/references/AUTHORING.md): the TS packages, the addon's API and how elements map to scenes
 - [Scene format](packages/cli/skills/kinetograph/references/SCENE.md)
-- [Changelog](CHANGELOG.md): what changed in each release. 0.2.0 adds GSAP and its free plugins, HyperFrames projects,
-  WebGPU, `<Video datamosh>`, x264/x265 encoding everywhere through a bundled `ffmpeg`, SVG pictures and font
-  fallback for symbols and emoji.
+- [Changelog](CHANGELOG.md): what changed in each release. 0.2.5 adds motion tracking (`kinetograph track`), video
+  frames in canvases (`onVideoFrame`, `drawImage` of a `<video>`), the Web Animations API, GPU-deformed 3D models
+  with bevels and shadows from every light, HyperFrames audio effects and modules, and Intel and AMD GPU encoders on
+  Linux.
 
 ## Architecture
 
