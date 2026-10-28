@@ -3,6 +3,7 @@
 pub mod anim;
 pub mod blur;
 pub mod bounds;
+pub mod bsp;
 pub mod box_shadow;
 pub mod cache;
 pub mod datamosh;

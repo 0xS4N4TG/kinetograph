@@ -1,4 +1,15 @@
+#include "rive/animation/linear_animation.hpp"
 #include "rive/animation/linear_animation_instance.hpp"
+#include "rive/animation/state_machine.hpp"
+#include "rive/artboard.hpp"
+#include "rive/assets/audio_asset.hpp"
+#include "rive/assets/file_asset.hpp"
+#include "rive/assets/font_asset.hpp"
+#include "rive/assets/image_asset.hpp"
+#include "rive/file_asset_loader.hpp"
+#include "rive/simple_array.hpp"
+#include <cstdio>
+#include <string>
 #include "rive/animation/state_machine_bool.hpp"
 #include "rive/animation/state_machine_input.hpp"
 #include "rive/animation/state_machine_input_instance.hpp"
@@ -453,6 +464,203 @@ extern "C"
         Number,
         Trigger,
     };
+
+    // Kinetograph: assets outside the file (and every asset, for the list of them) are handed to a Rust callback while
+    // the file is imported. The callback answers the bytes to decode, or false to leave the asset to the runtime.
+    typedef bool (*RustAssetCallback)(void* context,
+                                      uint8_t kind,
+                                      const char* unique_filename,
+                                      size_t unique_filename_len,
+                                      const char* name,
+                                      size_t name_len,
+                                      const char* extension,
+                                      size_t extension_len,
+                                      const char* cdn_uuid,
+                                      size_t cdn_uuid_len,
+                                      const uint8_t* in_band,
+                                      size_t in_band_len,
+                                      const uint8_t** data,
+                                      size_t* len);
+
+    class RustAssetLoader : public FileAssetLoader
+    {
+    public:
+        RustAssetLoader(void* context, RustAssetCallback callback) :
+            m_context(context), m_callback(callback)
+        {}
+
+        /// After the import the Rust side is gone: later calls leave assets to the runtime.
+        void detach() { m_callback = nullptr; }
+
+        bool loadContents(FileAsset& asset,
+                          Span<const uint8_t> inBandBytes,
+                          Factory* factory) override
+        {
+            if (m_callback == nullptr)
+            {
+                return false;
+            }
+            uint8_t kind = asset.is<ImageAsset>()   ? 0
+                           : asset.is<FontAsset>()  ? 1
+                           : asset.is<AudioAsset>() ? 2
+                                                    : 3;
+            std::string unique = asset.uniqueFilename();
+            const std::string& name = asset.name();
+            std::string extension = asset.fileExtension();
+            std::string cdn = asset.cdnUuidStr();
+            const uint8_t* data = nullptr;
+            size_t len = 0;
+            if (!m_callback(m_context,
+                            kind,
+                            unique.data(),
+                            unique.size(),
+                            name.data(),
+                            name.size(),
+                            extension.data(),
+                            extension.size(),
+                            cdn.data(),
+                            cdn.size(),
+                            inBandBytes.data(),
+                            inBandBytes.size(),
+                            &data,
+                            &len) ||
+                data == nullptr)
+            {
+                return false;
+            }
+            SimpleArray<uint8_t> bytes(data, len);
+            return asset.decode(bytes, factory);
+        }
+
+    private:
+        void* m_context;
+        RustAssetCallback m_callback;
+    };
+
+    const File* rive_rs_file_new_with_assets(const uint8_t* data,
+                                             size_t len,
+                                             const RendererEntries* entries,
+                                             ImportResult* result,
+                                             RustFactory** factory,
+                                             void* context,
+                                             RustAssetCallback callback)
+    {
+        RustFactory* rust_factory = new RustFactory(entries);
+        auto loader = make_rcp<RustAssetLoader>(context, callback);
+        auto file = rive::File::import({data, len}, rust_factory, result, loader);
+        loader->detach();
+
+        *factory = rust_factory;
+
+        return static_cast<const File*>(file.release());
+    }
+
+    static void json_string(std::string& out, const std::string& text)
+    {
+        out += '"';
+        for (unsigned char c : text)
+        {
+            if (c == '"' || c == '\\')
+            {
+                out += '\\';
+                out += static_cast<char>(c);
+            }
+            else if (c < 0x20)
+            {
+                char escaped[8];
+                snprintf(escaped, sizeof(escaped), "\\u%04x", c);
+                out += escaped;
+            }
+            else
+            {
+                out += static_cast<char>(c);
+            }
+        }
+        out += '"';
+    }
+
+    // Kinetograph: the artboards of a file, with their animations and state machines (and the inputs and their
+    // defaults), as JSON handed to `write`.
+    void rive_rs_file_describe(const File* file,
+                               void (*write)(void* context, const char* text, size_t len),
+                               void* context)
+    {
+        std::string out = "{\"artboards\":[";
+        File* mutable_file = const_cast<File*>(file);
+        for (size_t a = 0; a < mutable_file->artboardCount(); a++)
+        {
+            Artboard* artboard = mutable_file->artboard(a);
+            if (a > 0)
+            {
+                out += ',';
+            }
+            out += "{\"name\":";
+            json_string(out, artboard->name());
+            out += ",\"width\":" + std::to_string(artboard->width());
+            out += ",\"height\":" + std::to_string(artboard->height());
+            out += ",\"animations\":[";
+            for (size_t i = 0; i < artboard->animationCount(); i++)
+            {
+                LinearAnimation* animation = artboard->animation(i);
+                if (i > 0)
+                {
+                    out += ',';
+                }
+                out += "{\"name\":";
+                json_string(out, animation->name());
+                out += ",\"fps\":" + std::to_string(animation->fps());
+                out += ",\"duration\":" + std::to_string(animation->duration());
+                out += ",\"speed\":" + std::to_string(animation->speed());
+                out += ",\"loop\":" + std::to_string(animation->loopValue());
+                out += ",\"workStart\":" + std::to_string(animation->workStart());
+                out += ",\"workEnd\":" + std::to_string(animation->workEnd());
+                out += ",\"enableWorkArea\":";
+                out += animation->enableWorkArea() ? "true" : "false";
+                out += '}';
+            }
+            out += "],\"stateMachines\":[";
+            for (size_t i = 0; i < artboard->stateMachineCount(); i++)
+            {
+                StateMachine* machine = artboard->stateMachine(i);
+                if (i > 0)
+                {
+                    out += ',';
+                }
+                out += "{\"name\":";
+                json_string(out, machine->name());
+                out += ",\"inputs\":[";
+                for (size_t k = 0; k < machine->inputCount(); k++)
+                {
+                    const StateMachineInput* input = machine->input(k);
+                    if (k > 0)
+                    {
+                        out += ',';
+                    }
+                    out += "{\"name\":";
+                    json_string(out, input->name());
+                    if (input->is<StateMachineBool>())
+                    {
+                        out += ",\"type\":\"bool\",\"value\":";
+                        out += input->as<StateMachineBool>()->value() ? "true" : "false";
+                    }
+                    else if (input->is<StateMachineNumber>())
+                    {
+                        out += ",\"type\":\"number\",\"value\":" +
+                               std::to_string(input->as<StateMachineNumber>()->value());
+                    }
+                    else
+                    {
+                        out += ",\"type\":\"trigger\"";
+                    }
+                    out += '}';
+                }
+                out += "]}";
+            }
+            out += "]}";
+        }
+        out += "]}";
+        write(context, out.data(), out.size());
+    }
 
     const File* rive_rs_file_new(const uint8_t* data,
                                  size_t len,

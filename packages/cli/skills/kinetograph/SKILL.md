@@ -79,8 +79,9 @@ registerRoot(() => <Composition id="Main" component={Card} durationInFrames={90}
   `staticFile('x.png')` is `public/x.png` next to the entry file.
 - `@remotion/transitions`, `motion-blur`, `noise`, `paths`, `shapes`, `layout-utils`, `animation-utils`, `captions`,
   `fonts`, `lottie` and `@remotion/google-fonts/<Family>` import as usual. `@remotion/rive`'s `<RemotionRiveCanvas src={staticFile('a.riv')}>` plays a Rive file with Rive's own runtime (frame
-  exact; `stateMachine` prop added). `@remotion/skia` and `@shopify/react-native-skia` (`<SkiaCanvas>`, RN-Skia's components, SkSL shaders) run on real Skia
-  in the optional `@kinetographdev/skia` addon (`npm install @kinetographdev/skia`; the first Skia canvas says so if it is
+  exact; `stateMachine` and `stateMachineInputs` props added; referenced assets beside the `.riv` or from `assetLoader`). `@remotion/skia` and `@shopify/react-native-skia` (`<SkiaCanvas>`, RN-Skia's components, SkSL shaders) run on real Skia
+  (Reanimated shared values, `FitBox`, surfaces, `Skia.Data`/`Image`/`Typeface`, animated images, paragraph measurement,
+  paint shaders, SVG text included) in the optional `@kinetographdev/skia` addon (`npm install @kinetographdev/skia`; the first Skia canvas says so if it is
   missing). Other `@remotion/*` packages do not exist yet.
   For new work, use the elements below. `<div>`s, `className`, stylesheets (`.css` imports, `<style>`, Tailwind) and SVG
   also work (compat mode, see "Compat mode and doctor"): the engine's own CSS engine styles, lays out and draws them,

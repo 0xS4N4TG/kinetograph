@@ -158,27 +158,168 @@ impl Blur {
         input: PixelRect,
         output: PixelRect,
     ) {
+        let pad = PadSource {
+            rect: [
+                src.origin[0],
+                src.origin[1],
+                src.size[0] as i32,
+                src.size[1] as i32,
+            ],
+            texel: [0, 0],
+            mirror: NO_SOURCE,
+            shrink: 1,
+        };
+        self.run_with(
+            device, encoder, uniforms, src.view, pad, dst, size, radius, input, output,
+        );
+    }
+
+    /// A blur as a browser draws `backdrop-filter: blur()`: `src` (which
+    /// has content only inside `bounds`, the canvas's pixels; transparent
+    /// outside) read only inside `frost`, mirrored past its edges, blurred,
+    /// into `dst`, which must hold `frost`.
+    ///
+    /// The blur runs on a canvas of its own: `frost` with the blur's reach on
+    /// every side, all of it the box mirrored. When that canvas would be
+    /// larger than a texture can be (`MAX_SIDE`), it is drawn shrunk by a
+    /// power of two (each texel the mean of a square of the mirrored
+    /// source), blurred by the radius shrunk the same, and enlarged into
+    /// `dst` bilinearly: the blur is then at least `MIN_SIGMA` texels wide
+    /// at that size, so the enlarging cannot show.
+    #[allow(clippy::too_many_arguments)]
+    pub fn run_mirrored(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        uniforms: &mut Uniforms,
+        src: Input,
+        bounds: PixelRect,
+        dst: Input,
+        frost: PixelRect,
+        radius: f32,
+    ) {
+        let m = MirrorPlan::new(frost, radius);
+        let s = m.shrink as i32;
+        // Canvas pixel `c` is pixel `c + shift` of the mirrored canvas at
+        // full size, and its pixel `l` is texel `l / s` of the shrunk one.
+        let shift = [m.room - frost.x0, m.room - frost.y0];
+        let source = bounds.intersect(PixelRect::new(
+            src.origin[0],
+            src.origin[1],
+            src.origin[0] + src.size[0] as i32,
+            src.origin[1] + src.size[1] as i32,
+        ));
+        let pad = PadSource {
+            rect: [
+                source.x0 + shift[0],
+                source.y0 + shift[1],
+                source.width() as i32,
+                source.height() as i32,
+            ],
+            texel: [source.x0 - src.origin[0], source.y0 - src.origin[1]],
+            mirror: [
+                m.room,
+                m.room,
+                m.room + frost.width() as i32,
+                m.room + frost.height() as i32,
+            ],
+            shrink: m.shrink,
+        };
+        let whole = PixelRect::whole(m.size.0, m.size.1);
+        if s == 1 {
+            let mut dst = dst;
+            dst.origin = [dst.origin[0] + shift[0], dst.origin[1] + shift[1]];
+            let inner = frost.translate(shift[0], shift[1]);
+            self.run_with(
+                device, encoder, uniforms, src.view, pad, dst, m.size, radius, whole, inner,
+            );
+            return;
+        }
+        // Shrunk: blur into a texture of the texels the enlarging reads,
+        // then enlarge it into `dst` over `frost`.
+        let inner = m.inner;
+        let temp = self.scratch_texture(device, inner.width(), inner.height());
+        let temp_input = Input {
+            view: &temp.view,
+            origin: [inner.x0, inner.y0],
+            size: [inner.width(), inner.height()],
+        };
+        self.run_with(
+            device,
+            encoder,
+            uniforms,
+            src.view,
+            pad,
+            temp_input,
+            m.size,
+            radius / s as f32,
+            whole,
+            inner,
+        );
+        // `fs_up` reads texel `(p + a) / b * size` of `temp` for the texel `p`
+        // of `dst`: its full-size mirrored pixel is `p + dst.origin + shift`,
+        // the shrunk one that over `s`, and `temp` starts at `inner`.
+        let a = [
+            (dst.origin[0] + shift[0] - s * inner.x0) as f32,
+            (dst.origin[1] + shift[1] - s * inner.y0) as f32,
+        ];
+        let b = [
+            (s as u32 * inner.width()) as f32,
+            (s as u32 * inner.height()) as f32,
+        ];
+        let region = frost.translate(-dst.origin[0], -dst.origin[1]);
+        self.draw(
+            device,
+            encoder,
+            uniforms,
+            &self.up,
+            &temp.view,
+            dst.view,
+            [0.0, a[0], a[1], 0.0, b[0], b[1], 0.0, 0.0],
+            NO_INTS,
+            region,
+        );
+        self.scratch.put(temp);
+    }
+
+    /// `run`, reading the source as `pad` says (`fs_pad`), from `src`.
+    #[allow(clippy::too_many_arguments)]
+    fn run_with(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        uniforms: &mut Uniforms,
+        src: &wgpu::TextureView,
+        pad_source: PadSource,
+        dst: Input,
+        size: (u32, u32),
+        radius: f32,
+        input: PixelRect,
+        output: PixelRect,
+    ) {
         let plan = Plan::new(size, radius);
         let levels = plan.levels;
         let regions = plan.regions(size, input, output);
-        let (padded, sigma) = (plan.padded, plan.sigma);
-        let origin = plan.pad as f32;
-        // `dst` holds some of the canvas, and the passes that write it work
-        // in its texels: a canvas pixel is the texel at `p - dst.origin`, and
-        // the pixel of the padded image that it stands for is `p + pad`.
+        let (sigma, pad) = (plan.sigma, plan.pad);
+        let win = &plan.windows;
+        // Each image of the pyramid holds the window `win[k]` of its level
+        // (`spare` holds `plan.spare`); a pass is told where its target's
+        // and its input's texel (0, 0) are in the level's texels. `dst`
+        // holds some of the canvas: its texel `p` is the texel `p +
+        // dst.origin + pad` of level 0.
+        let at = |r: PixelRect| [r.x0 as f32, r.y0 as f32];
+        let local = |r: PixelRect, w: PixelRect| r.translate(-w.x0, -w.y0);
         let to_dst = |r: PixelRect| r.translate(-dst.origin[0], -dst.origin[1]);
-        let dst_shift = [origin + dst.origin[0] as f32, origin + dst.origin[1] as f32];
+        let dst_at = [(pad + dst.origin[0]) as f32, (pad + dst.origin[1]) as f32];
 
-        // chain[k] is the padded image shrunk 2^k times; `spare` takes the
-        // horizontal Gaussian pass at the smallest size. They have the
-        // sizes of a blur of the whole canvas whatever the boxes are.
-        let chain: Vec<Tex> = (0..=levels)
-            .map(|k| self.scratch_texture(device, padded.0 >> k, padded.1 >> k))
+        let chain: Vec<Tex> = win
+            .iter()
+            .map(|w| self.scratch_texture(device, w.width(), w.height()))
             .collect();
-        let spare = self.scratch_texture(device, padded.0 >> levels, padded.1 >> levels);
-        let size = |k: u32| [(padded.0 >> k) as f32, (padded.1 >> k) as f32];
+        let spare = self.scratch_texture(device, plan.spare.width(), plan.spare.height());
+        let dims = |w: PixelRect| [w.width() as f32, w.height() as f32];
 
-        let mut draw = |pipeline, input, target, params, source, region| {
+        let mut draw = |pipeline, input, target, params, ints, region| {
             self.draw(
                 device,
                 &mut *encoder,
@@ -187,79 +328,102 @@ impl Blur {
                 input,
                 target,
                 params,
-                source,
+                ints,
                 region,
             );
         };
-        let [w0, h0] = size(0);
-        let source = [
-            src.origin[0],
-            src.origin[1],
-            src.size[0] as i32,
-            src.size[1] as i32,
-        ];
+        let [w0, h0] = dims(win[0]);
+        let o0 = at(win[0]);
         draw(
             &self.pad,
-            src.view,
+            src,
             &chain[0].view,
-            [0.0, origin, origin, 0.0, w0, h0, 0.0, 0.0],
-            source,
-            regions.pad,
+            [
+                0.0,
+                pad as f32 - o0[0],
+                pad as f32 - o0[1],
+                pad_source.shrink as f32,
+                w0,
+                h0,
+                pad_source.texel[0] as f32,
+                pad_source.texel[1] as f32,
+            ],
+            [pad_source.rect, pad_source.mirror],
+            local(regions.pad, win[0]),
         );
-        for k in 1..=levels {
-            let [w, h] = size(k);
-            let input = &chain[k as usize - 1].view;
-            let params = [0.0, 0.0, 0.0, 0.0, w, h, 0.0, 0.0];
+        for k in 1..=levels as usize {
+            let (wk, wi) = (at(win[k]), at(win[k - 1]));
+            let [w, h] = dims(win[k]);
+            let params = [
+                0.0,
+                2.0 * wk[0] - wi[0],
+                2.0 * wk[1] - wi[1],
+                0.0,
+                w,
+                h,
+                0.0,
+                0.0,
+            ];
             draw(
                 &self.down,
-                input,
-                &chain[k as usize].view,
+                &chain[k - 1].view,
+                &chain[k].view,
                 params,
-                NO_SOURCE,
-                regions.down[k as usize - 1],
+                NO_INTS,
+                local(regions.down[k - 1], win[k]),
             );
         }
-        // At level 0 the vertical pass is the one that writes `dst`.
-        let (last, shift, region) = if levels == 0 {
-            (dst.view, dst_shift, to_dst(regions.vertical))
-        } else {
-            (&chain[levels as usize].view, [0.0, 0.0], regions.vertical)
-        };
-        let [w, h] = size(levels);
-        let horizontal = [sigma, 0.0, 0.0, 0.0, w, h, 1.0, 0.0];
+        let n = levels as usize;
+        let (on, os) = (at(win[n]), at(plan.spare));
+        let [w, h] = dims(win[n]);
+        let horizontal = [sigma, os[0] - on[0], os[1] - on[1], 0.0, w, h, 1.0, 0.0];
         draw(
             &self.gauss,
-            &chain[levels as usize].view,
+            &chain[n].view,
             &spare.view,
             horizontal,
-            NO_SOURCE,
-            regions.horizontal,
+            NO_INTS,
+            local(regions.horizontal, plan.spare),
         );
+        // At level 0 the vertical pass is the one that writes `dst`.
+        let (last, shift, region) = if levels == 0 {
+            (
+                dst.view,
+                [dst_at[0] - os[0], dst_at[1] - os[1]],
+                to_dst(regions.vertical),
+            )
+        } else {
+            (
+                &chain[n].view,
+                [on[0] - os[0], on[1] - os[1]],
+                local(regions.vertical, win[n]),
+            )
+        };
         let vertical = [sigma, shift[0], shift[1], 0.0, w, h, 0.0, 1.0];
-        draw(&self.gauss, &spare.view, last, vertical, NO_SOURCE, region);
-        for k in (1..=levels).rev() {
-            let [w, h] = size(k - 1);
-            let input = &chain[k as usize].view;
-            if k == 1 {
-                draw(
-                    &self.up,
-                    input,
-                    dst.view,
-                    [0.0, dst_shift[0], dst_shift[1], 0.0, w, h, 0.0, 0.0],
-                    NO_SOURCE,
-                    to_dst(regions.up[0]),
-                );
+        draw(&self.gauss, &spare.view, last, vertical, NO_INTS, region);
+        for k in (1..=n).rev() {
+            let wk = at(win[k]);
+            let [w, h] = dims(win[k]);
+            let (target, out_at, region) = if k == 1 {
+                (dst.view, dst_at, to_dst(regions.up[0]))
             } else {
-                let params = [0.0, 0.0, 0.0, 0.0, w, h, 0.0, 0.0];
-                draw(
-                    &self.up,
-                    input,
-                    &chain[k as usize - 1].view,
-                    params,
-                    NO_SOURCE,
-                    regions.up[k as usize - 1],
-                );
-            }
+                (
+                    &chain[k - 1].view,
+                    at(win[k - 1]),
+                    local(regions.up[k - 1], win[k - 1]),
+                )
+            };
+            let params = [
+                0.0,
+                out_at[0] - 2.0 * wk[0],
+                out_at[1] - 2.0 * wk[1],
+                0.0,
+                2.0 * w,
+                2.0 * h,
+                0.0,
+                0.0,
+            ];
+            draw(&self.up, &chain[k].view, target, params, NO_INTS, region);
         }
         for texture in chain.into_iter().chain([spare]) {
             self.scratch.put(texture);
@@ -293,8 +457,8 @@ impl Blur {
     }
 
     /// One full-screen pass over the box `region` (in texels) of `target`,
-    /// which is cleared all over first. `params` and `source` fill the
-    /// shader's `Params`.
+    /// which is cleared all over first. `params` and `ints` (the source and
+    /// the mirror box) fill the shader's `Params`.
     #[allow(clippy::too_many_arguments)]
     fn draw(
         &self,
@@ -305,11 +469,11 @@ impl Blur {
         input: &wgpu::TextureView,
         target: &wgpu::TextureView,
         params: [f32; 8],
-        source: [i32; 4],
+        ints: [[i32; 4]; 2],
         region: PixelRect,
     ) {
         let mut bytes: Vec<u8> = params.iter().flat_map(|v| v.to_le_bytes()).collect();
-        bytes.extend(source.iter().flat_map(|v| v.to_le_bytes()));
+        bytes.extend(ints.iter().flatten().flat_map(|v| v.to_le_bytes()));
         let uniform = uniforms.push(&bytes);
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("blur"),
@@ -369,8 +533,72 @@ impl Blur {
 }
 
 /// What `fs_pad` is told of the texture it copies from when no pass reads
-/// one.
+/// one, and of the box it mirrors when it mirrors none.
 const NO_SOURCE: [i32; 4] = [0; 4];
+
+/// The largest side of a texture a blur makes: the device's limit
+/// (`wgpu::Limits::default`), which is also the largest canvas.
+const MAX_SIDE: u32 = crate::scene::MAX_SIDE;
+
+/// What `fs_pad` reads: the box `rect` (`x, y, width, height`, in the blur's
+/// canvas pixels) of the source, whose corner is the source's texel `texel`;
+/// the box `mirror` (`x0, y0, x1, y1`) mirrored past its edges, if not
+/// empty; each texel the mean of a `shrink` x `shrink` square of those
+/// pixels.
+#[derive(Clone, Copy)]
+struct PadSource {
+    rect: [i32; 4],
+    texel: [i32; 2],
+    mirror: [i32; 4],
+    shrink: u32,
+}
+
+/// The canvas of a mirrored blur (`Blur::run_mirrored`) of a box `frost`.
+#[derive(Debug, PartialEq)]
+struct MirrorPlan {
+    /// The blur's reach past the box, at full size.
+    room: i32,
+    /// How many times the canvas is shrunk on each side, a power of two.
+    shrink: u32,
+    /// The size of the (shrunk) canvas.
+    size: (u32, u32),
+    /// The texels of the shrunk canvas that the enlarging into the box reads.
+    inner: PixelRect,
+}
+
+impl MirrorPlan {
+    fn new(frost: PixelRect, radius: f32) -> MirrorPlan {
+        let room = (3.0 * f64::from(radius)).ceil() as i32 + 2;
+        let full = (
+            frost.width() + 2 * room as u32,
+            frost.height() + 2 * room as u32,
+        );
+        // Room for the windows' border of texels (`Plan::windows`).
+        let mut shrink = 1u32;
+        while full.0.div_ceil(shrink).max(full.1.div_ceil(shrink)) + 8 > MAX_SIDE {
+            shrink *= 2;
+        }
+        let size = (full.0.div_ceil(shrink), full.1.div_ceil(shrink));
+        let s = shrink as i32;
+        // The box in shrunk texels, grown by one for the bilinear reads.
+        let inner = PixelRect::new(
+            room.div_euclid(s) - 1,
+            room.div_euclid(s) - 1,
+            (room + frost.width() as i32 + s - 1).div_euclid(s) + 1,
+            (room + frost.height() as i32 + s - 1).div_euclid(s) + 1,
+        )
+        .intersect(PixelRect::whole(size.0, size.1));
+        MirrorPlan {
+            room,
+            shrink,
+            size,
+            inner,
+        }
+    }
+}
+
+/// The integers of a pass that is not `fs_pad`.
+const NO_INTS: [[i32; 4]; 2] = [NO_SOURCE; 2];
 
 /// Smallest Gaussian width, in texels, that hides the coarse grid.
 const MIN_SIGMA: f32 = 4.0;
@@ -400,6 +628,13 @@ struct Plan {
     /// How many texels either side of a texel the Gaussian reads, as the
     /// shader works it out from `sigma`.
     reach: i32,
+    /// The texels of each level's image that a blur of anything in the
+    /// canvas draws, with a border of untouched ones (`windows`): only these
+    /// are kept, so a large radius needs no texture larger than the canvas
+    /// but at the smallest level.
+    windows: Vec<PixelRect>,
+    /// The same for `spare`, the horizontal Gaussian's image.
+    spare: PixelRect,
 }
 
 /// The box each pass of a blur draws. Boxes are in the texels of the pass's
@@ -434,13 +669,70 @@ impl Plan {
             (size.0 + 2 * pad).next_multiple_of(step),
             (size.1 + 2 * pad).next_multiple_of(step),
         );
-        Plan {
+        let mut plan = Plan {
             levels,
             sigma,
             pad: pad as i32,
             padded,
             reach: (3.0 * sigma).ceil() as i32,
+            windows: Vec::new(),
+            spare: PixelRect::EMPTY,
+        };
+        (plan.windows, plan.spare) = plan.windows(size);
+        plan
+    }
+
+    /// The part of each level's image (and of `spare`) that is ever drawn,
+    /// for any input and output in the canvas, grown by two texels and cut
+    /// to the level. A pass reads only texels its draws can reach, and a
+    /// texel of the full image outside these is never drawn, so zero: the
+    /// border is zero too, and a read past it, clamped to it, is zero as well
+    /// (where a window meets the edge of the level, the clamp is the full
+    /// image's). So a blur in the windows draws the pixels of a blur in the
+    /// full images.
+    fn windows(&self, size: (u32, u32)) -> (Vec<PixelRect>, PixelRect) {
+        let n = self.levels as usize;
+        let whole = PixelRect::whole(size.0, size.1);
+        let r = self.regions(size, whole, whole);
+        let level = |k: usize| PixelRect::whole(self.padded.0 >> k, self.padded.1 >> k);
+        // Level 0 gets the pad pass, level k the down pass that makes it, the
+        // smallest level the vertical Gaussian too, and the ones between the
+        // up pass that makes them.
+        let mut drawn: Vec<PixelRect> = std::iter::once(r.pad)
+            .chain(r.down.iter().copied())
+            .collect();
+        if n > 0 {
+            drawn[n] = drawn[n].union(r.vertical);
         }
+        for (d, up) in drawn.iter_mut().zip(&r.up).take(n).skip(1) {
+            *d = d.union(*up);
+        }
+        // No wider than a texture can be: a window that would be (the
+        // whole of a canvas of `MAX_SIDE`) loses some of its border, and the
+        // reads past its edge clamp to drawn texels there.
+        let fit = |lo: i32, hi: i32, d0: i32, d1: i32| {
+            let max = MAX_SIDE as i32;
+            if hi - lo <= max {
+                return (lo, hi);
+            }
+            let lo = lo.max(d0 - (max - (d1 - d0)).max(0) / 2);
+            (lo, hi.min(lo + max))
+        };
+        let window = |d: PixelRect, k: usize| {
+            if d.is_empty() {
+                return PixelRect::new(0, 0, 1, 1);
+            }
+            let w = d.grow(2, 2).intersect(level(k));
+            let (x0, x1) = fit(w.x0, w.x1, d.x0, d.x1);
+            let (y0, y1) = fit(w.y0, w.y1, d.y0, d.y1);
+            PixelRect::new(x0, y0, x1, y1)
+        };
+        let windows = drawn
+            .iter()
+            .enumerate()
+            .map(|(k, d)| window(*d, k))
+            .collect();
+        (windows, window(r.horizontal, n))
     }
 
     /// Which pixels of each pass to draw to get the pixels `output` of the
@@ -559,7 +851,7 @@ fn double(r: PixelRect) -> PixelRect {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::{MIN_SIGMA, Plan, double, halve, plan};
+    use super::{MAX_SIDE, MIN_SIGMA, MirrorPlan, Plan, double, halve, plan};
     use crate::bounds::PixelRect;
 
     #[test]
@@ -829,6 +1121,112 @@ pub(crate) mod tests {
                     }
                 }
             }
+        }
+    }
+
+    /// Every pass of a blur of anything in the canvas draws inside the
+    /// windows the images keep, a texel in from their edge unless the edge is
+    /// the level's; and a wide blur keeps no image much larger than the
+    /// canvas but the smallest.
+    /// No texture of a blur is wider than a texture can be: a mirrored blur's
+    /// canvas is shrunk until it fits, and a canvas of the largest size keeps
+    /// its windows within it.
+    #[test]
+    fn no_blur_texture_passes_the_largest_side() {
+        let fits = |plan: &Plan| {
+            plan.windows
+                .iter()
+                .chain([&plan.spare])
+                .all(|w| w.width() <= MAX_SIDE && w.height() <= MAX_SIDE)
+        };
+        for (side, radius) in [(1920, 1100.0), (8192, 16384.0), (8192, 1.0), (100, 16384.0)] {
+            let frost = PixelRect::new(5, 7, 5 + side, 7 + side / 2);
+            let m = MirrorPlan::new(frost, radius);
+            assert!(
+                m.size.0 + 8 <= MAX_SIDE && m.size.1 + 8 <= MAX_SIDE,
+                "{m:?}"
+            );
+            let plan = Plan::new(m.size, radius / m.shrink as f32);
+            assert!(
+                fits(&plan),
+                "mirrored {side} at {radius}: {:?}",
+                plan.windows
+            );
+            // The texels the enlarging reads hold the whole box.
+            let s = m.shrink as i32;
+            assert!(m.inner.x0 * s <= m.room, "{m:?}");
+            assert!(m.inner.x1 * s >= m.room + side, "{m:?}");
+        }
+        // 1920 + 6 * 1100 does not fit: half size.
+        let wide = MirrorPlan::new(PixelRect::new(0, 0, 1920, 200), 1100.0);
+        assert_eq!(wide.shrink, 2);
+        let small = MirrorPlan::new(PixelRect::new(0, 0, 400, 100), 10.0);
+        assert_eq!(small.shrink, 1);
+        for radius in [1.0, 128.0, 1000.0, 16384.0] {
+            assert!(fits(&Plan::new((MAX_SIDE, MAX_SIDE), radius)), "{radius}");
+        }
+    }
+
+    #[test]
+    fn the_windows_hold_every_draw_and_stay_small() {
+        let size = (1920u32, 1080u32);
+        let canvas = PixelRect::whole(size.0, size.1);
+        for radius in [1.0, 9.0, 64.0, 128.0, 300.0, 1000.0, 16384.0] {
+            let plan = Plan::new(size, radius);
+            let n = plan.levels as usize;
+            let level = |k: usize| PixelRect::whole(plan.padded.0 >> k, plan.padded.1 >> k);
+            let inside = |r: PixelRect, w: PixelRect, k: usize| {
+                let l = level(k);
+                r.is_empty()
+                    || (r.intersect(w) == r
+                        && (w.x0 == l.x0 || r.x0 - w.x0 >= 1)
+                        && (w.y0 == l.y0 || r.y0 - w.y0 >= 1)
+                        && (w.x1 == l.x1 || w.x1 - r.x1 >= 1)
+                        && (w.y1 == l.y1 || w.y1 - r.y1 >= 1))
+            };
+            for (input, output) in [
+                (canvas, canvas),
+                (PixelRect::new(0, 0, 10, 10), canvas),
+                (
+                    PixelRect::new(1900, 1000, 1920, 1080),
+                    PixelRect::new(0, 0, 50, 50),
+                ),
+                (
+                    PixelRect::new(900, 500, 1000, 600),
+                    PixelRect::new(950, 550, 960, 560),
+                ),
+            ] {
+                let r = plan.regions(size, input, output);
+                let case = format!("radius {radius}, {input:?} to {output:?}");
+                assert!(inside(r.pad, plan.windows[0], 0), "{case}: pad");
+                for k in 1..=n {
+                    assert!(
+                        inside(r.down[k - 1], plan.windows[k], k),
+                        "{case}: down {k}"
+                    );
+                }
+                assert!(inside(r.horizontal, plan.spare, n), "{case}: horizontal");
+                if n > 0 {
+                    assert!(inside(r.vertical, plan.windows[n], n), "{case}: vertical");
+                }
+                for j in 1..n {
+                    assert!(inside(r.up[j], plan.windows[j], j), "{case}: up {j}");
+                }
+            }
+            // Below the smallest level, the canvas and a few texels.
+            for (k, w) in plan.windows.iter().enumerate().take(n) {
+                assert!(
+                    w.width() <= (size.0 >> k) + 16 && w.height() <= (size.1 >> k) + 16,
+                    "radius {radius}: level {k} {w:?}"
+                );
+            }
+            // The smallest level holds the canvas and the blur's reach past
+            // it: a few thousand texels.
+            let w = plan.windows[n];
+            assert!(
+                u64::from(w.width()) * u64::from(w.height()) < 1 << 22,
+                "radius {radius}: {w:?}"
+            );
         }
     }
 

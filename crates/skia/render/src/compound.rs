@@ -4,16 +4,17 @@
 use serde_json::Value;
 use skia_safe::canvas::PointMode;
 use skia_safe::svg;
+use skia_safe::textlayout::TypefaceFontProvider;
 use skia_safe::{
     BlendMode, Canvas, ClipOp, Color, FontMgr, Image, Paint, PictureRecorder, Point, RSXform, Rect,
-    Size, TextBlob, TextBlobBuilder, canvas::SrcRectConstraint,
+    Size, TextBlob, TextBlobBuilder, Typeface, canvas::SrcRectConstraint,
 };
 
 use crate::Error;
 use crate::draw::{image_of, points_of, sampling_of};
 use crate::enums;
 use crate::render::{Ctx, Node, paint_of};
-use crate::text::font_of;
+use crate::text::{font_of, paint_paragraph, typeface_in};
 use crate::value::{Props, as_f32, color, err, floats, matrix, path, point, rect_of, rrect_of};
 
 pub fn draw(ctx: &mut Ctx, n: Node, paint: &Paint) -> Result<(), Error> {
@@ -261,7 +262,7 @@ pub fn picture(ctx: &mut Ctx, n: Node) -> Result<(), Error> {
     Ok(())
 }
 
-fn record(ctx: &mut Ctx, v: &Value) -> Result<skia_safe::Picture, Error> {
+pub fn record(ctx: &mut Ctx, v: &Value) -> Result<skia_safe::Picture, Error> {
     let ops = v
         .get("ops")
         .and_then(Value::as_array)
@@ -444,6 +445,23 @@ fn replay(ctx: &mut Ctx, canvas: &Canvas, op: &Value) -> Result<(), Error> {
                 .map_err(|_| Error("drawPatch needs 12 points".into()))?;
             patch_draw(canvas, &cubics, p, "texs", &paint_for(ctx)?)?
         }
+        "drawNodes" => {
+            let nodes = p.array("nodes").map(Vec::as_slice).unwrap_or_default();
+            let left_out =
+                crate::render::draw_nodes(canvas, nodes, ctx.assets, ctx.base_dir.clone())?;
+            for item in left_out {
+                if !ctx.unsupported.contains(&item) {
+                    ctx.unsupported.push(item);
+                }
+            }
+        }
+        "drawParagraph" => {
+            let held = p
+                .props("paragraph")
+                .ok_or_else(|| Error("drawParagraph needs a paragraph".into()))?;
+            let width = p.f32("width")?.unwrap_or(f32::INFINITY);
+            paint_paragraph(ctx, held, width, Point::new(num("x")?, num("y")?), canvas)?;
+        }
         other => return err(format!("a picture cannot record {other:?}")),
     }
     Ok(())
@@ -451,16 +469,119 @@ fn replay(ctx: &mut Ctx, canvas: &Canvas, op: &Value) -> Result<(), Error> {
 
 // ---- ImageSVG ----
 
-fn dom_of(svg: &str) -> Result<svg::Dom, Error> {
-    // No system fonts: text in an SVG would depend on the machine.
-    svg::Dom::from_str(svg, FontMgr::empty())
-        .map_err(|_| Error("the SVG could not be parsed".into()))
+fn dom_of(svg: &str, fonts: FontMgr) -> Result<svg::Dom, Error> {
+    svg::Dom::from_str(svg, fonts).map_err(|_| Error("the SVG could not be parsed".into()))
 }
 
 /// `{ width, height }` of the SVG's own size.
 pub fn svg_size(svg: &str) -> Result<(f32, f32), Error> {
-    let size: Size = dom_of(svg)?.root().intrinsic_size();
+    let size: Size = dom_of(svg, FontMgr::empty())?.root().intrinsic_size();
     Ok((size.width, size.height))
+}
+
+/// The CSS generic families: an SVG that asks for one gets the fallback font without a warning.
+const GENERIC_FAMILIES: &[&str] = &[
+    "serif",
+    "sans-serif",
+    "monospace",
+    "cursive",
+    "fantasy",
+    "system-ui",
+    "ui-serif",
+    "ui-sans-serif",
+    "ui-monospace",
+    "ui-rounded",
+    "math",
+    "emoji",
+    "fangsong",
+];
+
+/// Every `font-family` an SVG names, as written: in an attribute (`font-family="Inter, sans-serif"`) or in a style
+/// (`style="font-family: 'Inter'"`, a `<style>` rule).
+fn font_family_values(svg: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut rest = svg;
+    while let Some(at) = rest.find("font-family") {
+        rest = &rest[at + "font-family".len()..];
+        let after = rest.trim_start();
+        let value = if let Some(v) = after.strip_prefix('=') {
+            let v = v.trim_start();
+            let quote = v.chars().next().filter(|c| *c == '"' || *c == '\'');
+            match quote {
+                Some(q) => v[1..].split(q).next().unwrap_or_default(),
+                None => continue,
+            }
+        } else if let Some(v) = after.strip_prefix(':') {
+            v.split([';', '"', '}', '>']).next().unwrap_or_default()
+        } else {
+            continue;
+        };
+        let value = value.trim().to_string();
+        if !value.is_empty() && !out.contains(&value) {
+            out.push(value);
+        }
+    }
+    out
+}
+
+/// The fonts an SVG's text is drawn with: the project's registered fonts, each under the `font-family` values that
+/// name it, and the fallback font under the rest (and Skia's default family). No system font is read, so the text is
+/// the same on every machine. Answers the families that are named and not registered.
+fn svg_fonts(ctx: &mut Ctx, held: Props, svg: &str) -> Result<(FontMgr, Vec<String>), Error> {
+    let mut registered: Vec<(String, Typeface)> = Vec::new();
+    for font in held.array("fonts").map(Vec::as_slice).unwrap_or_default() {
+        let f = Props(font);
+        let Some(family) = f.str("family") else {
+            continue;
+        };
+        let typeface = typeface_in(ctx.assets, &ctx.base_dir, f)?;
+        registered.push((family.to_string(), typeface));
+    }
+    let fallback = match held.props("fallback") {
+        Some(f) => Some(typeface_in(ctx.assets, &ctx.base_dir, f)?),
+        None => registered.first().map(|(_, t)| t.clone()),
+    };
+    let mut provider = TypefaceFontProvider::new();
+    let mut missing = Vec::new();
+    let mut aliases = vec!["default".to_string()];
+    for value in font_family_values(svg) {
+        if !aliases.contains(&value) {
+            aliases.push(value);
+        }
+    }
+    for alias in &aliases {
+        let names: Vec<String> = alias
+            .split(',')
+            .map(|n| n.trim().trim_matches(['"', '\'']).trim().to_string())
+            .filter(|n| !n.is_empty())
+            .collect();
+        let chosen = names.iter().find(|name| {
+            registered
+                .iter()
+                .any(|(family, _)| family.eq_ignore_ascii_case(name))
+        });
+        match chosen {
+            Some(name) => {
+                for (family, typeface) in &registered {
+                    if family.eq_ignore_ascii_case(name) {
+                        provider.register_typeface(typeface.clone(), Some(alias.as_str()));
+                    }
+                }
+            }
+            None => {
+                for name in &names {
+                    let generic = GENERIC_FAMILIES.contains(&name.to_ascii_lowercase().as_str());
+                    if !generic && name != "default" && !missing.contains(name) {
+                        missing.push(name.clone());
+                    }
+                }
+                if let Some(typeface) = &fallback {
+                    provider.register_typeface(typeface.clone(), Some(alias.as_str()));
+                }
+            }
+        }
+    }
+    Ok((provider.into(), missing))
 }
 
 fn svg_image(ctx: &mut Ctx, props: Props) -> Result<(), Error> {
@@ -470,15 +591,30 @@ fn svg_image(ctx: &mut Ctx, props: Props) -> Result<(), Error> {
     let text = held.get("svg").and_then(Value::as_str).ok_or_else(|| {
         Error("svg must be an SVG made with Skia.SVG.MakeFromString or useSVG".into())
     })?;
-    if text.contains("<text") {
-        ctx.leave_out(
-            "ImageSVG",
-            Some("text"),
-            "text in an SVG is not drawn: there are no system fonts",
-        );
-    }
+    let fonts = if text.contains("<text") {
+        let (fonts, missing) = svg_fonts(ctx, Props(held), text)?;
+        if fonts.count_families() == 0 {
+            ctx.leave_out(
+                "ImageSVG",
+                Some("text"),
+                "no font is registered and there is no fallback font: the SVG's text is not drawn",
+            );
+        }
+        for family in missing {
+            ctx.leave_out(
+                "ImageSVG",
+                Some("text"),
+                format!(
+                    "the font \"{family}\" is not registered: the SVG's text is drawn in the fallback font"
+                ),
+            );
+        }
+        fonts
+    } else {
+        FontMgr::empty()
+    };
     let canvas = ctx.canvas;
-    let mut dom = dom_of(text)?;
+    let mut dom = dom_of(text, fonts)?;
     let own = dom.root().intrinsic_size();
     let width = props.f32("width")?.unwrap_or(own.width);
     let height = props.f32("height")?.unwrap_or(own.height);

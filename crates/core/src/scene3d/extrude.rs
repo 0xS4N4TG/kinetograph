@@ -8,6 +8,7 @@
 //! centred on z = 0, and the outline's y axis points up.
 
 use glam::{Vec2, Vec3};
+use kurbo::{BezPath, PathEl, Shape};
 use lyon_tessellation::geom::point;
 use lyon_tessellation::path::Path;
 use lyon_tessellation::{
@@ -16,7 +17,6 @@ use lyon_tessellation::{
 use skrifa::instance::{LocationRef, NormalizedCoord, Size};
 use skrifa::outline::{DrawSettings, OutlinePen};
 use skrifa::{FontRef, GlyphId, MetadataProvider};
-use kurbo::{BezPath, PathEl, Shape};
 
 use super::mesh::{MeshData, Vertex3};
 use super::{ExtrudeSpec, TextSpec};
@@ -82,7 +82,13 @@ pub fn text(spec: &TextSpec, engine: &mut TextEngine) -> Result<MeshData> {
                 .map(|c| c.into_iter().map(place).collect())
                 .collect::<Vec<Contour>>();
             let size = f32::max(laid.width, laid.height) * scale;
-            mesh.prism(&contours, FillRule::NonZero, spec.depth as f32, size);
+            mesh.prism(
+                &contours,
+                FillRule::NonZero,
+                spec.depth as f32,
+                size,
+                spec.bevel.as_ref(),
+            );
         }
     }
     Ok(mesh.finish())
@@ -116,6 +122,7 @@ pub fn path(spec: &ExtrudeSpec) -> Result<MeshData> {
         spec.fill_rule,
         spec.depth as f32,
         spec.size as f32,
+        spec.bevel.as_ref(),
     );
     Ok(mesh.finish())
 }
@@ -188,24 +195,104 @@ impl Builder {
         MeshData::new(self.vertices, self.indices)
     }
 
-    /// Adds the prism of `contours` filled by `rule`, `depth` thick. `size`
-    /// scales the texture coordinates of the caps.
-    fn prism(&mut self, contours: &[Contour], rule: FillRule, depth: f32, size: f32) {
+    /// Adds the prism of `contours` filled by `rule`, `depth` thick, with
+    /// `bevel` round its edges. `size` scales the texture coordinates of the
+    /// caps.
+    fn prism(
+        &mut self,
+        contours: &[Contour],
+        rule: FillRule,
+        depth: f32,
+        size: f32,
+        bevel: Option<&Bevel>,
+    ) {
         let contours: Vec<Contour> = contours.iter().filter_map(|c| clean(c)).collect();
         if contours.is_empty() {
             return;
         }
+        // Whether each contour's inside is empty: it is inside an odd number
+        // of the other contours (a hole, or an island's hole).
+        let holes: Vec<bool> = contours
+            .iter()
+            .enumerate()
+            .map(|(i, contour)| {
+                contours
+                    .iter()
+                    .enumerate()
+                    .filter(|(j, other)| *j != i && contains(other, contour[0]))
+                    .count()
+                    % 2
+                    == 1
+            })
+            .collect();
         let half = depth / 2.0;
-        self.caps(&contours, rule, half, size);
-        for (i, contour) in contours.iter().enumerate() {
-            // Whether the contour's inside is empty: it is inside an odd
-            // number of the other contours (a hole, or an island's hole).
-            let inside = contours
+        let Some(bevel) = bevel else {
+            self.caps(&contours, rule, half, size);
+            for (contour, hole) in contours.iter().zip(&holes) {
+                let normals = edge_normals(contour, *hole);
+                self.band(
+                    [contour, contour],
+                    [-half, half],
+                    &normals,
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                );
+            }
+            return;
+        };
+        // The profile of the edge, from the cap to the wall: a quarter of an
+        // ellipse `size` out and `thickness` down, cut into `segments`.
+        let steps: Vec<(f32, f32)> = (0..=bevel.segments)
+            .map(|k| {
+                let angle = k as f32 / bevel.segments as f32 * std::f32::consts::FRAC_PI_2;
+                (
+                    bevel.offset + bevel.size * angle.sin(),
+                    half + bevel.thickness * angle.cos(),
+                )
+            })
+            .collect();
+        let caps: Vec<Contour> = contours
+            .iter()
+            .zip(&holes)
+            .map(|(c, hole)| grown(c, *hole, bevel.offset))
+            .collect();
+        self.caps(&caps, rule, half + bevel.thickness, size);
+        for (contour, hole) in contours.iter().zip(&holes) {
+            let normals = edge_normals(contour, *hole);
+            let rings: Vec<Contour> = steps
                 .iter()
-                .enumerate()
-                .filter(|(j, other)| *j != i && contains(other, contour[0]))
-                .count();
-            self.walls(contour, inside % 2 == 1, half);
+                .map(|(out, _)| grown(contour, *hole, *out))
+                .collect();
+            let wall = &rings[rings.len() - 1];
+            self.band(
+                [wall, wall],
+                [-half, half],
+                &normals,
+                [1.0, 0.0],
+                [0.0, 1.0],
+            );
+            for k in 0..steps.len() - 1 {
+                // From the wall's side of the band to the cap's.
+                let (s0, z0) = steps[k + 1];
+                let (s1, z1) = steps[k];
+                // The band's normal across the profile: out and toward the cap.
+                let tilt = Vec2::new(z1 - z0, s0 - s1).normalize_or(Vec2::X);
+                let v = [0.0, 1.0];
+                self.band(
+                    [&rings[k + 1], &rings[k]],
+                    [z0, z1],
+                    &normals,
+                    [tilt.x, tilt.y],
+                    v,
+                );
+                self.band(
+                    [&rings[k + 1], &rings[k]],
+                    [-z0, -z1],
+                    &normals,
+                    [tilt.x, -tilt.y],
+                    v,
+                );
+            }
         }
     }
 
@@ -257,24 +344,20 @@ impl Builder {
         }
     }
 
-    /// A band of quads round `contour`; `hole` says the material is outside
-    /// the polygon, so the walls face into it.
-    fn walls(&mut self, contour: &[Vec2], hole: bool, half: f32) {
-        let n = contour.len();
-        let ccw = area(contour) > 0.0;
-        // The normal of each edge `i -> i + 1`, facing away from the material.
-        let normals: Vec<Vec2> = (0..n)
-            .map(|i| {
-                let d = (contour[(i + 1) % n] - contour[i]).normalize_or_zero();
-                // The right-hand side is outside a counter-clockwise polygon.
-                let outward = if ccw {
-                    Vec2::new(d.y, -d.x)
-                } else {
-                    Vec2::new(-d.y, d.x)
-                };
-                if hole { -outward } else { outward }
-            })
-            .collect();
+    /// A band of quads between two rings of the same contour, `rings[0]` at
+    /// `z[0]` and `rings[1]` at `z[1]`, whose `normals` are its edges' (see
+    /// `edge_normals`). `tilt` is the band's normal across it: how much of it
+    /// is the edge's outward normal and how much +z (a wall is `[1, 0]`);
+    /// `v` is the texture coordinate at each ring.
+    fn band(
+        &mut self,
+        rings: [&[Vec2]; 2],
+        z: [f32; 2],
+        normals: &[Vec2],
+        tilt: [f32; 2],
+        v: [f32; 2],
+    ) {
+        let n = normals.len();
         let at_vertex = |own: Vec2, other: Vec2| {
             if own.dot(other) > CREASE {
                 (own + other).normalize_or_zero()
@@ -282,37 +365,44 @@ impl Builder {
                 own
             }
         };
+        let normal = |across: Vec2| {
+            if tilt == [1.0, 0.0] {
+                Vec3::new(across.x, across.y, 0.0)
+            } else {
+                Vec3::new(across.x * tilt[0], across.y * tilt[0], tilt[1]).normalize_or_zero()
+            }
+        };
+        let [low, high] = rings;
         let mut length = 0.0;
         for i in 0..n {
             let j = (i + 1) % n;
-            let (a, b) = (contour[i], contour[j]);
             let edge = normals[i];
-            let na = at_vertex(edge, normals[(i + n - 1) % n]);
-            let nb = at_vertex(edge, normals[j]);
-            let span = (b - a).length();
+            let na = normal(at_vertex(edge, normals[(i + n - 1) % n]));
+            let nb = normal(at_vertex(edge, normals[j]));
+            let span = (low[j] - low[i]).length();
             let base = self.vertices.len() as u32;
             let corners = [
-                (a, -half, na, length),
-                (b, -half, nb, length + span),
-                (b, half, nb, length + span),
-                (a, half, na, length),
+                (low[i], z[0], na, length, v[0]),
+                (low[j], z[0], nb, length + span, v[0]),
+                (high[j], z[1], nb, length + span, v[1]),
+                (high[i], z[1], na, length, v[1]),
             ];
-            for (p, z, normal, u) in corners {
+            for (p, z, normal, u, v) in corners {
                 self.vertices.push(Vertex3 {
                     position: [p.x, p.y, z],
-                    normal: [normal.x, normal.y, 0.0],
-                    uv: [u, (z + half) / (2.0 * half)],
+                    normal: normal.to_array(),
+                    uv: [u, v],
                 });
             }
-            // Counter-clockwise seen from outside: the order a-back, b-back,
-            // b-front turns towards the edge's outward normal when the
+            // Counter-clockwise seen from outside: the order a-low, b-low,
+            // b-high turns towards the edge's outward normal when the
             // polygon runs the way the material is on its left.
             let (p, q, r) = (
-                Vec3::new(a.x, a.y, -half),
-                Vec3::new(b.x, b.y, -half),
-                Vec3::new(b.x, b.y, half),
+                Vec3::new(low[i].x, low[i].y, z[0]),
+                Vec3::new(low[j].x, low[j].y, z[0]),
+                Vec3::new(high[j].x, high[j].y, z[1]),
             );
-            let facing = (q - p).cross(r - p).dot(Vec3::new(edge.x, edge.y, 0.0));
+            let facing = (q - p).cross(r - p).dot(normal(edge));
             if facing >= 0.0 {
                 self.indices
                     .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -323,6 +413,61 @@ impl Builder {
             length += span;
         }
     }
+}
+
+/// How a prism's edges are rounded: as three.js's `ExtrudeGeometry` does,
+/// the caps stand `thickness` beyond the walls on each side and the walls
+/// `size` beyond the outline (`offset` moves both); the edge between them is
+/// a quarter of an ellipse cut into `segments` flat bands.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bevel {
+    pub thickness: f32,
+    pub size: f32,
+    pub offset: f32,
+    pub segments: u32,
+}
+
+/// The normal of each edge `i -> i + 1` of `contour`, facing away from the
+/// material; `hole` says the material is outside the polygon.
+fn edge_normals(contour: &[Vec2], hole: bool) -> Vec<Vec2> {
+    let n = contour.len();
+    let ccw = area(contour) > 0.0;
+    (0..n)
+        .map(|i| {
+            let d = (contour[(i + 1) % n] - contour[i]).normalize_or_zero();
+            // The right-hand side is outside a counter-clockwise polygon.
+            let outward = if ccw {
+                Vec2::new(d.y, -d.x)
+            } else {
+                Vec2::new(-d.y, d.x)
+            };
+            if hole { -outward } else { outward }
+        })
+        .collect()
+}
+
+/// A sharp corner's point moves at most this many times the distance when a
+/// contour grows (as SVG's default `miter-limit`), so it does not spike.
+const MITER_LIMIT: f32 = 4.0;
+
+/// `contour` grown by `by` away from its material (shrunk when `by` is
+/// negative): each edge moves `by` along its normal, and each point to where
+/// its two edges meet, so the edges keep their directions.
+fn grown(contour: &[Vec2], hole: bool, by: f32) -> Contour {
+    if by == 0.0 {
+        return contour.to_vec();
+    }
+    let normals = edge_normals(contour, hole);
+    let n = contour.len();
+    (0..n)
+        .map(|i| {
+            let (before, after) = (normals[(i + n - 1) % n], normals[i]);
+            let mid = (before + after).normalize_or(after);
+            // The miter: the distance along `mid` that moves both edges by `by`.
+            let reach = (1.0 / mid.dot(after).max(1.0 / MITER_LIMIT)).min(MITER_LIMIT);
+            contour[i] + mid * by * reach
+        })
+        .collect()
 }
 
 /// `contour` without repeated points (and its closing point); `None` if
@@ -372,6 +517,7 @@ mod tests {
             size: 2.0,
             depth: 1.0,
             fill_rule: rule,
+            bevel: None,
         }
     }
 
@@ -505,6 +651,7 @@ mod tests {
             depth: 0.2,
             align,
             line_height: None,
+            bevel: None,
         }
     }
 
@@ -567,5 +714,128 @@ mod tests {
     #[test]
     fn a_path_with_no_extent_is_an_error() {
         assert!(path(&spec("M5 5L5 5", FillRule::NonZero)).is_err());
+    }
+
+    fn bevelled(path_data: &str, bevel: Bevel) -> MeshData {
+        let mut s = spec(path_data, FillRule::NonZero);
+        s.bevel = Some(bevel);
+        path(&s).unwrap()
+    }
+
+    const BEVEL: Bevel = Bevel {
+        thickness: 0.2,
+        size: 0.1,
+        offset: 0.0,
+        segments: 3,
+    };
+
+    #[test]
+    fn a_bevel_adds_its_thickness_to_the_caps_and_its_size_to_the_walls() {
+        // The 2 x 2 x 1 box of `a_square_is_a_box`, bevelled as three.js's
+        // ExtrudeGeometry is: 0.2 more each side in z, 0.1 out at the walls.
+        let mesh = bevelled("M0 0H10V10H0Z", BEVEL);
+        let (lo, hi) = mesh.bounds().unwrap();
+        assert!((lo - Vec3::new(-1.1, -1.1, -0.7)).length() < 1e-5, "{lo:?}");
+        assert!((hi - Vec3::new(1.1, 1.1, 0.7)).length() < 1e-5, "{hi:?}");
+        assert_wound_outwards(&mesh);
+        // The caps are the outline as it is, at the full depth.
+        let front: Vec<_> = mesh
+            .vertices
+            .iter()
+            .filter(|v| v.normal == [0.0, 0.0, 1.0])
+            .collect();
+        assert!(!front.is_empty());
+        for v in &front {
+            assert!((v.position[2] - 0.7).abs() < 1e-6);
+            assert!(v.position[0].abs() <= 1.0 + 1e-5 && v.position[1].abs() <= 1.0 + 1e-5);
+        }
+        // Caps of 2, walls of 4 x 2, and 3 bands of 4 x 2 on each side.
+        assert_eq!(mesh.indices.len() / 3, 4 + 8 + 2 * 3 * 8);
+        // The walls stand 0.1 out, between z = -0.5 and 0.5.
+        for v in mesh.vertices.iter().filter(|v| v.normal[2] == 0.0) {
+            assert!(v.position[2].abs() <= 0.5 + 1e-6, "{v:?}");
+            let out = v.position[0].abs().max(v.position[1].abs());
+            assert!((out - 1.1).abs() < 1e-5, "{v:?}");
+        }
+    }
+
+    #[test]
+    fn a_bevels_bands_turn_from_the_cap_to_the_wall() {
+        let mesh = bevelled("M0 0H10V10H0Z", BEVEL);
+        // The bands' normals lean between +z and the wall's: the one nearest
+        // the front cap leans most toward +z.
+        let leaning: Vec<f32> = mesh
+            .vertices
+            .iter()
+            .filter(|v| v.normal[2] > 0.0 && v.normal[2] < 1.0)
+            .map(|v| v.normal[2])
+            .collect();
+        assert!(!leaning.is_empty());
+        assert!(leaning.iter().any(|z| *z > 0.8) && leaning.iter().any(|z| *z < 0.5));
+        for v in &mesh.vertices {
+            assert!((Vec3::from(v.normal).length() - 1.0).abs() < 1e-5, "{v:?}");
+        }
+    }
+
+    #[test]
+    fn a_bevel_offset_moves_the_caps_and_holes_shrink() {
+        let ring = "M0 0H10V10H0Z M3 3V7H7V3Z";
+        let mesh = bevelled(
+            ring,
+            Bevel {
+                offset: 0.05,
+                ..BEVEL
+            },
+        );
+        assert_wound_outwards(&mesh);
+        let (lo, hi) = mesh.bounds().unwrap();
+        // 1 + 0.05 + 0.1 out, the outline being 2 across.
+        assert!((hi.x - 1.15).abs() < 1e-5 && (lo.x + 1.15).abs() < 1e-5);
+        // The hole (0.4 a side from the middle) closes in as the material grows:
+        // its wall is 0.4 - 0.15 from the middle.
+        let inner = mesh
+            .vertices
+            .iter()
+            .filter(|v| v.normal[2] == 0.0)
+            .map(|v| v.position[0].abs().max(v.position[1].abs()))
+            .fold(f32::MAX, f32::min);
+        assert!((inner - 0.25).abs() < 1e-5, "{inner}");
+    }
+
+    #[test]
+    fn a_sharp_corner_grows_no_further_than_the_miter_limit() {
+        // A thin spike: its tip moves at most 4 times the distance.
+        let contour = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(10.0, 0.5),
+            Vec2::new(0.0, 1.0),
+        ];
+        let tip = grown(&contour, false, 0.1);
+        assert!((tip[1] - contour[1]).length() <= 0.4 + 1e-5);
+        // A right angle moves its corner the diagonal of the distance.
+        let square = vec![Vec2::ZERO, Vec2::X, Vec2::ONE, Vec2::Y];
+        let out = grown(&square, false, 0.1);
+        assert!((out[0] - Vec2::splat(-0.1)).length() < 1e-6, "{:?}", out[0]);
+    }
+
+    #[test]
+    fn bevelled_text_is_wound_outwards_and_bigger() {
+        use crate::scene::TextAlign;
+        let mut engine = engine();
+        // Letters with no concave curve tighter than the bevel: where one is,
+        // the grown outline folds over itself, as it does in three.js.
+        let plain = text(&text_spec("OD", TextAlign::Center), &mut engine).unwrap();
+        let mut spec = text_spec("OD", TextAlign::Center);
+        spec.bevel = Some(Bevel {
+            thickness: 0.02,
+            size: 0.01,
+            offset: 0.0,
+            segments: 2,
+        });
+        let mesh = text(&spec, &mut engine).unwrap();
+        assert_wound_outwards(&mesh);
+        let ((lo, hi), (plo, phi)) = (mesh.bounds().unwrap(), plain.bounds().unwrap());
+        assert!((hi.z - 0.12).abs() < 1e-5 && (lo.z + 0.12).abs() < 1e-5);
+        assert!((hi.x - phi.x - 0.01).abs() < 2e-3 && (plo.x - lo.x - 0.01).abs() < 2e-3);
     }
 }

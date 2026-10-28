@@ -3,6 +3,7 @@
 // (paths, images, fonts, paints) serialise themselves through `toJSON`.
 
 import { parseColor } from '../colors.js';
+import { unwrap } from './shared-value.js';
 
 /** A colour as RN-Skia holds it: four floats from 0 to 1. */
 export type SkColor = Float32Array;
@@ -36,7 +37,8 @@ function transformItems(item: Record<string, unknown>): Record<string, unknown>[
 }
 
 /** Anything RN-Skia accepts as a prop value, as JSON-able data. */
-export function plain(value: unknown): unknown {
+export function plain(input: unknown): unknown {
+  const value = unwrap(input);
   if (value === null || typeof value !== 'object') return value;
   if (ArrayBuffer.isView(value)) return Array.from(value as unknown as ArrayLike<number>);
   if ('toJSON' in value && typeof value.toJSON === 'function') return value.toJSON();
@@ -51,12 +53,13 @@ export function plain(value: unknown): unknown {
 /** The props of a node, normalised; `children`, `ref`, functions and undefined values are left out. */
 export function normalizeProps(props: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(props)) {
+  for (const [key, raw] of Object.entries(props)) {
+    const value = unwrap(raw);
     if (key === 'children' || key === 'ref' || key === 'key' || value === undefined || typeof value === 'function') continue;
     if (COLOR_KEYS.has(key)) {
-      out[key] = key === 'colors' ? (value as unknown[]).map(toColor) : toColor(value);
+      out[key] = key === 'colors' ? (value as unknown[]).map((c) => toColor(unwrap(c))) : toColor(value);
     } else if (key === 'transform' && Array.isArray(value)) {
-      out[key] = value.flatMap((item) => transformItems(item as Record<string, unknown>));
+      out[key] = value.flatMap((item) => transformItems(plain(item) as Record<string, unknown>));
     } else {
       out[key] = plain(value);
     }

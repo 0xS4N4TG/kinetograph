@@ -162,6 +162,30 @@ pub enum FilterFn {
         blur: f64,
         color: Color,
     },
+    /// `url(#id)`, not found: the painter of a page (`crates/dom`) turns one
+    /// that names an SVG `<filter>` of the document into `graph`. The rest of
+    /// the list is drawn without it, and it is reported.
+    Url {
+        url: String,
+    },
+    /// An SVG `<filter>` (`crate::filter`), in the canvas's pixels: what a
+    /// `url()` names.
+    Graph {
+        #[serde(deserialize_with = "graph_of")]
+        graph: Box<crate::filter::ResolvedFilterGraph>,
+    },
+}
+
+/// A `filterGraph` effect's spelling, checked as a scene's is, at its only
+/// moment (its numbers are constants).
+fn graph_of<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<Box<crate::filter::ResolvedFilterGraph>, D::Error> {
+    let graph = crate::filter::FilterGraph::deserialize(d)?;
+    graph
+        .validate("canvas", true)
+        .map_err(serde::de::Error::custom)?;
+    Ok(Box::new(graph.resolve(0.0)))
 }
 
 /// A blur's length in the canvas's pixels, in the pixels the passes work in:
@@ -180,10 +204,11 @@ fn device_offset(to_device: Affine, x: f64, y: f64) -> (f64, f64) {
 
 impl FilterFn {
     /// The scene effect that runs the function, with its lengths in the
-    /// pixels the passes work in (`to_device` takes the canvas's to those).
-    fn effect(&self, to_device: Affine) -> Effect {
+    /// pixels the passes work in (`to_device` takes the canvas's to those);
+    /// `None` for a `url()` and a filter graph.
+    fn effect(&self, to_device: Affine) -> Option<Effect> {
         let num = Num::Const;
-        match *self {
+        Some(match *self {
             FilterFn::Blur { radius } => Effect::Blur {
                 radius: num(device_length(to_device, radius)),
             },
@@ -216,21 +241,36 @@ impl FilterFn {
                     color,
                 })
             }
-        }
+            FilterFn::Url { .. } | FilterFn::Graph { .. } => return None,
+        })
     }
 }
 
 /// The passes a `filter` list runs: the ones a layer's `blur`, colour filters
 /// and `dropShadow` effects run, colour filters in a row merged into one.
+/// A filter graph runs where it stands in the list; a `url()` not found is
+/// left out.
 pub(crate) fn filter_effects(filter: &[FilterFn], to_device: Affine) -> Vec<ResolvedEffect> {
-    let effects: Vec<Effect> = filter.iter().map(|f| f.effect(to_device)).collect();
     // The numbers are constants, so any moment gives the same passes.
     let clock = Clock {
         t: 0.0,
         frame: 0,
         fps: 30.0,
     };
-    resolve_effects(&effects, clock)
+    let mut out = Vec::new();
+    let mut run: Vec<Effect> = Vec::new();
+    for f in filter {
+        match (f.effect(to_device), f) {
+            (Some(effect), _) => run.push(effect),
+            (None, FilterFn::Graph { graph }) => {
+                out.extend(resolve_effects(&std::mem::take(&mut run), clock));
+                out.push(ResolvedEffect::FilterGraph(graph.clone()));
+            }
+            (None, _) => {}
+        }
+    }
+    out.extend(resolve_effects(&run, clock));
+    out
 }
 
 impl CanvasOp {
@@ -853,6 +893,25 @@ mod tests {
             unreachable!();
         };
         assert_eq!((shadow.x, shadow.y, shadow.blur), (2.0, 4.0, 8.0));
+    }
+
+    #[test]
+    fn an_svg_filter_runs_where_it_stands_in_the_list_and_a_url_not_found_is_left_out() {
+        let parsed = ops(
+            r##"[{"op": "fill", "path": "M0 0H4V4Z", "paint": {"type": "color", "color": "#fff"},
+                  "filter": [{"type": "blur", "radius": 1}, {"type": "url", "url": "url(#gone)"},
+                             {"type": "graph", "graph": {"primitives": [{"primitive": "feGaussianBlur", "stdDeviation": 2}]}},
+                             {"type": "invert", "amount": 1}]}]"##,
+        );
+        let effects = filter_effects(&parsed[0].state().unwrap().filter, Affine::IDENTITY);
+        assert!(matches!(
+            effects[..],
+            [
+                ResolvedEffect::Blur { radius: 1.0 },
+                ResolvedEffect::FilterGraph(_),
+                ResolvedEffect::ColorMatrix(_),
+            ]
+        ));
     }
 
     #[test]

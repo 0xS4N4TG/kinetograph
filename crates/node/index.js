@@ -799,6 +799,7 @@ module.exports.setFfmpegPath = nativeBinding.setFfmpegPath
 module.exports.rgbaToYuv = nativeBinding.rgbaToYuv
 module.exports.riveFrame = nativeBinding.riveFrame
 module.exports.sceneUnknownKeys = nativeBinding.sceneUnknownKeys
+module.exports.riveInfo = nativeBinding.riveInfo
 module.exports.scanStreams = nativeBinding.scanStreams
 module.exports.startDomIsland = nativeBinding.startDomIsland
 module.exports.takeProfile = nativeBinding.takeProfile

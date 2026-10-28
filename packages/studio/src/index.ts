@@ -27,6 +27,8 @@ export interface StudioOptions {
   agentCwd?: string;
   /** Allow the agent although the studio listens on an address other computers can reach. Default false. */
   allowRemoteAgent?: boolean;
+  /** How long a conversation waits for its window to come back (a reload) before the agent stops, in ms. Default 30 000. */
+  agentReclaimMs?: number;
   /** Receives one line for each build, build failure and warning. */
   log?: (message: string) => void;
 }

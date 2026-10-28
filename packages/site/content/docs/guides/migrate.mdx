@@ -49,7 +49,7 @@ Status: **works** means every export exists and the package is used as usual. **
 | `@remotion/canvas` | Works | 24 of 24 | Remotion Studio's editor canvas. It bundles, and every call throws `UnsupportedApiError`. Counted on 4.0.532, because 4.0.536 is not on npm. |
 | `@remotion/media-parser` | Partly | 13 of 13 | Local files only. No box tree or sample callbacks. [Known issues](/docs/known-issues/). |
 | `@remotion/webcodecs` | Partly | 24 of 24 | Encode and decode throw `UnsupportedApiError`. `convertMedia` writes sound to WAV. |
-| `@remotion/rive` | Partly | 1 of 1 | No `onLoad`, `assetLoader`, `effects`, or state machine inputs. |
+| `@remotion/rive` | Yes | 1 of 1 | `getRenderer()` is `null`; CDN assets are not fetched. |
 | `@remotion/skia` | Partly | 1 of 1 | Needs the `@kinetographdev/skia` add-on. Some Skia features are not drawn. Also covers `@shopify/react-native-skia`. |
 | `@remotion/three` | Not planned | not counted | The own 3D layer, `Scene3D`. Steps in the [skill](#the-agent-skill). |
 | `@remotion/player` | Not planned | 0 of 3 | The studio: `kinetograph studio`. There is no embeddable player. |

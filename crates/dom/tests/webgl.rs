@@ -16,6 +16,16 @@ fn case_file(name: &str, extension: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
 }
 
+/// The context attributes the case asks for on its second line (`// attributes: {...}`), as JSON.
+fn attributes_of(script: &str) -> String {
+    script
+        .lines()
+        .nth(1)
+        .and_then(|l| l.strip_prefix("// attributes: "))
+        .unwrap_or("{}")
+        .to_string()
+}
+
 fn size_of(script: &str) -> (u32, u32) {
     let line = script.lines().next().unwrap_or_default();
     let mut numbers = line
@@ -41,11 +51,12 @@ fn run(name: &str, mean_limit: f64) -> Option<(f64, u8)> {
     } else {
         "webgl"
     };
+    let attributes = attributes_of(&script);
     let body = format!(
         "<canvas id=\"c\" width=\"{w}\" height=\"{h}\" data-kg-webgl='{}' style=\"display:block\"></canvas>\n\
          <script>\n\
          const W = {w}, H = {h};\n\
-         (function (gl, W, H) {{\n{script}\n}})(document.getElementById('c').getContext('{ctx}'), W, H);\n\
+         (function (gl, W, H) {{\n{script}\n}})(document.getElementById('c').getContext('{ctx}', {attributes}), W, H);\n\
          </script>",
         recording.trim()
     );
@@ -84,6 +95,26 @@ fn webgl_framebuffer() {
 }
 
 #[test]
+fn webgl_stencil() {
+    run("webgl_stencil", 1.0);
+}
+
+#[test]
+fn webgl2_mrt() {
+    run("webgl2_mrt", 1.0);
+}
+
+#[test]
+fn webgl2_depth_texture() {
+    run("webgl2_depth_texture", 1.0);
+}
+
+#[test]
+fn webgl2_blit_depth_stencil() {
+    run("webgl2_blit_depth_stencil", 1.0);
+}
+
+#[test]
 fn a_canvas_with_a_recording_is_one_glsl_layer_at_its_bitmap_size() {
     let recording = case_file("webgl_gradient", "json");
     let body = format!(
@@ -107,6 +138,10 @@ fn the_committed_recordings_parse_as_the_scene_format_does() {
         "webgl_noise",
         "webgl_texture",
         "webgl_framebuffer",
+        "webgl_stencil",
+        "webgl2_mrt",
+        "webgl2_depth_texture",
+        "webgl2_blit_depth_stencil",
     ] {
         let content: serde_json::Value = serde_json::from_str(&case_file(name, "json")).unwrap();
         let mut layer = serde_json::json!({ "id": "c", "type": "glsl", "width": 10, "height": 10 });

@@ -3,6 +3,7 @@
 // the host tree, `getComputedStyle`, the observers. There is no network and no clock: remote URLs fail with a message
 // that says so. `<canvas>` is the native 2D canvas (`./canvas.ts`). Installed in Node only where the globals are missing.
 
+import { AnimationEffectShim, AnimationPlaybackEventShim, AnimationShim, AnimationTimelineShim, animationsOf, DocumentTimelineShim, documentTimeline, KeyframeEffectShim } from './animations.js';
 import { readFile } from 'node:fs/promises';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolveObjectURL } from 'node:buffer';
@@ -616,6 +617,13 @@ export function installDomGlobals(): void {
   define(g, 'ResizeObserver', ResizeObserverShim);
   define(g, 'IntersectionObserver', IntersectionObserverShim);
   define(g, 'MutationObserver', MutationObserverShim);
+  // The Web Animations API, on the virtual clock (animations.ts).
+  define(g, 'Animation', AnimationShim);
+  define(g, 'AnimationEffect', AnimationEffectShim);
+  define(g, 'KeyframeEffect', KeyframeEffectShim);
+  define(g, 'AnimationTimeline', AnimationTimelineShim);
+  define(g, 'DocumentTimeline', DocumentTimelineShim);
+  define(g, 'AnimationPlaybackEvent', AnimationPlaybackEventShim);
 
   // `fetch` of project files only. The real one stays reachable for the font downloads, which are explicit and cached.
   if (typeof g.fetch === 'function' && (g.fetch as { kinetograph?: boolean }).kinetograph !== true) {
@@ -635,6 +643,8 @@ export function installDomGlobals(): void {
   define(doc, 'cookie', '');
   define(doc, 'compatMode', 'CSS1Compat');
   define(doc, 'characterSet', 'UTF-8');
+  define(doc, 'timeline', documentTimeline);
+  define(doc, 'getAnimations', () => animationsOf(null));
   // The document's own elements are real ones: a script's `document.head.prepend(style)` and `document.body.append(canvas)`
   // put nodes into the tree that is drawn (`head`'s `<style>`s are stylesheets; `body` is the top level of the root).
   const html = domElementFor(htmlHost);

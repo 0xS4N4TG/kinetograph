@@ -59,22 +59,19 @@ Each item says what doesn't work and what you see instead. For what does work, s
 
 ### Canvas 2D
 
-- A pattern of a canvas, used for a stroke or for text, is drawn transparent.
-- Pattern fills work, up to 10,000 tiles.
-- `isPointInStroke` ignores caps, joins and dashes.
-- `url()` filters are reported and not drawn.
-- Shadow and filter images are capped at 50 million pixels per canvas layer per frame. A frame past that is an error.
+- A `url()` filter is drawn when it names an SVG `<filter>` of the page. On a `<Canvas>` component, which has no page, or when nothing has that id, it is reported and the rest of the filter list is drawn.
+- `isPointInStroke` agrees with Chrome's on straight edges. Along a curve, a point within a tenth of a pixel of the edge can get the other answer, because Chrome approximates the curve's outline.
 
 ### WebGL
 
 Every frame starts with an empty canvas and blank framebuffer textures, also for a context made with `preserveDrawingBuffer`, because a frame is a function of its own number. A frame that draws nothing draws nothing, where a browser would keep the last picture. Each item below needs new GPU work.
 
-- Not supported: colour and stencil renderbuffers; a depth or stencil texture as an attachment; the stencil test; `COLOR_ATTACHMENT1` and up; a texture level above 0 as a target; targets that are not RGBA or that hold uploaded pixels; `generateMipmap` on a texture drawn into; `LINES`, `LINE_STRIP` and `LINE_LOOP`; instanced points; a `vertexAttribDivisor` above 1; cube, 3D and float textures; and multisampled edges.
+- Not supported: multisampled renderbuffers (`renderbufferStorageMultisample` with samples above 0); targets that are not RGBA or that hold uploaded pixels; attachments of different sizes in one framebuffer; `generateMipmap` on a texture drawn into; a `TEXTURE_BASE_LEVEL` other than 0; `LINES`, `LINE_STRIP` and `LINE_LOOP`; instanced points; a `vertexAttribDivisor` above 1; cube, 3D and float textures; `sampler2DShadow`; and multisampled edges.
 - `readPixels` is refused by design.
-- The depth test is drawn on the canvas (the `depth` context attribute, on by default) and on a framebuffer with a depth renderbuffer, with `depthFunc`, `depthMask`, `depthRange`, `clearDepth` and `polygonOffset`. The depth buffer holds 32-bit floats where a browser's holds 24 bits, so two surfaces closer than about 6e-8 of the depth range can order differently, and `polygonOffset`'s `units` are whole steps of that float buffer, truncated to an integer. A renderbuffer is its framebuffer's own: two framebuffers sharing one do not share depth. A canvas made with `depth: false` has no depth buffer, so the test always passes.
-- Points are drawn as squares of `gl_PointSize` pixels with `gl_PointCoord`, at most 511 pixels across (`ALIASED_POINT_SIZE_RANGE` is 1 to 511). `gl_VertexID` in a vertex shader that draws points is the point's index, but with `drawElements` it is the position in the index list, not the index.
-- `blitFramebuffer` copies the colour only (a `DEPTH_BUFFER_BIT` in the mask is ignored), and refuses to read and write one buffer.
-- `texSubImage2D` into a texture a framebuffer drew in is supported from a canvas, `ImageData` or an array of pixels; from an image file it is not.
+- The depth and stencil tests are drawn, on the canvas (its `depth` and `stencil` attributes) and on framebuffers, with every function and operation. The depth buffer holds 32-bit floats where a browser's holds 24 bits, so two surfaces closer than about 6e-8 of the depth range can order differently, and `polygonOffset`'s `units` are whole steps of that float buffer, truncated to an integer. A canvas made with `depth: false` has no depth buffer, so the test always passes.
+- A depth texture is sampled `NEAREST`, whatever filter it is given.
+- Points are drawn as squares of `gl_PointSize` pixels with `gl_PointCoord`, at most 511 pixels across (`ALIASED_POINT_SIZE_RANGE` is 1 to 511, as Chrome reports on Apple silicon). `gl_VertexID` in a vertex shader that draws points is the point's index, but with `drawElements` it is the position in the index list, not the index.
+- `texSubImage2D` over a texture that had `generateMipmap` makes its mipmaps again from the new picture; Chrome keeps the old levels until the next `generateMipmap`.
 
 ### WebGPU
 
@@ -83,7 +80,7 @@ A canvas's `getContext('webgpu')` records, and the passes it submits are drawn o
 - 2D textures of the 8, 16 and 32-bit colour formats (`rgba8unorm`, `rgba8unorm-srgb`, `bgra8unorm`, `bgra8unorm-srgb`, `r8unorm`, `rg8unorm`, `rgba16float`, `rgba32float`, `r32float`, `rg32float`, the `uint` and `sint` ones, and the rest of WebGPU's table without optional features), with mip levels; `createView` (levels), `createSampler` (address modes, filters, lod clamps, anisotropy); texture and sampler bind group entries, in explicit layouts and in `layout: 'auto'`.
 - `queue.writeTexture`, `copyBufferToTexture`, `copyTextureToTexture`, and `queue.copyExternalImageToTexture` from `ImageData`, `<img>`, `ImageBitmap` (`createImageBitmap` of an image, a canvas, `ImageData` or a `Blob` of an image file), a 2D `<canvas>` or `OffscreenCanvas`, a `<video>` and a layer (in an effect). A video gives the frame at `video.currentTime` (set it before the copy; the frame is the one a video layer shows at that time, so it is the same alone and in a sequence). `flipY` and `premultipliedAlpha` are honoured, and `copyExternalImageToTexture` goes into the four 8-bit RGBA formats only.
 - Render passes into a texture, so multi-pass shaders work. A texture is the steps that wrote it, in order; the steps of an earlier frame stay for later frames until a whole write (a `clear` pass, a whole `writeTexture` or copy) covers them, so a page that redraws a texture each frame is the same alone and in a sequence. A texture drawn with `loadOp: 'load'` every frame piles up and is not: the frame then depends on the frames before it.
-- Every size, level, origin, row stride and usage is checked as the spec does, on the page side (it throws) and again when the frame is drawn (a warning on stderr and a transparent canvas). A frame may hold 512 MiB of textures (all levels counted) and 4096 steps; identical bytes are kept once.
+- Every size, level, origin, row stride and usage is checked as the spec does, on the page side (it throws) and again when the frame is drawn (a warning on stderr and a transparent canvas). A frame may hold 4 GiB of textures (all levels counted: three of the biggest textures the device's 8192 limit allows, `rgba32float` with every level) and 4096 steps; identical bytes are kept once. WebGPU has no such cap and Chrome made 4 GiB of textures on the M4 without an error; the engine keeps one because each render worker makes a frame's textures anew.
 
 - Compute: `createComputePipeline`, `createComputePipelineAsync` (with an explicit layout or `layout: 'auto'` and `getBindGroupLayout`), `beginComputePass`, `setPipeline`, `setBindGroup` (dynamic offsets too), `dispatchWorkgroups` and `end`, replayed in submit order with the render passes and copies. Storage buffers (`read-only-storage` and `storage`) and storage textures (`write-only`; `read-write` and `read-only` for `r32float`, `r32uint` and `r32sint`, as WebGPU allows without optional features) in `rgba32float`, `rgba16float`, `rgba8unorm`, `r32float` and the other storage formats. A 32-bit float texture is sampled as `unfilterable-float` with a non-filtering sampler, or as `float` when the device has `float32-filterable` (it does on Apple GPUs, and `adapter.features` says so).
 - `device.limits` and `adapter.limits` are those of the engine's own wgpu device, asked of the addon; a device that asks for better limits is refused, because the one that draws has them. Workgroup sizes written with number literals, dispatch sizes, storage binding counts and sizes, offsets and formats are checked on the page side (the call throws) and again by `webgpu::validate` when the frame is drawn (a warning and a transparent canvas, never a panic). A frame holds at most 4096 dispatches and 2^26 workgroups.
@@ -94,7 +91,7 @@ A canvas's `getContext('webgpu')` records, and the passes it submits are drawn o
 Not supported, and reported on every frame (`--strict` fails): query sets and timestamp writes, render bundles, indirect draws and dispatches, depth and stencil, multisampling, texture arrays, 1D and 3D textures, `viewFormats`, comparison samplers, `importExternalTexture` (copy the frame with `copyExternalImageToTexture`), a video that is not a file of the project, reading a buffer or a texture back (`mapAsync`, `copyTextureToBuffer`), a copy of a buffer a pass wrote into a texture (`copyBufferToTexture`), the canvas's own texture as a source or in a bind group, pipeline-overridable constants, and other texture formats (depth, compressed, and the ones that need optional features, such as `bgra8unorm` and `r16unorm` storage).
 
 - A `<video>` is read at `currentTime`, which a page sets itself; the engine does not play it. A video file that names no colour space is converted as a video layer is, which differs from Chrome's colour management for unlabelled video.
-- The canvas is drawn as 8-bit `rgba8unorm`; `rgba16float` and a display-p3 `colorSpace` are reported and drawn in sRGB without extended range.
+- An `rgba16float` canvas is drawn at half-float precision all the way into the compositor, and a `display-p3` `colorSpace` is converted to the video's sRGB primaries. The output is SDR sRGB (Rec. 709) video, so values outside 0 to 1 are clipped, as a canvas of the standard tone mapping is, and a P3 colour outside sRGB's gamut is clipped to it. `toneMapping: { mode: 'extended' }` is drawn as standard and reported.
 - A WGSL module naga refuses is reported and the canvas draws nothing; one that wgpu refuses later is a warning on stderr and a transparent canvas.
 - The `shaders.iife.js` blocks of HyperFrames draw into one canvas without an input: none of them takes an image or a layer. The ones that read a texture they made themselves (`chrome-orb`, `frost`, `goo`, `heatmap`, `hologram`, `holographic`, `light-edge`, `liquid-metal`, `nebula`, `obsidian`, `plastic`, `thin-film`, `water`) also dispatch compute kernels that write `rgba32float` storage textures; they are drawn, with nothing reported. They ask the adapter for `timestamp-query`, which is not offered (query sets are not drawn), and say so on stderr.
 
@@ -104,14 +101,15 @@ It sees only its own layer, runs one pass, has no other texture, and takes `f32`
 
 ### 3D (`scene3d`)
 
-- Not supported: occlusion and emissive texture maps, bevels and GPU skinning.
-- The CPU deforms morphs and skins once per pose.
-- At most 4 lights cast shadows, and 8 shadow maps are drawn in all. A point light takes 6 of them.
+- A model's texture on a second set of texture coordinates, `alphaMode: MASK` (drawn opaque) and glTF extensions are not read, and are reported.
+- Every light may cast shadows (up to 48 maps; a point light takes 6), but a scene's shadow maps may hold at most 1 GiB, every map counted at the largest `mapSize`: 48 maps of 2048 or 16 of 4096. A scene over it is refused when it loads.
+- A bevel bigger than a concave curve of the outline folds over itself there, as in three.js.
 
 ### CSS
 
-- `background-repeat: space` with thousands of gradient tiles still errors. The other repeats are drawn as one tile repeated by `feTile`.
-- Backdrop blur and glow are capped at 128 px. The `blur` effect takes up to 512.
+- A `box-shadow` blur above about 200 px is a true Gaussian here; Chrome approximates very wide box shadows and draws them fainter. `filter: blur()`, `drop-shadow()` and `backdrop-filter: blur()` match Chrome up to its own limit of 532 px, and past it, as Chrome draws them 532 px wide.
+- A margin makes room for at most `3 * 128` px past the canvas edge for a scene `glow`, shadow or canvas-mode `backdropBlur`: a wider one is drawn as wide, but content further off the canvas than that does not reach in. CSS `backdrop-filter` reads only its own box, so it needs no margin.
+- A `backdrop-filter` in a `preserve-3d` context that sits inside an element drawn as one group (an ancestor with `opacity` below 1, a `filter`, a `mask`, `mix-blend-mode` or `isolation: isolate`) blurs only what its own 3D context drew before it, not the rest of that group. Chrome blurs everything the group drew before it. The frame reports it as approximated.
 
 ### SVG
 
@@ -120,37 +118,40 @@ It sees only its own layer, runs one pass, has no other texture, and takes `f32`
 
 ### GSAP
 
-- GSAP's root clock follows the frame, so a `gsap.to` that plays by itself advances ([GSAP](/docs/compat/#gsap)). A jump to a later frame (a still, a worker starting at frame 600) renders the frames it skips, without reading them, so the effects that make tweens at an intermediate frame run there. That costs one React render per skipped frame in a project that imports `gsap`, also when it only seeks paused timelines.
-- Motion-blur sub-frames do not move GSAP's clock: a tween that plays by itself is at the frame's own state in every sub-frame. A paused timeline you seek yourself is blurred as usual.
+- GSAP's root clock follows the frame, so a `gsap.to` that plays by itself advances ([GSAP](/docs/compat/#gsap)). A jump to a later frame (a still, a worker starting at frame 600) renders the frames it skips, without drawing or reading them, so that an effect which makes a tween at an intermediate frame runs there. This can't be skipped without changing the frame: an effect that starts a tween at frame 30 has to run at frame 30. It costs one React render per skipped frame in a project that imports `gsap`, also when it only seeks paused timelines. Measured: about 0.1 ms per skipped frame for a 48-element composition (a still at frame 899 takes 100 ms more than one at frame 0), and 0.36 ms for the HyperFrames test page.
+- Motion-blur sub-frames show a tween that plays by itself at the sub-frame's time, and run its `onUpdate`. They do not run `onStart`, `onComplete`, `onRepeat` or a timeline's `call()`: what those do would outlive the sample. A tween that starts later than the frame is not sampled in the frame's later sub-frames.
 - `ScrollTrigger` and `Draggable` respond to scrolling and dragging, which a render does not have, so they do not apply. `Flip` works.
-- An SVG shape's `getBoundingClientRect` is worked out from its `getBBox`, its transforms and the `<svg>`'s `viewBox`, not from layout. Strokes and filters are not in it.
 - More in [GSAP](/docs/compat/#gsap).
 
 ### Libraries
 
 - A rendered frame is only as frame-pure as the library: Motion's `animate()` that plays by itself is (see [Libraries](/docs/compat/#libraries-that-run-their-own-frame-loop)), but one that reads the wall clock or a real `Date` outside the virtual one is not.
-- Motion picks the Web Animations API when `element.animate` exists. The engine's `animate()` throws, so Motion falls back to its own JavaScript animation, whose colour mixing differs slightly from the browser's.
+- The Web Animations API (`element.animate()`, which Motion uses) does not draw an animation of a pseudo-element (`pseudoElement: '::before'`); it warns once. An animation that a later one covers completely is not removed by itself (`replaceState` stays `active`), so `getAnimations()` keeps listing it until it is cancelled. Two transform lists whose functions don't pair up mix through their 2D matrices; a 3D function there is not mixed and jumps at half way.
+- Motion components that mount in the middle of a video (in a `<Sequence>`) start their animation at the frame they mount on. A still or a render worker that starts after that frame mounts them at its own first frame, so the animation starts there. Mount them at frame 0, or drive them from the frame with `@kinetographdev/motion`.
 - Chart.js, Recharts and the rest measure text only with the fonts you registered. With none, text is measured and drawn in the built-in font.
 
 ### `@remotion/skia` and `@shopify/react-native-skia`
 
-- `Atlas`, `Patch`, `Glyphs`, `TextBlob`, `Picture` and `ImageSVG` are drawn. Text inside an SVG is not.
-- Not supported: Reanimated values, `FitBox`, `Skia.Surface` and `Skia.Offscreen`, the `Skia.Image`, `Skia.Data` and `Skia.Typeface` factories, `useVideo`, animated images, paragraph measurement, and shaders or filters set on a `Skia.Paint()` object.
-- Drawing is on the CPU only.
+- Text inside an SVG is drawn with your registered fonts. A family that is not registered is drawn in the built-in fallback font and reported. Characters the font lacks are not drawn.
+- Reanimated values live for one frame, so drive them from `useCurrentFrame()`. `withTiming`, `withSpring` and the other clock animations jump to their end value and are reported.
+- `useVideo` shows the video's frames but does not play its sound. Add an `<Audio>` of the file for it.
+- Not supported: `makeImageFromView`, `Skia.SVG.MakeFromData`, and touch handling.
+- Drawing is on the CPU only. Skia's GPU path was measured and kept out: no prebuilt Skia has the GPU backend and the text and SVG modules together, and GPU pixels differ by machine.
+- An offscreen surface is drawn on the CPU too, so it looks the same on every machine.
 - PNGs of drawn frames are kept under `~/.cache/kinetograph/skia`, the newest 400 to 600 of them.
 - More in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 7.7.
 
 ### `@remotion/rive`
 
-- Not supported: `onLoad`, `assetLoader`, `effects` and the `ref` getters.
-- A state machine starts with its inputs at their defaults, and you can't set them.
-- Only pictures embedded in the file are supported.
+- Set state machine inputs with the `stateMachineInputs` prop, as an object or as a function of the frame.
+- A referenced picture or font is read from beside the `.riv` file or given by `assetLoader`. An asset on Rive's CDN is not fetched; it is reported and drawn without.
+- `getRenderer()` on the `ref` returns `null`.
 - More in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 7.6.
 
 ## Can look different
 
-- **`preserve-3d` with planes that cross.** Groups with `transform-style: preserve-3d` under `perspective` are drawn back to front, with no depth buffer. Planes that cross each other are drawn wrong. An element with a grouping property (`opacity` below 1, `filter`, `clip-path`, `mask`, `mix-blend-mode`, `isolation: isolate`, `overflow` other than `visible` or `clip`, `backdrop-filter`) is flat, as in a browser, so its children are not sorted in depth with the 3D around it.
-- **Inline-block with a stacking context is drawn twice.** A `display: inline-block` element that also has a `transform`, or any other property that makes it a stacking context or positions it, comes out as two identical layers. Its antialiased edges look slightly heavier, and it costs two draws. To reproduce it: a div with the text "ab", and a `span` with `display: inline-block; transform: scale(0.5)`. The end card of the launch film (frames 1386 to 1520) has this case.
+- **`preserve-3d` planes cut along a box.** Planes in a `preserve-3d` context are ordered and cut where they cross, as Chrome's BSP tree does, using each element's border box. A shadow or glow that reaches past the box does not count as part of the plane when deciding what crosses. The line where two planes cross is not anti-aliased: each pixel along it belongs to one piece, as with Chrome's split quads. A layer whose pieces are cut more than 16 times (a card lying flat under a comb of 20 standing cards) is cut before it is warped instead, so its pieces meet with bilinear edges and can show a faint seam.
+- **`backdrop-filter` on a turned element.** The backdrop is mirrored at the element's bounding box on the canvas, not at its own turned or skewed edges as in Chrome.
 - **`@paper-design/shaders`: eight shaders checked.** Version 0.0.82 runs, and its mesh gradient, grain gradient, warp, voronoi, swirl, simplex noise, dot orbit and smoke ring (three of them read the library's noise texture) match Chrome for Testing to the pixel, mounted with `speed` 0 at a fixed `frame`. Its other shaders, the ones that take a picture, and `@paper-design/shaders-react` have not been run.
 - **`ex` from a font that is not loaded.** The `ex` unit is the x-height of the element's first font. When the page names only a generic family (`serif`), that font is Kinetograph's built-in fallback, whose x-height (0.495 em) is larger than Chrome's Times (0.448 em), so a MathJax formula, which MathJax sizes in `ex`, comes out about 10% larger, and nothing reports it. Load the font the page asks for: with the same font loaded, MathJax's SVG output matches Chrome. Kinetograph reads the x-height from the font's OS/2 table, as Chrome does on Linux and Windows; Chrome on macOS measures the `x` glyph instead, which differs by a few percent in some fonts (KaTeX_Main: 0.442 em against 0.431 em).
 - **`ex` inside SVG geometry.** A length in `ex` in an SVG shape's attributes (`<rect width="10ex">`) is half an em, not the font's x-height. The `width` and `height` of the `<svg>` element itself are right.

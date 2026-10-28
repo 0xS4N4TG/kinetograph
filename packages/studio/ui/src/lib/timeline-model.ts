@@ -4,7 +4,7 @@
 
 import type { SequenceJson, TimelineLayer } from '@/api';
 import type { SourceLocation } from '../../../src/protocol.ts';
-import { displayName } from './names';
+import { baseName, displayName } from './names';
 
 export type Range = [first: number, last: number];
 
@@ -200,7 +200,7 @@ export function buildTimeline(sequences: SequenceJson[], layers: TimelineLayer[]
       const groups = new Map<string, TimelineLayer[]>();
       const order: string[] = [];
       for (const r of list) {
-        const key = `${r.component ?? ''}@${sourceKey(r.source)}@${r.component === undefined ? displayName(r) : ''}`;
+        const key = `${r.component ?? ''}@${sourceKey(r.source)}@${r.component === undefined ? baseName(r) : ''}`;
         const g = groups.get(key);
         if (g) g.push(r);
         else {
@@ -214,7 +214,7 @@ export function buildTimeline(sequences: SequenceJson[], layers: TimelineLayer[]
           if (g.length === 1) return single(g[0]!);
           const first = g[0]!;
           const items = g.map(single);
-          const label = first.component ?? displayName(first);
+          const label = first.component ?? baseName(first);
           return {
             id: `f:${first.id}`,
             kind: 'component' as const,

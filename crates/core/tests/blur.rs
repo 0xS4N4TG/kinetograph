@@ -190,3 +190,51 @@ fn blur_radius_can_be_keyframed() {
         "peaks fall as radius grows"
     );
 }
+
+/// A layer with `backdropBlur` (`edgeMode: "mirror"`) over a transparent
+/// canvas that has a red box at `0..red` along x: the alpha along the middle
+/// row. With `gpu` both are in a `preserve3d` group, which the GPU
+/// compositor draws (its blur, `blur.rs`), else Skia draws them.
+fn mirrored_backdrop(width: u32, red: u32, radius: f64, gpu: bool) -> Vec<u8> {
+    let json = format!(
+        r##"{{"width": {width}, "height": 100, "fps": 30, "durationInFrames": 1,
+            "background": "#00000000", "layers": [
+              {{"id": "g", "type": "group", "preserve3d": {gpu}, "children": [
+                {{"id": "red", "type": "shape", "fill": "#ff0000",
+                  "shape": {{"kind": "rect", "width": {red}, "height": 100}}}},
+                {{"id": "panel", "type": "shape", "fill": "#00000000",
+                  "shape": {{"kind": "rect", "width": {width}, "height": 100}},
+                  "effects": [{{"type": "backdropBlur", "radius": {radius}, "edgeMode": "mirror"}}]}}]}}]}}"##
+    );
+    let frame = render(&json);
+    let row = 50 * frame.width as usize * 4;
+    (0..frame.width as usize)
+        .map(|x| frame.rgba[row + 4 * x + 3])
+        .collect()
+}
+
+#[test]
+fn a_mirrored_backdrop_blur_wider_than_a_texture_is_shrunk_first() {
+    // 1920 + 6 * 1100 is past the largest texture: the GPU blur's canvas is
+    // drawn at half size. The box mirrored is red on its left half and
+    // clear on its right, so a blur this wide leaves the clear half about
+    // half red (Skia blurs by at most 532, so less there).
+    let alpha = mirrored_backdrop(1920, 960, 1100.0, true);
+    for x in [1000, 1440, 1910] {
+        assert!((80..=150).contains(&alpha[x]), "alpha {} at {x}", alpha[x]);
+    }
+    let alpha = mirrored_backdrop(1920, 960, 1100.0, false);
+    assert!((5..=60).contains(&alpha[1440]), "Skia: {}", alpha[1440]);
+}
+
+#[test]
+fn a_mirrored_backdrop_blur_mirrors_at_its_own_box() {
+    // The backdrop has content on the left quarter of the panel only; the
+    // panel mirrors at its own edges, so its right end stays clear, and the
+    // frost spills past the red box a little.
+    for gpu in [true, false] {
+        let alpha = mirrored_backdrop(400, 100, 10.0, gpu);
+        assert!(alpha[110] > 20, "gpu {gpu}: alpha {} at 110", alpha[110]);
+        assert!(alpha[390] < 4, "gpu {gpu}: alpha {} at 390", alpha[390]);
+    }
+}
