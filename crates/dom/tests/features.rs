@@ -455,3 +455,149 @@ document.getAnimations().forEach(a => {{ a.pause(); a.currentTime = 500; }});
         out.unsupported
     );
 }
+
+/// A case compared with Chrome more closely than `case!`: the mean difference
+/// must be under `$mean` (of 255).
+macro_rules! close_case {
+    ($name:ident, $w:expr, $h:expr, $mean:expr, $body:expr) => {
+        #[test]
+        fn $name() {
+            let body: String = $body;
+            let (out, frame, diff) = compare(stringify!($name), &body, $w, $h);
+            println!(
+                "{}: layers {}; unsupported {:?}; diff {:?}",
+                stringify!($name),
+                paintkit::count_layers(&out.layers),
+                out.unsupported,
+                diff
+            );
+            paintkit::check_golden(stringify!($name), &frame);
+            assert!(out.unsupported.is_empty(), "{:?}", out.unsupported);
+            if let Some(d) = diff {
+                assert!(d.mean < $mean, "{}: {d:?}", stringify!($name));
+            }
+        }
+    };
+}
+
+// Two planes that cross, a cube and a card turned past edge-on, in one
+// preserve-3d context each: drawn in pieces, back to front, as Chrome's BSP
+// tree orders them.
+close_case!(preserve_3d_crossing, 480, 200, 1.5, {
+    r#"<div style="position:absolute;left:20px;top:20px;width:160px;height:160px;perspective:600px">
+<div style="position:relative;width:160px;height:160px;transform-style:preserve-3d;transform:rotateY(25deg) rotateX(-20deg)">
+<div style="position:absolute;left:20px;top:30px;width:120px;height:100px;background:rgba(220,40,40,.85)"></div>
+<div style="position:absolute;left:20px;top:30px;width:120px;height:100px;background:rgba(40,90,220,.85);transform:rotateY(70deg)"></div>
+<div style="position:absolute;left:20px;top:30px;width:120px;height:100px;background:rgba(40,170,60,.85);transform:rotateX(60deg)"></div>
+</div></div>
+<div style="position:absolute;left:200px;top:40px;width:120px;height:120px;perspective:500px">
+<div style="position:relative;width:100px;height:100px;margin:10px;transform-style:preserve-3d;transform:rotateX(-25deg) rotateY(38deg)">
+<div style="position:absolute;width:100px;height:100px;background:#e55;transform:translateZ(50px)"></div>
+<div style="position:absolute;width:100px;height:100px;background:#5b5;transform:rotateY(90deg) translateZ(50px)"></div>
+<div style="position:absolute;width:100px;height:100px;background:#55e;transform:rotateY(180deg) translateZ(50px)"></div>
+<div style="position:absolute;width:100px;height:100px;background:#ee5;transform:rotateY(-90deg) translateZ(50px)"></div>
+<div style="position:absolute;width:100px;height:100px;background:#5ee;transform:rotateX(90deg) translateZ(50px)"></div>
+<div style="position:absolute;width:100px;height:100px;background:#e5e;transform:rotateX(-90deg) translateZ(50px)"></div>
+</div></div>
+<div style="position:absolute;left:340px;top:30px;width:120px;height:140px;perspective:400px">
+<div style="position:relative;width:120px;height:140px;transform-style:preserve-3d;transform:rotateY(150deg)">
+<div style="position:absolute;inset:0;background:#c63;backface-visibility:hidden">front</div>
+<div style="position:absolute;inset:0;background:#36c;backface-visibility:hidden;transform:rotateY(180deg)">back</div>
+</div></div>"#
+        .to_string()
+});
+
+// A card lying flat, crossed by 20 standing cards side by side: pieces of the
+// flat card collect more cuts than one warp takes, and are cut before the warp.
+close_case!(preserve_3d_comb, 360, 260, 1.5, {
+    let standing: String = (0..20)
+        .map(|i| {
+            format!(
+                r#"<div style="position:absolute;left:{}px;top:0;width:100px;height:120px;background:hsl({},70%,55%);transform:rotateY(90deg)"></div>"#,
+                i * 8,
+                i * 18
+            )
+        })
+        .collect();
+    format!(
+        r#"<div style="position:absolute;left:0;top:0;width:360px;height:260px;perspective:700px">
+<div style="position:absolute;left:70px;top:70px;width:240px;height:120px;transform-style:preserve-3d;transform:rotateX(-35deg) rotateY(25deg)">
+{standing}<div style="position:absolute;left:20px;top:10px;width:200px;height:100px;background:rgba(40,40,40,.9);transform:rotateX(90deg)"></div>
+</div></div>"#
+    )
+});
+
+// A star of 20 cards turned about one vertical axis: each crosses all the
+// others along the axis.
+close_case!(preserve_3d_star, 320, 240, 1.5, {
+    let cards: String = (0..20)
+        .map(|i| {
+            format!(
+                r#"<div style="position:absolute;left:0;top:0;width:160px;height:140px;background:hsl({},65%,55%);transform:rotateY({}deg)"></div>"#,
+                i * 18,
+                i * 9
+            )
+        })
+        .collect();
+    format!(
+        r#"<div style="position:absolute;left:0;top:0;width:320px;height:240px;perspective:600px">
+<div style="position:absolute;left:80px;top:50px;width:160px;height:140px;transform-style:preserve-3d;transform:rotateX(-20deg) rotateY(10deg)">
+{cards}</div></div>"#
+    )
+});
+
+// Parallel cards in a turned stack, where the middle of the farther card is
+// nearer the eye than the middle of the nearer one: ordered by their planes.
+close_case!(preserve_3d_tilted_stack, 480, 270, 1.0, {
+    r#"<div style="position:absolute;left:0;top:0;width:480px;height:270px;perspective:700px">
+<div style="position:absolute;left:115px;top:212px;width:0;height:0;transform-style:preserve-3d;transform:rotateX(24deg) rotateY(40deg)">
+<div style="position:absolute;left:-44px;top:-19px;width:88px;height:54px;border-radius:8px;background:#f4a460;transform:translateZ(30px)"></div>
+<div style="position:absolute;left:8px;top:-15px;width:88px;height:54px;border-radius:8px;background:#e8c76a;transform:translateZ(60px)"></div>
+<div style="position:absolute;left:-10px;top:-37px;width:88px;height:54px;border-radius:8px;background:#e06050;transform:translateZ(-60px)"></div>
+</div></div>"#
+        .to_string()
+});
+
+// An inline-block that is a stacking context is painted once, from its line.
+close_case!(inline_block_stacking_context, 320, 120, 1.0, {
+    r#"<div style="font-size:40px">ab</div>
+<div style="font-size:40px"><span style="display:inline-block;transform:scale(0.5);background:rgba(0,120,255,.5)">ab</span> <span style="display:inline-block;position:relative;left:10px;opacity:.6;background:#f80">cd</span></div>"#
+        .to_string()
+});
+
+// `background-repeat: space` and `round` with thousands of gradient tiles,
+// and `space` with thousands of picture tiles: one shape whose paint repeats
+// the tile at its exact period.
+close_case!(background_space_many_tiles, 640, 420, 4.0, {
+    format!(
+        r#"<div style="position:absolute;left:10px;top:10px;width:300px;height:200px;background-image:linear-gradient(red,blue);background-size:12px 12px;background-repeat:space"></div>
+<div style="position:absolute;left:330px;top:10px;width:300px;height:200px;background-image:linear-gradient(90deg,#fc0,#063);background-size:13px 9px;background-repeat:space"></div>
+<div style="position:absolute;left:10px;top:220px;width:300px;height:190px;background-image:radial-gradient(#000 40%,transparent 41%);background-size:11px 11px;background-repeat:round"></div>
+<div style="position:absolute;left:330px;top:220px;width:300px;height:190px;background:url({}) 0 0 / 10px 10px space"></div>"#,
+        asset("tile.png")
+    )
+});
+
+// `backdrop-filter` reads only the backdrop inside the element's box,
+// mirrored past its edges, as Chrome does: the box beside the black half
+// stays white, the strip is mirrored at the box's left edge, and a blur of
+// 300 px (wider than the old limit of 128) frosts a box at the canvas edge.
+close_case!(backdrop_mirrored, 640, 320, 1.0, {
+    r#"<div style="position:absolute;left:0;top:0;width:320px;height:320px;background:#000"></div>
+<div style="position:absolute;left:470px;top:0;width:20px;height:320px;background:#c00"></div>
+<div style="position:absolute;left:330px;top:20px;width:100px;height:100px;backdrop-filter:blur(20px)"></div>
+<div style="position:absolute;left:200px;top:140px;width:240px;height:80px;backdrop-filter:blur(20px)"></div>
+<div style="position:absolute;left:470px;top:20px;width:150px;height:150px;backdrop-filter:blur(12px)"></div>
+<div style="position:absolute;left:0;top:240px;width:640px;height:80px;background:linear-gradient(90deg,#fc0,#06c)"></div>
+<div style="position:absolute;left:0;top:250px;width:400px;height:70px;backdrop-filter:blur(300px)"></div>"#
+        .to_string()
+});
+
+// Blurs wider than the old limits (128 for a shadow, 512 for a blur): a
+// drop shadow of 300 px and a blur of 600 px.
+close_case!(large_blurs, 640, 320, 2.0, {
+    r#"<div style="position:absolute;inset:0;background:linear-gradient(90deg,#f00,#00f)"></div>
+<div style="position:absolute;left:60px;top:60px;width:200px;height:200px;background:#fff;filter:drop-shadow(0 0 600px #0f0)"></div>
+<div style="position:absolute;left:380px;top:60px;width:200px;height:200px;background:#ff0;filter:blur(600px)"></div>"#
+        .to_string()
+});

@@ -13,12 +13,24 @@
 //            q.z <= 0, and is not drawn: the part of a plane that passes the
 //            eye plane is cut off, not mirrored back onto the screen. The back
 //            of a layer turned away is drawn, mirrored, as in CSS.
+//
+//            With cuts (a piece of a plane that another crosses, `bsp.rs`),
+//            only the texels q.xy / q.z that every cut keeps are drawn: a
+//            cut (a, b, c, strict) keeps a u + b v + c >= 0, or > 0 when
+//            strict is 1. Pieces cut by the same line the two ways (one of
+//            them strict) cover every pixel along it once, without
+//            anti-aliasing, so they leave no seam.
+
+const MAX_CUTS: u32 = 16u;
 
 struct Params {
     // The rows of H^-1; the w components are unused.
     row0: vec4<f32>,
     row1: vec4<f32>,
     row2: vec4<f32>,
+    // x: how many of `cuts` are used.
+    count: vec4<u32>,
+    cuts: array<vec4<f32>, MAX_CUTS>,
 }
 
 @group(0) @binding(0) var tex: texture_2d<f32>;
@@ -40,6 +52,12 @@ fn fs_warp(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
         return vec4<f32>(0.0);
     }
     let texel = q.xy / q.z;
+    for (var i = 0u; i < min(params.count.x, MAX_CUTS); i += 1u) {
+        let d = dot(params.cuts[i].xyz, vec3<f32>(texel, 1.0));
+        if d < 0.0 || (params.cuts[i].w > 0.5 && d <= 0.0) {
+            return vec4<f32>(0.0);
+        }
+    }
     let dims = vec2<f32>(textureDimensions(tex));
     if any(texel < vec2<f32>(0.0)) || any(texel > dims) {
         return vec4<f32>(0.0);

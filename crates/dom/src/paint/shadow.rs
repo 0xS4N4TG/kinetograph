@@ -62,7 +62,11 @@ impl<'a> Painter<'a> {
             };
             if let Some(layer) = layer {
                 out.push(layer);
-                self.note_reach(3.0 * sigma + dx.abs().max(dy.abs()) + spread.abs());
+                self.note_reach(
+                    3.0 * sigma.min(kinetograph_core::scene::MAX_MARGIN_BLUR)
+                        + dx.abs().max(dy.abs())
+                        + spread.abs(),
+                );
             }
         }
         out

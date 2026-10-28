@@ -305,26 +305,32 @@ impl<'a> Painter<'a> {
         // The real count (the lists are cut short), as a whole number.
         let count = (x_total * y_total).min(1e9) as usize;
 
+        // Too many tiles to draw one by one: one shape whose paint repeats a
+        // tile a period apart (a tile and, for `space`, the gap).
+        let tiled = |p: &mut Self, fill: Value| {
+            let period = |rep: Tile, total: f64, len: f64, t: f64| match rep {
+                Tile::Space if total >= 2.0 => t + (len - total * t) / (total - 1.0),
+                _ => t,
+            };
+            let reps = (
+                matches!(spec.repeat.0, Tile::Repeat | Tile::Round)
+                    || (spec.repeat.0 == Tile::Space && x_total >= 2.0),
+                matches!(spec.repeat.1, Tile::Repeat | Tile::Round)
+                    || (spec.repeat.1 == Tile::Space && y_total >= 2.0),
+            );
+            let cell = Rect::new(
+                xs[0],
+                ys[0],
+                period(spec.repeat.0, x_total, area.w, tw),
+                period(spec.repeat.1, y_total, area.h, th),
+            );
+            p.tiled_shape(id, cell, (tw, th), fill, reps, paint, paint_radii)
+        };
         match img {
             Img::Gradient(g) => {
                 if count > MAX_TILES {
-                    if spec.repeat.0 == Tile::Space || spec.repeat.1 == Tile::Space {
-                        self.report(
-                            node,
-                            spec.property,
-                            "background-repeat: space",
-                            "too many tiles of a gradient to space out",
-                        );
-                        return None;
-                    }
-                    // One tile, repeated by a feTile filter over the area.
-                    let reps = (
-                        matches!(spec.repeat.0, Tile::Repeat | Tile::Round),
-                        matches!(spec.repeat.1, Tile::Repeat | Tile::Round),
-                    );
-                    let cell = Rect::new(xs[0], ys[0], tw, th);
                     return match gradient_paint(&g, Rect::new(0.0, 0.0, tw, th), current) {
-                        Ok(fill) => Some(self.tiled_cell(id, cell, fill, reps, paint, paint_radii)),
+                        Ok(fill) => tiled(self, fill),
                         Err(reason) => {
                             self.report(node, spec.property, "gradient", &reason);
                             None
@@ -388,13 +394,8 @@ impl<'a> Painter<'a> {
                 let repeat_y = matches!(spec.repeat.1, Tile::Repeat | Tile::Round);
                 let space = spec.repeat.0 == Tile::Space || spec.repeat.1 == Tile::Space;
                 if space && count > MAX_TILES {
-                    self.report(
-                        node,
-                        spec.property,
-                        "background-repeat: space",
-                        "too many tiles",
-                    );
-                    return None;
+                    let fill = image_paint(&path, 0.0, 0.0, tw, th, false, false);
+                    return tiled(self, fill);
                 }
                 if space || (!repeat_x && !repeat_y && count == 1) {
                     // Individual tiles, each one picture.
@@ -481,52 +482,64 @@ impl<'a> Painter<'a> {
         }
     }
 
-    /// `fill` painted in one `cell` and repeated over the painting area `paint`
-    /// by a `feTile` filter, along the axes `reps` says repeat: for the
-    /// thousands of tiles that cannot be drawn one by one.
-    fn tiled_cell(
+    /// `fill` (a gradient or picture paint laid out in a tile of `size`) in
+    /// one `cell` (a tile and the gap after it) at its corner, repeated cell
+    /// by cell over the painting area `paint` along the axes `reps` says
+    /// repeat, by the paint itself (a gradient's `tile`, a picture's
+    /// `spaceX` and `spaceY`): one shape for the thousands of tiles that
+    /// cannot be drawn one by one.
+    #[allow(clippy::too_many_arguments)]
+    fn tiled_shape(
         &mut self,
         id: &str,
         cell: Rect,
-        fill: Value,
+        size: (f64, f64),
+        mut fill: Value,
         reps: (bool, bool),
         paint: Rect,
         paint_radii: Radii,
-    ) -> Value {
-        // Where the tiling shows: the painting area, cut to the cell's own
+    ) -> Option<Value> {
+        // Where the tiling shows: the painting area, cut to the tile's own
         // band along an axis that does not repeat.
         let mut region = paint;
         if !reps.0 {
-            region = Rect::new(cell.x, region.y, cell.w, region.h).intersect(&region);
+            region = Rect::new(cell.x, region.y, size.0, region.h).intersect(&region);
         }
         if !reps.1 {
-            region = Rect::new(region.x, cell.y, region.w, cell.h).intersect(&region);
+            region = Rect::new(region.x, cell.y, region.w, size.1).intersect(&region);
         }
-        let tile = rect_shape(&format!("{id}.cell"), cell.w, cell.h, 0.0, fill)
-            .at(cell.x, cell.y)
-            .build();
         if region.is_empty() {
-            return tile;
+            return None;
         }
-        let (x0, y0) = (region.x.floor() - 1.0, region.y.floor() - 1.0);
-        let (x1, y1) = (region.right().ceil() + 1.0, region.bottom().ceil() + 1.0);
-        let clip = self.region_clip(paint.intersect(&region), paint_radii, 0.0, 0.0);
-        super::util::group(id, vec![tile])
-            .set(
-                "effects",
-                json!([{
-                    "type": "filterGraph", "filterUnits": "userSpaceOnUse",
-                    "x": num(x0), "y": num(y0), "width": num(x1 - x0), "height": num(y1 - y0),
-                    "primitives": [
-                        {"primitive": "feOffset", "dx": 0, "dy": 0,
-                         "x": num(cell.x), "y": num(cell.y),
-                         "width": num(cell.w), "height": num(cell.h)},
-                        {"primitive": "feTile"},
-                    ],
-                }]),
-            )
-            .set("clip", clip)
-            .build()
+        // The tile's corner in the shape's own space.
+        let (x, y) = (cell.x - region.x, cell.y - region.y);
+        let (sx, sy) = (cell.w - size.0, cell.h - size.1);
+        if let Some(o) = fill.as_object_mut() {
+            if o.get("type").and_then(Value::as_str) == Some("image") {
+                o.insert("x".into(), json!(num(x)));
+                o.insert("y".into(), json!(num(y)));
+                o.insert("repeatX".into(), json!(reps.0));
+                o.insert("repeatY".into(), json!(reps.1));
+                o.insert("spaceX".into(), json!(num(sx)));
+                o.insert("spaceY".into(), json!(num(sy)));
+            } else {
+                o.insert(
+                    "tile".into(),
+                    json!({
+                        "x": num(x), "y": num(y), "width": num(size.0), "height": num(size.1),
+                        "spaceX": num(sx), "spaceY": num(sy), "repeatX": reps.0, "repeatY": reps.1,
+                    }),
+                );
+            }
+        }
+        if region == paint {
+            return Some(self.region_shape(id, paint, paint_radii, fill));
+        }
+        let mut shape = rect_shape(id, region.w, region.h, 0.0, fill)
+            .at(region.x, region.y)
+            .build();
+        self.clip_layer(&mut shape, paint, paint_radii);
+        Some(shape)
     }
 
     /// A clip path (scene `clip`) of a region, in the coordinates of a layer

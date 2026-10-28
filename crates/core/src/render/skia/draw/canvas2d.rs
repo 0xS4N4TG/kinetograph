@@ -288,7 +288,7 @@ impl Translator {
             if stops.is_empty() {
                 return None;
             }
-            let g = ResolvedGradient { geometry, stops: stops.to_vec(), extend: Extend::Pad, units: Units::User, transform: Affine::IDENTITY, unpremultiplied: true };
+            let g = ResolvedGradient { geometry, stops: stops.to_vec(), extend: Extend::Pad, units: Units::User, transform: Affine::IDENTITY, unpremultiplied: true, tile: None };
             gradient_shader_for(&g, None, linear)
         };
         let shader = match paint {

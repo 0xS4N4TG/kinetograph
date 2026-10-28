@@ -55,6 +55,23 @@ interface GradientBase {
    *  `gradientTransform`. `[1, 0, 0, k, 0, cy * (1 - k)]` squashes a radial gradient about `(cx, cy)` into an ellipse.
    *  Not animated. */
   transform?: [number, number, number, number, number, number];
+  /** Paint the gradient in one tile and repeat it (`background-repeat` of a gradient): the gradient's coordinates are
+   *  the tile's, `(0, 0)` at its corner. */
+  tile?: GradientTile;
+}
+/** A gradient's tile: `width` x `height` with its top-left corner at `(x, y)` in the painted layer's space, repeated
+ *  every `width + spaceX` (`height + spaceY`) along the axes that repeat; along the others there is the one tile. */
+export interface GradientTile {
+  /** Default 0. */
+  x?: Num;
+  y?: Num;
+  width: Num;
+  height: Num;
+  /** The gap between tiles. Default 0. */
+  spaceX?: Num;
+  spaceY?: Num;
+  repeatX?: boolean;
+  repeatY?: boolean;
 }
 export interface LinearGradient extends GradientBase {
   type: 'linear';
@@ -79,8 +96,9 @@ export interface ConicGradient extends GradientBase {
 }
 export type Gradient = LinearGradient | RadialGradient | ConicGradient;
 /** A picture as a paint, once or tiled (`background-image: url()` with `background-repeat`): drawn `width` x `height`
- *  with its top-left corner at `(x, y)` in the painted layer's space, repeated along the axes that repeat; along the
- *  others its edge pixels are held, so cut the shape to the tile. `src` is a PNG, JPEG or GIF file or a `data:` URL. */
+ *  with its top-left corner at `(x, y)` in the painted layer's space, repeated along the axes that repeat, `spaceX`
+ *  (`spaceY`) apart; along the others its edge pixels are held, so cut the shape to the tile (with a space, there is
+ *  the one copy). `src` is a PNG, JPEG or GIF file or a `data:` URL. */
 export interface ImagePaint {
   type: 'image';
   src: string;
@@ -92,6 +110,9 @@ export interface ImagePaint {
   height: Num;
   repeatX?: boolean;
   repeatY?: boolean;
+  /** The gap between copies along an axis that repeats (`background-repeat: space`). Default 0. */
+  spaceX?: Num;
+  spaceY?: Num;
 }
 /** A colour string, a gradient or a picture: a shape's `fill` and a text layer's `color`. */
 export type Paint = ColorString | Gradient | ImagePaint;
@@ -235,6 +256,9 @@ export interface BlurEffect {
 export interface BackdropBlurEffect {
   type: 'backdropBlur';
   radius: Num;
+  /** `mirror`: read only the backdrop inside the layer's box, mirrored past its edges, as a browser's
+   *  `backdrop-filter` does. Default `canvas`: the canvas around the layer. */
+  edgeMode?: 'canvas' | 'mirror';
 }
 export interface GlowEffect {
   type: 'glow';

@@ -38,7 +38,7 @@ const shadowFields: EffectField[] = [
     type: 'Num',
     default: 0,
     description:
-      "Blur in canvas pixels, the same scale as the blur effect (roughly the standard deviation). Clamped to 0..128. CSS box-shadow takes the full width, about twice this, so '0 8px 24px' is blur 12.",
+      "Blur in canvas pixels, the same scale as the blur effect (roughly the standard deviation). Clamped to 0..16384. CSS box-shadow takes the full width, about twice this, so '0 8px 24px' is blur 12.",
   },
   {
     name: 'spread',
@@ -65,19 +65,28 @@ export const effectCatalog: EffectInfo[] = [
   {
     type: 'blur',
     description: 'Gaussian blur of the layer, run in linear light on premultiplied colour. Does not scale with the layer; radii below 1 do nothing.',
-    fields: [radius('Clamped to 0..128.')],
+    fields: [radius('Clamped to 0..16384.')],
   },
   {
     type: 'backdropBlur',
     description:
       'Frosted glass: what is behind the layer is blurred and shown through the layer\'s shape, with the layer drawn on top.',
-    fields: [radius('Clamped to 0..128; below 1 it does nothing.')],
+    fields: [
+      radius('Clamped to 0..16384; below 1 it does nothing.'),
+      {
+        name: 'edgeMode',
+        type: "'canvas' | 'mirror'",
+        default: 'canvas',
+        description:
+          "mirror: only the backdrop inside the layer's box is blurred, mirrored past its edges, as CSS backdrop-filter is drawn. canvas: the canvas around the layer, and the margin past the canvas.",
+      },
+    ],
   },
   {
     type: 'glow',
     description: 'A halo: a blurred copy of the layer is drawn under it, so light spills out past its edges.',
     fields: [
-      radius('Clamped to 0..128; below 1 the effect does nothing.'),
+      radius('Clamped to 0..16384; below 1 the effect does nothing.'),
       {
         name: 'color',
         type: 'color',

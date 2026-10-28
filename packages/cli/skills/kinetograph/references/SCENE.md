@@ -1046,8 +1046,11 @@ reach past a layer, at any keyframe on any layer (nested layers included), round
 - `blur` is not counted. It spreads a layer's own pixels and nothing needs room beyond them, so a scene that uses
   only `blur` keeps margin 0.
 - `glow` counts `3 * radius`, and `chromaticAberration` counts `|amount|`.
-- `backdropBlur` counts `3 * radius` (it reads the canvas around a layer that sits at the edge).
-- `dropShadow` and `insetShadow` count `max(|x|, |y|) + |spread| + 3 * blur`. (An inset shadow stays inside its
+- `backdropBlur` counts `3 * radius` (it reads the canvas around a layer that sits at the edge); with
+  `edgeMode: "mirror"` it counts nothing.
+- `dropShadow` and `insetShadow` count `max(|x|, |y|) + |spread| + 3 * blur`.
+- A radius or a shadow's `blur` counts at most 128 (`3 * 128` past the edge): a wider blur is drawn as wide, but what
+  lies further than that past the canvas edge is not drawn for it. (An inset shadow stays inside its
   layer, but it reads the space around the layer, so it needs the room too. A negative spread reads the pixels around
   a point as a positive one does.)
 - `shader` counts its `padding`: it is how far you say the shader paints past the layer (or reads from), and nothing
@@ -1078,12 +1081,16 @@ reach past a layer, at any keyframe on any layer (nested layers included), round
 
 | Field | Meaning |
 |---|---|
-| `radius` | Animatable number, in canvas pixels: roughly the standard deviation of the Gaussian. Clamped to 0..512. |
+| `radius` | Animatable number, in canvas pixels: roughly the standard deviation of the Gaussian. Clamped to 0..16384. |
 
 The blur is a Gaussian, run in linear light on premultiplied colour. Large radii are blurred at reduced resolution, but
-never so low that the Gaussian is narrower than 4 texels, which hides the coarse grid. In tests (`tests/blur.rs`) the
-measured standard deviation is within 5% of `radius` for radii from 2 to 512, and a small layer's blur follows its
-position to within 0.01 pixel, so moving or resizing a blurred glow does not make it jump. Things to know:
+never so low that the Gaussian is narrower than 4 texels, which hides the coarse grid. Whatever the radius, each image
+of the reduced chain holds only what the blur draws in it, so a wide blur needs about the memory of a narrow one, and no
+blur texture is larger than 8192 pixels a side: on a 1920 x 1080 canvas a frame with a blur, glow, backdrop blur or drop
+shadow of 128, 256, 512 or 1000 px takes 3 to 14 ms on an M4 (`cargo run --release --example blur_bench`). In tests
+(`tests/blur.rs`) the measured standard deviation is within 5% of `radius` for radii from 2 to 512, and a small layer's
+blur follows its position to within 0.01 pixel, so moving or resizing a blurred glow does not make it jump. Things to
+know:
 
 - It does not scale with the layer's `scale` or a parent group's `scale`; the radius is always in canvas pixels.
 - Radii below 1 do nothing.
@@ -1103,15 +1110,15 @@ edges.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `radius` | required | Animatable number, in canvas pixels, like the `blur` effect's: roughly the standard deviation. Clamped to 0..128; below 1 the effect does nothing. |
+| `radius` | required | Animatable number, in canvas pixels, like the `blur` effect's: roughly the standard deviation. Clamped to 0..16384; below 1 the effect does nothing. |
 | `color` | none | Colours the halo. Without it the halo has the layer's own colours; with it the halo is this colour, scaled by the blurred layer's alpha (so the colour's own alpha dims it too). Not animated. |
 | `intensity` | `1` | Animatable. Multiplies the halo, clamped to 0..4. At 0 the effect does nothing. |
 
 The blur runs in linear light on premultiplied colour, so the halo is physically a light falloff. Where
 `intensity` pushes the halo past fully opaque it is capped at alpha 1 with its colour kept (so it saturates rather than
 shifting hue). The halo is made from the layer as it is after the effects before it, and opacity fades layer and halo
-together. The halo reaches about three radii past the layer's edge, which the [margin](#canvas-margin) allows for, so
-the glow of a layer that hangs off the canvas still falls on it.
+together. The halo reaches about three radii past the layer's edge, which the [margin](#canvas-margin) allows for (up to
+a radius of 128), so the glow of a layer that hangs off the canvas still falls on it.
 
 ### chromaticAberration
 
@@ -1146,7 +1153,7 @@ unchanged.
 | Field | Default | Meaning |
 |---|---|---|
 | `x`, `y` | `0` | Offset of the shadow in canvas pixels (positive is right and down). Not scaled by the layer's `scale` or rotated with it. Fractions are fine and move the shadow smoothly. |
-| `blur` | `0` | Blur of the shadow, in canvas pixels. The same scale as the `blur` effect: roughly the standard deviation of the Gaussian. Clamped to 0..128. CSS `box-shadow` takes the full width, which is about twice this, so `0 8px 24px` is `blur: 12`. |
+| `blur` | `0` | Blur of the shadow, in canvas pixels. The same scale as the `blur` effect: roughly the standard deviation of the Gaussian. Clamped to 0..16384. CSS `box-shadow` takes the full width, which is about twice this, so `0 8px 24px` is `blur: 12`. |
 | `spread` | `0` | Grows the shadow by this many pixels on every side before it is blurred. Negative shrinks it. Clamped to -128..128. |
 | `color` | `#000000` | The shadow colour, with straight alpha (so `#00000080` is a half-strength black). Not animated. |
 
@@ -1639,7 +1646,8 @@ top of it.
 
 | Field | Meaning |
 |---|---|
-| `radius` | Animatable number, in canvas pixels, like the `blur` effect's: roughly the standard deviation. Clamped to 0..128; below 1 it does nothing. Required. |
+| `radius` | Animatable number, in canvas pixels, like the `blur` effect's: roughly the standard deviation. Clamped to 0..16384; below 1 it does nothing. Required. |
+| `edgeMode` | `canvas` (the default): the backdrop is the canvas around the layer, as below. `mirror`: only the backdrop inside the layer's box is blurred, mirrored past the box's edges, which is how a browser draws CSS `backdrop-filter` (the DOM painter writes it). A mirrored blur reads nothing outside the box, so it needs no margin; where the backdrop has nothing it is transparent. The box is the layer's bounding box on the canvas, so a layer turned or skewed mirrors at that box, not at its own edges. When the box and three radii each way would be more than 8192 pixels, the blur is drawn on that canvas shrunk by a power of two and enlarged into the box. |
 
 - **The backdrop** is the canvas as it is when the layer is reached: the background and every layer below it. Inside a
   group it is the backdrop of the group with the group's earlier children drawn over it (normal blend, full opacity),
@@ -1655,7 +1663,8 @@ top of it.
 - A matte source (see [Track mattes](#track-mattes)) with a `backdropBlur` blurs the backdrop of the layer it mattes.
 - The backdrop is blurred as the canvas plus the [margin](#canvas-margin): at the canvas edge it blurs in the
   background colour and whatever hangs past the edge up to the margin, and past that nothing (transparent). The
-  margin counts `3 * radius`, so the edge of the canvas is blurred from real pixels.
+  margin counts `3 * radius` up to a radius of 128, so the edge of the canvas is blurred from real pixels; a wider blur
+  at the edge blurs in some transparency. With `edgeMode: "mirror"` none of this applies: the box is all it reads.
 - Cost: one extra full-canvas blur per frosted layer per frame, plus one canvas-sized copy when the layer is inside a
   group.
 
@@ -1782,6 +1791,7 @@ Common fields:
 | `units` | `user` | What the coordinates are measured in. `user`: pixels of the painted layer. `box`: fractions of the painted layer's box, see [Box units](#box-units). |
 | `transform` | none | A matrix `[a, b, c, d, e, f]` (SVG's `matrix()`, so `x' = a x + c y + e`) that takes the gradient's space (after `units`) to the painted layer's: SVG's `gradientTransform`. A non-uniform matrix turns a circle into an ellipse and skews a line's perpendiculars. |
 | `unpremultiplied` | `false` | Blend the stops without premultiplying alpha, as SVG and canvas gradients do (the DOM painter sets it for SVG `<linearGradient>` and `<radialGradient>`): a stop fading to `#0000ff00` darkens the red next to it through purple. |
+| `tile` | none | Paint the gradient in one tile and repeat the tile, which is CSS `background-repeat` of a gradient: `{ "x", "y", "width", "height", "spaceX", "spaceY", "repeatX", "repeatY" }`. The tile is `width` x `height` with its top-left corner at (`x`, `y`) (default 0) in the painted layer's space, and the gradient's coordinates are the tile's: (0, 0) at its corner, `box` units fractions of the tile. It repeats every `width + spaceX` (`height + spaceY`; the spaces default to 0) along the axes with `repeatX` / `repeatY`; along the others there is the one tile. Any number of tiles costs one shape: the tile is drawn once and repeated by the paint, at any fractional period. The DOM painter writes it for `background-repeat` (`repeat`, `round` and `space`) with more than 150 tiles of a gradient. |
 
 Colours blend in sRGB with premultiplied alpha, as in CSS, so a stop fading to `#ffffff00` fades to transparent white
 and not through grey. (Layers themselves are still blended in linear light.) A gradient with no extent paints the last
@@ -1987,12 +1997,15 @@ layers inside a preserve3d group are warped even when they have no 3D transform 
 them.
 
 **Depth sorting.** The layers a preserve3d group draws (its children, and recursively the children of preserve3d
-groups nested in it, which sort together with them) are painted in **painter's order**: farthest first, by the `z` of
-each layer's centre after its placement (before the camera's perspective, which does not change the order along a
-line of sight). A layer's centre is the middle of its box (the box an `inset` clip uses: a shape's, image's, noise's or
-mesh's width by height, a text layer's layout box, a path's bounding box), or its position `(x, y)` (where its anchor
-lands) for a group without a `layout`, which has no box. The sort is stable: layers at the same depth (within 1/1024 of a pixel) keep
-their document order. Only preserve3d groups sort. Every other list, a preserve3d group's parent and the children of an
+groups nested in it, which sort together with them) are painted back to front as a BSP tree of their planes orders them,
+which is how Chrome orders the layers of a 3D rendering context (`crates/core/src/bsp.rs`). Each layer is a plane: its
+box (the box an `inset` clip uses: a shape's, image's, noise's or mesh's width by height, a text layer's layout box, a
+path's bounding box; for a group, its children's boxes together), moved by its placement. A plane that another crosses
+is cut along the line where they meet, and each piece takes its own place in the order, so two cards pushed through each
+other intersect: each is in front where it is nearer. The layer is drawn and warped once and blended piece by piece.
+Planes that only touch (the faces of a cube) are not cut. The planes are put in the tree in painter's order (farthest
+first by the `z` of each layer's centre after its placement, document order for ties within 1/1024 of a pixel), and
+planes in one plane keep that order. Only preserve3d groups sort. Every other list, a preserve3d group's parent and the children of an
 ordinary group inside it included, keeps document order; an ordinary group inside a preserve3d group is one layer to sort,
 at its position, and is drawn as a flat picture. The group as a whole is drawn at its place in its parent's list, so
 siblings above and below it stay above and below.
@@ -2008,9 +2021,8 @@ Rules:
   modes, effects, clips and masks like any layer; each is applied to the layer flat, before it is warped. A matte
   source cannot have `rotateX`, `rotateY` or `z` itself: the matte moves with the layer it cuts.
 - A `backdropBlur` child blurs the canvas as painted so far, in depth order.
-- Sorting only orders whole layers. There is no depth buffer, so two layers that cross each other (a card pushed through
-  another) do not intersect: one is entirely over the other, and a layer that is large and tilted can be sorted wrong
-  against a small one in front of part of it.
+- A layer's plane is its box; what it paints past its box (a shadow, a glow) is in the piece of the plane it lies in,
+  but does not make the box cross another plane.
 - A preserve3d group scaled to nothing draws nothing. Its `scale` enlarges its children in the plane only, not in
   depth (see above).
 
@@ -2195,8 +2207,9 @@ A shape's `fill` and a text layer's `color` can be a picture, once or tiled, whi
 ```
 
 The picture is drawn `width` x `height` with its top-left corner at (`x`, `y`) in the painted layer's space, bilinearly
-resampled. It repeats along the axes with `repeatX` / `repeatY`; along an axis that does not repeat its edge pixels are
-held, so cut the shape to the tile (a shape no taller than the tile for `repeat-x`). `src` is a PNG, JPEG or GIF
+resampled. It repeats along the axes with `repeatX` / `repeatY`, `spaceX` / `spaceY` pixels apart (default 0, which is
+`background-repeat: space`); along an axis that does not repeat its edge pixels are held, so cut the shape to the tile
+(a shape no taller than the tile for `repeat-x`). With a space there is the one copy along such an axis. `src` is a PNG, JPEG or GIF
 file, or a `data:` URL, which is decoded from memory (an `image` layer's `src` can be one too).
 
 ### Blend space
@@ -2268,10 +2281,11 @@ numbers. Blurs, colour filters and everything inside one layer are unchanged. Th
   Overlapping patches blend in document order without depth.
 - `cornerPin` needs a box (no groups), costs one pass each, and warps with bilinear sampling like the 3D transforms (no
   mipmaps). It cannot bring in pixels from beyond the texture (canvas plus margin).
-- 3D is a warp of a flat layer, not a 3D renderer: no depth buffer, no intersecting layers, no lighting, one scene
+- 3D is a warp of a flat layer, not a 3D renderer: no depth buffer (the layers of a preserve3d group that cross are cut
+  where they meet, see [preserve3d groups](#preserve3d-groups)), no lighting, one scene
   camera, no mipmaps (see [3D transforms and the camera](#3d-transforms-and-the-camera)), and a layer that hangs off the
   canvas is cut at the canvas edge (plus margin) before it is turned.
-- A `preserve3d` group sorts whole layers by the depth of their centre (painter's order); it cannot have effects, a
+- A `preserve3d` group orders its layers by a BSP tree of their planes and cuts the ones that cross; it cannot have effects, a
   clip, a mask, a matte or a blend mode, and multiplies its `opacity` into its children instead of fading them as one
   picture (see [preserve3d groups](#preserve3d-groups)).
 - `motionBlur` averages 2 to 64 equally weighted samples of the shutter (no sample-weighting curve, no random

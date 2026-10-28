@@ -632,7 +632,7 @@ container stay inside its clip. The canvas takes the root's (or the body's) back
 |---|---|
 | box background colour, solid uniform opaque border | one `shape` with `fill` and `stroke` (centre line) |
 | background colour / images, `background-blend-mode` | shapes per layer; a `group` (isolated) when a layer blends |
-| `background-size/position/repeat/clip/origin` | `Paint::Image` fill (tiles repeat in the image sampler); one shape per tile for `space`, gradients tiles (up to 150) |
+| `background-size/position/repeat/clip/origin` | `Paint::Image` fill (tiles repeat in the image sampler); one shape per tile for `space` and gradient tiles up to 150; past that one shape whose paint repeats one tile (a gradient's `tile`, a picture's `spaceX`/`spaceY`: a Skia picture shader, as Chrome tiles a gradient) |
 | gradients (linear, radial incl. ellipse, conic, repeating, hints) | scene gradients; an ellipse is a circle with `transform` |
 | `background-clip: text` | the layers get a `matte` whose source is white glyph runs |
 | `box-shadow` outer / inset | a blurred shape of the shadow colour, cut with `clip` to outside the border box / inside the padding box |
@@ -642,7 +642,7 @@ container stay inside its clip. The canvas takes the root's (or the body's) back
 | text, `letter-spacing`, `white-space`, `vertical-align`, inline-block | `text` layers with `runs` (Blitz's Parley glyph positions) |
 | `text-shadow`, `text-decoration` | blurred copies of the run; decoration lines as shapes |
 | `transform`, `translate`, `rotate`, `scale`, `transform-origin`, `perspective`, `preserve-3d`, `backface-visibility` | `transform.matrix` about the origin; parent perspective folded into the child's matrix; `preserve3d` group; `backfaceHidden` |
-| `opacity`, `mix-blend-mode`, `filter`, `backdrop-filter: blur()` | group fields, effects, a see-through shape with `backdropBlur` |
+| `opacity`, `mix-blend-mode`, `filter`, `backdrop-filter: blur()` | group fields, effects, a see-through shape with `backdropBlur` (`edgeMode: "mirror"`: Chrome reads the backdrop inside the border box only, mirrored past its edges). Blur deviations are capped at 532 as Chrome caps them (Skia's limit); `drop-shadow()` takes its blur length as the deviation, as Chrome does (`box-shadow` takes half) |
 | `filter: url(#id)` | `svg::filter_graph` |
 | `clip-path` (inset, circle, ellipse, polygon, `path()`, geometry boxes), `overflow` | scene `clip` (path / polygon / ellipse) |
 | `mask-image` (gradients, pictures, size/position/repeat/origin/clip/mode) | a source group of the mask layers and a `matte` |
@@ -797,7 +797,9 @@ markers in the bundled bullet font.
 
 Each case renders the same HTML in our painter and in Chrome for Testing 154 (a test oracle only) and prints the mean
 per-pixel largest-channel difference (0 to 255) over the whole picture; text and anti-aliasing differ by design.
-With `blendSpace: srgb`: blend modes 0.35, clip paths 0.21, preserve-3d cubes and backface 0.22, paint order 0.17,
+With `blendSpace: srgb`: blend modes 0.35, clip paths 0.21, preserve-3d cubes and backface 0.22 (crossing planes, a
+cube and a flipped card 0.65), backdrop blur 0.27 (mirrored in the box, up to 300 px), drop shadow 600 px and blur
+600 px 0.93, paint order 0.17,
 clipped positioned boxes 0.16, transforms 0.28, tiled backgrounds 0.38, shadows 0.55, filters 1.1, lists and outline
 1.3, gradients 1.6, border images 2.6, borders 3.6 (dotted dot spacing), `background-clip: text` 5.0 (synthetic bold),
 text 13 (Chrome's heavier text rendering), masks 22 (Chrome blocks a `file:` mask picture, so the other three agree).
@@ -811,8 +813,9 @@ The same cases blended in linear light were 3 to 15 times worse for anything tra
 
 ### Known gaps and findings
 
-- Gradient tiles and `space` tiles are one layer each, limited to 150; a CSS grid made of `linear-gradient` tiles over a
-  big box is reported. A tile pattern needs a pattern paint of a rendered tile.
+- Gradient tiles and `space` tiles are one layer each up to 150. Past that the tile is drawn once and the paint repeats
+  it (`Gradient.tile`, `ImagePaint.spaceX`/`spaceY`), at any fractional period: `background_space_many_tiles` is 3.3
+  mean levels from Chrome (`space` 0.5 to 5.8 by quarter, `round` 1.1, a 10 px picture 6.1, Chrome's sharper downscale).
 - `blendSpace: srgb` converts at every composite (a power function per pixel in the blend pass); blurs and colour filters
   stay in linear light, so a blurred translucent shape is not exactly Chrome's.
 - Synthetic bold is a stroke of a 48th of the size; Chrome's is a little heavier.
@@ -1001,14 +1004,13 @@ the first measure computes the baseline and nothing is wrong. Fix: `layout/inlin
 (`vendor/README.md`): an inline box measured with no baselines is laid out in `PerformLayout` mode, which the cache
 keeps whole. Test: `an_edited_svg_beside_text_leaves_the_line_as_fresh` (`crates/dom/tests/samples.rs`).
 
-**An element painted twice** (not fixed): an inline-block with a stacking context (a `transform`, say) in a line of text
-is painted twice, as `$0.0.1` and `$0.0.1~2`, identical layers, so its antialiased edge is drawn at double alpha and it
-costs double. Cause: `Painter::walk` (`paint/mod.rs`, the children loop) paints a child with `is_sc` (or `positioned`)
-through `paint_context` (`paint_atomic`) into `pos` before it looks at `inline_level`, and `paint_inline_root`
-(`paint/text.rs`, the `InlineBox` arm) paints the same box again into `pos` while walking the lines. A line-level box
-without a context is painted only from the lines. Reproduce: a `div` with text `ab` and a `span` with
-`display: inline-block; transform: scale(0.5)` gives `["$0.0.text","$0.0.1","$0.0.1~2"]`. The end card of the launch film
-(`kinetograph.` with a scaled full stop, frames 1386-1520) has it.
+**An element painted twice** (fixed): an inline-block with a stacking context (a `transform`, say) in a line of text
+was painted twice, as `$0.0.1` and `$0.0.1~2`, identical layers, so its antialiased edge was drawn at double alpha.
+`Painter::walk` (`paint/mod.rs`, the children loop) painted a child with `is_sc` (or `positioned`) before it looked at
+`inline_level`, and `paint_inline_root` (`paint/text.rs`, the `InlineBox` arm) painted the same box again while
+walking the lines. `walk` now leaves an atomic inline-level box of an inline root (not floated, not out of flow) to the
+lines, context or not. Test: `inline_block_stacking_context` (`crates/dom/tests/features.rs`, 0.9 mean levels from
+Chrome).
 
 ## 13. HyperFrames colour grade and readback caching
 
