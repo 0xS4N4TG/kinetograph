@@ -437,7 +437,7 @@ impl Translator {
         let tile = recorder.begin_recording(bounds, false);
         match source {
             CanvasSource::Canvas { commands, .. } => self.canvas_nested(tile, (width, height), commands, 1.0, SkBlend::SrcOver),
-            CanvasSource::Layer { id } => {
+            CanvasSource::Layer { id, .. } => {
                 let sampling = SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None);
                 self.draw_layer_picture(tile, id, bounds, &Paint::default(), sampling);
             }
