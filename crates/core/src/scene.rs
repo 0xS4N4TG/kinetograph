@@ -11,7 +11,6 @@ use kurbo::BezPath;
 use crate::anim::Num;
 use crate::color::Color;
 use crate::error::{Error, Result};
-use crate::resolve::MAX_BLUR_RADIUS;
 use crate::turbulence::MAX_OCTAVES;
 use crate::video::VideoInfo;
 
@@ -372,6 +371,17 @@ pub enum BlendMode {
     Luminosity,
 }
 
+/// What a `backdropBlur` reads past the layer's box.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum BackdropEdge {
+    /// The canvas around the layer (and the margin past the canvas).
+    #[default]
+    Canvas,
+    /// The backdrop inside the layer's box, mirrored past its edges.
+    Mirror,
+}
+
 /// Per-layer effects. Each one added here gets a matching variant in
 /// `resolve::ResolvedEffect` and a pass in the compositor.
 #[derive(Clone, Debug, Deserialize)]
@@ -381,8 +391,14 @@ pub enum Effect {
     /// pixels.
     Blur { radius: Num },
     /// Frosted glass: what is behind the layer, blurred, shows through the
-    /// layer's shape. `radius` is like `blur`'s.
-    BackdropBlur { radius: Num },
+    /// layer's shape. `radius` is like `blur`'s. `edgeMode: "mirror"` reads
+    /// only the backdrop inside the layer's box, mirrored past its edges, as
+    /// a browser's `backdrop-filter` does.
+    BackdropBlur {
+        radius: Num,
+        #[serde(default, rename = "edgeMode")]
+        edge_mode: BackdropEdge,
+    },
     /// A halo: the layer blurred, drawn under itself. `radius` is like
     /// `blur`'s. `color` replaces the halo's colours (its alpha scales the
     /// halo); `intensity` scales it, 0..4.
@@ -780,13 +796,18 @@ impl Shadow {
         let largest = |n: &Num| n.max().abs().max(n.min().abs());
         let offset = largest(&self.x).max(largest(&self.y));
         let spread = largest(&self.spread).min(MAX_SHADOW_SIZE);
-        let blur = self.blur.max().clamp(0.0, MAX_SHADOW_SIZE);
+        let blur = self.blur.max().clamp(0.0, MAX_MARGIN_BLUR);
         offset + spread + 3.0 * blur
     }
 }
 
-/// Largest shadow blur and spread, in pixels; bigger values are clamped.
+/// Largest shadow spread, in pixels; bigger values are clamped.
 pub const MAX_SHADOW_SIZE: f64 = 128.0;
+
+/// The largest blur radius the margin makes room for (`3 *` this past the
+/// canvas): a wider blur still blurs as wide, but what lies further past the
+/// edge of the canvas is not drawn for it.
+pub const MAX_MARGIN_BLUR: f64 = 128.0;
 
 impl Effect {
     /// How far past the layer's own pixels the effect can paint, in pixels,
@@ -802,8 +823,13 @@ impl Effect {
             // A backdrop blur reads the canvas around the layer, so a layer at
             // the canvas edge blurs in what lies beyond it. A glow paints
             // about three radii past the layer.
-            Effect::BackdropBlur { radius } | Effect::Glow { radius, .. } => {
-                3.0 * radius.max().clamp(0.0, MAX_BLUR_RADIUS)
+            // A mirrored backdrop blur reads only inside the layer's box.
+            Effect::BackdropBlur {
+                edge_mode: BackdropEdge::Mirror,
+                ..
+            } => 0.0,
+            Effect::BackdropBlur { radius, .. } | Effect::Glow { radius, .. } => {
+                3.0 * radius.max().clamp(0.0, MAX_MARGIN_BLUR)
             }
             Effect::DropShadow(shadow) | Effect::InsetShadow(shadow) => shadow.reach(),
             // Channels are shifted by up to `amount`, in either direction.
@@ -948,6 +974,35 @@ pub struct Gradient {
     /// gradients blend premultiplied, the default).
     #[serde(default)]
     pub unpremultiplied: bool,
+    /// Paint the gradient in one tile and repeat the tile (CSS's
+    /// `background-repeat` of a gradient): its coordinates are then the
+    /// tile's, (0, 0) at its corner.
+    #[serde(default)]
+    pub tile: Option<Tile>,
+}
+
+/// A tile of a gradient paint: `width` x `height` with its top-left corner at
+/// (`x`, `y`) in the painted layer's space, repeated every `width + spaceX`
+/// (and `height + spaceY`) in the directions that repeat; in the others there
+/// is the one tile. `{ "x": 10, "y": 10, "width": 12, "height": 12,
+/// "spaceY": 0.5, "repeatX": true, "repeatY": true }`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Tile {
+    #[serde(default = "zero")]
+    pub x: Num,
+    #[serde(default = "zero")]
+    pub y: Num,
+    pub width: Num,
+    pub height: Num,
+    #[serde(default = "zero")]
+    pub space_x: Num,
+    #[serde(default = "zero")]
+    pub space_y: Num,
+    #[serde(default)]
+    pub repeat_x: bool,
+    #[serde(default)]
+    pub repeat_y: bool,
 }
 
 /// The space a gradient's coordinates are in.
@@ -1026,8 +1081,9 @@ pub enum Paint {
 
 /// A picture as a paint: drawn `width` x `height` with its top-left corner at
 /// (`x`, `y`) in the painted layer's space, and repeated across the plane in
-/// the directions that repeat; in the others its edge pixels are held (so cut
-/// the shape to the tile). `{ "type": "image", "src": "tile.png", "width": 64,
+/// the directions that repeat, `spaceX` (`spaceY`) apart; in the others its
+/// edge pixels are held (so cut the shape to the tile), or, with a space,
+/// there is the one copy. `{ "type": "image", "src": "tile.png", "width": 64,
 /// "height": 64, "repeatX": true, "repeatY": true }`.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1043,6 +1099,10 @@ pub struct ImagePaint {
     pub repeat_x: bool,
     #[serde(default)]
     pub repeat_y: bool,
+    #[serde(default = "zero")]
+    pub space_x: Num,
+    #[serde(default = "zero")]
+    pub space_y: Num,
 }
 
 impl<'de> Deserialize<'de> for Paint {
@@ -3113,8 +3173,9 @@ mod tests {
                  "blur": 5, "spread": 2}]"#,
         );
         assert_eq!(scene.margin(), 47);
-        // A negative spread reads as far as a positive one; blur and spread
-        // are limited to 128 as they are when drawn.
+        // A negative spread reads as far as a positive one; the spread is
+        // limited to 128 as it is when drawn, and the blur counts up to 128
+        // (`MAX_MARGIN_BLUR`).
         let scene = effects_of(
             r#"[{"type": "insetShadow", "y": 4, "blur": [{"frame": 0, "value": 1}, {"frame": 9, "value": 1000}],
                  "spread": -20}]"#,
@@ -3190,10 +3251,10 @@ mod tests {
             r#"[{"type": "backdropBlur", "radius": [{"frame": 0, "value": 4}, {"frame": 9, "value": 10}]}]"#,
         );
         assert!(
-            matches!(&scene.layers[0].effects[0], Effect::BackdropBlur { radius } if radius.at(9.0) == 10.0)
+            matches!(&scene.layers[0].effects[0], Effect::BackdropBlur { radius, .. } if radius.at(9.0) == 10.0)
         );
         assert_eq!(scene.margin(), 30);
-        // The radius is limited to 128 as it is when drawn.
+        // The margin counts a radius up to 128 (`MAX_MARGIN_BLUR`).
         let scene = effects_of(r#"[{"type": "backdropBlur", "radius": 1000}]"#);
         assert_eq!(scene.margin(), 384);
         // It adds to a shadow on the same layer.

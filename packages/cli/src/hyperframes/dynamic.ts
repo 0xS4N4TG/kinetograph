@@ -11,7 +11,9 @@ import { Script } from 'node:vm';
 import { noteStylesheetProblem } from '@kinetographdev/compat/dom';
 import { trackPending } from '@kinetographdev/compat/shim';
 import { lockPathOf } from '@kinetographdev/core/lock';
-import { activeLockFile, MAX_DATA_BYTES, useLockFile, type FetchedDep, type FetchOptions } from './deps.js';
+import { existsSync } from 'node:fs';
+import { activeLockFile, dataCachePath, MAX_DATA_BYTES, resolveCdnData, useLockFile, type FetchedDep, type FetchOptions } from './deps.js';
+import { notCachedPicture, REMOTE_PICTURE } from './images.js';
 import { bundleDynamicImport, DYNAMIC_IMPORT, type ImportMap } from './modules.js';
 
 /** What the project's bundle leaves for the host: the page's import map and where the project is. */
@@ -24,13 +26,18 @@ export interface DynamicConfig {
 
 /** Set while the pre-download step runs the page: downloads are allowed, and what happens is kept in `discovered`. */
 let discovery: FetchOptions | null = null;
-export const discovered: { fetched: FetchedDep[]; failed: { specifier: string; referrer: string; error: string; code?: string }[] } = { fetched: [], failed: [] };
+export const discovered: { fetched: FetchedDep[]; failed: { specifier: string; referrer: string; error: string; code?: string }[]; pictures: Set<string> } = {
+  fetched: [],
+  failed: [],
+  pictures: new Set(),
+};
 
 export function setDiscovery(options: FetchOptions | null): void {
   discovery = options;
   if (options !== null) {
     discovered.fetched = [];
     discovered.failed = [];
+    discovered.pictures = new Set();
   }
 }
 
@@ -89,6 +96,26 @@ export function installDynamicImport(): void {
       promise.catch(() => {});
     }
     return trackPending(promise);
+  };
+}
+
+/**
+ * Where a remote picture a page's script set at run time (`img.src = url`, `el.style.backgroundImage`) is read from: the
+ * pre-download cache, as a picture in the markup is (`plan.ts`, `localImage`). The page's runtime asks through
+ * `REMOTE_PICTURE` (`@kinetographdev/core/hyperframes`); a render never downloads. While the pre-download step runs the
+ * page, a picture that is not cached is kept, to be downloaded after the run.
+ */
+export function installRemotePictures(): void {
+  (globalThis as Record<symbol, unknown>)[REMOTE_PICTURE] = (url: string): { file: string } | { error: string; discovering?: boolean } => {
+    if (/^https:/i.test(url)) {
+      const found = resolveCdnData(url);
+      if ('file' in found) return found;
+      // A cached file that does not match the lock is not drawn, and the reason is said.
+      if (existsSync(dataCachePath(url))) return found;
+    }
+    if (discovery === null) return { error: notCachedPicture(url) };
+    discovered.pictures.add(url);
+    return { error: notCachedPicture(url), discovering: true };
   };
 }
 

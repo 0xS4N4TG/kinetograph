@@ -489,6 +489,11 @@ impl ContentWidthsMeasurer {
 
     #[inline(always)]
     fn measure<B: Brush>(mut self, layout_data: &LayoutData<B>) -> ContentWidths {
+        // The root style's wrap mode holds until a text atom sets its own, so an
+        // inline box ahead of any text obeys `white-space: nowrap`, as in the line breaker.
+        if let Some(root) = layout_data.styles.first() {
+            self.text_wrap_mode = root.text_wrap_mode;
+        }
         let mut items = layout_data.items.iter();
         while let Some(item) = items.next() {
             match item.kind {

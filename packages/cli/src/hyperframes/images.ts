@@ -2,6 +2,29 @@
 // in picture properties (`background`, `mask`, `border-image`, `list-style`, `content`, ...). `fetch-deps` downloads them
 // (`deps.ts`), the plan reads them from that cache, and a render never touches the network.
 
+import { parseSrcset, srcsetCandidate } from '@kinetographdev/compat/dom';
+import { DEFAULT_ALLOWED_HOSTS } from './deps.js';
+
+/** How the page's runtime asks the host for the cached file of a remote picture a script set (`dynamic.ts`). */
+export const REMOTE_PICTURE = Symbol.for('kinetograph.hf.remotePicture');
+
+/**
+ * Why a remote picture is drawn without, and the command that fixes it: `fetch-deps`, with `--allow-host` when its host is
+ * not one of the defaults. `http:` is refused outright.
+ */
+export function notCachedPicture(url: string, entry = '<entry>', what = 'the picture'): string {
+  if (/^http:/i.test(url)) return `${what} ${url} is not downloaded: only https pictures are`;
+  // The host is pasted into a command to copy: only a plain hostname is (punycode is ASCII), and a URL that does not parse gets none.
+  let host = '';
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    // no host to suggest
+  }
+  const allow = host === '' || DEFAULT_ALLOWED_HOSTS.includes(host) || !/^[a-z0-9.-]+$/i.test(host) ? '' : ` --allow-host ${host}`;
+  return `${what} ${url} is not cached, and a render reads no network, so it is drawn without the picture: run \`kinetograph fetch-deps ${entry}${allow}\``;
+}
+
 /** The most bytes of one remote picture. */
 export const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
 
@@ -23,23 +46,16 @@ export function remoteImage(value: string): RemoteImage {
 }
 
 /**
- * The candidate of a `srcset` that is drawn: the 1x one (or one with no descriptor), else the smallest density above 1,
- * else the first. A width descriptor has no viewport to measure against here, so the first of those is taken.
+ * The candidate of a `srcset` that is drawn, parsed as HTML parses it and chosen as Chrome chooses at device pixel ratio
+ * 1 (`srcsetCandidate`): a `w` descriptor is measured against `sizes`, `100vw` by default, of a 1920x1080 viewport.
  */
-export function pickSrcset(srcset: string): string | null {
-  const candidates: { url: string; density: number | null }[] = [];
-  // A URL may hold a comma (a resizer's); a candidate ends at a comma followed by whitespace, or at the end.
-  for (const part of srcset.split(/,\s+|,$/)) {
-    const m = /^\s*(\S+)(?:\s+(\d+(?:\.\d+)?)([xw]))?\s*,?\s*$/.exec(part);
-    if (m === null) continue;
-    candidates.push({ url: m[1]!, density: m[3] === 'x' ? Number(m[2]) : m[3] === 'w' ? null : 1 });
-  }
-  if (candidates.length === 0) return null;
-  const sized = candidates.filter((c) => c.density !== null);
-  const one = sized.find((c) => c.density === 1);
-  if (one) return one.url;
-  const above = sized.filter((c) => c.density! > 1).sort((a, b) => a.density! - b.density!)[0];
-  return (above ?? candidates[0]!).url;
+export function pickSrcset(srcset: string, src?: string, sizes?: string): string | null {
+  return srcsetCandidate(srcset, src, sizes);
+}
+
+/** Every URL a `srcset` names, in the order written. */
+export function srcsetUrls(srcset: string): string[] {
+  return parseSrcset(srcset).map((c) => c.url);
 }
 
 /**

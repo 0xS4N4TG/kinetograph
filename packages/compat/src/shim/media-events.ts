@@ -5,6 +5,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { addonFunction, hasAddonFunction } from '../addon.js';
+import { sameOriginPath } from '../environment.js';
 import { domElementFor } from './element.js';
 import type { HostElement, Readback } from './host.js';
 import { propsWithOverlay } from './host.js';
@@ -41,7 +42,7 @@ function event(type: string, target: unknown, extra: Record<string, unknown> = {
 
 /** Whether `src` names an image the engine can read (and its size is known). */
 function imageLoads(src: string): { ok: true } | { ok: false; message: string } {
-  if (/^(https?|wss?|ftp):\/\//i.test(src)) return { ok: false, message: remoteMessage('<img src>', src) };
+  if (/^(https?|wss?|ftp):\/\//i.test(src) && sameOriginPath(src) === null) return { ok: false, message: remoteMessage('<img src>', src) };
   if (src.startsWith('data:')) return { ok: true };
   if (src.startsWith('blob:')) return { ok: true };
   const file = projectFileOf(src);
@@ -75,7 +76,7 @@ export function deliverMediaEvents(readback: Readback, hosts: Set<HostElement>):
       else props.onError?.(event('error', target, { message: result.message }));
       continue;
     }
-    const file = /^(https?|data|blob):/i.test(src) ? null : projectFileOf(src);
+    const file = /^(https?|data|blob):/i.test(src) && sameOriginPath(src) === null ? null : projectFileOf(src);
     if (file === null || !existsSync(file)) {
       props.onError?.(event('error', target, { message: `<${host.type} src="${src}">: no such file in the project` }));
       continue;

@@ -15,8 +15,24 @@ export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-was
  */
 export declare function compileEffect(sksl: string): string
 
+/** `{ image, baseDir, format }` in; the picture's bytes out: `rgba` (straight alpha, row after row) or `png`. */
+export declare function imageBytes(requestJson: string): Buffer
+
+/**
+ * `{ image, baseDir, call }` in; for `call` `size`, the picture's `{ width, height }`, and for `frames`, an animated
+ * picture's `{ count, durations }` out.
+ */
+export declare function imageCall(requestJson: string): string
+
 /** `{ src, baseDir }` in; the picture's `{ width, height }` out (what `useImage` reports). */
 export declare function imageSize(requestJson: string): string
+
+/**
+ * `{ paragraph, width, ranges?, points? }` in; what `SkParagraph` answers after `layout(width)` out: `height`,
+ * `maxWidth`, `longestLine`, the intrinsic widths, the baselines, `didExceedMaxLines`, `lines` (the line metrics),
+ * `ranges` (the boxes of each `[start, end]`) and `points` (the glyph position at each `{ x, y }`).
+ */
+export declare function measureParagraph(requestJson: string): string
 
 /** `{ font: { file, size }, text, baseDir }` in; `{ width, bounds, metrics, glyphIds, glyphWidths }` out. */
 export declare function measureText(requestJson: string): string
@@ -25,10 +41,25 @@ export declare function measureText(requestJson: string): string
 export declare function pathCall(requestJson: string): string
 
 /**
+ * Keeps `bytes` (an encoded picture, a font, raw pixels) and answers the name a tree uses for them: content-addressed,
+ * so the same bytes always get the same name.
+ */
+export declare function putData(bytes: Buffer): string
+
+/**
+ * Keeps a picture's bytes for the frame being drawn (a video's, `useVideo`): only the last few are kept, so a long
+ * video does not fill memory.
+ */
+export declare function putFrameData(bytes: Buffer): string
+
+/**
  * `{ width, height, nodes, baseDir, outDir }` in; the nodes drawn into a PNG file under `outDir` named by its pixels'
  * hash, and `{ path, width, height, unsupported }` out. A frame is a pure function of the tree and the files it names.
  */
 export declare function renderSkia(requestJson: string): string
+
+/** `{ dataBytes, data, frames }`: what the addon keeps of what was put in it. */
+export declare function skiaKept(): string
 
 /**
  * `{ svg }` in; the SVG's own `{ width, height }` out (what `Skia.SVG.MakeFromString(...).width()` reports), or an

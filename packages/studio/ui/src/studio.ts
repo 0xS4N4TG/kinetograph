@@ -6,6 +6,7 @@ import {
   ApiError,
   type AgentClientMessage,
   type AgentEvent,
+  type ChatRecord,
   type CompositionInfo,
   type InspectResult,
   type ProjectInfo,
@@ -19,6 +20,7 @@ import {
   type TimelineData,
 } from '@/api';
 import { findLayer } from '@/lib/inspect';
+import { numberByParent, numberTree } from '@/lib/names';
 import { Player, type PlayerState } from '@/lib/player';
 import { layerName, remapSelection } from '@/lib/selection';
 
@@ -81,6 +83,10 @@ export interface Studio {
 
   /** Calls `listener` with each event of the coding agent, and returns how to stop. */
   onAgentEvent(listener: (event: AgentEvent) => void): () => void;
+  /** The address of a small picture of `frame` of the composition, for the timeline's clips; null without one. */
+  thumbnailUrl(frame: number, height: number): string | null;
+  /** The conversation so far, sent when this window takes it over after a reload. */
+  onAgentHistory(listener: (items: ChatRecord[]) => void): () => void;
   /** Sends a message to the coding agent; false when the connection is down. */
   sendAgent(message: AgentClientMessage): boolean;
   agentInfo(): ReturnType<StudioApi['agentInfo']>;
@@ -114,6 +120,7 @@ export function useStudio(api: StudioApi): Studio {
   selectedRef.current = selectedLayers;
   const rebuilt = useRef(false);
   const agentListeners = useRef(new Set<(event: AgentEvent) => void>());
+  const historyListeners = useRef(new Set<(items: ChatRecord[]) => void>());
   const [renders, setRenders] = useState<RenderJob[]>([]);
   /** Bumped by every `reload`: what the timeline and the scene tree show is from the old build. */
   const [reloads, setReloads] = useState(0);
@@ -203,6 +210,9 @@ export function useStudio(api: StudioApi): Studio {
         case 'agent':
           for (const listener of agentListeners.current) listener(message.event);
           break;
+        case 'agent.history':
+          for (const listener of historyListeners.current) listener(message.items);
+          break;
         case 'error':
           player.handleError(message.requestId, message.error);
           break;
@@ -290,7 +300,8 @@ export function useStudio(api: StudioApi): Studio {
         );
       }, TIMELINE_POLL_MS);
       api.timeline(comp.id, propsOverride).then(
-        (data) => !cancelled && setTimeline({ state: 'ready', data }),
+        // Same-name siblings are numbered ("Card 2") once, here, for every view that names them.
+        (data) => !cancelled && setTimeline({ state: 'ready', data: { ...data, layers: numberByParent(data.layers) } }),
         (error: unknown) => !cancelled && setTimeline({ state: 'error', error: toStudioError(error) }),
       );
     }, TIMELINE_DELAY_MS);
@@ -314,6 +325,7 @@ export function useStudio(api: StudioApi): Studio {
       api.inspect(comp.id, frame, propsOverride).then(
         (data) => {
           if (cancelled) return;
+          numberTree(data.layers);
           setInspect(data);
           // After a rebuild the ids may have moved: find the selected layers again by the names they had.
           if (rebuilt.current) {
@@ -343,7 +355,17 @@ export function useStudio(api: StudioApi): Studio {
       agentListeners.current.delete(listener);
     };
   }, []);
+  const onAgentHistory = useCallback((listener: (items: ChatRecord[]) => void) => {
+    historyListeners.current.add(listener);
+    return () => {
+      historyListeners.current.delete(listener);
+    };
+  }, []);
   const agentInfo = useCallback(() => api.agentInfo(), [api]);
+  const thumbnailUrl = useCallback(
+    (frame: number, height: number) => (comp && buildId > 0 ? api.thumbnailUrl(comp.id, frame, height, buildId, propsOverride) : null),
+    [api, comp?.id, buildId, overrideKey],
+  );
   const sendAgent = useCallback((message: AgentClientMessage) => socketRef.current?.sendAgent(message) ?? false, []);
 
   // ---- renders ----
@@ -391,6 +413,8 @@ export function useStudio(api: StudioApi): Studio {
     selectLayer,
     selectLayers,
     onAgentEvent,
+    onAgentHistory,
+    thumbnailUrl,
     sendAgent,
     agentInfo,
     renders,

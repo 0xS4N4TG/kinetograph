@@ -311,6 +311,20 @@ describe('bundleProject', () => {
     expect(resolveSpecifier('@remotion/skia/enable')).toEqual({ kind: 'path', target: '@kinetographdev/core/skia/enable' });
   });
 
+  it('bundles react-native-reanimated onto the core shared values', async () => {
+    expect(resolveSpecifier('react-native-reanimated')).toEqual({ kind: 'path', target: '@kinetographdev/core/skia/reanimated' });
+    const dir = project({
+      'index.tsx': [
+        `import { registerRoot } from 'remotion';`,
+        `import { useDerivedValue, useSharedValue } from 'react-native-reanimated';`,
+        `console.log(useDerivedValue, useSharedValue);`,
+        `registerRoot(() => null);`,
+      ].join('\n'),
+    });
+    const { file } = await bundleProject(join(dir, 'index.tsx'));
+    expect(readFileSync(file, 'utf8')).toContain('packages/core/dist/skia/reanimated.js');
+  });
+
 
   it('leaves one file per entry, replaced when the code changes', async () => {
     const dir = project({ 'index.ts': `console.log('v1');` });

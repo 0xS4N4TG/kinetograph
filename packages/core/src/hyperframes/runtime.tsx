@@ -13,7 +13,7 @@
 
 import { type ReactNode } from 'react';
 import { Audio, createSceneRoot } from '@kinetographdev/react';
-import { noteStylesheetProblem, registerStylesheet } from '@kinetographdev/compat/dom';
+import { noteStylesheetProblem, registerStylesheet, setRemoteAssetResolver } from '@kinetographdev/compat/dom';
 import { hostOf, setPageDocument, setRefusedFetchHandler, setRemoteFiles, whenFetchesSettle } from '@kinetographdev/compat/shim';
 import { continueRender, delayRender } from '../assets.js';
 import { Composition, registerRoot } from '../compositions.js';
@@ -633,6 +633,34 @@ function effectsOf(el: AnyRecord | null): string | null {
   }
 }
 
+/** How the host (the CLI) is asked for the cached file of a remote picture: `{ file }`, or `{ error }` saying how to get it. */
+const REMOTE_PICTURE = Symbol.for('kinetograph.hf.remotePicture');
+type PictureLookup = (url: string) => { file: string } | { error: string; discovering?: boolean };
+
+/**
+ * A remote picture a script sets at run time (`img.src = url`, `el.style.backgroundImage = "url(…)"`) is read from the
+ * pre-download cache, as one in the markup is: a render never downloads it. One that is not cached is drawn without, the
+ * frame reports it, and a note says the command that downloads it.
+ */
+function remotePictureResolver(plan: HfPlan): (url: string) => string | null {
+  // A cached file is read (and its hash checked) once; one that is not is looked for again, as the pre-download step
+  // that runs the page in this process can fetch it before the render.
+  const cached = new Map<string, string>();
+  return (url) => {
+    const known = plan.remoteData?.[url] ?? cached.get(url);
+    if (known !== undefined) return known;
+    const lookup = (globalThis as Record<symbol, unknown>)[REMOTE_PICTURE] as PictureLookup | undefined;
+    const found = lookup?.(url) ?? { error: `the picture ${url} is not cached, and a render reads no network, so it is drawn without the picture: run \`kinetograph fetch-deps <entry>\`` };
+    if ('file' in found) {
+      cached.set(url, found.file);
+      return found.file;
+    }
+    // While the pre-download step runs the page it is to be downloaded, not reported.
+    if (!found.discovering) noteStylesheetProblem(found.error);
+    return null;
+  };
+}
+
 export function defineHyperframes(plan: HfPlan): void {
   registerStylesheet(baseCss, 'hyperframes');
   for (const sheet of plan.stylesheets) registerStylesheet(sheet.css, sheet.file);
@@ -651,6 +679,7 @@ export function defineHyperframes(plan: HfPlan): void {
   setRefusedFetchHandler((url) =>
     noteStylesheetProblem(`fetch("${url}") was refused: the file is not cached. Run \`kinetograph fetch-deps <entry> --url ${url}\` once; a render never downloads it`),
   );
+  setRemoteAssetResolver(remotePictureResolver(plan));
 
   function HyperframesProject(): ReactNode {
     const frame = useCurrentFrame();

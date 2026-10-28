@@ -16,12 +16,17 @@
 
 struct Params {
     // x: sigma in texels, yz: origin (pad: where the source starts in the
-    // target; gauss, up: where the target starts inside the virtual output)
+    // target; down, gauss, up: where the target's texel 0 is, against the
+    // input's, see each pass), w: pad: how many times the canvas is shrunk
     a: vec4<f32>,
-    // xy: size of the (virtual) output in pixels, zw: gauss axis
+    // xy: up: the input's size times the enlarging; zw: gauss axis, pad: the
+    // source's texel at the corner of its box c
     b: vec4<f32>,
-    // pad: xy: the canvas pixel of the source's texel (0, 0), zw: its size
+    // pad: the box of the canvas the source holds: its corner, its size
     c: vec4<i32>,
+    // pad: a box of the canvas (x0, y0, x1, y1) the source is read in,
+    // mirrored past its edges; none when it is empty
+    d: vec4<i32>,
 }
 
 @group(0) @binding(0) var tex: texture_2d<f32>;
@@ -39,23 +44,48 @@ fn tap(uv: vec2<f32>) -> vec4<f32> {
     return textureSampleLevel(tex, samp, uv, 0.0);
 }
 
+// `x` reflected into lo..hi, again and again past either end.
+fn mirrored(x: i32, lo: i32, hi: i32) -> i32 {
+    let w = hi - lo;
+    let t = ((x - lo) % (2 * w) + 2 * w) % (2 * w);
+    return select(lo + t, lo + 2 * w - 1 - t, t >= w);
+}
+
 @fragment
 fn fs_pad(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    // The canvas pixel that this texel of the padded image stands for, and
-    // the texel of the source that is.
-    let q = vec2<i32>(p.xy) - vec2<i32>(params.a.yz) - params.c.xy;
-    if any(q < vec2<i32>(0)) || any(q >= params.c.zw) {
-        return vec4<f32>(0.0);
+    // The canvas pixels that this texel of the padded image stands for (a
+    // square of a.w x a.w of them when the canvas is shrunk), each mirrored
+    // into the box d when there is one, and the texels of the source that
+    // are: the box c of the canvas is the source's, its corner at the
+    // source's texel b.zw.
+    let s = max(i32(params.a.w), 1);
+    let base = (vec2<i32>(p.xy) - vec2<i32>(params.a.yz)) * s;
+    let m = params.d;
+    var sum = vec4<f32>(0.0);
+    for (var j = 0; j < s; j += 1) {
+        for (var i = 0; i < s; i += 1) {
+            var c = base + vec2<i32>(i, j);
+            if m.z > m.x && m.w > m.y {
+                c = vec2<i32>(mirrored(c.x, m.x, m.z), mirrored(c.y, m.y, m.w));
+            }
+            let q = c - params.c.xy;
+            if all(q >= vec2<i32>(0)) && all(q < params.c.zw) {
+                sum += textureLoad(tex, q + vec2<i32>(params.b.zw), 0);
+            }
+        }
     }
-    return textureLoad(tex, q, 0);
+    return sum / f32(s * s);
 }
 
 @fragment
 fn fs_down(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     // The output texel centre sits on a corner between four input texels.
-    // Taps 0.75 texel either side of it weigh the pairs 3:1.
-    let uv = p.xy / params.b.xy;
-    let d = 0.75 / vec2<f32>(textureDimensions(tex));
+    // Taps 0.75 texel either side of it weigh the pairs 3:1. Each image holds
+    // a window of its level: a.yz is where the output's texel 0 is in the
+    // input's texels, times two, less where the input's texel 0 is.
+    let size = vec2<f32>(textureDimensions(tex));
+    let uv = (p.xy * 2.0 + params.a.yz) / size;
+    let d = 0.75 / size;
     var sum = tap(uv + vec2<f32>(-d.x, -d.y));
     sum += tap(uv + vec2<f32>(d.x, -d.y));
     sum += tap(uv + vec2<f32>(-d.x, d.y));
@@ -99,6 +129,8 @@ fn fs_gauss(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     return sum / weights;
 }
 
+// The output texel at p reads the input at (p + a.yz) / 2 texels: a.yz is
+// where the output's texel 0 is in its level, less twice where the input's is.
 @fragment
 fn fs_up(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     return tap((p.xy + params.a.yz) / params.b.xy);

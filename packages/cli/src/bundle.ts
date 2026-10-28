@@ -71,6 +71,8 @@ export function resolveSpecifier(specifier: string): Resolution | null {
   }
   // React Native Skia's components are the core's (drawn by the optional @kinetographdev/skia addon, packages/cli/skills/kinetograph/references/AUTHORING.md §7.7).
   if (specifier === '@shopify/react-native-skia') return { kind: 'path', target: '@kinetographdev/core/skia' };
+  // Reanimated's shared values drive RN-Skia's props; the core has them, worked out from the frame.
+  if (specifier === 'react-native-reanimated') return { kind: 'path', target: '@kinetographdev/core/skia/reanimated' };
   if (specifier.startsWith('@shopify/react-native-skia/')) {
     return { kind: 'unsupported', message: `"${specifier}" is an internal of React Native Skia; import from "@shopify/react-native-skia".` };
   }
@@ -115,7 +117,7 @@ function aliasPlugin(unsupported?: UnsupportedImport[]): Plugin {
   return {
     name: 'kinetograph-aliases',
     setup(b) {
-      b.onResolve({ filter: /^(remotion($|\/)|@remotion\/|@shopify\/react-native-skia($|\/)|@kinetographdev\/(core|react|scene|audio|compat)($|\/)|react(-reconciler)?($|\/))/ }, async (args) => {
+      b.onResolve({ filter: /^(remotion($|\/)|@remotion\/|@shopify\/react-native-skia($|\/)|react-native-reanimated$|@kinetographdev\/(core|react|scene|audio|compat)($|\/)|react(-reconciler)?($|\/))/ }, async (args) => {
         if (args.pluginData?.kinetograph) return undefined;
         const resolution = resolveSpecifier(args.path);
         if (!resolution) return undefined;

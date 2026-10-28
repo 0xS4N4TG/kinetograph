@@ -520,6 +520,24 @@ fn declare_image_filter(ctx: &mut Ctx, n: Node) -> Result<(), Error> {
             set_builder_uniforms(&effect, &mut builder, n.props.props("uniforms"))?;
             image_filters::runtime_shader(&builder, "", None)
         }
+        "ShaderImageFilter" => {
+            let shader = ctx
+                .shaders
+                .pop()
+                .ok_or_else(|| Error("an image filter of a shader needs the shader".into()))?;
+            image_filters::shader(shader, None)
+        }
+        "ColorFilterImageFilter" => {
+            let before = ctx.color_filters.len();
+            color_filters(ctx, &children_of(&n, crate::render::is_color_filter)?)?;
+            let made = ctx
+                .color_filters
+                .split_off(before.min(ctx.color_filters.len()));
+            let filter = compose(made, color_filters::compose).ok_or_else(|| {
+                Error("an image filter of a colour filter needs the colour filter".into())
+            })?;
+            image_filters::color_filter(filter, None, None)
+        }
         other => return err(format!("unknown image filter {other}")),
     };
     ctx.image_filters

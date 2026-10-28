@@ -5,7 +5,7 @@ import { effectCatalog, type Effect, type EffectOf, type EffectType, type SceneJ
  *  field to a type here without the catalog (below) noticing fails the build or the test. */
 const fullEffects: { [T in EffectType]: Required<EffectOf<T>> } = {
   blur: { type: 'blur', radius: 24 },
-  backdropBlur: { type: 'backdropBlur', radius: 16 },
+  backdropBlur: { type: 'backdropBlur', radius: 16, edgeMode: 'mirror' },
   glow: { type: 'glow', radius: 24, color: '#ffcc66', intensity: 1.5 },
   chromaticAberration: { type: 'chromaticAberration', amount: 4, angle: 45 },
   dropShadow: { type: 'dropShadow', x: 0, y: 8, blur: 12, spread: 0, color: '#00000080' },

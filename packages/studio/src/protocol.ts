@@ -126,7 +126,18 @@ export type ServerMessage =
   | { type: 'buildError'; error: StudioError }
   | { type: 'render'; job: RenderJob }
   | { type: 'error'; requestId: number | null; error: StudioError }
-  | { type: 'agent'; event: AgentEvent };
+  | { type: 'agent'; event: AgentEvent }
+  /** The conversation so far, sent to a window that takes it over (a reload of the one that began it). */
+  | { type: 'agent.history'; items: ChatRecord[] };
+
+/**
+ * One step of the conversation as the server keeps it, to replay to a window that reconnects: what the agent sent
+ * (`status` aside), the user's own messages and the permissions the user answered.
+ */
+export type ChatRecord =
+  | { kind: 'event'; event: AgentEvent }
+  | { kind: 'user'; text: string; chips: string[] }
+  | { kind: 'answer'; id: string; optionId: string | null };
 
 // ---- the coding agent (ACP) ----
 
@@ -150,7 +161,7 @@ export interface AgentPreset {
 
 /** What the user says to the agent. `context` is the studio's description of what is selected. */
 export type AgentClientMessage =
-  | { type: 'agent.prompt'; text: string; context: string; image?: { data: string; mimeType: string } }
+  | { type: 'agent.prompt'; text: string; context: string; image?: { data: string; mimeType: string }; chips?: string[] }
   | { type: 'agent.cancel' }
   /** The answer to a permission request; a null `optionId` denies it. */
   | { type: 'agent.permission'; id: string; optionId: string | null }

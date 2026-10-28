@@ -301,7 +301,8 @@ export class AgentBridge {
       // The SDK hands notifications to their handlers a little after it reads them, so the last updates of the turn can
       // arrive after this response; let them through first.
       await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
-      this.options.emit({ kind: 'done', stopReason: response.stopReason });
+      // A conversation that was stopped meanwhile (reset) says nothing more.
+      if (!live.exited) this.options.emit({ kind: 'done', stopReason: response.stopReason });
     } catch (error) {
       // A dead agent closes the pipe before its exit is seen; once it is, `crashed` has told the user.
       if (!live.exited) await new Promise((resolve) => setTimeout(resolve, 250));

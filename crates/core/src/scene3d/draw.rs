@@ -15,7 +15,7 @@ use glam::{DMat4, DVec3, DVec4, Mat3, Mat4, Vec3};
 
 use super::environment::Environment;
 use super::mesh::{MeshData, primitive};
-use super::model::Model;
+use super::model::{Model, PoseDeform};
 use super::{
     Content3d, FogKind3d, MAX_LIGHTS, Resolved3d, ResolvedCamera3d, ResolvedLight3d,
     ResolvedMaterial3d, Shadow3d,
@@ -129,16 +129,24 @@ pub struct Material {
     pub double_sided: bool,
     /// How far a normal map tilts the normal (glTF's `scale`); 1 when there is none.
     pub normal_scale: f32,
+    /// How much an occlusion map darkens the light from all around (glTF's
+    /// `strength`): 0 not at all, 1 fully; 1 when there is none.
+    pub occlusion_strength: f32,
 }
 
-/// The textures of a material that are data, not colour: read as they are,
-/// not as sRGB.
+/// The textures of a material besides its base colour. All but `emissive`
+/// are data, read as they are, not as sRGB.
 #[derive(Clone, Debug, Default)]
-pub struct DataMaps {
+pub struct Maps {
     /// Tangent-space normals (OpenGL convention: green up), 0..1 for -1..1.
     pub normal: Option<Arc<Texture>>,
     /// Roughness in green and metallic in blue, which multiply the factors.
     pub metallic_roughness: Option<Arc<Texture>>,
+    /// Ambient occlusion in red: the share of the light from all around (the
+    /// ambient light and the environment) that reaches the surface.
+    pub occlusion: Option<Arc<Texture>>,
+    /// The emitted colour, sRGB, multiplied by the emissive factor.
+    pub emissive: Option<Arc<Texture>>,
 }
 
 impl From<&ResolvedMaterial3d> for Material {
@@ -151,12 +159,17 @@ impl From<&ResolvedMaterial3d> for Material {
             unlit: m.unlit,
             double_sided: m.double_sided,
             normal_scale: 1.0,
+            occlusion_strength: 1.0,
         }
     }
 }
 
 pub struct DrawItem {
+    /// The mesh, or a deformed mesh's vertices before `deform`.
     pub mesh: Arc<MeshData>,
+    /// What moves the mesh's vertices in this frame's pose (a model's morph
+    /// targets and skin), which the GPU applies before it draws.
+    pub deform: Option<PoseDeform>,
     pub model: Mat4,
     /// The model matrix mirrors (a negative scale), which turns the faces
     /// inside out as seen on screen.
@@ -165,7 +178,7 @@ pub struct DrawItem {
     pub normal: Mat3,
     pub material: Material,
     pub texture: Option<Arc<Texture>>,
-    pub maps: DataMaps,
+    pub maps: Maps,
     pub cast_shadow: bool,
     pub receive_shadow: bool,
 }
@@ -650,10 +663,11 @@ impl Assets3d {
         let mut casters = Vec::new();
         for object in &scene.objects {
             let mut add = |mesh: Arc<MeshData>,
+                           deform: Option<PoseDeform>,
                            local: &DMat4,
                            material: Material,
                            texture: Option<Arc<Texture>>,
-                           maps: DataMaps| {
+                           maps: Maps| {
                 let world = object.world * *local;
                 let model = world.as_mat4();
                 let linear = Mat3::from_mat4(model);
@@ -661,7 +675,12 @@ impl Assets3d {
                 if linear.determinant().abs() < 1e-12 {
                     return;
                 }
-                let bounds = mesh.bounds();
+                // A deformed mesh's vertices are made on the GPU: its box is
+                // one they are sure to be inside.
+                let bounds = match &deform {
+                    Some(d) => Some(d.bounds),
+                    None => mesh.bounds(),
+                };
                 let centre = bounds.map_or(Vec3::ZERO, |(lo, hi)| (lo + hi) / 2.0);
                 let depth = (view * world).transform_point3(centre.as_dvec3()).z;
                 if let (true, Some((lo, hi))) = (object.shadowing.cast_shadow, bounds) {
@@ -677,6 +696,7 @@ impl Assets3d {
                 }
                 let item = DrawItem {
                     mesh,
+                    deform,
                     model,
                     mirrored: linear.determinant() < 0.0,
                     normal: linear.inverse().transpose(),
@@ -710,18 +730,20 @@ impl Assets3d {
                             Error::Render(format!("layer {layer:?}: model {src:?} {msg}"))
                         })?;
                     let pose = model.pose(at);
-                    for placed in model.placed(&pose, at.is_none()) {
+                    for placed in model.placed(&pose) {
                         let part = placed.part;
                         match own {
                             Some(m) => add(
                                 placed.mesh,
+                                placed.deform,
                                 &placed.local,
                                 m.into(),
                                 own_texture.clone(),
-                                DataMaps::default(),
+                                Maps::default(),
                             ),
                             None => add(
                                 placed.mesh,
+                                placed.deform,
                                 &placed.local,
                                 part.material.clone(),
                                 part.texture.clone(),
@@ -737,10 +759,11 @@ impl Assets3d {
                         .unwrap_or_else(|| unreachable!("every object but a model has a material"));
                     add(
                         mesh,
+                        None,
                         &DMat4::IDENTITY,
                         material,
                         own_texture,
-                        DataMaps::default(),
+                        Maps::default(),
                     );
                 }
             }

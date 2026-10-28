@@ -1,0 +1,196 @@
+{
+ "chrome": "Chrome/154.0.8037.57",
+ "results": [
+  {
+   "name": "opacity ease-in-out",
+   "values": [
+    "0",
+    "0.129162",
+    "0.5",
+    "0.980278"
+   ]
+  },
+  {
+   "name": "legacy colours mix premultiplied in sRGB",
+   "values": [
+    "rgba(239, 0, 16, 0.8)",
+    "rgba(213, 0, 43, 0.6)",
+    "rgba(159, 0, 96, 0.4)"
+   ]
+  },
+  {
+   "name": "hex to hsl",
+   "values": [
+    "rgb(42, 126, 113)",
+    "rgb(30, 159, 60)"
+   ]
+  },
+  {
+   "name": "oklch mixes in Oklab",
+   "values": [
+    "oklab(0.701791 0.110226 0.0379168)",
+    "oklab(0.703582 0.0472471 -0.0241664)",
+    "oklab(0.705373 -0.0157319 -0.0862496)"
+   ]
+  },
+  {
+   "name": "matching transform lists",
+   "values": [
+    "matrix(0.92388, 0.382683, -0.382683, 0.92388, 25, 0)",
+    "matrix(0.707107, 0.707107, -0.707107, 0.707107, 50, 0)"
+   ]
+  },
+  {
+   "name": "transform lists that do not match",
+   "values": [
+    "matrix(1.03934, 0.694463, -0.694463, 1.03934, 5, 0)",
+    "matrix(1.38582, 0.574025, -0.574025, 1.38582, 10, 0)",
+    "matrix(1.71637, 0.341408, -0.341408, 1.71637, 15, 0)"
+   ]
+  },
+  {
+   "name": "none to a list",
+   "values": [
+    "matrix(1.25, 0, 0, 1.25, 20, 10)"
+   ]
+  },
+  {
+   "name": "translate and translateX share a primitive",
+   "values": [
+    "matrix(1, 0, 0, 1, 40, 15)"
+   ]
+  },
+  {
+   "name": "filter list padded",
+   "values": [
+    "blur(5px) brightness(1.25)"
+   ]
+  },
+  {
+   "name": "clip-path inset",
+   "values": [
+    "inset(5% 10% 15% 20%)"
+   ]
+  },
+  {
+   "name": "box-shadow from none",
+   "values": [
+    "rgba(255, 0, 0, 0.5) 5px 5px 2.5px 0px"
+   ]
+  },
+  {
+   "name": "steps jump-end",
+   "values": [
+    "0",
+    "0.25",
+    "0.5",
+    "0.75"
+   ]
+  },
+  {
+   "name": "steps jump-both",
+   "values": [
+    "0.25",
+    "0.5",
+    "0.75"
+   ]
+  },
+  {
+   "name": "linear() stops",
+   "values": [
+    "0.1",
+    "0.25",
+    "0.7"
+   ]
+  },
+  {
+   "name": "spring as linear()",
+   "values": [
+    "0.32724",
+    "1",
+    "1"
+   ]
+  },
+  {
+   "name": "alternate with a delay",
+   "values": [
+    "0",
+    "0.25",
+    "0.75",
+    "0.5",
+    "1"
+   ]
+  },
+  {
+   "name": "iterationStart",
+   "values": [
+    "0.5",
+    "0.75",
+    "0.25"
+   ]
+  },
+  {
+   "name": "fill none after the end",
+   "values": [
+    "1"
+   ]
+  },
+  {
+   "name": "offsets and a keyframe easing",
+   "values": [
+    "0.252285",
+    "0.8",
+    "0.9"
+   ]
+  },
+  {
+   "name": "property-indexed with offsets",
+   "values": [
+    "0.45",
+    "0.6"
+   ]
+  },
+  {
+   "name": "partial keyframes take the inline style",
+   "values": [
+    "0.4"
+   ]
+  },
+  {
+   "name": "composite add on a transform",
+   "values": [
+    "matrix(1, 0, 0, 1, 20, 0)"
+   ]
+  },
+  {
+   "name": "composite accumulate on a transform",
+   "values": [
+    "matrix(3, 0, 0, 3, 20, 0)"
+   ]
+  },
+  {
+   "name": "composite add on a length",
+   "values": [
+    "100px"
+   ]
+  },
+  {
+   "name": "length to percentage",
+   "values": [
+    "150px"
+   ]
+  },
+  {
+   "name": "two animations, the later wins",
+   "values": [
+    "0.5"
+   ]
+  },
+  {
+   "name": "reverse playback rate",
+   "values": [
+    "0.8"
+   ]
+  }
+ ]
+}

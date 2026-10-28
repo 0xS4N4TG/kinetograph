@@ -474,15 +474,17 @@ The context and the globals around it:
 |---|---|
 | Paths | `beginPath`, `closePath`, `moveTo`, `lineTo`, `bezierCurveTo`, `quadraticCurveTo`, `arc`, `arcTo`, `ellipse`, `rect`, `roundRect`, `fill(rule)`, `stroke`, `clip(rule)`, `Path2D` (SVG path data, `addPath` with a matrix) as an argument to all three. Each point is taken through the transform in force when it was added, as the spec has it. |
 | Rectangles | `fillRect`, `strokeRect`, `clearRect` |
-| Styles | `fillStyle`, `strokeStyle` as CSS colours (named, hex, `rgb()`, `hsl()`; no `lab()`, `oklch()`, `color()`: such an assignment is ignored, as an invalid one is), `createLinearGradient`, `createRadialGradient`, `createConicGradient`, `createPattern` of an image or `ImageData`, `globalAlpha`, `globalCompositeOperation` (all 26 plus `clear` for `clearRect`), `lineWidth`, `lineCap`, `lineJoin`, `miterLimit`, `setLineDash`, `lineDashOffset`, `imageSmoothingEnabled` |
+| Styles | `fillStyle`, `strokeStyle` as CSS colours (named, hex, `rgb()`, `hsl()`; no `lab()`, `oklch()`, `color()`: such an assignment is ignored, as an invalid one is), `createLinearGradient`, `createRadialGradient`, `createConicGradient`, `createPattern` of an image, `ImageData` or another canvas (any number of tiles, in fills, strokes and text), `globalAlpha`, `globalCompositeOperation` (all 26 plus `clear` for `clearRect`), `lineWidth`, `lineCap`, `lineJoin`, `miterLimit`, `setLineDash`, `lineDashOffset`, `imageSmoothingEnabled` |
 | Transform | `scale`, `rotate`, `translate`, `transform`, `setTransform` (six numbers or a matrix), `resetTransform`, `getTransform`, `save`, `restore`, `reset` |
 | Text | `fillText`, `strokeText` (with `maxWidth`), `measureText` (width from the text engine; the other metrics from the line's ascent and descent), `font` (the shorthand: style, weight, size in `px`, `pt`, `em`, `%` or a keyword, a family list), `textAlign`, `textBaseline` |
 | Pictures | `drawImage` (three forms) of an `<img>`, `new Image()` (a project file or a `data:` URL), a `<video>` (the frame at its `currentTime`), the frame `<Video onVideoFrame>` hands over (§11.3), another canvas (`<canvas>`, `document.createElement('canvas')`, `OffscreenCanvas`: its commands, drawn as a whole) or `ImageData`; `createImageData`, `putImageData` (with a dirty rectangle), `getImageData` |
 | Elsewhere | `canvas.width`/`height` (setting either empties the canvas and resets the context), `toDataURL()` (always PNG), `toBlob`, `OffscreenCanvas`, `Path2D`, `ImageData`, `CanvasGradient`, `CanvasPattern`, `CanvasRenderingContext2D` as globals |
 
 Kept and drawn with nothing (reading back what was set works): `letterSpacing`, `wordSpacing`, `fontKerning`,
-`fontStretch`, `fontVariantCaps`, `textRendering`, `direction`, `imageSmoothingQuality`. `isPointInPath` and
-`isPointInStroke` return `false`.
+`fontStretch`, `fontVariantCaps`, `textRendering`, `direction`, `imageSmoothingQuality`. `isPointInPath` answers
+with the fill rule, and `isPointInStroke` with the line width, caps, joins, miter limit and dashes in the current
+transform, as Chrome does (checked against Chrome on every pixel of twelve cases: straight edges agree exactly, a
+curve's to a tenth of a pixel).
 
 Shadows and filters are drawn (SCENE.md, "canvas"; checked against Chrome by `crates/dom/tests/canvas/canvas_effects.js`):
 
@@ -494,11 +496,12 @@ Shadows and filters are drawn (SCENE.md, "canvas"; checked against Chrome by `cr
 - **`filter`.** `none`, or a list of `blur()`, `brightness()`, `contrast()`, `drop-shadow()`, `grayscale()`,
   `hue-rotate()`, `invert()`, `opacity()`, `saturate()` and `sepia()`, with CSS's units (`px`, `pt`, `em` as 16 px,
   `%` or a number, `deg`, `rad`, `grad`, `turn`). It runs over each command's drawing before its shadow is cast. A value
-  that is not a filter list is ignored, and a `url()` reference is kept and reported as unsupported (the rest of the
-  list is drawn). `clearRect` and `putImageData` are not filtered, nor do they cast shadows.
+  that is not a filter list is ignored. A `url(#id)` naming an SVG `<filter>` of the page is drawn in its place in the
+  list, its `objectBoundingBox` units over the canvas's box, as in Chrome (`crates/dom/tests/canvas/canvas_url_filter.js`);
+  one that names nothing, or is on a `<Canvas>` component (no page to find it in), is reported as unsupported and the
+  rest of the list is drawn. `clearRect` and `putImageData` are not filtered, nor do they cast shadows.
 - A command with either costs GPU passes of its own (drawn alone, blurred, drawn again as a picture), so a canvas with
-  hundreds of shadowed shapes is slower than one without, and one frame may not make more than 50 million pixels of
-  such pictures per canvas layer (SCENE.md, "canvas"). `getContext('webgl')` and
+  hundreds of shadowed shapes is slower than one without. `getContext('webgl')` and
 `'webgl2'` return a recording WebGL context (§6.7); `'webgpu'` returns a recording WebGPU context (ENGINE.md, "WebGPU"), compute passes, storage buffers and storage textures included. A page whose compute passes build on what an earlier frame left is replayed from that history and reported; to make a frame the same alone, clear or rewrite what the kernels write at the start of the frame; another context type returns `null`.
 
 - **Fonts.** `font` is matched against the registered fonts (`registerFont`, `loadFont`, `@font-face`) by family
@@ -586,34 +589,45 @@ own GLSL ES, translated to WGSL by naga (SCENE.md, "glsl"). No browser is involv
   array, `texParameteri`, `generateMipmap`, `activeTexture`, `pixelStorei` (flip and premultiply), `viewport`,
   `scissor`, `enable` (`BLEND`, `CULL_FACE`, `SCISSOR_TEST`), `blendFunc` and the rest of blending, `colorMask`,
   `clearColor`, `clear`, `drawArrays` and `drawElements` of triangles and of points (`gl_PointSize` pixels, 1 to 511, with
-  `gl_PointCoord`), `gl_VertexID`, and in WebGL 2 `drawArraysInstanced`, `drawElementsInstanced`,
-  `vertexAttribDivisor(i, 1)` (`gl_InstanceID`) and `blitFramebuffer` of the colour between the canvas and a texture
-  drawn in (`NEAREST` or `LINEAR`, mirrored by reversed corners). `getShaderParameter(COMPILE_STATUS)` is true:
-  a shader naga cannot read fails when the scene loads, naming the line. `getExtension('OES_standard_derivatives')`
-  answers (derivatives always work); other extensions return `null`.
+  `gl_PointCoord`; 511 is also what Chrome reports on Apple silicon), `gl_VertexID`, and in WebGL 2
+  `drawArraysInstanced`, `drawElementsInstanced`, `vertexAttribDivisor(i, 1)` (`gl_InstanceID`), `clearBuffer*`, and
+  `blitFramebuffer` of colour, depth and stencil (colour `NEAREST` or `LINEAR`, mirrored by reversed corners; depth
+  and stencil texel for texel; with `antialias`, as in Chrome, nothing is blitted into the canvas and it is read only
+  into a rectangle of its own bounds). The stencil test is drawn: `enable(STENCIL_TEST)`, `stencilFunc`, `stencilOp`,
+  `stencilMask` and their `Separate` forms, `clearStencil`, on a canvas made with `stencil: true` and on a framebuffer
+  with a stencil buffer. `getShaderParameter(COMPILE_STATUS)` is true: a shader naga cannot read fails when the scene
+  loads, naming the line. `getExtension('OES_standard_derivatives')` and, in WebGL 1, `'WEBGL_depth_texture'` answer;
+  other extensions return `null`.
 - **Framebuffers** (multi-pass shaders: render to a texture, then sample it; ping-pong; blur passes):
   `createFramebuffer`, `bindFramebuffer` (`FRAMEBUFFER`, and in WebGL 2 `DRAW_FRAMEBUFFER` and `READ_FRAMEBUFFER`),
-  `framebufferTexture2D` of an RGBA, `UNSIGNED_BYTE` `TEXTURE_2D` to `COLOR_ATTACHMENT0`, `checkFramebufferStatus`,
-  `deleteFramebuffer`, `isFramebuffer`; binding `null` returns to the canvas. Draws, `clear` and `viewport` act on the
-  bound framebuffer's texture, in GL's orientation (its first row is the bottom one), and the texture can then be
-  sampled by later draws. Call `viewport` after binding a framebuffer, as GL needs. Allocate the texture with
-  `texImage2D(..., null)` (or `texStorage2D`); one that holds uploaded pixels, or is not RGBA, cannot be drawn into. A
-  framebuffer with no texture, or a texture not yet specified, is incomplete: `checkFramebufferStatus` says so and a
-  draw or clear sets `INVALID_FRAMEBUFFER_OPERATION`. A draw that samples the texture it draws into sets
-  `INVALID_OPERATION` and draws nothing. A render is a function of its own frame: every framebuffer texture starts a
-  frame transparent black, so a pass reading what an earlier frame left reads black. A texture drawn into cannot be
-  given `generateMipmap`; `texSubImage2D` of a canvas, `ImageData` or an array of pixels patches it in order with the
-  draws; sample it with `LINEAR` or `NEAREST` (a mipmapped minification filter
-  without levels is incomplete, and reads black).
+  `framebufferTexture2D` of an RGBA, `UNSIGNED_BYTE` `TEXTURE_2D` (any level with storage, in WebGL 2) to
+  `COLOR_ATTACHMENT0` and, in WebGL 2, `COLOR_ATTACHMENT1` to 7 with `drawBuffers` (fragment outputs at
+  `layout(location = n)`); a depth texture (`DEPTH_COMPONENT16/24/32F`, `DEPTH24_STENCIL8`, or `DEPTH_COMPONENT` with
+  `WEBGL_depth_texture`) to `DEPTH_ATTACHMENT` or `DEPTH_STENCIL_ATTACHMENT`, which later draws sample as its depth;
+  `renderbufferStorage` of colour (`RGBA4`, `RGB565`, `RGB5_A1`, `RGBA8`, each drawn as RGBA8), depth, `STENCIL_INDEX8`
+  or depth-and-stencil formats with `framebufferRenderbuffer`; `checkFramebufferStatus`, `readBuffer`,
+  `invalidateFramebuffer`, `deleteFramebuffer`, `isFramebuffer`; binding `null` returns to the canvas. Draws, `clear`
+  and `viewport` act on the bound framebuffer's attachments, in GL's orientation (a texture's first row is the bottom
+  one), and its textures can then be sampled by later draws. Call `viewport` after binding a framebuffer, as GL needs.
+  Allocate a texture with `texImage2D(..., null)` (or `texStorage2D`, with levels); one that holds uploaded pixels, or
+  is not RGBA, cannot be drawn into. A framebuffer with no attachment, or one not yet specified, is incomplete:
+  `checkFramebufferStatus` says so and a draw or clear sets `INVALID_FRAMEBUFFER_OPERATION`. A draw that samples a
+  texture attached to the framebuffer it draws into sets `INVALID_OPERATION` and draws nothing. A render is a function
+  of its own frame: every framebuffer texture starts a frame transparent black (a depth buffer at 1, a stencil buffer
+  at 0), so a pass reading what an earlier frame left reads black. A texture drawn into cannot be given
+  `generateMipmap`; `texSubImage2D` of a canvas, `ImageData`, an array of pixels, an image or a layer's picture patches
+  it in order with the draws (and lays a picture over a texture made from an image or a layer); sample it with
+  `LINEAR` or `NEAREST`, or set `TEXTURE_MAX_LEVEL` to the levels it has (a mipmapped minification filter without
+  complete levels is incomplete, and reads black).
 - The drawing buffer is emptied before every frame (a frame is a function of its own calls, so the frames can be made
   in any order), `preserveDrawingBuffer` or not, and a frame that draws nothing draws nothing. A canvas has one kind of context for good; `getContext('2d')` after `getContext('webgl')`
   returns `null`.
 - Anything outside the list throws a `WebGLUnsupportedError` (message starting `unsupported:`) saying what to do:
-  colour and stencil renderbuffers, depth and stencil textures as attachments, the stencil test, `readPixels`, lines, instanced points,
-  cube and float textures, `getContext('webgpu')`, and drawing or `toDataURL`-ing a WebGL canvas.
+  multisampled renderbuffers, `readPixels`, lines, instanced points, cube and float textures, attachments of different
+  sizes in one framebuffer, `getContext('webgpu')`, and drawing or `toDataURL`-ing a WebGL canvas.
   The depth test is drawn: `enable(DEPTH_TEST)`, `depthFunc`, `depthMask`, `depthRange`, `clearDepth`, `clear(DEPTH_BUFFER_BIT)` and
   `polygonOffset` on the canvas (the `depth` attribute, true by default) and on a framebuffer with a depth
-  renderbuffer (`renderbufferStorage` with a depth format, `framebufferRenderbuffer`).
+  renderbuffer or depth texture; framebuffers that attach one depth buffer share it.
 
 ### 6.4 Audio clips
 
@@ -913,17 +927,25 @@ drawn natively with Skia.
 |---|---|
 | `src` | a `.riv` path or `staticFile(...)`; a URL is an error (a frame must not depend on the network) |
 | `artboard`, `animation` | by name or position; the default artboard and its first animation (else its default state machine) when left out |
-| `stateMachine` | not in Remotion's props: plays a state machine instead, from its start with its inputs at their defaults, stepped at 1/60 s |
+| `stateMachine` | not in Remotion's props: plays a state machine instead, from its start, stepped at 1/60 s |
+| `stateMachineInputs` | not in Remotion's props: the machine's inputs, `{ name: true \| false \| number \| 'fire' }` from the start, or `(frame) => ({ ... })` for each frame; a change is set at its frame's time as the machine is replayed, a trigger fires on each frame whose value is `true` or `'fire'`; an unknown name or a value of the wrong type is an error naming the input |
 | `fit`, `alignment` | as Remotion's: `contain`, `cover`, `fill`, `fit-width`, `fit-height`, `none`, `scale-down`; nine alignments |
 | `from`, `durationInFrames`, `name` | as `<Sequence>`'s |
 | `className`, `style` | on the `<canvas>`, which is as large as the composition |
-| `ref` | the four getters answer `null` (the runtime is in the addon) |
-| `onLoad`, `assetLoader`, `effects`, `effectsOutputSize` | reported as unsupported (a warning; `--strict` fails) |
+| `ref` | `getCanvas()` is the `<canvas>` element, `getArtboard()` the artboard played (`name`, `width`, `height`, `bounds`, its animations and state machines by index or name), `getAnimationInstance()` the animation (or state machine) and its `time` at the frame; `getRenderer()` is `null` (the drawing is the canvas's commands) |
+| `onLoad` | called with the file (`artboardCount()`, `artboardByIndex`, `artboardByName`, `defaultArtboard()`, the same objects as `getArtboard`) when the canvas renders |
+| `assetLoader` | `(asset, bytes) => boolean`, called once per file for each asset (`name`, `uniqueFilename`, `fileExtension`, `cdnUuid`, `isImage`, `isFont`, `isAudio`; `bytes` is empty): `asset.decode(bytes)`, or `asset.setRenderImage(await decodeImage(bytes))` / `setFont(await decodeFont(bytes))` (both exported), uses those bytes; a promise is waited for (`delayRender`) |
+| `effects`, `effectsOutputSize` | run over the canvas as for `<AnimatedImage>` (§7.5) |
+| `enableRiveAssetCdn` | accepted; an asset on Rive's CDN is not fetched |
 
 A frame is played from the file's start to `frame / fps`, never from what was played before, so a frame is a pure function
-of the file and the frame number. Pictures embedded in a file are decoded and written as PNGs under
-`~/.cache/kinetograph/rive` for the commands to name; fonts embedded in the file are shaped by the runtime. The test file
-`crates/rive/tests/assets/volume_bars.riv` is from `rive-app/rive-runtime` (MIT).
+of the file, the inputs given for each frame up to it and the frame number. Pictures embedded in a file are decoded and
+written as PNGs under `~/.cache/kinetograph/rive` for the commands to name; fonts embedded in the file are shaped by the
+runtime. An asset outside the file (a referenced picture or font) is what `assetLoader` gave for it, else the file of its
+name beside the `.riv` (`name-id.ext`, as the Rive editor exports referenced assets, or the asset's own name); one found
+in neither (an asset on Rive's CDN) is reported (a warning; `--strict` fails) and what uses it is drawn without it.
+`riveInfo` in the addon describes a file. The test files under `crates/rive/tests/assets` are from
+`rive-app/rive-runtime` (MIT).
 
 ### 7.7 `@remotion/skia` and `@shopify/react-native-skia`
 
@@ -977,6 +999,49 @@ Fonts are files, as everywhere: `matchFont` and `Paragraph` find only fonts regi
 (no system fonts, so text is the same on every machine); `useFont(staticFile('a.ttf'), size)` reads a file. Pictures are
 read from the project or its `public` directory. Everything a render reads is read when the frame is drawn.
 
+Also drawn, each frame-pure:
+
+- **Reanimated values.** `react-native-reanimated` maps to `@kinetographdev/core/skia/reanimated`: `useSharedValue`,
+  `useDerivedValue` (worked out each time it is read), `makeMutable`, `isSharedValue`, `useAnimatedReaction`,
+  `useFrameCallback` (called once for the frame, with its time), `runOnJS`/`runOnUI`, `interpolate`, `Extrapolation`,
+  `interpolateColor`, `Easing`. A shared value is a prop's value when the frame is drawn, after the effects ran. Every frame
+  renders the tree afresh, so a value lives for one frame: drive it from `useCurrentFrame()`. `withTiming`, `withSpring`,
+  `withDecay`, `withRepeat`, `withDelay` and `withSequence` run on the wall clock: the value jumps to its end and it is
+  reported. RN-Skia's `useClock` (the frame's time in ms), `usePathInterpolation`, `useVectorInterpolation`,
+  `usePathValue`, `useRectBuffer` and `useRSXformBuffer` work on them.
+- **`FitBox`**, `fitbox(fit, src, dst, rotation?)`, `rect2rect`, `fitRects`.
+- **Offscreen drawing.** `Skia.Surface.Make(w, h)` and `MakeOffscreen(w, h)` give a canvas whose
+  `makeImageSnapshot(bounds?)` is an `SkImage`; `drawAsImage(element, size)` and `drawAsPicture(element, bounds?)` draw
+  Skia components into one. The addon rasterises them on the CPU when they are drawn, so they are the same on every
+  machine (RN-Skia's offscreen surface is a GPU one).
+- **Data and pictures.** `Skia.Data.fromBytes`, `fromBase64` and `fromURI` (a project file or a `data:` URI; a URL is an
+  error), `Skia.Image.MakeImageFromEncoded(data)` (null if it is not a picture), `Skia.Image.MakeImage(info, data,
+  bytesPerRow)` (`ColorType` `RGBA_8888`, `BGRA_8888`, `Alpha_8`, `Gray_8`, `RGBA_F16`, `RGBA_F32`; `AlphaType`), and on
+  an `SkImage` `readPixels`, `encodeToBytes`/`encodeToBase64` (PNG), `makeShaderOptions`, `makeShaderCubic`. Bytes go
+  to the addon once (`putData`) and a tree names them by their content.
+- **Typefaces.** `Skia.Typeface.MakeFreeTypeFaceFromData(data)`, `Skia.Font(typeface, size)`, `Skia.FontMgr.System()`
+  (`countFamilies`, `getFamilyName`, `matchFamilyStyle`: the registered fonts), `Skia.TypefaceFontProvider.Make()`
+  (`registerFont(typeface, family)`, for `Skia.ParagraphBuilder.Make(style, provider)`), `useTypeface`, `useFonts`.
+  `Skia.Font()` without a typeface uses the first registered font (or the built-in fallback) and is reported.
+- **Animated pictures.** `useAnimatedImageValue(source, paused?)` is the GIF or WebP frame for the time of the frame
+  being rendered, looping by the file's frame durations (the first frame while `paused`); `useAnimatedImage` and
+  `Skia.AnimatedImage.MakeAnimatedImageFromEncoded` give an `SkAnimatedImage` (`getFrameCount`, `decodeNextFrame`,
+  `currentFrameDuration`, `getCurrentFrame`). Frames are decoded once.
+- **Paragraph measurement.** After `paragraph.layout(width)`: `getHeight`, `getMaxWidth`, `getLongestLine`,
+  `getMinIntrinsicWidth`, `getMaxIntrinsicWidth`, the baselines, `didExceedMaxLines`, `getLineMetrics`,
+  `getRectsForRange`, `getGlyphPositionAtCoordinate`, measured by Skia's text layout with the paragraph's fonts;
+  `paragraph.paint(canvas, x, y)` on a recording canvas.
+- **Paints with shaders and filters.** `Skia.Shader.*` (the gradients, `MakeTurbulence`, `MakeFractalNoise`,
+  `MakeBlend`, `MakeColor`), `effect.makeShader(uniforms)` and `makeShaderWithChildren`, `Skia.ColorFilter.*`,
+  `Skia.ImageFilter.*` (`MakeBlur`, `MakeOffset`, `MakeDropShadow(Only)`, `MakeErode`, `MakeDilate`, `MakeColorFilter`,
+  `MakeShader`, `MakeCompose`, `MakeBlend`, `MakeDisplacementMap` of a `MakeShader`, `MakeRuntimeShader`),
+  `Skia.MaskFilter.MakeBlur` and `Skia.PathEffect.*` set on a `Skia.Paint()` draw as the matching JSX children do. A drop
+  shadow blurs by its x sigma.
+- **Text in an SVG.** `ImageSVG` draws `<text>` with the registered fonts: for each `font-family` the SVG names, the
+  first family of its list that is registered, else the built-in fallback font (a generic family such as `sans-serif`
+  goes to the fallback silently; a named family that is not registered is reported). Characters the font lacks are not
+  drawn.
+
 `Atlas` is `canvas.drawAtlas` (`colorBlendMode` combines a sprite, the source, with its colour, the destination; default
 `dstOver`), `Patch` is `drawPatch` (corners clockwise from the top left, `c1` the control point on the edge that arrives
 at the corner and `c2` on the one that leaves it), `Glyphs` and `TextBlob` draw glyphs of a registered font, `Picture` is
@@ -984,11 +1049,22 @@ recorded again by Skia's own recorder and drawn once, whatever paints are declar
 DOM: an SVG with a size of its own is fitted whole and centred into `width` by `height`, one sized by percentages is laid
 out in them. An SVG has no system fonts, so its `<text>` is left out and reported (a warning; `--strict` fails).
 
-Not provided (an import of one fails the bundle, naming the export): Reanimated
-values and hooks (`useSharedValue`, `useDerivedValue`, `useClock`; a Remotion project drives props from the frame),
-`FitBox`/`fitbox`/`rect2rect`, `Skia.Surface`/`Offscreen`/`makeImageFromView`, `Skia.Image.*` and `Skia.Data.*` factories,
-`Skia.SVG.MakeFromData`, `Skia.Typeface`/`FontMgr`, `useVideo`, animated images, `Paragraph` measurement, a `Skia.Paint()` with a
-shader or filter set on it (use the JSX children), touch handling.
+- **Video.** `useVideo(source, { paused, looping, seek, playbackSpeed })` gives `currentFrame` (a shared value of the
+  picture the file shows at the frame's time, times `playbackSpeed`, from `seek` ms, looping unless `looping: false`;
+  `seek` while `paused`), `currentTime` (ms), `duration` (ms), `framerate`, `size` and `rotation`. The picture is decoded
+  by the engine's video decoder on the CPU (`readCanvasPicture`, as `onVideoFrame` frames are read). Its sound is not
+  played (a `volume` above 0 is reported): add an `<Audio>` of the file.
+
+Not provided (an import of one fails the bundle, naming the export): `makeImageFromView` and
+`Skia.Image.MakeImageFromViewTag` (there are no React Native views), `Skia.SVG.MakeFromData`, touch handling, and
+Reanimated's `Animated` components.
+
+**Why the CPU.** Drawing `@remotion/skia` through the main renderer's Skia (Graphite on Metal) was measured and not done:
+skia-safe 0.153.3 publishes no prebuilt Skia with `graphite`, `metal`, `textlayout` and `svg` together (the main renderer's
+build is `graphite-metal-pdf`, the addon's `textlayout-svg-webp`), so it would mean compiling Skia from source on every
+platform; GPU rasterising does not give the same pixels as Skia's CPU rasteriser, nor the same pixels on every machine;
+and at 1920 x 1080 a busy canvas costs the CPU addon 9.9 ms a frame to draw, read back and hash, plus 8.0 ms to write a new
+PNG (0.39 MB).
 
 ## 8. `@kinetographdev/audio` (stream 5)
 
@@ -1298,6 +1374,17 @@ rendered, so a whole timeline is the union over frames; two entries with one `ke
   arrives is dropped without a reply (latest wins).
 - **Timeline.** `/api/timeline` runs the JS stage for every frame of the composition (no addon) and returns the
   union of `sequences` and each layer's frame ranges, cached per (buildId, composition, props).
+- **Thumbnails.** `/api/thumbnail` draws a small JPEG of a frame for the timeline's clips through the preview worker,
+  one at a time and only once no preview frame has been asked for in 250 ms, so playback and scrubbing never wait for
+  one. Thumbnails are kept (400, by the build they were drawn from, composition, frame, props and size). The answer's
+  `X-Build` is the build drawn; when it is the `build` the address names, the answer is `immutable`, else `no-store`
+  (the project was rebuilt while it waited).
+- **Chat.** The server keeps the conversation with the coding agent (the user's messages, what the agent sent, the
+  permissions answered). When the window that began it closes, the agent waits 30 s (`agentReclaimMs`) for it to come
+  back: the next window to connect takes it over and is sent `agent.history`, which the chat replays. Starting over,
+  choosing another agent, or a window that does not come back drops it. At most 5,000 records and 4 MB are kept
+  (streamed text is one record per paragraph); past that whole turns go from the start, so a replay begins at one of
+  the user's messages.
 - **Names and source.** The studio bundles a project with esbuild's dev JSX transform, so each Sequence and layer
   (`/api/timeline`, `/api/inspect`) can carry optional `label` (a person's name for it: the Sequence `name`, the
   element `id`, `Component · “text…”`, the tag and class, or its kind), `component` (the nearest user component) and
@@ -1314,6 +1401,7 @@ The routes and messages are typed in `packages/studio/src/protocol.ts`; that fil
 | `GET /api/frame?comp&frame&scale&format&props` | the image (`Content-Type` its mime, headers `X-Build`, `X-Frame`) |
 | `GET /api/inspect?comp&frame&props` | `InspectResult` (§3) |
 | `GET /api/timeline?comp&props` | `TimelineData` |
+| `GET /api/thumbnail?comp&frame&height&build&props` | a JPEG `height` px tall (8 to 120), drawn when the preview is idle |
 | `GET /api/renders` | `RenderJob[]`, oldest first |
 | `POST /api/renders` (`RenderRequest`) | `RenderJob`, status 201 |
 | `DELETE /api/renders/:id` | `RenderJob` (cancelled; a finished job is left as it is) |
@@ -1337,7 +1425,9 @@ server through one client module (`src/api.ts`), so tests swap in a mock server.
   toggle, a frame counter and timecode, and the fps the preview actually reaches. Playing paces frames at the
   composition's fps and skips frames the server cannot keep up with; it never shows a frame older than the last.
 - Timeline: one row per Sequence (nested under its parent, labelled with `name`) and layer rows below, a playhead,
-  a ruler in frames; clicking a row selects that layer in the scene tree.
+  a ruler in frames; clicking a row selects that layer in the scene tree. A clip at least 64 px wide shows a picture of
+  its first frame (`/api/thumbnail`, loaded lazily). Siblings that share a name are numbered ("Card", "Card 2", "Card 3")
+  in the timeline, the scene tree, the preview and the chat's context.
 - Scene tree: the `InspectResult` of the current frame; selecting a layer shows its resolved fields.
 - Props panel: a form for the composition's `defaultProps` (strings, numbers, booleans, colours as text; nested
   objects as JSON); an edit re-renders the preview with the new `props`; reset restores the defaults.
@@ -1414,9 +1504,11 @@ interface DatamoshOptions {
 GSAP (core and the free plugins, `Flip` too) runs on the page's HTML and SVG. Build a paused timeline in a layout
 effect and `seek(frame / fps)` it in a second one. A tween that plays by itself (`gsap.to` in a `useEffect`) works
 as well: GSAP's root clock is moved with the frame, and a jump to a later frame renders the frames it skips so a
-tween an effect makes at frame 30 starts there. Stop such a tween in the effect's cleanup. `ScrollTrigger` and
-`Draggable` need scrolling and dragging, which a render does not have. What works and the gaps are on the site at
-`/docs/compat/#gsap`.
+tween an effect makes at frame 30 starts there (about 0.1 ms per skipped frame). Stop such a tween in the effect's
+cleanup. Such a tween is warned about once: Remotion's and HyperFrames' own renderers do not move GSAP's root clock
+with the frame, so it renders differently there. Motion-blur sub-frames sample it at their own time (`onUpdate` runs,
+`onComplete` and the other callbacks do not). `ScrollTrigger` and `Draggable` need scrolling and dragging, which a
+render does not have. What works and the gaps are on the site at `/docs/compat/#gsap`.
 
 ### 11.10 Animation libraries and their plugins
 
@@ -1433,7 +1525,8 @@ library to `frame / fps`; the library stays a peer dependency (`npm install @kin
 
 Libraries that need no plugin, only frame-pure use (details and snippets in `/docs/libraries/`, status in
 `/docs/compat/#libraries`): Recharts (`isAnimationActive={false}`, fixed `width`/`height`), d3 scales and shapes and
-`d3-selection` into a ref (no `d3-transition`/`d3-timer`), anime.js, Motion `animate()`, Paper.js (clear and redraw each
+`d3-selection` into a ref (no `d3-transition`/`d3-timer`), anime.js, Motion `animate()` (on the Web Animations API,
+which runs on the frame clock: `element.animate()`, `KeyframeEffect`, `Animation`, `getAnimations()`), Paper.js (clear and redraw each
 frame), Bklit UI, rough.js (pass `seed`), Chart.js (`animation: false`, `update('none')`), Observable Plot, Vega, visx,
 Matter.js and Rapier (step the world to the frame). Shiki is close: `monospace` is the bundled JetBrains Mono unless you
 load a monospace font (ENGINE.md "Fonts"). Mermaid 12 draws with its default HTML labels (a `<foreignObject>` of `<div>`s: flowchart,

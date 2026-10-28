@@ -442,6 +442,7 @@ class Emitter {
       path,
       viewport,
       fonts: this.options.fonts?.() ?? {},
+      refreshFonts: () => this.options.fonts?.() ?? {},
       emitNative: (node: unknown, at: string) => this.element(node as HostElement, at),
       time: this.options.time?.() ?? 0,
       stylesheets: this.stylesheets(),
@@ -580,14 +581,14 @@ class Emitter {
           type: 'text',
           text: textOf(node),
           font: fontKey(props.font, props.weight, props.fontStyle),
-          ...pick(props, ['size', 'depth', 'align', 'lineHeight']),
+          ...pick(props, ['size', 'depth', 'align', 'lineHeight', 'bevel']),
           ...material,
           ...shadowing,
           ...placement,
         } as Object3DJson;
       case 'kg-extrude':
         if (typeof props.path !== 'string') throw new Error('<Extrude> needs a path, SVG path data');
-        return { type: 'extrude', path: props.path, ...pick(props, ['size', 'depth', 'fillRule']), ...material, ...shadowing, ...placement } as Object3DJson;
+        return { type: 'extrude', path: props.path, ...pick(props, ['size', 'depth', 'fillRule', 'bevel']), ...material, ...shadowing, ...placement } as Object3DJson;
       case 'kg-group3d': {
         const children: Object3DJson[] = [];
         for (const child of node.children) {
@@ -720,7 +721,7 @@ class Emitter {
         const context = createCanvasContext({ size: () => ({ width, height }), ...canvasEnvironment(this.options.fonts) });
         draw(context);
         for (const value of unsupportedFilters(context.commands)) {
-          this.unsupported.push({ path: `${path} <${name}>`, element: name, property: 'filter', value, reason: 'a url() filter is not drawn on a canvas' });
+          this.unsupported.push({ path: `${path} <${name}>`, element: name, property: 'filter', value, reason: 'a url() filter names a <filter> of a page, and a <Canvas> layer has none; it is drawn without' });
         }
         return { id, type: 'canvas', width, height, commands: context.commands, ...commonOf(props, name) } as LayerJson;
       }

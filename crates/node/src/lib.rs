@@ -3,7 +3,7 @@
 //! is specified in `packages/cli/skills/kinetograph/references/AUTHORING.md` §3.
 //!
 //! The functions that need no GPU (`validateScene`, `inspect`, `layoutText`,
-//! `parseRange`, `probeMedia`, `probeStreams`, `scanStreams`, `decodeAudio`, `modelUnsupported`, `riveFrame`, `track`,
+//! `parseRange`, `probeMedia`, `probeStreams`, `scanStreams`, `decodeAudio`, `modelUnsupported`, `riveFrame`, `riveInfo`, `track`,
 //! `version`) never open a device; `new Renderer()` does, once, and every scene given to it afterwards reuses that
 //! setup.
 //!
@@ -85,6 +85,13 @@ pub fn validate_scene(scene_json: String, base_dir: Option<String>) -> Result<Sc
     })
 }
 
+/// The JSON path of each key in a scene file that the format does not read
+/// (`layers[0].opacty`): serde skips such a key, so it is said here instead.
+#[napi]
+pub fn scene_unknown_keys(scene_json: String) -> Vec<String> {
+    kinetograph_core::scene_keys::unknown_keys(&scene_json)
+}
+
 /// Fails with `IO` for the first file the scene names that is not there. It
 /// reads the JSON rather than the loaded scene, so a file-valued field a
 /// later phase adds (any layer's `src`) is covered without a change here.
@@ -121,7 +128,8 @@ fn check_files(scene_json: &str, base: &Path) -> Result<()> {
     if let Some(list) = doc.get("layers") {
         layers(list, &mut files);
     }
-    for file in files {
+    // A `data:` URL is the picture itself (an SVG `<image>` of the DOM painter's), not a file.
+    for file in files.into_iter().filter(|f| !f.starts_with("data:")) {
         let path = base.join(file);
         if let Err(source) = std::fs::metadata(&path) {
             return Err(from_core(CoreError::Io { path, source }));
@@ -308,11 +316,19 @@ pub fn dom_computed_style(
 
 /// A Rive file (`.riv`) played to a time, as the commands of a canvas layer
 /// (packages/cli/skills/kinetograph/references/AUTHORING.md §7.6): `{ src, baseDir, artboard, animation, stateMachine,
-/// time, width, height, fit, alignment }` as JSON in, the commands as a JSON
-/// array out. CPU only; the file is read once.
+/// inputs, assets, time, width, height, fit, alignment }` as JSON in, the commands as a JSON
+/// array out. `inputs` are `[{ time, name, value }]` set as the state machine plays; `assets` are the bytes (base64)
+/// of assets outside the file, by file name. CPU only; the file is read once.
 #[napi]
 pub fn rive_frame(request_json: String) -> Result<String> {
     rive::rive_frame(&request_json)
+}
+
+/// `{ src, baseDir, assets }` in; the file's artboards (with their animations, state machines and inputs) and assets
+/// (in the file, given, or missing) out, as JSON.
+#[napi]
+pub fn rive_info(request_json: String) -> Result<String> {
+    rive::rive_info(&request_json)
 }
 
 // ---- GPU ----
@@ -534,7 +550,9 @@ fn channels(audio: &AudioPcm) -> Vec<&[f32]> {
 /// encoders the linked LGPL ffmpeg lacks (libx264, libx265). `KINETOGRAPH_FFMPEG` takes precedence. `null` forgets it.
 #[napi]
 pub fn set_ffmpeg_path(path: Option<String>) {
-    kinetograph_cli::external::set_path(path.filter(|p| !p.is_empty()).map(std::path::PathBuf::from));
+    kinetograph_cli::external::set_path(
+        path.filter(|p| !p.is_empty()).map(std::path::PathBuf::from),
+    );
 }
 
 /// The planes (Y, U, V for `yuv420p`, the default; rows packed) the encoder
@@ -671,7 +689,9 @@ pub struct Renderer {
     layer_cache: bool,
     /// Frames `startFrame` queued that `finishFrame` has not collected, oldest first: what each will send when the
     /// frame is started.
-    started: std::collections::VecDeque<std::sync::mpsc::Receiver<Result<kinetograph_core::PendingFrame>>>,
+    started: std::collections::VecDeque<
+        std::sync::mpsc::Receiver<Result<kinetograph_core::PendingFrame>>,
+    >,
     /// The thread that starts frames (parses their scene, builds and submits their GPU work) while the caller
     /// goes on to the JS of the next one; started with the first frame.
     starter: Option<std::sync::mpsc::Sender<StartJob>>,
@@ -835,9 +855,7 @@ impl Renderer {
         let frame = count("frame", frame)?;
         let base_dir = resolve_base(base_dir);
         let shared = self.shared.clone();
-        let starter = self
-            .starter
-            .get_or_insert_with(|| spawn_starter(shared));
+        let starter = self.starter.get_or_insert_with(|| spawn_starter(shared));
         let (done, result) = std::sync::mpsc::channel();
         starter
             .send(StartJob::Start {
@@ -1124,8 +1142,11 @@ impl VideoWriter {
                     "frames must come in increasing order: {frame} after {last}"
                 )));
             }
-            let (shared, writer, failed) =
-                (self.shared.clone(), self.writer.clone(), self.failed.clone());
+            let (shared, writer, failed) = (
+                self.shared.clone(),
+                self.writer.clone(),
+                self.failed.clone(),
+            );
             let pusher = self
                 .pusher
                 .get_or_insert_with(|| spawn_pusher(shared, writer, failed));

@@ -3,14 +3,16 @@
 //! What is read: the node tree with each node's transform; the triangle meshes
 //! on the nodes of the default scene, with each primitive's positions, normals
 //! (flat ones when the file has none), first texture coordinates and indices;
-//! materials' base colour factor and texture, normal and metallic-roughness
-//! textures, metallic and roughness factors, emissive factor, `doubleSided`, and `alphaMode` (`BLEND` is blended; `OPAQUE`
-//! and `MASK` are drawn opaque); animations of node translation, rotation,
-//! scale and morph weights (`LINEAR`, `STEP` and `CUBICSPLINE`); morph targets'
-//! position and normal displacements; skins with up to four joints a vertex.
+//! materials' base colour factor and texture, normal, metallic-roughness,
+//! occlusion (with its `strength`) and emissive textures, metallic and
+//! roughness factors, emissive factor, `doubleSided`, and `alphaMode` (`BLEND`
+//! is blended; `OPAQUE` and `MASK` are drawn opaque); animations of node
+//! translation, rotation, scale and morph weights (`LINEAR`, `STEP` and
+//! `CUBICSPLINE`); morph targets' position and normal displacements; skins
+//! with up to four joints a vertex.
 //!
 //! What is not is listed in `Model::unsupported`, one entry for each kind of
-//! thing: other texture slots (occlusion, emissive), texture coordinate sets above 0, primitives that are not lists
+//! thing: texture coordinate sets above 0, primitives that are not lists
 //! of triangles, more than four joints a vertex, scenes other than the
 //! default, and every glTF extension.
 //!
@@ -20,15 +22,15 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
-use glam::{DMat4, DQuat, DVec3, Mat3, Mat4, Vec3};
+use glam::{DMat4, DQuat, DVec3, Mat4, Vec3};
 use gltf::animation::Interpolation;
 use gltf::animation::util::ReadOutputs;
 use gltf::image::Format;
 use gltf::material::AlphaMode;
 
-use super::draw::{DataMaps, Material, Texture};
+use super::draw::{Maps, Material, Texture};
 use super::mesh::{MeshData, Vertex3};
 use crate::error::{Error, Result};
 
@@ -59,32 +61,55 @@ pub struct ModelPart {
     pub node: usize,
     pub material: Material,
     pub texture: Option<Arc<Texture>>,
-    pub maps: DataMaps,
+    pub maps: Maps,
     deform: Option<Deform>,
 }
 
 /// What moves a part's vertices after the nodes have: morph targets and a skin.
 struct Deform {
-    targets: Arc<Vec<MorphTarget>>,
-    /// The skin (an index into `Model::skins`) and each vertex's joints.
-    skin: Option<(usize, Arc<Influences>)>,
-    /// The file has no normals: the mesh has flat ones, made again from the
-    /// deformed positions.
-    flat: bool,
-    /// The part in the pose of no animation, made when first wanted.
-    rest: OnceLock<Arc<MeshData>>,
+    data: Arc<DeformData>,
+    /// The skin, an index into `Model::skins`.
+    skin: Option<usize>,
 }
 
-/// One morph target: displacements to add, scaled by the target's weight.
-struct MorphTarget {
-    positions: Vec<[f32; 3]>,
-    normals: Option<Vec<[f32; 3]>>,
+/// What a part's mesh is deformed with that does not change with the pose:
+/// its morph targets, then the four joints of a skin that move each vertex.
+/// The GPU deforms the mesh (`shaders/scene3d_deform.wgsl`) each frame from
+/// these and a `PoseDeform`.
+pub struct DeformData {
+    /// What the compositor keys its GPU copy by.
+    pub id: u64,
+    pub vertex_count: usize,
+    pub target_count: usize,
+    /// For each target, then each vertex: the displacement of the position
+    /// (xyz) and of the normal (xyz), to add times the target's weight.
+    pub targets: Vec<[f32; 6]>,
+    /// Each vertex's four joints (indices into the skin's) and their weights,
+    /// which sum to 1; empty without a skin.
+    pub joints: Vec<[u32; 4]>,
+    pub weights: Vec<[f32; 4]>,
+    /// The file has no normals: the mesh has flat ones, each triangle with
+    /// vertices of its own, made again from the deformed positions.
+    pub flat: bool,
+    /// The box of the rest positions.
+    rest_box: (Vec3, Vec3),
+    /// For each target, the most it moves a vertex along each axis.
+    reach: Vec<Vec3>,
+    /// For each joint, the box of the rest positions it moves.
+    joint_boxes: Vec<Option<(Vec3, Vec3)>>,
 }
 
-/// The four joints that move each vertex, and by how much each.
-struct Influences {
-    joints: Vec<[u16; 4]>,
-    weights: Vec<[f32; 4]>,
+/// A deformed part in one pose: what the GPU deforms its rest mesh with.
+pub struct PoseDeform {
+    pub data: Arc<DeformData>,
+    /// One for each morph target.
+    pub weights: Vec<f32>,
+    /// Each joint of the skin in the model's space, times its inverse bind
+    /// matrix; empty when the part has no skin.
+    pub joints: Vec<Mat4>,
+    /// A box the deformed vertices are inside, in the space `Placed::local`
+    /// is applied to.
+    pub bounds: (Vec3, Vec3),
 }
 
 struct Skin {
@@ -108,10 +133,12 @@ pub struct Pose {
     weights: Vec<Vec<f32>>,
 }
 
-/// A part's mesh in a pose, and the matrix that puts it in the model's space.
+/// A part in a pose: its mesh as the file has it, what deforms it in the
+/// pose, and the matrix that puts it in the model's space.
 pub struct Placed<'a> {
     pub part: &'a ModelPart,
     pub mesh: Arc<MeshData>,
+    pub deform: Option<PoseDeform>,
     pub local: DMat4,
 }
 
@@ -257,9 +284,10 @@ impl Model {
         Pose { world, weights }
     }
 
-    /// The parts in `pose`. `rest` says the pose is the file's own (no clip),
-    /// so a deformed part's mesh is made once and kept.
-    pub fn placed(&self, pose: &Pose, rest: bool) -> Vec<Placed<'_>> {
+    /// The parts in `pose`: each with its mesh as the file has it and, for a
+    /// part with morph targets or a skin, what deforms it in the pose (the
+    /// GPU does, when it is drawn).
+    pub fn placed(&self, pose: &Pose) -> Vec<Placed<'_>> {
         self.parts
             .iter()
             .map(|part| {
@@ -267,15 +295,22 @@ impl Model {
                     return Placed {
                         part,
                         mesh: part.mesh.clone(),
+                        deform: None,
                         local: pose.world[part.node],
                     };
                 };
-                let build = || Arc::new(self.deformed(part, deform, pose));
-                let mesh = if rest {
-                    deform.rest.get_or_init(build).clone()
-                } else {
-                    build()
-                };
+                let data = &deform.data;
+                let mut weights = pose.weights[part.node].clone();
+                weights.resize(data.target_count, 0.0);
+                let joints: Vec<Mat4> = deform.skin.map_or_else(Vec::new, |skin| {
+                    let skin = &self.skins[skin];
+                    skin.joints
+                        .iter()
+                        .zip(&skin.inverse_bind)
+                        .map(|(joint, inverse_bind)| (pose.world[*joint] * *inverse_bind).as_mat4())
+                        .collect()
+                });
+                let bounds = data.bounds(&weights, &joints);
                 // A skin's joints put the vertices in the model's space; the
                 // mesh node's own transform does not apply to them.
                 let local = if deform.skin.is_some() {
@@ -283,68 +318,123 @@ impl Model {
                 } else {
                     pose.world[part.node]
                 };
-                Placed { part, mesh, local }
+                Placed {
+                    part,
+                    mesh: part.mesh.clone(),
+                    deform: Some(PoseDeform {
+                        data: data.clone(),
+                        weights,
+                        joints,
+                        bounds,
+                    }),
+                    local,
+                }
             })
             .collect()
     }
+}
 
-    /// `part`'s vertices moved by its morph targets (at the weights of its
-    /// node), then by its skin (at the joints' places).
-    fn deformed(&self, part: &ModelPart, deform: &Deform, pose: &Pose) -> MeshData {
-        let mut vertices = part.mesh.vertices.clone();
-        let weights = &pose.weights[part.node];
-        for (target, weight) in deform.targets.iter().zip(weights) {
-            if *weight == 0.0 {
+impl DeformData {
+    /// A box the vertices are inside once moved by the targets at `weights`
+    /// and the skin's `joints` (none: no skin). A vertex a joint moves is in
+    /// that joint's box; the targets move it at most their reach; and a skin
+    /// moves it to a blend (weights that sum to 1) of where its joints take
+    /// it, which is inside the box of where they take their boxes.
+    fn bounds(&self, weights: &[f32], joints: &[Mat4]) -> (Vec3, Vec3) {
+        let reach: Vec3 = self
+            .reach
+            .iter()
+            .zip(weights)
+            .map(|(r, w)| *r * w.abs())
+            .sum();
+        let grow = |(lo, hi): (Vec3, Vec3)| (lo - reach, hi + reach);
+        if joints.is_empty() || self.joints.is_empty() {
+            return grow(self.rest_box);
+        }
+        let mut out: Option<(Vec3, Vec3)> = None;
+        for (joint, b) in joints.iter().zip(&self.joint_boxes) {
+            let Some((lo, hi)) = b.map(grow) else {
                 continue;
-            }
-            for (i, v) in vertices.iter_mut().enumerate() {
-                let d = Vec3::from(target.positions[i]) * *weight;
-                v.position = (Vec3::from(v.position) + d).to_array();
-                if let Some(normals) = &target.normals {
-                    let d = Vec3::from(normals[i]) * *weight;
-                    v.normal = (Vec3::from(v.normal) + d).to_array();
-                }
-            }
-        }
-        if let Some((skin, influences)) = &deform.skin {
-            let skin = &self.skins[*skin];
-            let joint_matrices: Vec<Mat4> = skin
-                .joints
-                .iter()
-                .zip(&skin.inverse_bind)
-                .map(|(joint, inverse_bind)| (pose.world[*joint] * *inverse_bind).as_mat4())
-                .collect();
-            for (v, (joints, weights)) in vertices
-                .iter_mut()
-                .zip(influences.joints.iter().zip(&influences.weights))
-            {
-                let mut blended = Mat4::ZERO;
-                for (joint, weight) in joints.iter().zip(weights) {
-                    if *weight > 0.0 {
-                        blended += joint_matrices[*joint as usize] * *weight;
-                    }
-                }
-                v.position = blended.transform_point3(Vec3::from(v.position)).to_array();
-                v.normal = (Mat3::from_mat4(blended) * Vec3::from(v.normal)).to_array();
+            };
+            for i in 0..8 {
+                let pick = |bit: usize, a: f32, b: f32| if i & bit == 0 { a } else { b };
+                let p = joint.transform_point3(Vec3::new(
+                    pick(1, lo.x, hi.x),
+                    pick(2, lo.y, hi.y),
+                    pick(4, lo.z, hi.z),
+                ));
+                out = Some(out.map_or((p, p), |(lo, hi)| (lo.min(p), hi.max(p))));
             }
         }
-        for v in &mut vertices {
-            v.normal = Vec3::from(v.normal).normalize_or_zero().to_array();
-        }
-        let indices = part.mesh.indices.clone();
-        if deform.flat {
-            // Each triangle has vertices of its own, so each gets its
-            // triangle's normal.
-            for t in indices.as_chunks::<3>().0 {
-                let p = |k: usize| Vec3::from(vertices[t[k] as usize].position);
-                let n = (p(1) - p(0)).cross(p(2) - p(0)).normalize_or_zero();
-                for &i in t {
-                    vertices[i as usize].normal = n.to_array();
-                }
-            }
-        }
-        MeshData::new(vertices, indices)
+        out.unwrap_or_else(|| grow(self.rest_box))
     }
+}
+
+impl DeformData {
+    /// The bytes of the biggest storage buffer the GPU deform binds for this
+    /// part with `joints` joint matrices: the rest vertices, the vertices it
+    /// writes, the morph targets (24 bytes a vertex each), the joints and
+    /// weights (32 bytes a vertex), the matrices or the target weights.
+    pub fn largest_binding(&self, joints: usize) -> u64 {
+        let vertices = self.vertex_count as u64;
+        [
+            vertices * 32,
+            vertices * 24 * self.target_count as u64,
+            joints as u64 * 64,
+            self.target_count as u64 * 4,
+        ]
+        .into_iter()
+        .max()
+        .unwrap_or(0)
+    }
+}
+
+/// What the GPU makes of `mesh` in the pose `deform`, on the CPU: the same
+/// sums as `shaders/scene3d_deform.wgsl`. The compositor deforms a part this
+/// way when its data is more than the device lets one storage binding hold;
+/// the tests check the shader by it.
+pub fn deform_on_cpu(mesh: &MeshData, deform: &PoseDeform) -> MeshData {
+    let data = &deform.data;
+    let n = data.vertex_count;
+    let mut vertices = mesh.vertices.clone();
+    for (t, weight) in deform.weights.iter().enumerate() {
+        if *weight == 0.0 {
+            continue;
+        }
+        for (i, v) in vertices.iter_mut().enumerate() {
+            let d = data.targets[t * n + i];
+            v.position =
+                (Vec3::from(v.position) + Vec3::new(d[0], d[1], d[2]) * *weight).to_array();
+            v.normal = (Vec3::from(v.normal) + Vec3::new(d[3], d[4], d[5]) * *weight).to_array();
+        }
+    }
+    if !deform.joints.is_empty() && !data.joints.is_empty() {
+        for (i, v) in vertices.iter_mut().enumerate() {
+            let mut blended = Mat4::ZERO;
+            for (joint, weight) in data.joints[i].iter().zip(&data.weights[i]) {
+                if *weight > 0.0 {
+                    blended += deform.joints[*joint as usize] * *weight;
+                }
+            }
+            v.position = blended.transform_point3(Vec3::from(v.position)).to_array();
+            v.normal = (glam::Mat3::from_mat4(blended) * Vec3::from(v.normal)).to_array();
+        }
+    }
+    for v in &mut vertices {
+        v.normal = Vec3::from(v.normal).normalize_or_zero().to_array();
+    }
+    if data.flat {
+        // Each triangle has vertices of its own, so each gets its
+        // triangle's normal.
+        for t in mesh.indices.as_chunks::<3>().0 {
+            let p = |k: usize| Vec3::from(vertices[t[k] as usize].position);
+            let normal = (p(1) - p(0)).cross(p(2) - p(0)).normalize_or_zero();
+            for &i in t {
+                vertices[i as usize].normal = normal.to_array();
+            }
+        }
+    }
+    MeshData::new(vertices, mesh.indices.clone())
 }
 
 /// Whether keyframe times are all finite and never fall (a NaN fails both).
@@ -496,9 +586,58 @@ impl Channel {
 /// What a primitive comes to: the mesh and what can deform it.
 struct Built {
     mesh: Arc<MeshData>,
-    flat: bool,
-    targets: Arc<Vec<MorphTarget>>,
-    influences: Option<Arc<Influences>>,
+    /// Its morph targets and the joints that move it, if it has either.
+    deform: Option<Arc<DeformData>>,
+}
+
+impl DeformData {
+    fn new(
+        mesh: &MeshData,
+        targets: Vec<[f32; 6]>,
+        target_count: usize,
+        joints: Vec<[u32; 4]>,
+        weights: Vec<[f32; 4]>,
+        flat: bool,
+    ) -> DeformData {
+        let vertex_count = mesh.vertices.len();
+        let rest_box = mesh.bounds().unwrap_or((Vec3::ZERO, Vec3::ZERO));
+        let reach = targets
+            .chunks(vertex_count.max(1))
+            .take(target_count)
+            .map(|target| {
+                target
+                    .iter()
+                    .fold(Vec3::ZERO, |m, d| m.max(Vec3::new(d[0], d[1], d[2]).abs()))
+            })
+            .collect();
+        let mut joint_boxes: Vec<Option<(Vec3, Vec3)>> = Vec::new();
+        for (v, (js, ws)) in mesh.vertices.iter().zip(joints.iter().zip(&weights)) {
+            let p = Vec3::from(v.position);
+            for (j, w) in js.iter().zip(ws) {
+                if *w <= 0.0 {
+                    continue;
+                }
+                let j = *j as usize;
+                if joint_boxes.len() <= j {
+                    joint_boxes.resize(j + 1, None);
+                }
+                joint_boxes[j] =
+                    Some(joint_boxes[j].map_or((p, p), |(lo, hi)| (lo.min(p), hi.max(p))));
+            }
+        }
+        DeformData {
+            id: super::mesh::next_id(),
+            vertex_count,
+            target_count,
+            targets,
+            joints,
+            weights,
+            flat,
+            rest_box,
+            reach,
+            joint_boxes,
+        }
+    }
 }
 
 struct Loader<'a> {
@@ -609,32 +748,30 @@ impl Loader<'_> {
                 };
                 let Some(built) = built else { continue };
                 let (material, texture, maps) = self.material(&primitive.material());
-                let skin =
-                    match (node.skin(), built.influences.clone()) {
-                        (Some(skin), Some(influences)) => {
-                            let joints = skin.joints().count();
-                            let stray = influences.joints.iter().zip(&influences.weights).any(
-                                |(js, ws)| {
-                                    js.iter()
-                                        .zip(ws)
-                                        .any(|(j, w)| *w > 0.0 && *j as usize >= joints)
-                                },
+                let data = built.deform.as_ref();
+                let skin = match (node.skin(), data.filter(|d| !d.joints.is_empty())) {
+                    (Some(skin), Some(data)) => {
+                        let joints = skin.joints().count();
+                        let stray = data.joints.iter().zip(&data.weights).any(|(js, ws)| {
+                            js.iter()
+                                .zip(ws)
+                                .any(|(j, w)| *w > 0.0 && *j as usize >= joints)
+                        });
+                        if stray {
+                            return Err(
+                                "a vertex is moved by a joint its skin does not have".into()
                             );
-                            if stray {
-                                return Err(
-                                    "a vertex is moved by a joint its skin does not have".into()
-                                );
-                            }
-                            Some((skin.index(), influences))
                         }
-                        _ => None,
-                    };
-                let deform = (!built.targets.is_empty() || skin.is_some()).then(|| Deform {
-                    targets: built.targets.clone(),
-                    skin,
-                    flat: built.flat,
-                    rest: OnceLock::new(),
-                });
+                        Some(skin.index())
+                    }
+                    _ => None,
+                };
+                let deform = data
+                    .filter(|d| d.target_count > 0 || skin.is_some())
+                    .map(|data| Deform {
+                        data: data.clone(),
+                        skin,
+                    });
                 self.parts.push(ModelPart {
                     mesh: built.mesh.clone(),
                     node: node.index(),
@@ -712,7 +849,9 @@ impl Loader<'_> {
             }
         };
 
-        let mut targets = Vec::new();
+        // Target-major: each target's displacements of every vertex of the mesh.
+        let mut targets: Vec<[f32; 6]> = Vec::new();
+        let mut target_count = 0;
         for (target_positions, target_normals, _) in reader.read_morph_targets() {
             let positions: Vec<[f32; 3]> = match target_positions {
                 Some(p) => p.collect(),
@@ -722,13 +861,16 @@ impl Loader<'_> {
             if positions.len() != count || normals.as_ref().is_some_and(|n| n.len() != count) {
                 return Err("a morph target does not have a displacement for every vertex".into());
             }
-            targets.push(MorphTarget {
-                positions: per_vertex(positions, &indices, flat),
-                // Flat normals are made again from the positions.
-                normals: normals
-                    .filter(|_| !flat)
-                    .map(|n| per_vertex(n, &indices, flat)),
-            });
+            let positions = per_vertex(positions, &indices, flat);
+            // Flat normals are made again from the positions.
+            let normals = normals
+                .filter(|_| !flat)
+                .map(|n| per_vertex(n, &indices, flat));
+            targets.extend(positions.iter().enumerate().map(|(i, p)| {
+                let n = normals.as_ref().map_or([0.0; 3], |n| n[i]);
+                [p[0], p[1], p[2], n[0], n[1], n[2]]
+            }));
+            target_count += 1;
         }
 
         let influences = match (reader.read_joints(0), reader.read_weights(0)) {
@@ -739,16 +881,25 @@ impl Loader<'_> {
                     return Err("a skin's joints and weights do not cover every vertex".into());
                 }
                 for w in &mut weights {
-                    // The weights are to sum to 1; make sure.
+                    // The weights are to sum to 1 (glTF 2.0, "Skinned Mesh
+                    // Attributes"); make sure. A vertex whose weights do not
+                    // (all 0, or not numbers) follows its first joint alone, as
+                    // three.js's `normalizeSkinWeights` makes it, rather than
+                    // collapsing to the origin.
                     let sum: f32 = w.iter().sum();
-                    if sum > 0.0 {
+                    if sum > 0.0 && sum.is_finite() {
                         w.iter_mut().for_each(|x| *x /= sum);
+                    } else {
+                        *w = [1.0, 0.0, 0.0, 0.0];
                     }
                 }
-                Some(Arc::new(Influences {
-                    joints: per_vertex(joints, &indices, flat),
-                    weights: per_vertex(weights, &indices, flat),
-                }))
+                Some((
+                    per_vertex(joints, &indices, flat)
+                        .into_iter()
+                        .map(|j| j.map(u32::from))
+                        .collect::<Vec<_>>(),
+                    per_vertex(weights, &indices, flat),
+                ))
             }
             _ => None,
         };
@@ -758,26 +909,27 @@ impl Loader<'_> {
                 "only the 4 strongest-listed (JOINTS_0) move a vertex",
             );
         }
+        let deform = (target_count > 0 || influences.is_some()).then(|| {
+            let (joints, weights) = influences.unwrap_or_default();
+            Arc::new(DeformData::new(
+                &mesh,
+                targets,
+                target_count,
+                joints,
+                weights,
+                flat,
+            ))
+        });
         Ok(Some(Built {
             mesh: Arc::new(mesh),
-            flat,
-            targets: Arc::new(targets),
-            influences,
+            deform,
         }))
     }
 
-    fn material(&mut self, m: &gltf::Material) -> (Material, Option<Arc<Texture>>, DataMaps) {
+    fn material(&mut self, m: &gltf::Material) -> (Material, Option<Arc<Texture>>, Maps) {
         let pbr = m.pbr_metallic_roughness();
         let blend = m.alpha_mode() == AlphaMode::Blend;
         if self.materials.insert(m.index()) {
-            for (used, feature) in [
-                (m.occlusion_texture().is_some(), "occlusion textures"),
-                (m.emissive_texture().is_some(), "emissive textures"),
-            ] {
-                if used {
-                    self.note(feature, "the material is drawn without them");
-                }
-            }
             if m.alpha_mode() == AlphaMode::Mask {
                 self.note("alphaMode MASK", "the material is drawn opaque");
             }
@@ -787,6 +939,10 @@ impl Loader<'_> {
                 || m.normal_texture().is_some_and(|info| info.tex_coord() != 0)
                 || pbr
                     .metallic_roughness_texture()
+                    .is_some_and(|info| info.tex_coord() != 0)
+                || m.occlusion_texture()
+                    .is_some_and(|info| info.tex_coord() != 0)
+                || m.emissive_texture()
                     .is_some_and(|info| info.tex_coord() != 0)
             {
                 self.note(
@@ -804,6 +960,7 @@ impl Loader<'_> {
             .filter(|info| info.tex_coord() == 0)
             .and_then(|info| self.texture(info.texture().source().index(), blend));
         let normal = m.normal_texture().filter(|info| info.tex_coord() == 0);
+        let occlusion = m.occlusion_texture().filter(|info| info.tex_coord() == 0);
         let material = Material {
             color,
             emissive: m.emissive_factor(),
@@ -812,11 +969,17 @@ impl Loader<'_> {
             unlit: false,
             double_sided: m.double_sided(),
             normal_scale: normal.as_ref().map_or(1.0, |n| n.scale()),
+            occlusion_strength: occlusion.as_ref().map_or(1.0, |o| o.strength()),
         };
-        let maps = DataMaps {
+        let maps = Maps {
             normal: normal.and_then(|n| self.texture(n.texture().source().index(), false)),
             metallic_roughness: pbr
                 .metallic_roughness_texture()
+                .filter(|info| info.tex_coord() == 0)
+                .and_then(|info| self.texture(info.texture().source().index(), false)),
+            occlusion: occlusion.and_then(|o| self.texture(o.texture().source().index(), false)),
+            emissive: m
+                .emissive_texture()
                 .filter(|info| info.tex_coord() == 0)
                 .and_then(|info| self.texture(info.texture().source().index(), false)),
         };
@@ -1104,6 +1267,21 @@ mod tests {
         assert!((a - b).length() < 1e-6, "{a:?} is not {b:?}");
     }
 
+    /// The parts in `pose` with their meshes deformed on the CPU, as the GPU
+    /// deforms them.
+    fn placed_on_cpu<'a>(model: &'a Model, pose: &Pose) -> Vec<Placed<'a>> {
+        model
+            .placed(pose)
+            .into_iter()
+            .map(|mut p| {
+                if let Some(deform) = &p.deform {
+                    p.mesh = Arc::new(deform_on_cpu(&p.mesh, deform));
+                }
+                p
+            })
+            .collect()
+    }
+
     fn position(m: &Placed, vertex: usize) -> Vec3 {
         Vec3::from(m.mesh.vertices[vertex].position)
     }
@@ -1236,24 +1414,73 @@ mod tests {
         let model = open("morph.glb");
         let top_right = |m: &[Placed]| position(&m[0], 2);
         // No clip: the mesh's own weight, 0.5.
-        let rest = model.placed(&model.pose(None), true);
+        let rest = placed_on_cpu(&model, &model.pose(None));
         near32(top_right(&rest), Vec3::new(1.0, 1.0, 0.0));
         // The clip drives the weight from 0 to 1; the bottom corners never move.
         for (t, x) in [(0.0, 0.5), (0.5, 1.0), (1.0, 1.5)] {
-            let posed = model.placed(&model.pose(Some((0, t))), false);
+            let posed = placed_on_cpu(&model, &model.pose(Some((0, t))));
             near32(top_right(&posed), Vec3::new(x, 1.0, 0.0));
             near32(position(&posed[0], 0), Vec3::new(-0.5, 0.0, 0.0));
         }
-        // The file's own mesh is untouched, and the rest pose is made once.
+        // The file's own mesh is untouched, and is what is drawn, the GPU
+        // moving its vertices.
         assert_eq!(model.parts[0].mesh.vertices[2].position, [0.5, 1.0, 0.0]);
-        let again = model.placed(&model.pose(None), true);
-        assert!(Arc::ptr_eq(&rest[0].mesh, &again[0].mesh));
+        let placed = model.placed(&model.pose(None));
+        assert!(Arc::ptr_eq(&placed[0].mesh, &model.parts[0].mesh));
+        assert_eq!(placed[0].deform.as_ref().unwrap().weights, [0.5]);
+    }
+
+    /// Every vertex `placed_on_cpu` makes is inside the box `placed` gives.
+    fn inside_bounds(model: &Model, pose: &Pose) {
+        for (gpu, cpu) in model.placed(pose).iter().zip(placed_on_cpu(model, pose)) {
+            let Some(deform) = &gpu.deform else { continue };
+            let (lo, hi) = deform.bounds;
+            for v in &cpu.mesh.vertices {
+                let p = Vec3::from(v.position);
+                assert!(
+                    p.cmpge(lo - 1e-5).all() && p.cmple(hi + 1e-5).all(),
+                    "{p} is outside {lo}..{hi}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_vertex_with_no_skin_weight_follows_its_first_joint_and_stays_in_the_box() {
+        // The top vertices weigh 0 on joints (1, 0, 0, 0): they follow joint 1,
+        // as in skin.glb where they weigh 1 on it, instead of the origin.
+        let (bare, skin) = (open("unweighted.glb"), open("skin.glb"));
+        for t in [0.0, 0.5, 1.0] {
+            let a = placed_on_cpu(&bare, &bare.pose(Some((0, t))));
+            let b = placed_on_cpu(&skin, &skin.pose(Some((0, t))));
+            for i in 0..6 {
+                near32(position(&a[0], i), position(&b[0], i));
+            }
+            inside_bounds(&bare, &bare.pose(Some((0, t))));
+        }
+        let data = &bare.parts[0].deform.as_ref().unwrap().data;
+        assert_eq!(data.weights[4], [1.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn a_deformed_parts_box_holds_its_vertices_in_every_pose() {
+        for name in ["morph.glb", "skin.glb"] {
+            let model = open(name);
+            inside_bounds(&model, &model.pose(None));
+            for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                inside_bounds(&model, &model.pose(Some((0, t))));
+            }
+        }
+        let model = khronos("SimpleSkin.gltf");
+        for t in [0.0, 1.0, 2.5, 4.0] {
+            inside_bounds(&model, &model.pose(Some((0, t))));
+        }
     }
 
     #[test]
     fn a_mesh_with_no_normals_gets_flat_ones_after_it_morphs() {
         let model = open("morph.glb");
-        let flat = &model.placed(&model.pose(None), true)[1];
+        let flat = &placed_on_cpu(&model, &model.pose(None))[1];
         // The corner (0, 1, 0) is lifted to (0, 1, 1): the triangle leans.
         let n = Vec3::from(flat.mesh.vertices[0].normal);
         near32(n, Vec3::new(0.0, -1.0, 1.0).normalize());
@@ -1261,7 +1488,7 @@ mod tests {
         // At weight 0 it is the flat triangle the file describes.
         let mut pose = model.pose(None);
         pose.weights[model.parts[1].node] = vec![0.0];
-        let flat = &model.placed(&pose, false)[1];
+        let flat = &placed_on_cpu(&model, &pose)[1];
         near32(Vec3::from(flat.mesh.vertices[2].normal), Vec3::Z);
     }
 
@@ -1270,7 +1497,7 @@ mod tests {
         let model = open("skin.glb");
         let skinned = |t: Option<f64>| {
             let pose = model.pose(t.map(|t| (0, t)));
-            model.placed(&pose, t.is_none())
+            placed_on_cpu(&model, &pose)
         };
         // Vertices are (x, y) = (-0.25, 0), (0.25, 0), (-0.25, 1), (0.25, 1),
         // (-0.25, 2), (0.25, 2); the upper joint turns 90 degrees about z at y = 1.
@@ -1299,8 +1526,6 @@ mod tests {
                 0.0,
             ),
         );
-        // The rest pose is made once.
-        assert!(Arc::ptr_eq(&rest[0].mesh, &skinned(None)[0].mesh));
     }
 
     #[test]
@@ -1313,7 +1538,7 @@ mod tests {
             .collect();
         for feature in [
             "KHR_materials_clearcoat",
-            "occlusion textures",
+            "texture coordinate sets above 0",
             "alphaMode MASK",
             "Points primitives",
         ] {
@@ -1327,9 +1552,39 @@ mod tests {
         // What can be drawn still is: the triangle.
         assert_eq!(model.parts.len(), 1);
         // The files that use nothing the loader skips say nothing.
-        for name in ["gem.glb", "animated.glb", "morph.glb", "skin.glb"] {
+        for name in [
+            "gem.glb",
+            "animated.glb",
+            "morph.glb",
+            "skin.glb",
+            "maps.glb",
+            "occlusion.glb",
+        ] {
             assert!(open(name).unsupported.is_empty(), "{name}");
         }
+    }
+
+    #[test]
+    fn occlusion_and_emissive_textures_are_read_with_their_strength() {
+        let model = open("occlusion.glb");
+        let parts = &model.parts;
+        assert_eq!(parts.len(), 4);
+        let occlusion = parts[0].maps.occlusion.as_ref().expect("an occlusion map");
+        // The map is data: its red (0) is kept as it is.
+        assert_eq!(&occlusion.rgba[..4], &[0, 255, 255, 255]);
+        assert_eq!(parts[0].material.occlusion_strength, 1.0);
+        assert_eq!(parts[1].material.occlusion_strength, 0.5);
+        // The two quads share the picture.
+        assert!(Arc::ptr_eq(
+            occlusion,
+            parts[1].maps.occlusion.as_ref().unwrap()
+        ));
+        let emissive = parts[2].maps.emissive.as_ref().expect("an emissive map");
+        assert_eq!(&emissive.rgba[..4], &[255, 0, 0, 255]);
+        assert_eq!(parts[2].material.emissive, [1.0; 3]);
+        let plain = &parts[3];
+        assert!(plain.maps.occlusion.is_none() && plain.maps.emissive.is_none());
+        assert_eq!(plain.material.occlusion_strength, 1.0);
     }
 
     #[test]
@@ -1408,7 +1663,7 @@ mod tests {
         assert!((model.animations[0].duration - 4.2).abs() < 1e-3);
         let base = &model.parts[0].mesh.vertices;
         // At 0 both weights are 0: the mesh as the file has it.
-        let posed = model.placed(&model.pose(Some((0, 0.0))), false);
+        let posed = placed_on_cpu(&model, &model.pose(Some((0, 0.0))));
         assert!(
             posed[0]
                 .mesh
@@ -1425,11 +1680,11 @@ mod tests {
             "{:?}",
             pose.weights
         );
-        let posed = model.placed(&pose, false);
-        let deform = model.parts[0].deform.as_ref().unwrap();
+        let posed = placed_on_cpu(&model, &pose);
+        let data = &model.parts[0].deform.as_ref().unwrap().data;
         for (i, v) in posed[0].mesh.vertices.iter().enumerate() {
-            let want =
-                Vec3::from(base[i].position) + Vec3::from(deform.targets[0].positions[i]) * weight;
+            let d = data.targets[i];
+            let want = Vec3::from(base[i].position) + Vec3::new(d[0], d[1], d[2]) * weight;
             near32(Vec3::from(v.position), want);
             assert!((Vec3::from(v.normal).length() - 1.0).abs() < 1e-4);
         }
@@ -1448,7 +1703,7 @@ mod tests {
         let model = khronos("SimpleSkin.gltf");
         assert!((model.animations[0].duration - 5.5).abs() < 1e-6);
         // 1 s in, the upper joint (at y = 1) has turned 90 degrees about z.
-        let bent = model.placed(&model.pose(Some((0, 1.0))), false);
+        let bent = placed_on_cpu(&model, &model.pose(Some((0, 1.0))));
         // The file has no normals, so each triangle has vertices of its own:
         // vertices are found by where the file puts them.
         let rest = &model.parts[0].mesh.vertices;
@@ -1469,7 +1724,7 @@ mod tests {
         // The middle one, at (-0.5, 1), is half and half: the mean of where each joint puts it.
         moved(Vec3::new(-0.5, 1.0, 0.0), Vec3::new(-0.25, 0.75, 0.0));
         // The clip is back at its start pose at 5.5 s, where the skin is the file's own.
-        let home = model.placed(&model.pose(Some((0, 5.5))), false);
+        let home = placed_on_cpu(&model, &model.pose(Some((0, 5.5))));
         for (i, w) in model.parts[0].mesh.vertices.iter().enumerate() {
             near32(position(&home[0], i), Vec3::from(w.position));
         }

@@ -4,7 +4,7 @@
 
 import type { CameraJson, LayerJson, Unsupported } from '@kinetographdev/scene';
 import { addonFunction, hasAddonFunction } from '../addon.js';
-import { getDomEnvironment, importedStylesheets, noteStylesheet, readLocalStylesheet } from '../environment.js';
+import { fontFacesRegistered, getDomEnvironment, importedStylesheets, noteStylesheet, readLocalStylesheet } from '../environment.js';
 import { buildIslandRequest, type IslandRequestJson } from '../request/build.js';
 import { isDomElement } from '../request/tags.js';
 import type { DomNode, IslandContext, IslandResult } from '../types.js';
@@ -31,6 +31,7 @@ export {
 } from '../environment.js';
 export type { DomEnvironment, CssFontFace } from '../environment.js';
 export { buildIslandRequest, collectStyleElements, styleText } from '../request/build.js';
+export { parseSrcset, sourceSize, srcsetCandidate } from '../request/srcset.js';
 export type { IslandRequestJson, RequestNode, BuildOptions, BuiltRequest } from '../request/build.js';
 export { styleToCss } from '../request/style.js';
 export { attributesOf } from '../request/attrs.js';
@@ -109,8 +110,9 @@ export function requestFor(root: Extract<DomNode, { kind: 'element' }>, context:
   const environment = getDomEnvironment();
   const publicDir = context.publicDir ?? environment.publicDir;
   const stylesheets = context.stylesheets ?? importedStylesheets();
+  const faces = fontFacesRegistered();
   for (const css of stylesheets) noteStylesheet(css);
-  return buildIslandRequest(root, {
+  const built = buildIslandRequest(root, {
     path: context.path,
     viewport: context.viewport,
     fonts: context.fonts,
@@ -126,6 +128,9 @@ export function requestFor(root: Extract<DomNode, { kind: 'element' }>, context:
       return css;
     },
   });
+  // A font the page's CSS registered just now is not in the list the caller read before: never lay text out without it.
+  if (fontFacesRegistered() !== faces && context.refreshFonts) built.request.fonts = context.refreshFonts();
+  return built;
 }
 
 /**

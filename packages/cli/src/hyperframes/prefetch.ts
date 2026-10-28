@@ -8,7 +8,7 @@ import { makeGoogleFont } from '@kinetographdev/core/google-fonts';
 import { lockPathOf } from '@kinetographdev/core/lock';
 import { CliError } from '../errors.js';
 import { cdnCacheDir, fetchCdnData, fetchCdnScripts, MAX_DATA_BYTES, useLockFile, type FetchedDep, type FetchOptions } from './deps.js';
-import { discovered, installDynamicImport, setDiscovery } from './dynamic.js';
+import { discovered, installDynamicImport, installRemotePictures, setDiscovery } from './dynamic.js';
 import { setBeforePlan } from './entry.js';
 import { MAX_IMAGE_BYTES } from './images.js';
 import { fetchModuleGraph } from './modules.js';
@@ -45,7 +45,7 @@ export async function prefetchHyperframes(entry: string, options: PrefetchOption
   const allowHosts = options.allowHosts ?? [];
   const lockFile = lockPathOf(entry);
   useLockFile(lockFile, options.update === true);
-  const { plan, files: planFiles, scriptUrls, scriptIntegrity, dataUrls, mediaUrls, imageUrls, modules, importMap } = await buildPlan(entry, { discoverOnly: true, allowHosts });
+  const { plan, files: planFiles, scriptUrls, scriptIntegrity, dataUrls, mediaUrls, imageUrls, modules, importMap, runtimePictures } = await buildPlan(entry, { discoverOnly: true, allowHosts });
   const extra = options.extraUrls ?? [];
   const common: FetchOptions = { allowHosts, update: options.update === true, ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) };
   const summary = `${scriptUrls.length} script URL(s), ${modules.length} module script(s), ${dataUrls.length + extra.length} data URL(s), ${mediaUrls.length} remote media file(s), ${imageUrls.length} remote picture(s), ${plan.googleFonts.length} Google font famil${plan.googleFonts.length === 1 ? 'y' : 'ies'}`;
@@ -56,11 +56,13 @@ export async function prefetchHyperframes(entry: string, options: PrefetchOption
   // Scripts, data, --url files, media and pictures are checked alike: the default CDNs plus --allow-host, never a host the page names.
   files.push(...(await fetchCdnData([...dataUrls, ...extra], { ...common, maxBytes: MAX_DATA_BYTES })));
   files.push(...(await fetchCdnData(mediaUrls, { ...common, maxBytes: Math.round(maxMedia * 1024 * 1024) })));
-  files.push(...(await fetchCdnData(imageUrls, { ...common, maxBytes: MAX_IMAGE_BYTES })));
+  // A picture a script names on an allowed host is a data URL too (`fetch` can read it), with the same size limit: it is downloaded once.
+  const data = new Set(dataUrls);
+  files.push(...(await fetchCdnData(imageUrls.filter((u) => !data.has(u)), { ...common, maxBytes: MAX_IMAGE_BYTES })));
   const moduleInfo = { inputs: new Set<string>(), computed: false };
   if (modules.length > 0) files.push(...(await fetchModuleGraph(modules, importMap, { ...common, maxBytes: MAX_DATA_BYTES }, moduleInfo)));
-  // An `import()` of a specifier built at run time is found by running the page.
-  if (moduleInfo.computed) files.push(...(await discoverComputedImports(entry, { ...common, maxBytes: MAX_DATA_BYTES })));
+  // An `import()` of a specifier built at run time, and a picture a script sets from a URL it builds, are found by running the page.
+  if (moduleInfo.computed || runtimePictures) files.push(...(await discoverAtRunTime(entry, common)));
 
   const fonts: PrefetchResult['fonts'] = [];
   for (const font of plan.googleFonts) {
@@ -89,15 +91,19 @@ function sampleFrames(total: number): number[] {
 /**
  * Runs the page's JS for a sample of its frames, with a hook on `import()` of a computed specifier (`dynamic.ts`) that
  * resolves each through the import map, downloads it and locks it. A render then finds the modules in the cache. A
- * specifier that only shows in a frame not sampled is downloaded when a render first asks for it, and said so.
+ * specifier that only shows in a frame not sampled is downloaded when a render first asks for it, and said so. The
+ * remote pictures the page's scripts set on those frames (`img.src = base + name`) are kept and downloaded after, under
+ * the rules of the markup's pictures; one that only shows in a frame not sampled is reported by the render.
  */
-async function discoverComputedImports(entry: string, options: FetchOptions): Promise<FetchedDep[]> {
+async function discoverAtRunTime(entry: string, common: FetchOptions): Promise<FetchedDep[]> {
+  const options: FetchOptions = { ...common, maxBytes: MAX_DATA_BYTES };
   const { openSource } = await import('../source.js');
   // The bundle the pass builds must not start another download step.
   const saved = setBeforePlan(null);
   setDiscovery(options);
   try {
     installDynamicImport();
+    installRemotePictures();
     const source = await openSource(entry, { prefetch: false });
     try {
       for (const frame of sampleFrames(source.composition.durationInFrames)) {
@@ -108,7 +114,7 @@ async function discoverComputedImports(entry: string, options: FetchOptions): Pr
       source.dispose();
     }
   } catch (error) {
-    return [{ url: entry, file: '', status: 'failed', error: `running the page to find its computed import() calls failed: ${error instanceof Error ? error.message : String(error)}` }];
+    return [{ url: entry, file: '', status: 'failed', error: `running the page to find its computed import() calls and pictures failed: ${error instanceof Error ? error.message : String(error)}` }];
   } finally {
     setDiscovery(null);
     setBeforePlan(saved);
@@ -119,6 +125,8 @@ async function discoverComputedImports(entry: string, options: FetchOptions): Pr
   for (const f of discovered.failed) {
     results.push({ url: f.specifier, file: '', status: 'failed', error: `import(${JSON.stringify(f.specifier)}) from ${f.referrer}: ${f.error}`, ...(f.code ? { code: f.code } : {}) });
   }
+  const pictures = [...discovered.pictures].filter((url) => /^https:/i.test(url));
+  if (pictures.length > 0) results.push(...(await fetchCdnData(pictures, { ...common, maxBytes: MAX_IMAGE_BYTES })));
   return results;
 }
 
