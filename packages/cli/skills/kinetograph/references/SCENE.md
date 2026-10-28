@@ -418,9 +418,12 @@ default `source-over`), `shadow` and `filter` (below).
   transform in force when it paints. `globalAlpha` multiplies the paint's alpha.
 - **`source`** is `{ "kind": "src", "src" }` (an image file of the scene, loaded like an image layer's, so it is
   among the files the renderer holds), `{ "kind": "pixels", "width", "height", "data" }` (straight-alpha RGBA8 in
-  base64: an `ImageData`), or `{ "kind": "canvas", "width", "height", "commands" }` (another canvas, drawn as a
-  whole: its commands are drawn into a layer that takes the `globalAlpha` and blend). A pattern takes any of them (and
-  a canvas pass's `layer`): a canvas or a layer is recorded once as the tile and repeated by a picture shader, so a
+  base64: an `ImageData`), `{ "kind": "video", "src", "time", "end" }` (the picture of a video file `time` seconds
+  after its first picture, chosen as a video layer chooses it: rule 5 of "video", with `end` the second where the clip
+  ends, the stream's end when omitted; decoded by the video layer's decoder, so it is what `onVideoFrame` hands a
+  project), or `{ "kind": "canvas", "width", "height", "commands" }` (another canvas, drawn as a whole: its commands
+  are drawn into a layer that takes the `globalAlpha` and blend). A pattern takes any of them (and a
+  canvas pass's `layer`): a canvas or a layer is recorded once as the tile and repeated by a picture shader, so a
   pattern covers any number of tiles, in a fill, a stroke or text alike.
 - **`blend`** is any `globalCompositeOperation`: `source-over`, `source-in`, `source-out`, `source-atop`,
   `destination-over`, `destination-in`, `destination-out`, `destination-atop`, `lighter`, `copy`, `xor`, `multiply`,

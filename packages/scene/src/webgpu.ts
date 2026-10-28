@@ -1173,6 +1173,7 @@ function externalSource(device: GPUDeviceShim, source: unknown, tables: Tables):
   const s = picture.source;
   if (s.kind === 'src') return { source: { src: s.src }, width: picture.width, height: picture.height };
   if (s.kind === 'pixels') return { source: { pixels: { id: blobOf(tables, new Uint8Array(Buffer.from(s.data, 'base64'))), width: s.width, height: s.height } }, width: picture.width, height: picture.height };
+  if (s.kind === 'video') return { source: { video: { src: s.src, time: s.time } }, width: picture.width, height: picture.height };
   if (s.kind === 'layer') throw new WebGpuUnsupportedError('copyExternalImageToTexture from a layer picture outside layerPicture()');
   const pixels = device.options.rasterize?.(s) ?? null;
   if (pixels === null) throw new WebGpuUnsupportedError('copyExternalImageToTexture from a canvas here (the pixels of a canvas need the addon)');

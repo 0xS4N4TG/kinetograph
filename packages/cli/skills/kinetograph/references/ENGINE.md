@@ -220,7 +220,16 @@ until the tree changes (`generation`: bumped by every commit, before layout effe
   `document.querySelector/getElementById/…` search every root.
 - SVG: `getTotalLength`, `getPointAtLength` and `getBBox` of `path`, `rect`, `circle`, `ellipse`, `line`, `polyline`,
   `polygon` use the path functions of `@kinetographdev/core/paths` (handed over by `web/install`); a group's `getBBox` is
-  the union of its children's, with their `transform` attributes applied.
+  the union of its children's, with their transforms applied (a nested `<svg>`: its viewport). An SVG element's
+  `getBoundingClientRect` is its `getBBox` through its transforms (the CSS `transform` about its `transform-origin`
+  wins over the attribute), the nested `<svg>` viewports and the outer `<svg>`'s `viewBox` and `preserveAspectRatio`,
+  placed at the outer `<svg>`'s box, as Chrome gives it (no stroke, marker or filter; `compat/src/shim/svg-transform.ts`).
+- The Web Animations API (`compat/src/shim/animations.ts`): `element.animate()`, `KeyframeEffect`, `Animation`,
+  `getAnimations()`, `document.timeline` (whose time is the virtual clock). What the animations of an element give is
+  worked out when its props are read (`propsWithOverlay`, over the inline style, as the cascade's animation origin), so
+  a motion-blur sub-frame sees its own time; `setVirtualFrame` touches the animated elements' readback and, on a frame,
+  runs `tickAnimations` (pending play and pause tasks, finished state, events) before the animation-frame callbacks.
+  Values are mixed in `css-interpolate.ts` and `css-color.ts`; easing in `easing.ts`.
 - `ResizeObserver` and `IntersectionObserver` deliver after React's work is done and layout is settled: a callback that
   sets state makes the root render again before the frame is emitted; resize observers fire when the border-box
   size differs from the last one delivered (an element that is 0 by 0 is not reported first, as in the spec), and

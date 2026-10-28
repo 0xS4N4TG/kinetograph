@@ -404,6 +404,14 @@ pub enum CanvasSource {
     /// The picture of a child of a canvas pass (`GroupLayer::canvas`), by id:
     /// the child as a browser would hold it for a canvas it was drawn on.
     Layer { id: String },
+    /// A picture of a video file: the one a `<video>` shows, or a `<Video>` clip shows at a scene frame, at `time`
+    /// seconds after the file's first picture (SCENE.md "video", rule 5; `end` is where the clip ends, the stream's end
+    /// when omitted). The file is opened on first use.
+    Video {
+        src: String,
+        time: f64,
+        end: Option<f64>,
+    },
     /// Another canvas, drawn at its commands' size.
     Canvas {
         width: f64,
@@ -604,7 +612,7 @@ pub fn sources(ops: &[CanvasOp], out: &mut Vec<String>) {
     let source = |s: &CanvasSource, out: &mut Vec<String>| match s {
         CanvasSource::Src { src } => out.push(src.clone()),
         CanvasSource::Canvas { commands, .. } => sources(commands, out),
-        CanvasSource::Pixels { .. } | CanvasSource::Layer { .. } => {}
+        CanvasSource::Pixels { .. } | CanvasSource::Layer { .. } | CanvasSource::Video { .. } => {}
     };
     for op in ops {
         match op {
@@ -633,6 +641,7 @@ pub fn layer_sources(ops: &[CanvasOp]) -> Vec<String> {
             CanvasSource::Layer { id } => out.push(id.clone()),
             CanvasSource::Canvas { commands, .. } => out.extend(layer_sources(commands)),
             CanvasSource::Src { .. } | CanvasSource::Pixels { .. } => {}
+            CanvasSource::Video { .. } => {}
         }
     }
     let mut out = Vec::new();

@@ -477,7 +477,7 @@ The context and the globals around it:
 | Styles | `fillStyle`, `strokeStyle` as CSS colours (named, hex, `rgb()`, `hsl()`; no `lab()`, `oklch()`, `color()`: such an assignment is ignored, as an invalid one is), `createLinearGradient`, `createRadialGradient`, `createConicGradient`, `createPattern` of an image, `ImageData` or another canvas (any number of tiles, in fills, strokes and text), `globalAlpha`, `globalCompositeOperation` (all 26 plus `clear` for `clearRect`), `lineWidth`, `lineCap`, `lineJoin`, `miterLimit`, `setLineDash`, `lineDashOffset`, `imageSmoothingEnabled` |
 | Transform | `scale`, `rotate`, `translate`, `transform`, `setTransform` (six numbers or a matrix), `resetTransform`, `getTransform`, `save`, `restore`, `reset` |
 | Text | `fillText`, `strokeText` (with `maxWidth`), `measureText` (width from the text engine; the other metrics from the line's ascent and descent), `font` (the shorthand: style, weight, size in `px`, `pt`, `em`, `%` or a keyword, a family list), `textAlign`, `textBaseline` |
-| Pictures | `drawImage` (three forms) of an `<img>`, `new Image()` (a project file or a `data:` URL), another canvas (`<canvas>`, `document.createElement('canvas')`, `OffscreenCanvas`: its commands, drawn as a whole) or `ImageData`; `createImageData`, `putImageData` (with a dirty rectangle), `getImageData` |
+| Pictures | `drawImage` (three forms) of an `<img>`, `new Image()` (a project file or a `data:` URL), a `<video>` (the frame at its `currentTime`), the frame `<Video onVideoFrame>` hands over (§11.3), another canvas (`<canvas>`, `document.createElement('canvas')`, `OffscreenCanvas`: its commands, drawn as a whole) or `ImageData`; `createImageData`, `putImageData` (with a dirty rectangle), `getImageData` |
 | Elsewhere | `canvas.width`/`height` (setting either empties the canvas and resets the context), `toDataURL()` (always PNG), `toBlob`, `OffscreenCanvas`, `Path2D`, `ImageData`, `CanvasGradient`, `CanvasPattern`, `CanvasRenderingContext2D` as globals |
 
 Kept and drawn with nothing (reading back what was set works): `letterSpacing`, `wordSpacing`, `fontKerning`,
@@ -509,11 +509,22 @@ Shadows and filters are drawn (SCENE.md, "canvas"; checked against Chrome by `cr
   registered gives the key a `<Text>` of that font would (`'Unknown:700'`), which the scene then lacks, like a `<Text>`.
   The text engine measures and draws with the same face, so `measureText` is what is drawn.
 - **`getImageData`, `toDataURL`, `toBlob`.** They need the pixels of what has been drawn, so they ask the addon to draw
-  the commands on a transparent canvas (`renderCanvas`: it opens the GPU on each call, about 100 ms, so not in a per-frame
-  loop) and read it back; without the addon they throw. A canvas drawn into another with `drawImage` is not drawn to
-  pixels: its commands are copied in, which keeps it sharp.
+  the commands on a transparent canvas (`renderCanvas`) and read it back; without the addon they throw. The first call
+  in a process opens the GPU (25 to 100 ms measured on the M4); the device is kept, so a later call costs the draw and
+  the readback (about 3 ms at 1080p, plus the decode when the picture is a video frame). A canvas drawn into another
+  with `drawImage` is not drawn to pixels: its commands are copied in, which keeps it sharp.
+- **Reading a picture without the GPU.** When the canvas holds one plain `drawImage` (after any `clearRect`) of a
+  picture file or a video frame, `getImageData` does not draw: the addon's `readCanvasPicture` answers it on the CPU
+  from the decoder's cache, resampled like the renderer's bilinear filter (within 1 level of the GPU draw; the same
+  bytes at 1:1), so reading a frame per video frame needs no GPU and no device start-up. It applies when the draw has
+  no shadow, filter, alpha or composite operation, only a scale and shift in the transform, and a destination box on
+  whole pixels; with `imageSmoothingEnabled = false` also when the picture is not shrunk. Anything else, including a
+  canvas that has been drawn on after the picture, is drawn by the renderer as before (same bytes, the GPU cost).
+  `texImage2D` of a frame reads it the same way.
 - **Images.** `drawImage` of an `<img>` or `new Image()` names the file; it is read when the renderer is built, as an
-  `<Image>` layer's is. `putImageData` replaces what is under it (it ignores the transform, alpha and composite
+  `<Image>` layer's is. `drawImage` of a `<video>` or of an `onVideoFrame` frame names the file and the instant
+  (`{ kind: 'video' }`, SCENE.md "canvas") and the renderer decodes that picture with the decoder a `<Video>` layer
+  uses; a frame is the same bytes whichever frames were drawn before it. `putImageData` replaces what is under it (it ignores the transform, alpha and composite
   operation, but not an open clip).
 - **Sizes.** The bitmap is `width` x `height` (300 x 150 by default); CSS stretches it to the element's box as
   `object-fit: fill` does. The commands are drawn at the box's size, not resampled from the bitmap, so a stretched canvas
@@ -1224,6 +1235,7 @@ Written from Remotion's documented props. Exported from `@kinetographdev/react` 
 | `loop` | `loop` |
 | `volume` (number or `(frame) => number`), `muted` | not in the layer: an `AudioClipJson` with `video: true` in `RenderedTree.audio`, with the same `id` |
 | `datamosh` | `datamosh` (a Kinetograph prop, §11.8) |
+| `onVideoFrame(frame)` (Remotion 4.0.190+; `<Video>`, `<OffthreadVideo>`, `<Html5Video>`) | called once for each composition frame the video is shown in (not before `from`), after the frame's effects have run so a canvas ref is set, with a `VideoFramePicture` (`width`, `height`, `displayWidth`, `videoWidth`, `timestamp` in microseconds, `close()`): the frame the layer shows there, chosen by the layer's own clock (`trimBefore`, `playbackRate`, `loop`, `<Sequence>`, `<Freeze>`). It is a `CanvasImageSource` for `drawImage` (all forms), `createPattern`, WebGL's `texImage2D` and WebGPU's `copyExternalImageToTexture`; `getImageData` of the canvas it was drawn on returns its pixels (alpha included: a ProRes 4444 matte keeps its alpha). Nothing is decoded until a canvas draws or reads it |
 | `transparent`, `toneMapped`, `pauseWhenBuffering`, `acceptableTimeShiftInSeconds`, `onError`, `showInTimeline`, `name`, `delayRenderTimeoutInMilliseconds` | accepted and ignored |
 
 `AudioClipJson` gains `video?: boolean`. `renderAudio` (§8) decodes a clip with `video: true` through
@@ -1398,9 +1410,11 @@ interface DatamoshOptions {
 GSAP (core and the free plugins, `Flip` too) runs on the page's HTML and SVG. Build a paused timeline in a layout
 effect and `seek(frame / fps)` it in a second one. A tween that plays by itself (`gsap.to` in a `useEffect`) works
 as well: GSAP's root clock is moved with the frame, and a jump to a later frame renders the frames it skips so a
-tween an effect makes at frame 30 starts there. Stop such a tween in the effect's cleanup. `ScrollTrigger` and
-`Draggable` need scrolling and dragging, which a render does not have. What works and the gaps are on the site at
-`/docs/compat/#gsap`.
+tween an effect makes at frame 30 starts there (about 0.1 ms per skipped frame). Stop such a tween in the effect's
+cleanup. Such a tween is warned about once: Remotion's and HyperFrames' own renderers do not move GSAP's root clock
+with the frame, so it renders differently there. Motion-blur sub-frames sample it at their own time (`onUpdate` runs,
+`onComplete` and the other callbacks do not). `ScrollTrigger` and `Draggable` need scrolling and dragging, which a
+render does not have. What works and the gaps are on the site at `/docs/compat/#gsap`.
 
 ### 11.10 Animation libraries and their plugins
 
@@ -1417,7 +1431,8 @@ library to `frame / fps`; the library stays a peer dependency (`npm install @kin
 
 Libraries that need no plugin, only frame-pure use (details and snippets in `/docs/libraries/`, status in
 `/docs/compat/#libraries`): Recharts (`isAnimationActive={false}`, fixed `width`/`height`), d3 scales and shapes and
-`d3-selection` into a ref (no `d3-transition`/`d3-timer`), anime.js, Motion `animate()`, Paper.js (clear and redraw each
+`d3-selection` into a ref (no `d3-transition`/`d3-timer`), anime.js, Motion `animate()` (on the Web Animations API,
+which runs on the frame clock: `element.animate()`, `KeyframeEffect`, `Animation`, `getAnimations()`), Paper.js (clear and redraw each
 frame), Bklit UI, rough.js (pass `seed`), Chart.js (`animation: false`, `update('none')`), Observable Plot, Vega, visx,
 Matter.js and Rapier (step the world to the frame). Shiki is close: `monospace` is the bundled JetBrains Mono unless you
 load a monospace font (ENGINE.md "Fonts"). Mermaid 12 draws with its default HTML labels (a `<foreignObject>` of `<div>`s: flowchart,

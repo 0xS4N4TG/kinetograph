@@ -335,10 +335,29 @@ impl Translator {
         }
     }
 
+    /// The picture of video file `src` that a canvas's `drawImage` of a `<video>` or an `onVideoFrame` picture names
+    /// (`VideoInfo::media_time`): decoded by the same decoder, and kept the same way, as a video layer's.
+    fn canvas_video(&mut self, src: &str, time: f64, end: Option<f64>) -> Option<Image> {
+        if !self.videos.contains_key(src) {
+            crate::video::init();
+            let path = self.base_dir.join(src);
+            let info = crate::video::probe(&path).ok()?;
+            let decoder = crate::video::VideoDecoder::open(&path, info).ok()?;
+            self.videos.insert(src.to_string(), decoder);
+        }
+        let info = self.videos.get(src)?.info().clone();
+        if !time.is_finite() {
+            return None;
+        }
+        let at = info.media_time(time.max(0.0), end.unwrap_or(info.duration));
+        self.video_image(src, at.ts)
+    }
+
     /// The pixels behind a picture source (a canvas is drawn, not sampled).
     fn canvas_picture(&mut self, source: &CanvasSource) -> Option<Image> {
         match source {
             CanvasSource::Src { src } => self.image(src),
+            CanvasSource::Video { src, time, end } => self.canvas_video(src, *time, *end),
             CanvasSource::Pixels { width, height, data } => {
                 use std::hash::{Hash, Hasher};
                 let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -439,10 +458,10 @@ impl Translator {
                     return;
                 }
             },
-            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } => match self.canvas_picture(&op.source) {
+            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } | CanvasSource::Video { .. } => match self.canvas_picture(&op.source) {
                 Some(i) => (i.width() as f64, i.height() as f64),
                 None => {
-                    self.stats.no("canvas image (file)");
+                    self.stats.no(if matches!(op.source, CanvasSource::Video { .. }) { "canvas video picture (decode failed)" } else { "canvas image (file)" });
                     return;
                 }
             },

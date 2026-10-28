@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createWebGLContext, glslShader, GL, GL2, layerPicture, WebGLUnsupportedError, type WebGLContext } from '../src/index.js';
+import { createWebGLContext, glslShader, GL, GL2, layerPicture, VideoFramePicture, WebGLUnsupportedError, type WebGLContext } from '../src/index.js';
 
 const VERTEX = 'attribute vec2 p; varying vec2 v; void main() { v = p; gl_Position = vec4(p, 0.0, 1.0); }';
 const FRAGMENT = 'precision mediump float; varying vec2 v; uniform float t; uniform vec2 r[2]; uniform sampler2D tex; void main() { gl_FragColor = texture2D(tex, v) * t; }';
@@ -191,6 +191,36 @@ describe('the recording WebGL context', () => {
     expect(first).toEqual({ layer: 'scene-a' });
     expect(second).toMatchObject({ width: 1, height: 1 });
     expect(second).not.toHaveProperty('layer');
+  });
+
+  it('uploads a video frame (onVideoFrame) with texImage2D as the pixels the addon reads of it', () => {
+    const asked: unknown[] = [];
+    const gl = createWebGLContext({
+      size: () => ({ width: 8, height: 4 }),
+      rasterize: (canvas) => {
+        asked.push(canvas);
+        return new Uint8Array(4 * 2 * 4).fill(9);
+      },
+    });
+    const program = gl.createProgram();
+    for (const [type, source] of [[GL.VERTEX_SHADER, VERTEX], [GL.FRAGMENT_SHADER, FRAGMENT]] as const) {
+      const shader = gl.createShader(type)!;
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      gl.attachShader(program, shader);
+    }
+    gl.linkProgram(program);
+    gl.useProgram(program);
+    gl.bindTexture(GL.TEXTURE_2D, gl.createTexture());
+    gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, GL.RGBA, GL.UNSIGNED_BYTE, new VideoFramePicture('/p/clip.mp4', 0.5, 4, 2));
+    gl.uniform1i(gl.getUniformLocation(program, 'tex'), 0);
+    gl.drawArrays(GL.TRIANGLES, 0, 3);
+    // The frame was asked for as a canvas of its own size that draws it 1:1.
+    expect(asked).toEqual([
+      { kind: 'canvas', width: 4, height: 2, commands: [{ op: 'image', source: { kind: 'video', src: '/p/clip.mp4', time: 0.5 }, dx: 0, dy: 0, dw: 4, dh: 2 }] },
+    ]);
+    const content = gl.content();
+    expect(Object.values(content.textures)).toMatchObject([{ width: 4, height: 2 }]);
   });
 
   it('uploads an element image with texElementImage2D as it does with texImage2D', () => {

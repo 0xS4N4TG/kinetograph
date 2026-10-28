@@ -28,6 +28,17 @@ Each item says what doesn't work and what you see instead. For what does work, s
 - Mermaid 12 draws flowcharts, class, state and entity-relationship diagrams with its default HTML labels (a `<foreignObject>` of `<div>`s) and sequence diagrams and pie charts (text labels); checked on those six. The label text is measured and drawn with the registered font, or the built-in fallback when its family (`"Recursive Variable"`, `arial`) is not loaded, so register the font you want before `mermaid.render` and the boxes fit it. Gaps: a `<foreignObject>` with a percentage `width` or `height` is not drawn (`doctor` says so), a `display: table` label is a block that holds its content in one cell (no row or column sizing), and `mermaid.initialize({ htmlLabels: false })` still gives plain SVG text if you want no HTML at all.
 - `monospace` text falls back to a proportional face, so code blocks (Shiki, Code Hike) look wider than in Chrome unless the project loads a monospace font, for example with `@remotion/google-fonts/JetBrainsMono`.
 
+### Video pixels
+
+`onVideoFrame` (on `<Video>`, `<OffthreadVideo>` and `<Html5Video>`) gives your code the frame the video shows, decoded by the engine's own decoder. Draw it with `drawImage` and read it with `getImageData`.
+
+- The frame is a function of the composition frame. It is called once for each frame the video is shown in, after the frame's effects have run, and a canvas you draw on starts each frame empty. The `VideoFrame` of WebCodecs is not what you get; it has `width`, `height`, `timestamp` and `close()` and nothing else.
+- `getImageData` of a canvas that holds one plain `drawImage` of a frame or an image file is read on the CPU, resampled like the renderer's bilinear filter. It is the same bytes at 1:1 and within 1 level of the GPU's draw when the picture is scaled. A draw with a shadow, a filter, alpha, a composite operation, a rotation, a box off the pixel grid, a nearest-neighbour shrink, or anything drawn after it is drawn by the renderer and read back, as before, which costs a few milliseconds more.
+- A frame is decoded as the video layer decodes it: a file with an alpha channel (ProRes 4444) keeps it, one without is opaque. A video whose colour space is not named is converted as a video layer is, which differs from Chrome's colour management.
+- `texImage2D` and `copyExternalImageToTexture` take the frame; WebGL reads its pixels first, so a WebGL canvas that uploads a new frame every frame pays the decode and a copy.
+- The frame of a `<video>` element you create is the one at its `currentTime`; the engine does not play it.
+- `onVideoFrame` of `@remotion/webcodecs` `convertMedia` is a different API (a WebCodecs `VideoFrame`) and still throws.
+
 ### Video and audio encoding and decoding in your own code
 
 `@remotion/webcodecs` is Remotion's wrapper around the browser's WebCodecs API, which encodes and decodes video and audio frames. Its encode and decode functions, and the box tree and sample callbacks of `@remotion/media-parser`, throw `UnsupportedApiError`. They need a video decoder and encoder in the addon, which is not built. Normal `<Video>` and `<Audio>` are not affected.
@@ -106,16 +117,16 @@ It sees only its own layer, runs one pass, has no other texture, and takes `f32`
 
 ### GSAP
 
-- GSAP's root clock follows the frame, so a `gsap.to` that plays by itself advances ([GSAP](/docs/compat/#gsap)). A jump to a later frame (a still, a worker starting at frame 600) renders the frames it skips, without reading them, so the effects that make tweens at an intermediate frame run there. That costs one React render per skipped frame in a project that imports `gsap`, also when it only seeks paused timelines.
-- Motion-blur sub-frames do not move GSAP's clock: a tween that plays by itself is at the frame's own state in every sub-frame. A paused timeline you seek yourself is blurred as usual.
+- GSAP's root clock follows the frame, so a `gsap.to` that plays by itself advances ([GSAP](/docs/compat/#gsap)). A jump to a later frame (a still, a worker starting at frame 600) renders the frames it skips, without drawing or reading them, so that an effect which makes a tween at an intermediate frame runs there. This can't be skipped without changing the frame: an effect that starts a tween at frame 30 has to run at frame 30. It costs one React render per skipped frame in a project that imports `gsap`, also when it only seeks paused timelines. Measured: about 0.1 ms per skipped frame for a 48-element composition (a still at frame 899 takes 100 ms more than one at frame 0), and 0.36 ms for the HyperFrames test page.
+- Motion-blur sub-frames show a tween that plays by itself at the sub-frame's time, and run its `onUpdate`. They do not run `onStart`, `onComplete`, `onRepeat` or a timeline's `call()`: what those do would outlive the sample. A tween that starts later than the frame is not sampled in the frame's later sub-frames.
 - `ScrollTrigger` and `Draggable` respond to scrolling and dragging, which a render does not have, so they do not apply. `Flip` works.
-- An SVG shape's `getBoundingClientRect` is worked out from its `getBBox`, its transforms and the `<svg>`'s `viewBox`, not from layout. Strokes and filters are not in it.
 - More in [GSAP](/docs/compat/#gsap).
 
 ### Libraries
 
 - A rendered frame is only as frame-pure as the library: Motion's `animate()` that plays by itself is (see [Libraries](/docs/compat/#libraries-that-run-their-own-frame-loop)), but one that reads the wall clock or a real `Date` outside the virtual one is not.
-- Motion picks the Web Animations API when `element.animate` exists. The engine's `animate()` throws, so Motion falls back to its own JavaScript animation, whose colour mixing differs slightly from the browser's.
+- The Web Animations API (`element.animate()`, which Motion uses) does not draw an animation of a pseudo-element (`pseudoElement: '::before'`); it warns once. An animation that a later one covers completely is not removed by itself (`replaceState` stays `active`), so `getAnimations()` keeps listing it until it is cancelled. Two transform lists whose functions don't pair up mix through their 2D matrices; a 3D function there is not mixed and jumps at half way.
+- Motion components that mount in the middle of a video (in a `<Sequence>`) start their animation at the frame they mount on. A still or a render worker that starts after that frame mounts them at its own first frame, so the animation starts there. Mount them at frame 0, or drive them from the frame with `@kinetographdev/motion`.
 - Chart.js, Recharts and the rest measure text only with the fonts you registered. With none, text is measured and drawn in the built-in font.
 
 ### `@remotion/skia` and `@shopify/react-native-skia`

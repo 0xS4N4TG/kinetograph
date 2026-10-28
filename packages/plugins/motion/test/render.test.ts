@@ -25,7 +25,7 @@ const haveFfmpeg = spawnSync('ffmpeg', ['-version']).status === 0;
 const ready = addon && haveFfmpeg && existsSync(cli) && existsSync(join(here, '..', 'dist', 'index.js'));
 
 const PROJECT = `
-import { useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { AbsoluteFill, Composition, registerRoot } from 'remotion';
 import { animate } from 'motion';
 import { motion, useTransform } from 'motion/react';
@@ -62,12 +62,29 @@ const Pure = () => {
   );
 };
 
+// Motion with no MotionFrame: it plays on the Web Animations API (element.animate), which runs on the frame clock.
+const Waapi = () => {
+  const a = useRef<HTMLDivElement>(null);
+  const b = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    animate(a.current!, { backgroundColor: ['#ff0000', '#0000ff'], opacity: [0.2, 1], filter: ['blur(0px)', 'blur(4px)'] }, { duration: 0.8 });
+    animate(b.current!, { transform: ['translateX(0px) rotate(0deg)', 'translateX(90px) rotate(180deg)'] }, { type: 'spring', stiffness: 80, damping: 10 });
+  }, []);
+  return (
+    <AbsoluteFill style={{ background: '#f4efe6' }}>
+      <div ref={a} style={{ ...box, background: '#888' }} />
+      <div ref={b} style={{ ...box, top: 60, background: '#2a9d8f' }} />
+    </AbsoluteFill>
+  );
+};
+
 const common = { width: 160, height: 90, fps: 30, durationInFrames: 30 };
 registerRoot(() => (
   <>
     <Composition id="Spring" component={Spring} {...common} />
     <Composition id="Seek" component={Seek} {...common} />
     <Composition id="Pure" component={Pure} {...common} />
+    <Composition id="Waapi" component={Waapi} {...common} />
   </>
 ));
 `;
@@ -95,7 +112,7 @@ function frames(file: string): string[] {
 }
 
 describe.skipIf(!ready)('@kinetographdev/motion', () => {
-  for (const comp of ['Spring', 'Seek', 'Pure']) {
+  for (const comp of ['Spring', 'Seek', 'Pure', 'Waapi']) {
     it(`${comp}: the animation moves, and concurrency 1, 4 and a lone frame decode to the same frames`, () => {
       const one = render('index.tsx', comp, `${comp}-c1.mp4`, ['--concurrency', '1']);
       expect(one.status, one.log).toBe(0);
