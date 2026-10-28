@@ -465,6 +465,58 @@ fn a_spot_light_casts_shadows_within_its_cone() {
 }
 
 #[test]
+fn seven_lights_cast_shadows_and_each_map_keeps_its_own_size() {
+    // Before the shadow scene's light: a point light and five directional
+    // ones that cast (11 maps) and give no light, at other map sizes.
+    let others = |size: u32| {
+        let mut lights = vec![format!(
+            r#"{{"type": "point", "position": [0, 5, 0], "intensity": 0, "castShadow": true, "shadow": {{"mapSize": {size}}}}}"#
+        )];
+        lights.extend((0..5).map(|i| {
+            format!(
+                r#"{{"type": "directional", "direction": [{i}, -1, 1], "intensity": 0, "castShadow": true, "shadow": {{"mapSize": {size}}}}}"#
+            )
+        }));
+        lights.join(",")
+    };
+    let frame = |own: u32, size: u32| {
+        render(&format!(
+            r##""camera": {{"type": "orthographic", "height": 10, "position": [0, 10, 0], "up": [0, 0, -1]}},
+               "lights": [{{"type": "ambient", "intensity": 0.2}}, {others},
+                          {{"type": "directional", "direction": [1, -1, 0], "intensity": 1, "castShadow": true,
+                            "shadow": {{"mapSize": {own}}}}}],
+               "objects": [
+                 {{"type": "mesh", "geometry": {{"kind": "plane", "width": 12, "height": 12}},
+                   "material": {{"color": "#ffffff", "roughness": 1}}, "rotation": [-90, 0, 0], "receiveShadow": true}},
+                 {{"type": "mesh", "geometry": {{"kind": "box", "width": 2, "height": 2, "depth": 2}},
+                   "material": {{"color": "#ffffff", "roughness": 1}}, "position": [0, 1, 0], "castShadow": true}}]"##,
+            others = others(size)
+        ))
+    };
+    // The eighth light's map is its twelfth: drawn as the light alone draws it.
+    let alone = shadow_scene(LIGHT_CASTS, CASTS, RECEIVES);
+    let crowded = frame(2048, 512);
+    for x in [20, 70, 90] {
+        assert_eq!(px(&crowded, x, 50), px(&alone, x, 50), "x = {x}");
+    }
+    // A small map among bigger ones (a corner of its layer) is read as the
+    // same map alone.
+    let small_alone = shadow_scene(
+        r#", "castShadow": true, "shadow": {"mapSize": 512}"#,
+        CASTS,
+        RECEIVES,
+    );
+    let small_crowded = frame(512, 2048);
+    for x in [20, 60, 70, 75, 90] {
+        let (a, b) = (px(&small_crowded, x, 50), px(&small_alone, x, 50));
+        assert!(
+            (i32::from(a[0]) - i32::from(b[0])).abs() <= 1,
+            "x = {x}: {a:?} {b:?}"
+        );
+    }
+}
+
+#[test]
 fn a_point_light_casts_shadows_across_cube_faces() {
     // Top-down orthographic view (10 x 10 units on 100 x 100 canvas, +x right, -z up).
     // Point light at (-1, 5, 0) above a 1x1x1 box at (0, 0.5, 0) over a ground plane at y = 0:
@@ -549,22 +601,33 @@ fn bad_shadow_settings_name_the_problem() {
     assert!(err(&format!(r#"{cast}, "shadow": {{"bias": -1}}}}"#)).contains("bias"));
     let spot_cast = r#"{"type": "spot", "position": [0, 5, 0], "castShadow": true"#;
     assert!(err(&format!(r#"{spot_cast}, "shadow": {{"mapSize": 8192}}}}"#)).contains("mapSize"));
+    // Every light may cast: eight point lights are 48 maps, which fit at the
+    // default 2048 (768 MiB) and not at 4096 (3 GiB).
+    let point_cast = r#"{"type": "point", "position": [0, 5, 0], "castShadow": true"#;
+    let points = |size: u32| {
+        vec![format!(r#"{point_cast}, "shadow": {{"mapSize": {size}}}}}"#); 8].join(",")
+    };
+    scene(&format!(r#""lights": [{}]"#, points(2048)));
+    let msg = err(&points(4096));
+    assert!(
+        msg.contains("layer \"s\"")
+            && msg.contains("48 shadow maps of 4096 x 4096")
+            && msg.contains("lower a mapSize"),
+        "{msg}"
+    );
+    // The largest map sets every map's size: one at 4096 among small ones counts as 4096.
+    let mixed = vec![format!(r#"{point_cast}, "shadow": {{"mapSize": 512}}}}"#); 7]
+        .into_iter()
+        .chain([format!(r#"{cast}, "shadow": {{"mapSize": 4096}}}}"#)])
+        .collect::<Vec<_>>()
+        .join(",");
+    assert!(err(&mixed).contains("43 shadow maps of 4096"));
     let five = vec![format!("{cast}}}"); 4]
         .into_iter()
         .chain([format!("{spot_cast}}}")])
         .collect::<Vec<_>>()
         .join(",");
-    assert!(err(&five).contains("5 lights that cast shadows"));
-    let point_cast = r#"{"type": "point", "position": [0, 5, 0], "castShadow": true}"#;
-    let two_points = format!("{point_cast}, {point_cast}");
-    let msg = err(&two_points);
-    assert!(
-        msg.contains("layer \"s\"") && msg.contains("needs 12 shadow maps"),
-        "{msg}"
-    );
-    // One point (6 maps) plus two directional (2 maps) = 8 maps: allowed.
-    let eight_maps = format!("{point_cast}, {cast}}}, {cast}}}");
-    scene(&format!(r#""lights": [{eight_maps}]"#));
+    scene(&format!(r#""lights": [{five}]"#));
 }
 
 // ---- environment maps ----
@@ -966,6 +1029,48 @@ fn a_metallic_roughness_texture_scales_the_factors() {
     assert_eq!(scaled, dielectric);
     // Metallic 1 with no texture is not: it has no diffuse light.
     assert_ne!(metal, dielectric);
+}
+
+/// `occlusion.glb` (the grid of `maps.glb`, with occlusion and emissive
+/// textures) under `lights`.
+fn occlusion_frame(lights: &str) -> Frame {
+    render(&format!(
+        r##"{ORTHO}, "lights": [{lights}], "objects": [{{"type": "model", "src": "media/occlusion.glb"}}]"##
+    ))
+}
+
+#[test]
+fn an_occlusion_map_darkens_the_light_from_all_around_by_its_strength() {
+    let frame = occlusion_frame(r#"{"type": "ambient", "intensity": 1}"#);
+    // No map: white under white ambient light. Occlusion 0 at strength 1:
+    // none of it. At strength 0.5: half, which is sRGB 188.
+    assert_eq!(px(&frame, 80, 80), [255, 255, 255, 255]);
+    assert_eq!(px(&frame, 20, 20), [0, 0, 0, 255]);
+    let half = px(&frame, 80, 20);
+    for c in &half[..3] {
+        assert!((i32::from(*c) - 188).abs() <= 1, "{half:?}");
+    }
+    // A light with a direction is not occluded.
+    let lit =
+        occlusion_frame(r#"{"type": "directional", "direction": [0, 0, -1], "intensity": 1}"#);
+    assert_eq!(px(&lit, 20, 20), px(&lit, 80, 80));
+    // The environment is, as the ambient light is.
+    let env = render(&format!(
+        r##"{ORTHO}, "environment": {{"src": "media/flat.png"}},
+            "objects": [{{"type": "model", "src": "media/occlusion.glb"}}]"##
+    ));
+    assert_eq!(px(&env, 20, 20), [0, 0, 0, 255]);
+    assert!(luma(px(&env, 80, 80)) > 300);
+}
+
+#[test]
+fn an_emissive_map_colours_the_emission() {
+    // A black surface with no light shows only what it emits: the red map
+    // times a white factor.
+    let frame = occlusion_frame(r#"{"type": "ambient", "intensity": 0}"#);
+    assert_eq!(px(&frame, 20, 80), [255, 0, 0, 255]);
+    // The quads that emit nothing are black.
+    assert_eq!(px(&frame, 80, 80), [0, 0, 0, 255]);
 }
 
 #[test]

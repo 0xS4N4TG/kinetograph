@@ -227,7 +227,7 @@ interface DoctorIssue {
 </Accordion>
 <Accordion title="glTF models">
 
-If a `<Model>` file (or a `model` object's file) uses something the 3D layer can't read, it is listed like any other unsupported item, on every frame that draws the model. The element is `Model`, the property is the feature (for example `KHR_materials_clearcoat` or `normal textures`), and the value is the file.
+If a `<Model>` file (or a `model` object's file) uses something the 3D layer can't read, it is listed like any other unsupported item, on every frame that draws the model. The element is `Model`, the property is the feature (for example `KHR_materials_clearcoat` or `texture coordinate sets above 0`), and the value is the file. Normal, metallic-roughness, occlusion and emissive textures are drawn.
 
 The CLI asks the addon once for each file. A file it can't read at all is not listed. The render fails on it instead. The scene format is described in [SCENE.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/SCENE.md).
 

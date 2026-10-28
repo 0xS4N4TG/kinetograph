@@ -21,8 +21,8 @@ pub mod model;
 use std::sync::Arc;
 
 use glam::{DMat4, DQuat, DVec3, EulerRot};
-use serde::Deserialize;
 use kurbo::BezPath;
+use serde::Deserialize;
 
 use crate::anim::Num;
 use crate::color::Color;
@@ -32,12 +32,15 @@ use model::ClipRef;
 
 /// The most lights a scene has, ambient ones included.
 pub const MAX_LIGHTS: usize = 8;
-/// The most lights that cast shadows.
-pub const MAX_SHADOW_LIGHTS: usize = 4;
-/// The most shadow maps across all lights (a point light uses 6).
-pub const MAX_SHADOW_MAPS: usize = 8;
+/// The most shadow maps across all lights: every light may cast, and a point
+/// light uses 6. They are the layers of one depth texture array.
+pub const MAX_SHADOW_MAPS: usize = 6 * MAX_LIGHTS;
 /// The largest side of a shadow map, in texels.
 pub const MAX_SHADOW_MAP: u32 = 4096;
+/// The most memory a scene's shadow maps may hold. Each map is a layer of
+/// one array whose side is the scene's largest `mapSize`, at 4 bytes a
+/// texel: 48 maps of 2048 or 16 of 4096 fit.
+pub const MAX_SHADOW_BYTES: u64 = 1 << 30;
 /// The most segments a round primitive is cut into.
 pub const MAX_SEGMENTS: u32 = 256;
 
@@ -403,6 +406,8 @@ pub enum Object3d {
         align: TextAlign,
         /// A multiple of `size`.
         line_height: Option<f64>,
+        /// Rounds the letters' edges.
+        bevel: Option<Bevel3d>,
         #[serde(default)]
         material: Material3d,
         #[serde(flatten)]
@@ -425,6 +430,8 @@ pub enum Object3d {
         depth: f64,
         #[serde(default)]
         fill_rule: FillRule,
+        /// Rounds the shape's edges.
+        bevel: Option<Bevel3d>,
         #[serde(default)]
         material: Material3d,
         #[serde(flatten)]
@@ -441,6 +448,71 @@ pub enum Object3d {
         #[serde(flatten)]
         placement: Placement3d,
     },
+}
+
+/// The most bands a bevel is cut into.
+pub const MAX_BEVEL_SEGMENTS: u32 = 32;
+
+/// A bevel round the edges of extruded text or a path, as three.js's
+/// `ExtrudeGeometry` makes it (`bevelThickness`, `bevelSize`, `bevelOffset`,
+/// `bevelSegments`): each cap stands `thickness` out beyond the walls, which
+/// stand `size` out beyond the outline; `offset` moves the whole bevel out
+/// (in, when negative) from the outline. In world units.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Bevel3d {
+    /// Default: a quarter of the object's `depth`.
+    pub thickness: Option<f64>,
+    /// Default: the thickness.
+    pub size: Option<f64>,
+    pub offset: f64,
+    pub segments: u32,
+}
+
+impl Default for Bevel3d {
+    fn default() -> Bevel3d {
+        Bevel3d {
+            thickness: None,
+            size: None,
+            offset: 0.0,
+            segments: 3,
+        }
+    }
+}
+
+impl Bevel3d {
+    fn resolve(&self, depth: f64) -> extrude::Bevel {
+        let thickness = self.thickness.unwrap_or(depth / 4.0);
+        extrude::Bevel {
+            thickness: thickness as f32,
+            size: self.size.unwrap_or(thickness) as f32,
+            offset: self.offset as f32,
+            segments: self.segments,
+        }
+    }
+
+    fn problem(&self) -> Option<String> {
+        for (what, v) in [("thickness", self.thickness), ("size", self.size)] {
+            if let Some(v) = v
+                && !(v.is_finite() && v >= 0.0)
+            {
+                return Some(format!("bevel {what} must be 0 or more, got {v}"));
+            }
+        }
+        if !self.offset.is_finite() {
+            return Some(format!(
+                "bevel offset must be a number, got {}",
+                self.offset
+            ));
+        }
+        if !(1..=MAX_BEVEL_SEGMENTS).contains(&self.segments) {
+            return Some(format!(
+                "bevel segments must be 1 to {MAX_BEVEL_SEGMENTS}, got {}",
+                self.segments
+            ));
+        }
+        None
+    }
 }
 
 fn default_text_size() -> f64 {
@@ -549,8 +621,10 @@ fn segments48() -> u32 {
     48
 }
 
-/// Metallic-roughness shading, lean: no normal, occlusion or
-/// metallic-roughness maps.
+/// Metallic-roughness shading with a base colour texture. A scene's own
+/// material has no other maps; a model's materials keep the normal,
+/// metallic-roughness, occlusion and emissive maps their file gives them
+/// (`model.rs`), unless this replaces them.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Material3d {
@@ -712,6 +786,7 @@ pub struct TextSpec {
     pub depth: f64,
     pub align: TextAlign,
     pub line_height: Option<f64>,
+    pub bevel: Option<extrude::Bevel>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -720,6 +795,7 @@ pub struct ExtrudeSpec {
     pub size: f64,
     pub depth: f64,
     pub fill_rule: FillRule,
+    pub bevel: Option<extrude::Bevel>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -789,8 +865,8 @@ impl Scene3dLayer {
                 self.lights.len()
             ));
         }
-        let mut casters = 0;
         let mut shadow_maps = 0;
+        let mut largest = 0;
         for light in &self.lights {
             let shadow = match light {
                 Light3d::Directional {
@@ -811,8 +887,8 @@ impl Scene3dLayer {
                 _ => None,
             };
             if let Some((shadow, maps)) = shadow {
-                casters += 1;
                 shadow_maps += maps;
+                largest = largest.max(shadow.map_size);
                 if !(64..=MAX_SHADOW_MAP).contains(&shadow.map_size) {
                     return bad(format!(
                         "shadow mapSize must be 64 to {MAX_SHADOW_MAP}, got {}",
@@ -857,14 +933,14 @@ impl Scene3dLayer {
                 }
             }
         }
-        if casters > MAX_SHADOW_LIGHTS {
+        // At most `MAX_LIGHTS` lights, so at most `MAX_SHADOW_MAPS` maps.
+        let bytes = shadow_maps as u64 * u64::from(largest).pow(2) * 4;
+        if bytes > MAX_SHADOW_BYTES {
             return bad(format!(
-                "has {casters} lights that cast shadows; at most {MAX_SHADOW_LIGHTS} do"
-            ));
-        }
-        if shadow_maps > MAX_SHADOW_MAPS {
-            return bad(format!(
-                "needs {shadow_maps} shadow maps (a point light needs 6); at most {MAX_SHADOW_MAPS}"
+                "needs {shadow_maps} shadow maps of {largest} x {largest} (a point light needs 6, and every \
+                 map is as big as the largest mapSize), {} MiB; at most {} MiB: lower a mapSize",
+                bytes >> 20,
+                MAX_SHADOW_BYTES >> 20
             ));
         }
         let cam = &self.camera;
@@ -1091,8 +1167,12 @@ fn validate_objects(layer: &str, objects: &[Object3d], fonts: &dyn Fn(&str) -> b
                 size,
                 depth,
                 line_height,
+                bevel,
                 ..
             } => {
+                if let Some(problem) = bevel.as_ref().and_then(Bevel3d::problem) {
+                    return bad(format!("text {problem}"));
+                }
                 if !fonts(font) {
                     return bad(format!(
                         "text uses font {font:?}, which is not in \"fonts\""
@@ -1106,8 +1186,15 @@ fn validate_objects(layer: &str, objects: &[Object3d], fonts: &dyn Fn(&str) -> b
                 }
             }
             Object3d::Extrude {
-                path, size, depth, ..
+                path,
+                size,
+                depth,
+                bevel,
+                ..
             } => {
+                if let Some(problem) = bevel.as_ref().and_then(Bevel3d::problem) {
+                    return bad(format!("extrude {problem}"));
+                }
                 if let Err(e) = BezPath::from_svg(path) {
                     return bad(format!("extrude path is not SVG path data: {e}"));
                 }
@@ -1258,6 +1345,7 @@ fn flatten(
                 depth,
                 align,
                 line_height,
+                bevel,
                 material,
                 shadowing,
                 ..
@@ -1269,6 +1357,7 @@ fn flatten(
                     depth: *depth,
                     align: *align,
                     line_height: *line_height,
+                    bevel: bevel.map(|b| b.resolve(*depth)),
                 }),
                 Some(material.resolve(f)),
                 *shadowing,
@@ -1278,6 +1367,7 @@ fn flatten(
                 size,
                 depth,
                 fill_rule,
+                bevel,
                 material,
                 shadowing,
                 ..
@@ -1287,6 +1377,7 @@ fn flatten(
                     size: *size,
                     depth: *depth,
                     fill_rule: *fill_rule,
+                    bevel: bevel.map(|b| b.resolve(*depth)),
                 }),
                 Some(material.resolve(f)),
                 *shadowing,
@@ -1562,6 +1653,59 @@ mod tests {
             )
             .contains("SVG path data")
         );
+    }
+
+    #[test]
+    fn a_bevel_takes_its_defaults_from_the_depth_and_is_checked() {
+        let l = layer(
+            r#"{"width": 1, "height": 1, "objects": [
+              {"type": "extrude", "path": "M0 0H1V1Z", "depth": 0.4, "bevel": {}},
+              {"type": "text", "text": "A", "font": "Sans", "bevel": {"thickness": 0.1, "size": 0.02, "offset": -0.01, "segments": 5}},
+              {"type": "extrude", "path": "M0 0H1V1Z"}]}"#,
+        );
+        l.validate("s", &has_font).unwrap();
+        let r = l.resolve("s", 0.0, 0.0).unwrap();
+        let Content3d::Extrude(spec) = &r.objects[0].content else {
+            panic!("not an extrusion");
+        };
+        // A quarter of the depth thick, as far out, in 3 bands.
+        assert_eq!(
+            spec.bevel,
+            Some(extrude::Bevel {
+                thickness: 0.1,
+                size: 0.1,
+                offset: 0.0,
+                segments: 3
+            })
+        );
+        let Content3d::Text(spec) = &r.objects[1].content else {
+            panic!("not text");
+        };
+        assert_eq!(
+            spec.bevel,
+            Some(extrude::Bevel {
+                thickness: 0.1,
+                size: 0.02,
+                offset: -0.01,
+                segments: 5
+            })
+        );
+        let Content3d::Extrude(spec) = &r.objects[2].content else {
+            panic!("not an extrusion");
+        };
+        assert_eq!(spec.bevel, None);
+        let err = |bevel: &str| {
+            layer(&format!(
+                r#"{{"width": 1, "height": 1, "objects": [{{"type": "extrude", "path": "M0 0H1V1Z", "bevel": {bevel}}}]}}"#
+            ))
+            .validate("hero", &has_font)
+            .expect_err("invalid")
+            .to_string()
+        };
+        assert!(err(r#"{"size": -1}"#).contains("bevel size must be 0 or more"));
+        assert!(err(r#"{"thickness": -0.5}"#).contains("bevel thickness"));
+        assert!(err(r#"{"segments": 0}"#).contains("bevel segments must be 1 to 32"));
+        assert!(err(r#"{"segments": 33}"#).contains("hero"));
     }
 
     #[test]
