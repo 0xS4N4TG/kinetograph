@@ -2,8 +2,7 @@
  "name": "Tiny Agent narrator (fast male explainer)",
  "locked": "2026-10-02",
  "replaces": "the chibi narrator (kept in archive-chibi/)",
- "source": "voice-clone-93947: ref.wav = 7.45-15.2 s of Video-93947.mp4, vocals isolated with Demucs htdemucs; the user picked the takes_english sound",
- "clone_model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+ "source": "voice-clone-93947: ref.wav = 7.45-15.2 s of Video-93947.mp4, vocals isolated with Demucs htdemucs; the takes_english sound was picked",
  "ref_audio": "$KINETOGRAPH_CORPUS/tiny-agent/voice/narrator_ref.wav",
  "ref_text": "One agent handles planning, another writes the code, another runs tests, then another checks security. They all run in parallel, sharing memory, and even improving each other after every single run.",
  "x_vector_only_mode": false,
@@ -30,5 +29,5 @@
   "asr_match": 0.9
  },
  "sample": "narrator_sample_bakers.wav (takes_english/take_1, the liveliest take)",
- "tempo_note": "2026-10-03: back to 1.0 (the clone's natural pace) at the user's request; the 0.75x cuts of ep 01-03 are in each episode's archive-slow/. History: 2026-10-02 the user had asked for 0.75x (Rubber Band R3 --fine, pitch kept)."
+ "tempo_note": "2026-10-03: back to 1.0 (the clone's natural pace); the 0.75x cuts of ep 01-03 are in each episode's archive-slow/. History: 2026-10-02 it was 0.75x (Rubber Band R3 --fine, pitch kept)."
 }

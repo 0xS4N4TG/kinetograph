@@ -189,7 +189,7 @@ fn papercut_ink_strokes_match_golden() {
 #[test]
 fn css_filter_url_on_boxes_matches_golden() {
     // papercut's Paper: a div with `filter: url(#torn)`, and one with
-    // `url(#rough)` and a rotation. The box painter (stream 2) calls
+    // `url(#rough)` and a rotation. The box painter calls
     // `filter_graph` with the box's size; the effect goes on the box's layer.
     let (doc, request) = document("papercut-torn.html", 420, 340);
     let boxes = [

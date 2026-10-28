@@ -535,7 +535,7 @@ export function Audio(props: AudioProps) {
   return createElement('kg-audio', { id: props.id, clip });
 }
 
-// ---- <Video>, <OffthreadVideo>, <Gif> (packages/cli/skills/kinetograph/references/AUTHORING.md §11.3, stream 2) ----
+// ---- <Video>, <OffthreadVideo>, <Gif> (packages/cli/skills/kinetograph/references/AUTHORING.md §11.3) ----
 
 /**
  * A datamosh: the look of a video whose keyframe was dropped. Between `from` and `to` the clip's own picture is not

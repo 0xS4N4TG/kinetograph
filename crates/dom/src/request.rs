@@ -1,6 +1,5 @@
 //! The JSON the TS side sends for one DOM island and what comes back
-//! (packages/cli/skills/kinetograph/references/ENGINE.md §2). Owned by the orchestrator: a stream may add optional
-//! fields; changing an existing one goes through the orchestrator.
+//! (packages/cli/skills/kinetograph/references/ENGINE.md §2).
 
 use std::collections::BTreeMap;
 

@@ -1,7 +1,6 @@
 // The studio's HTTP and WebSocket API (packages/cli/skills/kinetograph/references/AUTHORING.md §11.5). The server
-// (stream 3) answers with these shapes and the UI (stream 4) reads them; both
-// import this file, and only the orchestrator changes it: types and the
-// binary frame codec, nothing that touches Node or the DOM.
+// answers with these shapes and the UI reads them; both import this file:
+// types and the binary frame codec, nothing that touches Node or the DOM.
 
 import type { CompositionInfo } from '@kinetographdev/core';
 import type { LayerName, SequenceJson, SourceLocation } from '@kinetographdev/scene';

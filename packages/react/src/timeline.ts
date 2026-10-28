@@ -1,7 +1,6 @@
 // The timeline every component reads time from (packages/cli/skills/kinetograph/references/AUTHORING.md §6.2).
-// Owned by the orchestrator: the Remotion shim (`@kinetographdev/core`), the
-// native elements and the motion-blur sub-frames all agree on time through
-// this one context, so only the orchestrator changes it.
+// The Remotion shim (`@kinetographdev/core`), the native elements and the
+// motion-blur sub-frames all agree on time through this one context.
 
 import { createContext, useContext } from 'react';
 
