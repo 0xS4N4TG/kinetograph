@@ -14,6 +14,7 @@
 
 ## Conventions
 - One Conventional Commit per logical change; push only when asked.
+- CSS parity (decided 2026-10-28): when a CSS feature is off, read Blink's source (LayoutNG, paint) and port its behaviour into our engine, as with Remotion; never embed Blink/OxyBlink or copy its code.
 - Branches `feat/<work>`, phase in the PR title, merge commits, no session links in commits/PRs (HANDOFF §8). PR bodies do NOT end with "🤖 Generated with Claude Code" (user, 2026-10-25); commits keep "Co-Authored-By: Claude Opus 5.5".
 - Coding happens in Claude Code cloud sessions; the M4 does rendering, goldens, benchmarks and ideation.
 - docs/reference/ (third-party reference video and stills) was deleted 2026-10-25; do not bring it back.
