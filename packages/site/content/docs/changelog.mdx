@@ -7,6 +7,10 @@ Kinetograph is in beta, so APIs can still change between versions. The same list
 
 ## Unreleased
 
+### Fixed
+
+- The error for an entry that never calls `registerRoot` says where to import it from (`@kinetographdev/core`) and that a file which only exports a component is not an entry. Importing the video API from `kinetograph`, which is the CLI, adds a hint that names `@kinetographdev/core`.
+
 ## 0.2.5 (2026-10-28)
 
 ### Added

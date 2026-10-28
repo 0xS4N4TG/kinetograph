@@ -177,7 +177,10 @@ export function registerRoot(component: ComponentType): void {
 function discover(): CompositionEntry[] {
   if (discovered !== null) return discovered;
   if (root === null) {
-    throw new Error('No root is registered: call registerRoot(Root) in the project entry before asking for compositions');
+    throw new Error(
+      "No root is registered: call registerRoot(Root) in the project entry before asking for compositions " +
+        "(import { registerRoot, Composition } from '@kinetographdev/core'; a file that only exports a component is not an entry)",
+    );
   }
   const Root = root;
   const collector: Collector = { entries: [] };
