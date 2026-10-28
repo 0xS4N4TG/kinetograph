@@ -9,6 +9,7 @@ import {
   mapDomIsland,
   registerStylesheet,
   resetStylesheets,
+  setCssFontFaceHandler,
   setDomAddon,
   setDomEnvironment,
 } from '../src/dom/index.js';
@@ -191,5 +192,23 @@ describe('a pass of island renders', () => {
     beginSamplePass();
     answer = { layers: [{ $same: 0 }], unsupported: [], camera: null, delta: true };
     expect(() => mapDomIsland(node('div'), context())).toThrow(/did not make/);
+  });
+});
+
+describe('fonts of the page\'s own CSS', () => {
+  it('are in the request of the frame their <style> first appears in, not only from the next', () => {
+    answer = { layers: [], unsupported: [], camera: null };
+    const registry: Record<string, string> = { 'Inter:400:normal': '/f.ttf' };
+    setCssFontFaceHandler((face) => {
+      registry[`${face.family}:${face.weight}:${face.style}`] = `/proj/src/${face.url}`;
+    });
+    try {
+      const css = '@font-face{font-family:KaTeX_Main;font-style:normal;font-weight:400;src:url(KaTeX_Main-Regular.woff2) format("woff2")}';
+      // The caller read the font list before the island's stylesheets were seen, as emit does.
+      mapDomIsland(node('div', {}, [node('span', {}, [{ kind: 'text', text: 'x' }])]), context({ fonts: { ...registry }, refreshFonts: () => ({ ...registry }), stylesheets: [css] }));
+      expect(sent[0].fonts).toEqual({ 'Inter:400:normal': '/f.ttf', 'KaTeX_Main:400:normal': '/proj/src/KaTeX_Main-Regular.woff2' });
+    } finally {
+      setCssFontFaceHandler(null);
+    }
   });
 });

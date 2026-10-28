@@ -237,3 +237,49 @@ fn nowrap_keeps_inline_blocks_on_one_line() {
         }
     }
 }
+
+/// A `width: min-content` box with `white-space: nowrap` is as wide as its whole
+/// line when it starts with an inline-block (KaTeX's `.base`): there is no soft
+/// wrap opportunity after the box, so the text after it is on the same line.
+#[test]
+fn nowrap_min_content_counts_text_after_an_inline_block() {
+    let root = el(
+        "div",
+        "$0",
+        "font-family: 'DM Sans'; font-size: 20px",
+        vec![
+            el(
+                "span",
+                "$0.0",
+                "display: inline-block; width: min-content; white-space: nowrap",
+                vec![
+                    el(
+                        "span",
+                        "$0.0.0",
+                        "display: inline-block; width: 30px; height: 10px",
+                        vec![],
+                    ),
+                    text("Wide text"),
+                ],
+            ),
+            el(
+                "span",
+                "$0.1",
+                "display: inline-block; width: 10px; height: 10px",
+                vec![],
+            ),
+        ],
+    );
+    let island = resolve(&request(root));
+    let wrapped = span_width("", "Wide text");
+    let (x, _, w, _) = bounds(&island, "$0.0");
+    assert!(
+        (w - 30.0 - wrapped).abs() < 1.0,
+        "min-content box is {w} wide, its line {}",
+        30.0 + wrapped
+    );
+    assert!(
+        bounds(&island, "$0.1").0 >= x + w - 0.5,
+        "the next box overlaps the first"
+    );
+}

@@ -403,7 +403,15 @@ pub enum CanvasSource {
     },
     /// The picture of a child of a canvas pass (`GroupLayer::canvas`), by id:
     /// the child as a browser would hold it for a canvas it was drawn on.
-    Layer { id: String },
+    /// `width` and `height` are the size the authoring layer gives it; the
+    /// picture is drawn at the canvas's size whatever they say.
+    Layer {
+        id: String,
+        #[serde(default)]
+        width: Option<f64>,
+        #[serde(default)]
+        height: Option<f64>,
+    },
     /// A picture of a video file: the one a `<video>` shows, or a `<Video>` clip shows at a scene frame, at `time`
     /// seconds after the file's first picture (SCENE.md "video", rule 5; `end` is where the clip ends, the stream's end
     /// when omitted). The file is opened on first use.
@@ -638,7 +646,7 @@ pub fn layer_key(id: &str) -> String {
 pub fn layer_sources(ops: &[CanvasOp]) -> Vec<String> {
     fn source(s: &CanvasSource, out: &mut Vec<String>) {
         match s {
-            CanvasSource::Layer { id } => out.push(id.clone()),
+            CanvasSource::Layer { id, .. } => out.push(id.clone()),
             CanvasSource::Canvas { commands, .. } => out.extend(layer_sources(commands)),
             CanvasSource::Src { .. } | CanvasSource::Pixels { .. } => {}
             CanvasSource::Video { .. } => {}

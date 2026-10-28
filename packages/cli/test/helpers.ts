@@ -107,6 +107,7 @@ export function fakeNative(overrides: Partial<Record<string, unknown>> = {}): { 
       const s = JSON.parse(text) as { width: number; height: number; fps: number; durationInFrames: number };
       return { width: s.width, height: s.height, fps: s.fps, durationInFrames: s.durationInFrames, margin: 0 };
     },
+    sceneUnknownKeys: () => [],
     inspect: () => {
       throw new Error('inspect not stubbed');
     },

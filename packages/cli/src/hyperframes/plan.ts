@@ -18,7 +18,7 @@ import { CliError } from '../errors.js';
 import { lockPathOf } from '@kinetographdev/core/lock';
 import { DEFAULT_ALLOWED_HOSTS, dataCachePath, resolveCdnData, resolveCdnScript, useLockFile, verifyIntegrity } from './deps.js';
 import { bundleModuleScript, emptyImportMap, mergeImportMaps, parseImportMap, type ImportMap, type ModuleScript } from './modules.js';
-import { pickSrcset, remoteImage, rewriteCssImages, type RemoteImage } from './images.js';
+import { notCachedPicture, pickSrcset, remoteImage, rewriteCssImages, srcsetUrls, type RemoteImage } from './images.js';
 import { bundledUses, emptyUse, finishUse, noteCss, noteFamilyValue, noteInline } from './fonts.js';
 import {
   extractGoogleFontImports,
@@ -79,6 +79,8 @@ export interface BuiltPlan {
   importMap: ImportMap;
   /** A module script has an `import()` of a specifier built at run time (resolved while the page runs, `dynamic.ts`). */
   computedImports: boolean;
+  /** A page script sets a picture from a URL built at run time (`scanScriptPictures`). */
+  runtimePictures: boolean;
 }
 
 interface Context {
@@ -91,6 +93,11 @@ interface Context {
   rootId: string | null;
   stack: string[];
 }
+
+/** A script that sets a picture: `el.src =`, `srcset`, `poster`, `href`, `setAttribute('src', …)`, `style.backgroundImage =`. */
+const PICTURE_SET = /\.(?:src|srcset|poster|href)\s*=(?!=)|setAttribute(?:NS)?\(\s*(?:[^,()]*,\s*)?['"](?:src|srcset|poster|href|xlink:href)['"]|backgroundImage|\.background\s*=(?!=)/;
+const PICTURE_FILE = /\.(?:png|jpe?g|gif|webp|avif|svg|bmp|ico)$/i;
+const MEDIA_FILE = /\.(?:mp4|webm|mov|m4v|mkv|mp3|wav|ogg|m4a|aac|flac)$/i;
 
 class Builder {
   readonly stylesheets: HfStylesheet[] = [];
@@ -110,6 +117,8 @@ class Builder {
   /** Remote files found in the cache, by URL. */
   readonly remoteData: Record<string, string> = {};
   usesThree = false;
+  /** A page script sets a picture from a URL it builds at run time: the pre-download step runs the page to find it. */
+  runtimePictures = false;
   /** The page's import maps, merged, and its `<script type="module">`s in document order. */
   readonly importMap: ImportMap = emptyImportMap();
   readonly modules: ModuleScript[] = [];
@@ -195,6 +204,8 @@ class Builder {
     }
     if (/\bTHREE\.(WebGLRenderer|Scene|PerspectiveCamera)\b/.test(code)) this.usesThree = true;
     this.scanDataUrls(code, src === null ? null : normalizeUrl(src));
+    // A CDN library's code is not the page's: a picture URL in it (a comment, a demo) is not one the page sets.
+    if (src === null || !/^(https?:)?\/\//i.test(src)) this.scanScriptPictures(code);
     this.scripts.push({ code, file, scope: src === null ? ctx.scope : null, sourceFile: src === null && ctx.scope !== null ? ctx.file : null });
   }
 
@@ -204,6 +215,7 @@ class Builder {
     if (src === null) {
       const code = textOf(el);
       this.scanDataUrls(code, null);
+      this.scanScriptPictures(code);
       if (/\bTHREE\.(WebGLRenderer|Scene|PerspectiveCamera)\b/.test(code)) this.usesThree = true;
       this.modules.push({ code, file: ctx.file, base: pathToFileURL(ctx.file).href, scope: ctx.scope, sourceFile: ctx.scope !== null ? ctx.file : null, root: this.root });
       return;
@@ -220,6 +232,7 @@ class Builder {
     if (!existsSync(path)) throw new CliError('SCRIPT_NOT_FOUND', `${ctx.file}: <script type="module" src="${src}"> was not found beside ${ctx.file} or in ${this.root}`);
     this.files.add(path);
     this.checkIntegrity(el, path, path);
+    this.scanScriptPictures(readFileSync(path, 'utf8'));
     this.modules.push({ code: null, file: path, base: pathToFileURL(path).href, scope: null, sourceFile: null, root: this.root });
   }
 
@@ -241,6 +254,29 @@ class Builder {
       this.dataUrls.add(url);
       this.useCached(url);
     }
+  }
+
+  /**
+   * The remote pictures and media a page's own script names (`img.src = "https://…/a.png"`), on any host: the pre-download
+   * step fetches them under the same rules as the markup's (`--allow-host` for a host that is not a default one), and a
+   * render finds them in the cache when the script sets them. A URL the script builds at run time (a template with a
+   * hole, a base URL with a name added) is not found here: `runtimePictures` says the page is run to find it.
+   */
+  scanScriptPictures(code: string): void {
+    if (!PICTURE_SET.test(code)) return;
+    for (const m of code.matchAll(/https:\/\/[^\s'"`<>)\\]+/g)) {
+      const url = m[0].replace(/[.,;]+$/, '');
+      let pathname: string;
+      try {
+        pathname = new URL(url).pathname;
+      } catch {
+        continue;
+      }
+      if (PICTURE_FILE.test(pathname)) this.imageUrls.add(url);
+      else if (MEDIA_FILE.test(pathname)) this.mediaUrls.add(url);
+      else this.runtimePictures = true;
+    }
+    if (/https:\/\/[^'"`\s]*\$\{/.test(code)) this.runtimePictures = true;
   }
 
   /** Records the cached file of a remote URL, or the note that says it is not cached. */
@@ -277,15 +313,7 @@ class Builder {
       this.note(`${what} ${image.url} is drawn without the picture: ${found.error}`);
       return null;
     }
-    // The host is pasted into a command to copy: only a plain hostname is (punycode is ASCII), and a URL that does not parse gets none.
-    let host = '';
-    try {
-      host = new URL(image.url).hostname;
-    } catch {
-      // no host to suggest
-    }
-    const allow = host === '' || DEFAULT_ALLOWED_HOSTS.includes(host) || !/^[a-z0-9.-]+$/i.test(host) ? '' : ` --allow-host ${host}`;
-    this.note(`${what} ${image.url} is not cached, and a render reads no network, so it is drawn without the picture: run \`kinetograph fetch-deps ${this.entry}${allow}\``);
+    this.note(notCachedPicture(image.url, this.entry, what));
     return null;
   }
 
@@ -426,10 +454,16 @@ class Builder {
     };
     const get = (name: string): string | undefined => attrs.find(([n]) => n === name)?.[1];
     if (tag === 'img') {
-      // A `srcset` is drawn as the browser would choose, so its candidate stands in for the `src`.
-      const candidate = pickSrcset(get('srcset') ?? '');
-      const chosen = candidate === null ? null : remoteImage(candidate);
+      // A `srcset` is drawn as the browser would choose, so its candidate stands in for the `src`. Each remote candidate
+      // is downloaded: the render chooses again against the composition's size and `sizes`.
+      const srcset = get('srcset') ?? '';
+      for (const url of srcsetUrls(srcset)) {
+        const image = remoteImage(url);
+        if (image !== null && 'url' in image) this.imageUrls.add(image.url);
+      }
       const src = get('src');
+      const candidate = pickSrcset(srcset, src, get('sizes'));
+      const chosen = candidate === null ? null : remoteImage(candidate);
       const own = src === undefined ? null : remoteImage(src);
       const image = chosen ?? own;
       if (image !== null) {
@@ -727,5 +761,6 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
     modules: builder.modules,
     importMap: builder.importMap,
     computedImports,
+    runtimePictures: builder.runtimePictures,
   };
 }

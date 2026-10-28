@@ -48,11 +48,12 @@ Drop when Blitz answers container queries and restyles a `style` change on its o
 
 ## parley 0.12.0
 
-Upstream: crates.io `parley` 0.12.0 (`linebender/parley`). Licence: Apache-2.0 OR MIT. An inline box (an `inline-block`) ahead of any text ignored `white-space: nowrap` on its container, because the line breaker took the wrap mode only from text atoms, so a nowrap row of inline-blocks wrapped.
+Upstream: crates.io `parley` 0.12.0 (`linebender/parley`). Licence: Apache-2.0 OR MIT. An inline box (an `inline-block`) ahead of any text ignored `white-space: nowrap` on its container, because the line breaker and the content-width measurer took the wrap mode only from text atoms. So a nowrap row of inline-blocks wrapped, and a `width: min-content` nowrap box that starts with an inline-block (KaTeX's `.base`) was only as wide as the box, letting the text after it overlap what follows.
 
 - `src/layout/line_break.rs`: `BreakLines::new` starts the line's wrap mode from the root style.
+- `src/layout/data.rs`: `ContentWidthsMeasurer::measure` does the same.
 
-Only this file differs from upstream 0.12.0 (5 added lines). Upstream it, then drop the copy when Parley's inline boxes follow the container's `text-wrap-mode`.
+Only these two files differ from upstream 0.12.0 (10 added lines). Upstream them, then drop the copy when Parley's inline boxes follow the container's `text-wrap-mode`.
 
 ## rive (rive-rs and the C++ it builds)
 

@@ -10,7 +10,7 @@ import { resolveObjectURL } from 'node:buffer';
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, WebGLContext, createGpu, GPU_GLOBALS, pictureOf, type CanvasPicture } from '@kinetographdev/scene';
-import { resolveProjectFile } from '../environment.js';
+import { resolveDocumentUrl, resolveProjectFile, sameOriginPath } from '../environment.js';
 import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas.js';
 import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, installDocumentMembers } from './document.js';
 import { AttrShim, NamedNodeMapShim } from './attributes.js';
@@ -34,7 +34,9 @@ export function setWebViewport(size: { width: number; height: number }): void {
   setPageViewport(size);
 }
 
-const REMOTE = /^(https?|wss?|ftp):\/\//i;
+const REMOTE_SCHEME = /^(https?|wss?|ftp):\/\//i;
+/** Not a project file: another origin's URL (the document's own, `http://localhost/…`, is the project). */
+const REMOTE = { test: (url: string): boolean => REMOTE_SCHEME.test(url) && sameOriginPath(url) === null };
 
 export function remoteMessage(what: string, url: string): string {
   return (
@@ -150,6 +152,8 @@ const MIME: Record<string, string> = {
 /** The file a URL or path names in the project, or null (a `data:` or `blob:` URL, or no such file). */
 export function projectFileOf(url: string): string | null {
   if (url.startsWith('file:')) return fileURLToPath(url);
+  const own = sameOriginPath(url);
+  if (own !== null) return resolveProjectFile(own);
   if (/^(data|blob):/i.test(url)) return null;
   return resolveProjectFile(decodeURIComponent(url.split(/[?#]/)[0]!));
 }
@@ -219,7 +223,7 @@ class ImageShim extends BrowserEventTarget {
     return this.complete && !this.failure ? this.source : '';
   }
   get src(): string {
-    return this.source;
+    return this.source === '' ? '' : resolveDocumentUrl(this.source);
   }
   set src(value: string) {
     this.source = String(value);
@@ -482,6 +486,23 @@ class SVGElementShim extends DomElement {
 }
 
 
+/**
+ * `window.visualViewport`: the composition's size at scale 1, never scrolled or zoomed, so its `resize` and `scroll`
+ * events never fire. An EventTarget, as a library that listens to it expects.
+ */
+class VisualViewportShim extends EventTarget {
+  onresize: unknown = null;
+  onscroll: unknown = null;
+  onscrollend: unknown = null;
+  get width(): number { return viewport.width; }
+  get height(): number { return viewport.height; }
+  get scale(): number { return 1; }
+  get offsetLeft(): number { return 0; }
+  get offsetTop(): number { return 0; }
+  get pageLeft(): number { return 0; }
+  get pageTop(): number { return 0; }
+}
+
 class LocalStorage {
   private readonly map = new Map<string, string>();
   get length(): number { return this.map.size; }
@@ -524,6 +545,8 @@ export function installDomGlobals(): void {
   defineGetter(g, 'scrollY', () => 0);
   defineGetter(g, 'pageXOffset', () => 0);
   defineGetter(g, 'pageYOffset', () => 0);
+  define(g, 'VisualViewport', VisualViewportShim);
+  define(g, 'visualViewport', new VisualViewportShim());
   defineGetter(g, 'screen', () => ({
     width: viewport.width, height: viewport.height, availWidth: viewport.width, availHeight: viewport.height,
     colorDepth: 24, pixelDepth: 24, orientation: { type: viewport.height >= viewport.width ? 'portrait-primary' : 'landscape-primary', angle: 0 },

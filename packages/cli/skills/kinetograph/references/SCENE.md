@@ -2222,7 +2222,9 @@ numbers. Blurs, colour filters and everything inside one layer are unchanged. Th
 
 ## Limits in this version
 
-- Unknown fields are ignored rather than rejected, so a misspelt optional field has no effect.
+- A key the format does not read (a misspelt `opacty`, a stray `bogus`) is ignored, and `render`, `still`, `lint` and
+  `doctor` warn about it by its JSON path (`layers[0].shape.nope`) on every frame; `--strict` fails on it. The check
+  gives each key a value no field accepts and sees whether the layer still loads, so it follows the format exactly.
 - Effects so far: `blur`, `backdropBlur`, `glow`, `chromaticAberration`, `dropShadow`, `insetShadow`, `saturate`,
   `contrast`, `brightness`, `grayscale`, `sepia`, `invert`, `hueRotate`, `gradientMap`, `lut`, `grain`, `dither`,
   `halftone`, `dotMatrix`, `displace`, `filterGraph`, `cornerPin`, `shader`.

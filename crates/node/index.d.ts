@@ -362,6 +362,12 @@ export declare function rgbaToYuv(rgba: Buffer, width: number, height: number, p
 export declare function riveFrame(requestJson: string): string
 
 /**
+ * The JSON path of each key in a scene file that the format does not read
+ * (`layers[0].opacty`): serde skips such a key, so it is said here instead.
+ */
+export declare function sceneUnknownKeys(sceneJson: string): Array<string>
+
+/**
  * `{ src, baseDir, assets }` in; the file's artboards (with their animations, state machines and inputs) and assets
  * (in the file, given, or missing) out, as JSON.
  */

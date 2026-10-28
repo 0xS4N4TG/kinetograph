@@ -40,8 +40,7 @@
      "shape": {
       "kind": "rect",
       "width": 26,
-      "height": 24,
-      "radius": 6
+      "height": 24
      },
      "fill": "#1d6d13c8",
      "transform": {
@@ -66,8 +65,7 @@
      "shape": {
       "kind": "rect",
       "width": 27,
-      "height": 56,
-      "radius": 6
+      "height": 56
      },
      "fill": "#1fcb19ff",
      "transform": {
@@ -93,8 +91,7 @@
      "shape": {
       "kind": "rect",
       "width": 38,
-      "height": 54,
-      "radius": 6
+      "height": 54
      },
      "fill": "#9d5c343c",
      "transform": {
@@ -119,8 +116,7 @@
      "shape": {
       "kind": "rect",
       "width": 27,
-      "height": 59,
-      "radius": 6
+      "height": 59
      },
      "fill": "#daa0ee80",
      "transform": {
@@ -251,8 +247,7 @@
      "shape": {
       "kind": "rect",
       "width": 83,
-      "height": 25,
-      "radius": 6
+      "height": 25
      },
      "fill": "#cd8e4680",
      "transform": {
@@ -276,8 +271,7 @@
      "shape": {
       "kind": "rect",
       "width": 49,
-      "height": 29,
-      "radius": 6
+      "height": 29
      },
      "fill": "#4d7677ff",
      "transform": {
@@ -356,8 +350,7 @@
      "shape": {
       "kind": "rect",
       "width": 20,
-      "height": 56,
-      "radius": 6
+      "height": 56
      },
      "fill": "#33ba0d3c",
      "transform": {
@@ -433,8 +426,7 @@
      "shape": {
       "kind": "rect",
       "width": 87,
-      "height": 39,
-      "radius": 6
+      "height": 39
      },
      "fill": "#bb55b6c8",
      "transform": {
@@ -458,8 +450,7 @@
      "shape": {
       "kind": "rect",
       "width": 48,
-      "height": 59,
-      "radius": 6
+      "height": 59
      },
      "fill": "#cd7466ff",
      "transform": {
@@ -484,8 +475,7 @@
      "shape": {
       "kind": "rect",
       "width": 80,
-      "height": 36,
-      "radius": 6
+      "height": 36
      },
      "fill": "#b0e4b23c",
      "transform": {
@@ -510,8 +500,7 @@
      "shape": {
       "kind": "rect",
       "width": 46,
-      "height": 50,
-      "radius": 6
+      "height": 50
      },
      "fill": "#b02b3d80",
      "transform": {
@@ -589,8 +578,7 @@
      "shape": {
       "kind": "rect",
       "width": 44,
-      "height": 33,
-      "radius": 6
+      "height": 33
      },
      "fill": "#6c957bc8",
      "transform": {
@@ -642,8 +630,7 @@
      "shape": {
       "kind": "rect",
       "width": 20,
-      "height": 69,
-      "radius": 6
+      "height": 69
      },
      "fill": "#48f23dff",
      "transform": {
@@ -667,8 +654,7 @@
      "shape": {
       "kind": "rect",
       "width": 81,
-      "height": 69,
-      "radius": 6
+      "height": 69
      },
      "fill": "#1d7f613c",
      "transform": {
@@ -718,8 +704,7 @@
      "shape": {
       "kind": "rect",
       "width": 53,
-      "height": 55,
-      "radius": 6
+      "height": 55
      },
      "fill": "#46d53e80",
      "transform": {
@@ -771,8 +756,7 @@
      "shape": {
       "kind": "rect",
       "width": 40,
-      "height": 62,
-      "radius": 6
+      "height": 62
      },
      "fill": "#dcceadff",
      "transform": {
@@ -852,8 +836,7 @@
    "shape": {
     "kind": "rect",
     "width": 14,
-    "height": 14,
-    "radius": 6
+    "height": 14
    },
    "fill": "#878b14ff",
    "transform": {
@@ -869,8 +852,7 @@
    "shape": {
     "kind": "rect",
     "width": 14,
-    "height": 14,
-    "radius": 6
+    "height": 14
    },
    "fill": "#42d884c8",
    "transform": {
@@ -886,8 +868,7 @@
    "shape": {
     "kind": "rect",
     "width": 14,
-    "height": 14,
-    "radius": 6
+    "height": 14
    },
    "fill": "#fda72d3c",
    "transform": {
@@ -903,8 +884,7 @@
    "shape": {
     "kind": "rect",
     "width": 14,
-    "height": 14,
-    "radius": 6
+    "height": 14
    },
    "fill": "#d92589ff",
    "transform": {
@@ -920,8 +900,7 @@
    "shape": {
     "kind": "rect",
     "width": 14,
-    "height": 14,
-    "radius": 6
+    "height": 14
    },
    "fill": "#2a7122c8",
    "transform": {
@@ -937,8 +916,7 @@
    "shape": {
     "kind": "rect",
     "width": 14,
-    "height": 14,
-    "radius": 6
+    "height": 14
    },
    "fill": "#05add580",
    "transform": {
@@ -971,8 +949,7 @@
    "shape": {
     "kind": "rect",
     "width": 14,
-    "height": 14,
-    "radius": 6
+    "height": 14
    },
    "fill": "#195c67c8",
    "transform": {
@@ -1005,8 +982,7 @@
    "shape": {
     "kind": "rect",
     "width": 14,
-    "height": 14,
-    "radius": 6
+    "height": 14
    },
    "fill": "#b10980c8",
    "transform": {
@@ -1021,8 +997,7 @@
    "shape": {
     "kind": "rect",
     "width": 14,
-    "height": 14,
-    "radius": 6
+    "height": 14
    },
    "fill": "#61f37dff",
    "transform": {
@@ -1070,8 +1045,7 @@
    "shape": {
     "kind": "rect",
     "width": 60,
-    "height": 60,
-    "radius": 6
+    "height": 60
    },
    "fill": "#b11b4280",
    "transform": {
@@ -1087,8 +1061,7 @@
    "shape": {
     "kind": "rect",
     "width": 60,
-    "height": 60,
-    "radius": 6
+    "height": 60
    },
    "fill": "#dc531cc8",
    "transform": {
@@ -1157,8 +1130,7 @@
    "shape": {
     "kind": "rect",
     "width": 30,
-    "height": 30,
-    "radius": 6
+    "height": 30
    },
    "fill": "#6fb65dc8",
    "transform": {
@@ -1173,8 +1145,7 @@
    "shape": {
     "kind": "rect",
     "width": 30,
-    "height": 30,
-    "radius": 6
+    "height": 30
    },
    "fill": "#8e667f80",
    "transform": {
@@ -1253,8 +1224,7 @@
    "shape": {
     "kind": "rect",
     "width": 30,
-    "height": 30,
-    "radius": 6
+    "height": 30
    },
    "fill": "#35c0e7c8",
    "transform": {
@@ -1269,8 +1239,7 @@
    "shape": {
     "kind": "rect",
     "width": 30,
-    "height": 30,
-    "radius": 6
+    "height": 30
    },
    "fill": "#7dfa873c",
    "transform": {
@@ -1285,8 +1254,7 @@
    "shape": {
     "kind": "rect",
     "width": 30,
-    "height": 30,
-    "radius": 6
+    "height": 30
    },
    "fill": "#21f2813c",
    "transform": {
@@ -1301,8 +1269,7 @@
    "shape": {
     "kind": "rect",
     "width": 30,
-    "height": 30,
-    "radius": 6
+    "height": 30
    },
    "fill": "#76ebfcff",
    "transform": {
@@ -1341,8 +1308,7 @@
        "shape": {
         "kind": "rect",
         "width": 40,
-        "height": 30,
-        "radius": 6
+        "height": 30
        },
        "fill": "#4ba982ff",
        "transform": {
@@ -1411,8 +1377,7 @@
      "shape": {
       "kind": "rect",
       "width": 40,
-      "height": 40,
-      "radius": 6
+      "height": 40
      },
      "fill": "#2bf208c8",
      "transform": {
@@ -1450,8 +1415,7 @@
      "shape": {
       "kind": "rect",
       "width": 40,
-      "height": 40,
-      "radius": 6
+      "height": 40
      },
      "fill": "#2e4886ff",
      "transform": {
@@ -1466,8 +1430,7 @@
      "shape": {
       "kind": "rect",
       "width": 40,
-      "height": 40,
-      "radius": 6
+      "height": 40
      },
      "fill": "#8f39ba3c",
      "transform": {
@@ -1573,8 +1536,7 @@
      "shape": {
       "kind": "rect",
       "width": 60,
-      "height": 40,
-      "radius": 6
+      "height": 40
      },
      "fill": "#81be21c8",
      "transform": {
