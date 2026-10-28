@@ -90,7 +90,11 @@ libavformat-dev libswscale-dev libavutil-dev libclang-dev` on Debian and Ubuntu)
   separate GPL `ffmpeg` program (`crates/cli/src/external.rs`: `KINETOGRAPH_FFMPEG`, then the platform package's
   `bin/ffmpeg`, then `ffmpeg` on the `PATH`), and the linked `libopenh264` (macOS, Linux) and `h264_mf` (Windows) are the
   fallbacks when there is none. `libx264` runs at `crf 18`, `preset medium`; the other encoders get a bit rate
-  of 0.2 bits per pixel per frame (about 12.4 Mbit/s for 1080p30). The Node `kinetograph render` also writes H.265,
+  of 0.2 bits per pixel per frame (about 12.4 Mbit/s for 1080p30). `h264_vaapi`, `hevc_vaapi`, `h264_qsv` and
+  `hevc_qsv` (`external::HARDWARE`) run only in the external program: a device option, `-vf format=nv12,hwupload`, a
+  test encode before they count as available (`external::opened`, tried plain and with `-low_power 1`), and
+  `encode::unavailable` for the error. An encoder is looked up in each program in turn (`external::candidates`).
+  Skia's CPU fallback reason comes from `skia/vk_report.rs` (Vulkan) and reaches `doctor` as `backendReason()`. The Node `kinetograph render` also writes H.265,
   ProRes, VP9 and GIF, with `--scale`, `--crf` and the rest (packages/cli/skills/kinetograph/references/AUTHORING.md §9).
 - **Container.** From the output's extension, `.mp4` or `.mov`; both are written with `+faststart` (the index first, so
   they play while downloading).
