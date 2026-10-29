@@ -77,6 +77,8 @@ export interface PluginSummary {
   skill: string | null;
   /** The URL of the bundled panel module. */
   panel: string | null;
+  /** The names of the plugin's MCP tools (empty when it has none or they do not load). */
+  tools: string[];
 }
 
 /** `POST /api/renders`. */

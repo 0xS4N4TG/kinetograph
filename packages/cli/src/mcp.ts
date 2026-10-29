@@ -9,6 +9,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { allOptions, type Command } from './commands/types.js';
 import { commands } from './commands/index.js';
+import { findPlugins, loadPluginTools, mcpToolName, type PluginTool } from './plugins.js';
 
 export interface ChildResult {
   stdout: string;
@@ -112,7 +113,26 @@ export async function callTool(command: Command, input: Record<string, unknown>,
   return failed ? { isError: true, content } : { content };
 }
 
-export function createMcpServer(runner: Runner = runCli): McpServer {
+/** A plugin's tool under its MCP name. */
+export interface LoadedPluginTool {
+  name: string;
+  tool: PluginTool;
+}
+
+/** The tools of the plugins the project at `dir` depends on. A plugin whose tools fail to load is skipped; `onError` hears why. */
+export async function loadProjectTools(dir: string, onError: (message: string) => void = () => undefined): Promise<LoadedPluginTool[]> {
+  const out: LoadedPluginTool[] = [];
+  for (const plugin of findPlugins(dir)) {
+    try {
+      for (const tool of await loadPluginTools(plugin)) out.push({ name: mcpToolName(plugin, tool), tool });
+    } catch (error) {
+      onError(`kinetograph: the tools of ${plugin.name} did not load, skipped: ${(error as Error).message}`);
+    }
+  }
+  return out;
+}
+
+export function createMcpServer(runner: Runner = runCli, plugins: LoadedPluginTool[] = []): McpServer {
   const version = (createRequire(import.meta.url)('../package.json') as { version: string }).version;
   const server = new McpServer({ name: 'kinetograph', version });
   for (const command of toolCommands()) {
@@ -122,12 +142,33 @@ export function createMcpServer(runner: Runner = runCli): McpServer {
       async (input: Record<string, unknown>) => callTool(command, input, runner),
     );
   }
+  const taken = new Set(toolCommands().map(toolName));
+  for (const { name, tool } of plugins) {
+    if (taken.has(name)) {
+      process.stderr.write(`kinetograph: the plugin tool ${name} is skipped: the name is taken\n`);
+      continue;
+    }
+    taken.add(name);
+    server.registerTool(
+      name,
+      { description: tool.description, inputSchema: tool.input as never },
+      (async (input: unknown) => {
+        try {
+          const result = await tool.run(input);
+          return { content: [{ type: 'text', text: JSON.stringify(result ?? null, null, 2) }] };
+        } catch (error) {
+          return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: { code: 'TOOL', message: (error as Error).message } }) }] };
+        }
+      }) as never,
+    );
+  }
   return server;
 }
 
 /** Serves on stdio until the client closes it. */
 export async function startMcpServer(): Promise<void> {
-  const server = createMcpServer();
+  const plugins = await loadProjectTools(process.cwd(), (message) => process.stderr.write(`${message}\n`));
+  const server = createMcpServer(runCli, plugins);
   const transport = new StdioServerTransport();
   const closed = new Promise<void>((resolve) => {
     transport.onclose = resolve;

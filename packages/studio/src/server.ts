@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { dirname, extname, join, resolve } from 'node:path';
-import { bundlePanel, cliVersion, CliError, findPlugins } from 'kinetograph';
+import { bundlePanel, cliVersion, CliError, findPlugins, pluginToolNames } from 'kinetograph';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { REAL_ENGINE_FILE } from './worker-client.js';
 import { AgentBridge } from './agent-bridge.js';
@@ -391,12 +391,16 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       return json(res, 200, project.compositions);
     }
     if (method === 'GET' && path === '/api/plugins') {
-      const plugins: PluginSummary[] = findPlugins(entry).map((p) => ({
-        name: p.name,
-        version: p.version,
-        skill: p.skill,
-        panel: p.panelFile ? `/api/plugins/${encodeURIComponent(p.name)}/panel.js` : null,
-      }));
+      const plugins: PluginSummary[] = [];
+      for (const p of findPlugins(entry)) {
+        plugins.push({
+          name: p.name,
+          version: p.version,
+          skill: p.skill,
+          panel: p.panelFile ? `/api/plugins/${encodeURIComponent(p.name)}/panel.js` : null,
+          tools: await pluginToolNames(p, log),
+        });
+      }
       return json(res, 200, { plugins });
     }
     const panel = /^\/api\/plugins\/([^/]+)\/panel\.js$/.exec(path);

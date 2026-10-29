@@ -1,4 +1,4 @@
-import { findPlugins } from '../plugins.js';
+import { findPlugins, pluginToolNames } from '../plugins.js';
 import type { Command } from './types.js';
 
 export const plugins: Command = {
@@ -8,14 +8,13 @@ export const plugins: Command = {
   positionals: [{ name: 'project', description: 'A project file or directory (default: the current directory)', optional: true }],
   options: [],
   async run(args) {
-    const list = findPlugins(String(args.positionals.project ?? '.')).map(({ name, version, skill, panelFile }) => ({
-      name,
-      version,
-      skill,
-      hasPanel: panelFile !== null,
-    }));
+    const list = [];
+    for (const p of findPlugins(String(args.positionals.project ?? '.'))) {
+      const tools = await pluginToolNames(p, (message) => process.stderr.write(`${message}\n`));
+      list.push({ name: p.name, version: p.version, skill: p.skill, hasPanel: p.panelFile !== null, tools });
+    }
     const text = list
-      .map((p) => `${p.name}@${p.version}  skill: ${p.skill ?? 'none'}  panel: ${p.hasPanel ? 'yes' : 'no'}`)
+      .map((p) => `${p.name}@${p.version}  skill: ${p.skill ?? 'none'}  panel: ${p.hasPanel ? 'yes' : 'no'}  tools: ${p.tools.join(', ') || 'none'}`)
       .join('\n');
     return { data: { plugins: list }, text: text || '(no Kinetograph plugins installed)' };
   },

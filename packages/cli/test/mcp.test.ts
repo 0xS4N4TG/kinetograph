@@ -5,8 +5,11 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it } from 'vitest';
 import { findCommand } from '../src/commands/index.js';
-import { callTool, createMcpServer, runCli, toArgv, toolCommands, toolName, type Runner } from '../src/mcp.js';
-import { solidPng } from './helpers.js';
+import { callTool, createMcpServer, loadProjectTools, runCli, toArgv, toolCommands, toolName, type Runner } from '../src/mcp.js';
+import { solidPng, toolsProject } from './helpers.js';
+import { fileURLToPath } from 'node:url';
+import { Client as SdkClient } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 const command = (name: string) => findCommand(name.split(' '))!.command;
 
@@ -155,4 +158,50 @@ describe('the real child process', () => {
     expect(failure.isError).toBe(true);
     expect(JSON.parse((failure.content[0] as { text: string }).text).error.code).toBe('ENTRY_NOT_FOUND');
   });
+});
+
+describe('plugin tools', () => {
+  const fixture = () => toolsProject(mkdtempSync(join(tmpdir(), 'kinetograph-mcp-plugins-')));
+
+  it('registers them as <short>_<name> with their zod input as the schema, and skips a bad plugin', async () => {
+    const skipped: string[] = [];
+    const loaded = await loadProjectTools(fixture(), (m) => skipped.push(m));
+    expect(loaded.map((t) => t.name)).toEqual(['dice_roll', 'dice_fail']);
+    expect(skipped.map((m) => m.match(/of (\S+) did/)![1]).sort()).toEqual(['fx-bad', 'fx-shape']);
+
+    const server = createMcpServer(async () => ({ stdout: '{}', stderr: '', code: 0 }), loaded);
+    const client = new Client({ name: 'test', version: '0.0.0' });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(a), client.connect(b)]);
+    const { tools } = await client.listTools();
+    const roll = tools.find((t) => t.name === 'dice_roll')!;
+    expect(roll.description).toBe('Rolls dice.');
+    const schema = roll.inputSchema as { properties: Record<string, { type: string; description?: string }>; required: string[] };
+    expect(schema.properties.sides).toMatchObject({ type: 'integer', description: 'Sides on the die' });
+    expect(schema.required).toEqual(['sides']);
+
+    const ok = await client.callTool({ name: 'dice_roll', arguments: { sides: 6, count: 3 } });
+    expect(JSON.parse((ok.content as { text: string }[])[0]!.text)).toEqual({ total: 18 });
+    const failed = await client.callTool({ name: 'dice_fail', arguments: {} });
+    expect(failed.isError).toBe(true);
+    const invalid = await client.callTool({ name: 'dice_roll', arguments: { sides: 'x' } }).catch((e: unknown) => e);
+    expect(invalid instanceof Error || (invalid as { isError?: boolean }).isError === true).toBe(true);
+  });
+
+  it('serves them over stdio from `node dist/cli.js mcp` in the project directory', async () => {
+    const cliJs = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
+    if (!existsSync(cliJs)) return; // needs `npm run build`
+    const dir = fixture();
+    const transport = new StdioClientTransport({ command: process.execPath, args: [cliJs, 'mcp'], cwd: dir, stderr: 'ignore' });
+    const client = new SdkClient({ name: 'e2e', version: '0.0.0' });
+    await client.connect(transport);
+    try {
+      const { tools } = await client.listTools();
+      expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(['still', 'dice_roll', 'dice_fail']));
+      const r = await client.callTool({ name: 'dice_roll', arguments: { sides: 4, count: 2 } });
+      expect(JSON.parse((r.content as { text: string }[])[0]!.text)).toEqual({ total: 8 });
+    } finally {
+      await client.close();
+    }
+  }, 60_000);
 });

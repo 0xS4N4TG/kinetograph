@@ -3,8 +3,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { run } from '../src/index.js';
-import { bundlePanel, findPlugins } from '../src/plugins.js';
+import { bundlePanel, findPlugins, loadPluginTools, mcpToolName } from '../src/plugins.js';
 import { parseProps } from '../src/source.js';
+import { toolsProject } from './helpers.js';
 
 const root = mkdtempSync(join(tmpdir(), 'kinetograph-plugins-'));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -45,8 +46,9 @@ describe('findPlugins', () => {
           version: '1.2.3',
           skill: join(project, 'node_modules/fx-a/SKILL.md'),
           panelFile: join(project, 'node_modules/fx-a/studio/panel.ts'),
+          toolsFile: null,
         },
-        { name: 'fx-b', version: '2.0.0', skill: null, panelFile: null },
+        { name: 'fx-b', version: '2.0.0', skill: null, panelFile: null, toolsFile: null },
       ]);
     }
   });
@@ -77,8 +79,8 @@ describe('plugins command', () => {
     expect(text.text).toContain('panel: yes');
     const json = JSON.parse((await cli('plugins', project, '--json')).text);
     expect(json.plugins).toEqual([
-      { name: 'fx-a', version: '1.2.3', skill: join(project, 'node_modules/fx-a/SKILL.md'), hasPanel: true },
-      { name: 'fx-b', version: '2.0.0', skill: null, hasPanel: false },
+      { name: 'fx-a', version: '1.2.3', skill: join(project, 'node_modules/fx-a/SKILL.md'), hasPanel: true, tools: [] },
+      { name: 'fx-b', version: '2.0.0', skill: null, hasPanel: false, tools: [] },
     ]);
   });
 });
@@ -95,5 +97,35 @@ describe('parseProps with a file', () => {
     expect(() => parseProps(join(root, 'bad.json'))).toThrow(/must be a JSON object/);
     expect(() => parseProps(join(root, 'nope.json'))).toThrow(/not valid JSON/);
     expect(() => parseProps('{nope')).toThrow(/not valid JSON/);
+  });
+});
+
+describe('plugin tools', () => {
+  it('maps names: the scope is dropped and dashes become underscores', () => {
+    expect(mcpToolName({ name: '@kinetographdev/hexed' }, { name: 'roll' })).toBe('hexed_roll');
+    expect(mcpToolName({ name: 'my-fx' }, { name: 'a' })).toBe('my_fx_a');
+  });
+
+  it('loads a plugin\'s tools; one whose module throws or whose tool is invalid fails to load', async () => {
+    const dir = toolsProject(root);
+    const [dice, bad, shape] = findPlugins(dir);
+    const tools = await loadPluginTools(dice!);
+    expect(tools.map((t) => t.name)).toEqual(['roll', 'fail']);
+    expect(await tools[0]!.run({ sides: 6, count: 2 })).toEqual({ total: 12 });
+    await expect(loadPluginTools(bad!)).rejects.toThrow(/boom/);
+    await expect(loadPluginTools(shape!)).rejects.toThrow(/snake_case/);
+  });
+
+  it('lists the MCP names in `plugins --json`, none for a plugin whose tools do not load', async () => {
+    const dir = toolsProject(root);
+    const out: string[] = [];
+    const err: string[] = [];
+    await run(['plugins', dir, '--json'], { out: (s) => void out.push(s), err: (s) => void err.push(s) });
+    const json = JSON.parse(out.join(''));
+    expect(json.plugins.map((p: { name: string; tools: string[] }) => [p.name, p.tools])).toEqual([
+      ['@fx/dice', ['dice_roll', 'dice_fail']],
+      ['fx-bad', []],
+      ['fx-shape', []],
+    ]);
   });
 });
