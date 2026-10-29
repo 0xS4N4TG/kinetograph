@@ -32,7 +32,7 @@ flate2 = "1.1"
 resvg = { version = "0.48.0", default-features = false, features = ["raster-images", "svgz"] }
 parley = "0.12.0"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "hdr", "webp"] }
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1.0.154"
 pollster = "0.4"
 # The version wgpu 30 uses. Validates shaders on the CPU: the built-in ones in

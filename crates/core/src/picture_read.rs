@@ -161,7 +161,7 @@ impl PictureReader {
                 if crate::svg_picture::is_svg(src) || src.starts_with("data:") {
                     return Ok(None);
                 }
-                let path = base_dir.join(src);
+                let path = base_dir.join(&**src);
                 let key =
                     FileKey::of(&path).ok_or_else(|| format!("cannot read {}", path.display()))?;
                 if let Some((held, picture)) = self.images.get(&path)
@@ -219,7 +219,8 @@ impl PictureReader {
             }
             CanvasSource::Pixels { .. }
             | CanvasSource::Canvas { .. }
-            | CanvasSource::Layer { .. } => Ok(None),
+            | CanvasSource::Layer { .. }
+            | CanvasSource::Ref { .. } => Ok(None),
         }
     }
 }

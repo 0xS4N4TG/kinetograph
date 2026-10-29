@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::canvas::{
-    CanvasBlend, CanvasCap, CanvasJoin, CanvasOp, CanvasPaint, CanvasSource, CanvasTextAlign, CanvasBaseline, DrawState,
+    CanvasBlend, CanvasCap, CanvasJoin, CanvasOp, CanvasOps, CanvasPaint, CanvasSource, CanvasTextAlign, CanvasBaseline, DrawState,
     FillOp, FilterFn, ImageOp, LineStyle, StrokeOp, TextOp,
 };
 
@@ -49,6 +49,30 @@ fn state_of(op: &CanvasOp) -> Option<&DrawState> {
 /// operation sees the canvas's pixels and not the page behind it.
 fn uses_composite(ops: &[CanvasOp]) -> bool {
     ops.iter().any(|op| state_of(op).is_some_and(|s| s.blend != CanvasBlend::SourceOver))
+}
+
+/// Whether a canvas's commands come out the same pixels from a recorded picture as drawn straight, whatever matrix the picture
+/// is drawn under. Clips are left out (Skia anti-aliases a clip edge under a skewed or rotated matrix differently when it
+/// is replayed from a picture: a few edge pixels, by up to 70 levels) and so are shadows and filters, whose layers are
+/// bounded by the device the commands are drawn on; both are drawn straight, as they always were.
+fn replayable(ops: &[CanvasOp]) -> bool {
+    ops.iter().all(|op| {
+        if matches!(op, CanvasOp::Clip(_) | CanvasOp::Unclip) {
+            return false;
+        }
+        let nested = |source: &CanvasSource| match source {
+            CanvasSource::Canvas { commands, .. } => replayable(commands),
+            _ => true,
+        };
+        let source_ok = match op {
+            CanvasOp::Image(i) => nested(&i.source),
+            CanvasOp::Fill(FillOp { paint, .. }) | CanvasOp::Stroke(StrokeOp { paint, .. }) | CanvasOp::Text(TextOp { paint, .. }) => {
+                !matches!(paint, CanvasPaint::Pattern { source, .. } if !nested(source))
+            }
+            CanvasOp::Clip(_) | CanvasOp::Unclip => false,
+        };
+        source_ok && !state_of(op).is_some_and(DrawState::has_effects)
+    })
 }
 
 fn stroke_style(p: &mut Paint, l: &LineStyle) {
@@ -95,10 +119,14 @@ impl Translator {
         if isolate {
             canvas.restore();
         }
+        // What the layer recorded is for the layer: a canvas that is drawn again in the next one is its own commands.
+        self.canvas_pictures.clear();
+        self.pixel_keys.clear();
     }
 
     /// Another canvas drawn into this one (a pattern tile, `drawImage` of a canvas): as a whole, with `alpha`.
-    fn canvas_nested(&mut self, canvas: &Canvas, size: (f64, f64), ops: &[CanvasOp], alpha: f32, blend: SkBlend) {
+    fn canvas_nested(&mut self, canvas: &Canvas, size: (f64, f64), commands: &CanvasOps, alpha: f32, blend: SkBlend) {
+        let ops: &[CanvasOp] = commands;
         let layer = alpha < 1.0 || blend != SkBlend::SrcOver || uses_composite(ops);
         if layer {
             let mut p = Paint::default();
@@ -107,10 +135,40 @@ impl Translator {
             let b = Rect::new(0.0, 0.0, size.0 as f32, size.1 as f32);
             self.save_layer(canvas, Some(b), &p, None);
         }
-        self.canvas_ops(canvas, size, ops);
+        match self.shared_picture(commands, size) {
+            Some(picture) => {
+                canvas.draw_picture(&picture, None, None);
+            }
+            None => self.canvas_ops(canvas, size, ops),
+        }
         if layer {
             canvas.restore();
         }
+    }
+
+    /// The picture of a canvas that the layer draws more than once: its commands recorded the first time and replayed by every
+    /// command that draws it, under that command's own clip and transform. A canvas drawn once (its commands held by one
+    /// command only) is drawn straight, as before. Nothing but where the commands are held decides which: the same
+    /// pixels come out either way.
+    fn shared_picture(&mut self, commands: &CanvasOps, size: (f64, f64)) -> Option<skia_safe::Picture> {
+        if Arc::strong_count(&commands.0) < 2 {
+            return None;
+        }
+        let key = Arc::as_ptr(&commands.0) as usize;
+        if let Some((_, picture)) = self.canvas_pictures.get(&key) {
+            return picture.clone();
+        }
+        let picture = if replayable(commands) {
+            let bounds = Rect::new(0.0, 0.0, size.0 as f32, size.1 as f32);
+            let mut recorder = skia_safe::PictureRecorder::new();
+            let tile = recorder.begin_recording(bounds, false);
+            self.canvas_ops(tile, size, commands);
+            recorder.finish_recording_as_picture(Some(&bounds))
+        } else {
+            None
+        };
+        self.canvas_pictures.insert(key, (commands.clone(), picture.clone()));
+        picture
     }
 
     fn canvas_ops(&mut self, canvas: &Canvas, size: (f64, f64), ops: &[CanvasOp]) {
@@ -360,9 +418,17 @@ impl Translator {
             CanvasSource::Video { src, time, end } => self.canvas_video(src, *time, *end),
             CanvasSource::Pixels { width, height, data } => {
                 use std::hash::{Hash, Hasher};
-                let mut h = std::collections::hash_map::DefaultHasher::new();
-                data.hash(&mut h);
-                let key = format!("pixels:{width}x{height}:{:x}", h.finish());
+                let at = Arc::as_ptr(data) as *const u8 as usize;
+                let key = match self.pixel_keys.get(&at) {
+                    Some((_, key)) => key.clone(),
+                    None => {
+                        let mut h = std::collections::hash_map::DefaultHasher::new();
+                        data.hash(&mut h);
+                        let key = format!("pixels:{width}x{height}:{:x}", h.finish());
+                        self.pixel_keys.insert(at, (data.clone(), key.clone()));
+                        key
+                    }
+                };
                 if let Some(i) = self.images.get(&key) {
                     return i.clone();
                 }
@@ -384,7 +450,7 @@ impl Translator {
             }
             // A canvas is drawn, not sampled, and a canvas pass's child is drawn through `draw_layer_picture` (a pattern
             // of either is a picture shader, `picture_pattern`).
-            CanvasSource::Layer { .. } | CanvasSource::Canvas { .. } => None,
+            CanvasSource::Layer { .. } | CanvasSource::Canvas { .. } | CanvasSource::Ref { .. } => None,
         }
     }
 
@@ -423,7 +489,7 @@ impl Translator {
                     return None;
                 }
             },
-            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } | CanvasSource::Video { .. } => return None,
+            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } | CanvasSource::Video { .. } | CanvasSource::Ref { .. } => return None,
         };
         if !(width > 0.0 && height > 0.0 && width.is_finite() && height.is_finite()) {
             return None;
@@ -441,7 +507,7 @@ impl Translator {
                 let sampling = SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None);
                 self.draw_layer_picture(tile, id, bounds, &Paint::default(), sampling);
             }
-            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } | CanvasSource::Video { .. } => {}
+            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } | CanvasSource::Video { .. } | CanvasSource::Ref { .. } => {}
         }
         let picture = recorder.finish_recording_as_picture(Some(&bounds))?;
         // Outside a pattern that does not repeat the canvas draws nothing.
@@ -458,6 +524,7 @@ impl Translator {
                     return;
                 }
             },
+            CanvasSource::Ref { .. } => return,
             CanvasSource::Src { .. } | CanvasSource::Pixels { .. } | CanvasSource::Video { .. } => match self.canvas_picture(&op.source) {
                 Some(i) => (i.width() as f64, i.height() as f64),
                 None => {
@@ -587,5 +654,31 @@ impl Translator {
         }
         let path = pb.detach().make_transform(&mat(origin));
         self.canvas_paint_path(canvas, &path, op.line.as_ref(), &op.paint, comp);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ops(json: &str) -> Vec<CanvasOp> {
+        serde_json::from_str(json).expect("commands parse")
+    }
+
+    #[test]
+    fn only_commands_without_clips_or_effects_are_recorded_once_and_replayed() {
+        let plain = r##"{"op": "fill", "path": "M0 0H4V4H0Z", "paint": {"type": "color", "color": "#ff0000"}, "a": 0.5, "blend": "multiply"}"##;
+        assert!(replayable(&ops(&format!("[{plain}]"))));
+        assert!(!replayable(&ops(&format!(r##"[{{"op": "clip", "path": "M0 0H2V2H0Z"}}, {plain}, {{"op": "unclip"}}]"##))));
+        let shadowed = r##"{"op": "fill", "path": "M0 0H4V4H0Z", "paint": {"type": "color", "color": "#ff0000"}, "shadow": {"color": "#000000", "blur": 2}}"##;
+        assert!(!replayable(&ops(&format!("[{shadowed}]"))));
+        // A canvas inside it, drawn or as a pattern, has to be replayable too.
+        let inner = |commands: &str| format!(r##"{{"kind": "canvas", "width": 4, "height": 4, "commands": [{commands}]}}"##);
+        let drawn = |source: &str| format!(r##"[{{"op": "image", "source": {source}, "dx": 0, "dy": 0, "dw": 4, "dh": 4}}]"##);
+        assert!(replayable(&ops(&drawn(&inner(plain)))));
+        assert!(!replayable(&ops(&drawn(&inner(shadowed)))));
+        let tiled = |source: &str| format!(r##"[{{"op": "fill", "path": "M0 0H4V4H0Z", "paint": {{"type": "pattern", "source": {source}}}}}]"##);
+        assert!(replayable(&ops(&tiled(&inner(plain)))));
+        assert!(!replayable(&ops(&tiled(&inner(shadowed)))));
     }
 }

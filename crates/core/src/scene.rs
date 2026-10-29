@@ -1370,13 +1370,36 @@ pub struct LottieLayer {
 /// What a Canvas 2D context drew in a frame (`packages/cli/skills/kinetograph/references/SCENE.md`, "canvas"): the
 /// box `(0, 0, width, height)`, drawn with Skia from `commands`.
 #[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", try_from = "RawCanvasLayer")]
 pub struct CanvasLayer {
     pub width: Num,
     pub height: Num,
-    /// In drawing order (`crate::canvas`).
-    #[serde(default)]
+    /// In drawing order (`crate::canvas`), with the `sources` they refer to already in them.
     pub commands: crate::canvas::CanvasOps,
+}
+
+/// A canvas layer as written: the commands may refer (`{ "kind": "ref", "index" }`) to entries of `sources`, each
+/// picture drawn many times stored once.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawCanvasLayer {
+    width: Num,
+    height: Num,
+    #[serde(default)]
+    commands: Vec<crate::canvas::CanvasOp>,
+    #[serde(default)]
+    sources: Vec<crate::canvas::CanvasSource>,
+}
+
+impl TryFrom<RawCanvasLayer> for CanvasLayer {
+    type Error = String;
+    fn try_from(raw: RawCanvasLayer) -> std::result::Result<CanvasLayer, String> {
+        Ok(CanvasLayer {
+            width: raw.width,
+            height: raw.height,
+            commands: crate::canvas::resolve_sources(raw.commands, raw.sources)?,
+        })
+    }
 }
 
 /// What a WebGL context drew in a frame (`packages/cli/skills/kinetograph/references/SCENE.md`, "glsl"): the box

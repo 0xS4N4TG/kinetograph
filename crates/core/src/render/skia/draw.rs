@@ -7,6 +7,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use skia_safe::gpu::graphite;
 
@@ -65,6 +66,12 @@ pub struct Translator {
     base_dir: PathBuf,
     fonts_key: std::collections::BTreeMap<String, String>,
     images: HashMap<String, Option<Image>>,
+    /// The canvases a canvas layer draws more than once, each recorded once for the layer (`canvas2d.rs`, `shared_picture`): by the address
+    /// of its commands, which the entry keeps alive.
+    canvas_pictures: HashMap<usize, (crate::canvas::CanvasOps, Option<skia_safe::Picture>)>,
+    /// The `images` key of each `ImageData` source a canvas layer draws, by the address of its text, so a picture drawn many times
+    /// is hashed once for the layer.
+    pixel_keys: HashMap<usize, (Arc<str>, String)>,
     typefaces: HashMap<(u64, u32, Vec<i16>), Option<Typeface>>,
     glyph_paths: HashMap<(skia_safe::typeface::TypefaceId, u32, u32, bool, u16), Option<Path>>,
     text_atlas: bool,
@@ -186,6 +193,8 @@ impl Translator {
             base_dir: scene.base_dir.clone(),
             fonts_key: scene.fonts.clone(),
             images: HashMap::new(),
+            canvas_pictures: HashMap::new(),
+            pixel_keys: HashMap::new(),
             typefaces: HashMap::new(),
             glyph_paths: HashMap::new(),
             text_atlas: std::env::var("KINETOGRAPH_SKIA_TEXT").is_ok_and(|v| v == "atlas"),

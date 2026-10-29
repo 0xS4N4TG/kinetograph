@@ -33,6 +33,13 @@ use crate::scene::{Effect, Shadow};
 #[serde(from = "Vec<CanvasOp>")]
 pub struct CanvasOps(pub Arc<Vec<CanvasOp>>);
 
+impl std::ops::Deref for CanvasOps {
+    type Target = Vec<CanvasOp>;
+    fn deref(&self) -> &Vec<CanvasOp> {
+        &self.0
+    }
+}
+
 impl Default for CanvasOps {
     fn default() -> CanvasOps {
         CanvasOps(Arc::new(Vec::new()))
@@ -394,13 +401,18 @@ pub struct ImageOp {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum CanvasSource {
     /// A picture file of the scene, by its `src` (`Renderer::images`).
-    Src { src: String },
+    Src { src: Arc<str> },
     /// RGBA pixels, straight alpha, base64: an `ImageData`.
     Pixels {
         width: u32,
         height: u32,
-        data: String,
+        data: Arc<str>,
     },
+    /// An entry of the layer's `sources` table, by index. Only the layer's own loading reads it: `CanvasLayer` swaps each
+    /// one for the entry (`resolve_sources`), so a command that refers to a source and every other that does share one
+    /// `Arc`, and the renderer decodes or records it once. What is left after loading (an index the table has no entry
+    /// for) draws nothing.
+    Ref { index: usize },
     /// The picture of a child of a canvas pass (`GroupLayer::canvas`), by id:
     /// the child as a browser would hold it for a canvas it was drawn on.
     /// `width` and `height` are the size the authoring layer gives it; the
@@ -424,7 +436,7 @@ pub enum CanvasSource {
     Canvas {
         width: f64,
         height: f64,
-        commands: Vec<CanvasOp>,
+        commands: CanvasOps,
     },
 }
 
@@ -576,6 +588,11 @@ impl CanvasBlend {
 /// canvases inside them) that cannot be read, for a scene to refuse when it
 /// loads; `None` when all can.
 pub fn bad_path(ops: &[CanvasOp]) -> Option<String> {
+    bad_path_once(ops, &mut std::collections::HashSet::new())
+}
+
+/// `bad_path`, taking each canvas and block of pixels that more than one command shares (one `Arc`, `seen` by address) once.
+fn bad_path_once(ops: &[CanvasOp], seen: &mut std::collections::HashSet<usize>) -> Option<String> {
     for op in ops {
         let path = match op {
             CanvasOp::Fill(f) => Some(&f.path),
@@ -585,7 +602,9 @@ pub fn bad_path(ops: &[CanvasOp]) -> Option<String> {
                 source: CanvasSource::Canvas { commands, .. },
                 ..
             }) => {
-                if let Some(bad) = bad_path(commands) {
+                if seen.insert(Arc::as_ptr(&commands.0) as usize)
+                    && let Some(bad) = bad_path_once(commands, seen)
+                {
                     return Some(bad);
                 }
                 None
@@ -606,6 +625,7 @@ pub fn bad_path(ops: &[CanvasOp]) -> Option<String> {
                 },
             ..
         }) = op
+            && seen.insert(Arc::as_ptr(data) as *const u8 as usize)
             && let Err(e) = pixels(*width, *height, data)
         {
             return Some(e);
@@ -617,10 +637,26 @@ pub fn bad_path(ops: &[CanvasOp]) -> Option<String> {
 /// Every picture file the commands name, in order of use (`Renderer::images`
 /// holds them), also inside the canvases they draw.
 pub fn sources(ops: &[CanvasOp], out: &mut Vec<String>) {
-    let source = |s: &CanvasSource, out: &mut Vec<String>| match s {
-        CanvasSource::Src { src } => out.push(src.clone()),
-        CanvasSource::Canvas { commands, .. } => sources(commands, out),
-        CanvasSource::Pixels { .. } | CanvasSource::Layer { .. } | CanvasSource::Video { .. } => {}
+    sources_once(ops, out, &mut std::collections::HashSet::new());
+}
+
+/// `sources`, taking each canvas and file name that more than one command shares (one `Arc`, `seen` by address) once.
+fn sources_once(ops: &[CanvasOp], out: &mut Vec<String>, seen: &mut std::collections::HashSet<usize>) {
+    let mut source = |s: &CanvasSource, out: &mut Vec<String>| match s {
+        CanvasSource::Src { src } => {
+            if seen.insert(Arc::as_ptr(src) as *const u8 as usize) {
+                out.push(src.to_string());
+            }
+        }
+        CanvasSource::Canvas { commands, .. } => {
+            if seen.insert(Arc::as_ptr(&commands.0) as usize) {
+                sources_once(commands, out, seen);
+            }
+        }
+        CanvasSource::Pixels { .. }
+        | CanvasSource::Layer { .. }
+        | CanvasSource::Video { .. }
+        | CanvasSource::Ref { .. } => {}
     };
     for op in ops {
         match op {
@@ -648,8 +684,10 @@ pub fn layer_sources(ops: &[CanvasOp]) -> Vec<String> {
         match s {
             CanvasSource::Layer { id, .. } => out.push(id.clone()),
             CanvasSource::Canvas { commands, .. } => out.extend(layer_sources(commands)),
-            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } => {}
-            CanvasSource::Video { .. } => {}
+            CanvasSource::Src { .. }
+            | CanvasSource::Pixels { .. }
+            | CanvasSource::Video { .. }
+            | CanvasSource::Ref { .. } => {}
         }
     }
     let mut out = Vec::new();
@@ -692,6 +730,60 @@ pub fn has_effects(ops: &[CanvasOp]) -> bool {
         op.state().is_some_and(DrawState::has_effects)
             || matches!(op, CanvasOp::Image(ImageOp { source: CanvasSource::Canvas { commands, .. }, .. }) if has_effects(commands))
     })
+}
+
+/// The commands, with each `Ref` swapped for the entry of `table` it names. An entry that is a canvas has its own refs
+/// swapped first, so `table` is in dependency order (an entry only refers to the ones before it) and a source drawn
+/// many times is one `Arc`, not a copy per command.
+fn resolve_ops(ops: &mut [CanvasOp], table: &[CanvasSource]) -> std::result::Result<(), String> {
+    let resolve = |source: &mut CanvasSource| -> std::result::Result<(), String> {
+        if let CanvasSource::Ref { index } = source {
+            *source = table
+                .get(*index)
+                .ok_or_else(|| format!("canvas source {index} is not in the layer's sources (it has {})", table.len()))?
+                .clone();
+        } else if let CanvasSource::Canvas { commands, .. } = source {
+            // An inline canvas can hold refs too (a table entry is one, once resolved, so this finds none).
+            resolve_ops(Arc::make_mut(&mut commands.0).as_mut_slice(), table)?;
+        }
+        Ok(())
+    };
+    for op in ops {
+        match op {
+            CanvasOp::Image(i) => resolve(&mut i.source)?,
+            CanvasOp::Fill(FillOp { paint, .. })
+            | CanvasOp::Stroke(StrokeOp { paint, .. })
+            | CanvasOp::Text(TextOp { paint, .. }) => {
+                if let CanvasPaint::Pattern { source, .. } = paint {
+                    resolve(source)?;
+                }
+            }
+            CanvasOp::Clip(_) | CanvasOp::Unclip => {}
+        }
+    }
+    Ok(())
+}
+
+/// A layer's commands with the refs they hold swapped for the entries of `sources` (`CanvasSource::Ref`).
+pub fn resolve_sources(
+    mut commands: Vec<CanvasOp>,
+    sources: Vec<CanvasSource>,
+) -> std::result::Result<CanvasOps, String> {
+    if sources.is_empty() {
+        return Ok(CanvasOps(Arc::new(commands)));
+    }
+    let mut table: Vec<CanvasSource> = Vec::with_capacity(sources.len());
+    for mut entry in sources {
+        if let CanvasSource::Ref { .. } = entry {
+            return Err("a canvas source in the sources table cannot itself be a ref".into());
+        }
+        if let CanvasSource::Canvas { commands, .. } = &mut entry {
+            resolve_ops(Arc::make_mut(&mut commands.0).as_mut_slice(), &table)?;
+        }
+        table.push(entry);
+    }
+    resolve_ops(&mut commands, &table)?;
+    Ok(CanvasOps(Arc::new(commands)))
 }
 
 /// An `ImageData` of straight-alpha RGBA8 pixels from base64.
@@ -934,5 +1026,47 @@ mod tests {
                   "commands": [{SHADOWED}]}}, "dx": 0, "dy": 0, "dw": 4, "dh": 4}}]"##
         ));
         assert!(has_effects(&nested));
+    }
+
+    #[test]
+    fn a_source_the_commands_refer_to_is_one_arc_and_an_entry_is_resolved_before_it_is_used() {
+        let ops: Vec<CanvasOp> = serde_json::from_str(
+            r##"[{"op": "image", "source": {"kind": "ref", "index": 1}, "dx": 0, "dy": 0, "dw": 4, "dh": 4},
+                 {"op": "image", "source": {"kind": "ref", "index": 1}, "dx": 4, "dy": 0, "dw": 4, "dh": 4}]"##,
+        )
+        .unwrap();
+        let sources: Vec<CanvasSource> = serde_json::from_str(
+            r##"[{"kind": "pixels", "width": 1, "height": 1, "data": "/wAA/w=="},
+                 {"kind": "canvas", "width": 4, "height": 4, "commands": [
+                   {"op": "image", "source": {"kind": "ref", "index": 0}, "dx": 0, "dy": 0, "dw": 4, "dh": 4}]}]"##,
+        )
+        .unwrap();
+        let ops = resolve_sources(ops, sources).unwrap();
+        let [CanvasOp::Image(a), CanvasOp::Image(b)] = &ops[..] else { panic!("two images") };
+        let (CanvasSource::Canvas { commands: x, .. }, CanvasSource::Canvas { commands: y, .. }) = (&a.source, &b.source) else {
+            panic!("both are the canvas")
+        };
+        assert!(Arc::ptr_eq(&x.0, &y.0), "one canvas, shared");
+        let CanvasOp::Image(inner) = &x[0] else { panic!("the canvas draws an image") };
+        assert!(matches!(inner.source, CanvasSource::Pixels { .. }), "its own ref is resolved");
+    }
+
+    #[test]
+    fn a_ref_to_a_later_entry_or_to_none_is_refused() {
+        let ops = || -> Vec<CanvasOp> {
+            serde_json::from_str(r##"[{"op": "image", "source": {"kind": "ref", "index": 0}, "dx": 0, "dy": 0, "dw": 4, "dh": 4}]"##).unwrap()
+        };
+        let canvas_of_ref = |index: usize| -> CanvasSource {
+            serde_json::from_str(&format!(
+                r##"{{"kind": "canvas", "width": 4, "height": 4, "commands": [{{"op": "image", "source": {{"kind": "ref", "index": {index}}}, "dx": 0, "dy": 0, "dw": 4, "dh": 4}}]}}"##
+            ))
+            .unwrap()
+        };
+        // An entry that refers to itself (or to one after it) cannot be resolved: the table is in dependency order.
+        assert!(resolve_sources(ops(), vec![canvas_of_ref(0)]).is_err());
+        assert!(resolve_sources(ops(), vec![canvas_of_ref(1), canvas_of_ref(0)]).is_err());
+        assert!(resolve_sources(ops(), vec![CanvasSource::Ref { index: 0 }]).is_err());
+        // Without a table the commands are kept as they are.
+        assert_eq!(resolve_sources(ops(), vec![]).unwrap().len(), 1);
     }
 }

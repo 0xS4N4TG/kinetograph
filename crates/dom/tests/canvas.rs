@@ -138,6 +138,18 @@ fn a_canvas_is_one_layer_at_its_content_box_the_size_of_its_bitmap() {
 }
 
 #[test]
+fn commands_with_a_table_of_pictures_become_the_layers_commands_and_sources() {
+    let drawn = r##"{"commands":[{"op":"image","source":{"kind":"ref","index":0},"dx":0,"dy":0,"dw":4,"dh":4}],
+        "sources":[{"kind":"canvas","width":4,"height":4,"commands":[{"op":"fill","path":"M0 0H4V4H0Z","paint":{"type":"color","color":"#ff0000"}}]}]}"##
+        .replace('\n', "");
+    let body = format!("<canvas id=\"c\" width=\"8\" height=\"8\" data-kg-canvas='{drawn}' style=\"display:block\"></canvas>");
+    let layers = layers_of(&body, 20, 20);
+    let canvas = find(&layers, "c").expect("a canvas layer");
+    assert_eq!(canvas["commands"][0]["source"]["kind"], "ref");
+    assert_eq!(canvas["sources"][0]["kind"], "canvas");
+}
+
+#[test]
 fn css_scales_the_bitmap_with_a_flat_matrix() {
     let commands =
         r##"[{"op":"fill","path":"M0 0H5V5Z","paint":{"type":"color","color":"#ff0000"}}]"##;

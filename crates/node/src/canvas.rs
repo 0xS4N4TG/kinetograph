@@ -20,8 +20,8 @@ use kinetograph_core::{Renderer, Scene};
 /// (`Renderer::set_scene`), and a frame is the same as a new renderer's.
 static RENDERER: Mutex<Option<Renderer>> = Mutex::new(None);
 
-/// `{ width, height, commands, fonts, baseDir, format }` as JSON in; straight
-/// alpha RGBA, or a PNG with `format: "png"`, out.
+/// `{ width, height, commands, sources, fonts, baseDir, format }` as JSON in (`sources` is the layer's table of
+/// pictures the commands refer to, left out when none does); straight alpha RGBA, or a PNG with `format: "png"`, out.
 pub fn render_canvas(request_json: &str) -> Result<Buffer> {
     let request: Value =
         serde_json::from_str(request_json).map_err(|e| invalid(format!("renderCanvas: {e}")))?;
@@ -39,6 +39,7 @@ pub fn render_canvas(request_json: &str) -> Result<Buffer> {
         "layers": [{
             "id": "canvas", "type": "canvas", "width": width, "height": height,
             "commands": request.get("commands").cloned().unwrap_or_else(|| json!([])),
+            "sources": request.get("sources").cloned().unwrap_or_else(|| json!([])),
         }],
     });
     let base_dir = request["baseDir"]

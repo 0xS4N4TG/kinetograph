@@ -268,8 +268,31 @@ impl<'a> Painter<'a> {
             self.webgpu_report(node, &mut drawn);
         }
         let id = self.layer_id(node, kind);
+        // The commands, as a list (a picture drawn once is in its command) or with the table of pictures that more than one
+        // command draws (`{ commands, sources }`, `CanvasLayer`).
+        let mut sources = None;
         if kind == "canvas" {
+            if drawn.is_object() {
+                sources = drawn.get_mut("sources").map(Value::take);
+                drawn = drawn.get_mut("commands").map_or(json!([]), Value::take);
+            }
             self.canvas_url_filters(node, &mut drawn, (width, height), &id);
+            // The canvases in the table hold commands too.
+            for entry in sources
+                .as_mut()
+                .and_then(Value::as_array_mut)
+                .into_iter()
+                .flatten()
+            {
+                if entry.get("kind").and_then(Value::as_str) != Some("canvas") {
+                    continue;
+                }
+                let side = |k: &str| entry.get(k).and_then(Value::as_f64).unwrap_or(0.0);
+                let inner_size = (side("width"), side("height"));
+                if let Some(inner) = entry.get_mut("commands") {
+                    self.canvas_url_filters(node, inner, inner_size, &id);
+                }
+            }
         }
         let mut layer = Layer::new(&id, kind)
             .set("width", num(width))
@@ -281,7 +304,11 @@ impl<'a> Painter<'a> {
                 .into_iter()
                 .fold(layer, |layer, (key, value)| layer.set(&key, value))
         } else {
-            layer.set("commands", drawn)
+            let layer = layer.set("commands", drawn);
+            match sources {
+                Some(sources) => layer.set("sources", sources),
+                None => layer,
+            }
         };
         let mut layer = layer.build();
         let (sx, sy) = (content.w / width, content.h / height);

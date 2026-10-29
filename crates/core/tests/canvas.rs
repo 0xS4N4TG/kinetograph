@@ -278,3 +278,129 @@ fn a_command_with_bad_path_data_is_refused_with_the_layer() {
         other => panic!("expected a scene error, got {:?}", other.err()),
     }
 }
+
+// ---- a picture drawn many times is stored once (`sources`) ----
+
+/// A 24 x 24 scene with one canvas layer; `rest` is more of the layer's fields (`"sources": [...]`).
+fn render_layer(commands: &str, rest: &str) -> Result<Frame, Error> {
+    let json = format!(
+        r##"{{"width": 24, "height": 24, "fps": 30, "durationInFrames": 1, "background": "#223344",
+            "layers": [{{"id": "c", "type": "canvas", "width": 24, "height": 24, "commands": {commands}{rest}}}]}}"##
+    );
+    Scene::from_json(&json, Default::default()).and_then(|scene| render_still(scene, 0))
+}
+
+/// Draws of `source` under three different clips and transforms, with `source` inline or as `ref`s.
+fn many_draws(source: &str) -> String {
+    format!(
+        r##"[{{"op": "clip", "path": "M0 0L14 2L3 14Z"}},
+             {{"op": "image", "source": {source}, "dx": 0, "dy": 0, "dw": 8, "dh": 8, "m": [1.5, 0.3, -0.2, 1.2, 1, 1]}},
+             {{"op": "unclip"}},
+             {{"op": "clip", "path": "M10 10L24 12L12 24Z"}},
+             {{"op": "image", "source": {source}, "dx": 0, "dy": 0, "dw": 8, "dh": 8, "a": 0.6, "m": [1.9, 0, 0.4, 1.7, 8, 9]}},
+             {{"op": "unclip"}},
+             {{"op": "image", "source": {source}, "sx": 1, "sy": 1, "sw": 4, "sh": 3, "dx": 14, "dy": 1, "dw": 8, "dh": 6, "smooth": false}},
+             {{"op": "image", "source": {source}, "dx": 2, "dy": 16, "dw": 6, "dh": 6, "blend": "multiply"}}]"##
+    )
+}
+
+const REF0: &str = r##"{"kind": "ref", "index": 0}"##;
+
+#[test]
+fn pixels_drawn_many_times_look_the_same_from_the_table() {
+    // 2x2 RGBA: red, blue / green, white.
+    let pixels = r##"{"kind": "pixels", "width": 2, "height": 2, "data": "/wAA/wAA//8A/wD//////w=="}"##;
+    let inline = render_layer(&many_draws(pixels), "").unwrap();
+    let table = render_layer(&many_draws(REF0), &format!(r#", "sources": [{pixels}]"#)).unwrap();
+    assert_eq!(inline.rgba, table.rgba);
+    assert_ne!(inline.rgba, render_layer("[]", "").unwrap().rgba, "something is drawn");
+}
+
+/// How many bytes of two frames differ, and by how much at most.
+fn differ(a: &Frame, b: &Frame) -> (usize, u8) {
+    let pairs = a.rgba.iter().zip(&b.rgba).filter(|(x, y)| x != y);
+    (pairs.clone().count(), pairs.map(|(x, y)| x.abs_diff(*y)).max().unwrap_or(0))
+}
+
+#[test]
+fn a_canvas_drawn_many_times_looks_the_same_from_the_table() {
+    let fill = |path: &str, paint: &str, extra: &str| {
+        format!(r##"{{"op": "fill", "path": "{path}", "paint": {paint}{extra}}}"##)
+    };
+    let yellow = r##"{"type": "color", "color": "#ffcc00"}"##;
+    let blue = r##"{"type": "color", "color": "#0044ff"}"##;
+    let pixels = r##"{"kind": "pixels", "width": 2, "height": 2, "data": "/wAA/wAA//8A/wD//////w=="}"##;
+    let image = format!(r##"{{"op": "image", "source": {pixels}, "dx": 1, "dy": 1, "dw": 7, "dh": 6, "a": 0.7}}"##);
+    let tiles = [
+        ("a fill and alpha", vec![fill("M0 0H8V8H0Z", yellow, ""), fill("M2 2H8V8H2Z", RED, r#", "a": 0.5"#)]),
+        ("blends", vec![
+            fill("M0 0H8V8H0Z", yellow, ""),
+            fill("M6 0H8V3H6Z", blue, r#", "blend": "multiply""#),
+            fill("M0 5H5V8H0Z", blue, r#", "blend": "source-in""#),
+            fill("M3 3H6V6H3Z", blue, r#", "blend": "destination-out", "a": 0.5"#),
+            fill("M1 1H7V2H1Z", RED, r#", "blend": "lighter""#),
+        ]),
+        ("pictures and strokes", vec![
+            image.clone(),
+            r##"{"op": "stroke", "path": "M1 1L7 7", "paint": {"type": "color", "color": "#00ff88"}, "width": 2}"##.into(),
+        ]),
+        ("a canvas in it", vec![
+            fill("M0 0H8V8H0Z", yellow, ""),
+            format!(r##"{{"op": "image", "source": {{"kind": "canvas", "width": 4, "height": 4, "commands": [{}]}}, "dx": 2, "dy": 2, "dw": 4, "dh": 4, "a": 0.8}}"##, fill("M0 0H4V2H0Z", RED, "")),
+        ]),
+        // Clips and shadows are drawn straight, as before.
+        ("a clip", vec![fill("M0 0H8V8H0Z", yellow, ""), r##"{"op": "clip", "path": "M0 0H6V6H0Z"}"##.into(), fill("M2 2H8V8H2Z", RED, ""), r##"{"op": "unclip"}"##.into()]),
+        ("a shadow", vec![fill("M1 1H5V5H1Z", yellow, r##", "shadow": {"color": "#000000", "blur": 2, "x": 2, "y": 2}"##)]),
+    ];
+    let mut bad = Vec::new();
+    for (name, ops) in tiles {
+        let tile = format!(r##"{{"kind": "canvas", "width": 8, "height": 8, "commands": [{}]}}"##, ops.join(","));
+        let inline = render_layer(&many_draws(&tile), "").unwrap();
+        let table = render_layer(&many_draws(REF0), &format!(r#", "sources": [{tile}]"#)).unwrap();
+        let (n, most) = differ(&inline, &table);
+        if n > 0 {
+            bad.push(format!("{name}: {n} bytes differ, by {most} at most"));
+        }
+        assert_ne!(inline.rgba, render_layer("[]", "").unwrap().rgba, "{name} draws something");
+    }
+    assert!(bad.is_empty(), "{bad:?}");
+}
+
+#[test]
+fn a_table_entry_can_draw_an_earlier_entry() {
+    // Entry 1 is a canvas that draws entry 0 twice; the layer draws entry 1 twice.
+    let pixels = r##"{"kind": "pixels", "width": 2, "height": 1, "data": "/wAA/wAA//8="}"##;
+    let tile_inline = format!(
+        r##"{{"kind": "canvas", "width": 8, "height": 8, "commands": [
+              {{"op": "image", "source": {pixels}, "dx": 0, "dy": 0, "dw": 8, "dh": 4}},
+              {{"op": "image", "source": {pixels}, "dx": 0, "dy": 4, "dw": 4, "dh": 4}}]}}"##
+    );
+    let tile_ref = format!(
+        r##"{{"kind": "canvas", "width": 8, "height": 8, "commands": [
+              {{"op": "image", "source": {REF0}, "dx": 0, "dy": 0, "dw": 8, "dh": 4}},
+              {{"op": "image", "source": {REF0}, "dx": 0, "dy": 4, "dw": 4, "dh": 4}}]}}"##
+    );
+    let two = |source: &str| {
+        format!(
+            r##"[{{"op": "image", "source": {source}, "dx": 0, "dy": 0, "dw": 8, "dh": 8}},
+                 {{"op": "image", "source": {source}, "dx": 10, "dy": 3, "dw": 8, "dh": 8, "m": [1, 0.2, 0, 1, 0, 0]}}]"##
+        )
+    };
+    let inline = render_layer(&two(&tile_inline), "").unwrap();
+    let table = render_layer(
+        &two(r##"{"kind": "ref", "index": 1}"##),
+        &format!(r#", "sources": [{pixels}, {tile_ref}]"#),
+    )
+    .unwrap();
+    assert_eq!(inline.rgba, table.rgba);
+}
+
+#[test]
+fn a_ref_the_table_has_no_entry_for_is_an_error() {
+    let err = render_layer(&many_draws(r##"{"kind": "ref", "index": 3}"##), r#", "sources": []"#).map(|_| ());
+    // With no table at all the ref draws nothing; with a table that is too short the layer does not load.
+    assert!(err.is_ok());
+    let pixels = r##"{"kind": "pixels", "width": 1, "height": 1, "data": "/wAA/w=="}"##;
+    let err = render_layer(&many_draws(r##"{"kind": "ref", "index": 3}"##), &format!(r#", "sources": [{pixels}]"#));
+    assert!(err.is_err_and(|e| e.to_string().contains("canvas source 3")));
+}
