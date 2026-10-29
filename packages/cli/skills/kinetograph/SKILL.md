@@ -228,6 +228,7 @@ One line each; the pointer has the detail. `kinetograph doctor` alone lists the 
 
 ## Habits that save iterations
 
+- Run `npx kinetograph plugins` and read each plugin's `SKILL.md` before using it.
 - `strip` before `render`; `lint` before `strip`. Fix every lint error.
 - When a layer is in the wrong place, `inspect` it instead of guessing from the picture: `bounds` and `matrix` are in canvas pixels.
 - Give an explicit `id` to matte sources and to anything an `<Audio>` or matte refers to.

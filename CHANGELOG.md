@@ -5,6 +5,13 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ## Unreleased
 
+### Added
+
+- Plugins. A package whose `package.json` has a `kinetograph` field (`skill`, `panel`) is a plugin, found from the project's dependencies. `kinetograph plugins [project]` (and the `plugins` MCP tool) lists them with the path of each `SKILL.md`; agents read it before using a plugin. See `/docs/guides/plugins/`.
+- `propsSchema` on `CompositionInfo`: the JSON Schema of the composition's zod 4 `schema`, left out when there is none or it cannot be converted. The Props tab in Studio draws from it: a select for an enum, a slider and number box for a number with `min` and `max`, a switch, a colour input for `zColor()`, a text area for `zTextarea()`, a labelled group for an object, and the field's `description` as helper text. A field with `kinetographPanel` meta is drawn by that plugin's panel, with an error box if the panel fails.
+- Presets in Studio: the Props tab has a Presets menu and a Save preset button. Presets are files at `presets/<composition id>/<name>.json` beside the entry, served by `GET /api/presets` and `PUT /api/presets/<id>/<name>`.
+- `--props` takes the path of a JSON file as well as a JSON object, as Remotion's does.
+
 ### Fixed
 
 - The error for an entry that never calls `registerRoot` says where to import it from (`@kinetographdev/core`) and that a file which only exports a component is not an entry. Importing the video API from `kinetograph`, which is the CLI, adds a hint that names `@kinetographdev/core`.
