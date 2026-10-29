@@ -30,6 +30,7 @@ import {
   createGpuCanvasContext,
   createWebGLContext,
   GPUDeviceShim,
+  internSources,
   layerPicture,
   type CanvasContext2D,
   type CanvasPass,
@@ -107,7 +108,10 @@ export class RecordingCanvas {
   pass(): { glsl?: GlslPass; canvas?: CanvasPass } {
     const { width, height } = this;
     if (this.context === null) return { glsl: { width, height } };
-    if (this.kind === '2d') return { canvas: { width, height, commands: (this.context as CanvasContext2D).commands } };
+    if (this.kind === '2d') {
+      const { commands, sources } = internSources((this.context as CanvasContext2D).commands);
+      return { canvas: { width, height, commands, ...(sources !== undefined && { sources }) } };
+    }
     if (this.kind === 'webgpu') return { glsl: { width, height, ...(this.context as GPUCanvasContextShim).content() } };
     return { glsl: { width, height, ...(this.context as WebGLContext).content() } };
   }

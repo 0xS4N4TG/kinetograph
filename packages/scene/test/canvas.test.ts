@@ -4,6 +4,7 @@ import {
   canvasLayer,
   createCanvasContext,
   ImageData,
+  internSources,
   layerPicture,
   parseCssColor,
   Path2D,
@@ -806,5 +807,121 @@ describe('the picture of a layer', () => {
   it('is a pattern too', () => {
     const ctx = make();
     expect(ctx.createPattern(layerPicture('child', 4, 4), 'repeat')).not.toBeNull();
+  });
+});
+
+describe('pictures drawn many times', () => {
+  type Pixels = Extract<import('../src/index.js').CanvasSource, { kind: 'pixels' }>;
+  const pixelsOf = (ctx: CanvasContext2D, i: number): Pixels => (ctx.commands[i] as { source: Pixels }).source;
+
+  it('gives an ImageData one source object while its pixels are the same, and a new one when they are written to', () => {
+    const image = new ImageData(4, 4);
+    const ctx = make();
+    ctx.drawImage(image as never, 0, 0);
+    ctx.drawImage(image as never, 10, 0);
+    expect(pixelsOf(ctx, 1)).toBe(pixelsOf(ctx, 0));
+    // A direct write to `data` (a small picture is hashed at every draw, so even in the same frame).
+    image.data[0] = 200;
+    ctx.drawImage(image as never, 20, 0);
+    expect(pixelsOf(ctx, 2)).not.toBe(pixelsOf(ctx, 0));
+    expect(pixelsOf(ctx, 2).data).not.toBe(pixelsOf(ctx, 0).data);
+    expect(Buffer.from(pixelsOf(ctx, 2).data, 'base64')[0]).toBe(200);
+  });
+
+  it('hashes a large ImageData once per frame, so a write is seen when the next frame begins', () => {
+    const image = new ImageData(200, 200);
+    const ctx = make({ width: 200, height: 200 });
+    ctx.drawImage(image as never, 0, 0);
+    const first = pixelsOf(ctx, 0);
+    ctx.drawImage(image as never, 5, 5);
+    expect(pixelsOf(ctx, 1)).toBe(first);
+    image.data[100] = 7;
+    ctx.beginFrame();
+    ctx.drawImage(image as never, 0, 0);
+    expect(pixelsOf(ctx, 0)).not.toBe(first);
+    expect(Buffer.from(pixelsOf(ctx, 0).data, 'base64')[100]).toBe(7);
+    // Written back to the same content: the picture it had is kept.
+    image.data[100] = 0;
+    ctx.beginFrame();
+    ctx.drawImage(image as never, 0, 0);
+    ctx.beginFrame();
+    ctx.drawImage(image as never, 0, 0);
+    expect(Buffer.from(pixelsOf(ctx, 0).data, 'base64')[100]).toBe(0);
+  });
+
+  it('writes an ImageData drawn many times once, in a table, and one drawn once inline', () => {
+    const image = new ImageData(4, 4);
+    const ctx = make();
+    for (let i = 0; i < 5; i += 1) ctx.drawImage(image as never, i * 5, 0);
+    const out = internSources(ctx.commands);
+    expect(out.sources).toHaveLength(1);
+    expect(out.sources![0]).toMatchObject({ kind: 'pixels', width: 4, height: 4 });
+    expect(out.commands.map((c) => (c as { source: unknown }).source)).toEqual(Array(5).fill({ kind: 'ref', index: 0 }));
+    // The commands given are untouched.
+    expect(pixelsOf(ctx, 0).kind).toBe('pixels');
+    const once = make();
+    once.drawImage(image as never, 0, 0);
+    const alone = internSources(once.commands);
+    expect(alone.sources).toBeUndefined();
+    expect(alone.commands).toBe(once.commands);
+  });
+
+  it('gives a canvas one source object until something more is drawn on it', () => {
+    const face = make({ width: 8, height: 8 });
+    face.fillRect(0, 0, 8, 8);
+    const a = face.pictureSource(8, 8);
+    expect(face.pictureSource(8, 8)).toBe(a);
+    expect(face.pictureSource(8, 9)).not.toBe(a);
+    face.fillRect(1, 1, 2, 2);
+    const b = face.pictureSource(8, 8);
+    expect(b).not.toBe(a);
+    expect(b.commands).toHaveLength(2);
+    // The earlier picture is a value: what is drawn later does not reach it.
+    expect(a.commands).toHaveLength(1);
+    face.reset();
+    expect(face.pictureSource(8, 8)).not.toBe(b);
+    expect(face.pictureSource(8, 8).commands).toHaveLength(0);
+  });
+
+  it('writes a canvas drawn many times once, with the pictures it draws, nested ones first', () => {
+    const image = new ImageData(2, 2);
+    const inner = make({ width: 8, height: 8 });
+    inner.fillRect(0, 0, 8, 8);
+    const face = make({ width: 8, height: 8 });
+    face.drawImage(image as never, 0, 0);
+    face.drawImage(image as never, 2, 0);
+    face.drawImage({ [CANVAS_SOURCE]: () => ({ source: inner.pictureSource(8, 8), width: 8, height: 8 }) } as never, 0, 0);
+    const main = make({ width: 80, height: 80 });
+    const faceSource = { [CANVAS_SOURCE]: () => ({ source: face.pictureSource(8, 8), width: 8, height: 8 }) };
+    for (let i = 0; i < 4; i += 1) {
+      main.save();
+      main.rect(i * 10, 0, 8, 8);
+      main.clip();
+      main.drawImage(faceSource as never, i * 10, 0);
+      main.restore();
+    }
+    const out = internSources(main.commands);
+    // The ImageData is drawn twice inside the face, but the face is one entry that holds it once; inside it the
+    // ImageData is its own entry, before the face.
+    expect(out.sources!.map((s) => s.kind)).toEqual(['pixels', 'canvas']);
+    const entry = out.sources![1] as { commands: { source: { kind: string; index?: number } }[] };
+    expect(entry.commands[0]!.source).toEqual({ kind: 'ref', index: 0 });
+    expect(entry.commands[1]!.source).toEqual({ kind: 'ref', index: 0 });
+    expect(entry.commands[2]!.source.kind).toBe('canvas');
+    const images = out.commands.filter((c) => c.op === 'image') as { source: unknown }[];
+    expect(images).toHaveLength(4);
+    expect(images.every((c) => JSON.stringify(c.source) === '{"kind":"ref","index":1}')).toBe(true);
+    // Written once: the JSON holds the pixels once however many draws.
+    expect(JSON.stringify(out).split(pixelsOf(face, 0).data).length - 1).toBe(1);
+  });
+
+  it('carries the table on the canvas layer, and leaves a layer that repeats nothing as it was', () => {
+    const image = new ImageData(2, 2);
+    const ctx = make();
+    ctx.drawImage(image as never, 0, 0);
+    ctx.drawImage(image as never, 4, 0);
+    const layer = canvasLayer(ctx, { id: 'c', width: 100, height: 50 });
+    expect(layer.sources).toHaveLength(1);
+    expect(canvasLayer(make(), { id: 'c', width: 1, height: 1 })).not.toHaveProperty('sources');
   });
 });
