@@ -69,6 +69,12 @@ export interface PresetInfo {
   props: Record<string, unknown>;
 }
 
+/** `GET /api/live-props`, and the body of `PUT /api/live-props`. `comp` is null before any window has said what it previews. */
+export interface LiveProps {
+  comp: string | null;
+  props: Record<string, unknown>;
+}
+
 /** One of `GET /api/plugins`. */
 export interface PluginSummary {
   name: string;
@@ -122,7 +128,14 @@ export interface RenderJob {
 // ---- WebSocket `/ws` ----
 
 /** Client → server, JSON text. */
-export type ClientMessage = FrameRequest | AgentClientMessage;
+export type ClientMessage = FrameRequest | AgentClientMessage | PropsMessage;
+
+/** Client → server: the composition and props the window previews, sent on every props change and composition switch. */
+export interface PropsMessage {
+  type: 'props';
+  comp: string;
+  props: Record<string, unknown>;
+}
 
 export interface FrameRequest {
   type: 'frame';
@@ -144,6 +157,8 @@ export type ServerMessage =
   | { type: 'render'; job: RenderJob }
   | { type: 'error'; requestId: number | null; error: StudioError }
   | { type: 'agent'; event: AgentEvent }
+  /** Props pushed by `PUT /api/live-props`: the window switches to `comp` and replaces its props with these. */
+  | { type: 'props'; comp: string; props: Record<string, unknown> }
   /** The conversation so far, sent to a window that takes it over (a reload of the one that began it). */
   | { type: 'agent.history'; items: ChatRecord[] };
 

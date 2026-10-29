@@ -207,6 +207,14 @@ export function useStudio(api: StudioApi): Studio {
         case 'render':
           setRenders((jobs) => upsertJob(jobs, message.job));
           break;
+        case 'props':
+          // Pushed by the agent: show that composition with these props (Reset still goes back to the defaults).
+          if (compIdRef.current !== message.comp) {
+            setCompId(message.comp);
+            setSelectedLayers([]);
+          }
+          setEdits((all) => ({ ...all, [message.comp]: message.props }));
+          break;
         case 'agent':
           for (const listener of agentListeners.current) listener(message.event);
           break;
@@ -278,6 +286,11 @@ export function useStudio(api: StudioApi): Studio {
     setCompId(id);
     setSelectedLayers([]);
   }, []);
+
+  // The server is told what is previewed, for the agent to read; again when the socket comes back.
+  useEffect(() => {
+    if (connected && comp) socketRef.current?.sendProps(comp.id, propValues);
+  }, [connected, comp?.id, propValues]);
 
   // `comp` is a new object after each refetch; the player only acts when what it shows changed.
   useEffect(() => {

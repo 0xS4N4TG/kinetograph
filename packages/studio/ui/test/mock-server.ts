@@ -33,6 +33,8 @@ export class MockServer implements StudioApi {
   agent: AgentInfo = { presets: [{ id: 'fake', name: 'Fake agent', command: 'fake --acp' }], command: 'fake --acp', cwd: '/work' };
   /** Everything the page sent for the agent. */
   agentMessages: AgentClientMessage[] = [];
+  /** What the window said it previews (`props` messages), oldest first. */
+  propsMessages: { comp: string; props: Record<string, unknown> }[] = [];
   /** When set, `compositions()` fails as the server does before the first good build. */
   noGoodBuild = false;
   /** Saved presets by composition id, and the installed plugins. */
@@ -177,6 +179,10 @@ export class MockServer implements StudioApi {
       },
       sendAgent: (message: AgentClientMessage) => {
         this.agentMessages.push(message);
+        return true;
+      },
+      sendProps: (comp: string, props: Record<string, unknown>) => {
+        this.propsMessages.push({ comp, props });
         return true;
       },
       close: () => {

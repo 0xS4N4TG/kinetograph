@@ -25,6 +25,7 @@ import {
   type CompositionInfo,
   type FrameHeader,
   type FrameRequest,
+  type LiveProps,
   type PluginSummary,
   type ProjectInfo,
   type RenderJob,
@@ -160,6 +161,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     hasViewer: () => (owner !== null && owner.readyState === owner.OPEN) || orphaned !== null,
     version: cliVersion(),
   });
+  // What the window previews (its last `props` message), for the agent to read, and what the agent pushes to it.
+  let live: LiveProps = { comp: null, props: {} };
   const tokenOk = (given: string | null | undefined): boolean => {
     if (!given) return false;
     const a = Buffer.from(given);
@@ -385,6 +388,23 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         ? { presets: [], command: null, cwd: agentCwd, disabled: agentOff }
         : { presets: agents, command: bridge.currentCommand, cwd: agentCwd };
       return json(res, 200, info);
+    }
+    if (path === '/api/live-props' && (method === 'GET' || method === 'PUT')) {
+      if (!tokenOk(req.headers['x-studio-token'] as string | undefined)) {
+        throw new StudioFailure('FORBIDDEN', 'live props need the studio token from the address the studio opened');
+      }
+      if (method === 'GET') return json(res, 200, live);
+      const body = await readBody(req);
+      if (!isObject(body)) throw invalid('the body must be { comp, props }');
+      if (typeof body.comp !== 'string' || body.comp === '') throw invalid('comp is required');
+      if (!isObject(body.props)) throw invalid('props must be a JSON object');
+      if (project.buildId === 0) known(body.comp); // no good build yet
+      if (!project.compositions.some((c) => c.id === body.comp)) {
+        throw invalid(`no composition "${body.comp}"; the project has: ${project.compositions.map((c) => c.id).join(', ') || '(none)'}`);
+      }
+      live = { comp: body.comp, props: body.props };
+      broadcast({ type: 'props', comp: body.comp, props: body.props });
+      return json(res, 200, live);
     }
     if (method === 'GET' && path === '/api/compositions') {
       if (project.buildId === 0) known('');
@@ -649,7 +669,12 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         if (isObject(parsed) && typeof parsed.type === 'string' && parsed.type.startsWith('agent.')) {
           return agentMessage(ws, parsed as unknown as AgentClientMessage);
         }
-        if (!isObject(parsed) || parsed.type !== 'frame') throw invalid('unknown message: only { "type": "frame", … } and "agent.…" messages are understood');
+        if (isObject(parsed) && parsed.type === 'props') {
+          if (typeof parsed.comp !== 'string' || !isObject(parsed.props)) throw invalid('a props message is { "type": "props", "comp": string, "props": object }');
+          live = { comp: parsed.comp, props: parsed.props };
+          return;
+        }
+        if (!isObject(parsed) || parsed.type !== 'frame') throw invalid('unknown message: only { "type": "frame", … }, { "type": "props", … } and "agent.…" messages are understood');
         if (typeof parsed.requestId !== 'number') throw invalid('requestId must be a number');
         message = parsed as unknown as FrameRequest;
       } catch (error) {

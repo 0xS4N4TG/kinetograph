@@ -81,6 +81,8 @@ export interface StudioSocket {
   requestFrame(args: FrameArgs): number;
   /** Sends a message for the coding agent; false when the socket is not open. */
   sendAgent(message: AgentClientMessage): boolean;
+  /** Tells the server what this window previews; false when the socket is not open. */
+  sendProps(comp: string, props: Record<string, unknown>): boolean;
   close(): void;
 }
 
@@ -247,6 +249,12 @@ export function createApi(options: ApiOptions = {}): StudioApi {
         },
         sendAgent(message) {
           if (socket === null || socket.readyState !== 1) return false;
+          socket.send(JSON.stringify(message));
+          return true;
+        },
+        sendProps(comp, props) {
+          if (socket === null || socket.readyState !== 1) return false;
+          const message: ClientMessage = { type: 'props', comp, props };
           socket.send(JSON.stringify(message));
           return true;
         },
