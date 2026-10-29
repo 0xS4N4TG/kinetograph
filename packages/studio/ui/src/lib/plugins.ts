@@ -14,7 +14,8 @@ export function usePlugins(api: StudioApi): PluginSummary[] {
   useEffect(() => {
     let live = true;
     api.plugins().then(
-      (list) => live && setPlugins(list),
+      // An older server sends no display fields: fill them in.
+      (list) => live && setPlugins(list.map((p) => ({ ...p, title: p.title ?? p.name.replace(/^@[^/]+\//, ''), description: p.description ?? '', icon: p.icon ?? null, components: p.components ?? [] }))),
       () => live && setPlugins([]),
     );
     return () => {
