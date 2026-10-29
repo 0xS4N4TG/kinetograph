@@ -38,6 +38,33 @@ interface AgentPanelProps {
   timeline: TimelineData | null;
 }
 
+/**
+ * Agent text can be steered by what is in the project's files, so its markdown is held tight: links are https, http or
+ * mailto only (and ask before they open); an image is drawn only from this page's own origin, a data: or a blob: address,
+ * never from a remote one, whose query string could carry something out; raw HTML is not rendered.
+ */
+function safeUrl(url: string, key: string): string {
+  if (/^(data:|blob:)/i.test(url)) return key === 'src' ? url : '';
+  if (/^(https?:|mailto:)/i.test(url)) {
+    if (key === 'src') {
+      try {
+        return new URL(url).origin === window.location.origin ? url : '';
+      } catch {
+        return '';
+      }
+    }
+    return url;
+  }
+  // relative addresses stay on this origin
+  return /^[a-z][a-z0-9+.-]*:/i.test(url) ? '' : url;
+}
+
+const MD_COMPONENTS = {
+  /** A picture that is not allowed shows its alt text, as text. */
+  img: ({ src, alt }: { src?: string | Blob; alt?: string }) =>
+    typeof src === 'string' && src !== '' ? <img src={src} alt={alt ?? ''} className="max-w-full rounded-lg" /> : <span className="text-muted-foreground">{alt ? `[${alt}]` : '[image]'}</span>,
+};
+
 const basename = (path: string) => path.split('/').pop() ?? path;
 
 /** The words for a status of the connection to the agent. */
@@ -84,7 +111,9 @@ const Item = memo(function Item({ item, onAnswer }: { item: ChatItem; onAnswer(i
     case 'agent':
       return (
         <div className="kg-md" data-testid="chat-agent">
-          <Streamdown linkSafety={{ enabled: false }}>{item.text}</Streamdown>
+          <Streamdown components={MD_COMPONENTS} urlTransform={safeUrl}>
+            {item.text}
+          </Streamdown>
         </div>
       );
     case 'tool': {

