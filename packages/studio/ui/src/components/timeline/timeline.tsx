@@ -91,6 +91,32 @@ const Playhead = memo(function Playhead({
   );
 });
 
+/** The height of the film strip, px. */
+const STRIP_HEIGHT = 56;
+
+/**
+ * The composition frame by frame: small pictures of evenly spaced frames laid along the time axis, so the timeline shows
+ * what is on screen where. More of them as the lane gets wider; the server draws each as it is asked for.
+ */
+const Filmstrip = memo(function Filmstrip({ comp, laneWidth, thumbnailUrl }: { comp: CompositionInfo; laneWidth: number; thumbnailUrl: TimelineProps['thumbnailUrl'] }) {
+  const tileWidth = Math.max(24, Math.round(STRIP_HEIGHT * (comp.width / Math.max(1, comp.height))));
+  const count = Math.max(1, Math.min(80, Math.round(laneWidth / tileWidth)));
+  const duration = Math.max(1, comp.durationInFrames);
+  return (
+    <div data-testid="filmstrip" className="bg-muted/60 flex overflow-hidden rounded-xl" style={{ width: laneWidth, height: STRIP_HEIGHT }} aria-hidden="true">
+      {Array.from({ length: count }, (_, i) => {
+        const frame = Math.min(duration - 1, Math.floor(((i + 0.5) / count) * duration));
+        const src = thumbnailUrl?.(frame, STRIP_HEIGHT * 2);
+        return (
+          <div key={i} className="relative h-full min-w-0 flex-1 overflow-hidden">
+            {src && <img data-testid="filmstrip-frame" src={src} alt="" loading="lazy" decoding="async" draggable={false} className="size-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+});
+
 /** The time and frame under the playhead, in the header. */
 const FrameReadout = memo(function FrameReadout({ player, fps }: { player: Player; fps: number }) {
   const frame = useFrame(player);
@@ -378,25 +404,30 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
                 {`Could not read the timeline: ${status.error.message}`}
               </TimelineNotice>
             )}
-            {status.state === 'ready' && !open && (
-              <div className="flex h-12 items-center" style={{ paddingLeft: GUTTER }}>
-                <div data-lane className="bg-muted relative h-9 rounded-xl" style={{ width: laneWidth }}>
-                  {roots.flatMap((node) =>
+            {/* The film strip: always there, in both the slim and the expanded timeline. */}
+            <div className="flex items-center py-1.5" style={{ paddingLeft: open ? 0 : GUTTER }}>
+              {open && (
+                <div className="bg-card text-muted-foreground sticky left-0 z-40 flex shrink-0 items-center px-4 text-xs font-medium" style={{ width: LABEL_WIDTH }}>
+                  Frames
+                </div>
+              )}
+              <div data-lane className="relative" style={{ width: laneWidth, height: STRIP_HEIGHT }}>
+                <Filmstrip comp={comp} laneWidth={laneWidth} thumbnailUrl={thumbnailUrl} />
+                {!open && status.state === 'ready' &&
+                  roots.flatMap((node) =>
                     node.bars.map(([a, b]) => (
                       <div
                         key={`${node.id}-${a}`}
                         title={nodeTitle(node)}
-                        className={cn('absolute inset-y-1 overflow-hidden rounded-lg border px-2 text-xs leading-6 font-medium whitespace-nowrap', layerColors('sequence').bar)}
-                        style={{ left: a * pxPerFrame, width: Math.max(4, (b + 1 - a) * pxPerFrame) }}
+                        className="bg-card/75 text-foreground pointer-events-none absolute bottom-1 h-5 overflow-hidden rounded-full px-2 text-[11px] leading-5 font-medium whitespace-nowrap backdrop-blur-sm"
+                        style={{ left: a * pxPerFrame + 4, maxWidth: Math.max(8, (b + 1 - a) * pxPerFrame - 8) }}
                       >
-                        <span className="truncate">{node.label}</span>
+                        {node.label}
                       </div>
                     )),
                   )}
-                  {roots.length === 0 && <span className="text-muted-foreground px-3 text-xs leading-9">No Sequences</span>}
-                </div>
               </div>
-            )}
+            </div>
             {status.state === 'ready' && open && rows.length === 0 && <EmptyRow>{q ? 'Nothing matches the search.' : 'No Sequences'}</EmptyRow>}
             {status.state === 'ready' && open && rows.length > 0 && (
               <>

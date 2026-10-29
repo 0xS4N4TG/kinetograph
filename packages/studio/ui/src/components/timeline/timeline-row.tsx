@@ -127,7 +127,7 @@ export function Row({ swatch, label, count, detail, badge, title, depth, expande
 }
 
 /** The height of a clip's thumbnail, px: the bar's inner height. */
-export const THUMB_HEIGHT = 26;
+export const THUMB_HEIGHT = 24;
 /** A clip narrower than this shows no thumbnail, px. */
 export const THUMB_MIN_BAR = 64;
 
