@@ -7,12 +7,12 @@ import { indent } from '@/lib/tree';
 import { cn } from '@/lib/utils';
 
 /** Width of the sticky label column, px. */
-export const LABEL_WIDTH = 288;
-/** Height of a row, px: big enough to hit. */
-export const ROW_HEIGHT = 36;
+export const LABEL_WIDTH = 248;
+/** Height of a row, px: roomy enough to hit. */
+export const ROW_HEIGHT = 40;
 
 export function EmptyRow({ children }: { children: string }) {
-  return <div className="text-muted-foreground sticky left-0 h-9 px-3 py-2 text-xs">{children}</div>;
+  return <div className="text-muted-foreground sticky left-0 px-4 py-3 text-sm">{children}</div>;
 }
 
 /** What stands in for the rows while the timeline is being read, or when it could not be. */
@@ -32,12 +32,10 @@ export function TimelineNotice({
     <div
       data-testid={testId}
       role={error ? 'alert' : 'status'}
-      className={cn('sticky left-0 flex max-w-lg flex-col gap-2 px-4 py-5 text-xs', error ? 'text-destructive' : 'text-muted-foreground')}
+      className={cn('sticky left-0 flex max-w-lg flex-col gap-2.5 px-4 py-4 text-sm', error ? 'text-destructive-foreground' : 'text-muted-foreground')}
     >
       <p>{children}</p>
-      {progress !== undefined && (
-        <Progress value={progress === null ? 0 : Math.round(progress * 100)} aria-label="Timeline progress" className="h-1.5" />
-      )}
+      {progress !== undefined && <Progress value={progress === null ? 0 : Math.round(progress * 100)} aria-label="Timeline progress" />}
     </div>
   );
 }
@@ -67,11 +65,12 @@ interface RowProps {
 
 export function Row({ swatch, label, count, detail, badge, title, depth, expanded, onToggle, selected, current, onSelect, laneWidth, children, ...rest }: RowProps) {
   return (
-    <div {...rest} data-selected={selected || undefined} data-current={current || undefined} className={cn('flex border-b border-white/[0.04]', selected && 'bg-nle-blue/10')} style={{ height: ROW_HEIGHT }}>
+    <div {...rest} data-selected={selected || undefined} data-current={current || undefined} className="group/row flex" style={{ height: ROW_HEIGHT }}>
       <div
         className={cn(
-          'sticky left-0 z-40 flex shrink-0 items-center border-r border-white/10 pr-2 text-xs',
-          selected ? 'bg-[#1f3047] text-white shadow-[inset_3px_0_0_var(--nle-blue)]' : 'bg-[#1b1b20] hover:bg-[#22222a]',
+          'bg-card sticky left-0 z-40 flex shrink-0 items-center pr-2 text-sm',
+          'group-hover/row:bg-[color-mix(in_oklab,var(--card),var(--foreground)_4%)]',
+          selected && 'bg-[color-mix(in_oklab,var(--card),var(--primary)_14%)] group-hover/row:bg-[color-mix(in_oklab,var(--card),var(--primary)_16%)]',
           indent(depth),
         )}
         style={{ width: LABEL_WIDTH }}
@@ -88,7 +87,7 @@ export function Row({ swatch, label, count, detail, badge, title, depth, expande
               event.stopPropagation();
               onToggle?.();
             }}
-            className="text-muted-foreground hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded-sm hover:bg-white/10"
+            className="text-muted-foreground hover:text-foreground hover:bg-accent flex size-6 shrink-0 items-center justify-center rounded-md"
           >
             <ChevronRightIcon className={cn('size-4 transition-transform', expanded && 'rotate-90')} aria-hidden="true" />
           </button>
@@ -99,22 +98,22 @@ export function Row({ swatch, label, count, detail, badge, title, depth, expande
           aria-pressed={selected}
           data-testid="row-select"
           onClick={onSelect}
-          className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-inset"
+          className="focus-visible:ring-ring flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-inset"
         >
-          <span className={cn('size-3 shrink-0 rounded-[3px]', swatch, current && 'ring-2 ring-white/70')} aria-hidden="true" />
+          <span className={cn('size-2.5 shrink-0 rounded-full', swatch, current && 'ring-foreground/40 ring-2')} aria-hidden="true" />
           <span className="flex min-w-0 flex-col leading-tight">
             <span className="flex min-w-0 items-baseline gap-1.5">
-              <span className={cn('truncate text-[12px] font-medium', current && 'text-white')}>{label}</span>
+              <span className={cn('truncate text-[13px] font-medium', !current && !selected && 'text-foreground/85')}>{label}</span>
               {count !== undefined && count > 1 && (
-                <span data-testid="row-count" className="text-muted-foreground shrink-0 font-mono text-[10px]">
+                <span data-testid="row-count" className="text-muted-foreground shrink-0 font-mono text-[11px]">
                   {`×${count}`}
                 </span>
               )}
             </span>
-            {detail && <span className="text-muted-foreground/70 truncate text-[10px]">{detail}</span>}
+            {detail && <span className="text-muted-foreground truncate text-[11px]">{detail}</span>}
           </span>
           {badge && (
-            <Badge variant="outline" className="text-muted-foreground ml-auto shrink-0 rounded-xs px-1 py-0 font-mono text-[9px]">
+            <Badge variant="outline" className="text-muted-foreground ml-auto shrink-0 rounded-full px-1.5 font-mono text-[10px]">
               {badge}
             </Badge>
           )}
@@ -128,7 +127,7 @@ export function Row({ swatch, label, count, detail, badge, title, depth, expande
 }
 
 /** The height of a clip's thumbnail, px: the bar's inner height. */
-export const THUMB_HEIGHT = 24;
+export const THUMB_HEIGHT = 26;
 /** A clip narrower than this shows no thumbnail, px. */
 export const THUMB_MIN_BAR = 64;
 
@@ -161,8 +160,8 @@ export function Bar({
       title={title}
       onClick={onClick}
       className={cn(
-        'absolute inset-y-1.5 flex cursor-pointer items-center gap-1.5 overflow-hidden rounded-md px-2 text-[11px] leading-[22px] font-medium whitespace-nowrap shadow-xs',
-        showThumb && 'pl-0.5',
+        'absolute inset-y-1.5 flex cursor-pointer items-center gap-1.5 overflow-hidden rounded-lg border px-2.5 text-xs font-medium whitespace-nowrap',
+        showThumb && 'pl-1',
         className,
       )}
       style={{ left: from * pxPerFrame, width }}
@@ -175,7 +174,7 @@ export function Bar({
           loading="lazy"
           decoding="async"
           draggable={false}
-          className="h-full max-w-[45%] shrink-0 rounded-sm object-cover"
+          className="h-full max-w-[45%] shrink-0 rounded-md object-cover"
           style={{ height: THUMB_HEIGHT }}
           onError={(event) => {
             event.currentTarget.style.display = 'none';
