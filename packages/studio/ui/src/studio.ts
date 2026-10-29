@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { readStored, writeStored } from '@/lib/persisted';
+
 import {
   ApiError,
   type AgentClientMessage,
@@ -121,6 +123,27 @@ export function useStudio(api: StudioApi): Studio {
   const [buildId, setBuildId] = useState(0);
   const [buildError, setBuildError] = useState<StudioError | null>(null);
   const [edits, setEdits] = useState<Record<string, Record<string, unknown>>>({});
+  // The edited props survive a reload: kept per project in the browser, restored once the project is known.
+  const editsKey = project ? `kg.props:${project.entry}` : null;
+  const editsRestored = useRef<string | null>(null);
+  const skipWrite = useRef(false);
+  useEffect(() => {
+    if (!editsKey || editsRestored.current === editsKey) return;
+    editsRestored.current = editsKey;
+    const stored = readStored(editsKey);
+    if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
+      skipWrite.current = true;
+      setEdits((all) => ({ ...(stored as Record<string, Record<string, unknown>>), ...all }));
+    }
+  }, [editsKey]);
+  useEffect(() => {
+    if (!editsKey || editsRestored.current !== editsKey) return;
+    if (skipWrite.current) {
+      skipWrite.current = false;
+      return;
+    }
+    writeStored(editsKey, Object.keys(edits).length > 0 ? edits : undefined);
+  }, [editsKey, edits]);
   const [timeline, setTimeline] = useState<TimelineStatus>({ state: 'loading', done: 0, total: 0 });
   const [inspect, setInspect] = useState<InspectResult | null>(null);
   const [selectedLayers, setSelectedLayers] = useState<string[]>([]);

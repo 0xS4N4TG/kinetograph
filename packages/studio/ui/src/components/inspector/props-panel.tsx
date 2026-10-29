@@ -43,8 +43,9 @@ interface PluginUi {
   selected: ReadonlySet<string>;
   onSelect(name: string): void;
   onAsk(text: string): void;
+  scope: string;
 }
-const PluginUiContext = createContext<PluginUi>({ plugins: [], selected: new Set(), onSelect: () => {}, onAsk: () => {} });
+const PluginUiContext = createContext<PluginUi>({ plugins: [], selected: new Set(), onSelect: () => {}, onAsk: () => {}, scope: '' });
 
 interface PropsPanelProps {
   api: StudioApi;
@@ -71,7 +72,7 @@ interface PropsPanelProps {
 export const PropsPanel = memo(function PropsPanel({ api, comp, values, edited, onChange, onReset, plugins = NO_PLUGINS, inspect = null, selectedPlugins = NO_SELECTED, onSelectPlugin = noop, onAskAgent = noop }: PropsPanelProps) {
   const [active, setActive] = useState<string | null>(null);
   const panels = useMemo<Record<string, string>>(() => Object.fromEntries(plugins.flatMap((p) => (p.panel ? [[p.name, p.panel]] : []))), [plugins]);
-  const ui = useMemo<PluginUi>(() => ({ plugins, selected: selectedPlugins, onSelect: onSelectPlugin, onAsk: onAskAgent }), [plugins, selectedPlugins, onSelectPlugin, onAskAgent]);
+  const ui = useMemo<PluginUi>(() => ({ plugins, selected: selectedPlugins, onSelect: onSelectPlugin, onAsk: onAskAgent, scope: comp?.id ?? '' }), [plugins, selectedPlugins, onSelectPlugin, onAskAgent, comp?.id]);
   const used = useMemo(() => new Set(plugins.filter((p) => pluginUsed(p, comp?.propsSchema, inspect)).map((p) => p.name)), [plugins, comp?.propsSchema, inspect]);
   const schemaFields = schemaProperties(comp?.propsSchema);
   const names = useMemo(() => {
@@ -292,6 +293,7 @@ function PanelSection({ name, path, plugin, schema, value, onChange }: { name: s
       onSelect={() => ui.onSelect(plugin)}
       onAsk={ui.onAsk}
       onActive={() => setActive(key)}
+      scope={ui.scope}
       help={<Help schema={schema} />}
     />
   );

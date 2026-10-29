@@ -95,3 +95,22 @@ describe('plugin cards', () => {
     expect((screen.getByLabelText('Message for the agent') as HTMLTextAreaElement).value).toContain('Add the Paper plugin');
   });
 });
+
+describe('reload', () => {
+  it('keeps edited props across a reload, and Reset forgets them', async () => {
+    window.localStorage.clear();
+    const user = userEvent.setup();
+    const first = render(<App api={new PluginServer()} />);
+    const title = await screen.findByLabelText('title');
+    await user.clear(title);
+    await user.type(title, 'Kept');
+    first.unmount();
+
+    render(<App api={new PluginServer()} />);
+    await waitFor(() => expect(screen.getByLabelText('title')).toHaveValue('Kept'));
+    await user.click(screen.getByRole('button', { name: /Reset/ }));
+    await waitFor(() => expect(screen.getByLabelText('title')).toHaveValue('Hello'));
+    expect(window.localStorage.getItem('kg.props:/work/scene.tsx')).toBeNull();
+    window.localStorage.clear();
+  });
+});

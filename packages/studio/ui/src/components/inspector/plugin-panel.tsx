@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { JsonSchema } from '@/lib/props-schema';
+import { readStored, writeStored } from '@/lib/persisted';
 import { useFrame } from '@/lib/player-hooks';
 import { ActivePanelContext, PreviewContext } from '@/lib/preview-context';
 
@@ -14,6 +15,10 @@ interface PanelContext {
   schema: JsonSchema;
   path: string[];
   onChange(value: unknown): void;
+  /** What the panel last saved with `setState`, kept in the browser; undefined the first time. */
+  state?: unknown;
+  /** Keeps panel-only state (locks, open sections) across reloads. */
+  setState(state: unknown): void;
   preview?: {
     overlay: HTMLElement;
     width: number;
@@ -38,6 +43,8 @@ interface PluginPanelProps {
   open?: boolean;
   /** Hears the panel module's one-line `summary(value)` (CONTRACT.md section 3), when it exports one. */
   onSummary?(text: string): void;
+  /** Names where the panel's own state is kept: the composition. */
+  scope?: string;
 }
 
 const message = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause));
@@ -55,7 +62,7 @@ function makeOverlay(): HTMLElement {
  * plain element, and given the field's value, and an overlay laid over the preview picture. A panel that fails to load
  * or throws is replaced by an error box.
  */
-export function PluginPanel({ plugin, name, schema, path, value, onChange, open = true, onSummary }: PluginPanelProps) {
+export function PluginPanel({ plugin, name, schema, path, value, onChange, open = true, onSummary, scope = '' }: PluginPanelProps) {
   const url = useContext(PluginPanels)[plugin];
   const preview = useContext(PreviewContext);
   const { active } = useContext(ActivePanelContext);
@@ -72,12 +79,15 @@ export function PluginPanel({ plugin, name, schema, path, value, onChange, open 
   const layer = preview?.layer ?? null;
 
   // The panel calls the latest `onChange`, and `update` gets the latest context, without remounting.
-  const latest = useRef<PanelContext>({ value, schema, path, onChange });
+  const stateKey = `kg.panel:${plugin}:${scope}:${path.join('.')}`;
+  const latest = useRef<PanelContext>({ value, schema, path, onChange, setState: () => {} });
   latest.current = {
     value,
     schema,
     path,
     onChange,
+    setState: (next) => writeStored(stateKey, next),
+    state: readStored(stateKey),
     ...(preview ? { preview: { overlay, width, height, frame } } : {}),
   };
   const reportSummary = () => {

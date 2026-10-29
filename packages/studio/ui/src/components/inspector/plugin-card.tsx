@@ -46,6 +46,8 @@ interface PluginCardProps {
   /** Called when the panel is picked, so its overlay shows. */
   onActive(): void;
   help: ReactNode;
+  /** The composition, so a panel's own state is kept per composition. */
+  scope?: string;
 }
 
 /**
@@ -53,7 +55,7 @@ interface PluginCardProps {
  * description, and the panel in the body. Clicking the header selects the plugin (and the layers it draws); a selected
  * card has a ring and opens itself.
  */
-export function PluginCard({ plugin, pluginName, field, path, schema, value, onChange, selected, onSelect, onAsk, onActive, help }: PluginCardProps) {
+export function PluginCard({ plugin, pluginName, field, path, schema, value, onChange, selected, onSelect, onAsk, onActive, help, scope }: PluginCardProps) {
   const [open, setOpen] = useState(true);
   const [summary, setSummary] = useState('');
   const card = useRef<HTMLElement>(null);
@@ -123,7 +125,7 @@ export function PluginCard({ plugin, pluginName, field, path, schema, value, onC
         </p>
       )}
       <div className={cn('flex flex-col gap-2', !open && 'hidden')}>
-        <PluginPanel plugin={pluginName} name={field} schema={schema} path={path} value={value} onChange={onChange} open={open} onSummary={setSummary} />
+        <PluginPanel plugin={pluginName} name={field} schema={schema} path={path} value={value} onChange={onChange} open={open} onSummary={setSummary} {...(scope ? { scope } : {})} />
         {help}
       </div>
     </section>
