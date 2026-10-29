@@ -13,6 +13,7 @@ use parley::{
     Alignment, AlignmentOptions, FontContext, FontData, FontFamily, LayoutContext, LineHeight,
     PositionedLayoutItem, StyleProperty,
 };
+use parley::fontique::FontWeight;
 
 use crate::error::{Error, Result};
 use crate::scene::{GlyphRun, TextAlign};
@@ -181,6 +182,21 @@ fn unpack_web_font(data: Vec<u8>) -> std::result::Result<Vec<u8>, String> {
     }
 }
 
+/// The weight range a font key declares (`Wave:300-1000`): its bottom, and its top if it has one.
+fn weight_range(key: &str) -> (f32, Option<f32>) {
+    let Some((_, rest)) = key.rsplit_once(':') else {
+        return (400.0, None);
+    };
+    let digits = rest.strip_suffix('i').unwrap_or(rest);
+    match digits.split_once('-') {
+        Some((low, high)) => match (low.parse::<u16>(), high.parse::<u16>()) {
+            (Ok(low), Ok(high)) => (f32::from(low), Some(f32::from(high))),
+            _ => (400.0, None),
+        },
+        None => (400.0, None),
+    }
+}
+
 impl TextEngine {
     /// Registers every font in `fonts` (family name -> path, relative to
     /// `base_dir`) under its scene name.
@@ -201,10 +217,15 @@ impl TextEngine {
             })?;
             let data = unpack_web_font(data)
                 .map_err(|e| Error::Render(format!("{}: {e}", path.display())))?;
+            // A key with a weight range (`Wave:300-1000`, `font-weight: 300 1000`) is a
+            // variable face that follows the weight a text asks for within it.
+            let (low, high) = weight_range(name);
             let registered = font_cx.collection.register_fonts(
                 Blob::from(data),
                 Some(FontInfoOverride {
                     family_name: Some(name),
+                    weight: high.map(|_| FontWeight::new(low)),
+                    weight_max: high,
                     ..Default::default()
                 }),
             );
@@ -315,10 +336,21 @@ impl TextEngine {
         max_width: Option<f32>,
         align: TextAlign,
     ) -> LaidOutText {
+        // A text in a ranged face names the weight it asks for: `Wave:300-1000@700`.
+        let (font, weight) = match font.rsplit_once('@') {
+            Some((key, w)) => match w.parse::<f32>() {
+                Ok(w) => (key, Some(w)),
+                Err(_) => (font, None),
+            },
+            None => (font, None),
+        };
         let mut builder = self
             .layout_cx
             .ranged_builder(&mut self.font_cx, text, 1.0, false);
         builder.push_default(StyleProperty::FontFamily(FontFamily::named(font)));
+        if let Some(w) = weight {
+            builder.push_default(StyleProperty::FontWeight(FontWeight::new(w)));
+        }
         builder.push_default(StyleProperty::FontSize(size));
         if let Some(lh) = line_height {
             builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(lh)));
@@ -380,7 +412,8 @@ impl TextEngine {
                             char_index: chars.get(i).or(chars.last()).copied().unwrap_or_default(),
                         })
                         .collect(),
-                    coords: Vec::new(),
+                    // The variation the run was shaped at, so it is drawn at it too.
+                    coords: run.normalized_coords().iter().map(|c| c.to_bits()).collect(),
                     skew: 0.0,
                     embolden: 0.0,
                 });
@@ -406,6 +439,34 @@ mod tests {
         )]);
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         TextEngine::new(&fonts, &root).unwrap()
+    }
+
+    #[test]
+    fn a_face_with_a_weight_range_is_shaped_and_drawn_at_the_weight_asked_for() {
+        // `font-weight: 100 900` on a variable file is the key `Inter:100-900`; a text names its weight after an `@`.
+        let fonts = BTreeMap::from([(
+            "Inter:100-900".to_string(),
+            "crates/dom/tests/fixtures/fonts/inter-800-latin.woff2".to_string(),
+        )]);
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut engine = TextEngine::new(&fonts, &root).unwrap();
+        let mut at = |weight: &str| {
+            engine.layout(
+                "Hamburgefonstiv Quickly",
+                &format!("Inter:100-900@{weight}"),
+                40.0,
+                None,
+                None,
+                TextAlign::Left,
+            )
+        };
+        let (thin, heavy, beyond) = (at("100"), at("900"), at("1000"));
+        assert!(heavy.width > thin.width + 10.0, "{} vs {}", heavy.width, thin.width);
+        // The request is held to the range.
+        assert_eq!(beyond.width, heavy.width);
+        // The run carries the variation it was shaped at, so it is drawn at it.
+        assert_ne!(thin.runs[0].coords, heavy.runs[0].coords);
+        assert!(!heavy.runs[0].coords.is_empty());
     }
 
     /// The `builtin:` name of the font a code point's glyph was drawn in, if it is a bundled one.

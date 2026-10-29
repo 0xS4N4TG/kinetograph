@@ -20,7 +20,7 @@ export function registerCssFontFace(face: CssFontFace): void {
   }
   addFace(
     new NodeFontFace(face.family, `url("${file}")`, {
-      weight: face.weight,
+      weight: face.weightMax === undefined ? face.weight : `${face.weight} ${face.weightMax}`,
       style: face.style,
       ...(face.unicodeRange ? { unicodeRange: face.unicodeRange } : {}),
     }),

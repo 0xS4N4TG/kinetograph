@@ -86,6 +86,8 @@ export interface CssFontFace {
   /** The source file as written (relative to the base or public directory, or absolute). */
   url: string;
   weight: string;
+  /** The top of a weight range (`font-weight: 300 1000`); `weight` is its first value. */
+  weightMax?: string;
   style: string;
   unicodeRange?: string;
 }
@@ -134,9 +136,9 @@ export function parseFontFaces(css: string): CssFontFace[] {
     const urls = [...src.matchAll(/url\(\s*(['"]?)(.*?)\1\s*\)/g)].map((m) => m[2]!);
     const url = urls.find((u) => !/^https?:|^data:/i.test(u)) ?? urls[0];
     if (family === '' || url === undefined) continue;
-    // A weight range (`100 900`, a variable font) is registered at its first value.
-    const weight = (decl['font-weight'] ?? 'normal').split(/\s+/)[0]!;
-    const face: CssFontFace = { family, url, weight, style: (decl['font-style'] ?? 'normal').split(/\s+/)[0]! };
+    // A weight range (`100 900`, a variable font) is registered from its first value up to its second.
+    const [weight = 'normal', weightMax] = (decl['font-weight'] ?? 'normal').split(/\s+/);
+    const face: CssFontFace = { family, url, weight, ...(weightMax === undefined ? {} : { weightMax }), style: (decl['font-style'] ?? 'normal').split(/\s+/)[0]! };
     if (decl['unicode-range'] !== undefined) face.unicodeRange = decl['unicode-range'];
     faces.push(face);
   }

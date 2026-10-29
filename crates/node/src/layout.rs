@@ -110,7 +110,9 @@ pub fn layout_text(request: &TextLayoutRequest) -> Result<TextLayout> {
             )));
         }
     };
-    if !request.fonts.contains_key(&request.font) {
+    // A ranged face's key may carry the weight a text asks for (`Wave:300-1000@700`).
+    let key = request.font.rsplit_once('@').map_or(request.font.as_str(), |(key, _)| key);
+    if !request.fonts.contains_key(key) {
         return Err(invalid(format!(
             "font {:?} is not one of the fonts given: {:?}",
             request.font,

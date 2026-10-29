@@ -28,6 +28,9 @@ pub struct FontInfo {
     /// Kinetograph: the `wght` axis is held at `weight` (see
     /// `FontInfoOverride::pin_weight`).
     pin_weight: bool,
+    /// Kinetograph: the top of the `@font-face` weight range (the face's
+    /// `weight` is the bottom); the requested weight is clamped into it.
+    weight_max: Option<f32>,
 }
 
 impl FontInfo {
@@ -112,7 +115,13 @@ impl FontInfo {
             // `font-weight` does (the used `wght` is clamped to the
             // descriptor). A request far heavier than the face still gets
             // the faux bold a browser adds.
-            let wanted = if self.pin_weight { self.weight } else { weight };
+            let wanted = if self.pin_weight {
+                self.weight
+            } else if let Some(max) = self.weight_max {
+                FontWeight::new(weight.value().clamp(self.weight.value(), max.max(self.weight.value())))
+            } else {
+                weight
+            };
             if self.pin_weight && weight.value() > self.weight.value() + 200.0 {
                 synth.embolden = true;
             }
@@ -268,6 +277,7 @@ impl FontInfo {
             attr_axes,
             charmap_index,
             pin_weight: false,
+            weight_max: None,
         })
     }
 
@@ -301,6 +311,9 @@ impl FontInfo {
         }
         if info_override.pin_weight {
             self.pin_weight = true;
+        }
+        if info_override.weight_max.is_some() {
+            self.weight_max = info_override.weight_max;
         }
         if let Some(axes) = info_override.axes {
             // This is O(n^2) but no font should have enough axes for that to
@@ -505,6 +518,9 @@ pub struct FontInfoOverride<'a> {
     /// Kinetograph: hold a `wght` axis at the weight this override (or the
     /// font) gives, instead of following the requested weight.
     pub pin_weight: bool,
+    /// Kinetograph: the top of the `@font-face` weight range, whose bottom is
+    /// `weight`. The `wght` axis follows the requested weight within it.
+    pub weight_max: Option<f32>,
 }
 
 #[cfg(test)]

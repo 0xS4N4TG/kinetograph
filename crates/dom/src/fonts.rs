@@ -84,14 +84,29 @@ pub fn families_in_xml(xml: &str) -> Vec<String> {
     out
 }
 
-/// A font key split into family, weight and style.
+/// A font key split into family, weight and style. A weight range (`Family:300-1000`) gives its bottom.
 pub fn parse_key(key: &str) -> (&str, f32, FontStyle) {
+    let (family, weight, _, style) = parse_key_range(key);
+    (family, weight, style)
+}
+
+/// A font key split into family, weight, the top of its weight range (a face declared
+/// `font-weight: 300 1000` is the key `Family:300-1000`) and style.
+pub fn parse_key_range(key: &str) -> (&str, f32, Option<f32>, FontStyle) {
     if let Some((family, rest)) = key.rsplit_once(':') {
         let (digits, italic) = match rest.strip_suffix('i') {
             Some(d) => (d, true),
             None => (rest, false),
         };
-        if let Ok(weight) = digits.parse::<u16>()
+        let (low, high) = match digits.split_once('-') {
+            Some((low, high)) => (low, Some(high)),
+            None => (digits, None),
+        };
+        if let Ok(weight) = low.parse::<u16>()
+            && let Some(high) = match high {
+                None => Some(None),
+                Some(h) => h.parse::<u16>().ok().map(Some),
+            }
             && !family.is_empty()
         {
             let style = if italic {
@@ -99,10 +114,10 @@ pub fn parse_key(key: &str) -> (&str, f32, FontStyle) {
             } else {
                 FontStyle::Normal
             };
-            return (family, f32::from(weight), style);
+            return (family, f32::from(weight), high.map(f32::from), style);
         }
     }
-    (key, 400.0, FontStyle::Normal)
+    (key, 400.0, None, FontStyle::Normal)
 }
 
 type Key = (String, u64, Option<SystemTime>);
@@ -149,7 +164,7 @@ pub fn font_context(
     let mut families = Vec::new();
     let mut fixed_pitch = Vec::new();
     for (key, path) in fonts {
-        let (family, weight, style) = parse_key(key);
+        let (family, weight, weight_max, style) = parse_key_range(key);
         // Paths are absolute; a relative one is read from baseDir.
         let data = font_bytes(&base_dir.join(path).to_string_lossy())?;
         let registered = ctx.collection.register_fonts(
@@ -159,8 +174,11 @@ pub fn font_context(
                 weight: Some(FontWeight::new(weight)),
                 style: Some(style),
                 // The file is the face of that weight: a variable font stays
-                // at it (the vendored fontique, vendor/README.md).
-                pin_weight: true,
+                // at it (the vendored fontique, vendor/README.md). A face
+                // declared with a weight range follows the requested weight
+                // within it instead.
+                pin_weight: weight_max.is_none(),
+                weight_max,
                 ..Default::default()
             }),
         );
@@ -297,5 +315,15 @@ mod tests {
         );
         // A colon that is not a weight stays in the family name.
         assert_eq!(parse_key("Foo:Bar"), ("Foo:Bar", 400.0, FontStyle::Normal));
+        // A weight range, as `font-weight: 300 1000` registers it.
+        assert_eq!(
+            parse_key_range("Wave:300-1000"),
+            ("Wave", 300.0, Some(1000.0), FontStyle::Normal)
+        );
+        assert_eq!(
+            parse_key_range("Wave:100-900i"),
+            ("Wave", 100.0, Some(900.0), FontStyle::Italic)
+        );
+        assert_eq!(parse_key_range("Foo:1-"), ("Foo:1-", 400.0, None, FontStyle::Normal));
     }
 }

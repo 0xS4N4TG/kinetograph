@@ -592,6 +592,24 @@ describe('text', () => {
     });
   });
 
+  it('shapes a face with a weight range at the weight the font asks for', () => {
+    const asked: string[] = [];
+    const ctx = createCanvasContext({
+      size: () => ({ width: 100, height: 50 }),
+      fonts: () => ({ 'Wave:300-1000': '/f/wave.woff2', 'Wave:300-1000i': '/f/wave-i.woff2' }),
+      measure: (_text: string, font: string) => (asked.push(font), { width: 1, ascent: 1, descent: 1 }),
+    });
+    ctx.font = '1000 20px Wave';
+    ctx.measureText('a');
+    ctx.font = '700 20px Wave';
+    ctx.measureText('a');
+    ctx.font = '100 20px Wave';
+    ctx.measureText('a');
+    ctx.font = 'italic 500 20px Wave';
+    ctx.measureText('a');
+    expect(asked).toEqual(['Wave:300-1000@1000', 'Wave:300-1000@700', 'Wave:300-1000@300', 'Wave:300-1000i@500']);
+  });
+
   it('measures with the text engine it is given', () => {
     const asked: unknown[] = [];
     const ctx = make(undefined, { measure: (text: string, font: string, size: number) => (asked.push([text, font, size]), { width: 42, ascent: 8, descent: 2 }) });

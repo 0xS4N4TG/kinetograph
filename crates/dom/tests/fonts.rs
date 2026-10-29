@@ -123,6 +123,31 @@ fn a_variable_font_stays_at_its_registered_weight() {
 }
 
 #[test]
+fn a_face_declared_with_a_weight_range_follows_the_requested_weight() {
+    // `@font-face { font-weight: 100 900 }` on a variable file: the key `Inter:100-900`.
+    let fonts = json!({ "Inter:100-900": inter_800() });
+    let at = |weight: u32| {
+        width(
+            fonts.clone(),
+            &format!("font-family: Inter; font-weight: {weight}"),
+        )
+    };
+    assert!(at(900) > at(100) + 10.0, "{} vs {}", at(900), at(100));
+    // The request is clamped to the range: 1000 is 900, 50 is 100.
+    assert_eq!(at(1000), at(900));
+    assert_eq!(at(50), at(100));
+    // `font-variation-settings` sets the axis whatever the weight.
+    let set = |wght: u32| {
+        width(
+            fonts.clone(),
+            &format!("font-family: Inter; font-variation-settings: 'wght' {wght}"),
+        )
+    };
+    assert_eq!(set(900), at(900));
+    assert_eq!(set(100), at(100));
+}
+
+#[test]
 fn style_matching() {
     let dm = reference(&dm_sans());
     let archivo = reference(&archivo_black());
