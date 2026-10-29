@@ -166,6 +166,16 @@ export function App({ api }: { api: StudioApi }) {
   const toggleDetailsOnly = useCallback(() => toggleDetails(), [toggleDetails]);
 
   const timelineData = studio.timeline.state === 'ready' ? studio.timeline.data : null;
+  /** Where the top-level Sequences start and end: the progress bar is split there. */
+  const edges = useMemo(() => {
+    const set = new Set<number>();
+    for (const s of timelineData?.sequences ?? []) {
+      if (s.parent !== null) continue;
+      set.add(s.from);
+      set.add(s.from + s.durationInFrames);
+    }
+    return [...set].sort((x, y) => x - y);
+  }, [timelineData]);
   const preview = useMemo<PreviewHost>(
     () => ({ layer: overlayLayer, width: comp?.width ?? 0, height: comp?.height ?? 0, player }),
     [overlayLayer, comp?.width, comp?.height, player],
@@ -258,8 +268,8 @@ export function App({ api }: { api: StudioApi }) {
                 onOverlayHost={setOverlayLayer}
                 onSelectLayers={pickLayers}
               />
-              <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
-                <Transport comp={comp} player={player} className="pointer-events-auto" />
+              <div className="pointer-events-none absolute inset-x-4 bottom-4 flex justify-center">
+                <Transport comp={comp} player={player} edges={edges} className="pointer-events-auto w-full max-w-3xl" />
               </div>
             </Panel>
             <ResizeHandle
@@ -320,7 +330,7 @@ export function App({ api }: { api: StudioApi }) {
         </div>
 
         <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
-        <ExportDialog open={exportOpen} onOpenChange={setExportOpen} comp={comp} propsEdited={studio.propsOverride !== undefined} player={player} onStart={startExport} />
+        <ExportDialog open={exportOpen} onOpenChange={setExportOpen} comp={comp} propsEdited={studio.propsOverride !== undefined} player={player} thumbnailUrl={studio.thumbnailUrl} onStart={startExport} />
       </div>
     </TooltipProvider>
   );

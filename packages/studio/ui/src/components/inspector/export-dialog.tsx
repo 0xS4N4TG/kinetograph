@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Slider } from '@/components/ui/slider';
+import { TrimBar } from '@/components/inspector/trim-bar';
 import { Switch } from '@/components/ui/switch';
 import type { Player } from '@/lib/player';
 
@@ -65,6 +65,8 @@ interface ExportDialogProps {
   propsEdited: boolean;
   /** The playhead, for the range shortcuts. */
   player: Player;
+  /** The address of a small picture of a frame, for the trim bar. */
+  thumbnailUrl?: (frame: number, height: number) => string | null;
   onStart(request: Omit<RenderRequest, 'comp' | 'props'>): Promise<unknown>;
 }
 
@@ -72,7 +74,7 @@ interface ExportDialogProps {
  * Export in one place: what is rendered (size, length), the range with shortcuts for the whole film or from or up to the
  * playhead, where the file goes, and draft quality. It opens from the Export button, Cmd+K and the render queue.
  */
-export function ExportDialog({ open, onOpenChange, comp, propsEdited, player, onStart }: ExportDialogProps) {
+export function ExportDialog({ open, onOpenChange, comp, propsEdited, player, thumbnailUrl, onStart }: ExportDialogProps) {
   const [output, setOutput] = useState('');
   const [mode, setMode] = useState<'whole' | 'custom'>('whole');
   const [begin, setBegin] = useState(0);
@@ -160,18 +162,15 @@ export function ExportDialog({ open, onOpenChange, comp, propsEdited, player, on
                     <TimeField label="Start" frame={begin} fps={fps} max={last} onChange={setStartTo} onPlayhead={() => setStartTo(playhead())} />
                     <TimeField label="End" frame={end} fps={fps} max={last} onChange={setEndTo} onPlayhead={() => setEndTo(playhead())} />
                   </div>
-                  <Slider
-                    min={0}
-                    max={Math.max(1, last)}
-                    step={1}
-                    value={[begin, end]}
-                    getAriaLabel={(index) => (index === 0 ? 'Range start' : 'Range end')}
-                    onValueChange={(next) => {
-                      if (Array.isArray(next) && next.length === 2) {
-                        setBegin(next[0]!);
-                        setEnd(next[1]!);
-                      }
+                  <TrimBar
+                    comp={comp}
+                    start={begin}
+                    end={end}
+                    onChange={(a, b) => {
+                      setBegin(a);
+                      setEnd(b);
                     }}
+                    {...(thumbnailUrl ? { thumbnailUrl } : {})}
                   />
                 </>
               )}
