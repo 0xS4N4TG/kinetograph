@@ -370,7 +370,7 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
 
   return (
     <div data-testid="timeline" className="flex h-full min-h-0 flex-col select-none">
-      <div className="flex h-12 min-w-0 shrink-0 items-center gap-3 px-4">
+      <div className="@container/tl flex h-12 min-w-0 shrink-0 items-center gap-2 px-4">
         <Hint label={open ? 'Fold the timeline' : 'Show the layers'}>
           <Button
             variant="ghost"
@@ -378,19 +378,19 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
             aria-expanded={open}
             aria-label={open ? 'Fold the timeline' : 'Expand the timeline'}
             onClick={() => onExpandedChange(!open)}
-            className="-ml-2 gap-2 rounded-full px-3 font-semibold"
+            className="-ml-2 shrink-0 gap-2 rounded-full px-3 font-semibold"
           >
             <ChevronUpIcon className={cn('transition-transform', open && 'rotate-180')} />
             Timeline
           </Button>
         </Hint>
                 <FrameReadout player={player} fps={fps} />
-        <span className="text-muted-foreground/80 hidden font-mono text-xs whitespace-nowrap min-[1500px]:inline" title="Length in frames">{duration} f</span>
+        <span className="text-muted-foreground/80 hidden font-mono text-xs whitespace-nowrap @2xl/tl:inline" title="Length in frames">{duration} f</span>
 
-        <div className="ml-auto flex min-w-0 shrink-0 items-center gap-3">
+        <div className="ml-auto flex min-w-0 shrink items-center gap-2">
           {open && (
             <>
-              <div className="bg-input/40 hidden h-8 w-44 items-center gap-2 rounded-full px-3 min-[1500px]:flex">
+              <div className="bg-input/40 hidden h-8 w-44 shrink-0 items-center gap-2 rounded-full px-3 @3xl/tl:flex">
                 <SearchIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden="true" />
                 <input
                   type="search"
@@ -401,17 +401,17 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
                   className="placeholder:text-muted-foreground/70 w-full bg-transparent text-sm outline-none"
                 />
               </div>
-              <Button variant={details ? 'secondary' : 'ghost'} size="sm" aria-pressed={details} onClick={() => onDetailsChange(!details)} aria-label="Show details" title="Show details" className="rounded-full px-3 whitespace-nowrap">
+              <Button variant={details ? 'secondary' : 'ghost'} size="sm" aria-pressed={details} onClick={() => onDetailsChange(!details)} aria-label="Show details" title="Show details" className="shrink-0 rounded-full px-3 whitespace-nowrap">
                 <ListTreeIcon />
-                <span className="hidden min-[1500px]:inline">Show details</span>
+                <span className="hidden @3xl/tl:inline">Show details</span>
               </Button>
             </>
           )}
-          <div className="flex w-[148px] shrink-0 items-center gap-1 [&_[data-slot=slider-control]]:min-w-0">
+          <div className="flex shrink-0 items-center gap-1 [&_[data-slot=slider-control]]:min-w-0">
             <Button variant="ghost" size="icon-sm" aria-label="Zoom out timeline" disabled={zoom <= MIN_ZOOM} onClick={() => setZoom((z) => clampZoom(z / ZOOM_FACTOR))} className="shrink-0 rounded-full">
               <ZoomOutIcon />
             </Button>
-            <Slider className="w-[72px] min-w-0" aria-label="Zoom" min={MIN_ZOOM} max={MAX_ZOOM} step={0.5} value={[zoom]} onValueChange={(value) => setZoom(clampZoom(Array.isArray(value) ? (value[0] ?? MIN_ZOOM) : value))} />
+            <Slider className="hidden w-[72px] min-w-0 @lg/tl:flex" aria-label="Zoom" min={MIN_ZOOM} max={MAX_ZOOM} step={0.5} value={[zoom]} onValueChange={(value) => setZoom(clampZoom(Array.isArray(value) ? (value[0] ?? MIN_ZOOM) : value))} />
             <Button variant="ghost" size="icon-sm" aria-label="Zoom in timeline" disabled={zoom >= MAX_ZOOM} onClick={() => setZoom((z) => clampZoom(z * ZOOM_FACTOR))} className="shrink-0 rounded-full">
               <ZoomInIcon />
             </Button>
@@ -447,8 +447,8 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
                     <span
                       data-testid="ruler-label"
                       title={`frame ${Math.round(mark.frame)}`}
-                      className={cn('absolute top-1.5 font-mono tabular-nums', mark.whole ? 'text-muted-foreground text-[11px]' : 'text-muted-foreground/60 text-[10px]')}
-                      style={{ left: mark.x + 4 }}
+                      className={cn('absolute top-1.5 -translate-x-1/2 font-mono whitespace-nowrap tabular-nums', mark.whole ? 'text-muted-foreground text-[11px]' : 'text-muted-foreground/60 text-[10px]')}
+                      style={{ left: Math.min(Math.max(mark.x, 18), Math.max(18, laneWidth - 18)) }}
                     >
                       {mark.text}
                     </span>
