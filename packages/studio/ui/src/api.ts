@@ -93,6 +93,10 @@ export interface StudioApi {
   timeline(comp: string, props?: Record<string, unknown>): Promise<TimelineData>;
   /** How far the sweep that `timeline` waits for has got. */
   timelineProgress(comp: string, props?: Record<string, unknown>): Promise<TimelineProgress>;
+  /** The mixed sound of a composition as a WAV; null when it has none. Answers when the timeline sweep has finished. */
+  audio(comp: string, props?: Record<string, unknown>): Promise<ArrayBuffer | null>;
+  /** Peaks (0..1) of one audio clip, or of the whole mix when `clip` is left out. */
+  waveform(comp: string, props: Record<string, unknown> | undefined, clip: string | undefined, buckets: number): Promise<Waveform>;
   /** The saved presets of a composition. */
   presets(comp: string): Promise<PresetInfo[]>;
   /** Writes `presets/<comp>/<name>.json` beside the entry. */
@@ -111,6 +115,14 @@ export interface StudioApi {
    * only while no preview frame is being asked for; `build` makes the address change when the project is rebuilt.
    */
   thumbnailUrl(comp: string, frame: number, height: number, build: number, props?: Record<string, unknown>): string;
+}
+
+/** `GET /api/waveform`. */
+export interface Waveform {
+  peaks: number[];
+  /** The frames the clip's sound covers (first, then one past the last); only for a clip. */
+  startFrame?: number;
+  endFrame?: number;
 }
 
 export interface ApiOptions {
@@ -191,6 +203,19 @@ export function createApi(options: ApiOptions = {}): StudioApi {
     timeline: (comp, props) => request<TimelineData>(`/api/timeline${query({ comp, props: propsParam(props) })}`),
     timelineProgress: (comp, props) =>
       request<TimelineProgress>(`/api/timeline/progress${query({ comp, props: propsParam(props) })}`),
+    audio: async (comp, props) => {
+      let response: Response;
+      try {
+        response = await doFetch(`${baseUrl}/api/audio${query({ comp, props: propsParam(props) })}`);
+      } catch (cause) {
+        throw new ApiError('IO', cause instanceof Error ? cause.message : String(cause));
+      }
+      if (response.status === 404) return null;
+      if (!response.ok) throw new ApiError('IO', `${response.status} ${response.statusText}`, response.status);
+      return response.arrayBuffer();
+    },
+    waveform: (comp, props, clip, buckets) =>
+      request<Waveform>(`/api/waveform${query({ comp, props: propsParam(props), clip, buckets })}`),
     presets: async (comp) => (await request<{ presets: PresetInfo[] }>(`/api/presets${query({ comp })}`)).presets,
     savePreset: async (comp, name, props) => {
       await request(`/api/presets/${encodeURIComponent(comp)}/${encodeURIComponent(name)}`, {

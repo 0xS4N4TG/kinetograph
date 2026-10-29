@@ -318,6 +318,22 @@ describe('timeline', () => {
     expect(screen.queryByTestId('timeline-loading')).not.toBeInTheDocument();
   });
 
+  it('keeps drawing the timeline it has while a newer one is read, with a thin progress line', async () => {
+    const server = new MockServer();
+    await start(server);
+    expect(await screen.findAllByTestId('sequence-row')).toHaveLength(1);
+    let open!: () => void;
+    server.timelineGate = new Promise<void>((resolve) => (open = resolve));
+    server.reload();
+    expect(await screen.findByTestId('timeline-refreshing')).toBeInTheDocument();
+    // The rows stay, no empty or loading state.
+    expect(screen.getAllByTestId('sequence-row')).toHaveLength(1);
+    expect(screen.queryByTestId('timeline-loading')).not.toBeInTheDocument();
+    open();
+    await vi.waitFor(() => expect(screen.queryByTestId('timeline-refreshing')).not.toBeInTheDocument());
+    expect(screen.getAllByTestId('sequence-row')).toHaveLength(1);
+  });
+
   it('shows the error, not an empty list, when the timeline cannot be read', async () => {
     const server = new MockServer();
     server.timelineError = new ApiError('PROJECT_ERROR', 'the composition threw at frame 12', 500);

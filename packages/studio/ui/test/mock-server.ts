@@ -98,6 +98,18 @@ export class MockServer implements StudioApi {
   timelineError: ApiError | null = null;
   progress: TimelineProgress = { done: 0, total: 0 };
 
+  /** The sound of a composition for `audio()`; none by default. */
+  wav: ArrayBuffer | null = null;
+  audioCalls = 0;
+  async audio(): Promise<ArrayBuffer | null> {
+    this.audioCalls++;
+    return this.wav;
+  }
+
+  async waveform(): Promise<{ peaks: number[] }> {
+    return { peaks: [] };
+  }
+
   async timelineProgress(): Promise<TimelineProgress> {
     return this.progress;
   }

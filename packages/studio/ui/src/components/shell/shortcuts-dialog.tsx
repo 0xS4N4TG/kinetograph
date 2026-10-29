@@ -11,6 +11,7 @@ const SHORTCUTS: { group: string; rows: [keys: string, action: string][] }[] = [
       ['← / →', 'Previous or next frame (Shift: 10 frames)'],
       ['Home / End', 'First or last frame'],
       ['L', 'Loop on or off'],
+      ['M', 'Mute the sound'],
     ],
   },
   {

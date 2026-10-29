@@ -125,6 +125,7 @@ export function App({ api }: { api: StudioApi }) {
     z: () => setTool('zoom'),
     '0': () => zoomTo('fit'),
     '1': () => zoomTo(1),
+    m: () => studio.audio.setMuted(!studio.audio.getState().muted),
     '?': () => setShortcutsOpen(true),
   });
 
@@ -269,7 +270,7 @@ export function App({ api }: { api: StudioApi }) {
                 onSelectLayers={pickLayers}
               />
               <div className="pointer-events-none absolute inset-x-4 bottom-4 flex justify-center">
-                <Transport comp={comp} player={player} edges={edges} className="pointer-events-auto w-full max-w-3xl" />
+                <Transport comp={comp} player={player} audio={studio.audio} edges={edges} className="pointer-events-auto w-full max-w-3xl" />
               </div>
             </Panel>
             <ResizeHandle

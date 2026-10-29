@@ -18,7 +18,9 @@ import {
   type StudioError,
   type StudioSocket,
   type TimelineData,
+  type Waveform,
 } from '@/api';
+import { PreviewAudio } from '@/lib/audio';
 import { findLayer } from '@/lib/inspect';
 import { numberByParent, numberTree } from '@/lib/names';
 import { Player } from '@/lib/player';
@@ -44,7 +46,8 @@ function upsertJob(jobs: RenderJob[], job: RenderJob): RenderJob[] {
 /** What the timeline has to show: the sweep is slow on a long film, so loading and failing are states of their own. */
 export type TimelineStatus =
   | { state: 'loading'; done: number; total: number }
-  | { state: 'ready'; data: TimelineData }
+  // `refreshing`: the timeline on show is of the props or build before the last change, and a newer one is being read.
+  | { state: 'ready'; data: TimelineData; refreshing: { done: number; total: number } | null }
   | { state: 'error'; error: StudioError };
 
 export interface Studio {
@@ -73,6 +76,10 @@ export interface Studio {
   resetProps(): void;
 
   timeline: TimelineStatus;
+  /** The preview's sound: whether the composition has any, and the mute switch. */
+  audio: PreviewAudio;
+  /** Peaks of one audio clip of the timeline (or of the whole mix) in `buckets` slices. */
+  waveform(clip: string | undefined, buckets: number): Promise<Waveform>;
   inspect: InspectResult | null;
   /** The layers picked in the preview, the scene tree or the timeline, in the order they were picked. */
   selectedLayers: string[];
@@ -97,7 +104,8 @@ export interface Studio {
 }
 
 const INSPECT_DELAY_MS = 80;
-const TIMELINE_DELAY_MS = 200;
+/** A change of props is read again this long after the last one, ms. */
+const TIMELINE_DELAY_MS = 250;
 const TIMELINE_POLL_MS = 400;
 
 export function useStudio(api: StudioApi): Studio {
@@ -131,8 +139,12 @@ export function useStudio(api: StudioApi): Studio {
   const imageListeners = useRef(new Set<(frame: ReceivedFrame) => void>());
   const lastImageRef = useRef<ReceivedFrame | null>(null);
   const playerRef = useRef<Player | null>(null);
+  const audioRef = useRef<PreviewAudio | null>(null);
+  audioRef.current ??= new PreviewAudio();
+  const audio = audioRef.current;
   if (playerRef.current === null) {
     playerRef.current = new Player({
+      audio,
       requestFrame: (args) => socketRef.current?.requestFrame(args) ?? -1,
       onImage: (frame) => {
         lastImageRef.current = frame;
@@ -298,22 +310,33 @@ export function useStudio(api: StudioApi): Studio {
 
   // ---- timeline and scene tree ----
 
+  // The timeline on show stays until the next one arrives (a prop edit does not blank it); a thin line tracks the reading.
   useEffect(() => {
-    setTimeline({ state: 'loading', done: 0, total: 0 });
-    if (!comp) return;
+    if (!comp) {
+      setTimeline({ state: 'loading', done: 0, total: 0 });
+      return;
+    }
+    setTimeline((s) => (s.state === 'ready' && s.data.comp === comp.id ? { ...s, refreshing: s.refreshing ?? { done: 0, total: 0 } } : { state: 'loading', done: 0, total: 0 }));
     let cancelled = false;
     let poll: ReturnType<typeof setInterval> | undefined;
     const timer = setTimeout(() => {
       // The request answers only when the whole film has been read: meanwhile, ask how far it has got.
       poll = setInterval(() => {
         api.timelineProgress(comp.id, propsOverride).then(
-          ({ done, total }) => !cancelled && setTimeline((s) => (s.state === 'loading' ? { state: 'loading', done, total } : s)),
+          ({ done, total }) =>
+            !cancelled &&
+            setTimeline((s) => (s.state === 'loading' ? { state: 'loading', done, total } : s.state === 'ready' && s.refreshing ? { ...s, refreshing: { done, total } } : s)),
           () => {},
         );
       }, TIMELINE_POLL_MS);
       api.timeline(comp.id, propsOverride).then(
-        // Same-name siblings are numbered ("Card 2") once, here, for every view that names them.
-        (data) => !cancelled && setTimeline({ state: 'ready', data: { ...data, layers: numberByParent(data.layers) } }),
+        (raw) => {
+          if (cancelled) return;
+          // Same-name siblings are numbered ("Card 2") once, here, for every view that names them.
+          const data = { ...raw, layers: numberByParent(raw.layers) };
+          // The same timeline as the one on show is not a new one: its rows are not drawn again.
+          setTimeline((s) => (s.state === 'ready' && sameJson(s.data, data) ? (s.refreshing ? { ...s, refreshing: null } : s) : { state: 'ready', data, refreshing: null }));
+        },
         (error: unknown) => !cancelled && setTimeline({ state: 'error', error: toStudioError(error) }),
       );
     }, TIMELINE_DELAY_MS);
@@ -323,6 +346,33 @@ export function useStudio(api: StudioApi): Studio {
       clearInterval(poll);
     };
   }, [api, comp?.id, comp?.durationInFrames, overrideKey, reloads]);
+
+  // The sound of the composition: fetched once the timeline sweep that mixes it has been asked for, with the same wait
+  // after a prop edit. The sound that plays goes on until the new mix has been decoded.
+  useEffect(() => {
+    if (!comp) {
+      audio.clear();
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void audio.load(() => api.audio(comp.id, propsOverride)).then((loaded) => {
+        // Playing when the new sound arrives: it joins at the playhead.
+        const { playing, frame } = player.getState();
+        if (loaded && !cancelled && playing) audio.start(frame / comp.fps);
+      });
+    }, TIMELINE_DELAY_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [api, audio, player, comp?.id, comp?.fps, comp?.durationInFrames, overrideKey, reloads]);
+
+  const waveform = useCallback(
+    (clip: string | undefined, buckets: number) => (comp ? api.waveform(comp.id, propsOverride, clip, buckets) : Promise.resolve({ peaks: [] })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [api, comp?.id, overrideKey],
+  );
 
   // The scene of the frame on show, fetched once the playhead rests. Driven by the player's own subscription, not by a
   // React one, so a frame ticking by does not render the whole studio.
@@ -431,6 +481,8 @@ export function useStudio(api: StudioApi): Studio {
     setPropValues,
     resetProps,
     timeline,
+    audio,
+    waveform,
     inspect,
     selectedLayers,
     selectedLayer,

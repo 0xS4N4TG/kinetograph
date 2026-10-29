@@ -1,4 +1,4 @@
-import { MaximizeIcon, PauseIcon, PlayIcon, RepeatIcon, SkipBackIcon, SkipForwardIcon } from 'lucide-react';
+import { MaximizeIcon, PauseIcon, PlayIcon, RepeatIcon, SkipBackIcon, SkipForwardIcon, Volume2Icon, VolumeXIcon } from 'lucide-react';
 import { memo, useRef, useState, useSyncExternalStore, type PointerEvent } from 'react';
 
 import type { CompositionInfo } from '@/api';
@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/hint';
 import { Toggle } from '@/components/ui/toggle';
 import { clock, formatTimecode, parseClock, parseTimecode } from '@/lib/format';
+import type { PreviewAudio } from '@/lib/audio';
 import type { Player } from '@/lib/player';
 import { cn } from '@/lib/utils';
 
@@ -108,9 +109,15 @@ function Progress({ comp, frame, edges, player }: { comp: CompositionInfo | null
   );
 }
 
+const noSubscribe = (): (() => void) => () => {};
+const silent = { available: false, muted: false };
+const noSound = () => silent;
+
 interface TransportProps {
   comp: CompositionInfo | null;
   player: Player;
+  /** The preview's sound; the mute switch shows only when the composition has some. */
+  audio?: PreviewAudio;
   /** Frames where the Sequences start or end, to split the progress bar. */
   edges?: number[];
   className?: string;
@@ -121,8 +128,9 @@ interface TransportProps {
  * progress bar split at the Sequence boundaries, loop and fullscreen. It follows the player itself, so a frame ticking
  * by renders this and nothing else.
  */
-export const Transport = memo(function Transport({ comp, player, edges = [], className }: TransportProps) {
+export const Transport = memo(function Transport({ comp, player, audio, edges = [], className }: TransportProps) {
   const state = useSyncExternalStore(player.subscribe, player.getState);
+  const sound = useSyncExternalStore(audio?.subscribe ?? noSubscribe, audio?.getState ?? noSound);
   const disabled = comp === null;
   const quiet = 'size-8 rounded-full';
 
@@ -161,6 +169,19 @@ export const Transport = memo(function Transport({ comp, player, edges = [], cla
       >
         {state.fps === null ? '-' : state.fps.toFixed(1)} / {comp?.fps ?? '-'} fps
       </span>
+      {audio && sound.available && (
+        <Hint label={sound.muted ? 'Unmute (M)' : 'Mute (M)'}>
+          <Toggle
+            aria-label="Mute"
+            data-testid="mute"
+            pressed={sound.muted}
+            onPressedChange={(pressed) => audio.setMuted(pressed)}
+            className="data-pressed:bg-accent data-pressed:text-accent-foreground size-8 rounded-full px-0 sm:size-8"
+          >
+            {sound.muted ? <VolumeXIcon /> : <Volume2Icon />}
+          </Toggle>
+        </Hint>
+      )}
       <Hint label="Loop (L)">
         <Toggle
           aria-label="Loop"
