@@ -21,12 +21,13 @@ Add a `kinetograph` field to the package's `package.json`:
   "name": "@kinetographdev/hexed",
   "kinetograph": {
     "skill": "./SKILL.md",
-    "panel": "./studio/panel.ts"
+    "panel": "./studio/panel.ts",
+    "tools": "./tools.ts"
   }
 }
 ```
 
-Both keys are optional, and the paths are relative to the package root. A package with a `kinetograph` field is a
+All three keys are optional, and the paths are relative to the package root. A package with a `kinetograph` field is a
 plugin. Kinetograph finds the plugins a project uses by reading the `dependencies` and `devDependencies` of the nearest
 `package.json` above the project's entry, and resolving each one from the entry's directory.
 
@@ -100,6 +101,32 @@ class of your own, and read Studio's CSS variables (`--background`, `--foregroun
 A panel only produces props. A render never runs it. If the panel fails to load or throws, Studio shows an error box in
 its place and the rest of the form keeps working.
 
+### Tools
+
+A plugin can offer tools that a coding agent calls over MCP. Point `tools` at a module that exports a `tools` array:
+
+```ts
+import { z } from 'zod';
+
+export const tools = [
+  {
+    name: 'roll',
+    description: 'Rerolls the unlocked slots of a genome, or all slots.',
+    input: z.object({ seed: z.number().optional().describe('Seed for the dice') }),
+    run: ({ seed }) => ({ /* data that serialises to JSON */ }),
+  },
+];
+```
+
+`name` is snake_case and unique in the plugin. `input` is a zod 4 object schema, and becomes the tool's input schema.
+`run` takes the parsed input and returns JSON data. It is pure: it never writes files, renders or fetches.
+
+`kinetograph mcp` registers each tool as `<short>_<name>`, where `<short>` is the package name without its scope and with
+`-` turned into `_`. `@kinetographdev/hexed` with a `roll` tool gives `hexed_roll`. Plugins are found from the working
+directory of the MCP server, the same way `kinetograph plugins` finds them. The module is bundled with esbuild for Node,
+so it can import its own files. A plugin whose tools fail to load is skipped with a message on stderr, and the server
+still starts.
+
 ### SKILL.md
 
 Ship a `SKILL.md` in the package. It tells a coding agent what the plugin does, so keep to this:
@@ -114,8 +141,10 @@ An agent finds the file by running `npx kinetograph plugins`, which prints the p
 `SKILL.md`. With `--json` it prints:
 
 ```json
-{ "plugins": [{ "name": "@kinetographdev/hexed", "version": "1.0.0", "skill": "/path/to/SKILL.md", "hasPanel": true }] }
+{ "plugins": [{ "name": "@kinetographdev/hexed", "version": "1.0.0", "skill": "/path/to/SKILL.md", "hasPanel": true, "tools": ["hexed_roll"] }] }
 ```
+
+`tools` holds the MCP names of the plugin's tools.
 
 Over MCP it is the `plugins` tool.
 
@@ -146,7 +175,28 @@ Studio serves these for tools that talk to it:
 
 | Route | Returns |
 |---|---|
-| `GET /api/plugins` | `{ plugins: [{ name, version, skill, panel }] }`; `skill` is a path and `panel` a URL or `null` |
+| `GET /api/plugins` | `{ plugins: [{ name, version, skill, panel, tools }] }`; `skill` is a path, `panel` a URL or `null`, `tools` the MCP tool names |
 | `GET /api/plugins/<name>/panel.js` | The plugin's panel, bundled |
 | `GET /api/presets?comp=<id>` | `{ presets: [{ name, props }] }` |
 | `PUT /api/presets/<id>/<name>` | Writes the preset from the JSON object in the body; a bad name is a 400 |
+| `GET /api/live-props` | `{ comp, props }`: the composition and props the window previews now (`comp` is `null` before a window says) |
+| `PUT /api/live-props` | Sets them from `{ comp, props }`; every window switches to that composition and shows those props. An unknown `comp` is a 400 |
+
+The two live-props routes need the Studio token, in the `x-studio-token` header. It is the `token` in the address Studio
+opens.
+
+### Studio's agent
+
+The coding agent in Studio's chat panel gets a Kinetograph MCP server. It has every `kinetograph` tool, the tools of
+your plugins, and two for the open window:
+
+- `studio_get_props` returns `{ comp, props }`, what the preview shows now.
+- `studio_set_props` takes `{ comp?, props, merge? }` and sets the props. By default it merges them over the props
+  shown now; `merge: false` replaces them. The preview re-renders, and the Props tab and any plugin panel update.
+
+An agent in Studio should try values with `studio_set_props`, then write the values it picks into the code or a preset.
+Outside Studio you can run the same server yourself:
+
+```sh
+KINETOGRAPH_STUDIO_TOKEN=<token> npx kinetograph mcp --studio http://127.0.0.1:3000
+```

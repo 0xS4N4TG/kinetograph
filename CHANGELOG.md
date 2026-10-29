@@ -11,6 +11,9 @@ Kinetograph is in beta, so APIs can still change between versions.
 - `propsSchema` on `CompositionInfo`: the JSON Schema of the composition's zod 4 `schema`, left out when there is none or it cannot be converted. The Props tab in Studio draws from it: a select for an enum, a slider and number box for a number with `min` and `max`, a switch, a colour input for `zColor()`, a text area for `zTextarea()`, a labelled group for an object, and the field's `description` as helper text. A field with `kinetographPanel` meta is drawn by that plugin's panel, with an error box if the panel fails.
 - Presets in Studio: the Props tab has a Presets menu and a Save preset button. Presets are files at `presets/<composition id>/<name>.json` beside the entry, served by `GET /api/presets` and `PUT /api/presets/<id>/<name>`.
 - `--props` takes the path of a JSON file as well as a JSON object, as Remotion's does.
+- Plugins can offer tools: `kinetograph mcp` registers each as `<short>_<name>` (`hexed_roll`), and `plugins --json` lists their names under `tools`. Set `"tools": "./tools.ts"` in the manifest.
+- Live props in Studio: the window sends the props it previews, `GET /api/live-props` returns them, and `PUT /api/live-props` pushes new ones to every window. Both need the Studio token.
+- `kinetograph mcp --studio <url>` (token in `KINETOGRAPH_STUDIO_TOKEN`) adds `studio_get_props` and `studio_set_props`. Studio passes this server to its coding agent in ACP `session/new`.
 
 ### Fixed
 
