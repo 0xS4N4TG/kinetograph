@@ -236,9 +236,9 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
         className="focus-visible:ring-ring/50 flex w-full items-center gap-1 pb-1 text-left font-sans text-[12px] font-semibold tracking-tight text-foreground outline-none focus-visible:ring-2"
       >
         <ChevronDownIcon className={cn('text-muted-foreground size-3 transition-transform', !open && '-rotate-90')} aria-hidden="true" />
-        <span>{title}</span>
+        <span className="min-w-0 truncate">{title}</span>
       </button>
-      {open && <dl className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1.5 pt-1.5">{children}</dl>}
+      {open && <dl className="grid grid-cols-[92px_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1.5 pt-1.5">{children}</dl>}
     </section>
   );
 }
@@ -246,7 +246,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 function LayerDetails({ layer }: { layer: InspectLayer }) {
   const t = layer.transform;
   return (
-    <div data-testid="layer-details" className="flex flex-col gap-4 p-4 font-mono text-[12px]">
+    <div data-testid="layer-details" className="flex min-w-0 flex-col gap-4 p-4 font-mono text-[12px]">
       <Section title="Layer Identity">
         <Field name="name">{displayName(layer)}</Field>
         {layer.component !== undefined && <Field name="component">{layer.component}</Field>}
@@ -343,8 +343,12 @@ function LayerDetails({ layer }: { layer: InspectLayer }) {
 function Field({ name, children }: { name: string; children: ReactNode }) {
   return (
     <>
-      <dt className="text-muted-foreground font-sans text-[11px]">{name}</dt>
-      <dd className="break-words">{children}</dd>
+      <dt className="text-muted-foreground truncate font-sans text-[11px]" title={name}>
+        {name}
+      </dt>
+      <dd className="min-w-0 truncate" title={typeof children === 'string' ? children : undefined}>
+        {children}
+      </dd>
     </>
   );
 }

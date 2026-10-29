@@ -1,12 +1,12 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type RefObject } from 'react';
-import { ChevronUpIcon, SearchIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
+import { ChevronUpIcon, ListTreeIcon, SearchIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
 
 import type { CompositionInfo } from '@/api';
 import { Bar, EmptyRow, LABEL_WIDTH, ROW_HEIGHT, Row, THUMB_HEIGHT, TimelineNotice } from '@/components/timeline/timeline-row';
 import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/hint';
 import { Slider } from '@/components/ui/slider';
-import { formatTimecode } from '@/lib/format';
+import { clock } from '@/lib/format';
 import { layerColors } from '@/lib/layer-colors';
 import { fullSource, secondLine } from '@/lib/names';
 import type { Player } from '@/lib/player';
@@ -83,10 +83,10 @@ const Playhead = memo(function Playhead({
   return (
     <div
       data-testid="playhead"
-      className="bg-primary pointer-events-none absolute inset-y-0 z-30 w-[1.5px] -translate-x-1/2"
+      className="bg-primary pointer-events-none absolute top-10 bottom-0 z-30 w-[1.5px] -translate-x-1/2"
       style={{ left: left + frame * pxPerFrame }}
     >
-      <span className="bg-primary ring-card absolute top-3.5 left-1/2 size-3 -translate-x-1/2 rounded-full ring-2" />
+      <span className="bg-primary ring-card absolute top-0 left-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2" />
     </div>
   );
 });
@@ -128,15 +128,19 @@ const Filmstrip = memo(function Filmstrip({ comp, laneWidth, thumbnailUrl }: { c
 /** The timecode, large, in the box at the top left of the layers. */
 const BigTimecode = memo(function BigTimecode({ player, fps }: { player: Player; fps: number }) {
   const frame = useFrame(player);
-  return <span className="bg-muted rounded-lg px-2.5 py-1 font-mono text-lg font-medium tracking-tight tabular-nums">{formatTimecode(frame, fps)}</span>;
+  return (
+    <span className="bg-muted flex h-8 items-center rounded-lg px-2.5 font-mono text-base leading-none font-medium whitespace-nowrap tabular-nums" title={`frame ${frame}`}>
+      {clock(frame, fps)}
+    </span>
+  );
 });
 
 /** The time and frame under the playhead, in the header. */
 const FrameReadout = memo(function FrameReadout({ player, fps }: { player: Player; fps: number }) {
   const frame = useFrame(player);
   return (
-    <span className="text-muted-foreground font-mono text-xs tabular-nums">
-      {formatTimecode(frame, fps)} · {frame}
+    <span className="text-muted-foreground font-mono text-xs whitespace-nowrap tabular-nums" title={`frame ${frame}`}>
+      {clock(frame, fps)}
     </span>
   );
 });
@@ -336,9 +340,8 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
             Timeline
           </Button>
         </Hint>
-        <span className="text-muted-foreground hidden min-w-0 truncate text-sm sm:inline">{comp?.id ?? ''}</span>
-        <FrameReadout player={player} fps={fps} />
-        <span className="text-muted-foreground/80 font-mono text-xs">{duration} f</span>
+                <FrameReadout player={player} fps={fps} />
+        <span className="text-muted-foreground/80 hidden font-mono text-xs whitespace-nowrap min-[1500px]:inline" title="Length in frames">{duration} f</span>
 
         <div className="ml-auto flex min-w-0 shrink-0 items-center gap-3">
           {open && (
@@ -354,7 +357,8 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
                   className="placeholder:text-muted-foreground/70 w-full bg-transparent text-sm outline-none"
                 />
               </div>
-              <Button variant={details ? 'secondary' : 'ghost'} size="sm" aria-pressed={details} onClick={() => onDetailsChange(!details)} className="rounded-full px-3">
+              <Button variant={details ? 'secondary' : 'ghost'} size="sm" aria-pressed={details} onClick={() => onDetailsChange(!details)} className="rounded-full px-3 whitespace-nowrap">
+                <ListTreeIcon />
                 Show details
               </Button>
             </>

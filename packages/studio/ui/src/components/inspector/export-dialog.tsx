@@ -7,24 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { TrimBar } from '@/components/inspector/trim-bar';
 import { Switch } from '@/components/ui/switch';
+import { clock, parseClock } from '@/lib/format';
 import type { Player } from '@/lib/player';
-
-/** `mm:ss.ff` (ff in frames) for a frame number. */
-function clock(frame: number, fps: number): string {
-  const whole = Math.floor(frame / fps);
-  const ff = Math.round(frame - whole * fps);
-  const mm = Math.floor(whole / 60);
-  return `${String(mm).padStart(2, '0')}:${String(whole % 60).padStart(2, '0')}.${String(ff).padStart(2, '0')}`;
-}
-
-/** What a person types for a time: seconds (`2.4`), `mm:ss` or `mm:ss.ff` (ff in frames). Null when it is none of those. */
-function parseClock(text: string, fps: number): number | null {
-  const t = text.trim();
-  if (/^\d+(\.\d+)?$/.test(t)) return Math.round(Number(t) * fps);
-  const m = /^(\d+):(\d{1,2})(?:\.(\d{1,3}))?$/.exec(t);
-  if (!m) return null;
-  return (Number(m[1]) * 60 + Number(m[2])) * fps + (m[3] ? Number(m[3]) : 0);
-}
 
 const seconds = (frames: number, fps: number) => `${(Math.round((frames / fps) * 10) / 10).toString()} s`;
 

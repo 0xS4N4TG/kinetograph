@@ -192,7 +192,7 @@ describe('transport', () => {
     await user.click(screen.getByRole('button', { name: 'Next frame' }));
     await user.click(screen.getByRole('button', { name: 'Next frame' }));
     expect(counter()).toHaveTextContent('2 / 150');
-    expect(screen.getByTestId('timecode')).toHaveTextContent('00:00:02');
+    expect(screen.getByTestId('timecode')).toHaveTextContent('00:00.02');
     await user.click(screen.getByRole('button', { name: 'Previous frame' }));
     expect(counter()).toHaveTextContent('1 / 150');
     const loop = screen.getByRole('button', { name: 'Loop' });
@@ -584,7 +584,7 @@ describe('transport controls', () => {
     await user.clear(field());
     await user.type(field(), '00:02:00{Enter}');
     expect(counter()).toHaveTextContent('60 / 150');
-    expect(screen.getByTestId('timecode')).toHaveTextContent('00:02:00');
+    expect(screen.getByTestId('timecode')).toHaveTextContent('00:02.00');
 
     await user.click(screen.getByTestId('timecode'));
     await user.clear(field());

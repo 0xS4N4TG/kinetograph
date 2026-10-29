@@ -5,7 +5,7 @@ import type { CompositionInfo } from '@/api';
 import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/hint';
 import { Toggle } from '@/components/ui/toggle';
-import { formatTimecode, parseTimecode } from '@/lib/format';
+import { clock, formatTimecode, parseClock, parseTimecode } from '@/lib/format';
 import type { Player } from '@/lib/player';
 import { cn } from '@/lib/utils';
 
@@ -22,10 +22,10 @@ function Timecode({ comp, frame, player }: { comp: CompositionInfo | null; frame
         data-testid="timecode"
         title="Go to a frame or timecode"
         disabled={comp === null}
-        onClick={() => setDraft(formatTimecode(frame, fps))}
+        onClick={() => setDraft(clock(frame, fps))}
         className="hover:bg-accent focus-visible:ring-ring rounded-full px-2 py-1 font-mono text-[13px] font-medium tabular-nums outline-none focus-visible:ring-2 disabled:opacity-50"
       >
-        {formatTimecode(frame, fps)}
+        {clock(frame, fps)}
       </button>
     );
   }
@@ -46,7 +46,7 @@ function Timecode({ comp, frame, player }: { comp: CompositionInfo | null; frame
         if (event.key === 'Escape') {
           setDraft(null);
         } else if (event.key === 'Enter') {
-          const target = parseTimecode(draft, fps);
+          const target = parseClock(draft, fps) ?? parseTimecode(draft, fps);
           if (target === null) setInvalid(true);
           else {
             player.seek(target);
