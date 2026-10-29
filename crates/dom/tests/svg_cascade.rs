@@ -411,7 +411,13 @@ fn defs_page(sheet: &str) -> Value {
         "",
         vec![],
     );
-    let clip = el_attrs("clipPath", "$0.0.1", json!({ "id": "c" }), "", vec![clip_rect]);
+    let clip = el_attrs(
+        "clipPath",
+        "$0.0.1",
+        json!({ "id": "c" }),
+        "",
+        vec![clip_rect],
+    );
     let defs = el("defs", "$0.0.2", "", vec![filter, clip]);
     let rect = el_attrs(
         "rect",
@@ -442,9 +448,30 @@ fn filter_from_the_cascade_applies() {
 }
 
 #[test]
+fn css_filter_functions_on_svg_elements_become_effects() {
+    let out = paint(&defs_page(
+        ".chart .bar { filter: blur(4px) drop-shadow(0 10px 20px rgba(0, 113, 227, 0.22)) }",
+    ));
+    let json = json_of(&out);
+    assert!(json.contains(r#""type":"blur""#), "{json}");
+    assert!(json.contains(r#""type":"dropShadow""#), "{json}");
+    assert!(json.contains(r#""blur":20"#), "{json}");
+    assert!(
+        out.unsupported
+            .iter()
+            .all(|u| u.property.as_deref() != Some("filter")),
+        "{:?}",
+        out.unsupported
+    );
+}
+
+#[test]
 fn clip_path_from_the_cascade_applies() {
     let plain = json_of(&paint(&defs_page("")));
     let clipped = json_of(&paint(&defs_page(".chart .bar { clip-path: url(#c) }")));
     assert_ne!(clipped, plain);
-    assert!(clipped.contains("M 0 0 L 40 0 L 40 100 L 0 100 Z"), "{clipped}");
+    assert!(
+        clipped.contains("M 0 0 L 40 0 L 40 100 L 0 100 Z"),
+        "{clipped}"
+    );
 }

@@ -22,6 +22,7 @@ use kurbo::{Affine, BezPath, PathEl, Point, Shape};
 use serde_json::{Map, Value, json};
 use usvg::tiny_skia_path::PathSegment;
 
+use super::css_filter::FilterItem;
 use super::filter;
 use super::serialize::{FOREIGN_PREFIX, Note};
 use crate::paint::Painter;
@@ -33,8 +34,8 @@ pub struct Emitter<'a> {
     pub id: String,
     pub counter: usize,
     pub notes: Vec<Note>,
-    /// Marker group id -> the `url(#id)`s of the filter it carries.
-    pub filters: HashMap<String, Vec<String>>,
+    /// Marker group id -> the entries of the `filter` it carries.
+    pub filters: HashMap<String, Vec<FilterItem>>,
     pub viewport: [f64; 2],
     /// Clip path content is drawn in opaque white, as coverage.
     pub coverage: bool,
@@ -329,15 +330,28 @@ impl<'a> Emitter<'a> {
         if !layer_transform.is_null() && layer_transform != json!({}) {
             t["transform"] = layer_transform.clone();
         }
-        if let Some(urls) = filter_urls {
+        let mut extra_opacity = 1.0;
+        if let Some(items) = filter_urls {
             let bb = g.bounding_box();
             let bbox = [bb.x(), bb.y(), bb.width(), bb.height()].map(f64::from);
             let mut effects = Vec::new();
-            for url in &urls {
-                if let Some(e) =
-                    filter::effect(self.doc, url, Some(bbox), self.viewport, &mut self.notes)
-                {
-                    effects.push(e);
+            let mut urls = Vec::new();
+            for item in &items {
+                match item {
+                    FilterItem::Url(url) => {
+                        urls.push(url.as_str());
+                        if let Some(e) = filter::effect(
+                            self.doc,
+                            url,
+                            Some(bbox),
+                            self.viewport,
+                            &mut self.notes,
+                        ) {
+                            effects.push(e);
+                        }
+                    }
+                    FilterItem::Effect(e) => effects.push(e.clone()),
+                    FilterItem::Opacity(o) => extra_opacity *= o,
                 }
             }
             if !effects.is_empty() && layer_transform.is_null() {
@@ -377,6 +391,7 @@ impl<'a> Emitter<'a> {
             current["matte"] = json!({"layer": source["id"], "mode": mode});
             current = json!({"id": self.next_id(), "type": "group", "children": [current, source]});
         }
+        let opacity = f64::from(opacity) * extra_opacity;
         if opacity < 1.0 {
             current["opacity"] = json!(opacity);
         }

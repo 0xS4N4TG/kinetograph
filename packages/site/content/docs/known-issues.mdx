@@ -130,7 +130,7 @@ It sees only its own layer, runs one pass, has no other texture, and takes `f32`
 
 ### SVG
 
-- A page rule reaches the shapes in an `<svg>` for fill, stroke, opacity, display, visibility, the font, `text-anchor`, `paint-order`, `shape-rendering`, `clip-rule`, `transform` (with `rotate`, `scale`, `translate` and `transform-origin`), `filter: url(#id)`, `clip-path: url(#id)` and `mask: url(#id)`. A CSS filter function (`blur()`) or a basic shape (`inset()`) on an element inside the `<svg>` is not drawn.
+- A page rule reaches the shapes in an `<svg>` for fill, stroke, opacity, display, visibility, the font, `text-anchor`, `paint-order`, `shape-rendering`, `clip-rule`, `transform` (with `rotate`, `scale`, `translate` and `transform-origin`), `filter` (`url(#id)` and the CSS functions `blur()`, `drop-shadow()`, `brightness()`, `contrast()`, `grayscale()`, `hue-rotate()`, `invert()`, `opacity()`, `saturate()` and `sepia()`, in lengths of px), `clip-path: url(#id)` and `mask: url(#id)`. A basic shape (`inset()`) on an element inside the `<svg>` is not drawn.
 - A rule that sets a property to its initial value on a shape with a presentation attribute for it (`.bar { fill: black }` over `fill="red"`) does not win: the value looks like inheritance.
 
 ### GSAP
