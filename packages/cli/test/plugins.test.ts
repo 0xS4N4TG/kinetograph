@@ -24,8 +24,9 @@ write(
 write(join(project, 'src/index.tsx'), '');
 write(
   join(project, 'node_modules/fx-a/package.json'),
-  JSON.stringify({ name: 'fx-a', version: '1.2.3', kinetograph: { skill: './SKILL.md', panel: './studio/panel.ts' } }),
+  JSON.stringify({ name: 'fx-a', version: '1.2.3', kinetograph: { title: 'Effect A', description: 'Does A.', icon: './icon.svg', components: ['FxA', 3], skill: './SKILL.md', panel: './studio/panel.ts' } }),
 );
+write(join(project, 'node_modules/fx-a/icon.svg'), '<svg/>');
 write(join(project, 'node_modules/fx-a/SKILL.md'), '# fx-a');
 write(join(project, 'node_modules/fx-a/studio/helper.ts'), 'export const label = "from helper";');
 write(
@@ -47,8 +48,12 @@ describe('findPlugins', () => {
           skill: join(project, 'node_modules/fx-a/SKILL.md'),
           panelFile: join(project, 'node_modules/fx-a/studio/panel.ts'),
           toolsFile: null,
+          title: 'Effect A',
+          description: 'Does A.',
+          iconFile: join(project, 'node_modules/fx-a/icon.svg'),
+          components: ['FxA'],
         },
-        { name: 'fx-b', version: '2.0.0', skill: null, panelFile: null, toolsFile: null },
+        { name: 'fx-b', version: '2.0.0', skill: null, panelFile: null, toolsFile: null, title: 'Fx-b', description: '', iconFile: null, components: [] },
       ]);
     }
   });
@@ -79,8 +84,8 @@ describe('plugins command', () => {
     expect(text.text).toContain('panel: yes');
     const json = JSON.parse((await cli('plugins', project, '--json')).text);
     expect(json.plugins).toEqual([
-      { name: 'fx-a', version: '1.2.3', skill: join(project, 'node_modules/fx-a/SKILL.md'), hasPanel: true, tools: [] },
-      { name: 'fx-b', version: '2.0.0', skill: null, hasPanel: false, tools: [] },
+      { name: 'fx-a', version: '1.2.3', title: 'Effect A', description: 'Does A.', icon: join(project, 'node_modules/fx-a/icon.svg'), components: ['FxA'], skill: join(project, 'node_modules/fx-a/SKILL.md'), hasPanel: true, tools: [] },
+      { name: 'fx-b', version: '2.0.0', title: 'Fx-b', description: '', icon: null, components: [], skill: null, hasPanel: false, tools: [] },
     ]);
   });
 });

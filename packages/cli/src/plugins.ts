@@ -17,6 +17,14 @@ export interface PluginInfo {
   panelFile: string | null;
   /** The tools module's source, absolute; null when the plugin has no tools. */
   toolsFile: string | null;
+  /** Shown name: the manifest's `title`, else the package name without its scope, capitalised. */
+  title: string;
+  /** One line about what the plugin does; '' when the manifest has none. */
+  description: string;
+  /** The icon SVG, absolute; null when the plugin ships none. */
+  iconFile: string | null;
+  /** The React components the plugin exports that draw layers. */
+  components: string[];
 }
 
 interface PackageJson {
@@ -24,7 +32,7 @@ interface PackageJson {
   version?: string;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
-  kinetograph?: { skill?: unknown; panel?: unknown; tools?: unknown };
+  kinetograph?: { skill?: unknown; panel?: unknown; tools?: unknown; title?: unknown; description?: unknown; icon?: unknown; components?: unknown };
 }
 
 function readJson(file: string): PackageJson | null {
@@ -53,6 +61,12 @@ function inside(root: string, path: unknown): string | null {
   return existsSync(file) && statSync(file).isFile() ? file : null;
 }
 
+/** `@kinetographdev/hexed` → `Hexed`; `my-fx` → `My-fx`. */
+function defaultTitle(name: string): string {
+  const short = name.replace(/^@[^/]+\//, '');
+  return short.charAt(0).toUpperCase() + short.slice(1);
+}
+
 /** The plugins the project at `entry` (a file or a directory) depends on, by name. */
 export function findPlugins(entry: string): PluginInfo[] {
   const start = resolve(entry);
@@ -72,12 +86,17 @@ export function findPlugins(entry: string): PluginInfo[] {
     const root = packageDir(base, name);
     const manifest = root ? readJson(join(root, 'package.json')) : null;
     if (!root || !manifest || typeof manifest.kinetograph !== 'object' || manifest.kinetograph === null) continue;
+    const k = manifest.kinetograph;
     found.push({
       name,
       version: manifest.version ?? '0.0.0',
       skill: inside(root, manifest.kinetograph.skill),
       panelFile: inside(root, manifest.kinetograph.panel),
       toolsFile: inside(root, manifest.kinetograph.tools),
+      title: typeof k.title === 'string' && k.title !== '' ? k.title : defaultTitle(name),
+      description: typeof k.description === 'string' ? k.description : '',
+      iconFile: inside(root, k.icon),
+      components: Array.isArray(k.components) ? k.components.filter((c): c is string => typeof c === 'string') : [],
     });
   }
   return found;

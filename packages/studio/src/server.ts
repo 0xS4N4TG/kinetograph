@@ -2,7 +2,7 @@
 // the renderer live in worker threads (`project.ts`, `render-queue.ts`); this thread only routes.
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createRequire } from 'node:module';
@@ -437,12 +437,25 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         plugins.push({
           name: p.name,
           version: p.version,
+          title: p.title,
+          description: p.description,
+          icon: p.iconFile ? `/api/plugins/${encodeURIComponent(p.name)}/icon.svg` : null,
+          components: p.components,
           skill: p.skill,
           panel: p.panelFile ? `/api/plugins/${encodeURIComponent(p.name)}/panel.js` : null,
           tools: await pluginToolNames(p, log),
         });
       }
       return json(res, 200, { plugins });
+    }
+    const icon = /^\/api\/plugins\/([^/]+)\/icon\.svg$/.exec(path);
+    if (method === 'GET' && icon) {
+      const name = decodeURIComponent(icon[1]!);
+      const file = findPlugins(entry).find((p) => p.name === name)?.iconFile;
+      if (!file) throw new StudioFailure('NOT_FOUND', `no icon for the plugin "${name}"`);
+      const svg = readFileSync(file);
+      res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Content-Length': svg.length, 'Cache-Control': 'no-store' });
+      return void res.end(svg);
     }
     const panel = /^\/api\/plugins\/([^/]+)\/panel\.js$/.exec(path);
     if (method === 'GET' && panel) {

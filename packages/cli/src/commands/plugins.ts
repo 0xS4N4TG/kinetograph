@@ -11,7 +11,7 @@ export const plugins: Command = {
     const list = [];
     for (const p of findPlugins(String(args.positionals.project ?? '.'))) {
       const tools = await pluginToolNames(p, (message) => process.stderr.write(`${message}\n`));
-      list.push({ name: p.name, version: p.version, skill: p.skill, hasPanel: p.panelFile !== null, tools });
+      list.push({ name: p.name, version: p.version, title: p.title, description: p.description, icon: p.iconFile, components: p.components, skill: p.skill, hasPanel: p.panelFile !== null, tools });
     }
     const text = list
       .map((p) => `${p.name}@${p.version}  skill: ${p.skill ?? 'none'}  panel: ${p.hasPanel ? 'yes' : 'no'}  tools: ${p.tools.join(', ') || 'none'}`)

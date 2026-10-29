@@ -91,6 +91,13 @@ export interface LiveProps {
 export interface PluginSummary {
   name: string;
   version: string;
+  /** The name to show (contract section 11). */
+  title: string;
+  description: string;
+  /** The URL of the plugin's icon SVG; null for the generic icon. */
+  icon: string | null;
+  /** The components the plugin exports that draw layers. */
+  components: string[];
   /** The plugin's SKILL.md, absolute. */
   skill: string | null;
   /** The URL of the bundled panel module. */

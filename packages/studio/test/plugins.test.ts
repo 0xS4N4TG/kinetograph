@@ -19,7 +19,8 @@ beforeAll(async () => {
   write(join(dir, 'package.json'), JSON.stringify({ type: 'module', dependencies: { '@fx/hexed': '1.0.0', 'fx-broken': '1.0.0', plain: '1.0.0' } }));
   write(join(dir, 'index.tsx'), projectSource('Plugins'));
   const hexed = join(dir, 'node_modules/@fx/hexed');
-  write(join(hexed, 'package.json'), JSON.stringify({ name: '@fx/hexed', version: '1.0.0', kinetograph: { skill: './SKILL.md', panel: './studio/panel.ts', tools: './tools.ts' } }));
+  write(join(hexed, 'package.json'), JSON.stringify({ name: '@fx/hexed', version: '1.0.0', kinetograph: { title: 'Hex', description: 'Rolls looks.', icon: './icon.svg', components: ['Hexed', 7], skill: './SKILL.md', panel: './studio/panel.ts', tools: './tools.ts' } }));
+  write(join(hexed, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7z" fill="currentColor"/></svg>');
   write(join(hexed, 'tools.ts'), "import { z } from 'zod';\nexport const tools = [{ name: 'roll', description: 'Rolls.', input: z.object({}), run: () => 1 }];\n");
   mkdirSync(join(dir, 'node_modules'), { recursive: true });
   symlinkSync(join(import.meta.dirname, '../../../node_modules/zod'), join(dir, 'node_modules/zod'));
@@ -42,8 +43,8 @@ describe('plugins', () => {
     const r = await api(studio, '/api/plugins');
     expect(r.status).toBe(200);
     expect(r.json.plugins).toEqual([
-      { name: '@fx/hexed', version: '1.0.0', skill: join(dir, 'node_modules/@fx/hexed/SKILL.md'), panel: '/api/plugins/%40fx%2Fhexed/panel.js', tools: ['hexed_roll'] },
-      { name: 'fx-broken', version: '0.1.0', skill: null, panel: '/api/plugins/fx-broken/panel.js', tools: [] },
+      { name: '@fx/hexed', version: '1.0.0', title: 'Hex', description: 'Rolls looks.', icon: '/api/plugins/%40fx%2Fhexed/icon.svg', components: ['Hexed'], skill: join(dir, 'node_modules/@fx/hexed/SKILL.md'), panel: '/api/plugins/%40fx%2Fhexed/panel.js', tools: ['hexed_roll'] },
+      { name: 'fx-broken', version: '0.1.0', title: 'Fx-broken', description: '', icon: null, components: [], skill: null, panel: '/api/plugins/fx-broken/panel.js', tools: [] },
     ]);
   });
 
@@ -53,6 +54,14 @@ describe('plugins', () => {
     expect(r.headers.get('content-type')).toContain('text/javascript');
     expect(text(r.body)).toContain('hexed panel');
     expect(text(r.body)).toContain('mount');
+  });
+
+  it('serves the icon as SVG, 404 when the plugin has none', async () => {
+    const r = await api(studio, '/api/plugins/%40fx%2Fhexed/icon.svg');
+    expect(r.status).toBe(200);
+    expect(r.headers.get('content-type')).toBe('image/svg+xml');
+    expect(text(r.body)).toContain('currentColor');
+    expect((await api(studio, '/api/plugins/fx-broken/icon.svg')).status).toBe(404);
   });
 
   it('answers 404 for an unknown plugin and a BUILD error for a panel that does not build', async () => {
