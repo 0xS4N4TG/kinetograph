@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Client as McpClient } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentBridge } from '../src/agent-bridge.js';
 import { isInside, readTextFile, resolveInside, writeTextFile } from '../src/agent-fs.js';
@@ -364,4 +366,54 @@ describe('who may reach the agent', () => {
     first.close();
     second.close();
   });
+});
+
+describe('the kinetograph tools for the agent', () => {
+  it('passes the kinetograph MCP server in session/new, with the studio address and token', async () => {
+    const { dir, entry } = writeProject('Mcp');
+    const studio = await start(entry, { agent: command, agentCwd: dir });
+    const client = await Client.connect(studio);
+    client.send({ type: 'agent.prompt', text: 'mcp', context: '' });
+    const done = await client.waitFor((r) => r.kind === 'json' && r.message.type === 'agent' && r.message.event.kind === 'done', 20_000);
+    expect(done).toBeTruthy();
+    const said = client
+      .messages('agent')
+      .flatMap((m) => (m.type === 'agent' && m.event.kind === 'message' ? [m.event.text] : []))
+      .join('');
+    const params = JSON.parse(said) as { cwd: string; mcpServers: { name: string; command: string; args: string[]; env: { name: string; value: string }[] }[] };
+    expect(params.cwd).toBe(dir);
+    expect(params.mcpServers).toHaveLength(1);
+    const server = params.mcpServers[0]!;
+    expect(server.name).toBe('kinetograph');
+    expect(server.command).toBe(process.execPath);
+    expect(server.args[0]).toMatch(/cli\.js$/);
+    expect(existsSync(server.args[0]!)).toBe(true);
+    expect(server.args.slice(1, 3)).toEqual(['mcp', '--studio']);
+    expect(server.args[3]).toBe(new URL(studio.url).origin);
+    expect(server.env).toEqual([{ name: 'KINETOGRAPH_STUDIO_TOKEN', value: tokenOf(studio) }]);
+
+    // The server it names works: its tools read and set the live props of this studio.
+    const mcp = new McpClient({ name: 'e2e', version: '0.0.0' });
+    await mcp.connect(
+      new StdioClientTransport({
+        command: server.command,
+        args: server.args,
+        env: { ...(process.env as Record<string, string>), ...Object.fromEntries(server.env.map((e) => [e.name, e.value])) },
+        cwd: dir,
+        stderr: 'ignore',
+      }),
+    );
+    try {
+      const names = (await mcp.listTools()).tools.map((t) => t.name);
+      expect(names).toEqual(expect.arrayContaining(['studio_get_props', 'studio_set_props', 'still']));
+      const set = await mcp.callTool({ name: 'studio_set_props', arguments: { comp: 'Short', props: { title: 'from agent' } } });
+      expect(JSON.parse((set.content as { text: string }[])[0]!.text)).toEqual({ comp: 'Short', props: { title: 'from agent' } });
+      await client.waitForMessage('props', (m) => m.comp === 'Short' && m.props.title === 'from agent');
+      const got = await mcp.callTool({ name: 'studio_get_props', arguments: {} });
+      expect(JSON.parse((got.content as { text: string }[])[0]!.text).props).toEqual({ title: 'from agent' });
+    } finally {
+      await mcp.close();
+      client.close();
+    }
+  }, 60_000);
 });

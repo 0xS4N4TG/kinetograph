@@ -5,11 +5,12 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { createRequire } from 'node:module';
 import { dirname, extname, join, resolve } from 'node:path';
 import { bundlePanel, cliVersion, CliError, findPlugins, pluginToolNames } from 'kinetograph';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { REAL_ENGINE_FILE } from './worker-client.js';
-import { AgentBridge } from './agent-bridge.js';
+import { AgentBridge, type McpServerConfig } from './agent-bridge.js';
 import { ChatLog } from './chat-log.js';
 import { isInside } from './agent-fs.js';
 import { availableAgents } from './agent-presets.js';
@@ -98,6 +99,11 @@ function queryProps(text: string | null): Record<string, unknown> | undefined {
   return value;
 }
 
+/** `cli.js` of the `kinetograph` package this studio runs with (next to its `index.js`). */
+function kinetographCli(): string {
+  return join(dirname(createRequire(import.meta.url).resolve('kinetograph')), 'cli.js');
+}
+
 function displayHost(host: string): string {
   const shown = host === '0.0.0.0' || host === '::' ? 'localhost' : host;
   return shown.includes(':') ? `[${shown}]` : shown;
@@ -147,6 +153,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     orphaned = null;
     chat.clear();
   };
+  // Where the studio can be reached by the agent's MCP server; known once it listens.
+  let selfUrl = '';
   const bridge = new AgentBridge({
     cwd: agentCwd,
     allowed: agents.map((a) => a.command),
@@ -160,6 +168,15 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     // A permission asked while the window reloads waits for it to come back.
     hasViewer: () => (owner !== null && owner.readyState === owner.OPEN) || orphaned !== null,
     version: cliVersion(),
+    // The agent gets the Kinetograph tools: the plugins' tools and, for this studio, studio_get_props and studio_set_props.
+    mcpServers: (): McpServerConfig[] => [
+      {
+        name: 'kinetograph',
+        command: process.execPath,
+        args: [kinetographCli(), 'mcp', '--studio', selfUrl],
+        env: [{ name: 'KINETOGRAPH_STUDIO_TOKEN', value: token }],
+      },
+    ],
   });
   // What the window previews (its last `props` message), for the agent to read, and what the agent pushes to it.
   let live: LiveProps = { comp: null, props: {} };
@@ -731,7 +748,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     });
     http.listen(options.port ?? 3000, host, resolveListening);
   });
-  const url = `http://${displayHost(host)}:${(http.address() as AddressInfo).port}/?token=${token}`;
+  selfUrl = `http://${displayHost(host)}:${(http.address() as AddressInfo).port}`;
+  const url = `${selfUrl}/?token=${token}`;
 
   try {
     await project.start();

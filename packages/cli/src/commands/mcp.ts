@@ -5,11 +5,17 @@ export const mcp: Command = {
   summary: 'Run the MCP server on stdio: one tool per command',
   project: false,
   positionals: [],
-  options: [],
-  async run() {
+  options: [
+    {
+      name: 'studio',
+      type: 'string',
+      description: 'The address of a running studio (http://127.0.0.1:3000); adds the tools studio_get_props and studio_set_props. The studio token goes in the environment variable KINETOGRAPH_STUDIO_TOKEN',
+    },
+  ],
+  async run(args) {
     // Loaded here so that no other command pays for the SDK, and because the server lists the commands.
     const { startMcpServer } = await import('../mcp.js');
-    await startMcpServer();
+    await startMcpServer(args.options.studio as string | undefined);
     return { data: {}, text: '' };
   },
 };
