@@ -1,6 +1,7 @@
 import { Fragment } from 'react';
 
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogDescription, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from '@/components/ui/dialog';
+import { Kbd } from '@/components/ui/kbd';
 
 const SHORTCUTS: { group: string; rows: [keys: string, action: string][] }[] = [
   {
@@ -45,20 +46,20 @@ interface ShortcutsDialogProps {
 export function ShortcutsDialog({ open, onOpenChange }: ShortcutsDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogPopup className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Keyboard shortcuts</DialogTitle>
           <DialogDescription>The keys do nothing while a field or a menu has focus.</DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-4 text-xs">
+        <DialogPanel className="flex flex-col gap-5 text-[13px]">
           {SHORTCUTS.map(({ group, rows }) => (
             <section key={group} className="flex flex-col gap-1.5">
-              <h3 className="text-muted-foreground text-[10px] font-semibold tracking-wider uppercase">{group}</h3>
-              <dl className="grid grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-1.5">
+              <h3 className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{group}</h3>
+              <dl className="grid grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-2">
                 {rows.map(([keys, action]) => (
                   <Fragment key={keys}>
                     <dt>
-                      <kbd className="bg-muted rounded-xs px-1.5 py-0.5 font-mono text-[11px]">{keys}</kbd>
+                      <Kbd className="h-6 px-2 font-mono text-[11px]">{keys}</Kbd>
                     </dt>
                     <dd className="text-muted-foreground">{action}</dd>
                   </Fragment>
@@ -66,8 +67,8 @@ export function ShortcutsDialog({ open, onOpenChange }: ShortcutsDialogProps) {
               </dl>
             </section>
           ))}
-        </div>
-      </DialogContent>
+        </DialogPanel>
+      </DialogPopup>
     </Dialog>
   );
 }

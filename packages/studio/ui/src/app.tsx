@@ -1,50 +1,94 @@
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { MessageSquareIcon } from 'lucide-react';
 
 import type { StudioApi } from '@/api';
 import { AgentPanel } from '@/components/agent/agent-panel';
-import { InspectorPanel } from '@/components/inspector/inspector-panel';
-import { ProjectPanel } from '@/components/project/project-panel';
-import { MenuBar } from '@/components/shell/menu-bar';
+import { CommandMenu } from '@/components/command/command-menu';
+import { InspectorPanel, type InspectorTab } from '@/components/inspector/inspector-panel';
+import { Panel } from '@/components/shell/panel';
 import { ShortcutsDialog } from '@/components/shell/shortcuts-dialog';
-import { ToolBar, type Tool, type Workspace } from '@/components/shell/tool-bar';
+import { TopBar } from '@/components/shell/top-bar';
 import { Timeline } from '@/components/timeline/timeline';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
+import { Button } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Transport } from '@/components/viewer/transport';
-import { Viewer, type View, type Zoom } from '@/components/viewer/viewer';
+import { Viewer, type Tool, type View, type Zoom } from '@/components/viewer/viewer';
+import { usePlayerState } from '@/lib/player-hooks';
+import { PreviewContext, type PreviewHost } from '@/lib/preview-context';
+import { useTheme } from '@/lib/theme';
 import { useChat } from '@/lib/use-chat';
 import { useTransportKeys } from '@/lib/use-transport-keys';
 import { useStudio } from '@/studio';
 
-/** The inspector tab each workspace opens. */
-const WORKSPACE_TABS: Record<Workspace, string> = {
-  Default: 'scene',
-  Animation: 'props',
-  'Color & Inspect': 'scene',
-  Export: 'renders',
-};
+const DETAILS_KEY = 'kinetograph.studio.timeline.details';
+function readDetails(): boolean {
+  try {
+    return window.localStorage.getItem(DETAILS_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+function writeDetails(on: boolean): void {
+  try {
+    window.localStorage.setItem(DETAILS_KEY, on ? '1' : '0');
+  } catch {
+    // No storage: the choice lasts until reload.
+  }
+}
 
+const FIT: View = { zoom: 'fit', pan: { x: 0, y: 0 } };
+
+/**
+ * The layout, and nothing that follows the playhead: the transport, the timeline's playhead and the plugin overlays each
+ * subscribe to the player themselves, so a frame ticking by never renders this component.
+ */
 export function App({ api }: { api: StudioApi }) {
   const studio = useStudio(api);
-  const { player, playerState, comp } = studio;
+  const { player, comp } = studio;
   const chat = useChat(studio);
-  const [tab, setTab] = useState('scene');
-  const [workspace, setWorkspace] = useState<Workspace>('Default');
+  const [theme, setTheme] = useTheme();
+  const [tab, setTab] = useState<InspectorTab>('props');
+  const [chatOpen, setChatOpen] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const [details, setDetails] = useState(readDetails);
   const [tool, setTool] = useState<Tool>('select');
-  const [view, setView] = useState<View>({ zoom: 'fit', pan: { x: 0, y: 0 } });
+  const [view, setView] = useState<View>(FIT);
   const [safeZones, setSafeZones] = useState(false);
+  const [guides, setGuides] = useState(true);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [overlayLayer, setOverlayLayer] = useState<HTMLElement | null>(null);
+  const frameError = usePlayerState(player, (s) => s.error);
 
-  const selectWorkspace = (next: Workspace) => {
-    setWorkspace(next);
-    setTab(WORKSPACE_TABS[next]);
-  };
-  const zoomTo = (zoom: Zoom) => setView({ zoom, pan: { x: 0, y: 0 } });
+  const zoomTo = useCallback((zoom: Zoom) => setView({ zoom, pan: { x: 0, y: 0 } }), []);
+  const openTab = useCallback((next: InspectorTab) => {
+    setTab(next);
+    setInspectorOpen(true);
+  }, []);
+  const { selectLayers, selectLayer } = studio;
+  const selectedLayers = studio.selectedLayers;
   /** Layers picked in the preview or on the timeline: one, several, or none; shown in the scene tree. */
-  const pickLayers = (ids: string[]) => {
-    studio.selectLayers(ids);
-    if (ids.length > 0 && tab !== 'agent') setTab('scene');
-  };
+  const pickLayers = useCallback(
+    (ids: string[]) => {
+      selectLayers(ids);
+      if (ids.length > 0) openTab('scene');
+    },
+    [selectLayers, openTab],
+  );
+  const pickLayer = useCallback(
+    (id: string | null, additive?: boolean) =>
+      id !== null && additive
+        ? selectLayers(selectedLayers.includes(id) ? selectedLayers.filter((l) => l !== id) : [...selectedLayers, id])
+        : selectLayer(id),
+    [selectLayers, selectLayer, selectedLayers],
+  );
+  const toggleDetails = useCallback((next?: boolean) => {
+    setDetails((on) => {
+      const value = typeof next === 'boolean' ? next : !on;
+      writeDetails(value);
+      return value;
+    });
+  }, []);
 
   useTransportKeys(player, {
     v: () => setTool('select'),
@@ -55,98 +99,139 @@ export function App({ api }: { api: StudioApi }) {
     '?': () => setShortcutsOpen(true),
   });
 
-  return (
-    <TooltipProvider>
-      <div className="bg-background text-foreground flex h-screen flex-col overflow-hidden">
-        {/* Menu bar and tool bar */}
-        <header className="bg-card flex flex-col border-b select-none">
-          <MenuBar
-            project={studio.project}
-            buildId={studio.buildId}
-            connected={studio.connected}
-            compositions={studio.compositions}
-            comp={comp}
-            onSelectComp={studio.selectComp}
-            player={player}
-            playback={playerState}
-            onZoom={zoomTo}
-            safeZones={safeZones}
-            onSafeZonesChange={setSafeZones}
-            workspace={workspace}
-            onSelectWorkspace={selectWorkspace}
-            onRender={() => setTab('renders')}
-            onReload={studio.reload}
-            onShowShortcuts={() => setShortcutsOpen(true)}
-          />
-          <ToolBar tool={tool} onSelectTool={setTool} workspace={workspace} onSelectWorkspace={selectWorkspace} />
-        </header>
+  const toggleChat = useCallback(() => setChatOpen((v) => !v), []);
+  const toggleInspector = useCallback(() => setInspectorOpen((v) => !v), []);
+  const toggleTimeline = useCallback(() => setTimelineOpen((v) => !v), []);
+  const toggleSafeZones = useCallback(() => setSafeZones((v) => !v), []);
+  const toggleGuides = useCallback(() => setGuides((v) => !v), []);
+  const exportNow = useCallback(() => openTab('renders'), [openTab]);
+  const showShortcuts = useCallback(() => setShortcutsOpen(true), []);
+  const onDetailsChange = useCallback((next: boolean) => toggleDetails(next), [toggleDetails]);
+  const toggleDetailsOnly = useCallback(() => toggleDetails(), [toggleDetails]);
 
-        {/* Docked NLE Panels with Dark Gutters */}
-        <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1 bg-nle-gutter p-1 gap-1">
-          <ResizablePanel defaultSize="64%" minSize="30%" className="overflow-hidden rounded-[2px] border border-white/10">
-            <ResizablePanelGroup orientation="horizontal" className="gap-1 bg-nle-gutter">
-              <ResizablePanel defaultSize="20%" minSize="14%" className="overflow-hidden rounded-[2px] border border-white/10">
-                <ProjectPanel
-                  compositions={studio.compositions}
-                  selected={comp?.id ?? null}
-                  onSelect={studio.selectComp}
-                />
-              </ResizablePanel>
-              <ResizableHandle className="bg-transparent" />
-              <ResizablePanel
-                defaultSize="52%"
-                minSize="25%"
-                className="overflow-hidden rounded-[2px] border border-nle-blue/60 shadow-[inset_0_0_0_1px_rgba(38,128,235,0.25)]"
-              >
-                <div className="flex h-full flex-col">
-                  <Viewer
-                    comp={comp}
-                    onImage={studio.onImage}
-                    lastImage={studio.lastImage}
-                    buildError={studio.buildError}
-                    frameError={playerState.error}
-                    inspect={studio.inspect}
-                    selectedLayers={studio.selectedLayers}
-                    compositions={studio.compositions}
-                    onSelectComp={studio.selectComp}
-                    tool={tool}
-                    view={view}
-                    onViewChange={setView}
-                    safeZones={safeZones}
-                    onSafeZonesChange={setSafeZones}
-                    onSelectLayers={pickLayers}
-                  />
-                  <Transport comp={comp} player={player} state={playerState} />
-                </div>
-              </ResizablePanel>
-              <ResizableHandle className="bg-transparent" />
-              <ResizablePanel defaultSize="28%" minSize="20%" className="overflow-hidden rounded-[2px] border border-white/10">
+  const timelineData = studio.timeline.state === 'ready' ? studio.timeline.data : null;
+  const preview = useMemo<PreviewHost>(
+    () => ({ layer: overlayLayer, width: comp?.width ?? 0, height: comp?.height ?? 0, player }),
+    [overlayLayer, comp?.width, comp?.height, player],
+  );
+
+  return (
+    <TooltipProvider delay={500}>
+      <div className="text-foreground flex h-screen flex-col gap-3 overflow-hidden p-3">
+        <TopBar
+          project={studio.project}
+          buildId={studio.buildId}
+          connected={studio.connected}
+          compositions={studio.compositions}
+          comp={comp}
+          onSelectComp={studio.selectComp}
+          theme={theme}
+          onTheme={setTheme}
+          chatOpen={chatOpen}
+          onToggleChat={toggleChat}
+          inspectorOpen={inspectorOpen}
+          onToggleInspector={toggleInspector}
+          onExport={exportNow}
+          launcher={
+            <CommandMenu
+              compositions={studio.compositions}
+              comp={comp}
+              player={player}
+              theme={theme}
+              onTheme={setTheme}
+              onSelectComp={studio.selectComp}
+              onZoom={zoomTo}
+              onTool={setTool}
+              onToggleSafeZones={toggleSafeZones}
+              onToggleGuides={toggleGuides}
+              onToggleChat={toggleChat}
+              onToggleInspector={toggleInspector}
+              onToggleTimeline={toggleTimeline}
+              onToggleDetails={toggleDetailsOnly}
+              onInspectorTab={openTab}
+              onExport={exportNow}
+              onReload={studio.reload}
+              onShowShortcuts={showShortcuts}
+            />
+          }
+        />
+
+        <div className="flex min-h-0 flex-1 gap-3">
+          {chatOpen ? (
+            <Panel className="w-[340px] shrink-0 2xl:w-[380px]" aria-label="Agent">
+              <AgentPanel
+                comp={comp}
+                project={studio.project}
+                inspect={studio.inspect}
+                selectedLayers={studio.selectedLayers}
+                selectLayers={studio.selectLayers}
+                lastImage={studio.lastImage}
+                chat={chat}
+                timeline={timelineData}
+              />
+            </Panel>
+          ) : (
+            <Button variant="outline" size="icon-lg" aria-label="Show the agent" onClick={toggleChat} className="bg-card shrink-0 self-start rounded-full">
+              <MessageSquareIcon />
+            </Button>
+          )}
+
+          <div className="flex min-w-0 flex-1 flex-col gap-3">
+            <Panel className="flex-1" aria-label="Preview">
+              <Viewer
+                comp={comp}
+                onImage={studio.onImage}
+                lastImage={studio.lastImage}
+                buildError={studio.buildError}
+                frameError={frameError}
+                inspect={studio.inspect}
+                selectedLayers={studio.selectedLayers}
+                tool={tool}
+                onToolChange={setTool}
+                view={view}
+                onViewChange={setView}
+                safeZones={safeZones}
+                onSafeZonesChange={setSafeZones}
+                guides={guides}
+                onGuidesChange={setGuides}
+                onOverlayHost={setOverlayLayer}
+                onSelectLayers={pickLayers}
+              />
+              <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
+                <Transport comp={comp} player={player} className="pointer-events-auto" />
+              </div>
+            </Panel>
+            <Panel className="shrink-0 transition-[height] duration-200" style={{ height: timelineOpen ? 'clamp(280px, 40vh, 460px)' : 128 }} aria-label="Timeline">
+              <Timeline
+                comp={comp}
+                status={studio.timeline}
+                player={player}
+                selectedLayers={studio.selectedLayers}
+                onSelectLayers={pickLayers}
+                thumbnailUrl={studio.thumbnailUrl}
+                expanded={timelineOpen}
+                onExpandedChange={setTimelineOpen}
+                details={details}
+                onDetailsChange={onDetailsChange}
+              />
+            </Panel>
+          </div>
+
+          {inspectorOpen && (
+            <Panel className="w-[340px] shrink-0 2xl:w-[380px]" aria-label="Inspector">
+              <PreviewContext.Provider value={preview}>
                 <InspectorPanel
                   api={api}
                   tab={tab}
                   onTabChange={setTab}
                   comp={comp}
-                  frame={playerState.frame}
                   inspect={studio.inspect}
                   project={studio.project}
-                  timeline={studio.timeline.state === 'ready' ? studio.timeline.data : null}
+                  timeline={timelineData}
                   selectedLayer={studio.selectedLayer}
                   selectedLayers={studio.selectedLayers}
                   onSelectLayers={pickLayers}
-                  onSelectLayer={(id, additive) =>
-                    id !== null && additive
-                      ? studio.selectLayers(
-                          studio.selectedLayers.includes(id) ? studio.selectedLayers.filter((l) => l !== id) : [...studio.selectedLayers, id],
-                        )
-                      : studio.selectLayer(id)
-                  }
-                  agentTab={
-                    <AgentPanel
-                      studio={{ ...studio, frame: playerState.frame }}
-                      chat={chat}
-                      timeline={studio.timeline.state === 'ready' ? studio.timeline.data : null}
-                    />
-                  }
+                  onSelectLayer={pickLayer}
                   propValues={studio.propValues}
                   propsEdited={studio.propsOverride !== undefined}
                   onChangeProps={studio.setPropValues}
@@ -155,22 +240,10 @@ export function App({ api }: { api: StudioApi }) {
                   onStartRender={studio.startRender}
                   onCancelRender={studio.cancelRender}
                 />
-              </ResizablePanel>
-            </ResizablePanelGroup>
-          </ResizablePanel>
-          <ResizableHandle withHandle className="bg-transparent" />
-          <ResizablePanel defaultSize="36%" minSize="18%" className="overflow-hidden rounded-[2px] border border-white/10">
-            <Timeline
-              comp={comp}
-              status={studio.timeline}
-              state={playerState}
-              player={player}
-              selectedLayers={studio.selectedLayers}
-              onSelectLayers={pickLayers}
-              thumbnailUrl={studio.thumbnailUrl}
-            />
-          </ResizablePanel>
-        </ResizablePanelGroup>
+              </PreviewContext.Provider>
+            </Panel>
+          )}
+        </div>
 
         <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       </div>

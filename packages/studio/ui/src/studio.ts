@@ -1,6 +1,6 @@
 // The studio's state: what the server told us, what the user chose, and the player. One hook so `App` is layout only.
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   ApiError,
@@ -21,7 +21,7 @@ import {
 } from '@/api';
 import { findLayer } from '@/lib/inspect';
 import { numberByParent, numberTree } from '@/lib/names';
-import { Player, type PlayerState } from '@/lib/player';
+import { Player } from '@/lib/player';
 import { layerName, remapSelection } from '@/lib/selection';
 
 function toStudioError(error: unknown): StudioError {
@@ -58,8 +58,8 @@ export interface Studio {
   buildId: number;
   buildError: StudioError | null;
 
+  /** The player is not a React subscription here: the views that follow the frame read it with `usePlayerState`. */
   player: Player;
-  playerState: PlayerState;
   /** Calls `listener` with each frame to show, and returns how to stop. */
   onImage(listener: (frame: ReceivedFrame) => void): () => void;
   /** The last frame handed to listeners, for a view that mounts later. */
@@ -141,7 +141,6 @@ export function useStudio(api: StudioApi): Studio {
     });
   }
   const player = playerRef.current;
-  const playerState = useSyncExternalStore(player.subscribe, player.getState);
 
   const onImage = useCallback((listener: (frame: ReceivedFrame) => void) => {
     imageListeners.current.add(listener);
@@ -325,16 +324,17 @@ export function useStudio(api: StudioApi): Studio {
     };
   }, [api, comp?.id, comp?.durationInFrames, overrideKey, reloads]);
 
-  const frame = playerState.frame;
-  const moving = playerState.playing || playerState.scrubbing;
+  // The scene of the frame on show, fetched once the playhead rests. Driven by the player's own subscription, not by a
+  // React one, so a frame ticking by does not render the whole studio.
   useEffect(() => {
     if (!comp) {
       setInspect(null);
       return;
     }
-    if (moving) return;
     let cancelled = false;
-    const timer = setTimeout(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let key = '';
+    const fetchScene = (frame: number) => {
       api.inspect(comp.id, frame, propsOverride).then(
         (data) => {
           if (cancelled) return;
@@ -353,12 +353,24 @@ export function useStudio(api: StudioApi): Studio {
         },
         () => !cancelled && setInspect(null),
       );
-    }, INSPECT_DELAY_MS);
+    };
+    const schedule = (force: boolean) => {
+      const { frame, playing, scrubbing } = player.getState();
+      const next = `${frame}:${playing || scrubbing}`;
+      if (!force && next === key) return;
+      key = next;
+      clearTimeout(timer);
+      if (playing || scrubbing) return;
+      timer = setTimeout(() => fetchScene(frame), INSPECT_DELAY_MS);
+    };
+    schedule(true);
+    const off = player.subscribe(() => schedule(false));
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      off();
     };
-  }, [api, comp?.id, frame, moving, overrideKey, reloads]);
+  }, [api, player, comp?.id, overrideKey, reloads]);
 
   // ---- the coding agent ----
 
@@ -412,7 +424,6 @@ export function useStudio(api: StudioApi): Studio {
     buildId,
     buildError,
     player,
-    playerState,
     onImage,
     lastImage,
     propValues,
