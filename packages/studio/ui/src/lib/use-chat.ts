@@ -1,6 +1,6 @@
 // The chat's state and what it can do: send a message with the selection as context, answer a permission, stop, start over.
 
-import { useCallback, useEffect, useReducer } from 'react';
+import { useCallback, useEffect, useMemo, useReducer } from 'react';
 
 import type { AgentEvent, AgentInfo, ChatRecord } from '@/api';
 import { addUserMessage, answerPermission, clearChat, emptyChat, reduceChat, replayChat, type ChatState } from '@/lib/chat';
@@ -82,5 +82,5 @@ export function useChat(studio: Pick<Studio, 'onAgentEvent' | 'onAgentHistory' |
   );
   const loadInfo = useCallback(() => agentInfo().then((info) => info, () => null), [agentInfo]);
 
-  return { state, send, answer, stop, restart, chooseAgent, loadInfo };
+  return useMemo(() => ({ state, send, answer, stop, restart, chooseAgent, loadInfo }), [state, send, answer, stop, restart, chooseAgent, loadInfo]);
 }
