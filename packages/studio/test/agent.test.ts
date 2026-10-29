@@ -390,7 +390,13 @@ describe('the kinetograph tools for the agent', () => {
     expect(existsSync(server.args[0]!)).toBe(true);
     expect(server.args.slice(1, 3)).toEqual(['mcp', '--studio']);
     expect(server.args[3]).toBe(new URL(studio.url).origin);
-    expect(server.env).toEqual([{ name: 'KINETOGRAPH_STUDIO_TOKEN', value: tokenOf(studio) }]);
+    const agentToken = server.env[0]!.value;
+    expect(server.env).toEqual([{ name: 'KINETOGRAPH_STUDIO_TOKEN', value: agentToken }]);
+    expect(agentToken).not.toBe(tokenOf(studio));
+    // That token reaches the live-props routes and nothing else.
+    expect((await api(studio, '/api/live-props', { headers: { 'x-studio-token': agentToken } })).status).toBe(200);
+    expect((await api(studio, '/api/agent', { headers: { 'x-studio-token': agentToken } })).status).toBe(403);
+    await expect(Client.connect(studio, {}, agentToken)).rejects.toThrow(/403/);
 
     // The server it names works: its tools read and set the live props of this studio.
     const mcp = new McpClient({ name: 'e2e', version: '0.0.0' });

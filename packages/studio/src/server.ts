@@ -137,6 +137,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   // Whoever reaches the agent can have it edit files and run tools, so: a secret in the URL the studio opens, the same
   // origin, one window that owns the conversation, and no agent at all on an address other computers can reach.
   const token = randomBytes(32).toString('hex');
+  // The agent's MCP server gets its own secret, good for the live-props routes only: not the window's channel (/ws, the agent routes).
+  const agentToken = randomBytes(32).toString('hex');
   const agentOff =
     !loopback && options.allowRemoteAgent !== true
       ? 'The coding agent is off because the studio can be reached from other computers. Start it with --allow-remote-agent if you really want it on.'
@@ -174,18 +176,19 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         name: 'kinetograph',
         command: process.execPath,
         args: [kinetographCli(), 'mcp', '--studio', selfUrl],
-        env: [{ name: 'KINETOGRAPH_STUDIO_TOKEN', value: token }],
+        env: [{ name: 'KINETOGRAPH_STUDIO_TOKEN', value: agentToken }],
       },
     ],
   });
   // What the window previews (its last `props` message), for the agent to read, and what the agent pushes to it.
   let live: LiveProps = { comp: null, props: {} };
-  const tokenOk = (given: string | null | undefined): boolean => {
+  const matches = (given: string | null | undefined, secret: string): boolean => {
     if (!given) return false;
     const a = Buffer.from(given);
-    const b = Buffer.from(token);
+    const b = Buffer.from(secret);
     return a.length === b.length && timingSafeEqual(a, b);
   };
+  const tokenOk = (given: string | null | undefined): boolean => matches(given, token);
 
   /** The composition `comp`, or `BUILD` before any good build and `NOT_FOUND` for an unknown id. */
   function known(comp: string): CompositionInfo {
@@ -407,7 +410,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       return json(res, 200, info);
     }
     if (path === '/api/live-props' && (method === 'GET' || method === 'PUT')) {
-      if (!tokenOk(req.headers['x-studio-token'] as string | undefined)) {
+      const given = req.headers['x-studio-token'] as string | undefined;
+      if (!tokenOk(given) && !matches(given, agentToken)) {
         throw new StudioFailure('FORBIDDEN', 'live props need the studio token from the address the studio opened');
       }
       if (method === 'GET') return json(res, 200, live);
