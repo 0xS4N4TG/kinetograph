@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
@@ -23,6 +23,16 @@ use blitz_dom::node::SvgImageData;
 use blitz_dom::util::ImageType;
 use blitz_traits::net::{Bytes, NetHandler, NetProvider, Request};
 use url::Url;
+
+/// A Windows drive path such as `D:\proj\logo.png` or `D:/proj/logo.png`. A URL
+/// parser reads its drive letter as a one-letter scheme, so this is checked
+/// before a string is taken for a URL.
+pub fn drive_path(s: &str) -> Option<PathBuf> {
+    let b = s.as_bytes();
+    let is_drive =
+        b.len() > 2 && b[0].is_ascii_alphabetic() && b[1] == b':' && matches!(b[2], b'\\' | b'/');
+    is_drive.then(|| PathBuf::from(s))
+}
 
 /// The `file:` URL a document's relative URLs resolve against: `base_dir` as a
 /// directory.
@@ -86,8 +96,7 @@ impl LocalFiles {
 
     /// The file a `file:` URL names: the path itself if it exists, else the
     /// same path read as relative to `publicDir`, else to `baseDir`.
-    fn find(&self, url: &Url) -> Option<PathBuf> {
-        let path = url.to_file_path().ok()?;
+    fn find(&self, path: PathBuf) -> Option<PathBuf> {
         if path.is_file() {
             return Some(path);
         }
@@ -96,7 +105,13 @@ impl LocalFiles {
         let relative = path
             .strip_prefix(&self.base_dir)
             .map(Path::to_path_buf)
-            .unwrap_or_else(|_| path.components().skip(1).collect());
+            .unwrap_or_else(|_| {
+                // Keep the names only: on Windows a rooted path starts with a
+                // drive prefix as well as the root.
+                path.components()
+                    .filter(|c| matches!(c, Component::Normal(_)))
+                    .collect()
+            });
         [self.public_dir.as_deref(), Some(self.base_dir.as_path())]
             .into_iter()
             .flatten()
@@ -105,17 +120,26 @@ impl LocalFiles {
     }
 
     fn source(&self, url: &Url) -> Result<Source, String> {
-        match url.scheme() {
-            "file" => {
-                let path = self
-                    .find(url)
+        let file = match url.scheme() {
+            "file" => Some(url.to_file_path().ok()),
+            "data" => None,
+            // A Windows drive path, which the URL parser read as scheme `d`.
+            _ => {
+                drive_path(&percent_encoding::percent_decode_str(url.as_str()).decode_utf8_lossy())
+                    .map(Some)
+            }
+        };
+        match (url.scheme(), file) {
+            (_, Some(path)) => {
+                let path = path
+                    .and_then(|path| self.find(path))
                     .ok_or_else(|| format!("{url}: no such file"))?;
                 let meta =
                     std::fs::metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
                 Ok(Source::File(path, meta.len(), meta.modified().ok()))
             }
-            "data" => Ok(Source::Data(url.clone())),
-            scheme => Err(format!("{url}: {scheme} requests are not available")),
+            ("data", None) => Ok(Source::Data(url.clone())),
+            (scheme, None) => Err(format!("{url}: {scheme} requests are not available")),
         }
     }
 
