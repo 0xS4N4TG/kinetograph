@@ -395,6 +395,7 @@ project's `<canvas>` (`getContext('2d')`) both make one; the context object is `
 |---|---|---|
 | `width`, `height` | required | Animatable, not negative: the box in layer pixels. What the commands draw outside it is cut off. |
 | `commands` | `[]` | The drawing, in order. Not animated: a canvas that changes from frame to frame has a layer with other commands at each. |
+| `sources` | `[]` | The [pictures](#canvas-sources) that more than one command draws, each once; a command names one with `{ "kind": "ref", "index" }`. |
 
 The context keeps the canvas's state (transform, `globalAlpha`, `globalCompositeOperation`, styles, the line style, the
 text state) and writes each command with the state it is drawn in, so the renderer holds none. Every drawing command
@@ -424,7 +425,22 @@ default `source-over`), `shadow` and `filter` (below).
   project), or `{ "kind": "canvas", "width", "height", "commands" }` (another canvas, drawn as a whole: its commands
   are drawn into a layer that takes the `globalAlpha` and blend). A pattern takes any of them (and a
   canvas pass's `layer`): a canvas or a layer is recorded once as the tile and repeated by a picture shader, so a
-  pattern covers any number of tiles, in a fill, a stroke or text alike.
+  pattern covers any number of tiles, in a fill, a stroke or text alike. A source can also be
+  `{ "kind": "ref", "index" }`, an entry of the layer's `sources` (below).
+- <a id="canvas-sources"></a>**`sources`** is how a picture that more than one command draws is written once. Drawing one
+  `OffscreenCanvas`, `ImageData` or long `data:` URL a few hundred times (a sheet drawn as triangles, each under its own
+  clip and transform) would otherwise copy its commands or its base64 pixels into every command: about 6 MB for each
+  1150 x 1000 `ImageData`. Each entry is a `pixels`, `canvas` or `src` source (never a `ref`), and an entry that is a canvas
+  may hold `ref`s to the entries before it, so the table is in dependency order. A `ref` to an entry that is not there
+  is an error when the scene loads (with no `sources` at all it draws nothing). The renderer swaps each `ref` for its
+  entry as it loads the layer, so every command that names one shares it: the pixels are decoded once, and a canvas's
+  commands are recorded once into a picture that each command replays under its own clip and transform. The pixels
+  are the same as with the source written out in each command (still the form to use for a picture drawn once, and
+  the one every earlier scene has). The authoring layer writes the table itself (`internSources` of
+  `@kinetographdev/scene`), for each picture that two commands draw; what a canvas drew is a snapshot, so what
+  is drawn on it later does not change a picture already drawn. A canvas with a clip, a shadow or a filter in its
+  commands is not replayed from a picture but drawn command by command each time, as Skia anti-aliases a clip edge
+  differently when it is replayed under a skewed matrix.
 - **`blend`** is any `globalCompositeOperation`: `source-over`, `source-in`, `source-out`, `source-atop`,
   `destination-over`, `destination-in`, `destination-out`, `destination-atop`, `lighter`, `copy`, `xor`, `multiply`,
   `screen`, `overlay`, `darken`, `lighten`, `color-dodge`, `color-burn`, `hard-light`, `soft-light`, `difference`,
