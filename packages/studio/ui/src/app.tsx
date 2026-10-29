@@ -16,6 +16,7 @@ import { Viewer, type Tool, type View, type Zoom } from '@/components/viewer/vie
 import { jobPercent } from '@/lib/format';
 import { usePersistedNumber } from '@/lib/persisted';
 import { usePlayerState } from '@/lib/player-hooks';
+import { layersOfPlugin, pluginsOfSelection, usePlugins } from '@/lib/plugins';
 import { PreviewContext, type PreviewHost } from '@/lib/preview-context';
 import { useTheme } from '@/lib/theme';
 import { useChat } from '@/lib/use-chat';
@@ -111,6 +112,35 @@ export function App({ api }: { api: StudioApi }) {
         : selectLayer(id),
     [selectLayers, selectLayer, selectedLayers],
   );
+  const plugins = usePlugins(api);
+  /** The plugin whose card was clicked; the plugins that drew the selected layers count as selected too. */
+  const [focusedPlugin, setFocusedPlugin] = useState<string | null>(null);
+  const layerPlugins = useMemo(() => pluginsOfSelection(plugins, studio.inspect, selectedLayers), [plugins, studio.inspect, selectedLayers]);
+  const selectedPlugins = useMemo<ReadonlySet<string>>(() => new Set(focusedPlugin ? [...layerPlugins, focusedPlugin] : layerPlugins), [layerPlugins, focusedPlugin]);
+  useEffect(() => {
+    if (focusedPlugin !== null && selectedLayers.length > 0 && !layerPlugins.includes(focusedPlugin)) setFocusedPlugin(null);
+  }, [selectedLayers, layerPlugins, focusedPlugin]);
+  /** Clicking a plugin's card selects it and the layers it draws; clicking it again lets go. */
+  const selectPlugin = useCallback(
+    (name: string) => {
+      const plugin = plugins.find((p) => p.name === name);
+      if (!plugin) return;
+      if (selectedPlugins.has(name)) {
+        setFocusedPlugin(null);
+        selectLayers(layerPlugins.includes(name) ? [] : selectedLayers);
+        return;
+      }
+      setFocusedPlugin(name);
+      selectLayers(layersOfPlugin(plugin, studio.inspect));
+    },
+    [plugins, selectedPlugins, layerPlugins, selectedLayers, selectLayers, studio.inspect],
+  );
+  const [agentDraft, setAgentDraft] = useState<{ text: string; id: number } | null>(null);
+  /** Opens the agent with a message typed for the user to send. */
+  const askAgent = useCallback((text: string) => {
+    setChatOpen(true);
+    setAgentDraft((previous) => ({ text, id: (previous?.id ?? 0) + 1 }));
+  }, []);
   const toggleDetails = useCallback((next?: boolean) => {
     setDetails((on) => {
       const value = typeof next === 'boolean' ? next : !on;
@@ -241,6 +271,8 @@ export function App({ api }: { api: StudioApi }) {
                 lastImage={studio.lastImage}
                 chat={chat}
                 timeline={timelineData}
+                plugins={plugins}
+                draft={agentDraft}
               />
             </Panel>
           )}
@@ -291,6 +323,7 @@ export function App({ api }: { api: StudioApi }) {
                 selectedLayers={studio.selectedLayers}
                 onSelectLayers={pickLayers}
                 thumbnailUrl={studio.thumbnailUrl}
+                waveform={studio.waveform}
                 expanded={timelineOpen}
                 onExpandedChange={setTimelineOpen}
                 details={details}
@@ -324,6 +357,10 @@ export function App({ api }: { api: StudioApi }) {
                   renders={studio.renders}
                   onNewRender={exportNow}
                   onCancelRender={studio.cancelRender}
+                  plugins={plugins}
+                  selectedPlugins={selectedPlugins}
+                  onSelectPlugin={selectPlugin}
+                  onAskAgent={askAgent}
                 />
               </PreviewContext.Provider>
             </Panel>

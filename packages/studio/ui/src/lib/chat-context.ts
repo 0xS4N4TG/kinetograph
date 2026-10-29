@@ -4,15 +4,25 @@
 
 import { currentValues, quoted, relativePath, sequenceOf, type AgentMessageInput } from '@/lib/agent-message';
 import { formatNumber, formatTimecode } from '@/lib/format';
+import type { PluginSummary } from '@/api';
 import type { InspectLayer } from '@/lib/inspect';
+import { pluginOfLayer } from '@/lib/plugins';
 import { layerComponent, layerName, layerRect, layerSource } from '@/lib/selection';
 
-export type ChatContextInput = Omit<AgentMessageInput, 'layer'> & { layers: InspectLayer[] };
+export type ChatContextInput = Omit<AgentMessageInput, 'layer'> & { layers: InspectLayer[]; plugins?: PluginSummary[] };
 
-function describe(layer: InspectLayer, index: number, { comp, frame, timeline }: ChatContextInput): string {
+function describe(layer: InspectLayer, index: number, input: ChatContextInput): string {
+  const { comp, frame, timeline } = input;
   const parts = [`${index + 1}. ${quoted(layerName(layer))}, a ${layer.type} layer`];
   const component = layerComponent(layer);
-  if (component) parts.push(`drawn by the component ${component}`);
+  if (component) {
+    const plugin = pluginOfLayer(input.plugins ?? [], layer);
+    parts.push(
+      plugin
+        ? `drawn by the component ${component} of the plugin ${plugin.title} (${plugin.name}${plugin.skill ? `, guide at ${plugin.skill}` : ''})`
+        : `drawn by the component ${component}`,
+    );
+  }
   const source = layerSource(layer);
   if (source) parts.push(`written at ${source.file}:${source.line}`);
   // An id the author chose is a good handle; a path through the tree is not, and is left out.

@@ -1,6 +1,6 @@
 import { memo } from 'react';
 
-import type { CompositionInfo, InspectResult, ProjectInfo, RenderJob, StudioApi, TimelineData } from '@/api';
+import type { CompositionInfo, InspectResult, PluginSummary, ProjectInfo, RenderJob, StudioApi, TimelineData } from '@/api';
 import { PropsPanel } from '@/components/inspector/props-panel';
 import { RenderQueue } from '@/components/inspector/render-queue';
 import { SceneTree } from '@/components/inspector/scene-tree';
@@ -33,6 +33,11 @@ interface InspectorPanelProps {
   /** Opens the export dialog. */
   onNewRender(): void;
   onCancelRender(id: string): Promise<void>;
+  /** Plugins: the installed ones, the selected names, and the actions of the plugin cards. */
+  plugins?: PluginSummary[];
+  selectedPlugins?: ReadonlySet<string>;
+  onSelectPlugin?(name: string): void;
+  onAskAgent?(text: string): void;
 }
 
 /** Props first, then the Scene tree and the Renders: the panel on the right. */
@@ -55,6 +60,10 @@ export const InspectorPanel = memo(function InspectorPanel({
   renders,
   onNewRender,
   onCancelRender,
+  plugins,
+  selectedPlugins,
+  onSelectPlugin,
+  onAskAgent,
 }: InspectorPanelProps) {
   const activeRenders = renders.filter((job) => job.status === 'queued' || job.status === 'running').length;
 
@@ -79,7 +88,19 @@ export const InspectorPanel = memo(function InspectorPanel({
         </TabsList>
       </div>
       <TabsContent value="props" className="min-h-0 pt-2">
-        <PropsPanel api={api} comp={comp} values={propValues} edited={propsEdited} onChange={onChangeProps} onReset={onResetProps} />
+        <PropsPanel
+          api={api}
+          comp={comp}
+          values={propValues}
+          edited={propsEdited}
+          onChange={onChangeProps}
+          onReset={onResetProps}
+          inspect={inspect}
+          {...(plugins ? { plugins } : {})}
+          {...(selectedPlugins ? { selectedPlugins } : {})}
+          {...(onSelectPlugin ? { onSelectPlugin } : {})}
+          {...(onAskAgent ? { onAskAgent } : {})}
+        />
       </TabsContent>
       <TabsContent value="scene" className="min-h-0 pt-2">
         <SceneTree

@@ -36,6 +36,8 @@ interface PluginPanelProps {
   onChange(value: unknown): void;
   /** False while the field's section is folded: the overlay is hidden then. */
   open?: boolean;
+  /** Hears the panel module's one-line `summary(value)` (CONTRACT.md section 3), when it exports one. */
+  onSummary?(text: string): void;
 }
 
 const message = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause));
@@ -53,7 +55,7 @@ function makeOverlay(): HTMLElement {
  * plain element, and given the field's value, and an overlay laid over the preview picture. A panel that fails to load
  * or throws is replaced by an error box.
  */
-export function PluginPanel({ plugin, name, schema, path, value, onChange, open = true }: PluginPanelProps) {
+export function PluginPanel({ plugin, name, schema, path, value, onChange, open = true, onSummary }: PluginPanelProps) {
   const url = useContext(PluginPanels)[plugin];
   const preview = useContext(PreviewContext);
   const { active } = useContext(ActivePanelContext);
@@ -63,6 +65,7 @@ export function PluginPanel({ plugin, name, schema, path, value, onChange, open 
   const handle = useRef<PanelHandle | null>(null);
   const [overlay] = useState(makeOverlay);
   const [error, setError] = useState<string | null>(null);
+  const summarise = useRef<((value: unknown) => unknown) | null>(null);
   const frame = useFrame(preview?.player ?? NO_PLAYER);
   const width = preview?.width ?? 0;
   const height = preview?.height ?? 0;
@@ -76,6 +79,15 @@ export function PluginPanel({ plugin, name, schema, path, value, onChange, open 
     path,
     onChange,
     ...(preview ? { preview: { overlay, width, height, frame } } : {}),
+  };
+  const reportSummary = () => {
+    if (!onSummary || !summarise.current) return;
+    try {
+      const text = summarise.current(latest.current.value);
+      onSummary(typeof text === 'string' ? text : '');
+    } catch {
+      onSummary('');
+    }
   };
   const context = (): PanelContext => ({ ...latest.current, onChange: (next) => latest.current.onChange(next) });
 
@@ -98,11 +110,13 @@ export function PluginPanel({ plugin, name, schema, path, value, onChange, open 
     let cancelled = false;
     setError(null);
     import(/* @vite-ignore */ url).then(
-      (module: { mount?: (el: HTMLElement, ctx: PanelContext) => PanelHandle }) => {
+      (module: { mount?: (el: HTMLElement, ctx: PanelContext) => PanelHandle; summary?: (value: unknown) => unknown }) => {
         if (cancelled || !host.current) return;
         try {
           if (typeof module.mount !== 'function') throw new Error('the module does not export mount(el, ctx)');
           handle.current = module.mount(host.current, context());
+          summarise.current = typeof module.summary === 'function' ? module.summary : null;
+          reportSummary();
         } catch (cause) {
           setError(message(cause));
         }
@@ -124,6 +138,7 @@ export function PluginPanel({ plugin, name, schema, path, value, onChange, open 
   useEffect(() => {
     try {
       handle.current?.update(context());
+      reportSummary();
     } catch (cause) {
       setError(message(cause));
     }

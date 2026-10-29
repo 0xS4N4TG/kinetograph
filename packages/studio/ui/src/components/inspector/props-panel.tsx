@@ -1,11 +1,12 @@
-import { memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ChevronDownIcon, RotateCcwIcon } from 'lucide-react';
+import { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { RotateCcwIcon } from 'lucide-react';
 
-import type { CompositionInfo, StudioApi } from '@/api';
-import { PluginPanel, PluginPanels } from '@/components/inspector/plugin-panel';
+import type { CompositionInfo, InspectResult, PluginSummary, StudioApi } from '@/api';
+import { PluginCard } from '@/components/inspector/plugin-card';
+import { PluginList } from '@/components/inspector/plugin-list';
+import { PluginPanels } from '@/components/inspector/plugin-panel';
 import { PresetsMenu } from '@/components/inspector/presets-menu';
 import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -13,11 +14,15 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '@/c
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { pluginUsed } from '@/lib/plugins';
 import { fieldKind, helperText, schemaProperties, unsetType, type JsonSchema } from '@/lib/props-schema';
 import { ActivePanelContext } from '@/lib/preview-context';
 import { cn } from '@/lib/utils';
 
 const NO_PATH: string[] = [];
+const NO_PLUGINS: PluginSummary[] = [];
+const NO_SELECTED: ReadonlySet<string> = new Set();
+const noop = () => {};
 
 /** The path of the first field a plugin draws, for its overlay to show before anything is touched. */
 function firstPanel(entries: [string, JsonSchema | undefined][], base: string[]): string | null {
@@ -32,8 +37,24 @@ function firstPanel(entries: [string, JsonSchema | undefined][], base: string[])
   return null;
 }
 
+/** What a plugin card needs from the app: the installed plugins, which are selected, and the actions. */
+interface PluginUi {
+  plugins: PluginSummary[];
+  selected: ReadonlySet<string>;
+  onSelect(name: string): void;
+  onAsk(text: string): void;
+}
+const PluginUiContext = createContext<PluginUi>({ plugins: [], selected: new Set(), onSelect: () => {}, onAsk: () => {} });
+
 interface PropsPanelProps {
   api: StudioApi;
+  /** The installed plugins, and the layers on screen (to tell which a composition uses). */
+  plugins?: PluginSummary[];
+  inspect?: InspectResult | null;
+  /** Names of the plugins that are selected: a layer they draw is, or their card was clicked. */
+  selectedPlugins?: ReadonlySet<string>;
+  onSelectPlugin?(name: string): void;
+  onAskAgent?(text: string): void;
   comp: CompositionInfo | null;
   values: Record<string, unknown>;
   /** True while the values differ from the composition's defaults. */
@@ -47,15 +68,11 @@ interface PropsPanelProps {
  * composition's `propsSchema` when it has one, then from any `defaultProps` the schema does not name. A field only
  * re-renders when its own value changes, so dragging one slider does not redraw the rest.
  */
-export const PropsPanel = memo(function PropsPanel({ api, comp, values, edited, onChange, onReset }: PropsPanelProps) {
-  const [panels, setPanels] = useState<Record<string, string>>({});
+export const PropsPanel = memo(function PropsPanel({ api, comp, values, edited, onChange, onReset, plugins = NO_PLUGINS, inspect = null, selectedPlugins = NO_SELECTED, onSelectPlugin = noop, onAskAgent = noop }: PropsPanelProps) {
   const [active, setActive] = useState<string | null>(null);
-  useEffect(() => {
-    api.plugins().then(
-      (plugins) => setPanels(Object.fromEntries(plugins.flatMap((p) => (p.panel ? [[p.name, p.panel]] : [])))),
-      () => setPanels({}),
-    );
-  }, [api]);
+  const panels = useMemo<Record<string, string>>(() => Object.fromEntries(plugins.flatMap((p) => (p.panel ? [[p.name, p.panel]] : []))), [plugins]);
+  const ui = useMemo<PluginUi>(() => ({ plugins, selected: selectedPlugins, onSelect: onSelectPlugin, onAsk: onAskAgent }), [plugins, selectedPlugins, onSelectPlugin, onAskAgent]);
+  const used = useMemo(() => new Set(plugins.filter((p) => pluginUsed(p, comp?.propsSchema, inspect)).map((p) => p.name)), [plugins, comp?.propsSchema, inspect]);
   const schemaFields = schemaProperties(comp?.propsSchema);
   const names = useMemo(() => {
     const schemaNames = new Set(schemaFields.map(([name]) => name));
@@ -83,19 +100,24 @@ export const PropsPanel = memo(function PropsPanel({ api, comp, values, edited, 
         </div>
       </div>
       <ScrollArea className="min-h-0 flex-1">
-        {names.length === 0 ? (
-          <p className="text-muted-foreground px-4 py-3 text-sm">This composition has no props.</p>
-        ) : (
-          <PluginPanels.Provider value={panels}>
-            <ActivePanelContext.Provider value={activeContext}>
-              <form className="flex flex-col gap-5 px-4 pt-1 pb-6" onSubmit={(event) => event.preventDefault()}>
-                {names.map((name) => (
-                  <PropField key={name} name={name} parentPath={NO_PATH} schema={schemas.get(name)} value={values[name]} set={setField} />
-                ))}
-              </form>
-            </ActivePanelContext.Provider>
-          </PluginPanels.Provider>
-        )}
+        <PluginUiContext.Provider value={ui}>
+          {names.length === 0 ? (
+            <p className="text-muted-foreground px-4 py-3 text-sm">This composition has no props.</p>
+          ) : (
+            <PluginPanels.Provider value={panels}>
+              <ActivePanelContext.Provider value={activeContext}>
+                <form className="flex flex-col gap-5 px-4 pt-1 pb-4" onSubmit={(event) => event.preventDefault()}>
+                  {names.map((name) => (
+                    <PropField key={name} name={name} parentPath={NO_PATH} schema={schemas.get(name)} value={values[name]} set={setField} />
+                  ))}
+                </form>
+              </ActivePanelContext.Provider>
+            </PluginPanels.Provider>
+          )}
+          <div className="px-4 pt-2 pb-6">
+            <PluginList plugins={plugins} used={used} selected={selectedPlugins} onSelect={onSelectPlugin} onAsk={onAskAgent} />
+          </div>
+        </PluginUiContext.Provider>
       </ScrollArea>
     </div>
   );
@@ -251,22 +273,27 @@ const PropField = memo(function PropField({ name, parentPath, schema, value, set
   return <JsonField id={id} label={label} help={<Help schema={schema} />} value={value} onChange={onChange} />;
 });
 
-/** A plugin's panel in a section that folds; its overlay on the preview shows while the section is open and being edited. */
+/** A field a plugin's panel owns, drawn as the plugin's card. */
 function PanelSection({ name, path, plugin, schema, value, onChange }: { name: string; path: string[]; plugin: string; schema: JsonSchema; value: unknown; onChange(value: unknown): void }) {
-  const [open, setOpen] = useState(true);
   const { setActive } = useContextActive();
+  const ui = useContext(PluginUiContext);
+  const info = ui.plugins.find((p) => p.name === plugin);
   const key = path.join('.');
   return (
-    <Collapsible open={open} onOpenChange={setOpen} onPointerDownCapture={() => setActive(key)} onFocusCapture={() => setActive(key)}>
-      <CollapsibleTrigger className="group/trigger hover:text-foreground flex w-full items-center justify-between gap-2 rounded-lg py-1 text-left text-[13px] font-semibold outline-none">
-        {name}
-        <ChevronDownIcon className={cn('text-muted-foreground size-4 transition-transform', !open && '-rotate-90')} />
-      </CollapsibleTrigger>
-      <div className={cn('flex flex-col gap-2 pt-2', !open && 'hidden')}>
-        <PluginPanel plugin={plugin} name={name} schema={schema} path={path} value={value} onChange={onChange} open={open} />
-        <Help schema={schema} />
-      </div>
-    </Collapsible>
+    <PluginCard
+      plugin={info}
+      pluginName={plugin}
+      field={name}
+      path={path}
+      schema={schema}
+      value={value}
+      onChange={onChange}
+      selected={ui.selected.has(plugin)}
+      onSelect={() => ui.onSelect(plugin)}
+      onAsk={ui.onAsk}
+      onActive={() => setActive(key)}
+      help={<Help schema={schema} />}
+    />
   );
 }
 

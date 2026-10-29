@@ -16,7 +16,7 @@ import {
   XIcon,
 } from 'lucide-react';
 
-import type { AgentInfo, CompositionInfo, InspectResult, ProjectInfo, ReceivedFrame, TimelineData } from '@/api';
+import type { AgentInfo, CompositionInfo, InspectResult, PluginSummary, ProjectInfo, ReceivedFrame, TimelineData } from '@/api';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import type { ChatItem } from '@/lib/chat';
@@ -36,6 +36,10 @@ interface AgentPanelProps {
   lastImage(): ReceivedFrame | null;
   chat: Chat;
   timeline: TimelineData | null;
+  /** The installed plugins, so the selection can name the plugin that drew a layer. */
+  plugins?: PluginSummary[];
+  /** A message to put in the box for the user to send (a new `id` puts it there again). */
+  draft?: { text: string; id: number } | null;
 }
 
 /**
@@ -187,7 +191,7 @@ const Item = memo(function Item({ item, onAnswer }: { item: ChatItem; onAnswer(i
 });
 
 /** The conversation with the user's own coding agent about what is selected in the preview. */
-export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, selectedLayers, selectLayers, lastImage, chat, timeline }: AgentPanelProps) {
+export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, selectedLayers, selectLayers, lastImage, chat, timeline, plugins, draft }: AgentPanelProps) {
   const [info, setInfo] = useState<AgentInfo | null>(null);
   const [text, setText] = useState('');
   const [withPicture, setWithPicture] = useState(true);
@@ -204,6 +208,12 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
       live = false;
     };
   }, [chat.loadInfo]);
+
+  useEffect(() => {
+    if (!draft) return;
+    setText(draft.text);
+    inputRef.current?.focus();
+  }, [draft?.id]);
 
   useEffect(() => {
     const list = listRef.current;
@@ -236,7 +246,7 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
       const last: ReceivedFrame | null = lastImage();
       if (rect && last) image = (await cropToPng(last, comp.width, rect)) ?? undefined;
     }
-    const context = comp && project ? buildChatContext({ entry: project.entry, cwd, comp, frame, layers, timeline }) : '';
+    const context = comp && project ? buildChatContext({ entry: project.entry, cwd, comp, frame, layers, timeline, ...(plugins ? { plugins } : {}) }) : '';
     if (chat.send(message, context, chips, image)) setText('');
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
