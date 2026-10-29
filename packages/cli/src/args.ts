@@ -26,7 +26,7 @@ export interface ParsedArgs {
 /** Options every command that opens a project takes (packages/cli/skills/kinetograph/references/AUTHORING.md §9). */
 export const PROJECT_OPTIONS: OptionSpec[] = [
   { name: 'comp', type: 'string', description: 'Composition id (default: the first composition)' },
-  { name: 'props', type: 'string', description: 'Input props as a JSON object' },
+  { name: 'props', type: 'string', description: 'Input props: a JSON object, or the path of a JSON file' },
   { name: 'offline', type: 'boolean', description: 'Never download: remote scripts, modules, pictures and media must already be cached (a missing one is an error, as before the pre-download step)' },
 ];
 
