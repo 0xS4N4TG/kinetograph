@@ -5,7 +5,7 @@ import { afterEach, beforeEach, vi } from 'vitest';
 
 import { decode, draws, installCanvasStubs } from './canvas';
 
-// react-resizable-panels measures layout. In jsdom every rect is zero, so it takes each pointer for a drag on a separator
+// react-resizable-panels measures layout (the studio no longer uses it). In jsdom every rect is zero, so it takes each pointer for a drag on a separator
 // and cancels pointerdown (no mousedown, no focus from a click). Panels render as plain boxes in tests.
 vi.mock('react-resizable-panels', () => {
   const box = (role?: string) =>
@@ -27,6 +27,8 @@ Element.prototype.setPointerCapture = () => {};
 Element.prototype.releasePointerCapture = () => {};
 Element.prototype.hasPointerCapture = () => false;
 Element.prototype.scrollIntoView = () => {};
+// Base UI and motion ask for running animations; jsdom has none.
+Element.prototype.getAnimations = () => [];
 
 installCanvasStubs();
 

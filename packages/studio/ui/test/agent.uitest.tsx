@@ -11,6 +11,8 @@ async function start() {
   const user = userEvent.setup();
   render(<App api={server} />);
   await waitFor(() => expect(server.frameRequests.length).toBeGreaterThan(0));
+  // the inspector opens on Props; the scene tree is its Scene tab
+  await user.click(await screen.findByRole('tab', { name: 'Scene' }));
   await screen.findByTestId('scene-tree');
   return { server, user };
 }
@@ -50,7 +52,6 @@ describe('picking layers in the preview', () => {
   it('a dragged box picks the layers inside it, draws the box while dragging, and lists them as chips in the Agent tab', async () => {
     stubFrameRect();
     const { user } = await start();
-    await user.click(screen.getByRole('tab', { name: 'Agent' }));
     const preview = screen.getByTestId('preview');
     fireEvent.pointerDown(preview, { clientX: 0, clientY: 0, button: 0 });
     fireEvent.pointerMove(preview, { clientX: 300, clientY: 200 });
@@ -78,8 +79,6 @@ describe('the Agent tab', () => {
     const { server, user } = await start();
     const tree = await screen.findByTestId('scene-tree');
     await user.click(within(tree).getByTitle(/^title \(/));
-    await user.click(screen.getByRole('tab', { name: 'Agent' }));
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Coding agent' })).toHaveTextContent('Fake agent'));
 
     await user.type(screen.getByLabelText('Message for the agent'), 'make it red');
     await user.click(screen.getByRole('button', { name: /Send/ }));
@@ -102,7 +101,6 @@ describe('the Agent tab', () => {
 
   it('shows edits compactly with file names, and permission requests as buttons that are never answered for the user', async () => {
     const { server, user } = await start();
-    await user.click(screen.getByRole('tab', { name: 'Agent' }));
     await say(server, { kind: 'tool', id: 't1', title: 'Edit scene.tsx', toolKind: 'edit', status: 'in_progress', files: ['src/scene.tsx'] });
     await say(server, { kind: 'tool', id: 't1', title: '', toolKind: 'edit', status: 'completed', files: [] });
     const tool = screen.getByTestId('chat-tool');
@@ -130,7 +128,6 @@ describe('the Agent tab', () => {
 
   it('says what went wrong in plain words', async () => {
     const { server, user } = await start();
-    await user.click(screen.getByRole('tab', { name: 'Agent' }));
     await say(server, { kind: 'error', message: 'The agent needs you to sign in first.' });
     expect(screen.getByRole('alert')).toHaveTextContent('sign in');
   });
@@ -139,12 +136,11 @@ describe('the Agent tab', () => {
     const server = new MockServer();
     server.agent = { presets: [], command: null, cwd: '/work' };
     render(<App api={server} />);
-    await userEvent.setup().click(await screen.findByRole('tab', { name: 'Agent' }));
     expect(await screen.findByText(/No coding agent was found/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Send/ })).toBeDisabled();
   });
 
-  it('chooses another agent from the list', async () => {
+  it('switches the agent from Cmd+K, and restarts it there too; the chat header has no picker', async () => {
     const server = new MockServer();
     server.agent = {
       presets: [
@@ -156,12 +152,18 @@ describe('the Agent tab', () => {
     };
     const user = userEvent.setup();
     render(<App api={server} />);
-    await user.click(await screen.findByRole('tab', { name: 'Agent' }));
-    const list = await screen.findByRole('combobox', { name: 'Coding agent' });
-    // the server tells every window which agent is in use when it connects
+    await screen.findByTestId('agent-panel');
+    expect(screen.queryByRole('combobox', { name: 'Coding agent' })).not.toBeInTheDocument();
     await act(() => server.send({ type: 'agent', event: { kind: 'status', status: 'idle', command: 'claude-cmd', image: false } }));
-    await waitFor(() => expect(within(list).getAllByRole('option')).toHaveLength(2));
-    await user.selectOptions(list, 'codex-cmd');
+    await user.keyboard('{Meta>}k{/Meta}');
+    await user.type(await screen.findByRole('combobox', { name: 'Command' }), 'switch agent');
+    await user.keyboard('{Enter}');
+    await user.click(await screen.findByRole('option', { name: 'Codex' }));
     expect(server.agentMessages.at(-1)).toEqual({ type: 'agent.select', command: 'codex-cmd' });
+
+    await user.keyboard('{Meta>}k{/Meta}');
+    await user.type(await screen.findByRole('combobox', { name: 'Command' }), 'restart agent');
+    await user.keyboard('{Enter}');
+    expect(server.agentMessages.at(-1)).toEqual({ type: 'agent.reset' });
   });
 });

@@ -8,27 +8,44 @@ import { decode, draws } from './canvas';
 import { intro, job, outro } from './fixtures';
 import { MockServer } from './mock-server';
 
-async function start(server = new MockServer()) {
+/** Starts the studio; the timeline is opened to its rows unless `slim` (it starts folded to a scrubber). */
+async function start(server = new MockServer(), { slim = false } = {}) {
   const user = userEvent.setup();
   render(<App api={server} />);
   await waitFor(() => expect(server.frameRequests.length).toBeGreaterThan(0));
+  if (!slim) await user.click(screen.getByRole('button', { name: 'Expand the timeline' }));
   return { server, user };
+}
+
+/** The inspector's Scene tab, opened. */
+async function openScene(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('tab', { name: 'Scene' }));
+  return screen.findByTestId('scene-tree');
 }
 
 const counter = () => screen.getByTestId('frame-counter');
 /** Picks a layer by clicking it in the scene tree (its tooltip starts `id (type)`). */
 async function pickInTree(user: ReturnType<typeof userEvent.setup>, id: string) {
-  const tree = await screen.findByTestId('scene-tree');
+  const tree = await openScene(user);
   await user.click(within(tree).getByTitle(new RegExp(`^${id} \\(`)));
 }
-const compButton = (name: string) => within(screen.getByTestId('composition-list')).getByRole('button', { name: new RegExp(`^${name}`) });
+/** A composition's button in the top bar's switcher, which is opened first. */
+async function compButton(user: ReturnType<typeof userEvent.setup>, name: string) {
+  const trigger = screen.getByTestId('composition-switcher');
+  if (trigger.getAttribute('aria-expanded') !== 'true') {
+    // a popover that was just closed is still leaving
+    await waitFor(() => expect(screen.queryByTestId('composition-list')).not.toBeInTheDocument());
+    await user.click(trigger);
+  }
+  return within(await screen.findByTestId('composition-list')).getByRole('button', { name: new RegExp(`^${name}`) });
+}
 
 describe('composition list', () => {
   it('loads the compositions, selects the first and asks for its first frame', async () => {
-    const { server } = await start();
-    expect(compButton('Intro')).toHaveAttribute('aria-pressed', 'true');
-    expect(compButton('Outro')).toHaveAttribute('aria-pressed', 'false');
-    expect(within(compButton('Intro')).getByText('1920x1080 · 30 fps · 150 f')).toBeInTheDocument();
+    const { server, user } = await start();
+    expect(await compButton(user, 'Intro')).toHaveAttribute('aria-pressed', 'true');
+    expect(await compButton(user, 'Outro')).toHaveAttribute('aria-pressed', 'false');
+    expect(within(await compButton(user, 'Intro')).getByText('1920x1080 · 30 fps · 150 f')).toBeInTheDocument();
     expect(server.frameRequests[0]).toMatchObject({ comp: 'Intro', frame: 0, scale: 1, format: 'png' });
     expect(server.frameRequests[0]!.props).toBeUndefined();
     expect(counter()).toHaveTextContent('0 / 150');
@@ -37,9 +54,9 @@ describe('composition list', () => {
 
   it('selects another composition on click and renders it', async () => {
     const { server, user } = await start();
-    await user.click(compButton('Outro'));
-    expect(compButton('Outro')).toHaveAttribute('aria-pressed', 'true');
-    expect(compButton('Intro')).toHaveAttribute('aria-pressed', 'false');
+    await user.click(await compButton(user, 'Outro'));
+    expect(await compButton(user, 'Outro')).toHaveAttribute('aria-pressed', 'true');
+    expect(await compButton(user, 'Intro')).toHaveAttribute('aria-pressed', 'false');
     await waitFor(() => expect(server.lastFrameRequest).toMatchObject({ comp: 'Outro', frame: 0 }));
     expect(counter()).toHaveTextContent('0 / 48');
     await waitFor(() => expect(server.timelineCalls.at(-1)?.comp).toBe('Outro'));
@@ -125,8 +142,10 @@ describe('preview', () => {
     const server = new MockServer();
     server.noGoodBuild = true;
     server.projectInfo = { ...server.projectInfo, buildId: 0, buildError: { code: 'BUILD', message: 'cannot resolve ./missing' } };
+    const user = userEvent.setup();
     render(<App api={server} />);
     expect(await screen.findByRole('alertdialog', { name: 'Build error' })).toHaveTextContent('cannot resolve ./missing');
+    await user.click(screen.getByTestId('composition-switcher'));
     expect(screen.getByText('No compositions.')).toBeInTheDocument();
 
     server.noGoodBuild = false;
@@ -347,7 +366,7 @@ describe('timeline', () => {
 
     // a Sequence row selects its group in the scene tree, which comes to the front
     await user.click(within(screen.getAllByTestId('sequence-row')[1]!).getByTestId('row-select'));
-    const tree = await screen.findByTestId('scene-tree');
+    const tree = await openScene(user);
     await waitFor(() => expect(within(screen.getByTestId('layer-details')).getByText('title-group')).toBeInTheDocument());
 
     // with details on, the pieces are rows too
@@ -366,10 +385,12 @@ describe('timeline', () => {
 
   it('shows the scene tree of the current frame with the topmost layer first, children nested', async () => {
     const { server, user } = await start();
-    const tree = await screen.findByTestId('scene-tree');
+    const tree = await openScene(user);
     const ids = within(tree).getAllByRole('treeitem').map((i) => i.querySelector('.truncate')!.textContent);
     expect(ids).toEqual(['title-group', 'title', 'bg']);
     expect(tree).toHaveTextContent('1920x1080');
+    // the Scene tab has focus, and arrow keys move between tabs: let go of it first
+    (document.activeElement as HTMLElement).blur();
     await user.keyboard('{ArrowRight}');
     await waitFor(() => expect(server.inspectCalls.at(-1)).toMatchObject({ comp: 'Intro', frame: 1 }));
     await waitFor(() => expect(screen.getByTestId('scene-tree')).toHaveTextContent('frame 1'));
@@ -383,7 +404,7 @@ describe('props panel', () => {
     const title = screen.getByLabelText('title');
     expect(title).toHaveValue('Hello');
     expect(screen.getByLabelText('size')).toHaveValue(64);
-    expect(screen.getByLabelText('visible')).toBeChecked();
+    expect(screen.getByRole('switch', { name: 'visible' })).toBeChecked();
     expect(screen.getByLabelText('color')).toHaveValue('#ff0000');
     expect(screen.getByLabelText('style')).toHaveValue(JSON.stringify({ bold: true }, null, 2));
     expect(screen.getByRole('button', { name: /Reset/ })).toBeDisabled();
@@ -409,7 +430,7 @@ describe('props panel', () => {
     await user.type(size, '96');
     await waitFor(() => expect(server.lastFrameRequest.props).toMatchObject({ size: 96 }));
 
-    await user.click(screen.getByLabelText('visible'));
+    await user.click(screen.getByRole('switch', { name: 'visible' }));
     await waitFor(() => expect(server.lastFrameRequest.props).toMatchObject({ size: 96, visible: false }));
 
     const style = screen.getByLabelText('style');
@@ -425,24 +446,24 @@ describe('props panel', () => {
   it('resets to the defaults and asks for the frame without props', async () => {
     const { server, user } = await start();
     await user.click(screen.getByRole('tab', { name: 'Props' }));
-    await user.click(screen.getByLabelText('visible'));
+    await user.click(screen.getByRole('switch', { name: 'visible' }));
     await waitFor(() => expect(server.lastFrameRequest.props).toMatchObject({ visible: false }));
 
     await user.click(screen.getByRole('button', { name: /Reset/ }));
     await waitFor(() => expect(server.lastFrameRequest.props).toBeUndefined());
-    expect(screen.getByLabelText('visible')).toBeChecked();
+    expect(screen.getByRole('switch', { name: 'visible' })).toBeChecked();
     expect(screen.getByRole('button', { name: /Reset/ })).toBeDisabled();
   });
 
   it('says so when a composition has no props, and keeps edits per composition', async () => {
     const { server, user } = await start();
     await user.click(screen.getByRole('tab', { name: 'Props' }));
-    await user.click(screen.getByLabelText('visible'));
-    await user.click(compButton('Outro'));
+    await user.click(screen.getByRole('switch', { name: 'visible' }));
+    await user.click(await compButton(user, 'Outro'));
     expect(await screen.findByText('This composition has no props.')).toBeInTheDocument();
     await waitFor(() => expect(server.lastFrameRequest).toMatchObject({ comp: 'Outro' }));
     expect(server.lastFrameRequest.props).toBeUndefined();
-    await user.click(compButton('Intro'));
+    await user.click(await compButton(user, 'Intro'));
     await waitFor(() => expect(server.lastFrameRequest.props).toMatchObject({ visible: false }));
   });
 });
@@ -461,8 +482,13 @@ describe('render queue', () => {
     await user.click(screen.getByRole('button', { name: /New render/ }));
     const dialog = await screen.findByRole('dialog');
     await user.type(within(dialog).getByLabelText('Output'), 'out/test.mp4');
-    await user.type(within(dialog).getByLabelText('Range'), '10..40');
-    await user.click(within(dialog).getByRole('button', { name: 'Start render' }));
+    await user.click(within(dialog).getByRole('radio', { name: 'Custom' }));
+    await user.clear(within(dialog).getByLabelText('Start'));
+    await user.type(within(dialog).getByLabelText('Start'), '00:00.10');
+    await user.clear(within(dialog).getByLabelText('End'));
+    await user.type(within(dialog).getByLabelText('End'), '1.33');
+    expect(within(dialog).getByTestId('export-summary')).toHaveTextContent('1 s, 31 frames');
+    await user.click(within(dialog).getByRole('button', { name: 'Start export' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(server.startRenderCalls).toEqual([{ comp: 'Intro', output: 'out/test.mp4', range: '10..40' }]);
@@ -513,21 +539,23 @@ describe('render queue', () => {
   it('sends the edited props with the render, and shows the server\'s refusal in the dialog', async () => {
     const { server, user } = await start();
     await user.click(screen.getByRole('tab', { name: 'Props' }));
-    await user.click(screen.getByLabelText('visible'));
+    await user.click(screen.getByRole('switch', { name: 'visible' }));
     await user.click(screen.getByRole('tab', { name: /Renders/ }));
 
     server.startRenderError = new ApiError('INVALID_ARG', 'bad range "9..x"', 400);
     await user.click(screen.getByRole('button', { name: /New render/ }));
     const dialog = await screen.findByRole('dialog');
     expect(dialog).toHaveTextContent('with the props edited');
-    await user.type(within(dialog).getByLabelText('Range'), '9..x');
+    await user.click(within(dialog).getByRole('radio', { name: 'Custom' }));
+    await user.clear(within(dialog).getByLabelText('Start'));
+    await user.type(within(dialog).getByLabelText('Start'), '00:00.09');
     await user.click(within(dialog).getByRole('switch', { name: /Draft/ }));
-    await user.click(within(dialog).getByRole('button', { name: 'Start render' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Start export' }));
 
     expect(await within(dialog).findByText('bad range "9..x"')).toBeInTheDocument();
     expect(server.startRenderCalls[0]).toEqual({
       comp: 'Intro',
-      range: '9..x',
+      range: '9..149',
       draft: true,
       props: { title: 'Hello', size: 64, visible: false, color: '#ff0000', style: { bold: true } },
     });
@@ -561,7 +589,7 @@ describe('transport controls', () => {
     await user.click(screen.getByTestId('timecode'));
     await user.clear(field());
     await user.type(field(), '7{Escape}');
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Go to frame or timecode' })).not.toBeInTheDocument();
     expect(counter()).toHaveTextContent('60 / 150');
 
     await user.click(screen.getByTestId('timecode'));
@@ -617,8 +645,8 @@ describe('viewer', () => {
   });
 
   it('selects the topmost layer under the pointer, and none off the frame', async () => {
-    await start();
-    await screen.findByTestId('scene-tree');
+    const { user } = await start();
+    await openScene(user);
     const frame = screen.getByTestId('frame');
     vi.spyOn(frame, 'getBoundingClientRect').mockReturnValue({
       left: 100, top: 50, right: 2020, bottom: 1130, width: 1920, height: 1080, x: 100, y: 50, toJSON: () => ({}),
@@ -646,66 +674,105 @@ describe('viewer', () => {
   });
 });
 
-describe('menus', () => {
-  it('runs the playback items and the loop toggle', async () => {
+/** Opens the command menu with Cmd+K and runs the action named `label` by typing it and pressing Enter. */
+async function runCommand(user: ReturnType<typeof userEvent.setup>, label: string) {
+  await user.keyboard('{Meta>}k{/Meta}');
+  const input = await screen.findByRole('combobox', { name: 'Command' });
+  await user.type(input, label);
+  await user.keyboard('{Enter}');
+}
+
+describe('command menu', () => {
+  it('opens with Cmd+K, runs the playback actions and the loop toggle', async () => {
     const { user } = await start();
-    await user.click(screen.getByRole('button', { name: 'Playback' }));
-    await user.click(await screen.findByRole('menuitem', { name: /Go to end/ }));
+    await runCommand(user, 'last frame');
     expect(counter()).toHaveTextContent('149 / 150');
-
-    await user.click(screen.getByRole('button', { name: 'Playback' }));
-    await user.click(await screen.findByRole('menuitemcheckbox', { name: /Loop/ }));
+    await runCommand(user, 'Loop on');
     expect(screen.getByRole('button', { name: 'Loop' })).toHaveAttribute('aria-pressed', 'true');
+    await runCommand(user, 'first frame');
+    expect(counter()).toHaveTextContent('0 / 150');
   });
 
-  it('selects a composition from the Composition menu', async () => {
+  it('opens a page of compositions and selects one', async () => {
     const { user } = await start();
-    await user.click(screen.getByRole('button', { name: 'Composition' }));
-    await user.click(await screen.findByRole('menuitemradio', { name: /Outro/ }));
-    expect(compButton('Outro')).toHaveAttribute('aria-pressed', 'true');
+    await user.keyboard('{Meta>}k{/Meta}');
+    const input = await screen.findByRole('combobox', { name: 'Command' });
+    await user.type(input, 'go to comp');
+    await user.keyboard('{Enter}');
+    await user.click(await screen.findByRole('option', { name: 'Outro' }));
     await waitFor(() => expect(counter()).toHaveTextContent('0 / 48'));
+    expect(await compButton(user, 'Outro')).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('toggles the safe zones and fits the view from the View menu', async () => {
+  it('reaches the view, window and file actions the menu bar had', async () => {
+    const { server, user } = await start();
+    await runCommand(user, 'Safe zones');
+    await runCommand(user, '100%');
+    expect(screen.getByRole('button', { name: '100%' })).toBeInTheDocument();
+    await runCommand(user, 'render queue');
+    expect(screen.getByRole('tab', { name: /Renders/ })).toHaveAttribute('aria-selected', 'true');
+    await runCommand(user, 'Export or');
+    expect(await screen.findByRole('dialog', { name: /Export Intro/ })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await runCommand(user, 'Open Props');
+    expect(screen.getByRole('tab', { name: 'Props' })).toHaveAttribute('aria-selected', 'true');
+
+    const requests = server.frameRequests.length;
+    await runCommand(user, 'Reload');
+    await waitFor(() => expect(server.frameRequests.length).toBeGreaterThan(requests));
+
+    await runCommand(user, 'Keyboard shortcuts');
+    expect(await screen.findByRole('dialog', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
+  });
+
+  it('shows overlays and the zoom steps in the preview\'s View menu', async () => {
     const { user } = await start();
-    await user.click(screen.getByRole('button', { name: 'View' }));
+    await user.click(screen.getByRole('button', { name: 'View options' }));
     await user.click(await screen.findByRole('menuitemcheckbox', { name: /Safe zones/ }));
-    expect(screen.getByRole('button', { name: /Safe Zones/ })).toHaveAttribute('aria-pressed', 'true');
-    await user.click(screen.getByRole('button', { name: 'View' }));
+    expect(screen.getByRole('menuitemcheckbox', { name: /Safe zones/ })).toHaveAttribute('aria-checked', 'true');
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'View options' }));
     await user.click(await screen.findByRole('menuitem', { name: /^100%/ }));
     expect(screen.getByRole('button', { name: '100%' })).toBeInTheDocument();
   });
 
-  it('opens the renders tab from File, reloads the frame, and switches the workspace from Window', async () => {
-    const { server, user } = await start();
-    await user.click(screen.getByRole('button', { name: 'File' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Render…' }));
-    expect(screen.getByRole('tab', { name: /Renders/ })).toHaveAttribute('aria-selected', 'true');
-
-    const requests = server.frameRequests.length;
-    await user.click(screen.getByRole('button', { name: 'File' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Reload' }));
-    await waitFor(() => expect(server.frameRequests.length).toBeGreaterThan(requests));
-
-    await user.click(screen.getByRole('button', { name: 'Window' }));
-    await user.click(await screen.findByRole('menuitemradio', { name: 'Animation' }));
-    expect(screen.getByRole('tab', { name: 'Props' })).toHaveAttribute('aria-selected', 'true');
-  });
-
-  it('opens the keyboard shortcuts from Help', async () => {
+  it('switches the theme and keeps it', async () => {
     const { user } = await start();
-    await user.click(screen.getByRole('button', { name: 'Help' }));
-    await user.click(await screen.findByRole('menuitem', { name: /Keyboard shortcuts/ }));
-    expect(await screen.findByRole('dialog', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
+    expect(document.documentElement).toHaveClass('dark');
+    await user.click(screen.getByRole('button', { name: 'Use the light theme' }));
+    expect(document.documentElement).not.toHaveClass('dark');
+    expect(window.localStorage.getItem('kg.theme')).toBe('light');
   });
 });
 
-describe('tool bar workspaces', () => {
-  it('switches the workspace and opens its inspector tab', async () => {
+describe('panels', () => {
+  it('hides and shows the agent and the inspector', async () => {
     const { user } = await start();
-    await user.click(screen.getByRole('button', { name: 'Animation' }));
-    expect(screen.getByRole('button', { name: 'Animation' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('tab', { name: 'Props' })).toHaveAttribute('aria-selected', 'true');
+    await user.click(screen.getByRole('button', { name: 'Hide the agent' }));
+    expect(screen.queryByTestId('agent-panel')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show the agent' }));
+    expect(screen.getByTestId('agent-panel')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Hide the inspector' }));
+    expect(screen.queryByRole('tab', { name: 'Props' })).not.toBeInTheDocument();
+  });
+
+  it('starts the timeline as a slim scrubber with a marker per Sequence, and the Export button opens the renders', async () => {
+    const { user } = await start(new MockServer(), { slim: true });
+    expect(await screen.findAllByTestId('marker')).not.toHaveLength(0);
+    expect(screen.queryAllByTestId('sequence-row')).toHaveLength(0);
+    await user.click(screen.getByRole('button', { name: 'Export' }));
+    const dialog = await screen.findByRole('dialog', { name: /Export Intro/ });
+    expect(dialog).toHaveTextContent('1920×1080 · 30 fps');
+    expect(dialog).toHaveTextContent('150 frames');
+    await user.click(within(dialog).getByRole('radio', { name: 'Custom' }));
+    await user.click(within(dialog).getAllByRole('button', { name: 'Set to playhead' })[0]!);
+    expect(within(dialog).getByLabelText('Start')).toHaveValue('00:00.00');
+    await user.click(within(dialog).getByRole('button', { name: 'Start export' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByRole('tab', { name: /Renders/ })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByTestId('exporting')).toBeInTheDocument();
   });
 });
 
@@ -717,17 +784,6 @@ describe('connection', () => {
     expect(await screen.findByText('offline')).toBeInTheDocument();
     server.setConnected(true);
     await waitFor(() => expect(screen.queryByText('offline')).not.toBeInTheDocument());
-  });
-});
-
-describe('project panel', () => {
-  it('counts the compositions in its footer, and says when the search matches none', async () => {
-    const { user } = await start();
-    const list = screen.getByTestId('composition-list');
-    expect(within(list).getByText('2 compositions')).toBeInTheDocument();
-    await user.type(within(list).getByRole('searchbox', { name: 'Search project' }), 'zzz');
-    expect(within(list).getByText('No matches.')).toBeInTheDocument();
-    expect(within(list).getByText('0 of 2 compositions')).toBeInTheDocument();
   });
 });
 
@@ -771,11 +827,11 @@ describe('timeline controls', () => {
     await start();
     await screen.findAllByTestId('sequence-row');
     fireEvent.wheel(screen.getByTestId('timeline-ruler'), { deltaY: -100 });
-    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '1');
+    expect(screen.getByRole('slider', { hidden: true })).toHaveAttribute('aria-valuenow', '1');
     fireEvent.wheel(screen.getByTestId('timeline-ruler'), { ctrlKey: true, deltaY: -100 });
-    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '1.25');
+    expect(screen.getByRole('slider', { hidden: true })).toHaveAttribute('aria-valuenow', '1.25');
     fireEvent.wheel(screen.getByTestId('timeline-ruler'), { metaKey: true, deltaY: -100 });
-    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '1.5625');
+    expect(screen.getByRole('slider', { hidden: true })).toHaveAttribute('aria-valuenow', '1.5625');
   });
 
   it('a search opens the way to what matches and hides the rest', async () => {
@@ -792,7 +848,7 @@ describe('timeline controls', () => {
 describe('scene tree', () => {
   it('collapses a layer with children and expands it again', async () => {
     const { user } = await start();
-    const tree = await screen.findByTestId('scene-tree');
+    const tree = await openScene(user);
     expect(within(tree).getAllByRole('treeitem')).toHaveLength(3);
     await user.click(within(tree).getByRole('button', { name: 'Collapse title-group' }));
     expect(within(tree).getAllByRole('treeitem')).toHaveLength(2);
@@ -802,7 +858,7 @@ describe('scene tree', () => {
 
   it('collapses a property section', async () => {
     const { user } = await start();
-    const tree = await screen.findByTestId('scene-tree');
+    const tree = await openScene(user);
     await pickInTree(user, 'bg');
     const details = await within(tree).findByTestId('layer-details');
     expect(within(details).getByText('anchor')).toBeInTheDocument();
