@@ -75,7 +75,7 @@ export function PluginCard({ plugin, pluginName, field, path, schema, value, onC
       aria-label={`${title} plugin`}
       onPointerDownCapture={onActive}
       onFocusCapture={onActive}
-      className={cn('bg-muted/50 flex flex-col gap-2 rounded-xl p-3 transition-shadow', selected && 'ring-primary ring-2')}
+      className={cn('bg-muted/50 flex flex-col gap-2 scroll-my-3 rounded-xl p-3 transition-shadow', selected && 'ring-primary ring-2')}
     >
       <div className="flex items-center gap-1">
         <button
