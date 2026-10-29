@@ -166,4 +166,15 @@ describe('the Agent tab', () => {
     await user.keyboard('{Enter}');
     expect(server.agentMessages.at(-1)).toEqual({ type: 'agent.reset' });
   });
+
+  it('renders the agent\'s markdown, and never raw HTML', async () => {
+    const { server } = await start();
+    await say(server, { kind: 'message', text: 'Did **bold** and `code`:\n\n- one\n- two <script>alert(1)</script>' });
+    const box = await screen.findByTestId('chat-agent');
+    await waitFor(() => expect(box.querySelector('[data-streamdown=strong]')).toHaveTextContent('bold'));
+    expect(box.querySelector('[data-streamdown=inline-code]')).toHaveTextContent('code');
+    expect(box.querySelectorAll('li')).toHaveLength(2);
+    expect(box.querySelector('script')).toBeNull();
+    expect(box).not.toHaveTextContent('**');
+  });
 });

@@ -1,3 +1,4 @@
+import { Streamdown } from 'streamdown';
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
   ArrowUpIcon,
@@ -82,9 +83,9 @@ const Item = memo(function Item({ item, onAnswer }: { item: ChatItem; onAnswer(i
       );
     case 'agent':
       return (
-        <p className="text-[13.5px] leading-relaxed break-words whitespace-pre-wrap" data-testid="chat-agent">
-          {item.text}
-        </p>
+        <div className="kg-md" data-testid="chat-agent">
+          <Streamdown linkSafety={{ enabled: false }}>{item.text}</Streamdown>
+        </div>
       );
     case 'tool': {
       const done = item.status === 'completed';
