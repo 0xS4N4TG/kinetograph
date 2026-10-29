@@ -2,6 +2,7 @@ import { useEffect, useId, useState, type ReactNode } from 'react';
 import { RotateCcwIcon } from 'lucide-react';
 
 import type { CompositionInfo, StudioApi } from '@/api';
+import { PluginPanel, PluginPanels } from '@/components/inspector/plugin-panel';
 import { PresetsMenu } from '@/components/inspector/presets-menu';
 import { fieldKind, helperText, schemaProperties, type JsonSchema } from '@/lib/props-schema';
 import { Button } from '@/components/ui/button';
@@ -28,6 +29,13 @@ interface PropsPanelProps {
  * composition's `propsSchema` when it has one, then from any `defaultProps` the schema does not name.
  */
 export function PropsPanel({ api, comp, values, edited, onChange, onReset }: PropsPanelProps) {
+  const [panels, setPanels] = useState<Record<string, string>>({});
+  useEffect(() => {
+    api.plugins().then(
+      (plugins) => setPanels(Object.fromEntries(plugins.flatMap((p) => (p.panel ? [[p.name, p.panel]] : [])))),
+      () => setPanels({}),
+    );
+  }, [api]);
   const schemaFields = schemaProperties(comp?.propsSchema);
   const schemaNames = new Set(schemaFields.map(([name]) => name));
   const names = [...schemaNames, ...Object.keys(comp?.defaultProps ?? {}).filter((name) => !schemaNames.has(name))];
@@ -48,17 +56,20 @@ export function PropsPanel({ api, comp, values, edited, onChange, onReset }: Pro
         {names.length === 0 ? (
           <p className="text-muted-foreground p-3 text-sm">This composition has no props.</p>
         ) : (
-          <form className="flex flex-col gap-4 p-3" onSubmit={(event) => event.preventDefault()}>
-            {names.map((name) => (
-              <PropField
-                key={name}
-                name={name}
-                schema={schemas.get(name)}
-                value={values[name]}
-                onChange={(v) => onChange({ ...values, [name]: v })}
-              />
-            ))}
-          </form>
+          <PluginPanels.Provider value={panels}>
+            <form className="flex flex-col gap-4 p-3" onSubmit={(event) => event.preventDefault()}>
+              {names.map((name) => (
+                <PropField
+                  key={name}
+                  name={name}
+                  path={[name]}
+                  schema={schemas.get(name)}
+                  value={values[name]}
+                  onChange={(v) => onChange({ ...values, [name]: v })}
+                />
+              ))}
+            </form>
+          </PluginPanels.Provider>
         )}
       </ScrollArea>
     </div>
@@ -67,6 +78,8 @@ export function PropsPanel({ api, comp, values, edited, onChange, onReset }: Pro
 
 interface FieldProps {
   name: string;
+  /** Where the field is in the props, e.g. `["look", "seed"]`. */
+  path: string[];
   /** The field's JSON Schema, when the composition has one for it. */
   schema?: JsonSchema | undefined;
   value: unknown;
@@ -78,11 +91,20 @@ function Help({ schema }: { schema: JsonSchema | undefined }) {
   return text === null ? null : <p className="text-muted-foreground text-xs">{text}</p>;
 }
 
-function PropField({ name, schema, value, onChange }: FieldProps) {
+function PropField({ name, path, schema, value, onChange }: FieldProps) {
   const id = useId();
   const label = <Label htmlFor={id}>{name}</Label>;
   const kind = fieldKind(schema);
 
+  if (kind?.kind === 'panel' && schema) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <Label>{name}</Label>
+        <PluginPanel plugin={kind.plugin} name={name} schema={schema} path={path} value={value} onChange={onChange} />
+        <Help schema={schema} />
+      </div>
+    );
+  }
   if (kind?.kind === 'group') {
     const group =
       value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -94,6 +116,7 @@ function PropField({ name, schema, value, onChange }: FieldProps) {
           <PropField
             key={key}
             name={key}
+            path={[...path, key]}
             schema={child}
             value={group[key]}
             onChange={(v) => onChange({ ...group, [key]: v })}

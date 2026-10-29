@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { dirname, extname, join, resolve } from 'node:path';
-import { cliVersion, CliError } from 'kinetograph';
+import { bundlePanel, cliVersion, CliError, findPlugins } from 'kinetograph';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { REAL_ENGINE_FILE } from './worker-client.js';
 import { AgentBridge } from './agent-bridge.js';
@@ -25,6 +25,7 @@ import {
   type CompositionInfo,
   type FrameHeader,
   type FrameRequest,
+  type PluginSummary,
   type ProjectInfo,
   type RenderJob,
   type RenderRequest,
@@ -388,6 +389,33 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     if (method === 'GET' && path === '/api/compositions') {
       if (project.buildId === 0) known('');
       return json(res, 200, project.compositions);
+    }
+    if (method === 'GET' && path === '/api/plugins') {
+      const plugins: PluginSummary[] = findPlugins(entry).map((p) => ({
+        name: p.name,
+        version: p.version,
+        skill: p.skill,
+        panel: p.panelFile ? `/api/plugins/${encodeURIComponent(p.name)}/panel.js` : null,
+      }));
+      return json(res, 200, { plugins });
+    }
+    const panel = /^\/api\/plugins\/([^/]+)\/panel\.js$/.exec(path);
+    if (method === 'GET' && panel) {
+      const name = decodeURIComponent(panel[1]!);
+      const file = findPlugins(entry).find((p) => p.name === name)?.panelFile;
+      if (!file) throw new StudioFailure('NOT_FOUND', `no panel for the plugin "${name}"`);
+      let code: string;
+      try {
+        code = await bundlePanel(file);
+      } catch (error) {
+        throw new StudioFailure('BUILD', `the panel of "${name}" did not build: ${(error as Error).message}`);
+      }
+      res.writeHead(200, {
+        'Content-Type': 'text/javascript; charset=utf-8',
+        'Content-Length': Buffer.byteLength(code),
+        'Cache-Control': 'no-store',
+      });
+      return void res.end(code);
     }
     if (method === 'GET' && path === '/api/presets') {
       const comp = q.get('comp');
