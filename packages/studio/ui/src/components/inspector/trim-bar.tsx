@@ -1,10 +1,57 @@
-import { useRef, type KeyboardEvent, type PointerEvent } from 'react';
+import { useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 
 import type { CompositionInfo } from '@/api';
 import { cn } from '@/lib/utils';
 
 const HEIGHT = 40;
 const TILE = Math.round(HEIGHT * (16 / 9));
+
+interface RangeGripProps {
+  which: 'start' | 'end';
+  value: number;
+  last: number;
+  onMove(frame: number): void;
+  /** The frame under a pointer event. */
+  frameAt(event: PointerEvent): number;
+  style: CSSProperties;
+  className?: string;
+}
+
+/** A chunky grip at one end of a span: drag it, or focus it and use the arrow keys (Shift for ten frames). */
+export function RangeGrip({ which, value, last, onMove, frameAt, style, className }: RangeGripProps) {
+  const onKeyDown = (event: KeyboardEvent) => {
+    const step = event.shiftKey ? 10 : 1;
+    if (event.key === 'ArrowLeft') onMove(Math.max(0, value - step));
+    else if (event.key === 'ArrowRight') onMove(Math.min(last, value + step));
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  return (
+    <div
+      role="slider"
+      aria-label={which === 'start' ? 'Range start' : 'Range end'}
+      aria-valuemin={0}
+      aria-valuemax={last}
+      aria-valuenow={value}
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+      }}
+      onPointerMove={(event) => event.buttons === 1 && onMove(frameAt(event))}
+      className={cn(
+        'bg-primary focus-visible:ring-ring absolute inset-y-0 z-10 flex w-3.5 cursor-ew-resize touch-none items-center justify-center outline-none focus-visible:ring-2',
+        which === 'start' ? 'rounded-l-xl' : 'rounded-r-xl',
+        className,
+      )}
+      style={style}
+    >
+      <span className="bg-primary-foreground/70 h-4 w-[2px] rounded-full" />
+    </div>
+  );
+}
 
 interface TrimBarProps {
   comp: CompositionInfo;
@@ -34,32 +81,15 @@ export function TrimBar({ comp, start, end, onChange, thumbnailUrl }: TrimBarPro
   const grip = (which: 'start' | 'end') => {
     const value = which === 'start' ? start : end;
     const move = (frame: number) => (which === 'start' ? onChange(Math.min(frame, end), end) : onChange(start, Math.max(frame, start)));
-    const onKeyDown = (event: KeyboardEvent) => {
-      const step = event.shiftKey ? 10 : 1;
-      if (event.key === 'ArrowLeft') move(Math.max(0, value - step));
-      else if (event.key === 'ArrowRight') move(Math.min(last, value + step));
-      else return;
-      event.preventDefault();
-    };
     return (
-      <div
-        role="slider"
-        aria-label={which === 'start' ? 'Range start' : 'Range end'}
-        aria-valuemin={0}
-        aria-valuemax={last}
-        aria-valuenow={value}
-        tabIndex={0}
-        onKeyDown={onKeyDown}
-        onPointerDown={(event) => event.currentTarget.setPointerCapture?.(event.pointerId)}
-        onPointerMove={(event) => event.buttons === 1 && move(frameAt(event))}
-        className={cn(
-          'bg-primary focus-visible:ring-ring absolute inset-y-0 z-10 flex w-3.5 cursor-ew-resize touch-none items-center justify-center outline-none focus-visible:ring-2',
-          which === 'start' ? 'rounded-l-xl' : 'rounded-r-xl',
-        )}
-        style={which === 'start' ? { left: `calc(${pct(start)}% - ${(pct(start) / 100) * 14}px)` } : { left: `calc(${pct(end)}% - ${(pct(end) / 100) * 14}px)` }}
-      >
-        <span className="bg-primary-foreground/70 h-4 w-[2px] rounded-full" />
-      </div>
+      <RangeGrip
+        which={which}
+        value={value}
+        last={last}
+        onMove={move}
+        frameAt={frameAt}
+        style={{ left: `calc(${pct(value)}% - ${(pct(value) / 100) * 14}px)` }}
+      />
     );
   };
 

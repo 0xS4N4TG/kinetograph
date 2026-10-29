@@ -24,7 +24,7 @@ import { PreviewAudio } from '@/lib/audio';
 import { findLayer } from '@/lib/inspect';
 import { numberByParent, numberTree } from '@/lib/names';
 import { Player } from '@/lib/player';
-import { layerName, remapSelection } from '@/lib/selection';
+import { layerName, remapSelection, type FrameRange } from '@/lib/selection';
 
 function toStudioError(error: unknown): StudioError {
   if (error instanceof ApiError) return { code: error.code, message: error.message };
@@ -87,11 +87,16 @@ export interface Studio {
   selectedLayer: string | null;
   selectLayer(id: string | null): void;
   selectLayers(ids: string[]): void;
+  /** The span of time picked on the timeline (frames, both ends inside it), or null. */
+  selectedRange: FrameRange | null;
+  selectRange(range: FrameRange | null): void;
 
   /** Calls `listener` with each event of the coding agent, and returns how to stop. */
   onAgentEvent(listener: (event: AgentEvent) => void): () => void;
   /** The address of a small picture of `frame` of the composition, for the timeline's clips; null without one. */
   thumbnailUrl(frame: number, height: number): string | null;
+  /** The address of a frame as a JPEG at `scale` of the composition's size; null without a composition. */
+  frameUrl(frame: number, scale: number): string | null;
   /** The conversation so far, sent when this window takes it over after a reload. */
   onAgentHistory(listener: (items: ChatRecord[]) => void): () => void;
   /** Sends a message to the coding agent; false when the connection is down. */
@@ -122,6 +127,7 @@ export function useStudio(api: StudioApi): Studio {
   const selectedLayer = selectedLayers[0] ?? null;
   const selectLayer = useCallback((id: string | null) => setSelectedLayers(id === null ? [] : [id]), []);
   const selectLayers = useCallback((ids: string[]) => setSelectedLayers(ids), []);
+  const [selectedRange, selectRange] = useState<FrameRange | null>(null);
   /** The names the selected layers had, to find them again when the project is rebuilt and their ids moved. */
   const selectedNames = useRef(new Map<string, string>());
   const selectedRef = useRef<string[]>([]);
@@ -295,6 +301,7 @@ export function useStudio(api: StudioApi): Studio {
 
   const selectComp = useCallback((id: string) => {
     setCompId(id);
+    selectRange(null);
     setSelectedLayers([]);
   }, []);
 
@@ -437,6 +444,10 @@ export function useStudio(api: StudioApi): Studio {
     };
   }, []);
   const agentInfo = useCallback(() => api.agentInfo(), [api]);
+  const frameUrl = useCallback(
+    (frame: number, scale: number) => (comp && buildId > 0 ? api.frameUrl(comp.id, frame, scale, propsOverride) : null),
+    [api, comp, buildId, propsOverride],
+  );
   const thumbnailUrl = useCallback(
     (frame: number, height: number) => (comp && buildId > 0 ? api.thumbnailUrl(comp.id, frame, height, buildId, propsOverride) : null),
     [api, comp?.id, buildId, overrideKey],
@@ -488,9 +499,12 @@ export function useStudio(api: StudioApi): Studio {
     selectedLayer,
     selectLayer,
     selectLayers,
+    selectedRange,
+    selectRange,
     onAgentEvent,
     onAgentHistory,
     thumbnailUrl,
+    frameUrl,
     sendAgent,
     agentInfo,
     renders,

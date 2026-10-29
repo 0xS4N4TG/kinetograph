@@ -23,7 +23,8 @@ import type { ChatItem } from '@/lib/chat';
 import { buildChatContext } from '@/lib/chat-context';
 import { cropToPng } from '@/lib/crop';
 import { findLayer, type InspectLayer } from '@/lib/inspect';
-import { chipText, layerRect, unionRect } from '@/lib/selection';
+import { contactSheet } from '@/lib/contact-sheet';
+import { chipText, contactFrames, layerRect, rangeLabel, unionRect, type FrameRange } from '@/lib/selection';
 import type { Chat } from '@/lib/use-chat';
 import { cn } from '@/lib/utils';
 
@@ -34,6 +35,11 @@ interface AgentPanelProps {
   selectedLayers: string[];
   selectLayers(ids: string[]): void;
   lastImage(): ReceivedFrame | null;
+  /** The span of time picked on the timeline, or null: the agent is told about it and shown a contact sheet of it. */
+  range?: FrameRange | null;
+  onClearRange?(): void;
+  /** The address of a frame as a JPEG at a scale of the composition's size; the tiles of the contact sheet. */
+  thumbnailFrameUrl?: (frame: number, scale: number) => string | null;
   chat: Chat;
   timeline: TimelineData | null;
   /** The installed plugins, so the selection can name the plugin that drew a layer. */
@@ -191,7 +197,7 @@ const Item = memo(function Item({ item, onAnswer }: { item: ChatItem; onAnswer(i
 });
 
 /** The conversation with the user's own coding agent about what is selected in the preview. */
-export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, selectedLayers, selectLayers, lastImage, chat, timeline, plugins, draft }: AgentPanelProps) {
+export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, selectedLayers, selectLayers, lastImage, range = null, onClearRange, thumbnailFrameUrl, chat, timeline, plugins, draft }: AgentPanelProps) {
   const [info, setInfo] = useState<AgentInfo | null>(null);
   const [text, setText] = useState('');
   const [withPicture, setWithPicture] = useState(true);
@@ -235,18 +241,23 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
     });
   }, [inspect, selectedLayers]);
   const cwd = project?.cwd ?? '';
-  const chips = layers.map((layer) => chipText(layer, frame, cwd));
+  const span = comp && range ? rangeLabel(range, comp.fps) : undefined;
+  const chips = layers.map((layer) => chipText(layer, frame, cwd, span));
+  /** With a span and no layer, the span has a chip of its own. */
+  const rangeChip = span && layers.length === 0 ? `${comp!.id} · ${span}` : null;
 
   const send = async (override?: string) => {
     const message = (override ?? text).trim();
     if (message === '' || busy) return;
     let image: { data: string; mimeType: string } | undefined;
-    if (withPicture && comp && layers.length > 0) {
+    if (withPicture && comp && range && thumbnailFrameUrl) {
+      image = (await contactSheet(contactFrames(range), comp.fps, comp.width, comp.height, thumbnailFrameUrl)) ?? undefined;
+    } else if (withPicture && comp && layers.length > 0) {
       const rect = unionRect(layers.flatMap((l: InspectLayer) => layerRect(l) ?? []), 24, comp.width, comp.height);
       const last: ReceivedFrame | null = lastImage();
       if (rect && last) image = (await cropToPng(last, comp.width, rect)) ?? undefined;
     }
-    const context = comp && project ? buildChatContext({ entry: project.entry, cwd, comp, frame, layers, timeline, ...(plugins ? { plugins } : {}) }) : '';
+    const context = comp && project ? buildChatContext({ entry: project.entry, cwd, comp, frame, layers, timeline, range, ...(plugins ? { plugins } : {}) }) : '';
     if (chat.send(message, context, chips, image)) setText('');
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -320,7 +331,15 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
       <div className="shrink-0 p-3 pt-0">
         <div className="bg-background/60 border-input has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-ring/20 rounded-2xl border p-2.5 transition-[box-shadow,border-color] has-[textarea:focus-visible]:ring-[3px]">
           <div className="mb-1.5 flex flex-wrap items-center gap-1.5 px-0.5" data-testid="selection-chips">
-            {chips.length === 0 ? (
+            {rangeChip && (
+              <span className="bg-accent text-accent-foreground flex max-w-full items-center gap-1 rounded-full py-0.5 pr-1 pl-2.5 text-xs">
+                <span className="truncate">{rangeChip}</span>
+                <button type="button" aria-label={`Remove ${rangeChip}`} onClick={onClearRange} className="hover:bg-foreground/10 rounded-full p-0.5">
+                  <XIcon className="size-3" aria-hidden="true" />
+                </button>
+              </span>
+            )}
+            {chips.length === 0 && !rangeChip ? (
               <span className="text-muted-foreground text-xs">Nothing selected: the agent only knows the frame.</span>
             ) : (
               layers.map((layer, index) => (

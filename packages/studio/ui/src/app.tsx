@@ -14,6 +14,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Transport } from '@/components/viewer/transport';
 import { Viewer, type Tool, type View, type Zoom } from '@/components/viewer/viewer';
 import { jobPercent } from '@/lib/format';
+import { clampRange } from '@/lib/selection';
 import { usePersistedNumber } from '@/lib/persisted';
 import { usePlayerState } from '@/lib/player-hooks';
 import { layersOfPlugin, pluginsOfSelection, usePlugins } from '@/lib/plugins';
@@ -112,6 +113,8 @@ export function App({ api }: { api: StudioApi }) {
         : selectLayer(id),
     [selectLayers, selectLayer, selectedLayers],
   );
+  const { selectedRange, selectRange } = studio;
+  const range = useMemo(() => clampRange(selectedRange, comp?.durationInFrames ?? 0), [selectedRange, comp?.durationInFrames]);
   const plugins = usePlugins(api);
   /** The plugin whose card was clicked; the plugins that drew the selected layers count as selected too. */
   const [focusedPlugin, setFocusedPlugin] = useState<string | null>(null);
@@ -155,6 +158,11 @@ export function App({ api }: { api: StudioApi }) {
     z: () => setTool('zoom'),
     '0': () => zoomTo('fit'),
     '1': () => zoomTo(1),
+    Escape: () => {
+      selectRange(null);
+      selectLayers([]);
+      setFocusedPlugin(null);
+    },
     m: () => studio.audio.setMuted(!studio.audio.getState().muted),
     '?': () => setShortcutsOpen(true),
   });
@@ -268,6 +276,9 @@ export function App({ api }: { api: StudioApi }) {
                 inspect={studio.inspect}
                 selectedLayers={studio.selectedLayers}
                 selectLayers={studio.selectLayers}
+                range={range}
+                onClearRange={() => selectRange(null)}
+                thumbnailFrameUrl={studio.frameUrl}
                 lastImage={studio.lastImage}
                 chat={chat}
                 timeline={timelineData}
@@ -322,6 +333,8 @@ export function App({ api }: { api: StudioApi }) {
                 player={player}
                 selectedLayers={studio.selectedLayers}
                 onSelectLayers={pickLayers}
+                selectedRange={range}
+                onSelectRange={selectRange}
                 thumbnailUrl={studio.thumbnailUrl}
                 waveform={studio.waveform}
                 expanded={timelineOpen}

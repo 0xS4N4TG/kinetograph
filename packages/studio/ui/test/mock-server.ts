@@ -175,6 +175,10 @@ export class MockServer implements StudioApi {
     return `/api/thumbnail?comp=${comp}&frame=${frame}&height=${height}&build=${build}`;
   }
 
+  frameUrl(comp: string, frame: number, scale: number): string {
+    return `/api/frame?comp=${comp}&frame=${frame}&scale=${scale}&format=jpeg`;
+  }
+
   connect(handlers: SocketHandlers): StudioSocket {
     this.handlers = handlers;
     this.connections++;

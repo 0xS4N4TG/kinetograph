@@ -7,9 +7,39 @@ import { formatNumber, formatTimecode } from '@/lib/format';
 import type { PluginSummary } from '@/api';
 import type { InspectLayer } from '@/lib/inspect';
 import { pluginOfLayer } from '@/lib/plugins';
-import { layerComponent, layerName, layerRect, layerSource } from '@/lib/selection';
+import { isGeneric } from '@/lib/timeline-model';
+import { layerComponent, layerName, layerRect, layerSource, rangeLabel, touchesRange, type FrameRange } from '@/lib/selection';
 
-export type ChatContextInput = Omit<AgentMessageInput, 'layer'> & { layers: InspectLayer[]; plugins?: PluginSummary[] };
+export type ChatContextInput = Omit<AgentMessageInput, 'layer'> & { layers: InspectLayer[]; plugins?: PluginSummary[]; range?: FrameRange | null };
+
+const MAX_LISTED = 25;
+
+/** The Sequences the span overlaps and the layers drawn at some point in it, from what the timeline read. */
+function describeRange(range: FrameRange, timeline: NonNullable<ChatContextInput['timeline']>): string[] {
+  const lines: string[] = [];
+  const sequences = timeline.sequences.filter((s) => s.from <= range.end && s.from + s.durationInFrames - 1 >= range.start);
+  lines.push(
+    sequences.length === 0
+      ? 'No Sequence overlaps this span.'
+      : `Sequences it overlaps: ${sequences
+          .slice(0, MAX_LISTED)
+          .map((s) => `${quoted(s.label ?? s.name ?? 'Sequence')} (frames ${s.from} to ${s.from + s.durationInFrames - 1})`)
+          .join(', ')}${sequences.length > MAX_LISTED ? `, and ${sequences.length - MAX_LISTED} more` : ''}.`,
+  );
+  // Identical siblings fold into one entry with a count; bare Groups and Shapes say nothing and are left out.
+  const groups = new Map<string, number>();
+  for (const layer of timeline.layers) {
+    if (isGeneric(layer) || !touchesRange(layer.ranges, range)) continue;
+    const name = layer.label ?? layer.component ?? (layer.id.startsWith("$") ? layer.type : layer.id);
+    const key = layer.component && layer.component !== name ? `${name} (component ${layer.component})` : name;
+    groups.set(key, (groups.get(key) ?? 0) + 1);
+  }
+  const entries = [...groups].map(([name, n]) => (n > 1 ? `${quoted(name)} ×${n}` : quoted(name)));
+  if (entries.length > 0) {
+    lines.push(`Layers visible at some point in it: ${entries.slice(0, MAX_LISTED).join(', ')}${entries.length > MAX_LISTED ? `, and ${entries.length - MAX_LISTED} more` : ''}.`);
+  }
+  return lines;
+}
 
 function describe(layer: InspectLayer, index: number, input: ChatContextInput): string {
   const { comp, frame, timeline } = input;
@@ -43,8 +73,15 @@ function describe(layer: InspectLayer, index: number, input: ChatContextInput): 
 
 /** The context block for the selected layers, or '' when nothing is selected. */
 export function buildChatContext(input: ChatContextInput): string {
-  const { entry, cwd, comp, frame, layers } = input;
-  const header = `Project entry ${relativePath(entry, cwd)}, composition \`${comp.id}\`, frame ${frame} (${formatTimecode(frame, comp.fps)}).`;
-  if (layers.length === 0) return header;
-  return [header, `${layers.length === 1 ? 'Selected layer' : `Selected layers (${layers.length})`}:`, ...layers.map((l, i) => describe(l, i, input))].join('\n');
+  const { entry, cwd, comp, layers, range } = input;
+  // With a span, a selected layer's Sequence is looked up inside it (at the playhead when that is in it).
+  const frame = range ? Math.min(range.end, Math.max(range.start, input.frame)) : input.frame;
+  input = { ...input, frame };
+  const where = `Project entry ${relativePath(entry, cwd)}, composition \`${comp.id}\``;
+  const header = range
+    ? `${where}, a span of time: ${rangeLabel(range, comp.fps)}, ${range.end - range.start + 1} frames at ${comp.fps} fps.`
+    : `${where}, frame ${frame} (${formatTimecode(frame, comp.fps)}).`;
+  const extra = range && input.timeline ? describeRange(range, input.timeline) : [];
+  if (layers.length === 0) return [header, ...extra].join('\n');
+  return [header, ...extra, `${layers.length === 1 ? 'Selected layer' : `Selected layers (${layers.length})`}:`, ...layers.map((l, i) => describe(l, i, input))].join('\n');
 }

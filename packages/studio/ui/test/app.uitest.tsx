@@ -352,37 +352,68 @@ describe('timeline', () => {
     expect(screen.queryByText('No Sequences')).not.toBeInTheDocument();
   });
 
-  it('moves the playhead and asks for preview-quality frames while the ruler is dragged, full quality on release', async () => {
+  it('moves the playhead and asks for preview-quality frames while the film strip is dragged, full quality on release', async () => {
     const { server } = await start();
     const ruler = screen.getByTestId('timeline-ruler');
     vi.spyOn(ruler, 'getBoundingClientRect').mockReturnValue({
       left: 100, top: 0, right: 1600, bottom: 28, width: 1500, height: 28, x: 100, y: 0, toJSON: () => ({}),
     });
+    const strip = screen.getByTestId('filmstrip').closest('[data-lane]')!;
     const playhead = screen.getByTestId('playhead');
     const left0 = playhead.style.left;
 
-    fireEvent.pointerDown(ruler, { clientX: 400, pointerId: 1 }); // 300px of 1500 = frame 30
+    fireEvent.pointerDown(strip, { clientX: 400, pointerId: 1 }); // 300px of 1500 = frame 30
     expect(counter()).toHaveTextContent('30 / 150');
     expect(server.lastFrameRequest).toMatchObject({ frame: 30, scale: 0.5, format: 'jpeg' });
     expect(playhead.style.left).not.toBe(left0);
 
-    fireEvent.pointerMove(ruler, { clientX: 850, pointerId: 1 }); // frame 75
+    fireEvent.pointerMove(strip, { clientX: 850, pointerId: 1 }); // frame 75
     expect(counter()).toHaveTextContent('75 / 150');
     expect(server.lastFrameRequest).toMatchObject({ frame: 75, scale: 0.5, format: 'jpeg' });
 
-    fireEvent.pointerUp(ruler, { clientX: 850, pointerId: 1 });
+    fireEvent.pointerUp(strip, { clientX: 850, pointerId: 1 });
     expect(server.lastFrameRequest).toMatchObject({ frame: 75, scale: 1, format: 'png' });
 
     // moving without a button down does not scrub
-    fireEvent.pointerMove(ruler, { clientX: 1000, pointerId: 1 });
+    fireEvent.pointerMove(strip, { clientX: 1000, pointerId: 1 });
     expect(counter()).toHaveTextContent('75 / 150');
 
     // past the ends clamps to the first and last frame
-    fireEvent.pointerDown(ruler, { clientX: 5000, pointerId: 1 });
+    fireEvent.pointerDown(strip, { clientX: 5000, pointerId: 1 });
     expect(counter()).toHaveTextContent('149 / 150');
-    fireEvent.pointerMove(ruler, { clientX: -50, pointerId: 1 });
+    fireEvent.pointerMove(strip, { clientX: -50, pointerId: 1 });
     expect(counter()).toHaveTextContent('0 / 150');
-    fireEvent.pointerUp(ruler);
+    fireEvent.pointerUp(strip);
+  });
+
+  it('a drag across the ruler picks a span, the playhead stays; Shift extends it, Escape clears it', async () => {
+    const { server } = await start();
+    const ruler = screen.getByTestId('timeline-ruler');
+    vi.spyOn(ruler, 'getBoundingClientRect').mockReturnValue({
+      left: 100, top: 0, right: 1600, bottom: 28, width: 1500, height: 28, x: 100, y: 0, toJSON: () => ({}),
+    });
+    expect(screen.queryByTestId('time-range')).not.toBeInTheDocument();
+    fireEvent.pointerDown(ruler, { clientX: 400, pointerId: 1 }); // frame 30
+    fireEvent.pointerMove(ruler, { clientX: 850, pointerId: 1 }); // frame 75
+    fireEvent.pointerUp(ruler, { clientX: 850, pointerId: 1 });
+    expect(screen.getByTestId('time-range')).toBeInTheDocument();
+    expect(screen.getByRole('slider', { name: 'Range start' })).toHaveAttribute('aria-valuenow', '30');
+    expect(screen.getByRole('slider', { name: 'Range end' })).toHaveAttribute('aria-valuenow', '75');
+    expect(screen.getByTestId('selection-chips')).toHaveTextContent('Intro · 0:01.0–0:02.5 (frames 30–75)');
+    expect(server.lastFrameRequest).toMatchObject({ frame: 30 });
+
+    // shift-drag widens it
+    fireEvent.pointerDown(ruler, { clientX: 1300, pointerId: 1, shiftKey: true }); // frame 120
+    fireEvent.pointerUp(ruler, { pointerId: 1 });
+    expect(screen.getByRole('slider', { name: 'Range end' })).toHaveAttribute('aria-valuenow', '120');
+    expect(screen.getByRole('slider', { name: 'Range start' })).toHaveAttribute('aria-valuenow', '30');
+
+    // a grip moves with the arrow keys
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Range start' }), { key: 'ArrowRight' });
+    expect(screen.getByRole('slider', { name: 'Range start' })).toHaveAttribute('aria-valuenow', '31');
+
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(screen.queryByTestId('time-range')).not.toBeInTheDocument();
   });
 
   it('selects the layer of a clicked row in the scene tree and shows its resolved fields', async () => {

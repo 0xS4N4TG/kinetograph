@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import { ChevronRightIcon } from 'lucide-react';
 
 import type { LucideIcon } from 'lucide-react';
@@ -165,7 +165,7 @@ export function Bar({
   pxPerFrame: number;
   className: string;
   title?: string;
-  onClick?: () => void;
+  onClick?: (event: MouseEvent) => void;
   /** The address of the picture of the clip's first frame. */
   thumbnail?: string | null;
   /** Fills the bar behind its name (a video's film strip); the name sits on a chip then. */

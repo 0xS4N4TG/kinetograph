@@ -5,16 +5,18 @@ import type { CompositionInfo, TimelineAudio, Waveform } from '@/api';
 import { Bar, EmptyRow, LABEL_WIDTH, LANE_INSET, ROW_HEIGHT, Row, THUMB_HEIGHT, TimelineNotice } from '@/components/timeline/timeline-row';
 import { bucketsFor, useWaveform, VideoStrip, WaveformLine } from '@/components/timeline/timeline-media';
 import { Button } from '@/components/ui/button';
+import { RangeGrip } from '@/components/inspector/trim-bar';
 import { Hint } from '@/components/ui/hint';
 import { Slider } from '@/components/ui/slider';
 import { clock } from '@/lib/format';
 import { layerColors } from '@/lib/layer-colors';
 import { fullSource, secondLine } from '@/lib/names';
+import { extendRange, makeRange, type FrameRange } from '@/lib/selection';
 import type { Player } from '@/lib/player';
 import { useFrame, usePlayerState } from '@/lib/player-hooks';
 import type { TimelineStatus } from '@/studio';
 import { cn } from '@/lib/utils';
-import { buildTimeline, seekTarget, visibleRows, type TimelineNode } from '@/lib/timeline-model';
+import { buildTimeline, seekTarget, visibleRows, type Range, type TimelineNode } from '@/lib/timeline-model';
 import { buildRuler } from '@/lib/ruler';
 import { useElementSize } from '@/lib/use-element-size';
 
@@ -34,6 +36,9 @@ interface TimelineProps {
   selectedLayers: string[];
   /** A row was clicked: the layers it stands for (all the pieces of a folded row). */
   onSelectLayers(ids: string[]): void;
+  /** The span of time picked on the timeline, or null. */
+  selectedRange: FrameRange | null;
+  onSelectRange(range: FrameRange | null): void;
   /** The address of a small picture of a frame, for the clips; none when left out. */
   thumbnailUrl?: (frame: number, height: number) => string | null;
   /** Peaks of one sound (or of the mix); none when left out. */
@@ -89,6 +94,52 @@ const Playhead = memo(function Playhead({
       style={{ left: left + frame * pxPerFrame }}
     >
       <span className="bg-primary ring-card absolute top-0 left-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2" />
+    </div>
+  );
+});
+
+/**
+ * The picked span over every row, ruler included: a tinted region with a grip at each end, the look of the export
+ * dialog's trim bar. The grips sit in the ruler band; drag one, or focus it and use the arrow keys.
+ */
+const RangeOverlay = memo(function RangeOverlay({
+  range,
+  left,
+  pxPerFrame,
+  duration,
+  frameAt,
+  onChange,
+}: {
+  range: FrameRange;
+  left: number;
+  pxPerFrame: number;
+  duration: number;
+  frameAt(clientX: number): number;
+  onChange(range: FrameRange): void;
+}) {
+  const x = left + range.start * pxPerFrame;
+  const width = (range.end + 1 - range.start) * pxPerFrame;
+  const last = Math.max(0, duration - 1);
+  const grip = (which: 'start' | 'end') => (
+    <RangeGrip
+      which={which}
+      value={which === 'start' ? range.start : range.end}
+      last={last}
+      frameAt={(event) => frameAt(event.clientX)}
+      onMove={(frame) => {
+        const next = which === 'start' ? makeRange(frame, range.end, duration) : makeRange(range.start, frame, duration);
+        if (next) onChange(next);
+      }}
+      className="inset-y-auto top-0 z-[35] h-10"
+      style={which === 'start' ? { left: -14 } : { left: width }}
+    />
+  );
+  return (
+    <div data-testid="time-range" className="pointer-events-none absolute inset-y-0 z-[25]" style={{ left: x, width }}>
+      <div className="bg-primary/10 border-primary/60 absolute inset-0 border-x" />
+      <div className="bg-primary/20 absolute inset-x-0 top-0 h-10" />
+      <div className="pointer-events-auto">{grip('start')}</div>
+      <div className="pointer-events-auto">{grip('end')}</div>
     </div>
   );
 });
@@ -161,7 +212,7 @@ interface RowItemProps {
   player: Player;
   thumbnailUrl: TimelineProps['thumbnailUrl'];
   onToggle(id: string): void;
-  onPick(node: TimelineNode, seek: boolean): void;
+  onPick(node: TimelineNode, seek: boolean, span?: Range, extend?: boolean): void;
 }
 
 interface AudioRowProps {
@@ -239,7 +290,7 @@ const RowItem = memo(function RowItem({ node, depth, expandable, open, details, 
           to={b + 1}
           pxPerFrame={pxPerFrame}
           title={title}
-          onClick={() => onPick(node, false)}
+          onClick={(event) => onPick(node, false, [a, b], event.shiftKey)}
           thumbnail={thumbnailUrl?.(a, THUMB_HEIGHT * 2)}
           strip={node.type === 'video' && thumbnailUrl ? <VideoStrip first={a} end={b + 1} width={(b + 1 - a) * pxPerFrame} height={THUMB_HEIGHT + 12} thumbnailUrl={thumbnailUrl} /> : undefined}
           icon={colors.icon}
@@ -260,10 +311,13 @@ const RowItem = memo(function RowItem({ node, depth, expandable, open, details, 
  * Expanded: a row per Sequence nested under its parent, then a row per layer. Pressing and dragging in the ruler or a
  * lane scrubs; a row's click selects its layer. Only the rows in view are drawn.
  */
-export const Timeline = memo(function Timeline({ comp, status, player, selectedLayers, onSelectLayers, thumbnailUrl, waveform, expanded: open, onExpandedChange, details, onDetailsChange }: TimelineProps) {
+export const Timeline = memo(function Timeline({ comp, status, player, selectedLayers, onSelectLayers, selectedRange, onSelectRange, thumbnailUrl, waveform, expanded: open, onExpandedChange, details, onDetailsChange }: TimelineProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
-  const dragging = useRef(false);
+  /** What a press in the ruler or a lane is doing: scrubbing, or (for a press that may become a drag) waiting to see. */
+  const drag = useRef<{ kind: 'scrub' } | { kind: 'pending'; anchor: number; x: number } | { kind: 'range'; anchor: number; base: FrameRange | null } | null>(null);
+  const rangeRef = useRef(selectedRange);
+  rangeRef.current = selectedRange;
   /** A Ctrl or Cmd wheel zoom keeps the frame under the pointer where it was: `x` px from the scroller's left edge. */
   const anchor = useRef<{ frame: number; x: number } | null>(null);
   const size = useElementSize(scrollerRef);
@@ -299,15 +353,17 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
   );
   /** A click on a row's name: the playhead goes to where the item first shows (unless it is on it already). */
   const pick = useCallback(
-    (node: TimelineNode, seek: boolean) => {
+    (node: TimelineNode, seek: boolean, span?: Range, extend?: boolean) => {
       if (seek) {
         const target = seekTarget(node, player.getState().frame);
         if (target !== null) player.seek(target);
       }
       setClicked(node.id);
       onSelectLayers(node.layerIds);
+      // A clip selects its span; Shift widens the span already picked.
+      if (span) onSelectRange(extend ? extendRange(rangeRef.current, span[0], span[1], duration) : makeRange(span[0], span[1], duration));
     },
-    [player, onSelectLayers],
+    [player, onSelectLayers, onSelectRange, duration],
   );
 
   // Only the rows in (or near) view are drawn; before the scroller is measured, all of them.
@@ -348,22 +404,47 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
     const span = rect.width || laneWidth;
     player.seek(((clientX - rect.left) / span) * duration);
   };
-  // The ruler and every lane share one horizontal scale, so a press in any lane seeks the same way.
+  /** The whole frame under a pointer, in or out of the lane (the span clamps it). */
+  const frameAtX = (clientX: number) => {
+    const rect = rulerRef.current?.getBoundingClientRect();
+    return rect && duration > 0 ? Math.floor(((clientX - rect.left) / (rect.width || laneWidth)) * duration) : 0;
+  };
+  // The ruler and every lane share one horizontal scale. A press seeks, as it always did; in the ruler and the empty
+  // part of a row it becomes a span once the pointer moves, and with Shift it extends the span at once. The film strip
+  // only scrubs, and a clip takes the click itself.
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    const lane = (event.target as Element).closest<HTMLElement>('[data-lane]');
-    if (!lane || event.button > 0 || duration === 0) return;
-    dragging.current = true;
+    const target = event.target as Element;
+    const lane = target.closest<HTMLElement>('[data-lane]');
+    if (!lane || event.button > 0 || duration === 0 || target.closest('[data-testid=bar]')) return;
     lane.setPointerCapture?.(event.pointerId);
+    const frame = frameAtX(event.clientX);
+    const spans = lane === rulerRef.current || lane.closest('[data-testid$="-row"]') !== null;
+    if (spans && event.shiftKey) {
+      drag.current = { kind: 'range', anchor: frame, base: rangeRef.current };
+      onSelectRange(extendRange(rangeRef.current, frame, frame, duration));
+      return;
+    }
     player.beginScrub();
     seekTo(event.clientX);
+    drag.current = spans ? { kind: 'pending', anchor: frame, x: event.clientX } : { kind: 'scrub' };
   };
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (dragging.current) seekTo(event.clientX);
+    const d = drag.current;
+    if (!d) return;
+    if (d.kind === 'scrub') return seekTo(event.clientX);
+    if (d.kind === 'pending') {
+      if (Math.abs(event.clientX - d.x) < 4) return seekTo(event.clientX);
+      player.endScrub();
+      drag.current = { kind: 'range', anchor: d.anchor, base: null };
+      return onSelectRange(makeRange(d.anchor, frameAtX(event.clientX), duration));
+    }
+    const now = frameAtX(event.clientX);
+    onSelectRange(d.base ? extendRange(d.base, d.anchor, now, duration) : makeRange(d.anchor, now, duration));
   };
   const onPointerUp = () => {
-    if (!dragging.current) return;
-    dragging.current = false;
-    player.endScrub();
+    const d = drag.current;
+    drag.current = null;
+    if (d && d.kind !== 'range') player.endScrub();
   };
 
   const roots = model?.roots ?? [];
@@ -411,7 +492,7 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
             <Button variant="ghost" size="icon-sm" aria-label="Zoom out timeline" disabled={zoom <= MIN_ZOOM} onClick={() => setZoom((z) => clampZoom(z / ZOOM_FACTOR))} className="shrink-0 rounded-full">
               <ZoomOutIcon />
             </Button>
-            <Slider className="hidden w-[72px] min-w-0 @lg/tl:flex" aria-label="Zoom" min={MIN_ZOOM} max={MAX_ZOOM} step={0.5} value={[zoom]} onValueChange={(value) => setZoom(clampZoom(Array.isArray(value) ? (value[0] ?? MIN_ZOOM) : value))} />
+            <div className="hidden w-[72px] shrink-0 @xl/tl:block"><Slider className="w-full min-w-0" aria-label="Zoom" min={MIN_ZOOM} max={MAX_ZOOM} step={0.5} value={[zoom]} onValueChange={(value) => setZoom(clampZoom(Array.isArray(value) ? (value[0] ?? MIN_ZOOM) : value))} /></div>
             <Button variant="ghost" size="icon-sm" aria-label="Zoom in timeline" disabled={zoom >= MAX_ZOOM} onClick={() => setZoom((z) => clampZoom(z * ZOOM_FACTOR))} className="shrink-0 rounded-full">
               <ZoomInIcon />
             </Button>
@@ -540,6 +621,9 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
               <AudioRow key={sound.id} sound={sound} pxPerFrame={pxPerFrame} laneWidth={laneWidth} fps={fps} waveform={waveform} />
             ))}
 
+            {selectedRange && (
+              <RangeOverlay range={selectedRange} left={lead} pxPerFrame={pxPerFrame} duration={duration} frameAt={frameAtX} onChange={onSelectRange} />
+            )}
             <Playhead player={player} left={lead} pxPerFrame={pxPerFrame} scrollerRef={scrollerRef} zoom={zoom} labelWidth={labelWidth} />
           </div>
         )}

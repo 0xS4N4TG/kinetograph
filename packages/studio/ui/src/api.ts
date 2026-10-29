@@ -115,6 +115,8 @@ export interface StudioApi {
    * only while no preview frame is being asked for; `build` makes the address change when the project is rebuilt.
    */
   thumbnailUrl(comp: string, frame: number, height: number, build: number, props?: Record<string, unknown>): string;
+  /** The address of frame `frame` as a JPEG drawn at `scale` (0 to 1) of the composition's size: the tiles of a contact sheet. */
+  frameUrl(comp: string, frame: number, scale: number, props?: Record<string, unknown>): string;
 }
 
 /** `GET /api/waveform`. */
@@ -236,6 +238,8 @@ export function createApi(options: ApiOptions = {}): StudioApi {
     cancelRender: (id) => request<RenderJob>(`/api/renders/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     thumbnailUrl: (comp, frame, height, build, props) =>
       `${baseUrl}/api/thumbnail${query({ comp, frame, height, build, props: propsParam(props) })}`,
+
+    frameUrl: (comp, frame, scale, props) => `${baseUrl}/api/frame${query({ comp, frame, scale, format: 'jpeg', props: propsParam(props) })}`,
 
     connect(handlers) {
       const Socket = options.WebSocket ?? WebSocket;
