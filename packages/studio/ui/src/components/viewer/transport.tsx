@@ -150,7 +150,7 @@ export const Transport = memo(function Transport({ comp, player, edges = [], cla
         </Button>
       </Hint>
       <Timecode comp={comp} frame={state.frame} player={player} />
-      <span data-testid="frame-counter" className="text-muted-foreground font-mono text-xs tabular-nums">
+      <span data-testid="frame-counter" className="text-muted-foreground hidden font-mono text-xs tabular-nums min-[1400px]:inline">
         {state.frame} / {comp?.durationInFrames ?? 0}
       </span>
       <Progress comp={comp} frame={state.frame} edges={edges} player={player} />

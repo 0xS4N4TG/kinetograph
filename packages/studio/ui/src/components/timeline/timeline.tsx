@@ -346,7 +346,7 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
         <div className="ml-auto flex min-w-0 shrink-0 items-center gap-3">
           {open && (
             <>
-              <div className="bg-input/40 hidden h-8 w-48 items-center gap-2 rounded-full px-3 md:flex">
+              <div className="bg-input/40 hidden h-8 w-44 items-center gap-2 rounded-full px-3 min-[1500px]:flex">
                 <SearchIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden="true" />
                 <input
                   type="search"
@@ -357,9 +357,9 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
                   className="placeholder:text-muted-foreground/70 w-full bg-transparent text-sm outline-none"
                 />
               </div>
-              <Button variant={details ? 'secondary' : 'ghost'} size="sm" aria-pressed={details} onClick={() => onDetailsChange(!details)} className="rounded-full px-3 whitespace-nowrap">
+              <Button variant={details ? 'secondary' : 'ghost'} size="sm" aria-pressed={details} onClick={() => onDetailsChange(!details)} aria-label="Show details" title="Show details" className="rounded-full px-3 whitespace-nowrap">
                 <ListTreeIcon />
-                Show details
+                <span className="hidden min-[1500px]:inline">Show details</span>
               </Button>
             </>
           )}
