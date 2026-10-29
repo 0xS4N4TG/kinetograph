@@ -1,18 +1,36 @@
-import { useEffect, useId, useState, type ReactNode } from 'react';
-import { RotateCcwIcon } from 'lucide-react';
+import { memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ChevronDownIcon, RotateCcwIcon } from 'lucide-react';
 
 import type { CompositionInfo, StudioApi } from '@/api';
 import { PluginPanel, PluginPanels } from '@/components/inspector/plugin-panel';
 import { PresetsMenu } from '@/components/inspector/presets-menu';
-import { fieldKind, helperText, schemaProperties, unsetType, type JsonSchema } from '@/lib/props-schema';
 import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { fieldKind, helperText, schemaProperties, unsetType, type JsonSchema } from '@/lib/props-schema';
+import { ActivePanelContext } from '@/lib/preview-context';
+import { cn } from '@/lib/utils';
+
+const NO_PATH: string[] = [];
+
+/** The path of the first field a plugin draws, for its overlay to show before anything is touched. */
+function firstPanel(entries: [string, JsonSchema | undefined][], base: string[]): string | null {
+  for (const [name, schema] of entries) {
+    const kind = fieldKind(schema);
+    if (kind?.kind === 'panel') return [...base, name].join('.');
+    if (kind?.kind === 'group') {
+      const found = firstPanel(kind.properties, [...base, name]);
+      if (found) return found;
+    }
+  }
+  return null;
+}
 
 interface PropsPanelProps {
   api: StudioApi;
@@ -26,10 +44,12 @@ interface PropsPanelProps {
 
 /**
  * A form for the composition's props; every edit re-renders the preview with the new props. The fields come from the
- * composition's `propsSchema` when it has one, then from any `defaultProps` the schema does not name.
+ * composition's `propsSchema` when it has one, then from any `defaultProps` the schema does not name. A field only
+ * re-renders when its own value changes, so dragging one slider does not redraw the rest.
  */
-export function PropsPanel({ api, comp, values, edited, onChange, onReset }: PropsPanelProps) {
+export const PropsPanel = memo(function PropsPanel({ api, comp, values, edited, onChange, onReset }: PropsPanelProps) {
   const [panels, setPanels] = useState<Record<string, string>>({});
+  const [active, setActive] = useState<string | null>(null);
   useEffect(() => {
     api.plugins().then(
       (plugins) => setPanels(Object.fromEntries(plugins.flatMap((p) => (p.panel ? [[p.name, p.panel]] : [])))),
@@ -37,16 +57,26 @@ export function PropsPanel({ api, comp, values, edited, onChange, onReset }: Pro
     );
   }, [api]);
   const schemaFields = schemaProperties(comp?.propsSchema);
-  const schemaNames = new Set(schemaFields.map(([name]) => name));
-  const names = [...schemaNames, ...Object.keys(comp?.defaultProps ?? {}).filter((name) => !schemaNames.has(name))];
-  const schemas = new Map(schemaFields);
+  const names = useMemo(() => {
+    const schemaNames = new Set(schemaFields.map(([name]) => name));
+    return [...schemaNames, ...Object.keys(comp?.defaultProps ?? {}).filter((name) => !schemaNames.has(name))];
+  }, [comp?.propsSchema, comp?.defaultProps]);
+  const schemas = useMemo(() => new Map(schemaFields), [comp?.propsSchema]);
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
+  const setField = useCallback((name: string, value: unknown) => onChange({ ...valuesRef.current, [name]: value }), [onChange]);
+  const activeContext = useMemo(
+    () => ({ active: active ?? firstPanel(schemaFields, NO_PATH), setActive }),
+    [active, comp?.propsSchema],
+  );
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="props-panel">
-      <div className="flex h-9 shrink-0 items-center justify-between border-b px-3">
-        <span className="text-sm font-medium">{comp ? `${comp.id} props` : 'Props'}</span>
-        <div className="flex items-center">
+      <div className="flex h-11 shrink-0 items-center justify-between gap-2 px-4">
+        <div className="-ml-2 flex items-center gap-0.5">
           {comp && <PresetsMenu api={api} comp={comp} values={values} onLoad={onChange} />}
-          <Button variant="ghost" size="sm" disabled={!edited} onClick={onReset}>
+        </div>
+        <div className="-mr-2">
+          <Button variant="ghost" size="sm" disabled={!edited} onClick={onReset} className="rounded-full px-3">
             <RotateCcwIcon />
             Reset
           </Button>
@@ -54,102 +84,83 @@ export function PropsPanel({ api, comp, values, edited, onChange, onReset }: Pro
       </div>
       <ScrollArea className="min-h-0 flex-1">
         {names.length === 0 ? (
-          <p className="text-muted-foreground p-3 text-sm">This composition has no props.</p>
+          <p className="text-muted-foreground px-4 py-3 text-sm">This composition has no props.</p>
         ) : (
           <PluginPanels.Provider value={panels}>
-            <form className="flex flex-col gap-4 p-3" onSubmit={(event) => event.preventDefault()}>
-              {names.map((name) => (
-                <PropField
-                  key={name}
-                  name={name}
-                  path={[name]}
-                  schema={schemas.get(name)}
-                  value={values[name]}
-                  onChange={(v) => onChange({ ...values, [name]: v })}
-                />
-              ))}
-            </form>
+            <ActivePanelContext.Provider value={activeContext}>
+              <form className="flex flex-col gap-5 px-4 pt-1 pb-6" onSubmit={(event) => event.preventDefault()}>
+                {names.map((name) => (
+                  <PropField key={name} name={name} parentPath={NO_PATH} schema={schemas.get(name)} value={values[name]} set={setField} />
+                ))}
+              </form>
+            </ActivePanelContext.Provider>
           </PluginPanels.Provider>
         )}
       </ScrollArea>
     </div>
   );
-}
+});
 
 interface FieldProps {
   name: string;
-  /** Where the field is in the props, e.g. `["look", "seed"]`. */
-  path: string[];
+  /** Where the field's parent is in the props, e.g. `["look"]` for `look.seed`. */
+  parentPath: string[];
   /** The field's JSON Schema, when the composition has one for it. */
   schema?: JsonSchema | undefined;
   value: unknown;
-  onChange(value: unknown): void;
+  /** Sets one field of the parent (stable, so an untouched field does not re-render). */
+  set(name: string, value: unknown): void;
 }
 
 function Help({ schema }: { schema: JsonSchema | undefined }) {
   const text = helperText(schema);
-  return text === null ? null : <p className="text-muted-foreground text-xs">{text}</p>;
+  return text === null ? null : <p className="text-muted-foreground text-xs leading-relaxed">{text}</p>;
 }
 
-function PropField({ name, path, schema, value, onChange }: FieldProps) {
+const FIELD = 'flex flex-col gap-2';
+
+const PropField = memo(function PropField({ name, parentPath, schema, value, set }: FieldProps) {
   const id = useId();
+  const path = useMemo(() => [...parentPath, name], [parentPath, name]);
+  const onChange = useCallback((next: unknown) => set(name, next), [set, name]);
   const kind = fieldKind(schema);
   // An optional field with no value yet is drawn from its schema's type, empty, and marked as the component's default.
   const unset = value === undefined ? unsetType(schema) : null;
   const label = (
-    <Label htmlFor={id}>
+    <Label htmlFor={id} className="text-[13px] font-medium">
       {name}
-      {value === undefined && <span className="text-muted-foreground text-xs font-normal">default</span>}
+      {value === undefined && <span className="text-muted-foreground ml-1.5 text-xs font-normal">default</span>}
     </Label>
   );
 
   if (kind?.kind === 'panel' && schema) {
-    return (
-      <div className="flex flex-col gap-1.5">
-        <Label>{name}</Label>
-        <PluginPanel plugin={kind.plugin} name={name} schema={schema} path={path} value={value} onChange={onChange} />
-        <Help schema={schema} />
-      </div>
-    );
+    return <PanelSection name={name} path={path} plugin={kind.plugin} schema={schema} value={value} onChange={onChange} />;
   }
   if (kind?.kind === 'group') {
-    const group =
-      value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
     return (
-      <fieldset className="flex flex-col gap-3 rounded-md border p-3">
-        <legend className="px-1 text-sm font-medium">{name}</legend>
-        <Help schema={schema} />
-        {kind.properties.map(([key, child]) => (
-          <PropField
-            key={key}
-            name={key}
-            path={[...path, key]}
-            schema={child}
-            value={group[key]}
-            onChange={(v) => onChange({ ...group, [key]: v })}
-          />
-        ))}
-      </fieldset>
+      <GroupField name={name} path={path} schema={schema} value={value} properties={kind.properties} onChange={onChange} />
     );
   }
   if (kind?.kind === 'enum') {
+    const items = kind.options.map((option) => ({ value: String(option), label: String(option) }));
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className={FIELD}>
         {label}
         <Select
-          value={value === undefined ? '' : String(value)}
+          items={items}
+          value={value === undefined ? null : String(value)}
           onValueChange={(picked) => onChange(kind.options.find((option) => String(option) === picked))}
         >
           <SelectTrigger id={id}>
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
-            {kind.options.map((option) => (
-              <SelectItem key={String(option)} value={String(option)}>
-                {String(option)}
+          <SelectPopup>
+            {items.map((item) => (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
               </SelectItem>
             ))}
-          </SelectContent>
+          </SelectPopup>
         </Select>
         <Help schema={schema} />
       </div>
@@ -160,15 +171,16 @@ function PropField({ name, path, schema, value, onChange }: FieldProps) {
     const number = typeof value === 'number' ? value : undefined;
     const thumb = number ?? (typeof schema?.default === 'number' ? schema.default : kind.min);
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className={FIELD}>
         {label}
         <div className="flex items-center gap-3">
           <Slider
             min={kind.min}
             max={kind.max}
             step={step}
-            value={[thumb]}
-            onValueChange={([next]) => onChange(next)}
+            value={thumb}
+            getAriaLabel={() => name}
+            onValueChange={(next) => onChange(Array.isArray(next) ? next[0] : next)}
           />
           <div className="w-24 shrink-0">
             <NumberField id={id} value={number} onChange={onChange} />
@@ -181,13 +193,13 @@ function PropField({ name, path, schema, value, onChange }: FieldProps) {
   if (kind?.kind === 'color' && (typeof value === 'string' || unset === 'string')) {
     const text = typeof value === 'string' ? value : '';
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className={FIELD}>
         {label}
         <div className="flex items-center gap-2">
           <input
             type="color"
             aria-label={`${name} colour`}
-            className="border-input h-9 w-12 shrink-0 cursor-pointer rounded-md border bg-transparent p-1"
+            className="border-input size-8 shrink-0 cursor-pointer rounded-lg border bg-transparent p-0.5"
             value={/^#[0-9a-f]{6}$/i.test(text) ? text : '#000000'}
             onChange={(event) => onChange(event.target.value)}
           />
@@ -199,7 +211,7 @@ function PropField({ name, path, schema, value, onChange }: FieldProps) {
   }
   if (kind?.kind === 'textarea' && (typeof value === 'string' || unset === 'string')) {
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className={FIELD}>
         {label}
         <Textarea id={id} value={typeof value === 'string' ? value : ''} onChange={(event) => onChange(event.target.value)} />
         <Help schema={schema} />
@@ -209,10 +221,10 @@ function PropField({ name, path, schema, value, onChange }: FieldProps) {
 
   if (typeof value === 'boolean' || unset === 'boolean') {
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className={FIELD}>
         <div className="flex items-center justify-between gap-3">
           {label}
-          <Switch id={id} checked={value === true} onCheckedChange={onChange} />
+          <Switch id={id} checked={value === true} onCheckedChange={(checked) => onChange(checked)} />
         </div>
         <Help schema={schema} />
       </div>
@@ -220,7 +232,7 @@ function PropField({ name, path, schema, value, onChange }: FieldProps) {
   }
   if (typeof value === 'number' || unset === 'number') {
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className={FIELD}>
         {label}
         <NumberField id={id} value={typeof value === 'number' ? value : undefined} onChange={onChange} />
         <Help schema={schema} />
@@ -229,7 +241,7 @@ function PropField({ name, path, schema, value, onChange }: FieldProps) {
   }
   if (typeof value === 'string' || unset === 'string') {
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className={FIELD}>
         {label}
         <Input id={id} value={typeof value === 'string' ? value : ''} onChange={(event) => onChange(event.target.value)} />
         <Help schema={schema} />
@@ -237,6 +249,45 @@ function PropField({ name, path, schema, value, onChange }: FieldProps) {
     );
   }
   return <JsonField id={id} label={label} help={<Help schema={schema} />} value={value} onChange={onChange} />;
+});
+
+/** A plugin's panel in a section that folds; its overlay on the preview shows while the section is open and being edited. */
+function PanelSection({ name, path, plugin, schema, value, onChange }: { name: string; path: string[]; plugin: string; schema: JsonSchema; value: unknown; onChange(value: unknown): void }) {
+  const [open, setOpen] = useState(true);
+  const { setActive } = useContextActive();
+  const key = path.join('.');
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} onPointerDownCapture={() => setActive(key)} onFocusCapture={() => setActive(key)}>
+      <CollapsibleTrigger className="group/trigger hover:text-foreground flex w-full items-center justify-between gap-2 rounded-lg py-1 text-left text-[13px] font-semibold outline-none">
+        {name}
+        <ChevronDownIcon className={cn('text-muted-foreground size-4 transition-transform', !open && '-rotate-90')} />
+      </CollapsibleTrigger>
+      <div className={cn('flex flex-col gap-2 pt-2', !open && 'hidden')}>
+        <PluginPanel plugin={plugin} name={name} schema={schema} path={path} value={value} onChange={onChange} open={open} />
+        <Help schema={schema} />
+      </div>
+    </Collapsible>
+  );
+}
+
+function useContextActive() {
+  return useContext(ActivePanelContext);
+}
+
+function GroupField({ name, path, schema, value, properties, onChange }: { name: string; path: string[]; schema: JsonSchema | undefined; value: unknown; properties: [string, JsonSchema | undefined][]; onChange(value: unknown): void }) {
+  const group = value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  const groupRef = useRef(group);
+  groupRef.current = group;
+  const setChild = useCallback((key: string, next: unknown) => onChange({ ...groupRef.current, [key]: next }), [onChange]);
+  return (
+    <fieldset className="bg-muted/50 flex flex-col gap-4 rounded-xl p-3.5">
+      <legend className="float-left mb-3 w-full text-[13px] font-semibold">{name}</legend>
+      <Help schema={schema} />
+      {properties.map(([key, child]) => (
+        <PropField key={key} name={key} parentPath={path} schema={child} value={group[key]} set={setChild} />
+      ))}
+    </fieldset>
+  );
 }
 
 type FieldBody = {
@@ -286,7 +337,7 @@ function JsonField({ id, label, help, value, onChange }: FieldBody & { value: un
     }
   }, [value, draft]);
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className={FIELD}>
       {label}
       <Textarea
         id={id}
@@ -308,7 +359,7 @@ function JsonField({ id, label, help, value, onChange }: FieldBody & { value: un
           setInvalid(false);
         }}
       />
-      {invalid && <p className="text-destructive text-xs">Not valid JSON; the preview keeps the last valid value.</p>}
+      {invalid && <p className="text-destructive-foreground text-xs">Not valid JSON; the preview keeps the last valid value.</p>}
       {help}
     </div>
   );

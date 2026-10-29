@@ -5,18 +5,14 @@ import type { CompositionInfo, PresetInfo, StudioApi } from '@/api';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPanel,
+  DialogPopup,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from '@/components/ui/menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
@@ -56,28 +52,31 @@ export function PresetsMenu({ api, comp, values, onLoad }: PresetsMenuProps) {
 
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" data-testid="presets-menu">
-            Presets
-            <ChevronDownIcon />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+      <Menu>
+        <MenuTrigger
+          render={
+            <Button variant="ghost" size="sm" data-testid="presets-menu" className="rounded-full px-3">
+              Presets
+              <ChevronDownIcon />
+            </Button>
+          }
+        />
+        <MenuPopup align="end">
           {presets.length === 0 ? (
             <div className="text-muted-foreground px-2 py-1.5 text-sm">No presets saved</div>
           ) : (
             presets.map((preset) => (
-              <DropdownMenuItem key={preset.name} onSelect={() => onLoad({ ...comp.defaultProps, ...preset.props })}>
+              <MenuItem key={preset.name} onClick={() => onLoad({ ...comp.defaultProps, ...preset.props })}>
                 {preset.name}
-              </DropdownMenuItem>
+              </MenuItem>
             ))
           )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+        </MenuPopup>
+      </Menu>
       <Button
         variant="ghost"
         size="sm"
+        className="rounded-full px-3"
         onClick={() => {
           setName('');
           setError(null);
@@ -88,9 +87,9 @@ export function PresetsMenu({ api, comp, values, onLoad }: PresetsMenuProps) {
         Save preset
       </Button>
       <Dialog open={saving} onOpenChange={setSaving}>
-        <DialogContent>
+        <DialogPopup>
           <form
-            className="grid gap-4"
+            className="contents"
             onSubmit={(event) => {
               event.preventDefault();
               if (valid) save();
@@ -103,7 +102,7 @@ export function PresetsMenu({ api, comp, values, onLoad }: PresetsMenuProps) {
                 .json beside the entry.
               </DialogDescription>
             </DialogHeader>
-            <div className="flex flex-col gap-1.5">
+            <DialogPanel className="flex flex-col gap-2">
               <Label htmlFor={nameId}>Name</Label>
               <Input
                 id={nameId}
@@ -112,11 +111,11 @@ export function PresetsMenu({ api, comp, values, onLoad }: PresetsMenuProps) {
                 aria-invalid={name !== '' && !valid}
                 onChange={(event) => setName(event.target.value)}
               />
-              <p className={name !== '' && !valid ? 'text-destructive text-xs' : 'text-muted-foreground text-xs'}>
+              <p className={name !== '' && !valid ? 'text-destructive-foreground text-xs' : 'text-muted-foreground text-xs'}>
                 Lower-case letters, digits, - and _; up to 64 characters.
               </p>
-              {error !== null && <p className="text-destructive text-xs">{error}</p>}
-            </div>
+              {error !== null && <p className="text-destructive-foreground text-xs">{error}</p>}
+            </DialogPanel>
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => setSaving(false)}>
                 Cancel
@@ -126,7 +125,7 @@ export function PresetsMenu({ api, comp, values, onLoad }: PresetsMenuProps) {
               </Button>
             </DialogFooter>
           </form>
-        </DialogContent>
+        </DialogPopup>
       </Dialog>
     </>
   );

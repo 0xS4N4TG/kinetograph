@@ -1,23 +1,20 @@
-import type { ReactNode } from 'react';
+import { memo } from 'react';
 
-import type { CompositionInfo, InspectResult, StudioApi, ProjectInfo, RenderJob, RenderRequest, TimelineData } from '@/api';
+import type { CompositionInfo, InspectResult, ProjectInfo, RenderJob, RenderRequest, StudioApi, TimelineData } from '@/api';
 import { PropsPanel } from '@/components/inspector/props-panel';
 import { RenderQueue } from '@/components/inspector/render-queue';
 import { SceneTree } from '@/components/inspector/scene-tree';
-import { PanelHeader } from '@/components/shell/panel-header';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-const TAB_CLASS =
-  'data-[state=active]:border-primary h-full rounded-none border-b-2 border-transparent px-2.5 text-[11px] data-[state=active]:bg-transparent data-[state=active]:shadow-none';
+export type InspectorTab = 'props' | 'scene' | 'renders';
 
 interface InspectorPanelProps {
   /** For the Props tab's presets and plugin panels. */
   api: StudioApi;
-  tab: string;
-  onTabChange(tab: string): void;
+  tab: InspectorTab;
+  onTabChange(tab: InspectorTab): void;
   comp: CompositionInfo | null;
-  frame: number;
   inspect: InspectResult | null;
   project: ProjectInfo | null;
   /** The timeline once read, to name the Sequence a layer is in. */
@@ -27,8 +24,6 @@ interface InspectorPanelProps {
   onSelectLayer(id: string | null, additive?: boolean): void;
   /** Several layers at once (a folded group of identical siblings). */
   onSelectLayers?(ids: string[]): void;
-  /** The Agent tab. */
-  agentTab: ReactNode;
   propValues: Record<string, unknown>;
   /** Whether the props differ from the composition's defaults. */
   propsEdited: boolean;
@@ -39,13 +34,12 @@ interface InspectorPanelProps {
   onCancelRender(id: string): Promise<void>;
 }
 
-/** The Scene, Props and Renders tabs of the right-hand panel. */
-export function InspectorPanel({
+/** Props first, then the Scene tree and the Renders: the panel on the right. */
+export const InspectorPanel = memo(function InspectorPanel({
   api,
   tab,
   onTabChange,
   comp,
-  frame,
   inspect,
   project,
   timeline,
@@ -53,7 +47,6 @@ export function InspectorPanel({
   selectedLayers,
   onSelectLayer,
   onSelectLayers,
-  agentTab,
   propValues,
   propsEdited,
   onChangeProps,
@@ -65,31 +58,32 @@ export function InspectorPanel({
   const activeRenders = renders.filter((job) => job.status === 'queued' || job.status === 'running').length;
 
   return (
-    <Tabs value={tab} onValueChange={onTabChange} className="bg-card h-full gap-0">
-      <PanelHeader
-        className="px-2"
-        title={
-          <TabsList className="h-7 rounded-none bg-transparent p-0">
-            <TabsTrigger value="scene" className={TAB_CLASS}>
-              Scene
-            </TabsTrigger>
-            <TabsTrigger value="props" className={TAB_CLASS}>
-              Props
-            </TabsTrigger>
-            <TabsTrigger value="agent" className={TAB_CLASS}>
-              Agent
-            </TabsTrigger>
-            <TabsTrigger value="renders" className={TAB_CLASS}>
-              Renders
-              {activeRenders > 0 && <Badge className="ml-1 px-1.5 py-0 text-[9px]">{activeRenders}</Badge>}
-            </TabsTrigger>
-          </TabsList>
-        }
-      />
-      <TabsContent value="scene" className="min-h-0">
+    <Tabs value={tab} onValueChange={(next) => onTabChange(next as InspectorTab)} className="h-full min-h-0 gap-0">
+      <div className="shrink-0 px-3 pt-3">
+        <TabsList className="w-full rounded-full p-1">
+          <TabsTrigger value="props" className="rounded-full">
+            Props
+          </TabsTrigger>
+          <TabsTrigger value="scene" className="rounded-full">
+            Scene
+          </TabsTrigger>
+          <TabsTrigger value="renders" className="rounded-full">
+            Renders
+            {activeRenders > 0 && (
+              <Badge className="ml-1.5 rounded-full" size="sm">
+                {activeRenders}
+              </Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+      </div>
+      <TabsContent value="props" className="min-h-0 pt-2">
+        <PropsPanel api={api} comp={comp} values={propValues} edited={propsEdited} onChange={onChangeProps} onReset={onResetProps} />
+      </TabsContent>
+      <TabsContent value="scene" className="min-h-0 pt-2">
         <SceneTree
           inspect={inspect}
-          frame={frame}
+          frame={inspect?.frame ?? 0}
           selected={selectedLayer}
           selectedLayers={selectedLayers}
           onSelect={onSelectLayer}
@@ -97,21 +91,9 @@ export function InspectorPanel({
           agent={project && comp ? { entry: project.entry, cwd: project.cwd, comp, timeline } : null}
         />
       </TabsContent>
-      <TabsContent value="props" className="min-h-0">
-        <PropsPanel api={api} comp={comp} values={propValues} edited={propsEdited} onChange={onChangeProps} onReset={onResetProps} />
-      </TabsContent>
-      <TabsContent value="agent" className="min-h-0">
-        {agentTab}
-      </TabsContent>
-      <TabsContent value="renders" className="min-h-0">
-        <RenderQueue
-          comp={comp}
-          jobs={renders}
-          propsEdited={propsEdited}
-          onStart={onStartRender}
-          onCancel={onCancelRender}
-        />
+      <TabsContent value="renders" className="min-h-0 pt-2">
+        <RenderQueue comp={comp} jobs={renders} propsEdited={propsEdited} onStart={onStartRender} onCancel={onCancelRender} />
       </TabsContent>
     </Tabs>
   );
-}
+});

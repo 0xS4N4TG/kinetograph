@@ -30,7 +30,7 @@ interface SceneTreeProps {
 /** The layers of the current frame (topmost first) and the selected layer's resolved fields. */
 export function SceneTree({ inspect, frame, selected, selectedLayers = selected === null ? [] : [selected], onSelect, onSelectMany, agent }: SceneTreeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  if (inspect === null) return <p className="text-muted-foreground p-3 text-xs">Scene not loaded.</p>;
+  if (inspect === null) return <p className="text-muted-foreground p-4 text-[13px]">Scene not loaded.</p>;
   const layer = selected === null ? null : findLayer(inspect.layers, selected);
   const toggle = (id: string) =>
     setCollapsed((current) => {
@@ -43,14 +43,14 @@ export function SceneTree({ inspect, frame, selected, selectedLayers = selected 
   return (
     <div className="bg-card flex h-full min-h-0 flex-col select-none" data-testid="scene-tree">
       {/* Composition Frame Metadata Bar */}
-      <div className="bg-background/50 text-muted-foreground flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b px-3 py-1.5 font-mono text-[10px]">
+      <div className="text-muted-foreground flex flex-wrap items-center gap-x-2.5 gap-y-1 px-4 pb-2 font-mono text-[11px]">
         <span className="text-foreground font-semibold">
           {inspect.width}x{inspect.height}
         </span>
         <span>·</span>
         <span>{inspect.fps} fps</span>
         <span>·</span>
-        <span className="text-nle-value">frame {inspect.frame}</span>
+        <span className="text-accent-foreground">frame {inspect.frame}</span>
         <span>·</span>
         <span>margin {inspect.margin}</span>
         {inspect.camera && (
@@ -62,23 +62,23 @@ export function SceneTree({ inspect, frame, selected, selectedLayers = selected 
       </div>
 
       {/* Scene Hierarchy Section Header */}
-      <div className="bg-secondary/40 flex h-6 shrink-0 items-center justify-between border-b px-2.5 text-[10px] font-semibold tracking-wider uppercase">
+      <div className="flex h-9 shrink-0 items-center justify-between px-4 text-[11px] font-semibold tracking-wide uppercase">
         <span className="text-muted-foreground flex items-center gap-1.5">
-          <LayersIcon className="size-3" aria-hidden="true" />
-          Active Frame Layers
+          <LayersIcon className="size-3.5" aria-hidden="true" />
+          Layers at this frame
         </span>
-        <span className="text-muted-foreground font-mono text-[9px]">{inspect.layers.length} top</span>
+        <span className="text-muted-foreground font-mono text-[10px]">{inspect.layers.length} top</span>
       </div>
 
       <ScrollArea className="h-2/5 shrink-0">
         <Layers layers={inspect.layers} selected={selectedLayers} onSelect={onSelect} collapsed={collapsed} onToggle={toggle} {...(onSelectMany ? { onSelectMany } : {})} />
       </ScrollArea>
 
-      <Separator />
+      <Separator className="my-1" />
 
       {/* Properties header */}
-      <div className="bg-secondary/50 flex h-7 shrink-0 items-center border-b px-2.5 text-[11px]">
-        <span className="truncate font-medium">{layer ? `Properties: ${displayName(layer)}` : 'Effect Controls & Transform'}</span>
+      <div className="flex h-11 shrink-0 items-center px-4 text-[13px]">
+        <span className="truncate font-medium">{layer ? `Properties: ${displayName(layer)}` : 'Select a layer'}</span>
         {layer && agent && (
           <span className="ml-auto pl-2">
             <CopyForAgent message={buildAgentMessage({ ...agent, frame: inspect.frame, layer })} />
@@ -90,7 +90,7 @@ export function SceneTree({ inspect, frame, selected, selectedLayers = selected 
         {layer ? (
           <LayerDetails layer={layer} />
         ) : (
-          <p className="text-muted-foreground p-3 text-xs">
+          <p className="text-muted-foreground p-4 text-[13px]">
             {selected === null
               ? 'Select a layer to see its resolved fields.'
               : `Layer "${selected}" is not in the scene at frame ${frame}.`}
@@ -120,11 +120,11 @@ function Layers({
   /** False for the members of an open fold, already in display order. */
   fold?: boolean;
 }) {
-  if (layers.length === 0) return <p className="text-muted-foreground p-3 text-xs">No layers at this frame.</p>;
+  if (layers.length === 0) return <p className="text-muted-foreground p-4 text-[13px]">No layers at this frame.</p>;
   const ordered = fold ? [...layers].reverse() : layers;
   const items = fold ? foldSiblings(ordered) : ordered.map((layer) => ({ fold: false as const, layer }));
   return (
-    <ul className="flex flex-col p-1 text-xs" role="tree">
+    <ul className="flex flex-col p-1 text-[13px]" role="tree">
       {items.map((item) => {
         if (item.fold) {
           const open = collapsed.has(item.key);
@@ -139,7 +139,7 @@ function Layers({
                   type="button"
                   aria-label={`${open ? 'Collapse' : 'Expand'} ${name}`}
                   onClick={() => onToggle(item.key)}
-                  className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 flex size-5 shrink-0 items-center justify-center rounded-xs outline-none focus-visible:ring-2"
+                  className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 flex size-5 shrink-0 items-center justify-center rounded-md outline-none focus-visible:ring-2"
                 >
                   <ChevronDownIcon className={cn('size-3 transition-transform', !open && '-rotate-90')} aria-hidden="true" />
                 </button>
@@ -148,14 +148,14 @@ function Layers({
                   onClick={() => (onSelectMany ? onSelectMany(ids) : onSelect(ids[0]!, false))}
                   title={tooltip(name, 'folded', item.layers[0]!)}
                   className={cn(
-                    'hover:bg-white/[0.05] focus-visible:ring-ring/50 flex min-w-0 flex-1 items-center gap-2 rounded-xs px-2 py-1 text-left outline-none transition-colors focus-visible:ring-2',
-                    all && 'bg-nle-blue/25 text-foreground shadow-[inset_2px_0_0_var(--nle-blue)]',
+                    'hover:bg-muted focus-visible:ring-ring/50 flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left outline-none transition-colors focus-visible:ring-2',
+                    all && 'bg-accent text-accent-foreground',
                   )}
                 >
-                  <span className={cn('size-2 shrink-0 rounded-[2px]', swatch)} aria-hidden="true" />
+                  <span className={cn('size-2.5 shrink-0 rounded-full', swatch)} aria-hidden="true" />
                   <span className="flex min-w-0 flex-col leading-tight">
                     <span className="truncate font-medium">{name}</span>
-                    {secondLine(item.layers[0]!) && <span className="text-muted-foreground/70 truncate text-[10px]">{secondLine(item.layers[0]!)}</span>}
+                    {secondLine(item.layers[0]!) && <span className="text-muted-foreground truncate text-[11px]">{secondLine(item.layers[0]!)}</span>}
                   </span>
                 </button>
               </div>
@@ -180,28 +180,28 @@ function Layers({
                   type="button"
                   aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${displayName(layer)}`}
                   onClick={() => onToggle(layer.id)}
-                  className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 flex size-5 shrink-0 items-center justify-center rounded-xs outline-none focus-visible:ring-2"
+                  className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 flex size-5 shrink-0 items-center justify-center rounded-md outline-none focus-visible:ring-2"
                 >
                   <ChevronDownIcon className={cn('size-3 transition-transform', isCollapsed && '-rotate-90')} aria-hidden="true" />
                 </button>
               ) : (
-                <span className="size-5 shrink-0" aria-hidden="true" />
+                <span className="size-6 shrink-0" aria-hidden="true" />
               )}
               <button
                 type="button"
                 onClick={(event) => onSelect(layer.id, event.shiftKey)}
                 title={tooltip(displayName(layer), layer.type, layer)}
                 className={cn(
-                  'hover:bg-white/[0.05] focus-visible:ring-ring/50 flex min-w-0 flex-1 items-center gap-2 rounded-xs px-2 py-1 text-left outline-none transition-colors focus-visible:ring-2',
-                  isSelected && 'bg-nle-blue/25 text-foreground shadow-[inset_2px_0_0_var(--nle-blue)]',
+                  'hover:bg-muted focus-visible:ring-ring/50 flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left outline-none transition-colors focus-visible:ring-2',
+                  isSelected && 'bg-accent text-accent-foreground',
                 )}
               >
-                <span className={cn('size-2 shrink-0 rounded-[2px]', swatch)} aria-hidden="true" />
+                <span className={cn('size-2.5 shrink-0 rounded-full', swatch)} aria-hidden="true" />
                 <span className="flex min-w-0 flex-col leading-tight">
                   <span className="truncate font-medium">{displayName(layer)}</span>
-                  {secondLine(layer) && <span className="text-muted-foreground/70 truncate text-[10px]">{secondLine(layer)}</span>}
+                  {secondLine(layer) && <span className="text-muted-foreground truncate text-[11px]">{secondLine(layer)}</span>}
                 </span>
-                <Badge variant="outline" className="ml-auto rounded-xs px-1 py-0 font-mono text-[9px]">
+                <Badge variant="outline" className="ml-auto rounded-full px-1.5 font-mono text-[10px]">
                   {layer.type}
                 </Badge>
               </button>
@@ -233,7 +233,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="focus-visible:ring-ring/50 flex w-full items-center gap-1 border-b border-white/[0.06] pb-1 text-left font-sans text-[11px] font-semibold tracking-tight text-white/90 outline-none focus-visible:ring-2"
+        className="focus-visible:ring-ring/50 flex w-full items-center gap-1 pb-1 text-left font-sans text-[12px] font-semibold tracking-tight text-foreground outline-none focus-visible:ring-2"
       >
         <ChevronDownIcon className={cn('text-muted-foreground size-3 transition-transform', !open && '-rotate-90')} aria-hidden="true" />
         <span>{title}</span>
@@ -246,14 +246,14 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 function LayerDetails({ layer }: { layer: InspectLayer }) {
   const t = layer.transform;
   return (
-    <div data-testid="layer-details" className="flex flex-col gap-3 p-2.5 font-mono text-[11px]">
+    <div data-testid="layer-details" className="flex flex-col gap-4 p-4 font-mono text-[12px]">
       <Section title="Layer Identity">
         <Field name="name">{displayName(layer)}</Field>
         {layer.component !== undefined && <Field name="component">{layer.component}</Field>}
         {layer.source && <Field name="source">{fullSource(layer.source)}</Field>}
         {!layer.id.startsWith('$') && layer.id !== displayName(layer) && <Field name="id">{layer.id}</Field>}
         <Field name="type">
-          <Badge variant="secondary" className="rounded-xs px-1.5 py-0 text-[10px]">
+          <Badge variant="secondary" className="rounded-full px-2 text-[11px]">
             {layer.type}
           </Badge>
         </Field>
@@ -261,26 +261,26 @@ function LayerDetails({ layer }: { layer: InspectLayer }) {
 
       <Section title="Layer Transform">
         <Field name="anchor">
-          <span className="text-nle-value">
+          <span className="text-accent-foreground">
             {formatNumber(t.anchorX, 2)}, {formatNumber(t.anchorY, 2)}
           </span>
         </Field>
         <Field name="position">
-          <span className="text-nle-value">
+          <span className="text-accent-foreground">
             {formatNumber(t.x, 2)}, {formatNumber(t.y, 2)}
           </span>
         </Field>
         <Field name="scale">
-          <span className="text-nle-value">{formatNumber(t.scale)}</span>
+          <span className="text-accent-foreground">{formatNumber(t.scale)}</span>
         </Field>
         <Field name="rotation">
-          <span className="text-nle-value">{formatNumber(t.rotation)}</span>
+          <span className="text-accent-foreground">{formatNumber(t.rotation)}</span>
         </Field>
         <Field name="opacity">
-          <span className="text-nle-value">{formatNumber(layer.opacity)}</span>
+          <span className="text-accent-foreground">{formatNumber(layer.opacity)}</span>
         </Field>
         <Field name="rotateX / Y / z">
-          <span className="text-nle-value">
+          <span className="text-accent-foreground">
             {formatNumber(t.rotateX)} / {formatNumber(t.rotateY)} / {formatNumber(t.z)}
           </span>
         </Field>
@@ -294,7 +294,7 @@ function LayerDetails({ layer }: { layer: InspectLayer }) {
           ) : (
             <span className="flex flex-wrap gap-1">
               {layer.effects.map((effect, index) => (
-                <Badge key={index} variant="outline" className="border-sky-500/40 bg-sky-500/10 text-sky-300">
+                <Badge key={index} variant="outline" className="border-info/40 bg-info/10 text-info-foreground">
                   <SparklesIcon className="mr-1 size-2.5" aria-hidden="true" />
                   {effect}
                 </Badge>
@@ -316,7 +316,7 @@ function LayerDetails({ layer }: { layer: InspectLayer }) {
         <Section title="Text & Typography">
           <Field name="text">{layer.text.text}</Field>
           <Field name="font">
-            <span className="text-nle-value">
+            <span className="text-accent-foreground">
               {layer.text.font} {formatNumber(layer.text.size)}
             </span>
           </Field>
