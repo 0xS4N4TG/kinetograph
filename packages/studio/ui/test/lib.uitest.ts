@@ -4,6 +4,7 @@ import { fitSize, formatDuration, formatTimecode, jobEta, jobPercent, parseTimec
 import { buildAgentMessage, relativePath, sequenceOf } from '../src/lib/agent-message';
 import { findLayer, hitTest, type InspectLayer } from '../src/lib/inspect';
 import { displayName, fullSource, numberByParent, numberSiblings, numberTree, secondLine, tooltip } from '../src/lib/names';
+import { fieldKind, helperText, schemaProperties } from '../src/lib/props-schema';
 import { layerRows, sequenceRows } from '../src/lib/tree';
 import { inspectFor, intro, introTimeline, job, layer } from './fixtures';
 
@@ -285,5 +286,28 @@ describe('names', () => {
       layer: layer('hero', 'shape', { label: 'Hero card', box: null, bounds: null }),
     });
     expect(message).toContain('change the shape layer "Hero card" (id `hero`).');
+  });
+});
+
+describe('props schema', () => {
+  it('picks a field kind from the JSON Schema', () => {
+    expect(fieldKind({ type: 'string', enum: ['a', 'b'] })).toEqual({ kind: 'enum', options: ['a', 'b'] });
+    expect(fieldKind({ type: 'number', minimum: 0, maximum: 5 })).toEqual({ kind: 'slider', min: 0, max: 5, integer: false });
+    expect(fieldKind({ type: 'number', minimum: 0 })).toBeNull();
+    expect(fieldKind({ type: 'boolean' })).toEqual({ kind: 'boolean' });
+    expect(fieldKind({ type: 'string', description: '__remotion-color' })).toEqual({ kind: 'color' });
+    expect(fieldKind({ type: 'string', description: '__remotion-textarea' })).toEqual({ kind: 'textarea' });
+    expect(fieldKind({ type: 'object', kinetographPanel: '@x/y', properties: { a: { type: 'string' } } })).toEqual({
+      kind: 'panel',
+      plugin: '@x/y',
+    });
+    expect(fieldKind({ type: 'object', properties: { a: { type: 'string' } } })?.kind).toBe('group');
+    expect(fieldKind({ anyOf: [] })).toBeNull();
+  });
+
+  it('keeps descriptions as help text but not the markers', () => {
+    expect(helperText({ description: 'Seconds' })).toBe('Seconds');
+    expect(helperText({ description: '__remotion-color' })).toBeNull();
+    expect(schemaProperties({ properties: { a: { type: 'string' }, b: 3 } })).toEqual([['a', { type: 'string' }]]);
   });
 });
