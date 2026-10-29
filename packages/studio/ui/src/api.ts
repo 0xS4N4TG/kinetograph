@@ -46,7 +46,7 @@ export type {
   TimelineProgress,
 };
 export type { SequenceJson } from '../../src/protocol.ts';
-export type { RenderStatus, TimelineLayer } from '../../src/protocol.ts';
+export type { RenderStatus, TimelineAudio, TimelineLayer } from '../../src/protocol.ts';
 
 /** A failed request: the server's `StudioError`, plus the HTTP status when there was one. */
 export class ApiError extends Error {

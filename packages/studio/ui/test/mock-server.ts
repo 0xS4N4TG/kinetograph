@@ -19,6 +19,7 @@ import {
   type StudioApi,
   type StudioError,
   type StudioSocket,
+  type TimelineAudio,
   type TimelineData,
   type TimelineProgress,
 } from '../src/api';
@@ -46,6 +47,8 @@ export class MockServer implements StudioApi {
 
   frameRequests: FrameRequest[] = [];
   inspectCalls: { comp: string; frame: number; props?: Record<string, unknown> }[] = [];
+  /** The sounds `timeline('Intro')` reports; none by default. */
+  sounds: TimelineAudio[] | null = null;
   timelineCalls: { comp: string; props?: Record<string, unknown> }[] = [];
   startRenderCalls: RenderRequest[] = [];
   cancelCalls: string[] = [];
@@ -56,7 +59,7 @@ export class MockServer implements StudioApi {
   timelineFor(comp: string): TimelineData {
     const c = this.comps.find((x) => x.id === comp)!;
     return comp === 'Intro'
-      ? { ...introTimeline, durationInFrames: c.durationInFrames }
+      ? { ...introTimeline, durationInFrames: c.durationInFrames, ...(this.sounds ? { audio: this.sounds } : {}) }
       : { comp, fps: c.fps, durationInFrames: c.durationInFrames, sequences: [], layers: [] };
   }
 
@@ -106,8 +109,10 @@ export class MockServer implements StudioApi {
     return this.wav;
   }
 
-  async waveform(): Promise<{ peaks: number[] }> {
-    return { peaks: [] };
+  waveformCalls: { clip: string | undefined; buckets: number }[] = [];
+  async waveform(_comp: string, _props: Record<string, unknown> | undefined, clip: string | undefined, buckets: number): Promise<{ peaks: number[]; startFrame?: number; endFrame?: number }> {
+    this.waveformCalls.push({ clip, buckets });
+    return { peaks: Array.from({ length: 8 }, (_, i) => (i % 4) / 4), startFrame: 20, endFrame: 100 };
   }
 
   async timelineProgress(): Promise<TimelineProgress> {

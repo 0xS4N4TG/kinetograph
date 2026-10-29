@@ -318,6 +318,16 @@ describe('timeline', () => {
     expect(screen.queryByTestId('timeline-loading')).not.toBeInTheDocument();
   });
 
+  it('draws a sound as a row with its waveform, and asks the server for the peaks', async () => {
+    const server = new MockServer();
+    server.sounds = [{ id: 'tone-key', src: 'sfx/tone.wav', ranges: [[20, 99]] }];
+    await start(server);
+    const row = await screen.findByTestId('audio-row');
+    expect(row).toHaveTextContent('tone.wav');
+    expect(await screen.findByTestId('waveform')).toBeInTheDocument();
+    expect(server.waveformCalls[0]).toMatchObject({ clip: 'tone-key' });
+  });
+
   it('keeps drawing the timeline it has while a newer one is read, with a thin progress line', async () => {
     const server = new MockServer();
     await start(server);

@@ -1,8 +1,9 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type RefObject } from 'react';
-import { ChevronUpIcon, ListTreeIcon, SearchIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
+import { ChevronUpIcon, ListTreeIcon, SearchIcon, Volume2Icon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
 
-import type { CompositionInfo } from '@/api';
+import type { CompositionInfo, TimelineAudio, Waveform } from '@/api';
 import { Bar, EmptyRow, LABEL_WIDTH, LANE_INSET, ROW_HEIGHT, Row, THUMB_HEIGHT, TimelineNotice } from '@/components/timeline/timeline-row';
+import { bucketsFor, useWaveform, VideoStrip, WaveformLine } from '@/components/timeline/timeline-media';
 import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/hint';
 import { Slider } from '@/components/ui/slider';
@@ -35,6 +36,8 @@ interface TimelineProps {
   onSelectLayers(ids: string[]): void;
   /** The address of a small picture of a frame, for the clips; none when left out. */
   thumbnailUrl?: (frame: number, height: number) => string | null;
+  /** Peaks of one sound (or of the mix); none when left out. */
+  waveform?: (clip: string | undefined, buckets: number) => Promise<Waveform>;
   /** Slim scrubber (false) or the layer rows. */
   expanded: boolean;
   onExpandedChange(expanded: boolean): void;
@@ -161,6 +164,48 @@ interface RowItemProps {
   onPick(node: TimelineNode, seek: boolean): void;
 }
 
+interface AudioRowProps {
+  sound: TimelineAudio;
+  pxPerFrame: number;
+  laneWidth: number;
+  fps: number;
+  waveform: NonNullable<TimelineProps['waveform']>;
+}
+
+/** The row of one sound: a bar over each stretch it plays, and its waveform, a thin line of peaks. */
+const AudioRow = memo(function AudioRow({ sound, pxPerFrame, laneWidth, waveform }: AudioRowProps) {
+  const colors = layerColors('text');
+  const name = sound.src.split('/').pop() ?? sound.src;
+  const wide = Math.max(...sound.ranges.map(([a, b]) => (b + 1 - a) * pxPerFrame), 1);
+  const peaks = useWaveform(waveform, sound.id, bucketsFor(wide));
+  const extent = peaks && peaks.startFrame !== undefined && peaks.endFrame !== undefined ? ([peaks.startFrame, peaks.endFrame] as const) : null;
+  const title = `${name}\nframes ${sound.ranges[0]![0]}..${sound.ranges[sound.ranges.length - 1]![1]}`;
+  return (
+    <Row
+      data-testid="audio-row"
+      icon={Volume2Icon}
+      tile={colors.tile}
+      label={sound.video ? `Sound of ${name}` : name}
+      title={title}
+      depth={0}
+      expanded={undefined}
+      selected={false}
+      current={false}
+      onSelect={() => {}}
+      laneWidth={laneWidth}
+    >
+      {sound.ranges.map(([a, b]) => (
+        <Bar key={a} from={a} to={b + 1} pxPerFrame={pxPerFrame} title={title} className="bg-foreground/[0.04] border-border text-foreground" />
+      ))}
+      {peaks && extent && (
+        <div className="pointer-events-none absolute inset-y-1.5" style={{ left: extent[0] * pxPerFrame, width: Math.max(1, (extent[1] - extent[0]) * pxPerFrame) }}>
+          <WaveformLine peaks={peaks.peaks} width={Math.max(1, (extent[1] - extent[0]) * pxPerFrame)} height={ROW_HEIGHT - 12} />
+        </div>
+      )}
+    </Row>
+  );
+});
+
 /** One row. It watches whether the playhead is inside its bars, so only rows whose answer flips re-render with the frame. */
 const RowItem = memo(function RowItem({ node, depth, expandable, open, details, selectedLayers, clicked, pxPerFrame, laneWidth, player, thumbnailUrl, onToggle, onPick }: RowItemProps) {
   const current = usePlayerState(player, (s) => node.bars.some(([a, b]) => s.frame >= a && s.frame <= b));
@@ -196,6 +241,7 @@ const RowItem = memo(function RowItem({ node, depth, expandable, open, details, 
           title={title}
           onClick={() => onPick(node, false)}
           thumbnail={thumbnailUrl?.(a, THUMB_HEIGHT * 2)}
+          strip={node.type === 'video' && thumbnailUrl ? <VideoStrip first={a} end={b + 1} width={(b + 1 - a) * pxPerFrame} height={THUMB_HEIGHT + 12} thumbnailUrl={thumbnailUrl} /> : undefined}
           icon={colors.icon}
           tile={colors.tile}
           word={colors.word}
@@ -214,7 +260,7 @@ const RowItem = memo(function RowItem({ node, depth, expandable, open, details, 
  * Expanded: a row per Sequence nested under its parent, then a row per layer. Pressing and dragging in the ruler or a
  * lane scrubs; a row's click selects its layer. Only the rows in view are drawn.
  */
-export const Timeline = memo(function Timeline({ comp, status, player, selectedLayers, onSelectLayers, thumbnailUrl, expanded: open, onExpandedChange, details, onDetailsChange }: TimelineProps) {
+export const Timeline = memo(function Timeline({ comp, status, player, selectedLayers, onSelectLayers, thumbnailUrl, waveform, expanded: open, onExpandedChange, details, onDetailsChange }: TimelineProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -443,7 +489,7 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
             {/* The film strip: always there, in both the slim and the expanded timeline. */}
             <div className="flex items-center py-1.5" style={{ paddingLeft: open ? 0 : GUTTER }}>
               {open && (
-                <div className="bg-card text-muted-foreground sticky left-0 z-40 flex shrink-0 items-center px-4 text-xs font-medium" style={{ width: LABEL_WIDTH }}>
+                <div className="bg-card text-muted-foreground sticky left-0 z-40 flex shrink-0 items-center self-stretch px-4 text-xs font-medium" style={{ width: LABEL_WIDTH }}>
                   Frames
                 </div>
               )}
@@ -490,6 +536,9 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
                 <div aria-hidden="true" style={{ height: (rows.length - lastRow) * ROW_HEIGHT }} />
               </>
             )}
+            {status.state === 'ready' && open && waveform && (status.data.audio ?? []).map((sound) => (
+              <AudioRow key={sound.id} sound={sound} pxPerFrame={pxPerFrame} laneWidth={laneWidth} fps={fps} waveform={waveform} />
+            ))}
 
             <Playhead player={player} left={lead} pxPerFrame={pxPerFrame} scrollerRef={scrollerRef} zoom={zoom} labelWidth={labelWidth} />
           </div>

@@ -148,6 +148,7 @@ export function Bar({
   title,
   onClick,
   thumbnail,
+  strip,
   icon: Icon,
   tile,
   word,
@@ -167,10 +168,12 @@ export function Bar({
   onClick?: () => void;
   /** The address of the picture of the clip's first frame. */
   thumbnail?: string | null;
+  /** Fills the bar behind its name (a video's film strip); the name sits on a chip then. */
+  strip?: ReactNode;
   children?: string;
 }) {
   const width = Math.max(4, (to - from) * pxPerFrame);
-  const showThumb = thumbnail && width >= THUMB_MIN_BAR;
+  const showThumb = thumbnail && !strip && width >= THUMB_MIN_BAR;
   return (
     <div
       data-testid="bar"
@@ -183,6 +186,7 @@ export function Bar({
       )}
       style={{ left: from * pxPerFrame, width }}
     >
+      {strip}
       {showThumb && (
         <img
           data-testid="bar-thumbnail"
@@ -198,12 +202,12 @@ export function Bar({
           }}
         />
       )}
-      {Icon && !showThumb && (
+      {Icon && !showThumb && !strip && (
         <span className={cn('flex size-6 shrink-0 items-center justify-center rounded-md', tile)} aria-hidden="true">
           <Icon className="size-3.5" />
         </span>
       )}
-      <span className="truncate">
+      <span className={cn('truncate', strip && 'bg-card/80 relative rounded-md px-1.5 py-0.5 backdrop-blur-sm')}>
         {word && <span className="text-muted-foreground font-normal">{word}: </span>}
         {children}
       </span>
