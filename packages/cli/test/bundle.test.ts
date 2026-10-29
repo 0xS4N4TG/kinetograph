@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -182,6 +182,30 @@ describe('bundleProject', () => {
     // No Tailwind in this project: the file is registered as it is, and the problem is reported (doctor prints it).
     expect(code).toContain('noteStylesheetProblem(');
     expect(warnings.join('\n')).toContain('uses Tailwind, but the project has none that can build it');
+  });
+
+  it('gives an imported picture its real absolute path, in the project and in a plugin beside it', async () => {
+    const dir = project({
+      'src/index.ts': [
+        `import { registerRoot } from 'remotion';`,
+        `import hero from './assets/hero.png';`,
+        `import { pluginTexture, pluginLogo } from '../plugin/index';`,
+        `registerRoot(() => null);`,
+        `console.log('PICTURES', hero, pluginTexture, pluginLogo);`,
+      ].join('\n'),
+      'src/assets/hero.png': 'not really a png',
+      'plugin/index.ts': [`import tex from './textures/grain.JPG';`, `import logo from './logo.svg';`, `export const pluginTexture: string = tex;`, `export const pluginLogo: string = logo;`].join('\n'),
+      'plugin/textures/grain.JPG': 'jpeg',
+      'plugin/logo.svg': '<svg xmlns="http://www.w3.org/2000/svg"/>',
+    });
+    const { file } = await bundleProject(join(dir, 'src', 'index.ts'));
+    const code = readFileSync(file, 'utf8');
+    // `mkdtemp` may sit behind a symlink (/var -> /private/var): esbuild gives the path it resolved, which is the file's.
+    for (const path of [join(dir, 'src', 'assets', 'hero.png'), join(dir, 'plugin', 'textures', 'grain.JPG'), join(dir, 'plugin', 'logo.svg')]) {
+      expect(code).toContain(JSON.stringify(realpathSync(path)));
+    }
+    // The file's bytes are not in the bundle: it is a path, not a data: URL.
+    expect(code).not.toContain('not really a png');
   });
 
   it('bundles @remotion/sfx onto the core, and the sounds are the URLs the mix downloads', async () => {
