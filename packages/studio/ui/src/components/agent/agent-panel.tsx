@@ -6,7 +6,6 @@ import {
   ImageIcon,
   LoaderCircleIcon,
   PencilIcon,
-  RotateCcwIcon,
   SearchIcon,
   SparklesIcon,
   SquareIcon,
@@ -18,8 +17,6 @@ import {
 
 import type { AgentInfo, CompositionInfo, InspectResult, ProjectInfo, ReceivedFrame, TimelineData } from '@/api';
 import { Button } from '@/components/ui/button';
-import { Hint } from '@/components/ui/hint';
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import type { ChatItem } from '@/lib/chat';
 import { buildChatContext } from '@/lib/chat-context';
@@ -222,7 +219,6 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
   const presets = info?.presets ?? [];
   const noAgent = info !== null && presets.length === 0 && state.command === null;
   const unavailable = noAgent || !!info?.disabled;
-  const agentItems = presets.map((preset) => ({ value: preset.command, label: preset.name }));
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="agent-panel">
@@ -233,30 +229,6 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
           <span className={cn('size-1.5 rounded-full', busy ? 'bg-warning animate-pulse' : state.status === 'ready' ? 'bg-success' : 'bg-muted-foreground/50')} aria-hidden="true" />
           {statusText(state)}
         </span>
-        <div className="ml-auto flex items-center gap-1">
-          <Select
-            items={agentItems}
-            value={state.command}
-            disabled={busy || presets.length === 0}
-            onValueChange={(next) => chat.chooseAgent(next === null || next === '' ? null : next)}
-          >
-            <SelectTrigger aria-label="Coding agent" size="sm" className="min-w-0 max-w-40 rounded-full border-transparent bg-transparent shadow-none dark:bg-transparent">
-              <SelectValue placeholder="None" />
-            </SelectTrigger>
-            <SelectPopup align="end">
-              {agentItems.map((item) => (
-                <SelectItem key={item.value} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-          <Hint label="Clear the conversation and start again">
-            <Button variant="ghost" size="icon-sm" aria-label="New chat" onClick={chat.restart} disabled={state.items.length === 0 && state.status === 'idle'} className="rounded-full">
-              <RotateCcwIcon />
-            </Button>
-          </Hint>
-        </div>
       </div>
 
       <div ref={listRef} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pt-1 pb-4" data-testid="chat-list" aria-live="polite">

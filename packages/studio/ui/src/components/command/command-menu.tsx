@@ -1,4 +1,5 @@
 import {
+  BotIcon,
   ChevronFirstIcon,
   ChevronLastIcon,
   ClapperboardIcon,
@@ -14,7 +15,6 @@ import {
   MonitorIcon,
   MousePointerIcon,
   MoonIcon,
-  PanelRightIcon,
   PlayIcon,
   RefreshCwIcon,
   RepeatIcon,
@@ -22,7 +22,7 @@ import {
   SkipForwardIcon,
   SlidersHorizontalIcon,
   SunIcon,
-  UploadIcon,
+  DownloadIcon,
   ZoomInIcon,
 } from 'lucide-react';
 import { memo, useMemo } from 'react';
@@ -53,6 +53,11 @@ export interface CommandMenuProps {
   onExport(): void;
   onReload(): void;
   onShowShortcuts(): void;
+  /** The coding agents found on this computer, and the one in use. */
+  agents: { id: string; name: string; command: string }[];
+  agentCommand: string | null;
+  onSelectAgent(command: string): void;
+  onRestartAgent(): void;
 }
 
 /**
@@ -65,7 +70,7 @@ export const CommandMenu = memo(function CommandMenu(p: CommandMenuProps) {
   const { actions, pages } = useMemo(() => {
     const last = () => Math.max(0, (player.getState().comp?.durationInFrames ?? 1) - 1);
     const actions: LauncherAction[] = [
-      { id: 'export', label: 'Export or render', group: 'File', icon: <UploadIcon />, keywords: ['render', 'queue'], onSelect: p.onExport },
+      { id: 'export', label: 'Export or render', group: 'File', icon: <DownloadIcon />, keywords: ['render', 'queue'], onSelect: p.onExport },
       { id: 'reload', label: 'Reload the project', group: 'File', icon: <RefreshCwIcon />, onSelect: p.onReload },
       { id: 'composition', label: 'Go to composition', group: 'Composition', icon: <ClapperboardIcon />, page: 'compositions', keywords: ['switch', 'select'] },
       { id: 'play', label: 'Play or pause', group: 'Playback', icon: <PlayIcon />, shortcut: ['Space'], onSelect: () => player.toggle() },
@@ -85,7 +90,7 @@ export const CommandMenu = memo(function CommandMenu(p: CommandMenuProps) {
       { id: 'tab-scene', label: 'Open the scene tree', group: 'Window', icon: <LayersIcon />, onSelect: () => p.onInspectorTab('scene') },
       { id: 'tab-renders', label: 'Open the render queue', group: 'Window', icon: <ListVideoIcon />, onSelect: () => p.onInspectorTab('renders') },
       { id: 'chat', label: 'Show or hide the agent', group: 'Window', icon: <MessageSquareIcon />, onSelect: p.onToggleChat },
-      { id: 'inspector', label: 'Show or hide the inspector', group: 'Window', icon: <PanelRightIcon />, onSelect: p.onToggleInspector },
+      { id: 'inspector', label: 'Show or hide the inspector', group: 'Window', icon: <SlidersHorizontalIcon />, onSelect: p.onToggleInspector },
       { id: 'timeline', label: 'Expand or fold the timeline', group: 'Window', icon: <ListVideoIcon />, onSelect: p.onToggleTimeline },
       { id: 'details', label: 'Timeline details on or off', group: 'Window', icon: <MonitorIcon />, onSelect: p.onToggleDetails },
       {
@@ -95,9 +100,16 @@ export const CommandMenu = memo(function CommandMenu(p: CommandMenuProps) {
         icon: theme === 'dark' ? <SunIcon /> : <MoonIcon />,
         onSelect: () => p.onTheme(theme === 'dark' ? 'light' : 'dark'),
       },
+      { id: 'agent-switch', label: 'Switch agent', group: 'Agent', icon: <BotIcon />, page: 'agents', keywords: ['coding agent', 'claude', 'codex'] },
+      { id: 'agent-restart', label: 'Restart agent', group: 'Agent', icon: <RefreshCwIcon />, keywords: ['new chat', 'clear'], onSelect: p.onRestartAgent },
       { id: 'shortcuts', label: 'Keyboard shortcuts', group: 'Help', icon: <KeyboardIcon />, shortcut: ['?'], onSelect: p.onShowShortcuts },
     ];
     const pages: Record<string, LauncherPage> = {
+      agents: {
+        title: 'Agent',
+        placeholder: 'Pick a coding agent',
+        actions: p.agents.map((a) => ({ id: `agent-${a.id}`, label: a.command === p.agentCommand ? `${a.name} (in use)` : a.name, icon: <BotIcon />, onSelect: () => p.onSelectAgent(a.command) })),
+      },
       compositions: {
         title: 'Composition',
         placeholder: 'Pick a composition',
@@ -110,10 +122,10 @@ export const CommandMenu = memo(function CommandMenu(p: CommandMenuProps) {
         })),
       },
     };
-    return { actions: has ? actions : actions.filter((a) => ['reload', 'theme', 'shortcuts', 'tab-props', 'tab-scene', 'tab-renders', 'chat', 'inspector', 'composition'].includes(a.id)), pages };
+    return { actions: has ? actions : actions.filter((a) => ['reload', 'theme', 'shortcuts', 'tab-props', 'tab-scene', 'tab-renders', 'chat', 'inspector', 'composition', 'agent-switch', 'agent-restart'].includes(a.id)), pages };
     // The handlers are stable (or read what they need when run).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [compositions, has, theme, player, p.onTheme, p.onSelectComp, p.onZoom, p.onTool, p.onExport, p.onReload]);
+  }, [compositions, has, theme, player, p.agents, p.agentCommand, p.onSelectAgent, p.onRestartAgent, p.onTheme, p.onSelectComp, p.onZoom, p.onTool, p.onExport, p.onReload]);
 
   return <Launcher actions={actions} pages={pages} triggerLabel="Search or run a command" placeholder="Type a command or search" />;
 });

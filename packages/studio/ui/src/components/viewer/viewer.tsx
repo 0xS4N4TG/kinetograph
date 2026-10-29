@@ -5,7 +5,7 @@ import type { CompositionInfo, InspectResult, ReceivedFrame, StudioError } from 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/hint';
-import { Menu, MenuCheckboxItem, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from '@/components/ui/menu';
+import { Menu, MenuCheckboxItem, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from '@/components/ui/menu';
 import { fitSize, stepZoom } from '@/lib/format';
 import { displayName } from '@/lib/names';
 import { findLayer, hitTest } from '@/lib/inspect';
@@ -232,7 +232,7 @@ export const Viewer = memo(function Viewer({
           <div
             ref={frameRef}
             data-testid="frame"
-            className="relative overflow-hidden rounded-lg bg-[repeating-conic-gradient(#1a1d2b_0%_25%,#222638_0%_50%)] bg-[length:16px_16px] shadow-[0_24px_60px_-12px_rgba(4,6,20,0.7)] ring-1 ring-white/10"
+            className="relative overflow-hidden rounded-lg bg-[repeating-conic-gradient(#1d1d1d_0%_25%,#262626_0%_50%)] bg-[length:16px_16px] shadow-[0_24px_60px_-12px_rgba(0,0,0,0.6)] ring-1 ring-white/10"
             style={{
               width: shown.width,
               height: shown.height,
@@ -360,14 +360,17 @@ export const Viewer = memo(function Viewer({
               }
             />
             <MenuPopup align="end" className="min-w-56">
-              <MenuGroupLabel>Overlays</MenuGroupLabel>
-              <MenuCheckboxItem checked={showGuides} onCheckedChange={(on) => onGuidesChange(on === true)}>
-                Layer controls
-              </MenuCheckboxItem>
-              <MenuCheckboxItem checked={safeZones} onCheckedChange={(on) => onSafeZonesChange(on === true)}>
-                Safe zones
-              </MenuCheckboxItem>
+              <MenuGroup>
+                <MenuGroupLabel>Overlays</MenuGroupLabel>
+                <MenuCheckboxItem checked={showGuides} onCheckedChange={(on) => onGuidesChange(on === true)}>
+                  Layer controls
+                </MenuCheckboxItem>
+                <MenuCheckboxItem checked={safeZones} onCheckedChange={(on) => onSafeZonesChange(on === true)}>
+                  Safe zones
+                </MenuCheckboxItem>
+              </MenuGroup>
               <MenuSeparator />
+              <MenuGroup>
               <MenuGroupLabel>Zoom</MenuGroupLabel>
               <MenuItem disabled={!comp} onClick={() => onViewChange({ zoom: 'fit', pan: { x: 0, y: 0 } })}>
                 Fit
@@ -383,6 +386,7 @@ export const Viewer = memo(function Viewer({
               <MenuItem disabled={!comp} onClick={() => onViewChange({ zoom: 2, pan: { x: 0, y: 0 } })}>
                 200%
               </MenuItem>
+              </MenuGroup>
             </MenuPopup>
           </Menu>
         </div>
@@ -398,7 +402,7 @@ export const Viewer = memo(function Viewer({
               className="bg-card/80 border-border/60 pointer-events-auto rounded-full border px-3 font-mono text-xs shadow-sm backdrop-blur-md"
             >
               <MaximizeIcon />
-              {fitMode ? `Fit ${scalePct}%` : `${scalePct}%`}
+              {fitMode ? `Fit (${scalePct}%)` : `${scalePct}%`}
             </Button>
           </Hint>
         </div>

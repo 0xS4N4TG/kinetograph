@@ -1,5 +1,5 @@
-import { ChevronsUpDownIcon, MoonIcon, PanelLeftIcon, PanelRightIcon, SunIcon, UploadIcon } from 'lucide-react';
-import { memo, type ReactNode } from 'react';
+import { ChevronsUpDownIcon, DownloadIcon, MessageSquareIcon, MoonIcon, SlidersHorizontalIcon, SunIcon } from 'lucide-react';
+import { memo, useState, type ReactNode } from 'react';
 
 import type { CompositionInfo, ProjectInfo } from '@/api';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +23,9 @@ interface TopBarProps {
   inspectorOpen: boolean;
   onToggleInspector(): void;
   onExport(): void;
+  /** Renders still running (count and the first one's percent), or null. */
+  exporting: { count: number; percent: number } | null;
+  onShowRenders(): void;
   /** The command menu's trigger, in the middle. */
   launcher: ReactNode;
 }
@@ -44,15 +47,18 @@ export const TopBar = memo(function TopBar({
   inspectorOpen,
   onToggleInspector,
   onExport,
+  exporting,
+  onShowRenders,
   launcher,
 }: TopBarProps) {
   const entry = project?.entry.split(/[\\/]/).pop();
+  const [switcherOpen, setSwitcherOpen] = useState(false);
   return (
     <header className="grid h-10 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4 select-none">
       <div className="flex min-w-0 items-center gap-2">
         <Hint label={chatOpen ? 'Hide the agent' : 'Show the agent'}>
           <Button variant="ghost" size="icon" aria-label={chatOpen ? 'Hide the agent' : 'Show the agent'} aria-pressed={chatOpen} onClick={onToggleChat}>
-            <PanelLeftIcon />
+            <MessageSquareIcon />
           </Button>
         </Hint>
         <span
@@ -66,7 +72,7 @@ export const TopBar = memo(function TopBar({
             {entry ?? 'Kinetograph'}
           </span>
           <span className="text-muted-foreground/50 hidden lg:inline">/</span>
-          <Popover>
+          <Popover open={switcherOpen} onOpenChange={setSwitcherOpen}>
             <PopoverTrigger
               render={
                 <Button variant="ghost" data-testid="composition-switcher" className="max-w-56 gap-1.5 rounded-full px-3 font-semibold">
@@ -83,7 +89,10 @@ export const TopBar = memo(function TopBar({
                     key={c.id}
                     type="button"
                     aria-pressed={c.id === comp?.id}
-                    onClick={() => onSelectComp(c.id)}
+                    onClick={() => {
+                      onSelectComp(c.id);
+                      setSwitcherOpen(false);
+                    }}
                     className={cn(
                       'flex flex-col items-start gap-0.5 rounded-lg px-3 py-2 text-left outline-none transition-colors',
                       'hover:bg-accent focus-visible:ring-ring focus-visible:ring-2',
@@ -108,8 +117,9 @@ export const TopBar = memo(function TopBar({
             offline
           </Badge>
         )}
-        <span className="text-muted-foreground hidden font-mono text-[11px] xl:inline">
-          {project ? `v${project.version} · ` : ''}build {buildId}
+        <span className="text-muted-foreground hidden items-center gap-1.5 font-mono text-[11px] xl:flex">
+          {project && <span>v{project.version}</span>}
+          <span>build {buildId}</span>
         </span>
         <Hint label={theme === 'dark' ? 'Light theme' : 'Dark theme'}>
           <Button
@@ -123,11 +133,25 @@ export const TopBar = memo(function TopBar({
         </Hint>
         <Hint label={inspectorOpen ? 'Hide the inspector' : 'Show the inspector'}>
           <Button variant="ghost" size="icon" aria-label={inspectorOpen ? 'Hide the inspector' : 'Show the inspector'} aria-pressed={inspectorOpen} onClick={onToggleInspector}>
-            <PanelRightIcon />
+            <SlidersHorizontalIcon />
           </Button>
         </Hint>
+        {exporting && (
+          <button
+            type="button"
+            onClick={onShowRenders}
+            data-testid="exporting"
+            title="Show the render queue"
+            className="bg-muted hover:bg-accent text-foreground focus-visible:ring-ring flex h-8 items-center gap-2 rounded-full px-3 text-xs font-medium tabular-nums outline-none focus-visible:ring-2"
+          >
+            <span className="relative block h-1.5 w-12 overflow-hidden rounded-full bg-foreground/15" aria-hidden="true">
+              <span className="bg-playhead absolute inset-y-0 left-0 rounded-full" style={{ width: `${exporting.percent}%` }} />
+            </span>
+            Exporting {exporting.percent}%{exporting.count > 1 ? ` · ${exporting.count}` : ''}
+          </button>
+        )}
         <Button onClick={onExport} className="rounded-full px-4" disabled={!comp}>
-          <UploadIcon />
+          <DownloadIcon />
           Export
         </Button>
       </div>
