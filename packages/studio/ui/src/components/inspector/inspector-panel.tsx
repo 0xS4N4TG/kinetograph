@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import type { CompositionInfo, InspectResult, ProjectInfo, RenderJob, RenderRequest, TimelineData } from '@/api';
+import type { CompositionInfo, InspectResult, StudioApi, ProjectInfo, RenderJob, RenderRequest, TimelineData } from '@/api';
 import { PropsPanel } from '@/components/inspector/props-panel';
 import { RenderQueue } from '@/components/inspector/render-queue';
 import { SceneTree } from '@/components/inspector/scene-tree';
@@ -12,6 +12,8 @@ const TAB_CLASS =
   'data-[state=active]:border-primary h-full rounded-none border-b-2 border-transparent px-2.5 text-[11px] data-[state=active]:bg-transparent data-[state=active]:shadow-none';
 
 interface InspectorPanelProps {
+  /** For the Props tab's presets and plugin panels. */
+  api: StudioApi;
   tab: string;
   onTabChange(tab: string): void;
   comp: CompositionInfo | null;
@@ -39,6 +41,7 @@ interface InspectorPanelProps {
 
 /** The Scene, Props and Renders tabs of the right-hand panel. */
 export function InspectorPanel({
+  api,
   tab,
   onTabChange,
   comp,
@@ -95,7 +98,7 @@ export function InspectorPanel({
         />
       </TabsContent>
       <TabsContent value="props" className="min-h-0">
-        <PropsPanel comp={comp} values={propValues} edited={propsEdited} onChange={onChangeProps} onReset={onResetProps} />
+        <PropsPanel api={api} comp={comp} values={propValues} edited={propsEdited} onChange={onChangeProps} onReset={onResetProps} />
       </TabsContent>
       <TabsContent value="agent" className="min-h-0">
         {agentTab}

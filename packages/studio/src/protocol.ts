@@ -63,6 +63,22 @@ export interface TimelineLayer {
   sequence?: string;
 }
 
+/** One of `GET /api/presets`. */
+export interface PresetInfo {
+  name: string;
+  props: Record<string, unknown>;
+}
+
+/** One of `GET /api/plugins`. */
+export interface PluginSummary {
+  name: string;
+  version: string;
+  /** The plugin's SKILL.md, absolute. */
+  skill: string | null;
+  /** The URL of the bundled panel module. */
+  panel: string | null;
+}
+
 /** `POST /api/renders`. */
 export interface RenderRequest {
   comp: string;

@@ -14,6 +14,7 @@ import { ChatLog } from './chat-log.js';
 import { isInside } from './agent-fs.js';
 import { availableAgents } from './agent-presets.js';
 import { openBrowser } from './open-browser.js';
+import { listPresets, savePreset } from './presets.js';
 import { Project } from './project.js';
 import {
   encodeFrameMessage,
@@ -387,6 +388,17 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     if (method === 'GET' && path === '/api/compositions') {
       if (project.buildId === 0) known('');
       return json(res, 200, project.compositions);
+    }
+    if (method === 'GET' && path === '/api/presets') {
+      const comp = q.get('comp');
+      if (!comp) throw invalid('comp is required');
+      return json(res, 200, { presets: listPresets(entry, comp) });
+    }
+    const preset = /^\/api\/presets\/([^/]+)\/([^/]+)$/.exec(path);
+    if (method === 'PUT' && preset) {
+      const name = decodeURIComponent(preset[2]!);
+      savePreset(entry, decodeURIComponent(preset[1]!), name, await readBody(req));
+      return json(res, 200, { name });
     }
     if (method === 'GET' && path === '/api/frame') {
       const params = frameParams({

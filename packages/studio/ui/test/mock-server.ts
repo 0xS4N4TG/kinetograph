@@ -9,6 +9,8 @@ import {
   type CompositionInfo,
   type FrameArgs,
   type InspectResult,
+  type PluginSummary,
+  type PresetInfo,
   type ProjectInfo,
   type RenderJob,
   type RenderRequest,
@@ -33,6 +35,9 @@ export class MockServer implements StudioApi {
   agentMessages: AgentClientMessage[] = [];
   /** When set, `compositions()` fails as the server does before the first good build. */
   noGoodBuild = false;
+  /** Saved presets by composition id, and the installed plugins. */
+  presetsByComp: Record<string, PresetInfo[]> = {};
+  pluginList: PluginSummary[] = [];
   startRenderError: ApiError | null = null;
   /** Reply to frame requests at once; when false, the test calls `respond`. */
   auto = true;
@@ -133,6 +138,18 @@ export class MockServer implements StudioApi {
     const cancelled = { ...job, status: 'cancelled' as const };
     this.jobs = this.jobs.map((j) => (j.id === id ? cancelled : j));
     return cancelled;
+  }
+
+  async presets(comp: string): Promise<PresetInfo[]> {
+    return this.presetsByComp[comp] ?? [];
+  }
+
+  async savePreset(comp: string, name: string, props: Record<string, unknown>): Promise<void> {
+    this.presetsByComp[comp] = [...(this.presetsByComp[comp] ?? []).filter((p) => p.name !== name), { name, props }];
+  }
+
+  async plugins(): Promise<PluginSummary[]> {
+    return this.pluginList;
   }
 
   thumbnailUrl(comp: string, frame: number, height: number, build: number): string {

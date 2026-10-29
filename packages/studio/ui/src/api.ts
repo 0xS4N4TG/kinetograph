@@ -14,6 +14,8 @@ import type {
   FrameHeader,
   FrameRequest,
   InspectResult,
+  PluginSummary,
+  PresetInfo,
   ProjectInfo,
   RenderJob,
   RenderRequest,
@@ -33,6 +35,8 @@ export type {
   CompositionInfo,
   FrameHeader,
   InspectResult,
+  PluginSummary,
+  PresetInfo,
   ProjectInfo,
   RenderJob,
   RenderRequest,
@@ -87,6 +91,12 @@ export interface StudioApi {
   timeline(comp: string, props?: Record<string, unknown>): Promise<TimelineData>;
   /** How far the sweep that `timeline` waits for has got. */
   timelineProgress(comp: string, props?: Record<string, unknown>): Promise<TimelineProgress>;
+  /** The saved presets of a composition. */
+  presets(comp: string): Promise<PresetInfo[]>;
+  /** Writes `presets/<comp>/<name>.json` beside the entry. */
+  savePreset(comp: string, name: string, props: Record<string, unknown>): Promise<void>;
+  /** The installed Kinetograph plugins. */
+  plugins(): Promise<PluginSummary[]>;
   /** The coding agents on offer. */
   agentInfo(): Promise<AgentInfo>;
   renders(): Promise<RenderJob[]>;
@@ -179,6 +189,15 @@ export function createApi(options: ApiOptions = {}): StudioApi {
     timeline: (comp, props) => request<TimelineData>(`/api/timeline${query({ comp, props: propsParam(props) })}`),
     timelineProgress: (comp, props) =>
       request<TimelineProgress>(`/api/timeline/progress${query({ comp, props: propsParam(props) })}`),
+    presets: async (comp) => (await request<{ presets: PresetInfo[] }>(`/api/presets${query({ comp })}`)).presets,
+    savePreset: async (comp, name, props) => {
+      await request(`/api/presets/${encodeURIComponent(comp)}/${encodeURIComponent(name)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(props),
+      });
+    },
+    plugins: async () => (await request<{ plugins: PluginSummary[] }>('/api/plugins')).plugins,
     agentInfo: () => request<AgentInfo>('/api/agent', { headers: token ? { 'X-Studio-Token': token } : {} }),
     renders: () => request<RenderJob[]>('/api/renders'),
     startRender: (body) =>

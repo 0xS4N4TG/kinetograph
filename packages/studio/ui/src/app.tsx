@@ -122,6 +122,7 @@ export function App({ api }: { api: StudioApi }) {
               <ResizableHandle className="bg-transparent" />
               <ResizablePanel defaultSize="28%" minSize="20%" className="overflow-hidden rounded-[2px] border border-white/10">
                 <InspectorPanel
+                  api={api}
                   tab={tab}
                   onTabChange={setTab}
                   comp={comp}
