@@ -1,18 +1,20 @@
-import { useCallback, useMemo, useState } from 'react';
-import { MessageSquareIcon } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { StudioApi } from '@/api';
 import { AgentPanel } from '@/components/agent/agent-panel';
 import { CommandMenu } from '@/components/command/command-menu';
+import { ExportDialog } from '@/components/inspector/export-dialog';
 import { InspectorPanel, type InspectorTab } from '@/components/inspector/inspector-panel';
 import { Panel } from '@/components/shell/panel';
+import { ResizeHandle } from '@/components/shell/resize-handle';
 import { ShortcutsDialog } from '@/components/shell/shortcuts-dialog';
 import { TopBar } from '@/components/shell/top-bar';
 import { Timeline } from '@/components/timeline/timeline';
-import { Button } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Transport } from '@/components/viewer/transport';
 import { Viewer, type Tool, type View, type Zoom } from '@/components/viewer/viewer';
+import { jobPercent } from '@/lib/format';
+import { usePersistedNumber } from '@/lib/persisted';
 import { usePlayerState } from '@/lib/player-hooks';
 import { PreviewContext, type PreviewHost } from '@/lib/preview-context';
 import { useTheme } from '@/lib/theme';
@@ -37,6 +39,12 @@ function writeDetails(on: boolean): void {
 }
 
 const FIT: View = { zoom: 'fit', pan: { x: 0, y: 0 } };
+/** Panel sizes, px: the defaults, the limits, and the height of the folded (slim) timeline. */
+const SIDE_DEFAULT = 340;
+const SIDE_MIN = 260;
+const SIDE_MAX = 620;
+const TIMELINE_SLIM = 172;
+const TIMELINE_DEFAULT = 340;
 
 /**
  * The layout, and nothing that follows the playhead: the transport, the timeline's playhead and the plugin overlays each
@@ -51,6 +59,27 @@ export function App({ api }: { api: StudioApi }) {
   const [chatOpen, setChatOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [timelineOpen, setTimelineOpen] = useState(false);
+  const [chatWidth, setChatWidth] = usePersistedNumber('kg.size.chat', SIDE_DEFAULT);
+  const [inspectorWidth, setInspectorWidth] = usePersistedNumber('kg.size.inspector', SIDE_DEFAULT);
+  const [timelineHeight, setTimelineHeight] = usePersistedNumber('kg.size.timeline', TIMELINE_DEFAULT);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [agents, setAgents] = useState<{ id: string; name: string; command: string }[]>([]);
+  const agentCommand = chat.state.command;
+  const { loadInfo, chooseAgent, restart } = chat;
+  // The agents found on this computer, for the command menu; the first is used when the server has not picked one.
+  useEffect(() => {
+    let live = true;
+    void loadInfo().then((info) => {
+      if (live && info) setAgents(info.presets);
+    });
+    return () => {
+      live = false;
+    };
+  }, [loadInfo]);
+  useEffect(() => {
+    const first = agents[0];
+    if (first && agentCommand === null) chooseAgent(first.command);
+  }, [agents]);
   const [details, setDetails] = useState(readDetails);
   const [tool, setTool] = useState<Tool>('select');
   const [view, setView] = useState<View>(FIT);
@@ -104,7 +133,34 @@ export function App({ api }: { api: StudioApi }) {
   const toggleTimeline = useCallback(() => setTimelineOpen((v) => !v), []);
   const toggleSafeZones = useCallback(() => setSafeZones((v) => !v), []);
   const toggleGuides = useCallback(() => setGuides((v) => !v), []);
-  const exportNow = useCallback(() => openTab('renders'), [openTab]);
+  const exportNow = useCallback(() => setExportOpen(true), []);
+  const showRenders = useCallback(() => openTab('renders'), [openTab]);
+  const startExport = useCallback(
+    async (request: Parameters<typeof studio.startRender>[0]) => {
+      await studio.startRender(request);
+      openTab('renders');
+    },
+    [studio.startRender, openTab],
+  );
+  const exporting = useMemo(() => {
+    const active = studio.renders.filter((job) => job.status === 'queued' || job.status === 'running');
+    if (active.length === 0) return null;
+    const running = active.find((job) => job.status === 'running') ?? active[0]!;
+    return { count: active.length, percent: Math.round(jobPercent(running)) };
+  }, [studio.renders]);
+  /** Dragging the timeline's top edge: small folds it to the scrubber, larger opens the rows at that height. */
+  const resizeTimeline = useCallback(
+    (height: number) => {
+      if (height < TIMELINE_SLIM + 40) setTimelineOpen(false);
+      else {
+        setTimelineOpen(true);
+        setTimelineHeight(height);
+      }
+    },
+    [setTimelineHeight],
+  );
+  const maxSide = Math.max(SIDE_MIN, Math.min(SIDE_MAX, Math.round(window.innerWidth * 0.4)));
+  const maxTimeline = Math.max(TIMELINE_DEFAULT, Math.round(window.innerHeight * 0.7));
   const showShortcuts = useCallback(() => setShortcutsOpen(true), []);
   const onDetailsChange = useCallback((next: boolean) => toggleDetails(next), [toggleDetails]);
   const toggleDetailsOnly = useCallback(() => toggleDetails(), [toggleDetails]);
@@ -132,6 +188,8 @@ export function App({ api }: { api: StudioApi }) {
           inspectorOpen={inspectorOpen}
           onToggleInspector={toggleInspector}
           onExport={exportNow}
+          exporting={exporting}
+          onShowRenders={showRenders}
           launcher={
             <CommandMenu
               compositions={studio.compositions}
@@ -152,13 +210,17 @@ export function App({ api }: { api: StudioApi }) {
               onExport={exportNow}
               onReload={studio.reload}
               onShowShortcuts={showShortcuts}
+              agents={agents}
+              agentCommand={agentCommand}
+              onSelectAgent={chooseAgent}
+              onRestartAgent={restart}
             />
           }
         />
 
-        <div className="flex min-h-0 flex-1 gap-3">
-          {chatOpen ? (
-            <Panel className="w-[340px] shrink-0 2xl:w-[380px]" aria-label="Agent">
+        <div className="flex min-h-0 flex-1">
+          {chatOpen && (
+            <Panel className="shrink-0" style={{ width: chatWidth }} aria-label="Agent">
               <AgentPanel
                 comp={comp}
                 project={studio.project}
@@ -170,14 +232,13 @@ export function App({ api }: { api: StudioApi }) {
                 timeline={timelineData}
               />
             </Panel>
-          ) : (
-            <Button variant="outline" size="icon-lg" aria-label="Show the agent" onClick={toggleChat} className="bg-card shrink-0 self-start rounded-full">
-              <MessageSquareIcon />
-            </Button>
+          )}
+          {chatOpen && (
+            <ResizeHandle orientation="vertical" label="Resize the agent" size={chatWidth} direction={1} min={SIDE_MIN} max={maxSide} onResize={setChatWidth} onReset={() => setChatWidth(SIDE_DEFAULT)} />
           )}
 
-          <div className="flex min-w-0 flex-1 flex-col gap-3">
-            <Panel className="flex-1" aria-label="Preview">
+          <div className="flex min-w-0 flex-1 flex-col">
+            <Panel className="min-h-0 flex-1" aria-label="Preview">
               <Viewer
                 comp={comp}
                 onImage={studio.onImage}
@@ -201,7 +262,17 @@ export function App({ api }: { api: StudioApi }) {
                 <Transport comp={comp} player={player} className="pointer-events-auto" />
               </div>
             </Panel>
-            <Panel className="shrink-0 transition-[height] duration-200" style={{ height: timelineOpen ? 'clamp(280px, 40vh, 460px)' : 128 }} aria-label="Timeline">
+            <ResizeHandle
+              orientation="horizontal"
+              label="Resize the timeline"
+              size={timelineOpen ? timelineHeight : TIMELINE_SLIM}
+              direction={-1}
+              min={TIMELINE_SLIM}
+              max={maxTimeline}
+              onResize={resizeTimeline}
+              onReset={() => setTimelineOpen((open) => !open)}
+            />
+            <Panel className="shrink-0" style={{ height: timelineOpen ? Math.min(timelineHeight, maxTimeline) : TIMELINE_SLIM }} aria-label="Timeline">
               <Timeline
                 comp={comp}
                 status={studio.timeline}
@@ -218,7 +289,10 @@ export function App({ api }: { api: StudioApi }) {
           </div>
 
           {inspectorOpen && (
-            <Panel className="w-[340px] shrink-0 2xl:w-[380px]" aria-label="Inspector">
+            <ResizeHandle orientation="vertical" label="Resize the inspector" size={inspectorWidth} direction={-1} min={SIDE_MIN} max={maxSide} onResize={setInspectorWidth} onReset={() => setInspectorWidth(SIDE_DEFAULT)} />
+          )}
+          {inspectorOpen && (
+            <Panel className="shrink-0" style={{ width: inspectorWidth }} aria-label="Inspector">
               <PreviewContext.Provider value={preview}>
                 <InspectorPanel
                   api={api}
@@ -237,7 +311,7 @@ export function App({ api }: { api: StudioApi }) {
                   onChangeProps={studio.setPropValues}
                   onResetProps={studio.resetProps}
                   renders={studio.renders}
-                  onStartRender={studio.startRender}
+                  onNewRender={exportNow}
                   onCancelRender={studio.cancelRender}
                 />
               </PreviewContext.Provider>
@@ -246,6 +320,7 @@ export function App({ api }: { api: StudioApi }) {
         </div>
 
         <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+        <ExportDialog open={exportOpen} onOpenChange={setExportOpen} comp={comp} propsEdited={studio.propsOverride !== undefined} player={player} onStart={startExport} />
       </div>
     </TooltipProvider>
   );

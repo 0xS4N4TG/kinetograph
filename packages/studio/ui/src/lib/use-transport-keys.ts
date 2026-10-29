@@ -4,6 +4,8 @@ import type { Player } from '@/lib/player';
 
 /** Where typing, a slider, tabs, a menu or a dialog already use the key. */
 function ownsKeys(target: EventTarget | null): boolean {
+  // A dialog is open: it owns the keyboard whatever has focus.
+  if (document.querySelector('[role=dialog][data-open]')) return true;
   if (!(target instanceof HTMLElement)) return false;
   return (
     target.isContentEditable ||
