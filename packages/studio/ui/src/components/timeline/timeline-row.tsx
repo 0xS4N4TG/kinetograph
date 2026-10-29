@@ -10,6 +10,8 @@ import { cn } from '@/lib/utils';
 
 /** Width of the sticky label column, px. */
 export const LABEL_WIDTH = 248;
+/** Space between the label column and time 0, px: the first clip and the 00:00 tick sit inside the panel. */
+export const LANE_INSET = 14;
 /** Height of a row, px: roomy enough to hit. */
 export const ROW_HEIGHT = 48;
 
@@ -124,6 +126,7 @@ export function Row({ icon: Icon, tile, label, count, detail, badge, title, dept
           )}
         </button>
       </div>
+      <div aria-hidden="true" className="shrink-0" style={{ width: LANE_INSET }} />
       <div data-lane className="relative h-full" style={{ width: laneWidth }}>
         {children}
       </div>

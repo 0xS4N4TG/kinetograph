@@ -1,8 +1,8 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type RefObject } from 'react';
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type RefObject } from 'react';
 import { ChevronUpIcon, ListTreeIcon, SearchIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
 
 import type { CompositionInfo } from '@/api';
-import { Bar, EmptyRow, LABEL_WIDTH, ROW_HEIGHT, Row, THUMB_HEIGHT, TimelineNotice } from '@/components/timeline/timeline-row';
+import { Bar, EmptyRow, LABEL_WIDTH, LANE_INSET, ROW_HEIGHT, Row, THUMB_HEIGHT, TimelineNotice } from '@/components/timeline/timeline-row';
 import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/hint';
 import { Slider } from '@/components/ui/slider';
@@ -14,10 +14,9 @@ import { useFrame, usePlayerState } from '@/lib/player-hooks';
 import type { TimelineStatus } from '@/studio';
 import { cn } from '@/lib/utils';
 import { buildTimeline, seekTarget, visibleRows, type TimelineNode } from '@/lib/timeline-model';
+import { buildRuler } from '@/lib/ruler';
 import { useElementSize } from '@/lib/use-element-size';
 
-const MIN_TICK_SPACING = 64;
-const STEPS = [1, 2, 5, 10, 15, 30, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 24;
 const ZOOM_FACTOR = 1.25;
@@ -91,12 +90,13 @@ const Playhead = memo(function Playhead({
   );
 });
 
-/** A ruler label: m:ss, with tenths when the labels are closer than a second. */
-function tickLabel(frame: number, fps: number, step: number): string {
-  const total = frame / fps;
-  const m = Math.floor(total / 60);
-  const sec = total - m * 60;
-  return step < fps ? `${String(m).padStart(2, '0')}:${sec.toFixed(1).padStart(4, '0')}` : `${String(m).padStart(2, '0')}:${String(Math.floor(sec)).padStart(2, '0')}`;
+/** A thin line under the ruler while a newer timeline is read; the one on show stays. */
+function ReadingLine({ progress }: { progress: number | null }) {
+  return (
+    <div data-testid="timeline-refreshing" role="progressbar" aria-label="Reading the timeline" className="bg-primary/15 sticky left-0 h-0.5 w-full overflow-hidden">
+      <div className={cn('bg-primary h-full', progress === null && 'w-1/4 animate-pulse')} style={progress === null ? undefined : { width: `${Math.round(progress * 100)}%` }} />
+    </div>
+  );
 }
 
 /** The height of the film strip, px. */
@@ -225,7 +225,7 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
   const [filter, setFilter] = useState('');
 
   const labelWidth = open ? LABEL_WIDTH : 0;
-  const lead = open ? LABEL_WIDTH : GUTTER;
+  const lead = open ? LABEL_WIDTH + LANE_INSET : GUTTER;
   const duration = comp?.durationInFrames ?? 0;
   const fps = comp?.fps ?? 30;
   const fit = Math.max(0.1, ((size.width || 900) - lead - GUTTER) / Math.max(1, duration));
@@ -269,9 +269,7 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
   const firstRow = viewport > 0 ? Math.max(0, Math.floor(Math.max(0, scrollTop - 36) / ROW_HEIGHT) - 8) : 0;
   const lastRow = viewport > 0 ? Math.min(rows.length, firstRow + Math.ceil(viewport / ROW_HEIGHT) + 16) : rows.length;
 
-  const tickStep = STEPS.find((step) => step * pxPerFrame >= MIN_TICK_SPACING) ?? STEPS[STEPS.length - 1]!;
-  const ticks: number[] = [];
-  for (let f = 0; f < duration; f += tickStep) ticks.push(f);
+  const ruler = useMemo(() => buildRuler(fps, duration, pxPerFrame), [fps, duration, pxPerFrame]);
 
   useLayoutEffect(() => {
     const scroller = scrollerRef.current;
@@ -394,15 +392,24 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
                   <BigTimecode player={player} fps={fps} />
                 </div>
               )}
-              {!open && <div style={{ width: GUTTER }} />}
+              {open ? <div className="bg-card shrink-0" style={{ width: LANE_INSET }} /> : <div style={{ width: GUTTER }} />}
               <div ref={rulerRef} data-lane data-testid="timeline-ruler" className="relative h-full cursor-pointer touch-none select-none" style={{ width: laneWidth }}>
-                {ticks.map((f) => (
-                  <span key={f} title={`frame ${f}`} className="text-muted-foreground absolute top-1/2 -translate-y-1/2 font-mono text-[11px] tabular-nums" style={{ left: f * pxPerFrame + 10 }}>
-                    {tickLabel(f, fps, tickStep)}
-                  </span>
+                {/* Labels sit in the upper band, to the right of their tick; ticks and dots in the lower one, so they never meet. */}
+                {ruler.labels.map((mark) => (
+                  <Fragment key={`l${mark.frame}`}>
+                    <span aria-hidden="true" data-testid="ruler-tick" className="bg-muted-foreground/60 absolute bottom-1 h-2.5 w-px" style={{ left: mark.x }} />
+                    <span
+                      data-testid="ruler-label"
+                      title={`frame ${Math.round(mark.frame)}`}
+                      className={cn('absolute top-1.5 font-mono tabular-nums', mark.whole ? 'text-muted-foreground text-[11px]' : 'text-muted-foreground/60 text-[10px]')}
+                      style={{ left: mark.x + 4 }}
+                    >
+                      {mark.text}
+                    </span>
+                  </Fragment>
                 ))}
-                {ticks.map((f) => (
-                  <span key={`dot-${f}`} aria-hidden="true" className="bg-muted-foreground/40 absolute top-1/2 size-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ left: (f + tickStep / 2) * pxPerFrame }} />
+                {ruler.minor.map((mark) => (
+                  <span key={`m${mark.frame}`} aria-hidden="true" data-testid="ruler-dot" className="bg-muted-foreground/40 absolute bottom-1 h-1 w-px" style={{ left: mark.x }} />
                 ))}
                 {!open &&
                   roots.map((node) => {
@@ -420,6 +427,9 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
               </div>
             </div>
 
+            {status.state === 'ready' && status.refreshing && (
+              <ReadingLine progress={status.refreshing.total > 0 ? status.refreshing.done / status.refreshing.total : null} />
+            )}
             {status.state === 'loading' && (
               <TimelineNotice testId="timeline-loading" progress={status.total > 0 ? status.done / status.total : null}>
                 {status.total > 0 ? `Reading the timeline: frame ${status.done} of ${status.total}` : 'Reading the timeline...'}
@@ -437,6 +447,7 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
                   Frames
                 </div>
               )}
+              {open && <div className="shrink-0" style={{ width: LANE_INSET }} />}
               <div data-lane className="relative" style={{ width: laneWidth, height: STRIP_HEIGHT }}>
                 <Filmstrip comp={comp} laneWidth={laneWidth} thumbnailUrl={thumbnailUrl} />
                 {!open && status.state === 'ready' &&
