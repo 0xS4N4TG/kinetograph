@@ -4,7 +4,7 @@ import { fitSize, formatDuration, formatTimecode, jobEta, jobPercent, parseTimec
 import { buildAgentMessage, relativePath, sequenceOf } from '../src/lib/agent-message';
 import { findLayer, hitTest, type InspectLayer } from '../src/lib/inspect';
 import { displayName, fullSource, numberByParent, numberSiblings, numberTree, secondLine, tooltip } from '../src/lib/names';
-import { fieldKind, helperText, schemaProperties } from '../src/lib/props-schema';
+import { fieldKind, helperText, schemaProperties, unsetType } from '../src/lib/props-schema';
 import { layerRows, sequenceRows } from '../src/lib/tree';
 import { inspectFor, intro, introTimeline, job, layer } from './fixtures';
 
@@ -309,5 +309,13 @@ describe('props schema', () => {
     expect(helperText({ description: 'Seconds' })).toBe('Seconds');
     expect(helperText({ description: '__remotion-color' })).toBeNull();
     expect(schemaProperties({ properties: { a: { type: 'string' }, b: 3 } })).toEqual([['a', { type: 'string' }]]);
+  });
+
+  it('draws an unset optional field from its type', () => {
+    expect(unsetType({ type: 'integer', minimum: 0 })).toBe('number');
+    expect(unsetType({ type: 'boolean' })).toBe('boolean');
+    expect(unsetType({ type: 'string', description: '__remotion-color' })).toBe('string');
+    expect(unsetType({ type: 'array' })).toBeNull();
+    expect(unsetType(undefined)).toBeNull();
   });
 });

@@ -56,6 +56,14 @@ export function fieldKind(schema: JsonSchema | undefined): FieldKind | null {
   return null;
 }
 
+/** What an optional field with no value is drawn as: its schema's type, so it gets its own control and not a JSON box. */
+export function unsetType(schema: JsonSchema | undefined): 'boolean' | 'number' | 'string' | null {
+  const type = schema?.type;
+  if (type === 'boolean' || type === 'string') return type;
+  if (type === 'number' || type === 'integer') return 'number';
+  return null;
+}
+
 /** The field's `description` as helper text; Remotion's markers are not text. */
 export function helperText(schema: JsonSchema | undefined): string | null {
   const text = schema?.description;

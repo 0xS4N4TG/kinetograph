@@ -4,7 +4,7 @@ import { RotateCcwIcon } from 'lucide-react';
 import type { CompositionInfo, StudioApi } from '@/api';
 import { PluginPanel, PluginPanels } from '@/components/inspector/plugin-panel';
 import { PresetsMenu } from '@/components/inspector/presets-menu';
-import { fieldKind, helperText, schemaProperties, type JsonSchema } from '@/lib/props-schema';
+import { fieldKind, helperText, schemaProperties, unsetType, type JsonSchema } from '@/lib/props-schema';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -93,8 +93,15 @@ function Help({ schema }: { schema: JsonSchema | undefined }) {
 
 function PropField({ name, path, schema, value, onChange }: FieldProps) {
   const id = useId();
-  const label = <Label htmlFor={id}>{name}</Label>;
   const kind = fieldKind(schema);
+  // An optional field with no value yet is drawn from its schema's type, empty, and marked as the component's default.
+  const unset = value === undefined ? unsetType(schema) : null;
+  const label = (
+    <Label htmlFor={id}>
+      {name}
+      {value === undefined && <span className="text-muted-foreground text-xs font-normal">default</span>}
+    </Label>
+  );
 
   if (kind?.kind === 'panel' && schema) {
     return (
@@ -148,8 +155,10 @@ function PropField({ name, path, schema, value, onChange }: FieldProps) {
       </div>
     );
   }
-  if (kind?.kind === 'slider' && typeof value === 'number') {
+  if (kind?.kind === 'slider' && (typeof value === 'number' || unset === 'number')) {
     const step = kind.integer ? 1 : (kind.max - kind.min) / 200;
+    const number = typeof value === 'number' ? value : undefined;
+    const thumb = number ?? (typeof schema?.default === 'number' ? schema.default : kind.min);
     return (
       <div className="flex flex-col gap-1.5">
         {label}
@@ -158,18 +167,19 @@ function PropField({ name, path, schema, value, onChange }: FieldProps) {
             min={kind.min}
             max={kind.max}
             step={step}
-            value={[value]}
+            value={[thumb]}
             onValueChange={([next]) => onChange(next)}
           />
           <div className="w-24 shrink-0">
-            <NumberField id={id} value={value} onChange={onChange} />
+            <NumberField id={id} value={number} onChange={onChange} />
           </div>
         </div>
         <Help schema={schema} />
       </div>
     );
   }
-  if (kind?.kind === 'color' && typeof value === 'string') {
+  if (kind?.kind === 'color' && (typeof value === 'string' || unset === 'string')) {
+    const text = typeof value === 'string' ? value : '';
     return (
       <div className="flex flex-col gap-1.5">
         {label}
@@ -178,50 +188,50 @@ function PropField({ name, path, schema, value, onChange }: FieldProps) {
             type="color"
             aria-label={`${name} colour`}
             className="border-input h-9 w-12 shrink-0 cursor-pointer rounded-md border bg-transparent p-1"
-            value={/^#[0-9a-f]{6}$/i.test(value) ? value : '#000000'}
+            value={/^#[0-9a-f]{6}$/i.test(text) ? text : '#000000'}
             onChange={(event) => onChange(event.target.value)}
           />
-          <Input id={id} value={value} onChange={(event) => onChange(event.target.value)} />
+          <Input id={id} value={text} onChange={(event) => onChange(event.target.value)} />
         </div>
         <Help schema={schema} />
       </div>
     );
   }
-  if (kind?.kind === 'textarea' && typeof value === 'string') {
+  if (kind?.kind === 'textarea' && (typeof value === 'string' || unset === 'string')) {
     return (
       <div className="flex flex-col gap-1.5">
         {label}
-        <Textarea id={id} value={value} onChange={(event) => onChange(event.target.value)} />
+        <Textarea id={id} value={typeof value === 'string' ? value : ''} onChange={(event) => onChange(event.target.value)} />
         <Help schema={schema} />
       </div>
     );
   }
 
-  if (typeof value === 'boolean') {
+  if (typeof value === 'boolean' || unset === 'boolean') {
     return (
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-3">
           {label}
-          <Switch id={id} checked={value} onCheckedChange={onChange} />
+          <Switch id={id} checked={value === true} onCheckedChange={onChange} />
         </div>
         <Help schema={schema} />
       </div>
     );
   }
-  if (typeof value === 'number') {
+  if (typeof value === 'number' || unset === 'number') {
     return (
       <div className="flex flex-col gap-1.5">
         {label}
-        <NumberField id={id} value={value} onChange={onChange} />
+        <NumberField id={id} value={typeof value === 'number' ? value : undefined} onChange={onChange} />
         <Help schema={schema} />
       </div>
     );
   }
-  if (typeof value === 'string') {
+  if (typeof value === 'string' || unset === 'string') {
     return (
       <div className="flex flex-col gap-1.5">
         {label}
-        <Input id={id} value={value} onChange={(event) => onChange(event.target.value)} />
+        <Input id={id} value={typeof value === 'string' ? value : ''} onChange={(event) => onChange(event.target.value)} />
         <Help schema={schema} />
       </div>
     );
@@ -236,8 +246,8 @@ type FieldBody = {
   onChange(value: unknown): void;
 };
 
-/** Keeps what is being typed (`1.`, an empty box) until it is a number. */
-function NumberField({ id, value, onChange }: { id: string; value: number; onChange(value: unknown): void }) {
+/** Keeps what is being typed (`1.`, an empty box) until it is a number. Empty while `value` is unset. */
+function NumberField({ id, value, onChange }: { id: string; value: number | undefined; onChange(value: unknown): void }) {
   const [draft, setDraft] = useState<string | null>(null);
   useEffect(() => {
     // A box that is empty or half typed (`-`, `1e`) is kept; one that holds another number was reset from outside.
@@ -248,7 +258,8 @@ function NumberField({ id, value, onChange }: { id: string; value: number; onCha
     <Input
       id={id}
       type="number"
-      value={draft ?? String(value)}
+      value={draft ?? (value === undefined ? '' : String(value))}
+      placeholder={value === undefined ? 'default' : undefined}
       onChange={(event) => {
         setDraft(event.target.value);
         if (event.target.value.trim() !== '' && Number.isFinite(Number(event.target.value))) {
@@ -262,7 +273,8 @@ function NumberField({ id, value, onChange }: { id: string; value: number; onCha
 
 /** Nested values and null: edited as JSON, applied once it parses. */
 function JsonField({ id, label, help, value, onChange }: FieldBody & { value: unknown }) {
-  const text = JSON.stringify(value, null, 2) ?? 'null';
+  // An unset field is an empty box; `null` is a value of its own.
+  const text = value === undefined ? '' : (JSON.stringify(value, null, 2) ?? 'null');
   const [draft, setDraft] = useState<string | null>(null);
   const [invalid, setInvalid] = useState(false);
   useEffect(() => {
@@ -281,6 +293,7 @@ function JsonField({ id, label, help, value, onChange }: FieldBody & { value: un
         className="font-mono text-xs"
         aria-invalid={invalid}
         value={draft ?? text}
+        placeholder={value === undefined ? 'default' : undefined}
         onChange={(event) => {
           setDraft(event.target.value);
           try {
