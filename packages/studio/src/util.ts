@@ -38,6 +38,7 @@ export function httpError(error: unknown): { status: number; error: StudioError 
     case 'FORBIDDEN':
       return { status: 403, error: { code, message } };
     case 'BUILD':
+    case 'SUPERSEDED':
       return { status: 409, error: { code, message } };
     default:
       return { status: 500, error: { code, message } };
@@ -79,4 +80,18 @@ export function stableStringify(value: unknown): string {
 export function builtFile(name: string): string {
   const beside = fileURLToPath(new URL(`./${name}`, import.meta.url));
   return existsSync(beside) ? beside : fileURLToPath(new URL(`../dist/${name}`, import.meta.url));
+}
+
+/** `peaks` taken down (the loudest of the ones each new bucket covers) or stretched to `buckets`. */
+export function resamplePeaks(peaks: number[], buckets: number): number[] {
+  if (peaks.length === 0 || buckets <= 0) return [];
+  const out = new Array<number>(buckets).fill(0);
+  for (let b = 0; b < buckets; b++) {
+    const lo = Math.floor((b * peaks.length) / buckets);
+    const hi = Math.max(lo + 1, Math.floor(((b + 1) * peaks.length) / buckets));
+    let peak = 0;
+    for (let i = lo; i < hi && i < peaks.length; i++) peak = Math.max(peak, peaks[i]!);
+    out[b] = peak;
+  }
+  return out;
 }

@@ -11,6 +11,7 @@ import {
   renderSource,
   type Source,
 } from 'kinetograph';
+import { mixAudio } from './audio-mix.js';
 import type { Engine, EngineOptions, FrameScene } from './engine.js';
 import type { InspectLayer, InspectResult, LayerName, SequenceJson, SourceLocation } from './protocol.js';
 import { lookupName, stableStringify } from './util.js';
@@ -115,6 +116,7 @@ export function createEngine({ entry, bundleFile }: EngineOptions): Engine {
           durationInFrames,
           sequences: (out.sequences ?? []).map((s: SequenceJson) => withSource(s, entryDir)),
           ...(names ? { names } : {}),
+          audio: out.audio ?? [],
           constant: source.kind === 'scene',
           jsMs: out.jsMs,
         };
@@ -141,6 +143,8 @@ export function createEngine({ entry, bundleFile }: EngineOptions): Engine {
       const result = JSON.parse(native().inspect(scene.sceneJson, scene.frame, scene.baseDir)) as InspectResult;
       return scene.names ? { ...result, layers: nameLayers(result.layers, scene.names) } : result;
     },
+
+    mixAudio,
 
     async render(spec, hooks) {
       const source = await openSource(entry, { comp: spec.comp, props: JSON.stringify(spec.props), bundleFile: bundleFile ?? undefined });

@@ -3,6 +3,8 @@
 // project, the renderer and the addon goes through this interface. The default engine (`real-engine.ts`) drives the
 // CLI's source and the addon; tests name a stub module in `StudioOptions.engine`, which opens no GPU.
 
+import type { AudioClipJson } from '@kinetographdev/scene';
+import type { AudioMix } from './audio-mix.js';
 import type { CompositionInfo, InspectResult, LayerName, SequenceJson } from './protocol.js';
 
 export interface EngineOptions {
@@ -29,6 +31,8 @@ export interface FrameScene {
   names?: Record<string, LayerName>;
   /** A `.json` scene: every frame is the same scene. */
   constant: boolean;
+  /** The sounds this frame plays (as `kinetograph render` collects them); empty for a `.json` scene. */
+  audio: AudioClipJson[];
   /** ms spent in the JS stage. */
   jsMs: number;
 }
@@ -77,6 +81,8 @@ export interface Engine {
   /** The GPU stage: the frame rendered, scaled and encoded. The only call that opens a GPU device. */
   preview(scene: FrameScene, request: PreviewRequest): Promise<PreviewResult>;
   inspect(scene: FrameScene): Promise<InspectResult>;
+  /** The mix of the sounds the frames of a sweep played; null when the composition has no sound. */
+  mixAudio(frames: { frame: number; audio: AudioClipJson[] }[], info: { fps: number; durationInFrames: number; baseDir: string }): Promise<AudioMix | null>;
   /** A whole render job; resolves with the addon's `RenderSummary`. */
   render(spec: RenderSpec, hooks: RenderHooks): Promise<Record<string, unknown>>;
   dispose(): void;
@@ -106,6 +112,8 @@ export type WorkerRequest =
   | { id: number; op: 'preview'; comp: string; props: Record<string, unknown>; frame: number; scale: number; format: 'jpeg' | 'png' }
   | { id: number; op: 'inspect'; comp: string; props: Record<string, unknown>; frame: number }
   | { id: number; op: 'timeline'; comp: string; props: Record<string, unknown> }
+  /** After a `timeline` call: mixes the sound that sweep collected (no second pass over the frames). */
+  | { id: number; op: 'audio' }
   | { id: number; op: 'render'; spec: RenderSpec };
 
 export type WorkerReply =

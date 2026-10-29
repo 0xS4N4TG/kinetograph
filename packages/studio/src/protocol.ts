@@ -37,6 +37,18 @@ export interface TimelineData {
    * the Sequence shows on. */
   sequences: SequenceJson[];
   layers: TimelineLayer[];
+  /** The sounds the composition plays, one per clip id; absent from older servers. */
+  audio?: TimelineAudio[];
+}
+
+/** One sound of the composition: an `<Audio>`, or the sound of a `<Video>` (`video`). */
+export interface TimelineAudio {
+  /** The `id` of its clip; `GET /api/waveform?clip=` takes it. */
+  id: string;
+  src: string;
+  video?: boolean;
+  /** Inclusive frame ranges in which it is playing (not muted), ascending and disjoint. */
+  ranges: [first: number, last: number][];
 }
 
 /** `GET /api/timeline/progress`: how far the sweep for the timeline has got; `total` is 0 before it starts. */

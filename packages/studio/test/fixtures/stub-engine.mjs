@@ -73,9 +73,42 @@ export function createEngine({ entry, bundleFile }) {
                 { key: '/intro@10+20/inner@12+5', name: 'inner', from: 12, durationInFrames: 5, parent: '/intro@10+20', layer: frame >= 12 && frame < 17 ? '$0' : null },
                 { key: '/outro@50+10', name: 'outro', from: 50, durationInFrames: 10, parent: null, layer: frame >= 50 && frame < 60 ? '$0' : null },
               ],
+        // `_audio`: a clip plays on frames 10..<40 (a tone, see mixAudio).
+        audio: props._audio && frame >= 10 && frame < 40 ? [{ id: 'tone', src: 'tone.wav', from: 10, trimBefore: 0, trimAfter: null, playbackRate: 1, volume: 1, loop: false, muted: false }] : [],
         constant: false,
         jsMs: 0,
       };
+    },
+
+    // A 440 Hz tone over frames 10..<40 as a 16-bit mono WAV, so the routes have real bytes to serve.
+    async mixAudio(frames, { fps, durationInFrames }) {
+      if (frames.length === 0) return null;
+      const rate = 8000;
+      const total = Math.round((durationInFrames / fps) * rate);
+      const wav = new Uint8Array(44 + total * 2);
+      const view = new DataView(wav.buffer);
+      [...'RIFF'].forEach((c, i) => view.setUint8(i, c.charCodeAt(0)));
+      view.setUint32(4, wav.length - 8, true);
+      [...'WAVEfmt '].forEach((c, i) => view.setUint8(8 + i, c.charCodeAt(0)));
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, rate, true);
+      view.setUint32(28, rate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      [...'data'].forEach((c, i) => view.setUint8(36 + i, c.charCodeAt(0)));
+      view.setUint32(40, total * 2, true);
+      const begin = Math.round((10 / fps) * rate);
+      const end = Math.round((40 / fps) * rate);
+      const peaks = new Array(64).fill(0);
+      for (let i = begin; i < end; i++) {
+        const v = 0.5 * Math.sin((2 * Math.PI * 440 * i) / rate);
+        view.setInt16(44 + i * 2, Math.round(v * 32767), true);
+        const b = Math.floor((i / total) * 64);
+        peaks[b] = Math.max(peaks[b], Math.abs(v));
+      }
+      return { wav, sampleRate: rate, seconds: total / rate, peaks, clips: [{ id: 'tone', startFrame: 10, endFrame: 40, peaks: peaks.slice(7, 27) }] };
     },
 
     async preview(scene, { scale, format }) {

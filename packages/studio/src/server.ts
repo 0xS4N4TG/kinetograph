@@ -35,7 +35,7 @@ import {
 } from './protocol.js';
 import { RenderQueue } from './render-queue.js';
 import { serveStatic } from './static.js';
-import { StudioFailure, httpError } from './util.js';
+import { StudioFailure, httpError, resamplePeaks } from './util.js';
 import type { PreviewReply } from './engine.js';
 import type { StudioOptions, StudioServer } from './index.js';
 
@@ -537,6 +537,29 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       if (comp === '') throw invalid('comp is required');
       known(comp);
       return json(res, 200, project.timelineProgressOf(comp, { ...baseProps, ...queryProps(q.get('props')) }));
+    }
+    if (method === 'GET' && (path === '/api/audio' || path === '/api/waveform')) {
+      const comp = q.get('comp') ?? '';
+      if (comp === '') throw invalid('comp is required');
+      known(comp);
+      const mix = await project.audio(comp, { ...baseProps, ...queryProps(q.get('props')) });
+      if (!mix) throw new StudioFailure('NOT_FOUND', `the composition "${comp}" has no audio`);
+      if (path === '/api/audio') {
+        res.writeHead(200, {
+          'Content-Type': 'audio/wav',
+          'Content-Length': mix.wav.length,
+          'Cache-Control': 'no-store',
+          'X-Build': String(project.buildId),
+        });
+        return void res.end(Buffer.from(mix.wav.buffer, mix.wav.byteOffset, mix.wav.byteLength));
+      }
+      const buckets = number(q.get('buckets')) ?? 256;
+      if (!Number.isInteger(buckets) || buckets < 1 || buckets > 16384) throw invalid(`buckets must be a whole number from 1 to 16384, got "${q.get('buckets')}"`);
+      const clip = q.get('clip');
+      if (clip === null) return json(res, 200, { peaks: resamplePeaks(mix.peaks, buckets) });
+      const found = mix.clips.find((c) => c.id === clip);
+      if (!found) throw new StudioFailure('NOT_FOUND', `no audio clip "${clip}" in "${comp}"`);
+      return json(res, 200, { peaks: resamplePeaks(found.peaks, buckets), startFrame: found.startFrame, endFrame: found.endFrame });
     }
     if (method === 'GET' && path === '/api/renders') return json(res, 200, queue.list());
     if (method === 'POST' && path === '/api/renders') return json(res, 201, await createRender(await readBody(req)));

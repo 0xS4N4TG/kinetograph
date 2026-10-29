@@ -42,6 +42,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^2.0.2",
+    "@kinetographdev/audio": "0.2.5",
     "@kinetographdev/core": "0.2.5",
     "@kinetographdev/native": "0.2.5",
     "@kinetographdev/scene": "0.2.5",
