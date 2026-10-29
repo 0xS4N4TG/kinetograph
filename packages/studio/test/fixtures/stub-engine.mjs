@@ -108,7 +108,7 @@ export function createEngine({ entry, bundleFile }) {
         const b = Math.floor((i / total) * 64);
         peaks[b] = Math.max(peaks[b], Math.abs(v));
       }
-      return { wav, sampleRate: rate, seconds: total / rate, peaks, clips: [{ id: 'tone', startFrame: 10, endFrame: 40, peaks: peaks.slice(7, 27) }] };
+      return { wav, sampleRate: rate, seconds: total / rate, peaks, clips: [{ id: JSON.stringify(['tone.wav', 10, 0, null, 1, false, false]), startFrame: 10, endFrame: 40, peaks: peaks.slice(7, 27) }] };
     },
 
     async preview(scene, { scale, format }) {

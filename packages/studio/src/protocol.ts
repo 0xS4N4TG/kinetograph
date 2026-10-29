@@ -43,7 +43,7 @@ export interface TimelineData {
 
 /** One sound of the composition: an `<Audio>`, or the sound of a `<Video>` (`video`). */
 export interface TimelineAudio {
-  /** The `id` of its clip; `GET /api/waveform?clip=` takes it. */
+  /** Names the sound (its file, start, trims and rate), not its place in the tree; `GET /api/waveform?clip=` takes it. */
   id: string;
   src: string;
   video?: boolean;

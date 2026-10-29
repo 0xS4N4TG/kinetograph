@@ -5,6 +5,7 @@
 import { clampPcm, hasOnFrame, joinClips, renderAudio, type AudioPcm } from '@kinetographdev/audio';
 import { resolveSoundSource } from '@kinetographdev/core/sound-source';
 import type { AudioClipJson } from '@kinetographdev/scene';
+import { soundKey } from './util.js';
 
 /** How many peaks the mix and each clip keep; a request for fewer buckets takes the loudest of the ones it covers. */
 export const PEAK_BUCKETS = 4096;
@@ -88,7 +89,10 @@ export async function mixAudio(
   const samplesPerFrame = pcm.sampleRate / fps;
 
   const byId = new Map<string, typeof clips>();
-  for (const clip of clips) byId.set(clip.id, [...(byId.get(clip.id) ?? []), clip]);
+  for (const clip of clips) {
+    const id = soundKey(clip);
+    byId.set(id, [...(byId.get(id) ?? []), clip]);
+  }
   // One clip and no synthesis: the mix is that clip.
   const lone = byId.size === 1 && !hasOnFrame(0, last);
   const out: AudioMix['clips'] = [];

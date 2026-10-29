@@ -1,7 +1,7 @@
 import type { Engine } from './engine.js';
 import type { AudioClipJson } from '@kinetographdev/scene';
 import type { LayerName, SequenceJson, TimelineAudio, TimelineData, TimelineLayer } from './protocol.js';
-import { lookupName } from './util.js';
+import { lookupName, soundKey } from './util.js';
 
 interface SceneLayer {
   id: string;
@@ -100,8 +100,9 @@ export async function sweepTimeline(
       collect?.(frame, scene.audio, scene.baseDir);
       for (const clip of scene.audio) {
         if (clip.muted) continue;
-        let sound = sounds.get(clip.id);
-        if (!sound) sounds.set(clip.id, (sound = { id: clip.id, src: clip.src, ...(clip.video ? { video: true } : {}), ranges: [] }));
+        const id = soundKey(clip);
+        let sound = sounds.get(id);
+        if (!sound) sounds.set(id, (sound = { id, src: clip.src, ...(clip.video ? { video: true } : {}), ranges: [] }));
         const last = sound.ranges[sound.ranges.length - 1];
         if (last && last[1] >= frame - 1) last[1] = Math.max(last[1], frame);
         else sound.ranges.push([frame, frame]);

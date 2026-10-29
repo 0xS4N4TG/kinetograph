@@ -16,6 +16,7 @@ afterAll(async () => {
   cleanup();
 });
 
+const TONE = JSON.stringify(['tone.wav', 10, 0, null, 1, false, false]);
 const withAudio = `&props=${encodeURIComponent('{"_audio":true}')}`;
 
 /** The samples of a 16-bit mono PCM WAV. */
@@ -52,7 +53,7 @@ describe('audio routes (stub engine)', () => {
 
   it('the timeline lists the sound', async () => {
     const r = await api(studio, `/api/timeline?comp=Main${withAudio}`);
-    expect(r.json.audio).toEqual([{ id: 'tone', src: 'tone.wav', ranges: [[10, 39]] }]);
+    expect(r.json.audio).toEqual([{ id: TONE, src: 'tone.wav', ranges: [[10, 39]] }]);
     expect((await api(studio, '/api/timeline?comp=Main')).json.audio).toEqual([]);
   });
 
@@ -64,7 +65,7 @@ describe('audio routes (stub engine)', () => {
     expect(mix.json.peaks[0]).toBe(0);
     expect(Math.max(...mix.json.peaks)).toBeGreaterThan(0.4);
 
-    const clip = await api(studio, `/api/waveform?comp=Main&clip=tone&buckets=10${withAudio}`);
+    const clip = await api(studio, `/api/waveform?comp=Main&clip=${encodeURIComponent(TONE)}&buckets=10${withAudio}`);
     expect(clip.json.peaks).toHaveLength(10);
     expect(clip.json).toMatchObject({ startFrame: 10, endFrame: 40 });
     expect(Math.min(...clip.json.peaks)).toBeGreaterThan(0.3);

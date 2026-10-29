@@ -95,3 +95,11 @@ export function resamplePeaks(peaks: number[], buckets: number): number[] {
   }
   return out;
 }
+
+/**
+ * What a sound is, apart from the path id of the `<Audio>` that plays it: ids are paths in the tree, so when a sibling
+ * before it unmounts the same sound gets a new one. The timeline and the waveforms name a sound by this.
+ */
+export function soundKey(clip: { src: string; from: number; trimBefore: number; trimAfter: number | null; playbackRate: number; loop: boolean; video?: boolean }): string {
+  return JSON.stringify([clip.src, clip.from, clip.trimBefore, clip.trimAfter, clip.playbackRate, clip.loop, clip.video === true]);
+}
