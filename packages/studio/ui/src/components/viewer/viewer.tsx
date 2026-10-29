@@ -393,7 +393,7 @@ export const Viewer = memo(function Viewer({
       </div>
 
       {comp && shown && (
-        <div className="pointer-events-none absolute right-4 bottom-4 flex items-center gap-2 text-xs">
+        <div className="pointer-events-none absolute top-14 right-4 flex items-center gap-2 text-xs">
           <Hint label={fitMode ? 'Show at 100% (1)' : 'Fit to the preview (0)'}>
             <Button
               variant="ghost"

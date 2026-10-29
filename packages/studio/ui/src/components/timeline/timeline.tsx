@@ -83,13 +83,21 @@ const Playhead = memo(function Playhead({
   return (
     <div
       data-testid="playhead"
-      className="bg-playhead pointer-events-none absolute inset-y-0 z-30 w-px"
+      className="bg-primary pointer-events-none absolute inset-y-0 z-30 w-[1.5px] -translate-x-1/2"
       style={{ left: left + frame * pxPerFrame }}
     >
-      <div className="bg-playhead absolute top-1 -left-[5px] size-[11px] rounded-full ring-2 ring-[var(--card)]" />
+      <span className="bg-primary ring-card absolute top-3.5 left-1/2 size-3 -translate-x-1/2 rounded-full ring-2" />
     </div>
   );
 });
+
+/** A ruler label: m:ss, with tenths when the labels are closer than a second. */
+function tickLabel(frame: number, fps: number, step: number): string {
+  const total = frame / fps;
+  const m = Math.floor(total / 60);
+  const sec = total - m * 60;
+  return step < fps ? `${String(m).padStart(2, '0')}:${sec.toFixed(1).padStart(4, '0')}` : `${String(m).padStart(2, '0')}:${String(Math.floor(sec)).padStart(2, '0')}`;
+}
 
 /** The height of the film strip, px. */
 const STRIP_HEIGHT = 56;
@@ -115,6 +123,12 @@ const Filmstrip = memo(function Filmstrip({ comp, laneWidth, thumbnailUrl }: { c
       })}
     </div>
   );
+});
+
+/** The timecode, large, in the box at the top left of the layers. */
+const BigTimecode = memo(function BigTimecode({ player, fps }: { player: Player; fps: number }) {
+  const frame = useFrame(player);
+  return <span className="bg-muted rounded-lg px-2.5 py-1 font-mono text-lg font-medium tracking-tight tabular-nums">{formatTimecode(frame, fps)}</span>;
 });
 
 /** The time and frame under the playhead, in the header. */
@@ -154,7 +168,8 @@ const RowItem = memo(function RowItem({ node, depth, expandable, open, details, 
   return (
     <Row
       data-testid={isSequence ? 'sequence-row' : 'component-row'}
-      swatch={colors.swatch}
+      icon={colors.icon}
+      tile={colors.tile}
       label={node.label}
       count={node.count}
       {...(details && secondLine(node) ? { detail: secondLine(node)! } : {})}
@@ -177,7 +192,11 @@ const RowItem = memo(function RowItem({ node, depth, expandable, open, details, 
           title={title}
           onClick={() => onPick(node, false)}
           thumbnail={thumbnailUrl?.(a, THUMB_HEIGHT * 2)}
-          className={cn(colors.bar, !isSequence && 'opacity-90', current && 'ring-foreground/50 opacity-100 ring-2')}
+          icon={colors.icon}
+          tile={colors.tile}
+          word={colors.word}
+          selected={selected}
+          className={cn(colors.bar, 'text-foreground')}
         >
           {node.count > 1 ? `${node.label} ×${node.count}` : node.label}
         </Bar>
@@ -303,7 +322,7 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
 
   return (
     <div data-testid="timeline" className="flex h-full min-h-0 flex-col select-none">
-      <div className="flex h-12 shrink-0 items-center gap-3 px-4">
+      <div className="flex h-12 min-w-0 shrink-0 items-center gap-3 px-4">
         <Hint label={open ? 'Fold the timeline' : 'Show the layers'}>
           <Button
             variant="ghost"
@@ -317,11 +336,11 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
             Timeline
           </Button>
         </Hint>
-        <span className="text-muted-foreground hidden text-sm sm:inline">{comp?.id ?? ''}</span>
+        <span className="text-muted-foreground hidden min-w-0 truncate text-sm sm:inline">{comp?.id ?? ''}</span>
         <FrameReadout player={player} fps={fps} />
         <span className="text-muted-foreground/80 font-mono text-xs">{duration} f</span>
 
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex min-w-0 shrink-0 items-center gap-3">
           {open && (
             <>
               <div className="bg-input/40 hidden h-8 w-48 items-center gap-2 rounded-full px-3 md:flex">
@@ -340,11 +359,11 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
               </Button>
             </>
           )}
-          <div className="flex w-44 items-center gap-1.5">
+          <div className="flex w-[148px] shrink-0 items-center gap-1 [&_[data-slot=slider-control]]:min-w-0">
             <Button variant="ghost" size="icon-sm" aria-label="Zoom out timeline" disabled={zoom <= MIN_ZOOM} onClick={() => setZoom((z) => clampZoom(z / ZOOM_FACTOR))} className="shrink-0 rounded-full">
               <ZoomOutIcon />
             </Button>
-            <Slider aria-label="Zoom" min={MIN_ZOOM} max={MAX_ZOOM} step={0.5} value={[zoom]} onValueChange={(value) => setZoom(clampZoom(Array.isArray(value) ? (value[0] ?? MIN_ZOOM) : value))} />
+            <Slider className="w-[72px] min-w-0" aria-label="Zoom" min={MIN_ZOOM} max={MAX_ZOOM} step={0.5} value={[zoom]} onValueChange={(value) => setZoom(clampZoom(Array.isArray(value) ? (value[0] ?? MIN_ZOOM) : value))} />
             <Button variant="ghost" size="icon-sm" aria-label="Zoom in timeline" disabled={zoom >= MAX_ZOOM} onClick={() => setZoom((z) => clampZoom(z * ZOOM_FACTOR))} className="shrink-0 rounded-full">
               <ZoomInIcon />
             </Button>
@@ -365,18 +384,21 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
             onPointerCancel={onPointerUp}
           >
             {/* The frame ruler, sticky at the top; in the slim timeline the Sequences sit under it as one strip. */}
-            <div className="bg-card sticky top-0 z-20 flex h-8">
+            <div className="bg-card sticky top-0 z-20 flex h-10">
               {open && (
-                <div className="bg-card text-muted-foreground sticky left-0 z-40 flex shrink-0 items-center px-4 text-xs font-medium" style={{ width: LABEL_WIDTH }}>
-                  Layers
+                <div className="bg-card sticky left-0 z-40 flex shrink-0 items-center px-4" style={{ width: LABEL_WIDTH }}>
+                  <BigTimecode player={player} fps={fps} />
                 </div>
               )}
               {!open && <div style={{ width: GUTTER }} />}
               <div ref={rulerRef} data-lane data-testid="timeline-ruler" className="relative h-full cursor-pointer touch-none select-none" style={{ width: laneWidth }}>
                 {ticks.map((f) => (
-                  <div key={f} className="bg-border absolute bottom-0 h-2 w-px" style={{ left: f * pxPerFrame }}>
-                    <span className="text-muted-foreground absolute -top-4 left-1.5 font-mono text-[10px] tabular-nums">{f}</span>
-                  </div>
+                  <span key={f} title={`frame ${f}`} className="text-muted-foreground absolute top-1/2 -translate-y-1/2 font-mono text-[11px] tabular-nums" style={{ left: f * pxPerFrame + 10 }}>
+                    {tickLabel(f, fps, tickStep)}
+                  </span>
+                ))}
+                {ticks.map((f) => (
+                  <span key={`dot-${f}`} aria-hidden="true" className="bg-muted-foreground/40 absolute top-1/2 size-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ left: (f + tickStep / 2) * pxPerFrame }} />
                 ))}
                 {!open &&
                   roots.map((node) => {

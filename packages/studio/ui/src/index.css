@@ -3,6 +3,8 @@
 @import '@fontsource-variable/dm-sans';
 @import '@fontsource-variable/jetbrains-mono';
 
+@source '../../../../node_modules/streamdown/dist/*.js';
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -36,6 +38,11 @@
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -91,10 +98,15 @@
   --border: --alpha(var(--color-black) / 8%);
   --input: --alpha(var(--color-black) / 10%);
   --ring: var(--color-neutral-400);
+  --chart-1: var(--color-orange-600);
+  --chart-2: var(--color-teal-600);
+  --chart-3: var(--color-cyan-900);
+  --chart-4: var(--color-amber-400);
+  --chart-5: var(--color-amber-500);
 
   --canvas: color-mix(in srgb, var(--color-neutral-100) 80%, var(--color-neutral-200));
   --stage: color-mix(in srgb, var(--color-neutral-200) 70%, var(--color-neutral-300));
-  --playhead: var(--destructive);
+  --playhead: var(--primary);
   --panel-edge: --alpha(var(--color-white) / 70%);
   --panel-shadow: --alpha(var(--color-black) / 10%);
 }
@@ -125,6 +137,11 @@
   --border: --alpha(var(--color-white) / 6%);
   --input: --alpha(var(--color-white) / 8%);
   --ring: var(--color-neutral-500);
+  --chart-1: var(--color-blue-700);
+  --chart-2: var(--color-emerald-500);
+  --chart-3: var(--color-amber-500);
+  --chart-4: var(--color-purple-500);
+  --chart-5: var(--color-rose-500);
 
   --canvas: color-mix(in srgb, var(--color-neutral-950) 90%, var(--color-black));
   --stage: color-mix(in srgb, var(--color-neutral-950) 70%, var(--color-black));
@@ -169,4 +186,49 @@
   ::-webkit-scrollbar-corner {
     background: transparent;
   }
+}
+
+/* Agent messages (Streamdown): coss tokens, compact. Raw HTML is not rendered; the sanitiser stays on. */
+.kg-md {
+  font-size: 13.5px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.kg-md > * + * {
+  margin-top: 0.6em;
+}
+.kg-md :is(ul, ol) {
+  padding-left: 1.25em;
+}
+.kg-md ul {
+  list-style: disc;
+}
+.kg-md ol {
+  list-style: decimal;
+}
+.kg-md li + li {
+  margin-top: 0.2em;
+}
+.kg-md a {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, var(--foreground) 40%, transparent);
+}
+.kg-md :not(pre) > code {
+  background: var(--muted);
+  border-radius: 6px;
+  padding: 0.1em 0.4em;
+  font-size: 0.88em;
+}
+.kg-md pre {
+  background: var(--muted);
+  border-radius: 10px;
+  padding: 0.75em 0.9em;
+  overflow-x: auto;
+  font-size: 12px;
+}
+.kg-md :is(h1, h2, h3, h4) {
+  font-weight: 600;
+  font-size: 1em;
 }

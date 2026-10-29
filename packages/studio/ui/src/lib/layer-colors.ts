@@ -1,14 +1,29 @@
-/** Bar and swatch classes per layer type, shared by the timeline bars and the scene tree. Soft tints that work on both themes. */
-const COLORS: Record<string, { bar: string; swatch: string }> = {
-  sequence: { bar: 'bg-primary/25 border-primary/45 text-foreground', swatch: 'bg-primary' },
-  text: { bar: 'bg-rose-400/25 border-rose-400/45 text-foreground', swatch: 'bg-rose-400' },
-  shape: { bar: 'bg-violet-400/25 border-violet-400/45 text-foreground', swatch: 'bg-violet-400' },
-  group: { bar: 'bg-amber-400/25 border-amber-400/45 text-foreground', swatch: 'bg-amber-400' },
-  image: { bar: 'bg-emerald-400/25 border-emerald-400/45 text-foreground', swatch: 'bg-emerald-400' },
-  video: { bar: 'bg-sky-400/25 border-sky-400/45 text-foreground', swatch: 'bg-sky-400' },
+import { ClapperboardIcon, FolderIcon, ImageIcon, ShapesIcon, TypeIcon, type LucideIcon } from 'lucide-react';
+
+interface Kind {
+  /** The clip card: the same dark soft card for every kind. */
+  bar: string;
+  /** The icon tile, in the kind's colour (coss chart tokens: a light and a dark set). */
+  tile: string;
+  swatch: string;
+  icon: LucideIcon;
+  /** The word before the name on a clip: "Text: Welcome". */
+  word: string;
+}
+
+const CARD = 'bg-foreground/[0.07] border-border';
+const KINDS: Record<string, Kind> = {
+  sequence: { bar: CARD, tile: 'bg-foreground/10 text-foreground/70', swatch: 'bg-foreground/60', icon: ClapperboardIcon, word: 'Sequence' },
+  text: { bar: CARD, tile: 'bg-chart-1/20 text-chart-1', swatch: 'bg-chart-1', icon: TypeIcon, word: 'Text' },
+  shape: { bar: CARD, tile: 'bg-chart-2/20 text-chart-2', swatch: 'bg-chart-2', icon: ShapesIcon, word: 'Shape' },
+  group: { bar: CARD, tile: 'bg-chart-3/20 text-chart-3', swatch: 'bg-chart-3', icon: FolderIcon, word: 'Group' },
+  image: { bar: CARD, tile: 'bg-chart-4/20 text-chart-4', swatch: 'bg-chart-4', icon: ImageIcon, word: 'Image' },
+  video: { bar: CARD, tile: 'bg-chart-5/20 text-chart-5', swatch: 'bg-chart-5', icon: ClapperboardIcon, word: 'Video' },
 };
 
-/** Unknown or missing types take the sequence colours. */
-export function layerColors(type?: string): { bar: string; swatch: string } {
-  return COLORS[type ?? 'sequence'] ?? COLORS.sequence!;
+/** Unknown types (paths, svg, canvas, plugin layers) look like shapes: motion graphics. */
+export function layerColors(type?: string): Kind {
+  const known = KINDS[type ?? 'sequence'];
+  if (known) return known;
+  return { ...KINDS.shape!, word: type ? type.charAt(0).toUpperCase() + type.slice(1) : 'Layer' };
 }

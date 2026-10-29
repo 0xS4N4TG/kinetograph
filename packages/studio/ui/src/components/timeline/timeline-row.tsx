@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { ChevronRightIcon } from 'lucide-react';
 
+import type { LucideIcon } from 'lucide-react';
+
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { indent } from '@/lib/tree';
@@ -9,7 +11,7 @@ import { cn } from '@/lib/utils';
 /** Width of the sticky label column, px. */
 export const LABEL_WIDTH = 248;
 /** Height of a row, px: roomy enough to hit. */
-export const ROW_HEIGHT = 40;
+export const ROW_HEIGHT = 48;
 
 export function EmptyRow({ children }: { children: string }) {
   return <div className="text-muted-foreground sticky left-0 px-4 py-3 text-sm">{children}</div>;
@@ -41,7 +43,9 @@ export function TimelineNotice({
 }
 
 interface RowProps {
-  swatch: string;
+  icon: LucideIcon;
+  /** The icon tile's colours. */
+  tile: string;
   label: string;
   /** Folded instances: the count after the name. */
   count?: number;
@@ -63,14 +67,13 @@ interface RowProps {
   'data-testid': string;
 }
 
-export function Row({ swatch, label, count, detail, badge, title, depth, expanded, onToggle, selected, current, onSelect, laneWidth, children, ...rest }: RowProps) {
+export function Row({ icon: Icon, tile, label, count, detail, badge, title, depth, expanded, onToggle, selected, current, onSelect, laneWidth, children, ...rest }: RowProps) {
   return (
     <div {...rest} data-selected={selected || undefined} data-current={current || undefined} className="group/row flex" style={{ height: ROW_HEIGHT }}>
       <div
         className={cn(
           'bg-card sticky left-0 z-40 flex shrink-0 items-center pr-2 text-sm',
-          'group-hover/row:bg-[color-mix(in_oklab,var(--card),var(--foreground)_4%)]',
-          selected && 'bg-[color-mix(in_oklab,var(--card),var(--primary)_14%)] group-hover/row:bg-[color-mix(in_oklab,var(--card),var(--primary)_16%)]',
+          selected && 'text-foreground',
           indent(depth),
         )}
         style={{ width: LABEL_WIDTH }}
@@ -100,7 +103,9 @@ export function Row({ swatch, label, count, detail, badge, title, depth, expande
           onClick={onSelect}
           className="focus-visible:ring-ring flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-inset"
         >
-          <span className={cn('size-2.5 shrink-0 rounded-full', swatch, current && 'ring-foreground/40 ring-2')} aria-hidden="true" />
+          <span className={cn('flex size-6 shrink-0 items-center justify-center rounded-md', tile, current && 'ring-foreground/30 ring-2')} aria-hidden="true">
+            <Icon className="size-3.5" />
+          </span>
           <span className="flex min-w-0 flex-col leading-tight">
             <span className="flex min-w-0 items-baseline gap-1.5">
               <span className={cn('truncate text-[13px] font-medium', !current && !selected && 'text-foreground/85')}>{label}</span>
@@ -140,8 +145,17 @@ export function Bar({
   title,
   onClick,
   thumbnail,
+  icon: Icon,
+  tile,
+  word,
+  selected,
   children,
 }: {
+  icon?: LucideIcon;
+  tile?: string;
+  /** "Text", "Shape": shown before the name. */
+  word?: string;
+  selected?: boolean;
   from: number;
   to: number;
   pxPerFrame: number;
@@ -160,8 +174,8 @@ export function Bar({
       title={title}
       onClick={onClick}
       className={cn(
-        'absolute inset-y-1.5 flex cursor-pointer items-center gap-1.5 overflow-hidden rounded-lg border px-2.5 text-xs font-medium whitespace-nowrap',
-        showThumb && 'pl-1',
+        'absolute inset-y-1.5 flex cursor-pointer items-center gap-2 rounded-[10px] border pr-3 pl-1.5 text-xs font-medium whitespace-nowrap',
+        selected ? 'border-primary ring-primary z-10 ring-[1.5px]' : 'overflow-hidden',
         className,
       )}
       style={{ left: from * pxPerFrame, width }}
@@ -181,7 +195,15 @@ export function Bar({
           }}
         />
       )}
-      <span className="truncate">{children}</span>
+      {Icon && !showThumb && (
+        <span className={cn('flex size-6 shrink-0 items-center justify-center rounded-md', tile)} aria-hidden="true">
+          <Icon className="size-3.5" />
+        </span>
+      )}
+      <span className="truncate">
+        {word && <span className="text-muted-foreground font-normal">{word}: </span>}
+        {children}
+      </span>
     </div>
   );
 }
