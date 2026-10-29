@@ -1,6 +1,6 @@
 import { memo } from 'react';
 
-import type { CompositionInfo, InspectResult, ProjectInfo, RenderJob, RenderRequest, StudioApi, TimelineData } from '@/api';
+import type { CompositionInfo, InspectResult, ProjectInfo, RenderJob, StudioApi, TimelineData } from '@/api';
 import { PropsPanel } from '@/components/inspector/props-panel';
 import { RenderQueue } from '@/components/inspector/render-queue';
 import { SceneTree } from '@/components/inspector/scene-tree';
@@ -30,7 +30,8 @@ interface InspectorPanelProps {
   onChangeProps(values: Record<string, unknown>): void;
   onResetProps(): void;
   renders: RenderJob[];
-  onStartRender(request: Omit<RenderRequest, 'comp' | 'props'>): Promise<unknown>;
+  /** Opens the export dialog. */
+  onNewRender(): void;
   onCancelRender(id: string): Promise<void>;
 }
 
@@ -52,7 +53,7 @@ export const InspectorPanel = memo(function InspectorPanel({
   onChangeProps,
   onResetProps,
   renders,
-  onStartRender,
+  onNewRender,
   onCancelRender,
 }: InspectorPanelProps) {
   const activeRenders = renders.filter((job) => job.status === 'queued' || job.status === 'running').length;
@@ -92,7 +93,7 @@ export const InspectorPanel = memo(function InspectorPanel({
         />
       </TabsContent>
       <TabsContent value="renders" className="min-h-0 pt-2">
-        <RenderQueue comp={comp} jobs={renders} propsEdited={propsEdited} onStart={onStartRender} onCancel={onCancelRender} />
+        <RenderQueue comp={comp} jobs={renders} onNew={onNewRender} onCancel={onCancelRender} />
       </TabsContent>
     </Tabs>
   );
