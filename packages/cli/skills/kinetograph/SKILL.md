@@ -43,7 +43,7 @@ Also: `compositions <entry>` lists compositions (pick one with `--comp <id>`; pa
 `audio analyze <entry>` measures the sound, `snapshot <entry> --update` approves frames and `snapshot <entry>` later
 diffs against them, `bench <entry>` times the stages, `effects` lists effects, `doctor <entry>` says what the engine
 cannot draw and in which frames (see "Compat mode and doctor"; `doctor` alone says what this install can do).
-`studio <entry>` starts the local studio (preview, timeline, scene tree, props, render queue) at `http://127.0.0.1:3000`
+`studio <entry>` starts the local studio (a preview that plays sound, a timeline you can drag a span on, props and presets, plugin cards, scene tree, export dialog, render queue and a chat with the person's coding agent) at `http://127.0.0.1:3000`
 and opens a browser; it is for the person at the screen, runs until stopped, and is not an MCP tool. Use `--no-open`
 when you start it yourself.
 

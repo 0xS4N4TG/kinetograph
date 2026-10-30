@@ -9,7 +9,7 @@ An agent can't watch a video, so Kinetograph gives it two things instead. A skil
 
 **The skill** is a folder with a `SKILL.md` that the agent reads. It covers the loop below, how a project is laid out (`registerRoot`, `Composition`, the native elements and effects), sound, Remotion compatibility and `doctor`, and the CLI flags an agent needs.
 
-**The MCP server** is `npx kinetograph mcp`, over stdio. It has one tool for each CLI command except `studio`, which keeps running until stopped. A tool takes the same arguments as its command. Command names with a space use an underscore. An error comes back as `{ "error": { "code", "message" } }`.
+**The MCP server** is `npx kinetograph mcp`, over stdio. It has one tool for each CLI command except `studio`, which keeps running until stopped. Studio, the local editor, has its own chat with your coding agent and gives it these tools; see [Studio](/docs/guides/studio/#the-agent). A tool takes the same arguments as its command. Command names with a space use an underscore. An error comes back as `{ "error": { "code", "message" } }`.
 
 | Tool | What it does |
 |---|---|

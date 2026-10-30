@@ -22,12 +22,19 @@ Add a `kinetograph` field to the package's `package.json`:
   "kinetograph": {
     "skill": "./SKILL.md",
     "panel": "./studio/panel.ts",
-    "tools": "./tools.ts"
+    "tools": "./tools.ts",
+    "title": "Hexed",
+    "description": "Dice-rolled hex genomes drawn as ornaments.",
+    "icon": "./icon.svg",
+    "components": ["Genome", "GenomeRing"]
   }
 }
 ```
 
-All three keys are optional, and the paths are relative to the package root. A package with a `kinetograph` field is a
+All keys are optional, and the paths are relative to the package root. `title` and `description` are how Studio names the plugin on its card and in its Plugins list; without a `title`, the
+package name without its scope is shown, capitalised. `icon` is an SVG file, drawn in the text colour, so use
+`currentColor`. `components` names the React components the package exports that draw layers: Studio uses them to link a
+card to the layers it draws (selecting one selects the other). A package with a `kinetograph` field is a
 plugin. Kinetograph finds the plugins a project uses by reading the `dependencies` and `devDependencies` of the nearest
 `package.json` above the project's entry, and resolving each one from the entry's directory.
 
@@ -85,6 +92,9 @@ export interface PanelContext {
   schema: Record<string, unknown>; // The field's JSON Schema
   path: string[]; // Where the field is in the props, e.g. ["look"]
   onChange(value: unknown): void; // Sets the field; the preview re-renders
+  state?: unknown; // What the panel last passed to setState; undefined the first time
+  setState(state: unknown): void; // Keeps panel-only state (locks, open sections) in the browser across reloads
+  preview?: { overlay: HTMLElement; width: number; height: number; frame: number }; // Draws on the preview picture
 }
 
 export function mount(el: HTMLElement, ctx: PanelContext): {
@@ -97,6 +107,11 @@ Studio bundles the module with esbuild for the browser (ES module, its imports i
 panel must not rely on Studio's React. It gets a plain element, with no shadow root. Style it with CSS scoped under a
 class of your own, and read Studio's CSS variables (`--background`, `--foreground`, `--border`, `--muted-foreground`,
 `--primary`) so that it matches the theme.
+
+`preview.overlay` is an element laid over the preview picture, in composition pixels (`width` by `height`), and Studio
+scales it to the picture with the CSS variable `--kg-preview-scale`. It ignores the pointer. Draw guides or handles in it;
+`frame` is the playhead. Each mounted panel has its own overlay, and only the one for the panel being edited shows, and
+only while its card is open. `state` is kept in the browser per plugin, composition and field.
 
 A panel only produces props. A render never runs it. If the panel fails to load or throws, Studio shows an error box in
 its place and the rest of the form keeps working.
@@ -141,7 +156,7 @@ An agent finds the file by running `npx kinetograph plugins`, which prints the p
 `SKILL.md`. With `--json` it prints:
 
 ```json
-{ "plugins": [{ "name": "@kinetographdev/hexed", "version": "1.0.0", "skill": "/path/to/SKILL.md", "hasPanel": true, "tools": ["hexed_roll"] }] }
+{ "plugins": [{ "name": "@kinetographdev/hexed", "version": "1.0.0", "title": "Hexed", "description": "Dice-rolled hex genomes drawn as ornaments.", "icon": "/path/to/icon.svg", "components": ["Genome", "GenomeRing"], "skill": "/path/to/SKILL.md", "hasPanel": true, "tools": ["hexed_roll"] }] }
 ```
 
 `tools` holds the MCP names of the plugin's tools.
@@ -159,6 +174,8 @@ A preset is a file at `presets/<composition id>/<name>.json`, next to the projec
 props, so you can commit it, edit it by hand, or write it with a script. A name is lower-case letters, digits, `-` and
 `_`, up to 64 characters, and starts with a letter or digit.
 
+Studio itself is described in [Studio](/docs/guides/studio/); the Props tab draws a plugin's field as a card there.
+
 ### Render with a preset
 
 `--props` takes the path of a JSON file as well as a JSON object, so a preset renders from the command line:
@@ -175,7 +192,8 @@ Studio serves these for tools that talk to it:
 
 | Route | Returns |
 |---|---|
-| `GET /api/plugins` | `{ plugins: [{ name, version, skill, panel, tools }] }`; `skill` is a path, `panel` a URL or `null`, `tools` the MCP tool names |
+| `GET /api/plugins` | `{ plugins: [{ name, version, title, description, icon, components, skill, panel, tools }] }`; `skill` is a path, `icon` and `panel` are URLs or `null`, `tools` the MCP tool names |
+| `GET /api/plugins/<name>/icon.svg` | The plugin's icon |
 | `GET /api/plugins/<name>/panel.js` | The plugin's panel, bundled |
 | `GET /api/presets?comp=<id>` | `{ presets: [{ name, props }] }` |
 | `PUT /api/presets/<id>/<name>` | Writes the preset from the JSON object in the body; a bad name is a 400 |

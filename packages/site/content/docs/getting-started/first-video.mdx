@@ -62,6 +62,16 @@ npx kinetograph lint examples/hello/index.tsx
 
 To find type errors, such as a misspelled prop, run `npx kinetograph check examples/hello/index.tsx`. Rendering does not type-check the project.
 
+## Open it in Studio
+
+Studio is the local editor. It plays the project in a browser, with a timeline, a props form and a chat with your coding agent:
+
+```sh
+npx kinetograph studio examples/hello/index.tsx
+```
+
+Press Space to play, click a layer to select it, and press Cmd+K (Ctrl+K elsewhere) for every action. Stop it with Ctrl-C. See [Studio](/docs/guides/studio/).
+
 ## Render the video
 
 ```sh
@@ -117,4 +127,5 @@ The first render downloads GSAP from the CDN and pins it in `kinetograph.lock.js
 - [Scene format](/docs/guides/scene-format/) describes the JSON scenes that the engine draws.
 - [Audio](/docs/guides/audio/) covers sound files, synthesised sound and loudness checks.
 - [CLI reference](/docs/reference/cli/) lists every command and option.
+- [Studio](/docs/guides/studio/) is the local editor: preview, timeline, props, export and the agent chat.
 - [Use with agents](/docs/guides/agents/) sets up the agent skill and the MCP server.
