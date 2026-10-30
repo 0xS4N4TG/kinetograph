@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 
 /**
  * Sets `data-in` once, the first time the element scrolls into view. The CSS does the rest: `kc-enter` fades and
- * lifts it in (staggered by `index`), `kc-wipe` reveals a big clip from the top down. It never blocks interaction.
+ * lifts it in (staggered by `index`), `kc-wipe` (on an inner wrapper) reveals a big clip from the top down. It never blocks interaction.
  */
 export function InView({
   as = 'div',
@@ -41,12 +41,22 @@ export function InView({
     return () => watch.disconnect();
   }, []);
 
+  // A clipped element reports no area to the observer, so a wipe watches its wrapper and clips the child.
+  if (wipe) {
+    return createElement(
+      as,
+      { ref, className, style },
+      <div data-in={seen ? '' : undefined} className="kc-wipe">
+        {children}
+      </div>,
+    );
+  }
   return createElement(
     as,
     {
       ref,
       'data-in': seen ? '' : undefined,
-      className: cn(wipe ? 'kc-wipe' : 'kc-enter', className),
+      className: cn('kc-enter', className),
       style: { ...style, '--i': index } as CSSProperties,
     },
     children,
