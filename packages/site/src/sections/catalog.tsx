@@ -70,7 +70,7 @@ export function PageHero({ title, tag, line, clip, alt, children }: { title: str
         <InView
           wipe
           style={{ '--r': ratio } as CSSProperties}
-          className="w-full max-w-[min(100%,calc(var(--r)*44vh))] justify-self-start md:max-w-[min(100%,calc(var(--r)*68vh))] md:justify-self-end"
+          className="order-first w-full max-w-[min(100%,calc(var(--r)*44vh))] justify-self-start md:order-none md:max-w-[min(100%,calc(var(--r)*68vh))] md:justify-self-end"
         >
           <ClipPlayer clip={clip} label={alt} />
         </InView>
