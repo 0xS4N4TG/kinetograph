@@ -8,7 +8,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEMO_TEXT, PLUGIN_COPY, TEMPLATE_COPY } from './catalog-copy.mjs';
+import { DEMO_TEXT, EXPORT_NOTES, GENE_NOTES, PLUGIN_COPY, TEMPLATE_COPY } from './catalog-copy.mjs';
+import { compositionIds, readExports, readHexed, readKinetic, readPaper, readVj } from './catalog-source.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(process.env.KINETOGRAPH_EFFECTS ?? join(here, '../../../../kinetograph-effects'));
@@ -152,8 +153,6 @@ function presetsOf(d, c) {
       return { name, line: c?.presetLines?.[name] ?? genesLine(file), image: m ? still(m, `plugins/${d}/preset-${name}`) : null };
     });
 }
-/** The id of every composition a template's index registers. */
-const compositionIds = (src) => [...src.matchAll(/<Composition\s[^>]*?\bid=["'](\w+)["']/g)].map((m) => m[1]);
 
 // Plugins.
 const pluginDirs = dirs(join(root, 'plugins'));
@@ -162,20 +161,23 @@ const plugins = pluginDirs.map((d) => {
   const pkg = JSON.parse(read(join(root, 'plugins', d, 'package.json')));
   const k = pkg.kinetograph ?? {};
   const readme = read(join(root, 'plugins', d, 'README.md'));
-  const components = k.components ?? [...new Set([...readme.matchAll(/`<([A-Z]\w*)>`/g)].map((m) => m[1]))];
+  const pdir = join(root, 'plugins', d);
   const c = PLUGIN_COPY[d];
   if (!c) console.log(`catalog: no copy for plugin ${d}; its page will be thin`);
-  return {
+  // Everything below that the source states comes from the source and wins over the hand copy.
+  const { items, unparsed } = readExports(pdir);
+  if (unparsed.length) console.log(`catalog: ${d}: public names with no definition found: ${unparsed.join(', ')}`);
+  const out = {
     slug: d,
     name: pkg.name,
     title: k.title ?? titleCase(pkg.name.replace(/^@[^/]+\//, '')),
     description: c?.summary ?? k.description ?? firstParagraph(readme) ?? pkg.description ?? '',
-    components: c?.drawn ?? components,
+    components: items.filter((e) => e.kind === 'component').map((e) => e.name),
     hasPanel: Boolean(k.panel),
     hasTools: Boolean(k.tools),
     hasSkill: Boolean(k.skill),
     about: c?.about ?? [],
-    componentDocs: c?.components ?? [],
+    exports: items.map((e) => ({ ...e, summary: e.summary || EXPORT_NOTES[`${d}/${e.name}`] || '' })),
     presets: presetsOf(d, c),
     presetNote: c?.presetNote ?? '',
     examples: c?.examples ?? [],
@@ -183,6 +185,15 @@ const plugins = pluginDirs.map((d) => {
     hero: c?.media.hero ? still(c.media.hero, `plugins/${d}/hero`) : null,
     demos: [],
   };
+  if (d === 'hexed') {
+    const h = readHexed(pdir, GENE_NOTES);
+    out.genes = h.slots;
+    if (h.missing.length) console.log(`catalog: hexed genes with no note: ${h.missing.join(', ')}`);
+  }
+  if (d === 'vj') out.looks = readVj(pdir, out.exports);
+  if (d === 'paper') Object.assign(out, readPaper(pdir));
+  if (d === 'kinetic-typography') out.faces = readKinetic(pdir);
+  return out;
 });
 const byDir = Object.fromEntries(pluginDirs.map((d, i) => [d, plugins[i]]));
 
@@ -223,7 +234,7 @@ for (const id of dirs(join(root, 'effects'))) {
     const [first] = DEMOS[id].plugins;
     const stills = (PLUGIN_COPY[first]?.media.demos[id] ?? []).map((e, i) => still(e, `plugins/${first}/demo-${id}-${i + 1}`));
     for (const d of DEMOS[id].plugins) {
-      byDir[d].demos.push({ id, title: DEMOS[id].title, text: DEMO_TEXT[id] ?? '', stills: d === first ? stills : [] });
+      byDir[d].demos.push({ id, title: DEMOS[id].title, text: DEMO_TEXT[id] ?? '', compositions: compositionIds(index), stills: d === first ? stills : [] });
     }
     continue;
   }

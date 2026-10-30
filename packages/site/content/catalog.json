@@ -6,7 +6,9 @@
       "title": "Hexed",
       "description": "Rolls a look onto any picture or clip from eleven slots, such as grade, screen, optics and damage. Lock what you like and shuffle the rest.",
       "components": [
-        "Hexed"
+        "Hexed",
+        "Grunge",
+        "TimeLayers"
       ],
       "hasPanel": true,
       "hasTools": true,
@@ -16,58 +18,255 @@
         "The whole look is a genome: plain JSON with one strand per slot. A genome plays back the same every time, so a look you like can be kept in code or saved as a preset. Roll from a seed, lock the slots you want to keep, and reroll the rest.",
         "Use it when a video needs a grade, glitch, grain, shake or print look, or when you want to reroll and save looks."
       ],
-      "componentDocs": [
+      "exports": [
         {
           "name": "Hexed",
           "kind": "component",
-          "summary": "Wraps any children. It fills the composition unless you give a width and height.",
+          "summary": "Wraps any children and rolls a look onto them. It fills the composition unless you give a width and height.",
+          "detail": "",
+          "propsOf": "HexedProps",
           "props": [
-            [
-              "seed",
-              "Rolls a gene for each slot. Default 1."
-            ],
-            [
-              "lock",
-              "Slots to hold while the seed changes. A seed, a gene id, or a partial strand per slot."
-            ],
-            [
-              "genome",
-              "A saved look. Wins over seed and lock."
-            ],
-            [
-              "preset",
-              "A saved look by name from presets/. Wins over seed and lock."
-            ],
-            [
-              "off",
-              "Slots to switch off, for example [\"grunge\"]."
-            ],
-            [
-              "amount",
-              "Strength of the whole look, 0 to 1. Default 1."
-            ],
-            [
-              "amounts",
-              "Strength per slot, 0 to 1, on top of the genome's own."
-            ],
-            [
-              "order",
-              "The order the effect slots run in."
-            ],
-            [
-              "textures",
-              "Scans the grunge slot picks from, as { src, kind }."
-            ],
-            [
-              "adjust",
-              "Global exposure, shadows, highlights, contrast, saturation and temperature (each -100 to 100), hue (degrees), sharpen (0 to 100) and invert."
-            ],
-            [
-              "width, height, at",
-              "The picture's size and top-left corner on the canvas, for a picture that does not fill the frame."
-            ]
-          ],
-          "after": "Other exports: roll(seed, lock?, textures?) returns a genome, describe(genome, off?) names it in one line, genesOf(slot) lists the gene ids a slot accepts, and PRESETS holds the saved genomes. hexedSchema is the zod schema for the props, and genomeSchema is the schema for a genome."
+            {
+              "name": "children",
+              "type": "React.ReactNode",
+              "optional": false,
+              "doc": ""
+            },
+            {
+              "name": "seed",
+              "type": "number",
+              "optional": true,
+              "doc": "the roll; ignored when genome is given"
+            },
+            {
+              "name": "lock",
+              "type": "Partial<Record<Slot, Lock>>",
+              "optional": true,
+              "doc": "slots to hold while the seed changes"
+            },
+            {
+              "name": "genome",
+              "type": "Genome",
+              "optional": true,
+              "doc": "a saved look; wins over seed and lock"
+            },
+            {
+              "name": "preset",
+              "type": "string",
+              "optional": true,
+              "doc": "a saved look by name, from presets/ (tools/save-preset.mjs writes them); wins over seed and lock"
+            },
+            {
+              "name": "off",
+              "type": "Slot[]",
+              "optional": true,
+              "doc": "slots switched off"
+            },
+            {
+              "name": "amount",
+              "type": "number",
+              "optional": true,
+              "doc": "0..1 over the whole look"
+            },
+            {
+              "name": "amounts",
+              "type": "Partial<Record<Slot, number>>",
+              "optional": true,
+              "doc": "0..1 per slot, on top of the genome's own amounts"
+            },
+            {
+              "name": "order",
+              "type": "EffectSlot[]",
+              "optional": true,
+              "doc": "the order the effect slots run in"
+            },
+            {
+              "name": "textures",
+              "type": "readonly Texture[]",
+              "optional": true,
+              "doc": "scans the grunge slot picks from, beside its procedural textures"
+            },
+            {
+              "name": "adjust",
+              "type": "Adjust",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "width",
+              "type": "number",
+              "optional": true,
+              "doc": "the picture's size; default the composition's"
+            },
+            {
+              "name": "height",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "at",
+              "type": "[number, number]",
+              "optional": true,
+              "doc": "where the picture's top-left corner sits on the canvas, for the passes that read by position (mirror, streaks, slices); default [0, 0], right when Hexed fills the frame"
+            }
+          ]
+        },
+        {
+          "name": "describe",
+          "kind": "function",
+          "summary": "A one-line name for a genome: the genes that play, in panel order.",
+          "detail": ""
+        },
+        {
+          "name": "genesOf",
+          "kind": "function",
+          "summary": "Every gene id a slot can roll, \"none\" first.",
+          "detail": ""
+        },
+        {
+          "name": "roll",
+          "kind": "function",
+          "summary": "Rolls a genome from a seed.",
+          "detail": "Locked slots keep what the lock says; the rest roll fresh."
+        },
+        {
+          "name": "Grunge",
+          "kind": "component",
+          "summary": "Lays a texture (a procedural one or a scan) over the finished picture.",
+          "detail": ""
+        },
+        {
+          "name": "PROCEDURAL",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "DAMAGE",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "GRADE",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "ISOLATE",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "OPTICS",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "POOLS",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "SCREEN",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "SLOTS",
+          "kind": "constant",
+          "summary": "Every slot, in the order the panel lists them.",
+          "detail": ""
+        },
+        {
+          "name": "hsl",
+          "kind": "function",
+          "summary": "Hsl (degrees, 0..1, 0..1) to #rrggbb",
+          "detail": ""
+        },
+        {
+          "name": "CROP",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "FPS",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "SHAKE",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "hash",
+          "kind": "function",
+          "summary": "FNV-1a over a string, to a 32-bit whole number.",
+          "detail": ""
+        },
+        {
+          "name": "rng",
+          "kind": "function",
+          "summary": "Mulberry32: small, fast and the same on every machine.",
+          "detail": ""
+        },
+        {
+          "name": "MIRROR",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "TIME",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "TimeLayers",
+          "kind": "component",
+          "summary": "Draws the picture at frame, plus the copies the gene adds.",
+          "detail": ""
+        },
+        {
+          "name": "remap",
+          "kind": "function",
+          "summary": "The frame a remapping gene shows at frame (echo, ghost and strobe leave it alone).",
+          "detail": ""
+        },
+        {
+          "name": "adjustSchema",
+          "kind": "constant",
+          "summary": "The global controls over the whole look.",
+          "detail": ""
+        },
+        {
+          "name": "genomeSchema",
+          "kind": "constant",
+          "summary": "A rolled look: one strand per slot.",
+          "detail": "Plain JSON; <Hexed genome={...}> plays it back exactly."
+        },
+        {
+          "name": "hexedSchema",
+          "kind": "constant",
+          "summary": "The props of <Hexed> apart from its children.",
+          "detail": ""
+        },
+        {
+          "name": "rollGenome",
+          "kind": "function",
+          "summary": "Rolls a genome from a seed. ids lists the gene ids a slot can roll, \"none\" first.",
+          "detail": "Locked slots keep what the lock says; the rest roll fresh."
         }
       ],
       "presets": [
@@ -119,6 +318,26 @@
           "id": "hexed-demo",
           "title": "Hexed rolls",
           "text": "A reel that rolls a new look every second and a half, and sheets of twenty seeds on one frame.",
+          "compositions": [
+            "Reel",
+            "Sheet",
+            "Showcase",
+            "ShowSheet",
+            "GrungeSheet",
+            "Pop",
+            "VjSong",
+            "Flash",
+            "Song",
+            "Dream",
+            "Look",
+            "RickReel",
+            "RickSheet",
+            "RickShowcase",
+            "RickShowSheet",
+            "RickGrungeSheet",
+            "RickDream",
+            "RickLook"
+          ],
           "stills": [
             {
               "src": "/catalog/plugins/hexed/demo-hexed-demo-1.webp",
@@ -134,7 +353,414 @@
           "id": "plugin-ui-demo",
           "title": "Studio panels",
           "text": "Compositions wired to the Hexed, Paper and VJ Studio panels.",
+          "compositions": [
+            "HexedLook",
+            "PaperMatchCut",
+            "PaperCutOut",
+            "PaperFoldOut",
+            "VjLook"
+          ],
           "stills": []
+        }
+      ],
+      "genes": [
+        {
+          "slot": "crop",
+          "note": "how the picture sits in the frame (zoom, tilt, black bars)",
+          "genes": [
+            {
+              "id": "punch-in",
+              "note": "Zooms in a little and nudges the frame off centre."
+            },
+            {
+              "id": "off-centre",
+              "note": "A tighter crop pushed to one side."
+            },
+            {
+              "id": "tilt",
+              "note": "Turns the frame a few degrees and crops in to hide the corners."
+            },
+            {
+              "id": "letterbox",
+              "note": "2.39:1 or 2:1 bars on a 16:9 frame"
+            },
+            {
+              "id": "pillarbox",
+              "note": "4:3 or 1:1 pillars"
+            }
+          ]
+        },
+        {
+          "slot": "shake",
+          "note": "a camera that will not keep still",
+          "genes": [
+            {
+              "id": "handheld",
+              "note": "A slow, small camera wobble."
+            },
+            {
+              "id": "jitter",
+              "note": "Quick jumps from one position to the next."
+            },
+            {
+              "id": "impact",
+              "note": "A hard knock every half second or so that settles back."
+            },
+            {
+              "id": "breathe",
+              "note": "A slow push in and out."
+            }
+          ]
+        },
+        {
+          "slot": "fps",
+          "note": "frames held, so footage steps like 12 fps animation",
+          "genes": [
+            {
+              "id": "fps-12",
+              "note": "Holds frames so the clip steps at 12 a second."
+            },
+            {
+              "id": "fps-8",
+              "note": "Holds frames so the clip steps at 8 a second."
+            },
+            {
+              "id": "fps-6",
+              "note": "Holds frames so the clip steps at 6 a second."
+            },
+            {
+              "id": "stutter",
+              "note": "Holds of one to four frames in a seeded run, like footage stepped by hand"
+            }
+          ]
+        },
+        {
+          "slot": "time",
+          "note": "what happens between frames (echo, repeat, reverse)",
+          "genes": [
+            {
+              "id": "echo",
+              "note": "Trails of the picture from earlier frames."
+            },
+            {
+              "id": "ghost",
+              "note": "A faint copy of an earlier frame laid over the current one."
+            },
+            {
+              "id": "strobe",
+              "note": "Flashes a frame."
+            },
+            {
+              "id": "repeat",
+              "note": "Plays each short beat twice."
+            },
+            {
+              "id": "reverse",
+              "note": "The last few frames of a block play backwards, like a scratch."
+            },
+            {
+              "id": "blend",
+              "note": "Blends frames into a smear."
+            }
+          ]
+        },
+        {
+          "slot": "mirror",
+          "note": "the frame folded, tiled or split",
+          "genes": [
+            {
+              "id": "mirror-x",
+              "note": "Mirrors the frame left to right."
+            },
+            {
+              "id": "mirror-y",
+              "note": "Mirrors the frame top to bottom."
+            },
+            {
+              "id": "quad",
+              "note": "Four mirrored copies of the frame."
+            },
+            {
+              "id": "tile-2",
+              "note": "The frame tiled two across."
+            },
+            {
+              "id": "tile-3",
+              "note": "The frame tiled three across."
+            },
+            {
+              "id": "kaleido",
+              "note": "A kaleidoscope with three to eight segments."
+            },
+            {
+              "id": "split-offset",
+              "note": "Splits the frame in two and slides one half."
+            }
+          ]
+        },
+        {
+          "slot": "isolate",
+          "note": "keep one hue and drain the rest",
+          "genes": [
+            {
+              "id": "keep-red",
+              "note": "Keeps the reds and drains the rest to grey."
+            },
+            {
+              "id": "keep-warm",
+              "note": "Keeps orange and yellow tones and drains the rest."
+            },
+            {
+              "id": "keep-green",
+              "note": "Keeps the greens and drains the rest."
+            },
+            {
+              "id": "keep-blue",
+              "note": "Keeps the blues and drains the rest."
+            },
+            {
+              "id": "keep-any",
+              "note": "Keeps one randomly chosen hue and drains the rest."
+            },
+            {
+              "id": "shift-one",
+              "note": "Turns one hue into a different one and leaves the rest."
+            }
+          ]
+        },
+        {
+          "slot": "grade",
+          "note": "the tone of the whole picture",
+          "genes": [
+            {
+              "id": "negative",
+              "note": "A negative washed into one colour, the shadows crushed: inverted mint, inverted ice"
+            },
+            {
+              "id": "threshold",
+              "note": "One bit: black and paper, broken up by grain before the cut so the edges go to grit"
+            },
+            {
+              "id": "press",
+              "note": "Warm grey newsprint, hard contrast: the press look under a line screen"
+            },
+            {
+              "id": "night-tint",
+              "note": "A night picture tinted into one deep colour, a little of the original showing through"
+            },
+            {
+              "id": "monotone",
+              "note": "One hue from black to blown white, as a monotone print"
+            },
+            {
+              "id": "sepia-print",
+              "note": "Old sepia print: browns crushed at the bottom, a cream top, grain"
+            },
+            {
+              "id": "thermal",
+              "note": "Heat: posterised black, blood, orange, yellow, cream"
+            },
+            {
+              "id": "posterize",
+              "note": "Three or four flat colours"
+            },
+            {
+              "id": "duotone",
+              "note": "Two colours of ink"
+            },
+            {
+              "id": "solarize",
+              "note": "The tones folded back at the top: solarised"
+            },
+            {
+              "id": "acid",
+              "note": "Loud colour: hues spun, saturation up"
+            },
+            {
+              "id": "teal-crush",
+              "note": "Crushed blacks with teal shadows and warm highlights."
+            },
+            {
+              "id": "bleach",
+              "note": "Washed-out colour with hard contrast, like a bleach bypass print."
+            }
+          ]
+        },
+        {
+          "slot": "screen",
+          "note": "a print or display pattern over the picture",
+          "genes": [
+            {
+              "id": "halftone",
+              "note": "Dots of ink, as in a newspaper photo."
+            },
+            {
+              "id": "line-screen",
+              "note": "Fine horizontal lines, the TV-print look; sometimes turned"
+            },
+            {
+              "id": "dither",
+              "note": "A few flat colours broken up with a dither pattern."
+            },
+            {
+              "id": "scanlines",
+              "note": "Scanlines across the picture."
+            },
+            {
+              "id": "crt",
+              "note": "Scanlines plus the curved glass of a tube."
+            },
+            {
+              "id": "two-ink",
+              "note": "A print in two inks."
+            },
+            {
+              "id": "engraving",
+              "note": "Fine engraved lines in ink on paper."
+            },
+            {
+              "id": "crosshatch",
+              "note": "Crosshatched pen lines in ink on paper."
+            },
+            {
+              "id": "painterly",
+              "note": "A painted look that smooths detail into brush shapes."
+            },
+            {
+              "id": "ascii",
+              "note": "The picture drawn in text characters."
+            },
+            {
+              "id": "pixelate",
+              "note": "Large square pixels."
+            }
+          ]
+        },
+        {
+          "slot": "optics",
+          "note": "what the lens does (fringing, bloom, streaks)",
+          "genes": [
+            {
+              "id": "fringe",
+              "note": "Red and blue edges split a little apart, as in a cheap lens."
+            },
+            {
+              "id": "split",
+              "note": "A strong colour split along one axis."
+            },
+            {
+              "id": "bloom",
+              "note": "Highlights glow."
+            },
+            {
+              "id": "halation",
+              "note": "A red or orange glow round bright spots, as film does."
+            },
+            {
+              "id": "soft-focus",
+              "note": "A slight blur with a glow on top."
+            },
+            {
+              "id": "fringe-bloom",
+              "note": "Colour fringing and bloom together."
+            },
+            {
+              "id": "zoom-blur",
+              "note": "Blur that radiates from the centre."
+            },
+            {
+              "id": "streaks",
+              "note": "Highlights stretched into streaks."
+            },
+            {
+              "id": "anamorphic",
+              "note": "A coloured horizontal flare, as from an anamorphic lens."
+            },
+            {
+              "id": "light-leak",
+              "note": "A burst of coloured light, as from a film camera that leaks."
+            },
+            {
+              "id": "vignette",
+              "note": "Dark corners."
+            },
+            {
+              "id": "lens-wobble",
+              "note": "The picture ripples as if seen through a warped lens."
+            },
+            {
+              "id": "smear",
+              "note": "The whole picture dragged sideways in uneven bands, as a long shutter or a smeared print"
+            }
+          ]
+        },
+        {
+          "slot": "damage",
+          "note": "what the tape or film did to it",
+          "genes": [
+            {
+              "id": "slice-glitch",
+              "note": "Horizontal slices of the picture shift sideways."
+            },
+            {
+              "id": "rgb-slice",
+              "note": "Slices shift and the colour channels come apart."
+            },
+            {
+              "id": "fine-grain",
+              "note": "Fine monochrome grain."
+            },
+            {
+              "id": "coarse-grain",
+              "note": "Large, coloured grain."
+            },
+            {
+              "id": "film-wear",
+              "note": "Dust, hairs and scratches of an old print."
+            },
+            {
+              "id": "tape",
+              "note": "Worn video tape: tracking errors, noise and smeared colour."
+            },
+            {
+              "id": "glitch",
+              "note": "Digital blocks and colour splits."
+            },
+            {
+              "id": "warp",
+              "note": "The picture warps as if drawn on rippling water."
+            }
+          ]
+        },
+        {
+          "slot": "grunge",
+          "note": "a texture laid over the finished picture",
+          "genes": [
+            {
+              "id": "creases",
+              "note": "Folded-paper creases."
+            },
+            {
+              "id": "stains",
+              "note": "Stains and blotches."
+            },
+            {
+              "id": "speckle",
+              "note": "Speckled dirt."
+            },
+            {
+              "id": "scratches",
+              "note": "Scratches."
+            },
+            {
+              "id": "fibre",
+              "note": "Paper fibres."
+            },
+            {
+              "id": "toner",
+              "note": "Photocopier toner."
+            }
+          ]
         }
       ]
     },
@@ -153,50 +779,159 @@
         "HandCaptions writes a voiceover on screen letter by letter. Each word writes itself across its spoken time, every letter in a different handwritten face, so it reads as one restless hand. Key words break out whole in a display face: a fat serif with a doodle beside it, or a heavy italic that streaks in.",
         "The captions can hang off a tracked subject. They sit beside it on the side where they fit, with a reticle on the subject, lines to the text and off the frame, and a bracket with coordinates on the letter being written. Without a tracked subject they sit centred low."
       ],
-      "componentDocs": [
+      "exports": [
+        {
+          "name": "HANDS",
+          "kind": "constant",
+          "summary": "The default hands, mixed a letter at a time (OFL Google Fonts).",
+          "detail": ""
+        },
+        {
+          "name": "HEAVY",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
         {
           "name": "HandCaptions",
           "kind": "component",
-          "summary": "Writes a list of timed words on screen. Letters glow warm and land with a pink and cyan fringe.",
+          "summary": "Captions written on in many hands, hanging off a tracked subject or centred low.",
+          "detail": "",
+          "propsOf": "HandCaptionsProps",
           "props": [
-            [
-              "words",
-              "{ text, from, to } per word, in frames. wordsFrom(stamps, fps, at) makes them from timestamps in seconds."
-            ],
-            [
-              "split",
-              "Words per page. Default 3 a page. A page stays until the next starts, or 12 frames after its last word."
-            ],
-            [
-              "hot",
-              "Words that break out, matched without case or punctuation."
-            ],
-            [
-              "anchor",
-              "(frame) => { x, y } | null: a tracked subject. Without it the captions sit centred low."
-            ],
-            [
-              "place",
-              "Where the text hangs when it should not follow the subject; the lines still run to the subject."
-            ],
-            [
-              "size, color, glow, fringe",
-              "Letter size (default 124 px at 1080 high), colour, glow (a text-shadow, empty for none) and the landing fringe."
-            ],
-            [
-              "hands, serif, heavy",
-              "The handwritten faces mixed per letter (Caveat, Shadows Into Light, Indie Flower, Gloria Hallelujah, Patrick Hand, Gochi Hand) and the two display faces (Abril Fatface, Archivo Black)."
-            ],
-            [
-              "doodle, reticle, lines",
-              "The doodle's colour or false; the reticle's label or false; the lines on or off."
-            ],
-            [
-              "top",
-              "The highest the block may reach."
-            ]
-          ],
-          "after": "wordSpans(words, split, hot) gives when each word is written, to cue a pen sound on plain words and a thump on key words."
+            {
+              "name": "words",
+              "type": "Word[]",
+              "optional": false,
+              "doc": "The spoken words with their frames (wordsFrom turns timestamps in seconds into these)."
+            },
+            {
+              "name": "split",
+              "type": "number[]",
+              "optional": true,
+              "doc": "Words per page. Default 3 a page."
+            },
+            {
+              "name": "hot",
+              "type": "string[]",
+              "optional": true,
+              "doc": "Words that break out in a display face."
+            },
+            {
+              "name": "anchor",
+              "type": "(frame: number) => (Point & { side?: 'left' | 'right' }) | null",
+              "optional": true,
+              "doc": "The tracked subject on a frame, in canvas pixels, or null where nothing is tracked. Without it the captions sit centred low in the frame, with no reticle or lines."
+            },
+            {
+              "name": "place",
+              "type": "(frame: number) => (Point & { side?: 'left' | 'right' }) | null",
+              "optional": true,
+              "doc": "Where the text hangs, when it should not follow the subject (a subject that jumps about): the lines still run to the subject."
+            },
+            {
+              "name": "size",
+              "type": "number",
+              "optional": true,
+              "doc": "Letter size, px. Default 124 at 1080 high, scaled with the canvas."
+            },
+            {
+              "name": "color",
+              "type": "string",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "glow",
+              "type": "string",
+              "optional": true,
+              "doc": "A CSS text-shadow for the glow, or '' for none."
+            },
+            {
+              "name": "fringe",
+              "type": "boolean",
+              "optional": true,
+              "doc": "The pink and cyan fringe as letters land. Default true."
+            },
+            {
+              "name": "hands",
+              "type": "Hand[]",
+              "optional": true,
+              "doc": "The hands mixed a letter at a time, and the two display faces."
+            },
+            {
+              "name": "serif",
+              "type": "string",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "heavy",
+              "type": "string",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "doodle",
+              "type": "string | false",
+              "optional": true,
+              "doc": "The doodle's colour beside a serif key word, or false for none."
+            },
+            {
+              "name": "reticle",
+              "type": "string | false",
+              "optional": true,
+              "doc": "The reticle's label, or false for no reticle. Default TRK 01."
+            },
+            {
+              "name": "lines",
+              "type": "boolean",
+              "optional": true,
+              "doc": "Lines from the subject to the text and off the frame. Default true."
+            },
+            {
+              "name": "top",
+              "type": "number",
+              "optional": true,
+              "doc": "Highest the text block may reach, px from the top."
+            },
+            {
+              "name": "width",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "height",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            }
+          ]
+        },
+        {
+          "name": "SERIF",
+          "kind": "constant",
+          "summary": "The display faces a key word breaks out in, taken in turn: a soft fat serif, and a heavy italic that streaks.",
+          "detail": ""
+        },
+        {
+          "name": "pagesOf",
+          "kind": "function",
+          "summary": "The pages: split word counts per page (default 3 a page).",
+          "detail": "A page stays up until the next starts, or hold frames after its last word. hot words (compared without case or punctuation) break out, numbered in order."
+        },
+        {
+          "name": "wordSpans",
+          "kind": "constant",
+          "summary": "When each word is written, for sound: a pen across a plain word, a thump for one that breaks out.",
+          "detail": ""
+        },
+        {
+          "name": "wordsFrom",
+          "kind": "function",
+          "summary": "Words from timestamps in seconds (an ASR or TTS word list), starting on frame at.",
+          "detail": ""
         }
       ],
       "presets": [],
@@ -229,6 +964,10 @@
           "id": "kinetic-type-demo",
           "title": "Hand captions",
           "text": "A line written beside an anvil in archive film, tracked, and the same line centred low.",
+          "compositions": [
+            "Tracked",
+            "Centred"
+          ],
           "stills": [
             {
               "src": "/catalog/plugins/kinetic-typography/demo-kinetic-type-demo-1.webp",
@@ -240,7 +979,21 @@
             }
           ]
         }
-      ]
+      ],
+      "faces": {
+        "hands": [
+          "Caveat",
+          "Shadows Into Light",
+          "Indie Flower",
+          "Gloria Hallelujah",
+          "Patrick Hand",
+          "Gochi Hand"
+        ],
+        "display": [
+          "Abril Fatface",
+          "Archivo Black"
+        ]
+      }
     },
     {
       "slug": "paper",
@@ -261,92 +1014,513 @@
         "MatchCut comes with four looks to start from (web, broadsheet, crumpled and clean) and a look object that overrides any of them. With your own screenshots you give a rough box around the word and it snaps to it.",
         "Use it for fast keyword-over-pages edits and paper-craft looks."
       ],
-      "componentDocs": [
+      "exports": [
         {
           "name": "MatchCut",
           "kind": "component",
           "summary": "A keyword holds still, highlighted, while the page under it changes several times a second. It fills its composition.",
+          "detail": "",
+          "propsOf": "MatchCutProps",
           "props": [
-            [
-              "keyword",
-              "The word or phrase that holds still. Required."
-            ],
-            [
-              "preset",
-              "A look by name: web, broadsheet, crumpled or clean."
-            ],
-            [
-              "look",
-              "A partial look that overrides the preset."
-            ],
-            [
-              "screenshots",
-              "Your own pages: { src, hint: [x, y, w, h], exact? }. src is under public/."
-            ],
-            [
-              "everyNth",
-              "A screenshot every nth cut. 1 means screenshots only. Default 3."
-            ],
-            [
-              "seed",
-              "Another pile of made-up pages."
-            ],
-            [
-              "showKeyBox",
-              "Draws the hint (blue) and the snapped box (red) on screenshots."
-            ],
-            [
-              "durationInFrames",
-              "Frames the push-in runs over. Default the composition's."
-            ]
-          ],
-          "after": "The look fields are layouts, cutsPerSecond, zoom, keySize, anchorY, blur, smear, falloff, streak, crumple, tint, texture, textureOpacity, grain, highlight and wander. matchCutSchema and matchCutLookSchema are the zod schemas for the props and for look. flicks({ frames, fps, cutsPerSecond }) at the top level of the entry adds a paper flick on every cut."
+            {
+              "name": "keyword",
+              "type": "string",
+              "optional": false,
+              "doc": ""
+            },
+            {
+              "name": "preset",
+              "type": "string",
+              "optional": true,
+              "doc": "a look by name from presets/, under look"
+            },
+            {
+              "name": "look",
+              "type": "Partial<MatchCutLook>",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "screenshots",
+              "type": "Screenshot[]",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "everyNth",
+              "type": "number",
+              "optional": true,
+              "doc": "a screenshot every nth cut (1: screenshots only); made-up pages between"
+            },
+            {
+              "name": "seed",
+              "type": "number",
+              "optional": true,
+              "doc": "another pile of made-up pages"
+            },
+            {
+              "name": "showKeyBox",
+              "type": "boolean",
+              "optional": true,
+              "doc": "draw the hint (blue) and the snapped box (red) on screenshots, to check them in a still"
+            },
+            {
+              "name": "durationInFrames",
+              "type": "number",
+              "optional": true,
+              "doc": "frames the push-in runs over; default the composition's"
+            }
+          ]
+        },
+        {
+          "name": "DEFAULT_LOOK",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "cutOf",
+          "kind": "function",
+          "summary": "The cut showing at frame, for sound or for cutting to something else on a cut.",
+          "detail": ""
+        },
+        {
+          "name": "FACES",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "Paper",
+          "kind": "component",
+          "summary": "The sheet: a tint, crumpled creases, a scan multiplied over it if one is given (texture, a path under public/, stretched to cover), a soft fall-off to the corners. seed picks the crumple.",
+          "detail": ""
+        },
+        {
+          "name": "focus",
+          "kind": "function",
+          "summary": "Sharp on a band round the line y = ay, softer with distance above and below it (full blur falloff bands out), the blur smear times taller than wide there so copy runs into vertical streaks; past side from the middle the blur also streaks sideways.",
+          "detail": "Each pixel gathers 24 points on a spiral sized by its own blur."
+        },
+        {
+          "name": "measure",
+          "kind": "function",
+          "summary": "The advance of text in face at size px, measured once at 100 px on an OffscreenCanvas.",
+          "detail": ""
+        },
+        {
+          "name": "LAYOUTS",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "page",
+          "kind": "function",
+          "summary": "Page n for keyword, made from layouts in turn from a shuffled start so neighbours differ. reach is how far the copy must run above, below and to each side, page pixels; seed gives another pile of pages.",
+          "detail": ""
+        },
+        {
+          "name": "snapBox",
+          "kind": "function",
+          "summary": "The keyword's exact box near hint in the image at src (a resolved URL or path), image pixels.",
+          "detail": "The hint is returned as it is when no ink is found."
+        },
+        {
+          "name": "crinkle",
+          "kind": "function",
+          "summary": "Paper crumpled or opened: a dense burst of crackles (each a millisecond or so of noise, loudness spread like real crumpling: mostly faint, now and then a loud snap) over a soft rustle, length seconds long.",
+          "detail": "Built sample by sample into one buffer from random(key), then shaped: high-passed, a papery presence lift."
+        },
+        {
+          "name": "flick",
+          "kind": "function",
+          "summary": "A page flicked over: a short burst of bright noise with a papery band, key varying each one.",
+          "detail": ""
+        },
+        {
+          "name": "flicks",
+          "kind": "function",
+          "summary": "A flick on every cut: cuts begin at frame start and come cutsPerSecond a second for frames frames.",
+          "detail": ""
+        },
+        {
+          "name": "land",
+          "kind": "function",
+          "summary": "A sheet landing flat on a desk: a soft low thump of air and paper, with a few crackles on top.",
+          "detail": ""
+        },
+        {
+          "name": "unfolds",
+          "kind": "function",
+          "summary": "The sound of a <FoldOut>: a crinkle on each stop-motion step while it opens (louder as the flaps get bigger), then the sheet landing flat.",
+          "detail": "Pass the FoldOut's delay, duration and steps (defaults the same: 0, 0.7 s, 10), and start, the composition frame its Sequence starts on."
+        },
+        {
+          "name": "PRESETS",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
         },
         {
           "name": "CutOut",
           "kind": "component",
           "summary": "A photo with its background already removed (a PNG with alpha) as a paper cut-out.",
+          "detail": "",
+          "propsOf": "CutOutProps",
           "props": [
-            [
-              "src",
-              "The picture."
-            ],
-            [
-              "edge",
-              "torn, cut, wavy or sticker."
-            ],
-            [
-              "width, x, y",
-              "Size and place on the canvas."
-            ],
-            [
-              "paper, back, fringe, texture",
-              "Colours and the paper texture."
-            ],
-            [
-              "creases, shadow, boil, seed",
-              "How creased, how deep the shadow, how fast the edge redraws, and another take."
-            ],
-            [
-              "threshold",
-              "The alpha value that counts as inside."
-            ]
-          ],
-          "after": ""
+            {
+              "name": "src",
+              "type": "string",
+              "optional": false,
+              "doc": "The subject: a picture with alpha (staticFile('me.png')), its background already removed."
+            },
+            {
+              "name": "id",
+              "type": "string",
+              "optional": true,
+              "doc": "Layer id, if more than one is on screen. Default cut-out."
+            },
+            {
+              "name": "x",
+              "type": "number",
+              "optional": true,
+              "doc": "Centre of the picture on the canvas. Default the middle."
+            },
+            {
+              "name": "y",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "width",
+              "type": "number",
+              "optional": true,
+              "doc": "Drawn width of the picture, px (the height follows). Default 62% of the canvas width."
+            },
+            {
+              "name": "edge",
+              "type": "EdgeStyle | (Partial<Edge> & { style?: EdgeStyle })",
+              "optional": true,
+              "doc": "An edge style, or a style with changes: { style: 'torn', thickness: 0.04, intensity: 1.4, detail: 0.6 }."
+            },
+            {
+              "name": "stock",
+              "type": "Stock",
+              "optional": true,
+              "doc": "The paper: white (default), newsprint or kraft, from the plugin's scans."
+            },
+            {
+              "name": "paper",
+              "type": "string",
+              "optional": true,
+              "doc": "Colours over the stock's: the border's paper, the sheet's back, the torn fringe; and a picture under public/ multiplied over the paper."
+            },
+            {
+              "name": "back",
+              "type": "string",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "fringe",
+              "type": "string",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "texture",
+              "type": "string",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "creases",
+              "type": "number",
+              "optional": true,
+              "doc": "Creases left across the flat sheet (picture included), 0 (none) to 1, from the plugin's crumpled-paper scan. Default 0.45."
+            },
+            {
+              "name": "shadow",
+              "type": "number",
+              "optional": true,
+              "doc": "Shadow strength, 0 (none) to about 2. Default 1."
+            },
+            {
+              "name": "boil",
+              "type": "number",
+              "optional": true,
+              "doc": "Edge redraws per second (the tear changes, as stop motion). Default 0: held."
+            },
+            {
+              "name": "seed",
+              "type": "string | number",
+              "optional": true,
+              "doc": "Another tear, another crumple."
+            },
+            {
+              "name": "threshold",
+              "type": "number",
+              "optional": true,
+              "doc": "Alpha (0..255) that counts as the subject. Default 128."
+            }
+          ]
         },
         {
           "name": "FoldOut",
           "kind": "component",
-          "summary": "A CutOut that unfolds. It takes the CutOut props and adds delay, duration, steps, folds and ball. unfolds({ fps, delay }) adds its sounds.",
-          "props": [],
-          "after": ""
+          "summary": "A CutOut that unfolds from a crumpled packet to a flat sheet.",
+          "detail": "",
+          "propsOf": "FoldOutProps",
+          "props": [
+            {
+              "name": "delay",
+              "type": "number",
+              "optional": true,
+              "doc": "Frames before it starts to open (it waits as a ball). Default 0."
+            },
+            {
+              "name": "duration",
+              "type": "number",
+              "optional": true,
+              "doc": "Frames from folded to flat. Default 0.7 s."
+            },
+            {
+              "name": "steps",
+              "type": "number",
+              "optional": true,
+              "doc": "Stop-motion rate while it opens: new positions this many times a second. Default 10."
+            },
+            {
+              "name": "folds",
+              "type": "number",
+              "optional": true,
+              "doc": "Folds in the sheet, opened last first; each roughly halves it. Default 3."
+            },
+            {
+              "name": "ball",
+              "type": "number",
+              "optional": true,
+              "doc": "The packet's size against the flat sheet, before the folds shrink it. Default 0.95."
+            },
+            {
+              "name": "crumple",
+              "type": "number",
+              "optional": true,
+              "doc": "How far the packet's facets are knocked about, besides the folds. Default 0.004."
+            },
+            {
+              "name": "turn",
+              "type": "number",
+              "optional": true,
+              "doc": "Turn of the packet, degrees, unwound as it opens. Default 14."
+            },
+            {
+              "name": "cells",
+              "type": "number",
+              "optional": true,
+              "doc": "Facets across the sheet's longer side (finer bends the flaps more smoothly, costs more). Default 12."
+            },
+            {
+              "name": "src",
+              "type": "string",
+              "optional": false,
+              "doc": "The subject: a picture with alpha (staticFile('me.png')), its background already removed."
+            },
+            {
+              "name": "id",
+              "type": "string",
+              "optional": true,
+              "doc": "Layer id, if more than one is on screen. Default cut-out."
+            },
+            {
+              "name": "x",
+              "type": "number",
+              "optional": true,
+              "doc": "Centre of the picture on the canvas. Default the middle."
+            },
+            {
+              "name": "y",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "width",
+              "type": "number",
+              "optional": true,
+              "doc": "Drawn width of the picture, px (the height follows). Default 62% of the canvas width."
+            },
+            {
+              "name": "edge",
+              "type": "EdgeStyle | (Partial<Edge> & { style?: EdgeStyle })",
+              "optional": true,
+              "doc": "An edge style, or a style with changes: { style: 'torn', thickness: 0.04, intensity: 1.4, detail: 0.6 }."
+            },
+            {
+              "name": "stock",
+              "type": "Stock",
+              "optional": true,
+              "doc": "The paper: white (default), newsprint or kraft, from the plugin's scans."
+            },
+            {
+              "name": "paper",
+              "type": "string",
+              "optional": true,
+              "doc": "Colours over the stock's: the border's paper, the sheet's back, the torn fringe; and a picture under public/ multiplied over the paper."
+            },
+            {
+              "name": "back",
+              "type": "string",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "fringe",
+              "type": "string",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "texture",
+              "type": "string",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "creases",
+              "type": "number",
+              "optional": true,
+              "doc": "Creases left across the flat sheet (picture included), 0 (none) to 1, from the plugin's crumpled-paper scan. Default 0.45."
+            },
+            {
+              "name": "shadow",
+              "type": "number",
+              "optional": true,
+              "doc": "Shadow strength, 0 (none) to about 2. Default 1."
+            },
+            {
+              "name": "boil",
+              "type": "number",
+              "optional": true,
+              "doc": "Edge redraws per second (the tear changes, as stop motion). Default 0: held."
+            },
+            {
+              "name": "seed",
+              "type": "string | number",
+              "optional": true,
+              "doc": "Another tear, another crumple."
+            },
+            {
+              "name": "threshold",
+              "type": "number",
+              "optional": true,
+              "doc": "Alpha (0..255) that counts as the subject. Default 128."
+            }
+          ]
         },
         {
-          "name": "Paper",
-          "kind": "component",
-          "summary": "The paper material the other components are made of. Its props are not described in the plugin’s skill.",
-          "props": [],
-          "after": ""
+          "name": "openAt",
+          "kind": "function",
+          "summary": "How open the sheet is at frame: 0 (folded) to 1 (flat), moved only on stop-motion steps.",
+          "detail": ""
+        },
+        {
+          "name": "wrinkles",
+          "kind": "function",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "EDGES",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "DEFAULT_SHEET",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "STOCKS",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "TEXTURES",
+          "kind": "constant",
+          "summary": "The plugin's scans, as data: URLs (tools/textures.py makes them).",
+          "detail": "The crease maps are grey with their median at white: multiplied over anything they add only the creases' shade."
+        },
+        {
+          "name": "drawFace",
+          "kind": "function",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "drawFolded",
+          "kind": "function",
+          "summary": "The sheet drawn at canvas point (cx, cy) (its centre), folded by fold.",
+          "detail": ""
+        },
+        {
+          "name": "sheetOf",
+          "kind": "function",
+          "summary": "The cut-out of src drawn at dw x dh: traced once (alpha >= threshold) and kept.",
+          "detail": ""
+        },
+        {
+          "name": "EDGE_STYLES",
+          "kind": "constant",
+          "summary": "The edge styles and paper stocks <CutOut> takes (EDGES and STOCKS in sheet.ts).",
+          "detail": ""
+        },
+        {
+          "name": "MATCH_CUT_PRESETS",
+          "kind": "constant",
+          "summary": "Preset names under match-cut/, as <MatchCut preset> takes them.",
+          "detail": ""
+        },
+        {
+          "name": "STOCK_NAMES",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "cutOutLookSchema",
+          "kind": "constant",
+          "summary": "<CutOut>'s look and placement: every prop but src and id.",
+          "detail": "Spread it in: <CutOut src={...} {...look} />."
+        },
+        {
+          "name": "foldOutLookSchema",
+          "kind": "constant",
+          "summary": "<FoldOut>'s look, placement and unfolding.",
+          "detail": "Spread it in: <FoldOut src={...} {...look} />."
+        },
+        {
+          "name": "matchCutLookSchema",
+          "kind": "constant",
+          "summary": "A match cut's look: everything but the keyword and the screenshots.",
+          "detail": "Every field is optional; a preset fills the rest."
+        },
+        {
+          "name": "matchCutSchema",
+          "kind": "constant",
+          "summary": "The props of <MatchCut>.",
+          "detail": ""
+        },
+        {
+          "name": "screenshotSchema",
+          "kind": "constant",
+          "summary": "One of your screenshots, with a rough box round the keyword.",
+          "detail": ""
         }
       ],
       "presets": [
@@ -424,12 +1598,20 @@
           "id": "match-cut",
           "title": "Match cut presets",
           "text": "One composition per MatchCut look, five seconds each, keyword \"Super Bowl\", a paper flick on every cut.",
+          "compositions": [
+            "Screenshots"
+          ],
           "stills": []
         },
         {
           "id": "paper-photo",
           "title": "Paper photo effects",
           "text": "The four cut-out edges, and the fold-out on a green screen and on a desk.",
+          "compositions": [
+            "FoldOut",
+            "FoldOutDesk",
+            "Edges"
+          ],
           "stills": [
             {
               "src": "/catalog/plugins/paper/demo-paper-photo-1.webp",
@@ -445,8 +1627,42 @@
           "id": "plugin-ui-demo",
           "title": "Studio panels",
           "text": "Compositions wired to the Hexed, Paper and VJ Studio panels.",
+          "compositions": [
+            "HexedLook",
+            "PaperMatchCut",
+            "PaperCutOut",
+            "PaperFoldOut",
+            "VjLook"
+          ],
           "stills": []
         }
+      ],
+      "stocks": [
+        "white",
+        "newsprint",
+        "kraft"
+      ],
+      "edges": [
+        "torn",
+        "cut",
+        "wavy",
+        "sticker"
+      ],
+      "layouts": [
+        "pull",
+        "italic",
+        "kicker",
+        "body",
+        "web",
+        "post",
+        "display"
+      ],
+      "textures": [
+        "creaseLight",
+        "creaseHeavy",
+        "smoothWhite",
+        "newsprint",
+        "kraft"
       ]
     },
     {
@@ -455,6 +1671,7 @@
       "title": "VJ",
       "description": "Screen, tape and sensor looks (CRT, VHS, 1-bit, thermal, depth, pixels) and tracking overlays: boxes on moving blobs and a reticle on one point.",
       "components": [
+        "PopArt",
         "Blobs",
         "Reticle"
       ],
@@ -465,106 +1682,543 @@
         "VJ adds looks that make a picture seem to come from a screen, a tape or a sensor: a CRT with curved glass, scanlines and a switch-off, a worn VHS tape, a 1-bit dither in two inks, a thermal camera palette, a depth pass, and a magnifier that resolves into red, green and blue subpixels. Each look is a layer effect. Brightness stands in for heat and for depth, so these are looks, not measurements.",
         "It also draws tracking overlays. A blob tracker runs once, offline, over a clip and writes JSON; Blobs then draws boxes, ids, coordinates and links from that JSON on every frame, so a render stays a pure function of the frame. A second tool follows one patch of the picture, and Reticle puts a ticked box on it."
       ],
-      "componentDocs": [
+      "exports": [
+        {
+          "name": "IRON",
+          "kind": "constant",
+          "summary": "A thermal camera's palette (iron: cold violet through red to white-hot), a little soft as such sensors are.",
+          "detail": ""
+        },
+        {
+          "name": "RAINBOW",
+          "kind": "constant",
+          "summary": "The other common one: cold blue through green to hot red and white.",
+          "detail": ""
+        },
+        {
+          "name": "crt",
+          "kind": "function",
+          "summary": "A colour tube: curved glass, scanlines, aperture grille, misconvergence, a rolling bar, static and dark corners.",
+          "detail": "",
+          "propsOf": "CrtOptions",
+          "props": [
+            {
+              "name": "cx",
+              "type": "number",
+              "optional": true,
+              "doc": "The tube face's centre and half-size on the canvas, px. The default is the whole layer."
+            },
+            {
+              "name": "cy",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "hw",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "hh",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "curve",
+              "type": "number",
+              "optional": true,
+              "doc": "How far the glass bends. 0 is flat."
+            },
+            {
+              "name": "pitch",
+              "type": "number",
+              "optional": true,
+              "doc": "Source pixels per scanline."
+            },
+            {
+              "name": "scan",
+              "type": "number",
+              "optional": true,
+              "doc": "0..1: how dark between the lines."
+            },
+            {
+              "name": "grille",
+              "type": "number",
+              "optional": true,
+              "doc": "Screen pixels per grille stripe."
+            },
+            {
+              "name": "mask",
+              "type": "number",
+              "optional": true,
+              "doc": "0..1: how strong the grille is."
+            },
+            {
+              "name": "conv",
+              "type": "number",
+              "optional": true,
+              "doc": "Pixels the red and blue guns land off green."
+            },
+            {
+              "name": "noise",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "glass",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "offx",
+              "type": "number",
+              "optional": true,
+              "doc": "1 is on. Switching off: offy falls to 0 first (a line), then offx (a dot)."
+            },
+            {
+              "name": "offy",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            }
+          ]
+        },
+        {
+          "name": "depthLook",
+          "kind": "function",
+          "summary": "A depth map's look: near is white, far is black, smooth, no texture.",
+          "detail": "Brightness stands in for nearness."
+        },
+        {
+          "name": "lookEffects",
+          "kind": "function",
+          "summary": "The effects for a vjLookSchema value (from the Studio panel): <Layer effects={lookEffects(look)}>.",
+          "detail": ""
+        },
+        {
+          "name": "oneBit",
+          "kind": "function",
+          "summary": "One bit a pixel: grey, hard contrast, an ordered dither in cells of size px, printed in ink on paper.",
+          "detail": ""
+        },
+        {
+          "name": "pixels",
+          "kind": "function",
+          "summary": "A magnifier: blocks, then red, green and blue subpixel stripes as the zoom grows.",
+          "detail": ""
+        },
+        {
+          "name": "switchOff",
+          "kind": "function",
+          "summary": "The tube switching off over t 0..1, as crt()'s offx and offy: the picture folds to a bright line over the first 60%, and the line to a dot over the rest.",
+          "detail": "Spread it into the options: crt({ ...switchOff(t) })."
+        },
+        {
+          "name": "thermal",
+          "kind": "function",
+          "summary": "A thermal camera's palette on the picture's brightness, a little soft.",
+          "detail": ""
+        },
+        {
+          "name": "vhs",
+          "kind": "function",
+          "summary": "A worn tape: line wobble, late smeared colour, a head-switch tear, a drifting tracking band, snow and dropouts.",
+          "detail": "",
+          "propsOf": "VhsOptions",
+          "props": [
+            {
+              "name": "jitter",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "wobble",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "trackAt",
+              "type": "number",
+              "optional": true,
+              "doc": "0..1: where the tracking band is, top to bottom."
+            },
+            {
+              "name": "trackW",
+              "type": "number",
+              "optional": true,
+              "doc": "Half-height of the band, px."
+            },
+            {
+              "name": "track",
+              "type": "number",
+              "optional": true,
+              "doc": "0..1: how bad the tracking is."
+            },
+            {
+              "name": "bleed",
+              "type": "number",
+              "optional": true,
+              "doc": "How wide the colour smears, px, and how late it lands."
+            },
+            {
+              "name": "delay",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "sat",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "snow",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "drops",
+              "type": "number",
+              "optional": true,
+              "doc": "0..1: chance per line per frame of a dropout."
+            }
+          ]
+        },
+        {
+          "name": "FLASH_OVERLAY",
+          "kind": "constant",
+          "summary": "Which screen-glow variants lay an overlay on (screen blend), and how strongly.",
+          "detail": "The overlay is the caller's."
+        },
+        {
+          "name": "acid",
+          "kind": "effect",
+          "summary": "Brightness to hue: from hue (degrees) round the colour wheel cycles times (negative runs the other way) as the picture brightens, gamma under 1 spending more of the turn on the shadows, at full saturation, the brightest parts washed to white: the acid heat camera.",
+          "detail": ""
+        },
+        {
+          "name": "adaptiveCut",
+          "kind": "effect",
+          "summary": "A hard black and white cut that follows the footage: each pixel is cut against the mean brightness of a wide patch round it (reach, a fraction of the frame height), times bias, so bright footage and dark footage both split into big black and white shapes instead of going all white or all black.",
+          "detail": ""
+        },
+        {
+          "name": "acidHeat",
+          "kind": "effect",
+          "summary": "Acid heat camera.",
+          "detail": "1 and 4 soft blobs, folded; 2 sharp, warm shadows; 3 sharp, teal shadows."
+        },
+        {
+          "name": "fold",
+          "kind": "effect",
+          "summary": "One half folded onto the other. axis 0: left onto right, 1: top onto bottom. box is the picture on the canvas ([x, y, w, h], px); without it, the whole canvas.",
+          "detail": ""
+        },
+        {
+          "name": "grainyBW",
+          "kind": "effect",
+          "summary": "Grainy black and white.",
+          "detail": "1 soft and high-key, 5 high-key with grain; 2-4 a hard cut that follows the footage's brightness (3 and 4 folded), 6 the cut smeared down."
+        },
+        {
+          "name": "nightVision",
+          "kind": "effect",
+          "summary": "Night vision: lime phosphor with lifted blacks, a little noise.",
+          "detail": "1-5 smeared by the camera's move, 6 still."
+        },
+        {
+          "name": "screenGlow",
+          "kind": "effect",
+          "summary": "Screen glow: the picture's own colours pushed bright and blue-cyan into a big bloom.",
+          "detail": "1-3 bright (3 soft), 7 deep blue and crushed, 8 nearly clean, a little cool; 4-6 are 1 with room for an overlay (FLASH_OVERLAY)."
+        },
+        {
+          "name": "streak",
+          "kind": "effect",
+          "summary": "A blur along one direction (degrees), as a fast pan or a shake smears it.",
+          "detail": ""
+        },
+        {
+          "name": "PopArt",
+          "kind": "component",
+          "summary": "The pop-art cut-in on any clip of a person.",
+          "detail": "Place it in a <Sequence> to start the clip later.",
+          "propsOf": "PopArtProps",
+          "props": [
+            {
+              "name": "src",
+              "type": "string",
+              "optional": false,
+              "doc": "the clip of the person"
+            },
+            {
+              "name": "matte",
+              "type": "string",
+              "optional": false,
+              "doc": "its person matte (white = person), from tools/matte.mjs"
+            },
+            {
+              "name": "track",
+              "type": "PointTrack",
+              "optional": true,
+              "doc": "where the person is on every frame, from tools/matte.mjs --track; without it the rays start mid-frame"
+            },
+            {
+              "name": "rate",
+              "type": "number",
+              "optional": true,
+              "doc": "the clip's playback rate"
+            },
+            {
+              "name": "cuts",
+              "type": "PopCut[]",
+              "optional": true,
+              "doc": "when to cut to the poster; without cuts the poster is on throughout"
+            },
+            {
+              "name": "flash",
+              "type": "number[]",
+              "optional": true,
+              "doc": "frames that flash to a single yellow card"
+            },
+            {
+              "name": "title",
+              "type": "{ kicker: string; line1: string; line2: string } | null",
+              "optional": true,
+              "doc": "the three title rows; null for none"
+            },
+            {
+              "name": "chest",
+              "type": "number",
+              "optional": true,
+              "doc": "how far below the person's centre the rays and shapes start, px (1920x1080 space)"
+            },
+            {
+              "name": "id",
+              "type": "string",
+              "optional": true,
+              "doc": "a prefix for the layer ids, unique per <PopArt> on screen"
+            },
+            {
+              "name": "seed",
+              "type": "string",
+              "optional": true,
+              "doc": ""
+            }
+          ]
+        },
         {
           "name": "Blobs",
           "kind": "component",
-          "summary": "Draws the tracked blobs over the clip, at the same size.",
+          "summary": "Boxes, labels and links on a tracked clip's blobs.",
+          "detail": "Put it over the clip, the same size.",
+          "propsOf": "BlobsProps",
           "props": [
-            [
-              "track",
-              "The JSON from the blob tracker."
-            ],
-            [
-              "from",
-              "The composition frame the clip starts on. The track is read by time, so a 24 fps clip in a 30 fps film lines up."
-            ],
-            [
-              "box",
-              "frame, corners, cross or none."
-            ],
-            [
-              "label",
-              "id, xy (centre, 0 to 1), both or none."
-            ],
-            [
-              "links",
-              "nearest, chain (id order), all (pairs within reach of the diagonal) or none."
-            ],
-            [
-              "invert",
-              "0 to 1: the share of blobs filled solid in difference blending, inverting the picture under them."
-            ],
-            [
-              "blend",
-              "difference keeps the marks readable on white and black alike. Default normal."
-            ],
-            [
-              "min, max",
-              "Leave out small blobs; keep the biggest few."
-            ],
-            [
-              "color, stroke, fontSize, width, height, id",
-              "Styling, size and layer id prefix."
-            ]
-          ],
-          "after": "blobsAt(track, frame, fps, width, height, from) gives the blobs on a frame, to pin anything else to them."
+            {
+              "name": "track",
+              "type": "BlobTrack",
+              "optional": false,
+              "doc": ""
+            },
+            {
+              "name": "from",
+              "type": "number",
+              "optional": true,
+              "doc": "The composition frame the tracked clip starts on. Default 0."
+            },
+            {
+              "name": "width",
+              "type": "number",
+              "optional": true,
+              "doc": "The overlay's size: the clip's picture, filling it. Default the composition's."
+            },
+            {
+              "name": "height",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "box",
+              "type": "'frame' | 'corners' | 'cross' | 'none'",
+              "optional": true,
+              "doc": "How each blob is marked: a full box, the box's corners, a cross on its centre, or nothing. Default frame."
+            },
+            {
+              "name": "label",
+              "type": "'id' | 'xy' | 'both' | 'none'",
+              "optional": true,
+              "doc": "The text beside each box: its id, its centre as 0..1 coordinates, both, or nothing. Default both."
+            },
+            {
+              "name": "links",
+              "type": "BlobLinks",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "reach",
+              "type": "number",
+              "optional": true,
+              "doc": "For links=\"all\": how far apart two blobs may be and still be linked, as a fraction of the diagonal."
+            },
+            {
+              "name": "invert",
+              "type": "number",
+              "optional": true,
+              "doc": "0..1: the share of blobs (picked by id) filled solid in difference blending, inverting the picture under them."
+            },
+            {
+              "name": "min",
+              "type": "number",
+              "optional": true,
+              "doc": "Blobs smaller than this fraction of the frame are left out."
+            },
+            {
+              "name": "max",
+              "type": "number",
+              "optional": true,
+              "doc": "The biggest this many are kept."
+            },
+            {
+              "name": "color",
+              "type": "string",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "blend",
+              "type": "'normal' | 'difference'",
+              "optional": true,
+              "doc": "How the boxes, lines and labels sit on the picture. difference keeps them readable on white and black alike (a 1-bit picture); normal keeps color as it is. Default normal."
+            },
+            {
+              "name": "stroke",
+              "type": "number",
+              "optional": true,
+              "doc": "Line width, px."
+            },
+            {
+              "name": "fontSize",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "id",
+              "type": "string",
+              "optional": true,
+              "doc": "Prefix of the layer ids."
+            }
+          ]
+        },
+        {
+          "name": "MONO",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "blobsAt",
+          "kind": "function",
+          "summary": "The blobs on composition frame frame (at fps) of a clip that starts on frame from, scaled to width x height.",
+          "detail": "The track may run at another rate than the composition: it is read by time. Past the clip's end: none."
+        },
+        {
+          "name": "linksOf",
+          "kind": "function",
+          "summary": "",
+          "detail": ""
         },
         {
           "name": "Reticle",
           "kind": "component",
-          "summary": "A ticked box on one tracked point: <Reticle track label=\"TRK 01\" />. pointAt(track, frame, fps) gives the point itself.",
-          "props": [],
-          "after": ""
+          "summary": "A box with corner ticks and a label, on the tracked point.",
+          "detail": "",
+          "propsOf": "ReticleProps",
+          "props": [
+            {
+              "name": "track",
+              "type": "PointTrack",
+              "optional": false,
+              "doc": ""
+            },
+            {
+              "name": "from",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "width",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "height",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "size",
+              "type": "number",
+              "optional": true,
+              "doc": "The box's side, px."
+            },
+            {
+              "name": "label",
+              "type": "string",
+              "optional": true,
+              "doc": "The text under the box. A confidence figure flickers beside it."
+            },
+            {
+              "name": "color",
+              "type": "string",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "jitter",
+              "type": "number",
+              "optional": true,
+              "doc": "px the box shakes by each frame, as a lock that is never quite still."
+            }
+          ]
         },
         {
-          "name": "crt(o)",
-          "kind": "look",
-          "summary": "A colour tube: curved glass, rounded face, scanlines, aperture grille, misconvergence, breathing exposure, a rolling bar, static and dark corners. Options: cx, cy, hw, hh (the face; default the whole layer), curve, pitch, scan, grille, mask, conv, noise, glass, offx, offy.",
-          "props": [],
-          "after": ""
+          "name": "pointAt",
+          "kind": "function",
+          "summary": "The tracked point on composition frame frame (at fps) of a clip that starts on from, scaled to width x height; held at the first or last point outside the clip.",
+          "detail": ""
         },
         {
-          "name": "switchOff(t)",
-          "kind": "look",
-          "summary": "The tube switching off over t from 0 to 1: the picture folds to a line, the line to a dot. Spread it into crt: crt({ ...switchOff(t) }).",
-          "props": [],
-          "after": ""
+          "name": "LOOK_KINDS",
+          "kind": "constant",
+          "summary": "The looks lookEffects knows, none included.",
+          "detail": ""
         },
         {
-          "name": "vhs(o)",
-          "kind": "look",
-          "summary": "A worn tape: line wobble, late smeared colour, a head-switch tear along the bottom, a drifting tracking band, snow and dropouts. Options: jitter, wobble, trackAt (0 to 1, animate it), trackW, track, bleed, delay, sat, snow, drops.",
-          "props": [],
-          "after": ""
+          "name": "blobStyleSchema",
+          "kind": "constant",
+          "summary": "How <Blobs> marks the blobs: its props other than the track.",
+          "detail": "Spread it into <Blobs>."
         },
         {
-          "name": "oneBit(o)",
-          "kind": "look",
-          "summary": "One bit a pixel: an ordered dither in two inks. Options: size, punch, ink, paper.",
-          "props": [],
-          "after": ""
-        },
-        {
-          "name": "thermal(o)",
-          "kind": "look",
-          "summary": "A thermal camera's palette on the picture's brightness, a little soft. Options: palette (IRON, RAINBOW or your own stops), soft.",
-          "props": [],
-          "after": ""
-        },
-        {
-          "name": "depthLook(o)",
-          "kind": "look",
-          "summary": "A depth pass: smooth grey, near is white. Options: soft, punch.",
-          "props": [],
-          "after": ""
-        },
-        {
-          "name": "pixels(o)",
-          "kind": "look",
-          "summary": "A magnifier: blocks, then red, green and blue subpixel stripes as zoom grows. Options: zoom, cx, cy.",
-          "props": [],
-          "after": ""
+          "name": "vjLookSchema",
+          "kind": "constant",
+          "summary": "One look and the settings of each, so switching looks keeps what was set on the others.",
+          "detail": ""
         }
       ],
       "presets": [],
@@ -596,12 +2250,25 @@
           "id": "plugin-ui-demo",
           "title": "Studio panels",
           "text": "Compositions wired to the Hexed, Paper and VJ Studio panels.",
+          "compositions": [
+            "HexedLook",
+            "PaperMatchCut",
+            "PaperCutOut",
+            "PaperFoldOut",
+            "VjLook"
+          ],
           "stills": []
         },
         {
           "id": "vj-demo",
           "title": "VJ looks and tracking",
           "text": "Blob tracking over a 1-bit picture and over a thermal camera, a CRT switching off, and a VHS tape, on archive film.",
+          "compositions": [
+            "Blobs",
+            "Thermal",
+            "Crt",
+            "Vhs"
+          ],
           "stills": [
             {
               "src": "/catalog/plugins/vj/demo-vj-demo-1.webp",
@@ -625,6 +2292,63 @@
               "caption": "A worn VHS tape."
             }
           ]
+        }
+      ],
+      "looks": [
+        {
+          "kind": "none",
+          "uses": "",
+          "summary": "No look."
+        },
+        {
+          "kind": "crt",
+          "uses": "crt",
+          "summary": "A colour tube: curved glass, scanlines, aperture grille, misconvergence, a rolling bar, static and dark corners."
+        },
+        {
+          "kind": "vhs",
+          "uses": "vhs",
+          "summary": "A worn tape: line wobble, late smeared colour, a head-switch tear, a drifting tracking band, snow and dropouts."
+        },
+        {
+          "kind": "oneBit",
+          "uses": "oneBit",
+          "summary": "One bit a pixel: grey, hard contrast, an ordered dither in cells of size px, printed in ink on paper."
+        },
+        {
+          "kind": "thermal",
+          "uses": "thermal",
+          "summary": "A thermal camera's palette on the picture's brightness, a little soft."
+        },
+        {
+          "kind": "depth",
+          "uses": "depthLook",
+          "summary": "A depth map's look: near is white, far is black, smooth, no texture."
+        },
+        {
+          "kind": "pixels",
+          "uses": "pixels",
+          "summary": "A magnifier: blocks, then red, green and blue subpixel stripes as the zoom grows."
+        },
+        {
+          "kind": "glow",
+          "uses": "screenGlow",
+          "summary": "Screen glow: the picture's own colours pushed bright and blue-cyan into a big bloom."
+        },
+        {
+          "kind": "acid",
+          "uses": "acidHeat",
+          "summary": "Acid heat camera."
+        },
+        {
+          "kind": "night",
+          "uses": "nightVision",
+          "summary": "Night vision: lime phosphor with lifted blacks, a little noise."
+        },
+        {
+          "kind": "grainy",
+          "uses": "grainyBW",
+          "summary": "Grainy black and white."
         }
       ]
     }
