@@ -1,8 +1,10 @@
 // Writes content/catalog.json from the private kinetograph-effects checkout: its plugins and its reel templates.
 //   KINETOGRAPH_EFFECTS=/path/to/kinetograph-effects node scripts/catalog.mjs [--media]
 // Without the checkout it prints a message and leaves the committed catalog.json alone.
-// --media also extracts the stills named in catalog-copy.mjs (a frame of a render in the checkout's effects/<x>/out/,
-// or a png) to public/catalog/ as webp, 1280 px on the long side and under 250 KB. It needs ffmpeg, ffprobe and cwebp.
+// --media also extracts the stills and clips named in catalog-copy.mjs to public/catalog/. A still is a frame of a render in
+// the checkout's effects/<x>/out/ (or a png) as webp, 1280 px on the long side and under 250 KB. A clip is a cut of a render,
+// 4 s by default and 6 s at most, as H.264 at 1280 px on the long side, no audio, at most about 1.5 MB, with its first frame as
+// the poster. It needs ffmpeg, ffprobe, libx264 and cwebp. It clears public/catalog first and prints the media total.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,6 +18,7 @@ const root = resolve(process.env.KINETOGRAPH_EFFECTS ?? join(here, '../../../../
 const out = join(here, '../content/catalog.json');
 const pub = join(here, '../public');
 const withMedia = process.argv.includes('--media');
+if (withMedia && existsSync(join(root, 'plugins'))) rmSync(join(pub, 'catalog'), { recursive: true, force: true });
 
 if (!existsSync(join(root, 'plugins'))) {
   console.log(`catalog: no kinetograph-effects at ${root}; set KINETOGRAPH_EFFECTS. Keeping ${out}.`);
@@ -127,6 +130,39 @@ function still(entry, dest) {
     ...(entry.caption ? { caption: entry.caption } : {}),
   };
 }
+const clipCache = new Map();
+let mediaBytes = 0;
+let clipCount = 0;
+/**
+ * One clip: a media entry { from, at?, len?, caption? } becomes public/catalog/<dest>.mp4 plus <dest>.webp, its first frame.
+ * The same cut asked for twice is written once. Returns the poster's fields plus the video path and its length.
+ */
+function clip(entry, dest) {
+  const at = entry.at ?? 0;
+  const len = Math.min(entry.len ?? 4, 6);
+  const key = `${entry.from}|${at}|${len}`;
+  let hit = clipCache.get(key);
+  if (!hit) {
+    const file = join(pub, 'catalog', `${dest}.mp4`);
+    const poster = still({ from: entry.from, at }, dest);
+    if (withMedia) {
+      const src = join(root, entry.from);
+      const portrait = poster.h > poster.w;
+      const scale = portrait ? 'scale=-2:1280' : 'scale=1280:-2';
+      mkdirSync(dirname(file), { recursive: true });
+      for (const crf of [26, 29, 32, 35, 38, 41]) {
+        execFileSync('ffmpeg', ['-v', 'error', '-y', '-ss', String(at), '-i', src, '-t', String(len), '-an', '-vf', scale,
+          '-c:v', 'libx264', '-preset', 'slow', '-crf', String(crf), '-pix_fmt', 'yuv420p', '-movflags', '+faststart', file]);
+        if (statSync(file).size <= 1.5 * 1024 * 1024) break;
+      }
+      mediaBytes += statSync(file).size + statSync(join(pub, 'catalog', `${dest}.webp`)).size;
+      clipCount++;
+    }
+    hit = { poster, video: `/catalog/${dest}.mp4`, len };
+    clipCache.set(key, hit);
+  }
+  return { ...hit.poster, video: hit.video, len: hit.len, ...(entry.caption ? { caption: entry.caption } : {}) };
+}
 /** For a preset with no hand-written line: the genes it sets, skipping the slots it leaves at none. */
 function genesLine(file) {
   const g = JSON.parse(read(file));
@@ -176,14 +212,14 @@ const plugins = pluginDirs.map((d) => {
     hasPanel: Boolean(k.panel),
     hasTools: Boolean(k.tools),
     hasSkill: Boolean(k.skill),
-    about: c?.about ?? [],
+    intro: c?.intro ?? '',
+    features: (c?.features ?? []).map((f, i) => ({ title: f.title, text: f.text, clip: clip(f.media, `plugins/${d}/feature-${i + 1}`) })),
     exports: items.map((e) => ({ ...e, summary: e.summary || EXPORT_NOTES[`${d}/${e.name}`] || '' })),
     presets: presetsOf(d, c),
     presetNote: c?.presetNote ?? '',
     examples: c?.examples ?? [],
     studio: c?.studio ?? null,
-    hero: c?.media.hero ? still(c.media.hero, `plugins/${d}/hero`) : null,
-    stills: (c?.media.stills ?? []).map((e, i) => still(e, `plugins/${d}/still-${i + 1}`)),
+    hero: c?.media.hero ? clip(c.media.hero, `plugins/${d}/hero`) : null,
     demos: [],
   };
   if (d === 'hexed') {
@@ -233,9 +269,9 @@ for (const id of dirs(join(root, 'effects'))) {
   if (DEMOS[id]) {
     // The stills belong to the first plugin the demo lists; the others list the demo by name only.
     const [first] = DEMOS[id].plugins;
-    const stills = (PLUGIN_COPY[first]?.media.demos[id] ?? []).map((e, i) => still(e, `plugins/${first}/demo-${id}-${i + 1}`));
+    const clips = (PLUGIN_COPY[first]?.media.demos[id] ?? []).map((e, i) => clip(e, `plugins/${first}/demo-${id}-${i + 1}`));
     for (const d of DEMOS[id].plugins) {
-      byDir[d].demos.push({ id, title: DEMOS[id].title, text: DEMO_TEXT[id] ?? '', compositions: compositionIds(index), stills: d === first ? stills : [] });
+      byDir[d].demos.push({ id, title: DEMOS[id].title, text: DEMO_TEXT[id] ?? '', compositions: compositionIds(index), clips: d === first ? clips : [] });
     }
     continue;
   }
@@ -253,10 +289,11 @@ for (const id of dirs(join(root, 'effects'))) {
     change: c?.change ?? [],
     plugins: importedPlugins(dir).map((d) => byDir[d].name),
     compositions: compositionIds(index),
-    hero: c?.media?.hero ? still(c.media.hero, `templates/${id}/hero`) : null,
+    hero: c?.media?.hero ? clip(c.media.hero, `templates/${id}/hero`) : null,
   });
 }
 
 writeFileSync(out, JSON.stringify({ plugins, templates }, null, 2) + '\n');
 console.log(`catalog: ${plugins.length} plugins, ${templates.length} templates -> ${out}`);
+if (withMedia) console.log(`catalog: ${clipCount} clips, ${(mediaBytes / 1048576).toFixed(1)} MB of media added (clips and their posters, presets not counted)`);
 if (skipped.length) console.log(`catalog: skipped without index.tsx: ${skipped.join(', ')}`);
