@@ -1,6 +1,6 @@
 # kinetograph
 
-Last touched: 2026-10-25
+Last touched: 2026-10-30
 
 ## Features
 
@@ -13,19 +13,19 @@ Format per feature:
 Status values: active | stable | blocked | archived
 -->
 
-- **release** [active] — 0.2.0 on npm; 0.2.x batch #43-#54 merged 2026-10-27; tracking stage 1 + foreignObject in flight
+- **release** [active] — v0.2.5 released 2026-10-28; next is 0.3.0 (studio redesign + plugins + canvas sources + island-moves perf); stack unpushed (audit 2026-10-30)
   - paths: `.github/workflows/**`, `crates/node/npm/**`, `**/package.json`, `scripts/check-packages.mjs`
   - last: 2026-10-27 (0-2-x-batch)
 - **engine** [active] — PRs #5 datamosh, #8 text, #9 WebGL merged; determinism holds; svg-cascade + WebGPU in flight; rustup PATH trap
   - paths: `crates/**`, `vendor/**`, `packages/core/**`, `packages/compat/**`, `packages/cli/src/**`, `packages/cli/skills/kinetograph/references/ENGINE.md`
   - last: 2026-10-25 (pipeline-expansion)
-- **compat** [active] — GSAP + WebGL merged (p5.brush works); HyperFrames loader 11/29 match; lib-compat, plugins, HF extras in flight
+- **compat** [active] — HF 29 comps 20 MATCH / 7 CLOSE / 2 DIFF / 0 FAIL; real 5/7 MATCH (audit 2026-10-30)
   - paths: `packages/compat/**`, `packages/scene/src/webgl.ts`, `packages/site/content/docs/compat.mdx`, `packages/site/content/docs/known-issues.mdx`, `packages/cli/skills/kinetograph-migrate/**`
   - last: 2026-10-25 (pipeline-expansion)
 - **site** [active] — changelog page + tagline cleanup on docs/changelog-0.2 (unmerged); Libraries page coming
   - paths: `packages/site/**`, `README.md`, `docs/readme/**`
   - last: 2026-10-25 (pipeline-expansion)
-- **studio** [active] — agentic studio (readable names, ACP chat, Canva-simple timeline) on feat/studio-timeline; user reviewing on :3300
+- **studio** [active] — redesigned editor + plugins on feat/studio-redesign (unpushed, docs done 2026-10-30); ships as 0.3.0; screenshot to re-capture
   - paths: `packages/studio/**`
   - last: 2026-10-25 (pipeline-expansion)
 - **launch-film** [active] — v13 final (~39.5 s, 1184 frames); end-card stills made; renders in ~26-30 s
