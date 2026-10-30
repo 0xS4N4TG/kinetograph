@@ -69,7 +69,7 @@ export function PageHero({ title, tag, line, clip, alt, children }: { title: str
   const ratio = clip ? clip.w / clip.h : 16 / 9;
   const wide = ratio >= 1.5;
   return (
-    <div className={cn('grid grid-cols-1 items-center gap-8 md:gap-12', wide ? 'md:grid-cols-[5fr_7fr]' : 'md:grid-cols-2')}>
+    <div className={cn('grid grid-cols-1 items-center gap-8 md:gap-12', wide ? 'md:grid-cols-[4fr_8fr]' : 'md:grid-cols-2')}>
       <div>
         <Heading as="h1" lines={[title]} hot={title.split(' ')[0]} tag={tag} className="text-[clamp(34px,3.8vw,52px)]" />
         <p className={`${body} mt-5 max-w-[44ch]`}>{line}</p>
