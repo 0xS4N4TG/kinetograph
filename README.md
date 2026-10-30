@@ -77,20 +77,29 @@ three runs with `--concurrency 4` on the same Apple M4.
 ## The editor
 
 <p align="center">
-  <img src="docs/readme/studio.webp" alt="Kinetograph studio: the showcase project at frame 292, with the text layer 'kinetograph render' selected in the preview, the Agent tab open beside it, and a timeline with one row per shot and audio clip" width="100%">
+  <img src="docs/readme/studio.webp" alt="Kinetograph Studio: a top bar with the composition switcher and the command menu, the agent chat on the left, a large preview with a floating transport, the timeline below with coloured clips, film strips and waveforms, and the inspector on the right showing the Props tab with a plugin card" width="100%">
 </p>
 
 `kinetograph studio src/index.tsx` opens a local editor for a project. The engine draws its preview frames, so what you
 see is what renders.
 
-- **Timeline:** one row per shot and audio clip. Repeated components fold into one row, and clicking a bar jumps
-  there. "Show details" opens every layer.
-- **Readable layers:** each layer is named after its component and text, with the file and line it came from.
-- **Point and ask:** click a layer in the preview, or drag a box around several, then tell your coding agent what to
-  change. The agent gets the selection, the source locations and a picture of the area. It talks to the agent over
-  the Agent Client Protocol (ACP), with presets for Claude Code, Codex and Gemini (tested with Claude Code so far),
-  and asks you before the agent edits a file.
-- **Inspect and render:** props, the scene tree, each layer's resolved fields and renders, all in the same window.
+- **Panels:** the agent chat, the preview with its timeline, and the inspector float over the window. Drag a panel's
+  edge to resize it, double-click to reset, and fold the agent or the inspector from the top bar. Cmd+K opens a command
+  menu with every action; `?` lists the shortcuts.
+- **Preview with sound:** a large preview with a floating transport and a View menu (layer controls, safe zones, zoom).
+  The composition's audio plays in the preview, with the audio clock leading the picture.
+- **Timeline:** a slim bar that expands to one row per layer. Clips are coloured by kind, video clips show a film strip
+  and audio clips their waveform, and the ruler counts in mm:ss.ff.
+- **Point and ask:** click a layer in the preview, or drag a box around several. On the timeline, drag to pick a span of
+  time. Then tell your coding agent what to change: it gets the selection or the span, the source locations and a
+  picture (one contact sheet of frames for a span). It talks to the agent over the Agent Client Protocol (ACP), with
+  presets for Claude Code, Codex and Gemini (tested with Claude Code so far), asks you before the agent edits a file,
+  and its replies are rendered as markdown. The agent can read and set the props the preview shows.
+- **Props and presets:** a form drawn from the composition's zod `schema`, with presets saved beside the project.
+  A plugin's fields are drawn by the plugin, as a card with its icon and description. Selecting a card selects the
+  layers it draws. Edited props survive a reload.
+- **Export and renders:** export the whole video or a range you type or trim, with a queue of renders in the same
+  window. The scene tree shows each layer's resolved fields.
 
 ## Status
 
