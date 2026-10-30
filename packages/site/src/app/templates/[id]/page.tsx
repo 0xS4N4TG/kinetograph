@@ -1,10 +1,9 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
-import { pluginByName, templates } from '@/lib/catalog';
-import { Back, Block, CatalogPage, Figure } from '@/sections/catalog';
-import { Heading } from '@/sections/heading';
-import { body, link } from '@/sections/shared';
+import { pluginByName, templates, type Template } from '@/lib/catalog';
+import { Adjacent, Block, CatalogPage, Crumbs, oneLine, PageHero, Tile } from '@/sections/catalog';
+import { body } from '@/sections/shared';
 
 type Params = { id: string };
 
@@ -26,17 +25,20 @@ export default async function TemplatePage(props: { params: Promise<Params> }) {
   const t = templates.find((x) => x.id === id);
   if (!t) notFound();
   const uses = t.plugins.map(pluginByName).filter((p) => p !== undefined);
+  const i = templates.findIndex((x) => x.id === id);
+  const prev = templates[(i - 1 + templates.length) % templates.length];
+  const next = templates[(i + 1) % templates.length];
+  const toItem = (x: Template) => ({ href: `/templates/${x.id}/`, title: x.title, image: x.hero });
 
   return (
     <CatalogPage>
-      <Back href="/plugins/#templates">All templates</Back>
-      <Heading as="h1" lines={[t.title]} hot={t.title.split(' ')[0]} tag="TEMPLATE  1.00" className="text-[clamp(36px,4.2vw,56px)]" />
-      <p className={`${body} mt-6 max-w-[62ch]`}>{t.description}</p>
-      <p className="mt-4 text-[14px] text-mute">Coming; not published yet.</p>
-      {t.hero && (
-        <div className="mt-10">
-          <Figure media={t.hero} alt={`${t.title}, a clip of the finished video`} />
-        </div>
+      <Crumbs section="templates" current={t.title} />
+      <PageHero title={t.title} tag="TEMPLATE  1.00" line={oneLine(t.description)} clip={t.hero} alt={`${t.title}, a clip of the finished video`}>
+        <p className="mt-4 text-[14px] text-mute">Coming; not published yet.</p>
+      </PageHero>
+
+      {t.description !== oneLine(t.description) && (
+        <p className={`${body} mt-12 max-w-[62ch]`}>{t.description.slice(oneLine(t.description).length).trim()}</p>
       )}
 
       {t.change.length > 0 && (
@@ -52,14 +54,12 @@ export default async function TemplatePage(props: { params: Promise<Params> }) {
       )}
 
       {uses.length > 0 && (
-        <Block id="uses" title="Uses">
-          <ul className="space-y-1">
-            {uses.map((p) => (
-              <li key={p.slug} className={body}>
-                <a href={`/plugins/${p.slug}/`} className={link}>
-                  {p.title}
-                </a>
-              </li>
+        <Block id="uses" title="Plugins it uses">
+          <ul className="grid grid-cols-1 gap-8 sm:grid-cols-2 md:grid-cols-3">
+            {uses.map((p, n) => (
+              <Tile key={p.slug} href={`/plugins/${p.slug}/`} title={p.title} clip={p.hero} fixed index={n}>
+                <p className="line-clamp-2 text-[15px] leading-[1.5] text-ink/75">{oneLine(p.description)}</p>
+              </Tile>
             ))}
           </ul>
         </Block>
@@ -76,6 +76,8 @@ export default async function TemplatePage(props: { params: Promise<Params> }) {
           </ul>
         </Block>
       )}
+
+      <Adjacent label="template" prev={toItem(prev)} next={toItem(next)} />
     </CatalogPage>
   );
 }

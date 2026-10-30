@@ -19,15 +19,6 @@ export function CatalogPage({ children }: { children: ReactNode }) {
   );
 }
 
-/** A link back up the section, above a page's heading. */
-export function Back({ href, children }: { href: string; children: ReactNode }) {
-  return (
-    <a href={href} className={`${link} mb-6 inline-block font-jb text-[12px] tracking-[0.04em]`}>
-      {children}
-    </a>
-  );
-}
-
 /** The first sentence of a description: the one line under a tile. */
 export const oneLine = (text: string) => text.split(/(?<=[.!?])\s/)[0];
 
