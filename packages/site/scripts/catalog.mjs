@@ -1,13 +1,20 @@
 // Writes content/catalog.json from the private kinetograph-effects checkout: its plugins and its reel templates.
-//   KINETOGRAPH_EFFECTS=/path/to/kinetograph-effects node scripts/catalog.mjs
+//   KINETOGRAPH_EFFECTS=/path/to/kinetograph-effects node scripts/catalog.mjs [--media]
 // Without the checkout it prints a message and leaves the committed catalog.json alone.
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+// --media also extracts the stills named in catalog-copy.mjs (a frame of a render in the checkout's effects/<x>/out/,
+// or a png) to public/catalog/ as webp, 1280 px on the long side and under 250 KB. It needs ffmpeg, ffprobe and cwebp.
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEMO_TEXT, PLUGIN_COPY, TEMPLATE_COPY } from './catalog-copy.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(process.env.KINETOGRAPH_EFFECTS ?? join(here, '../../../../kinetograph-effects'));
 const out = join(here, '../content/catalog.json');
+const pub = join(here, '../public');
+const withMedia = process.argv.includes('--media');
 
 if (!existsSync(join(root, 'plugins'))) {
   console.log(`catalog: no kinetograph-effects at ${root}; set KINETOGRAPH_EFFECTS. Keeping ${out}.`);
@@ -78,6 +85,76 @@ function bulletFor(id) {
   return brief(text.join(' '));
 }
 
+/** An image's size, read from the webp on disk; a default when it is not extracted yet. */
+function sizeOf(file) {
+  if (!existsSync(file)) return { w: 1280, h: 720 };
+  const [w, h] = execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', file], { encoding: 'utf8' })
+    .trim().split(',').map(Number);
+  return { w, h };
+}
+/**
+ * One still: a media entry { from, at?, caption? } becomes public/catalog/<dest>.webp (extracted when --media is on).
+ * Returns what the pages read: the src, the size, and where it came from, so the catalog says how to make it again.
+ */
+function still(entry, dest) {
+  const file = join(pub, 'catalog', `${dest}.webp`);
+  if (withMedia) {
+    const src = join(root, entry.from);
+    const [sw, sh] = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', src], { encoding: 'utf8' })
+      .trim().split(',').map(Number);
+    const scale = sh > sw ? 'scale=-2:1280' : 'scale=1280:-2';
+    mkdirSync(dirname(file), { recursive: true });
+    // This ffmpeg may have no webp encoder, so ffmpeg writes one scaled png frame and cwebp encodes it.
+    const png = join(tmpdir(), `kg-catalog-${process.pid}.png`);
+    const args = ['-v', 'error', '-y'];
+    if (entry.at !== undefined) args.push('-ss', String(entry.at));
+    args.push('-i', src, '-frames:v', '1', '-vf', scale, png);
+    execFileSync('ffmpeg', args);
+    for (const q of [80, 70, 60, 50, 40]) {
+      execFileSync('cwebp', ['-quiet', '-q', String(q), png, '-o', file]);
+      if (statSync(file).size <= 250 * 1024) break;
+    }
+    rmSync(png);
+  }
+  const { w, h } = sizeOf(file);
+  return {
+    src: `/catalog/${dest}.webp`,
+    w,
+    h,
+    from: entry.from,
+    ...(entry.at !== undefined ? { at: entry.at } : {}),
+    ...(entry.caption ? { caption: entry.caption } : {}),
+  };
+}
+/** For a preset with no hand-written line: the genes it sets, skipping the slots it leaves at none. */
+function genesLine(file) {
+  const g = JSON.parse(read(file));
+  const set = Object.entries(g)
+    .filter(([, v]) => v && typeof v === 'object' && v.gene && v.gene !== 'none')
+    .map(([slot, v]) => `${slot} ${v.gene}`);
+  return set.length ? `Sets ${set.join(', ')}.` : '';
+}
+/** A plugin's presets: the json files under presets/, with a line and a still where one is chosen. */
+function presetsOf(d, c) {
+  const found = [];
+  const walk = (p) => {
+    if (!existsSync(p)) return;
+    for (const e of readdirSync(p, { withFileTypes: true })) {
+      if (e.isDirectory()) walk(join(p, e.name));
+      else if (e.name.endsWith('.json')) found.push({ name: e.name.replace(/\.json$/, ''), file: join(p, e.name) });
+    }
+  };
+  walk(join(root, 'plugins', d, 'presets'));
+  return found
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(({ name, file }) => {
+      const m = c?.media.presets?.[name];
+      return { name, line: c?.presetLines?.[name] ?? genesLine(file), image: m ? still(m, `plugins/${d}/preset-${name}`) : null };
+    });
+}
+/** The id of every composition a template's index registers. */
+const compositionIds = (src) => [...src.matchAll(/<Composition\s[^>]*?\bid=["'](\w+)["']/g)].map((m) => m[1]);
+
 // Plugins.
 const pluginDirs = dirs(join(root, 'plugins'));
 const pluginNames = Object.fromEntries(pluginDirs.map((d) => [d, JSON.parse(read(join(root, 'plugins', d, 'package.json'))).name]));
@@ -86,14 +163,24 @@ const plugins = pluginDirs.map((d) => {
   const k = pkg.kinetograph ?? {};
   const readme = read(join(root, 'plugins', d, 'README.md'));
   const components = k.components ?? [...new Set([...readme.matchAll(/`<([A-Z]\w*)>`/g)].map((m) => m[1]))];
+  const c = PLUGIN_COPY[d];
+  if (!c) console.log(`catalog: no copy for plugin ${d}; its page will be thin`);
   return {
+    slug: d,
     name: pkg.name,
     title: k.title ?? titleCase(pkg.name.replace(/^@[^/]+\//, '')),
-    description: k.description ?? firstParagraph(readme) ?? pkg.description ?? '',
-    components,
+    description: c?.summary ?? k.description ?? firstParagraph(readme) ?? pkg.description ?? '',
+    components: c?.drawn ?? components,
     hasPanel: Boolean(k.panel),
     hasTools: Boolean(k.tools),
     hasSkill: Boolean(k.skill),
+    about: c?.about ?? [],
+    componentDocs: c?.components ?? [],
+    presets: presetsOf(d, c),
+    presetNote: c?.presetNote ?? '',
+    examples: c?.examples ?? [],
+    studio: c?.studio ?? null,
+    hero: c?.media.hero ? still(c.media.hero, `plugins/${d}/hero`) : null,
     demos: [],
   };
 });
@@ -132,7 +219,12 @@ for (const id of dirs(join(root, 'effects'))) {
   const readme = read(join(dir, 'README.md'));
   const index = read(join(dir, 'index.tsx'));
   if (DEMOS[id]) {
-    for (const d of DEMOS[id].plugins) byDir[d].demos.push({ id, title: DEMOS[id].title });
+    // The stills belong to the first plugin the demo lists; the others list the demo by name only.
+    const [first] = DEMOS[id].plugins;
+    const stills = (PLUGIN_COPY[first]?.media.demos[id] ?? []).map((e, i) => still(e, `plugins/${first}/demo-${id}-${i + 1}`));
+    for (const d of DEMOS[id].plugins) {
+      byDir[d].demos.push({ id, title: DEMOS[id].title, text: DEMO_TEXT[id] ?? '', stills: d === first ? stills : [] });
+    }
     continue;
   }
   if (!index) {
@@ -140,11 +232,16 @@ for (const id of dirs(join(root, 'effects'))) {
     continue;
   }
   const heading = readme.match(/^#\s+(.+)$/m)?.[1];
+  const c = TEMPLATE_COPY[id];
+  if (!c) console.log(`catalog: no copy for template ${id}; its description comes from its README`);
   templates.push({
     id,
     title: heading && heading !== id ? heading.replace(/\s*\(.*\)\s*$/, '') : titleCase(id),
-    description: firstParagraph(readme) || bulletFor(id) || leadingComment(index),
+    description: c?.description ?? (firstParagraph(readme) || bulletFor(id) || leadingComment(index)),
+    change: c?.change ?? [],
     plugins: importedPlugins(dir).map((d) => byDir[d].name),
+    compositions: compositionIds(index),
+    hero: c?.media?.hero ? still(c.media.hero, `templates/${id}/hero`) : null,
   });
 }
 
