@@ -9,6 +9,7 @@ export function Nav() {
           <Wordmark className="text-[22px] text-ink" />
         </a>
         <nav className="flex items-center gap-7">
+          <a href="/plugins/" className="transition-colors hover:text-cobalt"><Label className="text-ink">Plugins</Label></a>
           <a href="/docs/" className="transition-colors hover:text-cobalt"><Label className="text-ink">Docs</Label></a>
           <a href={GITHUB} target="_blank" rel="noreferrer" className="transition-colors hover:text-cobalt"><Label className="text-ink">GitHub</Label></a>
         </nav>
