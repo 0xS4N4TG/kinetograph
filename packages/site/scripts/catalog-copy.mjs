@@ -2,18 +2,19 @@
 // README and presets, and from each template's index.tsx and README, in plain words. Nothing here names the private
 // kinetograph-effects repo, and no template says what it was modelled on.
 
-/** Studio-side facts that SKILL.md states once per plugin. */
-const INSTALLED = 'Run `npx kinetograph plugins` to see that a plugin is installed; agents read its skill from there.';
+/** The one line every plugin page says about installing: in words, no commands, none exist yet. */
+const INSTALLED = 'How it installs: as a package you add to your project. Its skill comes with it, so an agent can use it without being taught.';
 
 export const PLUGIN_COPY = {
   hexed: {
-    summary: 'Rolls a look onto any picture or clip from eleven slots, such as grade, screen, optics and damage. Lock what you like and shuffle the rest.',
+    summary: 'Put a look on any picture or clip. Hexed picks a grade, a print screen, a lens effect, some tape damage and a camera shake for you. Keep the parts you like and reroll the rest.',
     about: [
-      'Hexed rolls a look onto a picture or a clip. The look is made of eleven slots: crop, shake, fps, time, mirror, isolate, grade, screen, optics, damage and grunge. Each slot holds one gene (a named effect, such as a sepia print grade or a twelve-frame-a-second stutter), a seed and an amount.',
-      'The whole look is a genome: plain JSON with one strand per slot. A genome plays back the same every time, so a look you like can be kept in code or saved as a preset. Roll from a seed, lock the slots you want to keep, and reroll the rest.',
-      'Use it when a video needs a grade, glitch, grain, shake or print look, or when you want to reroll and save looks.',
+      'Hexed puts a look on a picture or a clip. Roll a number and you get a new one: a sepia print under a halftone screen with a little tape damage, or a crushed teal grade with a kaleidoscope on top. Like it? Keep it. Not quite? Lock the parts you like and roll again.',
+      'A look is built from eleven slots: crop, shake, frame rate, time, mirror, isolate, grade, screen, optics, damage and grunge. Each slot holds one named effect with its own strength, and the page below lists every effect each slot can roll.',
+      'The same number always gives the same look, so a look you settle on stays settled. Save it as a preset and use it again on the next video.',
+      'Reach for it when a clip needs grain, a glitch, a print look or a handheld shake, or when you want to flip through looks until one fits.',
     ],
-    presetNote: 'Presets live in presets/*.json. Roll and save one with the plugin’s save-preset tool.',
+    presetNote: 'Saved looks. Pick one by name, or roll your own and save it.',
     examples: [
       {
         title: 'Roll a look onto a clip',
@@ -32,14 +33,9 @@ import { Hexed } from '@kinetographdev/hexed';
       },
     ],
     studio: {
-      panel:
-        'A Hexed panel for any prop that uses genomeSchema: one card per slot with a gene list, an amount slider, a lock and the slot’s seed (click to copy), a shuffle per slot, a Shuffle button for the whole look that keeps locked slots, and a preset menu. It follows Studio’s light and dark theme.',
-      tools: [
-        { name: 'hexed_roll', text: 'Rolls a look and returns { seed, genome }. Without a seed it picks one and returns it, so the roll can be repeated. With a genome in from and slot names in locks, the locked slots keep their strands and the rest reroll.' },
-        { name: 'hexed_genes', text: 'Lists the gene ids each slot accepts, with a note on the slot. Takes an optional slot.' },
-        { name: 'hexed_presets', text: 'Returns the saved looks as { name: genome }.' },
-      ],
-      note: 'The tools are available while Kinetograph’s MCP server is running (kinetograph mcp). Try looks with studio_set_props, then write the settled genome into the code or save it as a preset; do not leave it only in Studio’s live props.',
+      panel: 'Studio gets a Hexed panel: a card for each slot with its effect, a strength slider, a lock and a shuffle button. A Shuffle for the whole look leaves the locked slots alone, and a menu holds your saved presets. It follows Studio’s light and dark theme.',
+      tools: [],
+      note: 'An agent can roll a look, list what each slot accepts and read the saved presets. It then writes the look it settles on into your code or saves it as a preset, so the look does not live only in Studio.',
       installed: INSTALLED,
     },
     presetLines: {},
@@ -53,10 +49,10 @@ import { Hexed } from '@kinetographdev/hexed';
   },
 
   'kinetic-typography': {
-    summary: 'Hand-written captions that write on letter by letter to a voiceover, with key words breaking out in display faces, optionally hung off a tracked subject.',
+    summary: 'Captions that write themselves on screen in many handwritten styles, timed to your voiceover. Key words jump out in a heavy display face, and the text can follow a tracked subject.',
     about: [
-      'HandCaptions writes a voiceover on screen letter by letter. Each word writes itself across its spoken time, every letter in a different handwritten face, so it reads as one restless hand. Key words break out whole in a display face: a fat serif with a doodle beside it, or a heavy italic that streaks in.',
-      'The captions can hang off a tracked subject. They sit beside it on the side where they fit, with a reticle on the subject, lines to the text and off the frame, and a bracket with coordinates on the letter being written. Without a tracked subject they sit centred low.',
+      'HandCaptions writes a voiceover on screen letter by letter. Each word writes itself across the time it is spoken, and every letter is in a different handwritten face, so it reads as one restless hand. Key words break out whole in a display face: a fat serif with a doodle beside it, or a heavy italic that streaks in.',
+      'The captions can follow a subject you have tracked. They sit beside it on whichever side has room, with a reticle on the subject, lines running to the text and a bracket on the letter being written. With no tracked subject they sit centred low.',
     ],
     presetNote: '',
     examples: [
@@ -82,7 +78,7 @@ import { pointAt } from '@kinetographdev/vj';
     studio: {
       panel: '',
       tools: [],
-      note: 'The plugin ships a skill and no Studio panel or agent tools. The skill tells an agent to get word timestamps from an ASR or TTS list rather than place frames by hand, to choose the pages and key words, to track the subject with the VJ plugin’s point tracker, and to render stills on a few word frames to check the block fits.',
+      note: 'There is no Studio panel and no agent tools. The skill tells an agent to take word timestamps from your speech-to-text or voice-over tool instead of placing frames by hand, choose the pages and key words, track the subject with the VJ plugin, and render a few stills to check the text fits.',
       installed: INSTALLED,
     },
     presetLines: {},
@@ -96,13 +92,13 @@ import { pointAt } from '@kinetographdev/vj';
   },
 
   paper: {
-    summary: 'A paper material with creases, scans and grain, and effects made of it: a text match cut over changing pages, and photo cut-outs that fold open.',
+    summary: 'Paper textures and what you can make from them: a keyword held still while pages flick past underneath, and photo cut-outs that unfold from a crumpled packet.',
     about: [
-      'Paper is a paper material (creases, scans, grain) and the effects made of it. MatchCut holds a highlighted keyword still while the page under it changes several times a second, on made-up pages or on your own screenshots. CutOut turns a photo with its background removed into a paper cut-out, and FoldOut unfolds it flap by flap in stop motion.',
-      'MatchCut comes with four looks to start from (web, broadsheet, crumpled and clean) and a look object that overrides any of them. With your own screenshots you give a rough box around the word and it snaps to it.',
+      'Paper gives a video the feel of real paper: creases, scanned fibres, grain. MatchCut holds a highlighted keyword in place while the page under it changes several times a second, using made-up pages or your own screenshots. CutOut turns a photo with its background removed into a paper cut-out, and FoldOut opens it from a crumpled packet in stop motion.',
+      'MatchCut comes with four looks to start from: web, broadsheet, crumpled and clean. Change any detail on top. With your own screenshots, draw a rough box round the word and it snaps to the word.',
       'Use it for fast keyword-over-pages edits and paper-craft looks.',
     ],
-    presetNote: 'The four MatchCut looks are in presets/match-cut/*.json. Picking one in the Studio panel replaces look with that preset’s fields; what it leaves out falls back to MatchCut’s defaults.',
+    presetNote: 'Four ready-made MatchCut looks. Pick one in the Studio panel and adjust from there. Anything a look leaves out falls back to MatchCut’s defaults.',
     presetLines: {
       web: 'Web pages and social posts, ten cuts a second, a strong blur and streak, creased grey paper, a yellow highlight.',
       broadsheet: 'Newspaper layouts (pull quote, italic, kicker, body, display) at ten cuts a second, with a closer push-in.',
@@ -130,10 +126,9 @@ flicks({ frames: 150, fps: 30, cutsPerSecond: 10 });
       },
     ],
     studio: {
-      panel:
-        'matchCutLookSchema carries the Paper panel, so Studio mounts it for a look field instead of a generated form. It has preset cards with a drawn swatch, a layout picker with a thumbnail per layout, sliders for keyword size and height, cuts per second, push-in, blur, streak, crumple, grain and wander, colour pickers for the highlight and the paper tint, and a keyword box on the preview you drag to set anchorY and keySize. cutOutLookSchema and foldOutLookSchema carry a sheet view: edge cards and stock cards (white, newsprint, kraft), sliders for creases, shadow, boil and seed, and on the preview a handle to place the picture.',
+      panel: 'Studio gets a Paper panel for MatchCut: a card for each look, a page layout picker, sliders for keyword size, cuts per second, push-in, blur, streak, crumple and grain, colour pickers for the highlight and the paper, and a box on the preview that you drag onto the keyword. CutOut and FoldOut get a sheet view with edge and paper cards, sliders for creases and shadow, and a handle to place the picture.',
       tools: [],
-      note: 'The plugin adds no agent tools. Inside Studio, set values with studio_set_props and read the result in the preview, then write the chosen look into the code or a preset. Give the composition look: matchCutLookSchema and leave preset out of its schema, since the preset cards write into look.',
+      note: 'The plugin adds no agent tools. An agent sets values in Studio, checks the preview, then writes the look it settled on into your code or a preset.',
       installed: INSTALLED,
     },
     media: {
@@ -151,10 +146,11 @@ flicks({ frames: 150, fps: 30, cutsPerSecond: 10 });
   },
 
   vj: {
-    summary: 'Screen, tape and sensor looks (CRT, VHS, 1-bit, thermal, depth, pixels) and tracking overlays: boxes on moving blobs and a reticle on one point.',
+    summary: 'Make footage look like it came from a CRT, a worn VHS tape, a thermal camera or a 1-bit screen, and draw tracking boxes on whatever moves.',
     about: [
-      'VJ adds looks that make a picture seem to come from a screen, a tape or a sensor: a CRT with curved glass, scanlines and a switch-off, a worn VHS tape, a 1-bit dither in two inks, a thermal camera palette, a depth pass, and a magnifier that resolves into red, green and blue subpixels. Each look is a layer effect. Brightness stands in for heat and for depth, so these are looks, not measurements.',
-      'It also draws tracking overlays. A blob tracker runs once, offline, over a clip and writes JSON; Blobs then draws boxes, ids, coordinates and links from that JSON on every frame, so a render stays a pure function of the frame. A second tool follows one patch of the picture, and Reticle puts a ticked box on it.',
+      'VJ makes a picture seem to come from a screen, a tape or a sensor. There is a CRT with curved glass and scanlines that can switch off, a worn VHS tape, a 1-bit dither in two inks, a thermal camera palette, a depth map look and a magnifier that breaks into red, green and blue subpixels. Brightness stands in for heat and depth, so these are looks, not measurements.',
+      'Flash looks add acid heat, night vision, screen glow and grainy black and white. PopArt puts a pop-art cut-in on a clip of a person.',
+      'It also draws tracking marks. A tracker runs once over a clip and saves where things moved. Blobs then draws boxes, ids, coordinates and links on every frame, and Reticle puts a ticked box on a single tracked point. The track is saved, so the video renders the same way every time.',
     ],
     presetNote: '',
     presetLines: {},
@@ -179,10 +175,9 @@ node plugins/vj/tools/track.mjs --in public/clip.mp4 --box 900,300,120,120 --out
       },
     ],
     studio: {
-      panel:
-        'Two schemas carry the plugin’s panel. vjLookSchema gives a card per look (none, CRT, VHS, 1-bit, thermal, depth, pixels) and the chosen look’s sliders and colours; each look keeps its own settings when you switch, and on the preview the CRT’s tube face is a box to drag and resize and the magnifier’s centre a cross to drag. blobStyleSchema gives the marks: box, label, links and blend as segmented choices, and sliders for most blobs, smallest, link reach, inverted share, line width, label size and colour. lookEffects(look) turns the look into layer effects, and the marks spread into Blobs.',
+      panel: 'Studio gets a VJ panel with a card for each look and that look’s own sliders and colours. Switching looks keeps the settings of the others. On the preview you drag and resize the CRT screen and drag the magnifier’s centre. A second panel sets how the tracking marks look: box style, labels, links, blend, how many blobs to show, line width and colour.',
       tools: [],
-      note: 'The panel only sets props. Tracking stays a command, because a browser panel cannot run ffmpeg. The plugin adds no agent tools; the skill walks an agent through running the tracker, opening two or three of the debug images, tuning the thresholds and rendering a still to check.',
+      note: 'Tracking is run on your own machine ahead of time, so the panel only styles the result. The plugin adds no agent tools. The skill walks an agent through tracking a clip, checking the debug images, tuning the tracker and rendering a still to check.',
       installed: INSTALLED,
     },
     media: {
@@ -206,53 +201,53 @@ export const DEMO_TEXT = {
   'kinetic-type-demo': 'A line written beside an anvil in archive film, tracked, and the same line centred low.',
   'vj-demo': 'Blob tracking over a 1-bit picture and over a thermal camera, a CRT switching off, and a VHS tape, on archive film.',
   'hexed-demo': 'A reel that rolls a new look every second and a half, and sheets of twenty seeds on one frame.',
-  'plugin-ui-demo': 'Compositions wired to the Hexed, Paper and VJ Studio panels.',
+  'plugin-ui-demo': 'Ready-made scenes set up for the Hexed, Paper and VJ panels in Studio.',
 };
 
 export const TEMPLATE_COPY = {
   'cyberpunk-reel': {
     description:
-      'A nine-second pop-art reel at 1920 by 1080: a person cut out of footage is painted in blue anime tones over a halftone background, with jagged rays, flying low-poly shapes, flames and a three-row title, and the cuts in and out break into shards and slices. You swap the footage and its matte, and the kicker and the two title lines.',
+      'A nine-second pop-art reel in full HD. A person cut out of your footage is painted in blue anime tones over a halftone background, with jagged rays, flying low-poly shapes and flames behind a three-row title. The cuts in and out break into shards and slices.',
     change: [
-      'The footage and its person matte (public/subject.mp4 and matte.mp4); the media tool crops the clip, makes the matte and tracks the person.',
-      'The title: the kicker and two title lines are props of the CyberpunkReel composition.',
+      'Your footage and a matte of the person. The media tool crops the clip, makes the matte and tracks the person for you.',
+      'The kicker and the two title lines.',
     ],
     media: { hero: { from: 'effects/cyberpunk-reel/out/cyberpunk-reel.mp4', at: 6 } },
   },
   'lyric-reel': {
     description:
-      'A seventeen-second square kinetic-type video in four looks: silver words stacking in a night sky full of glinting stars, black type on an orange band between letterbox bars, small blue words turning in the clouds, and a finale back in the stars. Words sit in 3D and one camera moves through them. You swap the words and the song.',
+      'A seventeen-second square kinetic-type video in four looks: silver words stacking in a night sky full of glinting stars, black type on an orange band between letterbox bars, small blue words turning in the clouds, and a finale back in the stars. The words sit in 3D and one camera moves through them.',
     change: [
-      'The words, in words.ts: one entry per word with the frame it starts to arrive, the same count per shot or the layouts in shots/ adjusted.',
-      'The song, at public/song.mp3; it plays from 16.04 seconds in.',
+      'The words. Each one has a frame where it starts to arrive. Keep the same number of words per shot, or adjust the shot layouts to match.',
+      'The song. It starts playing 16.04 seconds in.',
     ],
     media: { hero: { from: 'effects/lyric-reel/out/lyric-reel.mp4', at: 2 } },
   },
   scrapline: {
     description:
-      'A hand-drawn border round a cut-out subject: a wobbly marker, pencil, crayon, scribble or brush line, on a sheet of torn paper behind it, both redrawn a few times a second like hand animation. You swap the subject and its matte, and choose the line style, the paper and the colour.',
+      'A hand-drawn border round a cut-out subject: a wobbly marker, pencil, crayon, scribble or brush line, on a sheet of torn paper behind it. Both are redrawn a few times a second, like hand animation.',
     change: [
       'The subject: a video with a black and white matte, a video with alpha, an image with alpha, or an SVG path.',
-      'The style (Marker, Pencil, Crayon, Scribble, Brush), the paper (White, Kraft, Binder, Cardboard, your own picture or none), the line colour, the gap to the subject and the seed.',
+      'The line style (Marker, Pencil, Crayon, Scribble or Brush), the paper (White, Kraft, Binder, Cardboard, your own picture or none), the line colour, the gap to the subject and the seed.',
     ],
     media: { hero: { from: 'effects/scrapline/out/scrapline-demo.mp4', at: 20 } },
   },
   'wish-reel': {
     description:
-      'An eighteen-second pop-art edit at 1440 by 1080: street footage flattens into pastel colours under ribbons of colour with 3D props tracked into it, then a helix of strands in a white void, a collage of photos in stop motion, black title cards and a typewriter ending. You swap the clips, whose cameras a bundled tool solves, or run the WishFilter composition on one video of your own.',
+      'An eighteen-second pop-art edit. Street footage flattens into pastel colours under ribbons of colour, with 3D props tracked into the scene. Then come a helix of strands in a white void, a collage of photos in stop motion, black title cards and a typewriter ending.',
     change: [
-      'The five clips and the camera track for each, made with the camera-tracking tool.',
-      'Or one video of your own, prepared as "input" with the prepare tool, for the WishFilter composition; it also takes eight photos for the collage.',
+      'The five clips. A bundled tool solves the camera for each one.',
+      'Or one video of your own, run through the WishFilter composition. It also takes eight photos for the collage.',
     ],
     media: { hero: { from: 'effects/wish-reel/out/wish-reel.mp4', at: 2 } },
   },
   'word-flash': {
     description:
-      'A black-and-white type spot at 1080 by 1920 and 9.4 seconds, cut on every hit of its track: one word or a two-word lockup per cut, the background swapping black and white, ending with a last word that types on and blurs away. You swap the words, the track and the typeface.',
+      'A black-and-white type spot, 9.4 seconds, cut on every hit of its track. Each cut shows one word or a two-word lockup, the background swaps between black and white, and a last word types on and blurs away.',
     change: [
-      'The words, in script.ts (intro, run and outro). The run is one word per cut, so the word count has to match the number of cuts.',
-      'The track, at public/audio.m4a; a small tool finds its strongest hits and gives the cuts to paste into script.ts.',
-      'The typeface, FONT in lib.tsx. Positions are ink boxes, so another face lands in the same places.',
+      'The words: an intro, a run with one word per cut, and an outro. The word count has to match the number of cuts.',
+      'The track. A small tool finds its strongest hits and gives you the cuts.',
+      'The typeface. Another face lands in the same places.',
     ],
     media: { hero: { from: 'effects/word-flash/out/word-flash.mp4', at: 2.5 } },
   },
