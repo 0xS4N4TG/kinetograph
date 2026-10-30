@@ -10,12 +10,41 @@ export interface Image {
   caption?: string;
 }
 
-export interface ComponentDoc {
+export interface Prop {
   name: string;
-  kind: 'component' | 'look';
+  type: string;
+  optional: boolean;
+  doc: string;
+}
+
+/** A public export of a plugin, read from its source: the JSDoc summary and, for a component or an effect, its props. */
+export interface Export {
+  name: string;
+  kind: 'component' | 'effect' | 'function' | 'constant';
   summary: string;
-  props: [string, string][];
-  after: string;
+  detail: string;
+  propsOf?: string;
+  props?: Prop[];
+}
+
+export interface GeneSlot {
+  slot: string;
+  note: string;
+  genes: { id: string; note: string }[];
+}
+
+export interface Look {
+  kind: string;
+  uses: string;
+  summary: string;
+}
+
+export interface Demo {
+  id: string;
+  title: string;
+  text: string;
+  compositions: string[];
+  stills: Image[];
 }
 
 export interface Plugin {
@@ -28,13 +57,24 @@ export interface Plugin {
   hasTools: boolean;
   hasSkill: boolean;
   about: string[];
-  componentDocs: ComponentDoc[];
+  exports: Export[];
   presets: { name: string; line: string; image: Image | null }[];
   presetNote: string;
   examples: { title: string; code: string }[];
   studio: { panel: string; tools: { name: string; text: string }[]; note: string; installed: string } | null;
   hero: Image | null;
-  demos: { id: string; title: string; text: string; stills: Image[] }[];
+  demos: Demo[];
+  /** Hexed: the genes each slot can roll. */
+  genes?: GeneSlot[];
+  /** VJ: the look kinds and the export that draws each. */
+  looks?: Look[];
+  /** Paper: the paper stocks, edge styles, page layouts and texture scans. */
+  stocks?: string[];
+  edges?: string[];
+  layouts?: string[];
+  textures?: string[];
+  /** Kinetic Typography: the handwritten and display faces. */
+  faces?: { hands: string[]; display: string[] };
 }
 
 export interface Template {
