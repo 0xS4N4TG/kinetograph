@@ -298,8 +298,7 @@
         "src": "/catalog/plugins/hexed/hero.webp",
         "w": 1280,
         "h": 720,
-        "from": "effects/hexed-demo/out/reel.mp4",
-        "at": 8
+        "from": "effects/hexed-demo/out/RickReel-120.png"
       },
       "demos": [
         {
@@ -345,6 +344,7 @@
             "HexedLook",
             "PaperMatchCut",
             "PaperCutOut",
+            "PaperScrapline",
             "PaperFoldOut",
             "VjLook"
           ],
@@ -1905,6 +1905,7 @@
             "HexedLook",
             "PaperMatchCut",
             "PaperCutOut",
+            "PaperScrapline",
             "PaperFoldOut",
             "VjLook"
           ],
@@ -2535,6 +2536,7 @@
             "HexedLook",
             "PaperMatchCut",
             "PaperCutOut",
+            "PaperScrapline",
             "PaperFoldOut",
             "VjLook"
           ],

@@ -40,7 +40,7 @@ import { Hexed } from '@kinetographdev/hexed';
     },
     presetLines: {},
     media: {
-      hero: { from: 'effects/hexed-demo/out/reel.mp4', at: 8 },
+      hero: { from: 'effects/hexed-demo/out/RickReel-120.png' },
       presets: {},
       demos: {
         'hexed-demo': [{ from: 'effects/hexed-demo/out/dream.mp4', at: 3, caption: 'Twenty seeds rolled onto one frame, each with its genes named under it.' }],
