@@ -31,10 +31,8 @@ export default function PluginsPage() {
   return (
     <CatalogPage>
       <Heading as="h1" lines={['Plugins and templates']} hot="templates" tag="CAT 01  1.00" className="text-[clamp(36px,4.2vw,56px)]" />
-      <p className={`${body} mt-5 max-w-[62ch]`}>
-        Looks, captions and paper for your videos, and finished reels to start from.{' '}
-        <span className="text-[14px] text-mute">Coming; not published yet.</span>
-      </p>
+      <p className={`${body} mt-5 max-w-[62ch]`}>Looks, captions and paper for your videos, and finished reels to start from.</p>
+      <p className="mt-1 text-[14px] text-mute">Coming; not published yet.</p>
 
       <section className="mt-12" aria-labelledby="plugins">
         <div className="flex items-baseline justify-between">
@@ -48,7 +46,7 @@ export default function PluginsPage() {
         <ul className={pluginGrid}>
           {plugins.map((p, i) => (
             <Tile key={p.slug} href={`/plugins/${p.slug}/`} title={p.title} clip={p.hero} fixed index={i % 2}>
-              <p className={body}>{oneLine(p.description)}</p>
+              <p className={`${body} line-clamp-2`}>{oneLine(p.description)}</p>
               <Draws names={p.components} />
             </Tile>
           ))}

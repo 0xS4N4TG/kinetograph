@@ -4,9 +4,8 @@ import { notFound } from 'next/navigation';
 import { CodeBlock } from '@/components/code';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { plugins, type Clip, type Export, type GeneSlot, type Look, type Plugin } from '@/lib/catalog';
-import { Back, Badges, Block, CatalogPage, Draws, Figure, Still } from '@/sections/catalog';
-import { Heading } from '@/sections/heading';
-import { body } from '@/sections/shared';
+import { Adjacent, Badges, Block, CatalogPage, Crumbs, Draws, Figure, oneLine, PageHero, Still } from '@/sections/catalog';
+import { Label, body, link } from '@/sections/shared';
 
 type Params = { slug: string };
 
@@ -20,7 +19,10 @@ export async function generateMetadata(props: { params: Promise<Params> }): Prom
   const { slug } = await props.params;
   const p = plugins.find((x) => x.slug === slug);
   if (!p) return {};
-  return { title: `${p.title} plugin | Kinetograph`, description: p.description };
+  return {
+    title: `${p.title} plugin | Kinetograph`,
+    description: p.description,
+  };
 }
 
 const mono = 'rounded-sm bg-ink/8 px-1.5 py-0.5 font-jb text-[0.9em] text-ink';
@@ -46,7 +48,9 @@ function Props({ rows }: { rows: NonNullable<Export['props']> }) {
               {r.name}
               {r.optional ? '?' : ''}
             </TableCell>
-            <TableCell className="align-top leading-[1.5] whitespace-normal">{r.doc || <span className="text-mute">{r.type}</span>}</TableCell>
+            <TableCell className="align-top leading-[1.5] whitespace-normal">
+              {r.doc || <span className="text-mute">{r.type}</span>}
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -55,8 +59,16 @@ function Props({ rows }: { rows: NonNullable<Export['props']> }) {
 }
 
 const GROUPS: { kind: Export['kind']; title: string; note: string }[] = [
-  { kind: 'component', title: 'Components', note: 'Drawn as JSX inside a composition.' },
-  { kind: 'effect', title: 'Effects', note: 'Layer effects: put them in a layer\u2019s effects.' },
+  {
+    kind: 'component',
+    title: 'Components',
+    note: 'Drawn as JSX inside a composition.',
+  },
+  {
+    kind: 'effect',
+    title: 'Effects',
+    note: 'Layer effects: put them in a layer\u2019s effects.',
+  },
   { kind: 'function', title: 'Functions', note: '' },
   { kind: 'constant', title: 'Constants', note: '' },
 ];
@@ -87,7 +99,9 @@ function Exports({ items }: { items: Export[] }) {
             {described.map((e) => (
               <Doc key={e.name} e={e} />
             ))}
-            {plain.length > 0 && <p className="pt-2 font-jb text-[13px] leading-[1.8] text-ink/80">{plain.map((e) => e.name).join('  ')}</p>}
+            {plain.length > 0 && (
+              <p className="pt-2 font-jb text-[13px] leading-[1.8] text-ink/80">{plain.map((e) => e.name).join('  ')}</p>
+            )}
           </div>
         );
         if (g.kind === 'component') {
@@ -191,7 +205,7 @@ function FeatureBlock({ f }: { f: Feature }) {
     <div className="space-y-3">
       <h3 className="font-dm text-[20px] font-bold tracking-[-0.02em] text-ink">{f.title}</h3>
       <p className={`${body} max-w-[60ch]`}>{f.text}</p>
-      <Figure media={f.clip} alt={`${f.title}, a clip`} caption={f.clip.caption} />
+      <Figure media={f.clip} alt={`${f.title}, a clip`} caption={f.clip.caption} reveal />
     </div>
   );
 }
@@ -202,10 +216,19 @@ type Group = { kind: 'full' | 'pair' | 'stack'; at: number[] };
  * full: one wide clip. pair: two side by side. stack: a large clip beside two small ones. Every group is one column under md.
  */
 const LAYOUTS: Record<string, Group[]> = {
-  hexed: [{ kind: 'full', at: [0] }, { kind: 'pair', at: [1, 2] }],
+  hexed: [
+    { kind: 'full', at: [0] },
+    { kind: 'pair', at: [1, 2] },
+  ],
   'kinetic-typography': [{ kind: 'pair', at: [0, 1] }],
-  paper: [{ kind: 'pair', at: [0, 1] }, { kind: 'full', at: [2] }],
-  vj: [{ kind: 'stack', at: [0, 1, 2] }, { kind: 'pair', at: [3, 4] }],
+  paper: [
+    { kind: 'pair', at: [0, 1] },
+    { kind: 'full', at: [2] },
+  ],
+  vj: [
+    { kind: 'stack', at: [0, 1, 2] },
+    { kind: 'pair', at: [3, 4] },
+  ],
 };
 
 function Features({ slug, items }: { slug: string; items: Feature[] }) {
@@ -260,109 +283,42 @@ export default async function PluginPage(props: { params: Promise<Params> }) {
   const hasStudio = studio !== null && (studio.panel || studio.tools.length > 0 || studio.note);
   const demos = p.demos;
 
+  const i = plugins.findIndex((x) => x.slug === slug);
+  const prev = plugins[(i - 1 + plugins.length) % plugins.length];
+  const next = plugins[(i + 1) % plugins.length];
+  const toItem = (x: Plugin) => ({
+    href: `/plugins/${x.slug}/`,
+    title: x.title,
+    image: x.hero,
+  });
+  const jump = [
+    p.exports.length > 0 && ['exports', 'Exports'],
+    p.genes && ['genes', 'Genes'],
+    p.looks && ['looks', 'Looks'],
+    p.stocks && ['paper-lists', 'Stocks and layouts'],
+    p.faces && ['faces', 'Faces'],
+    p.presets.length > 0 && ['presets', 'Presets'],
+    p.examples.length > 0 && ['examples', 'Examples'],
+    hasStudio && ['studio', 'In Studio'],
+  ].filter((x): x is [string, string] => Array.isArray(x));
+
   return (
     <CatalogPage>
-      <Back href="/plugins/">All plugins</Back>
-      <Heading as="h1" lines={[p.title]} hot={p.title.split(' ')[0]} tag="PLUGIN  1.00" className="text-[clamp(36px,4.2vw,56px)]" />
-      <p className={`${body} mt-6 max-w-[62ch]`}>{p.description}</p>
-      <div className="mt-4 space-y-3">
-        <Draws names={p.components} />
-        <Badges panel={p.hasPanel} tools={p.hasTools} skill={p.hasSkill} />
-        <p className="text-[14px] text-mute">Coming; not published yet.</p>
-      </div>
-      {p.hero && (
-        <div className="mt-10">
-          <Figure media={p.hero} alt={`${p.title}, a clip from its demo`} />
+      <Crumbs section="plugins" current={p.title} />
+      <PageHero title={p.title} tag="PLUGIN  1.00" line={oneLine(p.description)} clip={p.hero} alt={`${p.title}, a clip from its demo`}>
+        <div className="mt-4 space-y-2">
+          <Draws names={p.components} />
+          <p className="text-[14px] text-mute">Coming; not published yet.</p>
+          <a href="#reference" className={`${link} kc-press inline-block font-jb text-[12px] tracking-[0.04em]`}>
+            Jump to reference
+          </a>
         </div>
-      )}
+      </PageHero>
 
       <Block id="what" title="What it does">
         <p className={`${body} max-w-[68ch]`}>{p.intro}</p>
         <Features slug={p.slug} items={p.features} />
       </Block>
-
-      {p.exports.length > 0 && (
-        <Block id="exports" title="What it exports">
-          <Exports items={p.exports} />
-        </Block>
-      )}
-
-      {p.genes && (
-        <Block id="genes" title="Genes by slot">
-          <p className={`${body} max-w-[68ch]`}>
-            Each slot holds one gene. Lock a slot to keep its gene, or leave it to the seed.
-          </p>
-          <Genes slots={p.genes} />
-        </Block>
-      )}
-
-      {p.looks && (
-        <Block id="looks" title="Looks">
-          <p className={`${body} max-w-[68ch]`}>The look kinds the Studio panel can switch between, and the export that draws each.</p>
-          <Looks looks={p.looks} />
-        </Block>
-      )}
-
-      {p.stocks && (
-        <Block id="paper-lists" title="Stocks, edges and layouts">
-          <PaperLists p={p} />
-        </Block>
-      )}
-
-      {p.faces && (
-        <Block id="faces" title="Faces">
-          <Names title="Handwritten, mixed a letter at a time" items={p.faces.hands} />
-          <Names title="Display, for key words" items={p.faces.display} />
-        </Block>
-      )}
-
-      {p.presets.length > 0 && (
-        <Block id="presets" title="Presets">
-          {p.presetNote && <p className={`${body} max-w-[68ch]`}>{p.presetNote}</p>}
-          <ul className="grid gap-x-8 gap-y-10 sm:grid-cols-2">
-            {p.presets.map((pr) => (
-              <li key={pr.name} className="border-t border-ink/15 pt-4">
-                {pr.image && <Still image={pr.image} alt={`${pr.name} preset`} fit />}
-                <h3 className="mt-4 font-jb text-[16px] font-medium text-ink">{pr.name}</h3>
-                {pr.line && <p className={`${body} mt-1`}>{pr.line}</p>}
-              </li>
-            ))}
-          </ul>
-        </Block>
-      )}
-
-      {p.examples.length > 0 && (
-        <Block id="examples" title="Examples">
-          {p.examples.map((e) => (
-            <CodeBlock key={e.title} title={e.title} code={e.code} />
-          ))}
-        </Block>
-      )}
-
-      {hasStudio && studio && (
-        <Block id="studio" title="In Studio">
-          {studio.panel && (
-            <div className="space-y-2">
-              <h3 className="font-dm text-[18px] font-bold tracking-[-0.02em] text-ink">Panel</h3>
-              <p className={`${body} max-w-[68ch]`}>{studio.panel}</p>
-            </div>
-          )}
-          {studio.tools.length > 0 && (
-            <div className="space-y-3">
-              <h3 className="font-dm text-[18px] font-bold tracking-[-0.02em] text-ink">Agent tools</h3>
-              <ul className="space-y-3">
-                {studio.tools.map((t) => (
-                  <li key={t.name} className={`${body} max-w-[68ch]`}>
-                    <Mono>{t.name}</Mono> {t.text}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {studio.note && <p className={`${body} max-w-[68ch]`}>{studio.note}</p>}
-          <p className={`${body} max-w-[68ch]`}>{studio.installed}</p>
-        </Block>
-      )}
 
       {demos.length > 0 && (
         <Block id="demos" title="Demos">
@@ -381,6 +337,115 @@ export default async function PluginPage(props: { params: Promise<Params> }) {
           ))}
         </Block>
       )}
+      <div id="reference" className="mt-24 scroll-mt-8 border-t-2 border-ink pt-6">
+        <h2 className="font-dm text-[clamp(30px,3.2vw,44px)] leading-tight font-bold tracking-[-0.04em] text-ink">Reference</h2>
+        <p className={`${body} mt-2 max-w-[62ch]`}>Exports, props and examples, for wiring it into a project.</p>
+        <div className="mt-4">
+          <Label className="mb-2">Ships with</Label>
+          <Badges panel={p.hasPanel} tools={p.hasTools} skill={p.hasSkill} />
+        </div>
+        <nav
+          aria-label="Reference sections"
+          className="sticky top-0 z-30 -mx-1 mt-6 overflow-x-auto border-b border-ink/15 bg-ground px-1 py-3"
+        >
+          <ul className="flex gap-5 font-jb text-[12px] tracking-[0.04em] whitespace-nowrap">
+            {jump.map(([id, name]) => (
+              <li key={id}>
+                <a href={`#${id}`} className={`${link} kc-press inline-block`}>
+                  {name}
+                </a>
+              </li>
+            ))}
+            <li className="ml-auto">
+              <a href="#" className={`${link} kc-press inline-block`}>
+                Top
+              </a>
+            </li>
+          </ul>
+        </nav>
+        {p.exports.length > 0 && (
+          <Block className="mt-14" id="exports" title="What it exports">
+            <Exports items={p.exports} />
+          </Block>
+        )}
+
+        {p.genes && (
+          <Block className="mt-14" id="genes" title="Genes by slot">
+            <p className={`${body} max-w-[68ch]`}>Each slot holds one gene. Lock a slot to keep its gene, or leave it to the seed.</p>
+            <Genes slots={p.genes} />
+          </Block>
+        )}
+
+        {p.looks && (
+          <Block className="mt-14" id="looks" title="Looks">
+            <p className={`${body} max-w-[68ch]`}>The look kinds the Studio panel can switch between, and the export that draws each.</p>
+            <Looks looks={p.looks} />
+          </Block>
+        )}
+
+        {p.stocks && (
+          <Block className="mt-14" id="paper-lists" title="Stocks, edges and layouts">
+            <PaperLists p={p} />
+          </Block>
+        )}
+
+        {p.faces && (
+          <Block className="mt-14" id="faces" title="Faces">
+            <Names title="Handwritten, mixed a letter at a time" items={p.faces.hands} />
+            <Names title="Display, for key words" items={p.faces.display} />
+          </Block>
+        )}
+
+        {p.presets.length > 0 && (
+          <Block className="mt-14" id="presets" title="Presets">
+            {p.presetNote && <p className={`${body} max-w-[68ch]`}>{p.presetNote}</p>}
+            <ul className="grid gap-x-8 gap-y-10 sm:grid-cols-2">
+              {p.presets.map((pr) => (
+                <li key={pr.name} className="border-t border-ink/15 pt-4">
+                  {pr.image && <Still image={pr.image} alt={`${pr.name} preset`} fit />}
+                  <h3 className="mt-4 font-jb text-[16px] font-medium text-ink">{pr.name}</h3>
+                  {pr.line && <p className={`${body} mt-1`}>{pr.line}</p>}
+                </li>
+              ))}
+            </ul>
+          </Block>
+        )}
+
+        {p.examples.length > 0 && (
+          <Block className="mt-14" id="examples" title="Examples">
+            {p.examples.map((e) => (
+              <CodeBlock key={e.title} title={e.title} code={e.code} />
+            ))}
+          </Block>
+        )}
+
+        {hasStudio && studio && (
+          <Block className="mt-14" id="studio" title="In Studio">
+            {studio.panel && (
+              <div className="space-y-2">
+                <h3 className="font-dm text-[18px] font-bold tracking-[-0.02em] text-ink">Panel</h3>
+                <p className={`${body} max-w-[68ch]`}>{studio.panel}</p>
+              </div>
+            )}
+            {studio.tools.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="font-dm text-[18px] font-bold tracking-[-0.02em] text-ink">Agent tools</h3>
+                <ul className="space-y-3">
+                  {studio.tools.map((t) => (
+                    <li key={t.name} className={`${body} max-w-[68ch]`}>
+                      <Mono>{t.name}</Mono> {t.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {studio.note && <p className={`${body} max-w-[68ch]`}>{studio.note}</p>}
+            <p className={`${body} max-w-[68ch]`}>{studio.installed}</p>
+          </Block>
+        )}
+      </div>
+
+      <Adjacent label="plugin" prev={toItem(prev)} next={toItem(next)} />
     </CatalogPage>
   );
 }
