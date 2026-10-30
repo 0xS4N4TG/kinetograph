@@ -252,3 +252,82 @@
 @media (prefers-reduced-motion: reduce) {
   .kg-in, .kg-box { animation: none !important; }
 }
+
+/* Catalog showroom motion: transform, opacity and clip-path only, named properties, no ease-in. */
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-io: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+/* Pressable cards and links. */
+.kc-press {
+  transition: transform 160ms var(--ease-out);
+}
+.kc-press:active {
+  transform: scale(0.97);
+}
+
+/* Index tiles: from opacity 0 and 8px down, a short stagger set by --i, toggled once by data-in. */
+.kc-enter {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.kc-enter[data-in] {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 240ms var(--ease-out),
+    transform 240ms var(--ease-out);
+  transition-delay: calc(var(--i, 0) * 50ms);
+}
+
+/* Big hero and feature clips: revealed once from the top down, 600ms. */
+.kc-wipe {
+  clip-path: inset(0 0 100% 0);
+}
+.kc-wipe[data-in] {
+  clip-path: inset(0);
+  transition: clip-path 600ms var(--ease-io);
+}
+
+.kc-media {
+  transition: transform 200ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .kc-tile:hover .kc-media {
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kc-enter {
+    transform: none;
+  }
+  .kc-enter[data-in] {
+    transition: opacity 200ms var(--ease-out);
+    transition-delay: 0ms;
+  }
+  .kc-wipe {
+    clip-path: none;
+    opacity: 0;
+  }
+  .kc-wipe[data-in] {
+    opacity: 1;
+    transition: opacity 300ms var(--ease-out);
+  }
+  .kc-press:active {
+    transform: none;
+  }
+  .kc-tile:hover .kc-media {
+    transform: none;
+  }
+}
+
+@media (scripting: none) {
+  .kc-enter,
+  .kc-wipe {
+    opacity: 1;
+    transform: none;
+    clip-path: none;
+  }
+}
