@@ -10,7 +10,11 @@ export const metadata: Metadata = {
   description: 'Plugins and reel templates for Kinetograph: what each one draws and what you change.',
 };
 
-const grid = 'mt-6 grid gap-x-8 gap-y-12 sm:grid-cols-2 lg:grid-cols-3';
+/** Plugins: two columns from md up, one under. */
+const pluginGrid = 'mt-6 grid grid-cols-1 gap-x-8 gap-y-12 md:grid-cols-2';
+/** Templates: twelve columns from md up, one under. Five cards span 7+5 then 4+4+4, so no cell is empty. */
+const templateGrid = 'mt-6 grid grid-cols-1 gap-x-8 gap-y-12 md:grid-cols-12';
+const templateSpan = ['md:col-span-7', 'md:col-span-5', 'md:col-span-4', 'md:col-span-4', 'md:col-span-4'];
 
 export default function PluginsPage() {
   return (
@@ -26,7 +30,7 @@ export default function PluginsPage() {
         <Label>
           <span id="plugins">Plugins ({plugins.length})</span>
         </Label>
-        <ul className={grid}>
+        <ul className={pluginGrid}>
           {plugins.map((p) => (
             <Card key={p.slug} href={`/plugins/${p.slug}/`} title={p.title} image={p.hero}>
               <p className={body}>{p.description}</p>
@@ -41,9 +45,9 @@ export default function PluginsPage() {
         <Label>
           <span id="templates">Templates ({templates.length})</span>
         </Label>
-        <ul className={grid}>
-          {templates.map((t) => (
-            <Card key={t.id} href={`/templates/${t.id}/`} title={t.title} image={t.hero}>
+        <ul className={templateGrid}>
+          {templates.map((t, i) => (
+            <Card key={t.id} href={`/templates/${t.id}/`} title={t.title} image={t.hero} className={templateSpan[i]}>
               <p className={body}>{t.description}</p>
             </Card>
           ))}

@@ -10,6 +10,12 @@ export interface Image {
   caption?: string;
 }
 
+/** A clip extracted by scripts/catalog.mjs: an mp4 under public/catalog, with its first frame as the poster (the Image fields). */
+export interface Clip extends Image {
+  video: string;
+  len: number;
+}
+
 export interface Prop {
   name: string;
   type: string;
@@ -44,7 +50,7 @@ export interface Demo {
   title: string;
   text: string;
   compositions: string[];
-  stills: Image[];
+  clips: Clip[];
 }
 
 export interface Plugin {
@@ -56,15 +62,14 @@ export interface Plugin {
   hasPanel: boolean;
   hasTools: boolean;
   hasSkill: boolean;
-  about: string[];
+  intro: string;
+  features: { title: string; text: string; clip: Clip }[];
   exports: Export[];
   presets: { name: string; line: string; image: Image | null }[];
   presetNote: string;
   examples: { title: string; code: string }[];
   studio: { panel: string; tools: { name: string; text: string }[]; note: string; installed: string } | null;
-  hero: Image | null;
-  /** Frames from other reels that show a component the demos do not. */
-  stills: Image[];
+  hero: Clip | null;
   demos: Demo[];
   /** Hexed: the genes each slot can roll. */
   genes?: GeneSlot[];
@@ -86,7 +91,7 @@ export interface Template {
   change: string[];
   plugins: string[];
   compositions: string[];
-  hero: Image | null;
+  hero: Clip | null;
 }
 
 export const plugins = catalog.plugins as unknown as Plugin[];

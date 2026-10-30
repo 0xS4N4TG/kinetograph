@@ -35,7 +35,7 @@ export default async function TemplatePage(props: { params: Promise<Params> }) {
       <p className="mt-4 text-[14px] text-mute">Coming; not published yet.</p>
       {t.hero && (
         <div className="mt-10">
-          <Figure image={t.hero} alt={`${t.title}, a frame from the finished video`} />
+          <Figure media={t.hero} alt={`${t.title}, a clip of the finished video`} />
         </div>
       )}
 

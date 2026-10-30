@@ -3,8 +3,8 @@ import { notFound } from 'next/navigation';
 
 import { CodeBlock } from '@/components/code';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { plugins, type Export, type GeneSlot, type Look, type Plugin } from '@/lib/catalog';
-import { Back, Badges, Block, CatalogPage, Draws, Figure, Paragraphs, Still } from '@/sections/catalog';
+import { plugins, type Clip, type Export, type GeneSlot, type Look, type Plugin } from '@/lib/catalog';
+import { Back, Badges, Block, CatalogPage, Draws, Figure, Still } from '@/sections/catalog';
 import { Heading } from '@/sections/heading';
 import { body } from '@/sections/shared';
 
@@ -73,7 +73,7 @@ function Doc({ e }: { e: Export }) {
   );
 }
 
-/** Components, effects, functions and constants, each as the source describes it. Constants without a line are one list. */
+/** Components open with their prop tables. Effects, functions and constants each sit in a disclosure, closed until opened. */
 function Exports({ items }: { items: Export[] }) {
   return (
     <>
@@ -82,74 +82,83 @@ function Exports({ items }: { items: Export[] }) {
         if (rows.length === 0) return null;
         const plain = g.kind === 'constant' ? rows.filter((e) => !e.summary) : [];
         const described = rows.filter((e) => !plain.includes(e));
-        return (
-          <div key={g.kind} className="space-y-4">
-            <h3 className="font-dm text-[18px] font-bold tracking-[-0.02em] text-ink">{g.title}</h3>
-            {g.note && <p className={`${body} max-w-[68ch]`}>{g.note}</p>}
+        const list = (
+          <div className="space-y-4">
             {described.map((e) => (
               <Doc key={e.name} e={e} />
             ))}
-            {plain.length > 0 && (
-              <p className="border-t border-ink/15 pt-5 font-jb text-[13px] leading-[1.8] text-ink/80">{plain.map((e) => e.name).join('  ')}</p>
-            )}
+            {plain.length > 0 && <p className="pt-2 font-jb text-[13px] leading-[1.8] text-ink/80">{plain.map((e) => e.name).join('  ')}</p>}
           </div>
+        );
+        if (g.kind === 'component') {
+          return (
+            <div key={g.kind} className="space-y-4">
+              <h3 className="font-dm text-[18px] font-bold tracking-[-0.02em] text-ink">{g.title}</h3>
+              {g.note && <p className={`${body} max-w-[68ch]`}>{g.note}</p>}
+              {list}
+            </div>
+          );
+        }
+        return (
+          <details key={g.kind} className="group border-t border-ink/15 pt-4">
+            <summary className="cursor-pointer font-dm text-[18px] font-bold tracking-[-0.02em] text-ink marker:text-ink/40 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cobalt">
+              {g.title} ({rows.length})
+            </summary>
+            <div className="mt-4 space-y-4">
+              {g.note && <p className={`${body} max-w-[68ch]`}>{g.note}</p>}
+              {list}
+            </div>
+          </details>
         );
       })}
     </>
   );
 }
 
+/** Genes by slot: one group per slot, each gene a chip. The note is the chip's title and, for screen readers, hidden text. */
 function Genes({ slots }: { slots: GeneSlot[] }) {
   return (
-    <>
+    <div className="grid gap-x-10 gap-y-8 md:grid-cols-2">
       {slots.map((s) => (
-        <div key={s.slot} className="space-y-3 border-t border-ink/15 pt-5">
+        <div key={s.slot} className="space-y-3">
           <h3 className="font-jb text-[16px] font-medium text-ink">
             {s.slot} <span className="text-mute">({s.genes.length})</span>
           </h3>
           {s.note && <p className={`${body} max-w-[68ch]`}>{s.note}</p>}
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Gene</TableHead>
-                <TableHead>What it does</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {s.genes.map((g) => (
-                <TableRow key={g.id}>
-                  <TableCell className="align-top font-jb text-[13px]">{g.id}</TableCell>
-                  <TableCell className="align-top leading-[1.5] whitespace-normal">{g.note}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <ul className="flex flex-wrap gap-1.5">
+            {s.genes.map((g) => (
+              <li key={g.id}>
+                <span
+                  tabIndex={0}
+                  title={g.note}
+                  className="inline-block rounded-sm border border-ink/20 px-2 py-1 font-jb text-[12px] text-ink focus-visible:outline-2 focus-visible:outline-cobalt"
+                >
+                  {g.id}
+                  <span className="sr-only">: {g.note}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       ))}
-    </>
+    </div>
   );
 }
 
+/** The look kinds as a two-column list on desktop, one column under md. */
 function Looks({ looks }: { looks: Look[] }) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Look</TableHead>
-          <TableHead>Drawn by</TableHead>
-          <TableHead>What it does</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {looks.map((l) => (
-          <TableRow key={l.kind}>
-            <TableCell className="align-top font-jb text-[13px]">{l.kind}</TableCell>
-            <TableCell className="align-top font-jb text-[13px]">{l.uses || '-'}</TableCell>
-            <TableCell className="align-top leading-[1.5] whitespace-normal">{l.summary}</TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <dl className="grid gap-x-10 gap-y-6 md:grid-cols-2">
+      {looks.map((l) => (
+        <div key={l.kind} className="space-y-1">
+          <dt className="font-jb text-[14px] font-medium text-ink">
+            {l.kind}
+            {l.uses && <span className="text-mute"> {l.uses}</span>}
+          </dt>
+          <dd className={body}>{l.summary}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -174,6 +183,75 @@ function PaperLists({ p }: { p: Plugin }) {
   );
 }
 
+type Feature = Plugin['features'][number];
+
+/** One feature: a heading of a few words, a sentence or two, and its clip with one caption line under it. */
+function FeatureBlock({ f }: { f: Feature }) {
+  return (
+    <div className="space-y-3">
+      <h3 className="font-dm text-[20px] font-bold tracking-[-0.02em] text-ink">{f.title}</h3>
+      <p className={`${body} max-w-[60ch]`}>{f.text}</p>
+      <Figure media={f.clip} alt={`${f.title}, a clip`} caption={f.clip.caption} />
+    </div>
+  );
+}
+
+type Group = { kind: 'full' | 'pair' | 'stack'; at: number[] };
+/**
+ * How each plugin lays out its features, so no two pages repeat a shape and none is an image-left, image-right zigzag.
+ * full: one wide clip. pair: two side by side. stack: a large clip beside two small ones. Every group is one column under md.
+ */
+const LAYOUTS: Record<string, Group[]> = {
+  hexed: [{ kind: 'full', at: [0] }, { kind: 'pair', at: [1, 2] }],
+  'kinetic-typography': [{ kind: 'pair', at: [0, 1] }],
+  paper: [{ kind: 'pair', at: [0, 1] }, { kind: 'full', at: [2] }],
+  vj: [{ kind: 'stack', at: [0, 1, 2] }, { kind: 'pair', at: [3, 4] }],
+};
+
+function Features({ slug, items }: { slug: string; items: Feature[] }) {
+  const groups = LAYOUTS[slug] ?? [{ kind: 'pair' as const, at: items.map((_, i) => i) }];
+  return (
+    <div className="mt-8 space-y-14">
+      {groups.map((g) => {
+        const fs = g.at.map((i) => items[i]).filter((f) => f !== undefined);
+        if (g.kind === 'full') return <FeatureBlock key={g.at.join()} f={fs[0]} />;
+        if (g.kind === 'stack') {
+          const [big, ...rest] = fs;
+          return (
+            <div key={g.at.join()} className="grid grid-cols-1 gap-10 md:grid-cols-[3fr_2fr]">
+              <FeatureBlock f={big} />
+              <div className="grid grid-cols-1 content-start gap-10">
+                {rest.map((f) => (
+                  <FeatureBlock key={f.title} f={f} />
+                ))}
+              </div>
+            </div>
+          );
+        }
+        return (
+          <div key={g.at.join()} className="grid grid-cols-1 gap-10 md:grid-cols-2">
+            {fs.map((f) => (
+              <FeatureBlock key={f.title} f={f} />
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** A demo's clips: two columns from md up, one under. Portrait clips run three across and keep their narrow width. */
+function DemoClips({ clips, title }: { clips: Clip[]; title: string }) {
+  const portrait = clips.every((c) => c.h > c.w);
+  return (
+    <div className={portrait ? 'grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3' : 'grid grid-cols-1 gap-6 md:grid-cols-2'}>
+      {clips.map((c) => (
+        <Figure key={c.video} media={c} alt={c.caption ?? title} caption={c.caption} />
+      ))}
+    </div>
+  );
+}
+
 export default async function PluginPage(props: { params: Promise<Params> }) {
   const { slug } = await props.params;
   const p = plugins.find((x) => x.slug === slug);
@@ -194,19 +272,13 @@ export default async function PluginPage(props: { params: Promise<Params> }) {
       </div>
       {p.hero && (
         <div className="mt-10">
-          <Figure image={p.hero} alt={`${p.title}, a frame from its demo`} />
+          <Figure media={p.hero} alt={`${p.title}, a clip from its demo`} />
         </div>
       )}
 
       <Block id="what" title="What it does">
-        <Paragraphs items={p.about} />
-        {p.stills.length > 0 && (
-          <div className="mt-8 grid gap-6 sm:grid-cols-2">
-            {p.stills.map((s) => (
-              <Figure key={s.src} image={s} alt={s.caption ?? p.title} caption={s.caption} />
-            ))}
-          </div>
-        )}
+        <p className={`${body} max-w-[68ch]`}>{p.intro}</p>
+        <Features slug={p.slug} items={p.features} />
       </Block>
 
       {p.exports.length > 0 && (
@@ -304,13 +376,7 @@ export default async function PluginPage(props: { params: Promise<Params> }) {
                   {d.compositions.join('  ')}
                 </p>
               )}
-              {d.stills.length > 0 && (
-                <div className="grid gap-6 sm:grid-cols-2">
-                  {d.stills.map((s) => (
-                    <Figure key={s.src} image={s} alt={s.caption ?? d.title} caption={s.caption} />
-                  ))}
-                </div>
-              )}
+              {d.clips.length > 0 && <DemoClips clips={d.clips} title={d.title} />}
             </div>
           ))}
         </Block>

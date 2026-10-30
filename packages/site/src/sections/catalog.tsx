@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
 
+import { ClipPlayer } from '@/components/clip-player';
 import { Badge } from '@/components/ui/badge';
-import type { Image } from '@/lib/catalog';
+import type { Clip, Image } from '@/lib/catalog';
 import { cn } from '@/lib/utils';
 import { Nav } from '@/sections/nav';
-import { body, link, section, shell } from '@/sections/shared';
+import { link, section, shell } from '@/sections/shared';
 
 /** The page frame the catalog pages share: the nav, then the shell. */
 export function CatalogPage({ children }: { children: ReactNode }) {
@@ -52,21 +53,26 @@ export function Still({ image, alt, fit = false, className }: { image: Image; al
   );
 }
 
-/** A still with its caption, for a page body. Portrait stills stay narrow. */
-export function Figure({ image, alt, caption }: { image: Image; alt: string; caption?: string }) {
-  const portrait = image.h > image.w;
+const isClip = (m: Image | Clip): m is Clip => 'video' in m;
+
+/**
+ * A clip (or a still) with one plain caption line under it. Portrait media stays narrow. The caption is text under the
+ * media, never over it.
+ */
+export function Figure({ media, alt, caption, className }: { media: Image | Clip; alt: string; caption?: string; className?: string }) {
+  const portrait = media.h > media.w;
   return (
-    <figure className={cn(portrait && 'max-w-[420px]')}>
-      <Still image={image} alt={alt} />
+    <figure className={cn(portrait && 'max-w-[360px]', className)}>
+      {isClip(media) ? <ClipPlayer clip={media} label={alt} /> : <Still image={media} alt={alt} />}
       {caption && <figcaption className="mt-2 text-[14px] text-mute">{caption}</figcaption>}
     </figure>
   );
 }
 
 /** A card of the index grids: a still, a title, text, and a link over the whole card. */
-export function Card({ href, title, image, children }: { href: string; title: string; image: Image | null; children: ReactNode }) {
+export function Card({ href, title, image, children, className }: { href: string; title: string; image: Image | null; children: ReactNode; className?: string }) {
   return (
-    <li className="group relative flex flex-col border-t border-ink/15 pt-4">
+    <li className={cn('group relative flex flex-col border-t border-ink/15 pt-4', className)}>
       {image ? <Still image={image} alt="" fit /> : <div className="aspect-[16/10] bg-ink/5" />}
       <h3 className="mt-4 font-dm text-[22px] leading-tight font-bold tracking-[-0.03em] text-ink">
         <a href={href} className="after:absolute after:inset-0 group-hover:text-cobalt">
@@ -93,16 +99,4 @@ export function Badges({ panel, tools, skill }: { panel: boolean; tools: boolean
 export function Draws({ names }: { names: string[] }) {
   if (names.length === 0) return null;
   return <p className="font-jb text-[13px] text-ink/75">Draws {names.map((c) => `<${c}>`).join(' ')}</p>;
-}
-
-export function Paragraphs({ items }: { items: string[] }) {
-  return (
-    <>
-      {items.map((t) => (
-        <p key={t} className={`${body} max-w-[68ch]`}>
-          {t}
-        </p>
-      ))}
-    </>
-  );
 }
