@@ -200,6 +200,13 @@ export default async function PluginPage(props: { params: Promise<Params> }) {
 
       <Block id="what" title="What it does">
         <Paragraphs items={p.about} />
+        {p.stills.length > 0 && (
+          <div className="mt-8 grid gap-6 sm:grid-cols-2">
+            {p.stills.map((s) => (
+              <Figure key={s.src} image={s} alt={s.caption ?? p.title} caption={s.caption} />
+            ))}
+          </div>
+        )}
       </Block>
 
       {p.exports.length > 0 && (

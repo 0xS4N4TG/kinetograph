@@ -63,6 +63,8 @@ export interface Plugin {
   examples: { title: string; code: string }[];
   studio: { panel: string; tools: { name: string; text: string }[]; note: string; installed: string } | null;
   hero: Image | null;
+  /** Frames from other reels that show a component the demos do not. */
+  stills: Image[];
   demos: Demo[];
   /** Hexed: the genes each slot can roll. */
   genes?: GeneSlot[];

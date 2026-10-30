@@ -183,6 +183,7 @@ const plugins = pluginDirs.map((d) => {
     examples: c?.examples ?? [],
     studio: c?.studio ?? null,
     hero: c?.media.hero ? still(c.media.hero, `plugins/${d}/hero`) : null,
+    stills: (c?.media.stills ?? []).map((e, i) => still(e, `plugins/${d}/still-${i + 1}`)),
     demos: [],
   };
   if (d === 'hexed') {

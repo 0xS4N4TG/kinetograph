@@ -92,9 +92,10 @@ import { pointAt } from '@kinetographdev/vj';
   },
 
   paper: {
-    summary: 'Paper textures and what you can make from them: a keyword held still while pages flick past underneath, and photo cut-outs that unfold from a crumpled packet.',
+    summary: 'Paper textures and what you can make from them: a keyword held still while pages flick past underneath, photo cut-outs that unfold from a crumpled packet, and a hand-drawn line round a moving subject on torn paper.',
     about: [
       'Paper gives a video the feel of real paper: creases, scanned fibres, grain. MatchCut holds a highlighted keyword in place while the page under it changes several times a second, using made-up pages or your own screenshots. CutOut turns a photo with its background removed into a paper cut-out, and FoldOut opens it from a crumpled packet in stop motion.',
+      'Scrapline draws a marker, pencil, crayon, scribble or brush line round a cut-out subject, on torn white, kraft, binder, cardboard or newsprint paper behind it. The line and the paper redraw a few times a second and hold in between, like hand animation, and it follows moving footage from a matte video.',
       'MatchCut comes with four looks to start from: web, broadsheet, crumpled and clean. Change any detail on top. With your own screenshots, draw a rough box round the word and it snaps to the word.',
       'Use it for fast keyword-over-pages edits and paper-craft looks.',
     ],
@@ -133,6 +134,10 @@ flicks({ frames: 150, fps: 30, cutsPerSecond: 10 });
     },
     media: {
       hero: { from: 'effects/match-cut/out/Broadsheet.mp4', at: 1 },
+      stills: [
+        { from: 'effects/scrapline/out/demo-f165.png', caption: 'Scrapline: a crayon line on binder paper round a moving subject.' },
+        { from: 'effects/scrapline/out/posters-f150.png', caption: 'Scrapline round posters, from an SVG path.' },
+      ],
       presets: {
         web: { from: 'effects/match-cut/out/web.mp4', at: 1 },
         broadsheet: { from: 'effects/match-cut/out/Broadsheet.mp4', at: 1 },
@@ -146,10 +151,10 @@ flicks({ frames: 150, fps: 30, cutsPerSecond: 10 });
   },
 
   vj: {
-    summary: 'Make footage look like it came from a CRT, a worn VHS tape, a thermal camera or a 1-bit screen, and draw tracking boxes on whatever moves.',
+    summary: 'Make footage look like it came from a CRT, a worn VHS tape, a thermal camera or a 1-bit screen, cut a person into a cyberpunk pop-art poster, and draw tracking boxes on whatever moves.',
     about: [
       'VJ makes a picture seem to come from a screen, a tape or a sensor. There is a CRT with curved glass and scanlines that can switch off, a worn VHS tape, a 1-bit dither in two inks, a thermal camera palette, a depth map look and a magnifier that breaks into red, green and blue subpixels. Brightness stands in for heat and depth, so these are looks, not measurements.',
-      'Flash looks add acid heat, night vision, screen glow and grainy black and white. PopArt puts a pop-art cut-in on a clip of a person.',
+      'Flash looks add acid heat, night vision, screen glow and grainy black and white. PopArt is the cyberpunk cut-in: footage of a person cuts to an anime poster of them, flattened into blue tones with ink lines and coloured rim light, over a halftone of the camera and flying shapes.',
       'It also draws tracking marks. A tracker runs once over a clip and saves where things moved. Blobs then draws boxes, ids, coordinates and links on every frame, and Reticle puts a ticked box on a single tracked point. The track is saved, so the video renders the same way every time.',
     ],
     presetNote: '',
@@ -182,6 +187,9 @@ node plugins/vj/tools/track.mjs --in public/clip.mp4 --box 900,300,120,120 --out
     },
     media: {
       hero: { from: 'effects/vj-demo/out/Thermal-40.png' },
+      stills: [
+        { from: 'effects/cyberpunk-reel/out/f150.png', caption: 'PopArt: the cyberpunk poster cut-in, from the cyberpunk reel.' },
+      ],
       presets: {},
       demos: {
         'vj-demo': [
