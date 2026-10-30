@@ -1,0 +1,123 @@
+{
+  "plugins": [
+    {
+      "name": "@kinetographdev/hexed",
+      "title": "Hexed",
+      "description": "Rolls a look onto any picture from slots like grade, screen, optics and damage; lock what you like and shuffle the rest.",
+      "components": [
+        "Hexed"
+      ],
+      "hasPanel": true,
+      "hasTools": true,
+      "hasSkill": true,
+      "demos": [
+        {
+          "id": "hexed-demo",
+          "title": "Hexed rolls"
+        },
+        {
+          "id": "plugin-ui-demo",
+          "title": "Studio panels"
+        }
+      ]
+    },
+    {
+      "name": "@kinetographdev/kinetic-typography",
+      "title": "Kinetic Typography",
+      "description": "Kinetic typography for Kinetograph: type that moves with the voice and the picture.",
+      "components": [
+        "HandCaptions"
+      ],
+      "hasPanel": false,
+      "hasTools": false,
+      "hasSkill": true,
+      "demos": [
+        {
+          "id": "kinetic-type-demo",
+          "title": "Hand captions"
+        }
+      ]
+    },
+    {
+      "name": "@kinetographdev/paper",
+      "title": "Paper",
+      "description": "A paper material with creases, scans and grain, and effects made of it, such as a text match cut and folded cut-outs.",
+      "components": [
+        "MatchCut",
+        "Paper",
+        "CutOut",
+        "FoldOut"
+      ],
+      "hasPanel": true,
+      "hasTools": false,
+      "hasSkill": true,
+      "demos": [
+        {
+          "id": "match-cut",
+          "title": "Match cut presets"
+        },
+        {
+          "id": "paper-photo",
+          "title": "Paper photo effects"
+        },
+        {
+          "id": "plugin-ui-demo",
+          "title": "Studio panels"
+        }
+      ]
+    },
+    {
+      "name": "@kinetographdev/vj",
+      "title": "VJ",
+      "description": "TouchDesigner-style VJ effects for Kinetograph.",
+      "components": [
+        "Blobs"
+      ],
+      "hasPanel": true,
+      "hasTools": false,
+      "hasSkill": true,
+      "demos": [
+        {
+          "id": "plugin-ui-demo",
+          "title": "Studio panels"
+        },
+        {
+          "id": "vj-demo",
+          "title": "VJ looks and tracking"
+        }
+      ]
+    }
+  ],
+  "templates": [
+    {
+      "id": "cyberpunk-reel",
+      "title": "Cyberpunk Reel",
+      "description": "Pop-art cut-in reel (subject cut out of public-domain footage, halftone, rays, title strips, synthesised sound).",
+      "plugins": []
+    },
+    {
+      "id": "lyric-reel",
+      "title": "Lyric Reel",
+      "description": "A kinetic-type lyric reel in four looks, rebuilt shot for shot from a reference reel's camera work, timing and textures: silver words stacking in a night sky full of glinting stars that streak when the camera moves, black type on an orange band between letterbox bars, small blue words turning in the clouds, and a finale back in the stars.",
+      "plugins": []
+    },
+    {
+      "id": "scrapline",
+      "title": "Scrapline",
+      "description": "A hand-drawn border round a cut-out subject: a wobbly marker, pencil, crayon, scribble or brush line, on a sheet of torn paper behind it.",
+      "plugins": []
+    },
+    {
+      "id": "wish-reel",
+      "title": "Wish Reel",
+      "description": "The wish style: an 18 s pop-art edit rebuilt in Kinetograph from a reference reel, and made into a template that runs on any footage.",
+      "plugins": []
+    },
+    {
+      "id": "word-flash",
+      "title": "Word Flash",
+      "description": "A black-and-white type spot for brands, cut on every hit of its track: one word or a two-word lockup per cut, the background swapping black and white at each one.",
+      "plugins": []
+    }
+  ]
+}
