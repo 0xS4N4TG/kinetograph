@@ -2920,50 +2920,6 @@
   ],
   "templates": [
     {
-      "id": "cyberpunk-reel",
-      "title": "Cyberpunk Reel",
-      "description": "A nine-second pop-art reel in full HD. A person cut out of your footage is painted in blue anime tones over a halftone background, with jagged rays, flying low-poly shapes and flames behind a three-row title. The cuts in and out break into shards and slices.",
-      "change": [
-        "Your footage and a matte of the person. The media tool crops the clip, makes the matte and tracks the person for you.",
-        "The kicker and the two title lines."
-      ],
-      "plugins": [],
-      "compositions": [
-        "CyberpunkReel"
-      ],
-      "hero": {
-        "src": "/catalog/templates/cyberpunk-reel/hero.webp",
-        "w": 1280,
-        "h": 720,
-        "from": "effects/cyberpunk-reel/out/cyberpunk-reel.mp4",
-        "at": 6,
-        "video": "/catalog/templates/cyberpunk-reel/hero.mp4",
-        "len": 5
-      }
-    },
-    {
-      "id": "lyric-reel",
-      "title": "Lyric Reel",
-      "description": "A seventeen-second square kinetic-type video in four looks: silver words stacking in a night sky full of glinting stars, black type on an orange band between letterbox bars, small blue words turning in the clouds, and a finale back in the stars. The words sit in 3D and one camera moves through them.",
-      "change": [
-        "The words. Each one has a frame where it starts to arrive. Keep the same number of words per shot, or adjust the shot layouts to match.",
-        "The song. It starts playing 16.04 seconds in."
-      ],
-      "plugins": [],
-      "compositions": [
-        "LyricReel"
-      ],
-      "hero": {
-        "src": "/catalog/templates/lyric-reel/hero.webp",
-        "w": 1280,
-        "h": 1280,
-        "from": "effects/lyric-reel/out/lyric-reel.mp4",
-        "at": 2,
-        "video": "/catalog/templates/lyric-reel/hero.mp4",
-        "len": 5
-      }
-    },
-    {
       "id": "scrapline",
       "title": "Scrapline demos",
       "description": "A hand-drawn border round a cut-out subject: a wobbly marker, pencil, crayon, scribble or brush line, on a sheet of torn paper behind it. Both are redrawn a few times a second, like hand animation.",
@@ -2985,29 +2941,6 @@
         "from": "effects/scrapline/out/scrapline-demo.mp4",
         "at": 20,
         "video": "/catalog/templates/scrapline/hero.mp4",
-        "len": 5
-      }
-    },
-    {
-      "id": "wish-reel",
-      "title": "Wish Reel",
-      "description": "An eighteen-second pop-art edit. Street footage flattens into pastel colours under ribbons of colour, with 3D props tracked into the scene. Then come a helix of strands in a white void, a collage of photos in stop motion, black title cards and a typewriter ending.",
-      "change": [
-        "The five clips. A bundled tool solves the camera for each one.",
-        "Or one video of your own, run through the WishFilter composition. It also takes eight photos for the collage."
-      ],
-      "plugins": [],
-      "compositions": [
-        "WishReel",
-        "WishFilter"
-      ],
-      "hero": {
-        "src": "/catalog/templates/wish-reel/hero.webp",
-        "w": 1280,
-        "h": 960,
-        "from": "effects/wish-reel/out/wish-reel.mp4",
-        "at": 2,
-        "video": "/catalog/templates/wish-reel/hero.mp4",
         "len": 5
       }
     },

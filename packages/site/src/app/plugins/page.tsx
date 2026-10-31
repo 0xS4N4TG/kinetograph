@@ -12,19 +12,13 @@ export const metadata: Metadata = {
 
 /** Plugins: two large tiles across from md up, one under. */
 const pluginGrid = 'mt-6 grid grid-cols-1 gap-x-8 gap-y-14 md:grid-cols-2';
-/**
- * Templates: a wall of hero clips, each at its own aspect. Three columns from md up with the portrait clip standing
- * tall in the first, two stacked in each of the others; one column under md, in this order.
- */
-const templateGrid = 'mt-6 grid grid-cols-1 gap-x-8 gap-y-12 md:grid-cols-3';
+/** Templates: a wall of hero clips, each at its own aspect. From md up the portrait clip takes one column and the wide one two; one column under md, in this order. */
+const templateGrid = 'mt-6 grid grid-cols-1 gap-x-8 gap-y-12 md:grid-cols-3 md:items-start';
 const templatePlace: Record<string, string> = {
-  'word-flash': 'md:col-start-1 md:row-span-2 md:row-start-1',
-  'cyberpunk-reel': 'md:col-start-2 md:row-start-1',
-  'lyric-reel': 'md:col-start-2 md:row-start-2',
-  scrapline: 'md:col-start-3 md:row-start-1',
-  'wish-reel': 'md:col-start-3 md:row-start-2',
+  'word-flash': 'md:col-start-1',
+  scrapline: 'md:col-span-2 md:col-start-2 md:row-start-1',
 };
-const order = ['cyberpunk-reel', 'lyric-reel', 'scrapline', 'wish-reel', 'word-flash'];
+const order = ['scrapline', 'word-flash'];
 const wall = [...templates].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
 
 export default function PluginsPage() {

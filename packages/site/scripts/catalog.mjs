@@ -35,7 +35,7 @@ const DEMOS = {
   'plugin-ui-demo': { title: 'Studio panels', plugins: ['hexed', 'paper', 'vj'] },
 };
 /** Studies, not for sale. */
-const EXCLUDED = new Set(['save-reel']);
+const EXCLUDED = new Set(['save-reel', 'cyberpunk-reel', 'lyric-reel', 'wish-reel']);
 
 const read = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : '');
 const dirs = (p) => readdirSync(p, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort();

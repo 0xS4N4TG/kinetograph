@@ -224,24 +224,6 @@ export const DEMO_TEXT = {
 };
 
 export const TEMPLATE_COPY = {
-  'cyberpunk-reel': {
-    description:
-      'A nine-second pop-art reel in full HD. A person cut out of your footage is painted in blue anime tones over a halftone background, with jagged rays, flying low-poly shapes and flames behind a three-row title. The cuts in and out break into shards and slices.',
-    change: [
-      'Your footage and a matte of the person. The media tool crops the clip, makes the matte and tracks the person for you.',
-      'The kicker and the two title lines.',
-    ],
-    media: { hero: { from: 'effects/cyberpunk-reel/out/cyberpunk-reel.mp4', at: 6, len: 5 } },
-  },
-  'lyric-reel': {
-    description:
-      'A seventeen-second square kinetic-type video in four looks: silver words stacking in a night sky full of glinting stars, black type on an orange band between letterbox bars, small blue words turning in the clouds, and a finale back in the stars. The words sit in 3D and one camera moves through them.',
-    change: [
-      'The words. Each one has a frame where it starts to arrive. Keep the same number of words per shot, or adjust the shot layouts to match.',
-      'The song. It starts playing 16.04 seconds in.',
-    ],
-    media: { hero: { from: 'effects/lyric-reel/out/lyric-reel.mp4', at: 2, len: 5 } },
-  },
   scrapline: {
     description:
       'A hand-drawn border round a cut-out subject: a wobbly marker, pencil, crayon, scribble or brush line, on a sheet of torn paper behind it. Both are redrawn a few times a second, like hand animation.',
@@ -250,15 +232,6 @@ export const TEMPLATE_COPY = {
       'The line style (Marker, Pencil, Crayon, Scribble or Brush), the paper (White, Kraft, Binder, Cardboard, your own picture or none), the line colour, the gap to the subject and the seed.',
     ],
     media: { hero: { from: 'effects/scrapline/out/scrapline-demo.mp4', at: 20, len: 5 } },
-  },
-  'wish-reel': {
-    description:
-      'An eighteen-second pop-art edit. Street footage flattens into pastel colours under ribbons of colour, with 3D props tracked into the scene. Then come a helix of strands in a white void, a collage of photos in stop motion, black title cards and a typewriter ending.',
-    change: [
-      'The five clips. A bundled tool solves the camera for each one.',
-      'Or one video of your own, run through the WishFilter composition. It also takes eight photos for the collage.',
-    ],
-    media: { hero: { from: 'effects/wish-reel/out/wish-reel.mp4', at: 2, len: 5 } },
   },
   'word-flash': {
     description:
