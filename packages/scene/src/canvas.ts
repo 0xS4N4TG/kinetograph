@@ -60,6 +60,39 @@ export interface CanvasContextOptions {
   canvas?: unknown;
 }
 
+/**
+ * Which frame of drawing an `ImageData`'s content hash was taken in: it moves on when a context begins one (`beginFrame`),
+ * is made or is reset. The same picture drawn many times in a frame is hashed once, so a write to `data` is seen at the first
+ * draw after the frame begins (and at every draw of a small one, below).
+ */
+let drawingEpoch = 0;
+
+/** An `ImageData` of at most this many bytes (a 128 x 128 picture) is hashed at every draw, so a write to it is always seen. */
+const HASHED_EVERY_DRAW = 1 << 16;
+
+/** A hash of `bytes` as two 32-bit words in one string: a cheap way to see that pixels were written to, not a defence against forgery. */
+function hashBytes(bytes: Uint8ClampedArray): string {
+  let a = 0x811c9dc5 | 0;
+  let b = 0x9e3779b9 | 0;
+  if (bytes.byteOffset % 4 === 0 && bytes.length % 4 === 0) {
+    const words = new Uint32Array(bytes.buffer, bytes.byteOffset, bytes.length >> 2);
+    for (let i = 0; i < words.length; i += 1) {
+      const w = words[i]!;
+      a = Math.imul(a ^ w, 0x01000193);
+      b = Math.imul(b + w, 0x85ebca6b) ^ (b >>> 13);
+    }
+  } else {
+    for (let i = 0; i < bytes.length; i += 1) {
+      a = Math.imul(a ^ bytes[i]!, 0x01000193);
+      b = Math.imul(b + bytes[i]!, 0x85ebca6b) ^ (b >>> 13);
+    }
+  }
+  return `${a >>> 0}:${b >>> 0}:${bytes.length}`;
+}
+
+/** The picture each `ImageData` last gave, with the hash of the pixels it was made from and the epoch that was taken in. */
+const imagePictures = new WeakMap<object, { epoch: number; hash: string; picture: CanvasPicture }>();
+
 function toBase64(bytes: Uint8ClampedArray): string {
   if (typeof Buffer !== 'undefined') return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('base64');
   let binary = '';
@@ -92,8 +125,21 @@ export class ImageData implements CanvasPictureSource {
     this.width = width;
     this.height = height;
   }
+  /**
+   * The same picture (one `source` object) for as long as the pixels are the same, so the scene writes pixels drawn
+   * many times once (`internSources`) and the encoding is made once, not at every draw.
+   */
   [CANVAS_SOURCE](): CanvasPicture {
-    return { source: { kind: 'pixels', width: this.width, height: this.height, data: toBase64(this.data) }, width: this.width, height: this.height };
+    const held = imagePictures.get(this);
+    if (held !== undefined && held.epoch === drawingEpoch && this.data.length > HASHED_EVERY_DRAW) return held.picture;
+    const hash = hashBytes(this.data);
+    if (held !== undefined && held.hash === hash) {
+      held.epoch = drawingEpoch;
+      return held.picture;
+    }
+    const picture: CanvasPicture = { source: { kind: 'pixels', width: this.width, height: this.height, data: toBase64(this.data) }, width: this.width, height: this.height };
+    imagePictures.set(this, { epoch: drawingEpoch, hash, picture });
+    return picture;
   }
 }
 
@@ -334,8 +380,25 @@ export class CanvasContext2D {
   /** Set by `beginFrame`: what is drawn is emptied when the first command of the frame is recorded. */
   private pending = false;
 
+  /** What `pictureSource` last gave, and the log (and its length) and size it was made from. */
+  private snapshot: { log: CanvasCommand[]; length: number; width: number; height: number; source: Extract<CanvasSource, { kind: 'canvas' }> } | null = null;
+
   constructor(private readonly options: CanvasContextOptions) {
     this.canvas = options.canvas;
+    drawingEpoch += 1;
+  }
+
+  /**
+   * This canvas as a picture of `width` by `height`: the commands drawn so far. It is the same object until something more is drawn
+   * (the log only grows, and a new frame or `reset` starts a new one), so a canvas drawn many times is one source, written
+   * once (`internSources`). Its length is the log's version.
+   */
+  pictureSource(width: number, height: number): Extract<CanvasSource, { kind: 'canvas' }> {
+    const held = this.snapshot;
+    if (held !== null && held.log === this.log && held.length === this.log.length && held.width === width && held.height === height) return held.source;
+    const source = { kind: 'canvas' as const, width, height, commands: [...this.log] };
+    this.snapshot = { log: this.log, length: this.log.length, width, height, source };
+    return source;
   }
 
   /** The drawing so far, in order: what a canvas layer's `commands` holds. */
@@ -365,6 +428,7 @@ export class CanvasContext2D {
    * draws, so a canvas redrawn each frame starts that frame empty and one nobody draws on keeps its pixels.
    */
   beginFrame(): void {
+    drawingEpoch += 1;
     this.resetState();
     this.pending = true;
   }
@@ -386,6 +450,7 @@ export class CanvasContext2D {
   }
 
   reset(): void {
+    drawingEpoch += 1;
     this.pending = false;
     this.log = [];
     this.saved.length = 0;
@@ -1050,7 +1115,87 @@ export function unsupportedFilters(commands: readonly CanvasCommand[]): string[]
   return [...found];
 }
 
-/** The scene layer for a context's drawing: its commands in a box of `width` by `height`. */
-export function canvasLayer(context: CanvasContext2D, layer: Omit<CanvasLayer, 'type' | 'commands'>): CanvasLayer {
-  return { ...layer, type: 'canvas', commands: context.commands };
+/** A source this long (a `data:` URL, say) is worth writing once; a path is not. */
+const SHARED_SRC_LENGTH = 256;
+
+const isShareable = (source: CanvasSource): boolean => source.kind === 'pixels' || source.kind === 'canvas' || (source.kind === 'src' && source.src.length > SHARED_SRC_LENGTH);
+
+/** The picture a command draws or fills with, if it has one. */
+function sourceOf(command: CanvasCommand): CanvasSource | undefined {
+  if (command.op === 'image') return command.source;
+  if ((command.op === 'fill' || command.op === 'stroke' || command.op === 'text') && command.paint.type === 'pattern') return command.paint.source;
+  return undefined;
+}
+
+/**
+ * `commands` with each picture that more than one command draws (the same `ImageData`, canvas or long `src` object, which is
+ * what drawing one object many times records) taken out into a table, each command holding a `{ kind: 'ref', index }` in its
+ * place. The table holds each picture once, with the pictures it draws before it (so an entry only refers to earlier ones);
+ * the renderer swaps the refs for the entries when it loads the layer, and decodes or records each once. A picture
+ * drawn once stays in its command, and `commands` come back untouched (no `sources`) when no picture is drawn twice, so a
+ * scene that never repeats one reads as it always did. The commands given are not changed.
+ */
+export function internSources(commands: CanvasCommand[]): { commands: CanvasCommand[]; sources?: CanvasSource[] } {
+  const uses = new Map<CanvasSource, number>();
+  const count = (list: readonly CanvasCommand[]): void => {
+    for (const command of list) {
+      const source = sourceOf(command);
+      if (source === undefined || !isShareable(source)) continue;
+      const seen = uses.get(source) ?? 0;
+      uses.set(source, seen + 1);
+      // What a canvas draws is counted once, however many commands draw the canvas.
+      if (seen === 0 && source.kind === 'canvas') count(source.commands);
+    }
+  };
+  count(commands);
+  if (![...uses.values()].some((n) => n > 1)) return { commands };
+
+  const table: CanvasSource[] = [];
+  const at = new Map<CanvasSource, number>();
+  const rewriteSource = (source: CanvasSource): CanvasSource => {
+    if (!isShareable(source)) return source;
+    const inside = (): CanvasSource => {
+      if (source.kind !== 'canvas') return source;
+      const inner = rewriteList(source.commands);
+      return inner === source.commands ? source : { ...source, commands: inner };
+    };
+    if ((uses.get(source) ?? 0) < 2) return inside();
+    let index = at.get(source);
+    if (index === undefined) {
+      // Its own pictures go in the table first.
+      const entry = inside();
+      index = table.push(entry) - 1;
+      at.set(source, index);
+    }
+    return { kind: 'ref', index };
+  };
+  const rewriteCommand = (command: CanvasCommand): CanvasCommand => {
+    if (command.op === 'image') {
+      const source = rewriteSource(command.source);
+      return source === command.source ? command : { ...command, source };
+    }
+    if ((command.op === 'fill' || command.op === 'stroke' || command.op === 'text') && command.paint.type === 'pattern') {
+      const source = rewriteSource(command.paint.source);
+      return source === command.paint.source ? command : ({ ...command, paint: { ...command.paint, source } } as CanvasCommand);
+    }
+    return command;
+  };
+  const rewriteList = (list: CanvasCommand[]): CanvasCommand[] => {
+    let out: CanvasCommand[] | null = null;
+    for (let i = 0; i < list.length; i += 1) {
+      const command = list[i]!;
+      const next = rewriteCommand(command);
+      if (next !== command && out === null) out = list.slice(0, i);
+      if (out !== null) out.push(next);
+    }
+    return out ?? list;
+  };
+  const rewritten = rewriteList(commands);
+  return { commands: rewritten, sources: table };
+}
+
+/** The scene layer for a context's drawing: its commands in a box of `width` by `height`, with the pictures more than one of them draws in `sources`. */
+export function canvasLayer(context: CanvasContext2D, layer: Omit<CanvasLayer, 'type' | 'commands' | 'sources'>): CanvasLayer {
+  const { commands, sources } = internSources(context.commands);
+  return { ...layer, type: 'canvas', commands, ...(sources !== undefined && { sources }) };
 }

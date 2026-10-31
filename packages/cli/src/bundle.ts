@@ -291,6 +291,33 @@ function entryPlugin(absolute: string): Plugin {
   };
 }
 
+/** The picture files an `import` gives the path of. */
+const IMAGE_FILE = /\.(png|jpe?g|webp|gif|avif|svg)$/i;
+
+/**
+ * `import tex from './tex.jpg'` is the file's real absolute path, a string `<Img>`, `new Image().src`, `Gif`, `staticFile`-style
+ * code and a canvas's `drawImage` all load. The bundle is written under `node_modules/.cache`, so a path made from
+ * `import.meta.url` (`new URL('./tex.jpg', import.meta.url)`) points into the cache, where the file is not; this
+ * import resolves where the project or plugin keeps it. (Remotion's own bundler gives a URL of its dev server here; a
+ * Node render has no server, and the path is what a file on disk is loaded by.) A `url()` in a stylesheet is the CSS
+ * plugin's, not this one's.
+ */
+function imagePlugin(): Plugin {
+  return {
+    name: 'kinetograph-image',
+    setup(b) {
+      b.onResolve({ filter: IMAGE_FILE }, async (args) => {
+        if (args.kind !== 'import-statement' && args.kind !== 'require-call' && args.kind !== 'dynamic-import') return undefined;
+        if (args.pluginData?.kinetographImage || args.namespace !== 'file') return undefined;
+        const found = await b.resolve(args.path, { resolveDir: args.resolveDir, importer: args.importer, kind: args.kind, pluginData: { kinetographImage: true } });
+        if (found.errors.length > 0 || found.external) return found.errors.length > 0 ? { errors: found.errors } : undefined;
+        return { path: found.path, namespace: 'kinetograph-image' };
+      });
+      b.onLoad({ filter: /.*/, namespace: 'kinetograph-image' }, (args) => ({ contents: `export default ${JSON.stringify(args.path)};`, loader: 'js' }));
+    },
+  };
+}
+
 /** The synthetic entry (packages/cli/skills/kinetograph/references/AUTHORING.md §9): the shim's side-effect module is evaluated before the project. */
 export function syntheticEntry(entry: string, dev = false): string {
   return [
@@ -356,7 +383,7 @@ function bundleOptions(absolute: string, unsupported?: UnsupportedImport[], dev 
     external: EXTERNAL,
     // An `import './index.css'` registers the stylesheet's text for the DOM engine (packages/cli/skills/kinetograph/references/ENGINE.md §1); Tailwind's
     // entry is built by the project's Tailwind, and `*.module.css` files export their scoped class names.
-    plugins: [...(dev ? [jsxDevPlugin()] : []), entryPlugin(absolute), hyperframesPlugin(), aliasPlugin(unsupported), gsapPlugin(), browserFieldPlugin(), cssPlugin()],
+    plugins: [...(dev ? [jsxDevPlugin()] : []), entryPlugin(absolute), imagePlugin(), hyperframesPlugin(), aliasPlugin(unsupported), gsapPlugin(), browserFieldPlugin(), cssPlugin()],
     // Bundled CommonJS packages (react-reconciler) call `require` for Node built-ins.
     banner: { js: `import { createRequire as __kCreateRequire } from 'node:module';\nconst require = __kCreateRequire(import.meta.url);` },
   };

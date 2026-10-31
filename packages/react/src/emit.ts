@@ -23,6 +23,7 @@ import {
   glslShader,
   fontKey,
   unsupportedFilters,
+  internSources,
   type AudioClipJson,
   type CameraJson,
   type LayerName,
@@ -723,7 +724,8 @@ class Emitter {
         for (const value of unsupportedFilters(context.commands)) {
           this.unsupported.push({ path: `${path} <${name}>`, element: name, property: 'filter', value, reason: 'a url() filter names a <filter> of a page, and a <Canvas> layer has none; it is drawn without' });
         }
-        return { id, type: 'canvas', width, height, commands: context.commands, ...commonOf(props, name) } as LayerJson;
+        const { commands, sources } = internSources(context.commands);
+        return { id, type: 'canvas', width, height, commands, ...(sources !== undefined && { sources }), ...commonOf(props, name) } as LayerJson;
       }
       case 'kg-glsl': {
         const { width, height, fragment, vertex, uniforms, textures } = props;

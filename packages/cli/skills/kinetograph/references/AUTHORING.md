@@ -503,6 +503,16 @@ Shadows and filters are drawn (SCENE.md, "canvas"; checked against Chrome by `cr
   in a process opens the GPU (25 to 100 ms measured on the M4); the device is kept, so a later call costs the draw and
   the readback (about 3 ms at 1080p, plus the decode when the picture is a video frame). A canvas drawn into another
   with `drawImage` is not drawn to pixels: its commands are copied in, which keeps it sharp.
+- **A picture drawn many times.** The same `OffscreenCanvas`, canvas or `ImageData` drawn by many commands (a sheet as
+  hundreds of clipped, transformed triangles) is written once per layer, in the layer's `sources` table (SCENE.md
+  "canvas"), and the renderer decodes it, or records its commands, once and replays that for every draw. It is the
+  same object while nothing is drawn on it (a canvas's log only grows, so its length is its version); after more is
+  drawn, or `canvas.width` is set, it is a new picture, and the pictures already drawn keep what they were. An
+  `ImageData` is hashed to see that its `data` was written to: once for each frame it is drawn in (a frame begins
+  when a context is made, or one in the tree is reset for a new frame), and at every draw when it is up to 128 x 128. So a
+  write to a large `ImageData` between two draws of it in the same frame is not seen by the second; draw a copy
+  (`new ImageData(new Uint8ClampedArray(data), w, h)`) when one buffer is written and drawn in a loop. The base64
+  encoding is made once for each content, not at each draw.
 - **Reading a picture without the GPU.** When the canvas holds one plain `drawImage` (after any `clearRect`) of a
   picture file or a video frame, `getImageData` does not draw: the addon's `readCanvasPicture` answers it on the CPU
   from the decoder's cache, resampled like the renderer's bilinear filter (within 1 level of the GPU draw; the same
@@ -1190,7 +1200,10 @@ Bundling: esbuild bundles the entry with a synthetic entry that imports `@kineto
 then the project, and re-exports `@kinetographdev/core`, so the CLI drives frames through the same core and React instance the
 project uses. Aliases: `remotion` → `@kinetographdev/core`, `@remotion/<pkg>[/sub]` → `@kinetographdev/core/<pkg>[/sub]`,
 `@remotion/google-fonts/<Family>` → a virtual module calling `makeGoogleFont`. `@kinetographdev/native` stays external.
-The bundle is written under `node_modules/.cache/kinetograph/`.
+The bundle is written under `node_modules/.cache/kinetograph/`. An `import tex from './tex.jpg'` of a `.png`, `.jpg`,
+`.jpeg`, `.webp`, `.gif`, `.avif` or `.svg` file is the file's absolute path (resolved where the importing file looks
+for it, in a project or a plugin), which `<Img>` and `new Image().src` (so a canvas's `drawImage`) load; a `new URL('./tex.jpg', import.meta.url)` points into the cache, where the file is not. A `url()` in
+a stylesheet is read by the CSS plugin as before.
 
 The MCP server (`@modelcontextprotocol/sdk`, stdio) exposes one tool per command with the same arguments; each call
 runs the CLI as a child process with `--json`, so the server process never installs the determinism shim. `still`,

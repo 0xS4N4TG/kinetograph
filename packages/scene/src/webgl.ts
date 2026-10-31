@@ -2074,6 +2074,8 @@ export class WebGLContext {
       texture.pixels = new Uint8Array(Buffer.from(s.data, 'base64'));
     } else if (s.kind === 'layer') {
       throw new WebGLUnsupportedError('a texture from a layer picture outside layerPicture()');
+    } else if (s.kind === 'ref') {
+      throw new WebGLUnsupportedError('a texture from a sources table entry (only a written scene holds one)');
     } else {
       const pixels = this.rasterized(s, picture.width, picture.height);
       if (pixels === null) throw new WebGLUnsupportedError(`a texture from a ${s.kind} here (its pixels need the addon)`);

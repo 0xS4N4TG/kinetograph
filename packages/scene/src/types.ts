@@ -630,7 +630,13 @@ export type CanvasSource =
    * as the pixels a browser holds for a canvas it was drawn on (packages/cli/skills/kinetograph/references/SCENE.md, "Canvas passes"). Outside such a
    * group nothing is drawn.
    */
-  | { kind: 'layer'; id: string; width: number; height: number };
+  | { kind: 'layer'; id: string; width: number; height: number }
+  /**
+   * An entry of the layer's `sources` table, by index: how a picture drawn by more than one command is written (a layer
+   * holds it once, here). `internSources` makes them, and the renderer swaps each for its entry when it loads the layer, so
+   * an authoring project never writes one. An entry of the table only refers to entries before it.
+   */
+  | { kind: 'ref'; index: number };
 
 export type CanvasBlend =
   | 'source-over'
@@ -752,6 +758,8 @@ export interface CanvasLayer extends LayerBase {
   width: Num;
   height: Num;
   commands?: CanvasCommand[];
+  /** The pictures that more than one of the commands draws, each once (`CanvasSource` `ref`); left out when there are none. */
+  sources?: CanvasSource[];
 }
 
 // ---- glsl (packages/cli/skills/kinetograph/references/SCENE.md, "glsl") ----
@@ -1212,6 +1220,7 @@ export interface CanvasPass {
   width: Num;
   height: Num;
   commands?: CanvasCommand[];
+  sources?: CanvasSource[];
 }
 
 /** A group's GLSL pass: a recording drawn into a buffer of `width` by `height`. */

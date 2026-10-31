@@ -10,6 +10,7 @@ import {
   createCanvasContext,
   createGpuCanvasContext,
   createWebGLContext,
+  internSources,
   type GPUCanvasContextShim,
   WebGLContext,
   WebGLUnsupportedError,
@@ -97,7 +98,8 @@ function readPicture(
 
 /** What the addon draws of `commands` on a transparent canvas: straight-alpha RGBA, or a PNG. */
 function renderCanvas(commands: CanvasCommand[], size: { width: number; height: number }, format: 'rgba' | 'png'): Uint8Array {
-  const request = { width: size.width, height: size.height, commands, fonts: fontsOf(), baseDir: getDomEnvironment().baseDir, format };
+  const { commands: written, sources } = internSources(commands);
+  const request = { width: size.width, height: size.height, commands: written, ...(sources !== undefined && { sources }), fonts: fontsOf(), baseDir: getDomEnvironment().baseDir, format };
   return addonFunction('renderCanvas')(JSON.stringify(request));
 }
 
@@ -250,14 +252,18 @@ export function withCanvasCommands(host: HostElement, props: Record<string, any>
   const gl = glContentOf(host);
   if (gl !== null) return { ...props, 'data-kg-webgl': JSON.stringify(gl) };
   const commands = canvasCommandsOf(host);
-  return commands === null ? props : { ...props, 'data-kg-canvas': JSON.stringify(commands) };
+  if (commands === null) return props;
+  // The pictures that more than one command draws are written once, in a table beside the commands.
+  const { commands: written, sources } = internSources(commands);
+  return { ...props, 'data-kg-canvas': JSON.stringify(sources === undefined ? written : { commands: written, sources }) };
 }
 
 /** What `drawImage` and `createPattern` read from the canvas on `host`: the commands so far, in its bitmap's size. */
 export function canvasPictureOf(host: object, size: { width: number; height: number }): CanvasPicture | null {
   if (glContexts.has(host)) throw new WebGLUnsupportedError('drawing or sampling a WebGL canvas as a picture; draw into the shader\'s own canvas');
   if (!(size.width > 0 && size.height > 0)) return null;
-  return { source: { kind: 'canvas', width: size.width, height: size.height, commands: [...(contexts.get(host)?.commands ?? [])] }, width: size.width, height: size.height };
+  const context = contexts.get(host);
+  return { source: context?.pictureSource(size.width, size.height) ?? { kind: 'canvas', width: size.width, height: size.height, commands: [] }, width: size.width, height: size.height };
 }
 
 /** Throws when the canvas on `host` has a WebGL context: its pixels are the GPU's, so it cannot be read back or drawn as a picture. */
@@ -335,7 +341,7 @@ export class CanvasSurface {
     this.refuseGl();
     const size = { width: this.widthValue, height: this.heightValue };
     if (!(size.width > 0 && size.height > 0)) return null;
-    return { source: { kind: 'canvas', ...size, commands: [...(this.context?.commands ?? [])] }, ...size };
+    return { source: this.context?.pictureSource(size.width, size.height) ?? { kind: 'canvas', ...size, commands: [] }, ...size };
   }
 }
 
