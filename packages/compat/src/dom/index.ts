@@ -10,6 +10,7 @@ import { isDomElement } from '../request/tags.js';
 import type { DomNode, IslandContext, IslandResult } from '../types.js';
 import { fillNatives, nativeSize, overlaysSiblings } from './native.js';
 import { historyFor, isWarming, noteTransitions, recordIsland } from './history.js';
+import { islandMoves } from './moving.js';
 
 export { isDomElement };
 export { setDomAddon, hasAddonFunction, addonFunction } from '../addon.js';
@@ -179,7 +180,9 @@ function prepare(root: DomNode, context: IslandContext) {
   noteTransitions(request.root, request.stylesheets);
   const history = historyFor(request.path, request.time);
   recordIsland(request.path, request.time, request.root);
-  if (history.length > 0) request.history = history;
+  // A history is only read when the island's CSS can move something (`islandMoves`, as the engine decides it): one
+  // it would not read is not sent.
+  if (history.length > 0 && islandMoves(request.stylesheets, [request.root, ...history.map((state) => state.root)])) request.history = history;
   if (isWarming()) return null;
   return { request, natives, json: JSON.stringify(request) };
 }

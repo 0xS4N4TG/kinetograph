@@ -51,11 +51,12 @@ impl<'a> Painter<'a> {
         let bytes = font.data.data();
         let mut found = None;
         for path in self.req.fonts.values() {
-            let Ok(file) = std::fs::read(path) else {
+            // The decoded bytes, unpacked once per file version (`fonts::font_bytes`): a
+            // document built for each frame has new blobs, so this runs for each frame.
+            let Ok(file) = crate::fonts::font_bytes(path) else {
                 continue;
             };
-            let file = blitz_dom::decode_font_bytes(&file);
-            if file.as_ref() == bytes {
+            if file.as_slice() == bytes {
                 found = Some(path.clone());
                 break;
             }
