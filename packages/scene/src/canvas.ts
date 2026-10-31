@@ -251,19 +251,26 @@ function parseFont(value: string): FontSpec | null {
   return null;
 }
 
-/** The key of the registered font that serves `spec`: the first family that has one, the nearest weight of it. */
+/**
+ * The key of the registered font that serves `spec`: the first family that has one, the nearest weight of it. A face
+ * with a weight range (`Wave:300-1000`) serves every weight in it, and the key says which one the text asks for
+ * (`Wave:300-1000@700`, clamped to the range), so measuring and drawing shape it at that weight.
+ */
 function fontOf(spec: FontSpec, fonts: Record<string, string>): string {
   const keys = Object.keys(fonts);
   for (const family of spec.families) {
     const own = keys
       .map((key) => {
-        const m = /^(.*?)(?::(\d+)(i?))?$/.exec(key)!;
-        return { key, family: m[1]!, weight: m[2] ? Number(m[2]) : 400, style: m[3] ? 'italic' : 'normal' };
+        const m = /^(.*?)(?::(\d+)(?:-(\d+))?(i?))?$/.exec(key)!;
+        const weight = m[2] ? Number(m[2]) : 400;
+        return { key, family: m[1]!, weight, max: m[3] ? Number(m[3]) : weight, style: m[4] ? 'italic' : 'normal' };
       })
       .filter((face) => face.family === family);
     if (own.length === 0) continue;
-    const rank = (face: (typeof own)[number]): number => (face.style === spec.style ? 0 : 10000) + Math.abs(face.weight - spec.weight);
-    return own.reduce((best, face) => (rank(face) < rank(best) ? face : best)).key;
+    const rank = (face: (typeof own)[number]): number =>
+      (face.style === spec.style ? 0 : 10000) + (spec.weight < face.weight ? face.weight - spec.weight : Math.max(0, spec.weight - face.max));
+    const best = own.reduce((a, face) => (rank(face) < rank(a) ? face : a));
+    return best.max > best.weight ? `${best.key}@${Math.min(best.max, Math.max(best.weight, spec.weight))}` : best.key;
   }
   return fontKey(spec.families[0]!, spec.weight, spec.style);
 }

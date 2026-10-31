@@ -237,6 +237,13 @@ describe('@font-face in a stylesheet', () => {
     registerStylesheet(`@font-face { font-family: "My Face"; src: url("/Face.ttf") format("truetype"); font-weight: 700; font-style: italic; }`);
     expect(getFonts()['My Face:700i']).toBe(join(dir, 'public', 'Face.ttf'));
   });
+
+  it('registers a weight range (a variable font) as its bottom and top', () => {
+    resetStylesheets();
+    writeFileSync(join(dir, 'public', 'Wave.ttf'), 'x');
+    registerStylesheet(`@font-face { font-family: "Wave"; src: url("/Wave.ttf"); font-weight: 300 1000; }`);
+    expect(getFonts()['Wave:300-1000']).toBe(join(dir, 'public', 'Wave.ttf'));
+  });
 });
 
 describe('document queries match html, head and body themselves', () => {

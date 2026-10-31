@@ -37,6 +37,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 - The error for an entry that never calls `registerRoot` says to import it from `@kinetographdev/core` and that a file exporting only a component is not an entry. Importing the video API from `kinetograph` (the CLI) adds a hint naming `@kinetographdev/core`.
 - On Windows, `staticFile()` paths such as `D:\proj\public\x.png` load. `<Img>` and the resource loader read the drive letter as a URL scheme and skipped the file (#27); they now treat a drive path as a path before parsing it as a URL. A root-relative `/x.png` (`D:\x.png` on Windows) was looked up in the public directory as a rooted path and missed, so every frame warned (#28); only the path's names are kept now (#71).
+- A variable font declared with a weight range (`@font-face { font-weight: 300 1000 }`, or `new FontFace(..., { weight: '300 1000' })`) was registered at its first weight and held there. It now follows the weight a text asks for within the range: `font-weight` and `font-variation-settings` in the DOM, and `ctx.font = '1000 40px Name'` on Canvas 2D, whose `measureText` and `fillText` ignored the weight before (they shaped at one instance and drew the font's default). A HyperFrames page that checks its variable font's axis by drawing at two weights, as `weight-wave` does, now passes.
 
 ## 0.2.5 (2026-10-28)
 

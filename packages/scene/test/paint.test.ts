@@ -169,6 +169,13 @@ describe('fontKey', () => {
     expect(fontKey('Inter', 100)).toBe('Inter:100');
   });
 
+  it('names a weight range with the top weight', () => {
+    expect(fontKey('Recursive', 300, 'normal', 1000)).toBe('Recursive:300-1000');
+    expect(fontKey('Inter', 400, 'italic', 900)).toBe('Inter:400-900i');
+    // A range that is no wider than one weight is that weight.
+    expect(fontKey('Inter', 700, 'normal', 700)).toBe('Inter:700');
+  });
+
   it('reads string weights', () => {
     expect(fontKey('Inter', 'bold')).toBe('Inter:700');
     expect(fontKey('Inter', 'Bold', 'italic')).toBe('Inter:700i');

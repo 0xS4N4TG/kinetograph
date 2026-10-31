@@ -17,7 +17,9 @@ Upstream: crates.io `fontique` 0.12.0 (`linebender/parley`, commit `6e1143dda817
 - `src/font.rs`: `FontInfoOverride` has a new `pin_weight: bool`. When set, `synthesis()` takes the `wght` value from the face, and sets `embolden` if the request is more than 200 heavier.
 - `crates/dom/src/fonts.rs` (our code): registers every project font with the flag.
 
-Drop when fontique can hold an axis at the face's weight.
+- `src/font.rs`: `FontInfoOverride` has a new `weight_max: Option<f32>` (the face's `weight` is the bottom of its `@font-face` weight range). `synthesis()` then follows the requested weight, clamped into the range, instead of pinning it.
+
+Drop when fontique can hold an axis at the face's weight and take a weight range.
 
 ## stylo 0.22.0
 

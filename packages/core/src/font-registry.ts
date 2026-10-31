@@ -10,6 +10,8 @@ export interface FontRegistration {
   family: string;
   path: string;
   weight?: number | string;
+  /** The top of the weight range of a variable face (`font-weight: 300 1000`); `weight` is the bottom. */
+  weightMax?: number | string;
   style?: 'normal' | 'italic';
 }
 
@@ -29,7 +31,7 @@ export function registerFont(font: FontRegistration): void {
   if (typeof font.path !== 'string' || font.path === '') {
     throw new TypeError(`registerFont() needs the path of the font file for "${font.family}"`);
   }
-  fonts.set(fontKey(font.family, font.weight, font.style), resolve(font.path));
+  fonts.set(fontKey(font.family, font.weight, font.style, font.weightMax), resolve(font.path));
   generation++;
 }
 

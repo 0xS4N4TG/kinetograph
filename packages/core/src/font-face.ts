@@ -115,13 +115,19 @@ export class NodeFontFace {
 
 export function addFace(face: NodeFontFace): void {
   if (!face.resolveSync()) return;
-  const weight = WEIGHTS[face.weight] ?? (Number.isFinite(Number(face.weight)) ? Number(face.weight) : 400);
+  // `font-weight: 300 1000` is a range: the face follows the weight a text asks for within it.
+  const [first, second] = face.weight.trim().split(/\s+/);
+  const weightOf = (w: string | undefined): number | undefined =>
+    w === undefined ? undefined : (WEIGHTS[w] ?? (Number.isFinite(Number(w)) ? Number(w) : undefined));
+  const weight = weightOf(first) ?? 400;
+  const top = weightOf(second);
+  const weightMax = top !== undefined && top > weight ? top : undefined;
   const style = face.style === 'italic' || face.style === 'oblique' ? 'italic' : 'normal';
-  const key = `${face.family}:${weight}:${style}`;
+  const key = `${face.family}:${weight}${weightMax === undefined ? '' : `-${weightMax}`}:${style}`;
   const latin = coversBasicLatin(face.unicodeRange);
   if (kept.has(key) && (kept.get(key) || !latin)) return;
   kept.set(key, latin);
-  registerFont({ family: face.family, path: face.path, weight, style });
+  registerFont({ family: face.family, path: face.path, weight, ...(weightMax === undefined ? {} : { weightMax }), style });
 }
 
 /** `document.fonts`: a set of the faces added. */

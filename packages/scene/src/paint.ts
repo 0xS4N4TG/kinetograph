@@ -147,11 +147,16 @@ function weightOf(weight: number | string): number {
 }
 
 /** The key a font is registered and referenced by: `'Inter'` for 400 normal, else `'Inter:700'`, `'Inter:400i'`,
- *  `'Inter:700i'`. */
-export function fontKey(family: string, weight: number | string = 400, style: 'normal' | 'italic' = 'normal'): string {
+ *  `'Inter:700i'`; a face with a weight range (`weightMax`) is `'Inter:100-900'`. */
+export function fontKey(family: string, weight: number | string = 400, style: 'normal' | 'italic' = 'normal', weightMax?: number | string): string {
   const w = weightOf(weight);
   if (style !== 'normal' && style !== 'italic') {
     throw new Error(`font style must be "normal" or "italic", got ${JSON.stringify(style)}`);
+  }
+  // A face declared with a weight range (`font-weight: 300 1000`) is `'Wave:300-1000'`.
+  if (weightMax !== undefined) {
+    const max = weightOf(weightMax);
+    if (max > w) return `${family}:${w}-${max}${style === 'italic' ? 'i' : ''}`;
   }
   if (w === 400 && style === 'normal') return family;
   return `${family}:${w}${style === 'italic' ? 'i' : ''}`;
