@@ -1,0 +1,48 @@
+---
+title: Migrate from HyperFrames
+description: Render a HyperFrames project with Kinetograph as it is, the commands that replace the HyperFrames CLI, and what to check.
+---
+
+A HyperFrames project needs no rewrite. Kinetograph reads its `index.html`, the compositions it mounts and the scripts it loads, and renders it without a browser. You keep the HTML, the `data-*` attributes and the GSAP timelines. What changes is the command you run.
+
+## The commands
+
+| HyperFrames | Kinetograph |
+|---|---|
+| `npx hyperframes preview` | `npx kinetograph studio my-video` |
+| `npx hyperframes render` | `npx kinetograph render my-video -o out.mp4` |
+
+`my-video` is the project directory, or its `index.html`. Kinetograph adds `still` (one frame to a PNG), `strip`, `doctor` and `fetch-deps`, used below; the [CLI reference](/docs/reference/cli/) lists every command. Install Kinetograph with `npm install kinetograph` first; see [Installation](/docs/getting-started/installation/).
+
+## Move a project
+
+1. **Check the root element.** The outermost `data-composition-id` element gives the size (`data-width`, `data-height`) and the length (`data-duration`, else the longest timeline or clip). The rate is 30 fps, as in HyperFrames. A page without these renders at 1920 x 1080 for one second, with a warning.
+2. **Download what the page loads.** `npx kinetograph fetch-deps my-video` puts the CDN scripts, ES modules, data files, remote pictures, media and Google Fonts in the local cache, and pins each one in `kinetograph.lock.json` beside the entry. Commit the lock file. `render`, `still`, `doctor` and `studio` run the same download first, so this step is optional; it is useful in CI or to warm the cache. A host other than the default CDNs needs `--allow-host`.
+3. **Run doctor.** `npx kinetograph doctor my-video` goes through every frame and lists what the engine can't draw, and the frames it happens on.
+4. **Look at it.** `npx kinetograph strip my-video -n 12 -o out/strip.png` draws twelve frames into one picture. Open it.
+5. **Render with `--strict`.** `npx kinetograph render my-video -o out.mp4 --strict` stops on the first frame with something unsupported, so nothing is left out without you knowing. Add `--offline` to make sure the render reads only the cache.
+
+## What carries over
+
+These work as they do in HyperFrames. The details are in [HyperFrames projects](/docs/compat/#hyperframes-projects) on the compatibility page.
+
+- Compositions mounted with `data-composition-src`, with their CSS scoped and their scripts seeing only their own composition. `data-variable-values` and `getVariables()`.
+- Clips: `data-start` (seconds or a clip id with an offset), `data-duration`, `data-hidden`.
+- Timelines on `window.__timelines`, seeked every frame, so a frame depends only on its number.
+- `<video>` and `<audio>`, with `data-media-start`, `data-playback-rate`, `data-volume` and fades.
+- Speed ramps and volume lanes (`data-automation`), audio effect chains (`data-fx-chain`) and colour grading (`data-color-grading`), measured against HyperFrames' own output.
+- The 18 font families HyperFrames embeds, and its mapping of system font names onto them.
+- WebGPU shader blocks (`shaders.iife.js`), import maps and ES modules.
+
+## What to check
+
+- **Three.js** is not drawn. A page that loads it is reported on every frame.
+- **A tween on GSAP's root clock** (a `gsap.to` that is not on a registered timeline) renders, and is warned about. HyperFrames seeks only the timelines on `window.__timelines`, so put the tween on one of those to get the same picture in both.
+- **Fonts.** Operating-system fonts are never read. CJK, Arabic, Devanagari and other scripts have no bundled font, so load one that has them.
+- **Variable fonts** that set `font-variation-settings` per element can measure wider than in Chrome, so a line fitted by `measureText` may wrap.
+
+The full list is in [Known issues](/docs/known-issues/#hyperframes-projects).
+
+## With an agent
+
+The `kinetograph` skill already covers HTML pages, so an agent can render and check a HyperFrames project with the same write, look, check, render loop. See [Use with agents](/docs/guides/agents/).

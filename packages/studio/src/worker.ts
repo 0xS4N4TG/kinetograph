@@ -4,9 +4,11 @@
 // Once a project's bundle is loaded the determinism shim has replaced this thread's `Date`, `performance.now` and
 // timers, so nothing here uses them: time is `process.hrtime`, and the queue is promises.
 
+import { dirname } from 'node:path';
 import { parentPort, workerData } from 'node:worker_threads';
 import { pathToFileURL } from 'node:url';
 import type { CreateEngine, Engine, PreviewReply, WorkerInit, WorkerReply, WorkerRequest } from './engine.js';
+import type { AudioClipJson } from '@kinetographdev/scene';
 import { sweepTimeline } from './timeline.js';
 import { toStudioError } from './util.js';
 
@@ -41,10 +43,23 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       const scene = await e.frame({ comp: request.comp, props: request.props, frame: request.frame });
       return e.inspect(scene);
     }
-    case 'timeline':
-      return sweepTimeline(e, { comp: request.comp, props: request.props }, (done, total) =>
-        port.postMessage({ event: 'progress', id: request.id, done, total } satisfies WorkerReply),
+    case 'timeline': {
+      const frames: { frame: number; audio: AudioClipJson[] }[] = [];
+      let baseDir = dirname(init.options.entry);
+      const timeline = await sweepTimeline(
+        e,
+        { comp: request.comp, props: request.props },
+        (done, total) => port.postMessage({ event: 'progress', id: request.id, done, total } satisfies WorkerReply),
+        (frame, audio, dir) => {
+          baseDir = dir;
+          frames.push({ frame, audio });
+        },
       );
+      swept = { frames, fps: timeline.fps, durationInFrames: timeline.durationInFrames, baseDir };
+      return timeline;
+    }
+    case 'audio':
+      return swept ? e.mixAudio(swept.frames, swept) : null;
     case 'render': {
       const cancel = init.cancel ? new Int32Array(init.cancel) : null;
       return e.render(request.spec, {
@@ -54,6 +69,9 @@ async function handle(request: WorkerRequest): Promise<unknown> {
     }
   }
 }
+
+/** What the last `timeline` call collected, for the `audio` call that follows it. */
+let swept: { frames: { frame: number; audio: AudioClipJson[] }[]; fps: number; durationInFrames: number; baseDir: string } | null = null;
 
 let queue: Promise<void> = Promise.resolve();
 port.on('message', (request: WorkerRequest) => {

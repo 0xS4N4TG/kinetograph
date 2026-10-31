@@ -1,7 +1,9 @@
-import { GITHUB } from '@/sections/links';
+import { GithubStars } from '@/components/github-stars';
+import { repoCounts } from '@/lib/repo';
 import { Label, shell, Wordmark } from '@/sections/shared';
 
-export function Nav() {
+export async function Nav() {
+  const counts = await repoCounts();
   return (
     <header className="relative z-40">
       <div className={`${shell} flex h-20 items-center justify-between`}>
@@ -10,7 +12,7 @@ export function Nav() {
         </a>
         <nav className="flex items-center gap-7">
           <a href="/docs/" className="transition-colors hover:text-cobalt"><Label className="text-ink">Docs</Label></a>
-          <a href={GITHUB} target="_blank" rel="noreferrer" className="transition-colors hover:text-cobalt"><Label className="text-ink">GitHub</Label></a>
+          <GithubStars initial={counts} className="font-jb text-[11px] font-medium tracking-[0.24em] text-ink uppercase" />
         </nav>
       </div>
     </header>

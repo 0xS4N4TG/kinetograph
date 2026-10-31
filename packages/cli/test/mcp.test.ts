@@ -1,12 +1,16 @@
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer } from 'node:http';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it } from 'vitest';
 import { findCommand } from '../src/commands/index.js';
-import { callTool, createMcpServer, runCli, toArgv, toolCommands, toolName, type Runner } from '../src/mcp.js';
-import { solidPng } from './helpers.js';
+import { callTool, createMcpServer, loadProjectTools, runCli, toArgv, toolCommands, toolName, type Runner } from '../src/mcp.js';
+import { solidPng, toolsProject } from './helpers.js';
+import { fileURLToPath } from 'node:url';
+import { Client as SdkClient } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 const command = (name: string) => findCommand(name.split(' '))!.command;
 
@@ -23,7 +27,7 @@ describe('the tool list', () => {
     const client = await connect(async () => ({ stdout: '{}', stderr: '', code: 0 }));
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
-      ['audio_analyze', 'bench', 'check', 'compositions', 'doctor', 'effects', 'inspect', 'lint', 'onion', 'render', 'snapshot', 'still', 'strip', 'track'],
+      ['audio_analyze', 'bench', 'check', 'compositions', 'doctor', 'effects', 'inspect', 'lint', 'onion', 'plugins', 'render', 'snapshot', 'still', 'strip', 'track'],
     );
     expect(toolCommands().map(toolName).sort()).toEqual(tools.map((t) => t.name).sort());
   });
@@ -154,5 +158,117 @@ describe('the real child process', () => {
     const failure = await callTool(command('compositions'), { entry: '/no/such.tsx' }, runCli);
     expect(failure.isError).toBe(true);
     expect(JSON.parse((failure.content[0] as { text: string }).text).error.code).toBe('ENTRY_NOT_FOUND');
+  });
+});
+
+describe('plugin tools', () => {
+  const fixture = () => toolsProject(mkdtempSync(join(tmpdir(), 'kinetograph-mcp-plugins-')));
+
+  it('registers them as <short>_<name> with their zod input as the schema, and skips a bad plugin', async () => {
+    const skipped: string[] = [];
+    const loaded = await loadProjectTools(fixture(), (m) => skipped.push(m));
+    expect(loaded.map((t) => t.name)).toEqual(['dice_roll', 'dice_fail']);
+    expect(skipped.map((m) => m.match(/of (\S+) did/)![1]).sort()).toEqual(['fx-bad', 'fx-shape']);
+
+    const server = createMcpServer(async () => ({ stdout: '{}', stderr: '', code: 0 }), loaded);
+    const client = new Client({ name: 'test', version: '0.0.0' });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(a), client.connect(b)]);
+    const { tools } = await client.listTools();
+    const roll = tools.find((t) => t.name === 'dice_roll')!;
+    expect(roll.description).toBe('Rolls dice.');
+    const schema = roll.inputSchema as { properties: Record<string, { type: string; description?: string }>; required: string[] };
+    expect(schema.properties.sides).toMatchObject({ type: 'integer', description: 'Sides on the die' });
+    expect(schema.required).toEqual(['sides']);
+
+    const ok = await client.callTool({ name: 'dice_roll', arguments: { sides: 6, count: 3 } });
+    expect(JSON.parse((ok.content as { text: string }[])[0]!.text)).toEqual({ total: 18 });
+    const failed = await client.callTool({ name: 'dice_fail', arguments: {} });
+    expect(failed.isError).toBe(true);
+    const invalid = await client.callTool({ name: 'dice_roll', arguments: { sides: 'x' } }).catch((e: unknown) => e);
+    expect(invalid instanceof Error || (invalid as { isError?: boolean }).isError === true).toBe(true);
+  });
+
+  it('serves them over stdio from `node dist/cli.js mcp` in the project directory', async () => {
+    const cliJs = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
+    if (!existsSync(cliJs)) return; // needs `npm run build`
+    const dir = fixture();
+    const transport = new StdioClientTransport({ command: process.execPath, args: [cliJs, 'mcp'], cwd: dir, stderr: 'ignore' });
+    const client = new SdkClient({ name: 'e2e', version: '0.0.0' });
+    await client.connect(transport);
+    try {
+      const { tools } = await client.listTools();
+      expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(['still', 'dice_roll', 'dice_fail']));
+      const r = await client.callTool({ name: 'dice_roll', arguments: { sides: 4, count: 2 } });
+      expect(JSON.parse((r.content as { text: string }[])[0]!.text)).toEqual({ total: 8 });
+    } finally {
+      await client.close();
+    }
+  }, 60_000);
+});
+
+describe('studio tools', () => {
+  async function withStudio(run: (client: Client, state: { live: { comp: string | null; props: Record<string, unknown> }; tokens: (string | undefined)[] }) => Promise<void>) {
+    const state = { live: { comp: 'Hero' as string | null, props: { title: 'a', size: 1 } as Record<string, unknown> }, tokens: [] as (string | undefined)[] };
+    const http = createServer((req, res) => {
+      state.tokens.push(req.headers['x-studio-token'] as string | undefined);
+      const reply = (status: number, body: unknown) => {
+        res.writeHead(status, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(body));
+      };
+      if (req.url !== '/api/live-props') return reply(404, {});
+      if (req.method === 'GET') return reply(200, state.live);
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        const put = JSON.parse(body) as { comp: string; props: Record<string, unknown> };
+        if (put.comp === 'Nope') return reply(400, { error: { message: 'no composition "Nope"' } });
+        state.live = put;
+        reply(200, put);
+      });
+    });
+    await new Promise<void>((r) => http.listen(0, '127.0.0.1', r));
+    const { port } = http.address() as { port: number };
+    const server = createMcpServer(async () => ({ stdout: '{}', stderr: '', code: 0 }), [], { url: `http://127.0.0.1:${port}/?token=ignored`, token: 'tok' });
+    const client = new Client({ name: 'test', version: '0.0.0' });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(a), client.connect(b)]);
+    try {
+      await run(client, state);
+    } finally {
+      await new Promise((r) => http.close(r));
+    }
+  }
+  const json = (r: Awaited<ReturnType<Client['callTool']>>) => JSON.parse((r.content as { text: string }[])[0]!.text);
+
+  it('adds studio_get_props and studio_set_props only when a studio is given', async () => {
+    const without = await (await connect(async () => ({ stdout: '{}', stderr: '', code: 0 }))).listTools();
+    expect(without.tools.some((t) => t.name.startsWith('studio_'))).toBe(false);
+    await withStudio(async (client) => {
+      expect((await client.listTools()).tools.map((t) => t.name).filter((n) => n.startsWith('studio_')).sort()).toEqual(['studio_get_props', 'studio_set_props']);
+    });
+  });
+
+  it('reads the live props and sets them, merging by default, with the token', async () => {
+    await withStudio(async (client, state) => {
+      expect(json(await client.callTool({ name: 'studio_get_props', arguments: {} }))).toEqual({ comp: 'Hero', props: { title: 'a', size: 1 } });
+      expect(json(await client.callTool({ name: 'studio_set_props', arguments: { props: { title: 'b' } } }))).toEqual({ comp: 'Hero', props: { title: 'b', size: 1 } });
+      expect(json(await client.callTool({ name: 'studio_set_props', arguments: { props: { x: 2 }, merge: false } }))).toEqual({ comp: 'Hero', props: { x: 2 } });
+      expect(state.live).toEqual({ comp: 'Hero', props: { x: 2 } });
+      // Another composition does not inherit the props of the one on screen.
+      expect(json(await client.callTool({ name: 'studio_set_props', arguments: { comp: 'Other', props: { y: 1 } } }))).toEqual({ comp: 'Other', props: { y: 1 } });
+      expect(new Set(state.tokens)).toEqual(new Set(['tok']));
+    });
+  });
+
+  it('reports the studio\'s error, and a missing window', async () => {
+    await withStudio(async (client, state) => {
+      const bad = await client.callTool({ name: 'studio_set_props', arguments: { comp: 'Nope', props: {} } });
+      expect(bad.isError).toBe(true);
+      expect(JSON.stringify(bad.content)).toContain('no composition');
+      state.live = { comp: null, props: {} };
+      const none = await client.callTool({ name: 'studio_set_props', arguments: { props: {} } });
+      expect(none.isError).toBe(true);
+    });
   });
 });

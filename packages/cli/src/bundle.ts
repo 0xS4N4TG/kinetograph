@@ -365,6 +365,10 @@ function bundleOptions(absolute: string, unsupported?: UnsupportedImport[], dev 
 /** The error for esbuild's `errors`: one line per message, with its file and line when it has them. */
 function bundleFailure(errors: Message[], fallback: unknown): CliError {
   const messages = errors.map((e) => (e.location ? `${e.location.file}:${e.location.line}: ${e.text}` : e.text));
+  // `kinetograph` is the CLI; the video API a project imports is `@kinetographdev/core`.
+  if (errors.some((e) => /^No matching export in ".*node_modules[\\/]kinetograph[\\/]/.test(e.text))) {
+    messages.push("hint: the 'kinetograph' package is the CLI; import the video API from '@kinetographdev/core'");
+  }
   return new CliError('BUNDLE_FAILED', messages.length ? messages.join('\n') : String(fallback));
 }
 

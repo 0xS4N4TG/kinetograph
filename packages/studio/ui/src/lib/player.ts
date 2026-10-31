@@ -22,7 +22,22 @@ export interface PlayerState {
   error: StudioError | null;
 }
 
+/**
+ * The sound the player plays along. While it is playing the player takes the time from `time()` (the audio clock)
+ * instead of the wall clock; a frame that cannot be drawn in time is skipped, never waited for.
+ */
+export interface PlayerAudio {
+  /** Plays from composition second `seconds`. */
+  start(seconds: number): void;
+  stop(): void;
+  /** The composition second the sound has reached; null when it is not playing (the wall clock then leads). */
+  time(): number | null;
+  /** A short piece at `seconds`, for scrubbing. */
+  snippet(seconds: number): void;
+}
+
 export interface PlayerOptions {
+  audio?: PlayerAudio;
   /** Sends a frame request and returns its id, or -1 when it could not be sent. */
   requestFrame: (args: FrameArgs) => number;
   /** Receives each frame to show, in the order they are to be shown. */
@@ -136,6 +151,7 @@ export class Player {
     this.shownTimes = [];
     this.set({ playing: true, frame, fps: null });
     this.anchor();
+    if (comp.fps > 0) this.options.audio?.start(frame / comp.fps);
     this.lastRequestedFrame = -1;
     this.advance();
     this.startLoop();
@@ -164,7 +180,10 @@ export class Player {
     const next = this.clamp(Math.round(frame), comp);
     if (next === this.state.frame && this.lastRequestedFrame === next) return;
     this.set({ frame: next });
-    if (this.state.playing) this.anchor();
+    if (this.state.playing) {
+      this.anchor();
+      this.options.audio?.start(next / comp.fps);
+    } else if (this.state.scrubbing) this.options.audio?.snippet(next / comp.fps);
     this.request();
   }
 
@@ -254,7 +273,9 @@ export class Player {
   private advance(): void {
     const { comp, loop } = this.state;
     if (comp === null || !this.state.playing) return;
-    const frames = ((this.now() - this.anchorTime) * comp.fps) / 1000;
+    // The sound's clock leads when it is running; the wall clock only until it is.
+    const heard = this.options.audio?.time() ?? null;
+    const frames = heard !== null ? heard * comp.fps - this.anchorFrame : ((this.now() - this.anchorTime) * comp.fps) / 1000;
     let target = this.anchorFrame + Math.floor(frames);
     const duration = comp.durationInFrames;
     if (target >= duration) {
@@ -262,6 +283,7 @@ export class Player {
         target %= duration;
         this.anchorFrame = target;
         this.anchorTime = this.now() - ((frames - Math.floor(frames)) * 1000) / comp.fps;
+        this.options.audio?.start(target / comp.fps);
       } else {
         this.stop();
         this.set({ playing: false, frame: duration - 1 });
@@ -286,6 +308,7 @@ export class Player {
   }
 
   private stop(): void {
+    this.options.audio?.stop();
     if (this.raf !== null) {
       (this.options.cancelSchedule ?? ((h: number) => cancelAnimationFrame(h)))(this.raf);
       this.raf = null;

@@ -7,12 +7,11 @@ This page makes a two-second title card. It needs Kinetograph installed: see [In
 
 ## Write the project
 
-Make a folder in the repository, such as `examples/hello`, and save this as `index.tsx` in it:
+Make a folder, run `npm install kinetograph` in it, and save this as `index.tsx` there. `registerRoot`, `Composition` and the rest of the API come from `@kinetographdev/core`, which `npm install kinetograph` brings with it. Remotion is not installed and not needed: an `@remotion/*` import, such as the font loader below, is mapped onto Kinetograph's own code. The `kinetograph` package itself is the CLI, so importing `registerRoot` from it fails.
 
 ```tsx
 import React from 'react';
-import { AbsoluteFill, Composition, interpolate, registerRoot, useCurrentFrame } from 'remotion';
-import { Rect, Text } from '@kinetographdev/core';
+import { AbsoluteFill, Composition, Rect, Text, interpolate, registerRoot, useCurrentFrame } from '@kinetographdev/core';
 import { loadFont } from '@remotion/google-fonts/Inter';
 
 const { fontFamily } = loadFont('normal', { weights: ['400'] });
@@ -62,6 +61,16 @@ npx kinetograph lint examples/hello/index.tsx
 `inspect` prints each layer at a frame, with its bounds. `lint` reports text that overflows its box, layers off the canvas, overlapping text and missing fonts. It exits with 1 when it finds errors.
 
 To find type errors, such as a misspelled prop, run `npx kinetograph check examples/hello/index.tsx`. Rendering does not type-check the project.
+
+## Open it in Studio
+
+Studio is the local editor. It plays the project in a browser, with a timeline, a props form and a chat with your coding agent:
+
+```sh
+npx kinetograph studio examples/hello/index.tsx
+```
+
+Press Space to play, click a layer to select it, and press Cmd+K (Ctrl+K elsewhere) for every action. Stop it with Ctrl-C. See [Studio](/docs/guides/studio/).
 
 ## Render the video
 
@@ -118,4 +127,5 @@ The first render downloads GSAP from the CDN and pins it in `kinetograph.lock.js
 - [Scene format](/docs/guides/scene-format/) describes the JSON scenes that the engine draws.
 - [Audio](/docs/guides/audio/) covers sound files, synthesised sound and loudness checks.
 - [CLI reference](/docs/reference/cli/) lists every command and option.
+- [Studio](/docs/guides/studio/) is the local editor: preview, timeline, props, export and the agent chat.
 - [Use with agents](/docs/guides/agents/) sets up the agent skill and the MCP server.

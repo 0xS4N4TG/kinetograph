@@ -1,6 +1,7 @@
 import type { Engine } from './engine.js';
-import type { LayerName, SequenceJson, TimelineData, TimelineLayer } from './protocol.js';
-import { lookupName } from './util.js';
+import type { AudioClipJson } from '@kinetographdev/scene';
+import type { LayerName, SequenceJson, TimelineAudio, TimelineData, TimelineLayer } from './protocol.js';
+import { lookupName, soundKey } from './util.js';
 
 interface SceneLayer {
   id: string;
@@ -28,12 +29,15 @@ export async function sweepTimeline(
   request: { comp: string; props: Record<string, unknown> },
   /** Called every few frames with the frames read so far and the total. */
   onProgress?: (done: number, total: number) => void,
+  /** Receives the sounds of each frame that has any, for the mix: the sweep is the only pass over the frames. */
+  collect?: (frame: number, audio: AudioClipJson[], baseDir: string) => void,
 ): Promise<TimelineData> {
   const { composition } = await engine.plan(request);
   const { durationInFrames, fps } = composition;
 
   const sequences = new Map<string, { entry: SequenceJson; order: number }>();
   const layers = new Map<string, TimelineLayer>();
+  const sounds = new Map<string, TimelineAudio>();
 
   const walk = (
     list: SceneLayer[],
@@ -92,6 +96,18 @@ export async function sweepTimeline(
         fallback = entry.key;
       }
     }
+    if (scene.audio.length > 0) {
+      collect?.(frame, scene.audio, scene.baseDir);
+      for (const clip of scene.audio) {
+        if (clip.muted) continue;
+        const id = soundKey(clip);
+        let sound = sounds.get(id);
+        if (!sound) sounds.set(id, (sound = { id, src: clip.src, ...(clip.video ? { video: true } : {}), ranges: [] }));
+        const last = sound.ranges[sound.ranges.length - 1];
+        if (last && last[1] >= frame - 1) last[1] = Math.max(last[1], frame);
+        else sound.ranges.push([frame, frame]);
+      }
+    }
     walk((JSON.parse(scene.sceneJson) as { layers: SceneLayer[] }).layers, null, frame, scene.names, groups, undefined, fallback);
     if (onProgress && ((frame + 1) % PROGRESS_EVERY === 0 || frame + 1 === durationInFrames)) onProgress(frame + 1, durationInFrames);
     if (scene.constant) {
@@ -109,5 +125,6 @@ export async function sweepTimeline(
       .sort((a, b) => a.entry.from - b.entry.from || a.order - b.order)
       .map(({ entry }) => entry),
     layers: [...layers.values()],
+    audio: [...sounds.values()],
   };
 }

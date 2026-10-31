@@ -34,7 +34,7 @@ export interface HalftoneWordmarkFooterProps {
   /** The giant word printed in dots. Lowercase reads best. */
   wordmark?: string;
   /** Top-left studio line. */
-  label?: string;
+  label?: React.ReactNode;
   /** The muted line under it. */
   meta?: string;
   /** Link columns along the top. */
@@ -145,7 +145,7 @@ const HWF_CSS = `
   font-family: var(--hwf-mono); font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; line-height: 1.75;
 }
 .hwf-brand strong { display: block; font-weight: 500; font-family: var(--font-serif); font-size: 16px; letter-spacing: 0.02em; text-transform: none; }
-.hwf-brand span { opacity: .55; }
+.hwf-brand > span { opacity: .55; }
 .hwf-col h3 { margin: 0; font: inherit; opacity: .45; font-weight: 500; }
 .hwf-col ul { list-style: none; margin: 0; padding: 0; }
 .hwf-col a, .hwf-up {

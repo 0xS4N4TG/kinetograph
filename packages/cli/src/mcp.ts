@@ -7,8 +7,10 @@ import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { CliError } from './errors.js';
 import { allOptions, type Command } from './commands/types.js';
 import { commands } from './commands/index.js';
+import { findPlugins, loadPluginTools, mcpToolName, type PluginTool } from './plugins.js';
 
 export interface ChildResult {
   stdout: string;
@@ -112,7 +114,96 @@ export async function callTool(command: Command, input: Record<string, unknown>,
   return failed ? { isError: true, content } : { content };
 }
 
-export function createMcpServer(runner: Runner = runCli): McpServer {
+/** A plugin's tool under its MCP name. */
+export interface LoadedPluginTool {
+  name: string;
+  tool: PluginTool;
+}
+
+/** The tools of the plugins the project at `dir` depends on. A plugin whose tools fail to load is skipped; `onError` hears why. */
+export async function loadProjectTools(dir: string, onError: (message: string) => void = () => undefined): Promise<LoadedPluginTool[]> {
+  const out: LoadedPluginTool[] = [];
+  for (const plugin of findPlugins(dir)) {
+    try {
+      for (const tool of await loadPluginTools(plugin)) out.push({ name: mcpToolName(plugin, tool), tool });
+    } catch (error) {
+      onError(`kinetograph: the tools of ${plugin.name} did not load, skipped: ${(error as Error).message}`);
+    }
+  }
+  return out;
+}
+
+/** A running studio the MCP server can reach. */
+export interface StudioTarget {
+  /** `http://127.0.0.1:3000`; any query (the token the studio opens with) is ignored. */
+  url: string;
+  token: string;
+}
+
+interface LiveProps {
+  comp: string | null;
+  props: Record<string, unknown>;
+}
+
+async function studioFetch(target: StudioTarget, init: RequestInit = {}): Promise<LiveProps> {
+  const url = new URL('/api/live-props', target.url);
+  const headers = new Headers(init.headers);
+  headers.set('x-studio-token', target.token);
+  if (init.body !== undefined) headers.set('content-type', 'application/json');
+  const response = await fetch(url, { ...init, headers });
+  const body = (await response.json().catch(() => ({}))) as LiveProps & { error?: { message?: string } };
+  if (!response.ok) throw new Error(body.error?.message ?? `the studio answered ${response.status}`);
+  return body;
+}
+
+const text = (value: unknown): { content: Content[] } => ({ content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] });
+const failure = (error: unknown): { isError: true; content: Content[] } => ({
+  isError: true,
+  content: [{ type: 'text', text: JSON.stringify({ error: { code: 'STUDIO', message: (error as Error).message } }) }],
+});
+
+function addStudioTools(server: McpServer, target: StudioTarget): void {
+  server.registerTool(
+    'studio_get_props',
+    {
+      description: 'The composition the open Studio window previews and the props it shows now: { comp, props }. comp is null when no window is open.',
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        return text(await studioFetch(target));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+  server.registerTool(
+    'studio_set_props',
+    {
+      description:
+        'Sets the props the open Studio window previews; the preview re-renders at once. Use it to try values; write the chosen ones into the code or a preset at the end. Returns { comp, props }.',
+      inputSchema: {
+        comp: z.string().optional().describe('The composition id; default: the one the window shows'),
+        props: z.record(z.string(), z.unknown()).describe('The props to set'),
+        merge: z.boolean().optional().describe('Shallow-merge over the props shown now (default true); false replaces them'),
+      },
+    },
+    async ({ comp, props, merge }: { comp?: string; props: Record<string, unknown>; merge?: boolean }) => {
+      try {
+        const now = await studioFetch(target);
+        const id = comp ?? now.comp;
+        if (id === null) throw new Error('no Studio window is open on a composition; pass comp');
+        // The props shown now are of the composition on screen; another composition starts from nothing.
+        const base = merge === false || id !== now.comp ? {} : now.props;
+        return text(await studioFetch(target, { method: 'PUT', body: JSON.stringify({ comp: id, props: { ...base, ...props } }) }));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+}
+
+export function createMcpServer(runner: Runner = runCli, plugins: LoadedPluginTool[] = [], studio?: StudioTarget): McpServer {
   const version = (createRequire(import.meta.url)('../package.json') as { version: string }).version;
   const server = new McpServer({ name: 'kinetograph', version });
   for (const command of toolCommands()) {
@@ -122,12 +213,36 @@ export function createMcpServer(runner: Runner = runCli): McpServer {
       async (input: Record<string, unknown>) => callTool(command, input, runner),
     );
   }
+  if (studio) addStudioTools(server, studio);
+  const taken = new Set(toolCommands().map(toolName));
+  for (const { name, tool } of plugins) {
+    if (taken.has(name)) {
+      process.stderr.write(`kinetograph: the plugin tool ${name} is skipped: the name is taken\n`);
+      continue;
+    }
+    taken.add(name);
+    server.registerTool(
+      name,
+      { description: tool.description, inputSchema: tool.input as never },
+      (async (input: unknown) => {
+        try {
+          const result = await tool.run(input);
+          return { content: [{ type: 'text', text: JSON.stringify(result ?? null, null, 2) }] };
+        } catch (error) {
+          return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: { code: 'TOOL', message: (error as Error).message } }) }] };
+        }
+      }) as never,
+    );
+  }
   return server;
 }
 
 /** Serves on stdio until the client closes it. */
-export async function startMcpServer(): Promise<void> {
-  const server = createMcpServer();
+export async function startMcpServer(studioUrl?: string): Promise<void> {
+  const plugins = await loadProjectTools(process.cwd(), (message) => process.stderr.write(`${message}\n`));
+  const token = process.env.KINETOGRAPH_STUDIO_TOKEN;
+  if (studioUrl !== undefined && !token) throw new CliError('INVALID_ARG', '--studio needs the studio token in the environment variable KINETOGRAPH_STUDIO_TOKEN');
+  const server = createMcpServer(runCli, plugins, studioUrl === undefined ? undefined : { url: studioUrl, token: token! });
   const transport = new StdioServerTransport();
   const closed = new Promise<void>((resolve) => {
     transport.onclose = resolve;

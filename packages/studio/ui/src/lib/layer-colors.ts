@@ -1,32 +1,29 @@
-/** Bar and swatch classes per layer type, shared by the timeline bars and the scene tree. */
-const COLORS: Record<string, { bar: string; swatch: string }> = {
-  sequence: {
-    bar: 'bg-[#6b5d43]/90 border-[#9c8863] text-amber-50',
-    swatch: 'bg-[#b59d72]',
-  },
-  text: {
-    bar: 'bg-[#8c3539]/90 border-[#c95156] text-rose-50',
-    swatch: 'bg-[#d95359]',
-  },
-  shape: {
-    bar: 'bg-[#435282]/90 border-[#687fc7] text-indigo-50',
-    swatch: 'bg-[#687fc7]',
-  },
-  group: {
-    bar: 'bg-[#6e3b47]/90 border-[#a65b6c] text-pink-50',
-    swatch: 'bg-[#b86577]',
-  },
-  image: {
-    bar: 'bg-[#2f6955]/90 border-[#4ba385] text-emerald-50',
-    swatch: 'bg-[#4ba385]',
-  },
-  video: {
-    bar: 'bg-[#295f78]/90 border-[#4597bd] text-sky-50',
-    swatch: 'bg-[#4597bd]',
-  },
+import { ClapperboardIcon, FolderIcon, ImageIcon, ShapesIcon, TypeIcon, type LucideIcon } from 'lucide-react';
+
+interface Kind {
+  /** The clip card: the same dark soft card for every kind. */
+  bar: string;
+  /** The icon tile, in the kind's colour (coss chart tokens: a light and a dark set). */
+  tile: string;
+  swatch: string;
+  icon: LucideIcon;
+  /** The word before the name on a clip: "Text: Welcome". */
+  word: string;
+}
+
+const CARD = 'bg-foreground/[0.07] border-border';
+const KINDS: Record<string, Kind> = {
+  sequence: { bar: CARD, tile: 'bg-foreground/10 text-foreground/70', swatch: 'bg-foreground/60', icon: ClapperboardIcon, word: 'Sequence' },
+  text: { bar: CARD, tile: 'bg-chart-1/20 text-chart-1', swatch: 'bg-chart-1', icon: TypeIcon, word: 'Text' },
+  shape: { bar: CARD, tile: 'bg-chart-2/20 text-chart-2', swatch: 'bg-chart-2', icon: ShapesIcon, word: 'Shape' },
+  group: { bar: CARD, tile: 'bg-chart-3/20 text-chart-3', swatch: 'bg-chart-3', icon: FolderIcon, word: 'Group' },
+  image: { bar: CARD, tile: 'bg-chart-4/20 text-chart-4', swatch: 'bg-chart-4', icon: ImageIcon, word: 'Image' },
+  video: { bar: CARD, tile: 'bg-chart-5/20 text-chart-5', swatch: 'bg-chart-5', icon: ClapperboardIcon, word: 'Video' },
 };
 
-/** Unknown or missing types take the sequence colours. */
-export function layerColors(type?: string): { bar: string; swatch: string } {
-  return COLORS[type ?? 'sequence'] ?? COLORS.sequence!;
+/** Unknown types (paths, svg, canvas, plugin layers) look like shapes: motion graphics. */
+export function layerColors(type?: string): Kind {
+  const known = KINDS[type ?? 'sequence'];
+  if (known) return known;
+  return { ...KINDS.shape!, word: type ? type.charAt(0).toUpperCase() + type.slice(1) : 'Layer' };
 }

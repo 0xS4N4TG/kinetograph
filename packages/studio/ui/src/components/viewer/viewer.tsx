@@ -1,16 +1,25 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
-import { CrosshairIcon, GridIcon, Maximize2Icon, TriangleAlertIcon } from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, memo, type MouseEvent, type PointerEvent } from 'react';
+import { EyeIcon, HandIcon, MaximizeIcon, MousePointerIcon, TriangleAlertIcon, ZoomInIcon, type LucideIcon } from 'lucide-react';
 
 import type { CompositionInfo, InspectResult, ReceivedFrame, StudioError } from '@/api';
-import { PanelHeader } from '@/components/shell/panel-header';
-import type { Tool } from '@/components/shell/tool-bar';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Hint } from '@/components/ui/hint';
+import { Menu, MenuCheckboxItem, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from '@/components/ui/menu';
 import { fitSize, stepZoom } from '@/lib/format';
 import { displayName } from '@/lib/names';
 import { findLayer, hitTest } from '@/lib/inspect';
 import { boxResult, boxSelect, clickSelection, layerRect, rectFrom, type Rect } from '@/lib/selection';
 import { useElementSize } from '@/lib/use-element-size';
 import { cn } from '@/lib/utils';
+
+export type Tool = 'select' | 'hand' | 'zoom';
+
+const TOOLS: { id: Tool; label: string; key: string; icon: LucideIcon }[] = [
+  { id: 'select', label: 'Selection', key: 'V', icon: MousePointerIcon },
+  { id: 'hand', label: 'Hand', key: 'H', icon: HandIcon },
+  { id: 'zoom', label: 'Zoom', key: 'Z', icon: ZoomInIcon },
+];
 
 /** Fit the frame to the viewer, or show it at a scale where 1 is 100%. */
 export type Zoom = 'fit' | number;
@@ -32,19 +41,23 @@ interface ViewerProps {
   inspect?: InspectResult | null;
   /** The layers picked: outlined on the frame, the first with its handles. */
   selectedLayers?: string[];
-  compositions?: CompositionInfo[];
-  onSelectComp?(id: string): void;
   tool: Tool;
+  onToolChange(tool: Tool): void;
   view: View;
   onViewChange(view: View): void;
   safeZones: boolean;
   onSafeZonesChange(on: boolean): void;
+  /** Selection outlines, handles and the anchor mark. */
+  guides: boolean;
+  onGuidesChange(on: boolean): void;
+  /** Receives the element plugin panels draw their preview overlays in (null when there is no frame). */
+  onOverlayHost?(el: HTMLElement | null): void;
   /** A click picked one layer (shift: added), or a dragged box picked the layers inside it. */
   onSelectLayers(ids: string[]): void;
 }
 
 /** The frames the server renders, drawn on a canvas that scales to fit, over a checkerboard for transparency. */
-export function Viewer({
+export const Viewer = memo(function Viewer({
   comp,
   onImage,
   lastImage,
@@ -52,13 +65,15 @@ export function Viewer({
   frameError,
   inspect = null,
   selectedLayers = [],
-  compositions = [],
-  onSelectComp,
   tool,
+  onToolChange,
   view,
   onViewChange,
   safeZones,
   onSafeZonesChange,
+  guides: showGuides,
+  onGuidesChange,
+  onOverlayHost,
   onSelectLayers,
 }: ViewerProps) {
   const boxRef = useRef<HTMLDivElement>(null);
@@ -70,7 +85,6 @@ export function Viewer({
   /** Where a hand-tool drag began: the pointer and the pan then. */
   const dragFrom = useRef<{ x: number; y: number; pan: View['pan'] } | null>(null);
   const [frameMs, setFrameMs] = useState<number | null>(null);
-  const [showGuides, setShowGuides] = useState(true);
   /** A drag with the select tool: where it began and whether it has gone far enough to be a box and not a click. */
   const boxFrom = useRef<{ x: number; y: number; px: number; py: number; moved: boolean } | null>(null);
   const [marquee, setMarquee] = useState<Rect | null>(null);
@@ -97,7 +111,7 @@ export function Viewer({
   const zoom = view.zoom;
   const shown = comp
     ? zoom === 'fit'
-      ? fitSize(box.width - 32, box.height - 32, comp.width, comp.height)
+      ? fitSize(box.width - 48, box.height - 112, comp.width, comp.height)
       : { width: Math.round(comp.width * zoom), height: Math.round(comp.height * zoom) }
     : null;
   const scaleRatio = comp && shown && comp.width > 0 ? shown.width / comp.width : 1;
@@ -184,72 +198,23 @@ export function Viewer({
   };
 
   const fitMode = zoom === 'fit';
+  const frameScale = scaleRatio;
+  const overlayHost = useRef<HTMLDivElement | null>(null);
+  const setOverlayHost = useCallback(
+    (el: HTMLDivElement | null) => {
+      overlayHost.current = el;
+      onOverlayHost?.(el);
+    },
+    [onOverlayHost],
+  );
+  // Plugin overlays are laid in composition pixels and scaled by this one variable.
+  useLayoutEffect(() => {
+    overlayHost.current?.style.setProperty('--kg-preview-scale', String(frameScale));
+  }, [frameScale, comp]);
+  const stop = (event: { stopPropagation(): void }) => event.stopPropagation();
 
   return (
-    <div className="bg-card flex min-h-0 flex-1 flex-col select-none">
-      <PanelHeader
-        title={
-          <div className="border-primary text-foreground flex h-full items-center border-b-2 px-1 font-medium">
-            <span>Composition {comp ? comp.id : ''}</span>
-          </div>
-        }
-      >
-        {frameMs !== null && <span className="text-muted-foreground font-mono text-[10px]">{frameMs.toFixed(0)} ms</span>}
-      </PanelHeader>
-
-      {/* Composition pills and overlay toggles */}
-      {compositions.length > 0 && (
-        <div className="bg-background/60 flex h-7 shrink-0 items-center gap-1.5 border-b px-3 text-[11px]">
-          {compositions.map((c) => {
-            const active = c.id === comp?.id;
-            return (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => onSelectComp?.(c.id)}
-                className={cn(
-                  'rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors',
-                  active
-                    ? 'bg-nle-blue/25 text-sky-300 ring-1 ring-nle-blue/50'
-                    : 'text-muted-foreground hover:bg-white/[0.05] hover:text-foreground',
-                )}
-              >
-                {c.id}
-              </button>
-            );
-          })}
-          <div className="ml-auto flex items-center gap-1.5">
-            <button
-              type="button"
-              aria-pressed={showGuides}
-              onClick={() => setShowGuides((v) => !v)}
-              title="Toggle Layer Transform Box Overlay"
-              className={cn(
-                'flex items-center gap-1 rounded-xs px-1.5 py-0.5 text-[10px] transition-colors',
-                showGuides ? 'bg-nle-blue/25 text-sky-300' : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <CrosshairIcon className="size-3" aria-hidden="true" />
-              <span>Layer Controls</span>
-            </button>
-            <button
-              type="button"
-              aria-pressed={safeZones}
-              onClick={() => onSafeZonesChange(!safeZones)}
-              title="Toggle Title/Action Safe Guides"
-              className={cn(
-                'flex items-center gap-1 rounded-xs px-1.5 py-0.5 text-[10px] transition-colors',
-                safeZones ? 'bg-nle-blue/25 text-sky-300' : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <GridIcon className="size-3" aria-hidden="true" />
-              <span>Safe Zones</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Main Viewport Canvas Area */}
+    <div className="bg-stage relative min-h-0 flex-1 select-none">
       <div
         ref={boxRef}
         data-testid="preview"
@@ -259,7 +224,7 @@ export function Viewer({
         onPointerCancel={onPointerUp}
         onClick={onClick}
         className={cn(
-          'relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-[#101013] p-4',
+          'absolute inset-0 flex items-center justify-center overflow-hidden p-6 pb-[88px]',
           tool === 'hand' ? 'cursor-grab' : tool === 'zoom' ? 'cursor-zoom-in' : 'cursor-default',
         )}
       >
@@ -267,7 +232,7 @@ export function Viewer({
           <div
             ref={frameRef}
             data-testid="frame"
-            className="relative overflow-hidden bg-[repeating-conic-gradient(#18181c_0%_25%,#202026_0%_50%)] bg-[length:16px_16px] shadow-[0_12px_40px_rgba(0,0,0,0.65)] ring-1 ring-white/15"
+            className="relative overflow-hidden rounded-lg bg-[repeating-conic-gradient(#1d1d1d_0%_25%,#262626_0%_50%)] bg-[length:16px_16px] shadow-[0_24px_60px_-12px_rgba(0,0,0,0.6)] ring-1 ring-white/10"
             style={{
               width: shown.width,
               height: shown.height,
@@ -282,20 +247,18 @@ export function Viewer({
               height={comp.height}
             />
 
-            {/* Optional Broadcast Action/Title Safe Overlay */}
             {safeZones && (
               <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-                <div className="absolute inset-[5%] border border-cyan-400/30" />
-                <div className="absolute inset-[10%] border border-dashed border-cyan-400/25" />
-                <div className="absolute inset-x-0 top-1/2 h-px bg-cyan-400/15" />
-                <div className="absolute inset-y-0 left-1/2 w-px bg-cyan-400/15" />
+                <div className="absolute inset-[5%] rounded-sm border border-cyan-300/35" />
+                <div className="absolute inset-[10%] rounded-sm border border-dashed border-cyan-300/30" />
+                <div className="absolute inset-x-0 top-1/2 h-px bg-cyan-300/20" />
+                <div className="absolute inset-y-0 left-1/2 w-px bg-cyan-300/20" />
               </div>
             )}
 
-            {/* Selected layer bounds overlay (read-only) */}
             {showGuides && activeLayer && layerBounds && (
               <div
-                className="pointer-events-none absolute border border-rose-500/90 shadow-[0_0_0_1px_rgba(0,0,0,0.4)]"
+                className="border-primary pointer-events-none absolute rounded-[3px] border-[1.5px] shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
                 aria-hidden="true"
                 style={{
                   left: layerBounds.x * scaleRatio,
@@ -304,19 +267,11 @@ export function Viewer({
                   height: Math.max(2, layerBounds.height * scaleRatio),
                 }}
               >
-                {/* 8 transform handles */}
-                <span className="absolute -top-1 -left-1 size-2 border border-white bg-rose-500" />
-                <span className="absolute -top-1 left-1/2 size-2 -translate-x-1/2 border border-white bg-rose-500" />
-                <span className="absolute -top-1 -right-1 size-2 border border-white bg-rose-500" />
-                <span className="absolute top-1/2 -left-1 size-2 -translate-y-1/2 border border-white bg-rose-500" />
-                <span className="absolute top-1/2 -right-1 size-2 -translate-y-1/2 border border-white bg-rose-500" />
-                <span className="absolute -bottom-1 -left-1 size-2 border border-white bg-rose-500" />
-                <span className="absolute -bottom-1 left-1/2 size-2 -translate-x-1/2 border border-white bg-rose-500" />
-                <span className="absolute -bottom-1 -right-1 size-2 border border-white bg-rose-500" />
-
-                {/* Layer label pill */}
+                {['-top-1 -left-1', '-top-1 left-1/2 -translate-x-1/2', '-top-1 -right-1', 'top-1/2 -left-1 -translate-y-1/2', 'top-1/2 -right-1 -translate-y-1/2', '-bottom-1 -left-1', '-bottom-1 left-1/2 -translate-x-1/2', '-bottom-1 -right-1'].map((place) => (
+                  <span key={place} className={cn('bg-primary absolute size-2 rounded-[3px] border border-white', place)} />
+                ))}
                 <span
-                  className="pointer-events-auto absolute -top-5 left-0 rounded-xs bg-rose-500 px-1.5 py-0.5 font-mono text-[9px] leading-none font-medium text-white shadow"
+                  className="bg-primary text-primary-foreground pointer-events-auto absolute -top-6 left-0 rounded-full px-2 py-0.5 font-mono text-[10px] leading-none font-medium shadow"
                   title={activeLayer.id}
                   data-testid="selection-label"
                 >
@@ -325,32 +280,29 @@ export function Viewer({
               </div>
             )}
 
-            {/* The other selected layers: an outline each */}
             {showGuides &&
               otherRects.map((rect, index) => (
                 <div
                   key={index}
                   data-testid="selection-outline"
-                  className="pointer-events-none absolute border border-rose-500/90"
+                  className="border-primary pointer-events-none absolute rounded-[3px] border-[1.5px]"
                   aria-hidden="true"
                   style={{ left: rect.x * scaleRatio, top: rect.y * scaleRatio, width: Math.max(2, rect.width * scaleRatio), height: Math.max(2, rect.height * scaleRatio) }}
                 />
               ))}
 
-            {/* The box being dragged */}
             {marquee && (
               <div
                 data-testid="marquee"
-                className="pointer-events-none absolute border border-dashed border-sky-300 bg-sky-400/10"
+                className="border-primary bg-primary/10 pointer-events-none absolute rounded-[3px] border border-dashed"
                 aria-hidden="true"
                 style={{ left: marquee.x * scaleRatio, top: marquee.y * scaleRatio, width: marquee.width * scaleRatio, height: marquee.height * scaleRatio }}
               />
             )}
 
-            {/* Anchor Point Reticle */}
             {showGuides && activeLayer && (
               <div
-                className="pointer-events-none absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/90 bg-rose-500/30"
+                className="pointer-events-none absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/90 bg-white/20"
                 aria-hidden="true"
                 style={{
                   left: activeLayer.transform.x * scaleRatio,
@@ -361,56 +313,120 @@ export function Viewer({
                 <span className="absolute inset-y-0 left-1/2 w-px bg-white/90" />
               </div>
             )}
+
+            {/* Where plugin panels draw on the picture: each gets an element in composition pixels (CONTRACT.md section 10). */}
+            <div
+              ref={setOverlayHost}
+              data-testid="plugin-overlays"
+              className="absolute inset-0 overflow-hidden"
+              style={{ pointerEvents: 'none' }}
+              onPointerDown={stop}
+              onPointerUp={stop}
+              onClick={stop}
+            />
           </div>
         ) : (
           <p className="text-muted-foreground text-sm">No composition selected.</p>
         )}
-
-        {/* Bottom-left & bottom-right viewport HUD: the zoom readout toggles fit and 100%. */}
-        {comp && shown && (
-          <div className="pointer-events-none absolute inset-x-3 bottom-2 flex items-center justify-between font-mono text-[10px] text-white/50">
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onViewChange({ zoom: fitMode ? 1 : 'fit', pan: { x: 0, y: 0 } });
-              }}
-              title={fitMode ? 'Show at 100% (1)' : 'Fit to viewer (0)'}
-              className="pointer-events-auto hover:text-foreground flex items-center gap-1 rounded-xs bg-black/50 px-1.5 py-0.5 backdrop-blur-xs"
-            >
-              <Maximize2Icon className="size-2.5" aria-hidden="true" />
-              {fitMode ? `Fit (${scalePct}%)` : `${scalePct}%`}
-            </button>
-            <span className="rounded-xs bg-black/50 px-1.5 py-0.5 backdrop-blur-xs">
-              {comp.width} × {comp.height} · {comp.fps} fps
-            </span>
-          </div>
-        )}
-
-        {frameError && !buildError && (
-          <Alert variant="destructive" className="absolute inset-x-4 bottom-4 w-auto">
-            <TriangleAlertIcon />
-            <AlertTitle>Frame failed ({frameError.code})</AlertTitle>
-            <AlertDescription>{frameError.message}</AlertDescription>
-          </Alert>
-        )}
-        {buildError && (
-          <div
-            role="alertdialog"
-            aria-label="Build error"
-            className="bg-background/90 absolute inset-0 z-10 flex items-center justify-center p-6"
-          >
-            <Alert variant="destructive" className="max-h-full max-w-3xl overflow-auto">
-              <TriangleAlertIcon />
-              <AlertTitle>Build failed ({buildError.code})</AlertTitle>
-              <AlertDescription>
-                <pre className="font-mono text-xs break-words whitespace-pre-wrap">{buildError.message}</pre>
-                <p>The last good build keeps running; this clears when a build succeeds.</p>
-              </AlertDescription>
-            </Alert>
-          </div>
-        )}
       </div>
+
+      {/* Floating controls: the tools top left, the view menu top right, the zoom readout bottom right. */}
+      <div className="pointer-events-none absolute inset-x-4 top-4 flex items-start justify-between">
+        <div className="bg-card/80 border-border/60 pointer-events-auto flex items-center gap-0.5 rounded-full border p-1 shadow-sm backdrop-blur-md" role="toolbar" aria-label="Tools">
+          {TOOLS.map(({ id, label, key, icon: Icon }) => (
+            <Hint key={id} label={`${label} (${key})`}>
+              <Button
+                variant={tool === id ? 'secondary' : 'ghost'}
+                size="icon-sm"
+                aria-label={label}
+                aria-pressed={tool === id}
+                onClick={() => onToolChange(id)}
+                className={cn('rounded-full', tool === id && 'bg-accent text-accent-foreground')}
+              >
+                <Icon />
+              </Button>
+            </Hint>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          {frameMs !== null && <span className="text-muted-foreground/80 pointer-events-none font-mono text-[11px]">{frameMs.toFixed(0)} ms</span>}
+          <Menu>
+            <MenuTrigger
+              render={
+                <Button variant="ghost" size="sm" aria-label="View options" className="bg-card/80 border-border/60 pointer-events-auto rounded-full border px-3 shadow-sm backdrop-blur-md">
+                  <EyeIcon />
+                  View
+                </Button>
+              }
+            />
+            <MenuPopup align="end" className="min-w-56">
+              <MenuGroup>
+                <MenuGroupLabel>Overlays</MenuGroupLabel>
+                <MenuCheckboxItem checked={showGuides} onCheckedChange={(on) => onGuidesChange(on === true)}>
+                  Layer controls
+                </MenuCheckboxItem>
+                <MenuCheckboxItem checked={safeZones} onCheckedChange={(on) => onSafeZonesChange(on === true)}>
+                  Safe zones
+                </MenuCheckboxItem>
+              </MenuGroup>
+              <MenuSeparator />
+              <MenuGroup>
+              <MenuGroupLabel>Zoom</MenuGroupLabel>
+              <MenuItem disabled={!comp} onClick={() => onViewChange({ zoom: 'fit', pan: { x: 0, y: 0 } })}>
+                Fit
+                <MenuShortcut>0</MenuShortcut>
+              </MenuItem>
+              <MenuItem disabled={!comp} onClick={() => onViewChange({ zoom: 0.5, pan: { x: 0, y: 0 } })}>
+                50%
+              </MenuItem>
+              <MenuItem disabled={!comp} onClick={() => onViewChange({ zoom: 1, pan: { x: 0, y: 0 } })}>
+                100%
+                <MenuShortcut>1</MenuShortcut>
+              </MenuItem>
+              <MenuItem disabled={!comp} onClick={() => onViewChange({ zoom: 2, pan: { x: 0, y: 0 } })}>
+                200%
+              </MenuItem>
+              </MenuGroup>
+            </MenuPopup>
+          </Menu>
+        </div>
+      </div>
+
+      {comp && shown && (
+        <div className="pointer-events-none absolute top-14 right-4 flex items-center gap-2 text-xs">
+          <Hint label={fitMode ? 'Show at 100% (1)' : 'Fit to the preview (0)'}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onViewChange({ zoom: fitMode ? 1 : 'fit', pan: { x: 0, y: 0 } })}
+              className="bg-card/80 border-border/60 pointer-events-auto rounded-full border px-3 font-mono text-xs shadow-sm backdrop-blur-md"
+            >
+              <MaximizeIcon />
+              {fitMode ? `Fit (${scalePct}%)` : `${scalePct}%`}
+            </Button>
+          </Hint>
+        </div>
+      )}
+
+      {frameError && !buildError && (
+        <Alert variant="error" className="absolute inset-x-6 bottom-24 w-auto">
+          <TriangleAlertIcon />
+          <AlertTitle>Frame failed ({frameError.code})</AlertTitle>
+          <AlertDescription>{frameError.message}</AlertDescription>
+        </Alert>
+      )}
+      {buildError && (
+        <div role="alertdialog" aria-label="Build error" className="bg-stage/90 absolute inset-0 z-10 flex items-center justify-center p-6 backdrop-blur-sm">
+          <Alert variant="error" className="bg-card max-h-full max-w-3xl overflow-auto">
+            <TriangleAlertIcon />
+            <AlertTitle>Build failed ({buildError.code})</AlertTitle>
+            <AlertDescription>
+              <pre className="font-mono text-xs break-words whitespace-pre-wrap">{buildError.message}</pre>
+              <p>The last good build keeps running; this clears when a build succeeds.</p>
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
     </div>
   );
-}
+});

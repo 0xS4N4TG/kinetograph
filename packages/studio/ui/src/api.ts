@@ -14,6 +14,8 @@ import type {
   FrameHeader,
   FrameRequest,
   InspectResult,
+  PluginSummary,
+  PresetInfo,
   ProjectInfo,
   RenderJob,
   RenderRequest,
@@ -33,6 +35,8 @@ export type {
   CompositionInfo,
   FrameHeader,
   InspectResult,
+  PluginSummary,
+  PresetInfo,
   ProjectInfo,
   RenderJob,
   RenderRequest,
@@ -42,7 +46,7 @@ export type {
   TimelineProgress,
 };
 export type { SequenceJson } from '../../src/protocol.ts';
-export type { RenderStatus, TimelineLayer } from '../../src/protocol.ts';
+export type { RenderStatus, TimelineAudio, TimelineLayer } from '../../src/protocol.ts';
 
 /** A failed request: the server's `StudioError`, plus the HTTP status when there was one. */
 export class ApiError extends Error {
@@ -77,6 +81,8 @@ export interface StudioSocket {
   requestFrame(args: FrameArgs): number;
   /** Sends a message for the coding agent; false when the socket is not open. */
   sendAgent(message: AgentClientMessage): boolean;
+  /** Tells the server what this window previews; false when the socket is not open. */
+  sendProps(comp: string, props: Record<string, unknown>): boolean;
   close(): void;
 }
 
@@ -87,6 +93,16 @@ export interface StudioApi {
   timeline(comp: string, props?: Record<string, unknown>): Promise<TimelineData>;
   /** How far the sweep that `timeline` waits for has got. */
   timelineProgress(comp: string, props?: Record<string, unknown>): Promise<TimelineProgress>;
+  /** The mixed sound of a composition as a WAV; null when it has none. Answers when the timeline sweep has finished. */
+  audio(comp: string, props?: Record<string, unknown>): Promise<ArrayBuffer | null>;
+  /** Peaks (0..1) of one audio clip, or of the whole mix when `clip` is left out. */
+  waveform(comp: string, props: Record<string, unknown> | undefined, clip: string | undefined, buckets: number): Promise<Waveform>;
+  /** The saved presets of a composition. */
+  presets(comp: string): Promise<PresetInfo[]>;
+  /** Writes `presets/<comp>/<name>.json` beside the entry. */
+  savePreset(comp: string, name: string, props: Record<string, unknown>): Promise<void>;
+  /** The installed Kinetograph plugins. */
+  plugins(): Promise<PluginSummary[]>;
   /** The coding agents on offer. */
   agentInfo(): Promise<AgentInfo>;
   renders(): Promise<RenderJob[]>;
@@ -99,6 +115,16 @@ export interface StudioApi {
    * only while no preview frame is being asked for; `build` makes the address change when the project is rebuilt.
    */
   thumbnailUrl(comp: string, frame: number, height: number, build: number, props?: Record<string, unknown>): string;
+  /** The address of frame `frame` as a JPEG drawn at `scale` (0 to 1) of the composition's size: the tiles of a contact sheet. */
+  frameUrl(comp: string, frame: number, scale: number, props?: Record<string, unknown>): string;
+}
+
+/** `GET /api/waveform`. */
+export interface Waveform {
+  peaks: number[];
+  /** The frames the clip's sound covers (first, then one past the last); only for a clip. */
+  startFrame?: number;
+  endFrame?: number;
 }
 
 export interface ApiOptions {
@@ -179,6 +205,28 @@ export function createApi(options: ApiOptions = {}): StudioApi {
     timeline: (comp, props) => request<TimelineData>(`/api/timeline${query({ comp, props: propsParam(props) })}`),
     timelineProgress: (comp, props) =>
       request<TimelineProgress>(`/api/timeline/progress${query({ comp, props: propsParam(props) })}`),
+    audio: async (comp, props) => {
+      let response: Response;
+      try {
+        response = await doFetch(`${baseUrl}/api/audio${query({ comp, props: propsParam(props) })}`);
+      } catch (cause) {
+        throw new ApiError('IO', cause instanceof Error ? cause.message : String(cause));
+      }
+      if (response.status === 404) return null;
+      if (!response.ok) throw new ApiError('IO', `${response.status} ${response.statusText}`, response.status);
+      return response.arrayBuffer();
+    },
+    waveform: (comp, props, clip, buckets) =>
+      request<Waveform>(`/api/waveform${query({ comp, props: propsParam(props), clip, buckets })}`),
+    presets: async (comp) => (await request<{ presets: PresetInfo[] }>(`/api/presets${query({ comp })}`)).presets,
+    savePreset: async (comp, name, props) => {
+      await request(`/api/presets/${encodeURIComponent(comp)}/${encodeURIComponent(name)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(props),
+      });
+    },
+    plugins: async () => (await request<{ plugins: PluginSummary[] }>('/api/plugins')).plugins,
     agentInfo: () => request<AgentInfo>('/api/agent', { headers: token ? { 'X-Studio-Token': token } : {} }),
     renders: () => request<RenderJob[]>('/api/renders'),
     startRender: (body) =>
@@ -190,6 +238,8 @@ export function createApi(options: ApiOptions = {}): StudioApi {
     cancelRender: (id) => request<RenderJob>(`/api/renders/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     thumbnailUrl: (comp, frame, height, build, props) =>
       `${baseUrl}/api/thumbnail${query({ comp, frame, height, build, props: propsParam(props) })}`,
+
+    frameUrl: (comp, frame, scale, props) => `${baseUrl}/api/frame${query({ comp, frame, scale, format: 'jpeg', props: propsParam(props) })}`,
 
     connect(handlers) {
       const Socket = options.WebSocket ?? WebSocket;
@@ -228,6 +278,12 @@ export function createApi(options: ApiOptions = {}): StudioApi {
         },
         sendAgent(message) {
           if (socket === null || socket.readyState !== 1) return false;
+          socket.send(JSON.stringify(message));
+          return true;
+        },
+        sendProps(comp, props) {
+          if (socket === null || socket.readyState !== 1) return false;
+          const message: ClientMessage = { type: 'props', comp, props };
           socket.send(JSON.stringify(message));
           return true;
         },

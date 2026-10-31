@@ -2,18 +2,20 @@
 // the renderer live in worker threads (`project.ts`, `render-queue.ts`); this thread only routes.
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { createRequire } from 'node:module';
 import { dirname, extname, join, resolve } from 'node:path';
-import { cliVersion, CliError } from 'kinetograph';
+import { bundlePanel, cliVersion, CliError, findPlugins, pluginToolNames } from 'kinetograph';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { REAL_ENGINE_FILE } from './worker-client.js';
-import { AgentBridge } from './agent-bridge.js';
+import { AgentBridge, type McpServerConfig } from './agent-bridge.js';
 import { ChatLog } from './chat-log.js';
 import { isInside } from './agent-fs.js';
 import { availableAgents } from './agent-presets.js';
 import { openBrowser } from './open-browser.js';
+import { listPresets, savePreset } from './presets.js';
 import { Project } from './project.js';
 import {
   encodeFrameMessage,
@@ -24,6 +26,8 @@ import {
   type CompositionInfo,
   type FrameHeader,
   type FrameRequest,
+  type LiveProps,
+  type PluginSummary,
   type ProjectInfo,
   type RenderJob,
   type RenderRequest,
@@ -31,7 +35,7 @@ import {
 } from './protocol.js';
 import { RenderQueue } from './render-queue.js';
 import { serveStatic } from './static.js';
-import { StudioFailure, httpError } from './util.js';
+import { StudioFailure, httpError, resamplePeaks } from './util.js';
 import type { PreviewReply } from './engine.js';
 import type { StudioOptions, StudioServer } from './index.js';
 
@@ -95,6 +99,11 @@ function queryProps(text: string | null): Record<string, unknown> | undefined {
   return value;
 }
 
+/** `cli.js` of the `kinetograph` package this studio runs with (next to its `index.js`). */
+function kinetographCli(): string {
+  return join(dirname(createRequire(import.meta.url).resolve('kinetograph')), 'cli.js');
+}
+
 function displayHost(host: string): string {
   const shown = host === '0.0.0.0' || host === '::' ? 'localhost' : host;
   return shown.includes(':') ? `[${shown}]` : shown;
@@ -128,6 +137,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   // Whoever reaches the agent can have it edit files and run tools, so: a secret in the URL the studio opens, the same
   // origin, one window that owns the conversation, and no agent at all on an address other computers can reach.
   const token = randomBytes(32).toString('hex');
+  // The agent's MCP server gets its own secret, good for the live-props routes only: not the window's channel (/ws, the agent routes).
+  const agentToken = randomBytes(32).toString('hex');
   const agentOff =
     !loopback && options.allowRemoteAgent !== true
       ? 'The coding agent is off because the studio can be reached from other computers. Start it with --allow-remote-agent if you really want it on.'
@@ -144,6 +155,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     orphaned = null;
     chat.clear();
   };
+  // Where the studio can be reached by the agent's MCP server; known once it listens.
+  let selfUrl = '';
   const bridge = new AgentBridge({
     cwd: agentCwd,
     allowed: agents.map((a) => a.command),
@@ -157,13 +170,25 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     // A permission asked while the window reloads waits for it to come back.
     hasViewer: () => (owner !== null && owner.readyState === owner.OPEN) || orphaned !== null,
     version: cliVersion(),
+    // The agent gets the Kinetograph tools: the plugins' tools and, for this studio, studio_get_props and studio_set_props.
+    mcpServers: (): McpServerConfig[] => [
+      {
+        name: 'kinetograph',
+        command: process.execPath,
+        args: [kinetographCli(), 'mcp', '--studio', selfUrl],
+        env: [{ name: 'KINETOGRAPH_STUDIO_TOKEN', value: agentToken }],
+      },
+    ],
   });
-  const tokenOk = (given: string | null | undefined): boolean => {
+  // What the window previews (its last `props` message), for the agent to read, and what the agent pushes to it.
+  let live: LiveProps = { comp: null, props: {} };
+  const matches = (given: string | null | undefined, secret: string): boolean => {
     if (!given) return false;
     const a = Buffer.from(given);
-    const b = Buffer.from(token);
+    const b = Buffer.from(secret);
     return a.length === b.length && timingSafeEqual(a, b);
   };
+  const tokenOk = (given: string | null | undefined): boolean => matches(given, token);
 
   /** The composition `comp`, or `BUILD` before any good build and `NOT_FOUND` for an unknown id. */
   function known(comp: string): CompositionInfo {
@@ -384,9 +409,82 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         : { presets: agents, command: bridge.currentCommand, cwd: agentCwd };
       return json(res, 200, info);
     }
+    if (path === '/api/live-props' && (method === 'GET' || method === 'PUT')) {
+      const given = req.headers['x-studio-token'] as string | undefined;
+      if (!tokenOk(given) && !matches(given, agentToken)) {
+        throw new StudioFailure('FORBIDDEN', 'live props need the studio token from the address the studio opened');
+      }
+      if (method === 'GET') return json(res, 200, live);
+      const body = await readBody(req);
+      if (!isObject(body)) throw invalid('the body must be { comp, props }');
+      if (typeof body.comp !== 'string' || body.comp === '') throw invalid('comp is required');
+      if (!isObject(body.props)) throw invalid('props must be a JSON object');
+      if (project.buildId === 0) known(body.comp); // no good build yet
+      if (!project.compositions.some((c) => c.id === body.comp)) {
+        throw invalid(`no composition "${body.comp}"; the project has: ${project.compositions.map((c) => c.id).join(', ') || '(none)'}`);
+      }
+      live = { comp: body.comp, props: body.props };
+      broadcast({ type: 'props', comp: body.comp, props: body.props });
+      return json(res, 200, live);
+    }
     if (method === 'GET' && path === '/api/compositions') {
       if (project.buildId === 0) known('');
       return json(res, 200, project.compositions);
+    }
+    if (method === 'GET' && path === '/api/plugins') {
+      const plugins: PluginSummary[] = [];
+      for (const p of findPlugins(entry)) {
+        plugins.push({
+          name: p.name,
+          version: p.version,
+          title: p.title,
+          description: p.description,
+          icon: p.iconFile ? `/api/plugins/${encodeURIComponent(p.name)}/icon.svg` : null,
+          components: p.components,
+          skill: p.skill,
+          panel: p.panelFile ? `/api/plugins/${encodeURIComponent(p.name)}/panel.js` : null,
+          tools: await pluginToolNames(p, log),
+        });
+      }
+      return json(res, 200, { plugins });
+    }
+    const icon = /^\/api\/plugins\/([^/]+)\/icon\.svg$/.exec(path);
+    if (method === 'GET' && icon) {
+      const name = decodeURIComponent(icon[1]!);
+      const file = findPlugins(entry).find((p) => p.name === name)?.iconFile;
+      if (!file) throw new StudioFailure('NOT_FOUND', `no icon for the plugin "${name}"`);
+      const svg = readFileSync(file);
+      res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Content-Length': svg.length, 'Cache-Control': 'no-store' });
+      return void res.end(svg);
+    }
+    const panel = /^\/api\/plugins\/([^/]+)\/panel\.js$/.exec(path);
+    if (method === 'GET' && panel) {
+      const name = decodeURIComponent(panel[1]!);
+      const file = findPlugins(entry).find((p) => p.name === name)?.panelFile;
+      if (!file) throw new StudioFailure('NOT_FOUND', `no panel for the plugin "${name}"`);
+      let code: string;
+      try {
+        code = await bundlePanel(file);
+      } catch (error) {
+        throw new StudioFailure('BUILD', `the panel of "${name}" did not build: ${(error as Error).message}`);
+      }
+      res.writeHead(200, {
+        'Content-Type': 'text/javascript; charset=utf-8',
+        'Content-Length': Buffer.byteLength(code),
+        'Cache-Control': 'no-store',
+      });
+      return void res.end(code);
+    }
+    if (method === 'GET' && path === '/api/presets') {
+      const comp = q.get('comp');
+      if (!comp) throw invalid('comp is required');
+      return json(res, 200, { presets: listPresets(entry, comp) });
+    }
+    const preset = /^\/api\/presets\/([^/]+)\/([^/]+)$/.exec(path);
+    if (method === 'PUT' && preset) {
+      const name = decodeURIComponent(preset[2]!);
+      savePreset(entry, decodeURIComponent(preset[1]!), name, await readBody(req));
+      return json(res, 200, { name });
     }
     if (method === 'GET' && path === '/api/frame') {
       const params = frameParams({
@@ -452,6 +550,29 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       if (comp === '') throw invalid('comp is required');
       known(comp);
       return json(res, 200, project.timelineProgressOf(comp, { ...baseProps, ...queryProps(q.get('props')) }));
+    }
+    if (method === 'GET' && (path === '/api/audio' || path === '/api/waveform')) {
+      const comp = q.get('comp') ?? '';
+      if (comp === '') throw invalid('comp is required');
+      known(comp);
+      const mix = await project.audio(comp, { ...baseProps, ...queryProps(q.get('props')) });
+      if (!mix) throw new StudioFailure('NOT_FOUND', `the composition "${comp}" has no audio`);
+      if (path === '/api/audio') {
+        res.writeHead(200, {
+          'Content-Type': 'audio/wav',
+          'Content-Length': mix.wav.length,
+          'Cache-Control': 'no-store',
+          'X-Build': String(project.buildId),
+        });
+        return void res.end(Buffer.from(mix.wav.buffer, mix.wav.byteOffset, mix.wav.byteLength));
+      }
+      const buckets = number(q.get('buckets')) ?? 256;
+      if (!Number.isInteger(buckets) || buckets < 1 || buckets > 16384) throw invalid(`buckets must be a whole number from 1 to 16384, got "${q.get('buckets')}"`);
+      const clip = q.get('clip');
+      if (clip === null) return json(res, 200, { peaks: resamplePeaks(mix.peaks, buckets) });
+      const found = mix.clips.find((c) => c.id === clip);
+      if (!found) throw new StudioFailure('NOT_FOUND', `no audio clip "${clip}" in "${comp}"`);
+      return json(res, 200, { peaks: resamplePeaks(found.peaks, buckets), startFrame: found.startFrame, endFrame: found.endFrame });
     }
     if (method === 'GET' && path === '/api/renders') return json(res, 200, queue.list());
     if (method === 'POST' && path === '/api/renders') return json(res, 201, await createRender(await readBody(req)));
@@ -605,7 +726,12 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         if (isObject(parsed) && typeof parsed.type === 'string' && parsed.type.startsWith('agent.')) {
           return agentMessage(ws, parsed as unknown as AgentClientMessage);
         }
-        if (!isObject(parsed) || parsed.type !== 'frame') throw invalid('unknown message: only { "type": "frame", … } and "agent.…" messages are understood');
+        if (isObject(parsed) && parsed.type === 'props') {
+          if (typeof parsed.comp !== 'string' || !isObject(parsed.props)) throw invalid('a props message is { "type": "props", "comp": string, "props": object }');
+          live = { comp: parsed.comp, props: parsed.props };
+          return;
+        }
+        if (!isObject(parsed) || parsed.type !== 'frame') throw invalid('unknown message: only { "type": "frame", … }, { "type": "props", … } and "agent.…" messages are understood');
         if (typeof parsed.requestId !== 'number') throw invalid('requestId must be a number');
         message = parsed as unknown as FrameRequest;
       } catch (error) {
@@ -662,7 +788,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     });
     http.listen(options.port ?? 3000, host, resolveListening);
   });
-  const url = `http://${displayHost(host)}:${(http.address() as AddressInfo).port}/?token=${token}`;
+  selfUrl = `http://${displayHost(host)}:${(http.address() as AddressInfo).port}`;
+  const url = `${selfUrl}/?token=${token}`;
 
   try {
     await project.start();

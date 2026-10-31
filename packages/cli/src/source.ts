@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ArtifactRecord, CompositionInfo, FrameRenderer } from '@kinetographdev/core';
@@ -93,11 +93,16 @@ export function isSceneFile(entry: string): boolean {
   return extname(entry).toLowerCase() === '.json';
 }
 
+/** `--props`: a JSON object, or the path of a file holding one (a value that does not start with `{` and names a file). */
 export function parseProps(text: string | undefined): Record<string, unknown> {
   if (text === undefined) return {};
   let value: unknown;
+  let source = text;
+  if (!text.trimStart().startsWith('{') && existsSync(text) && statSync(text).isFile()) {
+    source = readFileSync(text, 'utf8');
+  }
   try {
-    value = JSON.parse(text);
+    value = JSON.parse(source);
   } catch (error) {
     throw new CliError('INVALID_ARG', `--props is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }

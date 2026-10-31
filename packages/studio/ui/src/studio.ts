@@ -1,6 +1,8 @@
 // The studio's state: what the server told us, what the user chose, and the player. One hook so `App` is layout only.
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import { readStored, writeStored } from '@/lib/persisted';
 
 import {
   ApiError,
@@ -18,11 +20,13 @@ import {
   type StudioError,
   type StudioSocket,
   type TimelineData,
+  type Waveform,
 } from '@/api';
+import { PreviewAudio } from '@/lib/audio';
 import { findLayer } from '@/lib/inspect';
 import { numberByParent, numberTree } from '@/lib/names';
-import { Player, type PlayerState } from '@/lib/player';
-import { layerName, remapSelection } from '@/lib/selection';
+import { Player } from '@/lib/player';
+import { layerName, remapSelection, type FrameRange } from '@/lib/selection';
 
 function toStudioError(error: unknown): StudioError {
   if (error instanceof ApiError) return { code: error.code, message: error.message };
@@ -44,7 +48,8 @@ function upsertJob(jobs: RenderJob[], job: RenderJob): RenderJob[] {
 /** What the timeline has to show: the sweep is slow on a long film, so loading and failing are states of their own. */
 export type TimelineStatus =
   | { state: 'loading'; done: number; total: number }
-  | { state: 'ready'; data: TimelineData }
+  // `refreshing`: the timeline on show is of the props or build before the last change, and a newer one is being read.
+  | { state: 'ready'; data: TimelineData; refreshing: { done: number; total: number } | null }
   | { state: 'error'; error: StudioError };
 
 export interface Studio {
@@ -58,8 +63,8 @@ export interface Studio {
   buildId: number;
   buildError: StudioError | null;
 
+  /** The player is not a React subscription here: the views that follow the frame read it with `usePlayerState`. */
   player: Player;
-  playerState: PlayerState;
   /** Calls `listener` with each frame to show, and returns how to stop. */
   onImage(listener: (frame: ReceivedFrame) => void): () => void;
   /** The last frame handed to listeners, for a view that mounts later. */
@@ -73,6 +78,10 @@ export interface Studio {
   resetProps(): void;
 
   timeline: TimelineStatus;
+  /** The preview's sound: whether the composition has any, and the mute switch. */
+  audio: PreviewAudio;
+  /** Peaks of one audio clip of the timeline (or of the whole mix) in `buckets` slices. */
+  waveform(clip: string | undefined, buckets: number): Promise<Waveform>;
   inspect: InspectResult | null;
   /** The layers picked in the preview, the scene tree or the timeline, in the order they were picked. */
   selectedLayers: string[];
@@ -80,11 +89,16 @@ export interface Studio {
   selectedLayer: string | null;
   selectLayer(id: string | null): void;
   selectLayers(ids: string[]): void;
+  /** The span of time picked on the timeline (frames, both ends inside it), or null. */
+  selectedRange: FrameRange | null;
+  selectRange(range: FrameRange | null): void;
 
   /** Calls `listener` with each event of the coding agent, and returns how to stop. */
   onAgentEvent(listener: (event: AgentEvent) => void): () => void;
   /** The address of a small picture of `frame` of the composition, for the timeline's clips; null without one. */
   thumbnailUrl(frame: number, height: number): string | null;
+  /** The address of a frame as a JPEG at `scale` of the composition's size; null without a composition. */
+  frameUrl(frame: number, scale: number): string | null;
   /** The conversation so far, sent when this window takes it over after a reload. */
   onAgentHistory(listener: (items: ChatRecord[]) => void): () => void;
   /** Sends a message to the coding agent; false when the connection is down. */
@@ -97,7 +111,8 @@ export interface Studio {
 }
 
 const INSPECT_DELAY_MS = 80;
-const TIMELINE_DELAY_MS = 200;
+/** A change of props is read again this long after the last one, ms. */
+const TIMELINE_DELAY_MS = 250;
 const TIMELINE_POLL_MS = 400;
 
 export function useStudio(api: StudioApi): Studio {
@@ -108,12 +123,34 @@ export function useStudio(api: StudioApi): Studio {
   const [buildId, setBuildId] = useState(0);
   const [buildError, setBuildError] = useState<StudioError | null>(null);
   const [edits, setEdits] = useState<Record<string, Record<string, unknown>>>({});
+  // The edited props survive a reload: kept per project in the browser, restored once the project is known.
+  const editsKey = project ? `kg.props:${project.entry}` : null;
+  const editsRestored = useRef<string | null>(null);
+  const skipWrite = useRef(false);
+  useEffect(() => {
+    if (!editsKey || editsRestored.current === editsKey) return;
+    editsRestored.current = editsKey;
+    const stored = readStored(editsKey);
+    if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
+      skipWrite.current = true;
+      setEdits((all) => ({ ...(stored as Record<string, Record<string, unknown>>), ...all }));
+    }
+  }, [editsKey]);
+  useEffect(() => {
+    if (!editsKey || editsRestored.current !== editsKey) return;
+    if (skipWrite.current) {
+      skipWrite.current = false;
+      return;
+    }
+    writeStored(editsKey, Object.keys(edits).length > 0 ? edits : undefined);
+  }, [editsKey, edits]);
   const [timeline, setTimeline] = useState<TimelineStatus>({ state: 'loading', done: 0, total: 0 });
   const [inspect, setInspect] = useState<InspectResult | null>(null);
   const [selectedLayers, setSelectedLayers] = useState<string[]>([]);
   const selectedLayer = selectedLayers[0] ?? null;
   const selectLayer = useCallback((id: string | null) => setSelectedLayers(id === null ? [] : [id]), []);
   const selectLayers = useCallback((ids: string[]) => setSelectedLayers(ids), []);
+  const [selectedRange, selectRange] = useState<FrameRange | null>(null);
   /** The names the selected layers had, to find them again when the project is rebuilt and their ids moved. */
   const selectedNames = useRef(new Map<string, string>());
   const selectedRef = useRef<string[]>([]);
@@ -131,8 +168,12 @@ export function useStudio(api: StudioApi): Studio {
   const imageListeners = useRef(new Set<(frame: ReceivedFrame) => void>());
   const lastImageRef = useRef<ReceivedFrame | null>(null);
   const playerRef = useRef<Player | null>(null);
+  const audioRef = useRef<PreviewAudio | null>(null);
+  audioRef.current ??= new PreviewAudio();
+  const audio = audioRef.current;
   if (playerRef.current === null) {
     playerRef.current = new Player({
+      audio,
       requestFrame: (args) => socketRef.current?.requestFrame(args) ?? -1,
       onImage: (frame) => {
         lastImageRef.current = frame;
@@ -141,7 +182,6 @@ export function useStudio(api: StudioApi): Studio {
     });
   }
   const player = playerRef.current;
-  const playerState = useSyncExternalStore(player.subscribe, player.getState);
 
   const onImage = useCallback((listener: (frame: ReceivedFrame) => void) => {
     imageListeners.current.add(listener);
@@ -206,6 +246,14 @@ export function useStudio(api: StudioApi): Studio {
           break;
         case 'render':
           setRenders((jobs) => upsertJob(jobs, message.job));
+          break;
+        case 'props':
+          // Pushed by the agent: show that composition with these props (Reset still goes back to the defaults).
+          if (compIdRef.current !== message.comp) {
+            setCompId(message.comp);
+            setSelectedLayers([]);
+          }
+          setEdits((all) => ({ ...all, [message.comp]: message.props }));
           break;
         case 'agent':
           for (const listener of agentListeners.current) listener(message.event);
@@ -276,8 +324,14 @@ export function useStudio(api: StudioApi): Studio {
 
   const selectComp = useCallback((id: string) => {
     setCompId(id);
+    selectRange(null);
     setSelectedLayers([]);
   }, []);
+
+  // The server is told what is previewed, for the agent to read; again when the socket comes back.
+  useEffect(() => {
+    if (connected && comp) socketRef.current?.sendProps(comp.id, propValues);
+  }, [connected, comp?.id, propValues]);
 
   // `comp` is a new object after each refetch; the player only acts when what it shows changed.
   useEffect(() => {
@@ -286,22 +340,33 @@ export function useStudio(api: StudioApi): Studio {
 
   // ---- timeline and scene tree ----
 
+  // The timeline on show stays until the next one arrives (a prop edit does not blank it); a thin line tracks the reading.
   useEffect(() => {
-    setTimeline({ state: 'loading', done: 0, total: 0 });
-    if (!comp) return;
+    if (!comp) {
+      setTimeline({ state: 'loading', done: 0, total: 0 });
+      return;
+    }
+    setTimeline((s) => (s.state === 'ready' && s.data.comp === comp.id ? { ...s, refreshing: s.refreshing ?? { done: 0, total: 0 } } : { state: 'loading', done: 0, total: 0 }));
     let cancelled = false;
     let poll: ReturnType<typeof setInterval> | undefined;
     const timer = setTimeout(() => {
       // The request answers only when the whole film has been read: meanwhile, ask how far it has got.
       poll = setInterval(() => {
         api.timelineProgress(comp.id, propsOverride).then(
-          ({ done, total }) => !cancelled && setTimeline((s) => (s.state === 'loading' ? { state: 'loading', done, total } : s)),
+          ({ done, total }) =>
+            !cancelled &&
+            setTimeline((s) => (s.state === 'loading' ? { state: 'loading', done, total } : s.state === 'ready' && s.refreshing ? { ...s, refreshing: { done, total } } : s)),
           () => {},
         );
       }, TIMELINE_POLL_MS);
       api.timeline(comp.id, propsOverride).then(
-        // Same-name siblings are numbered ("Card 2") once, here, for every view that names them.
-        (data) => !cancelled && setTimeline({ state: 'ready', data: { ...data, layers: numberByParent(data.layers) } }),
+        (raw) => {
+          if (cancelled) return;
+          // Same-name siblings are numbered ("Card 2") once, here, for every view that names them.
+          const data = { ...raw, layers: numberByParent(raw.layers) };
+          // The same timeline as the one on show is not a new one: its rows are not drawn again.
+          setTimeline((s) => (s.state === 'ready' && sameJson(s.data, data) ? (s.refreshing ? { ...s, refreshing: null } : s) : { state: 'ready', data, refreshing: null }));
+        },
         (error: unknown) => !cancelled && setTimeline({ state: 'error', error: toStudioError(error) }),
       );
     }, TIMELINE_DELAY_MS);
@@ -312,16 +377,44 @@ export function useStudio(api: StudioApi): Studio {
     };
   }, [api, comp?.id, comp?.durationInFrames, overrideKey, reloads]);
 
-  const frame = playerState.frame;
-  const moving = playerState.playing || playerState.scrubbing;
+  // The sound of the composition: fetched once the timeline sweep that mixes it has been asked for, with the same wait
+  // after a prop edit. The sound that plays goes on until the new mix has been decoded.
+  useEffect(() => {
+    if (!comp) {
+      audio.clear();
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void audio.load(() => api.audio(comp.id, propsOverride)).then((loaded) => {
+        // Playing when the new sound arrives: it joins at the playhead.
+        const { playing, frame } = player.getState();
+        if (loaded && !cancelled && playing) audio.start(frame / comp.fps);
+      });
+    }, TIMELINE_DELAY_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [api, audio, player, comp?.id, comp?.fps, comp?.durationInFrames, overrideKey, reloads]);
+
+  const waveform = useCallback(
+    (clip: string | undefined, buckets: number) => (comp ? api.waveform(comp.id, propsOverride, clip, buckets) : Promise.resolve({ peaks: [] })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [api, comp?.id, overrideKey],
+  );
+
+  // The scene of the frame on show, fetched once the playhead rests. Driven by the player's own subscription, not by a
+  // React one, so a frame ticking by does not render the whole studio.
   useEffect(() => {
     if (!comp) {
       setInspect(null);
       return;
     }
-    if (moving) return;
     let cancelled = false;
-    const timer = setTimeout(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let key = '';
+    const fetchScene = (frame: number) => {
       api.inspect(comp.id, frame, propsOverride).then(
         (data) => {
           if (cancelled) return;
@@ -340,12 +433,24 @@ export function useStudio(api: StudioApi): Studio {
         },
         () => !cancelled && setInspect(null),
       );
-    }, INSPECT_DELAY_MS);
+    };
+    const schedule = (force: boolean) => {
+      const { frame, playing, scrubbing } = player.getState();
+      const next = `${frame}:${playing || scrubbing}`;
+      if (!force && next === key) return;
+      key = next;
+      clearTimeout(timer);
+      if (playing || scrubbing) return;
+      timer = setTimeout(() => fetchScene(frame), INSPECT_DELAY_MS);
+    };
+    schedule(true);
+    const off = player.subscribe(() => schedule(false));
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      off();
     };
-  }, [api, comp?.id, frame, moving, overrideKey, reloads]);
+  }, [api, player, comp?.id, overrideKey, reloads]);
 
   // ---- the coding agent ----
 
@@ -362,6 +467,10 @@ export function useStudio(api: StudioApi): Studio {
     };
   }, []);
   const agentInfo = useCallback(() => api.agentInfo(), [api]);
+  const frameUrl = useCallback(
+    (frame: number, scale: number) => (comp && buildId > 0 ? api.frameUrl(comp.id, frame, scale, propsOverride) : null),
+    [api, comp, buildId, propsOverride],
+  );
   const thumbnailUrl = useCallback(
     (frame: number, height: number) => (comp && buildId > 0 ? api.thumbnailUrl(comp.id, frame, height, buildId, propsOverride) : null),
     [api, comp?.id, buildId, overrideKey],
@@ -399,7 +508,6 @@ export function useStudio(api: StudioApi): Studio {
     buildId,
     buildError,
     player,
-    playerState,
     onImage,
     lastImage,
     propValues,
@@ -407,14 +515,19 @@ export function useStudio(api: StudioApi): Studio {
     setPropValues,
     resetProps,
     timeline,
+    audio,
+    waveform,
     inspect,
     selectedLayers,
     selectedLayer,
     selectLayer,
     selectLayers,
+    selectedRange,
+    selectRange,
     onAgentEvent,
     onAgentHistory,
     thumbnailUrl,
+    frameUrl,
     sendAgent,
     agentInfo,
     renders,

@@ -3,7 +3,8 @@
 > A blazingly fast programmatic video engine, made for agents, with no browser in it. Write a video in TypeScript with
 > Remotion's API, or as a plain HTML page (HyperFrames projects render as they are), with CSS, SVG, Canvas 2D, WebGL
 > fragment shaders, GSAP and Web Audio; Node runs the code; a Rust GPU compositor (an N-API addon on wgpu) draws every
-> frame. `remotion` and `@remotion/*` imports resolve to Kinetograph's own implementation.
+> frame. A new project imports from `@kinetographdev/core` (it comes with `npm install kinetograph`; Remotion is not
+> installed); `remotion` and `@remotion/*` imports in an existing project resolve to the same code.
 
 ## If you are an agent: install the skills first
 
@@ -65,7 +66,7 @@ Every command takes `--json`. `npx kinetograph mcp` serves the same commands as 
 - `npx kinetograph lint <entry>`: overflowing text, off-canvas layers, missing fonts and assets, what cannot be drawn
 - `npx kinetograph doctor <entry>`: what the engine cannot draw, and in which frames
 - `npx kinetograph render <entry> -o out.mp4`: frames to a video with audio
-- `npx kinetograph studio <entry>`: local preview, timeline, scene tree, props and render queue
+- `npx kinetograph studio <entry>`: local editor with a preview that plays sound, a timeline, props and presets, plugin cards, export, a render queue and a chat with your coding agent
 - `npx kinetograph fetch-deps <entry>`: download what an HTML page loads from the web, ahead of a render
 - Also: `compositions`, `onion`, `check`, `bench`, `audio analyze`, `snapshot`, `effects`
 

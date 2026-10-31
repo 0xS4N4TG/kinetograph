@@ -4,6 +4,8 @@
 // are found by rendering that Root once (nothing is drawn), as Remotion's Studio
 // does, so a Root can compute its list.
 
+import { createRequire } from 'node:module';
+import { join } from 'node:path';
 import { createContext, useContext, type ComponentType, type ReactNode } from 'react';
 import { createSceneRoot, type VideoConfig } from '@kinetographdev/react';
 
@@ -14,6 +16,8 @@ export interface CompositionInfo {
   fps: number;
   durationInFrames: number;
   defaultProps: Record<string, unknown>;
+  /** JSON Schema of the composition's zod (v4) `schema`; absent when there is none or it can't be converted. */
+  propsSchema?: Record<string, unknown>;
 }
 
 type Metadata<P> = Partial<Omit<CompositionInfo, 'id'> & { props: P; margin: number }>;
@@ -62,6 +66,7 @@ export interface CompositionEntry extends CompositionInfo {
   lazyComponent?: () => Promise<{ default: ComponentType<any> }>;
   calculateMetadata?: CompositionProps<any>['calculateMetadata'];
   folder: string[];
+  schema?: unknown;
 }
 
 interface Collector {
@@ -131,6 +136,7 @@ function entryFrom(props: CompositionProps<any>, folder: string[], isStill: bool
     lazyComponent: props.lazyComponent,
     calculateMetadata: props.calculateMetadata,
     folder,
+    schema: props.schema,
   };
 }
 
@@ -177,7 +183,10 @@ export function registerRoot(component: ComponentType): void {
 function discover(): CompositionEntry[] {
   if (discovered !== null) return discovered;
   if (root === null) {
-    throw new Error('No root is registered: call registerRoot(Root) in the project entry before asking for compositions');
+    throw new Error(
+      "No root is registered: call registerRoot(Root) in the project entry before asking for compositions " +
+        "(import { registerRoot, Composition } from '@kinetographdev/core'; a file that only exports a component is not an entry)",
+    );
   }
   const Root = root;
   const collector: Collector = { entries: [] };
@@ -196,16 +205,50 @@ function discover(): CompositionEntry[] {
   return discovered;
 }
 
+type ToJsonSchema = (schema: unknown, options: { unrepresentable: 'any' }) => Record<string, unknown>;
+
+let toJsonSchema: ToJsonSchema | null | undefined;
+
+// The core takes zod as an optional peer, so it is found when asked for: first the project's (from the working
+// directory), then the one next to the core. Both are loaded with require, which keeps this call synchronous.
+function loadToJsonSchema(): ToJsonSchema | null {
+  if (toJsonSchema !== undefined) return toJsonSchema;
+  toJsonSchema = null;
+  const requires = [createRequire(join(process.cwd(), 'noop.js')), createRequire(import.meta.url)];
+  for (const req of requires) {
+    try {
+      const found = (req('zod') as { toJSONSchema?: ToJsonSchema }).toJSONSchema;
+      if (typeof found === 'function') {
+        toJsonSchema = found;
+        break;
+      }
+    } catch {
+      // zod is not installed here; try the next place
+    }
+  }
+  return toJsonSchema;
+}
+
+/** JSON Schema for a zod 4 schema (`unrepresentable: 'any'`); undefined when it is not one or conversion throws. */
+export function propsSchemaOf(schema: unknown): Record<string, unknown> | undefined {
+  if (schema === undefined || schema === null || typeof schema !== 'object' || !('_zod' in schema)) return undefined;
+  try {
+    const convert = loadToJsonSchema();
+    if (convert === null) return undefined;
+    return convert(schema, { unrepresentable: 'any' });
+  } catch {
+    return undefined;
+  }
+}
+
 /** The compositions of the registered Root, with their declared (not yet `calculateMetadata`-adjusted) settings. */
 export function getCompositions(): CompositionInfo[] {
-  return discover().map(({ id, width, height, fps, durationInFrames, defaultProps }) => ({
-    id,
-    width,
-    height,
-    fps,
-    durationInFrames,
-    defaultProps,
-  }));
+  return discover().map(({ id, width, height, fps, durationInFrames, defaultProps, schema }) => {
+    const info: CompositionInfo = { id, width, height, fps, durationInFrames, defaultProps };
+    const propsSchema = propsSchemaOf(schema);
+    if (propsSchema !== undefined) info.propsSchema = propsSchema;
+    return info;
+  });
 }
 
 export function getCompositionEntry(id: string): CompositionEntry {

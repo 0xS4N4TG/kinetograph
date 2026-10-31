@@ -11,13 +11,16 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@base-ui/react": "1.9.0",
+    "@fontsource-variable/dm-sans": "5.3.0",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "lucide-react": "1.57.0",
-    "radix-ui": "1.8.1",
+    "motion": "14.7.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "react-resizable-panels": "4.14.5",
+    "streamdown": "2.7.1",
     "tailwind-merge": "3.7.0"
   },
   "devDependencies": {

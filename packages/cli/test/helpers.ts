@@ -151,3 +151,45 @@ export function writeWav(samples: Float32Array, sampleRate: number, name = 'clip
   writeFileSync(join(dir, name), Buffer.concat([header, data]));
   return { dir, name };
 }
+
+import { existsSync, mkdirSync as __mk, symlinkSync, writeFileSync as __wf } from 'node:fs';
+import { dirname as __dn, join as __join } from 'node:path';
+
+function wr(path: string, text: string): void {
+  __mk(__dn(path), { recursive: true });
+  __wf(path, text);
+}
+
+/** A project with plugin tools: `@fx/dice` (good), `fx-bad` (its module throws) and `fx-shape` (a tool that is not valid). */
+export function toolsProject(base: string): string {
+  const dir = __join(base, 'tools-proj');
+  if (existsSync(dir)) return dir;
+  wr(__join(dir, 'package.json'), JSON.stringify({ dependencies: { '@fx/dice': '1.0.0', 'fx-bad': '1.0.0', 'fx-shape': '1.0.0' } }));
+  wr(__join(dir, 'index.tsx'), '');
+  __mk(__join(dir, 'node_modules'), { recursive: true });
+  symlinkSync(__join(import.meta.dirname, '../../../node_modules/zod'), __join(dir, 'node_modules/zod'));
+  const dice = __join(dir, 'node_modules/@fx/dice');
+  wr(__join(dice, 'package.json'), JSON.stringify({ name: '@fx/dice', version: '1.0.0', kinetograph: { tools: './tools.ts' } }));
+  wr(
+    __join(dice, 'tools.ts'),
+    `import { z } from 'zod';
+export const tools = [
+  {
+    name: 'roll',
+    description: 'Rolls dice.',
+    input: z.object({ sides: z.number().int().describe('Sides on the die'), count: z.number().optional() }),
+    run: ({ sides, count }: { sides: number; count?: number }) => ({ total: sides * (count ?? 1) }),
+  },
+  { name: 'fail', description: 'Always throws.', input: z.object({}), run: () => { throw new Error('nope'); } },
+];
+`,
+  );
+  const bad = __join(dir, 'node_modules/fx-bad');
+  wr(__join(bad, 'package.json'), JSON.stringify({ name: 'fx-bad', version: '1.0.0', kinetograph: { tools: './tools.ts' } }));
+  wr(__join(bad, 'tools.ts'), "throw new Error('boom');\nexport const tools = [];\n");
+  const shape = __join(dir, 'node_modules/fx-shape');
+  wr(__join(shape, 'package.json'), JSON.stringify({ name: 'fx-shape', version: '1.0.0', kinetograph: { tools: './tools.ts' } }));
+  wr(shape + '/tools.ts', "export const tools = [{ name: 'Bad Name', description: 'x', input: {}, run() {} }];\n");
+  return dir;
+}
+

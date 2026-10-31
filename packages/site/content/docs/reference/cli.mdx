@@ -237,7 +237,7 @@ With no entry, `doctor` prints the Node version, the platform, whether the addon
 
 ## studio
 
-Opens the studio in a browser: a preview, the timeline, the scene tree, props and a render queue.
+Opens the studio in a browser: the local editor, with a preview that plays sound, a timeline, props and presets, the scene tree, an export dialog, a render queue and a chat with your coding agent. See [Studio](/docs/guides/studio/).
 
 ```sh
 npx kinetograph studio <entry>
@@ -248,7 +248,10 @@ npx kinetograph studio <entry>
 | `--port <n>` | Port to listen on. The default is 3000. `0` picks a free port. |
 | `--host <address>` | Address to listen on. The default is `127.0.0.1`. |
 | `--no-open` | Do not open the browser. |
-| `--props <json>` | Input props, merged over each composition's `defaultProps`. |
+| `--props <json>` | Input props, merged over each composition's `defaultProps`. A JSON object, or the path of a JSON file. |
+| `--agent <command>` | The command that starts your coding agent over ACP, for the chat panel. The default is Claude Code, Codex or Gemini CLI, whichever is installed. |
+| `--allow-remote-agent` | Keep the coding agent on when `--host` lets other computers reach the studio. It is off then by default. |
+| `--offline` | Never download what a HyperFrames project loads from the web; it must already be cached. |
 
 The studio is the `@kinetographdev/studio` package. The command loads it by name, so it must be installed next to `kinetograph`. Stop the studio with Ctrl-C.
 

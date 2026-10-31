@@ -5,6 +5,7 @@ import { doctor } from './doctor.js';
 import { fetchDeps } from './fetch-deps.js';
 import { check, inspect, lint } from './check.js';
 import { mcp } from './mcp.js';
+import { plugins } from './plugins.js';
 import { render, still } from './render.js';
 import { onion, strip } from './sheets.js';
 import { snapshot } from './snapshot.js';
@@ -27,6 +28,7 @@ export const commands: Command[] = [
   track,
   snapshot,
   effects,
+  plugins,
   doctor,
   fetchDeps,
   studio,

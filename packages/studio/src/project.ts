@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { mkdirSync, rmSync, unwatchFile, watchFile, writeFileSync } from 'node:fs';
 import { basename, extname, join } from 'node:path';
 import { cacheDir, isSceneFile, watchProject, type ProjectBuild } from 'kinetograph';
+import type { AudioMix } from './audio-mix.js';
 import type { Call } from './worker-client.js';
 import { WorkerClient } from './worker-client.js';
 import type { WorkerRole } from './engine.js';
@@ -44,6 +45,10 @@ export class Project extends EventEmitter<ProjectEvents> {
   private applying: Promise<void> = Promise.resolve();
   private readonly timelines = new Map<string, Promise<TimelineData>>();
   private readonly timelineProgress = new Map<string, TimelineProgress>();
+  /** The mix of the sound a sweep collected, made right after the sweep by the worker that did it. */
+  private readonly audios = new Map<string, Promise<AudioMix | null>>();
+  /** Sweeps still reading frames: a newer request for the same composition stops them. */
+  private readonly sweeping = new Map<string, { comp: string; worker: WorkerClient }>();
   private closed = false;
   /** The code of the build being served, so that a rebuild of identical code is not a reload. */
   private servedCode: string | null = null;
@@ -104,14 +109,34 @@ export class Project extends EventEmitter<ProjectEvents> {
     const key = this.timelineKey(current, comp, props);
     let timeline = this.timelines.get(key);
     if (!timeline) {
+      // Props edited while an older sweep of this composition is still reading frames: its answer is not wanted.
+      for (const [other, sweep] of this.sweeping) {
+        if (sweep.comp === comp && other !== key) void sweep.worker.terminate({ code: 'SUPERSEDED', message: 'a newer timeline was asked for' });
+      }
       timeline = this.sweep(current, key, comp, props);
       this.timelines.set(key, timeline);
       timeline.catch(() => {
         this.timelines.delete(key);
         this.timelineProgress.delete(key);
+        this.audios.delete(key);
       });
     }
     return timeline;
+  }
+
+  /** The mix of a composition's sound, from the same sweep as its timeline; null when it has none. */
+  async audio(comp: string, props: Record<string, unknown>): Promise<AudioMix | null> {
+    const current = this.serving();
+    const key = this.timelineKey(current, comp, props);
+    await this.timeline(comp, props);
+    const audio = this.audios.get(key);
+    if (!audio) return null;
+    try {
+      return await audio;
+    } catch (error) {
+      this.audios.delete(key);
+      throw error;
+    }
   }
 
   /** How far the timeline of this composition has got: `total` is 0 when no sweep has started for it. */
@@ -127,11 +152,21 @@ export class Project extends EventEmitter<ProjectEvents> {
     const worker = this.spawn('timeline', current.bundleFile);
     this.timelineProgress.set(key, { done: 0, total: 0 });
     worker.onProgress = (done, total) => this.timelineProgress.set(key, { done, total });
+    this.sweeping.set(key, { comp, worker });
+    let timeline: TimelineData;
     try {
-      return await worker.call<TimelineData>({ op: 'timeline', comp, props });
-    } finally {
+      timeline = await worker.call<TimelineData>({ op: 'timeline', comp, props });
+    } catch (error) {
       void worker.terminate();
+      throw error;
+    } finally {
+      this.sweeping.delete(key);
     }
+    // The sound is mixed from what the sweep collected; the timeline does not wait for it.
+    const audio = worker.call<AudioMix | null>({ op: 'audio' }).finally(() => void worker.terminate());
+    audio.catch(() => undefined);
+    this.audios.set(key, audio);
+    return timeline;
   }
 
   /** A worker for `role` over the bundle `bundleFile`. */
@@ -174,6 +209,7 @@ export class Project extends EventEmitter<ProjectEvents> {
     this.buildError = null;
     for (const key of this.timelines.keys()) if (!key.startsWith(`${buildId}\n`)) this.timelines.delete(key);
     for (const key of this.timelineProgress.keys()) if (!key.startsWith(`${buildId}\n`)) this.timelineProgress.delete(key);
+    for (const key of this.audios.keys()) if (!key.startsWith(`${buildId}\n`)) this.audios.delete(key);
     this.options.log?.(`build ${buildId} ready`);
     this.emit('reload', buildId);
     void old?.worker.close();

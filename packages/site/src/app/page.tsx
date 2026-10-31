@@ -4,6 +4,7 @@ import { Hero } from '@/sections/hero';
 import { GITHUB, doc } from '@/sections/links';
 import { Nav } from '@/sections/nav';
 import { About, Facts } from '@/sections/page';
+import { Wordmark } from '@/sections/shared';
 import { Start } from '@/sections/static';
 
 const FOOTER_COLUMNS = [
@@ -25,7 +26,7 @@ export default function Page() {
       </main>
       <HalftoneWordmarkFooter
         wordmark="kinetograph"
-        label="Kinetograph"
+        label={<Wordmark className="text-[26px]" />}
         meta="A programmatic video engine · Rust and TypeScript"
         columns={FOOTER_COLUMNS}
         preset="cobalt"

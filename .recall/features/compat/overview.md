@@ -14,6 +14,12 @@ What third-party code runs on Kinetograph: Remotion packages, GSAP, WebGL librar
 - In flight: chore/hf-svg-workarounds (Sonnet agent: delete svg-style.ts/pinSvgFonts/svgRules now covered by Rust, rerun 29-comp compare into scratchpad/hf-final); feat/plugins (gsap, p5-brush done; motion, anime, Libraries page in progress).
 - Real HyperFrames projects test (Haiku): BLOCKED by auto-mode classifier (external code: npx hyperframes init, repo clone, community repos). Asked user to approve / pick safer scope.
 
+## Audit 2026-10-30 (origin/main 7b0f4e69, harness hf-bench/ + saved refs; results scratchpad/hfm/RESULTS.txt of session 5148e0af)
+- HF 29 comps: MATCH 20 / CLOSE 7 / DIFF 2 / FAIL 0 (was 18/6/4/1). DIFF: three-orbiting-cards (Three.js, cube maps), weight-wave (variable-font advances ~13% wide). CLOSE: yt-prism-title, hw-title, nyc-paris-flight (CSS filter on SVG), kinetic-type f336 (video edges), apple-money-count, mk-clone-wall, transitions-radial.
+- HF real 7: 5 MATCH; nullmotion-22 and decision-tree now render but HF itself fails on them (unverified).
+- Gaps ranked: Three.js; CSS filter on SVG elements; variable-font widths; CJK/Arabic/Devanagari + colour emoji; system fonts; late-only scripts/pictures not prefetched.
+- Speed vs old HF times: 2-3.3x (machine shared; HF not re-run).
+
 ## Open threads
 - [x] #17 merged: pinSvgFonts removed. HF 29 comps now MATCH 17 / CLOSE 6 / DIFF 5 / FAIL 1 (code-slice-hero f59 depth test). Results scratchpad/hf-final.
 - [ ] SVG cascade gap (keeps applySvgRules alive): SVG elements created by scripts after a fetch are not styled by page CSS (us-map-flow arcs/dots draw black without the TS workaround); an @media rule's fill does not reach an SVG shape. Fix in crates/dom, then delete svg-style.ts/svgRules.

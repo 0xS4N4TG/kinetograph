@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CheckIcon, ClipboardCopyIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogPanel, DialogPopup, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { copyText } from '@/lib/clipboard';
 
@@ -25,6 +25,7 @@ function MessageBox({ message }: { message: string }) {
 
   return (
     <>
+      <DialogPanel>
       <Textarea
         ref={box}
         aria-label="Message for the agent"
@@ -36,9 +37,10 @@ function MessageBox({ message }: { message: string }) {
         rows={9}
         className="max-h-80 font-mono text-xs md:text-xs"
       />
+      </DialogPanel>
       <DialogFooter className="items-center">
         {state === 'failed' && (
-          <span role="status" className="text-destructive mr-auto text-xs">
+          <span role="status" className="text-destructive-foreground mr-auto text-xs">
             Could not copy. Select the text and copy it yourself.
           </span>
         )}
@@ -60,13 +62,13 @@ export function CopyForAgent({ message }: { message: string }) {
         variant="ghost"
         size="sm"
         onClick={() => setOpen(true)}
-        className="h-5 shrink-0 gap-1 rounded-xs px-1.5 text-[10px]"
+        className="shrink-0 rounded-full px-3"
       >
-        <ClipboardCopyIcon className="size-3" />
+        <ClipboardCopyIcon />
         Copy for agent
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-xl">
+        <DialogPopup className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Copy for agent</DialogTitle>
             <DialogDescription>
@@ -74,7 +76,7 @@ export function CopyForAgent({ message }: { message: string }) {
             </DialogDescription>
           </DialogHeader>
           <MessageBox message={message} />
-        </DialogContent>
+        </DialogPopup>
       </Dialog>
     </>
   );
