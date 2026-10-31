@@ -70,3 +70,20 @@ export function stepZoom(scale: number, direction: 1 | -1): number {
   if (direction > 0) return ZOOM_STEPS.find((step) => step > scale + 1e-9) ?? scale;
   return [...ZOOM_STEPS].reverse().find((step) => step < scale - 1e-9) ?? scale;
 }
+
+/** `mm:ss.ff` (ff in frames): the one format for a time in the UI. */
+export function clock(frame: number, fps: number): string {
+  const whole = Math.floor(frame / fps);
+  const ff = Math.round(frame - whole * fps);
+  const mm = Math.floor(whole / 60);
+  return `${String(mm).padStart(2, '0')}:${String(whole % 60).padStart(2, '0')}.${String(ff).padStart(2, '0')}`;
+}
+
+/** What a person types for a time: seconds (`2.4`), `mm:ss` or `mm:ss.ff` (ff in frames). Null when it is none of those. */
+export function parseClock(text: string, fps: number): number | null {
+  const t = text.trim();
+  if (/^\d+(\.\d+)?$/.test(t)) return Math.round(Number(t) * fps);
+  const m = /^(\d+):(\d{1,2})(?:\.(\d{1,3}))?$/.exec(t);
+  if (!m) return null;
+  return (Number(m[1]) * 60 + Number(m[2])) * fps + (m[3] ? Number(m[3]) : 0);
+}

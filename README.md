@@ -10,6 +10,7 @@
   <a href="#rendered-with-kinetograph">Examples</a> ·
   <a href="#the-editor">Editor</a> ·
   <a href="#projects-in-tsx">Get started</a> ·
+  <a href="#html-pages-and-hyperframes-projects">HTML and HyperFrames</a> ·
   <a href="packages/cli/skills/kinetograph/references/ENGINE.md">The engine</a> ·
   <a href="packages/site/content/docs/guides/agents.mdx">Use with agents</a>
 </p>
@@ -17,6 +18,8 @@
 You (or an agent) write a video in TypeScript with Remotion's API, CSS, SVG, Canvas 2D, WebGL shaders and Web Audio;
 Node runs the code; a Rust GPU compositor, loaded into Node as an N-API addon, draws every frame. Existing Remotion
 projects render as they are: `remotion` and `@remotion/*` imports resolve to Kinetograph's own implementation of them.
+A video can also be a plain HTML page, and [HyperFrames](https://github.com/heygen-com/hyperframes) projects render as
+they are too, GSAP timelines included: `npx kinetograph render index.html -o out.mp4`.
 
 **The film above is 1,184 frames of 1080p video, sound included, rendered in 26 seconds on a laptop.** It is one
 TypeScript project in [`examples/launch`](examples/launch).
@@ -74,20 +77,29 @@ three runs with `--concurrency 4` on the same Apple M4.
 ## The editor
 
 <p align="center">
-  <img src="docs/readme/studio.webp" alt="Kinetograph studio: the showcase project at frame 292, with the text layer 'kinetograph render' selected in the preview, the Agent tab open beside it, and a timeline with one row per shot and audio clip" width="100%">
+  <img src="docs/readme/studio.webp" alt="Kinetograph Studio: a top bar with the composition switcher and the command menu, the agent chat on the left, a large preview with a floating transport, the timeline below with coloured clips, film strips and waveforms, and the inspector on the right showing the Props tab with a plugin card" width="100%">
 </p>
 
 `kinetograph studio src/index.tsx` opens a local editor for a project. The engine draws its preview frames, so what you
 see is what renders.
 
-- **Timeline:** one row per shot and audio clip. Repeated components fold into one row, and clicking a bar jumps
-  there. "Show details" opens every layer.
-- **Readable layers:** each layer is named after its component and text, with the file and line it came from.
-- **Point and ask:** click a layer in the preview, or drag a box around several, then tell your coding agent what to
-  change. The agent gets the selection, the source locations and a picture of the area. It talks to the agent over
-  the Agent Client Protocol (ACP), with presets for Claude Code, Codex and Gemini (tested with Claude Code so far),
-  and asks you before the agent edits a file.
-- **Inspect and render:** props, the scene tree, each layer's resolved fields and renders, all in the same window.
+- **Panels:** the agent chat, the preview with its timeline, and the inspector float over the window. Drag a panel's
+  edge to resize it, double-click to reset, and fold the agent or the inspector from the top bar. Cmd+K opens a command
+  menu with every action; `?` lists the shortcuts.
+- **Preview with sound:** a large preview with a floating transport and a View menu (layer controls, safe zones, zoom).
+  The composition's audio plays in the preview, with the audio clock leading the picture.
+- **Timeline:** a slim bar that expands to one row per layer. Clips are coloured by kind, video clips show a film strip
+  and audio clips their waveform, and the ruler counts in mm:ss.ff.
+- **Point and ask:** click a layer in the preview, or drag a box around several. On the timeline, drag to pick a span of
+  time. Then tell your coding agent what to change: it gets the selection or the span, the source locations and a
+  picture (one contact sheet of frames for a span). It talks to the agent over the Agent Client Protocol (ACP), with
+  presets for Claude Code, Codex and Gemini (tested with Claude Code so far), asks you before the agent edits a file,
+  and its replies are rendered as markdown. The agent can read and set the props the preview shows.
+- **Props and presets:** a form drawn from the composition's zod `schema`, with presets saved beside the project.
+  A plugin's fields are drawn by the plugin, as a card with its icon and description. Selecting a card selects the
+  layers it draws. Edited props survive a reload.
+- **Export and renders:** export the whole video or a range you type or trim, with a queue of renders in the same
+  window. The scene tree shows each layer's resolved fields.
 
 ## Status
 
@@ -161,11 +173,42 @@ npx kinetograph render examples/rajz-cards/index.tsx -o out/rajz-cards.mp4
 npx kinetograph inspect examples/rajz-cards/index.tsx --frame 60 --json
 ```
 
-A project imports from `remotion` and `@remotion/*` as it would for Remotion (the CLI maps them onto
-`@kinetographdev/core`) and from `@kinetographdev/core` for the native elements and effects. Every command takes `--json`;
+A new project imports the API from `@kinetographdev/core`, which comes with `npm install kinetograph`; Remotion is
+not installed. A Remotion project keeps its `remotion` and `@remotion/*` imports, which the CLI maps onto the same code. Every command takes `--json`;
 `npx kinetograph mcp` serves the same commands over MCP; [Use with agents](packages/site/content/docs/guides/agents.mdx)
 has the client setup and the agent skill. `npm test` runs the CPU tests; the GPU ones run with
 `KINETOGRAPH_GPU_TESTS=1`.
+
+## HTML pages and HyperFrames projects
+
+A video can be an HTML page instead of a TSX project, and a HyperFrames project renders as it is, with no rewrite and
+no browser. The root element gives the size and length; GSAP timelines registered in `window.__timelines` are paused
+and seeked to each frame's time:
+
+```html
+<div id="root" data-composition-id="hello" data-width="1280" data-height="720" data-duration="2">
+  <div id="title">Hello, Kinetograph</div>
+  <div id="bar"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script>
+  const tl = gsap.timeline({ paused: true });
+  tl.to('#bar', { width: 640, duration: 1, ease: 'none' });
+  window.__timelines = { hello: tl };
+</script>
+```
+
+```sh
+npx kinetograph still index.html 15 -o frame.png   # the same commands as for a TSX project
+npx kinetograph render index.html -o out.mp4       # or the directory that holds index.html
+npx kinetograph fetch-deps index.html              # download what the page loads (CDN scripts, modules, media) ahead of time
+```
+
+`still`, `strip`, `inspect`, `lint`, `doctor`, `studio` and `render` all take the page. A render downloads what the page
+loads from the web first and pins it in `kinetograph.lock.json`; `--offline` never downloads. Clips (`data-start`,
+`data-duration`), nested compositions (`data-composition-src`), `<video>` and `<audio>`, `data-fx-chain` audio effects and
+`data-color-grading` work as in HyperFrames: the details are under "HyperFrames projects" on the kinetograph site's
+compatibility page (`/docs/compat/#hyperframes-projects`).
 
 ## Build from source
 

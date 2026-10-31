@@ -12,6 +12,8 @@ export type { BundleResult, ProjectBuild } from './bundle.js';
 export { CliError, toErrorObject } from './errors.js';
 export { native } from './native.js';
 export type { InspectLayer, InspectResult, Native } from './native.js';
+export { bundlePanel, findPlugins, loadPluginTools, mcpToolName, pluginToolNames } from './plugins.js';
+export type { PluginInfo, PluginTool } from './plugins.js';
 export { renderSource } from './render-job.js';
 export type { RenderJobOptions } from './render-job.js';
 export { checkFrame, frameRange, isSceneFile, listCompositions, openSource, parseProps } from './source.js';

@@ -1,6 +1,7 @@
 // A tiny ACP agent for the tests: no model, no network. What it does depends on the words in the prompt:
 //   "edit"   asks permission, then writes notes.txt through the client and tries to read ../outside.txt
 //   "crash"  exits at once
+//   "mcp"    answers with the mcpServers that session/new was given, as JSON
 //   else     answers with what it was sent (the text, and whether a picture came with it)
 import { Readable, Writable } from 'node:stream';
 import { agent, methods, ndJsonStream } from '@agentclientprotocol/sdk';
@@ -10,6 +11,7 @@ if (process.env.FAKE_AGENT_AUTH === '1') {
   process.exit(1);
 }
 
+let sessionNew = null;
 const stream = ndJsonStream(Writable.toWeb(process.stdout), Readable.toWeb(process.stdin));
 
 const say = (client, text) =>
@@ -23,12 +25,19 @@ agent({ name: 'fake-agent' })
     protocolVersion: 1,
     agentCapabilities: { promptCapabilities: { image: process.env.FAKE_AGENT_IMAGE !== '0' } },
   }))
-  .onRequest(methods.agent.session.new, () => ({ sessionId: 's1' }))
+  .onRequest(methods.agent.session.new, ({ params }) => {
+    sessionNew = params;
+    return { sessionId: 's1' };
+  })
   .onRequest(methods.agent.session.prompt, async ({ params, client }) => {
     const blocks = params.prompt;
     const text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
     const images = blocks.filter((b) => b.type === 'image').length;
     if (text.includes('crash')) process.exit(3);
+    if (text.includes('mcp')) {
+      await say(client, JSON.stringify(sessionNew));
+      return { stopReason: 'end_turn' };
+    }
     if (text.includes('edit')) {
       const cwd = process.env.FAKE_AGENT_CWD ?? process.cwd();
       const permission = await client.request(methods.client.session.requestPermission, {

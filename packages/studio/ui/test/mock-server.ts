@@ -9,6 +9,8 @@ import {
   type CompositionInfo,
   type FrameArgs,
   type InspectResult,
+  type PluginSummary,
+  type PresetInfo,
   type ProjectInfo,
   type RenderJob,
   type RenderRequest,
@@ -17,6 +19,7 @@ import {
   type StudioApi,
   type StudioError,
   type StudioSocket,
+  type TimelineAudio,
   type TimelineData,
   type TimelineProgress,
 } from '../src/api';
@@ -31,14 +34,21 @@ export class MockServer implements StudioApi {
   agent: AgentInfo = { presets: [{ id: 'fake', name: 'Fake agent', command: 'fake --acp' }], command: 'fake --acp', cwd: '/work' };
   /** Everything the page sent for the agent. */
   agentMessages: AgentClientMessage[] = [];
+  /** What the window said it previews (`props` messages), oldest first. */
+  propsMessages: { comp: string; props: Record<string, unknown> }[] = [];
   /** When set, `compositions()` fails as the server does before the first good build. */
   noGoodBuild = false;
+  /** Saved presets by composition id, and the installed plugins. */
+  presetsByComp: Record<string, PresetInfo[]> = {};
+  pluginList: PluginSummary[] = [];
   startRenderError: ApiError | null = null;
   /** Reply to frame requests at once; when false, the test calls `respond`. */
   auto = true;
 
   frameRequests: FrameRequest[] = [];
   inspectCalls: { comp: string; frame: number; props?: Record<string, unknown> }[] = [];
+  /** The sounds `timeline('Intro')` reports; none by default. */
+  sounds: TimelineAudio[] | null = null;
   timelineCalls: { comp: string; props?: Record<string, unknown> }[] = [];
   startRenderCalls: RenderRequest[] = [];
   cancelCalls: string[] = [];
@@ -49,7 +59,7 @@ export class MockServer implements StudioApi {
   timelineFor(comp: string): TimelineData {
     const c = this.comps.find((x) => x.id === comp)!;
     return comp === 'Intro'
-      ? { ...introTimeline, durationInFrames: c.durationInFrames }
+      ? { ...introTimeline, durationInFrames: c.durationInFrames, ...(this.sounds ? { audio: this.sounds } : {}) }
       : { comp, fps: c.fps, durationInFrames: c.durationInFrames, sequences: [], layers: [] };
   }
 
@@ -90,6 +100,20 @@ export class MockServer implements StudioApi {
   timelineGate: Promise<void> | null = null;
   timelineError: ApiError | null = null;
   progress: TimelineProgress = { done: 0, total: 0 };
+
+  /** The sound of a composition for `audio()`; none by default. */
+  wav: ArrayBuffer | null = null;
+  audioCalls = 0;
+  async audio(): Promise<ArrayBuffer | null> {
+    this.audioCalls++;
+    return this.wav;
+  }
+
+  waveformCalls: { clip: string | undefined; buckets: number }[] = [];
+  async waveform(_comp: string, _props: Record<string, unknown> | undefined, clip: string | undefined, buckets: number): Promise<{ peaks: number[]; startFrame?: number; endFrame?: number }> {
+    this.waveformCalls.push({ clip, buckets });
+    return { peaks: Array.from({ length: 8 }, (_, i) => (i % 4) / 4), startFrame: 20, endFrame: 100 };
+  }
 
   async timelineProgress(): Promise<TimelineProgress> {
     return this.progress;
@@ -135,8 +159,24 @@ export class MockServer implements StudioApi {
     return cancelled;
   }
 
+  async presets(comp: string): Promise<PresetInfo[]> {
+    return this.presetsByComp[comp] ?? [];
+  }
+
+  async savePreset(comp: string, name: string, props: Record<string, unknown>): Promise<void> {
+    this.presetsByComp[comp] = [...(this.presetsByComp[comp] ?? []).filter((p) => p.name !== name), { name, props }];
+  }
+
+  async plugins(): Promise<PluginSummary[]> {
+    return this.pluginList;
+  }
+
   thumbnailUrl(comp: string, frame: number, height: number, build: number): string {
     return `/api/thumbnail?comp=${comp}&frame=${frame}&height=${height}&build=${build}`;
+  }
+
+  frameUrl(comp: string, frame: number, scale: number): string {
+    return `/api/frame?comp=${comp}&frame=${frame}&scale=${scale}&format=jpeg`;
   }
 
   connect(handlers: SocketHandlers): StudioSocket {
@@ -160,6 +200,10 @@ export class MockServer implements StudioApi {
       },
       sendAgent: (message: AgentClientMessage) => {
         this.agentMessages.push(message);
+        return true;
+      },
+      sendProps: (comp: string, props: Record<string, unknown>) => {
+        this.propsMessages.push({ comp, props });
         return true;
       },
       close: () => {

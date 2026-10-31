@@ -110,8 +110,8 @@ export function layerComponent(layer: InspectLayer): string | null {
 }
 
 /** "Headline text · frame 120 · shots-a.tsx:48": what a chip says about a layer. */
-export function chipText(layer: InspectLayer, frame: number, cwd = ''): string {
-  const parts = [layerName(layer), `frame ${frame}`];
+export function chipText(layer: InspectLayer, frame: number, cwd = '', span?: string): string {
+  const parts = [layerName(layer), span ?? `frame ${frame}`];
   const source = layerSource(layer);
   if (source) parts.push(`${relativePath(source.file, cwd).split('/').pop()}:${source.line}`);
   return parts.join(' · ');
@@ -152,4 +152,56 @@ export function unionRect(rects: Rect[], pad: number, width: number, height: num
   const x1 = Math.min(width, Math.max(...rects.map((r) => r.x + r.width)) + pad);
   const y1 = Math.min(height, Math.max(...rects.map((r) => r.y + r.height)) + pad);
   return x1 > x0 && y1 > y0 ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : null;
+}
+
+// A span of time picked on the timeline, next to the layers picked in the preview. Frames are whole numbers and both
+// ends are inside the span (`{ start: 30, end: 75 }` is 46 frames).
+
+export interface FrameRange {
+  start: number;
+  end: number;
+}
+
+/** The span between two frames (in either order), snapped to whole frames and held inside a composition of `duration` frames. */
+export function makeRange(a: number, b: number, duration: number): FrameRange | null {
+  if (duration <= 0) return null;
+  const clamp = (n: number) => Math.min(duration - 1, Math.max(0, Math.floor(n)));
+  return { start: Math.min(clamp(a), clamp(b)), end: Math.max(clamp(a), clamp(b)) };
+}
+
+/** The smallest span holding `range` and the span `a`..`b`; `range` null starts a new one. */
+export function extendRange(range: FrameRange | null, a: number, b: number, duration: number): FrameRange | null {
+  const next = makeRange(a, b, duration);
+  if (!next || !range) return next;
+  return { start: Math.min(range.start, next.start), end: Math.max(range.end, next.end) };
+}
+
+/** `range` cut to a composition of `duration` frames (it may have got shorter); null when nothing is left. */
+export function clampRange(range: FrameRange | null, duration: number): FrameRange | null {
+  return range ? makeRange(range.start, range.end, duration) : null;
+}
+
+/** A frame as `m:ss.s`: frame 30 at 30 fps is `0:01.0`. */
+export function rangeStamp(frame: number, fps: number): string {
+  const tenths = Math.round((frame / fps) * 10);
+  const m = Math.floor(tenths / 600);
+  const s = (tenths - m * 600) / 10;
+  return `${m}:${s.toFixed(1).padStart(4, '0')}`;
+}
+
+/** `0:01.0–0:02.5 (frames 30–75)`. */
+export function rangeLabel(range: FrameRange, fps: number): string {
+  return `${rangeStamp(range.start, fps)}–${rangeStamp(range.end, fps)} (frames ${range.start}–${range.end})`;
+}
+
+/** The frames a contact sheet of the span is made of: up to `count`, evenly across it, first and last included. */
+export function contactFrames(range: FrameRange, count = 8): number[] {
+  const n = Math.min(count, range.end - range.start + 1);
+  if (n <= 1) return [range.start];
+  return Array.from({ length: n }, (_, i) => Math.round(range.start + (i * (range.end - range.start)) / (n - 1)));
+}
+
+/** Whether `ranges` (inclusive pairs) touch the span. */
+export function touchesRange(ranges: readonly (readonly [number, number])[], range: FrameRange): boolean {
+  return ranges.some(([a, b]) => a <= range.end && b >= range.start);
 }

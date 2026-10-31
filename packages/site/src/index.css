@@ -186,7 +186,7 @@
     @apply bg-background text-foreground font-sans antialiased;
   }
   ::selection {
-    background: oklch(1 0 0 / 20%);
+    background: color-mix(in oklab, var(--cobalt) 22%, transparent);
   }
 }
 

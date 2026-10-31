@@ -22,6 +22,16 @@ export interface AgentBridgeOptions {
   /** Whether a UI is connected to answer permission requests. */
   hasViewer(): boolean;
   version: string;
+  /** The MCP servers every new session gets (ACP `session/new`); asked for when the session starts. Default none. */
+  mcpServers?(): McpServerConfig[];
+}
+
+/** A stdio MCP server as ACP names it. */
+export interface McpServerConfig {
+  name: string;
+  command: string;
+  args: string[];
+  env: { name: string; value: string }[];
 }
 
 /** A failure whose message is already in plain words. */
@@ -245,7 +255,7 @@ export class AgentBridge {
         exited,
       ])) as { agentCapabilities?: { promptCapabilities?: { image?: boolean } } };
       live.image = init.agentCapabilities?.promptCapabilities?.image === true;
-      const session = (await Promise.race([agent.request(methods.agent.session.new, { cwd: this.options.cwd, mcpServers: [] }), exited])) as {
+      const session = (await Promise.race([agent.request(methods.agent.session.new, { cwd: this.options.cwd, mcpServers: this.options.mcpServers?.() ?? [] }), exited])) as {
         sessionId: string;
       };
       live.sessionId = session.sessionId;

@@ -1,0 +1,220 @@
+---
+title: Plugins
+description: Add props schemas, panels and skills to a package so that Studio and coding agents can use it, and save presets of a composition's props.
+---
+
+A plugin is an npm package that adds components or effects to Kinetograph projects and tells Studio and coding agents
+how to use them. Studio shows its props as form fields, an agent reads its skill, and a plugin may draw its own panel in
+Studio for a field a generic form cannot edit well.
+
+This page has two parts. The first is for people who write plugins. The second is for people who use Studio and want to
+save and reuse props.
+
+## For plugin authors
+
+### The manifest
+
+Add a `kinetograph` field to the package's `package.json`:
+
+```json
+{
+  "name": "@kinetographdev/hexed",
+  "kinetograph": {
+    "skill": "./SKILL.md",
+    "panel": "./studio/panel.ts",
+    "tools": "./tools.ts",
+    "title": "Hexed",
+    "description": "Dice-rolled hex genomes drawn as ornaments.",
+    "icon": "./icon.svg",
+    "components": ["Genome", "GenomeRing"]
+  }
+}
+```
+
+All keys are optional, and the paths are relative to the package root. `title` and `description` are how Studio names the plugin on its card and in its Plugins list; without a `title`, the
+package name without its scope is shown, capitalised. `icon` is an SVG file, drawn in the text colour, so use
+`currentColor`. `components` names the React components the package exports that draw layers: Studio uses them to link a
+card to the layers it draws (selecting one selects the other). A package with a `kinetograph` field is a
+plugin. Kinetograph finds the plugins a project uses by reading the `dependencies` and `devDependencies` of the nearest
+`package.json` above the project's entry, and resolving each one from the entry's directory.
+
+### The props schema
+
+Export zod (v4) schemas for your components' props, and put `.describe()` on every field a person sets. Studio shows the
+description under the field's label.
+
+```tsx
+import { z } from 'zod';
+
+export const genomeSchema = z.object({
+  seed: z.number().min(0).max(999).describe('Picks the pattern. The same seed always draws the same one.'),
+  palette: z.enum(['ember', 'ice', 'moss']).describe('The colours the pattern is drawn in.'),
+});
+```
+
+A project uses the schema in its own composition:
+
+```tsx
+<Composition id="Hero" schema={z.object({ look: genomeSchema, title: z.string() })} defaultProps={...} ... />
+```
+
+Kinetograph turns the composition's `schema` into JSON Schema with `z.toJSONSchema(schema, { unrepresentable: 'any' })`
+and gives it to Studio as `propsSchema` on the composition. If there is no schema, or it is not a zod 4 schema, or the
+conversion throws, `propsSchema` is left out and Studio infers the fields from `defaultProps`, as before.
+
+Studio draws these fields:
+
+| Schema | Field |
+|---|---|
+| `z.enum([...])` | A select |
+| `z.number().min(a).max(b)` | A slider with a number box |
+| `z.boolean()` | A switch |
+| `zColor()` from `@kinetographdev/core/zod-types` | A colour input and a text box |
+| `zTextarea()` | A text area |
+| `z.object({...})` | A labelled group of fields |
+
+Anything else falls back to the field Studio would infer from the default value, or a JSON box.
+
+### The panel
+
+For a field that needs more than a form, point the field at your panel with zod meta:
+
+```ts
+genomeSchema.meta({ kinetographPanel: '@kinetographdev/hexed' })
+```
+
+The value is the plugin's package name. Studio then draws that plugin's panel in place of the generated form for the
+field. The panel is an ES module named by `kinetograph.panel` in the manifest, and it exports `mount`:
+
+```ts
+export interface PanelContext {
+  value: unknown; // The field's current value (the props being previewed, not the defaults)
+  schema: Record<string, unknown>; // The field's JSON Schema
+  path: string[]; // Where the field is in the props, e.g. ["look"]
+  onChange(value: unknown): void; // Sets the field; the preview re-renders
+  state?: unknown; // What the panel last passed to setState; undefined the first time
+  setState(state: unknown): void; // Keeps panel-only state (locks, open sections) in the browser across reloads
+  preview?: { overlay: HTMLElement; width: number; height: number; frame: number }; // Draws on the preview picture
+}
+
+export function mount(el: HTMLElement, ctx: PanelContext): {
+  update(ctx: PanelContext): void; // The value changed from outside (reset, preset loaded)
+  unmount(): void;
+};
+```
+
+Studio bundles the module with esbuild for the browser (ES module, its imports included, React too if you use it), so the
+panel must not rely on Studio's React. It gets a plain element, with no shadow root. Style it with CSS scoped under a
+class of your own, and read Studio's CSS variables (`--background`, `--foreground`, `--border`, `--muted-foreground`,
+`--primary`) so that it matches the theme.
+
+`preview.overlay` is an element laid over the preview picture, in composition pixels (`width` by `height`), and Studio
+scales it to the picture with the CSS variable `--kg-preview-scale`. It ignores the pointer. Draw guides or handles in it;
+`frame` is the playhead. Each mounted panel has its own overlay, and only the one for the panel being edited shows, and
+only while its card is open. `state` is kept in the browser per plugin, composition and field.
+
+A panel only produces props. A render never runs it. If the panel fails to load or throws, Studio shows an error box in
+its place and the rest of the form keeps working.
+
+### Tools
+
+A plugin can offer tools that a coding agent calls over MCP. Point `tools` at a module that exports a `tools` array:
+
+```ts
+import { z } from 'zod';
+
+export const tools = [
+  {
+    name: 'roll',
+    description: 'Rerolls the unlocked slots of a genome, or all slots.',
+    input: z.object({ seed: z.number().optional().describe('Seed for the dice') }),
+    run: ({ seed }) => ({ /* data that serialises to JSON */ }),
+  },
+];
+```
+
+`name` is snake_case and unique in the plugin. `input` is a zod 4 object schema, and becomes the tool's input schema.
+`run` takes the parsed input and returns JSON data. It is pure: it never writes files, renders or fetches.
+
+`kinetograph mcp` registers each tool as `<short>_<name>`, where `<short>` is the package name without its scope and with
+`-` turned into `_`. `@kinetographdev/hexed` with a `roll` tool gives `hexed_roll`. Plugins are found from the working
+directory of the MCP server, the same way `kinetograph plugins` finds them. The module is bundled with esbuild for Node,
+so it can import its own files. A plugin whose tools fail to load is skipped with a message on stderr, and the server
+still starts.
+
+### SKILL.md
+
+Ship a `SKILL.md` in the package. It tells a coding agent what the plugin does, so keep to this:
+
+- What the plugin does, in a sentence or two.
+- Its components and their props.
+- Its presets, if it has any.
+- Two or three short examples.
+- What to check with `npx kinetograph still`.
+
+An agent finds the file by running `npx kinetograph plugins`, which prints the path of each installed plugin's
+`SKILL.md`. With `--json` it prints:
+
+```json
+{ "plugins": [{ "name": "@kinetographdev/hexed", "version": "1.0.0", "title": "Hexed", "description": "Dice-rolled hex genomes drawn as ornaments.", "icon": "/path/to/icon.svg", "components": ["Genome", "GenomeRing"], "skill": "/path/to/SKILL.md", "hasPanel": true, "tools": ["hexed_roll"] }] }
+```
+
+`tools` holds the MCP names of the plugin's tools.
+
+Over MCP it is the `plugins` tool.
+
+## For people using Studio
+
+### Presets
+
+A preset is a named set of props for one composition. In Studio, open the Props tab. The **Presets** menu lists the saved
+presets and loads one into the form, and **Save preset** asks for a name and saves the props you are previewing now.
+
+A preset is a file at `presets/<composition id>/<name>.json`, next to the project's entry file. It holds a JSON object of
+props, so you can commit it, edit it by hand, or write it with a script. A name is lower-case letters, digits, `-` and
+`_`, up to 64 characters, and starts with a letter or digit.
+
+Studio itself is described in [Studio](/docs/guides/studio/); the Props tab draws a plugin's field as a card there.
+
+### Render with a preset
+
+`--props` takes the path of a JSON file as well as a JSON object, so a preset renders from the command line:
+
+```sh
+npx kinetograph still src/index.tsx --comp Hero --props presets/Hero/warm.json
+```
+
+A value that starts with `{` is read as JSON. Any other value is the path of a file.
+
+### Studio's routes
+
+Studio serves these for tools that talk to it:
+
+| Route | Returns |
+|---|---|
+| `GET /api/plugins` | `{ plugins: [{ name, version, title, description, icon, components, skill, panel, tools }] }`; `skill` is a path, `icon` and `panel` are URLs or `null`, `tools` the MCP tool names |
+| `GET /api/plugins/<name>/icon.svg` | The plugin's icon |
+| `GET /api/plugins/<name>/panel.js` | The plugin's panel, bundled |
+| `GET /api/presets?comp=<id>` | `{ presets: [{ name, props }] }` |
+| `PUT /api/presets/<id>/<name>` | Writes the preset from the JSON object in the body; a bad name is a 400 |
+| `GET /api/live-props` | `{ comp, props }`: the composition and props the window previews now (`comp` is `null` before a window says) |
+| `PUT /api/live-props` | Sets them from `{ comp, props }`; every window switches to that composition and shows those props. An unknown `comp` is a 400 |
+
+The two live-props routes need the Studio token, in the `x-studio-token` header. It is the `token` in the address Studio
+opens.
+
+### Studio's agent
+
+The coding agent in Studio's chat panel gets a Kinetograph MCP server. It has every `kinetograph` tool, the tools of
+your plugins, and two for the open window:
+
+- `studio_get_props` returns `{ comp, props }`, what the preview shows now.
+- `studio_set_props` takes `{ comp?, props, merge? }` and sets the props. By default it merges them over the props
+  shown now; `merge: false` replaces them. The preview re-renders, and the Props tab and any plugin panel update.
+
+An agent in Studio should try values with `studio_set_props`, then write the values it picks into the code or a preset.
+Outside Studio you can run the same server yourself:
+
+```sh
+KINETOGRAPH_STUDIO_TOKEN=<token> npx kinetograph mcp --studio http://127.0.0.1:3000
+```

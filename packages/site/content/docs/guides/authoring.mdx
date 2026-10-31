@@ -32,7 +32,7 @@ npx kinetograph render src/index.tsx --comp Card --props '{"title":"Hello"}' -o 
 
 ## Remotion APIs
 
-Import Remotion's APIs from `remotion` and `@remotion/*`, as Remotion projects do. The CLI maps those imports onto Kinetograph's own versions. These are the ones most projects use:
+A new project imports the API, Remotion's names included, from `@kinetographdev/core`, which comes with `npm install kinetograph`. Remotion is not installed. A Remotion project keeps its `remotion` and `@remotion/*` imports: the CLI maps them onto the same code, so nothing in it changes. These are the ones most projects use:
 
 - Time: `useCurrentFrame`, `useVideoConfig`, `Sequence`, `Series`, `Loop`, `Freeze`.
 - Motion: `interpolate`, `interpolateColors`, `spring`, `measureSpring`, `Easing`.

@@ -3,16 +3,15 @@ title: First video
 description: Write a two-second title card, look at its frames, and render it to an MP4.
 ---
 
-This page makes a two-second title card. It needs the build from [Installation](/docs/getting-started/installation/).
+This page makes a two-second title card. It needs Kinetograph installed: see [Installation](/docs/getting-started/installation/).
 
 ## Write the project
 
-Make a folder in the repository, such as `examples/hello`, and save this as `index.tsx` in it:
+Make a folder, run `npm install kinetograph` in it, and save this as `index.tsx` there. `registerRoot`, `Composition` and the rest of the API come from `@kinetographdev/core`, which `npm install kinetograph` brings with it. Remotion is not installed and not needed: an `@remotion/*` import, such as the font loader below, is mapped onto Kinetograph's own code. The `kinetograph` package itself is the CLI, so importing `registerRoot` from it fails.
 
 ```tsx
 import React from 'react';
-import { AbsoluteFill, Composition, interpolate, registerRoot, useCurrentFrame } from 'remotion';
-import { Rect, Text } from '@kinetographdev/core';
+import { AbsoluteFill, Composition, Rect, Text, interpolate, registerRoot, useCurrentFrame } from '@kinetographdev/core';
 import { loadFont } from '@remotion/google-fonts/Inter';
 
 const { fontFamily } = loadFont('normal', { weights: ['400'] });
@@ -63,6 +62,16 @@ npx kinetograph lint examples/hello/index.tsx
 
 To find type errors, such as a misspelled prop, run `npx kinetograph check examples/hello/index.tsx`. Rendering does not type-check the project.
 
+## Open it in Studio
+
+Studio is the local editor. It plays the project in a browser, with a timeline, a props form and a chat with your coding agent:
+
+```sh
+npx kinetograph studio examples/hello/index.tsx
+```
+
+Press Space to play, click a layer to select it, and press Cmd+K (Ctrl+K elsewhere) for every action. Stop it with Ctrl-C. See [Studio](/docs/guides/studio/).
+
 ## Render the video
 
 ```sh
@@ -74,10 +83,49 @@ npx kinetograph render examples/hello/index.tsx -o out/hello.mp4
 
 `render` prints the frame count, the encoder and the time it took. Add `--json` to get one JSON object instead.
 
+## The same video as an HTML page
+
+A video can also be an HTML page, written as for [HyperFrames](https://github.com/heygen-com/hyperframes). Save this as `index.html`:
+
+```html
+<!doctype html>
+<html>
+<head>
+<style>
+  body { margin: 0; background: #14171f; font-family: Inter; }
+  #title { position: absolute; left: 320px; top: 200px; color: #fff; font-size: 96px; }
+  #bar { position: absolute; left: 320px; top: 340px; height: 12px; width: 0; border-radius: 6px; background: #f6c177; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+</head>
+<body>
+<div id="root" data-composition-id="hello" data-width="1280" data-height="720" data-duration="2">
+  <div id="title">Hello, Kinetograph</div>
+  <div id="bar"></div>
+</div>
+<script>
+  const tl = gsap.timeline({ paused: true });
+  tl.to('#bar', { width: 640, duration: 1, ease: 'none' });
+  window.__timelines = { hello: tl };
+</script>
+</body>
+</html>
+```
+
+The root element gives the size and the length in seconds (30 fps). The GSAP timeline in `window.__timelines` is paused and seeked to each frame's time. `still`, `strip`, `inspect`, `lint`, `doctor`, `studio` and `render` take the page as they take a TSX entry:
+
+```sh
+npx kinetograph still index.html 15 -o out/hello-15.png
+npx kinetograph render index.html -o out/hello-html.mp4
+```
+
+The first render downloads GSAP from the CDN and pins it in `kinetograph.lock.json`; `npx kinetograph fetch-deps index.html` does that download on its own. [HyperFrames projects](/docs/compat/#hyperframes-projects) lists what a page can use.
+
 ## Next steps
 
 - [Authoring](/docs/guides/authoring/) covers the elements, effects and Remotion APIs a project can use.
 - [Scene format](/docs/guides/scene-format/) describes the JSON scenes that the engine draws.
 - [Audio](/docs/guides/audio/) covers sound files, synthesised sound and loudness checks.
 - [CLI reference](/docs/reference/cli/) lists every command and option.
+- [Studio](/docs/guides/studio/) is the local editor: preview, timeline, props, export and the agent chat.
 - [Use with agents](/docs/guides/agents/) sets up the agent skill and the MCP server.

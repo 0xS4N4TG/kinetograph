@@ -135,14 +135,15 @@ export function About() {
           <Heading lines={['the same code, with a GPU where the browser was.']} hot="GPU" tag="TRK 03  0.96" className="text-[clamp(32px,3.6vw,52px)]" />
           <p className={`${body} mt-10 max-w-[44ch]`}>
             Kinetograph runs the video you already write, in TypeScript with Remotion's API, CSS, SVG, Canvas 2D and Web
-            Audio. Node runs the code and a Rust compositor draws every frame, so there is no browser anywhere in the path.
+            Audio, or as an HTML page with GSAP, so HyperFrames projects render as they are. Node runs the code and a Rust
+            compositor draws every frame, so there is no browser anywhere in the path.
           </p>
         </div>
         <div id="agents">
           <Heading lines={['an agent can see its own work.']} hot="see" tag="TRK 04  0.92" className="text-[clamp(32px,3.6vw,52px)]" />
           <p className={`${body} mt-10 max-w-[44ch]`}>
             Every command takes <code className="font-jb text-[14px]">--json</code>, and{' '}
-            <code className="font-jb text-[14px]">kinetograph mcp</code> serves them as tools. An agent writes the TSX,
+            <code className="font-jb text-[14px]">kinetograph mcp</code> serves them as tools. An agent writes the TSX or HTML,
             renders a still, reads the scene graph and fixes what it finds before anyone watches.
           </p>
           <p className={`${body} mt-6 max-w-[44ch]`}>Give your agent the Kinetograph skills:</p>

@@ -37,6 +37,18 @@ export interface TimelineData {
    * the Sequence shows on. */
   sequences: SequenceJson[];
   layers: TimelineLayer[];
+  /** The sounds the composition plays, one per clip id; absent from older servers. */
+  audio?: TimelineAudio[];
+}
+
+/** One sound of the composition: an `<Audio>`, or the sound of a `<Video>` (`video`). */
+export interface TimelineAudio {
+  /** Names the sound (its file, start, trims and rate), not its place in the tree; `GET /api/waveform?clip=` takes it. */
+  id: string;
+  src: string;
+  video?: boolean;
+  /** Inclusive frame ranges in which it is playing (not muted), ascending and disjoint. */
+  ranges: [first: number, last: number][];
 }
 
 /** `GET /api/timeline/progress`: how far the sweep for the timeline has got; `total` is 0 before it starts. */
@@ -61,6 +73,37 @@ export interface TimelineLayer {
   /** Key of the innermost Sequence whose group the layer sits in; absent for layers outside every Sequence group (older
    * servers never send it). Path ids repeat between Sequences, so `id` is only unique together with `sequence`. */
   sequence?: string;
+}
+
+/** One of `GET /api/presets`. */
+export interface PresetInfo {
+  name: string;
+  props: Record<string, unknown>;
+}
+
+/** `GET /api/live-props`, and the body of `PUT /api/live-props`. `comp` is null before any window has said what it previews. */
+export interface LiveProps {
+  comp: string | null;
+  props: Record<string, unknown>;
+}
+
+/** One of `GET /api/plugins`. */
+export interface PluginSummary {
+  name: string;
+  version: string;
+  /** The name to show (contract section 11). */
+  title: string;
+  description: string;
+  /** The URL of the plugin's icon SVG; null for the generic icon. */
+  icon: string | null;
+  /** The components the plugin exports that draw layers. */
+  components: string[];
+  /** The plugin's SKILL.md, absolute. */
+  skill: string | null;
+  /** The URL of the bundled panel module. */
+  panel: string | null;
+  /** The names of the plugin's MCP tools (empty when it has none or they do not load). */
+  tools: string[];
 }
 
 /** `POST /api/renders`. */
@@ -104,7 +147,14 @@ export interface RenderJob {
 // ---- WebSocket `/ws` ----
 
 /** Client → server, JSON text. */
-export type ClientMessage = FrameRequest | AgentClientMessage;
+export type ClientMessage = FrameRequest | AgentClientMessage | PropsMessage;
+
+/** Client → server: the composition and props the window previews, sent on every props change and composition switch. */
+export interface PropsMessage {
+  type: 'props';
+  comp: string;
+  props: Record<string, unknown>;
+}
 
 export interface FrameRequest {
   type: 'frame';
@@ -126,6 +176,8 @@ export type ServerMessage =
   | { type: 'render'; job: RenderJob }
   | { type: 'error'; requestId: number | null; error: StudioError }
   | { type: 'agent'; event: AgentEvent }
+  /** Props pushed by `PUT /api/live-props`: the window switches to `comp` and replaces its props with these. */
+  | { type: 'props'; comp: string; props: Record<string, unknown> }
   /** The conversation so far, sent to a window that takes it over (a reload of the one that began it). */
   | { type: 'agent.history'; items: ChatRecord[] };
 

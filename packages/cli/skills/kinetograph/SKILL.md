@@ -1,6 +1,6 @@
 ---
 name: kinetograph
-description: Make videos and motion graphics with Kinetograph. Write Remotion-shaped TSX (useCurrentFrame, interpolate, spring, Sequence, native elements) and Web Audio code, look at frames with `kinetograph still` and `strip`, check them with `inspect` and `lint`, then `render` to MP4. Use when asked to build, edit, preview or render a video, animation, title card or sound design with Kinetograph.
+description: Make videos and motion graphics with Kinetograph. Write Remotion-shaped TSX (useCurrentFrame, interpolate, spring, Sequence, native elements) and Web Audio code, or an HTML page with GSAP (HyperFrames projects render as they are), look at frames with `kinetograph still` and `strip`, check them with `inspect` and `lint`, then `render` to MP4. Use when asked to build, edit, preview or render a video, animation, title card or sound design with Kinetograph.
 ---
 
 # Working with Kinetograph
@@ -43,7 +43,7 @@ Also: `compositions <entry>` lists compositions (pick one with `--comp <id>`; pa
 `audio analyze <entry>` measures the sound, `snapshot <entry> --update` approves frames and `snapshot <entry>` later
 diffs against them, `bench <entry>` times the stages, `effects` lists effects, `doctor <entry>` says what the engine
 cannot draw and in which frames (see "Compat mode and doctor"; `doctor` alone says what this install can do).
-`studio <entry>` starts the local studio (preview, timeline, scene tree, props, render queue) at `http://127.0.0.1:3000`
+`studio <entry>` starts the local studio (a preview that plays sound, a timeline you can drag a span on, props and presets, plugin cards, scene tree, export dialog, render queue and a chat with the person's coding agent) at `http://127.0.0.1:3000`
 and opens a browser; it is for the person at the screen, runs until stopped, and is not an MCP tool. Use `--no-open`
 when you start it yourself.
 
@@ -51,9 +51,13 @@ An entry is a project file (`.tsx`, `.ts`, `.jsx`, `.js`) or a `.json` scene (re
 
 ## A project
 
+A new project imports the API from `@kinetographdev/core`, which comes with `kinetograph`; never install
+`remotion` (`@remotion/*` imports such as the font loaders are mapped too). An existing Remotion project keeps its `remotion` and `@remotion/*` imports, which map onto the same code.
+The entry must call `registerRoot`; a file that only exports a component is not an entry.
+
 ```tsx
 import { AbsoluteFill, Composition, Layer, Rect, Text, interpolate, registerRoot, spring,
-         useCurrentFrame, useVideoConfig, dropShadow, linearGradient, registerFont, staticFile } from 'remotion';
+         useCurrentFrame, useVideoConfig, dropShadow, linearGradient, registerFont, staticFile } from '@kinetographdev/core';
 
 registerFont({ family: 'DM Sans', path: staticFile('DMSans-Medium.ttf') }); // fonts BEFORE any text is measured
 
@@ -224,6 +228,8 @@ One line each; the pointer has the detail. `kinetograph doctor` alone lists the 
 
 ## Habits that save iterations
 
+- Run `npx kinetograph plugins` and read each plugin's `SKILL.md` before using it.
+- Inside Studio, try values with `studio_set_props` (it changes the open preview; `studio_get_props` reads it), then write the values you choose into the code or a preset. Plugin tools show as `<plugin>_<tool>`.
 - `strip` before `render`; `lint` before `strip`. Fix every lint error.
 - When a layer is in the wrong place, `inspect` it instead of guessing from the picture: `bounds` and `matrix` are in canvas pixels.
 - Give an explicit `id` to matte sources and to anything an `<Audio>` or matte refers to.

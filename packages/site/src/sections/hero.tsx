@@ -3,7 +3,7 @@ import { Heading } from '@/sections/heading';
 import { Film } from '@/sections/page';
 import { Label, shell } from '@/sections/shared';
 
-const TAGLINE = 'Made for agents. They write video in TypeScript; Kinetograph renders every frame on the GPU, with no browser.';
+const TAGLINE = 'Made for agents. They write video in TypeScript or HTML; Kinetograph renders every frame on the GPU, with no browser.';
 
 /** Command bars: square, hairline cobalt, mono. */
 export const commandBar =

