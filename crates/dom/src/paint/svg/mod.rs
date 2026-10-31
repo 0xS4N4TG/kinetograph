@@ -15,6 +15,7 @@
 mod assets;
 mod color;
 mod css;
+mod css_filter;
 mod emit;
 mod filter;
 mod fonts;
@@ -177,7 +178,7 @@ fn paint_serialized(
         filters: serialized
             .filters
             .iter()
-            .map(|f| (f.group.clone(), f.urls.clone()))
+            .map(|f| (f.group.clone(), f.items.clone()))
             .collect(),
         viewport: [request.viewport.width, request.viewport.height],
         coverage: false,

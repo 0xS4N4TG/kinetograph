@@ -33,6 +33,7 @@ use kurbo::{Affine, BezPath, Shape};
 use style::properties::{LonghandId, PropertyDeclarationId};
 use style_traits::ToCss;
 
+use super::css_filter::{self, FilterItem};
 use super::{color, css};
 
 /// A reason something is not drawn as Chrome would.
@@ -49,8 +50,8 @@ pub struct Note {
 #[derive(Clone, Debug)]
 pub struct FilterUse {
     pub group: String,
-    /// The ids of the `url(#id)`s, in order.
-    pub urls: Vec<String>,
+    /// What the list holds, in order: `url(#id)`s and filter functions.
+    pub items: Vec<FilterItem>,
 }
 
 pub struct Serialized {
@@ -510,7 +511,11 @@ fn cascaded(doc: &BaseDocument, id: NodeId, root: bool) -> Vec<(String, String, 
 /// `url()` in a computed `filter`, `clip-path` or `mask-image`, so these are
 /// read from the matched rules instead: the winning declaration, by the rule
 /// tree's order (most specific and last first, `!important` where it sits).
-fn declared(doc: &BaseDocument, style: &style::properties::ComputedValues, longhand: LonghandId) -> Option<String> {
+fn declared(
+    doc: &BaseDocument,
+    style: &style::properties::ComputedValues,
+    longhand: LonghandId,
+) -> Option<String> {
     let guard = doc.guard().read();
     for node in style.rules.as_ref()?.self_and_ancestors() {
         let Some(source) = node.style_source() else {
@@ -851,6 +856,25 @@ impl Writer<'_> {
         ))
     }
 
+    /// The entries of a `filter` value: `url(#id)`s and the CSS filter
+    /// functions. What cannot be read is noted.
+    fn filter_items(&mut self, id: NodeId, value: &str, tag: &str) -> Vec<FilterItem> {
+        let current = computed_color(self.doc, id);
+        let doc = self.doc;
+        let (items, rejected) = css_filter::parse(value, &current, &|w| {
+            color::resolve(doc, id, w).ok().map(Cow::into_owned)
+        });
+        if !rejected.is_empty() {
+            self.notes.push(Note {
+                element: tag.to_string(),
+                property: Some("filter".to_string()),
+                value: Some(rejected.join(" ")),
+                reason: "this filter is not one the engine reads, so it is not drawn".to_string(),
+            });
+        }
+        items
+    }
+
     fn element(&mut self, id: NodeId) {
         let Some((tag, mut attrs, mut decls)) = self.read(id) else {
             return;
@@ -869,11 +893,11 @@ impl Writer<'_> {
             attrs.push(("style".into(), css::to_style(&decls)));
         }
         let drawn = !NOT_DRAWN.contains(&tag.as_str());
-        let urls = match &filter {
-            Some(f) if drawn => filter_urls(f, &tag, &mut self.notes),
+        let items = match &filter {
+            Some(f) if drawn => self.filter_items(id, f, &tag),
             _ => Vec::new(),
         };
-        if urls.is_empty() {
+        if items.is_empty() {
             self.write(id, &tag, &attrs);
             return;
         }
@@ -881,7 +905,7 @@ impl Writer<'_> {
         let group = format!("kgf-{}", self.counter);
         self.filters.push(FilterUse {
             group: group.clone(),
-            urls,
+            items,
         });
         // The outer group takes what applies after the filter.
         let mut outer: Attrs = Vec::new();
@@ -957,33 +981,6 @@ impl Writer<'_> {
             at(y, vh),
         ));
     }
-}
-
-/// The `url(#id)`s of a `filter` value; what else it holds is noted.
-fn filter_urls(value: &str, tag: &str, notes: &mut Vec<Note>) -> Vec<String> {
-    let mut urls = Vec::new();
-    let mut rest = value;
-    let mut other = String::new();
-    while let Some(i) = rest.find("url(") {
-        other.push_str(&rest[..i]);
-        let after = &rest[i + 4..];
-        let end = after.find(')').unwrap_or(after.len());
-        let inner = after[..end].trim().trim_matches(['"', '\'']);
-        if let Some(id) = inner.strip_prefix('#') {
-            urls.push(id.to_string());
-        }
-        rest = after.get(end + 1..).unwrap_or("");
-    }
-    other.push_str(rest);
-    if !other.trim().is_empty() && !other.trim().eq_ignore_ascii_case("none") {
-        notes.push(Note {
-            element: tag.to_string(),
-            property: Some("filter".to_string()),
-            value: Some(other.trim().to_string()),
-            reason: "CSS filter functions on SVG elements are not drawn".to_string(),
-        });
-    }
-    urls
 }
 
 /// How much longer the shape is than its `pathLength`, if it has one.
