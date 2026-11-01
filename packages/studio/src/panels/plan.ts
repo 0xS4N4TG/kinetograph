@@ -3,15 +3,15 @@
 // file is a plain file, never a link; the name is a panel kind or custom-<slug>, never text from a request.
 
 import { randomBytes } from 'node:crypto';
-import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isInside } from '../agent-fs.js';
 import { StudioFailure } from '../util.js';
 import { isApproved } from './stages.js';
 import type { PanelStore } from './store.js';
-import type { OpenPanel, PanelDraft, PanelKind } from './types.js';
+import type { CustomAnswer, CustomDraft, OpenPanel, PanelDraft, PanelKind } from './types.js';
 import { CUSTOM_NAME } from './custom.js';
-import { PANEL_KINDS, checkAnswer } from './validate.js';
+import { PANEL_KINDS, checkAnswer, checkDraft } from './validate.js';
 
 /** The name of a plan file (without ".json"): a panel kind that keeps a file, or custom-<slug>. Never text from a request as it is. */
 export const isPlanFile = (name: string): boolean =>
@@ -76,6 +76,46 @@ export function readPlan(projectDir: string, kind: string): unknown {
   }
 }
 
+/**
+ * What plan/custom-<name>.json holds: the draft the person saw (its blocks) and their answer. A custom answer is values
+ * by block id and says nothing of the blocks, so the draft is kept with it, for the agent and to show the panel again.
+ */
+export interface CustomPlan {
+  draft: CustomDraft;
+  answer: CustomAnswer;
+}
+
+/** The names of the custom panels with a plan file (`end-card` for plan/custom-end-card.json), sorted. */
+function customPlanNames(projectDir: string): string[] {
+  try {
+    const dir = planDir(projectDir, false);
+    if (dir === null) return [];
+    return readdirSync(dir)
+      .flatMap((file) => {
+        const found = /^custom-([a-z0-9-]{1,40})\.json$/.exec(file);
+        return found ? [found[1]!] : [];
+      })
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/** The custom plan `name` holds, or null when it is not a draft with an answer that fits it (a file from before drafts were kept has values only). */
+function readCustomPlan(projectDir: string, name: string): CustomPlan | null {
+  let saved: unknown;
+  try {
+    saved = readPlan(projectDir, `custom-${name}`);
+  } catch {
+    return null;
+  }
+  if (typeof saved !== 'object' || saved === null) return null;
+  const { draft, answer } = saved as { draft?: unknown; answer?: unknown };
+  if (checkDraft('custom', draft) !== null || (draft as CustomDraft).name !== name) return null;
+  if (checkAnswer('custom', answer, draft) !== null) return null;
+  return { draft: draft as CustomDraft, answer: answer as CustomAnswer };
+}
+
 /** What a restored panel carries as its data: only what its answer already says, as the window shows no more than that. */
 const restoredData = (kind: PanelKind, answer: Record<string, unknown>): PanelDraft[PanelKind] => {
   switch (kind) {
@@ -99,7 +139,7 @@ const restoredData = (kind: PanelKind, answer: Record<string, unknown>): PanelDr
  */
 export function restorePanels(store: PanelStore, projectDir: string): void {
   for (const kind of PANEL_KINDS) {
-    // A custom panel's answer is values by block id and says nothing of its blocks, so it cannot be shown again.
+    // Custom panels come back below, each with the draft its plan file keeps.
     if (kind === 'custom') continue;
     let answer: unknown;
     try {
@@ -111,5 +151,9 @@ export function restorePanels(store: PanelStore, projectDir: string): void {
     const probe = { panel: kind, status: 'submitted', answer } as OpenPanel;
     if (!isApproved(probe)) continue;
     store.restore(kind, restoredData(kind, answer as Record<string, unknown>) as never, answer as never);
+  }
+  for (const name of customPlanNames(projectDir)) {
+    const saved = readCustomPlan(projectDir, name);
+    if (saved) store.restore('custom', saved.draft, saved.answer);
   }
 }

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -8,7 +8,7 @@ import { closingMessage } from '../src/panels/summary.js';
 import type { CustomDraft, OpenPanel } from '../src/panels/types.js';
 import { checkAnswer, checkDraft } from '../src/panels/validate.js';
 import type { StudioServer } from '../src/index.js';
-import { api, cleanup, Client, start, stopAll, tokenOf, until, writeProject } from './helpers.js';
+import { api, cleanup, Client, start, stopAll, tempDir, tokenOf, until, writeProject } from './helpers.js';
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
@@ -212,15 +212,69 @@ describe('opening and answering a custom panel', () => {
     client.send({ type: 'panel.submit', id: 'p_1', answer });
     const closed: any = await client.waitForMessage('panel.closed', (m) => m.id === 'p_1');
     expect(closed.message).toMatchObject({ status: 'submitted', panel: { answer } });
-    expect(readFileSync(join(dir, 'plan', 'custom-end-card.json'), 'utf8')).toBe(`${JSON.stringify(answer, null, 2)}\n`);
+    // The file keeps the draft with the answer, so the panel can come back after a restart.
+    expect(readFileSync(join(dir, 'plan', 'custom-end-card.json'), 'utf8')).toBe(`${JSON.stringify({ draft: draft(), answer }, null, 2)}\n`);
     expect(readdirSync(join(dir, 'plan'))).toEqual(['custom-end-card.json']);
-    expect((await api(studio, '/api/plan/custom-end-card', { headers: window(studio) })).json).toEqual(answer);
+    expect((await api(studio, '/api/plan/custom-end-card', { headers: window(studio) })).json).toEqual({ draft: draft(), answer });
     // The other panel is still open and has its own file name.
     expect((await api(studio, '/api/panels/p_2', { headers: window(studio) })).json.status).toBe('open');
     client.send({ type: 'panel.submit', id: 'p_2', answer: { values: { pick: 'a' } } });
     await client.waitForMessage('panel.closed', (m) => m.id === 'p_2');
     expect(readdirSync(join(dir, 'plan')).sort()).toEqual(['custom-end-card.json', 'custom-other.json']);
     client.close();
+  });
+
+  it('brings an answered custom panel back after a restart, with its blocks', async () => {
+    const { dir, entry } = writeProject('CustomRestore');
+    const first = await start(entry);
+    const client = await Client.connect(first);
+    await open(first, draft());
+    await client.waitForMessage('panel');
+    client.send({ type: 'panel.submit', id: 'p_1', answer });
+    await client.waitForMessage('panel.closed');
+    client.close();
+    await stopAll();
+
+    const second = await start(entry);
+    const again = await Client.connect(second);
+    await until(() => again.messages('panel').length, (n) => n === 1);
+    const restored: any = again.messages('panel')[0]!;
+    expect(restored.panel).toMatchObject({ panel: 'custom', status: 'submitted', data: draft(), answer });
+    expect(readdirSync(join(dir, 'plan'))).toEqual(['custom-end-card.json']);
+    // A new panel of the same name opens beside it and replaces nothing that waits.
+    expect((await open(second, draft())).json).toEqual({ id: 'p_2', status: 'open' });
+    again.close();
+  });
+
+  it('leaves out a custom plan file that is not a draft with an answer that fits it', async () => {
+    const { dir, entry } = writeProject('CustomRestoreBad');
+    mkdirSync(join(dir, 'plan'));
+    const put = (name: string, value: unknown) => writeFileSync(join(dir, 'plan', `custom-${name}.json`), typeof value === 'string' ? value : JSON.stringify(value));
+    put('good', { draft: draft({ name: 'good' }), answer });
+    put('values-only', answer);
+    put('wrong-name', { draft: draft({ name: 'other' }), answer });
+    put('bad-answer', { draft: draft({ name: 'bad-answer' }), answer: { values: { pick: 'zzz' } } });
+    put('missing-required', { draft: draft({ name: 'missing-required' }), answer: { values: {} } });
+    put('not-json', '{ nope');
+    const studio = await start(entry);
+    const list = (await api(studio, '/api/panels', { headers: window(studio) })).json.panels as OpenPanel[];
+    expect(list.map((p) => `${(p.data as CustomDraft).name}:${p.status}`)).toEqual(['good:submitted']);
+  });
+
+  it('does not restore from a plan directory that leaves the project, or a file that is a link', async () => {
+    const { dir, entry } = writeProject('CustomRestoreLinks');
+    const elsewhere = tempDir();
+    writeFileSync(join(elsewhere, 'custom-good.json'), JSON.stringify({ draft: draft({ name: 'good' }), answer }));
+    symlinkSync(elsewhere, join(dir, 'plan'));
+    const linked = await start(entry);
+    expect(((await api(linked, '/api/panels', { headers: window(linked) })).json as { panels: unknown[] }).panels).toEqual([]);
+    await stopAll();
+
+    const other = writeProject('CustomRestoreFileLink');
+    mkdirSync(join(other.dir, 'plan'));
+    symlinkSync(join(elsewhere, 'custom-good.json'), join(other.dir, 'plan', 'custom-good.json'));
+    const studio = await start(other.entry);
+    expect(((await api(studio, '/api/panels', { headers: window(studio) })).json as { panels: unknown[] }).panels).toEqual([]);
   });
 
   it('serves and writes only slugged custom plan files', async () => {

@@ -242,7 +242,8 @@ studio_open_panel({ panel: 'custom', placement: 'right', data: {
   multiple, with pictures), slider, text input, editable list, table, notes on a picture, A/B compare.
 - No code runs, so it is safe, and it works the same for an agent in a terminal. A person can ask the agent for a panel
   ("let me rate each shot") and the agent builds one on the spot.
-- The answer is saved as `plan/custom-<name>.json`, where `name` is a slug the agent gives.
+- The answer is saved as `plan/custom-<name>.json`, where `name` is a slug the agent gives. The file is `{ draft, answer }`
+  (the blocks the person saw and their values), so the panel can be shown again, answered, after a Studio restart.
 
 ### 2. Placement and persistent panels
 

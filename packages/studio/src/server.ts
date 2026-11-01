@@ -254,7 +254,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     if (bad) throw invalid(`the answer to the ${panel.panel} panel is not valid: ${bad}`);
     const file = planFileOf(panel);
     try {
-      writePlan(dirname(entry), file, answer);
+      // A custom answer is values by block id: the file keeps the draft with it, so the panel can come back after a restart.
+      writePlan(dirname(entry), file, panel.panel === 'custom' ? { draft: panel.data, answer } : answer);
     } catch (error) {
       throw new StudioFailure('IO', `could not write plan/${file}.json: ${(error as Error).message}`);
     }
