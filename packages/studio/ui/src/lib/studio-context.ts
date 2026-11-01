@@ -1,6 +1,10 @@
-import { createContext } from 'react';
+import { createContext, useContext } from 'react';
 
 import type { Studio } from '@/studio';
 
-/** The studio's state for a component that cannot be handed it as props (a panel the agent opened); null outside `App`. */
+/** The studio's store, for components that sit outside the layout's props (the panels the agent opens). */
 export const StudioContext = createContext<Studio | null>(null);
+
+export function useStudioContext(): Studio | null {
+  return useContext(StudioContext);
+}

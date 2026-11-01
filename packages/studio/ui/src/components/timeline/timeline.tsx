@@ -18,6 +18,7 @@ import type { TimelineStatus } from '@/studio';
 import { cn } from '@/lib/utils';
 import { buildTimeline, seekTarget, visibleRows, type Range, type TimelineNode } from '@/lib/timeline-model';
 import { buildRuler } from '@/lib/ruler';
+import { useReviewMarks } from '@/lib/review-marks';
 import { useElementSize } from '@/lib/use-element-size';
 
 const MIN_ZOOM = 1;
@@ -314,6 +315,8 @@ const RowItem = memo(function RowItem({ node, depth, expandable, open, details, 
 export const Timeline = memo(function Timeline({ comp, status, player, selectedLayers, onSelectLayers, selectedRange, onSelectRange, thumbnailUrl, waveform, expanded: open, onExpandedChange, details, onDetailsChange }: TimelineProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
+  /** The notes of an open review, marked on the ruler. */
+  const reviewMarks = useReviewMarks();
   /** What a press in the ruler or a lane is doing: scrubbing, or (for a press that may become a drag) waiting to see. */
   const drag = useRef<{ kind: 'scrub' } | { kind: 'pending'; anchor: number; x: number } | { kind: 'range'; anchor: number; base: FrameRange | null } | null>(null);
   const rangeRef = useRef(selectedRange);
@@ -538,6 +541,17 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
                 {ruler.minor.map((mark) => (
                   <span key={`m${mark.frame}`} aria-hidden="true" data-testid="ruler-dot" className="bg-muted-foreground/40 absolute bottom-1 h-1 w-px" style={{ left: mark.x }} />
                 ))}
+                {reviewMarks?.comp === comp.id &&
+                  reviewMarks.frames.map((frame, index) => (
+                    <span
+                      key={`n${index}`}
+                      aria-hidden="true"
+                      data-testid="review-mark"
+                      title={`Note at frame ${frame}`}
+                      className="pointer-events-none absolute top-0 h-3 w-[3px] -translate-x-1/2 rounded-b-sm bg-amber-400"
+                      style={{ left: frame * pxPerFrame }}
+                    />
+                  ))}
                 {!open &&
                   roots.map((node) => {
                     const first = node.bars[0]?.[0];
