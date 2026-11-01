@@ -1,13 +1,15 @@
 import { Streamdown } from 'streamdown';
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { ArrowUpIcon, ImageIcon, SparklesIcon, SquareIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
+import { ArrowUpIcon, ChevronRightIcon, ImageIcon, SparklesIcon, SquareIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
 
 import type { AgentInfo, CompositionInfo, InspectResult, PluginSummary, ProjectInfo, ReceivedFrame, TimelineData } from '@/api';
 import { ToolGroup } from '@/components/agent/tool-rows';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverPopup } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import type { ChatItem } from '@/lib/chat';
 import { buildChatContext } from '@/lib/chat-context';
+import { MAX_CHIPS, selectionChips, type Chip } from '@/lib/chips';
 import { cropToPng } from '@/lib/crop';
 import { findLayer, type InspectLayer } from '@/lib/inspect';
 import { contactSheet } from '@/lib/contact-sheet';
@@ -75,6 +77,115 @@ function statusText(chat: Chat['state']): string {
     default:
       return 'Not started';
   }
+}
+
+/** The selection as chips: three at most, the rest behind "+N more" (and a kind with many layers as one chip) in a popover that lists every layer. */
+function SelectionChips({ chips, rangeChip, onClearRange, remove, clearAll }: { chips: Chip[]; rangeChip: string | null; onClearRange?(): void; remove(ids: string[]): void; clearAll(): void }) {
+  const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const anchor = useRef<HTMLDivElement>(null);
+  const shown = chips.slice(0, MAX_CHIPS);
+  const hidden = chips.slice(MAX_CHIPS).reduce((n, c) => n + c.ids.length, 0);
+  const total = chips.reduce((n, c) => n + c.ids.length, 0);
+  const pill = 'bg-accent text-accent-foreground flex max-w-full items-center gap-1 rounded-full py-0.5 pr-1 pl-2.5 text-xs';
+  const removeButton = (label: string, ids: string[]) => (
+    <button type="button" aria-label={`Remove ${label}`} onClick={() => remove(ids)} className="hover:bg-foreground/10 shrink-0 rounded-full p-0.5">
+      <XIcon className="size-3" aria-hidden="true" />
+    </button>
+  );
+  return (
+    <div ref={anchor} className="mb-1.5 flex max-h-[3.4rem] flex-wrap items-center gap-1.5 overflow-y-auto px-0.5" data-testid="selection-chips">
+      {rangeChip && (
+        <span className={pill}>
+          <span className="truncate">{rangeChip}</span>
+          <button type="button" aria-label={`Remove ${rangeChip}`} onClick={onClearRange} className="hover:bg-foreground/10 rounded-full p-0.5">
+            <XIcon className="size-3" aria-hidden="true" />
+          </button>
+        </span>
+      )}
+      {chips.length === 0 && !rangeChip ? (
+        <span className="text-muted-foreground text-xs">Nothing selected: the agent only knows the frame.</span>
+      ) : (
+        shown.map((chip) => (
+          <span key={chip.key} className={pill} data-testid={chip.kind === 'group' ? 'chip-group' : 'chip-layer'}>
+            {chip.kind === 'group' ? (
+              <button type="button" onClick={() => setOpen(true)} title={chip.text} className="min-w-0 truncate">
+                {chip.text}
+              </button>
+            ) : (
+              <span className="truncate" title={chip.text}>
+                {chip.text}
+              </span>
+            )}
+            {removeButton(chip.text, chip.ids)}
+          </span>
+        ))
+      )}
+      {chips.length > MAX_CHIPS && (
+        <button type="button" onClick={() => setOpen(true)} data-testid="chip-more" className="bg-muted text-muted-foreground hover:text-foreground rounded-full px-2.5 py-0.5 text-xs">
+          +{hidden} more
+        </button>
+      )}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverPopup anchor={anchor} side="top" align="start" className="w-80 max-w-[90vw]">
+          <div data-testid="chip-popover" className="flex w-full flex-col gap-2">
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span className="text-muted-foreground">{total} selected</span>
+              <button
+                type="button"
+                onClick={() => {
+                  clearAll();
+                  setOpen(false);
+                }}
+                className="text-foreground hover:bg-accent rounded-md px-2 py-1"
+              >
+                Clear all
+              </button>
+            </div>
+            <ul className="flex max-h-64 flex-col gap-0.5 overflow-y-auto">
+              {chips.map((chip) => {
+                const isOpen = expanded.has(chip.key);
+                return (
+                  <li key={chip.key} className="flex flex-col">
+                    <div className="hover:bg-accent/60 flex items-center gap-1 rounded-md px-1.5 py-1 text-xs">
+                      {chip.kind === 'group' ? (
+                        <button
+                          type="button"
+                          aria-expanded={isOpen}
+                          onClick={() => setExpanded((prev) => (prev.has(chip.key) ? new Set([...prev].filter((k) => k !== chip.key)) : new Set(prev).add(chip.key)))}
+                          className="flex min-w-0 flex-1 items-center gap-1 text-left"
+                        >
+                          <ChevronRightIcon className={cn('size-3 shrink-0 transition-transform motion-reduce:transition-none', isOpen && 'rotate-90')} aria-hidden="true" />
+                          <span className="truncate">{chip.text}</span>
+                        </button>
+                      ) : (
+                        <span className="min-w-0 flex-1 truncate" title={chip.text}>
+                          {chip.text}
+                        </span>
+                      )}
+                      {removeButton(chip.text, chip.ids)}
+                    </div>
+                    {chip.kind === 'group' && isOpen && (
+                      <ul className="border-border/60 ml-3 flex flex-col border-l pl-1.5">
+                        {chip.entries.map((entry) => (
+                          <li key={entry.id} className="hover:bg-accent/60 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs">
+                            <span className="min-w-0 flex-1 truncate" title={entry.text}>
+                              {entry.text}
+                            </span>
+                            {removeButton(entry.text, [entry.id])}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </PopoverPopup>
+      </Popover>
+    </div>
+  );
 }
 
 const SUGGESTIONS = ['Make the title bigger', 'Try a warmer colour palette', 'Slow down the intro'];
@@ -210,6 +321,7 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
   const rows = useMemo(() => segments(state.items), [state.items]);
   const span = comp && range ? rangeLabel(range, comp.fps) : undefined;
   const chips = layers.map((layer) => chipText(layer, frame, cwd, span));
+  const chipList = useMemo(() => selectionChips(layers, chips, comp?.id ?? '', span ? ` · ${span}` : ` · frame ${frame}`), [layers, chips.join('\n'), comp?.id, span, frame]);
   /** With a span and no layer, the span has a chip of its own. */
   const rangeChip = span && layers.length === 0 ? `${comp!.id} · ${span}` : null;
 
@@ -322,33 +434,13 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
 
       <div className="shrink-0 p-3 pt-0">
         <div className="bg-background/60 border-input has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-ring/20 rounded-2xl border p-2.5 transition-[box-shadow,border-color] has-[textarea:focus-visible]:ring-[3px]">
-          <div className="mb-1.5 flex flex-wrap items-center gap-1.5 px-0.5" data-testid="selection-chips">
-            {rangeChip && (
-              <span className="bg-accent text-accent-foreground flex max-w-full items-center gap-1 rounded-full py-0.5 pr-1 pl-2.5 text-xs">
-                <span className="truncate">{rangeChip}</span>
-                <button type="button" aria-label={`Remove ${rangeChip}`} onClick={onClearRange} className="hover:bg-foreground/10 rounded-full p-0.5">
-                  <XIcon className="size-3" aria-hidden="true" />
-                </button>
-              </span>
-            )}
-            {chips.length === 0 && !rangeChip ? (
-              <span className="text-muted-foreground text-xs">Nothing selected: the agent only knows the frame.</span>
-            ) : (
-              layers.map((layer, index) => (
-                <span key={layer.id} className="bg-accent text-accent-foreground flex max-w-full items-center gap-1 rounded-full py-0.5 pr-1 pl-2.5 text-xs">
-                  <span className="truncate">{chips[index]}</span>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${chips[index]}`}
-                    onClick={() => selectLayers(selectedLayers.filter((id) => id !== layer.id))}
-                    className="hover:bg-foreground/10 rounded-full p-0.5"
-                  >
-                    <XIcon className="size-3" aria-hidden="true" />
-                  </button>
-                </span>
-              ))
-            )}
-          </div>
+          <SelectionChips
+            chips={chipList}
+            rangeChip={rangeChip}
+            {...(onClearRange ? { onClearRange } : {})}
+            remove={(ids) => selectLayers(selectedLayers.filter((id) => !ids.includes(id)))}
+            clearAll={() => selectLayers([])}
+          />
           <textarea
             ref={inputRef}
             aria-label="Message for the agent"
