@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { clampPcm, hasOnFrame, joinClips, renderAudio } from '@kinetographdev/audio';
+import { clampPcm, hasAudibleClip, hasOnFrame, joinClips, renderAudio } from '@kinetographdev/audio';
 import { resolveSoundSource } from '@kinetographdev/core/sound-source';
 import type { ExportOptions, Renderer, RenderSummary } from '@kinetographdev/native';
 import type { ArtifactRecord } from '@kinetographdev/core';
@@ -185,8 +185,8 @@ export async function renderSource(
     stage('frames pushed (loop end)');
     const clips = joinClips(clipFrames);
     let summary: RenderSummary;
-    // A GIF has no sound.
-    if (plan.audioCodec !== undefined && (clips.length > 0 || hasOnFrame(first, last))) {
+    // A GIF has no sound. A render whose clips are all muted (or at volume 0) and with no onFrame callback has none either.
+    if (plan.audioCodec !== undefined && (hasAudibleClip(clips) || hasOnFrame(first, last))) {
       options.progress?.('mixing audio');
       stage('audio mix start');
       const pcm = clampPcm(await renderAudio({ fps, first, last, clips, baseDir: source.baseDir, resolveSource: resolveSoundSource }));
