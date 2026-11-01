@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, type ReactNode } from 'react';
 
 import type { CompositionInfo, InspectResult, PluginSummary, ProjectInfo, RenderJob, StudioApi, TimelineData } from '@/api';
 import { PropsPanel } from '@/components/inspector/props-panel';
@@ -9,11 +9,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export type InspectorTab = 'props' | 'scene' | 'renders';
 
+/** A panel the agent placed in this column: a tab of its own after Renders. `value` is not one of the inspector's tab names. */
+export interface PanelTab {
+  value: string;
+  label: string;
+  content: ReactNode;
+}
+
 interface InspectorPanelProps {
   /** For the Props tab's presets and plugin panels. */
   api: StudioApi;
-  tab: InspectorTab;
-  onTabChange(tab: InspectorTab): void;
+  tab: InspectorTab | string;
+  onTabChange(tab: InspectorTab | string): void;
+  /** Panels placed in this column (`placement: 'right'`), as extra tabs. */
+  panelTabs?: PanelTab[];
   comp: CompositionInfo | null;
   inspect: InspectResult | null;
   project: ProjectInfo | null;
@@ -45,6 +54,7 @@ export const InspectorPanel = memo(function InspectorPanel({
   api,
   tab,
   onTabChange,
+  panelTabs = [],
   comp,
   inspect,
   project,
@@ -68,9 +78,9 @@ export const InspectorPanel = memo(function InspectorPanel({
   const activeRenders = renders.filter((job) => job.status === 'queued' || job.status === 'running').length;
 
   return (
-    <Tabs value={tab} onValueChange={(next) => onTabChange(next as InspectorTab)} className="h-full min-h-0 gap-0">
+    <Tabs value={tab} onValueChange={(next) => onTabChange(next as string)} className="h-full min-h-0 gap-0">
       <div className="shrink-0 px-3 pt-3">
-        <TabsList className="w-full rounded-full p-1">
+        <TabsList className="w-full justify-start overflow-x-auto rounded-full p-1 [scrollbar-width:none]">
           <TabsTrigger value="props" className="rounded-full">
             Props
           </TabsTrigger>
@@ -85,6 +95,11 @@ export const InspectorPanel = memo(function InspectorPanel({
               </Badge>
             )}
           </TabsTrigger>
+          {panelTabs.map((t) => (
+            <TabsTrigger key={t.value} value={t.value} className="max-w-36 rounded-full">
+              <span className="truncate">{t.label}</span>
+            </TabsTrigger>
+          ))}
         </TabsList>
       </div>
       <TabsContent value="props" className="min-h-0 pt-2">
@@ -116,6 +131,11 @@ export const InspectorPanel = memo(function InspectorPanel({
       <TabsContent value="renders" className="min-h-0 pt-2">
         <RenderQueue comp={comp} jobs={renders} onNew={onNewRender} onCancel={onCancelRender} />
       </TabsContent>
+      {panelTabs.map((t) => (
+        <TabsContent key={t.value} value={t.value} className="flex min-h-0 flex-col pt-2">
+          {t.content}
+        </TabsContent>
+      ))}
     </Tabs>
   );
 });

@@ -1,4 +1,6 @@
-import type { Brief, OpenPanel, ReviewAnswer, ScriptAnswer, StoryboardAnswer, StyleframesAnswer } from './types';
+import { answerRows } from './custom-model';
+import { planFileOf } from '../../../../src/panels/placement.ts';
+import type { Brief, CustomAnswer, CustomDraft, OpenPanel, ReviewAnswer, ScriptAnswer, StoryboardAnswer, StyleframesAnswer } from './types';
 
 type Row = [label: string, value: string];
 
@@ -36,6 +38,8 @@ function rowsOf(panel: OpenPanel): { rows: Row[]; notes: string[] } {
       const a = panel.answer as StyleframesAnswer;
       return { rows: [[a.pick !== null ? 'Picked' : 'Mixed', a.pick ?? a.mix ?? 'nothing']], notes: a.notes.map((n) => `${n.frame}: ${n.text}`) };
     }
+    case 'custom':
+      return { rows: answerRows(panel.data as CustomDraft, panel.answer as CustomAnswer), notes: [] };
     case 'review': {
       const a = panel.answer as ReviewAnswer;
       return { rows: [['Verdict', a.verdict === 'approved' ? 'approved' : 'changes wanted']], notes: [...a.notes].sort((x, y) => x.frame - y.frame).map((n) => `frame ${n.frame}: ${n.text}`) };
@@ -52,7 +56,7 @@ export function AnswerView({ panel }: { panel: OpenPanel }) {
         {rows.map(([label, value], i) => (
           <div key={i} className="contents">
             <dt className="text-muted-foreground">{label}</dt>
-            <dd className="min-w-0 break-words">{value}</dd>
+            <dd className="min-w-0 break-words whitespace-pre-line">{value}</dd>
           </div>
         ))}
       </dl>
@@ -66,7 +70,7 @@ export function AnswerView({ panel }: { panel: OpenPanel }) {
           </ul>
         </section>
       )}
-      <p className="text-muted-foreground text-xs">Saved in plan/{panel.panel}.json. Ask the agent to open it again to change it.</p>
+      <p className="text-muted-foreground text-xs">Saved in plan/{planFileOf(panel)}.json. Ask the agent to open it again to change it.</p>
     </div>
   );
 }
