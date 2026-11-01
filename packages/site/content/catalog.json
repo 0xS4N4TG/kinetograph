@@ -4,7 +4,7 @@
       "slug": "hexed",
       "name": "@kinetographdev/hexed",
       "title": "Hexed",
-      "description": "Put a look on any picture or clip. Hexed picks a grade, a print screen, a lens effect, some tape damage and a camera shake for you. Keep the parts you like and reroll the rest.",
+      "description": "Roll a look onto any picture or clip. Hexed picks a grade, a print screen, lens effects, tape damage and a camera shake. Keep the parts you like and reroll the rest.",
       "components": [
         "Hexed",
         "Grunge",
@@ -13,11 +13,11 @@
       "hasPanel": true,
       "hasTools": true,
       "hasSkill": true,
-      "intro": "Hexed puts a look on a picture or a clip. Roll a number and you get a new look, and the same number always gives the same one. A look is built from eleven slots, each holding one named effect.",
+      "intro": "A look is eleven slots, each holding one named effect. Roll a number and every slot fills. The same number always gives the same look, so a render comes out the same every time.",
       "features": [
         {
           "title": "Roll a look",
-          "text": "Roll a number for a grade, a print screen, lens effects, tape damage and a camera shake. Roll again for another.",
+          "text": "One number picks a crop, a grade, a print screen, lens effects, tape damage and a camera shake. Roll again for a different look.",
           "clip": {
             "src": "/catalog/plugins/hexed/feature-1.webp",
             "w": 1280,
@@ -31,7 +31,7 @@
         },
         {
           "title": "Lock and reroll",
-          "text": "Lock the slots you like and roll the rest again. Each label names the effects that seed rolled.",
+          "text": "Lock the slots you like and roll the rest again. Each label names the effects its number picked.",
           "clip": {
             "src": "/catalog/plugins/hexed/feature-2.webp",
             "w": 1280,
@@ -45,7 +45,7 @@
         },
         {
           "title": "Saved looks",
-          "text": "Save a look as a preset and use it on the next video. Pick one by name and set how strong it is.",
+          "text": "Save a look as a preset. Use it on the next video by name, and set how strong it is.",
           "clip": {
             "src": "/catalog/plugins/hexed/feature-3.webp",
             "w": 1280,
@@ -328,10 +328,10 @@
         }
       ],
       "studio": {
-        "panel": "Studio gets a Hexed panel: a card for each slot with its effect, a strength slider, a lock and a shuffle button. A Shuffle for the whole look leaves the locked slots alone, and a menu holds your saved presets. It follows Studio’s light and dark theme.",
+        "panel": "Studio gets a Hexed panel: a card for each slot with its effect, a strength slider, a lock and a shuffle button. Shuffle rerolls everything except the locked slots, and a menu holds your presets. It follows Studio's light and dark theme.",
         "tools": [],
-        "note": "An agent can roll a look, list what each slot accepts and read the saved presets. It then writes the look it settles on into your code or saves it as a preset, so the look does not live only in Studio.",
-        "installed": "How it installs: as a package you add to your project. Its skill comes with it, so an agent can use it without being taught."
+        "note": "An agent can roll a look, list what each slot accepts and read your presets. It then writes the look it settles on into your code or saves it as a preset, so the look does not live only in Studio.",
+        "installed": "It installs as a package you add to your project. Its skill comes with it, so an agent can use it without being taught."
       },
       "hero": {
         "src": "/catalog/plugins/hexed/hero.webp",
@@ -393,13 +393,14 @@
         {
           "id": "plugin-ui-demo",
           "title": "Studio panels",
-          "text": "Ready-made scenes set up for the Hexed, Paper and VJ panels in Studio.",
+          "text": "Ready-made scenes for the Hexed, Paper, VJ and caption panels in Studio. Edit a value and the preview redraws.",
           "compositions": [
             "HexedLook",
             "PaperMatchCut",
             "PaperCutOut",
             "PaperScrapline",
             "PaperFoldOut",
+            "TypeCaptions",
             "VjLook"
           ],
           "clips": []
@@ -809,19 +810,25 @@
     {
       "slug": "kinetic-typography",
       "name": "@kinetographdev/kinetic-typography",
-      "title": "Kinetic Typography",
-      "description": "Captions that write themselves on screen in many handwritten styles, timed to your voiceover. Key words jump out in a heavy display face, and the text can follow a tracked subject.",
+      "title": "Kinetic typography",
+      "description": "Captions that move with the voice, in fourteen ready-made styles. A hook word is set huge, and handwritten captions can follow a tracked subject.",
       "components": [
-        "HandCaptions"
+        "HandCaptions",
+        "Captions"
       ],
-      "hasPanel": false,
+      "hasPanel": true,
       "hasTools": false,
       "hasSkill": true,
-      "intro": "HandCaptions writes a voiceover on screen letter by letter, each letter in a different handwritten face. Key words break out whole in a display face.",
+      "intro": "Captions sets a voiceover on screen. Each word arrives as it is said and the line leaves all together. A line with a big word is a hook: that word is set huge and the small words sit round it. HandCaptions writes the other way, one letter at a time in mixed handwriting.",
       "features": [
         {
+          "title": "Fourteen caption styles",
+          "text": "Highlighter, typewriter, a text-selection sweep, a shine, a difference-blend prism and more. Pick one by name, then change its fonts, motion and colours. The accent colour and a readable shadow can come from your footage.",
+          "clip": null
+        },
+        {
           "title": "Hand captions",
-          "text": "Each word writes itself across the time it is spoken. Key words break out in a fat serif or a heavy italic.",
+          "text": "Each word writes itself across the time it is spoken, one letter at a time, every letter in a different handwritten face. Key words break out in a fat serif or a heavy italic, each with its own colour if you like. A dark halo keeps the letters readable over bright footage.",
           "clip": {
             "src": "/catalog/plugins/kinetic-typography/feature-1.webp",
             "w": 1280,
@@ -835,7 +842,7 @@
         },
         {
           "title": "Follows a tracked subject",
-          "text": "Captions sit beside the subject on the side with room, with a reticle on it and a bracket on the letter being written.",
+          "text": "The text hangs beside the subject, on the side with room. A reticle frames the subject and a bracket marks the letter being written. Give it the subject's box and the text stays clear of it.",
           "clip": {
             "src": "/catalog/plugins/kinetic-typography/feature-2.webp",
             "w": 1280,
@@ -882,21 +889,27 @@
             },
             {
               "name": "hot",
-              "type": "string[]",
+              "type": "readonly HotWord[]",
               "optional": true,
-              "doc": "Words that break out in a display face."
+              "doc": "Words that break out in a display face: a word, or { word, color, face } to give it its own colour and face (serif or heavy; without one the faces take turns)."
+            },
+            {
+              "name": "hotColor",
+              "type": "string",
+              "optional": true,
+              "doc": "The colour of every hot word without its own. Default color."
             },
             {
               "name": "anchor",
-              "type": "(frame: number) => (Point & { side?: 'left' | 'right' }) | null",
+              "type": "(frame: number) => Subject | null",
               "optional": true,
-              "doc": "The tracked subject on a frame, in canvas pixels, or null where nothing is tracked. Without it the captions sit centred low in the frame, with no reticle or lines."
+              "doc": "The tracked subject on a frame, in canvas pixels, or null where nothing is tracked: its centre, and its box (w, h) when known, which the reticle then frames and the text sits clear of. Without it the captions sit centred low in the frame, with no reticle or lines."
             },
             {
               "name": "place",
-              "type": "(frame: number) => (Point & { side?: 'left' | 'right' }) | null",
+              "type": "(frame: number) => Subject | null",
               "optional": true,
-              "doc": "Where the text hangs, when it should not follow the subject (a subject that jumps about): the lines still run to the subject."
+              "doc": "Where the text hangs, when it should not follow the subject (a subject that jumps about, or a place kept clear of the picture): the lines still run to the subject. A box here keeps the text clear of it as anchor's does."
             },
             {
               "name": "size",
@@ -915,6 +928,12 @@
               "type": "string",
               "optional": true,
               "doc": "A CSS text-shadow for the glow, or '' for none."
+            },
+            {
+              "name": "halo",
+              "type": "boolean | number",
+              "optional": true,
+              "doc": "A dark halo under the glow, so the letters read over bright footage and white flashes: true (strength 1) or a strength, 0..1.5. Default off."
             },
             {
               "name": "fringe",
@@ -985,15 +1004,21 @@
           "detail": ""
         },
         {
+          "name": "haloOf",
+          "kind": "function",
+          "summary": "The dark halo, as text-shadows listed after the glow so they paint under it: a tight black edge round each letter, then darker and wider shadows, so whatever is behind a word falls to grey near it. k scales the opacities.",
+          "detail": ""
+        },
+        {
           "name": "pagesOf",
           "kind": "function",
           "summary": "The pages: split word counts per page (default 3 a page).",
-          "detail": "A page stays up until the next starts, or hold frames after its last word. hot words (compared without case or punctuation) break out, numbered in order."
+          "detail": "A page stays up until the next starts, or hold frames after its last word. hot words (compared without case or punctuation) break out, numbered by their place in hot."
         },
         {
           "name": "wordSpans",
           "kind": "constant",
-          "summary": "When each word is written, for sound: a pen across a plain word, a thump for one that breaks out.",
+          "summary": "When each word is written: across its spoken time for a plain word, at once for one that breaks out.",
           "detail": ""
         },
         {
@@ -1001,13 +1026,248 @@
           "kind": "function",
           "summary": "Words from timestamps in seconds (an ASR or TTS word list), starting on frame at.",
           "detail": ""
+        },
+        {
+          "name": "Captions",
+          "kind": "component",
+          "summary": "Sets a voiceover on screen in one of fourteen ready-made styles. Each word arrives as it is said and the line leaves all together. A line with a big word is a hook.",
+          "detail": "",
+          "propsOf": "CaptionsProps",
+          "props": [
+            {
+              "name": "words",
+              "type": "Word[]",
+              "optional": false,
+              "doc": "The spoken words with their frames (wordsFrom turns timestamps in seconds into these)."
+            },
+            {
+              "name": "split",
+              "type": "number[]",
+              "optional": true,
+              "doc": "Words per line. Default 3 a line."
+            },
+            {
+              "name": "big",
+              "type": "string[]",
+              "optional": true,
+              "doc": "Words set big (matched without case or punctuation): a line with one is a hook."
+            },
+            {
+              "name": "marks",
+              "type": "string[]",
+              "optional": true,
+              "doc": "Caption words marked out (heavier, coloured or boxed, by the look's mark). Default: each caption line's first word."
+            },
+            {
+              "name": "preset",
+              "type": "StyleName",
+              "optional": true,
+              "doc": "A style by name (STYLE_NAMES)."
+            },
+            {
+              "name": "look",
+              "type": "LookPatch",
+              "optional": true,
+              "doc": "Changes to the style, every line."
+            },
+            {
+              "name": "lines",
+              "type": "Record<number, LookPatch>",
+              "optional": true,
+              "doc": "Changes for single lines, by line index from 0: { 2: { bigIn: 'left', big: { color: '#fff' } } }."
+            },
+            {
+              "name": "footage",
+              "type": "Footage",
+              "optional": true,
+              "doc": "The video under the captions, timed as its <Video> is."
+            },
+            {
+              "name": "subject",
+              "type": "(frame: number) => { x: number; y: number } | null",
+              "optional": true,
+              "doc": "The subject (a face) on a frame, in canvas pixels: beside puts the block in the open side of it, at its eye level. A point track from plugins/vj/tools/track.mjs read with pointAt, or a fixed point. Read once a line."
+            },
+            {
+              "name": "hold",
+              "type": "number",
+              "optional": true,
+              "doc": "Frames a line stays after its last word when the next does not start sooner. Default 12."
+            },
+            {
+              "name": "width",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "height",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            }
+          ]
+        },
+        {
+          "name": "captionLines",
+          "kind": "function",
+          "summary": "The lines of a caption track: when each starts and ends and whether it is a hook (has a big word).",
+          "detail": ""
+        },
+        {
+          "name": "checkFrames",
+          "kind": "function",
+          "summary": "Frames worth a still: a hook's big word and a caption line, each settled, to check that both read.",
+          "detail": ""
+        },
+        {
+          "name": "ABOUT",
+          "kind": "constant",
+          "summary": "One line on what each look is for, for the panel and for an agent choosing one.",
+          "detail": ""
+        },
+        {
+          "name": "BASE",
+          "kind": "constant",
+          "summary": "What every look starts from.",
+          "detail": ""
+        },
+        {
+          "name": "FINISHES",
+          "kind": "constant",
+          "summary": "The big word's surface: flat, a shine that sweeps across it, or a glow in its own colour.",
+          "detail": ""
+        },
+        {
+          "name": "FONTS",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "FONT_NAMES",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "INS",
+          "kind": "constant",
+          "summary": "How each word arrives. focus comes up from a blur; pop grows past its size and settles; typewriter and box-first are the moving styles used as an entrance for every word.",
+          "detail": ""
+        },
+        {
+          "name": "LAYOUTS",
+          "kind": "constant",
+          "summary": "Where the lines sit. over: the small words over and under the big word, upper middle. centre: the same block in the middle of the frame. left: flush left, upper left. beside: in the open side of the frame, at eye level (the side is read off the footage, or set). one-line: small and big words on one line. plain: captions only, the big word just marked.",
+          "detail": ""
+        },
+        {
+          "name": "MARKS",
+          "kind": "constant",
+          "summary": "How a caption word marks itself out (the line's marked word: marks, or its first word).",
+          "detail": ""
+        },
+        {
+          "name": "OUTS",
+          "kind": "constant",
+          "summary": "How a line leaves, all its words together.",
+          "detail": ""
+        },
+        {
+          "name": "STYLES",
+          "kind": "constant",
+          "summary": "The fourteen ready-made styles, by name.",
+          "detail": "Each is a patch on BASE."
+        },
+        {
+          "name": "STYLE_NAMES",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "TREATMENTS",
+          "kind": "constant",
+          "summary": "How the big word is dressed as it arrives. box-first: a box grows, then the word lands in it. typewriter: typed a letter at a time with a cursor. select: a blue text selection sweeps across it. highlight: a colour sweeps in behind it, like a highlighter pen. underline: a bar draws under it.",
+          "detail": ""
+        },
+        {
+          "name": "resolveLook",
+          "kind": "function",
+          "summary": "BASE, then a style, then patches in order; caption and big merge field by field.",
+          "detail": ""
+        },
+        {
+          "name": "styleLook",
+          "kind": "function",
+          "summary": "A look by style name, with overrides.",
+          "detail": ""
+        },
+        {
+          "name": "accentFrom",
+          "kind": "function",
+          "summary": "An accent colour taken from the footage: the strongest hue across a few moments of it (each cell weighted by how saturated and lit it is, so a lamp or a shirt wins over a grey wall), lifted to a colour that reads behind or as white-on text. fallback when the footage has no colour (black and white film).",
+          "detail": ""
+        },
+        {
+          "name": "brightness",
+          "kind": "function",
+          "summary": "Mean brightness 0..1 of the picture in a box given as fractions of the frame [x0, y0, x1, y1].",
+          "detail": ""
+        },
+        {
+          "name": "openSide",
+          "kind": "function",
+          "summary": "The side of the frame with less going on (less contrast between neighbouring cells), between y0 and y1.",
+          "detail": ""
+        },
+        {
+          "name": "subjectFrom",
+          "kind": "function",
+          "summary": "The subject's head from a matte (white subject on black, timed like the footage): the middle of the matte's top band across, and eye level a little under its top.",
+          "detail": "For <Captions subject>, so beside stays clear of a subject who moves. Null where the matte is empty."
+        },
+        {
+          "name": "timeAt",
+          "kind": "function",
+          "summary": "Seconds into the file at composition frame frame.",
+          "detail": ""
+        },
+        {
+          "name": "CAPTION_PRESETS",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "captionLookSchema",
+          "kind": "constant",
+          "summary": "A caption look: style names a ready-made look, the rest change it.",
+          "detail": "Every field is optional."
+        },
+        {
+          "name": "captionsSchema",
+          "kind": "constant",
+          "summary": "<Captions>'s props, for a composition whose schema is the component's.",
+          "detail": ""
+        },
+        {
+          "name": "textLookSchema",
+          "kind": "constant",
+          "summary": "One kind of text, the caption or the big text.",
+          "detail": ""
         }
       ],
       "presets": [],
       "presetNote": "",
       "examples": [
         {
-          "title": "Captions from word timestamps",
+          "title": "Captions in a ready-made style",
+          "code": "import { Captions, wordsFrom } from '@kinetographdev/kinetic-typography';\n\nconst words = wordsFrom(asr.words, 30);\nconst footage = { src: staticFile('me.mp4') };\n\n<Video src={footage.src} />\n<Captions words={words} split={[3, 3]} big={['premium']} preset=\"highlighter\" footage={footage} />"
+        },
+        {
+          "title": "Hand captions from word timestamps",
           "code": "import { HandCaptions, wordsFrom } from '@kinetographdev/kinetic-typography';\n\nconst words = wordsFrom(asr.words, 30, 12); // seconds to frames, starting on frame 12\n\n<HandCaptions words={words} split={[2, 2, 3]} hot={['1891', 'kinetograph', 'move']} />"
         },
         {
@@ -1016,10 +1276,10 @@
         }
       ],
       "studio": {
-        "panel": "",
+        "panel": "Studio gets a Captions panel: a card for each style drawn in its own type, a Caption or Big text switch for font, case, weight, size, tracking and colour, layout cards, motion controls with an In and Out switch, and an accent colour you can take from the footage. Hook and Caption pins sit on the preview and you drag them up or down. HandCaptions has no panel.",
         "tools": [],
-        "note": "There is no Studio panel and no agent tools. The skill tells an agent to take word timestamps from your speech-to-text or voice-over tool instead of placing frames by hand, choose the pages and key words, track the subject with the VJ plugin, and render a few stills to check the text fits.",
-        "installed": "How it installs: as a package you add to your project. Its skill comes with it, so an agent can use it without being taught."
+        "note": "There are no agent tools. The skill tells an agent to take word timestamps from your speech-to-text or voice-over tool instead of placing frames by hand, choose the lines and the big words, and render a settled hook frame and caption frame to check that both read. For tracked text it tracks the subject with the VJ plugin.",
+        "installed": "It installs as a package you add to your project. Its skill comes with it, so an agent can use it without being taught."
       },
       "hero": {
         "src": "/catalog/plugins/kinetic-typography/hero.webp",
@@ -1033,8 +1293,8 @@
       "demos": [
         {
           "id": "kinetic-type-demo",
-          "title": "Hand captions",
-          "text": "A line written beside an anvil in archive film, tracked, and the same line centred low.",
+          "title": "Caption styles and hand captions",
+          "text": "The fourteen caption styles over a talking head, and a line written beside a tracked anvil in archive film, then centred low.",
           "compositions": [
             "Tracked",
             "Centred"
@@ -1061,6 +1321,21 @@
               "caption": "Centred: the same line, low in the frame."
             }
           ]
+        },
+        {
+          "id": "plugin-ui-demo",
+          "title": "Studio panels",
+          "text": "Ready-made scenes for the Hexed, Paper, VJ and caption panels in Studio. Edit a value and the preview redraws.",
+          "compositions": [
+            "HexedLook",
+            "PaperMatchCut",
+            "PaperCutOut",
+            "PaperScrapline",
+            "PaperFoldOut",
+            "TypeCaptions",
+            "VjLook"
+          ],
+          "clips": []
         }
       ],
       "faces": {
@@ -1082,7 +1357,7 @@
       "slug": "paper",
       "name": "@kinetographdev/paper",
       "title": "Paper",
-      "description": "Paper textures and what you can make from them: a keyword held still while pages flick past underneath, photo cut-outs that unfold from a crumpled packet, and a hand-drawn line round a moving subject on torn paper.",
+      "description": "Give a video the feel of real paper. Keyword match cuts, photo cut-outs that unfold from a crumpled packet, and hand-drawn lines round a moving subject on torn paper.",
       "components": [
         "MatchCut",
         "Paper",
@@ -1093,7 +1368,7 @@
       "hasPanel": true,
       "hasTools": false,
       "hasSkill": true,
-      "intro": "Paper gives a video the feel of real paper: creases, scanned fibres and grain. It makes keyword match cuts, photo cut-outs and hand-drawn lines on torn paper.",
+      "intro": "Paper brings creases, scanned fibres and grain to a video. From them it makes keyword match cuts, photo cut-outs and hand-drawn lines on torn paper.",
       "features": [
         {
           "title": "MatchCut",
@@ -1111,7 +1386,7 @@
         },
         {
           "title": "CutOut and FoldOut",
-          "text": "A photo with its background removed becomes a paper cut-out. FoldOut opens it from a crumpled packet in stop motion.",
+          "text": "A photo with its background removed becomes a paper cut-out. FoldOut opens it from a crumpled packet, in stop motion.",
           "clip": {
             "src": "/catalog/plugins/paper/feature-2.webp",
             "w": 720,
@@ -1125,7 +1400,7 @@
         },
         {
           "title": "Scrapline",
-          "text": "A marker, pencil, crayon, scribble or brush line is drawn round a moving subject, on torn paper. It redraws a few times a second.",
+          "text": "A marker, pencil, crayon, scribble or brush line is drawn round a moving subject, on torn paper. It redraws a few times a second, like hand animation.",
           "clip": {
             "src": "/catalog/plugins/paper/feature-3.webp",
             "w": 1280,
@@ -1964,7 +2239,7 @@
         },
         {
           "name": "clean",
-          "line": "Eight cuts a second on near-white paper with no blur, streak, crumple, grain or wander.",
+          "line": "Eight cuts a second on near-white paper, with no blur, streak, crumple, grain or wander.",
           "image": {
             "src": "/catalog/plugins/paper/preset-clean.webp",
             "w": 720,
@@ -1986,7 +2261,7 @@
         },
         {
           "name": "web",
-          "line": "Web pages and social posts, ten cuts a second, a strong blur and streak, creased grey paper, a yellow highlight.",
+          "line": "Web pages and social posts: ten cuts a second, a strong blur and streak, creased grey paper, a yellow highlight.",
           "image": {
             "src": "/catalog/plugins/paper/preset-web.webp",
             "w": 720,
@@ -1996,7 +2271,7 @@
           }
         }
       ],
-      "presetNote": "Four ready-made MatchCut looks. Pick one in the Studio panel and adjust from there. Anything a look leaves out falls back to MatchCut’s defaults.",
+      "presetNote": "Four ready-made MatchCut looks. Pick one in the Studio panel and adjust from there. Anything a look leaves out falls back to MatchCut's defaults.",
       "examples": [
         {
           "title": "A match cut on made-up pages",
@@ -2011,7 +2286,7 @@
         "panel": "Studio gets a Paper panel for MatchCut: a card for each look, a page layout picker, sliders for keyword size, cuts per second, push-in, blur, streak, crumple and grain, colour pickers for the highlight and the paper, and a box on the preview that you drag onto the keyword. CutOut and FoldOut get a sheet view with edge and paper cards, sliders for creases and shadow, and a handle to place the picture.",
         "tools": [],
         "note": "The plugin adds no agent tools. An agent sets values in Studio, checks the preview, then writes the look it settled on into your code or a preset.",
-        "installed": "How it installs: as a package you add to your project. Its skill comes with it, so an agent can use it without being taught."
+        "installed": "It installs as a package you add to your project. Its skill comes with it, so an agent can use it without being taught."
       },
       "hero": {
         "src": "/catalog/plugins/paper/hero.webp",
@@ -2088,13 +2363,14 @@
         {
           "id": "plugin-ui-demo",
           "title": "Studio panels",
-          "text": "Ready-made scenes set up for the Hexed, Paper and VJ panels in Studio.",
+          "text": "Ready-made scenes for the Hexed, Paper, VJ and caption panels in Studio. Edit a value and the preview redraws.",
           "compositions": [
             "HexedLook",
             "PaperMatchCut",
             "PaperCutOut",
             "PaperScrapline",
             "PaperFoldOut",
+            "TypeCaptions",
             "VjLook"
           ],
           "clips": []
@@ -2141,20 +2417,21 @@
       "slug": "vj",
       "name": "@kinetographdev/vj",
       "title": "VJ",
-      "description": "Make footage look like it came from a CRT, a worn VHS tape, a thermal camera or a 1-bit screen, cut a person into a cyberpunk pop-art poster, and draw tracking boxes on whatever moves.",
+      "description": "Make footage look like a CRT, a worn VHS tape, a thermal camera or a 1-bit screen. Track what moves and draw boxes on it, cut a person into a pop-art poster, or fly a camera through clips seen as windows.",
       "components": [
         "PopArt",
         "Blobs",
+        "Fragments",
         "Reticle"
       ],
       "hasPanel": true,
       "hasTools": false,
       "hasSkill": true,
-      "intro": "VJ makes a picture seem to come from a screen, a tape or a sensor. It also cuts a person into a pop-art poster and draws tracking marks on whatever moves. Brightness stands in for heat and depth, so these are looks, not measurements.",
+      "intro": "VJ makes a picture look like it came from a screen, a tape or a sensor. Brightness stands in for heat and depth, so these are looks, not measurements. It also draws tracking marks on whatever moves, cuts a person into a pop-art poster and builds a camera fly-through of clips.",
       "features": [
         {
           "title": "Screens and tapes",
-          "text": "A CRT with curved glass that switches off, a worn VHS tape, a 1-bit screen and a red, green and blue pixel magnifier.",
+          "text": "A CRT with curved glass that switches off, a worn VHS tape, a 1-bit screen, and a pixel magnifier that resolves into red, green and blue stripes.",
           "clip": {
             "src": "/catalog/plugins/vj/feature-1.webp",
             "w": 1280,
@@ -2168,7 +2445,7 @@
         },
         {
           "title": "Thermal and depth",
-          "text": "Brightness becomes a thermal camera palette or a depth map look.",
+          "text": "Brightness becomes a thermal-camera palette or a depth-map look.",
           "clip": {
             "src": "/catalog/plugins/vj/feature-2.webp",
             "w": 1280,
@@ -2182,7 +2459,7 @@
         },
         {
           "title": "Flash looks",
-          "text": "Acid heat, night vision, screen glow and grainy black and white.",
+          "text": "Acid heat, night vision, screen glow and grainy black and white, to cut on the beat.",
           "clip": {
             "src": "/catalog/plugins/vj/feature-3.webp",
             "w": 1280,
@@ -2196,7 +2473,7 @@
         },
         {
           "title": "PopArt",
-          "text": "Footage of a person cuts to an anime poster of them in blue tones with ink lines and rim light, over a halftone.",
+          "text": "Footage of a person cuts to an anime poster of them: blue tones, ink lines and rim light over a halftone. It needs a matte of the person, which a bundled tool makes once per clip.",
           "clip": {
             "src": "/catalog/plugins/vj/feature-4.webp",
             "w": 1280,
@@ -2210,7 +2487,7 @@
         },
         {
           "title": "Tracking",
-          "text": "A tracker runs once and saves where things moved. Blobs draws boxes and links on every frame, and Reticle marks one point.",
+          "text": "A tracker runs once and saves where things moved. Blobs draws boxes and links on every frame. Reticle marks one point.",
           "clip": {
             "src": "/catalog/plugins/vj/feature-5.webp",
             "w": 1280,
@@ -2221,6 +2498,11 @@
             "len": 4,
             "caption": "Blob tracking over a 1-bit picture."
           }
+        },
+        {
+          "title": "Fragments",
+          "text": "Clips show only through windows: boxes round the people and animals in them, tiles of sky, round holes. Each clip sits on its own plane at its own depth, and a camera flies through so near pieces slide past faster than far ones. Boxes carry name tags with a flickering confidence figure. Whoever edits the video names the boxes; no detection model runs.",
+          "clip": null
         }
       ],
       "exports": [
@@ -2681,6 +2963,108 @@
           "detail": ""
         },
         {
+          "name": "Fragments",
+          "kind": "component",
+          "summary": "Clips seen through windows on planes at different depths, with a camera moving through them.",
+          "detail": "",
+          "propsOf": "FragmentsProps",
+          "props": [
+            {
+              "name": "pieces",
+              "type": "Piece[]",
+              "optional": false,
+              "doc": ""
+            },
+            {
+              "name": "camera",
+              "type": "CameraKey[] | ((frame: number) => { x: number; y: number; z: number })",
+              "optional": true,
+              "doc": "Keys the camera eases between (x, y in px, z in depth units), or a function of the frame. Default: a slow push from z 0 to 0.5 over the composition."
+            },
+            {
+              "name": "colors",
+              "type": "Record<string, string>",
+              "optional": true,
+              "doc": "Colours of the tags by name; other names get one from a set, the same each time."
+            },
+            {
+              "name": "fontSize",
+              "type": "number",
+              "optional": true,
+              "doc": "Tag text size, clip px. Default 22."
+            },
+            {
+              "name": "fog",
+              "type": "number",
+              "optional": true,
+              "doc": "0..1: how much a piece dims per unit of depth past 1. Default 0.25."
+            },
+            {
+              "name": "inspect",
+              "type": "number",
+              "optional": true,
+              "doc": "Show piece inspect flat, whole and filling the frame, at its clip's own frame (its from ignored), with every box's id, every spot's name and a grid in clip pixels: render stills of it to name the ids and place spots."
+            },
+            {
+              "name": "id",
+              "type": "string",
+              "optional": true,
+              "doc": ""
+            }
+          ]
+        },
+        {
+          "name": "cameraAt",
+          "kind": "function",
+          "summary": "The camera on frame: eased between the keys, held before the first and after the last.",
+          "detail": "",
+          "propsOf": "CameraKey",
+          "props": [
+            {
+              "name": "pieces",
+              "type": "Piece[]",
+              "optional": false,
+              "doc": ""
+            },
+            {
+              "name": "camera",
+              "type": "CameraKey[] | ((frame: number) => { x: number; y: number; z: number })",
+              "optional": true,
+              "doc": "Keys the camera eases between (x, y in px, z in depth units), or a function of the frame. Default: a slow push from z 0 to 0.5 over the composition."
+            },
+            {
+              "name": "colors",
+              "type": "Record<string, string>",
+              "optional": true,
+              "doc": "Colours of the tags by name; other names get one from a set, the same each time."
+            },
+            {
+              "name": "fontSize",
+              "type": "number",
+              "optional": true,
+              "doc": "Tag text size, clip px. Default 22."
+            },
+            {
+              "name": "fog",
+              "type": "number",
+              "optional": true,
+              "doc": "0..1: how much a piece dims per unit of depth past 1. Default 0.25."
+            },
+            {
+              "name": "inspect",
+              "type": "number",
+              "optional": true,
+              "doc": "Show piece inspect flat, whole and filling the frame, at its clip's own frame (its from ignored), with every box's id, every spot's name and a grid in clip pixels: render stills of it to name the ids and place spots."
+            },
+            {
+              "name": "id",
+              "type": "string",
+              "optional": true,
+              "doc": ""
+            }
+          ]
+        },
+        {
           "name": "Reticle",
           "kind": "component",
           "summary": "A box with corner ticks and a label, on the tracked point.",
@@ -2775,10 +3159,10 @@
         }
       ],
       "studio": {
-        "panel": "Studio gets a VJ panel with a card for each look and that look’s own sliders and colours. Switching looks keeps the settings of the others. On the preview you drag and resize the CRT screen and drag the magnifier’s centre. A second panel sets how the tracking marks look: box style, labels, links, blend, how many blobs to show, line width and colour.",
+        "panel": "Studio gets a VJ panel with a card for each look and that look's own sliders and colours. Switching looks keeps the settings of the others. On the preview you drag and resize the CRT screen and drag the magnifier's centre. A second panel sets how the tracking marks look: box style, labels, links, blend, how many blobs to show, line width and colour.",
         "tools": [],
-        "note": "Tracking is run on your own machine ahead of time, so the panel only styles the result. The plugin adds no agent tools. The skill walks an agent through tracking a clip, checking the debug images, tuning the tracker and rendering a still to check.",
-        "installed": "How it installs: as a package you add to your project. Its skill comes with it, so an agent can use it without being taught."
+        "note": "Tracking runs on your own machine ahead of time, so the panel only styles the result. The plugin adds no agent tools. The skill walks an agent through tracking a clip, checking the debug images, tuning the tracker and rendering a still to check. For Fragments it has the agent name the boxes from stills of each clip.",
+        "installed": "It installs as a package you add to your project. Its skill comes with it, so an agent can use it without being taught."
       },
       "hero": {
         "src": "/catalog/plugins/vj/hero.webp",
@@ -2793,13 +3177,14 @@
         {
           "id": "plugin-ui-demo",
           "title": "Studio panels",
-          "text": "Ready-made scenes set up for the Hexed, Paper and VJ panels in Studio.",
+          "text": "Ready-made scenes for the Hexed, Paper, VJ and caption panels in Studio. Edit a value and the preview redraws.",
           "compositions": [
             "HexedLook",
             "PaperMatchCut",
             "PaperCutOut",
             "PaperScrapline",
             "PaperFoldOut",
+            "TypeCaptions",
             "VjLook"
           ],
           "clips": []
@@ -2807,7 +3192,7 @@
         {
           "id": "vj-demo",
           "title": "VJ looks and tracking",
-          "text": "Blob tracking over a 1-bit picture and over a thermal camera, a CRT switching off, and a VHS tape, on archive film.",
+          "text": "Blob tracking over a 1-bit picture and over a thermal camera, a CRT switching off and a VHS tape, on archive film.",
           "compositions": [
             "Blobs",
             "Thermal",
@@ -2921,10 +3306,10 @@
   "templates": [
     {
       "id": "collage-burst",
-      "title": "Collage Burst",
-      "description": "A wordmark fades in on black, then a cluster of screenshot cards bursts out of one point as the camera flies in. The cards settle into a dense wall, drift, and whip off to the right, and big white type finishes the spot: \"One\", then \"One subscription.\"; \"Endless\", then \"Endless videos.\"",
+      "title": "Screenshot card burst",
+      "description": "A wordmark fades in on black, then a cluster of screenshot cards bursts out of one point as the camera flies in. The cards settle into a dense wall, drift, and whip off to the right. Big white type finishes it: two short lines, each starting as a single word.",
       "change": [
-        "The brand name and the word after it in the wordmark (or none), and the two tagline lines.",
+        "The brand name and the word after it in the wordmark (or none), and the two closing lines.",
         "Your own screenshots or photos on the cards, and the words printed on the cards. With none, every card is drawn.",
         "The three typefaces (wordmark and cards, terminal, serif) and the colours: canvas, text, accent, paper and dark cards.",
         "The seed, which sets the tilt and timing of the burst."
@@ -2945,8 +3330,8 @@
     },
     {
       "id": "greeting-intro",
-      "title": "Greeting Intro",
-      "description": "A gradient wordmark on a soft off-white ground shrinks away as an app window grows in behind it. The camera pushes into the window, tilted, types a greeting and a question in large perspective type, slides four suggestion cards in, then pulls back and flattens to the whole window.",
+      "title": "App window greeting",
+      "description": "A gradient wordmark on a soft off-white ground shrinks away as an app window grows in behind it. The camera pushes into the window, tilted, and types a greeting and a question in large perspective type. Four suggestion cards slide in, then the camera pulls back and flattens to the whole window.",
       "change": [
         "The brand name, the name in the greeting, the question under it and the placeholder in the prompt box.",
         "One to four suggestion cards, with your own labels, and the small caption at the bottom (or none).",
@@ -2969,8 +3354,8 @@
     },
     {
       "id": "phone-orbit",
-      "title": "Phone Orbit",
-      "description": "A phone showing a social post starts as a close-up of its lower edge, pulls back and glides to rest. Chat bubbles, avatars and icon chips pop in around it, a hand reaches into the photo and lifts the phone, and the screen swaps to a second one as the view count reaches its cap.",
+      "title": "Social post on a phone",
+      "description": "A phone showing a social post starts as a close-up of its lower edge, pulls back and glides to rest. Chat bubbles, avatars and icon chips pop in around it. A hand reaches into the photo and lifts the phone, and the screen swaps to a second one as the view count reaches its cap.",
       "change": [
         "The brand name in the post header, the caption pill and the two-part subtitle on the photo.",
         "The view count: where it starts, where it stops, and its unit.",
@@ -2994,8 +3379,8 @@
     },
     {
       "id": "prompt-reply",
-      "title": "Prompt Reply",
-      "description": "A chat prompt types itself into a rounded box and sends. The shot cuts to the reply, which builds on a page the camera scrolls through: two activity rows, a status line, a serif reply, a brand chip, a small table and a row of action icons fade up one after another.",
+      "title": "Chat prompt to reply",
+      "description": "A chat prompt types itself into a rounded box and sends. The shot cuts to the reply, built on a page the camera scrolls through. Two activity rows, a status line, a serif reply, a brand chip, a small table and a row of action icons fade up one after another.",
       "change": [
         "The prompt, the two activity rows, the status line and the reply.",
         "The brand chip, and the table: three column heads and one row.",
@@ -3018,8 +3403,8 @@
     },
     {
       "id": "scrapline",
-      "title": "Scrapline demos",
-      "description": "A hand-drawn border round a cut-out subject: a wobbly marker, pencil, crayon, scribble or brush line, on a sheet of torn paper behind it. Both are redrawn a few times a second, like hand animation.",
+      "title": "Scrapline cut-outs",
+      "description": "A hand-drawn border round a cut-out subject, on a sheet of torn paper. The line can be a wobbly marker, pencil, crayon, scribble or brush. Line and paper redraw a few times a second, like hand animation.",
       "change": [
         "The subject: a video with a black and white matte, a video with alpha, an image with alpha, or an SVG path.",
         "The line style (Marker, Pencil, Crayon, Scribble or Brush), the paper (White, Kraft, Binder, Cardboard, your own picture or none), the line colour, the gap to the subject and the seed."
@@ -3043,10 +3428,10 @@
     },
     {
       "id": "wait-ship",
-      "title": "Wait Ship",
-      "description": "Seven photo cards float round the edges of a near-black frame, out of focus. The camera pulls back and racks focus, \"You wait...\" comes up out of the blur, \"Ship it with Kinetograph Pro\" replaces it, and the scene slides off to the right as the left card sharpens.",
+      "title": "Two lines on a focus pull",
+      "description": "Seven photo cards float round the edges of a near-black frame, out of focus. The camera pulls back and racks focus. A first line comes up out of the blur and a second line replaces it. The scene slides off to the right as the left card sharpens.",
       "change": [
-        "The two lines and the product name in the second one.",
+        "The two lines, and a product name in the second.",
         "Your own photos on the seven cards. Any card you leave out keeps its drawn picture.",
         "The typeface, weight, size, tracking and text colour, and the two colours of the background.",
         "How strong the focus blur, the film grain and the closing slide are, and the frame where the first line gives way to the second."
@@ -3067,8 +3452,8 @@
     },
     {
       "id": "word-flash",
-      "title": "Word Flash",
-      "description": "A black-and-white type spot, 9.4 seconds, cut on every hit of its track. Each cut shows one word or a two-word lockup, the background swaps between black and white, and a last word types on and blurs away.",
+      "title": "Words cut to the beat",
+      "description": "A 9.4 second black-and-white type spot, cut on every hit of its track. Each cut shows one word or a two-word lockup on a ground that flips between black and white. A last word types on, then blurs away.",
       "change": [
         "The words: an intro, a run with one word per cut, and an outro. The word count has to match the number of cuts.",
         "The track. A small tool finds its strongest hits and gives you the cuts.",

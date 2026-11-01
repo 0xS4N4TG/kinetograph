@@ -7,7 +7,7 @@ import { Label, body, link } from '@/sections/shared';
 
 export const metadata: Metadata = {
   title: 'Plugins and templates | Kinetograph',
-  description: 'Plugins and reel templates for Kinetograph: what each one draws and what you change.',
+  description: 'Plugins and templates for Kinetograph: what each one makes and what you can change.',
 };
 
 /** Plugins: two large tiles across from md up, one under. */
@@ -35,7 +35,7 @@ export default function PluginsPage() {
   return (
     <CatalogPage>
       <Heading as="h1" lines={['Plugins and templates']} hot="templates" tag="CAT 01  1.00" className="text-[clamp(36px,4.2vw,56px)]" />
-      <p className={`${body} mt-5 max-w-[62ch]`}>Looks, captions and paper for your videos, and finished reels to start from.</p>
+      <p className={`${body} mt-5 max-w-[62ch]`}>Plugins add looks, captions, paper and tracking to a project. Templates are finished videos you start from and change.</p>
       <p className="mt-1 text-[14px] text-mute">Coming; not published yet.</p>
 
       <section className="mt-12" aria-labelledby="plugins">

@@ -1,18 +1,19 @@
 // Hand-written copy and chosen media for the catalog pages, read by catalog.mjs. Written from each plugin's SKILL.md,
 // README and presets, and from each template's index.tsx and README, in plain words. Nothing here names the private
-// kinetograph-effects repo, and no template says what it was modelled on.
+// kinetograph-effects repo, no template says what it was modelled on, and no template quotes its own default on-screen text
+// (those words are a template's placeholder, not what the site says). A feature with no `media` is text only.
 
 /** The one line every plugin page says about installing: in words, no commands, none exist yet. */
-const INSTALLED = 'How it installs: as a package you add to your project. Its skill comes with it, so an agent can use it without being taught.';
+const INSTALLED = 'It installs as a package you add to your project. Its skill comes with it, so an agent can use it without being taught.';
 
 export const PLUGIN_COPY = {
   hexed: {
-    summary: 'Put a look on any picture or clip. Hexed picks a grade, a print screen, a lens effect, some tape damage and a camera shake for you. Keep the parts you like and reroll the rest.',
-    intro: 'Hexed puts a look on a picture or a clip. Roll a number and you get a new look, and the same number always gives the same one. A look is built from eleven slots, each holding one named effect.',
+    summary: 'Roll a look onto any picture or clip. Hexed picks a grade, a print screen, lens effects, tape damage and a camera shake. Keep the parts you like and reroll the rest.',
+    intro: 'A look is eleven slots, each holding one named effect. Roll a number and every slot fills. The same number always gives the same look, so a render comes out the same every time.',
     features: [
-      { title: 'Roll a look', text: 'Roll a number for a grade, a print screen, lens effects, tape damage and a camera shake. Roll again for another.', media: { from: 'effects/hexed-demo/out/RickReel-10s.mp4', at: 0, len: 4, caption: 'Rick Astley, with a new look rolled every second and a half.' } },
-      { title: 'Lock and reroll', text: 'Lock the slots you like and roll the rest again. Each label names the effects that seed rolled.', media: { from: 'effects/hexed-demo/out/dream.mp4', at: 1, len: 4, caption: 'Twenty seeds rolled onto one frame, each with its effects named under it.' } },
-      { title: 'Saved looks', text: 'Save a look as a preset and use it on the next video. Pick one by name and set how strong it is.', media: { from: 'effects/hexed-demo/out/RickLook.mp4', at: 0, len: 4, caption: 'The moss-impact preset on the same footage.' } },
+      { title: 'Roll a look', text: 'One number picks a crop, a grade, a print screen, lens effects, tape damage and a camera shake. Roll again for a different look.', media: { from: 'effects/hexed-demo/out/RickReel-10s.mp4', at: 0, len: 4, caption: 'Rick Astley, with a new look rolled every second and a half.' } },
+      { title: 'Lock and reroll', text: 'Lock the slots you like and roll the rest again. Each label names the effects its number picked.', media: { from: 'effects/hexed-demo/out/dream.mp4', at: 1, len: 4, caption: 'Twenty seeds rolled onto one frame, each with its effects named under it.' } },
+      { title: 'Saved looks', text: 'Save a look as a preset. Use it on the next video by name, and set how strong it is.', media: { from: 'effects/hexed-demo/out/RickLook.mp4', at: 0, len: 4, caption: 'The moss-impact preset on the same footage.' } },
     ],
     presetNote: 'Saved looks. Pick one by name, or roll your own and save it.',
     examples: [
@@ -33,9 +34,9 @@ import { Hexed } from '@kinetographdev/hexed';
       },
     ],
     studio: {
-      panel: 'Studio gets a Hexed panel: a card for each slot with its effect, a strength slider, a lock and a shuffle button. A Shuffle for the whole look leaves the locked slots alone, and a menu holds your saved presets. It follows Studio’s light and dark theme.',
+      panel: "Studio gets a Hexed panel: a card for each slot with its effect, a strength slider, a lock and a shuffle button. Shuffle rerolls everything except the locked slots, and a menu holds your presets. It follows Studio's light and dark theme.",
       tools: [],
-      note: 'An agent can roll a look, list what each slot accepts and read the saved presets. It then writes the look it settles on into your code or saves it as a preset, so the look does not live only in Studio.',
+      note: 'An agent can roll a look, list what each slot accepts and read your presets. It then writes the look it settles on into your code or saves it as a preset, so the look does not live only in Studio.',
       installed: INSTALLED,
     },
     presetLines: {},
@@ -52,16 +53,27 @@ import { Hexed } from '@kinetographdev/hexed';
   },
 
   'kinetic-typography': {
-    summary: 'Captions that write themselves on screen in many handwritten styles, timed to your voiceover. Key words jump out in a heavy display face, and the text can follow a tracked subject.',
-    intro: 'HandCaptions writes a voiceover on screen letter by letter, each letter in a different handwritten face. Key words break out whole in a display face.',
+    summary: 'Captions that move with the voice, in fourteen ready-made styles. A hook word is set huge, and handwritten captions can follow a tracked subject.',
+    intro: 'Captions sets a voiceover on screen. Each word arrives as it is said and the line leaves all together. A line with a big word is a hook: that word is set huge and the small words sit round it. HandCaptions writes the other way, one letter at a time in mixed handwriting.',
     features: [
-      { title: 'Hand captions', text: 'Each word writes itself across the time it is spoken. Key words break out in a fat serif or a heavy italic.', media: { from: 'effects/kinetic-type-demo/out/Centred.mp4', at: 0, len: 4, caption: 'A line written centred low on archive film.' } },
-      { title: 'Follows a tracked subject', text: 'Captions sit beside the subject on the side with room, with a reticle on it and a bracket on the letter being written.', media: { from: 'effects/kinetic-type-demo/out/tracked.mp4', at: 0, len: 4, caption: 'A line written beside a tracked anvil.' } },
+      { title: 'Fourteen caption styles', text: 'Highlighter, typewriter, a text-selection sweep, a shine, a difference-blend prism and more. Pick one by name, then change its fonts, motion and colours. The accent colour and a readable shadow can come from your footage.' },
+      { title: 'Hand captions', text: 'Each word writes itself across the time it is spoken, one letter at a time, every letter in a different handwritten face. Key words break out in a fat serif or a heavy italic, each with its own colour if you like. A dark halo keeps the letters readable over bright footage.', media: { from: 'effects/kinetic-type-demo/out/Centred.mp4', at: 0, len: 4, caption: 'A line written centred low on archive film.' } },
+      { title: 'Follows a tracked subject', text: "The text hangs beside the subject, on the side with room. A reticle frames the subject and a bracket marks the letter being written. Give it the subject's box and the text stays clear of it.", media: { from: 'effects/kinetic-type-demo/out/tracked.mp4', at: 0, len: 4, caption: 'A line written beside a tracked anvil.' } },
     ],
     presetNote: '',
     examples: [
       {
-        title: 'Captions from word timestamps',
+        title: 'Captions in a ready-made style',
+        code: `import { Captions, wordsFrom } from '@kinetographdev/kinetic-typography';
+
+const words = wordsFrom(asr.words, 30);
+const footage = { src: staticFile('me.mp4') };
+
+<Video src={footage.src} />
+<Captions words={words} split={[3, 3]} big={['premium']} preset="highlighter" footage={footage} />`,
+      },
+      {
+        title: 'Hand captions from word timestamps',
         code: `import { HandCaptions, wordsFrom } from '@kinetographdev/kinetic-typography';
 
 const words = wordsFrom(asr.words, 30, 12); // seconds to frames, starting on frame 12
@@ -80,9 +92,9 @@ import { pointAt } from '@kinetographdev/vj';
       },
     ],
     studio: {
-      panel: '',
+      panel: 'Studio gets a Captions panel: a card for each style drawn in its own type, a Caption or Big text switch for font, case, weight, size, tracking and colour, layout cards, motion controls with an In and Out switch, and an accent colour you can take from the footage. Hook and Caption pins sit on the preview and you drag them up or down. HandCaptions has no panel.',
       tools: [],
-      note: 'There is no Studio panel and no agent tools. The skill tells an agent to take word timestamps from your speech-to-text or voice-over tool instead of placing frames by hand, choose the pages and key words, track the subject with the VJ plugin, and render a few stills to check the text fits.',
+      note: 'There are no agent tools. The skill tells an agent to take word timestamps from your speech-to-text or voice-over tool instead of placing frames by hand, choose the lines and the big words, and render a settled hook frame and caption frame to check that both read. For tracked text it tracks the subject with the VJ plugin.',
       installed: INSTALLED,
     },
     presetLines: {},
@@ -99,19 +111,19 @@ import { pointAt } from '@kinetographdev/vj';
   },
 
   paper: {
-    summary: 'Paper textures and what you can make from them: a keyword held still while pages flick past underneath, photo cut-outs that unfold from a crumpled packet, and a hand-drawn line round a moving subject on torn paper.',
-    intro: 'Paper gives a video the feel of real paper: creases, scanned fibres and grain. It makes keyword match cuts, photo cut-outs and hand-drawn lines on torn paper.',
+    summary: 'Give a video the feel of real paper. Keyword match cuts, photo cut-outs that unfold from a crumpled packet, and hand-drawn lines round a moving subject on torn paper.',
+    intro: 'Paper brings creases, scanned fibres and grain to a video. From them it makes keyword match cuts, photo cut-outs and hand-drawn lines on torn paper.',
     features: [
       { title: 'MatchCut', text: 'A highlighted keyword holds still while the page under it changes several times a second. Use made-up pages or your own screenshots.', media: { from: 'effects/match-cut/out/web.mp4', at: 0, len: 4, caption: 'The web look, keyword Super Bowl.' } },
-      { title: 'CutOut and FoldOut', text: 'A photo with its background removed becomes a paper cut-out. FoldOut opens it from a crumpled packet in stop motion.', media: { from: 'effects/paper-photo/out/FoldOutDesk.mp4', at: 0, len: 2, caption: 'A cut-out opening on a desk.' } },
-      { title: 'Scrapline', text: 'A marker, pencil, crayon, scribble or brush line is drawn round a moving subject, on torn paper. It redraws a few times a second.', media: { from: 'effects/scrapline/out/scrapline-demo.mp4', at: 20, len: 4, caption: 'A crayon line on binder paper round a moving subject.' } },
+      { title: 'CutOut and FoldOut', text: 'A photo with its background removed becomes a paper cut-out. FoldOut opens it from a crumpled packet, in stop motion.', media: { from: 'effects/paper-photo/out/FoldOutDesk.mp4', at: 0, len: 2, caption: 'A cut-out opening on a desk.' } },
+      { title: 'Scrapline', text: 'A marker, pencil, crayon, scribble or brush line is drawn round a moving subject, on torn paper. It redraws a few times a second, like hand animation.', media: { from: 'effects/scrapline/out/scrapline-demo.mp4', at: 20, len: 4, caption: 'A crayon line on binder paper round a moving subject.' } },
     ],
-    presetNote: 'Four ready-made MatchCut looks. Pick one in the Studio panel and adjust from there. Anything a look leaves out falls back to MatchCut’s defaults.',
+    presetNote: "Four ready-made MatchCut looks. Pick one in the Studio panel and adjust from there. Anything a look leaves out falls back to MatchCut's defaults.",
     presetLines: {
-      web: 'Web pages and social posts, ten cuts a second, a strong blur and streak, creased grey paper, a yellow highlight.',
+      web: 'Web pages and social posts: ten cuts a second, a strong blur and streak, creased grey paper, a yellow highlight.',
       broadsheet: 'Newspaper layouts (pull quote, italic, kicker, body, display) at ten cuts a second, with a closer push-in.',
       crumpled: 'The fastest and roughest: twelve cuts a second, heavy smear, streak and crumple, some grain.',
-      clean: 'Eight cuts a second on near-white paper with no blur, streak, crumple, grain or wander.',
+      clean: 'Eight cuts a second on near-white paper, with no blur, streak, crumple, grain or wander.',
     },
     examples: [
       {
@@ -161,14 +173,15 @@ flicks({ frames: 150, fps: 30, cutsPerSecond: 10 });
   },
 
   vj: {
-    summary: 'Make footage look like it came from a CRT, a worn VHS tape, a thermal camera or a 1-bit screen, cut a person into a cyberpunk pop-art poster, and draw tracking boxes on whatever moves.',
-    intro: 'VJ makes a picture seem to come from a screen, a tape or a sensor. It also cuts a person into a pop-art poster and draws tracking marks on whatever moves. Brightness stands in for heat and depth, so these are looks, not measurements.',
+    summary: 'Make footage look like a CRT, a worn VHS tape, a thermal camera or a 1-bit screen. Track what moves and draw boxes on it, cut a person into a pop-art poster, or fly a camera through clips seen as windows.',
+    intro: 'VJ makes a picture look like it came from a screen, a tape or a sensor. Brightness stands in for heat and depth, so these are looks, not measurements. It also draws tracking marks on whatever moves, cuts a person into a pop-art poster and builds a camera fly-through of clips.',
     features: [
-      { title: 'Screens and tapes', text: 'A CRT with curved glass that switches off, a worn VHS tape, a 1-bit screen and a red, green and blue pixel magnifier.', media: { from: 'effects/vj-demo/out/Crt.mp4', at: 0, len: 4, caption: 'A CRT tube switching off, on archive film.' } },
-      { title: 'Thermal and depth', text: 'Brightness becomes a thermal camera palette or a depth map look.', media: { from: 'effects/vj-demo/out/Thermal.mp4', at: 0, len: 4, caption: 'A thermal palette over a parade.' } },
-      { title: 'Flash looks', text: 'Acid heat, night vision, screen glow and grainy black and white.', media: { from: 'effects/hexed-demo/out/flash.mp4', at: 3, len: 4, caption: 'Flash looks on a song, each held for a second and a half.' } },
-      { title: 'PopArt', text: 'Footage of a person cuts to an anime poster of them in blue tones with ink lines and rim light, over a halftone.', media: { from: 'effects/vj-demo/out/PopArt.mp4', at: 1.2, len: 4, caption: 'Fred Ott cut to an anime poster and back.' } },
-      { title: 'Tracking', text: 'A tracker runs once and saves where things moved. Blobs draws boxes and links on every frame, and Reticle marks one point.', media: { from: 'effects/vj-demo/out/Blobs.mp4', at: 0, len: 4, caption: 'Blob tracking over a 1-bit picture.' } },
+      { title: 'Screens and tapes', text: 'A CRT with curved glass that switches off, a worn VHS tape, a 1-bit screen, and a pixel magnifier that resolves into red, green and blue stripes.', media: { from: 'effects/vj-demo/out/Crt.mp4', at: 0, len: 4, caption: 'A CRT tube switching off, on archive film.' } },
+      { title: 'Thermal and depth', text: 'Brightness becomes a thermal-camera palette or a depth-map look.', media: { from: 'effects/vj-demo/out/Thermal.mp4', at: 0, len: 4, caption: 'A thermal palette over a parade.' } },
+      { title: 'Flash looks', text: 'Acid heat, night vision, screen glow and grainy black and white, to cut on the beat.', media: { from: 'effects/hexed-demo/out/flash.mp4', at: 3, len: 4, caption: 'Flash looks on a song, each held for a second and a half.' } },
+      { title: 'PopArt', text: 'Footage of a person cuts to an anime poster of them: blue tones, ink lines and rim light over a halftone. It needs a matte of the person, which a bundled tool makes once per clip.', media: { from: 'effects/vj-demo/out/PopArt.mp4', at: 1.2, len: 4, caption: 'Fred Ott cut to an anime poster and back.' } },
+      { title: 'Tracking', text: 'A tracker runs once and saves where things moved. Blobs draws boxes and links on every frame. Reticle marks one point.', media: { from: 'effects/vj-demo/out/Blobs.mp4', at: 0, len: 4, caption: 'Blob tracking over a 1-bit picture.' } },
+      { title: 'Fragments', text: 'Clips show only through windows: boxes round the people and animals in them, tiles of sky, round holes. Each clip sits on its own plane at its own depth, and a camera flies through so near pieces slide past faster than far ones. Boxes carry name tags with a flickering confidence figure. Whoever edits the video names the boxes; no detection model runs.' },
     ],
     presetNote: '',
     presetLines: {},
@@ -193,9 +206,9 @@ node plugins/vj/tools/track.mjs --in public/clip.mp4 --box 900,300,120,120 --out
       },
     ],
     studio: {
-      panel: 'Studio gets a VJ panel with a card for each look and that look’s own sliders and colours. Switching looks keeps the settings of the others. On the preview you drag and resize the CRT screen and drag the magnifier’s centre. A second panel sets how the tracking marks look: box style, labels, links, blend, how many blobs to show, line width and colour.',
+      panel: "Studio gets a VJ panel with a card for each look and that look's own sliders and colours. Switching looks keeps the settings of the others. On the preview you drag and resize the CRT screen and drag the magnifier's centre. A second panel sets how the tracking marks look: box style, labels, links, blend, how many blobs to show, line width and colour.",
       tools: [],
-      note: 'Tracking is run on your own machine ahead of time, so the panel only styles the result. The plugin adds no agent tools. The skill walks an agent through tracking a clip, checking the debug images, tuning the tracker and rendering a still to check.',
+      note: 'Tracking runs on your own machine ahead of time, so the panel only styles the result. The plugin adds no agent tools. The skill walks an agent through tracking a clip, checking the debug images, tuning the tracker and rendering a still to check. For Fragments it has the agent name the boxes from stills of each clip.',
       installed: INSTALLED,
     },
     media: {
@@ -217,16 +230,17 @@ node plugins/vj/tools/track.mjs --in public/clip.mp4 --box 900,300,120,120 --out
 export const DEMO_TEXT = {
   'match-cut': 'One composition per MatchCut look, five seconds each, keyword "Super Bowl", a paper flick on every cut.',
   'paper-photo': 'The four cut-out edges, and the fold-out on a green screen and on a desk.',
-  'kinetic-type-demo': 'A line written beside an anvil in archive film, tracked, and the same line centred low.',
-  'vj-demo': 'Blob tracking over a 1-bit picture and over a thermal camera, a CRT switching off, and a VHS tape, on archive film.',
+  'kinetic-type-demo': 'The fourteen caption styles over a talking head, and a line written beside a tracked anvil in archive film, then centred low.',
+  'vj-demo': 'Blob tracking over a 1-bit picture and over a thermal camera, a CRT switching off and a VHS tape, on archive film.',
   'hexed-demo': 'A reel that rolls a new look every second and a half, and sheets of twenty seeds on one frame.',
-  'plugin-ui-demo': 'Ready-made scenes set up for the Hexed, Paper and VJ panels in Studio.',
+  'plugin-ui-demo': 'Ready-made scenes for the Hexed, Paper, VJ and caption panels in Studio. Edit a value and the preview redraws.',
 };
 
 export const TEMPLATE_COPY = {
   scrapline: {
+    title: 'Scrapline cut-outs',
     description:
-      'A hand-drawn border round a cut-out subject: a wobbly marker, pencil, crayon, scribble or brush line, on a sheet of torn paper behind it. Both are redrawn a few times a second, like hand animation.',
+      'A hand-drawn border round a cut-out subject, on a sheet of torn paper. The line can be a wobbly marker, pencil, crayon, scribble or brush. Line and paper redraw a few times a second, like hand animation.',
     change: [
       'The subject: a video with a black and white matte, a video with alpha, an image with alpha, or an SVG path.',
       'The line style (Marker, Pencil, Crayon, Scribble or Brush), the paper (White, Kraft, Binder, Cardboard, your own picture or none), the line colour, the gap to the subject and the seed.',
@@ -234,8 +248,9 @@ export const TEMPLATE_COPY = {
     media: { hero: { from: 'effects/scrapline/out/scrapline-demo.mp4', at: 20, len: 5 } },
   },
   'word-flash': {
+    title: 'Words cut to the beat',
     description:
-      'A black-and-white type spot, 9.4 seconds, cut on every hit of its track. Each cut shows one word or a two-word lockup, the background swaps between black and white, and a last word types on and blurs away.',
+      'A 9.4 second black-and-white type spot, cut on every hit of its track. Each cut shows one word or a two-word lockup on a ground that flips between black and white. A last word types on, then blurs away.',
     change: [
       'The words: an intro, a run with one word per cut, and an outro. The word count has to match the number of cuts.',
       'The track. A small tool finds its strongest hits and gives you the cuts.',
@@ -244,10 +259,11 @@ export const TEMPLATE_COPY = {
     media: { hero: { from: 'effects/word-flash/out/word-flash.mp4', at: 2.5, len: 5 } },
   },
   'collage-burst': {
+    title: 'Screenshot card burst',
     description:
-      'A wordmark fades in on black, then a cluster of screenshot cards bursts out of one point as the camera flies in. The cards settle into a dense wall, drift, and whip off to the right, and big white type finishes the spot: "One", then "One subscription."; "Endless", then "Endless videos."',
+      'A wordmark fades in on black, then a cluster of screenshot cards bursts out of one point as the camera flies in. The cards settle into a dense wall, drift, and whip off to the right. Big white type finishes it: two short lines, each starting as a single word.',
     change: [
-      'The brand name and the word after it in the wordmark (or none), and the two tagline lines.',
+      'The brand name and the word after it in the wordmark (or none), and the two closing lines.',
       'Your own screenshots or photos on the cards, and the words printed on the cards. With none, every card is drawn.',
       'The three typefaces (wordmark and cards, terminal, serif) and the colours: canvas, text, accent, paper and dark cards.',
       'The seed, which sets the tilt and timing of the burst.',
@@ -255,8 +271,9 @@ export const TEMPLATE_COPY = {
     media: { hero: { from: 'effects/collage-burst/out/collage-burst.mp4', at: 0.3, len: 4 } },
   },
   'greeting-intro': {
+    title: 'App window greeting',
     description:
-      'A gradient wordmark on a soft off-white ground shrinks away as an app window grows in behind it. The camera pushes into the window, tilted, types a greeting and a question in large perspective type, slides four suggestion cards in, then pulls back and flattens to the whole window.',
+      'A gradient wordmark on a soft off-white ground shrinks away as an app window grows in behind it. The camera pushes into the window, tilted, and types a greeting and a question in large perspective type. Four suggestion cards slide in, then the camera pulls back and flattens to the whole window.',
     change: [
       'The brand name, the name in the greeting, the question under it and the placeholder in the prompt box.',
       'One to four suggestion cards, with your own labels, and the small caption at the bottom (or none).',
@@ -266,10 +283,11 @@ export const TEMPLATE_COPY = {
     media: { hero: { from: 'effects/greeting-intro/out/greeting-intro.mp4', at: 0, len: 3.5 } },
   },
   'wait-ship': {
+    title: 'Two lines on a focus pull',
     description:
-      'Seven photo cards float round the edges of a near-black frame, out of focus. The camera pulls back and racks focus, "You wait..." comes up out of the blur, "Ship it with Kinetograph Pro" replaces it, and the scene slides off to the right as the left card sharpens.',
+      'Seven photo cards float round the edges of a near-black frame, out of focus. The camera pulls back and racks focus. A first line comes up out of the blur and a second line replaces it. The scene slides off to the right as the left card sharpens.',
     change: [
-      'The two lines and the product name in the second one.',
+      'The two lines, and a product name in the second.',
       'Your own photos on the seven cards. Any card you leave out keeps its drawn picture.',
       'The typeface, weight, size, tracking and text colour, and the two colours of the background.',
       'How strong the focus blur, the film grain and the closing slide are, and the frame where the first line gives way to the second.',
@@ -277,8 +295,9 @@ export const TEMPLATE_COPY = {
     media: { hero: { from: 'effects/wait-ship/out/wait-ship.mp4', at: 0, len: 2.45 } },
   },
   'prompt-reply': {
+    title: 'Chat prompt to reply',
     description:
-      'A chat prompt types itself into a rounded box and sends. The shot cuts to the reply, which builds on a page the camera scrolls through: two activity rows, a status line, a serif reply, a brand chip, a small table and a row of action icons fade up one after another.',
+      'A chat prompt types itself into a rounded box and sends. The shot cuts to the reply, built on a page the camera scrolls through. Two activity rows, a status line, a serif reply, a brand chip, a small table and a row of action icons fade up one after another.',
     change: [
       'The prompt, the two activity rows, the status line and the reply.',
       'The brand chip, and the table: three column heads and one row.',
@@ -288,8 +307,9 @@ export const TEMPLATE_COPY = {
     media: { hero: { from: 'effects/prompt-reply/out/prompt-reply.mp4', at: 0, len: 5 } },
   },
   'phone-orbit': {
+    title: 'Social post on a phone',
     description:
-      'A phone showing a social post starts as a close-up of its lower edge, pulls back and glides to rest. Chat bubbles, avatars and icon chips pop in around it, a hand reaches into the photo and lifts the phone, and the screen swaps to a second one as the view count reaches its cap.',
+      'A phone showing a social post starts as a close-up of its lower edge, pulls back and glides to rest. Chat bubbles, avatars and icon chips pop in around it. A hand reaches into the photo and lifts the phone, and the screen swaps to a second one as the view count reaches its cap.',
     change: [
       'The brand name in the post header, the caption pill and the two-part subtitle on the photo.',
       'The view count: where it starts, where it stops, and its unit.',
@@ -374,6 +394,8 @@ export const GENE_NOTES = {
 
 /** Summaries for public exports whose source has no JSDoc line, keyed plugin/name. */
 export const EXPORT_NOTES = {
+  'kinetic-typography/Captions': 'Sets a voiceover on screen in one of fourteen ready-made styles. Each word arrives as it is said and the line leaves all together. A line with a big word is a hook.',
+  'kinetic-typography/STYLES': 'The fourteen ready-made styles, by name.',
   'hexed/Hexed': 'Wraps any children and rolls a look onto them. It fills the composition unless you give a width and height.',
   'hexed/Grunge': 'Lays a texture (a procedural one or a scan) over the finished picture.',
   'paper/MatchCut': 'A keyword holds still, highlighted, while the page under it changes several times a second. It fills its composition.',
