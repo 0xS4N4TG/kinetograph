@@ -102,6 +102,103 @@ describe('StoryboardPanel', () => {
     expect(onSubmit.mock.calls[0]![0].shots.map((s) => s.id)).toEqual(['s2', 's3', 's1']);
   });
 
+  /** Cards 300 px apart along x by their place in the grid, as in the drag test, and by their place for the offsets. */
+  function layOut() {
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const x = ({ s1: 0, s2: 300, s3: 600 } as Record<string, number>)[this.getAttribute('data-shot') ?? ''] ?? 0;
+      return { x, y: 0, left: x, top: 0, right: x + 256, bottom: 200, width: 256, height: 200, toJSON: () => ({}) } as DOMRect;
+    });
+  }
+  const slot = (el: HTMLElement) => (el.parentElement ? Array.from(el.parentElement.children).indexOf(el) * 300 : 0);
+  function stubOffsets() {
+    vi.spyOn(HTMLElement.prototype, 'offsetLeft', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.tagName === 'LI' ? slot(this) : 0;
+    });
+  }
+  function stubAnimate() {
+    const animate = vi.fn(() => ({ onfinish: null, oncancel: null, cancel() {} }));
+    Object.defineProperty(Element.prototype, 'animate', { configurable: true, writable: true, value: animate });
+    return animate;
+  }
+  function stubReducedMotion(reduce: boolean) {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: reduce && query.includes('reduce'), media: query }));
+  }
+  afterEach(() => {
+    delete (Element.prototype as { animate?: unknown }).animate;
+    vi.unstubAllGlobals();
+  });
+
+  it('lifts the grabbed card under the pointer and puts it back in place on release', () => {
+    layOut();
+    start();
+    const handle = screen.getByRole('button', { name: 'Drag shot 1' });
+    const li = screen.getByRole('article', { name: 'Shot 1' }).parentElement!;
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+    expect(screen.getByRole('article', { name: 'Shot 1' }).className).toContain('scale-[1.03]');
+    expect(li.style.zIndex).toBe('20');
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 60, clientY: 90 });
+    expect(li.style.transform).toBe('translate(50px, 80px)');
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 60, clientY: 90 });
+    expect(li.style.transform).toBe('');
+    expect(li.style.zIndex).toBe('');
+    expect(screen.getByRole('article', { name: 'Shot 1' }).className).not.toContain('scale-[1.03]');
+  });
+
+  it('goes back to the old order on Escape and on pointer cancel', () => {
+    layOut();
+    const { onSubmit } = start();
+    const handle = screen.getByRole('button', { name: 'Drag shot 1' });
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 700, clientY: 100 });
+    expect(order()).toEqual(['s2', 's3', 's1']);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(order()).toEqual(['s1', 's2', 's3']);
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 700, clientY: 100 });
+    expect(order()).toEqual(['s1', 's2', 's3']);
+
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 400, clientY: 100 });
+    expect(order()).toEqual(['s2', 's1', 's3']);
+    fireEvent.pointerCancel(handle, { pointerId: 1 });
+    expect(order()).toEqual(['s1', 's2', 's3']);
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(onSubmit.mock.calls[0]![0].shots.map((s) => s.id)).toEqual(['s1', 's2', 's3']);
+  });
+
+  it('slides the cards that moved when the order changes, and not when reduced motion is asked for', async () => {
+    stubOffsets();
+    const animate = stubAnimate();
+    stubReducedMotion(false);
+    const { user } = start();
+    await user.click(screen.getByRole('button', { name: 'Move shot 1 right' }));
+    expect(order()).toEqual(['s2', 's1', 's3']);
+    // s2 was at 300 and is now at 0, s1 the other way round; s3 stayed
+    const slid = animate.mock.calls.map((c) => (c as unknown as [Keyframe[]])[0]!.map((k) => k.transform));
+    expect(slid).toHaveLength(2);
+    expect(slid).toContainEqual(['translate(300px, 0px)', 'translate(0px, 0px)']);
+    expect(slid).toContainEqual(['translate(-300px, 0px)', 'translate(0px, 0px)']);
+  });
+
+  it('changes the order at once with no animation under prefers-reduced-motion, and the drag still works', async () => {
+    layOut();
+    stubOffsets();
+    const animate = stubAnimate();
+    stubReducedMotion(true);
+    const { user } = start();
+    await user.click(screen.getByRole('button', { name: 'Move shot 1 right' }));
+    await user.click(screen.getByRole('button', { name: 'Add a shot after shot 1' }));
+    expect(order()).toEqual(['s2', 's4', 's1', 's3']);
+    const handle = screen.getByRole('button', { name: 'Drag shot 1' });
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 40, clientY: 50 });
+    // still the same card, wherever the order put it, and it follows the pointer
+    const grabbed = document.querySelector<HTMLElement>('[data-shot="s2"]')!.parentElement!;
+    expect(grabbed.style.transform).toMatch(/^translate\(/);
+    expect(order()).toContain('s2');
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 40, clientY: 50 });
+    expect(animate).not.toHaveBeenCalled();
+  });
+
   it('records a removed shot, and a shot added here and removed again is not reported', async () => {
     const { user, answer } = start();
     await user.click(screen.getByRole('button', { name: 'Remove shot 2' }));

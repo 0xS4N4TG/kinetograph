@@ -78,7 +78,6 @@ export interface ShotCardProps {
   thumbnail: string;
   note: string;
   dragging: boolean;
-  dropTarget: boolean;
   registerRef: (el: HTMLElement | null) => void;
   onChange: (patch: Partial<Shot>) => void;
   onNote: (text: string) => void;
@@ -92,7 +91,7 @@ export interface ShotCardProps {
 }
 
 export function ShotCard(props: ShotCardProps) {
-  const { shot, index, count, note, dragging, dropTarget } = props;
+  const { shot, index, count, note, dragging } = props;
   const n = index + 1;
   const [commenting, setCommenting] = useState(false);
   const showNote = commenting || note !== '';
@@ -103,8 +102,8 @@ export function ShotCard(props: ShotCardProps) {
       data-shot={shot.id}
       className={cn(
         'flex w-full min-w-0 flex-col gap-2 rounded-xl border bg-card p-2.5 text-card-foreground shadow-xs/5',
-        dragging && 'opacity-50',
-        dropTarget && 'ring-2 ring-ring',
+        'transition-[transform,box-shadow] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none',
+        dragging && 'scale-[1.03] cursor-grabbing shadow-xl/20',
       )}
     >
       <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
