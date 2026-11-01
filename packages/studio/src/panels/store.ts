@@ -21,6 +21,14 @@ export class PanelStore {
     return { panel, replaced };
   }
 
+  /** Adds an already answered panel, read back from its plan file when the studio starts (no one is told). */
+  restore<K extends PanelKind>(kind: K, data: PanelDraft[K], answer: PanelAnswer[K], now = Date.now()): OpenPanel<K> {
+    const { panel } = this.open(kind, data, null, now);
+    panel.status = 'submitted';
+    panel.answer = answer;
+    return panel;
+  }
+
   get(id: string): OpenPanel | undefined {
     return this.panels.find((p) => p.id === id);
   }

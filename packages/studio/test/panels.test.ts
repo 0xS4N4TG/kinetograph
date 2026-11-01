@@ -90,6 +90,46 @@ describe('opening panels over HTTP', () => {
   });
 });
 
+describe('plan files after a restart', () => {
+  it('brings each approving answer back as a submitted panel, and leaves out the rest', async () => {
+    const { dir, entry } = writeProject('PanelsRestore');
+    mkdirSync(join(dir, 'plan'));
+    const put = (kind: string, value: unknown) => writeFileSync(join(dir, 'plan', `${kind}.json`), JSON.stringify(value));
+    put('brief', brief);
+    put('script', { lines: [{ id: 'l1', text: 'hello' }], notes: [], approved: false });
+    put('storyboard', { shots: [shot('s1')], removed: [], notes: [], approved: true });
+    put('styleframes', { pick: 'a' });
+    writeFileSync(join(dir, 'plan', 'review.json'), '{ not json');
+    const studio = await start(entry);
+    const client = await Client.connect(studio);
+    await until(() => client.messages('panel').length, (n) => n === 2);
+    const got = client.messages('panel').map((m: any) => `${m.panel.panel}:${m.panel.status}`);
+    expect(got).toEqual(['brief:submitted', 'storyboard:submitted']);
+    expect(client.messages('panel').map((m: any) => m.panel.answer)).toEqual([brief, { shots: [shot('s1')], removed: [], notes: [], approved: true }]);
+    // They are only for the stepper: nothing waits, and a new panel of the same kind opens beside them.
+    expect(Object.values(stageStates(client.messages('panel').map((m: any) => m.panel)))).toMatchObject([
+      { state: 'approved' },
+      { state: 'empty' },
+      { state: 'approved' },
+      { state: 'empty' },
+      { state: 'empty' },
+      { state: 'empty' },
+      { state: 'empty' },
+    ]);
+    expect((await open(studio, tokenOf(studio)!, 'brief', draftBrief)).json).toEqual({ id: 'p_3', status: 'open' });
+    client.close();
+  });
+
+  it('ignores a plan directory that leaves the project', async () => {
+    const { dir, entry } = writeProject('PanelsRestoreLink');
+    const elsewhere = tempDir();
+    writeFileSync(join(elsewhere, 'brief.json'), JSON.stringify(brief));
+    symlinkSync(elsewhere, join(dir, 'plan'));
+    const studio = await start(entry);
+    expect(((await api(studio, '/api/panels', { headers: window(studio) })).json as { panels: unknown[] }).panels).toEqual([]);
+  });
+});
+
 describe('the person answering', () => {
   it('shows an opened panel to the window, and a submitted answer is checked, written to plan/<kind>.json and kept', async () => {
     const { dir, entry } = writeProject('PanelsSubmit');
@@ -342,11 +382,12 @@ describe('the messages and the stepper', () => {
       panel({ id: 'p_4', panel: 'review', status: 'submitted', answer: { verdict: 'approved', notes: [] }, openedAt: 4 }),
       panel({ id: 'p_5', panel: 'review', openedAt: 5 }),
     ]);
-    expect(states.brief).toEqual({ state: 'approved', panelId: null });
-    expect(states.board).toEqual({ state: 'open', panelId: 'p_2' });
+    expect(states.brief).toEqual({ state: 'approved', panelId: null, approvedId: 'p_1' });
+    expect(states.animatic.approvedId).toBe('p_4');
+    expect(states.board).toEqual({ state: 'open', panelId: 'p_2', approvedId: null });
     expect(states.script.state).toBe('empty');
     expect(states.animatic.state).toBe('approved');
-    expect(states.build).toEqual({ state: 'open', panelId: 'p_5' });
-    expect(stageStates([panel({ panel: 'review', openedAt: 1 })]).animatic).toEqual({ state: 'open', panelId: 'p_1' });
+    expect(states.build).toEqual({ state: 'open', panelId: 'p_5', approvedId: null });
+    expect(stageStates([panel({ panel: 'review', openedAt: 1 })]).animatic).toEqual({ state: 'open', panelId: 'p_1', approvedId: null });
   });
 });

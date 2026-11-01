@@ -15,7 +15,7 @@ import { ChatLog } from './chat-log.js';
 import { isInside } from './agent-fs.js';
 import { availableAgents } from './agent-presets.js';
 import { openBrowser } from './open-browser.js';
-import { readPlan, writePlan } from './panels/plan.js';
+import { readPlan, restorePanels, writePlan } from './panels/plan.js';
 import { PANEL_KINDS, checkAnswer, checkDraft } from './panels/validate.js';
 import { panelRoutes } from './panels/routes.js';
 import { PanelStore } from './panels/store.js';
@@ -165,6 +165,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   // The panels the agent opens (docs/proposals/studio-panels.md). They are kept like the chat, and a panel that closes
   // while the agent is mid-turn, or not running, waits here until it can be told.
   const panels = new PanelStore();
+  restorePanels(panels, dirname(entry));
   const unheard: { id: string; text: string }[] = [];
   /** Sends the agent what the person answered since its last turn, all in one message, once it is between turns. */
   function tellAgent(): void {

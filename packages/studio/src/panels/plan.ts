@@ -7,7 +7,10 @@ import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, w
 import { join } from 'node:path';
 import { isInside } from '../agent-fs.js';
 import { StudioFailure } from '../util.js';
-import { PANEL_KINDS } from './validate.js';
+import { isApproved } from './stages.js';
+import type { PanelStore } from './store.js';
+import type { OpenPanel, PanelDraft, PanelKind } from './types.js';
+import { PANEL_KINDS, checkAnswer } from './validate.js';
 
 function checkedKind(kind: string): void {
   if (!(PANEL_KINDS as readonly string[]).includes(kind)) throw new StudioFailure('INVALID_ARG', `no panel kind "${kind}"`);
@@ -65,5 +68,41 @@ export function readPlan(projectDir: string, kind: string): unknown {
     return JSON.parse(readFileSync(target, 'utf8'));
   } catch {
     return null;
+  }
+}
+
+/** What a restored panel carries as its data: only what its answer already says, as the window shows no more than that. */
+const restoredData = (kind: PanelKind, answer: Record<string, unknown>): PanelDraft[PanelKind] => {
+  switch (kind) {
+    case 'script':
+      return { lines: answer.lines } as PanelDraft['script'];
+    case 'storyboard':
+      return { comp: '', shots: answer.shots } as PanelDraft['storyboard'];
+    case 'styleframes':
+      return { frames: [] };
+    case 'review':
+      return { comp: '' };
+    default:
+      return {};
+  }
+};
+
+/**
+ * Rebuilds the stepper after a restart: each plan/<kind>.json that holds an approving answer comes back as a submitted
+ * panel, so its stage is approved and can be looked at. A file that does not read, does not check or does not approve is
+ * left out, and so is one the safe reader refuses (a link, or a plan directory that leaves the project).
+ */
+export function restorePanels(store: PanelStore, projectDir: string): void {
+  for (const kind of PANEL_KINDS) {
+    let answer: unknown;
+    try {
+      answer = readPlan(projectDir, kind);
+    } catch {
+      continue;
+    }
+    if (answer === null || checkAnswer(kind, answer) !== null) continue;
+    const probe = { panel: kind, status: 'submitted', answer } as OpenPanel;
+    if (!isApproved(probe)) continue;
+    store.restore(kind, restoredData(kind, answer as Record<string, unknown>) as never, answer as never);
   }
 }

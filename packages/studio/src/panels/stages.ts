@@ -21,6 +21,8 @@ export interface StageInfo {
   state: StageState;
   /** The open panel to bring up, when the stage is open. */
   panelId: string | null;
+  /** The approved panel to show read-only, when the stage is approved and nothing waits. */
+  approvedId: string | null;
 }
 
 /** True for a submitted panel whose answer approves: a brief always does, the others say so in their answer. */
@@ -40,8 +42,9 @@ const KIND_OF: Partial<Record<Stage, PanelKind>> = { brief: 'brief', script: 'sc
 
 const state = (panels: OpenPanel[]): StageInfo => {
   const open = panels.findLast((p) => p.status === 'open');
-  if (open) return { state: 'open', panelId: open.id };
-  return { state: panels.some(isApproved) ? 'approved' : 'empty', panelId: null };
+  if (open) return { state: 'open', panelId: open.id, approvedId: null };
+  const approved = panels.findLast(isApproved);
+  return { state: approved ? 'approved' : 'empty', panelId: null, approvedId: approved?.id ?? null };
 };
 
 /**
@@ -57,7 +60,7 @@ export function stageStates(panels: OpenPanel[], delivered = false): Record<Stag
   const out = {} as Record<Stage, StageInfo>;
   for (const [stage, kind] of Object.entries(KIND_OF) as [Stage, PanelKind][]) out[stage] = state(of(kind));
   out.animatic = state(firstApproved === -1 ? reviews : reviews.slice(0, firstApproved + 1));
-  out.build = firstApproved === -1 ? { state: 'empty', panelId: null } : state(reviews.slice(firstApproved + 1));
-  out.deliver = { state: delivered ? 'approved' : 'empty', panelId: null };
+  out.build = firstApproved === -1 ? { state: 'empty', panelId: null, approvedId: null } : state(reviews.slice(firstApproved + 1));
+  out.deliver = { state: delivered ? 'approved' : 'empty', panelId: null, approvedId: null };
   return out;
 }
