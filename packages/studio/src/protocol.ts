@@ -212,6 +212,8 @@ export interface AgentInfo {
   command: string | null;
   /** The directory the agent works in and may read and write. */
   cwd: string;
+  /** The home directory, so the chat can write `~` for it. */
+  home?: string;
   /** Why the agent is off, in plain words; absent when it is on. */
   disabled?: string;
 }
@@ -248,7 +250,22 @@ export type AgentEvent =
   | { kind: 'message'; text: string }
   | { kind: 'thought'; text: string }
   /** A tool call or file edit; the same `id` again updates it. `files` are relative to the project. */
-  | { kind: 'tool'; id: string; title: string; toolKind: string; status: string; files: string[] }
+  | {
+      kind: 'tool';
+      id: string;
+      title: string;
+      toolKind: string;
+      status: string;
+      files: string[];
+      /** What the agent asked the tool to do, in the few fields worth showing; absent from updates that do not repeat it. */
+      input?: ToolInput;
+      /** What the tool printed, cut to a size the chat can keep. */
+      output?: string;
+      /** The files it changed. */
+      diffs?: ToolDiff[];
+      /** How long the call took, once it has ended. */
+      ms?: number;
+    }
   | { kind: 'permission'; id: string; title: string; files: string[]; options: AgentPermissionOption[] }
   | { kind: 'permission_done'; id: string }
   | { kind: 'done'; stopReason: string }
@@ -264,6 +281,23 @@ export interface QueuedMessage {
   id: string;
   text: string;
   chips: string[];
+}
+
+/** The parts of an agent's tool input the chat shows. */
+export interface ToolInput {
+  command?: string;
+  description?: string;
+  pattern?: string;
+  url?: string;
+  path?: string;
+}
+
+/** A file changed by a tool call: how many lines, and the changed lines with context, each starting with ' ', '+' or '-'. */
+export interface ToolDiff {
+  path: string;
+  added: number;
+  removed: number;
+  lines: string[];
 }
 
 /**

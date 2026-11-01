@@ -1,22 +1,9 @@
 import { Streamdown } from 'streamdown';
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import {
-  ArrowUpIcon,
-  CheckIcon,
-  FileTextIcon,
-  ImageIcon,
-  LoaderCircleIcon,
-  PencilIcon,
-  SearchIcon,
-  SparklesIcon,
-  SquareIcon,
-  TerminalIcon,
-  TriangleAlertIcon,
-  WrenchIcon,
-  XIcon,
-} from 'lucide-react';
+import { ArrowUpIcon, ImageIcon, SparklesIcon, SquareIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
 
 import type { AgentInfo, CompositionInfo, InspectResult, PluginSummary, ProjectInfo, ReceivedFrame, TimelineData } from '@/api';
+import { ToolGroup } from '@/components/agent/tool-rows';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import type { ChatItem } from '@/lib/chat';
@@ -25,6 +12,7 @@ import { cropToPng } from '@/lib/crop';
 import { findLayer, type InspectLayer } from '@/lib/inspect';
 import { contactSheet } from '@/lib/contact-sheet';
 import { chipText, contactFrames, layerRect, rangeLabel, unionRect, type FrameRange } from '@/lib/selection';
+import type { ToolItem } from '@/lib/tool-summary';
 import type { Chat } from '@/lib/use-chat';
 import { cn } from '@/lib/utils';
 
@@ -75,8 +63,6 @@ const MD_COMPONENTS = {
     typeof src === 'string' && src !== '' ? <img src={src} alt={alt ?? ''} className="max-w-full rounded-lg" /> : <span className="text-muted-foreground">{alt ? `[${alt}]` : '[image]'}</span>,
 };
 
-const basename = (path: string) => path.split('/').pop() ?? path;
-
 /** The words for a status of the connection to the agent. */
 function statusText(chat: Chat['state']): string {
   switch (chat.status) {
@@ -93,15 +79,23 @@ function statusText(chat: Chat['state']): string {
 
 const SUGGESTIONS = ['Make the title bigger', 'Try a warmer colour palette', 'Slow down the intro'];
 
-function ToolIcon({ kind }: { kind: string }) {
-  if (kind === 'edit' || kind === 'delete' || kind === 'move') return <PencilIcon aria-hidden="true" />;
-  if (kind === 'read') return <FileTextIcon aria-hidden="true" />;
-  if (kind === 'search') return <SearchIcon aria-hidden="true" />;
-  if (kind === 'execute') return <TerminalIcon aria-hidden="true" />;
-  return <WrenchIcon aria-hidden="true" />;
+type PlainItem = Exclude<ChatItem, { kind: 'tool' }>;
+type Segment = { kind: 'item'; item: PlainItem } | { kind: 'tools'; tools: ToolItem[]; last: boolean };
+
+/** The chat as it is drawn: consecutive tool calls become one group. */
+function segments(items: ChatItem[]): Segment[] {
+  const out: Segment[] = [];
+  items.forEach((item, index) => {
+    if (item.kind !== 'tool') return void out.push({ kind: 'item', item });
+    const tail = out.at(-1);
+    if (tail?.kind === 'tools') tail.tools.push(item);
+    else out.push({ kind: 'tools', tools: [item], last: false });
+    if (index === items.length - 1) (out.at(-1) as Extract<Segment, { kind: 'tools' }>).last = true;
+  });
+  return out;
 }
 
-const Item = memo(function Item({ item, onAnswer }: { item: ChatItem; onAnswer(id: string, optionId: string | null): void }) {
+const Item = memo(function Item({ item, onAnswer }: { item: PlainItem; onAnswer(id: string, optionId: string | null): void }) {
   switch (item.kind) {
     case 'user':
       return (
@@ -126,35 +120,6 @@ const Item = memo(function Item({ item, onAnswer }: { item: ChatItem; onAnswer(i
           </Streamdown>
         </div>
       );
-    case 'tool': {
-      const done = item.status === 'completed';
-      const failed = item.status === 'failed';
-      return (
-        <div
-          className="bg-muted/70 text-muted-foreground flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] [&_svg]:size-3.5 [&_svg]:shrink-0"
-          data-testid="chat-tool"
-        >
-          <span className="bg-card text-foreground/80 flex size-6 shrink-0 items-center justify-center rounded-lg">
-            <ToolIcon kind={item.toolKind} />
-          </span>
-          <span className="text-foreground min-w-0 truncate font-medium">{item.title || 'Working'}</span>
-          {item.files.length > 0 && (
-            <span className="truncate font-mono text-[11px]" title={item.files.join(', ')}>
-              {item.files.map(basename).join(', ')}
-            </span>
-          )}
-          <span className="ml-auto shrink-0">
-            {done ? (
-              <CheckIcon className="text-success" aria-label="done" />
-            ) : failed ? (
-              <XIcon className="text-destructive" aria-label="failed" />
-            ) : (
-              <LoaderCircleIcon className="animate-spin" aria-label="working" />
-            )}
-          </span>
-        </div>
-      );
-    }
     case 'permission': {
       const chosen = item.answered === null ? null : (item.options.find((o) => o.id === item.answered)?.name ?? 'Cancelled');
       return (
@@ -241,6 +206,8 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
     });
   }, [inspect, selectedLayers]);
   const cwd = project?.cwd ?? '';
+  const paths = useMemo(() => ({ cwd: project?.cwd ?? info?.cwd ?? '', home: info?.home ?? '' }), [project?.cwd, info?.cwd, info?.home]);
+  const rows = useMemo(() => segments(state.items), [state.items]);
   const span = comp && range ? rangeLabel(range, comp.fps) : undefined;
   const chips = layers.map((layer) => chipText(layer, frame, cwd, span));
   /** With a span and no layer, the span has a chip of its own. */
@@ -322,9 +289,13 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
             </div>
           </div>
         )}
-        {state.items.map((item) => (
-          <Item key={item.id} item={item} onAnswer={chat.answer} />
-        ))}
+        {rows.map((row) =>
+          row.kind === 'item' ? (
+            <Item key={row.item.id} item={row.item} onAnswer={chat.answer} />
+          ) : (
+            <ToolGroup key={row.tools[0]!.id} tools={row.tools} live={busy && (row.last || row.tools.some((t) => t.status !== 'completed' && t.status !== 'failed'))} ctx={paths} />
+          ),
+        )}
         {busy && state.items.at(-1)?.kind === 'user' && <p className="text-muted-foreground text-xs">Thinking…</p>}
       </div>
 

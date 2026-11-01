@@ -105,9 +105,11 @@ describe('the Agent tab', () => {
     const { server, user } = await start();
     await say(server, { kind: 'tool', id: 't1', title: 'Edit scene.tsx', toolKind: 'edit', status: 'in_progress', files: ['src/scene.tsx'] });
     await say(server, { kind: 'tool', id: 't1', title: '', toolKind: 'edit', status: 'completed', files: [] });
+    // not working any more: the group is folded; opening it shows the row
+    await user.click(screen.getByRole('button', { name: /Edited 1 file/ }));
     const tool = screen.getByTestId('chat-tool');
-    expect(tool).toHaveTextContent('Edit scene.tsx');
-    expect(tool).toHaveTextContent('scene.tsx');
+    expect(tool).toHaveTextContent('Edit');
+    expect(tool).toHaveTextContent('src/scene.tsx');
     expect(screen.getAllByTestId('chat-tool')).toHaveLength(1);
 
     await say(server, {

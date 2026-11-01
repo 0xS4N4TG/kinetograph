@@ -25,6 +25,8 @@ import type {
   StudioError,
   TimelineData,
   TimelineProgress,
+  ToolDiff,
+  ToolInput,
 } from '../../src/protocol.ts';
 
 export type {
@@ -48,6 +50,8 @@ export type {
   StudioError,
   TimelineData,
   TimelineProgress,
+  ToolDiff,
+  ToolInput,
 };
 export type { SequenceJson } from '../../src/protocol.ts';
 export type { OpenPanel, PanelAnswer, PanelKind, PanelStatus } from '../../src/panels/types.ts';

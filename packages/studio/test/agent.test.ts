@@ -134,6 +134,26 @@ describe('the ACP bridge against a fake agent', () => {
     await bridge.close();
   });
 
+  it('forwards what a tool call did: its input, output, diff and how long it took', async () => {
+    const root = tempDir();
+    process.env.FAKE_AGENT_CWD = root;
+    try {
+      const { bridge, events } = setup(root);
+      await bridge.prompt('use tools', '');
+      const tools = events.filter((e): e is Extract<AgentEvent, { kind: 'tool' }> => e.kind === 'tool');
+      const run = tools.filter((t) => t.id === 'c1');
+      expect(run[0]).toMatchObject({ toolKind: 'execute', status: 'in_progress', input: { command: `cd ${root} && ls`, description: 'List files' } });
+      expect(run[0]!.ms).toBeUndefined();
+      expect(run.at(-1)).toMatchObject({ status: 'completed', output: 'a.txt\nb.txt' });
+      expect(run.at(-1)!.ms).toBeGreaterThanOrEqual(25);
+      const edit = tools.find((t) => t.id === 'c2')!;
+      expect(edit).toMatchObject({ toolKind: 'edit', files: ['a.txt'], diffs: [{ path: 'a.txt', added: 2, removed: 1, lines: [' one', '-two', '+2', '+three'] }] });
+      await bridge.close();
+    } finally {
+      delete process.env.FAKE_AGENT_CWD;
+    }
+  });
+
   it('leaves the picture out when the agent does not take images', async () => {
     const root = tempDir();
     process.env.FAKE_AGENT_IMAGE = '0';

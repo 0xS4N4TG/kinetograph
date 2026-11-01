@@ -9,6 +9,7 @@ import { client, methods, ndJsonStream, PROTOCOL_VERSION } from '@agentclientpro
 import type { ContentBlock, RequestPermissionRequest, RequestPermissionResponse, SessionUpdate, ToolCallUpdate } from '@agentclientprotocol/sdk';
 import { readTextFile, writeTextFile } from './agent-fs.js';
 import type { AgentEvent, AgentStatus } from './protocol.js';
+import { toolDiffs, toolInput, toolOutput } from './tool-details.js';
 
 export interface AgentBridgeOptions {
   /** The project directory: the agent's working directory and the only place it may read or write. */
@@ -84,6 +85,8 @@ export class AgentBridge {
   private closed = false;
   /** A prompt is being sent or has not run its course: the window between asking and the status turning busy. */
   private prompting = false;
+  /** When each tool call of the turn was first seen, to say how long it took. */
+  private readonly toolStarts = new Map<string, number>();
 
   constructor(private readonly options: AgentBridgeOptions) {
     this.command = options.command;
@@ -202,13 +205,26 @@ export class AgentBridge {
       case 'tool_call':
       case 'tool_call_update': {
         const call = update as ToolCallUpdate & { title?: string | null };
+        const now = performance.now();
+        if (!this.toolStarts.has(call.toolCallId)) this.toolStarts.set(call.toolCallId, now);
+        const status = call.status ?? (update.sessionUpdate === 'tool_call' ? 'pending' : 'in_progress');
+        const input = toolInput(call.rawInput);
+        const output = toolOutput(call.content, call.rawOutput);
+        const diffs = toolDiffs(this.options.cwd, call.content);
+        const ended = status === 'completed' || status === 'failed';
+        const started = this.toolStarts.get(call.toolCallId)!;
+        if (ended) this.toolStarts.delete(call.toolCallId);
         this.options.emit({
           kind: 'tool',
           id: call.toolCallId,
           title: call.title ?? '',
           toolKind: call.kind ?? 'other',
-          status: call.status ?? (update.sessionUpdate === 'tool_call' ? 'pending' : 'in_progress'),
+          status,
           files: files(this.options.cwd, call),
+          ...(input ? { input } : {}),
+          ...(output ? { output } : {}),
+          ...(diffs ? { diffs } : {}),
+          ...(ended ? { ms: Math.round(now - started) } : {}),
         });
         break;
       }
@@ -335,6 +351,7 @@ export class AgentBridge {
       if (!live.exited) this.options.emit({ kind: 'error', message: explain(error, live.stderr.text, this.command) });
     }
     this.prompting = false;
+    this.toolStarts.clear();
     if (this.liveNow === live) {
       this.setStatus('ready');
       this.options.idle?.();

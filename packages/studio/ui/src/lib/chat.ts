@@ -1,11 +1,24 @@
 // The chat as a list of items, built from the events the server sends. A pure reducer so the panel is only drawing.
 
-import type { AgentEvent, AgentPermissionOption, AgentStatus, ChatRecord, QueuedMessage } from '@/api';
+import type { AgentEvent, AgentPermissionOption, AgentStatus, ChatRecord, QueuedMessage, ToolDiff, ToolInput } from '@/api';
 
 export type ChatItem =
   | { kind: 'user'; id: number; text: string; chips: string[] }
   | { kind: 'agent'; id: number; text: string }
-  | { kind: 'tool'; id: number; toolId: string; title: string; toolKind: string; status: string; files: string[] }
+  | {
+      kind: 'tool';
+      id: number;
+      toolId: string;
+      title: string;
+      toolKind: string;
+      status: string;
+      files: string[];
+      input?: ToolInput;
+      output?: string;
+      diffs?: ToolDiff[];
+      /** How long the call took, once it has ended. */
+      ms?: number;
+    }
   | { kind: 'permission'; id: number; permissionId: string; title: string; files: string[]; options: AgentPermissionOption[]; answered: string | null }
   | { kind: 'error'; id: number; text: string };
 
@@ -66,11 +79,32 @@ export function reduceChat(state: ChatState, event: AgentEvent): ChatState {
       const index = state.items.findIndex((i) => i.kind === 'tool' && i.toolId === event.id);
       if (index >= 0) {
         const old = state.items[index] as Extract<ChatItem, { kind: 'tool' }>;
-        // An update may leave out what the first message said.
-        const next = { ...old, title: event.title || old.title, toolKind: event.toolKind || old.toolKind, status: event.status, files: event.files.length > 0 ? event.files : old.files };
+        // An update may leave out what the first message said (an update without a kind arrives as 'other').
+        const next: typeof old = {
+          ...old,
+          title: event.title || old.title,
+          toolKind: event.toolKind && event.toolKind !== 'other' ? event.toolKind : old.toolKind,
+          status: event.status,
+          files: event.files.length > 0 ? event.files : old.files,
+          ...(event.input ?? old.input ? { input: event.input ?? old.input } : {}),
+          ...(event.output ?? old.output ? { output: event.output ?? old.output } : {}),
+          ...(event.diffs ?? old.diffs ? { diffs: event.diffs ?? old.diffs } : {}),
+          ...(event.ms ?? old.ms ? { ms: event.ms ?? old.ms } : {}),
+        };
         return { ...state, items: state.items.map((item, i) => (i === index ? next : item)) };
       }
-      return push({ kind: 'tool', toolId: event.id, title: event.title, toolKind: event.toolKind, status: event.status, files: event.files });
+      return push({
+        kind: 'tool',
+        toolId: event.id,
+        title: event.title,
+        toolKind: event.toolKind,
+        status: event.status,
+        files: event.files,
+        ...(event.input ? { input: event.input } : {}),
+        ...(event.output ? { output: event.output } : {}),
+        ...(event.diffs ? { diffs: event.diffs } : {}),
+        ...(event.ms !== undefined ? { ms: event.ms } : {}),
+      });
     }
     case 'permission':
       return push({ kind: 'permission', permissionId: event.id, title: event.title, files: event.files, options: event.options, answered: null });

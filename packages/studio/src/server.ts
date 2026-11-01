@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createRequire } from 'node:module';
+import { homedir } from 'node:os';
 import { dirname, extname, join, resolve } from 'node:path';
 import { bundlePanel, cliVersion, CliError, findPlugins, pluginToolNames } from 'kinetograph';
 import { WebSocketServer, type WebSocket } from 'ws';
@@ -529,8 +530,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         throw new StudioFailure('FORBIDDEN', 'the agent needs the studio token from the address the studio opened');
       }
       const info: AgentInfo = agentOff
-        ? { presets: [], command: null, cwd: agentCwd, disabled: agentOff }
-        : { presets: agents, command: bridge.currentCommand, cwd: agentCwd };
+        ? { presets: [], command: null, cwd: agentCwd, home: homedir(), disabled: agentOff }
+        : { presets: agents, command: bridge.currentCommand, cwd: agentCwd, home: homedir() };
       return json(res, 200, info);
     }
     if (path === '/api/live-props' && (method === 'GET' || method === 'PUT')) {
