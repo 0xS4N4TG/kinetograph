@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { CompositionInfo, InspectResult } from '../src/api';
 import { ReviewView, type ReviewStore } from '../src/components/panels/review-view';
-import { answerNotes, areaOfSelection, reviewSpan, sortNotes } from '../src/components/panels/review-model';
+import { answerNotes, areaOfSelection, draftKey, reviewSpan, sortNotes, writeDraft } from '../src/components/panels/review-model';
 import type { OpenPanel } from '../src/components/panels/types';
 import { Timeline } from '../src/components/timeline/timeline';
 import { Player } from '../src/lib/player';
@@ -38,10 +38,10 @@ function fakeStore(options: { comp?: CompositionInfo; inspect?: InspectResult | 
   return store;
 }
 
-function setup(data: OpenPanel<'review'>['data'] = { comp: 'Intro' }, store = fakeStore()) {
+function setup(data: OpenPanel<'review'>['data'] = { comp: 'Intro' }, store = fakeStore(), draft?: string) {
   const onSubmit = vi.fn();
   const onDismiss = vi.fn();
-  const view = (s: ReviewStore) => <ReviewView panel={panelOf(data)} store={s} onSubmit={onSubmit} onDismiss={onDismiss} />;
+  const view = (s: ReviewStore) => <ReviewView panel={panelOf(data)} store={s} draftKey={draft} onSubmit={onSubmit} onDismiss={onDismiss} />;
   const utils = render(view(store));
   return { ...utils, store, onSubmit, onDismiss, rerenderWith: (s: ReviewStore) => utils.rerender(view(s)) };
 }
@@ -333,5 +333,82 @@ describe('timeline marks', () => {
     act(() => setReviewMarks({ comp: 'Outro', frames: [10] }));
     expect(screen.queryAllByTestId('review-mark')).toHaveLength(0);
     act(() => setReviewMarks(null));
+  });
+});
+
+describe('the unsent notes', () => {
+  const key = draftKey('/work/entry.ts', 'p_1');
+  const clearStorage = () => window.localStorage.removeItem(key);
+
+  it('are kept in the browser and come back when the panel shows again', async () => {
+    clearStorage();
+    const user = userEvent.setup();
+    const first = setup({ comp: 'Intro' }, fakeStore(), key);
+    first.store.player.seek(40);
+    await user.keyboard('n');
+    await user.keyboard('slow start');
+    first.unmount();
+
+    const again = setup({ comp: 'Intro' }, fakeStore(), key);
+    expect(notes()).toHaveLength(1);
+    expect(notes()[0]).toHaveAttribute('data-frame', '40');
+    expect(within(notes()[0]!).getByRole('textbox')).toHaveValue('slow start');
+    // a new note does not reuse the id of the restored one
+    await user.click(screen.getByRole('button', { name: /Add note/ }));
+    expect(notes()).toHaveLength(2);
+    again.unmount();
+    clearStorage();
+  });
+
+  it('are read once the project is known', async () => {
+    writeDraft(key, 0, [{ uid: 4, frame: 7, text: 'kept' }]);
+    const store = fakeStore();
+    const view = (draft?: string) => <ReviewView panel={panelOf({ comp: 'Intro' })} store={store} draftKey={draft} onSubmit={() => {}} onDismiss={() => {}} />;
+    const { rerender, unmount } = render(view());
+    expect(notes()).toHaveLength(0);
+    rerender(view(key));
+    expect(notes()).toHaveLength(1);
+    expect(window.localStorage.getItem(key)).toContain('kept');
+    unmount();
+    clearStorage();
+  });
+
+  it('are not mixed into another review that has the same id', () => {
+    writeDraft(key, 111, [{ uid: 1, frame: 7, text: 'old review' }]);
+    const { unmount } = setup({ comp: 'Intro' }, fakeStore(), key);
+    expect(notes()).toHaveLength(0);
+    unmount();
+    clearStorage();
+  });
+
+  it('go when the review is sent or dismissed, and stay when it is only put away', async () => {
+    clearStorage();
+    const user = userEvent.setup();
+    const sent = setup({ comp: 'Intro' }, fakeStore(), key);
+    await user.keyboard('n');
+    await user.keyboard('one');
+    expect(window.localStorage.getItem(key)).toContain('one');
+    await user.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(window.localStorage.getItem(key)).toBeNull();
+    sent.unmount();
+
+    const dismissed = setup({ comp: 'Intro' }, fakeStore(), key);
+    await user.keyboard('n');
+    await user.keyboard('two');
+    expect(window.localStorage.getItem(key)).toContain('two');
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(window.localStorage.getItem(key)).toBeNull();
+    dismissed.unmount();
+  });
+
+  it('are dropped from the browser when every note is deleted', async () => {
+    clearStorage();
+    const user = userEvent.setup();
+    const { unmount } = setup({ comp: 'Intro' }, fakeStore(), key);
+    await user.keyboard('n');
+    expect(window.localStorage.getItem(key)).not.toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Delete the note' }));
+    expect(window.localStorage.getItem(key)).toBeNull();
+    unmount();
   });
 });

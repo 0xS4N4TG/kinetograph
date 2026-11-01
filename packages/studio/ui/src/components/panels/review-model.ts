@@ -1,5 +1,6 @@
 import type { InspectResult } from '@/api';
 import { findLayer } from '@/lib/inspect';
+import { readStored, writeStored } from '@/lib/persisted';
 import { layerName, layerRect, unionRect } from '@/lib/selection';
 
 import type { Box, Note, ReviewRequest } from './types';
@@ -52,4 +53,24 @@ export function areaOfSelection(
   );
   if (!rect || !layer) return null;
   return { box: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) }, layer };
+}
+
+/** Where a review's unsent notes are kept in the browser: per project and panel. */
+export const draftKey = (project: string, panelId: string) => `kg.review:${project}:${panelId}`;
+
+/**
+ * The notes kept for this review, or none. A draft belongs to the panel that was open when it was written (`openedAt`):
+ * after a restart the same id can name another review.
+ */
+export function readDraft(key: string, openedAt: number): DraftNote[] {
+  const stored = readStored(key) as { openedAt?: unknown; notes?: unknown } | undefined;
+  if (!stored || stored.openedAt !== openedAt || !Array.isArray(stored.notes)) return [];
+  return stored.notes.filter(
+    (n): n is DraftNote => n !== null && typeof n === 'object' && Number.isFinite(n.uid) && Number.isFinite(n.frame) && typeof n.text === 'string',
+  );
+}
+
+/** Keeps the notes; none removes the draft. */
+export function writeDraft(key: string, openedAt: number, notes: readonly DraftNote[]): void {
+  writeStored(key, notes.length > 0 ? { openedAt, notes } : undefined);
 }

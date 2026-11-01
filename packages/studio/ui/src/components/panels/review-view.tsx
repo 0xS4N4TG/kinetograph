@@ -9,7 +9,7 @@ import { getMarqueeBox, setMarqueeBox, useMarqueeBox } from '@/lib/marquee-box';
 import { setReviewMarks } from '@/lib/review-marks';
 import type { Studio } from '@/studio';
 
-import { areaOfSelection, answerNotes, reviewSpan, sortNotes, type DraftNote } from './review-model';
+import { areaOfSelection, answerNotes, readDraft, reviewSpan, sortNotes, writeDraft, type DraftNote } from './review-model';
 import { ReviewNote } from './review-note';
 import type { PanelProps } from './types';
 
@@ -18,6 +18,8 @@ export type ReviewStore = Pick<Studio, 'comp' | 'compositions' | 'selectComp' | 
 
 interface ReviewViewProps extends PanelProps<'review'> {
   store: ReviewStore;
+  /** Where the unsent notes are kept in the browser, so they outlast putting the panel away and a reload; none keeps nothing. */
+  draftKey?: string;
 }
 
 /** The keys that type into a field or drive a control keep their meaning: N adds a note only from the page itself. */
@@ -35,7 +37,7 @@ function PlayheadReadout({ store, fps }: { store: ReviewStore; fps: number }) {
  * The review: a narrow column of notes beside the preview. The preview stays in view and keeps playing; the panel only
  * switches the studio to the composition, keeps playback inside the range, and reads the playhead and the picked layers.
  */
-export function ReviewView({ panel, store, onSubmit, onDismiss }: ReviewViewProps) {
+export function ReviewView({ panel, store, draftKey, onSubmit: send, onDismiss: close }: ReviewViewProps) {
   const { data } = panel;
   const { player, comp, compositions, selectComp, selectRange, inspect, selectedLayers } = store;
   const fps = comp?.fps ?? 30;
@@ -44,6 +46,38 @@ export function ReviewView({ panel, store, onSubmit, onDismiss }: ReviewViewProp
 
   const [notes, setNotes] = useState<DraftNote[]>([]);
   const nextUid = useRef(1);
+  // The draft is read once the project (and with it the key) is known, then kept as the notes change.
+  const loaded = useRef<string | null>(null);
+  const restoring = useRef(false);
+  useEffect(() => {
+    if (!draftKey || loaded.current === draftKey) return;
+    loaded.current = draftKey;
+    const kept = readDraft(draftKey, panel.openedAt);
+    restoring.current = kept.length > 0;
+    if (kept.length > 0) {
+      nextUid.current = Math.max(nextUid.current, ...kept.map((n) => n.uid + 1));
+      setNotes((now) => (now.length > 0 ? now : kept));
+    }
+  }, [draftKey, panel.openedAt]);
+  useEffect(() => {
+    if (restoring.current) {
+      restoring.current = false;
+      return;
+    }
+    if (draftKey && loaded.current === draftKey) writeDraft(draftKey, panel.openedAt, notes);
+  }, [draftKey, panel.openedAt, notes]);
+  /** Sending or dismissing ends the review: its draft goes with it. */
+  const finish = () => {
+    if (draftKey) writeDraft(draftKey, panel.openedAt, []);
+  };
+  const onSubmit: typeof send = (answer) => {
+    finish();
+    send(answer);
+  };
+  const onDismiss = () => {
+    finish();
+    close();
+  };
   const [focusUid, setFocusUid] = useState<number | null>(null);
 
   // ---- show the composition and the range ----
