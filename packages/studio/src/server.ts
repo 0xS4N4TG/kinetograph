@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createRequire } from 'node:module';
+import { homedir } from 'node:os';
 import { dirname, extname, join, resolve } from 'node:path';
 import { bundlePanel, cliVersion, CliError, findPlugins, pluginToolNames } from 'kinetograph';
 import { WebSocketServer, type WebSocket } from 'ws';
@@ -51,6 +52,7 @@ import type { StudioOptions, StudioServer } from './index.js';
 const PROGRESS_INTERVAL_MS = 100;
 const MAX_BODY_BYTES = 1 << 20;
 /** How long a conversation waits for the window that began it to come back (a reload). */
+const MAX_QUEUED = 20;
 const RECLAIM_MS = 30_000;
 /** A thumbnail is drawn only once no preview frame was asked for in this long (ms): playback is never kept waiting. */
 const THUMB_IDLE_MS = 250;
@@ -162,19 +164,48 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     if (orphaned) clearTimeout(orphaned);
     orphaned = null;
     chat.clear();
+    promptQueue.length = 0;
+    queueShown = false;
   };
   // The panels the agent opens (docs/proposals/studio-panels.md). They are kept like the chat, and a panel that closes
   // while the agent is mid-turn, or not running, waits here until it can be told.
   const panels = new PanelStore();
   restorePanels(panels, dirname(entry));
-  const unheard: { id: string; text: string }[] = [];
-  /** Sends the agent what the person answered since its last turn, all in one message, once it is between turns. */
+  /** What the person said while the agent was working, and the panel answers it has not heard yet; both wait for the end of the turn. */
+  const unheard: { id: string; text: string; seq: number }[] = [];
+  const promptQueue: { id: string; text: string; context: string; image: { data: string; mimeType: string } | undefined; chips: string[]; seq: number }[] = [];
+  let arrivals = 0;
+  let nextQueued = 1;
+  /** The queue as the window shows it; sent whenever it changes (and after a replay), never kept in the chat log. */
+  let queueShown = false;
+  const showQueue = (): void => {
+    // A queue that is empty and was never shown needs no word.
+    if (promptQueue.length === 0 && !queueShown) return;
+    queueShown = promptQueue.length > 0;
+    if (owner) send(owner, { type: 'agent', event: { kind: 'queue', items: promptQueue.map((q) => ({ id: q.id, text: q.text, chips: q.chips })) } });
+  };
+  /**
+   * Sends the agent everything waiting for it, as one prompt: the person's queued messages and the panel answers, in the
+   * order they arrived, separated by blank lines (the chat still shows each as its own message). The selection and the
+   * picture are those of the newest queued message. It runs when a message arrives, a panel closes and a turn ends, and
+   * does nothing while the agent is working. A panel answer alone does not start an agent that is not running.
+   */
   function tellAgent(): void {
-    if (unheard.length === 0 || agentOff || !bridge.ready) return;
-    const text = unheard.splice(0).map((u) => u.text).join('\n\n');
-    keep({ kind: 'user', text, chips: [] });
-    if (owner) send(owner, { type: 'agent', event: { kind: 'user', text } });
-    void bridge.prompt(text, '');
+    if (agentOff || bridge.working) return;
+    if (promptQueue.length === 0 && (unheard.length === 0 || !bridge.ready)) return;
+    const waiting = [
+      ...unheard.splice(0).map((u) => ({ text: u.text, chips: [] as string[], seq: u.seq })),
+      ...promptQueue.map((q) => ({ text: q.text, chips: q.chips, seq: q.seq })),
+    ].sort((x, y) => x.seq - y.seq);
+    const last = promptQueue.at(-1);
+    const image = promptQueue.findLast((q) => q.image)?.image;
+    promptQueue.length = 0;
+    for (const w of waiting) {
+      keep({ kind: 'user', text: w.text, chips: w.chips });
+      if (owner) send(owner, { type: 'agent', event: { kind: 'user', text: w.text, chips: w.chips } });
+    }
+    showQueue();
+    void bridge.prompt(waiting.map((w) => w.text).join('\n\n'), last?.context ?? '', image);
   }
   // Where the studio can be reached by the agent's MCP server; known once it listens.
   let selfUrl = '';
@@ -260,7 +291,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     }
     const closed = panels.close(id, 'submitted', answer as OpenPanel['answer'])!;
     closePanel(closed);
-    unheard.push({ id, text: closingMessage(closed) });
+    unheard.push({ id, text: closingMessage(closed), seq: arrivals++ });
     tellAgent();
   }
 
@@ -268,7 +299,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     const closed = panels.close(id, 'dismissed');
     if (!closed) return;
     closePanel(closed);
-    unheard.push({ id, text: closingMessage(closed) });
+    unheard.push({ id, text: closingMessage(closed), seq: arrivals++ });
     tellAgent();
   }
 
@@ -499,8 +530,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         throw new StudioFailure('FORBIDDEN', 'the agent needs the studio token from the address the studio opened');
       }
       const info: AgentInfo = agentOff
-        ? { presets: [], command: null, cwd: agentCwd, disabled: agentOff }
-        : { presets: agents, command: bridge.currentCommand, cwd: agentCwd };
+        ? { presets: [], command: null, cwd: agentCwd, home: homedir(), disabled: agentOff }
+        : { presets: agents, command: bridge.currentCommand, cwd: agentCwd, home: homedir() };
       return json(res, 200, info);
     }
     if (path === '/api/live-props' && (method === 'GET' || method === 'PUT')) {
@@ -807,9 +838,25 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         if (message.image !== undefined && (typeof message.image.data !== 'string' || typeof message.image.mimeType !== 'string')) {
           return bad('The picture is not valid.');
         }
-        keep({ kind: 'user', text: message.text, chips: Array.isArray(message.chips) ? message.chips.filter((c): c is string => typeof c === 'string') : [] });
-        void bridge.prompt(message.text, typeof message.context === 'string' ? message.context : '', message.image);
+        if (promptQueue.length >= MAX_QUEUED) return bad(`Too many messages are waiting for the agent (${MAX_QUEUED}). Remove one, or wait.`);
+        promptQueue.push({
+          id: `q${nextQueued++}`,
+          text: message.text,
+          context: typeof message.context === 'string' ? message.context : '',
+          image: message.image,
+          chips: Array.isArray(message.chips) ? message.chips.filter((c): c is string => typeof c === 'string') : [],
+          seq: arrivals++,
+        });
+        // Sent at once when the agent is free; otherwise it waits in the queue the window shows, until the turn ends.
+        if (bridge.working) showQueue();
+        tellAgent();
         return;
+      case 'agent.unqueue': {
+        const at = promptQueue.findIndex((q) => q.id === message.id);
+        if (at >= 0) promptQueue.splice(at, 1);
+        showQueue();
+        return;
+      }
       case 'agent.cancel':
         void bridge.cancel();
         return;
@@ -891,6 +938,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       orphaned = null;
       owner = ws;
       send(ws, { type: 'agent.history', items: chat.records });
+      showQueue();
     }
   });
 

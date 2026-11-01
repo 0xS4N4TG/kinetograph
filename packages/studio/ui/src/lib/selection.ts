@@ -109,9 +109,16 @@ export function layerComponent(layer: InspectLayer): string | null {
   return typeof component === 'string' && component !== '' ? component : null;
 }
 
+/** Text cut in the middle to at most `max` characters: both ends stay, so "Shape 8" is not lost behind a long prefix. */
+export function ellipsizeMiddle(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const tail = Math.floor((max - 1) * 0.4);
+  return `${text.slice(0, max - 1 - tail)}…${text.slice(text.length - tail)}`;
+}
+
 /** "Headline text · frame 120 · shots-a.tsx:48": what a chip says about a layer. */
 export function chipText(layer: InspectLayer, frame: number, cwd = '', span?: string): string {
-  const parts = [layerName(layer), span ?? `frame ${frame}`];
+  const parts = [ellipsizeMiddle(layerName(layer), 32), span ?? `frame ${frame}`];
   const source = layerSource(layer);
   if (source) parts.push(`${relativePath(source.file, cwd).split('/').pop()}:${source.line}`);
   return parts.join(' · ');
@@ -189,8 +196,9 @@ export function rangeStamp(frame: number, fps: number): string {
   return `${m}:${s.toFixed(1).padStart(4, '0')}`;
 }
 
-/** `0:01.0–0:02.5 (frames 30–75)`. */
+/** `0:01.0–0:02.5 (frames 30–75)`; a span of one frame (or none) is just `frame 30`. */
 export function rangeLabel(range: FrameRange, fps: number): string {
+  if (range.end <= range.start) return `frame ${range.start}`;
   return `${rangeStamp(range.start, fps)}–${rangeStamp(range.end, fps)} (frames ${range.start}–${range.end})`;
 }
 

@@ -212,6 +212,8 @@ export interface AgentInfo {
   command: string | null;
   /** The directory the agent works in and may read and write. */
   cwd: string;
+  /** The home directory, so the chat can write `~` for it. */
+  home?: string;
   /** Why the agent is off, in plain words; absent when it is on. */
   disabled?: string;
 }
@@ -226,6 +228,8 @@ export interface AgentPreset {
 export type AgentClientMessage =
   | { type: 'agent.prompt'; text: string; context: string; image?: { data: string; mimeType: string }; chips?: string[] }
   | { type: 'agent.cancel' }
+  /** Takes a message out of the queue (a prompt sent while the agent was working). */
+  | { type: 'agent.unqueue'; id: string }
   /** The answer to a permission request; a null `optionId` denies it. */
   | { type: 'agent.permission'; id: string; optionId: string | null }
   /** Chooses the agent (one of `AgentInfo.presets`) and starts a new conversation. */
@@ -246,14 +250,55 @@ export type AgentEvent =
   | { kind: 'message'; text: string }
   | { kind: 'thought'; text: string }
   /** A tool call or file edit; the same `id` again updates it. `files` are relative to the project. */
-  | { kind: 'tool'; id: string; title: string; toolKind: string; status: string; files: string[] }
+  | {
+      kind: 'tool';
+      id: string;
+      title: string;
+      toolKind: string;
+      status: string;
+      files: string[];
+      /** What the agent asked the tool to do, in the few fields worth showing; absent from updates that do not repeat it. */
+      input?: ToolInput;
+      /** What the tool printed, cut to a size the chat can keep. */
+      output?: string;
+      /** The files it changed. */
+      diffs?: ToolDiff[];
+      /** How long the call took, once it has ended. */
+      ms?: number;
+    }
   | { kind: 'permission'; id: string; title: string; files: string[]; options: AgentPermissionOption[] }
   | { kind: 'permission_done'; id: string }
   | { kind: 'done'; stopReason: string }
   /** A problem in plain words. */
   | { kind: 'error'; message: string }
   /** A message the studio sent the agent for the person (a panel's answer), to show in the chat. */
-  | { kind: 'user'; text: string };
+  | { kind: 'user'; text: string; chips?: string[] }
+  /** The messages waiting for the agent's turn to end: the whole queue, sent again whenever it changes. */
+  | { kind: 'queue'; items: QueuedMessage[] };
+
+/** A message the person sent while the agent was working, waiting for its turn to end. */
+export interface QueuedMessage {
+  id: string;
+  text: string;
+  chips: string[];
+}
+
+/** The parts of an agent's tool input the chat shows. */
+export interface ToolInput {
+  command?: string;
+  description?: string;
+  pattern?: string;
+  url?: string;
+  path?: string;
+}
+
+/** A file changed by a tool call: how many lines, and the changed lines with context, each starting with ' ', '+' or '-'. */
+export interface ToolDiff {
+  path: string;
+  added: number;
+  removed: number;
+  lines: string[];
+}
 
 /**
  * A frame is one binary message: a 4-byte little-endian length `n`, then `n` bytes of UTF-8 JSON (`FrameHeader`), then

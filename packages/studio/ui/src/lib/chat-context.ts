@@ -13,6 +13,15 @@ import { layerComponent, layerName, layerRect, layerSource, rangeLabel, touchesR
 export type ChatContextInput = Omit<AgentMessageInput, 'layer'> & { layers: InspectLayer[]; plugins?: PluginSummary[]; range?: FrameRange | null };
 
 const MAX_LISTED = 25;
+/** With more layers than this selected, a kind with `FOLD_MIN` or more of them is described in one line. */
+const FOLD_ABOVE = 6;
+const FOLD_MIN = 4;
+const MAX_NAMES = 20;
+/** Past this many individually described layers the rest are only named. */
+const MAX_DESCRIBED = 20;
+
+const plural = (type: string, n: number): string => (n === 1 ? type : `${type}${/(s|x|ch|sh)$/.test(type) ? 'es' : 's'}`);
+const nameList = (names: string[]): string => `${names.slice(0, MAX_NAMES).join(', ')}${names.length > MAX_NAMES ? `, and ${names.length - MAX_NAMES} more` : ''}`;
 
 /** The Sequences the span overlaps and the layers drawn at some point in it, from what the timeline read. */
 function describeRange(range: FrameRange, timeline: NonNullable<ChatContextInput['timeline']>): string[] {
@@ -83,5 +92,21 @@ export function buildChatContext(input: ChatContextInput): string {
     : `${where}, frame ${frame} (${formatTimecode(frame, comp.fps)}).`;
   const extra = range && input.timeline ? describeRange(range, input.timeline) : [];
   if (layers.length === 0) return [header, ...extra].join('\n');
-  return [header, ...extra, `${layers.length === 1 ? 'Selected layer' : `Selected layers (${layers.length})`}:`, ...layers.map((l, i) => describe(l, i, input))].join('\n');
+  const title = layers.length === 1 ? 'Selected layer' : `Selected layers (${layers.length})`;
+  // Many layers: a kind with many of them is one line (names only); the rest get a line each, up to a cap.
+  const folded = new Set<string>();
+  if (layers.length > FOLD_ABOVE) {
+    const counts = new Map<string, number>();
+    for (const l of layers) counts.set(l.type, (counts.get(l.type) ?? 0) + 1);
+    for (const [type, n] of counts) if (n >= FOLD_MIN) folded.add(type);
+  }
+  const lines: string[] = [];
+  for (const type of folded) {
+    const same = layers.filter((l) => l.type === type);
+    lines.push(`${same.length} ${plural(type, same.length)} (${nameList(same.map((l) => layerName(l)))}) in ${comp.id}${range ? '' : ` at frame ${frame}`}.`);
+  }
+  const rest = layers.filter((l) => !folded.has(l.type));
+  rest.slice(0, MAX_DESCRIBED).forEach((l, i) => lines.push(describe(l, i, input)));
+  if (rest.length > MAX_DESCRIBED) lines.push(`and ${rest.length - MAX_DESCRIBED} more: ${nameList(rest.slice(MAX_DESCRIBED).map((l) => layerName(l)))}.`);
+  return [header, ...extra, `${title}:`, ...lines].join('\n');
 }
