@@ -67,7 +67,7 @@ const GROUPS: { kind: Export['kind']; title: string; note: string }[] = [
   {
     kind: 'effect',
     title: 'Effects',
-    note: 'Layer effects: put them in a layer\u2019s effects.',
+    note: "Layer effects: put them in a layer's effects.",
   },
   { kind: 'function', title: 'Functions', note: '' },
   { kind: 'constant', title: 'Constants', note: '' },
@@ -199,13 +199,13 @@ function PaperLists({ p }: { p: Plugin }) {
 
 type Feature = Plugin['features'][number];
 
-/** One feature: a heading of a few words, a sentence or two, and its clip with one caption line under it. */
+/** One feature: a heading of a few words, a sentence or two, and its clip with one caption line under it (when it has one). */
 function FeatureBlock({ f }: { f: Feature }) {
   return (
     <div className="space-y-3">
       <h3 className="font-dm text-[20px] font-bold tracking-[-0.02em] text-ink">{f.title}</h3>
       <p className={`${body} max-w-[60ch]`}>{f.text}</p>
-      <Figure media={f.clip} alt={`${f.title}, a clip`} caption={f.clip.caption} reveal />
+      {f.clip && <Figure media={f.clip} alt={`${f.title}, a clip`} caption={f.clip.caption} reveal />}
     </div>
   );
 }
@@ -220,7 +220,10 @@ const LAYOUTS: Record<string, Group[]> = {
     { kind: 'full', at: [0] },
     { kind: 'pair', at: [1, 2] },
   ],
-  'kinetic-typography': [{ kind: 'pair', at: [0, 1] }],
+  'kinetic-typography': [
+    { kind: 'full', at: [0] },
+    { kind: 'pair', at: [1, 2] },
+  ],
   paper: [
     { kind: 'pair', at: [0, 1] },
     { kind: 'full', at: [2] },
@@ -228,6 +231,7 @@ const LAYOUTS: Record<string, Group[]> = {
   vj: [
     { kind: 'stack', at: [0, 1, 2] },
     { kind: 'pair', at: [3, 4] },
+    { kind: 'full', at: [5] },
   ],
 };
 

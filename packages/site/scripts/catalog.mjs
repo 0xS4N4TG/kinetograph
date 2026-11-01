@@ -29,10 +29,10 @@ if (!existsSync(join(root, 'plugins'))) {
 const DEMOS = {
   'match-cut': { title: 'Match cut presets', plugins: ['paper'] },
   'paper-photo': { title: 'Paper photo effects', plugins: ['paper'] },
-  'kinetic-type-demo': { title: 'Hand captions', plugins: ['kinetic-typography'] },
+  'kinetic-type-demo': { title: 'Caption styles and hand captions', plugins: ['kinetic-typography'] },
   'vj-demo': { title: 'VJ looks and tracking', plugins: ['vj'] },
   'hexed-demo': { title: 'Hexed rolls', plugins: ['hexed'] },
-  'plugin-ui-demo': { title: 'Studio panels', plugins: ['hexed', 'paper', 'vj'] },
+  'plugin-ui-demo': { title: 'Studio panels', plugins: ['hexed', 'paper', 'vj', 'kinetic-typography'] },
 };
 /** Studies, not for sale. */
 const EXCLUDED = new Set(['save-reel', 'cyberpunk-reel', 'lyric-reel', 'wish-reel', 'mikiwho-reel']);
@@ -200,7 +200,7 @@ const plugins = pluginDirs.map((d) => {
   const pdir = join(root, 'plugins', d);
   const c = PLUGIN_COPY[d];
   if (!c) console.log(`catalog: no copy for plugin ${d}; its page will be thin`);
-  // Everything below that the source states comes from the source and wins over the hand copy.
+  // What the source states comes from the source, except an export summary: EXPORT_NOTES wins there, so a summary can be fixed here.
   const { items, unparsed } = readExports(pdir);
   if (unparsed.length) console.log(`catalog: ${d}: public names with no definition found: ${unparsed.join(', ')}`);
   const out = {
@@ -213,8 +213,12 @@ const plugins = pluginDirs.map((d) => {
     hasTools: Boolean(k.tools),
     hasSkill: Boolean(k.skill),
     intro: c?.intro ?? '',
-    features: (c?.features ?? []).map((f, i) => ({ title: f.title, text: f.text, clip: clip(f.media, `plugins/${d}/feature-${i + 1}`) })),
-    exports: items.map((e) => ({ ...e, summary: e.summary || EXPORT_NOTES[`${d}/${e.name}`] || '' })),
+    // A feature with no media is text only (clip null). The clips are numbered by the features that have one.
+    features: (() => {
+      let n = 0;
+      return (c?.features ?? []).map((f) => ({ title: f.title, text: f.text, clip: f.media ? clip(f.media, `plugins/${d}/feature-${++n}`) : null }));
+    })(),
+    exports: items.map((e) => ({ ...e, summary: EXPORT_NOTES[`${d}/${e.name}`] || e.summary || '' })),
     presets: presetsOf(d, c),
     presetNote: c?.presetNote ?? '',
     examples: c?.examples ?? [],
@@ -284,7 +288,7 @@ for (const id of dirs(join(root, 'effects'))) {
   if (!c) console.log(`catalog: no copy for template ${id}; its description comes from its README`);
   templates.push({
     id,
-    title: heading && heading !== id ? heading.replace(/\s*\(.*\)\s*$/, '') : titleCase(id),
+    title: c?.title ?? (heading && heading !== id ? heading.replace(/\s*\(.*\)\s*$/, '') : titleCase(id)),
     description: c?.description ?? (firstParagraph(readme) || bulletFor(id) || leadingComment(index)),
     change: c?.change ?? [],
     plugins: importedPlugins(dir).map((d) => byDir[d].name),

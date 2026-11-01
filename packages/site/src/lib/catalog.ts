@@ -63,7 +63,8 @@ export interface Plugin {
   hasTools: boolean;
   hasSkill: boolean;
   intro: string;
-  features: { title: string; text: string; clip: Clip }[];
+  /** A feature with no media is text only: clip is null. */
+  features: { title: string; text: string; clip: Clip | null }[];
   exports: Export[];
   presets: { name: string; line: string; image: Image | null }[];
   presetNote: string;
