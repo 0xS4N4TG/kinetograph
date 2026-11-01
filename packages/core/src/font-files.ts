@@ -116,10 +116,18 @@ function networkReason(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** The text at `url`, cached by URL (and by who asks: `userAgent`). */
-export async function fetchTextCached(url: string, options: FontDownloadOptions = {}, userAgent = USER_AGENT): Promise<string> {
+/**
+ * The text at `url`, cached by URL (and by who asks: `userAgent`). `refresh` downloads it again past the cache and
+ * replaces the cached copy (a stylesheet whose file links have gone stale).
+ */
+export async function fetchTextCached(
+  url: string,
+  options: FontDownloadOptions = {},
+  userAgent = USER_AGENT,
+  refresh = false,
+): Promise<string> {
   const { dir, file } = textFile(url, options, userAgent);
-  const cached = await readIfThere(file);
+  const cached = refresh ? null : await readIfThere(file);
   if (cached !== null) return cached;
   const text = await (await download(url, options, userAgent)).text();
   await mkdir(dir, { recursive: true });
@@ -175,9 +183,14 @@ function downloadSync(url: string, options: FontDownloadOptions, userAgent: stri
 }
 
 /** `fetchTextCached`, blocking. */
-export function fetchTextCachedSync(url: string, options: FontDownloadOptions = {}, userAgent = USER_AGENT): string {
+export function fetchTextCachedSync(
+  url: string,
+  options: FontDownloadOptions = {},
+  userAgent = USER_AGENT,
+  refresh = false,
+): string {
   const { dir, file } = textFile(url, options, userAgent);
-  if (existsSync(file)) return readFileSync(file, 'utf8');
+  if (!refresh && existsSync(file)) return readFileSync(file, 'utf8');
   const text = Buffer.from(downloadSync(url, options, userAgent)).toString('utf8');
   mkdirSync(dir, { recursive: true });
   writeAtomicallySync(file, text);

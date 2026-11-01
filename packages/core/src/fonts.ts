@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { fetchFileCached, fetchFileCachedSync, type FontDownloadOptions } from './font-files.js';
 import { registerFont, trackFontLoad } from './font-registry.js';
 
+export { makeWebFont } from './web-fonts.js';
+export type { WebFontLoadOptions, WebFontLoadResult, WebFontModule, WebFontStyle } from './web-fonts.js';
+
 export interface LoadFontOptions {
   family: string;
   url: string;
