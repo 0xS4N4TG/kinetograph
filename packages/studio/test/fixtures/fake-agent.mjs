@@ -1,6 +1,7 @@
 // A tiny ACP agent for the tests: no model, no network. What it does depends on the words in the prompt:
 //   "edit"   asks permission, then writes notes.txt through the client and tries to read ../outside.txt
 //   "crash"  exits at once
+//   "slow"   takes 700 ms, then answers as below
 //   "mcp"    answers with the mcpServers that session/new was given, as JSON
 //   else     answers with what it was sent (the text, and whether a picture came with it)
 import { Readable, Writable } from 'node:stream';
@@ -34,6 +35,7 @@ agent({ name: 'fake-agent' })
     const text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
     const images = blocks.filter((b) => b.type === 'image').length;
     if (text.includes('crash')) process.exit(3);
+    if (text.includes('slow')) await new Promise((resolve) => setTimeout(resolve, 700));
     if (text.includes('mcp')) {
       await say(client, JSON.stringify(sessionNew));
       return { stopReason: 'end_turn' };

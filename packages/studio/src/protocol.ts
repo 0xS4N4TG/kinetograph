@@ -5,6 +5,7 @@
 import type { CompositionInfo } from '@kinetographdev/core';
 import type { LayerName, SequenceJson, SourceLocation } from '@kinetographdev/scene';
 import type { InspectLayer, InspectResult } from 'kinetograph';
+import type { OpenPanel, PanelAnswer, PanelKind, PanelStatus } from './panels/types.js';
 
 export type { CompositionInfo, InspectLayer, InspectResult, LayerName, SequenceJson, SourceLocation };
 
@@ -147,7 +148,12 @@ export interface RenderJob {
 // ---- WebSocket `/ws` ----
 
 /** Client → server, JSON text. */
-export type ClientMessage = FrameRequest | AgentClientMessage | PropsMessage;
+export type ClientMessage = FrameRequest | AgentClientMessage | PropsMessage | PanelClientMessage;
+
+/** Client → server: the person's answer to a panel the agent opened, or closing it without one. */
+export type PanelClientMessage =
+  | { type: 'panel.submit'; id: string; answer: PanelAnswer[PanelKind] }
+  | { type: 'panel.dismiss'; id: string };
 
 /** Client → server: the composition and props the window previews, sent on every props change and composition switch. */
 export interface PropsMessage {
@@ -179,7 +185,13 @@ export type ServerMessage =
   /** Props pushed by `PUT /api/live-props`: the window switches to `comp` and replaces its props with these. */
   | { type: 'props'; comp: string; props: Record<string, unknown> }
   /** The conversation so far, sent to a window that takes it over (a reload of the one that began it). */
-  | { type: 'agent.history'; items: ChatRecord[] };
+  | { type: 'agent.history'; items: ChatRecord[] }
+  /** A panel the agent opened (or, to a window that connects, one kept: open, or submitted for the stepper). */
+  | { type: 'panel'; panel: OpenPanel }
+  /** A panel was submitted or dismissed (by the person, or replaced by a newer one of its kind); `panel` is how it ended. */
+  | { type: 'panel.closed'; id: string; status: PanelStatus; panel: OpenPanel }
+  /** A submitted answer was refused, in plain words; the panel stays open. */
+  | { type: 'panel.error'; id: string; message: string };
 
 /**
  * One step of the conversation as the server keeps it, to replay to a window that reconnects: what the agent sent
@@ -239,7 +251,9 @@ export type AgentEvent =
   | { kind: 'permission_done'; id: string }
   | { kind: 'done'; stopReason: string }
   /** A problem in plain words. */
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string }
+  /** A message the studio sent the agent for the person (a panel's answer), to show in the chat. */
+  | { kind: 'user'; text: string };
 
 /**
  * A frame is one binary message: a 4-byte little-endian length `n`, then `n` bytes of UTF-8 JSON (`FrameHeader`), then

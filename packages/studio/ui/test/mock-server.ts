@@ -9,6 +9,7 @@ import {
   type CompositionInfo,
   type FrameArgs,
   type InspectResult,
+  type PanelClientMessage,
   type PluginSummary,
   type PresetInfo,
   type ProjectInfo,
@@ -34,6 +35,8 @@ export class MockServer implements StudioApi {
   agent: AgentInfo = { presets: [{ id: 'fake', name: 'Fake agent', command: 'fake --acp' }], command: 'fake --acp', cwd: '/work' };
   /** Everything the page sent for the agent. */
   agentMessages: AgentClientMessage[] = [];
+  /** Everything the page sent about panels (submits and dismissals). */
+  panelMessages: PanelClientMessage[] = [];
   /** What the window said it previews (`props` messages), oldest first. */
   propsMessages: { comp: string; props: Record<string, unknown> }[] = [];
   /** When set, `compositions()` fails as the server does before the first good build. */
@@ -204,6 +207,10 @@ export class MockServer implements StudioApi {
       },
       sendProps: (comp: string, props: Record<string, unknown>) => {
         this.propsMessages.push({ comp, props });
+        return true;
+      },
+      sendPanel: (message: PanelClientMessage) => {
+        this.panelMessages.push(message);
         return true;
       },
       close: () => {

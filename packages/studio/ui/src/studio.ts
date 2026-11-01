@@ -10,6 +10,9 @@ import {
   type AgentEvent,
   type ChatRecord,
   type CompositionInfo,
+  type OpenPanel,
+  type PanelAnswer,
+  type PanelKind,
   type InspectResult,
   type ProjectInfo,
   type ReceivedFrame,
@@ -43,6 +46,12 @@ function upsertJob(jobs: RenderJob[], job: RenderJob): RenderJob[] {
   const next = jobs.slice();
   next[index] = job;
   return next;
+}
+
+/** `panel` in place of the one with its id, or added; one dismissed (replaced by a newer one) is dropped. */
+function upsertPanel(panels: OpenPanel[], panel: OpenPanel): OpenPanel[] {
+  const rest = panels.filter((p) => p.id !== panel.id);
+  return panel.status === 'dismissed' ? rest : [...rest, panel].sort((a, b) => a.openedAt - b.openedAt);
 }
 
 /** What the timeline has to show: the sweep is slow on a long film, so loading and failing are states of their own. */
@@ -105,6 +114,14 @@ export interface Studio {
   sendAgent(message: AgentClientMessage): boolean;
   agentInfo(): ReturnType<StudioApi['agentInfo']>;
 
+  /** The panels the agent opened that are open, and the ones submitted (for the stepper), oldest first. */
+  panels: OpenPanel[];
+  /** Why the server refused the last answer to a panel, by panel id. */
+  panelErrors: Record<string, string>;
+  /** Sends the person's answer; the panel closes when the server confirms. False when the connection is down. */
+  submitPanel(id: string, answer: PanelAnswer[PanelKind]): boolean;
+  dismissPanel(id: string): boolean;
+
   renders: RenderJob[];
   startRender(request: Omit<RenderRequest, 'comp' | 'props'>): Promise<RenderJob>;
   cancelRender(id: string): Promise<void>;
@@ -159,6 +176,8 @@ export function useStudio(api: StudioApi): Studio {
   const agentListeners = useRef(new Set<(event: AgentEvent) => void>());
   const historyListeners = useRef(new Set<(items: ChatRecord[]) => void>());
   const [renders, setRenders] = useState<RenderJob[]>([]);
+  const [panels, setPanels] = useState<OpenPanel[]>([]);
+  const [panelErrors, setPanelErrors] = useState<Record<string, string>>({});
   /** Bumped by every `reload`: what the timeline and the scene tree show is from the old build. */
   const [reloads, setReloads] = useState(0);
 
@@ -229,6 +248,8 @@ export function useStudio(api: StudioApi): Studio {
     const handle = (message: ServerMessage) => {
       switch (message.type) {
         case 'hello':
+          // The server sends the panels it keeps right after: start from nothing so that one closed meanwhile goes.
+          setPanels([]);
           setBuildError(message.buildError);
           // (re)connected to a server that has built since: same as a reload we missed
           if (buildIdRef.current !== 0 && buildIdRef.current !== message.buildId) rebuilt(message.buildId);
@@ -260,6 +281,14 @@ export function useStudio(api: StudioApi): Studio {
           break;
         case 'agent.history':
           for (const listener of historyListeners.current) listener(message.items);
+          break;
+        case 'panel':
+        case 'panel.closed':
+          setPanels((all) => upsertPanel(all, message.panel));
+          setPanelErrors(({ [message.panel.id]: _gone, ...rest }) => rest);
+          break;
+        case 'panel.error':
+          setPanelErrors((all) => ({ ...all, [message.id]: message.message }));
           break;
         case 'error':
           player.handleError(message.requestId, message.error);
@@ -477,6 +506,12 @@ export function useStudio(api: StudioApi): Studio {
   );
   const sendAgent = useCallback((message: AgentClientMessage) => socketRef.current?.sendAgent(message) ?? false, []);
 
+  const submitPanel = useCallback(
+    (id: string, answer: PanelAnswer[PanelKind]) => socketRef.current?.sendPanel({ type: 'panel.submit', id, answer }) ?? false,
+    [],
+  );
+  const dismissPanel = useCallback((id: string) => socketRef.current?.sendPanel({ type: 'panel.dismiss', id }) ?? false, []);
+
   // ---- renders ----
 
   const startRender = useCallback(
@@ -530,6 +565,10 @@ export function useStudio(api: StudioApi): Studio {
     frameUrl,
     sendAgent,
     agentInfo,
+    panels,
+    panelErrors,
+    submitPanel,
+    dismissPanel,
     renders,
     startRender,
     cancelRender,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import type { Waveform as WaveformData } from '@/api';
+import { LoadingImage } from '@/components/ui/skeleton';
 
 /** Peaks come in power-of-two bucket counts, so a zoom step does not ask for new ones every time. */
 const MIN_BUCKETS = 64;
@@ -73,7 +74,7 @@ export function VideoStrip({
         const src = thumbnailUrl(Math.min(end - 1, first + Math.floor(((i + 0.5) / count) * frames)), height * 2);
         return (
           <div key={i} className="relative h-full min-w-0 flex-1 overflow-hidden">
-            {src && <img src={src} alt="" loading="lazy" decoding="async" draggable={false} className="size-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
+            {src && <LoadingImage src={src} alt="" loading="lazy" decoding="async" draggable={false} className="size-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
           </div>
         );
       })}

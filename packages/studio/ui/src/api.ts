@@ -14,6 +14,7 @@ import type {
   FrameHeader,
   FrameRequest,
   InspectResult,
+  PanelClientMessage,
   PluginSummary,
   PresetInfo,
   ProjectInfo,
@@ -35,6 +36,7 @@ export type {
   CompositionInfo,
   FrameHeader,
   InspectResult,
+  PanelClientMessage,
   PluginSummary,
   PresetInfo,
   ProjectInfo,
@@ -46,6 +48,7 @@ export type {
   TimelineProgress,
 };
 export type { SequenceJson } from '../../src/protocol.ts';
+export type { OpenPanel, PanelAnswer, PanelKind, PanelStatus } from '../../src/panels/types.ts';
 export type { RenderStatus, TimelineAudio, TimelineLayer } from '../../src/protocol.ts';
 
 /** A failed request: the server's `StudioError`, plus the HTTP status when there was one. */
@@ -83,6 +86,8 @@ export interface StudioSocket {
   sendAgent(message: AgentClientMessage): boolean;
   /** Tells the server what this window previews; false when the socket is not open. */
   sendProps(comp: string, props: Record<string, unknown>): boolean;
+  /** Answers or dismisses a panel the agent opened; false when the socket is not open. */
+  sendPanel(message: PanelClientMessage): boolean;
   close(): void;
 }
 
@@ -284,6 +289,11 @@ export function createApi(options: ApiOptions = {}): StudioApi {
         sendProps(comp, props) {
           if (socket === null || socket.readyState !== 1) return false;
           const message: ClientMessage = { type: 'props', comp, props };
+          socket.send(JSON.stringify(message));
+          return true;
+        },
+        sendPanel(message) {
+          if (socket === null || socket.readyState !== 1) return false;
           socket.send(JSON.stringify(message));
           return true;
         },

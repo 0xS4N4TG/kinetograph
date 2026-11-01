@@ -151,9 +151,9 @@ The agent's replies are rendered as markdown. Studio keeps that tight, since a p
 writes: remote images are not loaded and show their alt text, only `http` and `https` links are followed, and the page's
 Content-Security-Policy only allows images from the page itself, `data:` and `blob:`.
 
-The agent also gets a Kinetograph MCP server, with every `kinetograph` command, the tools of your plugins, and two for
+The agent also gets a Kinetograph MCP server, with every `kinetograph` command, the tools of your plugins, and four for
 the open window: `studio_get_props` reads the props the preview shows and `studio_set_props` sets them, so the agent can
-try values and you see the preview change. See [Studio's agent](/docs/guides/plugins/#studios-agent).
+try values and you see the preview change; `studio_open_panel` and `studio_panel_result` let it ask you for a decision in a panel. See [Studio's agent](/docs/guides/plugins/#studios-agent).
 
 Studio listens on `127.0.0.1` by default, and the agent needs the token in the address Studio opens. With `--host` set so
 that other computers can reach it, the agent is off unless you pass `--allow-remote-agent`.

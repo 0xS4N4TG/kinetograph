@@ -77,7 +77,7 @@ three runs with `--concurrency 4` on the same Apple M4.
 ## The editor
 
 <p align="center">
-  <img src="docs/readme/studio.webp" alt="Kinetograph Studio: a top bar with the composition switcher and the command menu, the agent chat on the left, a large preview with a floating transport, the timeline below with coloured clips, film strips and waveforms, and the inspector on the right showing the Props tab with a plugin card" width="100%">
+  <img src="docs/readme/studio.webp" alt="Kinetograph Studio: a top bar with the composition switcher and the command menu, the agent chat on the left, a large preview with a floating transport, the inspector on the right on the Props tab, and the timeline below with a strip of frames and a row per layer" width="100%">
 </p>
 
 `kinetograph studio src/index.tsx` opens a local editor for a project. The engine draws its preview frames, so what you

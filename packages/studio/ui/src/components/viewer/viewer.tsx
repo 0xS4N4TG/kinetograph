@@ -5,6 +5,7 @@ import type { CompositionInfo, InspectResult, ReceivedFrame, StudioError } from 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/hint';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Menu, MenuCheckboxItem, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from '@/components/ui/menu';
 import { fitSize, stepZoom } from '@/lib/format';
 import { displayName } from '@/lib/names';
@@ -246,6 +247,8 @@ export const Viewer = memo(function Viewer({
               width={comp.width}
               height={comp.height}
             />
+            {/* Until the first frame has arrived the canvas is blank: a skeleton of the frame stands in. */}
+            {frameMs === null && <Skeleton data-testid="preview-skeleton" className="absolute inset-0 rounded-none" />}
 
             {safeZones && (
               <div className="pointer-events-none absolute inset-0" aria-hidden="true">

@@ -7,6 +7,7 @@ import { bucketsFor, useWaveform, VideoStrip, WaveformLine } from '@/components/
 import { Button } from '@/components/ui/button';
 import { RangeGrip } from '@/components/inspector/trim-bar';
 import { Hint } from '@/components/ui/hint';
+import { LoadingImage, Skeleton } from '@/components/ui/skeleton';
 import { Slider } from '@/components/ui/slider';
 import { clock } from '@/lib/format';
 import { layerColors } from '@/lib/layer-colors';
@@ -18,6 +19,7 @@ import type { TimelineStatus } from '@/studio';
 import { cn } from '@/lib/utils';
 import { buildTimeline, seekTarget, visibleRows, type Range, type TimelineNode } from '@/lib/timeline-model';
 import { buildRuler } from '@/lib/ruler';
+import { useReviewMarks } from '@/lib/review-marks';
 import { useElementSize } from '@/lib/use-element-size';
 
 const MIN_ZOOM = 1;
@@ -171,7 +173,7 @@ const Filmstrip = memo(function Filmstrip({ comp, laneWidth, thumbnailUrl }: { c
         const src = thumbnailUrl?.(frame, STRIP_HEIGHT * 2);
         return (
           <div key={i} className="relative h-full min-w-0 flex-1 overflow-hidden">
-            {src && <img data-testid="filmstrip-frame" src={src} alt="" loading="lazy" decoding="async" draggable={false} className="size-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
+            {src && <LoadingImage data-testid="filmstrip-frame" src={src} alt="" loading="lazy" decoding="async" draggable={false} className="size-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
           </div>
         );
       })}
@@ -248,6 +250,10 @@ const AudioRow = memo(function AudioRow({ sound, pxPerFrame, laneWidth, waveform
       {sound.ranges.map(([a, b]) => (
         <Bar key={a} from={a} to={b + 1} pxPerFrame={pxPerFrame} title={title} className="bg-foreground/[0.04] border-border text-foreground" />
       ))}
+      {!peaks &&
+        sound.ranges.map(([a, b]) => (
+          <Skeleton key={a} data-testid="waveform-skeleton" className="pointer-events-none absolute inset-y-2.5 rounded-md" style={{ left: a * pxPerFrame, width: Math.max(4, (b + 1 - a) * pxPerFrame) }} />
+        ))}
       {peaks && extent && (
         <div className="pointer-events-none absolute inset-y-1.5" style={{ left: extent[0] * pxPerFrame, width: Math.max(1, (extent[1] - extent[0]) * pxPerFrame) }}>
           <WaveformLine peaks={peaks.peaks} width={Math.max(1, (extent[1] - extent[0]) * pxPerFrame)} height={ROW_HEIGHT - 12} />
@@ -314,6 +320,8 @@ const RowItem = memo(function RowItem({ node, depth, expandable, open, details, 
 export const Timeline = memo(function Timeline({ comp, status, player, selectedLayers, onSelectLayers, selectedRange, onSelectRange, thumbnailUrl, waveform, expanded: open, onExpandedChange, details, onDetailsChange }: TimelineProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
+  /** The notes of an open review, marked on the ruler. */
+  const reviewMarks = useReviewMarks();
   /** What a press in the ruler or a lane is doing: scrubbing, or (for a press that may become a drag) waiting to see. */
   const drag = useRef<{ kind: 'scrub' } | { kind: 'pending'; anchor: number; x: number } | { kind: 'range'; anchor: number; base: FrameRange | null } | null>(null);
   const rangeRef = useRef(selectedRange);
@@ -538,6 +546,17 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
                 {ruler.minor.map((mark) => (
                   <span key={`m${mark.frame}`} aria-hidden="true" data-testid="ruler-dot" className="bg-muted-foreground/40 absolute bottom-1 h-1 w-px" style={{ left: mark.x }} />
                 ))}
+                {reviewMarks?.comp === comp.id &&
+                  reviewMarks.frames.map((frame, index) => (
+                    <span
+                      key={`n${index}`}
+                      aria-hidden="true"
+                      data-testid="review-mark"
+                      title={`Note at frame ${frame}`}
+                      className="pointer-events-none absolute top-0 h-3 w-[3px] -translate-x-1/2 rounded-b-sm bg-amber-400"
+                      style={{ left: frame * pxPerFrame }}
+                    />
+                  ))}
                 {!open &&
                   roots.map((node) => {
                     const first = node.bars[0]?.[0];

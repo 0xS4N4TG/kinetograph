@@ -1,6 +1,7 @@
 import { useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 
 import type { CompositionInfo } from '@/api';
+import { LoadingImage } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
 const HEIGHT = 40;
@@ -103,7 +104,7 @@ export function TrimBar({ comp, start, end, onChange, thumbnailUrl }: TrimBarPro
           const src = thumbnailUrl?.(frame, HEIGHT * 2);
           return (
             <div key={i} className="bg-muted relative h-full min-w-0 flex-1" style={{ maxWidth: TILE * 2 }}>
-              {src && <img src={src} alt="" loading="lazy" draggable={false} className="size-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
+              {src && <LoadingImage src={src} alt="" loading="lazy" draggable={false} className="size-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
             </div>
           );
         })}

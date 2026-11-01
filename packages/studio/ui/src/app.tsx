@@ -5,6 +5,8 @@ import { AgentPanel } from '@/components/agent/agent-panel';
 import { CommandMenu } from '@/components/command/command-menu';
 import { ExportDialog } from '@/components/inspector/export-dialog';
 import { InspectorPanel, type InspectorTab } from '@/components/inspector/inspector-panel';
+import { PanelDock, PanelSheet, usePanelView } from '@/components/panels/panel-host';
+import { PanelStepper } from '@/components/panels/stepper';
 import { Panel } from '@/components/shell/panel';
 import { ResizeHandle } from '@/components/shell/resize-handle';
 import { ShortcutsDialog } from '@/components/shell/shortcuts-dialog';
@@ -19,6 +21,7 @@ import { usePersistedNumber } from '@/lib/persisted';
 import { usePlayerState } from '@/lib/player-hooks';
 import { layersOfPlugin, pluginsOfSelection, usePlugins } from '@/lib/plugins';
 import { PreviewContext, type PreviewHost } from '@/lib/preview-context';
+import { StudioContext } from '@/lib/studio-context';
 import { useTheme } from '@/lib/theme';
 import { useChat } from '@/lib/use-chat';
 import { useTransportKeys } from '@/lib/use-transport-keys';
@@ -65,6 +68,10 @@ export function App({ api }: { api: StudioApi }) {
   const [inspectorWidth, setInspectorWidth] = usePersistedNumber('kg.size.inspector', SIDE_DEFAULT);
   const [timelineHeight, setTimelineHeight] = usePersistedNumber('kg.size.timeline', TIMELINE_DEFAULT);
   const [exportOpen, setExportOpen] = useState(false);
+  const delivered = useMemo(() => studio.renders.some((job) => job.status === 'done'), [studio.renders]);
+  const panelView = usePanelView(studio.panels, delivered);
+  // The sheet covers the centre column: any open panel but a review (which docks), or an approved stage's saved answer.
+  const sheet = panelView.shown?.panel === 'review' ? null : (panelView.shown ?? panelView.answered);
   const [agents, setAgents] = useState<{ id: string; name: string; command: string }[]>([]);
   const agentCommand = chat.state.command;
   const { loadInfo, chooseAgent, restart } = chat;
@@ -221,6 +228,7 @@ export function App({ api }: { api: StudioApi }) {
   );
 
   return (
+    <StudioContext.Provider value={studio}>
     <TooltipProvider delay={500}>
       <div className="text-foreground flex h-screen flex-col gap-3 overflow-hidden p-3">
         <TopBar
@@ -292,57 +300,70 @@ export function App({ api }: { api: StudioApi }) {
           )}
 
           <div className="flex min-w-0 flex-1 flex-col">
-            <Panel className="min-h-0 flex-1" aria-label="Preview">
-              <Viewer
-                comp={comp}
-                onImage={studio.onImage}
-                lastImage={studio.lastImage}
-                buildError={studio.buildError}
-                frameError={frameError}
-                inspect={studio.inspect}
-                selectedLayers={studio.selectedLayers}
-                tool={tool}
-                onToolChange={setTool}
-                view={view}
-                onViewChange={setView}
-                safeZones={safeZones}
-                onSafeZonesChange={setSafeZones}
-                guides={guides}
-                onGuidesChange={setGuides}
-                onOverlayHost={setOverlayLayer}
-                onSelectLayers={pickLayers}
-              />
-              <div className="pointer-events-none absolute inset-x-4 bottom-4 flex justify-center">
-                <Transport comp={comp} player={player} audio={studio.audio} edges={edges} className="pointer-events-auto w-full max-w-3xl" />
+            {panelView.active && (
+              <div className="@container flex shrink-0 justify-center pb-2">
+                <PanelStepper stages={panelView.stages} shown={(panelView.shown ?? panelView.answered)?.id ?? null} onSelect={panelView.select} onDeliver={exportNow} />
               </div>
-            </Panel>
-            <ResizeHandle
-              orientation="horizontal"
-              label="Resize the timeline"
-              size={timelineOpen ? timelineHeight : TIMELINE_SLIM}
-              direction={-1}
-              min={TIMELINE_SLIM}
-              max={maxTimeline}
-              onResize={resizeTimeline}
-              onReset={() => setTimelineOpen((open) => !open)}
-            />
-            <Panel className="shrink-0" style={{ height: timelineOpen ? Math.min(timelineHeight, maxTimeline) : TIMELINE_SLIM }} aria-label="Timeline">
-              <Timeline
-                comp={comp}
-                status={studio.timeline}
-                player={player}
-                selectedLayers={studio.selectedLayers}
-                onSelectLayers={pickLayers}
-                selectedRange={range}
-                onSelectRange={selectRange}
-                thumbnailUrl={studio.thumbnailUrl}
-                waveform={studio.waveform}
-                expanded={timelineOpen}
-                onExpandedChange={setTimelineOpen}
-                details={details}
-                onDetailsChange={onDetailsChange}
+            )}
+            <div className="relative flex min-h-0 flex-1 flex-col">
+              <div className="flex min-h-0 flex-1">
+                <Panel className="min-w-0 flex-1" aria-label="Preview">
+                  <Viewer
+                    comp={comp}
+                    onImage={studio.onImage}
+                    lastImage={studio.lastImage}
+                    buildError={studio.buildError}
+                    frameError={frameError}
+                    inspect={studio.inspect}
+                    selectedLayers={studio.selectedLayers}
+                    tool={tool}
+                    onToolChange={setTool}
+                    view={view}
+                    onViewChange={setView}
+                    safeZones={safeZones}
+                    onSafeZonesChange={setSafeZones}
+                    guides={guides}
+                    onGuidesChange={setGuides}
+                    onOverlayHost={setOverlayLayer}
+                    onSelectLayers={pickLayers}
+                  />
+                  <div className="pointer-events-none absolute inset-x-4 bottom-4 flex justify-center">
+                    <Transport comp={comp} player={player} audio={studio.audio} edges={edges} className="pointer-events-auto w-full max-w-3xl" />
+                  </div>
+                </Panel>
+                {panelView.shown?.panel === 'review' && (
+                  <PanelDock panel={panelView.shown} error={studio.panelErrors[panelView.shown.id]} onSubmit={studio.submitPanel} onDismiss={studio.dismissPanel} onHide={panelView.hide} />
+                )}
+              </div>
+              <ResizeHandle
+                orientation="horizontal"
+                label="Resize the timeline"
+                size={timelineOpen ? timelineHeight : TIMELINE_SLIM}
+                direction={-1}
+                min={TIMELINE_SLIM}
+                max={maxTimeline}
+                onResize={resizeTimeline}
+                onReset={() => setTimelineOpen((open) => !open)}
               />
-            </Panel>
+              <Panel className="shrink-0" style={{ height: timelineOpen ? Math.min(timelineHeight, maxTimeline) : TIMELINE_SLIM }} aria-label="Timeline">
+                <Timeline
+                  comp={comp}
+                  status={studio.timeline}
+                  player={player}
+                  selectedLayers={studio.selectedLayers}
+                  onSelectLayers={pickLayers}
+                  selectedRange={range}
+                  onSelectRange={selectRange}
+                  thumbnailUrl={studio.thumbnailUrl}
+                  waveform={studio.waveform}
+                  expanded={timelineOpen}
+                  onExpandedChange={setTimelineOpen}
+                  details={details}
+                  onDetailsChange={onDetailsChange}
+                />
+              </Panel>
+              {sheet && <PanelSheet panel={sheet} error={studio.panelErrors[sheet.id]} onSubmit={studio.submitPanel} onDismiss={studio.dismissPanel} onHide={panelView.hide} />}
+            </div>
           </div>
 
           {inspectorOpen && (
@@ -384,5 +405,6 @@ export function App({ api }: { api: StudioApi }) {
         <ExportDialog open={exportOpen} onOpenChange={setExportOpen} comp={comp} propsEdited={studio.propsOverride !== undefined} player={player} thumbnailUrl={studio.thumbnailUrl} onStart={startExport} />
       </div>
     </TooltipProvider>
+    </StudioContext.Provider>
   );
 }

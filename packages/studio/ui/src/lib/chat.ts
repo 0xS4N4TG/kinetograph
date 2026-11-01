@@ -81,6 +81,8 @@ export function reduceChat(state: ChatState, event: AgentEvent): ChatState {
       };
     case 'done':
       return state;
+    case 'user':
+      return addUserMessage(state, event.text, []);
     case 'error':
       return push({ kind: 'error', text: event.message });
   }

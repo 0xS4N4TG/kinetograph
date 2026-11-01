@@ -145,15 +145,24 @@ interface LiveProps {
   props: Record<string, unknown>;
 }
 
-async function studioFetch(target: StudioTarget, init: RequestInit = {}): Promise<LiveProps> {
-  const url = new URL('/api/live-props', target.url);
+async function studioRequest<T>(target: StudioTarget, path: string, init: RequestInit = {}): Promise<T> {
+  const url = new URL(path, target.url);
   const headers = new Headers(init.headers);
   headers.set('x-studio-token', target.token);
   if (init.body !== undefined) headers.set('content-type', 'application/json');
   const response = await fetch(url, { ...init, headers });
-  const body = (await response.json().catch(() => ({}))) as LiveProps & { error?: { message?: string } };
+  const body = (await response.json().catch(() => ({}))) as T & { error?: { message?: string } };
   if (!response.ok) throw new Error(body.error?.message ?? `the studio answered ${response.status}`);
   return body;
+}
+
+const studioFetch = (target: StudioTarget, init: RequestInit = {}): Promise<LiveProps> => studioRequest<LiveProps>(target, '/api/live-props', init);
+
+/** What `GET /api/panels/<id>` says about a panel. */
+interface PanelState {
+  id: string;
+  status: 'open' | 'submitted' | 'dismissed';
+  answer: unknown;
 }
 
 const text = (value: unknown): { content: Content[] } => ({ content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] });
@@ -196,6 +205,45 @@ function addStudioTools(server: McpServer, target: StudioTarget): void {
         // The props shown now are of the composition on screen; another composition starts from nothing.
         const base = merge === false || id !== now.comp ? {} : now.props;
         return text(await studioFetch(target, { method: 'PUT', body: JSON.stringify({ comp: id, props: { ...base, ...props } }) }));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+  server.registerTool(
+    'studio_open_panel',
+    {
+      description:
+        'Opens a panel in the Studio window to ask the person for a decision: a brief, a script, a storyboard, styleframes or a review of a composition. It returns { id, status: "open" } at once and never waits. After you open a panel, end your turn with one line saying what you are waiting for; do not start the next stage and do not poll. The answer arrives as your next message, starting "[panel <kind> <id> submitted]" (or "dismissed" if the person closed it), and is saved in plan/<kind>.json beside the entry. If the person answers in a terminal instead and tells you, read it with studio_panel_result. One panel per kind is open at a time: opening another of the same kind replaces the first.',
+      inputSchema: {
+        panel: z.enum(['brief', 'script', 'storyboard', 'styleframes', 'review']).describe('The kind of panel'),
+        data: z
+          .record(z.string(), z.unknown())
+          .describe(
+            'What the panel starts from. brief: the fields you know ({ purpose, audience, platform, size, seconds, takeaway, references, notes }). script: { lines: [{ id, text, seconds? }], rate?, track? }. storyboard: { comp, shots: [{ id, frame, what, moves, line?, seconds, transition, transitionNote? }] }. styleframes: { frames: [{ id, label, comp, frame, note? }] }. review: { comp, range?: [first, last], ask? }.',
+          ),
+        message: z.string().optional().describe('One line shown at the top of the panel'),
+      },
+    },
+    async ({ panel, data, message }: { panel: string; data: Record<string, unknown>; message?: string }) => {
+      try {
+        return text(await studioRequest<{ id: string; status: string }>(target, '/api/panels', { method: 'POST', body: JSON.stringify({ panel, data, message }) }));
+      } catch (error) {
+        return failure(error);
+      }
+    },
+  );
+  server.registerTool(
+    'studio_panel_result',
+    {
+      description:
+        'The state of a panel opened with studio_open_panel: { status: "open" | "submitted" | "dismissed", answer? }. Use it only when the person says in a terminal that they have answered; inside Studio the answer arrives as a "[panel <kind> <id> submitted]" message, so end your turn after opening a panel and wait for it rather than calling this to check. The answer is also in plan/<kind>.json.',
+      inputSchema: { id: z.string().describe('The id studio_open_panel returned') },
+    },
+    async ({ id }: { id: string }) => {
+      try {
+        const { status, answer } = await studioRequest<PanelState>(target, `/api/panels/${encodeURIComponent(id)}`);
+        return text(answer === null || answer === undefined ? { status } : { status, answer });
       } catch (error) {
         return failure(error);
       }
