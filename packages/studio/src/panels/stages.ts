@@ -1,7 +1,7 @@
 // The stages of making a video that the panels support (docs/proposals/studio-panels.md, "The flow"), and where each
 // stands given the panels the server has kept. No Node, no DOM: the stepper in the UI and the tests use it too.
 
-import type { OpenPanel, PanelKind } from './types.js';
+import type { CustomDraft, OpenPanel, PanelKind } from './types.js';
 
 export type Stage = 'brief' | 'script' | 'board' | 'style' | 'animatic' | 'build' | 'deliver';
 
@@ -63,4 +63,26 @@ export function stageStates(panels: OpenPanel[], delivered = false): Record<Stag
   out.build = firstApproved === -1 ? { state: 'empty', panelId: null, approvedId: null } : state(reviews.slice(firstApproved + 1));
   out.deliver = { state: delivered ? 'approved' : 'empty', panelId: null, approvedId: null };
   return out;
+}
+
+/** A custom panel in the stepper: not a stage, so it comes after Deliver as a pill of its own. */
+export interface CustomPill {
+  /** The panel to bring up: the latest one with this name. */
+  id: string;
+  name: string;
+  title: string;
+  /** 'open' waits for the person; 'answered' was sent and shows read-only. */
+  state: 'open' | 'answered';
+}
+
+/** One pill per custom panel name, from its latest panel that was not dismissed, oldest name first. */
+export function customPills(panels: OpenPanel[]): CustomPill[] {
+  const latest = new Map<string, OpenPanel>();
+  for (const panel of [...panels].sort((a, b) => a.openedAt - b.openedAt)) {
+    if (panel.panel !== 'custom' || panel.status === 'dismissed') continue;
+    const name = (panel.data as CustomDraft).name;
+    latest.delete(name);
+    latest.set(name, panel);
+  }
+  return [...latest.values()].map((p) => ({ id: p.id, name: (p.data as CustomDraft).name, title: (p.data as CustomDraft).title, state: p.status === 'open' ? 'open' : 'answered' }));
 }

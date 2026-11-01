@@ -1,6 +1,6 @@
-// plan/<kind>.json beside the entry: where a submitted answer is kept. The directory may be a symlink the project owner
+// plan/<name>.json beside the entry: where a submitted answer is kept. The directory may be a symlink the project owner
 // did not intend, so both ways in check that the real plan directory is inside the real project directory and that the
-// file is a plain file, never a link; the kind in the name is one of the panel kinds, never text from a request.
+// file is a plain file, never a link; the name is a panel kind or custom-<slug>, never text from a request.
 
 import { randomBytes } from 'node:crypto';
 import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
@@ -10,10 +10,15 @@ import { StudioFailure } from '../util.js';
 import { isApproved } from './stages.js';
 import type { PanelStore } from './store.js';
 import type { OpenPanel, PanelDraft, PanelKind } from './types.js';
+import { CUSTOM_NAME } from './custom.js';
 import { PANEL_KINDS, checkAnswer } from './validate.js';
 
+/** The name of a plan file (without ".json"): a panel kind that keeps a file, or custom-<slug>. Never text from a request as it is. */
+export const isPlanFile = (name: string): boolean =>
+  ((PANEL_KINDS as readonly string[]).includes(name) && name !== 'custom') || (name.startsWith('custom-') && CUSTOM_NAME.test(name.slice(7)));
+
 function checkedKind(kind: string): void {
-  if (!(PANEL_KINDS as readonly string[]).includes(kind)) throw new StudioFailure('INVALID_ARG', `no panel kind "${kind}"`);
+  if (!isPlanFile(kind)) throw new StudioFailure('INVALID_ARG', `no plan file "${kind}"`);
 }
 
 /** The real plan directory, or null when it does not exist; throws when it leaves the project. */
@@ -94,6 +99,8 @@ const restoredData = (kind: PanelKind, answer: Record<string, unknown>): PanelDr
  */
 export function restorePanels(store: PanelStore, projectDir: string): void {
   for (const kind of PANEL_KINDS) {
+    // A custom panel's answer is values by block id and says nothing of its blocks, so it cannot be shown again.
+    if (kind === 'custom') continue;
     let answer: unknown;
     try {
       answer = readPlan(projectDir, kind);
