@@ -12,13 +12,23 @@ export const metadata: Metadata = {
 
 /** Plugins: two large tiles across from md up, one under. */
 const pluginGrid = 'mt-6 grid grid-cols-1 gap-x-8 gap-y-14 md:grid-cols-2';
-/** Templates: a wall of hero clips, each at its own aspect. From md up the portrait clip takes one column and the wide one two; one column under md, in this order. */
+/**
+ * Templates: a wall of hero clips, each at its own aspect, three columns from md up and one under, in `order`. Seven
+ * tiles: the portrait Word Flash spans the first two rows of column 1; four wide clips fill the two columns beside it;
+ * the last row is one wide clip and Scrapline across two columns. The two rows beside the portrait are about as tall as
+ * it is, so only the bottom of the wall is ragged. New templates go in `order`, then `templatePlace`.
+ */
 const templateGrid = 'mt-6 grid grid-cols-1 gap-x-8 gap-y-12 md:grid-cols-3 md:items-start';
 const templatePlace: Record<string, string> = {
-  'word-flash': 'md:col-start-1',
-  scrapline: 'md:col-span-2 md:col-start-2 md:row-start-1',
+  'word-flash': 'md:col-start-1 md:row-span-2 md:row-start-1',
+  'collage-burst': 'md:col-start-2 md:row-start-1',
+  'greeting-intro': 'md:col-start-3 md:row-start-1',
+  'wait-ship': 'md:col-start-2 md:row-start-2',
+  'prompt-reply': 'md:col-start-3 md:row-start-2',
+  'phone-orbit': 'md:col-start-1 md:row-start-3',
+  scrapline: 'md:col-span-2 md:col-start-2 md:row-start-3',
 };
-const order = ['scrapline', 'word-flash'];
+const order = ['scrapline', 'word-flash', 'collage-burst', 'greeting-intro', 'wait-ship', 'prompt-reply', 'phone-orbit'];
 const wall = [...templates].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
 
 export default function PluginsPage() {
