@@ -5,7 +5,7 @@ import { body, Label, link, section, shell } from '@/sections/shared';
 
 const STEPS = [
   ['Install', 'npm install kinetograph'],
-  ['Open the studio', 'npx kinetograph studio src/index.tsx'],
+  ['Open Studio', 'npx kinetograph studio src/index.tsx'],
   ['Render', 'npx kinetograph render src/index.tsx -o out.mp4'],
 ] as const;
 
@@ -16,8 +16,8 @@ export function Start() {
         <div>
           <Heading lines={['three commands to a film.']} hot="commands" tag="TRK 06  0.95" className="text-[clamp(32px,3.6vw,52px)]" />
           <p className={`${body} mt-10 max-w-[40ch]`}>
-            You need Node 22 or later. It uses the GPU when there is one (Metal, Vulkan or D3D12) and draws on the CPU
-            otherwise. It needs no display, so it runs on a server too, and the npm package carries FFmpeg.
+            You need Node 22 or later. It draws on the GPU (Metal, Vulkan or D3D12) and falls back to the CPU when there is
+            none. It needs no display, so it runs on a server too. The npm package carries FFmpeg.
           </p>
         </div>
         <ol className="space-y-9">
@@ -30,7 +30,7 @@ export function Start() {
         </ol>
       </div>
       <p className={`${body} mt-24 max-w-[62ch] text-[15px]`}>
-        Free for individuals and small companies under the PolyForm Small Business licence.{' '}
+        Source-available under the PolyForm Small Business licence: free for individuals and small companies.{' '}
         See the <a className={link} href="/docs/known-issues/">known issues</a>.
       </p>
     </section>

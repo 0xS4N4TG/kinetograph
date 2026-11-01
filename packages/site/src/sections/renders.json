@@ -1,7 +1,7 @@
 [
   {
     "name": "launch",
-    "title": "The launch film",
+    "title": "The launch film, written in code",
     "frames": 1184,
     "fps": 30,
     "width": 1920,
@@ -13,7 +13,7 @@
   },
   {
     "name": "capabilities",
-    "title": "Brush, shader and Motion",
+    "title": "Brush strokes and heat shimmer",
     "frames": 489,
     "fps": 24,
     "width": 1440,
@@ -26,7 +26,7 @@
   },
   {
     "name": "showcase",
-    "title": "Showcase",
+    "title": "A reel drawn from shapes",
     "frames": 928,
     "fps": 25,
     "width": 1920,
@@ -38,7 +38,7 @@
   },
   {
     "name": "showcase-3d",
-    "title": "3D scenes",
+    "title": "A 3D character in a studio",
     "frames": 180,
     "fps": 30,
     "width": 1920,
@@ -50,7 +50,7 @@
   },
   {
     "name": "video-overlay",
-    "title": "Video overlay",
+    "title": "Captions and overlays on video",
     "frames": 180,
     "fps": 30,
     "width": 1920,
@@ -62,7 +62,7 @@
   },
   {
     "name": "canvas",
-    "title": "Canvas",
+    "title": "An animated Canvas 2D chart",
     "frames": 60,
     "fps": 30,
     "width": 860,
@@ -74,7 +74,7 @@
   },
   {
     "name": "rajz-cards",
-    "title": "Rajz cards",
+    "title": "3D cards with a whip blur",
     "frames": 125,
     "fps": 25,
     "width": 1920,
@@ -86,7 +86,7 @@
   },
   {
     "name": "compat",
-    "title": "Remotion compat test",
+    "title": "A plain Remotion project, unchanged",
     "frames": 150,
     "fps": 30,
     "width": 1200,
@@ -98,7 +98,7 @@
   },
   {
     "name": "bench-diorama",
-    "title": "Diorama scene (JSON)",
+    "title": "A paper diorama in JSON",
     "frames": 90,
     "fps": 30,
     "width": 1080,
@@ -110,7 +110,7 @@
   },
   {
     "name": "papercut-card",
-    "title": "Papercut card (JSON)",
+    "title": "A paper-cut card in JSON",
     "frames": 60,
     "fps": 30,
     "width": 1080,
@@ -122,7 +122,7 @@
   },
   {
     "name": "basic",
-    "title": "Basic scene (JSON)",
+    "title": "A starter scene in JSON",
     "frames": 60,
     "fps": 30,
     "width": 640,

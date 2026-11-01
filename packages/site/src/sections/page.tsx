@@ -78,7 +78,7 @@ export function Facts() {
   return (
     <section id="why" className={`${shell} ${section}`}>
       <div className="border-t border-cobalt/30 pt-[clamp(56px,8vw,112px)]">
-        <Heading lines={['fast facts']} hot="facts" tag="TRK 02  0.94" className={h2Size} />
+        <Heading lines={['the renders, and how long they took.']} hot="took" tag="TRK 02  0.94" className={h2Size} />
         <div className="mt-14 grid grid-cols-[repeat(auto-fill,minmax(min(100%,340px),1fr))] gap-x-8 gap-y-14">
           {(renders as Render[]).filter((r) => r.name !== 'launch').map((r) => (
             <RenderCard key={r.name} r={r} />
@@ -121,8 +121,8 @@ export function Film() {
           )}
         </div>
         <p className={`${body} mt-6 max-w-[62ch]`}>
-          This film was rendered by Kinetograph: 1,184 frames in 26 seconds on a laptop. Everything in it, sound effects
-          included, comes from one TypeScript project in the repo,{' '}
+          Kinetograph rendered this film: 1,184 frames in 26 seconds on a laptop. One TypeScript project makes all of it,
+          sound effects included:{' '}
           <a className={link} href={doc('examples/launch')} target="_blank" rel="noreferrer">examples/launch</a>.
         </p>
       </div>
@@ -136,21 +136,22 @@ export function About() {
     <section id="engine" className={`${shell} ${section}`}>
       <div className="grid grid-cols-[minmax(0,1fr)] gap-x-16 gap-y-24 border-t border-cobalt/30 pt-[clamp(56px,8vw,112px)] md:grid-cols-2">
         <div>
-          <Heading lines={['the same code, with a GPU where the browser was.']} hot="GPU" tag="TRK 03  0.96" className="text-[clamp(32px,3.6vw,52px)]" />
+          <Heading lines={['the code you already write, no browser needed.']} hot="already" tag="TRK 03  0.96" className="text-[clamp(32px,3.6vw,52px)]" />
           <p className={`${body} mt-10 max-w-[44ch]`}>
-            Kinetograph runs the video you already write, in TypeScript with Remotion's API, CSS, SVG, Canvas 2D and Web
-            Audio, or as an HTML page with GSAP, so HyperFrames projects render as they are. Node runs the code and a Rust
-            compositor draws every frame, so there is no browser anywhere in the path.
+            Write in TypeScript with Remotion's API, CSS, SVG, Canvas 2D, WebGL shaders and Web Audio. Or write an HTML page
+            with GSAP: HyperFrames projects render as they are. Node runs the code and a Rust compositor draws every
+            frame. No browser sits anywhere in the path.
           </p>
         </div>
         <div id="agents">
-          <Heading lines={['an agent can see its own work.']} hot="see" tag="TRK 04  0.92" className="text-[clamp(32px,3.6vw,52px)]" />
+          <Heading lines={['an agent can check its own work.']} hot="check" tag="TRK 04  0.92" className="text-[clamp(32px,3.6vw,52px)]" />
           <p className={`${body} mt-10 max-w-[44ch]`}>
             Every command takes <code className="font-jb text-[14px]">--json</code>, and{' '}
             <code className="font-jb text-[14px]">kinetograph mcp</code> serves them as tools. An agent writes the TSX or HTML,
-            renders a still, reads the scene graph and fixes what it finds before anyone watches.
+            renders a still, reads the scene graph and fixes what is wrong before you watch. Studio, the local editor, has a
+            coding agent built in.
           </p>
-          <p className={`${body} mt-6 max-w-[44ch]`}>Give your agent the Kinetograph skills:</p>
+          <p className={`${body} mt-6 max-w-[44ch]`}>Teach your agent Kinetograph:</p>
           <CommandBar command="npx skills add 0xS4N4TG/kinetograph" className={`mt-4 ${commandBar}`} />
         </div>
       </div>

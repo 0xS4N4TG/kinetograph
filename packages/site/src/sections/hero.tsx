@@ -3,7 +3,7 @@ import { Heading } from '@/sections/heading';
 import { Film } from '@/sections/page';
 import { Label, shell } from '@/sections/shared';
 
-const TAGLINE = 'Made for agents. They write video in TypeScript or HTML; Kinetograph renders every frame on the GPU, with no browser.';
+const TAGLINE = 'Write a video in TypeScript or HTML, or have an agent write it. A Rust compositor draws every frame on the GPU. There is no browser.';
 
 /** Command bars: square, hairline cobalt, mono. */
 export const commandBar =
@@ -19,12 +19,12 @@ export function Hero() {
         style={{ background: 'radial-gradient(ellipse 75% 85% at 50% 40%, #eceae6 35%, #cfccc7 130%)' }}
       />
       <div className={`${shell} pt-[clamp(32px,5vw,72px)] pb-[clamp(48px,6vw,88px)]`}>
-        <Label>An agentic video engine</Label>
+        <Label>A video engine, made for agents</Label>
         <Heading
           as="h1"
           animate
-          lines={['blazingly fast', 'programmatic video.']}
-          hot="fast"
+          lines={['video written as code,', 'drawn on the GPU.']}
+          hot="GPU"
           tag="TRK 01  0.97"
           className="mt-10 text-[clamp(38px,6.6vw,96px)]"
         />
