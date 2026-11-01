@@ -7,7 +7,7 @@ import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
 import { useStudioContext } from '@/lib/studio-context';
 
-import { frameSrc } from '../custom-model';
+import { frameSrc } from '../frame-src';
 import type { Block } from '../types';
 import { BlockShell } from './shell';
 

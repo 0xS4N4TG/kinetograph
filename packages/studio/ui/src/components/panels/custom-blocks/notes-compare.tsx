@@ -6,7 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
-import { frameSrc } from '../custom-model';
+import { frameSrc } from '../frame-src';
 import { boxOf } from '../styleframes-card';
 import type { Block, Box, PictureNote } from '../types';
 import { FrameImage } from './picture';
