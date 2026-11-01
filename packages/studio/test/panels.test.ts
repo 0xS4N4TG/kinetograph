@@ -339,6 +339,31 @@ describe('telling the agent', () => {
     client.close();
   });
 
+  it('sends a queued message and a panel answer from the same turn as one prompt, in the order they arrived', async () => {
+    const { dir, entry } = writeProject('PanelsQueueMix');
+    const studio = await start(entry, { agent: command, agentCwd: dir });
+    const client = await Client.connect(studio);
+    client.send({ type: 'agent.prompt', text: 'slow one', context: '' });
+    await client.waitForMessage('agent', (m) => m.event.kind === 'status' && m.event.status === 'busy');
+    await open(studio, tokenOf(studio)!, 'brief', draftBrief);
+    client.send({ type: 'agent.prompt', text: 'before the panel', context: '' });
+    client.send({ type: 'panel.submit', id: 'p_1', answer: brief });
+    client.send({ type: 'agent.prompt', text: 'after the panel', context: '' });
+    await until(() => said(client), (t) => t.includes('after the panel'));
+    const text = said(client);
+    // one prompt (two turns in all), the three parts in arrival order, separated by blank lines
+    expect(text.match(/got: /g)).toHaveLength(2);
+    const [a, b, c] = ['before the panel', '[panel brief p_1 submitted]', 'after the panel'].map((part) => text.indexOf(part));
+    expect(a).toBeGreaterThan(-1);
+    expect(b).toBeGreaterThan(a!);
+    expect(c).toBeGreaterThan(b!);
+    expect(text).toContain('before the panel\n\n[panel brief p_1 submitted]');
+    // the chat shows each as its own message
+    const users = client.messages('agent').flatMap((m: any) => (m.event.kind === 'user' ? [m.event.text] : []));
+    expect(users.map((u) => u.split('\n')[0])).toEqual(['slow one', 'before the panel', expect.stringContaining('[panel brief p_1 submitted]'), 'after the panel']);
+    client.close();
+  });
+
   it('keeps the message when no agent is running, and the answer stays readable', async () => {
     const { dir, entry } = writeProject('PanelsNoAgent');
     const studio = await start(entry, { agent: command, agentCwd: dir });

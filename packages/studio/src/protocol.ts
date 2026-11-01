@@ -226,6 +226,8 @@ export interface AgentPreset {
 export type AgentClientMessage =
   | { type: 'agent.prompt'; text: string; context: string; image?: { data: string; mimeType: string }; chips?: string[] }
   | { type: 'agent.cancel' }
+  /** Takes a message out of the queue (a prompt sent while the agent was working). */
+  | { type: 'agent.unqueue'; id: string }
   /** The answer to a permission request; a null `optionId` denies it. */
   | { type: 'agent.permission'; id: string; optionId: string | null }
   /** Chooses the agent (one of `AgentInfo.presets`) and starts a new conversation. */
@@ -253,7 +255,16 @@ export type AgentEvent =
   /** A problem in plain words. */
   | { kind: 'error'; message: string }
   /** A message the studio sent the agent for the person (a panel's answer), to show in the chat. */
-  | { kind: 'user'; text: string };
+  | { kind: 'user'; text: string; chips?: string[] }
+  /** The messages waiting for the agent's turn to end: the whole queue, sent again whenever it changes. */
+  | { kind: 'queue'; items: QueuedMessage[] };
+
+/** A message the person sent while the agent was working, waiting for its turn to end. */
+export interface QueuedMessage {
+  id: string;
+  text: string;
+  chips: string[];
+}
 
 /**
  * A frame is one binary message: a 4-byte little-endian length `n`, then `n` bytes of UTF-8 JSON (`FrameHeader`), then

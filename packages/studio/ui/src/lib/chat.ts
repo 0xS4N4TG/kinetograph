@@ -1,6 +1,6 @@
 // The chat as a list of items, built from the events the server sends. A pure reducer so the panel is only drawing.
 
-import type { AgentEvent, AgentPermissionOption, AgentStatus, ChatRecord } from '@/api';
+import type { AgentEvent, AgentPermissionOption, AgentStatus, ChatRecord, QueuedMessage } from '@/api';
 
 export type ChatItem =
   | { kind: 'user'; id: number; text: string; chips: string[] }
@@ -16,11 +16,13 @@ export interface ChatState {
   /** Whether the agent takes pictures (known once it has started). */
   image: boolean;
   nextId: number;
+  /** The messages sent while the agent was working, waiting for the turn to end (kept by the server). */
+  queue: QueuedMessage[];
 }
 
 type NewItem = ChatItem extends infer T ? (T extends ChatItem ? Omit<T, 'id'> : never) : never;
 
-export const emptyChat: ChatState = { items: [], status: 'idle', command: null, image: false, nextId: 1 };
+export const emptyChat: ChatState = { items: [], status: 'idle', command: null, image: false, nextId: 1, queue: [] };
 
 /** Adds the user's own message. */
 export function addUserMessage(state: ChatState, text: string, chips: string[]): ChatState {
@@ -82,7 +84,9 @@ export function reduceChat(state: ChatState, event: AgentEvent): ChatState {
     case 'done':
       return state;
     case 'user':
-      return addUserMessage(state, event.text, []);
+      return addUserMessage(state, event.text, event.chips ?? []);
+    case 'queue':
+      return { ...state, queue: event.items };
     case 'error':
       return push({ kind: 'error', text: event.message });
   }

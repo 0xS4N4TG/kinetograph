@@ -88,6 +88,8 @@ describe('the Agent tab', () => {
     expect(context).toContain('composition `Intro`');
     expect(context).toContain('Hello');
     expect(context).not.toMatch(/\$\d/);
+    // The server answers with the message, as the chat shows it.
+    await say(server, { kind: 'user', text: 'make it red', chips: [] });
     expect(within(screen.getByTestId('chat-list')).getByText('make it red')).toBeInTheDocument();
 
     await say(server, { kind: 'status', status: 'busy', command: 'fake --acp', image: true });

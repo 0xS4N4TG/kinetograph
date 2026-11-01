@@ -8,7 +8,7 @@ import { AgentBridge } from '../src/agent-bridge.js';
 import { isInside, readTextFile, resolveInside, writeTextFile } from '../src/agent-fs.js';
 import { availableAgents, onPath } from '../src/agent-presets.js';
 import type { AgentEvent } from '../src/protocol.js';
-import { api, cleanup, Client, start, stopAll, tempDir, tokenOf, writeProject } from './helpers.js';
+import { api, cleanup, Client, start, stopAll, tempDir, tokenOf, until, writeProject } from './helpers.js';
 
 // Starting a studio starts workers, which is slow on a busy machine.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
@@ -250,6 +250,89 @@ describe('the agent over the studio server', () => {
     expect(said).toContain('hello agent');
     expect(said).toContain('layer: Title');
     client.close();
+  });
+
+  describe('messages sent while the agent works', () => {
+    const said = (c: Client) =>
+      c
+        .messages('agent')
+        .flatMap((m: any) => (m.event.kind === 'message' ? [m.event.text] : []))
+        .join('');
+    const queues = (c: Client) => c.messages('agent').flatMap((m: any) => (m.event.kind === 'queue' ? [m.event.items.map((i: any) => i.text)] : []));
+    const users = (c: Client) => c.messages('agent').flatMap((m: any) => (m.event.kind === 'user' ? [m.event.text] : []));
+
+    it('queues them, shows the queue, and sends everything queued in the turn as one prompt when it ends', async () => {
+      const { dir, entry } = writeProject('queue');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const client = await Client.connect(server);
+      client.send({ type: 'agent.prompt', text: 'slow first', context: '' });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'status' && m.event.status === 'busy');
+      client.send({ type: 'agent.prompt', text: 'second', context: 'layer: A', chips: ['A'] });
+      client.send({ type: 'agent.prompt', text: 'third', context: 'layer: B' });
+      await until(() => queues(client), (q) => q.some((items) => items.length === 2));
+      expect(queues(client)).toEqual([['second'], ['second', 'third']]);
+      // not sent, not in the chat yet, and no refusal
+      expect(said(client)).not.toContain('second');
+      expect(client.messages('agent').some((m: any) => m.event.kind === 'error')).toBe(false);
+      await until(() => said(client), (t) => t.includes('got: second'));
+      // one prompt, joined with a blank line, with the newest message's selection
+      expect(said(client)).toContain('got: second\n\nthird');
+      expect(said(client)).toContain('layer: B');
+      expect(said(client)).not.toContain('layer: A');
+      expect(users(client)).toEqual(['slow first', 'second', 'third']);
+      expect(queues(client).at(-1)).toEqual([]);
+      client.close();
+    });
+
+    it('takes a message out of the queue, and Stop keeps the rest of it', async () => {
+      const { dir, entry } = writeProject('unqueue');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const client = await Client.connect(server);
+      client.send({ type: 'agent.prompt', text: 'slow first', context: '' });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'status' && m.event.status === 'busy');
+      client.send({ type: 'agent.prompt', text: 'drop me', context: '' });
+      client.send({ type: 'agent.prompt', text: 'keep me', context: '' });
+      await until(() => queues(client), (q) => q.some((items) => items.length === 2));
+      const id = (client.messages('agent').find((m: any) => m.event.kind === 'queue' && m.event.items.length === 1) as any).event.items[0].id;
+      client.send({ type: 'agent.unqueue', id });
+      await until(() => queues(client), (q) => q.at(-1)?.join() === 'keep me');
+      client.send({ type: 'agent.cancel' });
+      await until(() => said(client), (t) => t.includes('got: keep me'));
+      expect(said(client)).not.toContain('drop me');
+      client.close();
+    });
+
+    it('keeps the queue when the window reloads, and sends the queue after the history', async () => {
+      const { dir, entry } = writeProject('queue-reload');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const first = await Client.connect(server);
+      first.send({ type: 'agent.prompt', text: 'slow first', context: '' });
+      await first.waitForMessage('agent', (m) => m.event.kind === 'status' && m.event.status === 'busy');
+      first.send({ type: 'agent.prompt', text: 'later', context: '', chips: ['Title'] });
+      await until(() => queues(first), (q) => q.length > 0);
+      first.close();
+      await new Promise((r) => setTimeout(r, 50));
+      const again = await Client.connect(server);
+      const history = await again.waitFor((r) => r.kind === 'json' && r.message.type === 'agent.history');
+      const queue = await again.waitFor((r) => r.kind === 'json' && r.message.type === 'agent' && (r.message as any).event.kind === 'queue');
+      expect(history.at).toBeLessThanOrEqual(queue.at);
+      expect(queues(again)).toEqual([['later']]);
+      expect((queue as any).message.event.items[0]).toMatchObject({ text: 'later', chips: ['Title'] });
+      // the turn ends while it is the owner: the queued message goes out
+      await until(() => said(again), (t) => t.includes('got: later'));
+      again.close();
+    });
+
+    it('refuses more than twenty waiting messages in plain words', async () => {
+      const { dir, entry } = writeProject('queue-cap');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const client = await Client.connect(server);
+      client.send({ type: 'agent.prompt', text: 'slow first', context: '' });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'status' && m.event.status === 'busy');
+      for (let i = 0; i < 21; i++) client.send({ type: 'agent.prompt', text: `m${i}`, context: '' });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'error' && /Too many messages/.test(m.event.message));
+      client.close();
+    });
   });
 
   it('keeps the conversation when its window reloads, and replays it to the window that comes back', async () => {

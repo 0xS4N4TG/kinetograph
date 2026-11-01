@@ -98,6 +98,11 @@ export class AgentBridge {
     return this.status === 'ready' && !this.prompting;
   }
 
+  /** Whether a prompt is starting, running or being sent: anything sent now has to wait for `idle`. */
+  get working(): boolean {
+    return this.prompting || this.status === 'busy' || this.status === 'starting';
+  }
+
   /** Tells the UI where things stand (also used for a socket that has just connected). */
   announce(): void {
     this.options.emit({ kind: 'status', status: this.status, command: this.command, image: this.image });

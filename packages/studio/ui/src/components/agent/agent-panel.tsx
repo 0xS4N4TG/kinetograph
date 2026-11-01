@@ -248,7 +248,7 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
 
   const send = async (override?: string) => {
     const message = (override ?? text).trim();
-    if (message === '' || busy) return;
+    if (message === '') return;
     let image: { data: string; mimeType: string } | undefined;
     if (withPicture && comp && range && thumbnailFrameUrl) {
       image = (await contactSheet(contactFrames(range), comp.fps, comp.width, comp.height, thumbnailFrameUrl)) ?? undefined;
@@ -328,6 +328,27 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
         {busy && state.items.at(-1)?.kind === 'user' && <p className="text-muted-foreground text-xs">Thinking…</p>}
       </div>
 
+      {state.queue.length > 0 && (
+        <ul className="flex max-h-40 shrink-0 flex-col items-end gap-1.5 overflow-y-auto px-4 pb-2" data-testid="chat-queue" aria-label="Messages waiting for the agent">
+          {state.queue.map((queued) => (
+            <li key={queued.id} className="flex max-w-[90%] items-start gap-1.5" data-testid="chat-queued">
+              <div className="bg-muted text-muted-foreground border-border min-w-0 rounded-2xl rounded-br-md border border-dashed px-3 py-1.5 text-[13px] leading-relaxed">
+                <span className="text-[10px] font-medium tracking-wide uppercase">Queued</span>
+                <p className="line-clamp-3 whitespace-pre-wrap">{queued.text}</p>
+              </div>
+              <button
+                type="button"
+                aria-label={`Remove queued message: ${queued.text.slice(0, 40)}`}
+                onClick={() => chat.unqueue(queued.id)}
+                className="text-muted-foreground hover:text-foreground hover:bg-accent focus-visible:ring-ring mt-1 shrink-0 rounded-full p-1 outline-none focus-visible:ring-2"
+              >
+                <XIcon className="size-3" aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
       <div className="shrink-0 p-3 pt-0">
         <div className="bg-background/60 border-input has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-ring/20 rounded-2xl border p-2.5 transition-[box-shadow,border-color] has-[textarea:focus-visible]:ring-[3px]">
           <div className="mb-1.5 flex flex-wrap items-center gap-1.5 px-0.5" data-testid="selection-chips">
@@ -363,7 +384,7 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
             value={text}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Ask the agent to change something"
+            placeholder={busy ? 'Queue a message for when the agent is done' : 'Ask the agent to change something'}
             rows={2}
             className="placeholder:text-muted-foreground/70 block max-h-40 min-h-[52px] w-full resize-none bg-transparent px-1 py-1 text-[13.5px] leading-relaxed outline-none"
           />
@@ -373,17 +394,30 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
               <ImageIcon className="size-3.5" aria-hidden="true" />
               Picture
             </label>
-            <div className="ml-auto">
-              {busy ? (
+            <div className="ml-auto flex items-center gap-2">
+              {busy && (
                 <Button size="sm" variant="outline" onClick={chat.stop} className="rounded-full px-3.5">
                   <SquareIcon className="size-3 fill-current" aria-hidden="true" />
                   Stop
                 </Button>
-              ) : (
-                <Button size="icon" onClick={() => void send()} aria-label="Send" disabled={text.trim() === '' || unavailable} className="rounded-full">
-                  <ArrowUpIcon />
-                </Button>
               )}
+              <Button
+                size="icon"
+                onClick={() => void send()}
+                aria-label={state.queue.length > 0 ? `Send (${state.queue.length} queued)` : 'Send'}
+                disabled={text.trim() === '' || unavailable}
+                className="relative rounded-full"
+              >
+                <ArrowUpIcon />
+                {state.queue.length > 0 && (
+                  <span
+                    data-testid="queue-count"
+                    className="bg-foreground text-background absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full text-[10px] leading-none font-medium"
+                  >
+                    {state.queue.length}
+                  </span>
+                )}
+              </Button>
             </div>
           </div>
         </div>
