@@ -16,7 +16,7 @@ function studioToken(): string | null {
   }
 }
 
-const withToken = (path: string): string => {
+export const withToken = (path: string): string => {
   const token = studioToken();
   return token ? `${path}${path.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : path;
 };
@@ -35,3 +35,6 @@ export async function uploadRef(file: File): Promise<StoredRef> {
   if (!response.ok || !body?.src) throw new Error(body?.error?.message ?? `${response.status} ${response.statusText}`);
   return { src: body.src, ...(body.sheet ? { sheet: body.sheet } : {}) };
 }
+
+/** The address of a project's audio file (a script's track, relative to the project), for an <audio> element. */
+export const trackUrl = (path: string): string => withToken(`/api/panels/script/audio?path=${encodeURIComponent(path)}`);

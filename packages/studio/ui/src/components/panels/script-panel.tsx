@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
 import { BeatStrip } from './script-beats';
+import { TrackPlayer } from './script-track';
 import { DEFAULT_RATE, formatSeconds, lineSeconds, overrun, totalSeconds, wordCount } from './script-math';
 import type { PanelProps, ScriptLine } from './types';
 
@@ -88,6 +89,7 @@ export function ScriptPanel({ panel, onSubmit, onDismiss }: PanelProps<'script'>
                 Keep this track
               </label>
             </div>
+            <TrackPlayer src={track.src} name={track.src.split('/').pop() ?? track.src} />
             <BeatStrip beats={track.beats} total={total} />
           </section>
         )}
