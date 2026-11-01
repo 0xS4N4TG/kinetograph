@@ -255,6 +255,8 @@ npx kinetograph studio <entry>
 
 The studio is the `@kinetographdev/studio` package. The command loads it by name, so it must be installed next to `kinetograph`. Stop the studio with Ctrl-C.
 
+The studio lists the site's plugins under **Available** in the Props tab. It reads the list from `https://kinetograph.dev/api/catalog` in the background and keeps the last answer in `~/.cache/kinetograph/plugin-catalog.json`; `--offline` (or `KINETOGRAPH_OFFLINE=1`) never asks the site. Set `KINETOGRAPH_CATALOG_URL` to read the list from another address.
+
 ## fetch-deps
 
 Downloads what a project loads from the web (CDN scripts, ES modules, remote pictures, media, Google Fonts) into the local cache and pins each file in `kinetograph.lock.json` beside the entry. `render`, `still`, `doctor` and `studio` do the same download first, so this is for doing it ahead of time, such as in CI or when building an image. `--offline` on those commands never downloads, and a file that is not cached is then an error.
