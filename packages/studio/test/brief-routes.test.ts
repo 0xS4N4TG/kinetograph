@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer, request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { findFfmpeg, safeRefName } from '../src/panels/brief-routes.js';
+import { findFfmpeg, safeRefName, sniff } from '../src/panels/brief-routes.js';
 import { panelRoutes, type PanelRouteContext } from '../src/panels/routes.js';
 import { cleanup, tempDir } from './helpers.js';
 
@@ -34,6 +34,9 @@ afterAll(() => {
   cleanup();
 });
 
+/** The first bytes of a real PNG, then `text`. */
+const png = (text: string): Buffer => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from(text)]);
+
 const put = (name: string, body: Uint8Array | string, token = 'window') =>
   fetch(`${base}/api/panels/brief/ref?token=${token}&name=${encodeURIComponent(name)}`, { method: 'PUT', body: body as BodyInit });
 
@@ -57,35 +60,93 @@ describe('safeRefName', () => {
   });
 });
 
+describe('sniff', () => {
+  it('knows the containers it accepts and nothing else', () => {
+    expect(sniff(Buffer.from('\0\0\0\x18ftypmp42'))).toMatchObject({ kind: 'video', demuxer: 'mov' });
+    expect(sniff(Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0, 0, 0, 0]))).toMatchObject({ kind: 'video', demuxer: 'matroska' });
+    expect(sniff(Buffer.from('RIFF\0\0\0\0AVI LIST'))).toMatchObject({ kind: 'video', demuxer: 'avi' });
+    expect(sniff(Buffer.from('RIFF\0\0\0\0WEBPVP8 '))).toEqual({ kind: 'image' });
+    expect(sniff(Buffer.from([0xff, 0xd8, 0xff, 0xe0]))).toEqual({ kind: 'image' });
+    expect(sniff(Buffer.from('GIF89a'))).toEqual({ kind: 'image' });
+    expect(sniff(Buffer.from('#EXTM3U\n'))).toBeNull();
+    expect(sniff(Buffer.from('ffconcat version 1.0'))).toBeNull();
+    expect(sniff(Buffer.alloc(0))).toBeNull();
+  });
+});
+
 describe('PUT /api/panels/brief/ref', () => {
   it('stores an image under plan/refs with a sanitised name', async () => {
-    const r = await put('../../My Ref!.png', 'png-bytes');
+    const r = await put('../../My Ref!.png', png('bytes'));
     expect(r.status).toBe(201);
     expect(await r.json()).toEqual({ src: 'plan/refs/My-Ref.png' });
-    expect(readFileSync(join(projectDir, 'plan', 'refs', 'My-Ref.png'), 'utf8')).toBe('png-bytes');
+    expect(readFileSync(join(projectDir, 'plan', 'refs', 'My-Ref.png'), 'utf8')).toBe(png('bytes').toString('utf8'));
     expect(existsSync(join(projectDir, 'My-Ref.png'))).toBe(false);
     expect(existsSync(join(projectDir, '..', 'My-Ref.png'))).toBe(false);
   });
 
   it('does not overwrite: a second file with the same name gets a suffix', async () => {
-    await put('same.jpg', 'one');
-    const r = await put('same.jpg', 'two');
-    expect(((await r.json()) as { src: string }).src).toBe('plan/refs/same-2.jpg');
-    expect(readFileSync(join(projectDir, 'plan', 'refs', 'same.jpg'), 'utf8')).toBe('one');
+    await put('same.png', png('one'));
+    const r = await put('same.png', png('two'));
+    expect(((await r.json()) as { src: string }).src).toBe('plan/refs/same-2.png');
+    expect(readFileSync(join(projectDir, 'plan', 'refs', 'same.png'))).toEqual(png('one'));
   });
 
   it('needs the window token', async () => {
-    const r = await put('nope.png', 'x', 'agent');
+    const r = await put('nope.png', png('x'), 'agent');
     expect(r.status).toBe(403);
     expect(((await r.json()) as { error: { code: string } }).error.code).toBe('FORBIDDEN');
     expect(existsSync(join(projectDir, 'plan', 'refs', 'nope.png'))).toBe(false);
   });
 
   it('refuses a name that is not a video or an image, and an empty file', async () => {
-    expect((await put('run.sh', 'rm -rf')).status).toBe(400);
-    expect((await put('..', 'x')).status).toBe(400);
+    expect((await put('run.sh', png('x'))).status).toBe(400);
+    expect((await put('..', png('x'))).status).toBe(400);
     expect((await put('empty.png', '')).status).toBe(400);
     expect(readdirSync(join(projectDir, 'plan', 'refs')).some((f) => f.endsWith('.part'))).toBe(false);
+  });
+
+  it('refuses text playlists and files that are not what their name says', async () => {
+    const before = readdirSync(join(projectDir, 'plan', 'refs')).sort();
+    expect((await put('list.mp4', '#EXTM3U\n#EXTINF:1,\nfile:///etc/passwd\n')).status).toBe(400);
+    expect((await put('concat.mov', "ffconcat version 1.0\nfile '/etc/hosts'\n")).status).toBe(400);
+    expect((await put('fake.png', '#EXTM3U\n')).status).toBe(400);
+    // A real image under a video name, and a video container under an image name.
+    expect((await put('image.mp4', png('x'))).status).toBe(400);
+    expect((await put('video.png', Buffer.concat([Buffer.alloc(4), Buffer.from('ftypisom0000')]))).status).toBe(400);
+    expect(readdirSync(join(projectDir, 'plan', 'refs')).sort()).toEqual(before);
+  });
+
+  it('does not write through a link at the target, its .part or its sheet path', async () => {
+    const refs = join(projectDir, 'plan', 'refs');
+    const victim = join(outside, 'victim.txt');
+    writeFileSync(victim, 'untouched');
+    for (const link of ['linked.png', 'linked.png.part', 'linked.png.sheet.png']) symlinkSync(victim, join(refs, link));
+    const r = await put('linked.png', png('new'));
+    expect(r.status).toBe(201);
+    expect(((await r.json()) as { src: string }).src).toBe('plan/refs/linked-2.png');
+    expect(readFileSync(victim, 'utf8')).toBe('untouched');
+    // A dangling link counts as taken too.
+    symlinkSync(join(outside, 'nowhere'), join(refs, 'dangling.png'));
+    expect(((await (await put('dangling.png', png('new'))).json()) as { src: string }).src).toBe('plan/refs/dangling-2.png');
+    expect(existsSync(join(outside, 'nowhere'))).toBe(false);
+  });
+
+  it('refuses when plan/refs is a link out of the project', async () => {
+    const other = tempDir();
+    const target = tempDir();
+    mkdirSync(join(other, 'plan'));
+    symlinkSync(target, join(other, 'plan', 'refs'));
+    const saved = projectDir;
+    projectDir = other;
+    try {
+      const r = await put('out.png', png('x'));
+      expect(r.status).toBe(403);
+      expect(readdirSync(target)).toEqual([]);
+      const get = await fetch(`${base}/api/panels/brief/ref?token=window&path=plan/refs/out.png`);
+      expect(get.status).toBe(404);
+    } finally {
+      projectDir = saved;
+    }
   });
 
   it('refuses a file over the cap from its Content-Length, writing nothing', async () => {
@@ -122,8 +183,16 @@ describe('GET /api/panels/brief/ref', () => {
     const ok = await fetch(`${base}/api/panels/brief/ref?token=window&path=plan/refs/My-Ref.png`);
     expect(ok.status).toBe(200);
     expect(ok.headers.get('content-type')).toBe('image/png');
-    expect(await ok.text()).toBe('png-bytes');
+    expect(await ok.text()).toBe(png('bytes').toString('utf8'));
     expect((await fetch(`${base}/api/panels/brief/ref?token=agent&path=plan/refs/My-Ref.png`)).status).toBe(403);
+  });
+
+  it('does not serve a link, even one that points at an image outside the project', async () => {
+    symlinkSync(join(outside, 'secret.png'), join(projectDir, 'plan', 'refs', 'leak.png'));
+    const r = await fetch(`${base}/api/panels/brief/ref?token=window&path=plan/refs/leak.png`);
+    expect(r.status).toBe(403);
+    expect(await r.text()).not.toContain('secret');
+    rmSync(join(projectDir, 'plan', 'refs', 'leak.png'));
   });
 
   it('refuses a path outside plan/refs', async () => {
