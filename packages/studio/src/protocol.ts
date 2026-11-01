@@ -107,6 +107,22 @@ export interface PluginSummary {
   tools: string[];
 }
 
+/** One plugin of the site's catalog (`GET /api/plugins/catalog`): a plugin the project may not have. */
+export interface CatalogPlugin {
+  /** The npm package name. */
+  name: string;
+  slug: string;
+  title: string;
+  description: string;
+  /** An absolute URL of the plugin's icon; the generic icon when absent. */
+  icon?: string;
+  version?: string;
+  /** Whether the package is on npm. Studio offers to add a plugin only when it is. */
+  published: boolean;
+  /** The plugin's page on the site. */
+  url: string;
+}
+
 /** `POST /api/renders`. */
 export interface RenderRequest {
   comp: string;

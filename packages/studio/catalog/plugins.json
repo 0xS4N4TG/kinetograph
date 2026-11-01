@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "name": "@kinetographdev/hexed",
+      "slug": "hexed",
+      "title": "Hexed",
+      "description": "Put a look on any picture or clip. Hexed picks a grade, a print screen, a lens effect, some tape damage and a camera shake for you. Keep the parts you like and reroll the rest.",
+      "published": false,
+      "url": "https://kinetograph.dev/plugins/hexed/"
+    },
+    {
+      "name": "@kinetographdev/kinetic-typography",
+      "slug": "kinetic-typography",
+      "title": "Kinetic Typography",
+      "description": "Captions that write themselves on screen in many handwritten styles, timed to your voiceover. Key words jump out in a heavy display face, and the text can follow a tracked subject.",
+      "published": false,
+      "url": "https://kinetograph.dev/plugins/kinetic-typography/"
+    },
+    {
+      "name": "@kinetographdev/paper",
+      "slug": "paper",
+      "title": "Paper",
+      "description": "Paper textures and what you can make from them: a keyword held still while pages flick past underneath, photo cut-outs that unfold from a crumpled packet, and a hand-drawn line round a moving subject on torn paper.",
+      "published": false,
+      "url": "https://kinetograph.dev/plugins/paper/"
+    },
+    {
+      "name": "@kinetographdev/vj",
+      "slug": "vj",
+      "title": "VJ",
+      "description": "Make footage look like it came from a CRT, a worn VHS tape, a thermal camera or a 1-bit screen, cut a person into a cyberpunk pop-art poster, and draw tracking boxes on whatever moves.",
+      "published": false,
+      "url": "https://kinetograph.dev/plugins/vj/"
+    }
+  ]
+}
