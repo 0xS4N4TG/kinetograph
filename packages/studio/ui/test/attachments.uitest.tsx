@@ -43,6 +43,37 @@ async function start() {
 const say = (server: MockServer, event: AgentEvent) => act(() => server.send({ type: 'agent', event }));
 const prompts = (server: MockServer) => server.agentMessages.filter((m) => m.type === 'agent.prompt') as Extract<(typeof server.agentMessages)[number], { type: 'agent.prompt' }>[];
 
+describe('the attach button', () => {
+  it('opens the file picker, which takes the same images as a drop (limits and errors included)', async () => {
+    const { user } = await start();
+    const input = screen.getByTestId('attach-input') as HTMLInputElement;
+    expect(input).toHaveAttribute('type', 'file');
+    expect(input).toHaveAttribute('multiple');
+    expect(input.accept).toBe('image/png,image/jpeg,image/webp,image/gif,image/avif');
+    const clicked = vi.fn();
+    input.addEventListener('click', clicked);
+    await user.click(screen.getByRole('button', { name: 'Attach images' }));
+    expect(clicked).toHaveBeenCalledTimes(1);
+    await user.upload(input, [png('a.png'), png('b.png')]);
+    expect(screen.getAllByTestId('image-chip')).toHaveLength(2);
+    // a file that is not an image is refused in plain words, as on a drop
+    fireEvent.change(input, { target: { files: [new File(['x'], 'notes.txt', { type: 'text/plain' })] } });
+    expect(screen.getByTestId('attach-error')).toHaveTextContent('notes.txt is not an image');
+    expect(screen.getAllByTestId('image-chip')).toHaveLength(2);
+  });
+
+  it('is findable: the placeholder says images work, and the frame toggle is labelled Frame', async () => {
+    const { user } = await start();
+    expect(screen.getByLabelText('Message for the agent')).toHaveAttribute('placeholder', expect.stringContaining('drop or paste images'));
+    const toggle = screen.getByRole('switch', { name: 'Send a picture of the current frame with the message' });
+    expect(toggle).toBeChecked();
+    expect(screen.getByText('Frame')).toBeInTheDocument();
+    expect(screen.queryByText('Picture')).toBeNull();
+    await user.click(toggle);
+    expect(toggle).not.toBeChecked();
+  });
+});
+
 describe('dropping and pasting images into the prompt box', () => {
   it('shows an overlay while files are dragged over, and a chip for each dropped image', async () => {
     const { panel } = await start();

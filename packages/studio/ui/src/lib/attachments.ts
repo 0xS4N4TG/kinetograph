@@ -28,6 +28,9 @@ export interface Attachment {
   stored?: string;
 }
 
+/** What the file picker offers. */
+export const ACCEPT_IMAGES = 'image/png,image/jpeg,image/webp,image/gif,image/avif';
+
 /** A PNG, JPEG, WebP, GIF or AVIF, by its type or (when the browser gives none) its name. */
 export const isImageFile = (file: File): boolean => (file.type === '' ? EXTENSIONS.test(file.name) : SENDABLE.has(file.type) || file.type === 'image/avif');
 

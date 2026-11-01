@@ -152,7 +152,7 @@ You can send a message while the agent is still working. It waits in a queue und
 button to remove it and a count on Send. When the turn ends, everything queued goes to the agent as one prompt, joined
 with blank lines, and the chat shows each message on its own. Stop ends the turn and keeps the queue. A reload keeps it.
 
-Drop images onto the agent, or paste one, to attach them (up to 6 per message, 20 MB each; PNG, JPEG, WebP, GIF or AVIF). Each
+Drop images onto the agent, paste one, or press the attach button left of Send to attach them (up to 6 per message, 20 MB each; PNG, JPEG, WebP, GIF or AVIF). Each
 appears as a thumbnail in the message box with an x. On Send, Studio stores the originals in `public/refs/` in your project
 and tells the agent the paths, so it can use one with `staticFile('refs/name.png')`; an agent that takes images also sees a
 scaled-down copy. A queued message keeps its images.

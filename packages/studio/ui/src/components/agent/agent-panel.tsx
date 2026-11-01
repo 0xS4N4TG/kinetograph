@@ -1,14 +1,15 @@
 import { Streamdown } from 'streamdown';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
-import { ArrowUpIcon, ChevronRightIcon, ImageIcon, SparklesIcon, SquareIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
+import { ArrowUpIcon, ChevronRightIcon, FrameIcon, ImagePlusIcon, SparklesIcon, SquareIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
 
 import type { AgentAttachment, AgentInfo, CompositionInfo, InspectResult, PluginSummary, ProjectInfo, ReceivedFrame, TimelineData } from '@/api';
 import { AttachmentChips, MessageImages } from '@/components/agent/attachments';
 import { ToolGroup } from '@/components/agent/tool-rows';
 import { Button } from '@/components/ui/button';
+import { Hint } from '@/components/ui/hint';
 import { Popover, PopoverPopup } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
-import { acceptImages, dragHasFiles, filesOf, prepareAttachments, type Attachment } from '@/lib/attachments';
+import { ACCEPT_IMAGES, acceptImages, dragHasFiles, filesOf, prepareAttachments, type Attachment } from '@/lib/attachments';
 import type { ChatItem } from '@/lib/chat';
 import { buildChatContext } from '@/lib/chat-context';
 import { MAX_CHIPS, selectionChips, type Chip } from '@/lib/chips';
@@ -284,6 +285,7 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
   const [withPicture, setWithPicture] = useState(true);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const pickerRef = useRef<HTMLInputElement>(null);
   // Pictures dropped or pasted, kept until the message goes. The ref is the latest list, so two drops in a row count right.
   const [attached, setAttached] = useState<Attachment[]>([]);
   const attachedRef = useRef<Attachment[]>([]);
@@ -560,17 +562,37 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
             value={text}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={onKeyDown}
-            placeholder={busy ? 'Queue a message for when the agent is done' : 'Ask the agent to change something'}
+            placeholder={busy ? 'Queue a message for when the agent is done' : 'Ask the agent to change something \u2014 drop or paste images too'}
             rows={2}
             className="placeholder:text-muted-foreground/70 block max-h-40 min-h-[52px] w-full resize-none bg-transparent px-1 py-1 text-[13.5px] leading-relaxed outline-none"
           />
           <div className="mt-1 flex items-center gap-2">
-            <label className="text-muted-foreground flex items-center gap-2 text-xs select-none">
-              <Switch aria-label="Include a picture of the selection" checked={withPicture} onCheckedChange={(checked) => setWithPicture(checked)} className="sm:[--thumb-size:--spacing(3.5)]" />
-              <ImageIcon className="size-3.5" aria-hidden="true" />
-              Picture
-            </label>
+            <Hint label="Send a picture of the current frame with the message">
+              <label className="text-muted-foreground flex items-center gap-2 text-xs select-none">
+                <Switch aria-label="Send a picture of the current frame with the message" checked={withPicture} onCheckedChange={(checked) => setWithPicture(checked)} className="sm:[--thumb-size:--spacing(3.5)]" />
+                <FrameIcon className="size-3.5" aria-hidden="true" />
+                Frame
+              </label>
+            </Hint>
             <div className="ml-auto flex items-center gap-2">
+              <input
+                ref={pickerRef}
+                type="file"
+                multiple
+                accept={ACCEPT_IMAGES}
+                hidden
+                data-testid="attach-input"
+                onChange={(event) => {
+                  addImages(Array.from(event.target.files ?? []));
+                  // the same file can be chosen again
+                  event.target.value = '';
+                }}
+              />
+              <Hint label="Attach images (or drop / paste)">
+                <Button size="icon" variant="ghost" aria-label="Attach images" disabled={unavailable} onClick={() => pickerRef.current?.click()} className="text-muted-foreground rounded-full">
+                  <ImagePlusIcon />
+                </Button>
+              </Hint>
               {busy && (
                 <Button size="sm" variant="outline" onClick={chat.stop} className="rounded-full px-3.5">
                   <SquareIcon className="size-3 fill-current" aria-hidden="true" />
