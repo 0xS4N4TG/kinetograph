@@ -7,6 +7,7 @@ import { bucketsFor, useWaveform, VideoStrip, WaveformLine } from '@/components/
 import { Button } from '@/components/ui/button';
 import { RangeGrip } from '@/components/inspector/trim-bar';
 import { Hint } from '@/components/ui/hint';
+import { LoadingImage, Skeleton } from '@/components/ui/skeleton';
 import { Slider } from '@/components/ui/slider';
 import { clock } from '@/lib/format';
 import { layerColors } from '@/lib/layer-colors';
@@ -172,7 +173,7 @@ const Filmstrip = memo(function Filmstrip({ comp, laneWidth, thumbnailUrl }: { c
         const src = thumbnailUrl?.(frame, STRIP_HEIGHT * 2);
         return (
           <div key={i} className="relative h-full min-w-0 flex-1 overflow-hidden">
-            {src && <img data-testid="filmstrip-frame" src={src} alt="" loading="lazy" decoding="async" draggable={false} className="size-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
+            {src && <LoadingImage data-testid="filmstrip-frame" src={src} alt="" loading="lazy" decoding="async" draggable={false} className="size-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
           </div>
         );
       })}
@@ -249,6 +250,10 @@ const AudioRow = memo(function AudioRow({ sound, pxPerFrame, laneWidth, waveform
       {sound.ranges.map(([a, b]) => (
         <Bar key={a} from={a} to={b + 1} pxPerFrame={pxPerFrame} title={title} className="bg-foreground/[0.04] border-border text-foreground" />
       ))}
+      {!peaks &&
+        sound.ranges.map(([a, b]) => (
+          <Skeleton key={a} data-testid="waveform-skeleton" className="pointer-events-none absolute inset-y-2.5 rounded-md" style={{ left: a * pxPerFrame, width: Math.max(4, (b + 1 - a) * pxPerFrame) }} />
+        ))}
       {peaks && extent && (
         <div className="pointer-events-none absolute inset-y-1.5" style={{ left: extent[0] * pxPerFrame, width: Math.max(1, (extent[1] - extent[0]) * pxPerFrame) }}>
           <WaveformLine peaks={peaks.peaks} width={Math.max(1, (extent[1] - extent[0]) * pxPerFrame)} height={ROW_HEIGHT - 12} />

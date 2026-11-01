@@ -6,6 +6,7 @@ import { CopyForAgent } from '@/components/inspector/agent-copy';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { buildAgentMessage, type AgentMessageInput } from '@/lib/agent-message';
 import { formatNumber } from '@/lib/format';
 import { findLayer, type InspectLayer } from '@/lib/inspect';
@@ -30,7 +31,20 @@ interface SceneTreeProps {
 /** The layers of the current frame (topmost first) and the selected layer's resolved fields. */
 export function SceneTree({ inspect, frame, selected, selectedLayers = selected === null ? [] : [selected], onSelect, onSelectMany, agent }: SceneTreeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  if (inspect === null) return <p className="text-muted-foreground p-4 text-[13px]">Scene not loaded.</p>;
+  if (inspect === null) {
+    // With a composition open the scene is on its way: rows shaped like the layer list. Without one there is nothing coming.
+    if (agent === null) return <p className="text-muted-foreground p-4 text-[13px]">Scene not loaded.</p>;
+    return (
+      <div data-testid="scene-skeleton" aria-busy="true" aria-label="Loading the scene" className="flex flex-col gap-2 p-4">
+        {[100, 82, 64, 82, 64].map((width, i) => (
+          <div key={i} className="flex items-center gap-2" style={{ paddingLeft: width === 100 ? 0 : 16 }}>
+            <Skeleton className="size-4 shrink-0 rounded-md" />
+            <Skeleton className="h-3.5 rounded-md" style={{ width: `${width}%` }} />
+          </div>
+        ))}
+      </div>
+    );
+  }
   const layer = selected === null ? null : findLayer(inspect.layers, selected);
   const toggle = (id: string) =>
     setCollapsed((current) => {

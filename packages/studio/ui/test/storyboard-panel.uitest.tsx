@@ -199,6 +199,17 @@ describe('StoryboardPanel', () => {
     expect(animate).not.toHaveBeenCalled();
   });
 
+  it('shows a skeleton over each still until it has loaded, and keeps the image element', () => {
+    start();
+    const card = screen.getByRole('article', { name: 'Shot 1' });
+    const img = within(card).getByRole('img');
+    expect(card.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+    expect(card.querySelector('[data-slot="skeleton"]')!.className).toContain('motion-reduce:animate-none');
+    fireEvent.load(img);
+    expect(card.querySelector('[data-slot="skeleton"]')).toBeNull();
+    expect(within(card).getByRole('img')).toBe(img);
+  });
+
   it('records a removed shot, and a shot added here and removed again is not reported', async () => {
     const { user, answer } = start();
     await user.click(screen.getByRole('button', { name: 'Remove shot 2' }));

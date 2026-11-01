@@ -3,7 +3,7 @@ import { useRef, useState, type DragEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingImage, Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
 import { newKey, type RefRow } from './brief-model';
@@ -15,11 +15,11 @@ const IMAGE = /\.(png|jpe?g|webp|gif)$/i;
 function Thumb({ row }: { row: RefRow }) {
   const shown = row.sheet ?? (row.kind === 'file' && IMAGE.test(row.src) ? row.src : null);
   return (
-    <div className="bg-muted text-muted-foreground flex h-14 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md border">
+    <div className="bg-muted text-muted-foreground relative flex h-14 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md border">
       {row.uploading ? (
-        <Spinner className="size-4" />
+        <Skeleton data-testid="upload-skeleton" className="size-full rounded-none" />
       ) : shown ? (
-        <img src={refUrl(shown)} alt={row.sheet ? `Contact sheet of ${row.name ?? row.src}` : (row.name ?? row.src)} className="size-full object-cover" />
+        <LoadingImage src={refUrl(shown)} alt={row.sheet ? `Contact sheet of ${row.name ?? row.src}` : (row.name ?? row.src)} className="size-full object-cover" />
       ) : row.kind === 'file' ? (
         row.error ? <XIcon className="size-4" /> : IMAGE.test(row.src) ? <ImageIcon className="size-4" /> : <FilmIcon className="size-4" />
       ) : (

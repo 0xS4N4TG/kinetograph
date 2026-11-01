@@ -2,7 +2,7 @@ import { CheckIcon, MessageSquarePlusIcon, XIcon } from 'lucide-react';
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
@@ -167,9 +167,7 @@ export function StyleframeCard({ frame, letter, picked, notes, focusKey, onPick,
           className={cn('block h-auto w-full', state !== 'ready' && 'invisible absolute inset-0 size-full')}
         />
         {state === 'loading' ? (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Spinner className="text-muted-foreground size-5" />
-          </div>
+          <Skeleton data-testid="styleframe-skeleton" className="absolute inset-0 rounded-none" />
         ) : null}
         {state === 'error' ? (
           <div role="alert" className="text-muted-foreground absolute inset-0 flex items-center justify-center p-3 text-center text-xs">

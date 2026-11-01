@@ -3,6 +3,7 @@ import { useState, type PointerEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { LoadingImage } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
@@ -107,7 +108,7 @@ export function ShotCard(props: ShotCardProps) {
       )}
     >
       <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
-        <img
+        <LoadingImage
           src={props.thumbnail}
           alt={`Frame ${shot.frame} for shot ${n}`}
           loading="lazy"
