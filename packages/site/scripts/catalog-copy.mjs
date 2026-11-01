@@ -317,7 +317,7 @@ export const TEMPLATE_COPY = {
       'Your own photo for the post, a second picture for the swap, a logo and four avatars. Without them, all of it is drawn.',
       'The typefaces and colours, and whether the motion steps at 24 frames a second or runs smooth at 60.',
     ],
-    media: { hero: { from: 'effects/phone-orbit/out/phone-orbit.mp4', at: 0.65, len: 2.55 } },
+    media: { hero: { from: 'effects/phone-orbit/out/phone-orbit-stock.mp4', at: 0.65, len: 2.55 } },
   },
 };
 

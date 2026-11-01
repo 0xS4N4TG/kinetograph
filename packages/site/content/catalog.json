@@ -3371,7 +3371,7 @@
         "src": "/catalog/templates/phone-orbit/hero.webp",
         "w": 1280,
         "h": 720,
-        "from": "effects/phone-orbit/out/phone-orbit.mp4",
+        "from": "effects/phone-orbit/out/phone-orbit-stock.mp4",
         "at": 0.65,
         "video": "/catalog/templates/phone-orbit/hero.mp4",
         "len": 2.55
