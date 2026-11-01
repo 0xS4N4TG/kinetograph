@@ -59,7 +59,8 @@ describe('StyleframesPanel', () => {
       '/api/frame?comp=Outro&frame=12&scale=1&format=jpeg',
       '/api/frame?comp=Intro&frame=90&scale=1&format=jpeg',
     ]);
-    expect(screen.getByText('Three looks for the intro')).toBeInTheDocument();
+    // The message is the host's to show, once.
+    expect(screen.queryByText('Three looks for the intro')).not.toBeInTheDocument();
     expect(screen.getByText('Serif display')).toBeInTheDocument();
     expect(screen.getByText('warm grade')).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Pick B' })).toBeInTheDocument();

@@ -138,7 +138,10 @@ export function StyleframeCard({ frame, letter, picked, notes, focusKey, onPick,
         </span>
         <span className="min-w-0">
           <span className="block truncate text-sm font-medium">{frame.label}</span>
-          {frame.note ? <span className="text-muted-foreground block text-xs">{frame.note}</span> : null}
+          {/* The line is kept when there is no note, so the stills of all the cards start at the same height. */}
+          <span className="text-muted-foreground block min-h-4 truncate text-xs" title={frame.note}>
+            {frame.note}
+          </span>
         </span>
       </button>
 

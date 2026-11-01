@@ -51,8 +51,7 @@ export function StyleframesPanel({ panel, onSubmit, onDismiss }: PanelProps<'sty
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {panel.message ? <p className="mb-3 text-sm">{panel.message}</p> : null}
-        <div role="radiogroup" aria-label="Styleframes" className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-3">
+        <div role="radiogroup" aria-label="Styleframes" className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,15rem),1fr))] gap-3">
           {frames.map((frame, index) => (
             <StyleframeCard
               key={frame.id}
