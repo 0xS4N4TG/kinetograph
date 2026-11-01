@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
-import { useStudioContext } from '@/lib/studio-context';
+import { useBuildId, useStudioContext } from '@/lib/studio-context';
 
 import { frameSrc } from '../frame-src';
 import type { Block } from '../types';
@@ -14,7 +14,7 @@ import { BlockShell } from './shell';
 /** A frame of a composition in a box that shows a skeleton until it has loaded, and says so when it cannot be drawn. */
 export function FrameImage({ comp, frame, scale = 0.5, alt, className }: { comp: string; frame: number; scale?: number; alt: string; className?: string }) {
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
-  const src = frameSrc(comp, frame, scale);
+  const src = frameSrc(comp, frame, scale, useBuildId());
   useEffect(() => setState('loading'), [src]);
   return (
     <div className={cn('bg-muted relative overflow-hidden rounded-md', state !== 'ready' && 'aspect-video', className)}>
@@ -59,7 +59,7 @@ export function ClipBlock({ block }: { block: Extract<Block, { type: 'clip' }> }
   const [playing, setPlaying] = useState(false);
   const [loaded, setLoaded] = useState<number | null>(null);
   const [failed, setFailed] = useState(false);
-  const src = frameSrc(block.comp, frame, 0.5);
+  const src = frameSrc(block.comp, frame, 0.5, useBuildId());
 
   // The next picture is asked for once the one on show has loaded, for as long as the frame would have lasted.
   useEffect(() => {

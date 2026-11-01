@@ -1,5 +1,9 @@
-/** Where a picture of a composition comes from: the studio's frame route, at a fraction of the composition's size. */
-export const frameSrc = (comp: string, frame: number, scale: number): string => `/api/frame?comp=${encodeURIComponent(comp)}&frame=${frame}&scale=${scale}&format=jpeg`;
+/**
+ * Where a picture of a composition comes from: the studio's frame route, at a fraction of the composition's size.
+ * `build` is the studio's current build: the route ignores it, but the changed address makes the browser draw the picture again after a rebuild.
+ */
+export const frameSrc = (comp: string, frame: number, scale: number, build = 0): string =>
+  `/api/frame?comp=${encodeURIComponent(comp)}&frame=${frame}&scale=${scale}&format=jpeg${build > 0 ? `&build=${build}` : ''}`;
 
 /** A storyboard card is about 16rem wide (256 px, 144 px tall at 16:9); stills are drawn for twice that, for retina screens. */
 const CARD_BOX = { width: 512, height: 288 };

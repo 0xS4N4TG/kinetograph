@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEven
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useStudioContext } from '@/lib/studio-context';
+import { useBuildId, useStudioContext } from '@/lib/studio-context';
 import { cn } from '@/lib/utils';
 
 import { cardScale, frameSrc } from './frame-src';
@@ -70,6 +70,7 @@ export function StoryboardPanel({ panel, onSubmit, onDismiss }: PanelProps<'stor
   const target = targetOf(panel.data);
   const originalIds = useMemo(() => new Set(panel.data.shots.map((s) => s.id)), [panel.data.shots]);
   const studio = useStudioContext();
+  const build = useBuildId();
   /** The stills are drawn for the card (twice its size), not as the timeline's tiny thumbnails. */
   const scale = cardScale(studio?.compositions.find((c) => c.id === comp));
   const [shots, setShots] = useState<Shot[]>(() => panel.data.shots.map((s) => ({ ...s })));
@@ -309,7 +310,7 @@ export function StoryboardPanel({ panel, onSubmit, onDismiss }: PanelProps<'stor
                   shot={shot}
                   index={i}
                   count={shots.length}
-                  thumbnail={frameSrc(comp, shot.frame, scale)}
+                  thumbnail={frameSrc(comp, shot.frame, scale, build)}
                   note={notes[shot.id] ?? ''}
                   dragging={dragId === shot.id}
                   registerRef={(el) => {
