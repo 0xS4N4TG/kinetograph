@@ -44,9 +44,14 @@ const PATH_RE = /^plan\/refs\/[A-Za-z0-9._-]+$/;
  * at most 100 characters before the extension. Null when nothing is left or the type is not a video or an image.
  */
 export function safeRefName(raw: string): string | null {
+  return safeName(raw, (ext) => VIDEO.has(ext) || IMAGE.has(ext));
+}
+
+/** `safeRefName` for any set of extensions (lower case, with the dot): the same cleaning, a different list of types. */
+export function safeName(raw: string, allowed: (ext: string) => boolean): string | null {
   const last = raw.split(/[\\/]/).pop() ?? '';
   const ext = extname(last).toLowerCase();
-  if (!VIDEO.has(ext) && !IMAGE.has(ext)) return null;
+  if (!allowed(ext)) return null;
   const stem = last
     .slice(0, last.length - ext.length)
     .normalize('NFKD')
@@ -56,14 +61,14 @@ export function safeRefName(raw: string): string | null {
   return stem === '' ? null : `${stem}${ext}`;
 }
 
-function reply(res: ServerResponse, status: number, body: unknown): true {
+export function reply(res: ServerResponse, status: number, body: unknown): true {
   const text = JSON.stringify(body);
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(text), 'Cache-Control': 'no-store' });
   res.end(text);
   return true;
 }
 
-const fail = (res: ServerResponse, status: number, code: string, message: string): true => reply(res, status, { error: { code, message } });
+export const fail = (res: ServerResponse, status: number, code: string, message: string): true => reply(res, status, { error: { code, message } });
 
 /** What a file really is, from its first bytes; the extension is only the name the person gave it. */
 export type Sniffed = { kind: 'video'; demuxer: 'mov' | 'matroska' | 'avi'; allow: string } | { kind: 'image' };
@@ -85,7 +90,7 @@ export function sniff(head: Buffer): Sniffed | null {
 }
 
 /** True when `path` is a regular file and not a symbolic link. */
-async function isPlainFile(path: string): Promise<boolean> {
+export async function isPlainFile(path: string): Promise<boolean> {
   try {
     return (await lstat(path)).isFile();
   } catch {
@@ -94,7 +99,7 @@ async function isPlainFile(path: string): Promise<boolean> {
 }
 
 /** True when something (a file, a link, even a dangling one) is at `path`. */
-async function taken(path: string): Promise<boolean> {
+export async function taken(path: string): Promise<boolean> {
   try {
     await lstat(path);
     return true;
@@ -104,7 +109,7 @@ async function taken(path: string): Promise<boolean> {
 }
 
 /** True when `path` really lies inside `root` once links are resolved. */
-async function inside(root: string, path: string): Promise<boolean> {
+export async function inside(root: string, path: string): Promise<boolean> {
   try {
     return (await realpath(path)).startsWith(root + sep);
   } catch {
@@ -112,7 +117,7 @@ async function inside(root: string, path: string): Promise<boolean> {
   }
 }
 
-async function head(file: string): Promise<Buffer> {
+export async function head(file: string): Promise<Buffer> {
   const handle = await open(file, 'r');
   try {
     const buffer = Buffer.alloc(16);
@@ -180,20 +185,26 @@ export async function makeContactSheet(video: string, sheet: string, kind: Extra
 }
 
 /** A name that is not taken in `dir`: `a.mp4`, then `a-2.mp4`, `a-3.mp4`. */
-async function freeName(dir: string, name: string): Promise<string> {
+export async function freeName(dir: string, name: string, siblings: string[] = ['.sheet.png', '.part']): Promise<string> {
   const ext = extname(name);
   const stem = name.slice(0, name.length - ext.length);
   let candidate = name;
-  for (let n = 2; (await taken(join(dir, candidate))) || (await taken(join(dir, `${candidate}.sheet.png`))) || (await taken(join(dir, `${candidate}.part`))); n++) candidate = `${stem}-${n}${ext}`;
+  const busy = async (c: string): Promise<boolean> => {
+    if (await taken(join(dir, c))) return true;
+    for (const suffix of siblings) if (await taken(join(dir, `${c}${suffix}`))) return true;
+    return false;
+  };
+  for (let n = 2; await busy(candidate); n++) candidate = `${stem}-${n}${ext}`;
   return candidate;
 }
 
-async function receive(req: IncomingMessage, to: string): Promise<void> {
+/** Streams the request body into a new file at `to` (flag wx), failing with a RangeError past `max` bytes. */
+export async function receive(req: IncomingMessage, to: string, max = MAX_REF_BYTES): Promise<void> {
   let size = 0;
   const limit = new Transform({
     transform(chunk: Buffer, _encoding, done) {
       size += chunk.length;
-      done(size > MAX_REF_BYTES ? new RangeError('too large') : null, chunk);
+      done(size > max ? new RangeError('too large') : null, chunk);
     },
   });
   await pipeline(req, limit, createWriteStream(to, { flags: 'wx' }));

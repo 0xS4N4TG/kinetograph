@@ -355,6 +355,123 @@ describe('the agent over the studio server', () => {
     });
   });
 
+  describe('pictures attached to a message', () => {
+    const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('pixels')]);
+    const said = (c: Client) =>
+      c
+        .messages('agent')
+        .flatMap((m: any) => (m.event.kind === 'message' ? [m.event.text] : []))
+        .join('');
+    const store = async (server: Awaited<ReturnType<typeof start>>, name: string): Promise<string> => {
+      const r = await fetch(`${server.url.split('?')[0]}api/agent/image?name=${name}&token=${tokenOf(server)}`, { method: 'PUT', body: PNG });
+      expect(r.status).toBe(201);
+      return ((await r.json()) as { file: string }).file;
+    };
+
+    it('stores the file, hands the agent the picture and always names the paths', async () => {
+      const { dir, entry } = writeProject('attach');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const a = await store(server, 'a.png');
+      const b = await store(server, 'b.png');
+      expect(readFileSync(join(dir, 'public', 'refs', a))).toEqual(PNG);
+      const client = await Client.connect(server);
+      client.send({ type: 'agent.prompt', text: 'use these', context: '', attachments: [{ name: a, data: 'AAAA', mimeType: 'image/png' }, { name: b }] });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'done');
+      // one picture block (the second came without data), and both paths named
+      expect(said(client)).toContain('images: 1');
+      expect(said(client)).toContain("Attached: public/refs/a.png, public/refs/b.png");
+      expect(said(client)).toContain("staticFile('refs/a.png')");
+      // the chat shows the person's own words and the picture names
+      const user = client.messages('agent').map((m: any) => m.event).find((e: any) => e.kind === 'user');
+      expect(user).toEqual({ kind: 'user', text: 'use these', chips: [], images: ['a.png', 'b.png'] });
+      client.close();
+    });
+
+    it('names the paths even when the agent does not take images', async () => {
+      process.env.FAKE_AGENT_IMAGE = '0';
+      try {
+        const { dir, entry } = writeProject('attach-noimg');
+        const server = await start(entry, { agent: command, agentCwd: dir });
+        const a = await store(server, 'a.png');
+        const client = await Client.connect(server);
+        client.send({ type: 'agent.prompt', text: 'look', context: '', attachments: [{ name: a, data: 'AAAA', mimeType: 'image/png' }] });
+        await client.waitForMessage('agent', (m) => m.event.kind === 'done');
+        expect(said(client)).toContain('images: 0');
+        expect(said(client)).toContain('Attached: public/refs/a.png');
+        client.close();
+      } finally {
+        delete process.env.FAKE_AGENT_IMAGE;
+      }
+    });
+
+    it('writes paths relative to the agent when it runs above the project', async () => {
+      const { dir, entry } = writeProject('attach-above');
+      const server = await start(entry, { agent: command, agentCwd: join(dir, '..') });
+      const a = await store(server, 'a.png');
+      const client = await Client.connect(server);
+      client.send({ type: 'agent.prompt', text: 'look', context: '', attachments: [{ name: a }] });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'done');
+      expect(said(client)).toContain(`Attached: ${dir.split('/').pop()}/public/refs/a.png`);
+      client.close();
+    });
+
+    it('lets a message that is only pictures through, and refuses names that are not stored pictures', async () => {
+      const { dir, entry } = writeProject('attach-only');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const a = await store(server, 'a.png');
+      const client = await Client.connect(server);
+      const errors = () => client.messages('agent').flatMap((m: any) => (m.event.kind === 'error' ? [m.event.message as string] : []));
+      client.send({ type: 'agent.prompt', text: '', context: '', attachments: [{ name: '../../etc/passwd' }] });
+      client.send({ type: 'agent.prompt', text: 'hi', context: '', attachments: [{ name: 'not-stored.png' }] });
+      client.send({ type: 'agent.prompt', text: 'hi', context: '', attachments: Array.from({ length: 7 }, () => ({ name: a })) });
+      await until(() => errors(), (e) => e.length === 3);
+      expect(errors()[0]).toMatch(/not valid/);
+      expect(errors()[1]).toMatch(/not stored in the project/);
+      expect(errors()[2]).toMatch(/At most 6/);
+      client.send({ type: 'agent.prompt', text: '', context: '', attachments: [{ name: a }] });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'done');
+      expect(said(client)).toContain('Attached: public/refs/a.png');
+      client.close();
+    });
+
+    it('keeps the pictures of a queued message, shows them in the queue and sends them when the turn ends', async () => {
+      const { dir, entry } = writeProject('attach-queue');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const a = await store(server, 'a.png');
+      const b = await store(server, 'b.png');
+      const client = await Client.connect(server);
+      client.send({ type: 'agent.prompt', text: 'slow first', context: '' });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'status' && m.event.status === 'busy');
+      client.send({ type: 'agent.prompt', text: 'with a', context: '', attachments: [{ name: a, data: 'AAAA', mimeType: 'image/png' }] });
+      client.send({ type: 'agent.prompt', text: 'with b', context: '', attachments: [{ name: b, data: 'BBBB', mimeType: 'image/png' }] });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'queue' && m.event.items.length === 2);
+      const queue = client.messages('agent').map((m: any) => m.event).filter((e: any) => e.kind === 'queue').at(-1);
+      expect(queue.items.map((i: any) => i.images)).toEqual([['a.png'], ['b.png']]);
+      await until(() => said(client), (t) => t.includes('got: with a'));
+      expect(said(client)).toContain('images: 2');
+      expect(said(client)).toContain('with a\n\nAttached: public/refs/a.png');
+      expect(said(client)).toContain('with b\n\nAttached: public/refs/b.png');
+      const users = client.messages('agent').map((m: any) => m.event).filter((e: any) => e.kind === 'user');
+      expect(users.map((u: any) => u.images)).toEqual([undefined, ['a.png'], ['b.png']]);
+      client.close();
+    });
+
+    it('keeps the pictures in the history a reloaded window gets', async () => {
+      const { dir, entry } = writeProject('attach-history');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const a = await store(server, 'a.png');
+      const first = await Client.connect(server);
+      first.send({ type: 'agent.prompt', text: 'see', context: '', attachments: [{ name: a }] });
+      await first.waitForMessage('agent', (m) => m.event.kind === 'done');
+      first.close();
+      await new Promise((r) => setTimeout(r, 100));
+      const again = await Client.connect(server);
+      const history = (await again.waitFor((r) => r.kind === 'json' && r.message.type === 'agent.history')) as any;
+      expect(history.message.items[0]).toEqual({ kind: 'user', text: 'see', chips: [], images: ['a.png'] });
+      again.close();
+    });
+  });
+
   it('keeps the conversation when its window reloads, and replays it to the window that comes back', async () => {
     const { dir, entry } = writeProject('reload');
     const server = await start(entry, { agent: command, agentCwd: dir });

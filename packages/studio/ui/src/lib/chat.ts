@@ -3,7 +3,7 @@
 import type { AgentEvent, AgentPermissionOption, AgentStatus, ChatRecord, QueuedMessage, ToolDiff, ToolInput } from '@/api';
 
 export type ChatItem =
-  | { kind: 'user'; id: number; text: string; chips: string[] }
+  | { kind: 'user'; id: number; text: string; chips: string[]; images?: string[] }
   | { kind: 'agent'; id: number; text: string }
   | {
       kind: 'tool';
@@ -38,8 +38,9 @@ type NewItem = ChatItem extends infer T ? (T extends ChatItem ? Omit<T, 'id'> : 
 export const emptyChat: ChatState = { items: [], status: 'idle', command: null, image: false, nextId: 1, queue: [] };
 
 /** Adds the user's own message. */
-export function addUserMessage(state: ChatState, text: string, chips: string[]): ChatState {
-  return { ...state, items: [...state.items, { kind: 'user', id: state.nextId, text, chips }], nextId: state.nextId + 1 };
+export function addUserMessage(state: ChatState, text: string, chips: string[], images: string[] = []): ChatState {
+  const item: ChatItem = { kind: 'user', id: state.nextId, text, chips, ...(images.length > 0 ? { images } : {}) };
+  return { ...state, items: [...state.items, item], nextId: state.nextId + 1 };
 }
 
 /** Starts again: the conversation is cleared (the status stays). */
@@ -118,7 +119,7 @@ export function reduceChat(state: ChatState, event: AgentEvent): ChatState {
     case 'done':
       return state;
     case 'user':
-      return addUserMessage(state, event.text, event.chips ?? []);
+      return addUserMessage(state, event.text, event.chips ?? [], event.images);
     case 'queue':
       return { ...state, queue: event.items };
     case 'error':
@@ -130,7 +131,7 @@ export function reduceChat(state: ChatState, event: AgentEvent): ChatState {
 export function replayChat(state: ChatState, records: ChatRecord[]): ChatState {
   let next = clearChat(state);
   for (const record of records) {
-    if (record.kind === 'user') next = addUserMessage(next, record.text, record.chips);
+    if (record.kind === 'user') next = addUserMessage(next, record.text, record.chips, record.images);
     else if (record.kind === 'answer') next = answerPermission(next, record.id, record.optionId);
     else next = reduceChat(next, record.event);
   }

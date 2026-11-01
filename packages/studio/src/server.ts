@@ -7,11 +7,12 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
-import { dirname, extname, join, resolve } from 'node:path';
+import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { bundlePanel, cliVersion, CliError, findPlugins, pluginToolNames } from 'kinetograph';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { REAL_ENGINE_FILE } from './worker-client.js';
-import { AgentBridge, type McpServerConfig } from './agent-bridge.js';
+import { AgentBridge, type McpServerConfig, type PromptImage } from './agent-bridge.js';
+import { IMAGE_DIR, MAX_IMAGES, isStoredName, missingImages } from './agent-images.js';
 import { ChatLog } from './chat-log.js';
 import { isInside } from './agent-fs.js';
 import { availableAgents } from './agent-presets.js';
@@ -53,6 +54,9 @@ const PROGRESS_INTERVAL_MS = 100;
 const MAX_BODY_BYTES = 1 << 20;
 /** How long a conversation waits for the window that began it to come back (a reload). */
 const MAX_QUEUED = 20;
+/** The most base64 a message may carry as pictures for the agent (the window sends them already scaled down). */
+const MAX_IMAGE_DATA = 12 * 1024 * 1024;
+const SENDABLE_IMAGES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 const RECLAIM_MS = 30_000;
 /** A thumbnail is drawn only once no preview frame was asked for in this long (ms): playback is never kept waiting. */
 const THUMB_IDLE_MS = 250;
@@ -173,7 +177,16 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   restorePanels(panels, dirname(entry));
   /** What the person said while the agent was working, and the panel answers it has not heard yet; both wait for the end of the turn. */
   const unheard: { id: string; text: string; seq: number }[] = [];
-  const promptQueue: { id: string; text: string; context: string; image: { data: string; mimeType: string } | undefined; chips: string[]; seq: number }[] = [];
+  const promptQueue: {
+    id: string;
+    text: string;
+    context: string;
+    image: PromptImage | undefined;
+    chips: string[];
+    /** The pictures attached to the message: their names in public/refs and, for an agent that takes pictures, a scaled copy. */
+    attached: { name: string; image?: PromptImage }[];
+    seq: number;
+  }[] = [];
   let arrivals = 0;
   let nextQueued = 1;
   /** The queue as the window shows it; sent whenever it changes (and after a replay), never kept in the chat log. */
@@ -182,7 +195,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     // A queue that is empty and was never shown needs no word.
     if (promptQueue.length === 0 && !queueShown) return;
     queueShown = promptQueue.length > 0;
-    if (owner) send(owner, { type: 'agent', event: { kind: 'queue', items: promptQueue.map((q) => ({ id: q.id, text: q.text, chips: q.chips })) } });
+    if (owner) send(owner, { type: 'agent', event: { kind: 'queue', items: promptQueue.map((q) => ({ id: q.id, text: q.text, chips: q.chips, ...(q.attached.length > 0 ? { images: q.attached.map((a) => a.name) } : {}) })) } });
   };
   /**
    * Sends the agent everything waiting for it, as one prompt: the person's queued messages and the panel answers, in the
@@ -194,18 +207,31 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     if (agentOff || bridge.working) return;
     if (promptQueue.length === 0 && (unheard.length === 0 || !bridge.ready)) return;
     const waiting = [
-      ...unheard.splice(0).map((u) => ({ text: u.text, chips: [] as string[], seq: u.seq })),
-      ...promptQueue.map((q) => ({ text: q.text, chips: q.chips, seq: q.seq })),
+      ...unheard.splice(0).map((u) => ({ text: u.text, say: u.text, chips: [] as string[], images: [] as string[], seq: u.seq })),
+      ...promptQueue.map((q) => ({ text: q.text, say: withAttached(q.text, q.attached.map((a) => a.name)), chips: q.chips, images: q.attached.map((a) => a.name), seq: q.seq })),
     ].sort((x, y) => x.seq - y.seq);
     const last = promptQueue.at(-1);
-    const image = promptQueue.findLast((q) => q.image)?.image;
+    const selection = promptQueue.findLast((q) => q.image)?.image;
+    const pictures = [...promptQueue.flatMap((q) => q.attached.flatMap((a) => (a.image ? [a.image] : []))), ...(selection ? [selection] : [])];
     promptQueue.length = 0;
     for (const w of waiting) {
-      keep({ kind: 'user', text: w.text, chips: w.chips });
-      if (owner) send(owner, { type: 'agent', event: { kind: 'user', text: w.text, chips: w.chips } });
+      const images = w.images.length > 0 ? { images: w.images } : {};
+      keep({ kind: 'user', text: w.text, chips: w.chips, ...images });
+      if (owner) send(owner, { type: 'agent', event: { kind: 'user', text: w.text, chips: w.chips, ...images } });
     }
     showQueue();
-    void bridge.prompt(waiting.map((w) => w.text).join('\n\n'), last?.context ?? '', image);
+    void bridge.prompt(waiting.map((w) => w.say).join('\n\n'), last?.context ?? '', pictures);
+  }
+  /**
+   * What the agent reads of the pictures a message carries, always: where they are in the project and how to use one in
+   * the video, so an agent that cannot look at pictures can still open or place them. Paths are relative to the agent's
+   * working directory, which is the project's own unless the studio was started higher up.
+   */
+  function withAttached(text: string, names: string[]): string {
+    if (names.length === 0) return text;
+    const dir = relative(agentCwd, join(dirname(entry), ...IMAGE_DIR.split('/'))).split(sep).join('/');
+    const list = names.map((n) => `${dir}/${n}`).join(', ');
+    return `${text}${text === '' ? '' : '\n\n'}Attached: ${list} \u2014 use staticFile('refs/${names[0]}') to put one in the video`;
   }
   // Where the studio can be reached by the agent's MCP server; known once it listens.
   let selfUrl = '';
@@ -834,7 +860,15 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     else if (!mine) return;
     switch (message.type) {
       case 'agent.prompt':
-        if (typeof message.text !== 'string' || message.text.trim() === '') return bad('Write a message for the agent first.');
+        if (typeof message.text !== 'string') return bad('Write a message for the agent first.');
+        const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+        if (message.text.trim() === '' && attachments.length === 0) return bad('Write a message for the agent first.');
+        if (attachments.length > MAX_IMAGES) return bad(`At most ${MAX_IMAGES} pictures go with one message.`);
+        if (attachments.some((a) => typeof a !== 'object' || a === null || typeof a.name !== 'string' || !isStoredName(a.name))) return bad('A picture is not valid.');
+        if (attachments.some((a) => (a.data !== undefined && typeof a.data !== 'string') || (a.mimeType !== undefined && typeof a.mimeType !== 'string'))) return bad('A picture is not valid.');
+        if (attachments.reduce((n, a) => n + (a.data?.length ?? 0), 0) > MAX_IMAGE_DATA) return bad('The pictures are too big to send together. Try fewer or smaller ones.');
+        const gone = missingImages(dirname(entry), attachments.map((a) => a.name));
+        if (gone.length > 0) return bad(`${gone.join(', ')} is not stored in the project. Attach it again.`);
         if (message.image !== undefined && (typeof message.image.data !== 'string' || typeof message.image.mimeType !== 'string')) {
           return bad('The picture is not valid.');
         }
@@ -845,6 +879,10 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
           context: typeof message.context === 'string' ? message.context : '',
           image: message.image,
           chips: Array.isArray(message.chips) ? message.chips.filter((c): c is string => typeof c === 'string') : [],
+          attached: attachments.map((a) => ({
+            name: a.name,
+            ...(a.data && a.mimeType && SENDABLE_IMAGES.has(a.mimeType) ? { image: { data: a.data, mimeType: a.mimeType } } : {}),
+          })),
           seq: arrivals++,
         });
         // Sent at once when the agent is free; otherwise it waits in the queue the window shows, until the turn ends.
