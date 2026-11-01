@@ -15,12 +15,13 @@ import { ChatLog } from './chat-log.js';
 import { isInside } from './agent-fs.js';
 import { availableAgents } from './agent-presets.js';
 import { openBrowser } from './open-browser.js';
-import { readPlan, restorePanels, writePlan } from './panels/plan.js';
-import { PANEL_KINDS, checkAnswer, checkDraft } from './panels/validate.js';
+import { isPlanFile, readPlan, restorePanels, writePlan } from './panels/plan.js';
+import { planFileOf } from './panels/placement.js';
+import { PANEL_KINDS, checkAnswer, checkDraft, checkPlacement } from './panels/validate.js';
 import { panelRoutes } from './panels/routes.js';
 import { PanelStore } from './panels/store.js';
 import { closingMessage } from './panels/summary.js';
-import type { OpenPanel, PanelDraft, PanelKind } from './panels/types.js';
+import type { OpenPanel, PanelDraft, PanelKind, Placement } from './panels/types.js';
 import { listPresets, savePreset } from './presets.js';
 import { Project } from './project.js';
 import {
@@ -218,10 +219,12 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   const closePanel = (panel: OpenPanel): void => broadcast({ type: 'panel.closed', id: panel.id, status: panel.status, panel });
 
   function openPanel(body: unknown): OpenPanel {
-    if (!isObject(body)) throw invalid('the body must be { panel, data, message }');
+    if (!isObject(body)) throw invalid('the body must be { panel, data, message?, placement? }');
     const kind = body.panel as PanelKind;
     if (!PANEL_KINDS.includes(kind)) throw invalid(`panel must be one of ${PANEL_KINDS.join(', ')}`);
     if (body.message !== undefined && typeof body.message !== 'string') throw invalid('message must be text');
+    const badPlacement = checkPlacement(body.placement);
+    if (badPlacement) throw invalid(badPlacement);
     const bad = checkDraft(kind, body.data);
     if (bad) throw invalid(`the data for a ${kind} panel is not valid: ${bad}`);
     const data = body.data as PanelDraft[typeof kind];
@@ -236,23 +239,24 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       const seconds = (saved as { seconds?: unknown } | null)?.seconds;
       if (typeof seconds === 'number' && Number.isFinite(seconds)) (data as { targetSeconds?: number }).targetSeconds = seconds;
     }
-    const { panel, replaced } = panels.open(kind, data, (body.message as string | undefined) ?? null);
+    const { panel, replaced } = panels.open(kind, data, (body.message as string | undefined) ?? null, Date.now(), body.placement as Placement | undefined);
     if (replaced) closePanel(replaced);
     showPanel(panel);
     return panel;
   }
 
-  /** The person's answer to a panel, from a window: checked, written to plan/<kind>.json, then the agent is told. */
+  /** The person's answer to a panel, from a window: checked, written to plan/<kind>.json (plan/custom-<name>.json), then the agent is told. */
   function submitPanel(id: string, answer: unknown): void {
     const panel = panels.get(id);
     if (!panel) throw invalid(`no panel "${id}"`);
     if (panel.status !== 'open') throw invalid(`the panel "${id}" is already ${panel.status}`);
-    const bad = checkAnswer(panel.panel, answer);
+    const bad = checkAnswer(panel.panel, answer, panel.data);
     if (bad) throw invalid(`the answer to the ${panel.panel} panel is not valid: ${bad}`);
+    const file = planFileOf(panel);
     try {
-      writePlan(dirname(entry), panel.panel, answer);
+      writePlan(dirname(entry), file, answer);
     } catch (error) {
-      throw new StudioFailure('IO', `could not write plan/${panel.panel}.json: ${(error as Error).message}`);
+      throw new StudioFailure('IO', `could not write plan/${file}.json: ${(error as Error).message}`);
     }
     const closed = panels.close(id, 'submitted', answer as OpenPanel['answer'])!;
     closePanel(closed);
@@ -535,7 +539,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         throw new StudioFailure('FORBIDDEN', 'the plan files need the studio token from the address the studio opened');
       }
       const kind = decodeURIComponent(plan[1]!);
-      const saved = (PANEL_KINDS as readonly string[]).includes(kind) ? readPlan(dirname(entry), kind) : null;
+      const saved = isPlanFile(kind) ? readPlan(dirname(entry), kind) : null;
       if (saved === null) throw new StudioFailure('NOT_FOUND', `no plan/${plan[1]}.json yet`);
       return json(res, 200, saved);
     }

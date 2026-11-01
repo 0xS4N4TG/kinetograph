@@ -1,7 +1,8 @@
 // The panels the server keeps (docs/proposals/studio-panels.md, "Rules"): in memory, for as long as the studio runs, so
-// a window that reloads gets them back. One panel per kind waits at a time. Plan files are the lasting record.
+// a window that reloads gets them back. One panel per kind waits at a time, and one per name for the custom ones. Plan files are the lasting record.
 
-import type { OpenPanel, PanelAnswer, PanelDraft, PanelKind } from './types.js';
+import { defaultPlacement } from './placement.js';
+import type { OpenPanel, PanelAnswer, PanelDraft, PanelKind, Placement } from './types.js';
 
 /** Closed panels kept besides the open ones, for the stepper and the reviews' order. */
 const KEEP_CLOSED = 60;
@@ -10,11 +11,18 @@ export class PanelStore {
   private panels: OpenPanel[] = [];
   private next = 1;
 
-  /** Opens a panel; the one of the same kind that waited is dismissed and returned. */
-  open<K extends PanelKind>(kind: K, data: PanelDraft[K], message: string | null, now = Date.now()): { panel: OpenPanel<K>; replaced: OpenPanel | null } {
-    const replaced = this.panels.find((p) => p.panel === kind && p.status === 'open') ?? null;
+  /** Opens a panel; the one of the same kind (and, for a custom panel, of the same name) that waited is dismissed and returned. */
+  open<K extends PanelKind>(
+    kind: K,
+    data: PanelDraft[K],
+    message: string | null,
+    now = Date.now(),
+    placement: Placement = defaultPlacement(kind),
+  ): { panel: OpenPanel<K>; replaced: OpenPanel | null } {
+    const sameName = (p: OpenPanel) => kind !== 'custom' || (p.data as { name?: string }).name === (data as { name?: string }).name;
+    const replaced = this.panels.find((p) => p.panel === kind && p.status === 'open' && sameName(p)) ?? null;
     if (replaced) replaced.status = 'dismissed';
-    const panel: OpenPanel<K> = { id: `p_${this.next++}`, panel: kind, data, message, status: 'open', answer: null, openedAt: now };
+    const panel: OpenPanel<K> = { id: `p_${this.next++}`, panel: kind, data, message, status: 'open', answer: null, openedAt: now, placement };
     this.panels.push(panel as OpenPanel);
     const closed = this.panels.filter((p) => p.status !== 'open');
     for (const old of closed.slice(0, Math.max(0, closed.length - KEEP_CLOSED))) this.panels.splice(this.panels.indexOf(old), 1);

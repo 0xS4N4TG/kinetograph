@@ -4,8 +4,9 @@ import type { StudioApi } from '@/api';
 import { AgentPanel } from '@/components/agent/agent-panel';
 import { CommandMenu } from '@/components/command/command-menu';
 import { ExportDialog } from '@/components/inspector/export-dialog';
-import { InspectorPanel, type InspectorTab } from '@/components/inspector/inspector-panel';
-import { PanelDock, PanelSheet, usePanelView } from '@/components/panels/panel-host';
+import { InspectorPanel, type InspectorTab, type PanelTab } from '@/components/inspector/inspector-panel';
+import { AgentColumn } from '@/components/panels/agent-column';
+import { PanelDock, PanelFrame, PanelSheet, titleOf, usePanelView } from '@/components/panels/panel-host';
 import { PanelStepper } from '@/components/panels/stepper';
 import { Panel } from '@/components/shell/panel';
 import { ResizeHandle } from '@/components/shell/resize-handle';
@@ -26,6 +27,7 @@ import { useTheme } from '@/lib/theme';
 import { useChat } from '@/lib/use-chat';
 import { useTransportKeys } from '@/lib/use-transport-keys';
 import { useStudio } from '@/studio';
+import { placementOf } from '../../src/panels/placement.ts';
 
 const DETAILS_KEY = 'kinetograph.studio.timeline.details';
 function readDetails(): boolean {
@@ -70,8 +72,39 @@ export function App({ api }: { api: StudioApi }) {
   const [exportOpen, setExportOpen] = useState(false);
   const delivered = useMemo(() => studio.renders.some((job) => job.status === 'done'), [studio.renders]);
   const panelView = usePanelView(studio.panels, delivered);
-  // The sheet covers the centre column: any open panel but a review (which docks), or an approved stage's saved answer.
-  const sheet = panelView.shown?.panel === 'review' ? null : (panelView.shown ?? panelView.answered);
+  // A panel placed beside the preview docks there (a review's default); the sheet covers the centre column with any other
+  // open panel, or with an approved stage's saved answer. Panels placed left or right are tabs in those columns.
+  const dock = panelView.shown && placementOf(panelView.shown) === 'beside-preview' ? panelView.shown : null;
+  const sheet = dock ? null : (panelView.shown ?? panelView.answered);
+  const { setTab: setPanelTab } = panelView;
+  const panelTabs = (side: 'left' | 'right'): PanelTab[] =>
+    panelView.side[side].map((panel) => ({
+      value: `panel:${panel.id}`,
+      label: titleOf(panel),
+      content: (
+        <PanelFrame
+          panel={panel}
+          error={studio.panelErrors[panel.id]}
+          onSubmit={studio.submitPanel}
+          onDismiss={studio.dismissPanel}
+          onHide={() => setPanelTab(side, null)}
+          hideLabel="Back to the tabs"
+        />
+      ),
+    }));
+  const leftTabs = panelTabs('left');
+  const rightTabs = panelTabs('right');
+  const tabValue = (id: string | null) => (id === null ? null : `panel:${id}`);
+  const fromTab = (value: string | null) => (value === null ? null : value.slice('panel:'.length));
+  // A panel placed in a column opens it, and a panel that opens or is brought back from the stepper takes the tab.
+  const leftFocus = panelView.focus.left;
+  const rightFocus = panelView.focus.right;
+  useEffect(() => {
+    if (leftFocus.n > 0) setChatOpen(true);
+  }, [leftFocus.n]);
+  useEffect(() => {
+    if (rightFocus.n > 0) setInspectorOpen(true);
+  }, [rightFocus.n]);
   const [agents, setAgents] = useState<{ id: string; name: string; command: string }[]>([]);
   const agentCommand = chat.state.command;
   const { loadInfo, chooseAgent, restart } = chat;
@@ -99,10 +132,14 @@ export function App({ api }: { api: StudioApi }) {
   const frameError = usePlayerState(player, (s) => s.error);
 
   const zoomTo = useCallback((zoom: Zoom) => setView({ zoom, pan: { x: 0, y: 0 } }), []);
-  const openTab = useCallback((next: InspectorTab) => {
-    setTab(next);
-    setInspectorOpen(true);
-  }, []);
+  const openTab = useCallback(
+    (next: InspectorTab) => {
+      setTab(next);
+      setPanelTab('right', null);
+      setInspectorOpen(true);
+    },
+    [setPanelTab],
+  );
   const { selectLayers, selectLayer } = studio;
   const selectedLayers = studio.selectedLayers;
   /** Layers picked in the preview or on the timeline: one, several, or none; shown in the scene tree. */
@@ -278,20 +315,27 @@ export function App({ api }: { api: StudioApi }) {
         <div className="flex min-h-0 flex-1">
           {chatOpen && (
             <Panel className="shrink-0" style={{ width: chatWidth }} aria-label="Agent">
-              <AgentPanel
-                comp={comp}
-                project={studio.project}
-                inspect={studio.inspect}
-                selectedLayers={studio.selectedLayers}
-                selectLayers={studio.selectLayers}
-                range={range}
-                onClearRange={() => selectRange(null)}
-                thumbnailFrameUrl={studio.frameUrl}
-                lastImage={studio.lastImage}
-                chat={chat}
-                timeline={timelineData}
-                plugins={plugins}
-                draft={agentDraft}
+              <AgentColumn
+                tabs={leftTabs}
+                active={tabValue(leftFocus.id)}
+                onTab={(value) => setPanelTab('left', fromTab(value))}
+                agent={
+                  <AgentPanel
+                    comp={comp}
+                    project={studio.project}
+                    inspect={studio.inspect}
+                    selectedLayers={studio.selectedLayers}
+                    selectLayers={studio.selectLayers}
+                    range={range}
+                    onClearRange={() => selectRange(null)}
+                    thumbnailFrameUrl={studio.frameUrl}
+                    lastImage={studio.lastImage}
+                    chat={chat}
+                    timeline={timelineData}
+                    plugins={plugins}
+                    draft={agentDraft}
+                  />
+                }
               />
             </Panel>
           )}
@@ -302,7 +346,14 @@ export function App({ api }: { api: StudioApi }) {
           <div className="flex min-w-0 flex-1 flex-col">
             {panelView.active && (
               <div className="@container flex shrink-0 justify-center pb-2">
-                <PanelStepper stages={panelView.stages} shown={(panelView.shown ?? panelView.answered)?.id ?? null} onSelect={panelView.select} onDeliver={exportNow} />
+                <PanelStepper
+                  stages={panelView.stages}
+                  extras={panelView.extras}
+                  shown={(panelView.shown ?? panelView.answered)?.id ?? null}
+                  onSelect={panelView.select}
+                  onSelectExtra={panelView.bring}
+                  onDeliver={exportNow}
+                />
               </div>
             )}
             <div className="relative flex min-h-0 flex-1 flex-col">
@@ -331,9 +382,7 @@ export function App({ api }: { api: StudioApi }) {
                     <Transport comp={comp} player={player} audio={studio.audio} edges={edges} className="pointer-events-auto w-full max-w-3xl" />
                   </div>
                 </Panel>
-                {panelView.shown?.panel === 'review' && (
-                  <PanelDock panel={panelView.shown} error={studio.panelErrors[panelView.shown.id]} onSubmit={studio.submitPanel} onDismiss={studio.dismissPanel} onHide={panelView.hide} />
-                )}
+                {dock && <PanelDock panel={dock} error={studio.panelErrors[dock.id]} onSubmit={studio.submitPanel} onDismiss={studio.dismissPanel} onHide={panelView.hide} />}
               </div>
               <ResizeHandle
                 orientation="horizontal"
@@ -374,8 +423,15 @@ export function App({ api }: { api: StudioApi }) {
               <PreviewContext.Provider value={preview}>
                 <InspectorPanel
                   api={api}
-                  tab={tab}
-                  onTabChange={setTab}
+                  tab={tabValue(rightFocus.id) ?? tab}
+                  onTabChange={(next) => {
+                    if (next.startsWith('panel:')) setPanelTab('right', fromTab(next));
+                    else {
+                      setPanelTab('right', null);
+                      setTab(next as InspectorTab);
+                    }
+                  }}
+                  panelTabs={rightTabs}
                   comp={comp}
                   inspect={studio.inspect}
                   project={studio.project}

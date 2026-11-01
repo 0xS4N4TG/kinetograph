@@ -2,11 +2,15 @@
 // "The server validates each answer against the panel's schema"). They catch a missing field or a wrong type, not
 // whether a value makes sense. Each returns the problem in plain words, or null.
 
-import type { PanelKind } from './types.js';
+import { checkCustomAnswer, checkCustomDraft } from './custom.js';
+import { PLACEMENTS } from './placement.js';
+import type { CustomDraft, PanelKind, Placement } from './types.js';
 
-export const PANEL_KINDS: readonly PanelKind[] = ['brief', 'script', 'storyboard', 'styleframes', 'review'];
+export const PANEL_KINDS: readonly PanelKind[] = ['brief', 'script', 'storyboard', 'styleframes', 'review', 'custom'];
 
 type Check = (value: Record<string, unknown>) => string | null;
+/** An answer is checked against the panel's draft when the kind needs it (a custom panel's blocks). */
+type AnswerCheck = (value: Record<string, unknown>, draft: unknown) => string | null;
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isString = (v: unknown): v is string => typeof v === 'string';
@@ -34,7 +38,7 @@ const first = (...problems: (string | null)[]): string | null => problems.find((
 const bool = (v: unknown): boolean => typeof v === 'boolean';
 const PLATFORMS = ['reel-9x16', 'youtube-16x9', 'square-1x1', 'ad-slot', 'custom'];
 
-const answers: Record<PanelKind, Check> = {
+const answers: Record<PanelKind, AnswerCheck> = {
   brief: (a) =>
     first(
       fields(a, [
@@ -63,6 +67,7 @@ const answers: Record<PanelKind, Check> = {
     ),
   review: (a) =>
     first(items(a, 'notes', [['frame', isNumber, 'a number'], ['text', isString, 'text']]), fields(a, [['verdict', (v) => v === 'approved' || v === 'changes', '"approved" or "changes"']])),
+  custom: (a, draft) => checkCustomAnswer(draft as CustomDraft, a),
 };
 
 const drafts: Record<PanelKind, Check> = {
@@ -71,6 +76,7 @@ const drafts: Record<PanelKind, Check> = {
   storyboard: (d) => first(fields(d, [['comp', isString, 'the board composition id']]), items(d, 'shots', [['id', isString, 'text'], ['frame', isNumber, 'a number'], ['seconds', isNumber, 'a number']])),
   styleframes: (d) => items(d, 'frames', [['id', isString, 'text'], ['comp', isString, 'text'], ['frame', isNumber, 'a number']]),
   review: (d) => first(fields(d, [['comp', isString, 'the composition id']]), d.range === undefined || (Array.isArray(d.range) && d.range.length === 2 && d.range.every(isNumber)) ? null : 'range must be [first, last] frames'),
+  custom: checkCustomDraft,
 };
 
 /** The problem with the data a panel is opened with, or null. */
@@ -79,6 +85,11 @@ export function checkDraft(kind: PanelKind, data: unknown): string | null {
 }
 
 /** The problem with the answer submitted for a panel, or null. */
-export function checkAnswer(kind: PanelKind, answer: unknown): string | null {
-  return isObject(answer) ? answers[kind](answer) : 'the answer must be an object';
+export function checkAnswer(kind: PanelKind, answer: unknown, draft?: unknown): string | null {
+  return isObject(answer) ? answers[kind](answer, draft) : 'the answer must be an object';
+}
+
+/** The problem with a placement, or null when it is one of the four or left out. */
+export function checkPlacement(placement: unknown): string | null {
+  return placement === undefined || PLACEMENTS.includes(placement as Placement) ? null : `placement must be one of ${PLACEMENTS.join(', ')}`;
 }

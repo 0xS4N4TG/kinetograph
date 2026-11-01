@@ -218,6 +218,10 @@ interface Note {
 The five panels above are fixed kinds. The mechanism under them (open, answer as the next message, plan file) can carry
 any panel, so the next step makes panels general in three parts, built in this order.
 
+Status: part 1 (the `custom` panel) and the placement half of part 2 (`sheet`, `left`, `right`, `beside-preview` on any
+panel) are built. Persistent panels, the `bottom` placement, dragging tabs between docks and the per-project layout, and
+part 3 (code panels) are not.
+
 ### 1. A `custom` panel made of blocks
 
 The agent sends a layout as data, not code. Studio draws it with one generic renderer and returns an answer keyed by

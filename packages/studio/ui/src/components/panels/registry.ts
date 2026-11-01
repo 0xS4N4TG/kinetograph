@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 
 import { BriefPanel } from './brief-panel';
+import { CustomPanel } from './custom-panel';
 import { ReviewPanel } from './review-panel';
 import { ScriptPanel } from './script-panel';
 import { StoryboardPanel } from './storyboard-panel';
@@ -14,4 +15,5 @@ export const panelComponents: { [K in PanelKind]: ComponentType<PanelProps<K>> }
   storyboard: StoryboardPanel,
   styleframes: StyleframesPanel,
   review: ReviewPanel,
+  custom: CustomPanel,
 };
