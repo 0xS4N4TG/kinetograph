@@ -827,6 +827,22 @@ returns the module Remotion's `@remotion/google-fonts/<Family>` exports (`loadFo
 `fontFamily`); it downloads TTFs once into `~/.cache/kinetograph/fonts` and registers them, and the frame loop waits
 for downloads before the first frame. The CLI maps `@remotion/google-fonts/<Family>` imports onto it.
 
+`@kinetographdev/core/fonts` also exports `makeWebFont(cssUrl, options?)` for any `@font-face` stylesheet URL, the
+fonts that are not on Google (Fontshare, Bunny Fonts, a font host's own CSS). It returns `{ fontFamily, loadFont(style?,
+{ weights }) }`, the same shape as the Google module: `makeWebFont(FONTSHARE_CSS).loadFont('italic', { weights: ['700'] })`
+where `FONTSHARE_CSS` is `https://api.fontshare.com/v2/css?f[]=switzer@400,401,700,701&display=swap`. Use it instead
+of pinning file links (`cdn.fontshare.com/wf/<hash>/...ttf`), which change with each release; the stylesheet URL is
+stable and lists the current files. A project's own `fetch` is blocked during a render (ENGINE.md §10), so this is
+the way to look a font up by its stylesheet. It reads the stylesheet (cached in `~/.cache/kinetograph/fonts`), keeps
+the blocks of the style and weights asked for (every weight by default), downloads one file per block once, and
+registers it with that block's weight and style under the stylesheet's `font-family` (which `fontFamily` reads, once,
+with the thread blocked). A block that lists several formats gives its TrueType or OpenType file when it has one,
+else its first (the renderer reads WOFF and WOFF2 too); `//cdn...` links take the scheme of the stylesheet's URL. If
+a file answers 404 (the host released new files), the stylesheet is downloaded again past the cache, replacing the
+cached copy, and the file is taken from its new answer; files already in the cache are used as they are. The files
+come from the host into the user's cache, so a font whose licence forbids redistributing it (Fontshare's) is not
+shipped with the project.
+
 ### 7.3 Frame loop
 
 ```ts
