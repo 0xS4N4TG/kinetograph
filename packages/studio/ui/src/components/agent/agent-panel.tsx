@@ -1,14 +1,17 @@
 import { Streamdown } from 'streamdown';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
-import { ArrowUpIcon, ChevronRightIcon, ImageIcon, SparklesIcon, SquareIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
+import { ArrowUpIcon, ChevronRightIcon, FrameIcon, ImagePlusIcon, SparklesIcon, SquareIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
 
 import type { AgentAttachment, AgentInfo, CompositionInfo, InspectResult, PluginSummary, ProjectInfo, ReceivedFrame, TimelineData } from '@/api';
 import { AttachmentChips, MessageImages } from '@/components/agent/attachments';
+import { NotesTray } from '@/components/agent/notes-tray';
+import { UpNext } from '@/components/agent/up-next';
 import { ToolGroup } from '@/components/agent/tool-rows';
 import { Button } from '@/components/ui/button';
+import { Hint } from '@/components/ui/hint';
 import { Popover, PopoverPopup } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
-import { acceptImages, dragHasFiles, filesOf, prepareAttachments, type Attachment } from '@/lib/attachments';
+import { ACCEPT_IMAGES, MAX_ATTACHMENTS, acceptImages, attachmentUrl, dragHasFiles, filesOf, prepareAttachments, restoreAttachment, type Attachment } from '@/lib/attachments';
 import type { ChatItem } from '@/lib/chat';
 import { buildChatContext } from '@/lib/chat-context';
 import { MAX_CHIPS, selectionChips, type Chip } from '@/lib/chips';
@@ -17,6 +20,7 @@ import { findLayer, type InspectLayer } from '@/lib/inspect';
 import { contactSheet } from '@/lib/contact-sheet';
 import { chipText, contactFrames, layerRect, rangeLabel, unionRect, type FrameRange } from '@/lib/selection';
 import type { ToolItem } from '@/lib/tool-summary';
+import { useStudioContext } from '@/lib/studio-context';
 import type { Chat } from '@/lib/use-chat';
 import { cn } from '@/lib/utils';
 
@@ -279,11 +283,13 @@ const Item = memo(function Item({ item, onAnswer }: { item: PlainItem; onAnswer(
 
 /** The conversation with the user's own coding agent about what is selected in the preview. */
 export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, selectedLayers, selectLayers, lastImage, range = null, onClearRange, thumbnailFrameUrl, chat, timeline, plugins, draft }: AgentPanelProps) {
+  const studio = useStudioContext();
   const [info, setInfo] = useState<AgentInfo | null>(null);
   const [text, setText] = useState('');
   const [withPicture, setWithPicture] = useState(true);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const pickerRef = useRef<HTMLInputElement>(null);
   // Pictures dropped or pasted, kept until the message goes. The ref is the latest list, so two drops in a row count right.
   const [attached, setAttached] = useState<Attachment[]>([]);
   const attachedRef = useRef<Attachment[]>([]);
@@ -330,6 +336,25 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
     },
     [],
   );
+
+  // A queued message taken out to be edited comes back here: its words (before what is already typed) and its pictures.
+  const takenN = state.taken?.n ?? 0;
+  const seenTaken = useRef(takenN);
+  useEffect(() => {
+    const taken = state.taken?.item;
+    // The panel can mount again (a tab switch) with a message taken long ago: only a new one counts.
+    if (!taken || takenN === seenTaken.current) return;
+    seenTaken.current = takenN;
+    setText((now) => (now.trim() === '' ? taken.text : `${taken.text}\n${now}`));
+    inputRef.current?.focus();
+    const names = taken.images ?? [];
+    if (names.length === 0) return;
+    void Promise.all(names.map((name) => restoreAttachment(name))).then((restored) => {
+      const room = Math.max(0, MAX_ATTACHMENTS - attachedRef.current.length);
+      const added = restored.slice(0, room).map(({ file, stored }): Attachment => ({ id: nextAttachment.current++, file, stored, preview: attachmentUrl(stored) }));
+      setAttachments([...attachedRef.current, ...added]);
+    });
+  }, [takenN]);
 
   useEffect(() => {
     if (!draft) return;
@@ -517,27 +542,8 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
         {busy && state.items.at(-1)?.kind === 'user' && <p className="text-muted-foreground text-xs">Thinking…</p>}
       </div>
 
-      {state.queue.length > 0 && (
-        <ul className="flex max-h-40 shrink-0 flex-col items-end gap-1.5 overflow-y-auto px-4 pb-2" data-testid="chat-queue" aria-label="Messages waiting for the agent">
-          {state.queue.map((queued) => (
-            <li key={queued.id} className="flex max-w-[90%] items-start gap-1.5" data-testid="chat-queued">
-              <div className="bg-muted text-muted-foreground border-border min-w-0 rounded-2xl rounded-br-md border border-dashed px-3 py-1.5 text-[13px] leading-relaxed">
-                <span className="text-[10px] font-medium tracking-wide uppercase">Queued</span>
-                {queued.images && <MessageImages names={queued.images} small className="my-1" />}
-                {queued.text !== '' && <p className="line-clamp-3 whitespace-pre-wrap">{queued.text}</p>}
-              </div>
-              <button
-                type="button"
-                aria-label={`Remove queued message: ${queued.text.slice(0, 40) || 'images'}`}
-                onClick={() => chat.unqueue(queued.id)}
-                className="text-muted-foreground hover:text-foreground hover:bg-accent focus-visible:ring-ring mt-1 shrink-0 rounded-full p-1 outline-none focus-visible:ring-2"
-              >
-                <XIcon className="size-3" aria-hidden="true" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      <NotesTray comp={comp} player={studio?.player ?? null} />
+      <UpNext items={state.queue} take={chat.take} remove={chat.unqueue} requeue={chat.requeue} sendNow={chat.sendNow} />
 
       <div className="shrink-0 p-3 pt-0">
         <div className="bg-background/60 border-input has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-ring/20 rounded-2xl border p-2.5 transition-[box-shadow,border-color] has-[textarea:focus-visible]:ring-[3px]">
@@ -560,17 +566,37 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
             value={text}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={onKeyDown}
-            placeholder={busy ? 'Queue a message for when the agent is done' : 'Ask the agent to change something'}
+            placeholder={busy ? 'Queue a message for when the agent is done' : 'Ask the agent to change something \u2014 drop or paste images too'}
             rows={2}
             className="placeholder:text-muted-foreground/70 block max-h-40 min-h-[52px] w-full resize-none bg-transparent px-1 py-1 text-[13.5px] leading-relaxed outline-none"
           />
           <div className="mt-1 flex items-center gap-2">
-            <label className="text-muted-foreground flex items-center gap-2 text-xs select-none">
-              <Switch aria-label="Include a picture of the selection" checked={withPicture} onCheckedChange={(checked) => setWithPicture(checked)} className="sm:[--thumb-size:--spacing(3.5)]" />
-              <ImageIcon className="size-3.5" aria-hidden="true" />
-              Picture
-            </label>
+            <Hint label="Send a picture of the current frame with the message">
+              <label className="text-muted-foreground flex items-center gap-2 text-xs select-none">
+                <Switch aria-label="Send a picture of the current frame with the message" checked={withPicture} onCheckedChange={(checked) => setWithPicture(checked)} className="sm:[--thumb-size:--spacing(3.5)]" />
+                <FrameIcon className="size-3.5" aria-hidden="true" />
+                Frame
+              </label>
+            </Hint>
             <div className="ml-auto flex items-center gap-2">
+              <input
+                ref={pickerRef}
+                type="file"
+                multiple
+                accept={ACCEPT_IMAGES}
+                hidden
+                data-testid="attach-input"
+                onChange={(event) => {
+                  addImages(Array.from(event.target.files ?? []));
+                  // the same file can be chosen again
+                  event.target.value = '';
+                }}
+              />
+              <Hint label="Attach images (or drop / paste)">
+                <Button size="icon" variant="ghost" aria-label="Attach images" disabled={unavailable} onClick={() => pickerRef.current?.click()} className="text-muted-foreground rounded-full">
+                  <ImagePlusIcon />
+                </Button>
+              </Hint>
               {busy && (
                 <Button size="sm" variant="outline" onClick={chat.stop} className="rounded-full px-3.5">
                   <SquareIcon className="size-3 fill-current" aria-hidden="true" />

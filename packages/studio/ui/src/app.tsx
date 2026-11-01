@@ -24,6 +24,8 @@ import { layersOfPlugin, pluginsOfSelection, usePlugins } from '@/lib/plugins';
 import { PreviewContext, type PreviewHost } from '@/lib/preview-context';
 import { StudioContext } from '@/lib/studio-context';
 import { useTheme } from '@/lib/theme';
+import { MarkupContext, MarkupStore } from '@/lib/markup';
+import { useMarkupSend } from '@/lib/use-markup-send';
 import { useChat } from '@/lib/use-chat';
 import { useTransportKeys } from '@/lib/use-transport-keys';
 import { useStudio } from '@/studio';
@@ -61,6 +63,8 @@ export function App({ api }: { api: StudioApi }) {
   const studio = useStudio(api);
   const { player, comp } = studio;
   const chat = useChat(studio);
+  // The marks drawn on the preview, shared by the preview, the timeline and the agent column.
+  const [markup] = useState(() => new MarkupStore());
   const [theme, setTheme] = useTheme();
   const [tab, setTab] = useState<InspectorTab>('props');
   const [chatOpen, setChatOpen] = useState(true);
@@ -203,13 +207,25 @@ export function App({ api }: { api: StudioApi }) {
     '0': () => zoomTo('fit'),
     '1': () => zoomTo(1),
     Escape: () => {
+      if (markup.getState().active) return markup.setActive(false);
       selectRange(null);
       selectLayers([]);
       setFocusedPlugin(null);
     },
-    m: () => studio.audio.setMuted(!studio.audio.getState().muted),
+    m: () => {
+      if (!markup.getState().active) player.pause();
+      markup.toggle();
+    },
+    // Shift+M: the key M is markup now.
+    M: () => studio.audio.setMuted(!studio.audio.getState().muted),
     '?': () => setShortcutsOpen(true),
   });
+
+  // Notes asked to be sent (from a bubble or the tray) open the agent column; the message goes through the chat.
+  const asked = useMarkupSend({ store: markup, chat, comp, project: studio.project, timeline: studio.timeline.state === 'ready' ? studio.timeline.data : null, player, frameUrl: studio.frameUrl });
+  useEffect(() => {
+    if (asked > 0) setChatOpen(true);
+  }, [asked]);
 
   const toggleChat = useCallback(() => setChatOpen((v) => !v), []);
   const toggleInspector = useCallback(() => setInspectorOpen((v) => !v), []);
@@ -266,6 +282,7 @@ export function App({ api }: { api: StudioApi }) {
 
   return (
     <StudioContext.Provider value={studio}>
+    <MarkupContext.Provider value={markup}>
     <TooltipProvider delay={500}>
       <div className="text-foreground flex h-screen flex-col gap-3 overflow-hidden p-3">
         <TopBar
@@ -377,6 +394,7 @@ export function App({ api }: { api: StudioApi }) {
                     onGuidesChange={setGuides}
                     onOverlayHost={setOverlayLayer}
                     onSelectLayers={pickLayers}
+                    player={player}
                   />
                   <div className="pointer-events-none absolute inset-x-4 bottom-4 flex justify-center">
                     <Transport comp={comp} player={player} audio={studio.audio} edges={edges} className="pointer-events-auto w-full max-w-3xl" />
@@ -461,6 +479,7 @@ export function App({ api }: { api: StudioApi }) {
         <ExportDialog open={exportOpen} onOpenChange={setExportOpen} comp={comp} propsEdited={studio.propsOverride !== undefined} player={player} thumbnailUrl={studio.thumbnailUrl} onStart={startExport} />
       </div>
     </TooltipProvider>
+    </MarkupContext.Provider>
     </StudioContext.Provider>
   );
 }
