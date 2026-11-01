@@ -212,3 +212,51 @@ interface Note {
   server touches the user's code; leaving it to the agent keeps one writer.
 - Is a contact sheet of a dropped reference enough, or should a reference also keep a few clips the agent can scrub?
 - Do the panels need to work without an agent, as plain planning tools the person fills in alone?
+
+## Next: general-purpose panels
+
+The five panels above are fixed kinds. The mechanism under them (open, answer as the next message, plan file) can carry
+any panel, so the next step makes panels general in three parts, built in this order.
+
+### 1. A `custom` panel made of blocks
+
+The agent sends a layout as data, not code. Studio draws it with one generic renderer and returns an answer keyed by
+block id, through the same async path.
+
+```ts
+studio_open_panel({ panel: 'custom', placement: 'right', data: {
+  title: 'Pick the end card',
+  blocks: [
+    { id: 'pick', type: 'choice', options: [{ id: 'a', still: { comp: 'End', frame: 40 } }, { id: 'b', still: { comp: 'End', frame: 90 } }] },
+    { id: 'speed', type: 'slider', min: 0.5, max: 2, value: 1, label: 'Logo speed' },
+    { id: 'why', type: 'text', label: 'Anything else?' },
+  ] } })
+// answer: { pick: 'b', speed: 1.2, why: '...' }
+```
+
+- Block types: heading, text, still (comp and frame), clip (comp and frame range, played in place), choice (single or
+  multiple, with pictures), slider, text input, editable list, table, notes on a picture, A/B compare.
+- No code runs, so it is safe, and it works the same for an agent in a terminal. A person can ask the agent for a panel
+  ("let me rate each shot") and the agent builds one on the spot.
+- The answer is saved as `plan/custom-<name>.json`, where `name` is a slug the agent gives.
+
+### 2. Placement and persistent panels
+
+- `placement: 'sheet' | 'left' | 'right' | 'beside-preview' | 'bottom'` on any panel. Left and right panels are tabs
+  beside the agent chat and the inspector. The person can drag a tab to another dock; the layout is kept per project.
+- A persistent panel stays open and is not a question: a live shot list, a checklist, a render log. The agent changes
+  its data with `studio_update_panel({ id, data })`, and closes it with `studio_close_panel({ id })`.
+
+### 3. Code panels, sandboxed
+
+- The agent, or the person through the agent, writes `studio/panels/<name>.ts` in the project, exporting
+  `mount(el, api)`: the contract plugin panels use, with `api.data`, the playhead, `seek`, stills and
+  `submit(answer)`. Studio bundles it and reloads it on save.
+- It runs in a sandboxed iframe (no same-origin, no window token) and talks to Studio only through messages, because a
+  panel in the Studio page could do anything Studio can. Plugin panels, which today run in the page, move to the same
+  sandbox.
+
+### Skill text
+
+Each part adds its section to the skill when it lands, not before: an agent that reads about a panel kind that does
+not exist yet calls it and gets an error.
