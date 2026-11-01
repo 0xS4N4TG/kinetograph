@@ -2,7 +2,7 @@
 // the renderer live in worker threads (`project.ts`, `render-queue.ts`); this thread only routes.
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createRequire } from 'node:module';
@@ -15,6 +15,7 @@ import { ChatLog } from './chat-log.js';
 import { isInside } from './agent-fs.js';
 import { availableAgents } from './agent-presets.js';
 import { openBrowser } from './open-browser.js';
+import { readPlan, writePlan } from './panels/plan.js';
 import { PANEL_KINDS, checkAnswer, checkDraft } from './panels/validate.js';
 import { panelRoutes } from './panels/routes.js';
 import { PanelStore } from './panels/store.js';
@@ -215,15 +216,6 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   const showPanel = (panel: OpenPanel): void => broadcast({ type: 'panel', panel });
   const closePanel = (panel: OpenPanel): void => broadcast({ type: 'panel.closed', id: panel.id, status: panel.status, panel });
 
-  /** plan/<kind>.json as saved by a submitted panel, or null when there is none (or it does not read). */
-  function readPlan(kind: PanelKind): unknown {
-    try {
-      return JSON.parse(readFileSync(join(dirname(entry), 'plan', `${kind}.json`), 'utf8'));
-    } catch {
-      return null;
-    }
-  }
-
   function openPanel(body: unknown): OpenPanel {
     if (!isObject(body)) throw invalid('the body must be { panel, data, message }');
     const kind = body.panel as PanelKind;
@@ -234,7 +226,13 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     const data = body.data as PanelDraft[typeof kind];
     // A script or a board is totalled against the brief's length: from the saved brief when the agent left it out.
     if ((kind === 'script' || kind === 'storyboard') && (data as { targetSeconds?: unknown }).targetSeconds === undefined) {
-      const seconds = (readPlan('brief') as { seconds?: unknown } | null)?.seconds;
+      let saved: unknown = null;
+      try {
+        saved = readPlan(dirname(entry), 'brief');
+      } catch {
+        // a plan/ that leads outside the project is not read
+      }
+      const seconds = (saved as { seconds?: unknown } | null)?.seconds;
       if (typeof seconds === 'number' && Number.isFinite(seconds)) (data as { targetSeconds?: number }).targetSeconds = seconds;
     }
     const { panel, replaced } = panels.open(kind, data, (body.message as string | undefined) ?? null);
@@ -250,10 +248,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     if (panel.status !== 'open') throw invalid(`the panel "${id}" is already ${panel.status}`);
     const bad = checkAnswer(panel.panel, answer);
     if (bad) throw invalid(`the answer to the ${panel.panel} panel is not valid: ${bad}`);
-    const dir = join(dirname(entry), 'plan');
     try {
-      mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, `${panel.panel}.json`), `${JSON.stringify(answer, null, 2)}\n`);
+      writePlan(dirname(entry), panel.panel, answer);
     } catch (error) {
       throw new StudioFailure('IO', `could not write plan/${panel.panel}.json: ${(error as Error).message}`);
     }
@@ -537,8 +533,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       if (!tokenOk(req.headers['x-studio-token'] as string | undefined)) {
         throw new StudioFailure('FORBIDDEN', 'the plan files need the studio token from the address the studio opened');
       }
-      const kind = decodeURIComponent(plan[1]!) as PanelKind;
-      const saved = PANEL_KINDS.includes(kind) ? readPlan(kind) : null;
+      const kind = decodeURIComponent(plan[1]!);
+      const saved = (PANEL_KINDS as readonly string[]).includes(kind) ? readPlan(dirname(entry), kind) : null;
       if (saved === null) throw new StudioFailure('NOT_FOUND', `no plan/${plan[1]}.json yet`);
       return json(res, 200, saved);
     }

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -6,7 +6,7 @@ import { closingMessage } from '../src/panels/summary.js';
 import { stageStates } from '../src/panels/stages.js';
 import type { OpenPanel } from '../src/panels/types.js';
 import type { StudioServer } from '../src/index.js';
-import { api, cleanup, Client, start, stopAll, tokenOf, until, writeProject } from './helpers.js';
+import { api, cleanup, Client, start, stopAll, tempDir, tokenOf, until, writeProject } from './helpers.js';
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
@@ -189,6 +189,58 @@ describe('the person answering', () => {
     await open(studio, token, 'script', { lines: [], targetSeconds: 5 });
     list = (await api(studio, '/api/panels', { headers: window(studio) })).json.panels;
     expect(list.filter((p) => p.status === 'open').map((p) => [p.panel, p.data.targetSeconds])).toEqual([['storyboard', 20], ['script', 5]]);
+  });
+});
+
+describe('the plan files', () => {
+  async function submitBrief(studio: StudioServer): Promise<any> {
+    const client = await Client.connect(studio);
+    await open(studio, tokenOf(studio)!, 'brief', draftBrief);
+    await client.waitForMessage('panel');
+    client.send({ type: 'panel.submit', id: 'p_1', answer: brief });
+    const refused = await Promise.race([client.waitForMessage('panel.error'), client.waitForMessage('panel.closed')]);
+    client.close();
+    return refused;
+  }
+
+  it('refuses a plan directory that is a link out of the project, and writes nothing there', async () => {
+    const { dir, entry } = writeProject('PlanOut');
+    const elsewhere = tempDir();
+    symlinkSync(elsewhere, join(dir, 'plan'));
+    const studio = await start(entry);
+    const got = await submitBrief(studio);
+    expect(got.message.type).toBe('panel.error');
+    expect(got.message.message).toContain('outside the project');
+    expect(readdirSync(elsewhere)).toEqual([]);
+    expect((await api(studio, '/api/panels/p_1', { headers: window(studio) })).json.status).toBe('open');
+    expect((await api(studio, '/api/plan/brief', { headers: window(studio) })).status).toBe(403);
+  });
+
+  it('refuses to write or read through a link in place of plan/<kind>.json', async () => {
+    const { dir, entry } = writeProject('PlanLink');
+    const elsewhere = tempDir();
+    writeFileSync(join(elsewhere, 'secret.json'), '{"seconds":1}');
+    mkdirSync(join(dir, 'plan'));
+    symlinkSync(join(elsewhere, 'secret.json'), join(dir, 'plan', 'brief.json'));
+    const studio = await start(entry);
+    expect((await api(studio, '/api/plan/brief', { headers: window(studio) })).status).toBe(403);
+    const got = await submitBrief(studio);
+    expect(got.message.type).toBe('panel.error');
+    expect(readFileSync(join(elsewhere, 'secret.json'), 'utf8')).toBe('{"seconds":1}');
+    expect(readdirSync(join(dir, 'plan'))).toEqual(['brief.json']);
+  });
+
+  it('replaces a plain file, leaves no temporary file, and takes only panel kinds as names', async () => {
+    const { dir, entry } = writeProject('PlanPlain');
+    mkdirSync(join(dir, 'plan'));
+    writeFileSync(join(dir, 'plan', 'brief.json'), '{"old":true}');
+    const studio = await start(entry);
+    expect((await submitBrief(studio)).message.type).toBe('panel.closed');
+    expect(JSON.parse(readFileSync(join(dir, 'plan', 'brief.json'), 'utf8'))).toEqual(brief);
+    expect(readdirSync(join(dir, 'plan'))).toEqual(['brief.json']);
+    writeFileSync(join(dir, 'plan', 'notes.json'), '{}');
+    expect((await api(studio, '/api/plan/notes', { headers: window(studio) })).status).toBe(404);
+    expect((await api(studio, '/api/plan/..%2Fpackage', { headers: window(studio) })).status).toBe(404);
   });
 });
 
