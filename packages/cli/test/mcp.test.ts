@@ -208,14 +208,34 @@ describe('plugin tools', () => {
 });
 
 describe('studio tools', () => {
-  async function withStudio(run: (client: Client, state: { live: { comp: string | null; props: Record<string, unknown> }; tokens: (string | undefined)[] }) => Promise<void>) {
-    const state = { live: { comp: 'Hero' as string | null, props: { title: 'a', size: 1 } as Record<string, unknown> }, tokens: [] as (string | undefined)[] };
+  async function withStudio(run: (client: Client, state: { live: { comp: string | null; props: Record<string, unknown> }; tokens: (string | undefined)[]; panels: { panel: string; data: unknown; message?: string }[]; answers: Record<string, unknown> }) => Promise<void>) {
+    const state = {
+      live: { comp: 'Hero' as string | null, props: { title: 'a', size: 1 } as Record<string, unknown> },
+      tokens: [] as (string | undefined)[],
+      panels: [] as { panel: string; data: unknown; message?: string }[],
+      answers: {} as Record<string, unknown>,
+    };
     const http = createServer((req, res) => {
       state.tokens.push(req.headers['x-studio-token'] as string | undefined);
       const reply = (status: number, body: unknown) => {
         res.writeHead(status, { 'content-type': 'application/json' });
         res.end(JSON.stringify(body));
       };
+      if (req.url === '/api/panels' && req.method === 'POST') {
+        let body = '';
+        req.on('data', (c) => (body += c));
+        return req.on('end', () => {
+          const opened = JSON.parse(body) as { panel: string; data: unknown; message?: string };
+          if (opened.panel === 'storyboard' && !(opened.data as { comp?: string }).comp) return reply(400, { error: { message: 'the data for a storyboard panel is not valid: comp must be the board composition id' } });
+          state.panels.push(opened);
+          reply(201, { id: `p_${state.panels.length}`, status: 'open' });
+        });
+      }
+      const one = /^\/api\/panels\/(p_\d+)$/.exec(req.url ?? '');
+      if (one && req.method === 'GET') {
+        const done = state.answers[one[1]!];
+        return done ? reply(200, { id: one[1], panel: 'brief', status: 'submitted', answer: done }) : one[1] === 'p_1' ? reply(200, { id: 'p_1', panel: 'brief', status: 'open', answer: null }) : reply(404, { error: { message: `no panel "${one[1]}"` } });
+      }
       if (req.url !== '/api/live-props') return reply(404, {});
       if (req.method === 'GET') return reply(200, state.live);
       let body = '';
@@ -241,11 +261,11 @@ describe('studio tools', () => {
   }
   const json = (r: Awaited<ReturnType<Client['callTool']>>) => JSON.parse((r.content as { text: string }[])[0]!.text);
 
-  it('adds studio_get_props and studio_set_props only when a studio is given', async () => {
+  it('adds the studio tools only when a studio is given', async () => {
     const without = await (await connect(async () => ({ stdout: '{}', stderr: '', code: 0 }))).listTools();
     expect(without.tools.some((t) => t.name.startsWith('studio_'))).toBe(false);
     await withStudio(async (client) => {
-      expect((await client.listTools()).tools.map((t) => t.name).filter((n) => n.startsWith('studio_')).sort()).toEqual(['studio_get_props', 'studio_set_props']);
+      expect((await client.listTools()).tools.map((t) => t.name).filter((n) => n.startsWith('studio_')).sort()).toEqual(['studio_get_props', 'studio_open_panel', 'studio_panel_result', 'studio_set_props']);
     });
   });
 
@@ -269,6 +289,39 @@ describe('studio tools', () => {
       state.live = { comp: null, props: {} };
       const none = await client.callTool({ name: 'studio_set_props', arguments: { props: {} } });
       expect(none.isError).toBe(true);
+    });
+  });
+
+  it('opens a panel at once and reads its result, with the token', async () => {
+    await withStudio(async (client, state) => {
+      const opened = await client.callTool({ name: 'studio_open_panel', arguments: { panel: 'brief', data: { purpose: 'an ad' }, message: 'Check this' } });
+      expect(json(opened)).toEqual({ id: 'p_1', status: 'open' });
+      expect(state.panels).toEqual([{ panel: 'brief', data: { purpose: 'an ad' }, message: 'Check this' }]);
+      expect(json(await client.callTool({ name: 'studio_panel_result', arguments: { id: 'p_1' } }))).toEqual({ status: 'open' });
+      state.answers.p_2 = { approved: true };
+      expect(json(await client.callTool({ name: 'studio_panel_result', arguments: { id: 'p_2' } }))).toEqual({ status: 'submitted', answer: { approved: true } });
+      expect(new Set(state.tokens)).toEqual(new Set(['tok']));
+    });
+  });
+
+  it('says what is wrong with a panel, and that a panel is unknown', async () => {
+    await withStudio(async (client) => {
+      const bad = await client.callTool({ name: 'studio_open_panel', arguments: { panel: 'storyboard', data: { shots: [] } } });
+      expect(bad.isError).toBe(true);
+      expect(JSON.stringify(bad.content)).toContain('comp must be');
+      expect((await client.callTool({ name: 'studio_panel_result', arguments: { id: 'p_9' } })).isError).toBe(true);
+      expect((await client.callTool({ name: 'studio_open_panel', arguments: { panel: 'poem', data: {} } })).isError).toBe(true);
+    });
+  });
+
+  it('tells the agent to end its turn and wait, in both panel tools', async () => {
+    await withStudio(async (client) => {
+      const tools = (await client.listTools()).tools;
+      const open = tools.find((t) => t.name === 'studio_open_panel')!.description!;
+      expect(open).toContain('end your turn');
+      expect(open).toContain('[panel <kind> <id> submitted]');
+      expect(open).toContain('studio_panel_result');
+      expect(tools.find((t) => t.name === 'studio_panel_result')!.description).toContain('terminal');
     });
   });
 });
