@@ -69,6 +69,52 @@ function RenderCard({ r }: { r: Render }) {
   );
 }
 
+/** A short film of what the engine draws, playing muted while it is in view (still under reduced motion). */
+export function Capabilities() {
+  const video = useRef<HTMLVideoElement>(null);
+  const [inView, setInView] = useState(false);
+  useEffect(() => {
+    const el = video.current;
+    if (!el) return;
+    const io = new IntersectionObserver(([e]) => setInView(e.isIntersecting), { threshold: 0.35 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  useEffect(() => {
+    const el = video.current;
+    if (!el) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (inView && !reduce) void el.play().catch(() => {});
+    else el.pause();
+  }, [inView]);
+  return (
+    <section id="capabilities" className={`${shell} ${section}`}>
+      <div className="border-t border-cobalt/30 pt-[clamp(56px,8vw,112px)]">
+        <Heading lines={['what it draws']} hot="draws" tag="TRK 01  0.98" className={h2Size} />
+        <figure className="mt-14 max-w-[960px]">
+          <video
+            ref={video}
+            className="aspect-[4/3] w-full bg-ink object-cover"
+            src="/film/capabilities.mp4"
+            poster="/film/capabilities.jpg"
+            muted
+            loop
+            playsInline
+            preload="none"
+            controls
+            aria-label="A 20 second film rendered by Kinetograph"
+          />
+          <figcaption className={`${body} mt-6 max-w-[62ch]`}>
+            Brush strokes from p5.brush, a WGSL heat-shimmer shader and Motion animations, rendered together by
+            Kinetograph from one TypeScript project: 489 frames at 1440×1080, 24 fps.
+            <span className="mt-2 block font-jb text-[12px] text-ink/60">Inspired by jordans.archivess.</span>
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+  );
+}
+
 /** Our own render times for example videos, stated plainly. The cards come from renders.json. */
 export function Facts() {
   return (

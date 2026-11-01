@@ -3,12 +3,12 @@ import { SmoothScroll } from '@/components/smooth-scroll';
 import { Hero } from '@/sections/hero';
 import { GITHUB, doc } from '@/sections/links';
 import { Nav } from '@/sections/nav';
-import { About, Facts } from '@/sections/page';
+import { About, Capabilities, Facts } from '@/sections/page';
 import { Wordmark } from '@/sections/shared';
 import { Start } from '@/sections/static';
 
 const FOOTER_COLUMNS = [
-  { title: 'Site', links: [{ label: 'Why', href: '#why' }, { label: 'The engine', href: '#engine' }, { label: 'Agents', href: '#agents' }, { label: 'The film', href: '#film' }, { label: 'Get started', href: '#start' }] },
+  { title: 'Site', links: [{ label: 'What it draws', href: '#capabilities' }, { label: 'Why', href: '#why' }, { label: 'The engine', href: '#engine' }, { label: 'Agents', href: '#agents' }, { label: 'The film', href: '#film' }, { label: 'Get started', href: '#start' }] },
   { title: 'Docs', links: [{ label: 'README', href: `${GITHUB}#readme` }, { label: 'DOM engine', href: doc('packages/cli/skills/kinetograph/references/ENGINE.md') }, { label: 'Remotion compat', href: '/docs/compat/' }, { label: 'Known issues', href: '/docs/known-issues/' }, { label: 'Changelog', href: '/docs/changelog/' }] },
   { title: 'Project', links: [{ label: 'GitHub', href: GITHUB }, { label: 'Licence', href: doc('LICENSE.md') }, { label: 'Commercial licence', href: doc('COMMERCIAL.md') }, { label: 'llms.txt', href: '/llms.txt' }] },
 ];
@@ -20,6 +20,7 @@ export default function Page() {
       <Nav />
       <main>
         <Hero />
+        <Capabilities />
         <Facts />
         <About />
         <Start />
