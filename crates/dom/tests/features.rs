@@ -155,6 +155,15 @@ case!(background_clip_text, 340, 120, {
         .to_string()
 });
 
+// `opacity` on inline elements (issue #73): the second span, a span with a background and a shadow, and a span that
+// wraps are each dimmed as a whole, the block at 0.45 as before.
+case!(inline_opacity, 360, 190, {
+    r#"<div style="margin:6px 10px;font-size:34px;line-height:40px"><span>read </span><span style="opacity:.45">not yet read</span></div>
+<div style="margin:6px 10px;font-size:30px;line-height:36px;width:200px"><span style="opacity:.5;background:#fc3;text-decoration:underline;text-shadow:3px 3px 0 #f00">wraps over two lines</span></div>
+<div style="margin:6px 10px;font-size:26px;opacity:.45">whole line .45</div>"#
+        .to_string()
+});
+
 case!(text_stroke, 460, 330, {
     r#"<div style="margin:6px 10px;font-size:64px;line-height:72px;font-weight:700;color:#fff;background:#6a9bd1;-webkit-text-stroke:12px #000;paint-order:stroke fill">MAKE KW</div>
 <div style="margin:6px 10px;font-size:64px;line-height:72px;font-weight:700;color:#fff;background:#6a9bd1;-webkit-text-stroke:8px #000">MAKE KW</div>

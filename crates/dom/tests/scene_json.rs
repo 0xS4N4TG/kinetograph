@@ -713,3 +713,133 @@ fn values_that_are_not_grouping_leave_preserve_3d_alone() {
         assert_eq!(find(&out.layers, "a")["preserve3d"], true, "{css}");
     }
 }
+
+fn child_ids(l: &Value) -> Vec<&str> {
+    l["children"]
+        .as_array()
+        .map(|c| c.iter().map(|c| c["id"].as_str().unwrap_or("?")).collect())
+        .unwrap_or_default()
+}
+
+/// How many text layers `layers` hold, at any depth.
+fn text_layers(layers: &[Value]) -> usize {
+    flat(layers).iter().filter(|l| l["type"] == "text").count()
+}
+
+fn children(l: &Value) -> &[Value] {
+    l["children"].as_array().map_or(&[], Vec::as_slice)
+}
+
+// An inline element with `opacity` below 1 is a stacking context: Chrome composites its background, shadow, text
+// and decoration together as one group at that opacity (issue #73).
+#[test]
+fn opacity_on_an_inline_element_groups_its_fragments() {
+    let out = paint(
+        r#"<div id="d" style="font-size:20px"><span id="a">read </span><span id="b" style="opacity:.45;background:#ccc;text-decoration:underline;text-shadow:2px 2px #f00">not yet</span> tail</div>"#,
+        300,
+        60,
+    );
+    let g = find(&out.layers, "b.fx");
+    assert_eq!(g["type"], "group");
+    assert_eq!(g["opacity"], 0.45);
+    let kids = child_ids(g);
+    assert!(kids.contains(&"b.bg.color"), "the background: {kids:?}");
+    assert!(
+        kids.iter().any(|k| k.contains("shadow")),
+        "the text shadow: {kids:?}"
+    );
+    // The shadow and the text are both text layers.
+    assert_eq!(text_layers(children(g)), 2, "the span's text: {kids:?}");
+    assert!(
+        kids.iter().any(|k| k.contains("deco")),
+        "the underline: {kids:?}"
+    );
+    // "read " and " tail" keep their own text layers, at full opacity, outside the group.
+    assert_eq!(text_layers(&out.layers), 4);
+    assert!(g.get("transform").is_none());
+    assert!(out.unsupported.is_empty(), "{:?}", out.unsupported);
+}
+
+#[test]
+fn an_inline_element_without_opacity_adds_no_group() {
+    let out = paint(
+        r#"<div id="d" style="font-size:20px">a <span id="b" style="opacity:1;background:#ccc">b</span> c</div>"#,
+        300,
+        60,
+    );
+    assert!(!flat(&out.layers).iter().any(|l| l["id"] == "b.fx"));
+}
+
+// A span that a line break splits is one group, not one per line, and a span inside it is a group inside it.
+#[test]
+fn a_wrapped_inline_element_is_one_group_and_nested_ones_nest() {
+    let out = paint(
+        r#"<div id="d" style="font-size:20px;width:90px"><span id="o" style="opacity:.5;background:#fc0">one two three <span id="i" style="opacity:.5">four five</span> six</span></div>"#,
+        200,
+        200,
+    );
+    let outer = find(&out.layers, "o.fx");
+    assert_eq!(outer["opacity"], 0.5);
+    let bgs = child_ids(outer)
+        .into_iter()
+        .filter(|k| k.contains("bg"))
+        .count();
+    assert!(bgs >= 2, "a background per line in the one group");
+    // The inner group holds only "four five", so the optimiser folds its opacity into that one text layer.
+    let inner = find(children(outer), "i.fx");
+    assert_eq!(inner["opacity"], 0.5);
+    // The rest of the outer's text is in the outer group, at the outer's opacity alone.
+    assert!(
+        children(outer)
+            .iter()
+            .any(|c| c["type"] == "text" && c.get("opacity").is_none())
+    );
+    let n = flat(&out.layers)
+        .iter()
+        .filter(|l| l["id"] == "o.fx")
+        .count();
+    assert_eq!(n, 1);
+}
+
+// The group is over the in-flow content (a stacking context is painted with the positioned boxes).
+#[test]
+fn an_inline_group_is_painted_over_the_in_flow_text() {
+    let out = paint(
+        r#"<div id="d" style="font-size:20px"><span id="b" style="opacity:.5">dim</span> later</div>"#,
+        200,
+        50,
+    );
+    // "dim" is the group's only content, so the optimiser folds the group into its text layer.
+    assert_eq!(find(&out.layers, "b.fx")["opacity"], 0.5);
+    let group_at = index_of(&out.layers, "b.fx");
+    let outside: Vec<usize> = flat(&out.layers)
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l["type"] == "text" && l["id"] != "b.fx")
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(outside.len(), 1, "\" later\" is a text layer of its own");
+    assert!(
+        outside[0] < group_at,
+        "{outside:?} before the group at {group_at}"
+    );
+}
+
+// Not drawn on an inline element, so reported rather than silently dropped.
+#[test]
+fn a_filter_on_an_inline_element_is_reported() {
+    let out = paint(
+        r#"<div id="d" style="font-size:20px"><span id="b" style="filter:blur(2px);mix-blend-mode:multiply">dim</span></div>"#,
+        200,
+        50,
+    );
+    let props: Vec<_> = out
+        .unsupported
+        .iter()
+        .filter_map(|u| u.property.as_deref())
+        .collect();
+    assert!(
+        props.contains(&"filter") && props.contains(&"mix-blend-mode"),
+        "{props:?}"
+    );
+}

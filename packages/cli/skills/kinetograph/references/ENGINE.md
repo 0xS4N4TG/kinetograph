@@ -645,7 +645,7 @@ container stay inside its clip. The canvas takes the root's (or the body's) back
 | text, `letter-spacing`, `white-space`, `vertical-align`, inline-block | `text` layers with `runs` (Blitz's Parley glyph positions) |
 | `text-shadow`, `text-decoration` | blurred copies of the run; decoration lines as shapes |
 | `transform`, `translate`, `rotate`, `scale`, `transform-origin`, `perspective`, `preserve-3d`, `backface-visibility` | `transform.matrix` about the origin; parent perspective folded into the child's matrix; `preserve3d` group; `backfaceHidden` |
-| `opacity`, `mix-blend-mode`, `filter`, `backdrop-filter: blur()` | group fields, effects, a see-through shape with `backdropBlur` (`edgeMode: "mirror"`: Chrome reads the backdrop inside the border box only, mirrored past its edges). Blur deviations are capped at 532 as Chrome caps them (Skia's limit); `drop-shadow()` takes its blur length as the deviation, as Chrome does (`box-shadow` takes half) |
+| `opacity`, `mix-blend-mode`, `filter`, `backdrop-filter: blur()` | group fields, effects (on an inline `<span>` only `opacity` is drawn: a group, over the in-flow text, of the element's line fragments (backgrounds, borders, shadows, text, decorations, boxes inside) in one composite, as Chrome's stacking context; its `filter`, `mix-blend-mode`, `clip-path` and `mask` are reported), a see-through shape with `backdropBlur` (`edgeMode: "mirror"`: Chrome reads the backdrop inside the border box only, mirrored past its edges). Blur deviations are capped at 532 as Chrome caps them (Skia's limit); `drop-shadow()` takes its blur length as the deviation, as Chrome does (`box-shadow` takes half) |
 | `filter: url(#id)` | `svg::filter_graph` |
 | `clip-path` (inset, circle, ellipse, polygon, `path()`, geometry boxes), `overflow` | scene `clip` (path / polygon / ellipse) |
 | `mask-image` (gradients, pictures, size/position/repeat/origin/clip/mode) | a source group of the mask layers and a `matte` |
@@ -793,7 +793,8 @@ than 16 off); a frame drawn alone, in sequence and by two workers has one hash.
 `writing-mode`, multi-column, the old `clip`, `list-style-image`,
 form controls, iframes, `evenodd` clip paths, `shape()`,
 `mask-composite` other than add, `backdrop-filter` functions other than `blur()`, a `margin-box` clip reference, a
-`conic-gradient` in a colour space other than sRGB, remote URLs, fonts that are not project font files, inside list
+`conic-gradient` in a colour space other than sRGB, `filter`, `mix-blend-mode`, `clip-path` and `mask` on an inline
+(non-atomic) element, remote URLs, fonts that are not project font files, inside list
 markers in the bundled bullet font.
 
 ### Against Chrome (`crates/dom/tests/features.rs`, `target/paint-tests`)
