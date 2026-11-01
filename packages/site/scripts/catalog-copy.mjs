@@ -243,6 +243,62 @@ export const TEMPLATE_COPY = {
     ],
     media: { hero: { from: 'effects/word-flash/out/word-flash.mp4', at: 2.5, len: 5 } },
   },
+  'collage-burst': {
+    description:
+      'A wordmark fades in on black, then a cluster of screenshot cards bursts out of one point as the camera flies in. The cards settle into a dense wall, drift, and whip off to the right, and big white type finishes the spot: "One", then "One subscription."; "Endless", then "Endless videos."',
+    change: [
+      'The brand name and the word after it in the wordmark (or none), and the two tagline lines.',
+      'Your own screenshots or photos on the cards, and the words printed on the cards. With none, every card is drawn.',
+      'The three typefaces (wordmark and cards, terminal, serif) and the colours: canvas, text, accent, paper and dark cards.',
+      'The seed, which sets the tilt and timing of the burst.',
+    ],
+    media: { hero: { from: 'effects/collage-burst/out/collage-burst.mp4', at: 0.3, len: 4 } },
+  },
+  'greeting-intro': {
+    description:
+      'A gradient wordmark on a soft off-white ground shrinks away as an app window grows in behind it. The camera pushes into the window, tilted, types a greeting and a question in large perspective type, slides four suggestion cards in, then pulls back and flattens to the whole window.',
+    change: [
+      'The brand name, the name in the greeting, the question under it and the placeholder in the prompt box.',
+      'One to four suggestion cards, with your own labels, and the small caption at the bottom (or none).',
+      'The typeface, and the colours: ground, glows, window, cards, text and the wordmark and greeting gradients.',
+      'Whether it moves in two-frame steps or smoothly at 60 frames a second.',
+    ],
+    media: { hero: { from: 'effects/greeting-intro/out/greeting-intro.mp4', at: 0, len: 3.5 } },
+  },
+  'wait-ship': {
+    description:
+      'Seven photo cards float round the edges of a near-black frame, out of focus. The camera pulls back and racks focus, "You wait..." comes up out of the blur, "Ship it with Kinetograph Pro" replaces it, and the scene slides off to the right as the left card sharpens.',
+    change: [
+      'The two lines and the product name in the second one.',
+      'Your own photos on the seven cards. Any card you leave out keeps its drawn picture.',
+      'The typeface, weight, size, tracking and text colour, and the two colours of the background.',
+      'How strong the focus blur, the film grain and the closing slide are, and the frame where the first line gives way to the second.',
+    ],
+    media: { hero: { from: 'effects/wait-ship/out/wait-ship.mp4', at: 0, len: 2.45 } },
+  },
+  'prompt-reply': {
+    description:
+      'A chat prompt types itself into a rounded box and sends. The shot cuts to the reply, which builds on a page the camera scrolls through: two activity rows, a status line, a serif reply, a brand chip, a small table and a row of action icons fade up one after another.',
+    change: [
+      'The prompt, the two activity rows, the status line and the reply.',
+      'The brand chip, and the table: three column heads and one row.',
+      'The three typefaces (interface, mono chip, serif reply).',
+      'The colours: background, panel, text, the warm typing tint, labels, links and icons.',
+    ],
+    media: { hero: { from: 'effects/prompt-reply/out/prompt-reply.mp4', at: 0, len: 5 } },
+  },
+  'phone-orbit': {
+    description:
+      'A phone showing a social post starts as a close-up of its lower edge, pulls back and glides to rest. Chat bubbles, avatars and icon chips pop in around it, a hand reaches into the photo and lifts the phone, and the screen swaps to a second one as the view count reaches its cap.',
+    change: [
+      'The brand name in the post header, the caption pill and the two-part subtitle on the photo.',
+      'The view count: where it starts, where it stops, and its unit.',
+      'The three chat bubbles, and the words on the second screen.',
+      'Your own photo for the post, a second picture for the swap, a logo and four avatars. Without them, all of it is drawn.',
+      'The typefaces and colours, and whether the motion steps at 24 frames a second or runs smooth at 60.',
+    ],
+    media: { hero: { from: 'effects/phone-orbit/out/phone-orbit.mp4', at: 0.65, len: 2.55 } },
+  },
 };
 
 /** Short notes for genes whose source carries no comment, keyed slot/id. */
