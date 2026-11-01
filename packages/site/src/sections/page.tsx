@@ -18,7 +18,8 @@ interface Render {
   width: number;
   height: number;
   seconds_video: number;
-  render_median: number;
+  render_median: number | null;
+  credit?: string;
   web: string;
   poster: string;
 }
@@ -63,7 +64,10 @@ function RenderCard({ r }: { r: Render }) {
         <p className="mt-1.5 font-jb text-[12px] leading-relaxed text-ink/75">
           {r.frames.toLocaleString('en-US')} frames, {r.width}×{r.height}, {secs(r.seconds_video)} of video
         </p>
-        <p className="font-jb text-[12px] leading-relaxed text-cobalt">rendered in {secs(r.render_median)}</p>
+        {r.render_median !== null && (
+          <p className="font-jb text-[12px] leading-relaxed text-cobalt">rendered in {secs(r.render_median)}</p>
+        )}
+        {r.credit && <p className="mt-1 font-jb text-[12px] leading-relaxed text-ink/60">{r.credit}</p>}
       </figcaption>
     </figure>
   );
