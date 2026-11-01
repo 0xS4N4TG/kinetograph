@@ -3472,6 +3472,4544 @@
         "video": "/catalog/components/word-flash/hero.mp4",
         "len": 5
       }
+    },
+    {
+      "id": "grid-rect",
+      "title": "Rectangular photo grid",
+      "description": "A wall of photo cards ripples in from the middle card, then the camera pulls back, trucks across and pushes in on a new card.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "GridRect"
+      ],
+      "hero": {
+        "src": "/catalog/components/grid-rect/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/grids/out/GridRect.mp4",
+        "at": 0.8,
+        "video": "/catalog/components/grid-rect/hero.mp4",
+        "len": 4
+      },
+      "category": "grids",
+      "props": [
+        {
+          "name": "photos",
+          "type": "list",
+          "default": "",
+          "doc": "Photo file names inside public/photos, in order. Items take them in turn and repeat when there are more items than photos."
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "default": "\"Rectangular\"",
+          "doc": "Small line at the bottom left. Empty for none."
+        },
+        {
+          "name": "showHud",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Show the caption and the counter."
+        },
+        {
+          "name": "aperture",
+          "type": "number",
+          "default": "14",
+          "doc": "Depth of field: blur, in px, of a card one focus distance away from the focus plane. 0 keeps everything sharp."
+        },
+        {
+          "name": "drift",
+          "type": "number",
+          "default": "1",
+          "doc": "Handheld drift on the camera, as a multiple of the default (about 0.4 degrees and 6 px). 0 for a locked-off camera."
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "default": "14",
+          "doc": "Corner radius of the cards, px."
+        },
+        {
+          "name": "colors.ground",
+          "type": "colour",
+          "default": "",
+          "doc": "Frame edge."
+        },
+        {
+          "name": "colors.ground2",
+          "type": "colour",
+          "default": "",
+          "doc": "Frame centre, slightly lighter."
+        },
+        {
+          "name": "colors.ink",
+          "type": "colour",
+          "default": "",
+          "doc": "Caption type."
+        },
+        {
+          "name": "colors.edge",
+          "type": "colour",
+          "default": "",
+          "doc": "Hairline round every card."
+        },
+        {
+          "name": "cols",
+          "type": "integer",
+          "default": "9",
+          "doc": "Cards across."
+        },
+        {
+          "name": "rows",
+          "type": "integer",
+          "default": "5",
+          "doc": "Cards down."
+        },
+        {
+          "name": "cardWidth",
+          "type": "number",
+          "default": "320",
+          "doc": "Card width, world px (1:1 at the focal distance)."
+        },
+        {
+          "name": "cardHeight",
+          "type": "number",
+          "default": "410",
+          "doc": "Card height, world px."
+        },
+        {
+          "name": "gap",
+          "type": "number",
+          "default": "44",
+          "doc": "Space between cards, world px."
+        },
+        {
+          "name": "stagger",
+          "type": "number",
+          "default": "2.6",
+          "doc": "Frames of delay per card of distance from the middle, for the ripple in."
+        },
+        {
+          "name": "startDistance",
+          "type": "number",
+          "default": "1180",
+          "doc": "Eye distance of the opening shot (a single card fills the frame at about 1000)."
+        },
+        {
+          "name": "endDistance",
+          "type": "number",
+          "default": "3400",
+          "doc": "Eye distance of the wide shot."
+        },
+        {
+          "name": "orbit",
+          "type": "number",
+          "default": "14",
+          "doc": "Degrees the camera turns about the wall for the wide shot and the truck."
+        },
+        {
+          "name": "truck",
+          "type": "number",
+          "default": "720",
+          "doc": "World px the camera slides sideways for the last move."
+        },
+        {
+          "name": "tilt",
+          "type": "number",
+          "default": "10",
+          "doc": "Degrees the camera looks down on the wall in the wide shot."
+        },
+        {
+          "name": "hold",
+          "type": "integer",
+          "default": "22",
+          "doc": "Frames the opening shot holds before the pull back."
+        }
+      ]
+    },
+    {
+      "id": "grid-radial",
+      "title": "Photo rings",
+      "description": "Three concentric rings of photos at different depths open from the centre. The camera swings side to side, then pushes in as focus racks from the inner ring to the outer one.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "GridRadial"
+      ],
+      "hero": {
+        "src": "/catalog/components/grid-radial/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/grids/out/GridRadial.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/grid-radial/hero.mp4",
+        "len": 4
+      },
+      "category": "grids",
+      "props": [
+        {
+          "name": "photos",
+          "type": "list",
+          "default": "",
+          "doc": "Photo file names inside public/photos, in order. Items take them in turn and repeat when there are more items than photos."
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "default": "\"Radial\"",
+          "doc": "Small line at the bottom left. Empty for none."
+        },
+        {
+          "name": "showHud",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Show the caption and the counter."
+        },
+        {
+          "name": "aperture",
+          "type": "number",
+          "default": "14",
+          "doc": "Depth of field: blur, in px, of a card one focus distance away from the focus plane. 0 keeps everything sharp."
+        },
+        {
+          "name": "drift",
+          "type": "number",
+          "default": "1",
+          "doc": "Handheld drift on the camera, as a multiple of the default (about 0.4 degrees and 6 px). 0 for a locked-off camera."
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "default": "14",
+          "doc": "Corner radius of the cards, px."
+        },
+        {
+          "name": "colors.ground",
+          "type": "colour",
+          "default": "",
+          "doc": "Frame edge."
+        },
+        {
+          "name": "colors.ground2",
+          "type": "colour",
+          "default": "",
+          "doc": "Frame centre, slightly lighter."
+        },
+        {
+          "name": "colors.ink",
+          "type": "colour",
+          "default": "",
+          "doc": "Caption type."
+        },
+        {
+          "name": "colors.edge",
+          "type": "colour",
+          "default": "",
+          "doc": "Hairline round every card."
+        },
+        {
+          "name": "count",
+          "type": "integer",
+          "default": "36",
+          "doc": "Cards in all, shared between the rings by circumference."
+        },
+        {
+          "name": "rings",
+          "type": "integer",
+          "default": "3",
+          "doc": "How many concentric rings."
+        },
+        {
+          "name": "ringGap",
+          "type": "number",
+          "default": "330",
+          "doc": "Radius step between rings, world px."
+        },
+        {
+          "name": "ringDepth",
+          "type": "number",
+          "default": "150",
+          "doc": "How far back each ring sits from the one inside it, world px. 0 for a flat dial."
+        },
+        {
+          "name": "cardWidth",
+          "type": "number",
+          "default": "230",
+          "doc": "Card width, world px."
+        },
+        {
+          "name": "cardHeight",
+          "type": "number",
+          "default": "290",
+          "doc": "Card height, world px."
+        },
+        {
+          "name": "swing",
+          "type": "number",
+          "default": "20",
+          "doc": "Degrees the camera swings either side of the ring axis."
+        },
+        {
+          "name": "stagger",
+          "type": "number",
+          "default": "9",
+          "doc": "Frames between one ring starting and the next."
+        },
+        {
+          "name": "pullBack",
+          "type": "number",
+          "default": "3800",
+          "doc": "Eye distance of the wide shot."
+        },
+        {
+          "name": "pushIn",
+          "type": "number",
+          "default": "2500",
+          "doc": "Eye distance at the end of the push in."
+        },
+        {
+          "name": "steps",
+          "type": "integer",
+          "default": "1",
+          "doc": "How many cards each ring advances in its step (0 keeps the rings still)."
+        }
+      ]
+    },
+    {
+      "id": "grid-path",
+      "title": "Photos along a curve",
+      "description": "Upright photo cards follow a curve: a wave, a triangle, a square or an infinity sign. The line draws on, the leading card sets off, and the camera trucks along the line.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "GridPath"
+      ],
+      "hero": {
+        "src": "/catalog/components/grid-path/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/grids/out/GridPath.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/grid-path/hero.mp4",
+        "len": 4
+      },
+      "category": "grids",
+      "props": [
+        {
+          "name": "photos",
+          "type": "list",
+          "default": "",
+          "doc": "Photo file names inside public/photos, in order. Items take them in turn and repeat when there are more items than photos."
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "default": "\"Path\"",
+          "doc": "Small line at the bottom left. Empty for none."
+        },
+        {
+          "name": "showHud",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Show the caption and the counter."
+        },
+        {
+          "name": "aperture",
+          "type": "number",
+          "default": "14",
+          "doc": "Depth of field: blur, in px, of a card one focus distance away from the focus plane. 0 keeps everything sharp."
+        },
+        {
+          "name": "drift",
+          "type": "number",
+          "default": "1",
+          "doc": "Handheld drift on the camera, as a multiple of the default (about 0.4 degrees and 6 px). 0 for a locked-off camera."
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "default": "14",
+          "doc": "Corner radius of the cards, px."
+        },
+        {
+          "name": "colors.ground",
+          "type": "colour",
+          "default": "",
+          "doc": "Frame edge."
+        },
+        {
+          "name": "colors.ground2",
+          "type": "colour",
+          "default": "",
+          "doc": "Frame centre, slightly lighter."
+        },
+        {
+          "name": "colors.ink",
+          "type": "colour",
+          "default": "",
+          "doc": "Caption type."
+        },
+        {
+          "name": "colors.edge",
+          "type": "colour",
+          "default": "",
+          "doc": "Hairline round every card."
+        },
+        {
+          "name": "shape",
+          "type": "wave | triangle | square | infinity",
+          "default": "\"wave\"",
+          "doc": "The curve: wave (open, swings in depth), triangle, square or infinity (closed)."
+        },
+        {
+          "name": "count",
+          "type": "integer",
+          "default": "9",
+          "doc": "Cards on the path."
+        },
+        {
+          "name": "size",
+          "type": "number",
+          "default": "1100",
+          "doc": "Half width of the curve, world px."
+        },
+        {
+          "name": "depth",
+          "type": "number",
+          "default": "520",
+          "doc": "How far the curve swings toward and away from the camera, world px."
+        },
+        {
+          "name": "cardWidth",
+          "type": "number",
+          "default": "310",
+          "doc": "Card width, world px."
+        },
+        {
+          "name": "cardHeight",
+          "type": "number",
+          "default": "390",
+          "doc": "Card height, world px."
+        },
+        {
+          "name": "travel",
+          "type": "number",
+          "default": "0.3",
+          "doc": "How far the train moves, as a fraction of the curve."
+        },
+        {
+          "name": "lag",
+          "type": "number",
+          "default": "3",
+          "doc": "Frames each card sets off after the one ahead."
+        },
+        {
+          "name": "showLine",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Draw the path as a hairline."
+        },
+        {
+          "name": "truck",
+          "type": "number",
+          "default": "520",
+          "doc": "World px the camera slides along while the train moves."
+        },
+        {
+          "name": "swing",
+          "type": "number",
+          "default": "14",
+          "doc": "Degrees the camera turns either side of straight on."
+        },
+        {
+          "name": "distance",
+          "type": "number",
+          "default": "2000",
+          "doc": "Eye distance."
+        }
+      ]
+    },
+    {
+      "id": "grid-path-orient",
+      "title": "Photo loop on a triangle",
+      "description": "Cards ride a rounded triangle, each turned to the direction of the path. The camera looks down and orbits as the cards swing through the corners.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "GridPathOrient"
+      ],
+      "hero": {
+        "src": "/catalog/components/grid-path-orient/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/grids/out/GridPathOrient.mp4",
+        "at": 0.4,
+        "video": "/catalog/components/grid-path-orient/hero.mp4",
+        "len": 4
+      },
+      "category": "grids",
+      "props": [
+        {
+          "name": "photos",
+          "type": "list",
+          "default": "",
+          "doc": "Photo file names inside public/photos, in order. Items take them in turn and repeat when there are more items than photos."
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "default": "\"Path orient\"",
+          "doc": "Small line at the bottom left. Empty for none."
+        },
+        {
+          "name": "showHud",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Show the caption and the counter."
+        },
+        {
+          "name": "aperture",
+          "type": "number",
+          "default": "14",
+          "doc": "Depth of field: blur, in px, of a card one focus distance away from the focus plane. 0 keeps everything sharp."
+        },
+        {
+          "name": "drift",
+          "type": "number",
+          "default": "1",
+          "doc": "Handheld drift on the camera, as a multiple of the default (about 0.4 degrees and 6 px). 0 for a locked-off camera."
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "default": "14",
+          "doc": "Corner radius of the cards, px."
+        },
+        {
+          "name": "colors.ground",
+          "type": "colour",
+          "default": "",
+          "doc": "Frame edge."
+        },
+        {
+          "name": "colors.ground2",
+          "type": "colour",
+          "default": "",
+          "doc": "Frame centre, slightly lighter."
+        },
+        {
+          "name": "colors.ink",
+          "type": "colour",
+          "default": "",
+          "doc": "Caption type."
+        },
+        {
+          "name": "colors.edge",
+          "type": "colour",
+          "default": "",
+          "doc": "Hairline round every card."
+        },
+        {
+          "name": "shape",
+          "type": "wave | triangle | square | infinity",
+          "default": "\"triangle\"",
+          "doc": "The curve the cards follow."
+        },
+        {
+          "name": "count",
+          "type": "integer",
+          "default": "9",
+          "doc": "Cards on the path."
+        },
+        {
+          "name": "size",
+          "type": "number",
+          "default": "1500",
+          "doc": "Half width of the curve, world px."
+        },
+        {
+          "name": "cardWidth",
+          "type": "number",
+          "default": "320",
+          "doc": "Card width, world px."
+        },
+        {
+          "name": "cardHeight",
+          "type": "number",
+          "default": "240",
+          "doc": "Card height, world px."
+        },
+        {
+          "name": "turns",
+          "type": "number",
+          "default": "1.5",
+          "doc": "Slots the train advances in the move (1 = one card position)."
+        },
+        {
+          "name": "follow",
+          "type": "number",
+          "default": "1",
+          "doc": "How far each card turns to the tangent: 0 keeps it upright, 1 follows the path fully."
+        },
+        {
+          "name": "lag",
+          "type": "number",
+          "default": "2",
+          "doc": "Frames each card sets off after the one ahead."
+        },
+        {
+          "name": "showLine",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Draw the path as a hairline."
+        },
+        {
+          "name": "orbit",
+          "type": "number",
+          "default": "22",
+          "doc": "Degrees the camera turns about the path."
+        },
+        {
+          "name": "distance",
+          "type": "number",
+          "default": "2300",
+          "doc": "Eye distance."
+        }
+      ]
+    },
+    {
+      "id": "grid-spherical",
+      "title": "Photo sphere",
+      "description": "Cards sit tangent to a sphere. It assembles from its centre and turns a full orbit, then settles on one hero card and pushes in.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "GridSpherical"
+      ],
+      "hero": {
+        "src": "/catalog/components/grid-spherical/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/grids/out/GridSpherical.mp4",
+        "at": 0.5,
+        "video": "/catalog/components/grid-spherical/hero.mp4",
+        "len": 4
+      },
+      "category": "grids",
+      "props": [
+        {
+          "name": "photos",
+          "type": "list",
+          "default": "",
+          "doc": "Photo file names inside public/photos, in order. Items take them in turn and repeat when there are more items than photos."
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "default": "\"Spherical\"",
+          "doc": "Small line at the bottom left. Empty for none."
+        },
+        {
+          "name": "showHud",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Show the caption and the counter."
+        },
+        {
+          "name": "aperture",
+          "type": "number",
+          "default": "16",
+          "doc": "Depth of field: blur, in px, of a card one focus distance away from the focus plane. 0 keeps everything sharp."
+        },
+        {
+          "name": "drift",
+          "type": "number",
+          "default": "1",
+          "doc": "Handheld drift on the camera, as a multiple of the default (about 0.4 degrees and 6 px). 0 for a locked-off camera."
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "default": "14",
+          "doc": "Corner radius of the cards, px."
+        },
+        {
+          "name": "colors.ground",
+          "type": "colour",
+          "default": "",
+          "doc": "Frame edge."
+        },
+        {
+          "name": "colors.ground2",
+          "type": "colour",
+          "default": "",
+          "doc": "Frame centre, slightly lighter."
+        },
+        {
+          "name": "colors.ink",
+          "type": "colour",
+          "default": "",
+          "doc": "Caption type."
+        },
+        {
+          "name": "colors.edge",
+          "type": "colour",
+          "default": "",
+          "doc": "Hairline round every card."
+        },
+        {
+          "name": "count",
+          "type": "integer",
+          "default": "34",
+          "doc": "Cards on the sphere, spread evenly (a Fibonacci spiral)."
+        },
+        {
+          "name": "radius3d",
+          "type": "number",
+          "default": "640",
+          "doc": "Radius of the sphere, world px."
+        },
+        {
+          "name": "cardWidth",
+          "type": "number",
+          "default": "250",
+          "doc": "Card width, world px."
+        },
+        {
+          "name": "cardHeight",
+          "type": "number",
+          "default": "310",
+          "doc": "Card height, world px."
+        },
+        {
+          "name": "turns",
+          "type": "number",
+          "default": "1",
+          "doc": "Full orbits the camera makes before it settles on the hero card."
+        },
+        {
+          "name": "hero",
+          "type": "integer",
+          "default": "17",
+          "doc": "Index of the card the move ends on (a card near the equator reads best)."
+        },
+        {
+          "name": "wideDistance",
+          "type": "number",
+          "default": "3900",
+          "doc": "Eye distance of the opening shot."
+        },
+        {
+          "name": "closeDistance",
+          "type": "number",
+          "default": "1500",
+          "doc": "Eye distance at the end of the push in."
+        },
+        {
+          "name": "backDim",
+          "type": "number",
+          "default": "0.35",
+          "doc": "How much the far side of the sphere is darkened."
+        }
+      ]
+    },
+    {
+      "id": "grid-forward-orient",
+      "title": "Photo ring facing forward",
+      "description": "A ring of cards on a tilted turntable, each turned to face the way it travels. The camera orbits and closes in during one slow stroke.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "GridForwardOrient"
+      ],
+      "hero": {
+        "src": "/catalog/components/grid-forward-orient/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/grids/out/GridForwardOrient.mp4",
+        "at": 0.4,
+        "video": "/catalog/components/grid-forward-orient/hero.mp4",
+        "len": 4
+      },
+      "category": "grids",
+      "props": [
+        {
+          "name": "photos",
+          "type": "list",
+          "default": "",
+          "doc": "Photo file names inside public/photos, in order. Items take them in turn and repeat when there are more items than photos."
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "default": "\"Forward orient\"",
+          "doc": "Small line at the bottom left. Empty for none."
+        },
+        {
+          "name": "showHud",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Show the caption and the counter."
+        },
+        {
+          "name": "aperture",
+          "type": "number",
+          "default": "8",
+          "doc": "Depth of field: blur, in px, of a card one focus distance away from the focus plane. 0 keeps everything sharp."
+        },
+        {
+          "name": "drift",
+          "type": "number",
+          "default": "1",
+          "doc": "Handheld drift on the camera, as a multiple of the default (about 0.4 degrees and 6 px). 0 for a locked-off camera."
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "default": "14",
+          "doc": "Corner radius of the cards, px."
+        },
+        {
+          "name": "colors.ground",
+          "type": "colour",
+          "default": "",
+          "doc": "Frame edge."
+        },
+        {
+          "name": "colors.ground2",
+          "type": "colour",
+          "default": "",
+          "doc": "Frame centre, slightly lighter."
+        },
+        {
+          "name": "colors.ink",
+          "type": "colour",
+          "default": "",
+          "doc": "Caption type."
+        },
+        {
+          "name": "colors.edge",
+          "type": "colour",
+          "default": "",
+          "doc": "Hairline round every card."
+        },
+        {
+          "name": "count",
+          "type": "integer",
+          "default": "10",
+          "doc": "Cards on the ring."
+        },
+        {
+          "name": "radius3d",
+          "type": "number",
+          "default": "700",
+          "doc": "Radius of the ring, world px."
+        },
+        {
+          "name": "cardWidth",
+          "type": "number",
+          "default": "400",
+          "doc": "Card width, world px. The long side runs along the direction of travel."
+        },
+        {
+          "name": "cardHeight",
+          "type": "number",
+          "default": "270",
+          "doc": "Card height, world px."
+        },
+        {
+          "name": "tilt",
+          "type": "number",
+          "default": "40",
+          "doc": "Degrees the plate tips away from the screen (0 faces us, 90 is edge on)."
+        },
+        {
+          "name": "revolution",
+          "type": "number",
+          "default": "216",
+          "doc": "Degrees the ring turns in the move."
+        },
+        {
+          "name": "direction",
+          "type": "clockwise | counterclockwise",
+          "default": "\"clockwise\"",
+          "doc": "Which way the ring turns."
+        },
+        {
+          "name": "orbit",
+          "type": "number",
+          "default": "34",
+          "doc": "Degrees the camera orbits."
+        },
+        {
+          "name": "distance",
+          "type": "number",
+          "default": "2900",
+          "doc": "Eye distance at the start; it closes in by about a third."
+        }
+      ]
+    },
+    {
+      "id": "grid-center-orient",
+      "title": "Photo rosette",
+      "description": "A grid in which every card turns to point at the centre. The twist travels outward into a rosette while the camera rolls and pushes in.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "GridCenterOrient"
+      ],
+      "hero": {
+        "src": "/catalog/components/grid-center-orient/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/grids/out/GridCenterOrient.mp4",
+        "at": 0.8,
+        "video": "/catalog/components/grid-center-orient/hero.mp4",
+        "len": 4
+      },
+      "category": "grids",
+      "props": [
+        {
+          "name": "photos",
+          "type": "list",
+          "default": "",
+          "doc": "Photo file names inside public/photos, in order. Items take them in turn and repeat when there are more items than photos."
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "default": "\"Center orient\"",
+          "doc": "Small line at the bottom left. Empty for none."
+        },
+        {
+          "name": "showHud",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Show the caption and the counter."
+        },
+        {
+          "name": "aperture",
+          "type": "number",
+          "default": "10",
+          "doc": "Depth of field: blur, in px, of a card one focus distance away from the focus plane. 0 keeps everything sharp."
+        },
+        {
+          "name": "drift",
+          "type": "number",
+          "default": "1",
+          "doc": "Handheld drift on the camera, as a multiple of the default (about 0.4 degrees and 6 px). 0 for a locked-off camera."
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "default": "14",
+          "doc": "Corner radius of the cards, px."
+        },
+        {
+          "name": "colors.ground",
+          "type": "colour",
+          "default": "",
+          "doc": "Frame edge."
+        },
+        {
+          "name": "colors.ground2",
+          "type": "colour",
+          "default": "",
+          "doc": "Frame centre, slightly lighter."
+        },
+        {
+          "name": "colors.ink",
+          "type": "colour",
+          "default": "",
+          "doc": "Caption type."
+        },
+        {
+          "name": "colors.edge",
+          "type": "colour",
+          "default": "",
+          "doc": "Hairline round every card."
+        },
+        {
+          "name": "cols",
+          "type": "integer",
+          "default": "9",
+          "doc": "Cards across (an odd number keeps a card at the centre)."
+        },
+        {
+          "name": "rows",
+          "type": "integer",
+          "default": "7",
+          "doc": "Cards down (odd keeps a card at the centre)."
+        },
+        {
+          "name": "cardSize",
+          "type": "number",
+          "default": "160",
+          "doc": "Card edge, world px (cards are square so the rosette stays even)."
+        },
+        {
+          "name": "gap",
+          "type": "number",
+          "default": "36",
+          "doc": "Space between card centres beyond the card size, world px."
+        },
+        {
+          "name": "stagger",
+          "type": "number",
+          "default": "3",
+          "doc": "Frames of delay per card of distance from the centre, for the twist to travel outward."
+        },
+        {
+          "name": "bowl",
+          "type": "number",
+          "default": "40",
+          "doc": "World px each ring of cards sits further back, so the rosette has depth."
+        },
+        {
+          "name": "roll",
+          "type": "number",
+          "default": "14",
+          "doc": "Degrees the camera rolls over the move."
+        },
+        {
+          "name": "startDistance",
+          "type": "number",
+          "default": "2500",
+          "doc": "Eye distance at the start."
+        },
+        {
+          "name": "endDistance",
+          "type": "number",
+          "default": "2050",
+          "doc": "Eye distance at the end."
+        }
+      ]
+    },
+    {
+      "id": "grid-face-screen",
+      "title": "Photo ring facing the screen",
+      "description": "A carousel ring where every card turns to face the screen. It steps one card at a time with a rest between steps, while the camera lifts and closes in.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "GridFaceScreen"
+      ],
+      "hero": {
+        "src": "/catalog/components/grid-face-screen/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/grids/out/GridFaceScreen.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/grid-face-screen/hero.mp4",
+        "len": 4
+      },
+      "category": "grids",
+      "props": [
+        {
+          "name": "photos",
+          "type": "list",
+          "default": "",
+          "doc": "Photo file names inside public/photos, in order. Items take them in turn and repeat when there are more items than photos."
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "default": "\"Face screen\"",
+          "doc": "Small line at the bottom left. Empty for none."
+        },
+        {
+          "name": "showHud",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Show the caption and the counter."
+        },
+        {
+          "name": "aperture",
+          "type": "number",
+          "default": "7",
+          "doc": "Depth of field: blur, in px, of a card one focus distance away from the focus plane. 0 keeps everything sharp."
+        },
+        {
+          "name": "drift",
+          "type": "number",
+          "default": "1",
+          "doc": "Handheld drift on the camera, as a multiple of the default (about 0.4 degrees and 6 px). 0 for a locked-off camera."
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "default": "14",
+          "doc": "Corner radius of the cards, px."
+        },
+        {
+          "name": "colors.ground",
+          "type": "colour",
+          "default": "",
+          "doc": "Frame edge."
+        },
+        {
+          "name": "colors.ground2",
+          "type": "colour",
+          "default": "",
+          "doc": "Frame centre, slightly lighter."
+        },
+        {
+          "name": "colors.ink",
+          "type": "colour",
+          "default": "",
+          "doc": "Caption type."
+        },
+        {
+          "name": "colors.edge",
+          "type": "colour",
+          "default": "",
+          "doc": "Hairline round every card."
+        },
+        {
+          "name": "count",
+          "type": "integer",
+          "default": "16",
+          "doc": "Cards on the ring."
+        },
+        {
+          "name": "radius3d",
+          "type": "number",
+          "default": "1250",
+          "doc": "Radius of the ring, world px."
+        },
+        {
+          "name": "cardWidth",
+          "type": "number",
+          "default": "330",
+          "doc": "Card width, world px."
+        },
+        {
+          "name": "cardHeight",
+          "type": "number",
+          "default": "420",
+          "doc": "Card height, world px."
+        },
+        {
+          "name": "steps",
+          "type": "integer",
+          "default": "3",
+          "doc": "How many cards the ring advances, one at a time with a hold between."
+        },
+        {
+          "name": "stepFrames",
+          "type": "integer",
+          "default": "40",
+          "doc": "Frames each step takes."
+        },
+        {
+          "name": "holdFrames",
+          "type": "integer",
+          "default": "22",
+          "doc": "Frames the ring rests between steps."
+        },
+        {
+          "name": "lift",
+          "type": "number",
+          "default": "12",
+          "doc": "Degrees the camera looks down on the ring at the high point."
+        },
+        {
+          "name": "distance",
+          "type": "number",
+          "default": "3200",
+          "doc": "Eye distance at the start; it closes in by about a quarter."
+        },
+        {
+          "name": "tiltCards",
+          "type": "number",
+          "default": "0",
+          "doc": "Degrees each card leans back from the screen plane (0 faces the screen exactly)."
+        }
+      ]
+    },
+    {
+      "id": "circle-carousel-1",
+      "title": "Growing circle carousel",
+      "description": "Square covers sit on a ring that grows from tiny to large as it turns.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "CircleCarousel1"
+      ],
+      "hero": {
+        "src": "/catalog/components/circle-carousel-1/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/carousels/out/circle-carousel-1.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/circle-carousel-1/hero.mp4",
+        "len": 4
+      },
+      "category": "carousels",
+      "props": [
+        {
+          "name": "images",
+          "type": "list",
+          "default": "",
+          "doc": "Pictures, as paths under public/ (or full URLs). They repeat when there are fewer than the count."
+        },
+        {
+          "name": "count",
+          "type": "integer",
+          "default": "26",
+          "doc": "How many covers sit on the ring."
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "default": "330",
+          "doc": "Radius of the ring in px at the start of the shot."
+        },
+        {
+          "name": "minSize",
+          "type": "number",
+          "default": "6",
+          "doc": "Side of the smallest cover, in px."
+        },
+        {
+          "name": "maxSize",
+          "type": "number",
+          "default": "250",
+          "doc": "Side of the largest cover, in px."
+        },
+        {
+          "name": "growth",
+          "type": "number",
+          "default": "2.2",
+          "doc": "How late the covers grow: 1 is even, higher keeps them small longer and piles the big ones up at the end."
+        },
+        {
+          "name": "turns",
+          "type": "number",
+          "default": "0.45",
+          "doc": "How far the ring turns over the shot, in full turns."
+        },
+        {
+          "name": "startAngle",
+          "type": "number",
+          "default": "-125",
+          "doc": "Where the smallest cover sits, in degrees clockwise from the top."
+        },
+        {
+          "name": "turnStart",
+          "type": "integer",
+          "default": "14",
+          "doc": "Frame the ring starts turning."
+        },
+        {
+          "name": "turnFrames",
+          "type": "integer",
+          "default": "170",
+          "doc": "Frames the turn takes, eased in and out."
+        },
+        {
+          "name": "stagger",
+          "type": "number",
+          "default": "1.2",
+          "doc": "Frames between one cover appearing and the next, round the ring."
+        },
+        {
+          "name": "push",
+          "type": "number",
+          "default": "0.12",
+          "doc": "How far the camera pushes in over the shot (0.1 is 10 percent)."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "default": "\"Circle Carousel\"",
+          "doc": "Small title at the bottom left. Empty for none."
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "default": "\"Public-domain photographs, NASA\"",
+          "doc": "Smaller line under the title. Empty for none."
+        },
+        {
+          "name": "font",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family for the label."
+        },
+        {
+          "name": "colors.ground",
+          "type": "colour",
+          "default": "\"#ececef\"",
+          "doc": "Background."
+        },
+        {
+          "name": "colors.ink",
+          "type": "colour",
+          "default": "\"#17171a\"",
+          "doc": "Title."
+        },
+        {
+          "name": "colors.muted",
+          "type": "colour",
+          "default": "\"#7d7d85\"",
+          "doc": "Caption."
+        }
+      ]
+    },
+    {
+      "id": "circle-carousel-2",
+      "title": "Spiral carousel",
+      "description": "Covers wind inward on a spiral. They are born at the rim and swallowed at the centre.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "CircleCarousel2"
+      ],
+      "hero": {
+        "src": "/catalog/components/circle-carousel-2/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/carousels/out/circle-carousel-2.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/circle-carousel-2/hero.mp4",
+        "len": 4
+      },
+      "category": "carousels",
+      "props": [
+        {
+          "name": "images",
+          "type": "list",
+          "default": "",
+          "doc": "Pictures, as paths under public/ (or full URLs). They repeat when there are fewer than the count."
+        },
+        {
+          "name": "count",
+          "type": "integer",
+          "default": "38",
+          "doc": "How many covers ride the spiral."
+        },
+        {
+          "name": "outerRadius",
+          "type": "number",
+          "default": "470",
+          "doc": "Radius of the rim, where the covers are born, in px."
+        },
+        {
+          "name": "innerRadius",
+          "type": "number",
+          "default": "90",
+          "doc": "Radius at the end of the spiral, where the largest cover sits, in px."
+        },
+        {
+          "name": "windings",
+          "type": "number",
+          "default": "1.15",
+          "doc": "How many times the spiral winds round on its way in."
+        },
+        {
+          "name": "minSize",
+          "type": "number",
+          "default": "5",
+          "doc": "Side of the smallest cover, in px."
+        },
+        {
+          "name": "maxSize",
+          "type": "number",
+          "default": "270",
+          "doc": "Side of the largest cover, in px."
+        },
+        {
+          "name": "growth",
+          "type": "number",
+          "default": "2.0",
+          "doc": "How late the covers grow; higher keeps them small until near the centre."
+        },
+        {
+          "name": "travel",
+          "type": "number",
+          "default": "0.4",
+          "doc": "How far the covers travel along the spiral over the shot, as a fraction of its length."
+        },
+        {
+          "name": "travelStart",
+          "type": "integer",
+          "default": "10",
+          "doc": "Frame the covers start moving."
+        },
+        {
+          "name": "travelFrames",
+          "type": "integer",
+          "default": "190",
+          "doc": "Frames the travel takes, eased in and out."
+        },
+        {
+          "name": "swirl",
+          "type": "number",
+          "default": "14",
+          "doc": "Degrees the whole spiral turns over the shot, on top of the covers travelling along it."
+        },
+        {
+          "name": "tilt",
+          "type": "number",
+          "default": "6",
+          "doc": "Degrees each cover leans along the spiral."
+        },
+        {
+          "name": "stagger",
+          "type": "number",
+          "default": "0.9",
+          "doc": "Frames between one cover appearing and the next."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "default": "\"Circle Carousel 2\"",
+          "doc": "Small title at the bottom right. Empty for none."
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "default": "\"A spiral, wound inward\"",
+          "doc": "Smaller line under the title. Empty for none."
+        },
+        {
+          "name": "font",
+          "type": "string",
+          "default": "\"Inter\"",
+          "doc": "Google Fonts family for the label."
+        },
+        {
+          "name": "colors.ground",
+          "type": "colour",
+          "default": "\"#e9ecf0\"",
+          "doc": "Background."
+        },
+        {
+          "name": "colors.ink",
+          "type": "colour",
+          "default": "\"#14171c\"",
+          "doc": "Title."
+        },
+        {
+          "name": "colors.muted",
+          "type": "colour",
+          "default": "\"#7a828d\"",
+          "doc": "Caption."
+        }
+      ]
+    },
+    {
+      "id": "circle-carousel-3",
+      "title": "U-shaped carousel",
+      "description": "Covers are filed into a U and sit askew, like prints that have been handled.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "CircleCarousel3"
+      ],
+      "hero": {
+        "src": "/catalog/components/circle-carousel-3/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/carousels/out/circle-carousel-3.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/circle-carousel-3/hero.mp4",
+        "len": 4
+      },
+      "category": "carousels",
+      "props": [
+        {
+          "name": "images",
+          "type": "list",
+          "default": "",
+          "doc": "Pictures, as paths under public/ (or full URLs). They repeat when there are fewer than the count."
+        },
+        {
+          "name": "count",
+          "type": "integer",
+          "default": "30",
+          "doc": "How many covers are in the pile."
+        },
+        {
+          "name": "width",
+          "type": "number",
+          "default": "640",
+          "doc": "Width of the U, centre to centre of its arms, in px."
+        },
+        {
+          "name": "armHeight",
+          "type": "number",
+          "default": "250",
+          "doc": "Length of each straight arm above the curve, in px."
+        },
+        {
+          "name": "minSize",
+          "type": "number",
+          "default": "70",
+          "doc": "Side of the cover at the top of the left arm, in px."
+        },
+        {
+          "name": "maxSize",
+          "type": "number",
+          "default": "270",
+          "doc": "Side of the cover at the top of the right arm, in px."
+        },
+        {
+          "name": "scatter",
+          "type": "number",
+          "default": "26",
+          "doc": "How far covers sit off the path, in px, so they pile."
+        },
+        {
+          "name": "lean",
+          "type": "number",
+          "default": "9",
+          "doc": "How far covers are turned from square, in degrees."
+        },
+        {
+          "name": "travel",
+          "type": "number",
+          "default": "0.3",
+          "doc": "How far the covers move along the U over the shot, as a fraction of its length."
+        },
+        {
+          "name": "travelStart",
+          "type": "integer",
+          "default": "12",
+          "doc": "Frame the covers start moving."
+        },
+        {
+          "name": "travelFrames",
+          "type": "integer",
+          "default": "170",
+          "doc": "Frames the move takes, eased in and out."
+        },
+        {
+          "name": "seed",
+          "type": "integer",
+          "default": "7",
+          "doc": "Seed for the scatter and lean. Same seed, same pile."
+        },
+        {
+          "name": "stagger",
+          "type": "number",
+          "default": "1.4",
+          "doc": "Frames between one cover appearing and the next."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "default": "\"Circle Carousel 3\"",
+          "doc": "Small title at the top left. Empty for none."
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "default": "\"Piled into a U\"",
+          "doc": "Smaller line under the title. Empty for none."
+        },
+        {
+          "name": "font",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family for the label."
+        },
+        {
+          "name": "colors.ground",
+          "type": "colour",
+          "default": "\"#f1eee8\"",
+          "doc": "Background."
+        },
+        {
+          "name": "colors.ink",
+          "type": "colour",
+          "default": "\"#1a1815\"",
+          "doc": "Title."
+        },
+        {
+          "name": "colors.muted",
+          "type": "colour",
+          "default": "\"#8a847a\"",
+          "doc": "Caption."
+        }
+      ]
+    },
+    {
+      "id": "card-rail",
+      "title": "Card rail",
+      "description": "Portrait cards sit on a tilted plane and are flicked along it in two throws, each with a label.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "CardRail"
+      ],
+      "hero": {
+        "src": "/catalog/components/card-rail/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/carousels/out/card-rail.mp4",
+        "at": 0.5,
+        "video": "/catalog/components/card-rail/hero.mp4",
+        "len": 4
+      },
+      "category": "carousels",
+      "props": [
+        {
+          "name": "images",
+          "type": "list",
+          "default": "",
+          "doc": "Pictures, as paths under public/ (or full URLs). They repeat when there are fewer than the count."
+        },
+        {
+          "name": "labels",
+          "type": "list",
+          "default": "[]",
+          "doc": "A name for each card, in order. Cards past the end of the list use the picture's own name."
+        },
+        {
+          "name": "count",
+          "type": "integer",
+          "default": "16",
+          "doc": "How many cards are on the rail."
+        },
+        {
+          "name": "cardWidth",
+          "type": "number",
+          "default": "300",
+          "doc": "Width of a card, in px on the plane."
+        },
+        {
+          "name": "cardHeight",
+          "type": "number",
+          "default": "420",
+          "doc": "Height of a card, in px on the plane."
+        },
+        {
+          "name": "gap",
+          "type": "number",
+          "default": "34",
+          "doc": "Space between cards, in px."
+        },
+        {
+          "name": "tiltX",
+          "type": "number",
+          "default": "52",
+          "doc": "How far the plane leans back, in degrees."
+        },
+        {
+          "name": "roll",
+          "type": "number",
+          "default": "-16",
+          "doc": "How far the plane is turned in its own plane, in degrees, so the rail runs on a diagonal."
+        },
+        {
+          "name": "perspective",
+          "type": "number",
+          "default": "1500",
+          "doc": "Camera perspective distance, in px. Lower is more dramatic."
+        },
+        {
+          "name": "flicks",
+          "type": "list",
+          "default": "",
+          "doc": "Each flick of the rail."
+        },
+        {
+          "name": "lift",
+          "type": "number",
+          "default": "70",
+          "doc": "How far the centred card rises off the plane, in px."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "default": "\"Card Rail\"",
+          "doc": "Title at the top left. Empty for none."
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "default": "\"Flicked, then let go\"",
+          "doc": "Smaller line under the title. Empty for none."
+        },
+        {
+          "name": "font",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family for the label and card numbers."
+        },
+        {
+          "name": "serif",
+          "type": "string",
+          "default": "\"Instrument Serif\"",
+          "doc": "Google Fonts family for the card names (set in italic)."
+        },
+        {
+          "name": "colors.ground",
+          "type": "colour",
+          "default": "\"#e7e3da\"",
+          "doc": "Background."
+        },
+        {
+          "name": "colors.ink",
+          "type": "colour",
+          "default": "\"#16150f\"",
+          "doc": "Title."
+        },
+        {
+          "name": "colors.muted",
+          "type": "colour",
+          "default": "\"#85806f\"",
+          "doc": "Caption."
+        },
+        {
+          "name": "colors.card",
+          "type": "colour",
+          "default": "\"#f7f5ef\"",
+          "doc": "Card colour behind the picture."
+        },
+        {
+          "name": "colors.cardText",
+          "type": "colour",
+          "default": "\"#16150f\"",
+          "doc": "Card names."
+        }
+      ]
+    },
+    {
+      "id": "reel-wall",
+      "title": "Spinning card ring",
+      "description": "A 3D ring of tall cards spins to rest on one, which steps forward with its name.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "ReelWall"
+      ],
+      "hero": {
+        "src": "/catalog/components/reel-wall/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/carousels/out/reel-wall.mp4",
+        "at": 1.5,
+        "video": "/catalog/components/reel-wall/hero.mp4",
+        "len": 4
+      },
+      "category": "carousels",
+      "props": [
+        {
+          "name": "images",
+          "type": "list",
+          "default": "",
+          "doc": "Pictures, as paths under public/ (or full URLs). They repeat when there are fewer than the count."
+        },
+        {
+          "name": "labels",
+          "type": "list",
+          "default": "[]",
+          "doc": "A name for each card, in order. Cards past the end of the list use the picture's own name."
+        },
+        {
+          "name": "count",
+          "type": "integer",
+          "default": "18",
+          "doc": "How many cards stand on the ring."
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "default": "1150",
+          "doc": "Radius of the ring, in px."
+        },
+        {
+          "name": "cardWidth",
+          "type": "number",
+          "default": "330",
+          "doc": "Width of a card, in px."
+        },
+        {
+          "name": "cardHeight",
+          "type": "number",
+          "default": "590",
+          "doc": "Height of a card, in px."
+        },
+        {
+          "name": "perspective",
+          "type": "number",
+          "default": "1700",
+          "doc": "Camera perspective distance, in px."
+        },
+        {
+          "name": "landOn",
+          "type": "integer",
+          "default": "7",
+          "doc": "Index of the card the ring comes to rest on."
+        },
+        {
+          "name": "extraTurns",
+          "type": "number",
+          "default": "1",
+          "doc": "Whole turns the ring makes before it lands (rounded to a whole number so it lands square)."
+        },
+        {
+          "name": "spinStart",
+          "type": "integer",
+          "default": "6",
+          "doc": "Frame the throw starts."
+        },
+        {
+          "name": "spinFrames",
+          "type": "integer",
+          "default": "150",
+          "doc": "Frames from the throw to rest."
+        },
+        {
+          "name": "step",
+          "type": "number",
+          "default": "150",
+          "doc": "How far the chosen card steps toward the camera at rest, in px."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "default": "\"Reel Wall\"",
+          "doc": "Small line at the top left. Empty for none."
+        },
+        {
+          "name": "font",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family for the small type."
+        },
+        {
+          "name": "serif",
+          "type": "string",
+          "default": "\"Instrument Serif\"",
+          "doc": "Google Fonts family for the chosen card's name (italic)."
+        },
+        {
+          "name": "colors.ground",
+          "type": "colour",
+          "default": "\"#0a0a0c\"",
+          "doc": "Background, near black."
+        },
+        {
+          "name": "colors.light",
+          "type": "colour",
+          "default": "\"#23232a\"",
+          "doc": "A soft pool of light behind the ring."
+        },
+        {
+          "name": "colors.ink",
+          "type": "colour",
+          "default": "\"#f2efe8\"",
+          "doc": "Type."
+        },
+        {
+          "name": "colors.muted",
+          "type": "colour",
+          "default": "\"#8b8a86\"",
+          "doc": "Small type."
+        }
+      ]
+    },
+    {
+      "id": "orbit-gallery",
+      "title": "Orbit gallery",
+      "description": "Nine photos spiral in around a title and settle on an ellipse.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "OrbitGallery"
+      ],
+      "hero": {
+        "src": "/catalog/components/orbit-gallery/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/carousels/out/orbit-gallery.mp4",
+        "at": 0,
+        "video": "/catalog/components/orbit-gallery/hero.mp4",
+        "len": 4
+      },
+      "category": "carousels",
+      "props": [
+        {
+          "name": "images",
+          "type": "list",
+          "default": "",
+          "doc": "Pictures, as paths under public/ (or full URLs). They repeat when there are fewer than the count."
+        },
+        {
+          "name": "count",
+          "type": "integer",
+          "default": "9",
+          "doc": "How many photographs land on the ring."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "default": "\"Orbit\"",
+          "doc": "The title in the middle."
+        },
+        {
+          "name": "subtitle",
+          "type": "string",
+          "default": "\"Nine photographs, one ring\"",
+          "doc": "A small line under the title. Empty for none."
+        },
+        {
+          "name": "radiusX",
+          "type": "number",
+          "default": "770",
+          "doc": "Half the width of the ring they settle on, in px."
+        },
+        {
+          "name": "radiusY",
+          "type": "number",
+          "default": "385",
+          "doc": "Half the height of the ring they settle on, in px."
+        },
+        {
+          "name": "photoWidth",
+          "type": "number",
+          "default": "210",
+          "doc": "Width of a photograph, in px."
+        },
+        {
+          "name": "photoHeight",
+          "type": "number",
+          "default": "250",
+          "doc": "Height of a photograph, in px."
+        },
+        {
+          "name": "swirl",
+          "type": "number",
+          "default": "300",
+          "doc": "How many degrees each photograph winds round the title on its way in."
+        },
+        {
+          "name": "startDistance",
+          "type": "number",
+          "default": "2.7",
+          "doc": "How far out they start, as a multiple of the ring."
+        },
+        {
+          "name": "firstFrame",
+          "type": "integer",
+          "default": "8",
+          "doc": "Frame the first photograph starts moving."
+        },
+        {
+          "name": "stagger",
+          "type": "number",
+          "default": "7",
+          "doc": "Frames between one photograph setting off and the next."
+        },
+        {
+          "name": "travelFrames",
+          "type": "integer",
+          "default": "78",
+          "doc": "Frames each photograph takes to arrive."
+        },
+        {
+          "name": "tilt",
+          "type": "number",
+          "default": "6",
+          "doc": "How far each photograph lies from square once settled, in degrees."
+        },
+        {
+          "name": "seed",
+          "type": "integer",
+          "default": "3",
+          "doc": "Seed for the tilt and the order. Same seed, same ring."
+        },
+        {
+          "name": "push",
+          "type": "number",
+          "default": "0.06",
+          "doc": "How far the camera pushes in once the ring has settled (0.06 is 6 percent)."
+        },
+        {
+          "name": "font",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family for the subtitle."
+        },
+        {
+          "name": "serif",
+          "type": "string",
+          "default": "\"Instrument Serif\"",
+          "doc": "Google Fonts family for the title."
+        },
+        {
+          "name": "colors.ground",
+          "type": "colour",
+          "default": "\"#f1eee7\"",
+          "doc": "Background."
+        },
+        {
+          "name": "colors.ink",
+          "type": "colour",
+          "default": "\"#17150f\"",
+          "doc": "Title."
+        },
+        {
+          "name": "colors.muted",
+          "type": "colour",
+          "default": "\"#8a8574\"",
+          "doc": "Subtitle."
+        }
+      ]
+    },
+    {
+      "id": "gallery-push",
+      "title": "Gallery wall push-in",
+      "description": "A wall of photo columns unrolls from the middle while the camera pushes in.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "GalleryPush"
+      ],
+      "hero": {
+        "src": "/catalog/components/gallery-push/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/carousels/out/gallery-push.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/gallery-push/hero.mp4",
+        "len": 4
+      },
+      "category": "carousels",
+      "props": [
+        {
+          "name": "images",
+          "type": "list",
+          "default": "",
+          "doc": "Pictures, as paths under public/ (or full URLs). They repeat when there are fewer than the count."
+        },
+        {
+          "name": "columns",
+          "type": "integer",
+          "default": "9",
+          "doc": "How many columns are in the wall."
+        },
+        {
+          "name": "tilesPerColumn",
+          "type": "integer",
+          "default": "5",
+          "doc": "How many photographs stack in each column."
+        },
+        {
+          "name": "columnWidth",
+          "type": "number",
+          "default": "260",
+          "doc": "Width of a column, in px."
+        },
+        {
+          "name": "gap",
+          "type": "number",
+          "default": "16",
+          "doc": "Space between tiles, in px."
+        },
+        {
+          "name": "depth",
+          "type": "number",
+          "default": "90",
+          "doc": "How far alternate columns stand off the plane, in px."
+        },
+        {
+          "name": "perspective",
+          "type": "number",
+          "default": "1500",
+          "doc": "Camera perspective distance, in px."
+        },
+        {
+          "name": "openStart",
+          "type": "integer",
+          "default": "6",
+          "doc": "Frame the middle column starts to open."
+        },
+        {
+          "name": "openStagger",
+          "type": "number",
+          "default": "6",
+          "doc": "Frames between one column starting to open and the next, outward from the middle."
+        },
+        {
+          "name": "openFrames",
+          "type": "integer",
+          "default": "34",
+          "doc": "Frames a column takes to open."
+        },
+        {
+          "name": "pushStart",
+          "type": "integer",
+          "default": "22",
+          "doc": "Frame the camera push starts."
+        },
+        {
+          "name": "pushFrames",
+          "type": "integer",
+          "default": "170",
+          "doc": "Frames the push takes, eased in and out."
+        },
+        {
+          "name": "pushTo",
+          "type": "number",
+          "default": "900",
+          "doc": "How far the camera starts back from the wall, in px; it ends about a third of that distance in front of it."
+        },
+        {
+          "name": "turn",
+          "type": "number",
+          "default": "18",
+          "doc": "How far the wall is turned at the start, in degrees; it comes square as the camera pushes in."
+        },
+        {
+          "name": "drift",
+          "type": "number",
+          "default": "70",
+          "doc": "How far alternate columns slide, in px, over the shot."
+        },
+        {
+          "name": "seed",
+          "type": "integer",
+          "default": "11",
+          "doc": "Seed for the tile heights. Same seed, same wall."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "default": "\"Gallery Push\"",
+          "doc": "Title at the bottom left, over the wall. Empty for none."
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "default": "\"Opened column by column\"",
+          "doc": "Smaller line under the title. Empty for none."
+        },
+        {
+          "name": "font",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family for the label."
+        },
+        {
+          "name": "serif",
+          "type": "string",
+          "default": "\"Instrument Serif\"",
+          "doc": "Google Fonts family for the title (italic)."
+        },
+        {
+          "name": "colors.ground",
+          "type": "colour",
+          "default": "\"#12110f\"",
+          "doc": "Background."
+        },
+        {
+          "name": "colors.ink",
+          "type": "colour",
+          "default": "\"#f3f0e8\"",
+          "doc": "Title."
+        },
+        {
+          "name": "colors.muted",
+          "type": "colour",
+          "default": "\"#8d897d\"",
+          "doc": "Caption."
+        }
+      ]
+    },
+    {
+      "id": "area-chart",
+      "title": "Area chart",
+      "description": "A gradient area draws in under a trucking camera and lands on a tooltip. Light or dark.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "AreaChart"
+      ],
+      "hero": {
+        "src": "/catalog/components/area-chart/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/charts/out/area-chart.mp4",
+        "at": 0.2,
+        "video": "/catalog/components/area-chart/hero.mp4",
+        "len": 4
+      },
+      "category": "charts",
+      "props": [
+        {
+          "name": "data",
+          "type": "list",
+          "default": "",
+          "doc": "The series, left to right."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "default": "\"Weekly active sessions\"",
+          "doc": "Small heading over the big number."
+        },
+        {
+          "name": "highlight",
+          "type": "integer",
+          "default": "9",
+          "doc": "Index of the point the camera lands on."
+        },
+        {
+          "name": "mode",
+          "type": "light | dark",
+          "default": "\"light\"",
+          "doc": "Colour theme: light or dark."
+        },
+        {
+          "name": "accent",
+          "type": "colour",
+          "default": "\"#4f7cf6\"",
+          "doc": "Line and area colour."
+        },
+        {
+          "name": "format.prefix",
+          "type": "string",
+          "default": "",
+          "doc": "Before the number, e.g. \"$\"."
+        },
+        {
+          "name": "format.suffix",
+          "type": "string",
+          "default": "",
+          "doc": "After the number, e.g. \"%\" or \"k\"."
+        },
+        {
+          "name": "format.decimals",
+          "type": "integer",
+          "default": "",
+          "doc": "Digits after the decimal point."
+        },
+        {
+          "name": "format.group",
+          "type": "string",
+          "default": "",
+          "doc": "Thousands separator, a comma by default. Empty for none."
+        },
+        {
+          "name": "pitch",
+          "type": "number",
+          "default": "190",
+          "doc": "Pixels between points: the longer, the more the camera has to travel."
+        },
+        {
+          "name": "drawSeconds",
+          "type": "number",
+          "default": "3.4",
+          "doc": "How long the line takes to draw."
+        },
+        {
+          "name": "holdSeconds",
+          "type": "number",
+          "default": "1.8",
+          "doc": "How long the last frame holds on the tooltip."
+        },
+        {
+          "name": "markers",
+          "type": "boolean",
+          "default": "true",
+          "doc": "A small dot at every data point as the line passes it."
+        },
+        {
+          "name": "camera.zoom",
+          "type": "number",
+          "default": "0.92",
+          "doc": "Camera zoom while trucking along the line."
+        },
+        {
+          "name": "camera.pushZoom",
+          "type": "number",
+          "default": "1.9",
+          "doc": "Camera zoom on the highlighted point."
+        },
+        {
+          "name": "camera.follow",
+          "type": "number",
+          "default": "0.35",
+          "doc": "How much of the line's rise and fall the camera follows (0 keeps it level)."
+        },
+        {
+          "name": "camera.motionBlur",
+          "type": "number",
+          "default": "0.5",
+          "doc": "Shutter in frames; 0 turns the blur off."
+        },
+        {
+          "name": "camera.drift",
+          "type": "number",
+          "default": "4",
+          "doc": "Handheld drift in pixels on the holds."
+        }
+      ]
+    },
+    {
+      "id": "line-ticker",
+      "title": "Line ticker",
+      "description": "A climbing line with the camera chasing its head and a large live number above it. Light or dark.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "LineTicker"
+      ],
+      "hero": {
+        "src": "/catalog/components/line-ticker/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/charts/out/line-ticker.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/line-ticker/hero.mp4",
+        "len": 4
+      },
+      "category": "charts",
+      "props": [
+        {
+          "name": "data",
+          "type": "list",
+          "default": "",
+          "doc": "The series, left to right."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "default": "\"Portfolio value\"",
+          "doc": "Small heading over the live number."
+        },
+        {
+          "name": "mode",
+          "type": "light | dark",
+          "default": "\"dark\"",
+          "doc": "Colour theme: light or dark."
+        },
+        {
+          "name": "accent",
+          "type": "colour",
+          "default": "\"#3fb58c\"",
+          "doc": "Line colour."
+        },
+        {
+          "name": "format.prefix",
+          "type": "string",
+          "default": "",
+          "doc": "Before the number, e.g. \"$\"."
+        },
+        {
+          "name": "format.suffix",
+          "type": "string",
+          "default": "",
+          "doc": "After the number, e.g. \"%\" or \"k\"."
+        },
+        {
+          "name": "format.decimals",
+          "type": "integer",
+          "default": "",
+          "doc": "Digits after the decimal point."
+        },
+        {
+          "name": "format.group",
+          "type": "string",
+          "default": "",
+          "doc": "Thousands separator, a comma by default. Empty for none."
+        },
+        {
+          "name": "pitch",
+          "type": "number",
+          "default": "170",
+          "doc": "Pixels between points in the world."
+        },
+        {
+          "name": "riseHeight",
+          "type": "number",
+          "default": "1500",
+          "doc": "Height in world pixels of the whole climb, first value to last."
+        },
+        {
+          "name": "startSeconds",
+          "type": "number",
+          "default": "0.5",
+          "doc": "Seconds before the line starts to climb."
+        },
+        {
+          "name": "climbSeconds",
+          "type": "number",
+          "default": "6",
+          "doc": "How long the climb takes."
+        },
+        {
+          "name": "holdSeconds",
+          "type": "number",
+          "default": "2",
+          "doc": "How long the last frame holds."
+        },
+        {
+          "name": "labelEvery",
+          "type": "integer",
+          "default": "3",
+          "doc": "An x label (and a vertical hairline) every N points."
+        },
+        {
+          "name": "camera.zoomFrom",
+          "type": "number",
+          "default": "0.95",
+          "doc": "Camera zoom at the start."
+        },
+        {
+          "name": "camera.zoomTo",
+          "type": "number",
+          "default": "1.2",
+          "doc": "Camera zoom at the end (the camera pushes in as the line speeds up)."
+        },
+        {
+          "name": "camera.lagSeconds",
+          "type": "number",
+          "default": "0.25",
+          "doc": "How far the camera trails the head, in seconds. 0 locks it on."
+        },
+        {
+          "name": "camera.headX",
+          "type": "number",
+          "default": "0.7",
+          "doc": "Where the head sits across the frame (0 left, 1 right) when the camera has caught up."
+        }
+      ]
+    },
+    {
+      "id": "bar-chart",
+      "title": "Bar chart",
+      "description": "Bars grow in turn, then focus racks and the camera pushes in on the winner. A small gap between bars makes it a histogram.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "BarChart"
+      ],
+      "hero": {
+        "src": "/catalog/components/bar-chart/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/charts/out/bar-chart.mp4",
+        "at": 1.2,
+        "video": "/catalog/components/bar-chart/hero.mp4",
+        "len": 4
+      },
+      "category": "charts",
+      "props": [
+        {
+          "name": "data",
+          "type": "list",
+          "default": "",
+          "doc": "The bars, left to right."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "default": "\"Orders per day\"",
+          "doc": "Heading over the chart."
+        },
+        {
+          "name": "subtitle",
+          "type": "string",
+          "default": "\"Last ten days\"",
+          "doc": "Small line under the heading. Empty for none."
+        },
+        {
+          "name": "winner",
+          "type": "integer",
+          "default": "-1",
+          "doc": "Index of the bar the camera pushes to. -1 picks the tallest."
+        },
+        {
+          "name": "mode",
+          "type": "light | dark",
+          "default": "\"light\"",
+          "doc": "Colour theme: light or dark."
+        },
+        {
+          "name": "accent",
+          "type": "colour",
+          "default": "\"#e0855a\"",
+          "doc": "Colour of the winning bar."
+        },
+        {
+          "name": "format.prefix",
+          "type": "string",
+          "default": "",
+          "doc": "Before the number, e.g. \"$\"."
+        },
+        {
+          "name": "format.suffix",
+          "type": "string",
+          "default": "",
+          "doc": "After the number, e.g. \"%\" or \"k\"."
+        },
+        {
+          "name": "format.decimals",
+          "type": "integer",
+          "default": "",
+          "doc": "Digits after the decimal point."
+        },
+        {
+          "name": "format.group",
+          "type": "string",
+          "default": "",
+          "doc": "Thousands separator, a comma by default. Empty for none."
+        },
+        {
+          "name": "gap",
+          "type": "number",
+          "default": "0.36",
+          "doc": "Gap between bars as a share of the pitch. About 0.04 makes a histogram."
+        },
+        {
+          "name": "pitch",
+          "type": "number",
+          "default": "150",
+          "doc": "Pixels from one bar to the next."
+        },
+        {
+          "name": "growSeconds",
+          "type": "number",
+          "default": "1.1",
+          "doc": "How long one bar takes to grow."
+        },
+        {
+          "name": "staggerFrames",
+          "type": "number",
+          "default": "7",
+          "doc": "Frames between one bar starting and the next."
+        },
+        {
+          "name": "holdSeconds",
+          "type": "number",
+          "default": "2",
+          "doc": "How long the last frame holds."
+        },
+        {
+          "name": "rackFocus",
+          "type": "number",
+          "default": "7",
+          "doc": "Blur radius in px on the other bars when the camera pushes in. 0 for none."
+        },
+        {
+          "name": "camera.pushZoom",
+          "type": "number",
+          "default": "2.1",
+          "doc": "Camera zoom on the winner."
+        },
+        {
+          "name": "camera.settleZoom",
+          "type": "number",
+          "default": "1.03",
+          "doc": "Camera zoom while the bars grow (it creeps in a little)."
+        },
+        {
+          "name": "camera.motionBlur",
+          "type": "number",
+          "default": "0.5",
+          "doc": "Shutter in frames; 0 turns the blur off."
+        },
+        {
+          "name": "camera.drift",
+          "type": "number",
+          "default": "3",
+          "doc": "Handheld drift in pixels on the holds."
+        }
+      ]
+    },
+    {
+      "id": "donut-chart",
+      "title": "Donut chart",
+      "description": "One sweep draws the segments, then the leading segment steps out with a callout. Light or dark.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "DonutChart"
+      ],
+      "hero": {
+        "src": "/catalog/components/donut-chart/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/charts/out/donut-chart.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/donut-chart/hero.mp4",
+        "len": 4
+      },
+      "category": "charts",
+      "props": [
+        {
+          "name": "data",
+          "type": "list",
+          "default": "",
+          "doc": "The segments, in sweep order (clockwise from 12 o'clock)."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "default": "\"Revenue by channel\"",
+          "doc": "Small line over the centre number."
+        },
+        {
+          "name": "leader",
+          "type": "integer",
+          "default": "-1",
+          "doc": "Index of the segment the camera pushes to. -1 picks the largest."
+        },
+        {
+          "name": "mode",
+          "type": "light | dark",
+          "default": "\"dark\"",
+          "doc": "Colour theme: light or dark."
+        },
+        {
+          "name": "format.prefix",
+          "type": "string",
+          "default": "",
+          "doc": "Before the number, e.g. \"$\"."
+        },
+        {
+          "name": "format.suffix",
+          "type": "string",
+          "default": "",
+          "doc": "After the number, e.g. \"%\" or \"k\"."
+        },
+        {
+          "name": "format.decimals",
+          "type": "integer",
+          "default": "",
+          "doc": "Digits after the decimal point."
+        },
+        {
+          "name": "format.group",
+          "type": "string",
+          "default": "",
+          "doc": "Thousands separator, a comma by default. Empty for none."
+        },
+        {
+          "name": "thickness",
+          "type": "number",
+          "default": "84",
+          "doc": "Ring thickness in world pixels."
+        },
+        {
+          "name": "gapDegrees",
+          "type": "number",
+          "default": "2.2",
+          "doc": "Gap between segments in degrees."
+        },
+        {
+          "name": "sweepSeconds",
+          "type": "number",
+          "default": "3",
+          "doc": "How long the sweep takes to go once round."
+        },
+        {
+          "name": "holdSeconds",
+          "type": "number",
+          "default": "2",
+          "doc": "How long the last frame holds."
+        },
+        {
+          "name": "camera.tilt",
+          "type": "number",
+          "default": "16",
+          "doc": "Degrees of tilt at the start (it settles to flat as the sweep ends). 0 for a flat camera."
+        },
+        {
+          "name": "camera.pushZoom",
+          "type": "number",
+          "default": "1.4",
+          "doc": "Camera zoom on the leader."
+        },
+        {
+          "name": "camera.motionBlur",
+          "type": "number",
+          "default": "0.5",
+          "doc": "Shutter in frames; 0 turns the blur off."
+        }
+      ]
+    },
+    {
+      "id": "scatter-bloom",
+      "title": "Scatter bloom",
+      "description": "Points bloom onto a plane in coloured groups. The camera then tips and orbits to show their heights.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "ScatterBloom"
+      ],
+      "hero": {
+        "src": "/catalog/components/scatter-bloom/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/charts/out/scatter-bloom.mp4",
+        "at": 1,
+        "video": "/catalog/components/scatter-bloom/hero.mp4",
+        "len": 4
+      },
+      "category": "charts",
+      "props": [
+        {
+          "name": "points",
+          "type": "list",
+          "default": "",
+          "doc": "The points."
+        },
+        {
+          "name": "groups",
+          "type": "list",
+          "default": "",
+          "doc": "Name of each group, in colour order."
+        },
+        {
+          "name": "xLabel",
+          "type": "string",
+          "default": "\"Seats\"",
+          "doc": "Label along the front edge of the plane."
+        },
+        {
+          "name": "yLabel",
+          "type": "string",
+          "default": "\"Monthly usage\"",
+          "doc": "Label along the left edge of the plane."
+        },
+        {
+          "name": "focus",
+          "type": "integer",
+          "default": "-1",
+          "doc": "Index of the point the camera finishes on (it gets the tooltip). -1 picks the largest."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "default": "\"Accounts by plan\"",
+          "doc": "Heading at the top left. Empty for none."
+        },
+        {
+          "name": "mode",
+          "type": "light | dark",
+          "default": "\"dark\"",
+          "doc": "Colour theme: light or dark."
+        },
+        {
+          "name": "bloomSeconds",
+          "type": "number",
+          "default": "2.6",
+          "doc": "How long the bloom takes, first point to last."
+        },
+        {
+          "name": "orbitSeconds",
+          "type": "number",
+          "default": "5.5",
+          "doc": "How long the tilt and orbit take."
+        },
+        {
+          "name": "holdSeconds",
+          "type": "number",
+          "default": "1.8",
+          "doc": "How long the last frame holds."
+        },
+        {
+          "name": "camera.startPitch",
+          "type": "number",
+          "default": "90",
+          "doc": "Camera angle at the start, degrees above the horizon (90 looks straight down)."
+        },
+        {
+          "name": "camera.endPitch",
+          "type": "number",
+          "default": "38",
+          "doc": "Camera angle at the end."
+        },
+        {
+          "name": "camera.startYaw",
+          "type": "number",
+          "default": "-4",
+          "doc": "Orbit angle at the start, degrees."
+        },
+        {
+          "name": "camera.endYaw",
+          "type": "number",
+          "default": "52",
+          "doc": "Orbit angle at the end, degrees."
+        },
+        {
+          "name": "camera.zoom",
+          "type": "number",
+          "default": "1",
+          "doc": "Overall scale of the plane in frame."
+        },
+        {
+          "name": "camera.perspective",
+          "type": "number",
+          "default": "2600",
+          "doc": "Distance from the camera to the plane centre in world px: smaller is stronger perspective."
+        }
+      ]
+    },
+    {
+      "id": "hex-tally",
+      "title": "Hexagon tally",
+      "description": "A unit chart of hexagons fills in beside a metric card that counts up.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "HexTally"
+      ],
+      "hero": {
+        "src": "/catalog/components/hex-tally/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/charts/out/hex-tally.mp4",
+        "at": 0.5,
+        "video": "/catalog/components/hex-tally/hero.mp4",
+        "len": 4
+      },
+      "category": "charts",
+      "props": [
+        {
+          "name": "data",
+          "type": "list",
+          "default": "",
+          "doc": "The segments; their sum is the number the card counts to."
+        },
+        {
+          "name": "target",
+          "type": "number",
+          "default": "2000",
+          "doc": "The whole field: the total the hexes stand for. The sum of the data fills that share of it."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "default": "\"Units shipped\"",
+          "doc": "Heading of the metric card."
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "default": "\"This quarter\"",
+          "doc": "Small line under the number, before \"of <target>\". Empty for none."
+        },
+        {
+          "name": "mode",
+          "type": "light | dark",
+          "default": "\"light\"",
+          "doc": "Colour theme: light or dark."
+        },
+        {
+          "name": "format.prefix",
+          "type": "string",
+          "default": "",
+          "doc": "Before the number, e.g. \"$\"."
+        },
+        {
+          "name": "format.suffix",
+          "type": "string",
+          "default": "",
+          "doc": "After the number, e.g. \"%\" or \"k\"."
+        },
+        {
+          "name": "format.decimals",
+          "type": "integer",
+          "default": "",
+          "doc": "Digits after the decimal point."
+        },
+        {
+          "name": "format.group",
+          "type": "string",
+          "default": "",
+          "doc": "Thousands separator, a comma by default. Empty for none."
+        },
+        {
+          "name": "columns",
+          "type": "integer",
+          "default": "18",
+          "doc": "Hexes across."
+        },
+        {
+          "name": "rows",
+          "type": "integer",
+          "default": "16",
+          "doc": "Hexes down."
+        },
+        {
+          "name": "fillSeconds",
+          "type": "number",
+          "default": "5",
+          "doc": "How long the fill takes."
+        },
+        {
+          "name": "holdSeconds",
+          "type": "number",
+          "default": "2",
+          "doc": "How long the last frame holds."
+        },
+        {
+          "name": "camera.startZoom",
+          "type": "number",
+          "default": "1.3",
+          "doc": "Zoom on the card at the start."
+        },
+        {
+          "name": "camera.endZoom",
+          "type": "number",
+          "default": "0.86",
+          "doc": "Zoom on the whole at the end."
+        },
+        {
+          "name": "camera.drift",
+          "type": "number",
+          "default": "3",
+          "doc": "Handheld drift in pixels on the holds."
+        }
+      ]
+    },
+    {
+      "id": "tally-rise",
+      "title": "Currency counter",
+      "description": "A currency amount rolls up like an odometer, its wheels locking from left to right.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "TallyRise"
+      ],
+      "hero": {
+        "src": "/catalog/components/tally-rise/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/charts/out/tally-rise.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/tally-rise/hero.mp4",
+        "len": 4
+      },
+      "category": "charts",
+      "props": [
+        {
+          "name": "value",
+          "type": "number",
+          "default": "1284920",
+          "doc": "The number the counter lands on."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "default": "\"Total revenue\"",
+          "doc": "Small heading above the number."
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "default": "\"Year to date, all regions\"",
+          "doc": "Small line under the number. Empty for none."
+        },
+        {
+          "name": "change",
+          "type": "number",
+          "default": "18.4",
+          "doc": "Percent change shown in the chip under the number. Leave at 0 and set `showChange` to false to hide it."
+        },
+        {
+          "name": "showChange",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Show the change chip."
+        },
+        {
+          "name": "changeLabel",
+          "type": "string",
+          "default": "\"vs last year\"",
+          "doc": "Words after the chip, e.g. \"vs last quarter\"."
+        },
+        {
+          "name": "mode",
+          "type": "light | dark",
+          "default": "\"light\"",
+          "doc": "Colour theme: light or dark."
+        },
+        {
+          "name": "accent",
+          "type": "colour",
+          "default": "\"#3fb58c\"",
+          "doc": "Colour of the currency sign, the chip and the rule."
+        },
+        {
+          "name": "format.prefix",
+          "type": "string",
+          "default": "",
+          "doc": "Before the number, e.g. \"$\"."
+        },
+        {
+          "name": "format.suffix",
+          "type": "string",
+          "default": "",
+          "doc": "After the number, e.g. \"%\" or \"k\"."
+        },
+        {
+          "name": "format.decimals",
+          "type": "integer",
+          "default": "",
+          "doc": "Digits after the decimal point."
+        },
+        {
+          "name": "format.group",
+          "type": "string",
+          "default": "",
+          "doc": "Thousands separator, a comma by default. Empty for none."
+        },
+        {
+          "name": "size",
+          "type": "number",
+          "default": "250",
+          "doc": "Digit size in px."
+        },
+        {
+          "name": "rollSeconds",
+          "type": "number",
+          "default": "4.2",
+          "doc": "How long until the last wheel locks."
+        },
+        {
+          "name": "spins",
+          "type": "number",
+          "default": "3",
+          "doc": "Extra turns of the lowest wheel. Higher wheels turn fewer."
+        },
+        {
+          "name": "holdSeconds",
+          "type": "number",
+          "default": "2",
+          "doc": "How long the last frame holds."
+        },
+        {
+          "name": "camera.startZoom",
+          "type": "number",
+          "default": "1.45",
+          "doc": "Zoom at the start, on the first digits."
+        },
+        {
+          "name": "camera.endZoom",
+          "type": "number",
+          "default": "0.92",
+          "doc": "Zoom on the finished number."
+        },
+        {
+          "name": "camera.tilt",
+          "type": "number",
+          "default": "14",
+          "doc": "Degrees of tilt at the start. It unwinds as the wheels lock."
+        },
+        {
+          "name": "camera.motionBlur",
+          "type": "number",
+          "default": "0.6",
+          "doc": "Shutter in frames for the rolling wheels; 0 for none."
+        }
+      ]
+    },
+    {
+      "id": "three-phone",
+      "title": "Three phones fanned out",
+      "description": "Three tilted phones fan out on an arc from the centre one. Each screen is drawn in, or is your own image.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "ThreePhone"
+      ],
+      "hero": {
+        "src": "/catalog/components/three-phone/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/showcase/out/three-phone.mp4",
+        "at": 0.1,
+        "video": "/catalog/components/three-phone/hero.mp4",
+        "len": 4
+      },
+      "category": "showcase",
+      "props": [
+        {
+          "name": "screens",
+          "type": "list",
+          "default": "['hero', 'dashboard', 'chart']",
+          "doc": "Left, centre and right screen. A built-in drawn screen (hero, dashboard, chart, plan) or a path to an image under public/, such as photos/nasa-earth-1.jpg."
+        },
+        {
+          "name": "font",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family for the type drawn on the built-in screens."
+        },
+        {
+          "name": "accent",
+          "type": "colour",
+          "default": "\"#d9f26b\"",
+          "doc": "The sample app's accent colour."
+        },
+        {
+          "name": "ground",
+          "type": "colour",
+          "default": "\"#eef0e5\"",
+          "doc": "The pale ground."
+        },
+        {
+          "name": "groundShade",
+          "type": "colour",
+          "default": "\"#dfe3d2\"",
+          "doc": "The ground at the lower right, away from the light."
+        },
+        {
+          "name": "frame",
+          "type": "colour",
+          "default": "\"#26272b\"",
+          "doc": "Phone frame colour."
+        },
+        {
+          "name": "fanAngle",
+          "type": "number",
+          "default": "13",
+          "doc": "How far the outer phones tilt, in degrees."
+        },
+        {
+          "name": "spread",
+          "type": "number",
+          "default": "365",
+          "doc": "Distance of the outer phones from the centre one, in pixels, when settled."
+        },
+        {
+          "name": "size",
+          "type": "number",
+          "default": "0.84",
+          "doc": "Phone scale: 1 is 800 px tall."
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": "1",
+          "doc": "Playback speed of the move: 2 is twice as fast."
+        },
+        {
+          "name": "startZoom",
+          "type": "number",
+          "default": "2.1",
+          "doc": "How tight the camera starts on the centre phone. 1 starts at the final framing."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0.035",
+          "doc": "Film grain over the whole frame."
+        }
+      ]
+    },
+    {
+      "id": "phone-pitch",
+      "title": "Phone with a pitch",
+      "description": "A headline, a line of body text and a button sit beside a phone that lands with a settle.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "PhonePitch"
+      ],
+      "hero": {
+        "src": "/catalog/components/phone-pitch/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/showcase/out/phone-pitch.mp4",
+        "at": 0,
+        "video": "/catalog/components/phone-pitch/hero.mp4",
+        "len": 4
+      },
+      "category": "showcase",
+      "props": [
+        {
+          "name": "eyebrow",
+          "type": "string",
+          "default": "\"Introducing Stride\"",
+          "doc": "Small line above the headline. Empty for none."
+        },
+        {
+          "name": "headline",
+          "type": "list",
+          "default": "",
+          "doc": "The headline, one entry per line."
+        },
+        {
+          "name": "italicLine",
+          "type": "integer",
+          "default": "1",
+          "doc": "Index of the line set in italics, or -1 for none."
+        },
+        {
+          "name": "body",
+          "type": "string",
+          "default": "",
+          "doc": "One or two lines under the headline. Empty for none."
+        },
+        {
+          "name": "cta",
+          "type": "string",
+          "default": "\"Start free\"",
+          "doc": "Label of the button. Empty for none."
+        },
+        {
+          "name": "screen",
+          "type": "string",
+          "default": "\"hero\"",
+          "doc": "The phone screen: hero, dashboard, chart, plan, or a path to an image under public/."
+        },
+        {
+          "name": "headlineFont",
+          "type": "string",
+          "default": "\"Instrument Serif\"",
+          "doc": "Google Fonts family of the headline (a serif suits)."
+        },
+        {
+          "name": "uiFont",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family for the small type and the screen."
+        },
+        {
+          "name": "ground",
+          "type": "colour",
+          "default": "\"#101410\"",
+          "doc": "Background colour."
+        },
+        {
+          "name": "glow",
+          "type": "colour",
+          "default": "\"#4b6422\"",
+          "doc": "The glow behind the phone."
+        },
+        {
+          "name": "ink",
+          "type": "colour",
+          "default": "\"#f4f2ea\"",
+          "doc": "Headline colour."
+        },
+        {
+          "name": "muted",
+          "type": "colour",
+          "default": "\"#9ca395\"",
+          "doc": "Body colour."
+        },
+        {
+          "name": "accent",
+          "type": "colour",
+          "default": "\"#d9f26b\"",
+          "doc": "Button and app accent colour."
+        },
+        {
+          "name": "frame",
+          "type": "colour",
+          "default": "\"#b4b7bd\"",
+          "doc": "Phone frame colour."
+        },
+        {
+          "name": "flip",
+          "type": "boolean",
+          "default": "false",
+          "doc": "Put the phone on the left and the type on the right."
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": "1",
+          "doc": "Playback speed of the move."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0.045",
+          "doc": "Film grain over the whole frame."
+        }
+      ]
+    },
+    {
+      "id": "screen-tunnel",
+      "title": "Phone tunnel",
+      "description": "Phones recede down a corridor on either side of a headline.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "ScreenTunnel"
+      ],
+      "hero": {
+        "src": "/catalog/components/screen-tunnel/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/showcase/out/screen-tunnel.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/screen-tunnel/hero.mp4",
+        "len": 4
+      },
+      "category": "showcase",
+      "props": [
+        {
+          "name": "headline",
+          "type": "list",
+          "default": "",
+          "doc": "The headline, one entry per line."
+        },
+        {
+          "name": "italicLine",
+          "type": "integer",
+          "default": "1",
+          "doc": "Index of the line set in italics, or -1 for none."
+        },
+        {
+          "name": "caption",
+          "type": "string",
+          "default": "\"Design once. See it everywhere.\"",
+          "doc": "Small line under the headline. Empty for none."
+        },
+        {
+          "name": "screens",
+          "type": "list",
+          "default": "",
+          "doc": "Screens from the nearest phone to the farthest. Built-in (hero, dashboard, chart, plan) or an image path under public/."
+        },
+        {
+          "name": "headlineFont",
+          "type": "string",
+          "default": "\"Instrument Serif\"",
+          "doc": "Google Fonts family of the headline."
+        },
+        {
+          "name": "uiFont",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family for small type and the screens."
+        },
+        {
+          "name": "ground",
+          "type": "colour",
+          "default": "\"#e8e5dd\"",
+          "doc": "The ground, which the far phones fade into."
+        },
+        {
+          "name": "ink",
+          "type": "colour",
+          "default": "\"#191a17\"",
+          "doc": "Headline colour."
+        },
+        {
+          "name": "muted",
+          "type": "colour",
+          "default": "\"#6c6e66\"",
+          "doc": "Caption colour."
+        },
+        {
+          "name": "accent",
+          "type": "colour",
+          "default": "\"#d9f26b\"",
+          "doc": "App accent colour."
+        },
+        {
+          "name": "frame",
+          "type": "colour",
+          "default": "\"#26272b\"",
+          "doc": "Phone frame colour."
+        },
+        {
+          "name": "depth",
+          "type": "number",
+          "default": "1",
+          "doc": "How far apart the phones sit down the tunnel (1 is 520 units)."
+        },
+        {
+          "name": "pullBack",
+          "type": "number",
+          "default": "950",
+          "doc": "How far the camera backs out, in units. 0 is a still camera."
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": "1",
+          "doc": "Playback speed of the move."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0.04",
+          "doc": "Film grain over the whole frame."
+        }
+      ]
+    },
+    {
+      "id": "laptop-open",
+      "title": "Laptop opening",
+      "description": "A 3D laptop lid opens, the screen wakes, and the camera moves into the app.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "LaptopOpen"
+      ],
+      "hero": {
+        "src": "/catalog/components/laptop-open/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/showcase/out/laptop-open.mp4",
+        "at": 0.5,
+        "video": "/catalog/components/laptop-open/hero.mp4",
+        "len": 4.5
+      },
+      "category": "showcase",
+      "props": [
+        {
+          "name": "screen",
+          "type": "string",
+          "default": "\"desk\"",
+          "doc": "The laptop screen: \"desk\" for the drawn analytics app, or a path to an image under public/."
+        },
+        {
+          "name": "uiFont",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family for the drawn screen."
+        },
+        {
+          "name": "accent",
+          "type": "colour",
+          "default": "\"#d9f26b\"",
+          "doc": "The drawn app's accent colour."
+        },
+        {
+          "name": "shell",
+          "type": "colour",
+          "default": "\"#c4c7cd\"",
+          "doc": "Laptop body colour."
+        },
+        {
+          "name": "ground",
+          "type": "colour",
+          "default": "\"#e9e6df\"",
+          "doc": "The desk and the room behind it."
+        },
+        {
+          "name": "openAngle",
+          "type": "number",
+          "default": "104",
+          "doc": "How far the lid ends open, in degrees from closed."
+        },
+        {
+          "name": "focus",
+          "type": "number",
+          "default": "1",
+          "doc": "Depth of field strength: 0 keeps everything sharp."
+        },
+        {
+          "name": "zoomInto",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Push in until the screen fills the frame. Off holds on the laptop."
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": "1",
+          "doc": "Playback speed of the move."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0.04",
+          "doc": "Film grain over the whole frame."
+        }
+      ]
+    },
+    {
+      "id": "screen-touch",
+      "title": "Touch to the next screen",
+      "description": "A finger presses a button and the next screen opens outward from the touch point.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "ScreenTouch"
+      ],
+      "hero": {
+        "src": "/catalog/components/screen-touch/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/showcase/out/screen-touch.mp4",
+        "at": 0.5,
+        "video": "/catalog/components/screen-touch/hero.mp4",
+        "len": 4
+      },
+      "category": "showcase",
+      "props": [
+        {
+          "name": "title",
+          "type": "string",
+          "default": "\"Ready when you are\"",
+          "doc": "Headline on the first screen."
+        },
+        {
+          "name": "subtitle",
+          "type": "string",
+          "default": "\"5.0 km easy run\"",
+          "doc": "Line under the headline."
+        },
+        {
+          "name": "button",
+          "type": "string",
+          "default": "\"Start run\"",
+          "doc": "Label of the button that is pressed."
+        },
+        {
+          "name": "resultLabel",
+          "type": "string",
+          "default": "\"Running\"",
+          "doc": "Small label on the screen the touch opens."
+        },
+        {
+          "name": "skin",
+          "type": "warm | pale | deep",
+          "default": "\"warm\"",
+          "doc": "Skin tone of the hand."
+        },
+        {
+          "name": "uiFont",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family for the screen."
+        },
+        {
+          "name": "accent",
+          "type": "colour",
+          "default": "\"#d9f26b\"",
+          "doc": "The app accent colour."
+        },
+        {
+          "name": "ground",
+          "type": "colour",
+          "default": "\"#e7e5df\"",
+          "doc": "Background colour."
+        },
+        {
+          "name": "frame",
+          "type": "colour",
+          "default": "\"#26272b\"",
+          "doc": "Phone frame colour."
+        },
+        {
+          "name": "touchAt",
+          "type": "integer",
+          "default": "52",
+          "doc": "Frame on which the fingertip meets the glass."
+        },
+        {
+          "name": "approach",
+          "type": "number",
+          "default": "1",
+          "doc": "How far above the glass the finger hangs before the strike (1 is normal)."
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": "1",
+          "doc": "Playback speed of the move."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0.04",
+          "doc": "Film grain over the whole frame."
+        }
+      ]
+    },
+    {
+      "id": "grain-gradient",
+      "title": "Grain gradient",
+      "description": "A mesh gradient drifts under film grain. It loops with no join at whole-number speeds.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "GrainGradient"
+      ],
+      "hero": {
+        "src": "/catalog/components/grain-gradient/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/backgrounds/out/grain-gradient.mp4",
+        "at": 0,
+        "video": "/catalog/components/grain-gradient/hero.mp4",
+        "len": 4
+      },
+      "category": "backgrounds",
+      "props": [
+        {
+          "name": "palette",
+          "type": "list",
+          "default": "",
+          "doc": "Colours of the mesh, spread over its points in a fixed pattern. Two to eight."
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": "1",
+          "doc": "How fast the field drifts. Whole numbers loop seamlessly over 10 seconds."
+        },
+        {
+          "name": "scale",
+          "type": "number",
+          "default": "1",
+          "doc": "How far the points wander, as a multiple of the default. 1 is about a tenth of a cell."
+        },
+        {
+          "name": "softness",
+          "type": "number",
+          "default": "0",
+          "doc": "Blur over the mesh in pixels: higher is smoother, lower shows more of the patches."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0.14",
+          "doc": "Grain amount. 0.1 is a visible film grain."
+        },
+        {
+          "name": "grainSize",
+          "type": "number",
+          "default": "1.3",
+          "doc": "Size of a grain cell in pixels."
+        }
+      ]
+    },
+    {
+      "id": "paper",
+      "title": "Paper texture",
+      "description": "A paper height field lit by a raking light that circles slowly. It loops with no join at whole-number speeds.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "Paper"
+      ],
+      "hero": {
+        "src": "/catalog/components/paper/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/backgrounds/out/paper.mp4",
+        "at": 0,
+        "video": "/catalog/components/paper/hero.mp4",
+        "len": 4
+      },
+      "category": "backgrounds",
+      "props": [
+        {
+          "name": "paper",
+          "type": "colour",
+          "default": "\"#f4efe4\"",
+          "doc": "The colour of the sheet where the light is full."
+        },
+        {
+          "name": "shade",
+          "type": "colour",
+          "default": "\"#d9d0bd\"",
+          "doc": "The colour of the sheet in its shadows and blotches."
+        },
+        {
+          "name": "fibre",
+          "type": "number",
+          "default": "1",
+          "doc": "How much fibre shows. 0 is smooth stock; 1 is a handmade sheet."
+        },
+        {
+          "name": "relief",
+          "type": "number",
+          "default": "1",
+          "doc": "How strongly the light picks out the surface. Higher is rougher."
+        },
+        {
+          "name": "scale",
+          "type": "number",
+          "default": "1",
+          "doc": "Size of the texture: higher is coarser."
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": "1",
+          "doc": "How fast the light moves. Whole numbers loop seamlessly over 10 seconds."
+        },
+        {
+          "name": "falloff",
+          "type": "number",
+          "default": "0.55",
+          "doc": "How much darker the far side of the sheet is."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0.03",
+          "doc": "Extra grain over the whole frame."
+        }
+      ]
+    },
+    {
+      "id": "dot-field",
+      "title": "Halftone dot field",
+      "description": "A grid of halftone dots breathes on a ring-shaped wave. It loops with no join at whole-number speeds.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "DotField"
+      ],
+      "hero": {
+        "src": "/catalog/components/dot-field/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/backgrounds/out/dot-field.mp4",
+        "at": 0,
+        "video": "/catalog/components/dot-field/hero.mp4",
+        "len": 4
+      },
+      "category": "backgrounds",
+      "props": [
+        {
+          "name": "ground",
+          "type": "colour",
+          "default": "\"#efede6\"",
+          "doc": "Background colour."
+        },
+        {
+          "name": "dot",
+          "type": "colour",
+          "default": "\"#c9c5b8\"",
+          "doc": "Colour of the dots where the wave is low."
+        },
+        {
+          "name": "dotHigh",
+          "type": "colour",
+          "default": "\"#2b3a22\"",
+          "doc": "Colour of the dots at the crest of the wave."
+        },
+        {
+          "name": "spacing",
+          "type": "number",
+          "default": "34",
+          "doc": "Distance between dot centres, in pixels."
+        },
+        {
+          "name": "size",
+          "type": "number",
+          "default": "0.62",
+          "doc": "The largest dot, as a fraction of the spacing."
+        },
+        {
+          "name": "waveLength",
+          "type": "number",
+          "default": "1",
+          "doc": "Length of the waves as a multiple of the default. Higher is calmer."
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": "1",
+          "doc": "How fast the wave travels. Whole numbers loop seamlessly over 10 seconds."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0.05",
+          "doc": "Grain amount over the whole frame."
+        }
+      ]
+    },
+    {
+      "id": "aurora",
+      "title": "Aurora ribbons",
+      "description": "Ribbons of light drift and are blended so that overlaps never blow out. It loops with no join at whole-number speeds.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "Aurora"
+      ],
+      "hero": {
+        "src": "/catalog/components/aurora/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/backgrounds/out/aurora.mp4",
+        "at": 0,
+        "video": "/catalog/components/aurora/hero.mp4",
+        "len": 4
+      },
+      "category": "backgrounds",
+      "props": [
+        {
+          "name": "groundTop",
+          "type": "colour",
+          "default": "\"#050912\"",
+          "doc": "The ground at the top."
+        },
+        {
+          "name": "groundBottom",
+          "type": "colour",
+          "default": "\"#0d1626\"",
+          "doc": "The ground at the bottom."
+        },
+        {
+          "name": "ribbons",
+          "type": "list",
+          "default": "",
+          "doc": "Three ribbon colours, which also blend along each ribbon."
+        },
+        {
+          "name": "intensity",
+          "type": "number",
+          "default": "0.85",
+          "doc": "How bright the ribbons are. 0.6 sits behind type; 1 is bold."
+        },
+        {
+          "name": "width",
+          "type": "number",
+          "default": "1",
+          "doc": "How wide the ribbons are, as a multiple of the default."
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": "1",
+          "doc": "How fast they flow. Whole numbers loop seamlessly over 10 seconds."
+        },
+        {
+          "name": "scale",
+          "type": "number",
+          "default": "1",
+          "doc": "How long the waves are, as a multiple of the default. Higher is calmer."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0.07",
+          "doc": "Grain amount over the whole frame."
+        }
+      ]
+    },
+    {
+      "id": "waveform",
+      "title": "Waveform",
+      "description": "A mirrored waveform with a playhead. The bars near the playhead rise with the live loudness. It is drawn from the audio file itself.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "Waveform"
+      ],
+      "hero": {
+        "src": "/catalog/components/waveform/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/audio/out/waveform.mp4",
+        "at": 0,
+        "video": "/catalog/components/waveform/hero.mp4",
+        "len": 4
+      },
+      "category": "audio",
+      "props": [
+        {
+          "name": "src",
+          "type": "string",
+          "default": "\"groove.wav\"",
+          "doc": "Audio file in public/ (any file with an audio stream)."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "default": "\"Groove No. 1\"",
+          "doc": "Title at the top left."
+        },
+        {
+          "name": "subtitle",
+          "type": "string",
+          "default": "\"Synthesised in Python · CC0\"",
+          "doc": "Small line under the title. Empty for none."
+        },
+        {
+          "name": "bars",
+          "type": "integer",
+          "default": "128",
+          "doc": "Number of bars across the clip."
+        },
+        {
+          "name": "height",
+          "type": "number",
+          "default": "400",
+          "doc": "Height in pixels of the loudest bar (both halves)."
+        },
+        {
+          "name": "barWidth",
+          "type": "number",
+          "default": "8",
+          "doc": "Width of a bar in pixels."
+        },
+        {
+          "name": "liveGain",
+          "type": "number",
+          "default": "0.35",
+          "doc": "How much the bars at the playhead rise with the live loudness (0 for none)."
+        },
+        {
+          "name": "showScale",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Show the seconds scale under the waveform."
+        },
+        {
+          "name": "playSound",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Put the clip in the render."
+        },
+        {
+          "name": "font",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family for all type."
+        },
+        {
+          "name": "colors.ground",
+          "type": "colour",
+          "default": "\"#0c0d10\"",
+          "doc": "Background."
+        },
+        {
+          "name": "colors.played",
+          "type": "colour",
+          "default": "\"#ff7a59\"",
+          "doc": "Bars the playhead has passed, and the playhead."
+        },
+        {
+          "name": "colors.ahead",
+          "type": "colour",
+          "default": "\"rgba(244,244,241,0.22)\"",
+          "doc": "Bars still to come."
+        },
+        {
+          "name": "colors.ink",
+          "type": "colour",
+          "default": "\"#f4f4f1\"",
+          "doc": "Title and clock."
+        },
+        {
+          "name": "colors.muted",
+          "type": "colour",
+          "default": "\"rgba(244,244,241,0.5)\"",
+          "doc": "Subtitle and scale."
+        }
+      ]
+    },
+    {
+      "id": "spectrum-bars",
+      "title": "Spectrum bars",
+      "description": "Forty-eight frequency bands, spaced on a log scale, with a reflection and falling peak caps. It is drawn from the audio file itself.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "SpectrumBars"
+      ],
+      "hero": {
+        "src": "/catalog/components/spectrum-bars/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/audio/out/spectrum-bars.mp4",
+        "at": 2,
+        "video": "/catalog/components/spectrum-bars/hero.mp4",
+        "len": 4
+      },
+      "category": "audio",
+      "props": [
+        {
+          "name": "src",
+          "type": "string",
+          "default": "\"groove.wav\"",
+          "doc": "Audio file in public/ (any file with an audio stream)."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "default": "\"Groove No. 1\"",
+          "doc": "Title at the top left."
+        },
+        {
+          "name": "subtitle",
+          "type": "string",
+          "default": "\"Synthesised in Python · CC0\"",
+          "doc": "Small line under the title. Empty for none."
+        },
+        {
+          "name": "bars",
+          "type": "integer",
+          "default": "48",
+          "doc": "Number of bars."
+        },
+        {
+          "name": "height",
+          "type": "number",
+          "default": "520",
+          "doc": "Height in pixels of a full bar."
+        },
+        {
+          "name": "barWidth",
+          "type": "number",
+          "default": "22",
+          "doc": "Width of a bar in pixels."
+        },
+        {
+          "name": "gap",
+          "type": "number",
+          "default": "14",
+          "doc": "Gap between bars in pixels."
+        },
+        {
+          "name": "release",
+          "type": "number",
+          "default": "0.86",
+          "doc": "How slowly a bar falls, per frame (0.86 is a half-life of 5 frames)."
+        },
+        {
+          "name": "peaks",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Show the peak caps."
+        },
+        {
+          "name": "reflection",
+          "type": "number",
+          "default": "0.16",
+          "doc": "Opacity of the reflection under the baseline (0 for none)."
+        },
+        {
+          "name": "playSound",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Put the clip in the render (turn off to render the picture only)."
+        },
+        {
+          "name": "font",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family for all type."
+        },
+        {
+          "name": "colors.ground",
+          "type": "colour",
+          "default": "\"#0c0d10\"",
+          "doc": "Background."
+        },
+        {
+          "name": "colors.low",
+          "type": "colour",
+          "default": "\"#ff7a59\"",
+          "doc": "Bar colour at the bass end."
+        },
+        {
+          "name": "colors.high",
+          "type": "colour",
+          "default": "\"#7a8cff\"",
+          "doc": "Bar colour at the treble end."
+        },
+        {
+          "name": "colors.ink",
+          "type": "colour",
+          "default": "\"#f4f4f1\"",
+          "doc": "Title."
+        },
+        {
+          "name": "colors.muted",
+          "type": "colour",
+          "default": "\"rgba(244,244,241,0.5)\"",
+          "doc": "Subtitle, time, baseline."
+        }
+      ]
+    },
+    {
+      "id": "radial-visualizer",
+      "title": "Radial audio visualiser",
+      "description": "A ring of bars round a cover image that swells on the bass. It is drawn from the audio file itself.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "RadialVisualizer"
+      ],
+      "hero": {
+        "src": "/catalog/components/radial-visualizer/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/audio/out/radial-visualizer.mp4",
+        "at": 1,
+        "video": "/catalog/components/radial-visualizer/hero.mp4",
+        "len": 4
+      },
+      "category": "audio",
+      "props": [
+        {
+          "name": "src",
+          "type": "string",
+          "default": "\"groove.wav\"",
+          "doc": "Audio file in public/ (any file with an audio stream)."
+        },
+        {
+          "name": "cover",
+          "type": "string",
+          "default": "\"photos/nasa-storm-1.jpg\"",
+          "doc": "Cover picture in public/ (cropped to a circle)."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "default": "\"Groove No. 1\"",
+          "doc": "Title under the ring."
+        },
+        {
+          "name": "artist",
+          "type": "string",
+          "default": "\"SYNTHESISED IN PYTHON\"",
+          "doc": "Small tracked line under the title. Empty for none."
+        },
+        {
+          "name": "bars",
+          "type": "integer",
+          "default": "96",
+          "doc": "Number of bars in the whole ring (half are mirrored)."
+        },
+        {
+          "name": "coverRadius",
+          "type": "number",
+          "default": "210",
+          "doc": "Radius of the cover picture in pixels."
+        },
+        {
+          "name": "barLength",
+          "type": "number",
+          "default": "170",
+          "doc": "Length of a full bar in pixels."
+        },
+        {
+          "name": "barWidth",
+          "type": "number",
+          "default": "9",
+          "doc": "Width of a bar in pixels."
+        },
+        {
+          "name": "spin",
+          "type": "number",
+          "default": "0.12",
+          "doc": "Degrees the ring turns each frame (0 holds it still)."
+        },
+        {
+          "name": "pulse",
+          "type": "number",
+          "default": "0.035",
+          "doc": "How much the cover swells with the bass (a fraction of its size)."
+        },
+        {
+          "name": "playSound",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Put the clip in the render."
+        },
+        {
+          "name": "font",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family for all type."
+        },
+        {
+          "name": "colors.ground",
+          "type": "colour",
+          "default": "\"#0c0d10\"",
+          "doc": "Background."
+        },
+        {
+          "name": "colors.low",
+          "type": "colour",
+          "default": "\"#ff7a59\"",
+          "doc": "Bar colour at the bass end (top of the ring)."
+        },
+        {
+          "name": "colors.high",
+          "type": "colour",
+          "default": "\"#7a8cff\"",
+          "doc": "Bar colour at the treble end (bottom of the ring)."
+        },
+        {
+          "name": "colors.ink",
+          "type": "colour",
+          "default": "\"#f4f4f1\"",
+          "doc": "Title."
+        },
+        {
+          "name": "colors.muted",
+          "type": "colour",
+          "default": "\"rgba(244,244,241,0.5)\"",
+          "doc": "Artist line and guide ring."
+        }
+      ]
+    },
+    {
+      "id": "light-leak",
+      "title": "Light leak",
+      "description": "A warm, streaked leak of light from one edge. It can cover a cut between two clips.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "LightLeak"
+      ],
+      "hero": {
+        "src": "/catalog/components/light-leak/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/effects/out/light-leak.mp4",
+        "at": 1.2,
+        "video": "/catalog/components/light-leak/hero.mp4",
+        "len": 3.5
+      },
+      "category": "effects",
+      "props": [
+        {
+          "name": "src",
+          "type": "string",
+          "default": "\"photos/nasa-desert-1.jpg\"",
+          "doc": "Picture in public/ (used when no children are given)."
+        },
+        {
+          "name": "toSrc",
+          "type": "string",
+          "default": "\"photos/nasa-clouds-1.jpg\"",
+          "doc": "Second picture, cut to at the peak of the leak. Empty for a single picture."
+        },
+        {
+          "name": "peakFrame",
+          "type": "integer",
+          "default": "66",
+          "doc": "Frame the leak is at its fullest (and the cut, when there is a second picture)."
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": "72",
+          "doc": "Frames the whole leak lasts, from first glow to gone."
+        },
+        {
+          "name": "strength",
+          "type": "number",
+          "default": "0.9",
+          "doc": "How strong the leak is at its peak. 1 floods most of the frame in warm light; 0.5 is a glow at the edge."
+        },
+        {
+          "name": "edge",
+          "type": "left | right | top | bottom",
+          "default": "\"right\"",
+          "doc": "The edge the light comes in from."
+        },
+        {
+          "name": "sweep",
+          "type": "number",
+          "default": "0.5",
+          "doc": "How far the leak travels along the edge while it plays (0 holds it in place)."
+        },
+        {
+          "name": "softness",
+          "type": "number",
+          "default": "1",
+          "doc": "How far the glow spreads into the frame. Higher is a larger, softer leak."
+        },
+        {
+          "name": "streaks",
+          "type": "number",
+          "default": "0.6",
+          "doc": "How much the glow breaks into streaks (0 is a smooth gradient)."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0.05",
+          "doc": "Film grain over the whole frame (0 for none)."
+        },
+        {
+          "name": "colors.core",
+          "type": "colour",
+          "default": "\"#fff1c9\"",
+          "doc": "The hot centre of the leak."
+        },
+        {
+          "name": "colors.body",
+          "type": "colour",
+          "default": "\"#ff8a2b\"",
+          "doc": "The body of the leak."
+        },
+        {
+          "name": "colors.fringe",
+          "type": "colour",
+          "default": "\"#c2160f\"",
+          "doc": "The outer fringe."
+        }
+      ]
+    },
+    {
+      "id": "halation",
+      "title": "Halation",
+      "description": "A red-orange halo round the bright parts of a picture, with film grain on top.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "Halation"
+      ],
+      "hero": {
+        "src": "/catalog/components/halation/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/effects/out/halation.mp4",
+        "at": 0,
+        "video": "/catalog/components/halation/hero.mp4",
+        "len": 3
+      },
+      "category": "effects",
+      "props": [
+        {
+          "name": "src",
+          "type": "string",
+          "default": "\"photos/nasa-city-2.jpg\"",
+          "doc": "Picture in public/ (used when no children are given)."
+        },
+        {
+          "name": "strength",
+          "type": "number",
+          "default": "1",
+          "doc": "How much glow is added back. 0 is off, 1 is a visible but gentle halo."
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "default": "22",
+          "doc": "Reach of the tight halo in pixels (the wide one is 2.8 times that)."
+        },
+        {
+          "name": "threshold",
+          "type": "number",
+          "default": "0.28",
+          "doc": "How bright a pixel must be (linear) before it glows. Lower glows more of the picture."
+        },
+        {
+          "name": "tint",
+          "type": "colour",
+          "default": "\"#ff5a2a\"",
+          "doc": "The colour of the halo. Film halation is red-orange."
+        },
+        {
+          "name": "tintMix",
+          "type": "number",
+          "default": "0.7",
+          "doc": "0 glows in the highlight's own colour, 1 in the tint."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0.07",
+          "doc": "Film grain amount (0 for none)."
+        },
+        {
+          "name": "grainSize",
+          "type": "number",
+          "default": "1.4",
+          "doc": "Grain size in pixels."
+        },
+        {
+          "name": "fadeIn",
+          "type": "integer",
+          "default": "36",
+          "doc": "Frames the glow takes to come on at the start."
+        },
+        {
+          "name": "push",
+          "type": "number",
+          "default": "0.04",
+          "doc": "How far the picture pushes in over the shot (0.04 is 4 percent)."
+        }
+      ]
+    },
+    {
+      "id": "glass-lens",
+      "title": "Glass lens",
+      "description": "A glass ball moves over the picture and refracts what is behind it.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "GlassLens"
+      ],
+      "hero": {
+        "src": "/catalog/components/glass-lens/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/effects/out/glass-lens.mp4",
+        "at": 0,
+        "video": "/catalog/components/glass-lens/hero.mp4",
+        "len": 4
+      },
+      "category": "effects",
+      "props": [
+        {
+          "name": "src",
+          "type": "string",
+          "default": "\"photos/nasa-reef-1.jpg\"",
+          "doc": "Picture in public/ (used when no children are given)."
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "default": "300",
+          "doc": "Radius of the lens in pixels."
+        },
+        {
+          "name": "path",
+          "type": "list",
+          "default": "",
+          "doc": "Where the lens is: [frame, x, y] keys, x and y as fractions of the frame width and height. It eases (slow in, slow out) between keys, so a key is a rest; two close keys make a hold with a little drift."
+        },
+        {
+          "name": "ior",
+          "type": "number",
+          "default": "1.5",
+          "doc": "Index of refraction of the glass. 1.5 is crown glass; higher bends more."
+        },
+        {
+          "name": "depth",
+          "type": "number",
+          "default": "0.55",
+          "doc": "How thick the lens is, as a share of its radius. More depth is more magnification."
+        },
+        {
+          "name": "dispersion",
+          "type": "number",
+          "default": "0.025",
+          "doc": "How far the colours split at the edge (0 for none)."
+        },
+        {
+          "name": "rim",
+          "type": "number",
+          "default": "0.55",
+          "doc": "Strength of the bright rim and highlight."
+        },
+        {
+          "name": "shadow",
+          "type": "number",
+          "default": "0.3",
+          "doc": "Darkness of the lens's shadow on the picture."
+        },
+        {
+          "name": "push",
+          "type": "number",
+          "default": "0.03",
+          "doc": "How far the picture pushes in over the shot."
+        }
+      ]
+    },
+    {
+      "id": "film-burn",
+      "title": "Film burn transition",
+      "description": "A heat front scorches the first picture and reveals the second.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "FilmBurn"
+      ],
+      "hero": {
+        "src": "/catalog/components/film-burn/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/effects/out/film-burn.mp4",
+        "at": 1,
+        "video": "/catalog/components/film-burn/hero.mp4",
+        "len": 3
+      },
+      "category": "effects",
+      "props": [
+        {
+          "name": "src",
+          "type": "string",
+          "default": "\"photos/nasa-volcano-1.jpg\"",
+          "doc": "First picture in public/."
+        },
+        {
+          "name": "toSrc",
+          "type": "string",
+          "default": "\"photos/nasa-earth-2.jpg\"",
+          "doc": "Second picture in public/."
+        },
+        {
+          "name": "startFrame",
+          "type": "integer",
+          "default": "28",
+          "doc": "Frame the heat starts to reach the picture."
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": "54",
+          "doc": "Frames the burn takes to cross the frame."
+        },
+        {
+          "name": "angle",
+          "type": "number",
+          "default": "20",
+          "doc": "Direction the front travels, in degrees clockwise from the right (0 sweeps left to right)."
+        },
+        {
+          "name": "width",
+          "type": "number",
+          "default": "0.13",
+          "doc": "How wide the glowing front is, as a share of the frame."
+        },
+        {
+          "name": "roughness",
+          "type": "number",
+          "default": "0.7",
+          "doc": "How ragged the front is (0 is a straight line, 1 is very organic)."
+        },
+        {
+          "name": "scorch",
+          "type": "number",
+          "default": "0.7",
+          "doc": "How much the first picture darkens and warms ahead of the front."
+        },
+        {
+          "name": "flash",
+          "type": "number",
+          "default": "0.4",
+          "doc": "How much the whole frame is washed with warm light at the front's peak."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0.05",
+          "doc": "Film grain over the whole frame (0 for none)."
+        },
+        {
+          "name": "colors.hot",
+          "type": "colour",
+          "default": "\"#fff4d6\"",
+          "doc": "The white-hot inside of the front."
+        },
+        {
+          "name": "colors.mid",
+          "type": "colour",
+          "default": "\"#ff9b2e\"",
+          "doc": "Yellow-orange body."
+        },
+        {
+          "name": "colors.outer",
+          "type": "colour",
+          "default": "\"#8f1d0a\"",
+          "doc": "Deep red and brown at the outer edge."
+        }
+      ]
     }
   ]
 }

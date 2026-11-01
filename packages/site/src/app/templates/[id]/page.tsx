@@ -6,9 +6,9 @@ type Params = { id: string };
 
 export const dynamicParams = false;
 
-/** Components were called templates. This keeps /templates/<id>/ alive and sends it to /components/<id>/ (a static export has no server redirects). */
+/** Components were called templates. This keeps /templates/<id>/ alive and sends it to /components/<id>/ (a static export has no server redirects). Only the first seven components ever were templates; the kinds added later get no redirect. */
 export function generateStaticParams(): Params[] {
-  return components.map((c) => ({ id: c.id }));
+  return components.filter((c) => !c.category).map((c) => ({ id: c.id }));
 }
 
 export async function generateMetadata(props: { params: Promise<Params> }): Promise<Metadata> {

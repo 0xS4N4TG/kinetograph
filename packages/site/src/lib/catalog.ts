@@ -85,6 +85,15 @@ export interface Plugin {
   faces?: { hands: string[]; display: string[] };
 }
 
+/** One prop of a motion component, read from its zod schema: nested fields are written `colors.ink`. */
+export interface ComponentProp {
+  name: string;
+  type: string;
+  /** A short literal default; empty when it is long or computed. */
+  default: string;
+  doc: string;
+}
+
 export interface Component {
   id: string;
   title: string;
@@ -93,7 +102,21 @@ export interface Component {
   plugins: string[];
   compositions: string[];
   hero: Clip | null;
+  /** The kind of a motion component (one of KINDS). The first seven components have none: they are the scenes. */
+  category?: string;
+  props?: ComponentProp[];
 }
+
+/** The kinds of motion component, in page order. */
+export const KINDS = [
+  { id: 'grids', title: 'Grids' },
+  { id: 'carousels', title: 'Carousels' },
+  { id: 'charts', title: 'Charts' },
+  { id: 'showcase', title: 'Showcase' },
+  { id: 'backgrounds', title: 'Backgrounds' },
+  { id: 'audio', title: 'Audio' },
+  { id: 'effects', title: 'Effects' },
+] as const;
 
 export const plugins = catalog.plugins as unknown as Plugin[];
 export const components = catalog.components as unknown as Component[];

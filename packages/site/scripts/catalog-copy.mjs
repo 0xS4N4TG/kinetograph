@@ -406,3 +406,61 @@ export const EXPORT_NOTES = {
   'vj/thermal': "A thermal camera's palette on the picture's brightness, a little soft.",
   'vj/pixels': 'A magnifier: blocks, then red, green and blue subpixel stripes as the zoom grows.',
 };
+
+/**
+ * The motion components, one folder of the private checkout per kind (components/<dir>/). Maps are left out for now.
+ * The order here is the order on the site.
+ */
+export const KIND_DIRS = ['grids', 'carousels', 'charts', 'showcase', 'backgrounds', 'audio', 'effects'];
+
+/**
+ * Copy and media for each composition a kind folder registers, keyed by composition id. `preview` is the render in the
+ * folder's out/; `at` and `len` pick the cut for the hero clip (seconds). A composition with no entry here is skipped.
+ */
+export const KIND_COPY = {
+  // grids
+  GridRect: { title: 'Rectangular photo grid', description: 'A wall of photo cards ripples in from the middle card, then the camera pulls back, trucks across and pushes in on a new card.', preview: 'GridRect.mp4', at: 0.8, len: 4 },
+  GridRadial: { title: 'Photo rings', description: 'Three concentric rings of photos at different depths open from the centre. The camera swings side to side, then pushes in as focus racks from the inner ring to the outer one.', preview: 'GridRadial.mp4', at: 0.3, len: 4 },
+  GridPath: { title: 'Photos along a curve', description: 'Upright photo cards follow a curve: a wave, a triangle, a square or an infinity sign. The line draws on, the leading card sets off, and the camera trucks along the line.', preview: 'GridPath.mp4', at: 0.3, len: 4 },
+  GridSpherical: { title: 'Photo sphere', description: 'Cards sit tangent to a sphere. It assembles from its centre and turns a full orbit, then settles on one hero card and pushes in.', preview: 'GridSpherical.mp4', at: 0.5, len: 4 },
+  GridForwardOrient: { title: 'Photo ring facing forward', description: 'A ring of cards on a tilted turntable, each turned to face the way it travels. The camera orbits and closes in during one slow stroke.', preview: 'GridForwardOrient.mp4', at: 0.4, len: 4 },
+  GridCenterOrient: { title: 'Photo rosette', description: 'A grid in which every card turns to point at the centre. The twist travels outward into a rosette while the camera rolls and pushes in.', preview: 'GridCenterOrient.mp4', at: 0.8, len: 4 },
+  GridPathOrient: { title: 'Photo loop on a triangle', description: 'Cards ride a rounded triangle, each turned to the direction of the path. The camera looks down and orbits as the cards swing through the corners.', preview: 'GridPathOrient.mp4', at: 0.4, len: 4 },
+  GridFaceScreen: { title: 'Photo ring facing the screen', description: 'A carousel ring where every card turns to face the screen. It steps one card at a time with a rest between steps, while the camera lifts and closes in.', preview: 'GridFaceScreen.mp4', at: 0.3, len: 4 },
+  // carousels
+  CircleCarousel1: { title: 'Growing circle carousel', description: 'Square covers sit on a ring that grows from tiny to large as it turns.', preview: 'circle-carousel-1.mp4', at: 0.3, len: 4 },
+  CircleCarousel2: { title: 'Spiral carousel', description: 'Covers wind inward on a spiral. They are born at the rim and swallowed at the centre.', preview: 'circle-carousel-2.mp4', at: 0.3, len: 4 },
+  CircleCarousel3: { title: 'U-shaped carousel', description: 'Covers are filed into a U and sit askew, like prints that have been handled.', preview: 'circle-carousel-3.mp4', at: 0.3, len: 4 },
+  CardRail: { title: 'Card rail', description: 'Portrait cards sit on a tilted plane and are flicked along it in two throws, each with a label.', preview: 'card-rail.mp4', at: 0.5, len: 4 },
+  ReelWall: { title: 'Spinning card ring', description: 'A 3D ring of tall cards spins to rest on one, which steps forward with its name.', preview: 'reel-wall.mp4', at: 1.5, len: 4 },
+  OrbitGallery: { title: 'Orbit gallery', description: 'Nine photos spiral in around a title and settle on an ellipse.', preview: 'orbit-gallery.mp4', at: 0, len: 4 },
+  GalleryPush: { title: 'Gallery wall push-in', description: 'A wall of photo columns unrolls from the middle while the camera pushes in.', preview: 'gallery-push.mp4', at: 0.3, len: 4 },
+  // charts
+  AreaChart: { title: 'Area chart', description: 'A gradient area draws in under a trucking camera and lands on a tooltip. Light or dark.', preview: 'area-chart.mp4', at: 0.2, len: 4 },
+  LineTicker: { title: 'Line ticker', description: 'A climbing line with the camera chasing its head and a large live number above it. Light or dark.', preview: 'line-ticker.mp4', at: 0.3, len: 4 },
+  BarChart: { title: 'Bar chart', description: 'Bars grow in turn, then focus racks and the camera pushes in on the winner. A small gap between bars makes it a histogram.', preview: 'bar-chart.mp4', at: 1.2, len: 4 },
+  DonutChart: { title: 'Donut chart', description: 'One sweep draws the segments, then the leading segment steps out with a callout. Light or dark.', preview: 'donut-chart.mp4', at: 0.3, len: 4 },
+  ScatterBloom: { title: 'Scatter bloom', description: 'Points bloom onto a plane in coloured groups. The camera then tips and orbits to show their heights.', preview: 'scatter-bloom.mp4', at: 1, len: 4 },
+  HexTally: { title: 'Hexagon tally', description: 'A unit chart of hexagons fills in beside a metric card that counts up.', preview: 'hex-tally.mp4', at: 0.5, len: 4 },
+  TallyRise: { title: 'Currency counter', description: 'A currency amount rolls up like an odometer, its wheels locking from left to right.', preview: 'tally-rise.mp4', at: 0.3, len: 4 },
+  // showcase
+  ThreePhone: { title: 'Three phones fanned out', description: 'Three tilted phones fan out on an arc from the centre one. Each screen is drawn in, or is your own image.', preview: 'three-phone.mp4', at: 0.1, len: 4 },
+  PhonePitch: { title: 'Phone with a pitch', description: 'A headline, a line of body text and a button sit beside a phone that lands with a settle.', preview: 'phone-pitch.mp4', at: 0, len: 4 },
+  ScreenTunnel: { title: 'Phone tunnel', description: 'Phones recede down a corridor on either side of a headline.', preview: 'screen-tunnel.mp4', at: 0.3, len: 4 },
+  LaptopOpen: { title: 'Laptop opening', description: 'A 3D laptop lid opens, the screen wakes, and the camera moves into the app.', preview: 'laptop-open.mp4', at: 0.5, len: 4.5 },
+  ScreenTouch: { title: 'Touch to the next screen', description: 'A finger presses a button and the next screen opens outward from the touch point.', preview: 'screen-touch.mp4', at: 0.5, len: 4 },
+  // backgrounds
+  GrainGradient: { title: 'Grain gradient', description: 'A mesh gradient drifts under film grain. It loops with no join at whole-number speeds.', preview: 'grain-gradient.mp4', at: 0, len: 4 },
+  Paper: { title: 'Paper texture', description: 'A paper height field lit by a raking light that circles slowly. It loops with no join at whole-number speeds.', preview: 'paper.mp4', at: 0, len: 4 },
+  DotField: { title: 'Halftone dot field', description: 'A grid of halftone dots breathes on a ring-shaped wave. It loops with no join at whole-number speeds.', preview: 'dot-field.mp4', at: 0, len: 4 },
+  Aurora: { title: 'Aurora ribbons', description: 'Ribbons of light drift and are blended so that overlaps never blow out. It loops with no join at whole-number speeds.', preview: 'aurora.mp4', at: 0, len: 4 },
+  // audio
+  Waveform: { title: 'Waveform', description: 'A mirrored waveform with a playhead. The bars near the playhead rise with the live loudness. It is drawn from the audio file itself.', preview: 'waveform.mp4', at: 0, len: 4 },
+  SpectrumBars: { title: 'Spectrum bars', description: 'Forty-eight frequency bands, spaced on a log scale, with a reflection and falling peak caps. It is drawn from the audio file itself.', preview: 'spectrum-bars.mp4', at: 2, len: 4 },
+  RadialVisualizer: { title: 'Radial audio visualiser', description: 'A ring of bars round a cover image that swells on the bass. It is drawn from the audio file itself.', preview: 'radial-visualizer.mp4', at: 1, len: 4 },
+  // effects
+  LightLeak: { title: 'Light leak', description: 'A warm, streaked leak of light from one edge. It can cover a cut between two clips.', preview: 'light-leak.mp4', at: 1.2, len: 3.5 },
+  Halation: { title: 'Halation', description: 'A red-orange halo round the bright parts of a picture, with film grain on top.', preview: 'halation.mp4', at: 0, len: 3 },
+  GlassLens: { title: 'Glass lens', description: 'A glass ball moves over the picture and refracts what is behind it.', preview: 'glass-lens.mp4', at: 0, len: 4 },
+  FilmBurn: { title: 'Film burn transition', description: 'A heat front scorches the first picture and reveals the second.', preview: 'film-burn.mp4', at: 1, len: 3 },
+};

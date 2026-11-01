@@ -53,6 +53,24 @@ export default async function ComponentPage(props: { params: Promise<Params> }) 
         </Block>
       )}
 
+      {t.props && t.props.length > 0 && (
+        <Block id="props" title="Props">
+          <p className={`${body} max-w-[62ch]`}>Every prop has a default, so the component renders as it is. Change any of them in Studio or in code.</p>
+          <ul className="divide-y divide-ink/10 border-y border-ink/15">
+            {t.props.map((p) => (
+              <li key={p.name} className="grid grid-cols-1 gap-x-6 gap-y-1 py-3 md:grid-cols-[minmax(0,13rem)_minmax(0,11rem)_minmax(0,1fr)]">
+                <code className="font-jb text-[13px] break-words text-ink">{p.name}</code>
+                <p className="font-jb text-[12px] break-words text-mute">
+                  {p.type}
+                  {p.default && <span className="text-ink/60">{` = ${p.default}`}</span>}
+                </p>
+                <p className="text-[15px] leading-[1.5] text-ink/75">{p.doc}</p>
+              </li>
+            ))}
+          </ul>
+        </Block>
+      )}
+
       {uses.length > 0 && (
         <Block id="uses" title="Plugins it uses">
           <ul className="grid grid-cols-1 gap-8 sm:grid-cols-2 md:grid-cols-3">
