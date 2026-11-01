@@ -219,3 +219,79 @@ fn inline_blocks_and_flex_items_are_untouched() {
     assert_eq!(boxes["$0.1.0"].width, 44.0);
     let _ = json!(null);
 }
+
+// Bidi isolation (issue #72): in an RTL paragraph an isolated LTR run keeps its sign on the left, `-1.43%`, where
+// the same text with no isolation resolves as `1.43%-` (the minus is a neutral between the Hebrew and the digits).
+// The boxes of the sign and of the number tell the order, as in Chrome for Testing's rendering of the same tree.
+const HEBREW: &str = "\u{5e9}\u{5dc}\u{5d5}\u{5dd} ";
+
+/// A row of an RTL paragraph: `label`, then an element of `tag` and `style` holding the sign and the number in a
+/// span each (`<row>.1` is the element, `<row>.1.0` the sign, `<row>.1.1` the number).
+fn bidi_row(row: &str, label: &str, tag: &str, style: &str) -> serde_json::Value {
+    let (mut kids, k) = if label.is_empty() {
+        (Vec::new(), 0)
+    } else {
+        (vec![text(label)], 1)
+    };
+    let path = format!("{row}.{k}");
+    kids.push(el(
+        tag,
+        &path,
+        style,
+        vec![
+            el("span", &format!("{path}.0"), "", vec![text("-")]),
+            el("span", &format!("{path}.1"), "", vec![text("1.43%")]),
+        ],
+    ));
+    el("div", row, "", kids)
+}
+
+fn bidi_island() -> kinetograph_dom::document::IslandDocument {
+    let root = el(
+        "div",
+        "$0",
+        "font-family: 'DM Sans'; font-size: 20px; width: 400px; direction: rtl",
+        vec![
+            bidi_row("$0.0", "", "bdi", ""),
+            bidi_row("$0.1", HEBREW, "bdi", ""),
+            bidi_row("$0.2", HEBREW, "span", "direction: ltr; unicode-bidi: isolate"),
+            bidi_row("$0.3", HEBREW, "span", ""),
+            bidi_row("$0.4", HEBREW, "span", "direction: ltr; unicode-bidi: isolate-override"),
+            bidi_row("$0.5", HEBREW, "span", "unicode-bidi: plaintext"),
+        ],
+    );
+    resolve(&request(root))
+}
+
+#[test]
+fn an_isolated_ltr_run_in_an_rtl_paragraph_keeps_its_sign_on_the_left() {
+    let island = bidi_island();
+    let boxes = readback::layout_boxes(&island);
+    let sign_left = |row: &str, k: usize| {
+        let sign = &boxes[&format!("{row}.{k}.0")].rect;
+        let number = &boxes[&format!("{row}.{k}.1")].rect;
+        sign.x < number.x
+    };
+    assert!(sign_left("$0.0", 0), "<bdi> alone");
+    assert!(sign_left("$0.1", 1), "label and <bdi>");
+    assert!(sign_left("$0.2", 1), "unicode-bidi: isolate with direction: ltr");
+    assert!(sign_left("$0.4", 1), "unicode-bidi: isolate-override");
+    assert!(sign_left("$0.5", 1), "unicode-bidi: plaintext, no strong character: left to right");
+    // No isolation: the sign is on the right of the number, in Chrome too.
+    assert!(!sign_left("$0.3", 1), "no isolation");
+}
+
+#[test]
+fn an_isolated_run_stays_beside_its_label_and_adds_no_width() {
+    let island = bidi_island();
+    let boxes = readback::layout_boxes(&island);
+    let width = |p: &str| {
+        let (a, b) = (&boxes[&format!("{p}.0")].rect, &boxes[&format!("{p}.1")].rect);
+        (a.x.min(b.x), (a.x + a.width).max(b.x + b.width))
+    };
+    let (iso_l, iso_r) = width("$0.1.1");
+    let (plain_l, plain_r) = width("$0.3.1");
+    assert!(near(iso_r - iso_l, plain_r - plain_l), "same width: {iso_l}..{iso_r} vs {plain_l}..{plain_r}");
+    // Both are left of the label, which is at the right edge in both rows.
+    assert!(near(iso_r, plain_r), "the run ends where the unisolated one does");
+}
