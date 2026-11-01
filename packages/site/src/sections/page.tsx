@@ -18,7 +18,8 @@ interface Render {
   width: number;
   height: number;
   seconds_video: number;
-  render_median: number;
+  render_median: number | null;
+  credit?: string;
   web: string;
   poster: string;
 }
@@ -63,55 +64,12 @@ function RenderCard({ r }: { r: Render }) {
         <p className="mt-1.5 font-jb text-[12px] leading-relaxed text-ink/75">
           {r.frames.toLocaleString('en-US')} frames, {r.width}×{r.height}, {secs(r.seconds_video)} of video
         </p>
-        <p className="font-jb text-[12px] leading-relaxed text-cobalt">rendered in {secs(r.render_median)}</p>
+        {r.render_median !== null && (
+          <p className="font-jb text-[12px] leading-relaxed text-cobalt">rendered in {secs(r.render_median)}</p>
+        )}
+        {r.credit && <p className="mt-1 font-jb text-[12px] leading-relaxed text-ink/60">{r.credit}</p>}
       </figcaption>
     </figure>
-  );
-}
-
-/** A short film of what the engine draws, playing muted while it is in view (still under reduced motion). */
-export function Capabilities() {
-  const video = useRef<HTMLVideoElement>(null);
-  const [inView, setInView] = useState(false);
-  useEffect(() => {
-    const el = video.current;
-    if (!el) return;
-    const io = new IntersectionObserver(([e]) => setInView(e.isIntersecting), { threshold: 0.35 });
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-  useEffect(() => {
-    const el = video.current;
-    if (!el) return;
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (inView && !reduce) void el.play().catch(() => {});
-    else el.pause();
-  }, [inView]);
-  return (
-    <section id="capabilities" className={`${shell} ${section}`}>
-      <div className="border-t border-cobalt/30 pt-[clamp(56px,8vw,112px)]">
-        <Heading lines={['what it draws']} hot="draws" tag="TRK 01  0.98" className={h2Size} />
-        <figure className="mt-14 max-w-[960px]">
-          <video
-            ref={video}
-            className="aspect-[4/3] w-full bg-ink object-cover"
-            src="/film/capabilities.mp4"
-            poster="/film/capabilities.jpg"
-            muted
-            loop
-            playsInline
-            preload="none"
-            controls
-            aria-label="A 20 second film rendered by Kinetograph"
-          />
-          <figcaption className={`${body} mt-6 max-w-[62ch]`}>
-            Brush strokes from p5.brush, a WGSL heat-shimmer shader and Motion animations, rendered together by
-            Kinetograph from one TypeScript project: 489 frames at 1440×1080, 24 fps.
-            <span className="mt-2 block font-jb text-[12px] text-ink/60">Inspired by jordans.archivess.</span>
-          </figcaption>
-        </figure>
-      </div>
-    </section>
   );
 }
 
