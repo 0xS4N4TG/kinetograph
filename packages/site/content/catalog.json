@@ -3303,7 +3303,7 @@
       ]
     }
   ],
-  "templates": [
+  "components": [
     {
       "id": "collage-burst",
       "title": "Screenshot card burst",
@@ -3319,12 +3319,12 @@
         "CollageBurst"
       ],
       "hero": {
-        "src": "/catalog/templates/collage-burst/hero.webp",
+        "src": "/catalog/components/collage-burst/hero.webp",
         "w": 1280,
         "h": 720,
         "from": "effects/collage-burst/out/collage-burst.mp4",
         "at": 0.3,
-        "video": "/catalog/templates/collage-burst/hero.mp4",
+        "video": "/catalog/components/collage-burst/hero.mp4",
         "len": 4
       }
     },
@@ -3343,12 +3343,12 @@
         "GreetingIntro"
       ],
       "hero": {
-        "src": "/catalog/templates/greeting-intro/hero.webp",
+        "src": "/catalog/components/greeting-intro/hero.webp",
         "w": 1280,
         "h": 720,
         "from": "effects/greeting-intro/out/greeting-intro.mp4",
         "at": 0,
-        "video": "/catalog/templates/greeting-intro/hero.mp4",
+        "video": "/catalog/components/greeting-intro/hero.mp4",
         "len": 3.5
       }
     },
@@ -3368,12 +3368,12 @@
         "PhoneOrbit"
       ],
       "hero": {
-        "src": "/catalog/templates/phone-orbit/hero.webp",
+        "src": "/catalog/components/phone-orbit/hero.webp",
         "w": 1280,
         "h": 720,
         "from": "effects/phone-orbit/out/phone-orbit-stock.mp4",
         "at": 0.65,
-        "video": "/catalog/templates/phone-orbit/hero.mp4",
+        "video": "/catalog/components/phone-orbit/hero.mp4",
         "len": 2.55
       }
     },
@@ -3392,12 +3392,12 @@
         "PromptReply"
       ],
       "hero": {
-        "src": "/catalog/templates/prompt-reply/hero.webp",
+        "src": "/catalog/components/prompt-reply/hero.webp",
         "w": 1280,
         "h": 720,
         "from": "effects/prompt-reply/out/prompt-reply.mp4",
         "at": 0,
-        "video": "/catalog/templates/prompt-reply/hero.mp4",
+        "video": "/catalog/components/prompt-reply/hero.mp4",
         "len": 5
       }
     },
@@ -3417,12 +3417,12 @@
         "ScraplineStill"
       ],
       "hero": {
-        "src": "/catalog/templates/scrapline/hero.webp",
+        "src": "/catalog/components/scrapline/hero.webp",
         "w": 1280,
         "h": 720,
         "from": "effects/scrapline/out/scrapline-demo.mp4",
         "at": 20,
-        "video": "/catalog/templates/scrapline/hero.mp4",
+        "video": "/catalog/components/scrapline/hero.mp4",
         "len": 5
       }
     },
@@ -3441,12 +3441,12 @@
         "WaitShip"
       ],
       "hero": {
-        "src": "/catalog/templates/wait-ship/hero.webp",
+        "src": "/catalog/components/wait-ship/hero.webp",
         "w": 1280,
         "h": 720,
         "from": "effects/wait-ship/out/wait-ship.mp4",
         "at": 0,
-        "video": "/catalog/templates/wait-ship/hero.mp4",
+        "video": "/catalog/components/wait-ship/hero.mp4",
         "len": 2.45
       }
     },
@@ -3464,12 +3464,12 @@
         "WordFlash"
       ],
       "hero": {
-        "src": "/catalog/templates/word-flash/hero.webp",
+        "src": "/catalog/components/word-flash/hero.webp",
         "w": 720,
         "h": 1280,
         "from": "effects/word-flash/out/word-flash.mp4",
         "at": 2.5,
-        "video": "/catalog/templates/word-flash/hero.mp4",
+        "video": "/catalog/components/word-flash/hero.mp4",
         "len": 5
       }
     }

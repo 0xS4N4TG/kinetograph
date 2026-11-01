@@ -85,7 +85,7 @@ export interface Plugin {
   faces?: { hands: string[]; display: string[] };
 }
 
-export interface Template {
+export interface Component {
   id: string;
   title: string;
   description: string;
@@ -96,7 +96,7 @@ export interface Template {
 }
 
 export const plugins = catalog.plugins as unknown as Plugin[];
-export const templates = catalog.templates as unknown as Template[];
+export const components = catalog.components as unknown as Component[];
 
 /** A plugin's title by its package name. */
 export const pluginTitle = (name: string) => plugins.find((p) => p.name === name)?.title ?? name;

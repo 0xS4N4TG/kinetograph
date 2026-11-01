@@ -26,9 +26,9 @@ export const oneLine = (text: string) => text.split(/(?<=[.!?])\s/)[0];
  * Small links above a page's heading so the catalog can be browsed without the back button: the section this page
  * belongs to and its own name on the left, the other section on the right.
  */
-export function Crumbs({ section: sec, current }: { section: 'plugins' | 'templates'; current?: string }) {
-  const here = sec === 'plugins' ? { href: '/plugins/', name: 'Plugins' } : { href: '/plugins/#templates', name: 'Templates' };
-  const other = sec === 'plugins' ? { href: '/plugins/#templates', name: 'Templates' } : { href: '/plugins/', name: 'Plugins' };
+export function Crumbs({ section: sec, current }: { section: 'plugins' | 'components'; current?: string }) {
+  const here = sec === 'plugins' ? { href: '/plugins/', name: 'Plugins' } : { href: '/plugins/#components', name: 'Components' };
+  const other = sec === 'plugins' ? { href: '/plugins/#components', name: 'Components' } : { href: '/plugins/', name: 'Plugins' };
   const cls = `${link} kc-press inline-block`;
   return (
     <nav aria-label="Catalog" className="mb-6 flex items-center justify-between font-jb text-[12px] tracking-[0.04em]">
@@ -53,7 +53,7 @@ export function Crumbs({ section: sec, current }: { section: 'plugins' | 'templa
 }
 
 /**
- * The first screen of a plugin or template page: the clip large, the title and one sentence beside it (stacked under
+ * The first screen of a plugin or component page: the clip large, the title and one sentence beside it (stacked under
  * md). The clip's width is capped by the viewport height so a portrait clip never pushes the title off the screen.
  */
 export function PageHero({ title, tag, line, clip, alt, children }: { title: string; tag: string; line: string; clip: Clip | null; alt: string; children?: ReactNode }) {

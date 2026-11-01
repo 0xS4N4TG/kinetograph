@@ -1,25 +1,25 @@
 import type { Metadata } from 'next';
 
-import { plugins, templates } from '@/lib/catalog';
+import { plugins, components } from '@/lib/catalog';
 import { CatalogPage, Draws, oneLine, Tile } from '@/sections/catalog';
 import { Heading } from '@/sections/heading';
 import { Label, body, link } from '@/sections/shared';
 
 export const metadata: Metadata = {
-  title: 'Plugins and templates | Kinetograph',
-  description: 'Plugins and templates for Kinetograph: what each one makes and what you can change.',
+  title: 'Plugins and components | Kinetograph',
+  description: 'Plugins and components for Kinetograph: what each one makes and what you can change.',
 };
 
 /** Plugins: two large tiles across from md up, one under. */
 const pluginGrid = 'mt-6 grid grid-cols-1 gap-x-8 gap-y-14 md:grid-cols-2';
 /**
- * Templates: a wall of hero clips, each at its own aspect, three columns from md up and one under, in `order`. Seven
+ * Components: a wall of hero clips, each at its own aspect, three columns from md up and one under, in `order`. Seven
  * tiles: the portrait Word Flash spans the first two rows of column 1; four wide clips fill the two columns beside it;
  * the last row is one wide clip and Scrapline across two columns. The two rows beside the portrait are about as tall as
- * it is, so only the bottom of the wall is ragged. New templates go in `order`, then `templatePlace`.
+ * it is, so only the bottom of the wall is ragged. New components go in `order`, then `componentPlace`.
  */
-const templateGrid = 'mt-6 grid grid-cols-1 gap-x-8 gap-y-12 md:grid-cols-3 md:items-start';
-const templatePlace: Record<string, string> = {
+const componentGrid = 'mt-6 grid grid-cols-1 gap-x-8 gap-y-12 md:grid-cols-3 md:items-start';
+const componentPlace: Record<string, string> = {
   'word-flash': 'md:col-start-1 md:row-span-2 md:row-start-1',
   'collage-burst': 'md:col-start-2 md:row-start-1',
   'greeting-intro': 'md:col-start-3 md:row-start-1',
@@ -29,13 +29,13 @@ const templatePlace: Record<string, string> = {
   scrapline: 'md:col-span-2 md:col-start-2 md:row-start-3',
 };
 const order = ['scrapline', 'word-flash', 'collage-burst', 'greeting-intro', 'wait-ship', 'prompt-reply', 'phone-orbit'];
-const wall = [...templates].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+const wall = [...components].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
 
 export default function PluginsPage() {
   return (
     <CatalogPage>
-      <Heading as="h1" lines={['Plugins and templates']} hot="templates" tag="CAT 01  1.00" className="text-[clamp(36px,4.2vw,56px)]" />
-      <p className={`${body} mt-5 max-w-[62ch]`}>Plugins add looks, captions, paper and tracking to a project. Templates are finished videos you start from and change.</p>
+      <Heading as="h1" lines={['Plugins and components']} hot="components" tag="CAT 01  1.00" className="text-[clamp(36px,4.2vw,56px)]" />
+      <p className={`${body} mt-5 max-w-[62ch]`}>Plugins add looks, captions, paper and tracking to a project. Components are finished videos you start from and change.</p>
       <p className="mt-1 text-[14px] text-mute">Coming; not published yet.</p>
 
       <section className="mt-12" aria-labelledby="plugins">
@@ -43,8 +43,8 @@ export default function PluginsPage() {
           <Label>
             <span id="plugins">Plugins ({plugins.length})</span>
           </Label>
-          <a href="#templates" className={`${link} kc-press inline-block font-jb text-[12px] tracking-[0.04em]`}>
-            Templates
+          <a href="#components" className={`${link} kc-press inline-block font-jb text-[12px] tracking-[0.04em]`}>
+            Components
           </a>
         </div>
         <ul className={pluginGrid}>
@@ -57,13 +57,13 @@ export default function PluginsPage() {
         </ul>
       </section>
 
-      <section className="mt-24 scroll-mt-8" aria-labelledby="templates">
+      <section className="mt-24 scroll-mt-8" aria-labelledby="components">
         <Label>
-          <span id="templates">Templates ({templates.length})</span>
+          <span id="components">Components ({components.length})</span>
         </Label>
-        <ul className={templateGrid}>
+        <ul className={componentGrid}>
           {wall.map((t, i) => (
-            <Tile key={t.id} href={`/templates/${t.id}/`} title={t.title} clip={t.hero} index={i % 3} className={templatePlace[t.id]}>
+            <Tile key={t.id} href={`/components/${t.id}/`} title={t.title} clip={t.hero} index={i % 3} className={componentPlace[t.id]}>
               <p className="line-clamp-2 text-[15px] leading-[1.5] text-ink/75">{oneLine(t.description)}</p>
             </Tile>
           ))}

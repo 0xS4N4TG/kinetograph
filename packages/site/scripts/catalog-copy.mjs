@@ -1,7 +1,7 @@
 // Hand-written copy and chosen media for the catalog pages, read by catalog.mjs. Written from each plugin's SKILL.md,
-// README and presets, and from each template's index.tsx and README, in plain words. Nothing here names the private
-// kinetograph-effects repo, no template says what it was modelled on, and no template quotes its own default on-screen text
-// (those words are a template's placeholder, not what the site says). A feature with no `media` is text only.
+// README and presets, and from each component's index.tsx and README, in plain words. Nothing here names the private
+// kinetograph-effects repo, no component says what it was modelled on, and no component quotes its own default on-screen text
+// (those words are a component's placeholder, not what the site says). A feature with no `media` is text only.
 
 /** The one line every plugin page says about installing: in words, no commands, none exist yet. */
 const INSTALLED = 'It installs as a package you add to your project. Its skill comes with it, so an agent can use it without being taught.';
@@ -226,7 +226,7 @@ node plugins/vj/tools/track.mjs --in public/clip.mp4 --box 900,300,120,120 --out
   },
 };
 
-/** Demo showrooms that are not templates: what they show, in a sentence. */
+/** Demo showrooms that are not components: what they show, in a sentence. */
 export const DEMO_TEXT = {
   'match-cut': 'One composition per MatchCut look, five seconds each, keyword "Super Bowl", a paper flick on every cut.',
   'paper-photo': 'The four cut-out edges, and the fold-out on a green screen and on a desk.',
@@ -236,7 +236,7 @@ export const DEMO_TEXT = {
   'plugin-ui-demo': 'Ready-made scenes for the Hexed, Paper, VJ and caption panels in Studio. Edit a value and the preview redraws.',
 };
 
-export const TEMPLATE_COPY = {
+export const COMPONENT_COPY = {
   scrapline: {
     title: 'Scrapline cut-outs',
     description:

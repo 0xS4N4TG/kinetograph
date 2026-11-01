@@ -1,4 +1,4 @@
-// Writes content/catalog.json from the private kinetograph-effects checkout: its plugins and its reel templates.
+// Writes content/catalog.json from the private kinetograph-effects checkout: its plugins and its reel components.
 //   KINETOGRAPH_EFFECTS=/path/to/kinetograph-effects node scripts/catalog.mjs [--media]
 // Without the checkout it prints a message and leaves the committed catalog.json alone.
 // --media also extracts the stills and clips named in catalog-copy.mjs to public/catalog/. A still is a frame of a render in
@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEMO_TEXT, EXPORT_NOTES, GENE_NOTES, PLUGIN_COPY, TEMPLATE_COPY } from './catalog-copy.mjs';
+import { DEMO_TEXT, EXPORT_NOTES, GENE_NOTES, PLUGIN_COPY, COMPONENT_COPY } from './catalog-copy.mjs';
 import { compositionIds, readExports, readHexed, readKinetic, readPaper, readVj } from './catalog-source.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -25,7 +25,7 @@ if (!existsSync(join(root, 'plugins'))) {
   process.exit(0);
 }
 
-/** Showrooms of a plugin: listed under the plugins they demo (folder names), never as templates. */
+/** Showrooms of a plugin: listed under the plugins they demo (folder names), never as components. */
 const DEMOS = {
   'match-cut': { title: 'Match cut presets', plugins: ['paper'] },
   'paper-photo': { title: 'Paper photo effects', plugins: ['paper'] },
@@ -238,7 +238,7 @@ const plugins = pluginDirs.map((d) => {
 });
 const byDir = Object.fromEntries(pluginDirs.map((d, i) => [d, plugins[i]]));
 
-// Effects: demos go under the plugins they import, the rest are templates.
+// Effects: demos go under the plugins they import, the rest are components.
 function sources(dir) {
   const found = [];
   const walk = (p) => {
@@ -263,7 +263,7 @@ function importedPlugins(dir) {
   return [...used];
 }
 
-const templates = [];
+const components = [];
 const skipped = [];
 for (const id of dirs(join(root, 'effects'))) {
   if (EXCLUDED.has(id)) continue;
@@ -284,20 +284,20 @@ for (const id of dirs(join(root, 'effects'))) {
     continue;
   }
   const heading = readme.match(/^#\s+(.+)$/m)?.[1];
-  const c = TEMPLATE_COPY[id];
-  if (!c) console.log(`catalog: no copy for template ${id}; its description comes from its README`);
-  templates.push({
+  const c = COMPONENT_COPY[id];
+  if (!c) console.log(`catalog: no copy for component ${id}; its description comes from its README`);
+  components.push({
     id,
     title: c?.title ?? (heading && heading !== id ? heading.replace(/\s*\(.*\)\s*$/, '') : titleCase(id)),
     description: c?.description ?? (firstParagraph(readme) || bulletFor(id) || leadingComment(index)),
     change: c?.change ?? [],
     plugins: importedPlugins(dir).map((d) => byDir[d].name),
     compositions: compositionIds(index),
-    hero: c?.media?.hero ? clip(c.media.hero, `templates/${id}/hero`) : null,
+    hero: c?.media?.hero ? clip(c.media.hero, `components/${id}/hero`) : null,
   });
 }
 
-writeFileSync(out, JSON.stringify({ plugins, templates }, null, 2) + '\n');
-console.log(`catalog: ${plugins.length} plugins, ${templates.length} templates -> ${out}`);
+writeFileSync(out, JSON.stringify({ plugins, components }, null, 2) + '\n');
+console.log(`catalog: ${plugins.length} plugins, ${components.length} components -> ${out}`);
 if (withMedia) console.log(`catalog: ${clipCount} clips, ${(mediaBytes / 1048576).toFixed(1)} MB of media added (clips and their posters, presets not counted)`);
 if (skipped.length) console.log(`catalog: skipped without index.tsx: ${skipped.join(', ')}`);
