@@ -19,7 +19,7 @@ import { jobPercent } from '@/lib/format';
 import { clampRange } from '@/lib/selection';
 import { usePersistedNumber } from '@/lib/persisted';
 import { usePlayerState } from '@/lib/player-hooks';
-import { layersOfPlugin, pluginsOfSelection, usePlugins } from '@/lib/plugins';
+import { layersOfPlugin, pluginsOfSelection, usePluginCatalog, usePlugins } from '@/lib/plugins';
 import { PreviewContext, type PreviewHost } from '@/lib/preview-context';
 import { StudioContext } from '@/lib/studio-context';
 import { useTheme } from '@/lib/theme';
@@ -123,6 +123,7 @@ export function App({ api }: { api: StudioApi }) {
   const { selectedRange, selectRange } = studio;
   const range = useMemo(() => clampRange(selectedRange, comp?.durationInFrames ?? 0), [selectedRange, comp?.durationInFrames]);
   const plugins = usePlugins(api);
+  const catalog = usePluginCatalog(api);
   /** The plugin whose card was clicked; the plugins that drew the selected layers count as selected too. */
   const [focusedPlugin, setFocusedPlugin] = useState<string | null>(null);
   const layerPlugins = useMemo(() => pluginsOfSelection(plugins, studio.inspect, selectedLayers), [plugins, studio.inspect, selectedLayers]);
@@ -392,6 +393,7 @@ export function App({ api }: { api: StudioApi }) {
                   onNewRender={exportNow}
                   onCancelRender={studio.cancelRender}
                   plugins={plugins}
+                  catalog={catalog}
                   selectedPlugins={selectedPlugins}
                   onSelectPlugin={selectPlugin}
                   onAskAgent={askAgent}
