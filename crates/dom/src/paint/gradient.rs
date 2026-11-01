@@ -242,10 +242,15 @@ pub fn gradient_paint(g: &Gradient, tile: Rect, current: &AbsoluteColor) -> Resu
             if stops.is_empty() {
                 return Err("a gradient with no colour stops".into());
             }
-            let (lo, hi) = (stops[0].pos, stops[stops.len() - 1].pos);
+            let (mut lo, mut hi) = (stops[0].pos, stops[stops.len() - 1].pos);
             let repeating = flags.contains(GradientFlags::REPEATING);
-            if hi - lo < 1e-6 || len <= 0.0 {
+            if len <= 0.0 || (repeating && hi - lo < 1e-6) {
                 return Ok(solid(&stops));
+            }
+            // Every stop at one position is a hard edge there (the first
+            // colour before it, the last after), not a solid fill.
+            if hi - lo < 1e-6 {
+                (lo, hi) = (0.0, len);
             }
             let (cx, cy) = (tile.x + tile.w / 2.0, tile.y + tile.h / 2.0);
             let start = (cx - dx * len / 2.0, cy - dy * len / 2.0);
@@ -280,9 +285,12 @@ pub fn gradient_paint(g: &Gradient, tile: Rect, current: &AbsoluteColor) -> Resu
             }
             let repeating = flags.contains(GradientFlags::REPEATING);
             let (lo, hi) = (stops[0].pos.max(0.0), stops[stops.len() - 1].pos);
-            if hi - lo < 1e-6 || rx <= 0.0 || ry <= 0.0 {
+            if rx <= 0.0 || ry <= 0.0 || (repeating && hi - lo < 1e-6) {
                 return Ok(solid(&stops));
             }
+            // Every stop at one radius is a hard edge there. At radius 0 the
+            // whole plane is past it: the last colour.
+            let hi = if hi > 1e-6 { hi } else { rx };
             // The scene's radial gradient is a circle of radius `r` (offset 1);
             // an ellipse is that circle squashed about its centre.
             let mut g = json!({
@@ -330,7 +338,7 @@ pub fn gradient_paint(g: &Gradient, tile: Rect, current: &AbsoluteColor) -> Resu
             }
             let repeating = flags.contains(GradientFlags::REPEATING);
             let (lo, hi) = (stops[0].pos, stops[stops.len() - 1].pos);
-            if hi - lo < 1e-6 {
+            if repeating && hi - lo < 1e-6 {
                 return Ok(solid(&stops));
             }
             let mut g = json!({

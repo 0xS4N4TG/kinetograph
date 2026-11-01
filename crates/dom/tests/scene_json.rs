@@ -843,3 +843,35 @@ fn a_filter_on_an_inline_element_is_reported() {
         "{props:?}"
     );
 }
+
+// Colour stops that all sit at one position are a hard edge there (the first colour before it, the last after), as
+// in Chrome; the painter made them the last colour alone (issue #81).
+#[test]
+fn colour_stops_all_at_one_position_are_a_hard_edge() {
+    let out = paint(
+        r#"<div id="l" style="width:100px;height:20px;background:linear-gradient(90deg,#f00 40%,#00f 40%)"></div>
+<div id="r" style="width:100px;height:20px;background:radial-gradient(circle 50px at 0 0,#f00 30px,#00f 30px)"></div>
+<div id="c" style="width:100px;height:20px;background:conic-gradient(#f00 50%,#00f 50%)"></div>
+<div id="z" style="width:100px;height:20px;background:linear-gradient(90deg,#f00 0,#00f 0)"></div>"#,
+        200,
+        100,
+    );
+    let fill = |id: &str| find(&out.layers, id)["fill"].clone();
+    let l = fill("l.bg.0");
+    assert_eq!(l["type"], "linear", "{l}");
+    assert_eq!(l["stops"][0]["offset"], 0.4);
+    assert_eq!(l["stops"][1]["offset"], 0.4);
+    assert_eq!(l["stops"][0]["color"], "#ff0000");
+    assert_eq!(l["stops"][1]["color"], "#0000ff");
+    let r = fill("r.bg.0");
+    assert_eq!(r["type"], "radial", "{r}");
+    assert_eq!(r["r"], 30);
+    let c = fill("c.bg.0");
+    assert_eq!(c["type"], "conic", "{c}");
+    assert_eq!(c["stops"][0]["offset"], 0.5);
+    assert_eq!(c["stops"][1]["offset"], 0.5);
+    // At the very start both colours are past the edge: the last one shows.
+    let z = fill("z.bg.0");
+    assert_eq!(z["type"], "linear", "{z}");
+    assert_eq!(z["stops"][1]["offset"], 0);
+}
