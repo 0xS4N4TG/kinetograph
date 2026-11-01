@@ -1,12 +1,14 @@
 import { Streamdown } from 'streamdown';
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
 import { ArrowUpIcon, ChevronRightIcon, ImageIcon, SparklesIcon, SquareIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
 
-import type { AgentInfo, CompositionInfo, InspectResult, PluginSummary, ProjectInfo, ReceivedFrame, TimelineData } from '@/api';
+import type { AgentAttachment, AgentInfo, CompositionInfo, InspectResult, PluginSummary, ProjectInfo, ReceivedFrame, TimelineData } from '@/api';
+import { AttachmentChips, MessageImages } from '@/components/agent/attachments';
 import { ToolGroup } from '@/components/agent/tool-rows';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverPopup } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
+import { acceptImages, dragHasFiles, filesOf, prepareAttachments, type Attachment } from '@/lib/attachments';
 import type { ChatItem } from '@/lib/chat';
 import { buildChatContext } from '@/lib/chat-context';
 import { MAX_CHIPS, selectionChips, type Chip } from '@/lib/chips';
@@ -220,7 +222,10 @@ const Item = memo(function Item({ item, onAnswer }: { item: PlainItem; onAnswer(
               ))}
             </div>
           )}
-          <p className="bg-primary text-primary-foreground max-w-[90%] rounded-2xl rounded-br-md px-3.5 py-2 text-[13.5px] leading-relaxed whitespace-pre-wrap">{item.text}</p>
+          {item.images && <MessageImages names={item.images} className="justify-end" />}
+          {item.text !== '' && (
+            <p className="bg-primary text-primary-foreground max-w-[90%] rounded-2xl rounded-br-md px-3.5 py-2 text-[13.5px] leading-relaxed whitespace-pre-wrap">{item.text}</p>
+          )}
         </div>
       );
     case 'agent':
@@ -279,6 +284,14 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
   const [withPicture, setWithPicture] = useState(true);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Pictures dropped or pasted, kept until the message goes. The ref is the latest list, so two drops in a row count right.
+  const [attached, setAttached] = useState<Attachment[]>([]);
+  const attachedRef = useRef<Attachment[]>([]);
+  const nextAttachment = useRef(1);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
   const { state } = chat;
   const busy = state.status === 'busy';
   const frame = inspect?.frame ?? 0;
@@ -290,6 +303,33 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
       live = false;
     };
   }, [chat.loadInfo]);
+
+  const setAttachments = useCallback((next: Attachment[]) => {
+    attachedRef.current = next;
+    setAttached(next);
+  }, []);
+  const addImages = useCallback(
+    (files: File[]) => {
+      const { files: taken, error } = acceptImages(files, attachedRef.current.length);
+      setAttachError(error);
+      if (taken.length === 0) return;
+      const added = taken.map((file): Attachment => ({ id: nextAttachment.current++, file, preview: typeof URL.createObjectURL === 'function' ? URL.createObjectURL(file) : '' }));
+      setAttachments([...attachedRef.current, ...added]);
+    },
+    [setAttachments],
+  );
+  const removeImage = (id: number) => {
+    const gone = attachedRef.current.find((a) => a.id === id);
+    if (gone?.preview && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(gone.preview);
+    setAttachError(null);
+    setAttachments(attachedRef.current.filter((a) => a.id !== id));
+  };
+  useEffect(
+    () => () => {
+      if (typeof URL.revokeObjectURL === 'function') for (const a of attachedRef.current) if (a.preview) URL.revokeObjectURL(a.preview);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!draft) return;
@@ -325,19 +365,69 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
   /** With a span and no layer, the span has a chip of its own. */
   const rangeChip = span && layers.length === 0 ? `${comp!.id} · ${span}` : null;
 
-  const send = async (override?: string) => {
-    const message = (override ?? text).trim();
-    if (message === '') return;
-    let image: { data: string; mimeType: string } | undefined;
-    if (withPicture && comp && range && thumbnailFrameUrl) {
-      image = (await contactSheet(contactFrames(range), comp.fps, comp.width, comp.height, thumbnailFrameUrl)) ?? undefined;
-    } else if (withPicture && comp && layers.length > 0) {
-      const rect = unionRect(layers.flatMap((l: InspectLayer) => layerRect(l) ?? []), 24, comp.width, comp.height);
-      const last: ReceivedFrame | null = lastImage();
-      if (rect && last) image = (await cropToPng(last, comp.width, rect)) ?? undefined;
+  const send = async () => {
+    const message = text.trim();
+    if ((message === '' && attached.length === 0) || sending) return;
+    setSending(true);
+    setAttachError(null);
+    try {
+      // The originals are stored in the project first; the agent gets a smaller copy and the paths.
+      let attachments: AgentAttachment[] = [];
+      if (attachedRef.current.length > 0) {
+        try {
+          attachments = await prepareAttachments(attachedRef.current, (id, name) => setAttachments(attachedRef.current.map((a) => (a.id === id ? { ...a, stored: name } : a))));
+        } catch (error) {
+          setAttachError(error instanceof Error ? error.message : 'The images could not be stored.');
+          return;
+        }
+      }
+      let image: { data: string; mimeType: string } | undefined;
+      if (withPicture && comp && range && thumbnailFrameUrl) {
+        image = (await contactSheet(contactFrames(range), comp.fps, comp.width, comp.height, thumbnailFrameUrl)) ?? undefined;
+      } else if (withPicture && comp && layers.length > 0) {
+        const rect = unionRect(layers.flatMap((l: InspectLayer) => layerRect(l) ?? []), 24, comp.width, comp.height);
+        const last: ReceivedFrame | null = lastImage();
+        if (rect && last) image = (await cropToPng(last, comp.width, rect)) ?? undefined;
+      }
+      const context = comp && project ? buildChatContext({ entry: project.entry, cwd, comp, frame, layers, timeline, range, ...(plugins ? { plugins } : {}) }) : '';
+      if (chat.send(message, context, chips, image, attachments)) {
+        setText('');
+        for (const a of attachedRef.current) if (a.preview && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(a.preview);
+        setAttachments([]);
+      }
+    } finally {
+      setSending(false);
     }
-    const context = comp && project ? buildChatContext({ entry: project.entry, cwd, comp, frame, layers, timeline, range, ...(plugins ? { plugins } : {}) }) : '';
-    if (chat.send(message, context, chips, image)) setText('');
+  };
+  const onDragEnter = (event: DragEvent) => {
+    if (unavailable || !dragHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    dragDepth.current++;
+    setDragging(true);
+  };
+  const onDragOver = (event: DragEvent) => {
+    if (unavailable || !dragHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  };
+  const onDragLeave = (event: DragEvent) => {
+    if (!dragHasFiles(event.dataTransfer)) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragging(false);
+  };
+  const onDrop = (event: DragEvent) => {
+    if (!dragHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    if (!unavailable) addImages(filesOf(event.dataTransfer));
+  };
+  const onPaste = (event: ClipboardEvent) => {
+    const files = filesOf(event.clipboardData);
+    // Text pastes as it always did; only a picture on the clipboard is taken.
+    if (unavailable || !files.some((f) => f.type.startsWith('image/'))) return;
+    event.preventDefault();
+    addImages(files);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -351,7 +441,23 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
   const unavailable = noAgent || !!info?.disabled;
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="agent-panel">
+    <div
+      className="relative flex h-full min-h-0 flex-col"
+      data-testid="agent-panel"
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onPaste={onPaste}
+    >
+      {dragging && (
+        <div
+          className="bg-background/80 border-primary text-primary pointer-events-none absolute inset-1 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed text-sm font-medium backdrop-blur-[2px]"
+          data-testid="drop-overlay"
+        >
+          Drop images to attach
+        </div>
+      )}
       <div className="flex h-14 shrink-0 items-center gap-2 px-4">
         <SparklesIcon className="text-primary size-4 shrink-0" aria-hidden="true" />
         <h2 className="text-sm font-semibold">Agent</h2>
@@ -417,11 +523,12 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
             <li key={queued.id} className="flex max-w-[90%] items-start gap-1.5" data-testid="chat-queued">
               <div className="bg-muted text-muted-foreground border-border min-w-0 rounded-2xl rounded-br-md border border-dashed px-3 py-1.5 text-[13px] leading-relaxed">
                 <span className="text-[10px] font-medium tracking-wide uppercase">Queued</span>
-                <p className="line-clamp-3 whitespace-pre-wrap">{queued.text}</p>
+                {queued.images && <MessageImages names={queued.images} small className="my-1" />}
+                {queued.text !== '' && <p className="line-clamp-3 whitespace-pre-wrap">{queued.text}</p>}
               </div>
               <button
                 type="button"
-                aria-label={`Remove queued message: ${queued.text.slice(0, 40)}`}
+                aria-label={`Remove queued message: ${queued.text.slice(0, 40) || 'images'}`}
                 onClick={() => chat.unqueue(queued.id)}
                 className="text-muted-foreground hover:text-foreground hover:bg-accent focus-visible:ring-ring mt-1 shrink-0 rounded-full p-1 outline-none focus-visible:ring-2"
               >
@@ -434,6 +541,12 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
 
       <div className="shrink-0 p-3 pt-0">
         <div className="bg-background/60 border-input has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-ring/20 rounded-2xl border p-2.5 transition-[box-shadow,border-color] has-[textarea:focus-visible]:ring-[3px]">
+          <AttachmentChips items={attached} remove={removeImage} />
+          {attachError && (
+            <p role="alert" className="text-destructive-foreground mb-1.5 px-1 text-xs" data-testid="attach-error">
+              {attachError}
+            </p>
+          )}
           <SelectionChips
             chips={chipList}
             rangeChip={rangeChip}
@@ -468,7 +581,7 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
                 size="icon"
                 onClick={() => void send()}
                 aria-label={state.queue.length > 0 ? `Send (${state.queue.length} queued)` : 'Send'}
-                disabled={text.trim() === '' || unavailable}
+                disabled={(text.trim() === '' && attached.length === 0) || unavailable || sending}
                 className="relative rounded-full"
               >
                 <ArrowUpIcon />
