@@ -219,6 +219,9 @@ describe('sending a message with images', () => {
     expect(uploads).toHaveLength(1);
     expect(prompts(server)[0]!.attachments).toEqual([{ name: 'a.png', data: btoa('pixels'), mimeType: 'image/png' }]);
     await say(server, { kind: 'queue', items: [{ id: 'q1', text: 'later please', chips: [], images: ['a.png'] }] });
+    // the thumbnail is on the collapsed bar, and on its card once the tray is open
+    expect(within(screen.getByTestId('queue-toggle')).getByRole('img')).toHaveAttribute('src', '/api/agent/image?name=a.png');
+    await user.click(screen.getByTestId('queue-toggle'));
     const queued = screen.getByTestId('chat-queued');
     expect(within(queued).getByRole('img')).toHaveAttribute('src', '/api/agent/image?name=a.png');
     // the turn ends: the message is the person's, with its thumbnail

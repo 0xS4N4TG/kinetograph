@@ -177,3 +177,20 @@ export async function prepareAttachments(items: Attachment[], stored: (id: numbe
   }
   return out;
 }
+
+/**
+ * A picture already stored in the project, back in the prompt box (a queued message taken out to be edited): its bytes are
+ * read again so that the agent gets its scaled copy as before; if they cannot be read, the name alone is kept.
+ */
+export async function restoreAttachment(name: string): Promise<{ file: File; stored: string }> {
+  try {
+    const response = await fetch(attachmentUrl(name));
+    if (response.ok) {
+      const blob = await response.blob();
+      return { file: new File([blob], name, { type: blob.type || 'image/png' }), stored: name };
+    }
+  } catch {
+    // below
+  }
+  return { file: new File([], name, { type: 'image/png' }), stored: name };
+}

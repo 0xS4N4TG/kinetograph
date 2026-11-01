@@ -148,9 +148,19 @@ for each selected layer its name, kind, source file and line, position, size and
 it. With many layers selected the box shows three chips and "+N more", which lists them all (with Clear all); a kind with
 four or more layers is one chip, such as "28 shapes in showcase". Keep the picture switch on to attach a picture of the selected area, or a contact sheet for a span.
 
-You can send a message while the agent is still working. It waits in a queue under the transcript, marked "Queued", with a
-button to remove it and a count on Send. When the turn ends, everything queued goes to the agent as one prompt, joined
-with blank lines, and the chat shows each message on its own. Stop ends the turn and keeps the queue. A reload keeps it.
+You can send a message while the agent is still working. It waits in the **Up next** tray, docked above the message box. Closed,
+the tray is one slim bar ("2 up next", the first message's first line and its thumbnails); open it with the chevron to see a
+card for each message: its first two lines, its images, and the selection it was sent with. A card has:
+
+- **Edit**, which takes the message out of the queue and puts its words and pictures back in the message box.
+- **Send now**, which stops the current turn and sends that message next, alone, and keeps the rest queued. It waits four
+  seconds first, with an Undo, so a stray click costs nothing.
+- **Remove** (the x), and a grip to drag the card to a new place (or press Arrow Up and Arrow Down on the focused grip).
+  **Clear** removes them all.
+
+When the turn ends, everything queued goes to the agent as one prompt, joined with blank lines, and the chat shows each message
+on its own. A panel's answer that is waiting for the turn to end shows in the same tray with the panel's icon; it cannot be
+edited or moved. Stop ends the turn and keeps the queue. A reload keeps it.
 
 Drop images onto the agent, paste one, or press the attach button left of Send to attach them (up to 6 per message, 20 MB each; PNG, JPEG, WebP, GIF or AVIF). Each
 appears as a thumbnail in the message box with an x. On Send, Studio stores the originals in `public/refs/` in your project

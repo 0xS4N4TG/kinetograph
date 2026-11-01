@@ -30,6 +30,12 @@ export interface Chat {
   send(text: string, context: string, chips: string[], image?: { data: string; mimeType: string }, attachments?: AgentAttachment[]): boolean;
   /** Takes a message out of the queue before the agent gets it. */
   unqueue(id: string): void;
+  /** Takes a message out of the queue and gives it back in `state.taken`, to edit it. */
+  take(id: string): void;
+  /** Puts the queued messages in this order. */
+  requeue(order: string[]): void;
+  /** Stops the turn and sends this queued message next. */
+  sendNow(id: string): void;
   answer(permissionId: string, optionId: string | null): void;
   stop(): void;
   /** Ends the conversation: the agent starts again at the next message. */
@@ -68,6 +74,9 @@ export function useChat(studio: Pick<Studio, 'onAgentEvent' | 'onAgentHistory' |
     [sendAgent],
   );
   const unqueue = useCallback((id: string) => void sendAgent({ type: 'agent.unqueue', id }), [sendAgent]);
+  const take = useCallback((id: string) => void sendAgent({ type: 'agent.unqueue', id, take: true }), [sendAgent]);
+  const requeue = useCallback((order: string[]) => void sendAgent({ type: 'agent.requeue', order }), [sendAgent]);
+  const sendNow = useCallback((id: string) => void sendAgent({ type: 'agent.sendnow', id }), [sendAgent]);
   const stop = useCallback(() => void sendAgent({ type: 'agent.cancel' }), [sendAgent]);
   const restart = useCallback(() => {
     sendAgent({ type: 'agent.reset' });
@@ -82,5 +91,5 @@ export function useChat(studio: Pick<Studio, 'onAgentEvent' | 'onAgentHistory' |
   );
   const loadInfo = useCallback(() => agentInfo().then((info) => info, () => null), [agentInfo]);
 
-  return useMemo(() => ({ state, send, unqueue, answer, stop, restart, chooseAgent, loadInfo }), [state, send, unqueue, answer, stop, restart, chooseAgent, loadInfo]);
+  return useMemo(() => ({ state, send, unqueue, take, requeue, sendNow, answer, stop, restart, chooseAgent, loadInfo }), [state, send, unqueue, take, requeue, sendNow, answer, stop, restart, chooseAgent, loadInfo]);
 }

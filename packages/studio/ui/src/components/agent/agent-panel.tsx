@@ -4,12 +4,13 @@ import { ArrowUpIcon, ChevronRightIcon, FrameIcon, ImagePlusIcon, SparklesIcon, 
 
 import type { AgentAttachment, AgentInfo, CompositionInfo, InspectResult, PluginSummary, ProjectInfo, ReceivedFrame, TimelineData } from '@/api';
 import { AttachmentChips, MessageImages } from '@/components/agent/attachments';
+import { UpNext } from '@/components/agent/up-next';
 import { ToolGroup } from '@/components/agent/tool-rows';
 import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/hint';
 import { Popover, PopoverPopup } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
-import { ACCEPT_IMAGES, acceptImages, dragHasFiles, filesOf, prepareAttachments, type Attachment } from '@/lib/attachments';
+import { ACCEPT_IMAGES, MAX_ATTACHMENTS, acceptImages, attachmentUrl, dragHasFiles, filesOf, prepareAttachments, restoreAttachment, type Attachment } from '@/lib/attachments';
 import type { ChatItem } from '@/lib/chat';
 import { buildChatContext } from '@/lib/chat-context';
 import { MAX_CHIPS, selectionChips, type Chip } from '@/lib/chips';
@@ -333,6 +334,25 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
     [],
   );
 
+  // A queued message taken out to be edited comes back here: its words (before what is already typed) and its pictures.
+  const takenN = state.taken?.n ?? 0;
+  const seenTaken = useRef(takenN);
+  useEffect(() => {
+    const taken = state.taken?.item;
+    // The panel can mount again (a tab switch) with a message taken long ago: only a new one counts.
+    if (!taken || takenN === seenTaken.current) return;
+    seenTaken.current = takenN;
+    setText((now) => (now.trim() === '' ? taken.text : `${taken.text}\n${now}`));
+    inputRef.current?.focus();
+    const names = taken.images ?? [];
+    if (names.length === 0) return;
+    void Promise.all(names.map((name) => restoreAttachment(name))).then((restored) => {
+      const room = Math.max(0, MAX_ATTACHMENTS - attachedRef.current.length);
+      const added = restored.slice(0, room).map(({ file, stored }): Attachment => ({ id: nextAttachment.current++, file, stored, preview: attachmentUrl(stored) }));
+      setAttachments([...attachedRef.current, ...added]);
+    });
+  }, [takenN]);
+
   useEffect(() => {
     if (!draft) return;
     setText(draft.text);
@@ -519,27 +539,7 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
         {busy && state.items.at(-1)?.kind === 'user' && <p className="text-muted-foreground text-xs">Thinking…</p>}
       </div>
 
-      {state.queue.length > 0 && (
-        <ul className="flex max-h-40 shrink-0 flex-col items-end gap-1.5 overflow-y-auto px-4 pb-2" data-testid="chat-queue" aria-label="Messages waiting for the agent">
-          {state.queue.map((queued) => (
-            <li key={queued.id} className="flex max-w-[90%] items-start gap-1.5" data-testid="chat-queued">
-              <div className="bg-muted text-muted-foreground border-border min-w-0 rounded-2xl rounded-br-md border border-dashed px-3 py-1.5 text-[13px] leading-relaxed">
-                <span className="text-[10px] font-medium tracking-wide uppercase">Queued</span>
-                {queued.images && <MessageImages names={queued.images} small className="my-1" />}
-                {queued.text !== '' && <p className="line-clamp-3 whitespace-pre-wrap">{queued.text}</p>}
-              </div>
-              <button
-                type="button"
-                aria-label={`Remove queued message: ${queued.text.slice(0, 40) || 'images'}`}
-                onClick={() => chat.unqueue(queued.id)}
-                className="text-muted-foreground hover:text-foreground hover:bg-accent focus-visible:ring-ring mt-1 shrink-0 rounded-full p-1 outline-none focus-visible:ring-2"
-              >
-                <XIcon className="size-3" aria-hidden="true" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      <UpNext items={state.queue} take={chat.take} remove={chat.unqueue} requeue={chat.requeue} sendNow={chat.sendNow} />
 
       <div className="shrink-0 p-3 pt-0">
         <div className="bg-background/60 border-input has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-ring/20 rounded-2xl border p-2.5 transition-[box-shadow,border-color] has-[textarea:focus-visible]:ring-[3px]">
