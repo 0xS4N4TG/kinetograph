@@ -53,13 +53,6 @@ export function BriefPanel({ panel, onSubmit, onDismiss }: PanelProps<'brief'>) 
 
   return (
     <div className="bg-background flex h-full min-h-0 flex-col" data-testid="brief-panel">
-      <header className="flex flex-col gap-1 border-b px-5 py-3">
-        <h2 className="text-base font-semibold">Brief</h2>
-        <p className="text-muted-foreground text-xs">
-          {panel.message ?? 'The agent filled in what it knows. Correct anything that is off, then approve.'}
-        </p>
-      </header>
-
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
         <div className="mx-auto flex max-w-2xl flex-col gap-5">
           <Field label="Purpose" htmlFor="brief-purpose" hint="what it is for">

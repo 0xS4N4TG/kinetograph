@@ -4,8 +4,9 @@ import { STAGES, type Stage, type StageInfo } from '../../../../src/panels/stage
 import { cn } from '@/lib/utils';
 
 /**
- * The stages of making a video (Brief to Deliver) over the preview. A stage is empty, open (a panel waits: click to bring
- * it up) or approved. Deliver has no panel: it opens the export dialog.
+ * The stages of making a video (Brief to Deliver), in a row of its own above the preview. A stage is empty, open (a panel
+ * waits: click to bring it up) or approved (click to see its saved answer). Deliver has no panel: it opens the export
+ * dialog. When the row is narrow, only the stage on show keeps its label.
  */
 export function PanelStepper({
   stages,
@@ -14,7 +15,7 @@ export function PanelStepper({
   onDeliver,
 }: {
   stages: Record<Stage, StageInfo>;
-  /** The panel on show, whose stage is marked as current. */
+  /** The panel on show (open or answered), whose stage is marked as current. */
   shown: string | null;
   onSelect(stage: Stage): void;
   onDeliver(): void;
@@ -23,24 +24,25 @@ export function PanelStepper({
     <nav
       aria-label="Stages"
       data-testid="stage-stepper"
-      className="bg-card/90 border-border/60 shadow-panel pointer-events-auto flex items-center gap-0.5 rounded-full border p-1 backdrop-blur"
+      className="bg-card border-border/60 shadow-panel flex max-w-full items-center gap-0.5 rounded-full border p-1"
     >
       {STAGES.map(({ id, label }) => {
         const info = stages[id];
-        const current = info.panelId !== null && info.panelId === shown;
-        const clickable = info.state === 'open' || id === 'deliver';
+        const current = shown !== null && (info.panelId === shown || info.approvedId === shown);
+        const clickable = info.state !== 'empty' || id === 'deliver';
         return (
           <button
             key={id}
             type="button"
             data-stage={id}
             data-state={info.state}
+            aria-label={label}
             aria-current={current ? 'step' : undefined}
             aria-disabled={!clickable}
-            title={info.state === 'open' ? `${label}: waiting for you` : info.state === 'approved' ? `${label}: approved` : id === 'deliver' ? 'Export' : label}
+            title={info.state === 'open' ? `${label}: waiting for you` : info.state === 'approved' ? `${label}: approved, click to see it` : id === 'deliver' ? 'Export' : label}
             onClick={() => {
               if (id === 'deliver') onDeliver();
-              else if (info.state === 'open') onSelect(id);
+              else if (info.state !== 'empty') onSelect(id);
             }}
             className={cn(
               'focus-visible:ring-ring flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium outline-none focus-visible:ring-2',
@@ -59,7 +61,7 @@ export function PanelStepper({
                 className={cn('size-2 rounded-full border', info.state === 'open' ? 'bg-primary border-primary animate-pulse' : 'border-muted-foreground/50')}
               />
             )}
-            {label}
+            <span className={cn(!current && 'hidden @min-[34rem]:inline')}>{label}</span>
           </button>
         );
       })}

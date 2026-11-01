@@ -148,16 +148,14 @@ export function ReviewView({ panel, store, onSubmit, onDismiss }: ReviewViewProp
   return (
     <div className="flex h-full min-h-0 w-full flex-col" data-testid="review-panel">
       <div className="flex flex-col gap-1.5 px-4 pt-4 pb-3">
-        <div className="flex items-baseline justify-between gap-2">
-          <h2 className="text-sm font-medium">Review</h2>
-          <span className="text-muted-foreground font-mono text-[11px]">{data.comp}</span>
-        </div>
         {data.ask && (
           <p data-testid="review-ask" className="text-sm leading-snug">
             {data.ask}
           </p>
         )}
         <p className="text-muted-foreground text-xs">
+          <span className="font-mono text-[11px]">{data.comp}</span>
+          {' · '}
           {data.range ? (
             <span data-testid="review-range">
               Frames {first} to {last} ({clock(first, fps)} to {clock(last, fps)}), playing on a loop.

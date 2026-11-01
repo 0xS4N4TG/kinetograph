@@ -105,6 +105,63 @@ describe('the panel host', () => {
     expect(stage('Animatic')).toHaveAttribute('data-state', 'open');
   });
 
+  it('shows one title and one message in the host header, and a docked review the same', async () => {
+    const { server } = await start();
+    push(server, { type: 'panel', panel: panel({ panel: 'storyboard', id: 'p_2', message: 'Five shots.' }) });
+    const sheet = await screen.findByTestId('panel-sheet');
+    expect(within(sheet).getAllByRole('heading', { name: 'Storyboard' })).toHaveLength(1);
+    expect(within(sheet).getAllByText('Five shots.')).toHaveLength(1);
+    push(server, { type: 'panel', panel: panel({ panel: 'review', id: 'p_3', data: { comp: 'Intro' }, message: 'Notes on pacing?', openedAt: 2 }) });
+    const dock = await screen.findByTestId('panel-dock');
+    expect(within(dock).getAllByRole('heading', { name: 'Review' })).toHaveLength(1);
+    expect(within(dock).getAllByText('Notes on pacing?')).toHaveLength(1);
+  });
+
+  it('covers the preview and the timeline with the sheet, and keeps the stepper in a row of its own above them', async () => {
+    const { server } = await start();
+    push(server, { type: 'panel', panel: panel({ panel: 'storyboard', id: 'p_2' }) });
+    const sheet = await screen.findByTestId('panel-sheet');
+    const preview = screen.getByLabelText('Preview');
+    const timeline = screen.getByLabelText('Timeline');
+    const column = sheet.parentElement!;
+    expect(column.contains(preview)).toBe(true);
+    expect(column.contains(timeline)).toBe(true);
+    expect(preview.contains(sheet)).toBe(false);
+    const stepper = screen.getByTestId('stage-stepper');
+    expect(preview.contains(stepper)).toBe(false);
+    expect(column.contains(stepper)).toBe(false);
+  });
+
+  it('shows an approved stage read-only from the stepper, with no way to answer it again', async () => {
+    const { server, user } = await start();
+    const answer = { shots: [{ id: 's1', frame: 0, what: 'a wide shot', moves: '', seconds: 3, transition: 'match-cut' }], removed: [], notes: [{ shot: 's1', text: 'hold it longer' }], approved: true };
+    push(server, { type: 'panel', panel: panel({ panel: 'storyboard', id: 'p_2', message: 'Five shots.', status: 'submitted', answer: answer as never }) });
+    expect(stage('Board')).toHaveAttribute('data-state', 'approved');
+    // Nothing comes up by itself for an answered panel.
+    expect(screen.queryByTestId('panel-sheet')).not.toBeInTheDocument();
+    await user.click(stage('Board'));
+    const sheet = await screen.findByTestId('panel-sheet');
+    expect(within(sheet).getByRole('heading', { name: 'Storyboard' })).toBeInTheDocument();
+    expect(within(sheet).getByText('Approved')).toBeInTheDocument();
+    const view = within(sheet).getByTestId('answer-view');
+    expect(view).toHaveTextContent('a wide shot, 3 s, then match cut');
+    expect(view).toHaveTextContent('s1: hold it longer');
+    expect(within(sheet).queryByTestId('stand-in-storyboard')).not.toBeInTheDocument();
+    expect(within(sheet).queryByRole('button', { name: /Send|Approve/ })).not.toBeInTheDocument();
+    expect(stage('Board')).toHaveAttribute('aria-current', 'step');
+    await user.click(stage('Board'));
+    expect(screen.queryByTestId('panel-sheet')).not.toBeInTheDocument();
+  });
+
+  it('keeps every stage label only for the stage on show, so a narrow row stays short', async () => {
+    const { server } = await start();
+    push(server, { type: 'panel', panel: panel({ panel: 'storyboard', id: 'p_2' }) });
+    await screen.findByTestId('panel-sheet');
+    const labelOf = (name: string) => stage(name).querySelector('span:not([aria-hidden])')!;
+    expect(labelOf('Board').className).not.toContain('hidden');
+    expect(labelOf('Script').className).toContain('hidden');
+  });
+
   it('shows why an answer was refused, and starts from nothing when the socket comes back', async () => {
     const { server } = await start();
     push(server, { type: 'panel', panel: panel({}) });

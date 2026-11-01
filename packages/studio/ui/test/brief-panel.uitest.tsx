@@ -39,9 +39,10 @@ function setup(data: Partial<Brief> = draft, message: string | null = null) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('BriefPanel', () => {
-  it('renders the agent draft, its message and its references', () => {
+  it('renders the agent draft and its references, leaving the title and message to the host', () => {
     setup(draft, 'Check the length.');
-    expect(screen.getByText('Check the length.')).toBeInTheDocument();
+    expect(screen.queryByText('Check the length.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Brief' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('Purpose')).toHaveValue('Launch ad for the plugin store');
     expect(screen.getByLabelText('Audience')).toHaveValue('Motion designers');
     expect(screen.getByLabelText('Width')).toHaveValue(1080);

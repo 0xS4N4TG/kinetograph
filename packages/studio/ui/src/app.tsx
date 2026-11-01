@@ -70,6 +70,8 @@ export function App({ api }: { api: StudioApi }) {
   const [exportOpen, setExportOpen] = useState(false);
   const delivered = useMemo(() => studio.renders.some((job) => job.status === 'done'), [studio.renders]);
   const panelView = usePanelView(studio.panels, delivered);
+  // The sheet covers the centre column: any open panel but a review (which docks), or an approved stage's saved answer.
+  const sheet = panelView.shown?.panel === 'review' ? null : (panelView.shown ?? panelView.answered);
   const [agents, setAgents] = useState<{ id: string; name: string; command: string }[]>([]);
   const agentCommand = chat.state.command;
   const { loadInfo, chooseAgent, restart } = chat;
@@ -298,70 +300,70 @@ export function App({ api }: { api: StudioApi }) {
           )}
 
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex min-h-0 flex-1">
-              <Panel className="min-w-0 flex-1" aria-label="Preview">
-                <Viewer
-                  comp={comp}
-                  onImage={studio.onImage}
-                  lastImage={studio.lastImage}
-                  buildError={studio.buildError}
-                  frameError={frameError}
-                  inspect={studio.inspect}
-                  selectedLayers={studio.selectedLayers}
-                  tool={tool}
-                  onToolChange={setTool}
-                  view={view}
-                  onViewChange={setView}
-                  safeZones={safeZones}
-                  onSafeZonesChange={setSafeZones}
-                  guides={guides}
-                  onGuidesChange={setGuides}
-                  onOverlayHost={setOverlayLayer}
-                  onSelectLayers={pickLayers}
-                />
-                <div className="pointer-events-none absolute inset-x-4 bottom-4 flex justify-center">
-                  <Transport comp={comp} player={player} audio={studio.audio} edges={edges} className="pointer-events-auto w-full max-w-3xl" />
-                </div>
-                {panelView.active && (
-                  <div className="pointer-events-none absolute inset-x-0 top-3 z-40 flex justify-center">
-                    <PanelStepper stages={panelView.stages} shown={panelView.shown?.id ?? null} onSelect={panelView.select} onDeliver={exportNow} />
+            {panelView.active && (
+              <div className="@container flex shrink-0 justify-center pb-2">
+                <PanelStepper stages={panelView.stages} shown={(panelView.shown ?? panelView.answered)?.id ?? null} onSelect={panelView.select} onDeliver={exportNow} />
+              </div>
+            )}
+            <div className="relative flex min-h-0 flex-1 flex-col">
+              <div className="flex min-h-0 flex-1">
+                <Panel className="min-w-0 flex-1" aria-label="Preview">
+                  <Viewer
+                    comp={comp}
+                    onImage={studio.onImage}
+                    lastImage={studio.lastImage}
+                    buildError={studio.buildError}
+                    frameError={frameError}
+                    inspect={studio.inspect}
+                    selectedLayers={studio.selectedLayers}
+                    tool={tool}
+                    onToolChange={setTool}
+                    view={view}
+                    onViewChange={setView}
+                    safeZones={safeZones}
+                    onSafeZonesChange={setSafeZones}
+                    guides={guides}
+                    onGuidesChange={setGuides}
+                    onOverlayHost={setOverlayLayer}
+                    onSelectLayers={pickLayers}
+                  />
+                  <div className="pointer-events-none absolute inset-x-4 bottom-4 flex justify-center">
+                    <Transport comp={comp} player={player} audio={studio.audio} edges={edges} className="pointer-events-auto w-full max-w-3xl" />
                   </div>
+                </Panel>
+                {panelView.shown?.panel === 'review' && (
+                  <PanelDock panel={panelView.shown} error={studio.panelErrors[panelView.shown.id]} onSubmit={studio.submitPanel} onDismiss={studio.dismissPanel} onHide={panelView.hide} />
                 )}
-                {panelView.shown && panelView.shown.panel !== 'review' && (
-                  <PanelSheet panel={panelView.shown} error={studio.panelErrors[panelView.shown.id]} onSubmit={studio.submitPanel} onDismiss={studio.dismissPanel} onHide={panelView.hide} />
-                )}
-              </Panel>
-              {panelView.shown?.panel === 'review' && (
-                <PanelDock panel={panelView.shown} error={studio.panelErrors[panelView.shown.id]} onSubmit={studio.submitPanel} onDismiss={studio.dismissPanel} onHide={panelView.hide} />
-              )}
-            </div>
-            <ResizeHandle
-              orientation="horizontal"
-              label="Resize the timeline"
-              size={timelineOpen ? timelineHeight : TIMELINE_SLIM}
-              direction={-1}
-              min={TIMELINE_SLIM}
-              max={maxTimeline}
-              onResize={resizeTimeline}
-              onReset={() => setTimelineOpen((open) => !open)}
-            />
-            <Panel className="shrink-0" style={{ height: timelineOpen ? Math.min(timelineHeight, maxTimeline) : TIMELINE_SLIM }} aria-label="Timeline">
-              <Timeline
-                comp={comp}
-                status={studio.timeline}
-                player={player}
-                selectedLayers={studio.selectedLayers}
-                onSelectLayers={pickLayers}
-                selectedRange={range}
-                onSelectRange={selectRange}
-                thumbnailUrl={studio.thumbnailUrl}
-                waveform={studio.waveform}
-                expanded={timelineOpen}
-                onExpandedChange={setTimelineOpen}
-                details={details}
-                onDetailsChange={onDetailsChange}
+              </div>
+              <ResizeHandle
+                orientation="horizontal"
+                label="Resize the timeline"
+                size={timelineOpen ? timelineHeight : TIMELINE_SLIM}
+                direction={-1}
+                min={TIMELINE_SLIM}
+                max={maxTimeline}
+                onResize={resizeTimeline}
+                onReset={() => setTimelineOpen((open) => !open)}
               />
-            </Panel>
+              <Panel className="shrink-0" style={{ height: timelineOpen ? Math.min(timelineHeight, maxTimeline) : TIMELINE_SLIM }} aria-label="Timeline">
+                <Timeline
+                  comp={comp}
+                  status={studio.timeline}
+                  player={player}
+                  selectedLayers={studio.selectedLayers}
+                  onSelectLayers={pickLayers}
+                  selectedRange={range}
+                  onSelectRange={selectRange}
+                  thumbnailUrl={studio.thumbnailUrl}
+                  waveform={studio.waveform}
+                  expanded={timelineOpen}
+                  onExpandedChange={setTimelineOpen}
+                  details={details}
+                  onDetailsChange={onDetailsChange}
+                />
+              </Panel>
+              {sheet && <PanelSheet panel={sheet} error={studio.panelErrors[sheet.id]} onSubmit={studio.submitPanel} onDismiss={studio.dismissPanel} onHide={panelView.hide} />}
+            </div>
           </div>
 
           {inspectorOpen && (
