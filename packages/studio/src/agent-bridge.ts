@@ -24,6 +24,8 @@ export interface AgentBridgeOptions {
   version: string;
   /** The MCP servers every new session gets (ACP `session/new`); asked for when the session starts. Default none. */
   mcpServers?(): McpServerConfig[];
+  /** Called when a prompt has run its course and the agent is ready for the next (not when it failed to start). */
+  idle?(): void;
 }
 
 /** A stdio MCP server as ACP names it. */
@@ -80,6 +82,8 @@ export class AgentBridge {
   private readonly permissions = new Map<string, (response: RequestPermissionResponse) => void>();
   private nextPermission = 1;
   private closed = false;
+  /** A prompt is being sent or has not run its course: the window between asking and the status turning busy. */
+  private prompting = false;
 
   constructor(private readonly options: AgentBridgeOptions) {
     this.command = options.command;
@@ -87,6 +91,11 @@ export class AgentBridge {
 
   get currentCommand(): string | null {
     return this.command;
+  }
+
+  /** Whether the agent is running and between turns: a prompt sent now starts at once. */
+  get ready(): boolean {
+    return this.status === 'ready' && !this.prompting;
   }
 
   /** Tells the UI where things stand (also used for a socket that has just connected). */
@@ -292,10 +301,12 @@ export class AgentBridge {
       return;
     }
     let live: Live;
+    this.prompting = true;
     try {
       this.live ??= this.start();
       live = await this.live;
     } catch (error) {
+      this.prompting = false;
       this.live = null;
       this.options.emit({ kind: 'error', message: explain(error, '', this.command) });
       this.setStatus('idle');
@@ -318,7 +329,11 @@ export class AgentBridge {
       if (!live.exited) await new Promise((resolve) => setTimeout(resolve, 250));
       if (!live.exited) this.options.emit({ kind: 'error', message: explain(error, live.stderr.text, this.command) });
     }
-    if (this.liveNow === live) this.setStatus('ready');
+    this.prompting = false;
+    if (this.liveNow === live) {
+      this.setStatus('ready');
+      this.options.idle?.();
+    }
   }
 
   /** Asks the agent to stop what it is doing. */

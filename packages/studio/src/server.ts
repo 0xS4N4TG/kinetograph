@@ -2,7 +2,7 @@
 // the renderer live in worker threads (`project.ts`, `render-queue.ts`); this thread only routes.
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createRequire } from 'node:module';
@@ -15,6 +15,11 @@ import { ChatLog } from './chat-log.js';
 import { isInside } from './agent-fs.js';
 import { availableAgents } from './agent-presets.js';
 import { openBrowser } from './open-browser.js';
+import { PANEL_KINDS, checkAnswer, checkDraft } from './panels/validate.js';
+import { panelRoutes } from './panels/routes.js';
+import { PanelStore } from './panels/store.js';
+import { closingMessage } from './panels/summary.js';
+import type { OpenPanel, PanelDraft, PanelKind } from './panels/types.js';
 import { listPresets, savePreset } from './presets.js';
 import { Project } from './project.js';
 import {
@@ -24,6 +29,7 @@ import {
   type ChatRecord,
   type ClientMessage,
   type CompositionInfo,
+  type PanelClientMessage,
   type FrameHeader,
   type FrameRequest,
   type LiveProps,
@@ -155,6 +161,18 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     orphaned = null;
     chat.clear();
   };
+  // The panels the agent opens (docs/proposals/studio-panels.md). They are kept like the chat, and a panel that closes
+  // while the agent is mid-turn, or not running, waits here until it can be told.
+  const panels = new PanelStore();
+  const unheard: { id: string; text: string }[] = [];
+  /** Sends the agent what the person answered since its last turn, all in one message, once it is between turns. */
+  function tellAgent(): void {
+    if (unheard.length === 0 || agentOff || !bridge.ready) return;
+    const text = unheard.splice(0).map((u) => u.text).join('\n\n');
+    keep({ kind: 'user', text, chips: [] });
+    if (owner) send(owner, { type: 'agent', event: { kind: 'user', text } });
+    void bridge.prompt(text, '');
+  }
   // Where the studio can be reached by the agent's MCP server; known once it listens.
   let selfUrl = '';
   const bridge = new AgentBridge({
@@ -170,6 +188,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     // A permission asked while the window reloads waits for it to come back.
     hasViewer: () => (owner !== null && owner.readyState === owner.OPEN) || orphaned !== null,
     version: cliVersion(),
+    idle: tellAgent,
     // The agent gets the Kinetograph tools: the plugins' tools and, for this studio, studio_get_props and studio_set_props.
     mcpServers: (): McpServerConfig[] => [
       {
@@ -189,6 +208,80 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     return a.length === b.length && timingSafeEqual(a, b);
   };
   const tokenOk = (given: string | null | undefined): boolean => matches(given, token);
+
+  // ---- panels ----
+
+  /** Shows `panel` to every window. */
+  const showPanel = (panel: OpenPanel): void => broadcast({ type: 'panel', panel });
+  const closePanel = (panel: OpenPanel): void => broadcast({ type: 'panel.closed', id: panel.id, status: panel.status, panel });
+
+  /** plan/<kind>.json as saved by a submitted panel, or null when there is none (or it does not read). */
+  function readPlan(kind: PanelKind): unknown {
+    try {
+      return JSON.parse(readFileSync(join(dirname(entry), 'plan', `${kind}.json`), 'utf8'));
+    } catch {
+      return null;
+    }
+  }
+
+  function openPanel(body: unknown): OpenPanel {
+    if (!isObject(body)) throw invalid('the body must be { panel, data, message }');
+    const kind = body.panel as PanelKind;
+    if (!PANEL_KINDS.includes(kind)) throw invalid(`panel must be one of ${PANEL_KINDS.join(', ')}`);
+    if (body.message !== undefined && typeof body.message !== 'string') throw invalid('message must be text');
+    const bad = checkDraft(kind, body.data);
+    if (bad) throw invalid(`the data for a ${kind} panel is not valid: ${bad}`);
+    const data = body.data as PanelDraft[typeof kind];
+    // A script or a board is totalled against the brief's length: from the saved brief when the agent left it out.
+    if ((kind === 'script' || kind === 'storyboard') && (data as { targetSeconds?: unknown }).targetSeconds === undefined) {
+      const seconds = (readPlan('brief') as { seconds?: unknown } | null)?.seconds;
+      if (typeof seconds === 'number' && Number.isFinite(seconds)) (data as { targetSeconds?: number }).targetSeconds = seconds;
+    }
+    const { panel, replaced } = panels.open(kind, data, (body.message as string | undefined) ?? null);
+    if (replaced) closePanel(replaced);
+    showPanel(panel);
+    return panel;
+  }
+
+  /** The person's answer to a panel, from a window: checked, written to plan/<kind>.json, then the agent is told. */
+  function submitPanel(id: string, answer: unknown): void {
+    const panel = panels.get(id);
+    if (!panel) throw invalid(`no panel "${id}"`);
+    if (panel.status !== 'open') throw invalid(`the panel "${id}" is already ${panel.status}`);
+    const bad = checkAnswer(panel.panel, answer);
+    if (bad) throw invalid(`the answer to the ${panel.panel} panel is not valid: ${bad}`);
+    const dir = join(dirname(entry), 'plan');
+    try {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, `${panel.panel}.json`), `${JSON.stringify(answer, null, 2)}\n`);
+    } catch (error) {
+      throw new StudioFailure('IO', `could not write plan/${panel.panel}.json: ${(error as Error).message}`);
+    }
+    const closed = panels.close(id, 'submitted', answer as OpenPanel['answer'])!;
+    closePanel(closed);
+    unheard.push({ id, text: closingMessage(closed) });
+    tellAgent();
+  }
+
+  function dismissPanel(id: string): void {
+    const closed = panels.close(id, 'dismissed');
+    if (!closed) return;
+    closePanel(closed);
+    unheard.push({ id, text: closingMessage(closed) });
+    tellAgent();
+  }
+
+  /** A panel message from a window; a refused answer is reported on the same socket and the panel stays open. */
+  function panelMessage(ws: WebSocket, message: PanelClientMessage): void {
+    if (typeof message.id !== 'string') throw invalid('a panel message needs the panel id');
+    try {
+      if (message.type === 'panel.submit') submitPanel(message.id, message.answer);
+      else if (message.type === 'panel.dismiss') dismissPanel(message.id);
+      else throw invalid('unknown panel message');
+    } catch (error) {
+      send(ws, { type: 'panel.error', id: message.id, message: httpError(error).error.message });
+    }
+  }
 
   /** The composition `comp`, or `BUILD` before any good build and `NOT_FOUND` for an unknown id. */
   function known(comp: string): CompositionInfo {
@@ -427,6 +520,42 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       broadcast({ type: 'props', comp: body.comp, props: body.props });
       return json(res, 200, live);
     }
+    if (path === '/api/panels' && (method === 'GET' || method === 'POST')) {
+      const given = req.headers['x-studio-token'] as string | undefined;
+      if (method === 'GET') {
+        if (!tokenOk(given)) throw new StudioFailure('FORBIDDEN', 'the list of panels needs the studio token from the address the studio opened');
+        return json(res, 200, { panels: panels.shown() });
+      }
+      if (!tokenOk(given) && !matches(given, agentToken)) {
+        throw new StudioFailure('FORBIDDEN', 'panels need the studio token from the address the studio opened');
+      }
+      const { id, status } = openPanel(await readBody(req));
+      return json(res, 201, { id, status });
+    }
+    const plan = /^\/api\/plan\/([^/]+)$/.exec(path);
+    if (method === 'GET' && plan) {
+      if (!tokenOk(req.headers['x-studio-token'] as string | undefined)) {
+        throw new StudioFailure('FORBIDDEN', 'the plan files need the studio token from the address the studio opened');
+      }
+      const kind = decodeURIComponent(plan[1]!) as PanelKind;
+      const saved = PANEL_KINDS.includes(kind) ? readPlan(kind) : null;
+      if (saved === null) throw new StudioFailure('NOT_FOUND', `no plan/${plan[1]}.json yet`);
+      return json(res, 200, saved);
+    }
+    const onePanel = /^\/api\/panels\/([^/]+)$/.exec(path);
+    if (method === 'GET' && onePanel) {
+      const given = req.headers['x-studio-token'] as string | undefined;
+      const fromAgent = matches(given, agentToken);
+      if (!tokenOk(given) && !fromAgent) throw new StudioFailure('FORBIDDEN', 'panels need the studio token from the address the studio opened');
+      const panel = panels.get(decodeURIComponent(onePanel[1]!));
+      if (!panel) throw new StudioFailure('NOT_FOUND', `no panel "${onePanel[1]}"`);
+      // An agent that reads the answer itself (outside Studio, or in a turn) need not be sent it as well.
+      if (fromAgent && panel.status !== 'open') {
+        const at = unheard.findIndex((u) => u.id === panel.id);
+        if (at >= 0) unheard.splice(at, 1);
+      }
+      return json(res, 200, { id: panel.id, panel: panel.panel, status: panel.status, answer: panel.answer });
+    }
     if (method === 'GET' && path === '/api/compositions') {
       if (project.buildId === 0) known('');
       return json(res, 200, project.compositions);
@@ -582,6 +711,13 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       if (!job) throw new StudioFailure('NOT_FOUND', `no render job "${cancel[1]}"`);
       return json(res, 200, job);
     }
+    // The panels' own routes (a file drop, a contact sheet), in the order they were added. The window's token comes in
+    // the header, or in the address for a picture (an <img> cannot set a header); the agent's token is not the window's.
+    const ctx = {
+      projectDir: dirname(entry),
+      fromWindow: tokenOk(req.headers['x-studio-token'] as string | undefined) || tokenOk(q.get('token')),
+    };
+    for (const handle of panelRoutes) if (await handle(req, res, url, ctx)) return;
     throw new StudioFailure('NOT_FOUND', `no route ${method} ${path}`);
   }
 
@@ -726,6 +862,9 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         if (isObject(parsed) && typeof parsed.type === 'string' && parsed.type.startsWith('agent.')) {
           return agentMessage(ws, parsed as unknown as AgentClientMessage);
         }
+        if (isObject(parsed) && typeof parsed.type === 'string' && parsed.type.startsWith('panel.')) {
+          return panelMessage(ws, parsed as unknown as PanelClientMessage);
+        }
         if (isObject(parsed) && parsed.type === 'props') {
           if (typeof parsed.comp !== 'string' || !isObject(parsed.props)) throw invalid('a props message is { "type": "props", "comp": string, "props": object }');
           live = { comp: parsed.comp, props: parsed.props };
@@ -743,6 +882,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       else void serveFrame(ws, message);
     });
     send(ws, { type: 'hello', version: cliVersion(), buildId: project.buildId, buildError: project.buildError });
+    for (const panel of panels.shown()) send(ws, { type: 'panel', panel });
     bridge.announce();
     // A window that comes while the conversation's window is gone (it reloaded) takes the conversation over.
     if (orphaned !== null && !agentOff) {

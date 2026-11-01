@@ -74,6 +74,8 @@ export interface ScriptDraft {
   rate?: number;
   /** A music-led piece: the track, relative to the project, and its beats in seconds. */
   track?: { src: string; beats: number[] };
+  /** The brief's length in seconds, to total the lines against; the server fills it from plan/brief.json when left out. */
+  targetSeconds?: number;
 }
 
 export interface ScriptAnswer {
@@ -103,6 +105,8 @@ export interface Storyboard {
   /** The composition that draws the board. */
   comp: string;
   shots: Shot[];
+  /** The brief's length in seconds, to total the shots against; the server fills it from plan/brief.json when left out. */
+  targetSeconds?: number;
 }
 
 export interface StoryboardAnswer {
