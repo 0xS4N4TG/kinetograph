@@ -1289,6 +1289,28 @@ pub(crate) fn build_inline_layout_into(
 
                             builder.push_style_span(style);
 
+                            // `unicode-bidi: isolate` and the like (`<bdi>`, `<bdo>`, `dir`) set the
+                            // element's text apart from the paragraph's bidi resolution.
+                            let bidi = node.primary_styles().and_then(|s| {
+                                // `<bdi>` and `dir=auto` take their direction from their first
+                                // strong character; an explicit `dir` is the CSS `direction`.
+                                let dir = element_data.attr(local_name!("dir"));
+                                let explicit = dir.is_some_and(|d| {
+                                    d.eq_ignore_ascii_case("ltr") || d.eq_ignore_ascii_case("rtl")
+                                });
+                                let first_strong = !explicit
+                                    && (dir.is_some_and(|d| d.eq_ignore_ascii_case("auto"))
+                                        || *tag_name == local_name!("bdi"));
+                                stylo_to_parley::bidi_controls(
+                                    s.clone_direction(),
+                                    s.clone_unicode_bidi(),
+                                    first_strong,
+                                )
+                            });
+                            if let Some((open, _)) = bidi {
+                                builder.push_text(open);
+                            }
+
                             if let Some(before_id) = node.before() {
                                 build_inline_layout_recursive(
                                     builder,
@@ -1318,6 +1340,9 @@ pub(crate) fn build_inline_layout_into(
                                 );
                             }
 
+                            if let Some((_, close)) = bidi {
+                                builder.push_text(close);
+                            }
                             builder.pop_style_span();
                         }
                     }
