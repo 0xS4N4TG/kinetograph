@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../src/app';
 import type { AgentEvent } from '../src/api';
+import { getMarqueeBox, setMarqueeBox } from '../src/lib/marquee-box';
 import { MockServer } from './mock-server';
 
 async function start() {
@@ -71,6 +72,23 @@ describe('picking layers in the preview', () => {
 
     await user.click(within(chips).getByRole('button', { name: /Remove bg/ }));
     await waitFor(() => expect(within(chips).queryByText(/^bg/)).not.toBeInTheDocument());
+  });
+
+  it('keeps the box dragged over empty space for the panels, in composition pixels, until the next click', async () => {
+    stubFrameRect();
+    setMarqueeBox(null);
+    await start();
+    const preview = screen.getByTestId('preview');
+    fireEvent.pointerDown(preview, { clientX: 700, clientY: 300, button: 0 });
+    fireEvent.pointerMove(preview, { clientX: 900, clientY: 450 });
+    fireEvent.pointerUp(preview, { clientX: 900, clientY: 450 });
+    expect(getMarqueeBox()).toEqual({ box: { x: 1400, y: 600, w: 400, h: 300 }, selection: '' });
+    fireEvent.click(preview, { clientX: 900, clientY: 450 });
+    expect(getMarqueeBox()).not.toBeNull();
+    fireEvent.pointerDown(preview, { clientX: 900, clientY: 500, button: 0 });
+    fireEvent.pointerUp(preview, { clientX: 900, clientY: 500 });
+    fireEvent.click(preview, { clientX: 900, clientY: 500 });
+    expect(getMarqueeBox()).toBeNull();
   });
 });
 

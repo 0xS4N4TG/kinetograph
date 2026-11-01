@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ScriptPanel } from '../src/components/panels/script-panel';
 import { lineSeconds, overrun, totalSeconds } from '../src/components/panels/script-math';
@@ -182,6 +182,69 @@ describe('ScriptPanel', () => {
     await user.click(screen.getByLabelText('Keep this track'));
     await user.click(screen.getByText('Approve'));
     expect(sent().track).toBeUndefined();
+  });
+
+  describe('playing the track', () => {
+    /** jsdom plays nothing: play and pause move `paused` and send the events a browser would. */
+    const pausedBefore = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'paused');
+    function fakeMedia(playResult: () => Promise<void> = () => Promise.resolve()) {
+      const state = new WeakMap<HTMLMediaElement, boolean>();
+      Object.defineProperty(HTMLMediaElement.prototype, 'paused', { configurable: true, get() { return state.get(this) ?? true; } });
+      const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (this: HTMLMediaElement) {
+        const result = playResult();
+        void result.then(() => {
+          state.set(this, false);
+          this.dispatchEvent(new Event('play'));
+        }, () => {});
+        return result;
+      });
+      const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(function (this: HTMLMediaElement) {
+        state.set(this, true);
+        this.dispatchEvent(new Event('pause'));
+      });
+      return { play, pause };
+    }
+    afterEach(() => {
+      vi.restoreAllMocks();
+      if (pausedBefore) Object.defineProperty(HTMLMediaElement.prototype, 'paused', pausedBefore);
+    });
+    const track = { src: 'assets/music/night-drive.mp3', beats: [1, 2] };
+
+    it('points the player at the studio route for the file, and fetches nothing before the first play', () => {
+      setup({ lines: [{ id: 'a', text: five }], track });
+      const audio = document.querySelector('audio')!;
+      expect(new URL(audio.getAttribute('src')!, 'http://studio.test').pathname).toBe('/api/panels/script/audio');
+      expect(new URL(audio.getAttribute('src')!, 'http://studio.test').searchParams.get('path')).toBe('assets/music/night-drive.mp3');
+      expect(audio.getAttribute('preload')).toBe('none');
+    });
+
+    it('plays and pauses with one button, and stops when the panel goes away', async () => {
+      const { play, pause } = fakeMedia();
+      const user = userEvent.setup();
+      const { unmount } = render(<ScriptPanel panel={open({ lines: [{ id: 'a', text: five }], track })} onSubmit={() => {}} onDismiss={() => {}} />);
+      await user.click(screen.getByRole('button', { name: 'Play night-drive.mp3' }));
+      expect(play).toHaveBeenCalledOnce();
+      await user.click(await screen.findByRole('button', { name: 'Pause night-drive.mp3' }));
+      expect(pause).toHaveBeenCalledOnce();
+      expect(screen.getByRole('button', { name: 'Play night-drive.mp3' })).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Play night-drive.mp3' }));
+      pause.mockClear();
+      unmount();
+      expect(pause).toHaveBeenCalledOnce();
+    });
+
+    it('says so when the file cannot be played', async () => {
+      fakeMedia(() => Promise.reject(new Error('NotSupported')));
+      const user = userEvent.setup();
+      setup({ lines: [{ id: 'a', text: five }], track });
+      await user.click(screen.getByRole('button', { name: 'Play night-drive.mp3' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('could not be played');
+    });
+
+    it('has no play button without a track', () => {
+      setup({ lines: [{ id: 'a', text: five }] });
+      expect(screen.queryByRole('button', { name: /^Play / })).toBeNull();
+    });
   });
 
   it('has no track section without a track', () => {

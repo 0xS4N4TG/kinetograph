@@ -4,10 +4,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { CompositionInfo, InspectResult } from '../src/api';
 import { ReviewView, type ReviewStore } from '../src/components/panels/review-view';
-import { answerNotes, areaOfSelection, reviewSpan, sortNotes } from '../src/components/panels/review-model';
+import { answerNotes, areaOfSelection, draftKey, reviewSpan, sortNotes, writeDraft } from '../src/components/panels/review-model';
 import type { OpenPanel } from '../src/components/panels/types';
 import { Timeline } from '../src/components/timeline/timeline';
 import { Player } from '../src/lib/player';
+import { getMarqueeBox, setMarqueeBox } from '../src/lib/marquee-box';
 import { setReviewMarks, useReviewMarks } from '../src/lib/review-marks';
 import type { FrameRange } from '../src/lib/selection';
 import { inspectFor, intro, introTimeline, layer, outro } from './fixtures';
@@ -37,10 +38,10 @@ function fakeStore(options: { comp?: CompositionInfo; inspect?: InspectResult | 
   return store;
 }
 
-function setup(data: OpenPanel<'review'>['data'] = { comp: 'Intro' }, store = fakeStore()) {
+function setup(data: OpenPanel<'review'>['data'] = { comp: 'Intro' }, store = fakeStore(), draft?: string) {
   const onSubmit = vi.fn();
   const onDismiss = vi.fn();
-  const view = (s: ReviewStore) => <ReviewView panel={panelOf(data)} store={s} onSubmit={onSubmit} onDismiss={onDismiss} />;
+  const view = (s: ReviewStore) => <ReviewView panel={panelOf(data)} store={s} draftKey={draft} onSubmit={onSubmit} onDismiss={onDismiss} />;
   const utils = render(view(store));
   return { ...utils, store, onSubmit, onDismiss, rerenderWith: (s: ReviewStore) => utils.rerender(view(s)) };
 }
@@ -82,6 +83,15 @@ describe('review model', () => {
     expect(areaOfSelection(inspect, ['a', 'b'], intro)?.box).toEqual({ x: 10, y: 20, w: 230, h: 120 });
     expect(areaOfSelection(inspect, [], intro)).toBeNull();
     expect(areaOfSelection(null, ['a'], intro)).toBeNull();
+  });
+
+  it('takes a drawn box, alone when no layer lies inside it and over the layers when one does', () => {
+    const inspect = inspectFor(intro, 0);
+    inspect.layers = [layer('a', 'shape', { bounds: { x: 10, y: 20, width: 100, height: 50 } })];
+    const drawn = { x: 500, y: 400, w: 200, h: 100 };
+    expect(areaOfSelection(inspect, [], intro, drawn)).toEqual({ box: drawn });
+    expect(areaOfSelection(null, [], intro, drawn)).toEqual({ box: drawn });
+    expect(areaOfSelection(inspect, ['a'], intro, drawn)).toEqual({ box: drawn, layer: 'a' });
   });
 });
 
@@ -250,6 +260,35 @@ describe('ReviewView', () => {
       });
     });
 
+    it('ties a note to a box drawn over empty space, with a box and no layer', async () => {
+      const user = userEvent.setup();
+      const store = withSelection();
+      setMarqueeBox(null);
+      const { onSubmit } = setup({ comp: 'Intro' }, store);
+      act(() => setMarqueeBox({ box: { x: 600, y: 300, w: 120, h: 80 }, selection: '' }));
+      expect(screen.getByRole('button', { name: /Tied to the box/ })).toHaveAttribute('aria-pressed', 'true');
+      await user.keyboard('n');
+      await user.keyboard('empty here');
+      await user.click(screen.getByRole('button', { name: 'Request changes' }));
+      expect(onSubmit).toHaveBeenCalledWith({ verdict: 'changes', notes: [{ frame: 0, text: 'empty here', box: { x: 600, y: 300, w: 120, h: 80 } }] });
+      act(() => setMarqueeBox(null));
+    });
+
+    it('keeps a drawn box and the layer inside it together, and forgets the box when the selection moves on', async () => {
+      const user = userEvent.setup();
+      const store = withSelection();
+      setMarqueeBox(null);
+      const { onSubmit, rerenderWith } = setup({ comp: 'Intro' }, store);
+      act(() => setMarqueeBox({ box: { x: 90, y: 190, w: 340, h: 120 }, selection: 'title' }));
+      rerenderWith({ ...store, selectedLayers: ['title'] });
+      await user.keyboard('n');
+      await user.keyboard('both');
+      await user.click(screen.getByRole('button', { name: 'Request changes' }));
+      expect(onSubmit).toHaveBeenCalledWith({ verdict: 'changes', notes: [{ frame: 0, text: 'both', box: { x: 90, y: 190, w: 340, h: 120 }, layer: 'title' }] });
+      rerenderWith({ ...store, selectedLayers: [] });
+      expect(getMarqueeBox()).toBeNull();
+    });
+
     it('leaves the area off when the tie is switched off or removed', async () => {
       const user = userEvent.setup();
       const store = withSelection();
@@ -294,5 +333,82 @@ describe('timeline marks', () => {
     act(() => setReviewMarks({ comp: 'Outro', frames: [10] }));
     expect(screen.queryAllByTestId('review-mark')).toHaveLength(0);
     act(() => setReviewMarks(null));
+  });
+});
+
+describe('the unsent notes', () => {
+  const key = draftKey('/work/entry.ts', 'p_1');
+  const clearStorage = () => window.localStorage.removeItem(key);
+
+  it('are kept in the browser and come back when the panel shows again', async () => {
+    clearStorage();
+    const user = userEvent.setup();
+    const first = setup({ comp: 'Intro' }, fakeStore(), key);
+    first.store.player.seek(40);
+    await user.keyboard('n');
+    await user.keyboard('slow start');
+    first.unmount();
+
+    const again = setup({ comp: 'Intro' }, fakeStore(), key);
+    expect(notes()).toHaveLength(1);
+    expect(notes()[0]).toHaveAttribute('data-frame', '40');
+    expect(within(notes()[0]!).getByRole('textbox')).toHaveValue('slow start');
+    // a new note does not reuse the id of the restored one
+    await user.click(screen.getByRole('button', { name: /Add note/ }));
+    expect(notes()).toHaveLength(2);
+    again.unmount();
+    clearStorage();
+  });
+
+  it('are read once the project is known', async () => {
+    writeDraft(key, 0, [{ uid: 4, frame: 7, text: 'kept' }]);
+    const store = fakeStore();
+    const view = (draft?: string) => <ReviewView panel={panelOf({ comp: 'Intro' })} store={store} draftKey={draft} onSubmit={() => {}} onDismiss={() => {}} />;
+    const { rerender, unmount } = render(view());
+    expect(notes()).toHaveLength(0);
+    rerender(view(key));
+    expect(notes()).toHaveLength(1);
+    expect(window.localStorage.getItem(key)).toContain('kept');
+    unmount();
+    clearStorage();
+  });
+
+  it('are not mixed into another review that has the same id', () => {
+    writeDraft(key, 111, [{ uid: 1, frame: 7, text: 'old review' }]);
+    const { unmount } = setup({ comp: 'Intro' }, fakeStore(), key);
+    expect(notes()).toHaveLength(0);
+    unmount();
+    clearStorage();
+  });
+
+  it('go when the review is sent or dismissed, and stay when it is only put away', async () => {
+    clearStorage();
+    const user = userEvent.setup();
+    const sent = setup({ comp: 'Intro' }, fakeStore(), key);
+    await user.keyboard('n');
+    await user.keyboard('one');
+    expect(window.localStorage.getItem(key)).toContain('one');
+    await user.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(window.localStorage.getItem(key)).toBeNull();
+    sent.unmount();
+
+    const dismissed = setup({ comp: 'Intro' }, fakeStore(), key);
+    await user.keyboard('n');
+    await user.keyboard('two');
+    expect(window.localStorage.getItem(key)).toContain('two');
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(window.localStorage.getItem(key)).toBeNull();
+    dismissed.unmount();
+  });
+
+  it('are dropped from the browser when every note is deleted', async () => {
+    clearStorage();
+    const user = userEvent.setup();
+    const { unmount } = setup({ comp: 'Intro' }, fakeStore(), key);
+    await user.keyboard('n');
+    expect(window.localStorage.getItem(key)).not.toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Delete the note' }));
+    expect(window.localStorage.getItem(key)).toBeNull();
+    unmount();
   });
 });

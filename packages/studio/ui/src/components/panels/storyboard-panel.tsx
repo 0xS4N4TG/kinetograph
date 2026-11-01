@@ -1,18 +1,18 @@
 import { PlusIcon, TriangleAlertIcon } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 
-import { createApi } from '@/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useBuildId, useStudioContext } from '@/lib/studio-context';
 import { cn } from '@/lib/utils';
 
+import { cardScale, frameSrc } from './frame-src';
 import { ShotCard, TransitionChip } from './storyboard-card';
 import { currentOffset, fadeIn, slideFrom, type Offset } from './storyboard-motion';
 import type { PanelProps, Shot, Storyboard, StoryboardAnswer } from './types';
 
 /** The length of a shot added by hand, seconds. */
 const NEW_SHOT_SECONDS = 2;
-const THUMB_HEIGHT = 120;
 /** Dragging within this many px of the scroll area's top or bottom edge scrolls it, up to MAX_SCROLL px a frame. */
 const SCROLL_EDGE = 72;
 const MAX_SCROLL = 16;
@@ -69,7 +69,10 @@ export function StoryboardPanel({ panel, onSubmit, onDismiss }: PanelProps<'stor
   const { comp } = panel.data;
   const target = targetOf(panel.data);
   const originalIds = useMemo(() => new Set(panel.data.shots.map((s) => s.id)), [panel.data.shots]);
-  const api = useMemo(() => createApi(), []);
+  const studio = useStudioContext();
+  const build = useBuildId();
+  /** The stills are drawn for the card (twice its size), not as the timeline's tiny thumbnails. */
+  const scale = cardScale(studio?.compositions.find((c) => c.id === comp));
   const [shots, setShots] = useState<Shot[]>(() => panel.data.shots.map((s) => ({ ...s })));
   const [removed, setRemoved] = useState<string[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -307,7 +310,7 @@ export function StoryboardPanel({ panel, onSubmit, onDismiss }: PanelProps<'stor
                   shot={shot}
                   index={i}
                   count={shots.length}
-                  thumbnail={api.thumbnailUrl(comp, shot.frame, THUMB_HEIGHT, 0)}
+                  thumbnail={frameSrc(comp, shot.frame, scale, build)}
                   note={notes[shot.id] ?? ''}
                   dragging={dragId === shot.id}
                   registerRef={(el) => {
