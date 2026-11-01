@@ -208,11 +208,11 @@ describe('plugin tools', () => {
 });
 
 describe('studio tools', () => {
-  async function withStudio(run: (client: Client, state: { live: { comp: string | null; props: Record<string, unknown> }; tokens: (string | undefined)[]; panels: { panel: string; data: unknown; message?: string }[]; answers: Record<string, unknown> }) => Promise<void>) {
+  async function withStudio(run: (client: Client, state: { live: { comp: string | null; props: Record<string, unknown> }; tokens: (string | undefined)[]; panels: { panel: string; data: unknown; message?: string; placement?: string }[]; answers: Record<string, unknown> }) => Promise<void>) {
     const state = {
       live: { comp: 'Hero' as string | null, props: { title: 'a', size: 1 } as Record<string, unknown> },
       tokens: [] as (string | undefined)[],
-      panels: [] as { panel: string; data: unknown; message?: string }[],
+      panels: [] as { panel: string; data: unknown; message?: string; placement?: string }[],
       answers: {} as Record<string, unknown>,
     };
     const http = createServer((req, res) => {
@@ -225,7 +225,7 @@ describe('studio tools', () => {
         let body = '';
         req.on('data', (c) => (body += c));
         return req.on('end', () => {
-          const opened = JSON.parse(body) as { panel: string; data: unknown; message?: string };
+          const opened = JSON.parse(body) as { panel: string; data: unknown; message?: string; placement?: string };
           if (opened.panel === 'storyboard' && !(opened.data as { comp?: string }).comp) return reply(400, { error: { message: 'the data for a storyboard panel is not valid: comp must be the board composition id' } });
           state.panels.push(opened);
           reply(201, { id: `p_${state.panels.length}`, status: 'open' });
@@ -301,6 +301,23 @@ describe('studio tools', () => {
       state.answers.p_2 = { approved: true };
       expect(json(await client.callTool({ name: 'studio_panel_result', arguments: { id: 'p_2' } }))).toEqual({ status: 'submitted', answer: { approved: true } });
       expect(new Set(state.tokens)).toEqual(new Set(['tok']));
+    });
+  });
+
+  it('offers the custom panel and a placement for any panel, and passes the placement on', async () => {
+    await withStudio(async (client, state) => {
+      const open = (await client.listTools()).tools.find((t) => t.name === 'studio_open_panel')!;
+      const properties = (open.inputSchema as { properties: Record<string, { enum?: string[] }> }).properties;
+      expect(properties.panel!.enum).toContain('custom');
+      expect(properties.placement!.enum).toEqual(['sheet', 'left', 'right', 'beside-preview']);
+      for (const block of ['heading', 'text', 'still', 'clip', 'choice', 'slider', 'input', 'list', 'table', 'notes', 'compare']) {
+        expect(JSON.stringify(open.inputSchema)).toContain(`${block} {`);
+      }
+      expect(open.description).toContain('plan/custom-<name>.json');
+      const data = { name: 'end-card', title: 'Pick', blocks: [{ id: 'pick', type: 'choice', options: [{ id: 'a', label: 'A' }] }] };
+      expect(json(await client.callTool({ name: 'studio_open_panel', arguments: { panel: 'custom', data, placement: 'right' } }))).toEqual({ id: 'p_1', status: 'open' });
+      expect(state.panels).toEqual([{ panel: 'custom', data, placement: 'right' }]);
+      expect((await client.callTool({ name: 'studio_open_panel', arguments: { panel: 'custom', data, placement: 'bottom' } })).isError).toBe(true);
     });
   });
 

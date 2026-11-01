@@ -24,7 +24,7 @@ export function styleframeUrl(frame: Styleframe): string {
 /** Fewer displayed pixels than this between pointer down and up is a click, not a box. */
 const CLICK_SLOP = 4;
 
-interface Drag {
+export interface Drag {
   x0: number;
   y0: number;
   x1: number;
@@ -32,7 +32,7 @@ interface Drag {
 }
 
 /** The box between two corners, clamped to the picture and rounded to whole composition pixels. */
-function boxOf(drag: Drag, width: number, height: number): Box {
+export function boxOf(drag: Drag, width: number, height: number): Box {
   const clamp = (v: number, max: number) => Math.min(max, Math.max(0, v));
   const x0 = clamp(Math.min(drag.x0, drag.x1), width);
   const y0 = clamp(Math.min(drag.y0, drag.y1), height);

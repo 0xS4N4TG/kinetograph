@@ -61,6 +61,38 @@ enum DecorStyle {
 struct Batch {
     paint: TextPaint,
     runs: Vec<Value>,
+    /// The inline element with `opacity` below 1 whose group the text is in.
+    owner: Option<NodeId>,
+}
+
+/// What an inline element with `opacity` below 1 holds: Chrome composites
+/// all of it (every line fragment's background, border, shadow and text, and
+/// the boxes inside) as one group at that opacity.
+struct InlineGroup {
+    node: NodeId,
+    /// The group this one is inside, if an ancestor element has an opacity too.
+    parent: Option<NodeId>,
+    opacity: f64,
+    layers: Vec<Value>,
+    /// The groups inside this one, in tree order: painted over `layers`.
+    nested: Vec<Value>,
+}
+
+/// The layers of an inline formatting context, by the group they are in:
+/// `None` is the context itself.
+#[derive(Default)]
+struct InlineSinks {
+    /// Tree order, so a group's own ancestors come before it.
+    groups: Vec<InlineGroup>,
+}
+
+impl InlineSinks {
+    fn put(&mut self, ph: &mut Phases, owner: Option<NodeId>, layers: Vec<Value>) {
+        match owner.and_then(|o| self.groups.iter_mut().find(|g| g.node == o)) {
+            Some(g) => g.layers.extend(layers),
+            None => ph.inline.extend(layers),
+        }
+    }
 }
 
 impl<'a> Painter<'a> {
@@ -88,10 +120,17 @@ impl<'a> Painter<'a> {
         let layout = &ild.layout;
         let scale = f64::from(layout.scale()).max(1e-6);
 
+        // Inline elements with `opacity` below 1 each hold their content as a
+        // group; the rest goes straight into the context's lists.
+        let mut sinks = InlineSinks::default();
+        self.collect_inline_groups(node, None, &mut sinks.groups);
+
         // Backgrounds and borders of inline elements go under the text.
         let mut inline_boxes = Vec::new();
-        self.inline_element_boxes(node, origin, &mut inline_boxes);
-        ph.inline.extend(inline_boxes);
+        self.inline_element_boxes(node, origin, None, &sinks, &mut inline_boxes);
+        for (owner, layers) in inline_boxes {
+            sinks.put(ph, owner, layers);
+        }
 
         // The layout's width is its longest line; a centred or right-aligned
         // line sits inside the content box, so the box the glyphs may fall in
@@ -126,7 +165,7 @@ impl<'a> Painter<'a> {
         let mut batch: Option<Batch> = None;
         // The characters no font had a glyph for, by the font-family they were set in.
         let mut missing: std::collections::BTreeMap<String, Vec<char>> = Default::default();
-        let mut decor_lines: Vec<(Decor, Rect, f64, bool)> = Vec::new(); // under / through lines, flushed with the batch
+        let mut decor_lines: Vec<(Decor, Rect, f64, bool, Option<NodeId>)> = Vec::new(); // under / through lines, flushed with the batch
 
         let clamp_line = self.clamp_line(node);
         let overflow_ellipsis = self.overflow_ellipsis(node);
@@ -144,6 +183,7 @@ impl<'a> Painter<'a> {
                         let Some(style) = brush_node.primary_styles() else {
                             continue;
                         };
+                        let owner = self.inline_owner(&sinks, brush_node, node.id);
                         if style.clone_visibility()
                             != style::computed_values::visibility::T::Visible
                         {
@@ -247,11 +287,17 @@ impl<'a> Painter<'a> {
                                 .max(1.0);
                             if d.underline {
                                 let off = f64::from(metrics.underline_offset) / scale;
-                                decor_lines.push((d, Rect::new(x0, base - off, adv, t), t, false));
+                                decor_lines.push((
+                                    d,
+                                    Rect::new(x0, base - off, adv, t),
+                                    t,
+                                    false,
+                                    owner,
+                                ));
                             }
                             if d.overline {
                                 let top = base - f64::from(metrics.ascent) / scale;
-                                decor_lines.push((d, Rect::new(x0, top, adv, t), t, false));
+                                decor_lines.push((d, Rect::new(x0, top, adv, t), t, false, owner));
                             }
                             if d.line_through {
                                 let off = f64::from(metrics.strikethrough_offset) / scale;
@@ -259,20 +305,29 @@ impl<'a> Painter<'a> {
                                     .thickness
                                     .unwrap_or(f64::from(metrics.strikethrough_size) / scale)
                                     .max(1.0);
-                                decor_lines.push((d, Rect::new(x0, base - off, adv, ts), ts, true));
+                                decor_lines.push((
+                                    d,
+                                    Rect::new(x0, base - off, adv, ts),
+                                    ts,
+                                    true,
+                                    owner,
+                                ));
                             }
                         }
 
                         match &mut batch {
-                            Some(b) if b.paint == paint => b.runs.push(run_json),
+                            Some(b) if b.paint == paint && b.owner == owner => {
+                                b.runs.push(run_json)
+                            }
                             _ => {
                                 if let Some(b) = batch.take() {
                                     let layers = self.text_layers(node, &b, content, size);
-                                    ph.inline.extend(layers);
+                                    sinks.put(ph, b.owner, layers);
                                 }
                                 batch = Some(Batch {
                                     paint,
                                     runs: vec![run_json],
+                                    owner,
                                 });
                             }
                         }
@@ -281,7 +336,7 @@ impl<'a> Painter<'a> {
                         // An atomic inline box: painted whole, in line order.
                         if let Some(b) = batch.take() {
                             let layers = self.text_layers(node, &b, content, size);
-                            ph.inline.extend(layers);
+                            sinks.put(ph, b.owner, layers);
                         }
                         if cut
                             .as_ref()
@@ -291,6 +346,10 @@ impl<'a> Painter<'a> {
                         }
                         let child_id = NodeId::from_u64(ib.id);
                         let child = self.node(child_id);
+                        let owner = child
+                            .parent
+                            .map(|p| self.node(p))
+                            .and_then(|p| self.inline_owner(&sinks, p, node.id));
                         // The front half's zero-height boxes that give inline
                         // edges their width (`inline::SPACER_TAG`).
                         if self.tag_of(child) == crate::inline::SPACER_TAG {
@@ -310,7 +369,8 @@ impl<'a> Painter<'a> {
                             continue;
                         }
                         if is_sc || positioned {
-                            // Painted with the positioned boxes.
+                            // Painted with the positioned boxes (inside the
+                            // group of the inline element that holds it).
                             let loc = child.final_layout().location;
                             let at = (origin.0 + f64::from(loc.x), origin.1 + f64::from(loc.y));
                             let layers = if is_sc {
@@ -318,20 +378,24 @@ impl<'a> Painter<'a> {
                             } else {
                                 self.paint_atomic(child, at, pos)
                             };
-                            pos.extend(layers);
+                            if owner.is_some() {
+                                sinks.put(ph, owner, layers);
+                            } else {
+                                pos.extend(layers);
+                            }
                             continue;
                         }
                         let loc = child.final_layout().location;
                         let at = (origin.0 + f64::from(loc.x), origin.1 + f64::from(loc.y));
                         let layers = self.paint_atomic(child, at, pos);
-                        ph.inline.extend(layers);
+                        sinks.put(ph, owner, layers);
                     }
                 }
             }
         }
         if let Some(b) = batch.take() {
             let layers = self.text_layers(node, &b, content, size);
-            ph.inline.extend(layers);
+            sinks.put(ph, b.owner, layers);
         }
         for (family, chars) in missing {
             let reason = format!(
@@ -341,14 +405,34 @@ impl<'a> Painter<'a> {
             self.report(node, "font-family", family, &reason);
         }
         // Decoration lines.
-        for (n, (d, r, _t, _through)) in decor_lines.into_iter().enumerate() {
+        for (n, (d, r, _t, _through, owner)) in decor_lines.into_iter().enumerate() {
             let id = self.layer_id(node, &format!("deco{n}"));
-            let layers = self.decoration_line(&id, &d, r);
-            for mut l in layers {
-                shift(&mut l, content.0, content.1);
-                ph.inline.push(l);
+            let mut layers = self.decoration_line(&id, &d, r);
+            for l in &mut layers {
+                shift(l, content.0, content.1);
+            }
+            sinks.put(ph, owner, layers);
+        }
+        // Each group goes into the one around it, or, an element that is a
+        // stacking context, over the in-flow content with the positioned boxes.
+        // Walked last to first, each is put in front of the groups after it.
+        let mut groups = sinks.groups;
+        let mut top: Vec<Value> = Vec::new();
+        while let Some(mut g) = groups.pop() {
+            let id = self.layer_id(self.node(g.node), "fx");
+            g.layers.append(&mut g.nested);
+            let group = super::util::group(&id, g.layers)
+                .set("opacity", num4(g.opacity.max(0.0)))
+                .build();
+            match g
+                .parent
+                .and_then(|p| groups.iter_mut().find(|o| o.node == p))
+            {
+                Some(parent) => parent.nested.insert(0, group),
+                None => top.insert(0, group),
             }
         }
+        pos.extend(top);
     }
 
     /// The text layers of a batch: its shadows (lowest first), then the text.
@@ -581,14 +665,116 @@ impl<'a> Painter<'a> {
         }
     }
 
-    /// The boxes of the non-atomic inline elements below `inline_root`, in tree
-    /// order: one background and border per line the element spans.
-    fn inline_element_boxes(&mut self, node: &'a Node, root_origin: Origin, out: &mut Vec<Value>) {
+    /// The non-atomic inline elements below `node` that have an `opacity`
+    /// below 1, in tree order, each with the one it is inside.
+    fn collect_inline_groups(
+        &mut self,
+        node: &'a Node,
+        parent: Option<NodeId>,
+        out: &mut Vec<InlineGroup>,
+    ) {
         for cid in node.children.iter() {
             let child = self.node(*cid);
             if !child.is_element() || !child.is_non_atomic_inline() {
                 continue;
             }
+            let opacity = child
+                .primary_styles()
+                .map(|s| f64::from(s.get_effects().opacity))
+                .filter(|o| *o < 1.0);
+            self.report_inline_effects(child);
+            let inner = match opacity {
+                Some(opacity) => {
+                    out.push(InlineGroup {
+                        node: child.id,
+                        parent,
+                        opacity,
+                        layers: Vec::new(),
+                        nested: Vec::new(),
+                    });
+                    Some(child.id)
+                }
+                None => parent,
+            };
+            self.collect_inline_groups(child, inner, out);
+        }
+    }
+
+    /// An inline element's `filter`, `mix-blend-mode`, `clip-path` and `mask`
+    /// are not drawn (only its `opacity` is): reported.
+    fn report_inline_effects(&mut self, node: &'a Node) {
+        use style::computed_values::mix_blend_mode::T as Blend;
+        use style::values::computed::Image;
+        use style::values::generics::basic_shape::GenericClipPath as ClipPath;
+        let Some(style) = node.primary_styles() else {
+            return;
+        };
+        let fx = style.get_effects();
+        let svg = style.get_svg();
+        let mut found: Vec<&str> = Vec::new();
+        if !fx.filter.0.is_empty()
+            || self
+                .kg_value(node, "--kg-filter")
+                .is_some_and(|f| f != "none")
+        {
+            found.push("filter");
+        }
+        if fx.mix_blend_mode != Blend::Normal {
+            found.push("mix-blend-mode");
+        }
+        if !matches!(svg.clip_path, ClipPath::None) {
+            found.push("clip-path");
+        }
+        if svg.mask_image.0.iter().any(|i| !matches!(i, Image::None)) {
+            found.push("mask");
+        }
+        drop(style);
+        for property in found {
+            self.report(
+                node,
+                property,
+                "",
+                "not drawn on an inline element (only its opacity is); drawn without it",
+            );
+        }
+    }
+
+    /// The group of the innermost inline element at or above `from` (up to the
+    /// inline formatting context's root) that has an `opacity` below 1.
+    fn inline_owner(&self, sinks: &InlineSinks, from: &Node, root: NodeId) -> Option<NodeId> {
+        let mut cur = from;
+        loop {
+            if sinks.groups.iter().any(|g| g.node == cur.id) {
+                return Some(cur.id);
+            }
+            if cur.id == root {
+                return None;
+            }
+            cur = self.node(cur.parent?);
+        }
+    }
+
+    /// The boxes of the non-atomic inline elements below `inline_root`, in tree
+    /// order: one background and border per line the element spans, with the
+    /// group (if any) each belongs to.
+    fn inline_element_boxes(
+        &mut self,
+        node: &'a Node,
+        root_origin: Origin,
+        owner: Option<NodeId>,
+        sinks: &InlineSinks,
+        out: &mut Vec<(Option<NodeId>, Vec<Value>)>,
+    ) {
+        for cid in node.children.iter() {
+            let child = self.node(*cid);
+            if !child.is_element() || !child.is_non_atomic_inline() {
+                continue;
+            }
+            let owner = if sinks.groups.iter().any(|g| g.node == child.id) {
+                Some(child.id)
+            } else {
+                owner
+            };
             if self.is_visible(child)
                 && let Some(frags) = child.inline_fragment_boxes()
             {
@@ -603,9 +789,9 @@ impl<'a> Painter<'a> {
                     })
                     .collect();
                 let layers = self.inline_fragments(child, &rects);
-                out.extend(layers);
+                out.push((owner, layers));
             }
-            self.inline_element_boxes(child, root_origin, out);
+            self.inline_element_boxes(child, root_origin, owner, sinks, out);
         }
     }
 

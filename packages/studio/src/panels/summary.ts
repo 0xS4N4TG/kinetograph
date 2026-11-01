@@ -1,7 +1,9 @@
 // What the agent is told when a panel closes (docs/proposals/studio-panels.md, "How the answer reaches the agent"): one
-// line the skill describes, then the changes in short form. The whole answer is in plan/<kind>.json.
+// line the skill describes, then the changes in short form. The whole answer is in plan/<kind>.json (plan/custom-<name>.json).
 
-import type { Brief, OpenPanel, ReviewAnswer, ScriptAnswer, Storyboard, StoryboardAnswer, StyleframesAnswer } from './types.js';
+import { takesAnswer } from './custom.js';
+import { planFileOf } from './placement.js';
+import type { Block, Brief, CustomAnswer, CustomDraft, OpenPanel, ReviewAnswer, ScriptAnswer, Storyboard, StoryboardAnswer, StyleframesAnswer } from './types.js';
 
 /** The longest detail sent; the plan file has the rest. */
 const DETAIL_MAX = 1500;
@@ -9,8 +11,37 @@ const DETAIL_MAX = 1500;
 const clip = (text: string, max = 160): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
 
-/** `[panel storyboard p_3 dismissed]`. */
-const tag = (panel: OpenPanel, what: 'submitted' | 'dismissed'): string => `[panel ${panel.panel} ${panel.id} ${what}]`;
+/** `[panel storyboard p_3 dismissed]`; a custom panel is named by its slug: `[panel custom:end-card p_3 dismissed]`. */
+const tag = (panel: OpenPanel, what: 'submitted' | 'dismissed'): string => {
+  const kind = panel.panel === 'custom' ? `custom:${(panel.data as CustomDraft).name}` : panel.panel;
+  return `[panel ${kind} ${panel.id} ${what}]`;
+};
+
+/** One block's value in a few words; the plan file has the whole of it. */
+function shortValue(block: Block, value: unknown): string {
+  switch (block.type) {
+    case 'choice':
+      return Array.isArray(value) ? (value.length > 0 ? value.join('+') : 'none') : value === null || value === undefined ? 'none' : String(value);
+    case 'slider':
+      return `${value}${block.unit ? ` ${block.unit}` : ''}`;
+    case 'input':
+      return JSON.stringify(clip(String(value), 60));
+    case 'list':
+      return plural((value as unknown[]).length, 'item');
+    case 'table':
+      return plural((value as unknown[]).length, 'row');
+    case 'notes':
+      return plural((value as unknown[]).length, 'note');
+    default:
+      return value === null || value === undefined ? 'none' : String(value);
+  }
+}
+
+/** `pick=b, speed=1.2 x, why="make it faster"`: each block that has a value, in the panel's order. */
+function describeCustom(draft: CustomDraft, answer: CustomAnswer): string {
+  const parts = draft.blocks.filter(takesAnswer).flatMap((b) => (b.id in answer.values ? [`${b.id}=${shortValue(b, answer.values[b.id])}`] : []));
+  return clip(parts.join(', ') || 'no values', 400);
+}
 
 /** The one-line summary of a submitted answer and the lines that follow it. */
 function describe(panel: OpenPanel): { line: string; detail: string[] } {
@@ -49,6 +80,8 @@ function describe(panel: OpenPanel): { line: string; detail: string[] } {
       const chose = a.pick !== null ? `picked ${a.pick}` : a.mix ? `mixed: ${clip(a.mix, 80)}` : 'no pick';
       return { line: `${a.approved ? 'approved' : 'changes wanted:'} ${chose}`, detail: a.notes.map((n) => `${n.frame}: ${clip(n.text)}`) };
     }
+    case 'custom':
+      return { line: describeCustom(panel.data as CustomDraft, panel.answer as CustomAnswer), detail: [] };
     case 'review': {
       const a = panel.answer as ReviewAnswer;
       const notes = [...a.notes].sort((x, y) => x.frame - y.frame);
@@ -65,5 +98,5 @@ export function closingMessage(panel: OpenPanel): string {
   if (panel.status !== 'submitted' || panel.answer === null) return tag(panel, 'dismissed');
   const { line, detail } = describe(panel);
   const body = detail.join('\n');
-  return `${tag(panel, 'submitted')} ${line}; see plan/${panel.panel}.json${body ? `\n${clip(body, DETAIL_MAX)}` : ''}`;
+  return `${tag(panel, 'submitted')} ${line}; see plan/${planFileOf(panel)}.json${body ? `\n${clip(body, DETAIL_MAX)}` : ''}`;
 }

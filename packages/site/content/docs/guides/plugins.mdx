@@ -211,9 +211,12 @@ your plugins, and four for the open window:
 - `studio_get_props` returns `{ comp, props }`, what the preview shows now.
 - `studio_set_props` takes `{ comp?, props, merge? }` and sets the props. By default it merges them over the props
   shown now; `merge: false` replaces them. The preview re-renders, and the Props tab and any plugin panel update.
-- `studio_open_panel` takes `{ panel, data, message? }` and opens a brief, script, storyboard, styleframes or review panel
-  in the window to ask the person for a decision. It returns `{ id, status: "open" }` at once; the agent then ends its
-  turn, and the answer arrives as a message starting `[panel <kind> <id> submitted]` and in `plan/<kind>.json`.
+- `studio_open_panel` takes `{ panel, data, message?, placement? }` and opens a brief, script, storyboard, styleframes,
+  review or custom panel in the window to ask the person for a decision. It returns `{ id, status: "open" }` at once; the
+  agent then ends its turn, and the answer arrives as a message starting `[panel <kind> <id> submitted]` and in
+  `plan/<kind>.json`. A `custom` panel is a list of blocks (heading, text, still, clip, choice, slider, input, list,
+  table, notes, compare) with `data: { name, title, blocks }`; its answer is `{ values }` by block id in
+  `plan/custom-<name>.json`. `placement` is `sheet`, `beside-preview`, `left` or `right`.
 - `studio_panel_result` takes `{ id }` and returns `{ status, answer? }`, for an agent in a terminal that the person told.
 
 An agent in Studio should try values with `studio_set_props`, then write the values it picks into the code or a preset.

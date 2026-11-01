@@ -214,20 +214,21 @@ function addStudioTools(server: McpServer, target: StudioTarget): void {
     'studio_open_panel',
     {
       description:
-        'Opens a panel in the Studio window to ask the person for a decision: a brief, a script, a storyboard, styleframes or a review of a composition. It returns { id, status: "open" } at once and never waits. After you open a panel, end your turn with one line saying what you are waiting for; do not start the next stage and do not poll. The answer arrives as your next message, starting "[panel <kind> <id> submitted]" (or "dismissed" if the person closed it), and is saved in plan/<kind>.json beside the entry. If the person answers in a terminal instead and tells you, read it with studio_panel_result. One panel per kind is open at a time: opening another of the same kind replaces the first.',
+        'Opens a panel in the Studio window to ask the person for a decision: a brief, a script, a storyboard, styleframes, a review of a composition, or a custom panel you lay out from blocks for a question the others do not fit. It returns { id, status: "open" } at once and never waits. After you open a panel, end your turn with one line saying what you are waiting for; do not start the next stage and do not poll. The answer arrives as your next message, starting "[panel <kind> <id> submitted]" (or "dismissed" if the person closed it), and is saved in plan/<kind>.json beside the entry (a custom panel: "[panel custom:<name> <id> submitted]" and plan/custom-<name>.json). If the person answers in a terminal instead and tells you, read it with studio_panel_result. One panel per kind is open at a time: opening another of the same kind replaces the first; custom panels are told apart by their name, so several can be open at once. placement says where any panel is shown: "sheet" (over the preview and timeline; the default), "beside-preview" (a column that leaves the preview in view; the default for a review), "left" (a tab beside the agent chat) or "right" (a tab beside the inspector). The person can put it away and bring it back from the stage strip.',
       inputSchema: {
-        panel: z.enum(['brief', 'script', 'storyboard', 'styleframes', 'review']).describe('The kind of panel'),
+        panel: z.enum(['brief', 'script', 'storyboard', 'styleframes', 'review', 'custom']).describe('The kind of panel'),
         data: z
           .record(z.string(), z.unknown())
           .describe(
-            'What the panel starts from. brief: the fields you know ({ purpose, audience, platform, size, seconds, takeaway, references, notes }). script: { lines: [{ id, text, seconds? }], rate?, track? }. storyboard: { comp, shots: [{ id, frame, what, moves, line?, seconds, transition, transitionNote? }] }. styleframes: { frames: [{ id, label, comp, frame, note? }] }. review: { comp, range?: [first, last], ask? }.',
+            'What the panel starts from. brief: the fields you know ({ purpose, audience, platform, size, seconds, takeaway, references, notes }). script: { lines: [{ id, text, seconds? }], rate?, track? }. storyboard: { comp, shots: [{ id, frame, what, moves, line?, seconds, transition, transitionNote? }] }. styleframes: { frames: [{ id, label, comp, frame, note? }] }. review: { comp, range?: [first, last], ask? }. custom: { name (slug of a-z 0-9 -, up to 40; names the plan file), title, blocks (1 to 40), submitLabel? }; every block has id (a letter first; unique) and may have label, help and required. Blocks: heading {text}; text {text; paragraphs and **bold** only}; still {comp, frame, caption?}; clip {comp, from, to, caption?} (plays in place); choice {options: [{id, label?, still?: {comp, frame}, text?}] (24 at most), multiple?, value?}; slider {min, max, step?, value?, unit?}; input {multiline?, placeholder?, value?}; list {items: string[], editable?} (add, remove, reorder); table {columns: string[], rows: string[][], editable?}; notes {still: {comp, frame}} (text notes and boxes drawn on a picture); compare {a: {comp, frame, label?}, b: {...}} (side by side, the person picks one). The answer is { values } keyed by block id, for the blocks that take one: choice a string (null for none; a string[] with multiple), slider a number, input a string, list string[], table string[][], notes [{ text, box?: {x, y, w, h} }], compare "a" or "b" (null for neither). Heading, text, still and clip have no value.',
           ),
         message: z.string().optional().describe('One line shown at the top of the panel'),
+        placement: z.enum(['sheet', 'left', 'right', 'beside-preview']).optional().describe('Where the panel is shown (default: beside-preview for a review, sheet for the rest)'),
       },
     },
-    async ({ panel, data, message }: { panel: string; data: Record<string, unknown>; message?: string }) => {
+    async ({ panel, data, message, placement }: { panel: string; data: Record<string, unknown>; message?: string; placement?: string }) => {
       try {
-        return text(await studioRequest<{ id: string; status: string }>(target, '/api/panels', { method: 'POST', body: JSON.stringify({ panel, data, message }) }));
+        return text(await studioRequest<{ id: string; status: string }>(target, '/api/panels', { method: 'POST', body: JSON.stringify({ panel, data, message, placement }) }));
       } catch (error) {
         return failure(error);
       }
