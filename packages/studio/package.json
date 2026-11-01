@@ -33,11 +33,13 @@
   },
   "files": [
     "dist",
+    "catalog",
     "!dist/**/*.map",
     "ui/dist"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "catalog": "node scripts/sync-catalog.mjs",
     "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
   },
   "dependencies": {

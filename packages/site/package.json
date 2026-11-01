@@ -10,7 +10,8 @@
     "build": "next build",
     "start": "npx serve out",
     "preview": "npx serve out",
-    "catalog": "node scripts/catalog.mjs"
+    "catalog": "node scripts/catalog.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

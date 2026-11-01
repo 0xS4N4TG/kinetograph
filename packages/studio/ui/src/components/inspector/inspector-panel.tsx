@@ -1,6 +1,6 @@
 import { memo, type ReactNode } from 'react';
 
-import type { CompositionInfo, InspectResult, PluginSummary, ProjectInfo, RenderJob, StudioApi, TimelineData } from '@/api';
+import type { CatalogPlugin, CompositionInfo, InspectResult, PluginSummary, ProjectInfo, RenderJob, StudioApi, TimelineData } from '@/api';
 import { PropsPanel } from '@/components/inspector/props-panel';
 import { RenderQueue } from '@/components/inspector/render-queue';
 import { SceneTree } from '@/components/inspector/scene-tree';
@@ -44,6 +44,8 @@ interface InspectorPanelProps {
   onCancelRender(id: string): Promise<void>;
   /** Plugins: the installed ones, the selected names, and the actions of the plugin cards. */
   plugins?: PluginSummary[];
+  /** The site's plugin catalog; null while it loads. */
+  catalog?: CatalogPlugin[] | null;
   selectedPlugins?: ReadonlySet<string>;
   onSelectPlugin?(name: string): void;
   onAskAgent?(text: string): void;
@@ -71,6 +73,7 @@ export const InspectorPanel = memo(function InspectorPanel({
   onNewRender,
   onCancelRender,
   plugins,
+  catalog,
   selectedPlugins,
   onSelectPlugin,
   onAskAgent,
@@ -112,6 +115,7 @@ export const InspectorPanel = memo(function InspectorPanel({
           onReset={onResetProps}
           inspect={inspect}
           {...(plugins ? { plugins } : {})}
+          {...(catalog !== undefined ? { catalog } : {})}
           {...(selectedPlugins ? { selectedPlugins } : {})}
           {...(onSelectPlugin ? { onSelectPlugin } : {})}
           {...(onAskAgent ? { onAskAgent } : {})}

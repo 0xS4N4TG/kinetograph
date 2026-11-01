@@ -1,7 +1,7 @@
 import { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { RotateCcwIcon } from 'lucide-react';
 
-import type { CompositionInfo, InspectResult, PluginSummary, StudioApi } from '@/api';
+import type { CatalogPlugin, CompositionInfo, InspectResult, PluginSummary, StudioApi } from '@/api';
 import { PluginCard } from '@/components/inspector/plugin-card';
 import { PluginList } from '@/components/inspector/plugin-list';
 import { PluginPanels } from '@/components/inspector/plugin-panel';
@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 
 const NO_PATH: string[] = [];
 const NO_PLUGINS: PluginSummary[] = [];
+const NO_CATALOG: CatalogPlugin[] = [];
 const NO_SELECTED: ReadonlySet<string> = new Set();
 const noop = () => {};
 
@@ -51,6 +52,8 @@ interface PropsPanelProps {
   api: StudioApi;
   /** The installed plugins, and the layers on screen (to tell which a composition uses). */
   plugins?: PluginSummary[];
+  /** The site's plugin catalog for the Available list; null while it loads. */
+  catalog?: CatalogPlugin[] | null;
   inspect?: InspectResult | null;
   /** Names of the plugins that are selected: a layer they draw is, or their card was clicked. */
   selectedPlugins?: ReadonlySet<string>;
@@ -69,7 +72,7 @@ interface PropsPanelProps {
  * composition's `propsSchema` when it has one, then from any `defaultProps` the schema does not name. A field only
  * re-renders when its own value changes, so dragging one slider does not redraw the rest.
  */
-export const PropsPanel = memo(function PropsPanel({ api, comp, values, edited, onChange, onReset, plugins = NO_PLUGINS, inspect = null, selectedPlugins = NO_SELECTED, onSelectPlugin = noop, onAskAgent = noop }: PropsPanelProps) {
+export const PropsPanel = memo(function PropsPanel({ api, comp, values, edited, onChange, onReset, plugins = NO_PLUGINS, catalog = NO_CATALOG, inspect = null, selectedPlugins = NO_SELECTED, onSelectPlugin = noop, onAskAgent = noop }: PropsPanelProps) {
   const [active, setActive] = useState<string | null>(null);
   const panels = useMemo<Record<string, string>>(() => Object.fromEntries(plugins.flatMap((p) => (p.panel ? [[p.name, p.panel]] : []))), [plugins]);
   const ui = useMemo<PluginUi>(() => ({ plugins, selected: selectedPlugins, onSelect: onSelectPlugin, onAsk: onAskAgent, scope: comp?.id ?? '' }), [plugins, selectedPlugins, onSelectPlugin, onAskAgent, comp?.id]);
@@ -116,7 +119,7 @@ export const PropsPanel = memo(function PropsPanel({ api, comp, values, edited, 
             </PluginPanels.Provider>
           )}
           <div className="px-4 pt-2 pb-6">
-            <PluginList plugins={plugins} used={used} selected={selectedPlugins} onSelect={onSelectPlugin} onAsk={onAskAgent} />
+            <PluginList plugins={plugins} catalog={catalog} used={used} selected={selectedPlugins} onSelect={onSelectPlugin} onAsk={onAskAgent} />
           </div>
         </PluginUiContext.Provider>
       </ScrollArea>
