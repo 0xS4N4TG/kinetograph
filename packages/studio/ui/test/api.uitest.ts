@@ -7,6 +7,17 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
+describe('createApi plugin catalog', () => {
+  it('reads /api/plugins/catalog with the studio token and returns the plugins', async () => {
+    const fetchMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => json({ version: 1, plugins: [{ name: 'a' }] }));
+    const api = createApi({ baseUrl: 'http://localhost:3000/', token: 'secret', fetch: fetchMock as unknown as typeof fetch });
+    expect(await api.pluginCatalog()).toEqual([{ name: 'a' }]);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toContain('/api/plugins/catalog');
+    expect(new Headers(init?.headers).get('X-Studio-Token')).toBe('secret');
+  });
+});
+
 describe('createApi HTTP', () => {
   it('calls the routes of AUTHORING.md 11.5 with the props URL-encoded', async () => {
     const fetchMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => json({}));

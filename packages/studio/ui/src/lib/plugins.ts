@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 
-import type { InspectResult, PluginSummary, StudioApi } from '@/api';
+import type { CatalogPlugin, InspectResult, PluginSummary, StudioApi } from '@/api';
 import { findLayer, type InspectLayer } from '@/lib/inspect';
 import { layerComponent } from '@/lib/selection';
 import type { JsonSchema } from '@/lib/props-schema';
@@ -23,6 +23,22 @@ export function usePlugins(api: StudioApi): PluginSummary[] {
     };
   }, [api]);
   return plugins;
+}
+
+/** The site's plugin catalog: null while it loads, empty when the server cannot give it. */
+export function usePluginCatalog(api: StudioApi): CatalogPlugin[] | null {
+  const [catalog, setCatalog] = useState<CatalogPlugin[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.pluginCatalog().then(
+      (list) => live && setCatalog(list),
+      () => live && setCatalog([]),
+    );
+    return () => {
+      live = false;
+    };
+  }, [api]);
+  return catalog;
 }
 
 /** The plugin whose `components` include this layer's component, or undefined. */

@@ -44,7 +44,7 @@ const open: StudioServer[] = [];
 
 /** A studio on a free port, with the stub engine unless `options.engine` says otherwise. */
 export async function start(entry: string, options: Partial<StudioOptions> = {}): Promise<StudioServer> {
-  const server = await startStudio({ entry, port: 0, open: false, engine: STUB_ENGINE, ...options });
+  const server = await startStudio({ entry, port: 0, open: false, engine: STUB_ENGINE, catalog: { offline: true, cacheFile: join(tempDir(), 'plugin-catalog.json') }, ...options });
   open.push(server);
   return server;
 }

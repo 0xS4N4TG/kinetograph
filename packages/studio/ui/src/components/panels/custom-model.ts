@@ -3,9 +3,6 @@ import type { Block, CustomAnswer, CustomDraft } from './types';
 
 export type Values = Record<string, unknown>;
 
-/** Where a picture of a composition comes from: the studio's frame route, at a fraction of the composition's size. */
-export const frameSrc = (comp: string, frame: number, scale: number): string => `/api/frame?comp=${encodeURIComponent(comp)}&frame=${frame}&scale=${scale}&format=jpeg`;
-
 /** What each input block starts with: its `value` (or items, rows) when the agent gave one, else empty. */
 export function initialValues(blocks: Block[]): Values {
   const values: Values = {};

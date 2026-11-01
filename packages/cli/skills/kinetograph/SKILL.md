@@ -278,7 +278,7 @@ studio_open_panel({ panel: 'custom', placement: 'right', message: 'Two end cards
     { id: 'speed', type: 'slider', label: 'Logo speed', min: 0.5, max: 2, value: 1, unit: 'x' },
     { id: 'why', type: 'input', label: 'Anything else?', multiline: true },
   ] } })
-// answer: { values: { pick: 'b', speed: 1.2, why: '...' } }
+// answer (in plan/custom-end-card.json under `answer`): { values: { pick: 'b', speed: 1.2, why: '...' } }
 ```
 
 `placement` works on every panel: `'sheet'` (over the preview and timeline; the default), `'beside-preview'` (a column that
@@ -287,7 +287,10 @@ inspector's). Put a panel in a column when the person should keep looking at the
 
 The answer arrives the same way as any other: end your turn, then read the message
 `[panel custom:<name> <id> submitted] <block id>=<value>, ...; see plan/custom-<name>.json`, or `dismissed`. The file holds
-`{ values }` keyed by block id; read it before you build from it.
+`{ draft, answer }`: `draft` is the `{ name, title, blocks, submitLabel? }` you sent, and `answer` is `{ values }` keyed by
+block id. Read `answer.values` before you build from it; `draft` is there so you can see which block each value belongs
+to. Studio keeps the file, and after a restart shows the panel again as answered. A file from before this, holding only
+`{ values }`, is read as it was but not shown again.
 
 ## Habits that save iterations
 

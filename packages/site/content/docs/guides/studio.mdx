@@ -118,6 +118,12 @@ the panel you are editing shows on the preview. A panel's own state, such as loc
 browser per plugin and composition. The **Plugins** list at the bottom of the tab shows every plugin the project depends
 on, whether this composition uses it or not.
 
+The list is always there. **In this project** is every plugin the project depends on, used here or not. **Available** is
+the plugins on the Kinetograph site that the project does not have, each with a link to its page. A plugin that is not
+published yet shows **Coming soon**; a published one has **Ask the agent to add it**, which asks the agent to install the
+package and read its `SKILL.md`. Studio reads the list from the site in the background and keeps the last answer, so it
+works offline too (`--offline` never asks the site).
+
 ## The Scene and Renders tabs
 
 **Scene** is the tree of layers at the playhead, with each layer's resolved fields and a

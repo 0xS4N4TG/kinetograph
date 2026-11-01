@@ -2,8 +2,12 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { cardScale } from '../src/components/panels/frame-src';
 import { StoryboardPanel } from '../src/components/panels/storyboard-panel';
 import type { OpenPanel, Shot, StoryboardAnswer } from '../src/components/panels/types';
+import { StudioContext } from '../src/lib/studio-context';
+import type { Studio } from '../src/studio';
+import { intro } from './fixtures';
 
 const shot = (id: string, frame: number, extra: Partial<Shot> = {}): Shot => ({
   id,
@@ -43,6 +47,29 @@ const order = () => screen.getAllByRole('article').map((el) => el.getAttribute('
 
 afterEach(() => vi.restoreAllMocks());
 
+describe('the stills', () => {
+  it('are drawn at twice the size of a card from the frame route, not as 120 px thumbnails', () => {
+    // the board is 1920 x 1080: a card is 256 px wide, so 512 px, a scale of 0.267
+    const studio = { compositions: [{ ...intro, id: 'Storyboard', width: 1920, height: 1080 }] } as unknown as Studio;
+    render(
+      <StudioContext.Provider value={studio}>
+        <StoryboardPanel panel={open(three())} onSubmit={() => {}} onDismiss={() => {}} />
+      </StudioContext.Provider>,
+    );
+    const url = new URL(screen.getAllByRole('img')[0]!.getAttribute('src')!, 'http://studio.test');
+    expect(url.pathname).toBe('/api/frame');
+    expect(url.searchParams.get('scale')).toBe('0.267');
+    expect(url.searchParams.get('format')).toBe('jpeg');
+  });
+
+  it('fit a card in both directions: a tall composition by its height, a small one at its own size', () => {
+    expect(cardScale({ width: 1920, height: 1080 })).toBe(0.267);
+    expect(cardScale({ width: 1080, height: 1920 })).toBe(0.15);
+    expect(cardScale({ width: 320, height: 180 })).toBe(1);
+    expect(cardScale(undefined)).toBe(0.25);
+  });
+});
+
 describe('StoryboardPanel', () => {
   it('shows the shots in order with a still of each one\'s frame from the board composition', () => {
     start();
@@ -51,7 +78,8 @@ describe('StoryboardPanel', () => {
     expect(srcs).toHaveLength(3);
     [0, 30, 60].forEach((frame, i) => {
       const url = new URL(srcs[i]!, 'http://studio.test');
-      expect(url.pathname).toBe('/api/thumbnail');
+      expect(url.pathname).toBe('/api/frame');
+      expect(url.searchParams.get('format')).toBe('jpeg');
       expect(url.searchParams.get('comp')).toBe('Storyboard');
       expect(url.searchParams.get('frame')).toBe(String(frame));
     });

@@ -1,5 +1,6 @@
 import { useStudioContext } from '@/lib/studio-context';
 
+import { draftKey } from './review-model';
 import { ReviewView } from './review-view';
 import type { PanelProps } from './types';
 
@@ -16,5 +17,5 @@ export function ReviewPanel(props: PanelProps<'review'>) {
       </div>
     );
   }
-  return <ReviewView {...props} store={studio} />;
+  return <ReviewView {...props} store={studio} draftKey={studio.project ? draftKey(studio.project.entry, props.panel.id) : undefined} />;
 }

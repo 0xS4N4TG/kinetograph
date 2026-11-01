@@ -4,9 +4,10 @@ import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { useBuildId } from '@/lib/studio-context';
 import { cn } from '@/lib/utils';
 
-import { frameSrc } from '../custom-model';
+import { frameSrc } from '../frame-src';
 import { boxOf } from '../styleframes-card';
 import type { Block, Box, PictureNote } from '../types';
 import { FrameImage } from './picture';
@@ -78,7 +79,8 @@ export function NotesBlock({ block, value, onChange }: { block: NotesBlockType; 
   const height = natural?.naturalHeight || 1;
   const percent = (box: Box) => ({ left: `${(box.x / width) * 100}%`, top: `${(box.y / height) * 100}%`, width: `${(box.w / width) * 100}%`, height: `${(box.h / height) * 100}%` });
   const live = drag && natural ? boxOf(drag, width, height) : null;
-  const src = frameSrc(block.still.comp, block.still.frame, 1);
+  const build = useBuildId();
+  const src = frameSrc(block.still.comp, block.still.frame, 1, build);
 
   return (
     <BlockShell block={block}>

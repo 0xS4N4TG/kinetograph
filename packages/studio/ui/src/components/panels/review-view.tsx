@@ -5,10 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
 import { clock } from '@/lib/format';
 import { useFrame } from '@/lib/player-hooks';
+import { getMarqueeBox, setMarqueeBox, useMarqueeBox } from '@/lib/marquee-box';
 import { setReviewMarks } from '@/lib/review-marks';
 import type { Studio } from '@/studio';
 
-import { areaOfSelection, answerNotes, reviewSpan, sortNotes, type DraftNote } from './review-model';
+import { areaOfSelection, answerNotes, readDraft, reviewSpan, sortNotes, writeDraft, type DraftNote } from './review-model';
 import { ReviewNote } from './review-note';
 import type { PanelProps } from './types';
 
@@ -17,6 +18,8 @@ export type ReviewStore = Pick<Studio, 'comp' | 'compositions' | 'selectComp' | 
 
 interface ReviewViewProps extends PanelProps<'review'> {
   store: ReviewStore;
+  /** Where the unsent notes are kept in the browser, so they outlast putting the panel away and a reload; none keeps nothing. */
+  draftKey?: string;
 }
 
 /** The keys that type into a field or drive a control keep their meaning: N adds a note only from the page itself. */
@@ -34,7 +37,7 @@ function PlayheadReadout({ store, fps }: { store: ReviewStore; fps: number }) {
  * The review: a narrow column of notes beside the preview. The preview stays in view and keeps playing; the panel only
  * switches the studio to the composition, keeps playback inside the range, and reads the playhead and the picked layers.
  */
-export function ReviewView({ panel, store, onSubmit, onDismiss }: ReviewViewProps) {
+export function ReviewView({ panel, store, draftKey, onSubmit: send, onDismiss: close }: ReviewViewProps) {
   const { data } = panel;
   const { player, comp, compositions, selectComp, selectRange, inspect, selectedLayers } = store;
   const fps = comp?.fps ?? 30;
@@ -43,6 +46,38 @@ export function ReviewView({ panel, store, onSubmit, onDismiss }: ReviewViewProp
 
   const [notes, setNotes] = useState<DraftNote[]>([]);
   const nextUid = useRef(1);
+  // The draft is read once the project (and with it the key) is known, then kept as the notes change.
+  const loaded = useRef<string | null>(null);
+  const restoring = useRef(false);
+  useEffect(() => {
+    if (!draftKey || loaded.current === draftKey) return;
+    loaded.current = draftKey;
+    const kept = readDraft(draftKey, panel.openedAt);
+    restoring.current = kept.length > 0;
+    if (kept.length > 0) {
+      nextUid.current = Math.max(nextUid.current, ...kept.map((n) => n.uid + 1));
+      setNotes((now) => (now.length > 0 ? now : kept));
+    }
+  }, [draftKey, panel.openedAt]);
+  useEffect(() => {
+    if (restoring.current) {
+      restoring.current = false;
+      return;
+    }
+    if (draftKey && loaded.current === draftKey) writeDraft(draftKey, panel.openedAt, notes);
+  }, [draftKey, panel.openedAt, notes]);
+  /** Sending or dismissing ends the review: its draft goes with it. */
+  const finish = () => {
+    if (draftKey) writeDraft(draftKey, panel.openedAt, []);
+  };
+  const onSubmit: typeof send = (answer) => {
+    finish();
+    send(answer);
+  };
+  const onDismiss = () => {
+    finish();
+    close();
+  };
   const [focusUid, setFocusUid] = useState<number | null>(null);
 
   // ---- show the composition and the range ----
@@ -95,24 +130,32 @@ export function ReviewView({ panel, store, onSubmit, onDismiss }: ReviewViewProp
 
   // ---- notes ----
 
-  const area = useMemo(() => (comp ? areaOfSelection(inspect, selectedLayers, comp) : null), [comp, inspect, selectedLayers]);
-  /** Whether the next note takes the picked layers' area; it switches on when the person picks something. */
-  const [tie, setTie] = useState(false);
   const selectionKey = selectedLayers.join('\0');
+  // The box last dragged on the preview counts while the selection is still what that drag picked.
+  const marquee = useMarqueeBox();
+  const drawn = marquee && marquee.selection === selectionKey ? marquee.box : null;
+  const drawnKey = drawn ? `${drawn.x},${drawn.y},${drawn.w},${drawn.h}` : '';
+  useEffect(() => {
+    const last = getMarqueeBox();
+    if (last && last.selection !== selectionKey) setMarqueeBox(null);
+  }, [selectionKey]);
+  const area = useMemo(() => (comp ? areaOfSelection(inspect, selectedLayers, comp, drawn) : null), [comp, inspect, selectedLayers, drawnKey]);
+  /** Whether the next note takes the picked area; it switches on when the person picks something or draws a box. */
+  const [tie, setTie] = useState(false);
   const firstSelection = useRef(true);
   useEffect(() => {
     if (firstSelection.current) {
       firstSelection.current = false;
       return;
     }
-    setTie(selectedLayers.length > 0);
-  }, [selectionKey]);
+    setTie(selectedLayers.length > 0 || drawnKey !== '');
+  }, [selectionKey, drawnKey]);
 
   const addNote = useCallback(() => {
     if (!comp) return;
     const frame = player.getState().frame;
     const uid = nextUid.current++;
-    setNotes((all) => [...all, { uid, frame, text: '', ...(tie && area ? { box: area.box, layer: area.layer } : {}) }]);
+    setNotes((all) => [...all, { uid, frame, text: '', ...(tie && area ? { box: area.box, ...(area.layer ? { layer: area.layer } : {}) } : {}) }]);
     setFocusUid(uid);
   }, [comp, player, tie, area]);
 
@@ -181,7 +224,7 @@ export function ReviewView({ panel, store, onSubmit, onDismiss }: ReviewViewProp
         {area && (
           <Button variant={tie ? 'secondary' : 'outline'} size="xs" aria-pressed={tie} onClick={() => setTie((on) => !on)} className="justify-start">
             <SquareDashedIcon />
-            <span className="truncate">{tie ? `Tied to ${area.layer}` : `Tie to ${area.layer}`}</span>
+            <span className="truncate">{tie ? `Tied to ${area.layer ?? 'the box'}` : `Tie to ${area.layer ?? 'the box'}`}</span>
           </Button>
         )}
         {!area && <p className="text-muted-foreground text-xs">Pick a layer or drag a box on the preview to tie the next note to that area.</p>}

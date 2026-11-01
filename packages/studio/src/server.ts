@@ -10,6 +10,7 @@ import { dirname, extname, join, resolve } from 'node:path';
 import { bundlePanel, cliVersion, CliError, findPlugins, pluginToolNames } from 'kinetograph';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { REAL_ENGINE_FILE } from './worker-client.js';
+import { createCatalog, type CatalogSource } from './catalog.js';
 import { AgentBridge, type McpServerConfig } from './agent-bridge.js';
 import { ChatLog } from './chat-log.js';
 import { isInside } from './agent-fs.js';
@@ -142,6 +143,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   // The coding agent works in the directory the studio was started in, or the entry's own when that is somewhere else.
   const agentCwd = options.agentCwd ?? (isInside(process.cwd(), entry) ? process.cwd() : dirname(entry));
   const agents = availableAgents(options.agent);
+  let catalog: CatalogSource | null = null;
   // Whoever reaches the agent can have it edit files and run tools, so: a secret in the URL the studio opens, the same
   // origin, one window that owns the conversation, and no agent at all on an address other computers can reach.
   const token = randomBytes(32).toString('hex');
@@ -254,7 +256,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     if (bad) throw invalid(`the answer to the ${panel.panel} panel is not valid: ${bad}`);
     const file = planFileOf(panel);
     try {
-      writePlan(dirname(entry), file, answer);
+      // A custom answer is values by block id: the file keeps the draft with it, so the panel can come back after a restart.
+      writePlan(dirname(entry), file, panel.panel === 'custom' ? { draft: panel.data, answer } : answer);
     } catch (error) {
       throw new StudioFailure('IO', `could not write plan/${file}.json: ${(error as Error).message}`);
     }
@@ -577,6 +580,12 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         });
       }
       return json(res, 200, { plugins });
+    }
+    if (method === 'GET' && path === '/api/plugins/catalog') {
+      if (!tokenOk(req.headers['x-studio-token'] as string | undefined)) {
+        throw new StudioFailure('FORBIDDEN', 'the plugin catalog needs the studio token from the address the studio opened');
+      }
+      return json(res, 200, { version: 1, plugins: catalog?.get() ?? [] });
     }
     const icon = /^\/api\/plugins\/([^/]+)\/icon\.svg$/.exec(path);
     if (method === 'GET' && icon) {
@@ -939,6 +948,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     await project.close();
     throw error;
   }
+  // The catalog is fetched in the background; the window gets the cached or bundled copy until then.
+  catalog = createCatalog({ ...options.catalog, log });
   if (project.buildError) log(`build failed: ${project.buildError.message}`);
   if (options.open !== false) openBrowser(url);
 
@@ -956,6 +967,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
           http.close(() => done());
           http.closeAllConnections();
         });
+        catalog?.close();
         await project.close();
       })();
       return closing;

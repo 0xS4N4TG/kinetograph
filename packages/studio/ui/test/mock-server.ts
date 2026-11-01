@@ -6,6 +6,7 @@ import {
   ApiError,
   type AgentClientMessage,
   type AgentInfo,
+  type CatalogPlugin,
   type CompositionInfo,
   type FrameArgs,
   type InspectResult,
@@ -44,6 +45,9 @@ export class MockServer implements StudioApi {
   /** Saved presets by composition id, and the installed plugins. */
   presetsByComp: Record<string, PresetInfo[]> = {};
   pluginList: PluginSummary[] = [];
+  /** The site's plugin catalog; `catalogError` makes the request fail. */
+  catalogList: CatalogPlugin[] = [];
+  catalogError = false;
   startRenderError: ApiError | null = null;
   /** Reply to frame requests at once; when false, the test calls `respond`. */
   auto = true;
@@ -172,6 +176,11 @@ export class MockServer implements StudioApi {
 
   async plugins(): Promise<PluginSummary[]> {
     return this.pluginList;
+  }
+
+  async pluginCatalog(): Promise<CatalogPlugin[]> {
+    if (this.catalogError) throw new Error('no catalog');
+    return this.catalogList;
   }
 
   thumbnailUrl(comp: string, frame: number, height: number, build: number): string {

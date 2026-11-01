@@ -8,6 +8,7 @@ import type {
   AgentInfo,
   AgentPermissionOption,
   AgentStatus,
+  CatalogPlugin,
   ChatRecord,
   ClientMessage,
   CompositionInfo,
@@ -32,6 +33,7 @@ export type {
   AgentInfo,
   AgentPermissionOption,
   AgentStatus,
+  CatalogPlugin,
   ChatRecord,
   CompositionInfo,
   FrameHeader,
@@ -108,6 +110,8 @@ export interface StudioApi {
   savePreset(comp: string, name: string, props: Record<string, unknown>): Promise<void>;
   /** The installed Kinetograph plugins. */
   plugins(): Promise<PluginSummary[]>;
+  /** The site's plugin catalog: plugins the project may not have. */
+  pluginCatalog(): Promise<CatalogPlugin[]>;
   /** The coding agents on offer. */
   agentInfo(): Promise<AgentInfo>;
   renders(): Promise<RenderJob[]>;
@@ -232,6 +236,7 @@ export function createApi(options: ApiOptions = {}): StudioApi {
       });
     },
     plugins: async () => (await request<{ plugins: PluginSummary[] }>('/api/plugins')).plugins,
+    pluginCatalog: async () => (await request<{ plugins: CatalogPlugin[] }>('/api/plugins/catalog', { headers: token ? { 'X-Studio-Token': token } : {} })).plugins,
     agentInfo: () => request<AgentInfo>('/api/agent', { headers: token ? { 'X-Studio-Token': token } : {} }),
     renders: () => request<RenderJob[]>('/api/renders'),
     startRender: (body) =>

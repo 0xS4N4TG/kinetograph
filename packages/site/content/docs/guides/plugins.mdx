@@ -215,8 +215,8 @@ your plugins, and four for the open window:
   review or custom panel in the window to ask the person for a decision. It returns `{ id, status: "open" }` at once; the
   agent then ends its turn, and the answer arrives as a message starting `[panel <kind> <id> submitted]` and in
   `plan/<kind>.json`. A `custom` panel is a list of blocks (heading, text, still, clip, choice, slider, input, list,
-  table, notes, compare) with `data: { name, title, blocks }`; its answer is `{ values }` by block id in
-  `plan/custom-<name>.json`. `placement` is `sheet`, `beside-preview`, `left` or `right`.
+  table, notes, compare) with `data: { name, title, blocks }`; its answer is `{ values }` by block id, saved with the draft as
+  `{ draft, answer }` in `plan/custom-<name>.json`. `placement` is `sheet`, `beside-preview`, `left` or `right`.
 - `studio_panel_result` takes `{ id }` and returns `{ status, answer? }`, for an agent in a terminal that the person told.
 
 An agent in Studio should try values with `studio_set_props`, then write the values it picks into the code or a preset.

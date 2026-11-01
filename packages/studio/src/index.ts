@@ -29,6 +29,12 @@ export interface StudioOptions {
   allowRemoteAgent?: boolean;
   /** How long a conversation waits for its window to come back (a reload) before the agent stops, in ms. Default 30 000. */
   agentReclaimMs?: number;
+  /**
+   * The plugin catalog Studio lists under "Available". `url` defaults to `KINETOGRAPH_CATALOG_URL`, else the site's
+   * `/api/catalog`; `cacheFile` to `~/.cache/kinetograph/plugin-catalog.json`; `offline` to `KINETOGRAPH_OFFLINE=1`
+   * (then nothing is fetched). Tests replace `fetch` and `cacheFile`.
+   */
+  catalog?: { url?: string; cacheFile?: string; offline?: boolean; fetch?: typeof fetch; timeoutMs?: number; bundledFile?: string };
   /** Receives one line for each build, build failure and warning. */
   log?: (message: string) => void;
 }

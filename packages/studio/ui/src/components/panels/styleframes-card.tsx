@@ -4,8 +4,10 @@ import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { useBuildId } from '@/lib/studio-context';
 import { cn } from '@/lib/utils';
 
+import { frameSrc } from './frame-src';
 import type { Box, Styleframe } from './types';
 
 /** A note the person is writing: the box (when they drew one) is in composition pixels. */
@@ -17,8 +19,8 @@ export interface DraftNote {
 }
 
 /** The address of a styleframe at the composition's own size (the studio's frame route, as `StudioApi.frameUrl` makes it). */
-export function styleframeUrl(frame: Styleframe): string {
-  return `/api/frame?comp=${encodeURIComponent(frame.comp)}&frame=${frame.frame}&scale=1&format=jpeg`;
+export function styleframeUrl(frame: Styleframe, build = 0): string {
+  return frameSrc(frame.comp, frame.frame, 1, build);
 }
 
 /** Fewer displayed pixels than this between pointer down and up is a click, not a box. */
@@ -56,6 +58,7 @@ interface StyleframeCardProps {
 }
 
 export function StyleframeCard({ frame, letter, picked, notes, focusKey, onPick, onAddNote, onEditNote, onRemoveNote }: StyleframeCardProps) {
+  const build = useBuildId();
   const imageRef = useRef<HTMLImageElement>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -159,7 +162,7 @@ export function StyleframeCard({ frame, letter, picked, notes, focusKey, onPick,
       >
         <img
           ref={imageRef}
-          src={styleframeUrl(frame)}
+          src={styleframeUrl(frame, build)}
           alt={`${frame.label}: ${frame.comp} at frame ${frame.frame}`}
           draggable={false}
           onLoad={() => setState('ready')}
