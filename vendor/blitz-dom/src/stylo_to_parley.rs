@@ -301,6 +301,40 @@ pub(crate) fn base_direction(
     }
 }
 
+/// The Unicode bidi control characters (UAX #9) that open and close the `unicode-bidi` context of a
+/// non-atomic inline element: a browser puts them in the text of the paragraph around the element's
+/// content. `first_strong` is an element whose direction comes from its text (`<bdi>`, `dir=auto`).
+/// Only the isolating values are handled; `embed` and `bidi-override` give `None`.
+pub(crate) fn bidi_controls(
+    direction: stylo::Direction,
+    unicode_bidi: stylo::UnicodeBidi,
+    first_strong: bool,
+) -> Option<(&'static str, &'static str)> {
+    const LRI: &str = "\u{2066}";
+    const RLI: &str = "\u{2067}";
+    const FSI: &str = "\u{2068}";
+    const PDI: &str = "\u{2069}";
+    let rtl = direction == stylo::Direction::Rtl;
+    let isolate = if first_strong {
+        FSI
+    } else if rtl {
+        RLI
+    } else {
+        LRI
+    };
+    match unicode_bidi {
+        stylo::UnicodeBidi::Isolate => Some((isolate, PDI)),
+        // The override sits inside the isolate: LRI LRO ... PDF PDI.
+        stylo::UnicodeBidi::IsolateOverride => Some(if rtl {
+            ("\u{2067}\u{202e}", "\u{202c}\u{2069}")
+        } else {
+            ("\u{2066}\u{202d}", "\u{202c}\u{2069}")
+        }),
+        stylo::UnicodeBidi::Plaintext => Some((FSI, PDI)),
+        _ => None,
+    }
+}
+
 pub(crate) fn text_align(input: stylo::TextAlignKeyword) -> parley::Alignment {
     match input {
         stylo::TextAlignKeyword::Start => parley::Alignment::Start,
