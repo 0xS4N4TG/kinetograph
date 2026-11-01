@@ -121,7 +121,6 @@ export function StoryboardPanel({ panel, onSubmit, onDismiss }: PanelProps<'stor
   return (
     <section aria-label="Storyboard" className="flex h-full min-h-0 flex-col gap-3 p-4">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <h2 className="text-sm font-semibold">Storyboard</h2>
         <span data-testid="total" className="text-sm text-muted-foreground tabular-nums">
           {shots.length} {shots.length === 1 ? 'shot' : 'shots'}, {fmt(total)} s{target !== null && ` of ${fmt(target)} s`}
         </span>
@@ -142,9 +141,9 @@ export function StoryboardPanel({ panel, onSubmit, onDismiss }: PanelProps<'stor
         {shots.length === 0 ? (
           <p className="p-6 text-center text-sm text-muted-foreground">No shots. Add one to start the board.</p>
         ) : (
-          <ol className="flex flex-wrap items-stretch gap-y-4">
+          <ol className="grid grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] items-start gap-3">
             {shots.map((shot, i) => (
-              <li key={shot.id} className="flex items-stretch">
+              <li key={shot.id} className="flex min-w-0 flex-col gap-1.5">
                 <ShotCard
                   shot={shot}
                   index={i}

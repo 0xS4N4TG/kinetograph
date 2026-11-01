@@ -1,4 +1,4 @@
-import { ChevronLeftIcon, ChevronRightIcon, GripVerticalIcon, MessageSquareIcon, PlusIcon, Trash2Icon } from 'lucide-react';
+import { ArrowRightIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, GripVerticalIcon, MessageSquareIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import { useState, type PointerEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -43,16 +43,22 @@ function SecondsInput({ value, label, onChange }: { value: number; label: string
   );
 }
 
-/** The transition out of a shot, shown between its card and the next. */
+/** The transition out of a shot, a chip under its card sized to its text: the whole chip is the select. */
 export function TransitionChip({ index, shot, onChange }: { index: number; shot: Shot; onChange: (transition: Transition) => void }) {
+  const label = TRANSITIONS.find((t) => t.value === shot.transition)?.label ?? shot.transition;
   return (
-    <div className="flex w-20 shrink-0 flex-col items-center justify-center self-center" data-testid="transition-chip">
-      <div aria-hidden="true" className="h-px w-full bg-border" />
+    <div
+      data-testid="transition-chip"
+      className="relative inline-flex w-fit items-center gap-1 self-end rounded-full border border-input bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground focus-within:ring-2 focus-within:ring-ring hover:bg-accent"
+    >
+      <ArrowRightIcon aria-hidden className="size-3" />
+      <span>{label}</span>
+      <ChevronDownIcon aria-hidden className="size-3 opacity-60" />
       <select
         aria-label={`Transition after shot ${index + 1}`}
         value={shot.transition}
         onChange={(e) => onChange(e.target.value as Transition)}
-        className="my-1 max-w-full cursor-pointer rounded-full border border-input bg-secondary px-2 py-0.5 text-center text-xs font-medium text-secondary-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="absolute inset-0 size-full cursor-pointer opacity-0"
       >
         {TRANSITIONS.map((t) => (
           <option key={t.value} value={t.value}>
@@ -60,7 +66,6 @@ export function TransitionChip({ index, shot, onChange }: { index: number; shot:
           </option>
         ))}
       </select>
-      <div aria-hidden="true" className="h-px w-full bg-border" />
     </div>
   );
 }
@@ -97,7 +102,7 @@ export function ShotCard(props: ShotCardProps) {
       aria-label={`Shot ${n}`}
       data-shot={shot.id}
       className={cn(
-        'flex w-64 shrink-0 flex-col gap-2 rounded-xl border bg-card p-2.5 text-card-foreground shadow-xs/5',
+        'flex w-full min-w-0 flex-col gap-2 rounded-xl border bg-card p-2.5 text-card-foreground shadow-xs/5',
         dragging && 'opacity-50',
         dropTarget && 'ring-2 ring-ring',
       )}

@@ -59,8 +59,19 @@ describe('StoryboardPanel', () => {
     expect(screen.getByLabelText('What moves in shot 2')).toHaveValue('moves s2');
     expect(screen.getByLabelText('Script line of shot 2')).toHaveValue('line s2');
     expect(screen.getByLabelText('Length of shot 2 in seconds')).toHaveValue(2);
-    // a chip sits between each pair of cards, none after the last
+    // a chip sits under each card but the last, and the cards lay out in a grid of their own columns
     expect(screen.getAllByTestId('transition-chip')).toHaveLength(2);
+  });
+
+  it('shows the transition as a chip with its name, sized to its text, that is still the select', async () => {
+    const { user } = start();
+    const chip = screen.getAllByTestId('transition-chip')[0]!;
+    expect(chip).toHaveTextContent('cut');
+    expect(chip.className).toContain('w-fit');
+    expect(chip.parentElement?.tagName).toBe('LI');
+    await user.selectOptions(within(chip).getByRole('combobox', { name: 'Transition after shot 1' }), 'match-cut');
+    expect(chip).toHaveTextContent('match cut');
+    expect(screen.queryByRole('heading', { name: 'Storyboard' })).not.toBeInTheDocument();
   });
 
   it('reorders with the move buttons and reports the new order', async () => {
