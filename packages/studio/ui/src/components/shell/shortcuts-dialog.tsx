@@ -11,7 +11,7 @@ const SHORTCUTS: { group: string; rows: [keys: string, action: string][] }[] = [
       ['← / →', 'Previous or next frame (Shift: 10 frames)'],
       ['Home / End', 'First or last frame'],
       ['L', 'Loop on or off'],
-      ['M', 'Mute the sound'],
+      ['Shift + M', 'Mute the sound'],
     ],
   },
   {
@@ -20,6 +20,7 @@ const SHORTCUTS: { group: string; rows: [keys: string, action: string][] }[] = [
       ['V', 'Selection: click a layer in the viewer to select it'],
       ['H', 'Hand: drag to pan the viewer'],
       ['Z', 'Zoom: click to zoom in, Alt-click to zoom out'],
+      ['M', 'Markup: pin, box or draw on the preview and comment (Esc leaves)'],
     ],
   },
   {

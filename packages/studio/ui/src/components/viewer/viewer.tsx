@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, memo, type MouseEvent, type PointerEvent } from 'react';
-import { EyeIcon, HandIcon, MaximizeIcon, MousePointerIcon, TriangleAlertIcon, ZoomInIcon, type LucideIcon } from 'lucide-react';
+import { EyeIcon, HandIcon, MaximizeIcon, MousePointerIcon, PenLineIcon, TriangleAlertIcon, ZoomInIcon, type LucideIcon } from 'lucide-react';
 
 import type { CompositionInfo, InspectResult, ReceivedFrame, StudioError } from '@/api';
+import { MarkupLayer, MarkupToolbar } from '@/components/viewer/markup-layer';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Hint } from '@/components/ui/hint';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Menu, MenuCheckboxItem, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from '@/components/ui/menu';
 import { fitSize, stepZoom } from '@/lib/format';
+import { useMarkup, useMarkupStore } from '@/lib/markup';
 import { displayName } from '@/lib/names';
+import type { Player } from '@/lib/player';
 import { findLayer, hitTest } from '@/lib/inspect';
 import { boxResult, boxSelect, clickSelection, layerRect, rectFrom, type Rect } from '@/lib/selection';
 import { useElementSize } from '@/lib/use-element-size';
@@ -55,6 +58,8 @@ interface ViewerProps {
   onOverlayHost?(el: HTMLElement | null): void;
   /** A click picked one layer (shift: added), or a dragged box picked the layers inside it. */
   onSelectLayers(ids: string[]): void;
+  /** The player, for markup mode: its marks belong to the frame the playhead is on. */
+  player?: Player;
 }
 
 /** The frames the server renders, drawn on a canvas that scales to fit, over a checkerboard for transparency. */
@@ -76,7 +81,12 @@ export const Viewer = memo(function Viewer({
   onGuidesChange,
   onOverlayHost,
   onSelectLayers,
+  player,
 }: ViewerProps) {
+  const markupStore = useMarkupStore();
+  const markup = useMarkup();
+  // The comment bubble of a mark is drawn in the viewer itself, which does not clip it as the frame does.
+  const [host, setHost] = useState<HTMLDivElement | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -215,7 +225,7 @@ export const Viewer = memo(function Viewer({
   const stop = (event: { stopPropagation(): void }) => event.stopPropagation();
 
   return (
-    <div className="bg-stage relative min-h-0 flex-1 select-none">
+    <div ref={setHost} className="bg-stage relative min-h-0 flex-1 select-none">
       <div
         ref={boxRef}
         data-testid="preview"
@@ -327,6 +337,8 @@ export const Viewer = memo(function Viewer({
               onPointerUp={stop}
               onClick={stop}
             />
+
+            {player && <MarkupLayer comp={comp} player={player} inspect={inspect} scale={scaleRatio} host={host} viewKey={`${shown.width}x${shown.height}|${view.pan.x},${view.pan.y}|${box.width}x${box.height}`} />}
           </div>
         ) : (
           <p className="text-muted-foreground text-sm">No composition selected.</p>
@@ -335,6 +347,7 @@ export const Viewer = memo(function Viewer({
 
       {/* Floating controls: the tools top left, the view menu top right, the zoom readout bottom right. */}
       <div className="pointer-events-none absolute inset-x-4 top-4 flex items-start justify-between">
+        <div className="flex flex-col items-start gap-2">
         <div className="bg-card/80 border-border/60 pointer-events-auto flex items-center gap-0.5 rounded-full border p-1 shadow-sm backdrop-blur-md" role="toolbar" aria-label="Tools">
           {TOOLS.map(({ id, label, key, icon: Icon }) => (
             <Hint key={id} label={`${label} (${key})`}>
@@ -350,6 +363,28 @@ export const Viewer = memo(function Viewer({
               </Button>
             </Hint>
           ))}
+          {markupStore && player && (
+            <>
+              <span className="bg-border mx-0.5 h-4 w-px" aria-hidden="true" />
+              <Hint label="Mark up the preview (M)">
+                <Button
+                  variant={markup.active ? 'secondary' : 'ghost'}
+                  size="icon-sm"
+                  aria-label="Markup"
+                  aria-pressed={markup.active}
+                  onClick={() => {
+                    if (!markup.active) player.pause();
+                    markupStore.toggle();
+                  }}
+                  className={cn('rounded-full', markup.active && 'bg-accent text-accent-foreground')}
+                >
+                  <PenLineIcon />
+                </Button>
+              </Hint>
+            </>
+          )}
+        </div>
+        {player && <MarkupToolbar />}
         </div>
         <div className="flex items-center gap-2">
           {frameMs !== null && <span className="text-muted-foreground/80 pointer-events-none font-mono text-[11px]">{frameMs.toFixed(0)} ms</span>}

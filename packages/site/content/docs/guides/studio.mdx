@@ -44,7 +44,8 @@ beside it. Type to filter.
 | Left, Right | Previous or next frame (Shift: 10 frames) |
 | Home, End | First or last frame |
 | L | Loop on or off |
-| M | Mute the sound |
+| Shift+M | Mute the sound |
+| M | Markup mode: mark up the preview (Esc leaves) |
 | V, H, Z | Selection, Hand (drag to pan) and Zoom (click to zoom in, Alt-click to zoom out) |
 | 0, 1 | Fit the frame to the preview, or show it at 100% |
 | Ctrl or Cmd + wheel | Zoom the timeline's time axis |
@@ -59,11 +60,35 @@ it plays or you scrub, and full-size PNGs at rest.
 
 Click a layer to select it. Shift-click adds to the selection, and dragging a box around layers selects them all.
 
+### Mark up the preview
+
+To show an agent what to change, press `M` (or the pen button beside the tools). The playhead pauses and four tools appear:
+
+- **Pin**: click a spot.
+- **Box**: drag a rectangle.
+- **Pen**: draw freehand, in one of four colours. The **Eraser** removes a whole stroke with a click.
+- **Range**: drag on the timeline ruler to mark a span of time instead of a place.
+
+After each mark a comment bubble opens next to it. Press Enter to add the note to the notes tray (the mark stays as a numbered
+marker), or Cmd+Enter (Ctrl+Enter elsewhere) to send that one note to the agent now. Esc in the bubble drops a new mark;
+Esc outside it leaves markup mode. Click a marker to reopen its bubble and edit or delete the note.
+
+Everything is stored in composition pixels on the frame you drew it on, so it lines up at any zoom or pan. A marker shows
+only while the playhead is on its frame (or inside its range), and each note is a tick on the timeline ruler.
+
+The notes tray sits above the message box. It lists the notes in time order with a button to jump to each, edit it, mark it
+resolved (greyed out and left out of the message) or delete it, and **Send N notes**. The agent gets one message: the notes in
+time order, such as `1. frame 120 (00:04.00), box 640,320 420x180 over Title: make this bigger`, with the names of the
+layers under each mark. For each distinct frame (up to 6) it also gets that frame as a picture with its marks drawn on it:
+numbered pins, boxes and pen strokes in their colours. The pictures are stored in `public/refs/` as `markup-<stamp>-<n>.png`
+and sent as images to an agent that takes them; the paths are always in the message. Frames beyond the 6th are named in the
+text without a picture. After sending, the notes stay on the preview as sent markers until you clear them with **Clear sent**.
+
 ### Sound
 
 If the composition has audio, the preview plays it. The server mixes the audio once, as a render does, and the window
 plays that mix with the Web Audio clock. While it plays, the picture follows the sound and drops frames rather than
-drift. Pausing, seeking and looping move the sound with the playhead, and scrubbing plays 80 ms snippets. `M` mutes, and
+drift. Pausing, seeking and looping move the sound with the playhead, and scrubbing plays 80 ms snippets. `Shift+M` mutes, and
 the choice is kept in the browser. A composition without audio has no mute button.
 
 ## The timeline
@@ -146,7 +171,7 @@ you before it edits a file.
 When you send a message, it carries the selection: the project file, the composition and the frame (or the span), and
 for each selected layer its name, kind, source file and line, position, size and current look, and the plugin that draws
 it. With many layers selected the box shows three chips and "+N more", which lists them all (with Clear all); a kind with
-four or more layers is one chip, such as "28 shapes in showcase". Keep the picture switch on to attach a picture of the selected area, or a contact sheet for a span.
+four or more layers is one chip, such as "28 shapes in showcase". Keep the Frame switch on to attach a picture of the selected area, or a contact sheet for a span.
 
 You can send a message while the agent is still working. It waits in the **Up next** tray, docked above the message box. Closed,
 the tray is one slim bar ("2 up next", the first message's first line and its thumbnails); open it with the chevron to see a

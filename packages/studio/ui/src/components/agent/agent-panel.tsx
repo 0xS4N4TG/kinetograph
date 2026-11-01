@@ -4,6 +4,7 @@ import { ArrowUpIcon, ChevronRightIcon, FrameIcon, ImagePlusIcon, SparklesIcon, 
 
 import type { AgentAttachment, AgentInfo, CompositionInfo, InspectResult, PluginSummary, ProjectInfo, ReceivedFrame, TimelineData } from '@/api';
 import { AttachmentChips, MessageImages } from '@/components/agent/attachments';
+import { NotesTray } from '@/components/agent/notes-tray';
 import { UpNext } from '@/components/agent/up-next';
 import { ToolGroup } from '@/components/agent/tool-rows';
 import { Button } from '@/components/ui/button';
@@ -19,6 +20,7 @@ import { findLayer, type InspectLayer } from '@/lib/inspect';
 import { contactSheet } from '@/lib/contact-sheet';
 import { chipText, contactFrames, layerRect, rangeLabel, unionRect, type FrameRange } from '@/lib/selection';
 import type { ToolItem } from '@/lib/tool-summary';
+import { useStudioContext } from '@/lib/studio-context';
 import type { Chat } from '@/lib/use-chat';
 import { cn } from '@/lib/utils';
 
@@ -281,6 +283,7 @@ const Item = memo(function Item({ item, onAnswer }: { item: PlainItem; onAnswer(
 
 /** The conversation with the user's own coding agent about what is selected in the preview. */
 export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, selectedLayers, selectLayers, lastImage, range = null, onClearRange, thumbnailFrameUrl, chat, timeline, plugins, draft }: AgentPanelProps) {
+  const studio = useStudioContext();
   const [info, setInfo] = useState<AgentInfo | null>(null);
   const [text, setText] = useState('');
   const [withPicture, setWithPicture] = useState(true);
@@ -539,6 +542,7 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
         {busy && state.items.at(-1)?.kind === 'user' && <p className="text-muted-foreground text-xs">Thinking…</p>}
       </div>
 
+      <NotesTray comp={comp} player={studio?.player ?? null} />
       <UpNext items={state.queue} take={chat.take} remove={chat.unqueue} requeue={chat.requeue} sendNow={chat.sendNow} />
 
       <div className="shrink-0 p-3 pt-0">

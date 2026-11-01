@@ -41,7 +41,8 @@ export function useTransportKeys(player: Player, shortcuts: Record<string, () =>
       } else if (key === 'l') {
         if (!event.repeat) player.setLoop(!player.getState().loop);
       } else {
-        latest.current[key]?.();
+        // A capital letter (Shift) is looked up as typed before the lowercase one: Shift+M is not M.
+        (latest.current[event.key] ?? latest.current[key])?.();
       }
     };
     // A focused button would also click on the Space key's release.
