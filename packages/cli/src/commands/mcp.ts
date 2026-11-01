@@ -9,7 +9,7 @@ export const mcp: Command = {
     {
       name: 'studio',
       type: 'string',
-      description: 'The address of a running studio (http://127.0.0.1:3000); adds the tools studio_get_props and studio_set_props. The studio token goes in the environment variable KINETOGRAPH_STUDIO_TOKEN',
+      description: 'The address of a running studio (http://127.0.0.1:3000); adds the tools studio_get_props, studio_set_props, studio_open_panel and studio_panel_result. The studio token goes in the environment variable KINETOGRAPH_STUDIO_TOKEN',
     },
   ],
   async run(args) {

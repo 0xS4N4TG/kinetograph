@@ -206,11 +206,15 @@ opens.
 ### Studio's agent
 
 The coding agent in Studio's chat panel gets a Kinetograph MCP server. It has every `kinetograph` tool, the tools of
-your plugins, and two for the open window:
+your plugins, and four for the open window:
 
 - `studio_get_props` returns `{ comp, props }`, what the preview shows now.
 - `studio_set_props` takes `{ comp?, props, merge? }` and sets the props. By default it merges them over the props
   shown now; `merge: false` replaces them. The preview re-renders, and the Props tab and any plugin panel update.
+- `studio_open_panel` takes `{ panel, data, message? }` and opens a brief, script, storyboard, styleframes or review panel
+  in the window to ask the person for a decision. It returns `{ id, status: "open" }` at once; the agent then ends its
+  turn, and the answer arrives as a message starting `[panel <kind> <id> submitted]` and in `plan/<kind>.json`.
+- `studio_panel_result` takes `{ id }` and returns `{ status, answer? }`, for an agent in a terminal that the person told.
 
 An agent in Studio should try values with `studio_set_props`, then write the values it picks into the code or a preset.
 Outside Studio you can run the same server yourself:

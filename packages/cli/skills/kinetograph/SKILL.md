@@ -226,6 +226,27 @@ One line each; the pointer has the detail. `kinetograph doctor` alone lists the 
   surface, and `cornerPin(usePlaneTrack(file).pin)` pins a picture to it. AUTHORING.md §11.12,
   `/docs/guides/motion-tracking/`.
 
+## Working with a person in Studio
+
+For a new video, settle the decisions in order before you animate, using `studio_open_panel`: a **brief** first
+(pre-fill what you know from the chat), then the script or track, then a **storyboard**, then the look. Build an
+animatic and ask for a **review** before animating; animate the hook and the reveal first and ask for a review again.
+
+- `studio_open_panel({ panel, data, message? })` opens `brief`, `script`, `storyboard`, `styleframes` or `review` in the
+  Studio window and returns `{ id, status: 'open' }` at once. `data` is what the panel starts from: a partial `Brief`; a
+  `Storyboard` (`comp` and `shots`); a `ReviewRequest` (`comp`, `range?`, `ask?`); and so on. `message` is one line shown
+  at the top. Opening a second panel of the same kind replaces the first.
+- `studio_panel_result({ id })` returns `{ status: 'open' | 'submitted' | 'dismissed', answer? }`. Use it only when the
+  person tells you in a terminal that they answered.
+
+After you open a panel, end your turn with one line saying what you are waiting for. Do not start the next stage and do
+not call the tool again to check. The answer arrives as a message starting `[panel <kind> <id> submitted]`, or
+`dismissed` if the person closed it; in a terminal, the person tells you, and you read it with `studio_panel_result`.
+Read `plan/<panel>.json` before you build from it.
+
+Skip stages that don't fit the job: a caption fix needs no brief. Never animate against an unapproved storyboard
+without saying so.
+
 ## Habits that save iterations
 
 - Run `npx kinetograph plugins` and read each plugin's `SKILL.md` before using it.
