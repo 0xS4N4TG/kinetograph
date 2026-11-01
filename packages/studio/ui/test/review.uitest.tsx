@@ -8,6 +8,7 @@ import { answerNotes, areaOfSelection, reviewSpan, sortNotes } from '../src/comp
 import type { OpenPanel } from '../src/components/panels/types';
 import { Timeline } from '../src/components/timeline/timeline';
 import { Player } from '../src/lib/player';
+import { getMarqueeBox, setMarqueeBox } from '../src/lib/marquee-box';
 import { setReviewMarks, useReviewMarks } from '../src/lib/review-marks';
 import type { FrameRange } from '../src/lib/selection';
 import { inspectFor, intro, introTimeline, layer, outro } from './fixtures';
@@ -82,6 +83,15 @@ describe('review model', () => {
     expect(areaOfSelection(inspect, ['a', 'b'], intro)?.box).toEqual({ x: 10, y: 20, w: 230, h: 120 });
     expect(areaOfSelection(inspect, [], intro)).toBeNull();
     expect(areaOfSelection(null, ['a'], intro)).toBeNull();
+  });
+
+  it('takes a drawn box, alone when no layer lies inside it and over the layers when one does', () => {
+    const inspect = inspectFor(intro, 0);
+    inspect.layers = [layer('a', 'shape', { bounds: { x: 10, y: 20, width: 100, height: 50 } })];
+    const drawn = { x: 500, y: 400, w: 200, h: 100 };
+    expect(areaOfSelection(inspect, [], intro, drawn)).toEqual({ box: drawn });
+    expect(areaOfSelection(null, [], intro, drawn)).toEqual({ box: drawn });
+    expect(areaOfSelection(inspect, ['a'], intro, drawn)).toEqual({ box: drawn, layer: 'a' });
   });
 });
 
@@ -248,6 +258,35 @@ describe('ReviewView', () => {
         verdict: 'changes',
         notes: [{ frame: 0, text: 'too small', box: { x: 100, y: 200, w: 300, h: 80 }, layer: 'title' }],
       });
+    });
+
+    it('ties a note to a box drawn over empty space, with a box and no layer', async () => {
+      const user = userEvent.setup();
+      const store = withSelection();
+      setMarqueeBox(null);
+      const { onSubmit } = setup({ comp: 'Intro' }, store);
+      act(() => setMarqueeBox({ box: { x: 600, y: 300, w: 120, h: 80 }, selection: '' }));
+      expect(screen.getByRole('button', { name: /Tied to the box/ })).toHaveAttribute('aria-pressed', 'true');
+      await user.keyboard('n');
+      await user.keyboard('empty here');
+      await user.click(screen.getByRole('button', { name: 'Request changes' }));
+      expect(onSubmit).toHaveBeenCalledWith({ verdict: 'changes', notes: [{ frame: 0, text: 'empty here', box: { x: 600, y: 300, w: 120, h: 80 } }] });
+      act(() => setMarqueeBox(null));
+    });
+
+    it('keeps a drawn box and the layer inside it together, and forgets the box when the selection moves on', async () => {
+      const user = userEvent.setup();
+      const store = withSelection();
+      setMarqueeBox(null);
+      const { onSubmit, rerenderWith } = setup({ comp: 'Intro' }, store);
+      act(() => setMarqueeBox({ box: { x: 90, y: 190, w: 340, h: 120 }, selection: 'title' }));
+      rerenderWith({ ...store, selectedLayers: ['title'] });
+      await user.keyboard('n');
+      await user.keyboard('both');
+      await user.click(screen.getByRole('button', { name: 'Request changes' }));
+      expect(onSubmit).toHaveBeenCalledWith({ verdict: 'changes', notes: [{ frame: 0, text: 'both', box: { x: 90, y: 190, w: 340, h: 120 }, layer: 'title' }] });
+      rerenderWith({ ...store, selectedLayers: [] });
+      expect(getMarqueeBox()).toBeNull();
     });
 
     it('leaves the area off when the tie is switched off or removed', async () => {

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
 import { clock } from '@/lib/format';
 import { useFrame } from '@/lib/player-hooks';
+import { getMarqueeBox, setMarqueeBox, useMarqueeBox } from '@/lib/marquee-box';
 import { setReviewMarks } from '@/lib/review-marks';
 import type { Studio } from '@/studio';
 
@@ -95,24 +96,32 @@ export function ReviewView({ panel, store, onSubmit, onDismiss }: ReviewViewProp
 
   // ---- notes ----
 
-  const area = useMemo(() => (comp ? areaOfSelection(inspect, selectedLayers, comp) : null), [comp, inspect, selectedLayers]);
-  /** Whether the next note takes the picked layers' area; it switches on when the person picks something. */
-  const [tie, setTie] = useState(false);
   const selectionKey = selectedLayers.join('\0');
+  // The box last dragged on the preview counts while the selection is still what that drag picked.
+  const marquee = useMarqueeBox();
+  const drawn = marquee && marquee.selection === selectionKey ? marquee.box : null;
+  const drawnKey = drawn ? `${drawn.x},${drawn.y},${drawn.w},${drawn.h}` : '';
+  useEffect(() => {
+    const last = getMarqueeBox();
+    if (last && last.selection !== selectionKey) setMarqueeBox(null);
+  }, [selectionKey]);
+  const area = useMemo(() => (comp ? areaOfSelection(inspect, selectedLayers, comp, drawn) : null), [comp, inspect, selectedLayers, drawnKey]);
+  /** Whether the next note takes the picked area; it switches on when the person picks something or draws a box. */
+  const [tie, setTie] = useState(false);
   const firstSelection = useRef(true);
   useEffect(() => {
     if (firstSelection.current) {
       firstSelection.current = false;
       return;
     }
-    setTie(selectedLayers.length > 0);
-  }, [selectionKey]);
+    setTie(selectedLayers.length > 0 || drawnKey !== '');
+  }, [selectionKey, drawnKey]);
 
   const addNote = useCallback(() => {
     if (!comp) return;
     const frame = player.getState().frame;
     const uid = nextUid.current++;
-    setNotes((all) => [...all, { uid, frame, text: '', ...(tie && area ? { box: area.box, layer: area.layer } : {}) }]);
+    setNotes((all) => [...all, { uid, frame, text: '', ...(tie && area ? { box: area.box, ...(area.layer ? { layer: area.layer } : {}) } : {}) }]);
     setFocusUid(uid);
   }, [comp, player, tie, area]);
 
@@ -181,7 +190,7 @@ export function ReviewView({ panel, store, onSubmit, onDismiss }: ReviewViewProp
         {area && (
           <Button variant={tie ? 'secondary' : 'outline'} size="xs" aria-pressed={tie} onClick={() => setTie((on) => !on)} className="justify-start">
             <SquareDashedIcon />
-            <span className="truncate">{tie ? `Tied to ${area.layer}` : `Tie to ${area.layer}`}</span>
+            <span className="truncate">{tie ? `Tied to ${area.layer ?? 'the box'}` : `Tie to ${area.layer ?? 'the box'}`}</span>
           </Button>
         )}
         {!area && <p className="text-muted-foreground text-xs">Pick a layer or drag a box on the preview to tie the next note to that area.</p>}

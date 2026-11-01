@@ -31,19 +31,25 @@ export function reviewSpan(request: ReviewRequest, duration: number): [number, n
   return [Math.min(a, b), Math.max(a, b)];
 }
 
-/** The area and layer a note gets from the layers picked in the preview (a drag box or a click), in composition pixels. */
-export function areaOfSelection(inspect: InspectResult | null, selected: readonly string[], size: { width: number; height: number }): { box: Box; layer: string } | null {
-  if (!inspect) return null;
-  const layers = selected.map((id) => findLayer(inspect.layers, id)).filter((l) => l !== null);
+/**
+ * The area and layer a note gets from the layers picked in the preview (a drag box or a click), in composition pixels.
+ * A box dragged on the preview (`drawn`) is the area itself, and it stands alone when no layer lies inside it.
+ */
+export function areaOfSelection(
+  inspect: InspectResult | null,
+  selected: readonly string[],
+  size: { width: number; height: number },
+  drawn: Box | null = null,
+): { box: Box; layer?: string } | null {
+  const layers = inspect ? selected.map((id) => findLayer(inspect.layers, id)).filter((l) => l !== null) : [];
+  const layer = layers.length > 0 ? layers.map(layerName).join(', ') : undefined;
+  if (drawn) return { box: drawn, ...(layer ? { layer } : {}) };
   const rect = unionRect(
     layers.map((l) => layerRect(l)).filter((r) => r !== null),
     0,
     size.width,
     size.height,
   );
-  if (!rect || layers.length === 0) return null;
-  return {
-    box: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
-    layer: layers.map(layerName).join(', '),
-  };
+  if (!rect || !layer) return null;
+  return { box: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) }, layer };
 }

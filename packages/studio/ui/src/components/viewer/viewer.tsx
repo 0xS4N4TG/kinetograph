@@ -8,6 +8,7 @@ import { Hint } from '@/components/ui/hint';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Menu, MenuCheckboxItem, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from '@/components/ui/menu';
 import { fitSize, stepZoom } from '@/lib/format';
+import { setMarqueeBox } from '@/lib/marquee-box';
 import { displayName } from '@/lib/names';
 import { findLayer, hitTest } from '@/lib/inspect';
 import { boxResult, boxSelect, clickSelection, layerRect, rectFrom, type Rect } from '@/lib/selection';
@@ -180,7 +181,16 @@ export const Viewer = memo(function Viewer({
       const at = clampedPixelAt(event);
       swallowClick.current = true;
       setMarquee(null);
-      if (at && inspect) onSelectLayers(boxResult(selectedLayers, boxSelect(inspect.layers, rectFrom(box, at)), event.shiftKey));
+      if (at) {
+        const picked = inspect ? boxResult(selectedLayers, boxSelect(inspect.layers, rectFrom(box, at)), event.shiftKey) : selectedLayers;
+        const rect = rectFrom(box, at);
+        // The drawn box, for a panel that ties a note to it even when no layer lies inside.
+        setMarqueeBox({
+          box: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
+          selection: picked.join('\0'),
+        });
+        if (inspect) onSelectLayers(picked);
+      }
     }
   };
 
@@ -190,6 +200,7 @@ export const Viewer = memo(function Viewer({
       return;
     }
     if (!comp || buildError) return;
+    setMarqueeBox(null);
     if (tool === 'zoom') {
       onViewChange({ zoom: stepZoom(scaleRatio, event.altKey ? -1 : 1), pan: view.pan });
     } else if (tool === 'select' && inspect) {
