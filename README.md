@@ -66,6 +66,15 @@ npx kinetograph render src/index.tsx      # writes out/renders/Main.mp4
 npx kinetograph render html/index.html    # for an HTML project
 ```
 
+## How it works
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/engine-dark.svg">
+  <img src="docs/readme/engine-light.svg" alt="Diagram of how Kinetograph makes a frame: a Remotion project or HyperFrames page is bundled, run in Node as layers and DOM islands, laid out and painted in the Rust addon, composited on the GPU and encoded to MP4, with Web Audio rendered offline as a side input" width="100%">
+</picture>
+
+Node runs your project and a Rust addon draws each frame on the GPU. The [Engine](https://kinetograph.dev/docs/internals/engine/) page walks through the six steps.
+
 ## Docs
 
 Everything else is on the docs site, [kinetograph.dev/docs](https://kinetograph.dev/docs/):
