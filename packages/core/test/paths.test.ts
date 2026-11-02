@@ -307,7 +307,7 @@ describe('relative quadratic segments with a control point on the start (Remotio
       close(points[i]!.x, x!);
       close(points[i]!.y, y!);
     });
-    const tangent = P.getTangentAtLength(d, 25);
+    const tangent = P.getTangentAtLength(d, 25)!;
     close(tangent.x, 0.6);
     close(tangent.y, 0.8);
     const after = P.getPointAtLength('M 10 20 q 0 0 30 40 l 10 0', 60)!;
