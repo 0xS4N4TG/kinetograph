@@ -1,10 +1,11 @@
 // kinetograph: the agent CLI and MCP server (packages/cli/skills/kinetograph/references/AUTHORING.md §9).
 
-import { createRequire } from 'node:module';
 import { parseCommandArgs, usage } from './args.js';
 import { allOptions, type Context } from './commands/types.js';
 import { commands, findCommand } from './commands/index.js';
 import { CliError, toErrorObject } from './errors.js';
+import { beginNotices } from './update-notice.js';
+import { cliVersion } from './version.js';
 
 export { createMcpServer, toolCommands, toolName } from './mcp.js';
 export { bundleProject, cacheDir, resolveSpecifier, syntheticEntry, watchProject } from './bundle.js';
@@ -19,10 +20,7 @@ export type { RenderJobOptions } from './render-job.js';
 export { checkFrame, frameRange, isSceneFile, listCompositions, openSource, parseProps, projectRootOf } from './source.js';
 export type { FrameOutput, OpenOptions, Source } from './source.js';
 
-/** The `kinetograph` package version. */
-export function cliVersion(): string {
-  return (createRequire(import.meta.url)('../package.json') as { version: string }).version;
-}
+export { cliVersion };
 
 export interface Io {
   out(text: string): void;
@@ -53,10 +51,17 @@ function help(): string {
  */
 export async function run(argv: string[], io: Io = processIo): Promise<number> {
   const asJson = argv.includes('--json');
-  const fail = (error: unknown): number => {
+  // Update notices (update-notice.ts): to stderr, and in `notices` of a `--json` result. Not for `studio`, which serves
+  // until it is stopped, or `mcp`, whose stderr no agent reads (the server puts them in its first tool result).
+  let session: ReturnType<typeof beginNotices>;
+  const notices = async (): Promise<string[]> => (await session?.collect().catch(() => undefined)) ?? [];
+  const showNotices = (lines: string[]): void => lines.forEach((line) => io.err(`${line}\n`));
+  const fail = async (error: unknown): Promise<number> => {
     const { code, message } = toErrorObject(error);
-    if (asJson) io.out(`${JSON.stringify({ error: { code, message } })}\n`);
+    const lines = await notices();
+    if (asJson) io.out(`${JSON.stringify({ error: { code, message }, ...(lines.length > 0 ? { notices: lines } : {}) })}\n`);
     else io.err(`error: ${message}\n`);
+    showNotices(lines);
     return 1;
   };
 
@@ -70,13 +75,15 @@ export async function run(argv: string[], io: Io = processIo): Promise<number> {
   }
 
   const found = findCommand(argv);
-  if (!found) return fail(new CliError('INVALID_ARG', `unknown command "${argv[0]}"; kinetograph --help lists the commands`));
+  if (!found) return await fail(new CliError('INVALID_ARG', `unknown command "${argv[0]}"; kinetograph --help lists the commands`));
   const { command, rest } = found;
   const spec = { name: command.name, positionals: command.positionals, options: allOptions(command) };
   if (rest.includes('--help') || rest.includes('-h')) {
     io.out(`${command.summary}\n${usage(spec)}\n`);
     return 0;
   }
+
+  if (command.name !== 'mcp' && command.name !== 'studio') session = beginNotices(cliVersion());
 
   try {
     const args = parseCommandArgs(spec, rest);
@@ -87,9 +94,14 @@ export async function run(argv: string[], io: Io = processIo): Promise<number> {
     const result = await command.run(args, context);
     // The MCP server owns stdout (it is the protocol) and has returned only because the client went away; the
     // studio has said what it had to (`announce`) and returns only when it is stopped.
-    if (command.name !== 'mcp' && command.name !== 'studio') io.out(`${args.json ? JSON.stringify(result.data) : result.text}\n`);
+    if (command.name !== 'mcp' && command.name !== 'studio') {
+      const lines = await notices();
+      const data = lines.length > 0 && !Array.isArray(result.data) ? { ...result.data, notices: lines } : result.data;
+      io.out(`${args.json ? JSON.stringify(data) : result.text}\n`);
+      showNotices(lines);
+    }
     return result.exitCode ?? 0;
   } catch (error) {
-    return fail(error);
+    return await fail(error);
   }
 }

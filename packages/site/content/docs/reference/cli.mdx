@@ -12,7 +12,8 @@ The entry is a `.tsx`, `.ts`, `.jsx` or `.js` project file, a `.json` scene, or 
 
 ## Shared behaviour
 
-- `--json` prints one JSON object on stdout instead of text. A failure prints `{ "error": { "code", "message" } }`.
+- `--json` prints one JSON object on stdout instead of text. Progress goes to stderr, which stays quiet with `--json` except for the update notice below. A failure prints `{ "error": { "code", "message" } }`.
+- Once a day the CLI checks npm for a newer `kinetograph` and looks for installed agent skills older than the CLI. It prints one line on stderr, and adds a `notices` array to the `--json` result. It never installs anything. `CI` or `KINETOGRAPH_NO_UPDATE_CHECK=1` turns it off.
 - `--help` or `-h` prints a command's usage. `kinetograph --help` lists the commands.
 - `kinetograph --version` or `-v` prints the package version.
 - Exit code 0 is success. Exit code 1 is an error, or a failed check: `check` with type errors, `lint` with errors, `snapshot` with a mismatch.
@@ -265,7 +266,7 @@ With no entry, `doctor` checks your install:
 npx kinetograph doctor
 ```
 
-It prints the Node version, the platform, whether the addon loaded, and which renderer draws (`renderer`). If Skia falls back to the CPU, `rendererReason` says why.
+It prints the Node version, the platform, whether the addon loaded, and which renderer draws (`renderer`). It also reports the CLI version against the latest on npm (`cli`) and each installed agent skill with its version and whether it is current (`skills`). If Skia falls back to the CPU, `rendererReason` (`why not the GPU:` in the text) says why: the device, the driver and what it lacks.
 
 ## studio
 

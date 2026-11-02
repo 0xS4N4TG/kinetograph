@@ -1,6 +1,8 @@
 ---
 name: kinetograph
 description: Make videos and motion graphics with Kinetograph. Write Remotion-shaped TSX (useCurrentFrame, interpolate, spring, Sequence, native elements) and Web Audio code, or an HTML page with GSAP (HyperFrames projects render as they are), look at frames with `kinetograph still` and `strip`, check them with `inspect` and `lint`, then `render` to MP4. Use when asked to build, edit, preview or render a video, animation, title card or sound design with Kinetograph.
+metadata:
+  version: "0.2.5"
 ---
 
 # Working with Kinetograph
@@ -28,6 +30,11 @@ out/              everything generated: renders/, stills/, sheets/
 
 Load assets as `staticFile('images/logo.png')`. Never write outputs next to the code or at the project root: `still`,
 `strip`, `onion` and `render` write to `out/` when you leave out `-o`, and print the path. An existing project keeps its own layout.
+
+If a Kinetograph command prints that the CLI or the skills are out of date (a line on stderr, a `notices` field in
+`--json`, or an extra text part on the first MCP tool result), tell the user and ask whether to update. Don't update
+without a yes. The commands are `npm install kinetograph@latest` and `npx skills add 0xS4N4TG/kinetograph`;
+`kinetograph doctor` shows both versions.
 
 ## The loop
 
