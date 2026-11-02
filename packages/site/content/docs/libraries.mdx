@@ -7,7 +7,7 @@ This page shows how to write code for each library. The list of what runs is in 
 
 One rule covers all of them: a frame is a function of the frame number. Make the library show what the frame number says, and a frame comes out the same alone, in order or in parallel.
 
-Four small, optional plugins do this for GSAP, anime.js, Motion and p5.brush. Each library is a peer dependency of its plugin. The plugins also need `react` and `@kinetographdev/core`, and they import from `remotion`.
+Four small, optional plugins do this for GSAP, anime.js, Motion and p5.brush. Each library is a peer dependency of its plugin, along with `react` and `@kinetographdev/core`.
 
 ## GSAP
 
@@ -106,8 +106,7 @@ These need only the habit above: compute from the frame, and keep the library's 
 
 ### d3
 
-Use d3 for scales, shapes and layouts, and let React draw the SVG. Avoid `d3-transition` and `d3-timer`. Interpolate by the frame number instead. `d3-selection` also works when it appends into a ref in a layout effect.
-
+Use d3 for scales, shapes and layouts, and let React draw the SVG. Avoid `d3-transition` and `d3-timer`. Interpolate by the frame number instead. 
 ```tsx
 const x = d3.scaleLinear().domain([0, 59]).range([90, 760]);
 const y = d3.scaleLinear().domain([0, 1]).range([600, 140]);
@@ -117,7 +116,7 @@ const line = d3.line<[number, number]>().x((d) => x(d[0])).y((d) => y(d[1])).cur
 
 ### rough.js
 
-Pass a `seed` to every shape, so the sketch does not change between frames. `rough.canvas(canvas)` takes the same options.
+Pass a `seed` to every shape, so the sketch does not change between frames.
 
 ```tsx
 const rc = rough.svg(svg);
@@ -136,25 +135,7 @@ chart.update('none');
 
 ### Recharts
 
-Set `isAnimationActive={false}` on every series, pass a fixed `width` and `height`, and slice the data by frame.
-
-```tsx
-<LineChart width={1280} height={720} data={rows.slice(0, Math.floor(frame / 5) + 1)}>
-  <Line type="monotone" dataKey="value" stroke="#1d4e89" isAnimationActive={false} />
-</LineChart>
-```
-
-### visx
-
-visx is d3 scales and React shapes, so it works the same way.
-
-```tsx
-<LinePath data={SERIES.slice(0, frame + 1)} x={(d) => x(d.x)} y={(d) => y(d.y)} stroke="#1d4e89" strokeWidth={5} curve={curveMonotoneX} />
-```
-
-### Bklit UI
-
-Bklit UI's charts (visx, d3 and Motion) run as they are, with their Tailwind classes. Wrap them in `<MotionFrame>` if the project also has to render under Remotion.
+Set `isAnimationActive={false}` on every series, pass a fixed `width` and `height`, and slice the data by frame, for example `data={rows.slice(0, Math.floor(frame / 5) + 1)}`.
 
 ### Paper.js
 
@@ -169,7 +150,7 @@ new scope.Path.Circle({ center: [640, 360], radius: 220, strokeColor: '#1d4e89',
 
 ### Matter.js and Rapier
 
-Step the world from the start to the frame, with a seeded generator for the starting positions. Each frame replays every step before it, so the cost grows with the frame number. For a long simulation, keep the step cheap or bake the positions into data first.
+Step the world from the start to the frame, with a seeded generator for the starting positions. Each frame replays every step before it, so a long simulation gets slow. Keep the step cheap or bake the positions into data first.
 
 ```tsx
 const engine = Engine.create({ gravity: { x: 0, y: 1, scale: 0.001 } });
@@ -183,7 +164,3 @@ Rapier (`@dimforge/rapier2d-compat`) works the same way. Open a `delayRender` wh
 ### Remotion packages
 
 `@remotion/motion-blur` (`Trail`, `CameraMotionBlur`), `@remotion/layout-utils` (`measureText`, `fitText`, `fillTextBox`) and `@remotion/captions` (`createTikTokStyleCaptions`) work as in Remotion.
-
-```tsx
-<Trail layers={10} lagInFrames={0.6} trailOpacity={0.5}>{children}</Trail>
-```
