@@ -74,7 +74,7 @@ export const render: Command = {
   options: [
     OUTPUT_OPTION,
     { name: 'range', type: 'string', description: 'Frames to render: 10..40 (10 to 39) or 10..=40 (10 to 40); default all' },
-    { name: 'encoder', type: 'string', description: 'ffmpeg encoder name for the codec (default: libx264, libx265, libvpx-vp9 on every platform, prores_videotoolbox on macOS else prores_ks; h264_videotoolbox and hevc_videotoolbox are opt-in, and the macOS fallback when libx264 or libx265 is missing). The encoders that have no keyframe interval of their own (VideoToolbox and the other hardware ones, libopenh264) get one every 2 seconds. libx264 and libx265 come from the ffmpeg program bundled in the platform package, or the one KINETOGRAPH_FFMPEG names' },
+    { name: 'encoder', type: 'string', description: 'ffmpeg encoder name for the codec (default: libx264, libx265, libvpx-vp9 on every platform, prores_videotoolbox on macOS else prores_ks; h264_videotoolbox and hevc_videotoolbox are opt-in, and the macOS fallback when libx264 or libx265 is missing). The encoders that have no keyframe interval of their own (VideoToolbox and the other hardware ones, libopenh264) get one every 2 seconds. libx264 and libx265 come from the ffmpeg program bundled in the platform package, or the one KINETOGRAPH_FFMPEG names, then the ffmpeg on the PATH when it has libx264' },
     { name: 'draft', type: 'boolean', description: 'Half size, for a fast look (the same as --scale 0.5)' },
     ...EXPORT_FLAGS,
     { name: 'concurrency', type: 'number', description: 'Frames drawn at once, in worker threads (default: half the cores, at most 4; 1 draws every frame in the main thread; a .json scene is drawn whole)' },

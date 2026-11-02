@@ -7,7 +7,7 @@
 //! video (`encode::mux_audio`).
 //!
 //! Where the program comes from, first match wins: `KINETOGRAPH_FFMPEG`, the path the host gave (`set_path`: the
-//! platform package's `bin/ffmpeg`), `ffmpeg` on the `PATH` when it lists libx264 (or, for the hardware encoders
+//! platform package's `bin/ffmpeg`), `ffmpeg` on the `PATH` (looked up in its directories) when it lists libx264 (or, for the hardware encoders
 //! below, the encoder asked for). An encoder is looked for in each of those in turn, so a `KINETOGRAPH_FFMPEG` that
 //! names a system ffmpeg with `h264_vaapi` does not hide the bundled program's `libx264`.
 //!
@@ -88,14 +88,38 @@ fn encoders_of(program: &Path) -> Probed {
 fn candidates(wanted: Option<&str>) -> Vec<(PathBuf, Vec<String>)> {
     let env = std::env::var_os("KINETOGRAPH_FFMPEG").filter(|v| !v.is_empty());
     let configured = CONFIGURED.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    candidates_in(
+        env.map(PathBuf::from),
+        configured,
+        std::env::var_os("PATH").as_deref(),
+        wanted,
+    )
+}
+
+/// The first `ffmpeg` (`ffmpeg.exe` on Windows) in the directories of `path_var`, found by looking, not by a shell.
+fn on_path(path_var: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
+    std::env::split_paths(path_var?)
+        .map(|dir| dir.join(PROGRAM))
+        .find(|candidate| candidate.is_file())
+}
+
+/// `candidates` with the three places given: `env` (`KINETOGRAPH_FFMPEG`), `configured` (the platform package's
+/// `bin/ffmpeg`) and the directories of `path_var` (`PATH`), in that order of preference.
+fn candidates_in(
+    env: Option<PathBuf>,
+    configured: Option<PathBuf>,
+    path_var: Option<&std::ffi::OsStr>,
+    wanted: Option<&str>,
+) -> Vec<(PathBuf, Vec<String>)> {
     let mut found: Vec<(PathBuf, Vec<String>)> = Vec::new();
-    for candidate in [env.map(PathBuf::from), configured].into_iter().flatten() {
+    for candidate in [env, configured].into_iter().flatten() {
         if let Some(list) = encoders_of(&candidate) {
             found.push((candidate, list));
         }
     }
-    let path = PathBuf::from(PROGRAM);
-    if let Some(list) = encoders_of(&path) {
+    if let Some(path) = on_path(path_var)
+        && let Some(list) = encoders_of(&path)
+    {
         let wanted_here = wanted.is_some_and(|w| is_hardware(w) && list.iter().any(|n| n == w));
         if wanted_here || list.iter().any(|n| n == encode::DEFAULT_ENCODER) {
             found.push((path, list));
@@ -1144,6 +1168,70 @@ mod tests {
         std::fs::write(&program, script).unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
         program
+    }
+
+    /// An `ffmpeg` that only lists `encoders` for `-encoders`, in `dir`.
+    #[cfg(unix)]
+    fn lister(dir: &Path, encoders: &[&str]) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::create_dir_all(dir).unwrap();
+        let program = dir.join("ffmpeg");
+        let rows: String = encoders
+            .iter()
+            .map(|n| format!(" V....D {n}  an encoder\\n"))
+            .collect();
+        let script = format!("#!/bin/sh\nprintf 'Encoders:\\n ------\\n{rows}'\n");
+        std::fs::write(&program, script).unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        program
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_ffmpeg_on_the_path_is_the_last_place_looked() {
+        let root = scratch("on-path");
+        let bundled = lister(&root.join("bundled"), &["libx264", "libx265"]);
+        let with_x264 = root.join("path-with");
+        lister(&with_x264, &["libx264"]);
+        let without = root.join("path-without");
+        lister(&without, &["libopenh264"]);
+        let names = |found: Vec<(PathBuf, Vec<String>)>| -> Vec<PathBuf> {
+            found.into_iter().map(|(p, _)| p).collect()
+        };
+        let path_of =
+            |dir: &Path| std::env::join_paths([root.join("empty"), dir.to_path_buf()]).unwrap();
+
+        // (a) No bundled program and no KINETOGRAPH_FFMPEG: the PATH's ffmpeg is used for libx264.
+        let found = names(candidates_in(
+            None,
+            None,
+            Some(&path_of(&with_x264)),
+            Some("libx264"),
+        ));
+        assert_eq!(found, [with_x264.join("ffmpeg")]);
+        // (b) A PATH ffmpeg without libx264 is ignored, so the chain goes on as before.
+        let found = candidates_in(None, None, Some(&path_of(&without)), Some("libx264"));
+        assert!(found.is_empty());
+        // (c) The bundled program comes first and the PATH's after it; KINETOGRAPH_FFMPEG comes before both.
+        let found = names(candidates_in(
+            None,
+            Some(bundled.clone()),
+            Some(&path_of(&with_x264)),
+            Some("libx264"),
+        ));
+        assert_eq!(found, [bundled.clone(), with_x264.join("ffmpeg")]);
+        let env = lister(&root.join("env"), &["libx264"]);
+        let found = names(candidates_in(
+            Some(env.clone()),
+            Some(bundled.clone()),
+            Some(&path_of(&with_x264)),
+            None,
+        ));
+        assert_eq!(found, [env, bundled, with_x264.join("ffmpeg")]);
+        // No PATH at all, or no ffmpeg on it.
+        assert!(candidates_in(None, None, None, None).is_empty());
+        assert!(on_path(Some(root.join("empty").as_os_str())).is_none());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[cfg(unix)]
