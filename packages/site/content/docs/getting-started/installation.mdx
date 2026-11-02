@@ -3,6 +3,24 @@ title: Installation
 description: Install Kinetograph from npm, or build it from a clone, and check that the native addon loads.
 ---
 
+There are two ways to install:
+
+- **Prebuilt from npm (recommended).** About a minute, with no Rust, FFmpeg or compiler to set up.
+- **From source.** Only to work on the engine, or on a platform with no prebuilt package (Intel Mac, Linux on ARM). It takes 15 to 30 minutes.
+
+## With a coding agent
+
+Paste this into Claude Code, Codex or another coding agent:
+
+```text
+Set up Kinetograph (https://github.com/0xS4N4TG/kinetograph) for me by following its AGENTS.md:
+https://github.com/0xS4N4TG/kinetograph/blob/main/AGENTS.md
+Ask me first whether I want the prebuilt package (recommended) or a build from source,
+and ask before installing anything system-wide or installing the Kinetograph agent skills.
+```
+
+The agent asks which install you want, installs it, runs `doctor`, and then asks whether to add the [agent skills and the MCP server](/docs/guides/agents/).
+
 ## From npm
 
 ```sh

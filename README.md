@@ -16,12 +16,28 @@ Kinetograph is in beta (version 0.2.5). APIs can still change between versions.
 
 ## Install
 
+You need Node.js 22 or newer. The prebuilt package covers macOS on Apple Silicon, Linux x64 and Windows x64, and
+installs in about a minute with nothing else to set up:
+
 ```sh
 npm install kinetograph
 npx kinetograph doctor
 ```
 
-You need Node.js 22 or newer. The prebuilt addon covers macOS (arm64), Linux (x64) and Windows (x64).
+Building from source is only for working on the engine, or for a platform with no prebuilt package. It needs Rust and
+the FFmpeg libraries and takes 15 to 30 minutes: see
+[Installation: From source](https://kinetograph.dev/docs/getting-started/installation/#from-source).
+
+### Install with a coding agent
+
+Paste this into Claude Code, Codex or another coding agent:
+
+```text
+Set up Kinetograph (https://github.com/0xS4N4TG/kinetograph) for me by following its AGENTS.md:
+https://github.com/0xS4N4TG/kinetograph/blob/main/AGENTS.md
+Ask me first whether I want the prebuilt package (recommended) or a build from source,
+and ask before installing anything system-wide or installing the Kinetograph agent skills.
+```
 
 ## Make a video
 
