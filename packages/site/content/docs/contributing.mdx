@@ -1,0 +1,122 @@
+---
+title: Contributing to Kinetograph
+description: How to report a problem, set up a clone, run the tests and send a pull request.
+---
+
+The most useful pull requests start with a real problem. If you can, link an issue that shows how the problem affects
+people who render with Kinetograph, for example a Remotion project that draws wrong or a CSS property that is skipped.
+Then put a before-and-after comparison in the pull request: a still or a short clip from the build before your change
+and one from after it.
+
+Issues and pull requests go to [github.com/0xS4N4TG/kinetograph](https://github.com/0xS4N4TG/kinetograph).
+
+## Report a problem
+
+A good report lets someone else see the problem on their own machine in a few minutes. Include:
+
+- The version, from `npx kinetograph --version`, and the output of `npx kinetograph doctor` with no arguments (the
+  platform, whether the addon loaded and which renderer draws).
+- The smallest project that shows the problem. One composition and a few frames is ideal. Leave out private footage
+  and fonts you can't share.
+- The frame where it goes wrong, and a still of it: `npx kinetograph still <entry> <frame> -o frame.png`.
+- What you expected. For a Remotion project, a still of the same frame from Remotion is the clearest way to show it.
+- The output of `npx kinetograph doctor <entry>`, which lists what the engine can't draw and on which frames.
+
+Check [Known issues](/docs/known-issues/) first. If your problem is listed there, a comment on the matching issue with
+your project helps more than a new report.
+
+## Before a large change
+
+Open an issue before you write a new feature, a new public API or a change that touches many packages. Say what you
+want to build and why. Agreeing on the shape first saves you rewriting it in review.
+
+Small fixes (a wrong colour, a crash, a docs mistake) can go straight to a pull request.
+
+## Set up a clone
+
+Follow [Installation: From source](/docs/getting-started/installation/#from-source). In short, with Node.js 22 or
+newer, a rustup toolchain and the FFmpeg development libraries installed:
+
+```sh
+git clone https://github.com/0xS4N4TG/kinetograph.git
+cd kinetograph
+npm ci
+npm run build
+```
+
+`npm run build` builds the TypeScript packages and a debug build of the native addon. Run the CLI from the clone with
+`node packages/cli/dist/cli.js <command>`.
+
+## Where things are
+
+- `crates/core`: the compositor, the scene format and the GPU passes.
+- `crates/dom`: HTML and CSS layout and painting.
+- `crates/cli`: encoding and export.
+- `crates/node`: the N-API addon that Node loads.
+- `packages/react`, `packages/core`, `packages/compat`: the React renderer, the TypeScript API and the Remotion and
+  DOM compatibility layer.
+- `packages/audio`: audio mixing and Web Audio.
+- `packages/cli`: the `kinetograph` command.
+- `packages/studio`: the local editor.
+- `packages/site`: this website and its docs.
+
+[How the engine works](/docs/internals/engine/) explains how a frame goes from your code to pixels.
+
+## Run the tests
+
+Run the tests for the part you changed, not the whole repository:
+
+```sh
+# One TypeScript package
+npm test -w kinetograph
+
+# One test file, from inside the package
+cd packages/cli && npx vitest run test/render-export.test.ts
+
+# One Rust crate, or one test target
+cargo test -p kinetograph-core
+cargo test -p kinetograph-core --test golden
+```
+
+The golden tests compare rendered frames with stored images. If your change is meant to alter the picture, regenerate
+them with `UPDATE_GOLDEN=1 cargo test -p kinetograph-core --test golden` and say in the pull request which images
+changed and why. The GPU tests, the goldens and the benchmarks are run on Apple Silicon; on Linux and Windows, CI
+builds the addon and renders a few frames.
+
+## How the code works
+
+These rules hold everywhere in the engine. A pull request that breaks one will be asked to change.
+
+- **A frame depends only on the project and the frame number.** Nothing reads the wall clock, and rendering a frame
+  twice gives the same pixels.
+- **No browser draws anything.** Not for a fallback, not for one hard CSS property, not for canvas or WebGL. Chrome for
+  Testing appears only in tests, as the reference a native drawing is compared against.
+- **Draw it natively, or say you can't.** Content the engine can't draw yet is skipped or approximated and reported in
+  the warnings and in `doctor`, and `--strict` turns it into an error. A fix adds the drawing to the engine.
+- **Write your own code.** Remotion APIs are rebuilt from Remotion's documented behaviour. Reading another project's
+  source to understand how something behaves is fine; copying it is not. The same goes for any project whose licence
+  doesn't allow it.
+- **`random(seed)` matches Remotion exactly**, bit for bit.
+- **Speed claims need a measurement.** If a pull request says something is faster, include the benchmark: the
+  command, the machine and the numbers before and after.
+- **Use an existing crate** for text shaping, layout and rasterising, and write the glue.
+
+## Send a pull request
+
+- One change per pull request, on its own branch.
+- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/): `fix(dom): ...`,
+  `feat(cli): ...`, `docs: ...`.
+- Add or update a test that fails without your change.
+- Visual changes include before-and-after stills or clips. A compatibility fix includes a comparison with what Remotion
+  or Chrome draws for the same frame.
+- Add a line to `CHANGELOG.md` under Unreleased, and the same line to `packages/site/content/docs/changelog.mdx`.
+- Update the docs page that describes the behaviour you changed, and [Known issues](/docs/known-issues/) if you fixed
+  one listed there.
+
+## Licence
+
+Kinetograph is source-available under the PolyForm Small Business License 1.0.0
+([LICENSE.md](https://github.com/0xS4N4TG/kinetograph/blob/main/LICENSE.md)), free for individuals, non-profits and
+small companies; other companies need a commercial licence
+([COMMERCIAL.md](https://github.com/0xS4N4TG/kinetograph/blob/main/COMMERCIAL.md)). If you have a question
+about how a contribution is licensed, ask in the issue before you start.
