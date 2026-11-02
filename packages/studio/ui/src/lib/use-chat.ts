@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer } from 'react';
 
-import type { AgentEvent, AgentInfo, ChatRecord } from '@/api';
+import type { AgentAttachment, AgentEvent, AgentInfo, ChatRecord } from '@/api';
 import { answerPermission, clearChat, emptyChat, reduceChat, replayChat, type ChatState } from '@/lib/chat';
 import type { Studio } from '@/studio';
 
@@ -27,7 +27,7 @@ function reducer(state: ChatState, action: Action): ChatState {
 
 export interface Chat {
   state: ChatState;
-  send(text: string, context: string, chips: string[], image?: { data: string; mimeType: string }): boolean;
+  send(text: string, context: string, chips: string[], image?: { data: string; mimeType: string }, attachments?: AgentAttachment[]): boolean;
   /** Takes a message out of the queue before the agent gets it. */
   unqueue(id: string): void;
   answer(permissionId: string, optionId: string | null): void;
@@ -50,8 +50,8 @@ export function useChat(studio: Pick<Studio, 'onAgentEvent' | 'onAgentHistory' |
   useEffect(() => onAgentHistory((items) => dispatch({ type: 'history', items })), [onAgentHistory]);
 
   const send = useCallback<Chat['send']>(
-    (text, context, chips, image) => {
-      if (!sendAgent({ type: 'agent.prompt', text, context, image, chips })) {
+    (text, context, chips, image, attachments) => {
+      if (!sendAgent({ type: 'agent.prompt', text, context, image, chips, ...(attachments && attachments.length > 0 ? { attachments } : {}) })) {
         dispatch({ type: 'event', event: { kind: 'error', message: 'The studio is not connected. Wait a moment and try again.' } });
         return false;
       }

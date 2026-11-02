@@ -3,6 +3,7 @@
 
 import { decodeFrameMessage } from '../../src/protocol.ts';
 import type {
+  AgentAttachment,
   AgentClientMessage,
   AgentEvent,
   AgentInfo,
@@ -31,6 +32,7 @@ import type {
 } from '../../src/protocol.ts';
 
 export type {
+  AgentAttachment,
   AgentClientMessage,
   AgentEvent,
   AgentInfo,

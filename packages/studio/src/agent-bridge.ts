@@ -37,6 +37,12 @@ export interface McpServerConfig {
   env: { name: string; value: string }[];
 }
 
+/** A picture for the agent: base64 data and its type. */
+export interface PromptImage {
+  data: string;
+  mimeType: string;
+}
+
 /** A failure whose message is already in plain words. */
 class Plain extends Error {}
 
@@ -315,8 +321,8 @@ export class AgentBridge {
     this.setStatus('idle');
   }
 
-  /** Sends the user's words and the context about the selection (and a picture of it, if the agent takes images). */
-  async prompt(text: string, context: string, image?: { data: string; mimeType: string }): Promise<void> {
+  /** Sends the user's words and the context about the selection (and pictures, if the agent takes images). */
+  async prompt(text: string, context: string, images?: PromptImage | PromptImage[]): Promise<void> {
     if (this.status === 'busy') {
       this.options.emit({ kind: 'error', message: 'The agent is still working on the last message. Stop it first, or wait.' });
       return;
@@ -334,7 +340,7 @@ export class AgentBridge {
       return;
     }
     const blocks: ContentBlock[] = [{ type: 'text', text: context ? `${text}\n\n---\nWhat is selected in the studio:\n${context}` : text }];
-    if (image && live.image) blocks.push({ type: 'image', data: image.data, mimeType: image.mimeType });
+    if (live.image) for (const image of images === undefined ? [] : Array.isArray(images) ? images : [images]) blocks.push({ type: 'image', data: image.data, mimeType: image.mimeType });
     this.setStatus('busy');
     try {
       const response = (await live.conn.agent.request(methods.agent.session.prompt, { sessionId: live.sessionId, prompt: blocks })) as {
