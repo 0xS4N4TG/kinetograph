@@ -453,18 +453,18 @@ export interface AudioBufferLike {
 }
 
 /**
- * A 32-bit float WAV of `buffer` as a `data:audio/wav;base64,…` URL. Stereo is interleaved; any other channel count
- * writes the first channel's samples under a header that says how many there are, as Remotion's does.
+ * A 32-bit float WAV of `buffer` as a `data:audio/wav;base64,…` URL. Every channel is interleaved, frame by frame
+ * (Remotion 4.0.539; before, any count but 2 wrote only the first channel under a header that said how many there were).
  */
 export function audioBufferToDataUrl(buffer: AudioBufferLike): string {
   const { numberOfChannels, sampleRate } = buffer;
   let samples = buffer.getChannelData(0);
-  if (numberOfChannels === 2) {
-    const right = buffer.getChannelData(1);
-    const interleaved = new Float32Array(samples.length + right.length);
-    for (let i = 0; i < samples.length; i++) {
-      interleaved[2 * i] = samples[i]!;
-      interleaved[2 * i + 1] = right[i]!;
+  if (numberOfChannels > 1) {
+    const length = samples.length;
+    const interleaved = new Float32Array(length * numberOfChannels);
+    for (let channel = 0; channel < numberOfChannels; channel++) {
+      const source = buffer.getChannelData(channel);
+      for (let i = 0; i < length; i++) interleaved[i * numberOfChannels + channel] = source[i]!;
     }
     samples = interleaved;
   }
