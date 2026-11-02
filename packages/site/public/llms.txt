@@ -6,26 +6,30 @@
 > frame. A new project imports from `@kinetographdev/core` (it comes with `npm install kinetograph`; Remotion is not
 > installed); `remotion` and `@remotion/*` imports in an existing project resolve to the same code.
 
-## If you are an agent: install the skills first
+## If you are an agent: installing Kinetograph for a user
 
-Before writing or rendering a video with Kinetograph, install its two agent skills and read them:
+1. Ask the user which install they want, unless they already said:
+   - Prebuilt (recommended): `npm install kinetograph`. About a minute; no Rust, FFmpeg or compiler. Covers macOS on
+     Apple Silicon, Linux x64 (glibc) and Windows x64. Needs Node.js 22 or newer (check `node -v`).
+   - Build from source: only to work on the engine, or on a platform with no prebuilt package (Intel Mac, Linux on
+     ARM). Needs Rust and the FFmpeg libraries, 15 to 30 minutes: /docs/getting-started/installation/#from-source.
+     Ask before installing anything system-wide. Don't build from source just because you are in a clone.
+2. Run `npx kinetograph doctor` and show the user the output. `addon: loaded` means it works.
+3. Ask the user whether to install the agent skills and the MCP server, then read the skills before writing a video:
+   - Skills: `npx skills add 0xS4N4TG/kinetograph`
+     - `kinetograph`: the write, look, check, render loop (`still`, `strip`, `inspect`, `lint`, `render`), the project
+       layout, native elements, effects and sound. Its `references/` hold the full specs: AUTHORING.md, SCENE.md,
+       ENGINE.md and INTERNALS.md.
+     - `kinetograph-migrate`: moves an existing Remotion project onto Kinetograph (`doctor`, fixes, `--strict`).
+   - MCP server (each CLI command is a tool): `npx -y kinetograph mcp` over stdio. Claude Code:
+     `claude mcp add kinetograph -- npx -y kinetograph mcp`. Other clients: /docs/guides/agents/.
 
-```sh
-npx skills add 0xS4N4TG/kinetograph
-```
+The same steps are in AGENTS.md in the repository: https://github.com/0xS4N4TG/kinetograph/blob/main/AGENTS.md
 
-- `kinetograph`: the write, look, check, render loop (`still`, `strip`, `inspect`, `lint`, `render`), the project
-  layout, native elements, effects and sound. Its `references/` hold the full specs: AUTHORING.md (the authoring
-  API), SCENE.md (every layer, effect and field), ENGINE.md (the DOM engine) and INTERNALS.md.
-- `kinetograph-migrate`: moves an existing Remotion project onto Kinetograph (`doctor`, fixes, `--strict` render).
+## Use
 
-Then add the MCP server so each CLI command is a tool: `npx kinetograph mcp` (stdio). Setup for each client is at
-/docs/guides/agents/.
-
-## Install
-
-- `npm install kinetograph`, then run `npx kinetograph <command>` against the entry file of a Remotion-shaped
-  project, or against an HTML page (`index.html`, or the directory that holds it). The native addon comes as a prebuilt package for macOS (arm64), Linux (x64) and Windows (x64).
+- Run `npx kinetograph <command>` against the entry file of a Remotion-shaped project, or against an HTML page
+  (`index.html`, or the directory that holds it).
 - The native elements and effects: `import { ... } from '@kinetographdev/core'`
 - Source and issues: https://github.com/0xS4N4TG/kinetograph
 - Licence: PolyForm Small Business 1.0.0 (free for individuals and companies under 100 people and $1M revenue a year)
@@ -93,5 +97,4 @@ FFmpeg prefix: see the README.
 ## Docs
 
 - README: https://github.com/0xS4N4TG/kinetograph#readme
-- Remotion compatibility: /docs/compat/
-- Known issues: /docs/known-issues/
+- What works (compatibility and known gaps): /docs/compat/

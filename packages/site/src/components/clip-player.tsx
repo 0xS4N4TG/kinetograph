@@ -6,7 +6,7 @@ import type { Clip } from '@/lib/catalog';
 import { cn } from '@/lib/utils';
 
 /**
- * A muted, looping clip with its poster. It starts when it scrolls into view and pauses when it leaves. Under
+ * A muted, looping clip with its poster; nothing of the video loads until it plays. It starts when it scrolls into view and pauses when it leaves. Under
  * prefers-reduced-motion it never starts: the poster shows with controls. The width and height reserve the aspect ratio.
  * With `play="hover"` (the index tiles) a desktop pointer or keyboard focus on the nearest `[data-tile]` starts it and
  * leaving rewinds it; on touch the card that is in view plays. Tiles carry no controls: the card is a link.
@@ -62,7 +62,7 @@ export function ClipPlayer({ clip, label, className, play = 'view' }: { clip: Cl
       muted
       loop
       playsInline
-      preload="metadata"
+      preload="none"
       controls={still && play === 'view'}
       aria-label={label}
       className={cn('block h-auto w-full bg-ink/5', className)}

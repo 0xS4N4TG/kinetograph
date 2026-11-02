@@ -3,11 +3,18 @@ title: First video
 description: Write a two-second title card, look at its frames, and render it to an MP4.
 ---
 
-This page makes a two-second title card. It needs Kinetograph installed: see [Installation](/docs/getting-started/installation/).
+This page makes a two-second title card. Install Kinetograph first: see [Installation](/docs/getting-started/installation/).
+
+You can write the video as a Remotion-style TSX project or as an HTML page in the [HyperFrames](https://github.com/heygen-com/hyperframes) style. The steps are the same. Pick a tab where the two differ.
 
 ## Write the project
 
-Make a folder, run `npm install kinetograph` in it, and save this as `index.tsx` there. `registerRoot`, `Composition` and the rest of the API come from `@kinetographdev/core`, which `npm install kinetograph` brings with it. Remotion is not installed and not needed: an `@remotion/*` import, such as the font loader below, is mapped onto Kinetograph's own code. The `kinetograph` package itself is the CLI, so importing `registerRoot` from it fails.
+Make a folder and run `npm install kinetograph` in it. Then save one of these.
+
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
+
+Save this as `index.tsx`:
 
 ```tsx
 import React from 'react';
@@ -34,58 +41,14 @@ registerRoot(() => (
 ));
 ```
 
-Each part does one job:
+Import the API from `@kinetographdev/core`, not from `kinetograph`. The `kinetograph` package is the CLI, so importing `registerRoot` from it fails. You do not need Remotion. An `@remotion/*` import, such as the font loader above, maps onto Kinetograph's own code.
 
-- `registerRoot` takes a function that returns the compositions. `Composition` sets the id, the length in frames, the frame rate and the size.
-- `useCurrentFrame` gives the frame being drawn. The picture depends only on that number. `interpolate` turns it into a width that grows from 0 to 640 over the first 30 frames, then holds.
-- `Text` and `Rect` are Kinetograph's own elements. `x` and `y` place the box. `width` takes a number, so it can change with the frame.
-- `loadFont` gets Inter from Google Fonts. The first render downloads it, and the file is kept in `~/.cache/kinetograph/fonts`.
+A [composition](/docs/terminology/composition/) is one video: `Composition` sets its id, length in frames, frame rate and size. `useCurrentFrame` gives the [frame](/docs/terminology/frame/) being drawn, and the picture depends only on that number. Here the bar grows from 0 to 640 over 30 frames, then holds. The first render downloads Inter into `~/.cache/kinetograph/fonts`.
 
-## Look at the frames
+  </Tab>
+  <Tab value="HyperFrames">
 
-```sh
-npx kinetograph compositions examples/hello/index.tsx
-npx kinetograph still examples/hello/index.tsx 15 -o out/hello-15.png
-npx kinetograph strip examples/hello/index.tsx -n 12 -o out/hello-strip.png
-```
-
-`compositions` lists each composition's id, size, frame rate and length. `still` writes one frame as a PNG. `strip` writes 12 evenly spaced frames on one sheet, labelled with the frame and the time. Open the files and look at them. The output folder is created if it does not exist.
-
-## Check the project
-
-```sh
-npx kinetograph inspect examples/hello/index.tsx --frame 30
-npx kinetograph lint examples/hello/index.tsx
-```
-
-`inspect` prints each layer at a frame, with its bounds. `lint` reports text that overflows its box, layers off the canvas, overlapping text and missing fonts. It exits with 1 when it finds errors.
-
-To find type errors, such as a misspelled prop, run `npx kinetograph check examples/hello/index.tsx`. Rendering does not type-check the project.
-
-## Open it in Studio
-
-Studio is the local editor. It plays the project in a browser, with a timeline, a props form and a chat with your coding agent:
-
-```sh
-npx kinetograph studio examples/hello/index.tsx
-```
-
-Press Space to play, click a layer to select it, and press Cmd+K (Ctrl+K elsewhere) for every action. Stop it with Ctrl-C. See [Studio](/docs/guides/studio/).
-
-## Render the video
-
-```sh
-npx kinetograph render examples/hello/index.tsx -o out/hello.mp4 --draft
-npx kinetograph render examples/hello/index.tsx -o out/hello.mp4
-```
-
-`--draft` renders at half size, for a quick look. Without it, the video is 1280 by 720. The output is H.264 by default. Use a `.mp4` or `.mov` path for it.
-
-`render` prints the frame count, the encoder and the time it took. Add `--json` to get one JSON object instead.
-
-## The same video as an HTML page
-
-A video can also be an HTML page, written as for [HyperFrames](https://github.com/heygen-com/hyperframes). Save this as `index.html`:
+Save this as `index.html`:
 
 ```html
 <!doctype html>
@@ -112,20 +75,101 @@ A video can also be an HTML page, written as for [HyperFrames](https://github.co
 </html>
 ```
 
-The root element gives the size and the length in seconds (30 fps). The GSAP timeline in `window.__timelines` is paused and seeked to each frame's time. `still`, `strip`, `inspect`, `lint`, `doctor`, `studio` and `render` take the page as they take a TSX entry:
+The root element gives the size and the length in seconds, at 30 fps. The GSAP timeline in `window.__timelines` is paused and moved to each frame's time.
+
+The first render downloads GSAP from the CDN and pins it in `kinetograph.lock.json`. `npx kinetograph fetch-deps index.html` does only that download. [HyperFrames projects](/docs/compat/#hyperframes-projects) lists what a page can use.
+
+  </Tab>
+</Tabs>
+
+## Look at the frames
+
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
+
+```sh
+npx kinetograph compositions index.tsx
+npx kinetograph still index.tsx 15 -o out/hello-15.png
+npx kinetograph strip index.tsx -n 12 -o out/hello-strip.png
+```
+
+  </Tab>
+  <Tab value="HyperFrames">
 
 ```sh
 npx kinetograph still index.html 15 -o out/hello-15.png
+npx kinetograph strip index.html -n 12 -o out/hello-strip.png
+```
+
+  </Tab>
+</Tabs>
+
+- `compositions` lists each composition's id, size, frame rate and length.
+- `still` writes one frame as a PNG.
+- `strip` writes 12 evenly spaced frames on one sheet, labelled with the frame and the time.
+
+## Check the project
+
+```sh
+npx kinetograph inspect index.tsx --frame 30
+npx kinetograph lint index.tsx
+npx kinetograph check index.tsx
+```
+
+- `inspect` prints each layer at a frame, with its bounds.
+- `lint` reports overflowing text, layers off the canvas, overlapping text and missing fonts. It exits with 1 on errors.
+- `check` finds type errors, such as a misspelled prop. Rendering does not type-check.
+
+These commands take an HTML page as they take a TSX entry.
+
+## Open it in Studio
+
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
+
+```sh
+npx kinetograph studio index.tsx
+```
+
+  </Tab>
+  <Tab value="HyperFrames">
+
+```sh
+npx kinetograph studio index.html
+```
+
+  </Tab>
+</Tabs>
+
+[Studio](/docs/guides/studio/) plays the project in a browser, with a timeline, a props form and a chat with your coding agent. Press Space to play and Cmd+K (Ctrl+K elsewhere) for every action. Stop it with Ctrl-C.
+
+## Render the video
+
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
+
+```sh
+npx kinetograph render index.tsx -o out/hello.mp4 --draft
+npx kinetograph render index.tsx -o out/hello.mp4
+```
+
+  </Tab>
+  <Tab value="HyperFrames">
+
+```sh
+npx kinetograph render index.html -o out/hello-html.mp4 --draft
 npx kinetograph render index.html -o out/hello-html.mp4
 ```
 
-The first render downloads GSAP from the CDN and pins it in `kinetograph.lock.json`; `npx kinetograph fetch-deps index.html` does that download on its own. [HyperFrames projects](/docs/compat/#hyperframes-projects) lists what a page can use.
+  </Tab>
+</Tabs>
+
+`--draft` renders at half size, for a quick look. Without it the video is 1280 by 720. The output is H.264 by default, in a `.mp4` or `.mov` file. `render` prints the frame count, the encoder and the time it took. Add `--json` to get one JSON object instead.
 
 ## Next steps
 
-- [Authoring](/docs/guides/authoring/) covers the elements, effects and Remotion APIs a project can use.
-- [Scene format](/docs/guides/scene-format/) describes the JSON scenes that the engine draws.
-- [Audio](/docs/guides/audio/) covers sound files, synthesised sound and loudness checks.
-- [CLI reference](/docs/reference/cli/) lists every command and option.
-- [Studio](/docs/guides/studio/) is the local editor: preview, timeline, props, export and the agent chat.
-- [Use with agents](/docs/guides/agents/) sets up the agent skill and the MCP server.
+- [Authoring](/docs/guides/authoring/): the elements, effects and Remotion APIs a project can use.
+- [Scene format](/docs/reference/scene-format/): the JSON scenes the engine draws.
+- [Audio](/docs/guides/audio/): sound files, synthesised sound and loudness checks.
+- [CLI reference](/docs/reference/cli/): every command and option.
+- [Use with agents](/docs/guides/agents/): the agent skill and the MCP server.

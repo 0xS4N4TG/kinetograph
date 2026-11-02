@@ -63,7 +63,8 @@ export interface Plugin {
   hasTools: boolean;
   hasSkill: boolean;
   intro: string;
-  features: { title: string; text: string; clip: Clip }[];
+  /** A feature with no media is text only: clip is null. */
+  features: { title: string; text: string; clip: Clip | null }[];
   exports: Export[];
   presets: { name: string; line: string; image: Image | null }[];
   presetNote: string;
@@ -84,7 +85,16 @@ export interface Plugin {
   faces?: { hands: string[]; display: string[] };
 }
 
-export interface Template {
+/** One prop of a motion component, read from its zod schema: nested fields are written `colors.ink`. */
+export interface ComponentProp {
+  name: string;
+  type: string;
+  /** A short literal default; empty when it is long or computed. */
+  default: string;
+  doc: string;
+}
+
+export interface Component {
   id: string;
   title: string;
   description: string;
@@ -92,10 +102,33 @@ export interface Template {
   plugins: string[];
   compositions: string[];
   hero: Clip | null;
+  /** The kind of a motion component (one of KINDS). The first seven components have none: they are the scenes. */
+  category?: string;
+  props?: ComponentProp[];
 }
 
+/** The kinds of motion component, in page order. */
+export const KINDS = [
+  { id: 'grids', title: 'Grids' },
+  { id: 'carousels', title: 'Carousels' },
+  { id: 'charts', title: 'Charts' },
+  { id: 'showcase', title: 'Showcase' },
+  { id: 'backgrounds', title: 'Backgrounds' },
+  { id: 'audio-viz', title: 'Audio' },
+  { id: 'effects', title: 'Effects' },
+] as const;
+
 export const plugins = catalog.plugins as unknown as Plugin[];
-export const templates = catalog.templates as unknown as Template[];
+export const components = catalog.components as unknown as Component[];
+
+/** A taste: a reusable style (palette, type, motion), shown by a cut of its demo reel. */
+export interface Taste {
+  id: string;
+  title: string;
+  description: string;
+  hero: Clip | null;
+}
+export const tastes = (catalog as unknown as { tastes?: Taste[] }).tastes ?? [];
 
 /** A plugin's title by its package name. */
 export const pluginTitle = (name: string) => plugins.find((p) => p.name === name)?.title ?? name;

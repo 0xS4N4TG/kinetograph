@@ -1,0 +1,29 @@
+---
+title: Frame
+description: One still picture of a video, counted from 0, with fps and durationInFrames setting the rate and the length.
+---
+
+A video is a list of frames. Frames are whole numbers that start at 0. A composition with `durationInFrames` of 60 has frames 0 to 59.
+
+`fps` is how many frames play each second. At 30 fps, 60 frames last two seconds.
+
+Inside a component, `useCurrentFrame()` gives the frame being drawn. `useVideoConfig()` gives `fps`, `durationInFrames`, `width` and `height`.
+
+```tsx
+const frame = useCurrentFrame();
+const { fps } = useVideoConfig();
+const seconds = frame / fps;
+```
+
+The picture must depend only on that number. See [Determinism](/docs/terminology/determinism/).
+
+Ranges on the command line use frames too. `10..40` is frames 10 to 39, and `10..=40` includes 40.
+
+**Coming from Remotion:** the same hooks and names.
+**Coming from HyperFrames:** time is in seconds, at 30 fps. A GSAP timeline is seeked to the frame's time.
+
+## See also
+
+- [CLI reference](/docs/reference/cli/#frames-and-ranges)
+- [Composition](/docs/terminology/composition/)
+- [Sequence](/docs/terminology/sequence/)

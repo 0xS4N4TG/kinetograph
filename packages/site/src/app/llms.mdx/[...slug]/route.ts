@@ -3,8 +3,14 @@ import { notFound } from 'next/navigation';
 
 export const dynamic = 'force-static';
 
-/** The docs index has no slug, so it is served as `index`; a directory cannot share the `llms.mdx` path. */
-const toSlug = (slug: string[]) => (slug.length === 1 && slug[0] === 'index' ? [] : slug);
+/**
+ * Each page is served as `<slug>.md`, so a folder's index page (`terminology.md`) and the folder of its pages
+ * (`terminology/`) can sit side by side in the static export. The docs index has no slug and is served as `index.md`.
+ */
+const toSlug = (slug: string[]) => {
+  const parts = [...slug.slice(0, -1), slug[slug.length - 1].replace(/\.md$/, '')];
+  return parts.length === 1 && parts[0] === 'index' ? [] : parts;
+};
 
 /** One Markdown file per docs page, written at build time for the "Copy Markdown" button. */
 export async function GET(_req: Request, props: { params: Promise<{ slug: string[] }> }) {
@@ -18,5 +24,7 @@ export async function GET(_req: Request, props: { params: Promise<{ slug: string
 }
 
 export function generateStaticParams() {
-  return source.generateParams().map(({ slug }) => ({ slug: slug.length ? slug : ['index'] }));
+  return source.generateParams().map(({ slug }) => ({
+    slug: slug.length ? [...slug.slice(0, -1), `${slug[slug.length - 1]}.md`] : ['index.md'],
+  }));
 }

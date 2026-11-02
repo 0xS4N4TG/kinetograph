@@ -20,3 +20,11 @@ Copyright HeyGen and the HyperFrames contributors, same licence. The port is cha
 node-web-audio-api's OfflineAudioContext instead of Chrome's, builds each graph once (no live updates), and adds what
 Chrome's Web Audio does that node-web-audio-api does not (a delay's feedback a render quantum late, Chrome's 2x and 4x
 WaveShaper oversampling).
+
+## Hairline (MIT)
+
+The engine figure on the docs site (`packages/site/public/docs/engine-path.svg`) is drawn in the style of, and with the
+figure engine of, Hairline. Copyright (c) 2026 Lucas Marques, https://github.com/lucasmarkes/hairline, licensed under the
+MIT License: permission is granted, free of charge, to deal in the software without restriction, provided the copyright
+notice and permission notice are included in all copies or substantial portions; the software is provided "as is",
+without warranty of any kind.

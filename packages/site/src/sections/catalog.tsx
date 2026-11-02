@@ -13,7 +13,7 @@ import { body, Label, link, section, shell } from '@/sections/shared';
 export function CatalogPage({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen overflow-x-clip bg-ground font-dm text-ink selection:bg-flag selection:text-white">
-      <Nav />
+      <Nav themeSwitch />
       <main className={`${shell} ${section}`}>{children}</main>
     </div>
   );
@@ -26,9 +26,9 @@ export const oneLine = (text: string) => text.split(/(?<=[.!?])\s/)[0];
  * Small links above a page's heading so the catalog can be browsed without the back button: the section this page
  * belongs to and its own name on the left, the other section on the right.
  */
-export function Crumbs({ section: sec, current }: { section: 'plugins' | 'templates'; current?: string }) {
-  const here = sec === 'plugins' ? { href: '/plugins/', name: 'Plugins' } : { href: '/plugins/#templates', name: 'Templates' };
-  const other = sec === 'plugins' ? { href: '/plugins/#templates', name: 'Templates' } : { href: '/plugins/', name: 'Plugins' };
+export function Crumbs({ section: sec, current }: { section: 'plugins' | 'components' | 'tastes'; current?: string }) {
+  const here = sec === 'plugins' ? { href: '/plugins/', name: 'Plugins' } : sec === 'tastes' ? { href: '/plugins/#kind-tastes', name: 'Tastes' } : { href: '/plugins/#components', name: 'Components' };
+  const other = sec === 'plugins' ? { href: '/plugins/#components', name: 'Components' } : { href: '/plugins/', name: 'Plugins' };
   const cls = `${link} kc-press inline-block`;
   return (
     <nav aria-label="Catalog" className="mb-6 flex items-center justify-between font-jb text-[12px] tracking-[0.04em]">
@@ -53,7 +53,7 @@ export function Crumbs({ section: sec, current }: { section: 'plugins' | 'templa
 }
 
 /**
- * The first screen of a plugin or template page: the clip large, the title and one sentence beside it (stacked under
+ * The first screen of a plugin or component page: the clip large, the title and one sentence beside it (stacked under
  * md). The clip's width is capped by the viewport height so a portrait clip never pushes the title off the screen.
  */
 export function PageHero({ title, tag, line, clip, alt, children }: { title: string; tag: string; line: string; clip: Clip | null; alt: string; children?: ReactNode }) {
@@ -143,7 +143,7 @@ export function Tile({ href, title, clip, fixed = false, index = 0, className, c
     <InView as="li" index={index} className={className}>
       <div data-tile className="kc-tile kc-press group relative">
         <div
-          className={cn('kc-media overflow-hidden bg-ink', fixed && 'aspect-[16/10]')}
+          className={cn('kc-media overflow-hidden bg-night', fixed && 'aspect-[16/10]')}
           style={!fixed && clip ? { aspectRatio: `${clip.w} / ${clip.h}` } : undefined}
         >
           {clip && <ClipPlayer clip={clip} label="" play="hover" className={cn('h-full w-full', fixed && portrait ? 'object-contain' : 'object-cover')} />}
@@ -166,7 +166,7 @@ export function Tile({ href, title, clip, fixed = false, index = 0, className, c
 export function Adjacent({ label, prev, next }: { label: string; prev: { href: string; title: string; image: Image | null }; next: { href: string; title: string; image: Image | null } }) {
   const side = (item: typeof prev, dir: 'Previous' | 'Next') => (
     <a href={item.href} className={cn('kc-press flex items-center gap-4 hover:text-cobalt', dir === 'Next' && 'flex-row-reverse text-right')}>
-      {item.image && <img src={item.image.src} width={item.image.w} height={item.image.h} alt="" loading="lazy" className="hidden aspect-[16/10] w-28 shrink-0 bg-ink object-cover sm:block" />}
+      {item.image && <img src={item.image.src} width={item.image.w} height={item.image.h} alt="" loading="lazy" className="hidden aspect-[16/10] w-28 shrink-0 bg-night object-cover sm:block" />}
       <span className="min-w-0">
         <Label>
           {dir} {label}

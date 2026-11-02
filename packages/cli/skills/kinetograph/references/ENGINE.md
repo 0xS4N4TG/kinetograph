@@ -605,7 +605,7 @@ blurred from real pixels) and `blendSpace` (always `"srgb"`: **the scene that ho
   `<text>`, text layers, Text3D and canvas `fillText`. CJK, Arabic and other scripts are not bundled: load a font that
   has them (`doctor` and `--strict` report the code point until then). `monospace` and `ui-monospace` use a
   registered fixed-pitch font (the `post` table's flag) if there is one, else the bundled JetBrains Mono Regular
-  (`fallback_fonts::monospace_face`, SIL OFL 1.1; bold and italic are synthesised). `/docs/known-issues/`.
+  (`fallback_fonts::monospace_face`, SIL OFL 1.1; bold and italic are synthesised). `/docs/compat/`.
 - SVG files as pictures: `<Img src={staticFile('a.svg')}>`, `<img src>`, `background-image: url(a.svg)`, `image` layers
   and `data:` URLs draw natively (`crates/core/src/svg_picture.rs`), sized from the file's `width`, `height` and
   `viewBox` (300 x 150 with none) and painted at the size they are drawn at. Text inside such a picture is left out and
@@ -616,7 +616,7 @@ blurred from real pixels) and `blendSpace` (always `"srgb"`: **the scene that ho
   `overflow: hidden` is flattened (as CSS Transforms 2 does) and drawn as a flat group with its effect.
 - A canvas (2D, WebGL or WebGPU) starts empty each frame; `preserveDrawingBuffer` does not carry a frame into the next.
   WebGPU on a canvas (buffers, WGSL render and compute pipelines, storage buffers and textures) replays on the engine's
-  GPU device; its gaps are in `/docs/known-issues/#webgpu`. `<Video datamosh>` is AUTHORING.md §11.8. Libraries and
+  GPU device; its gaps are in `/docs/compat/#webgpu`. `<Video datamosh>` is AUTHORING.md §11.8. Libraries and
   HyperFrames: AUTHORING.md §11.10 and §11.11.
 
 ### Paint order
