@@ -422,7 +422,7 @@ pub struct ExportOptions {
     pub encoder: Option<String>,
     /// Constant quality, lower is better. Not with `videoBitrate`.
     pub crf: Option<f64>,
-    /// libx264's and libx265's preset: `ultrafast` to `placebo` (default `medium`).
+    /// libx264's and libx265's preset: `ultrafast` to `placebo` (default `veryfast`).
     pub x264_preset: Option<String>,
     /// Bits per second.
     pub video_bitrate: Option<f64>,

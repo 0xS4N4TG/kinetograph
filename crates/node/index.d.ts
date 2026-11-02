@@ -136,7 +136,7 @@ export interface ExportOptions {
   encoder?: string
   /** Constant quality, lower is better. Not with `videoBitrate`. */
   crf?: number
-  /** libx264's and libx265's preset: `ultrafast` to `placebo` (default `medium`). */
+  /** libx264's and libx265's preset: `ultrafast` to `placebo` (default `veryfast`). */
   x264Preset?: string
   /** Bits per second. */
   videoBitrate?: number
