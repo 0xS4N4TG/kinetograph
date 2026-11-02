@@ -1,6 +1,7 @@
 {
   "name": "kinetograph",
   "version": "0.2.5",
+  "mcpName": "io.github.0xS4N4TG/kinetograph",
   "description": "Agent CLI and MCP server for the Kinetograph video engine: renders Remotion projects, HTML pages and HyperFrames projects without a browser",
   "license": "PolyForm-Small-Business-1.0.0",
   "repository": {
