@@ -6,6 +6,15 @@
 
 <p align="center"><b>A blazingly fast programmatic video engine, made for agents.</b></p>
 
+<p align="center">
+  <a href="https://github.com/0xS4N4TG/kinetograph/stargazers"><img src="https://img.shields.io/github/stars/0xS4N4TG/kinetograph?style=flat&logo=github" alt="GitHub stars"></a>
+  <a href="https://www.npmjs.com/package/kinetograph"><img src="https://img.shields.io/npm/v/kinetograph?style=flat&logo=npm" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/kinetograph"><img src="https://img.shields.io/npm/dm/kinetograph?style=flat" alt="npm downloads"></a>
+  <a href="https://github.com/0xS4N4TG/kinetograph/actions/workflows/native.yml"><img src="https://github.com/0xS4N4TG/kinetograph/actions/workflows/native.yml/badge.svg" alt="Build"></a>
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-PolyForm%20Small%20Business-blue?style=flat" alt="License: PolyForm Small Business 1.0.0"></a>
+  <a href="https://kinetograph.dev/docs/"><img src="https://img.shields.io/badge/docs-kinetograph.dev-black?style=flat" alt="Docs"></a>
+</p>
+
 Kinetograph makes videos from code, without a browser. You (or an agent) write a video in TypeScript with Remotion's
 API, or as a plain HTML page. Node runs the code, and a Rust GPU compositor draws every frame: CSS, SVG, Canvas 2D,
 WebGL shaders, 3D and Web Audio. Existing Remotion projects render as they are, and so do
