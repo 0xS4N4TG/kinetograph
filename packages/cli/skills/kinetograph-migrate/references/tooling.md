@@ -8,8 +8,8 @@ the compositions. The video entry (the file with `registerRoot`) stays.
 | Remotion | Kinetograph |
 |---|---|
 | `npx remotion studio <entry>` | `npx kinetograph studio <entry>` (add `--no-open` when you start it yourself; it runs until stopped) |
-| `npx remotion render <entry> <id> out.mp4` | `npx kinetograph render <entry> --comp <id> -o out.mp4` |
-| `npx remotion still <entry> <id> out.png --frame=45` | `npx kinetograph still <entry> 45 --comp <id> -o out.png` |
+| `npx remotion render <entry> <id> out.mp4` | `npx kinetograph render <entry> --comp <id> -o out/renders/<id>.mp4` |
+| `npx remotion still <entry> <id> out.png --frame=45` | `npx kinetograph still <entry> 45 --comp <id> -o out/stills/<id>-f45.png` |
 | `npx remotion compositions <entry>` | `npx kinetograph compositions <entry>` |
 | `--props='{"a":1}'` | `--props '{"a":1}'` (a JSON string; a file path is not read) |
 | `--frames=10-40` | `--range 10..=40` (`10..40` stops at 39) |
@@ -45,5 +45,5 @@ the compositions. The video entry (the file with `registerRoot`) stays.
 
 ## Check
 
-`kinetograph compositions <entry>` lists the compositions; `kinetograph render <entry> --comp <id> -o out/a.mp4
+`kinetograph compositions <entry>` lists the compositions; `kinetograph render <entry> --comp <id>
 --strict --range 0..30` renders a short part first.

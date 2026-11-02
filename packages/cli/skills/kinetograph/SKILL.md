@@ -13,14 +13,28 @@ To move an existing Remotion project onto Kinetograph, use the `kinetograph-migr
 Run everything as `npx kinetograph <command>`. Add `--json` to get one JSON object you can parse; a failure is
 `{ "error": { "code", "message" } }` with exit code 1. (Over MCP (`kinetograph mcp`) there is one tool per command except `studio`, named
 like the command (`audio analyze` is `audio_analyze`), with the same arguments; `still`, `strip` and `onion` return the image
-itself, and `output` is optional for them.)
+itself; `output` is optional.)
+
+## Project layout
+
+For a new project run `npx kinetograph init` (`--html` for an HTML page instead of TSX) and keep the layout it makes:
+
+```
+src/index.tsx     registerRoot and the compositions; scenes in src/scenes/, reusable pieces in src/components/, helpers in src/lib/
+html/index.html   an HTML or HyperFrames page (with --html)
+public/           assets for staticFile(): images/, fonts/, audio/, video/
+out/              everything generated: renders/, stills/, sheets/
+```
+
+Load assets as `staticFile('images/logo.png')`. Never write outputs next to the code or at the project root: `still`,
+`strip`, `onion` and `render` write to `out/` when you leave out `-o`, and print the path. An existing project keeps its own layout.
 
 ## The loop
 
 1. **Write** a project file, e.g. `src/index.tsx`, that calls `registerRoot` (see below).
-2. **Look.** `kinetograph still src/index.tsx 45 -o out/f45.png` for one frame; `kinetograph strip src/index.tsx -n 12 -o out/strip.png`
-   for twelve labelled frames at once (do this first, it shows the whole animation); `kinetograph onion src/index.tsx 0..60 -n 6 -o out/path.png`
-   to see a motion path. Open the PNG to look at it.
+2. **Look.** `kinetograph still src/index.tsx 45` for one frame (`out/stills/Main-f45.png`); `kinetograph strip src/index.tsx -n 12`
+   for twelve labelled frames at once (`out/sheets/Main-strip.png`; do this first, it shows the whole animation); `kinetograph onion src/index.tsx 0..60 -n 6`
+   to see a motion path (`out/sheets/Main-onion.png`). Open the PNG to look at it. `Main` is the composition id.
 3. **Check** without pixels: `kinetograph inspect src/index.tsx --frame 45` gives every layer's resolved position, size,
    bounds, effects and text lines. `kinetograph lint src/index.tsx` (`--frames 0,45,89` picks the frames; default 8 spread out) reports text overflowing its box or the canvas,
    layers off the canvas, overlapping text, missing fonts and assets, each with the frame and layer id. Fix what it
@@ -30,7 +44,7 @@ itself, and `output` is optional for them.)
    `kinetograph check src/index.tsx` runs `tsc --noEmit` on the project (its nearest `tsconfig.json`) and `lint` reports
    the same errors as `type-error`.
 4. **Fix** and repeat from 2. A still takes well under a second.
-5. **Render.** `kinetograph render src/index.tsx -o out/video.mp4`. Use `--draft` for a half-size quick look,
+5. **Render.** `kinetograph render src/index.tsx` writes `out/renders/Main.mp4`. Use `--draft` for a half-size quick look,
    `--range 0..90` for a part (`a..b` is a to b-1, `a..=b` includes b), `--concurrency 4` to draw several frames at once
    on a long film (the file is the same). Export options are Remotion's: `--scale 2` for 4K from 1080p (drawn at that
    size, not upscaled), `--codec h265|prores|vp9|gif` (the output extension must fit: `.mov` for prores, `.webm` for vp9,
@@ -59,7 +73,7 @@ The entry must call `registerRoot`; a file that only exports a component is not 
 import { AbsoluteFill, Composition, Layer, Rect, Text, interpolate, registerRoot, spring,
          useCurrentFrame, useVideoConfig, dropShadow, linearGradient, registerFont, staticFile } from '@kinetographdev/core';
 
-registerFont({ family: 'DM Sans', path: staticFile('DMSans-Medium.ttf') }); // fonts BEFORE any text is measured
+registerFont({ family: 'DM Sans', path: staticFile('fonts/DMSans-Medium.ttf') }); // fonts BEFORE any text is measured
 
 const Card = () => {
   const frame = useCurrentFrame();
@@ -80,7 +94,7 @@ registerRoot(() => <Composition id="Main" component={Card} durationInFrames={90}
 
 - Remotion's API works as documented: `useCurrentFrame`, `useVideoConfig`, `interpolate`, `interpolateColors`, `spring`,
   `Easing`, `random`, `Sequence`, `Series`, `Loop`, `Freeze`, `AbsoluteFill`, `Img`, `staticFile`, `delayRender`.
-  `staticFile('x.png')` is `public/x.png` next to the entry file.
+  `staticFile('x.png')` is `public/x.png` next to the entry file, or in the `public/` at the package.json's folder.
 - `@remotion/transitions`, `motion-blur`, `noise`, `paths`, `shapes`, `layout-utils`, `animation-utils`, `captions`,
   `fonts`, `lottie` and `@remotion/google-fonts/<Family>` import as usual. `@remotion/rive`'s `<RemotionRiveCanvas src={staticFile('a.riv')}>` plays a Rive file with Rive's own runtime (frame
   exact; `stateMachine` and `stateMachineInputs` props added; referenced assets beside the `.riv` or from `assetLoader`). `@remotion/skia` and `@shopify/react-native-skia` (`<SkiaCanvas>`, RN-Skia's components, SkSL shaders) run on real Skia
@@ -96,7 +110,7 @@ registerRoot(() => <Composition id="Main" component={Card} durationInFrames={90}
   check the props against the schema.
 - `@remotion/timeline-utils` (waveform peaks and drawing, loop and frame-strip maths) works for local files; what needs
   video pictures as WebCodecs frames (`extractFrames`) throws an `UnsupportedApiError` saying so.
-- `@remotion/media-parser`'s `parseMedia` reads local files (`staticFile('clip.mp4')`) through FFmpeg: duration,
+- `@remotion/media-parser`'s `parseMedia` reads local files (`staticFile('video/clip.mp4')`) through FFmpeg: duration,
   dimensions, fps, codecs, tracks, rotation, sample rate, metadata, and the slow fields. Not the box tree
   (`slowStructure`) or sample callbacks (`onVideoTrack`); URLs fail, as everywhere (offline).
 - `@remotion/webcodecs` bundles; `convertMedia` writes a file's sound to WAV and the lists and track checks work, the
@@ -146,7 +160,7 @@ onFrame(42, (ctx, t) => {
 });
 ```
 
-`<Audio src={staticFile('music.mp3')} volume={(f) => interpolate(f, [0, 30], [0, 1])} />` plays a file. `render` mixes
+`<Audio src={staticFile('audio/music.mp3')} volume={(f) => interpolate(f, [0, 30], [0, 1])} />` plays a file. `render` mixes
 both into the video. Check it with `kinetograph audio analyze src/index.tsx`: `integratedLufs` (null means silence),
 `truePeakDb` (keep it under -1), `clippedSamples` (should be 0) and `silences`. Aim for about -14 LUFS for online video.
 
@@ -193,7 +207,7 @@ One line each; the pointer has the detail. `kinetograph doctor` alone lists the 
   makes your system ffmpeg's encoders available, including `h264_vaapi`, `hevc_vaapi`, `h264_qsv` and `hevc_qsv` for Intel
   and AMD GPUs on Linux (`--encoder` only; never the default). H.264 defaults to libx264 off macOS hardware; VP9 on macOS
   and Linux; `--crf`, `--video-bitrate`. AUTHORING.md §9 (render flags), `/docs/ffmpeg-license/`.
-- **SVG files as pictures.** `<Img src={staticFile('a.svg')}>`, `<img>`, `background-image`, `data:` URLs; text inside
+- **SVG files as pictures.** `<Img src={staticFile('images/a.svg')}>`, `<img>`, `background-image`, `data:` URLs; text inside
   an SVG picture is not drawn (warned). ENGINE.md "SVG files as pictures".
 - **Scene colours** take any CSS colour (`white`, `rgb()`, `hsl()`, `oklch()`, ...), not only hex. SCENE.md, top.
 - **Missing glyphs.** A character the font lacks falls back per character to bundled Noto Symbols 2, Math and Emoji
@@ -218,9 +232,9 @@ One line each; the pointer has the detail. `kinetograph doctor` alone lists the 
   redraw the whole frame each time (never build on earlier frames). A plain HTML page is the exception (below). AUTHORING.md §6.5 to §6.7. `preserve-3d` with effects is flattened (ENGINE.md).
 - **`<Video datamosh>`** smears one shot into the next with the video's motion vectors. AUTHORING.md §11.8,
   `/docs/guides/datamosh/`.
-- **Motion tracking.** `kinetograph track public/clip.mp4 --point x,y` (video pixels of the first frame, y down; find
-  the point in a still) runs Blender's tracker once and writes `clip.mp4.track.json`; in a component
-  `const { x, y, rotation, scale, corners } = useTrack('clip.mp4.track.json')` (from `@kinetographdev/core`) pins
+- **Motion tracking.** `kinetograph track public/video/clip.mp4 --point x,y` (video pixels of the first frame, y down; find
+  the point in a still) runs Blender's tracker once and writes `clip.mp4.track.json` beside it; in a component
+  `const { x, y, rotation, scale, corners } = useTrack('video/clip.mp4.track.json')` (from `@kinetographdev/core`) pins
   anything to it. Check the `lost` frame it prints; use `--model locrotscale` for rotation and scale. `--detect` finds
   points itself (Blender's Detect Features); `--plane p1,p2,p3,p4` makes a plane track from 4+ points on a flat
   surface, and `cornerPin(usePlaneTrack(file).pin)` pins a picture to it. AUTHORING.md §11.12,
