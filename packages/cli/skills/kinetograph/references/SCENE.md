@@ -1059,8 +1059,10 @@ reach past a layer, at any keyframe on any layer (nested layers included), round
   from canvas positions, not from where the texture starts or how large it is, and `displace` gives the same bits at
   any margin. `halftone`, 3D transforms, `cornerPin` and the `noise` layer read the padded texture through the
   hardware filter or a matrix that includes the margin, and can differ by a level or so when it changes.
-- `blur` is not counted. It spreads a layer's own pixels and nothing needs room beyond them, so a scene that uses
-  only `blur` keeps margin 0.
+- `blur` is not counted for 2D layers, which Skia draws and blurs with room of its own: a scene that uses only `blur`
+  on them keeps margin 0. A `blur` on a `meshGradient`, `glsl` or `scene3d` layer, or on a group that holds one or is a
+  shader, Canvas 2D or `preserve3d` group, counts `3 * radius` (at most `3 * 128`), because the wgpu path draws those into
+  the padded canvas and the blur would otherwise fade at the canvas edge where the content runs past it.
 - `glow` counts `3 * radius`, and `chromaticAberration` counts `|amount|`.
 - `backdropBlur` counts `3 * radius` (it reads the canvas around a layer that sits at the edge); with
   `edgeMode: "mirror"` it counts nothing.
