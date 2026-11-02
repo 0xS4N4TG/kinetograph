@@ -13,7 +13,7 @@ export { downloadAndParseMedia, parseMedia } from './parse-media.js';
 export type * from './types.js';
 
 /** The version of `@remotion/media-parser` this follows. */
-export const VERSION = '4.0.536';
+export const VERSION = '4.0.540';
 /** Timestamps in tracks are in microseconds. */
 export const WEBCODECS_TIMESCALE = 1000000;
 

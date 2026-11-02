@@ -9,13 +9,13 @@ An agent can do this for you. See [Use with agents](/docs/guides/agents/) for th
 
 ## How much of Remotion is covered
 
-For `remotion` itself, Kinetograph exports **57 of 59** names. The two missing ones, `Internals` and `FolderContext`, are Remotion's own internals.
+For `remotion` itself, Kinetograph exports **57 of 60** names. Two of the missing ones, `Internals` and `FolderContext`, are Remotion's own internals. The third, `createEffectImplementation`, comes with the multi-backend form of `createEffect` that 4.0.540 added, which is not mapped yet.
 
-Across `remotion` and the 24 `@remotion/*` packages that Kinetograph maps, it exports **309 of 316** names. Seven are missing: the two above, plus `HtmlInCanvasMotionBlur`, `PathInternals`, `CaptionsInternals`, `AudioForPreview` and `getAvailableFonts`. The other 90 names come from nine packages that are left out on purpose (the tooling, below).
+Across `remotion` and the 24 `@remotion/*` packages that Kinetograph maps, it exports **310 of 318** names. Eight are missing: the three above, plus `HtmlInCanvasMotionBlur`, `PathInternals`, `CaptionsInternals`, `AudioForPreview` and `getAvailableFonts`. The other 90 names come from nine packages that are left out on purpose (the tooling, below).
 
 What this number means:
 
-- It counts runtime names that exist (functions, components, constants), measured against Remotion 4.0.536. Types are not counted.
+- It counts runtime names that exist (functions, components, constants), measured against Remotion 4.0.540. Types are not counted.
 - It does not mean every name does everything. A name can exist and still have gaps. The status column below says which, and [Known issues](/docs/known-issues/) lists the gaps.
 - It does not count names Kinetograph adds. The `remotion` entry alone has 105 more, such as `Layer` and `Scene3D`.
 - Do not read it as "99% of your project works". A project is a mix of names, and `doctor` tells you what yours uses.
@@ -26,7 +26,7 @@ Status: **works** means every export exists and the package is used as usual. **
 
 | Package | Status | Exports present | Use instead, or the gap |
 |---|---|---|---|
-| `remotion` | Works | 57 of 59 | `Internals` and `FolderContext` are internal to Remotion. |
+| `remotion` | Works | 57 of 60 | `Internals` and `FolderContext` are internal to Remotion. `createEffectImplementation` is missing. |
 | `@remotion/transitions` | Works | 11 of 11 | All 19 presentations. |
 | `@remotion/motion-blur` | Works | 2 of 3 | `HtmlInCanvasMotionBlur` is missing. |
 | `@remotion/noise` | Works | 3 of 3 | |
@@ -34,7 +34,7 @@ Status: **works** means every export exists and the package is used as usual. **
 | `@remotion/shapes` | Works | 22 of 22 | |
 | `@remotion/layout-utils` | Works | 4 of 4 | |
 | `@remotion/animation-utils` | Works | 23 of 23 | |
-| `@remotion/captions` | Works | 3 of 4 | `CaptionsInternals` is internal. |
+| `@remotion/captions` | Works | 4 of 5 | `CaptionsInternals` is internal. |
 | `@remotion/google-fonts` | Works | 0 of 1 | Each `@remotion/google-fonts/<Family>` import works. `getAvailableFonts` is missing. |
 | `@remotion/fonts` | Works | 1 of 1 | |
 | `@remotion/lottie` | Works | 2 of 2 | |
