@@ -2,7 +2,7 @@
 
 **Status:** active
 **Paths:** `crates/**`, `vendor/**`, `packages/core/**`, `packages/compat/**`, `packages/cli/src/**`, `packages/cli/skills/kinetograph/references/ENGINE.md`
-**Last touched:** 2026-10-25
+**Last touched:** 2026-11-02
 
 ## What this is
 The renderer: Rust compositor (Skia/Graphite default, Vello fallback), DOM islands (vendored blitz/stylo/taffy), the TS frame loop and CLI.
@@ -17,6 +17,7 @@ The renderer: Rust compositor (Skia/Graphite default, Vello fallback), DOM islan
 - Machine: parallel cargo builds + renders caused SIGKILL 137 on renders (memory pressure); disk ~21 GB free.
 
 ## Open threads
+- [ ] 2026-11-02 HANDOFF (sessions/2026-11-02-encoder-issues-deps.md): decide encoder default after the x264-preset/VT/Remotion benchmark (fix/encoder-defaults); land #91 MeshGradient blur edge, #92 Stroke type, #93 scaleX/scaleY (fix/issues-91-93); muted-video audio (fix/muted-video-audio 68d0338f); Remotion 4.0.539 (fix/remotion-4.0.539); map @remotion/effects (unmapped since 4.0.455); deps (chore/deps-compatible), then Skia 0.156/resvg 0.49, then Blitz/Stylo/fonts; zip<9 advisories via dotlottie-rs (not exploitable at render).
 - [ ] Clean the 8 crates/core clippy lints
 - [ ] CLI should log which backend/device it uses (GPU Skia vs CPU Skia vs Vello)
 - [ ] Audio test off-by-one (squareA 11917 vs 11918); cli test tsc errors fixed in #22; scene test tsc errors fixed in #25
@@ -52,5 +53,6 @@ The renderer: Rust compositor (Skia/Graphite default, Vello fallback), DOM islan
 - `packages/compat/src/dom/index.ts:57` (samplePass, incremental islands; KINETOGRAPH_NO_INCREMENTAL=1)
 
 ## Recent sessions
+- 2026-11-02-encoder-issues-deps [deep] — handoff: encoder/GOP bug, #91-#93, Remotion 4.0.539, deps + audit
 - 2026-10-25-pipeline-expansion — datamosh, GSAP, text fixes, WebGL merged; svg-cascade + WebGPU in flight; rustup PATH trap
 - 2026-10-25-release-and-fixes — Skia default; launch film now identical at 1 vs 4 workers (island baseline fix); workers do not speed the launch film

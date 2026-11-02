@@ -1,6 +1,6 @@
 # kinetograph
 
-Last touched: 2026-10-30
+Last touched: 2026-11-02
 
 ## Features
 
@@ -16,9 +16,9 @@ Status values: active | stable | blocked | archived
 - **release** [active] — v0.2.5 released 2026-10-28; next is 0.3.0 (studio redesign + plugins + canvas sources + island-moves perf); stack unpushed (audit 2026-10-30)
   - paths: `.github/workflows/**`, `crates/node/npm/**`, `**/package.json`, `scripts/check-packages.mjs`
   - last: 2026-10-27 (0-2-x-batch)
-- **engine** [active] — PRs #5 datamosh, #8 text, #9 WebGL merged; determinism holds; svg-cascade + WebGPU in flight; rustup PATH trap
+- **engine** [active] — 2026-11-02: encoder defaults (x264 vs VT, 12-frame GOP bug) benchmarking; #91-#93 filed + fixing; muted-audio + Remotion 4.0.539 fixes on branches; @remotion/effects unmapped; deps bump + cargo audit
   - paths: `crates/**`, `vendor/**`, `packages/core/**`, `packages/compat/**`, `packages/cli/src/**`, `packages/cli/skills/kinetograph/references/ENGINE.md`
-  - last: 2026-10-25 (pipeline-expansion)
+  - last: 2026-11-02 (encoder-issues-deps)
 - **compat** [active] — HF 29 comps 20 MATCH / 7 CLOSE / 2 DIFF / 0 FAIL; real 5/7 MATCH (audit 2026-10-30)
   - paths: `packages/compat/**`, `packages/scene/src/webgl.ts`, `packages/site/content/docs/compat.mdx`, `packages/site/content/docs/known-issues.mdx`, `packages/cli/skills/kinetograph-migrate/**`
   - last: 2026-10-25 (pipeline-expansion)

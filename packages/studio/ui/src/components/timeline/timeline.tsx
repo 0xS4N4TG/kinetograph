@@ -378,9 +378,11 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
     [player, onSelectLayers, onSelectRange, duration],
   );
 
-  // Only the rows in (or near) view are drawn; before the scroller is measured, all of them.
+  // Only the rows in (or near) view are drawn; before the scroller is measured, all of them. The first row stops at the
+  // end of the list: scrolled down into the sounds below it, a larger spacer would push the sounds further down, the
+  // browser would follow them, and the timeline would grow without end and never scroll back to the top.
   const viewport = size.height;
-  const firstRow = viewport > 0 ? Math.max(0, Math.floor(Math.max(0, scrollTop - 36) / ROW_HEIGHT) - 8) : 0;
+  const firstRow = viewport > 0 ? Math.min(rows.length, Math.max(0, Math.floor(Math.max(0, scrollTop - 36) / ROW_HEIGHT) - 8)) : 0;
   const lastRow = viewport > 0 ? Math.min(rows.length, firstRow + Math.ceil(viewport / ROW_HEIGHT) + 16) : rows.length;
 
   const ruler = useMemo(() => buildRuler(fps, duration, pxPerFrame), [fps, duration, pxPerFrame]);
