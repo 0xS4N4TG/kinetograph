@@ -3,9 +3,7 @@ title: FFmpeg licence
 description: Which FFmpeg Kinetograph links, which one it runs as a separate program, and what licence each is under.
 ---
 
-Kinetograph uses FFmpeg for two jobs: decoding the video and audio you put in a scene, and encoding the frames it renders. Two different FFmpeg builds do that work, and they are under different licences. This page says which is which.
-
-## The two builds
+Kinetograph uses two FFmpeg builds, one to decode and one for some encoders. They are under different licences.
 
 | | In the addon | The `bin/ffmpeg` program |
 |---|---|---|
@@ -15,17 +13,11 @@ Kinetograph uses FFmpeg for two jobs: decoding the video and audio you put in a 
 | Encoders | VideoToolbox (macOS), OpenH264 (macOS, Linux), Media Foundation (Windows), NVENC, libvpx (macOS, Linux), ProRes, AAC, GIF | libx264, libx265, libvpx, AAC |
 | Used for | All decoding, and the default encoding | `libx264` and `libx265` only |
 
-Libx264 and libx265 are GPL, and a GPL library cannot be linked into a PolyForm program. So the addon never links them. The GPL `ffmpeg` is a separate executable that the addon starts as a child process. The addon sends it raw pictures on a pipe and reads a video file back. The two programs share no memory and no code, which is the usual line between "linking" and "aggregating" under the GPL. The PolyForm licence does not cover `bin/ffmpeg`, and the GPL does not cover the addon.
+Libx264 and libx265 are GPL, and a GPL library cannot be linked into a PolyForm program. So the addon starts the GPL `ffmpeg` as a child process, sends it raw pictures on a pipe and reads a video file back. The two share no memory or code. The PolyForm licence does not cover `bin/ffmpeg`, and the GPL does not cover the addon.
 
-## Where each licence is in the package
+## What ships in the package
 
-Each `@kinetographdev/native-<platform>` package contains:
-
-- `LICENSE.md`: a short note that the package holds both works, followed by the PolyForm licence.
-- `FFMPEG-LICENSE.md`: the statement above, with the sources of the GPL program.
-- `COPYING.GPLv2` and `COPYING.LGPLv2.1`: the licence texts.
-- `THIRD-PARTY-NOTICES.md` and `OPENH264-LICENSE`: the other libraries in the addon.
-- `bin/ffmpeg` (`bin/ffmpeg.exe` on Windows) and `bin/SOURCES.txt`, which lists the exact tag and commit of every library in the program.
+Each `@kinetographdev/native-<platform>` package holds both licences and their texts (`LICENSE.md`, `FFMPEG-LICENSE.md`, `COPYING.GPLv2`, `COPYING.LGPLv2.1`), the `bin/ffmpeg` program (`bin/ffmpeg.exe` on Windows) and `bin/SOURCES.txt`, which lists the tag and commit of every library in it.
 
 ## Source code
 
@@ -36,14 +28,12 @@ The GPL program is built from unmodified upstream sources:
 - x265 4.2 from [bitbucket.org/multicoreware/x265_git](https://bitbucket.org/multicoreware/x265_git)
 - libvpx 1.15.0 (BSD-3-Clause) from [github.com/webmproject/libvpx](https://github.com/webmproject/libvpx)
 
-The configure options and the pinned refs are in [`scripts/build-ffmpeg-gpl.sh`](https://github.com/0xS4N4TG/kinetograph/blob/main/scripts/build-ffmpeg-gpl.sh). The LGPL build is [`scripts/build-ffmpeg.sh`](https://github.com/0xS4N4TG/kinetograph/blob/main/scripts/build-ffmpeg.sh).
+The configure options and pinned refs are in [`scripts/build-ffmpeg-gpl.sh`](https://github.com/0xS4N4TG/kinetograph/blob/main/scripts/build-ffmpeg-gpl.sh). The LGPL build is [`scripts/build-ffmpeg.sh`](https://github.com/0xS4N4TG/kinetograph/blob/main/scripts/build-ffmpeg.sh).
 
-## Using your own ffmpeg, or none
+## Use your own ffmpeg, or none
 
-The ffmpeg built into the addon does all the decoding and encodes with the encoders it has. Any other encoder runs in an external `ffmpeg` program, and that need not be `bin/ffmpeg`: set `KINETOGRAPH_FFMPEG` to the path of any `ffmpeg` (for example `KINETOGRAPH_FFMPEG=$(which ffmpeg)`) and Kinetograph runs your system ffmpeg for the encoders the addon lacks. That is the way to use `libx264` from your own build, or `h264_vaapi`, `hevc_vaapi`, `h264_qsv` and `hevc_qsv` on Intel and AMD GPUs. Each encoder is looked up in your program first, then in the package's `bin/ffmpeg`, then in an `ffmpeg` on your `PATH` that lists `libx264` (or the VAAPI or Quick Sync encoder you asked for).
+Set `KINETOGRAPH_FFMPEG` to any `ffmpeg` (for example `KINETOGRAPH_FFMPEG=$(which ffmpeg)`) to run it for encoders the addon lacks. That gives you `libx264` from your own build, or `h264_vaapi`, `hevc_vaapi`, `h264_qsv` and `hevc_qsv` on Intel and AMD GPUs.
 
-If you do not want the GPL program in your install, delete `bin/ffmpeg` from the platform package. Renders then use the addon's own encoders: VideoToolbox on macOS, OpenH264 on macOS and Linux, Media Foundation on Windows. `--encoder libx264` and `--encoder libx265` then fail with an error that names the missing encoder, unless `KINETOGRAPH_FFMPEG` or your `PATH` supplies one.
+Each encoder is looked up in your program first, then in the package's `bin/ffmpeg`, then in an `ffmpeg` on your `PATH` that lists it.
 
-## Windows
-
-The Windows package's GPL program is built with MinGW-w64 gcc rather than MSVC. It is a separate executable, so its C runtime does not have to match the addon's.
+To keep the GPL program out of your install, delete `bin/ffmpeg` from the platform package. Renders then use the addon's encoders, and `--encoder libx264` and `--encoder libx265` fail with an error naming the missing encoder, unless `KINETOGRAPH_FFMPEG` or your `PATH` supplies one.
