@@ -225,7 +225,7 @@ describe('the warning about the root clock', () => {
     warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
   });
   afterEach(() => warn.mockRestore());
-  const said = () => warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("GSAP's root clock"));
+  const said = () => warn.mock.calls.map((c: unknown[]) => String(c[0])).filter((m: string) => m.includes("GSAP's root clock"));
 
   it('is given once for tweens that play by themselves', async () => {
     registerRoot(() => <Composition id="B" component={Boxes} width={10} height={10} fps={30} durationInFrames={60} />);
