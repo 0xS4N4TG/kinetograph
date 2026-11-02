@@ -146,7 +146,7 @@ describe('hitTest', () => {
 describe('agent message', () => {
   const comp = { id: 'Intro', fps: 30 };
   const title = layer('title', 'text', {
-    transform: { x: 0, y: 0, scale: 1.2, rotation: 0, anchorX: 0, anchorY: 0, rotateX: 0, rotateY: 0, z: 0 },
+    transform: { x: 0, y: 0, scale: 1.2, scaleX: 1, scaleY: 1, rotation: 0, anchorX: 0, anchorY: 0, rotateX: 0, rotateY: 0, z: 0 },
     box: { x: 100.4, y: 200, width: 300, height: 80 },
     bounds: null,
     effects: ['dropShadow'],

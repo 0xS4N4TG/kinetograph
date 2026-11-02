@@ -457,3 +457,47 @@ fn a_text_stroke_of_no_width_draws_nothing() {
     .unwrap();
     assert_eq!(plain.rgba, none.rgba);
 }
+
+/// A 200 x 120 black canvas with one group `scaleX` 2 and `scaleY` 0.5 holding `child`: issue 93.
+fn stretched(child: &str) -> kinetograph_core::Frame {
+    let json = format!(
+        r##"{{"width": 200, "height": 120, "fps": 30, "durationInFrames": 1, "background": "#000000",
+              "layers": [{{"id": "s", "type": "group", "transform": {{"scaleX": 2, "scaleY": 0.5}},
+                           "children": [{child}]}}]}}"##
+    );
+    render_still(Scene::from_json(&json, PathBuf::new()).unwrap(), 0).unwrap()
+}
+
+/// The red channel of the pixel at (`x`, `y`).
+fn red(frame: &kinetograph_core::Frame, x: usize, y: usize) -> u8 {
+    frame.rgba[(y * frame.width as usize + x) * 4]
+}
+
+/// A 60 x 60 square at (20, 20) in a layer twice as wide and half as high covers x 40..160 and y 10..40.
+fn assert_stretched_box(frame: &kinetograph_core::Frame) {
+    for (x, y) in [(41, 11), (158, 11), (41, 38), (158, 38), (100, 25)] {
+        assert_eq!(red(frame, x, y), 255, "inside at ({x}, {y})");
+    }
+    // Unstretched, the square would cover x 20..80 and y 20..80.
+    for (x, y) in [(38, 25), (162, 25), (100, 8), (100, 42), (30, 60), (50, 60)] {
+        assert_eq!(red(frame, x, y), 0, "outside at ({x}, {y})");
+    }
+}
+
+#[test]
+fn scale_x_and_scale_y_stretch_what_skia_draws() {
+    assert_stretched_box(&stretched(
+        r##"{"id": "a", "type": "shape", "fill": "#ffffff",
+             "shape": {"kind": "rect", "width": 60, "height": 60}, "transform": {"x": 20, "y": 20}}"##,
+    ));
+}
+
+#[test]
+fn scale_x_and_scale_y_stretch_what_the_wgpu_path_draws() {
+    // A mesh gradient is drawn by the wgpu path, whose texture the stretch takes to the canvas.
+    assert_stretched_box(&stretched(
+        r##"{"id": "a", "type": "meshGradient", "width": 60, "height": 60, "columns": 2, "rows": 2,
+             "points": [[0, 0], [60, 0], [0, 60], [60, 60]], "colors": ["#fff", "#fff", "#fff", "#fff"],
+             "transform": {"x": 20, "y": 20}}"##,
+    ));
+}

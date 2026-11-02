@@ -47,6 +47,25 @@ fn a_dash_offset_starts_further_into_the_pattern() {
 }
 
 #[test]
+fn a_rect_takes_the_stroke_fields_typescript_writes() {
+    // Issue 92: the five fields `Stroke` in `@kinetographdev/scene` lists, on the rect of its repro (240 x 140 there; the
+    // dashes repeat, so 100 x 100 shows them). The top edge runs along y = 20 from x = 20: the first dash starts
+    // 4 into the pattern, so it is 12 long, and the round caps add 4 at both ends of every dash.
+    let f = render(
+        r##"[{"id": "r", "type": "shape", "shape": {"kind": "rect", "width": 200, "height": 100},
+              "transform": {"x": 20, "y": 20},
+              "stroke": {"color": "#ffffff", "width": 8, "cap": "round", "join": "bevel", "miterLimit": 4,
+                         "dashArray": [16, 12], "dashOffset": 4}}]"##,
+    );
+    // The cap before the first dash (a butt cap would leave x = 17 clear), then dash, gap, dash, gap.
+    assert_eq!(px(&f, 17, 20)[3], 255);
+    assert_eq!(px(&f, 30, 20)[3], 255);
+    assert_eq!(px(&f, 38, 20)[3], 0);
+    assert_eq!(px(&f, 50, 20)[3], 255);
+    assert_eq!(px(&f, 66, 20)[3], 0);
+}
+
+#[test]
 fn caps_finish_the_ends() {
     let cap = |cap: &str| {
         render(&path(

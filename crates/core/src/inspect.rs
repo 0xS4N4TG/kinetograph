@@ -56,6 +56,8 @@ pub struct InspectTransform {
     pub x: f64,
     pub y: f64,
     pub scale: f64,
+    pub scale_x: f64,
+    pub scale_y: f64,
     pub rotation: f64,
     pub anchor_x: f64,
     pub anchor_y: f64,
@@ -308,6 +310,8 @@ impl Walk<'_> {
                 x: finite(r.transform.x),
                 y: finite(r.transform.y),
                 scale: finite(r.transform.scale),
+                scale_x: finite(r.transform.scale_x),
+                scale_y: finite(r.transform.scale_y),
                 rotation: finite(r.transform.rotation),
                 anchor_x: finite(r.transform.anchor_x),
                 anchor_y: finite(r.transform.anchor_y),
@@ -876,6 +880,40 @@ mod tests {
     }
 
     #[test]
+    fn scale_x_and_scale_y_stretch_a_layer_about_its_anchor() {
+        // Issue 93: a 60 x 60 square at (20, 20) in a layer that is twice as wide and half as high.
+        let square = json!({ "id": "a", "type": "shape", "fill": "#ffffff",
+            "shape": { "kind": "rect", "width": 60, "height": 60 }, "transform": { "x": 20, "y": 20 } });
+        let group = |transform: Value| {
+            json!({ "id": "s", "type": "group", "transform": transform, "children": [square.clone()] })
+        };
+        let result = inspect(&scene(json!([group(json!({ "scaleX": 2, "scaleY": 0.5 }))])), 0).unwrap();
+        let s = &result.layers[0];
+        assert_eq!((s.transform.scale, s.transform.scale_x, s.transform.scale_y), (1.0, 2.0, 0.5));
+        assert_eq!(s.matrix, [2.0, 0.0, 0.0, 0.5, 0.0, 0.0]);
+        close(bounds_of(s), (40.0, 10.0, 120.0, 30.0));
+        close(bounds_of(&s.children.as_ref().unwrap()[0]), (40.0, 10.0, 120.0, 30.0));
+        // `scale` multiplies with them, about the anchor, which lands on the layer's position (0, 0).
+        let result = inspect(
+            &scene(json!([group(json!({ "scale": 2, "scaleX": 2, "scaleY": 0.5, "anchorX": 30, "anchorY": 40 }))])),
+            0,
+        )
+        .unwrap();
+        let s = &result.layers[0];
+        assert_eq!(s.matrix, [4.0, 0.0, 0.0, 1.0, -120.0, -40.0]);
+        // x: 4 * (20 - 30) = -40 to 4 * (80 - 30) = 200; y: 20 - 40 = -20 to 80 - 40 = 40.
+        close(bounds_of(s), (-40.0, -20.0, 240.0, 60.0));
+        // They act before the turn: a quarter turn about the origin takes the stretched box
+        // (x 40..160, y 10..40) to x -40..-10, y 40..160.
+        let result = inspect(&scene(json!([group(json!({ "scaleX": 2, "scaleY": 0.5, "rotation": 90 }))])), 0).unwrap();
+        close(bounds_of(&result.layers[0]), (-40.0, 40.0, 30.0, 120.0));
+        // About the layer's own point, as `scale` is: the centre of the box stays put.
+        let boxed = rect("b", json!({ "transform": { "originX": 0.5, "originY": 0.5, "scaleX": 2, "scaleY": 0.5 } }));
+        let result = inspect(&scene(json!([boxed])), 0).unwrap();
+        close(bounds_of(&result.layers[0]), (-50.0, 12.5, 200.0, 25.0));
+    }
+
+    #[test]
     fn a_frame_out_of_range_is_an_error() {
         let s = scene(json!([rect("a", json!({}))]));
         assert!(matches!(
@@ -1265,7 +1303,8 @@ mod tests {
             assert!(a.get(key).is_some(), "{key}");
         }
         for key in [
-            "x", "y", "scale", "rotation", "anchorX", "anchorY", "rotateX", "rotateY", "z",
+            "x", "y", "scale", "scaleX", "scaleY", "rotation", "anchorX", "anchorY", "rotateX", "rotateY",
+            "z",
         ] {
             assert!(a["transform"].get(key).is_some(), "transform.{key}");
         }

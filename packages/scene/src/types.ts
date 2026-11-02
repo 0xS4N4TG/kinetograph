@@ -123,6 +123,9 @@ export interface Transform {
   x?: Num;
   y?: Num;
   scale?: Num;
+  /** Stretch along the layer's own x or y axis, multiplied with `scale` and about the same point. Default 1. */
+  scaleX?: Num;
+  scaleY?: Num;
   /** Degrees, clockwise. */
   rotation?: Num;
   anchorX?: Num;
@@ -493,6 +496,17 @@ export interface LayerBase {
 export interface Stroke {
   color: ColorString;
   width: Num;
+  /** How an open end is finished. Default `butt`. */
+  cap?: 'butt' | 'round' | 'square';
+  /** How a corner is finished. Default `round`. */
+  join?: 'miter' | 'round' | 'bevel';
+  /** A `miter` join whose tip is longer than this many stroke widths is bevelled. Default 4. */
+  miterLimit?: Num;
+  /** Dash and gap lengths, alternating, starting with a dash and repeating along the line; an odd count is repeated to
+   *  make it even. Empty or left out: a solid line. */
+  dashArray?: Num[];
+  /** How far into the dash pattern the line starts. Default 0. */
+  dashOffset?: Num;
 }
 
 export type ShapeGeometry =
@@ -530,7 +544,7 @@ export interface TextLayer extends LayerBase {
   boxHeight?: Num;
   /** An outline around each glyph (CSS `-webkit-text-stroke`), centred on the glyph's edge. Only `color`, `width`,
    *  `join` and `miterLimit` are used; `join` defaults to `round`. */
-  stroke?: Stroke & { join?: 'miter' | 'round' | 'bevel'; miterLimit?: Num };
+  stroke?: Stroke;
   /** Which is drawn on top: the fill (`strokeFill`) or the stroke (`fillStroke`, the default). */
   paintOrder?: 'fillStroke' | 'strokeFill';
 }

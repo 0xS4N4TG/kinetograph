@@ -269,6 +269,10 @@ pub struct Transform {
     pub x: Num,
     pub y: Num,
     pub scale: Num,
+    /// Stretch along the layer's own x and y axes, multiplied with `scale`, about the same point
+    /// (default 1). They act before `rotation`, so a turned layer is stretched along its own edges.
+    pub scale_x: Num,
+    pub scale_y: Num,
     /// Degrees, clockwise.
     pub rotation: Num,
     pub anchor_x: Num,
@@ -335,6 +339,8 @@ impl Default for Transform {
             x: Num::Const(0.0),
             y: Num::Const(0.0),
             scale: Num::Const(1.0),
+            scale_x: Num::Const(1.0),
+            scale_y: Num::Const(1.0),
             rotation: Num::Const(0.0),
             anchor_x: Num::Const(0.0),
             anchor_y: Num::Const(0.0),
@@ -814,11 +820,15 @@ impl Effect {
     /// at its largest keyframes. Sets the scene's margin (`Scene::margin`).
     /// `layer_scale` is the largest product of the `scale` of the layer and
     /// its ancestors: only effects that measure in layer units use it.
-    fn reach(&self, layer_scale: f64) -> f64 {
+    /// `wgpu_drawn` is whether the layer holds, or is held by, content the wgpu path draws
+    /// into the padded textures (`drawn_by_wgpu`).
+    fn reach(&self, layer_scale: f64, wgpu_drawn: bool) -> f64 {
         match self {
-            // Not counted: blur only ever spreads the layer's own pixels, and
-            // leaving it out keeps scenes that use nothing else at margin 0,
-            // which is exactly the canvas-sized rendering they had before.
+            // Skia blurs what it draws with the layer's own bounds grown by the blur, so it needs no margin:
+            // leaving it out keeps scenes that use nothing else at margin 0, which is exactly the canvas-sized
+            // rendering they had before. Content the wgpu path draws is cut at the texture's edge, and a blur
+            // of it fades there unless the margin holds what lies past the canvas (up to three radii).
+            Effect::Blur { radius } if wgpu_drawn => 3.0 * radius.max().clamp(0.0, MAX_MARGIN_BLUR),
             Effect::Blur { .. } => 0.0,
             // A backdrop blur reads the canvas around the layer, so a layer at
             // the canvas edge blurs in what lies beyond it. A glow paints
@@ -1896,7 +1906,7 @@ impl Scene {
     pub fn margin(&self) -> u32 {
         let least = f64::from(self.margin.unwrap_or(0));
         margin_for(
-            max_reach(&self.layers, 1.0).max(least),
+            max_reach(&self.layers, 1.0, false).max(least),
             self.width,
             self.height,
         )
@@ -2482,14 +2492,33 @@ fn collect_shader_sources(layers: &[Layer], sources: &mut Vec<String>) {
 /// layers), which turns an effect's layer units into pixels. A layer's motion
 /// blur `frames`, and its sub-frames as `changes` make them, count as
 /// alternatives to the layer itself.
-fn max_reach(layers: &[Layer], scale: f64) -> f64 {
-    max_reach_with(layers, scale, None)
+fn max_reach(layers: &[Layer], scale: f64, wgpu_drawn: bool) -> f64 {
+    max_reach_with(layers, scale, wgpu_drawn, None)
 }
 
-/// `max_reach` of `layers` with the changes of one sub-frame put in place.
+/// Whether the wgpu path, not Skia, draws a layer of this kind into the compositor's textures, which end at the
+/// padded canvas (`render/skia/draw.rs`, `own_gaps`): a mesh gradient, a shader, a 3D scene, and a group that is a
+/// shader or Canvas 2D pass or keeps its children's 3D positions. Its children are drawn that way too.
+fn drawn_by_wgpu(kind: &LayerKind) -> bool {
+    match kind {
+        LayerKind::MeshGradient(_) | LayerKind::Glsl(_) | LayerKind::Scene3d(_) => true,
+        LayerKind::Group(g) => g.preserve3d || g.glsl.is_some() || g.canvas.is_some(),
+        _ => false,
+    }
+}
+
+/// Whether `layer` or anything under it is drawn by the wgpu path.
+fn holds_wgpu_content(layer: &Layer) -> bool {
+    drawn_by_wgpu(&layer.kind)
+        || matches!(&layer.kind, LayerKind::Group(g) if g.children.iter().any(holds_wgpu_content))
+}
+
+/// `max_reach` of `layers` with the changes of one sub-frame put in place. `wgpu_drawn` is whether the layers are
+/// inside a layer the wgpu path draws.
 fn max_reach_with(
     layers: &[Layer],
     scale: f64,
+    wgpu_drawn: bool,
     changes: Option<&HashMap<&str, &SampleChange>>,
 ) -> f64 {
     layers.iter().fold(0.0, |most, original| {
@@ -2497,22 +2526,26 @@ fn max_reach_with(
         let layer = change.map_or(original, |c| &c.layer);
         // A whole change is not reached into by the others.
         let changes = changes.filter(|_| change.is_none_or(|c| c.keep_children));
-        let t = &layer.transform.scale;
-        let scale = scale * t.max().abs().max(t.min().abs());
+        let largest = |n: &Num| n.max().abs().max(n.min().abs());
+        let t = &layer.transform;
+        let scale = scale * largest(&t.scale) * largest(&t.scale_x).max(largest(&t.scale_y));
+        // A blur on a layer with wgpu content, or inside one, is cut at the texture's edge.
+        let inside = wgpu_drawn || drawn_by_wgpu(&layer.kind);
         let children = match (&layer.kind, &original.kind) {
             (LayerKind::Group(_), LayerKind::Group(kept))
                 if change.is_some_and(|c| c.keep_children) =>
             {
-                max_reach_with(&kept.children, scale, changes)
+                max_reach_with(&kept.children, scale, inside, changes)
             }
-            (LayerKind::Group(g), _) => max_reach_with(&g.children, scale, changes),
+            (LayerKind::Group(g), _) => max_reach_with(&g.children, scale, inside, changes),
             _ => 0.0,
         };
-        let own: f64 = layer.effects.iter().map(|e| e.reach(scale)).sum();
+        let on_wgpu = inside || holds_wgpu_content(layer);
+        let own: f64 = layer.effects.iter().map(|e| e.reach(scale, on_wgpu)).sum();
         let blur = layer.motion_blur.as_ref();
         let copies = blur
             .and_then(|m| m.frames.as_ref())
-            .map_or(0.0, |frames| max_reach(frames, scale));
+            .map_or(0.0, |frames| max_reach(frames, scale, inside));
         // Inside a sub-frame (its changes put in place), the layer's own are the ones being counted.
         let own_changes = blur
             .and_then(|m| m.changes.as_ref())
@@ -2522,6 +2555,7 @@ fn max_reach_with(
                 most.max(max_reach_with(
                     std::slice::from_ref(layer),
                     scale,
+                    wgpu_drawn,
                     Some(&changes_by_id(list)),
                 ))
             })
@@ -3266,6 +3300,58 @@ mod tests {
         );
         let msg = error(r#""effects": [{"type": "sepia", "amount": "lots"}],"#);
         assert!(msg.contains("did not match"), "{msg}");
+    }
+
+    #[test]
+    fn parses_scale_x_and_scale_y_and_counts_them_in_the_margin_scale() {
+        // Issue 93: per-axis scale, 1 by default, animatable like `scale`.
+        let scene = scene_with(
+            r#""transform": {"scaleX": 2, "scaleY": [{"frame": 0, "value": 0.5}, {"frame": 9, "value": 3}]},"#,
+        )
+        .unwrap();
+        let t = &scene.layers[0].transform;
+        assert_eq!((t.scale.at(0.0), t.scale_x.at(0.0), t.scale_y.at(0.0)), (1.0, 2.0, 0.5));
+        assert_eq!(t.scale_y.at(9.0), 3.0);
+        let plain = scene_with("").unwrap();
+        let t = &plain.layers[0].transform;
+        assert_eq!((t.scale_x.at(0.0), t.scale_y.at(0.0)), (1.0, 1.0));
+        // A reach in layer units is pixels times the largest stretch: a displace of 10 counts 5 at scale 1.
+        let reach = |transform: &str| {
+            scene_with(&format!(
+                r#""transform": {transform}, "effects": [{{"type": "displace", "scale": 10, "turbulence": {TORN}}}],"#
+            ))
+            .unwrap()
+            .margin()
+        };
+        assert_eq!(reach("{}"), 5);
+        assert_eq!(reach(r#"{"scale": 2, "scaleX": 1.5, "scaleY": 0.5}"#), 15);
+        assert!(scene_with(r#""transform": {"scaleX": "wide"},"#).is_err());
+    }
+
+    #[test]
+    fn a_blur_counts_in_the_margin_only_where_the_wgpu_path_draws() {
+        let margin = |layers: &str| {
+            let json = format!(
+                r#"{{"width": 64, "height": 64, "fps": 30, "durationInFrames": 1, "layers": [{layers}]}}"#
+            );
+            Scene::from_json(&json, PathBuf::new()).unwrap().margin()
+        };
+        let blur = r#""effects": [{"type": "blur", "radius": 10}],"#;
+        let mesh = r##"{"id": "m", "type": "meshGradient", "width": 64, "height": 64, "columns": 2, "rows": 2,
+            "points": [[0, 0], [64, 0], [0, 64], [64, 64]], "colors": ["#fff", "#fff", "#fff", "#fff"]}"##;
+        let rect = r##"{"id": "r", "type": "shape", "fill": "#fff", "shape": {"kind": "rect", "width": 64, "height": 64}}"##;
+        // Skia blurs what it draws with room of its own: no margin.
+        assert_eq!(margin(&format!(r#"{{"id": "g", "type": "group", {blur} "children": [{rect}]}}"#)), 0);
+        // A mesh gradient is drawn into the padded textures, so the blur needs the room: three radii.
+        let meshed = format!(r#"{{"id": "g", "type": "group", {blur} "children": [{rect}, {mesh}]}}"#);
+        assert_eq!(margin(&meshed), 30);
+        // The blur on the mesh itself, and on a group a level up.
+        let own = mesh.replacen(r#""type": "meshGradient","#, &format!(r#""type": "meshGradient", {blur}"#), 1);
+        assert_eq!(margin(&own), 30);
+        assert_eq!(margin(&format!(r#"{{"id": "o", "type": "group", {blur} "children": [{meshed}]}}"#)), 60);
+        // A blur beside the mesh, not around it, has nothing to cut.
+        let beside = format!(r#"{{"id": "g", "type": "group", {blur} "children": [{rect}]}}, {mesh}"#);
+        assert_eq!(margin(&beside), 0);
     }
 
     #[test]

@@ -170,6 +170,61 @@ fn blur_fades_out_at_the_canvas_edge() {
     );
 }
 
+/// A background and a group 200 px past the canvas on every side (so its content is cut at the canvas),
+/// holding `child`, blurred by `radius` (no blur if 0). 640 x 360.
+fn overhanging_scene(child: &str, radius: u32) -> String {
+    let effects = if radius > 0 {
+        format!(r#""effects": [{{"type": "blur", "radius": {radius}}}],"#)
+    } else {
+        String::new()
+    };
+    format!(
+        r##"{{"width": 640, "height": 360, "fps": 30, "durationInFrames": 1,
+            "layers": [
+              {{"id": "bg", "type": "shape", "fill": "#f6d9c3", "shape": {{"kind": "rect", "width": 640, "height": 360}}}},
+              {{"id": "over", "type": "group", {effects} "transform": {{"x": -200, "y": -200}}, "children": [{child}]}}]}}"##
+    )
+}
+
+const OVERHANGING_MESH: &str = r##"{"id": "m", "type": "meshGradient", "width": 1040, "height": 760,
+    "columns": 3, "rows": 3, "points": [[0, 0], [520, 0], [1040, 0], [0, 380], [520, 380], [1040, 380], [0, 760], [520, 760], [1040, 760]],
+    "colors": ["#1d3b8f", "#3a6ff0", "#1d3b8f", "#3a6ff0", "#1d3b8f", "#3a6ff0", "#1d3b8f", "#3a6ff0", "#1d3b8f"]}"##;
+
+const OVERHANGING_RECT: &str = r##"{"id": "r", "type": "shape", "fill": "#1d3b8f",
+    "shape": {"kind": "rect", "width": 1040, "height": 760}}"##;
+
+fn rgb(frame: &Frame, x: usize, y: usize) -> [u8; 3] {
+    let i = (y * frame.width as usize + x) * 4;
+    [frame.rgba[i], frame.rgba[i + 1], frame.rgba[i + 2]]
+}
+
+/// The largest channel difference between two colours.
+fn apart(a: [u8; 3], b: [u8; 3]) -> u8 {
+    a.iter().zip(b).map(|(a, b)| a.abs_diff(b)).max().unwrap()
+}
+
+#[test]
+fn a_blurred_rect_past_the_canvas_stays_opaque_at_the_edges() {
+    let sharp = render(&overhanging_scene(OVERHANGING_RECT, 0));
+    let blurred = render(&overhanging_scene(OVERHANGING_RECT, 40));
+    for (x, y) in [(0, 180), (2, 180), (320, 0), (320, 359), (639, 180), (0, 0), (639, 359)] {
+        let d = apart(rgb(&sharp, x, y), rgb(&blurred, x, y));
+        assert!(d <= 6, "({x}, {y}): {:?} vs {:?}", rgb(&sharp, x, y), rgb(&blurred, x, y));
+    }
+}
+
+#[test]
+fn a_blurred_mesh_gradient_past_the_canvas_stays_opaque_at_the_edges() {
+    // Issue 91: the mesh was cut at the canvas before the blur, which pulled the cream background in along the frame edges.
+    let sharp = render(&overhanging_scene(OVERHANGING_MESH, 0));
+    let blurred = render(&overhanging_scene(OVERHANGING_MESH, 40));
+    // The mesh is smooth, so blurring it moves the edge colours by a few levels at most.
+    for (x, y) in [(0, 180), (2, 180), (10, 180), (320, 0), (320, 359), (639, 180), (0, 0), (639, 359)] {
+        let d = apart(rgb(&sharp, x, y), rgb(&blurred, x, y));
+        assert!(d <= 12, "({x}, {y}): {:?} vs {:?}", rgb(&sharp, x, y), rgb(&blurred, x, y));
+    }
+}
+
 #[test]
 fn blur_radius_can_be_keyframed() {
     let json = r##"{"width": 64, "height": 64, "fps": 30, "durationInFrames": 3,
