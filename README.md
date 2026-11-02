@@ -139,7 +139,7 @@ flowchart TB
   subgraph rust["Rust: the @kinetographdev/native addon (napi-rs)"]
     DOM["kinetograph-dom: DOM engine<br/>blitz-dom + Stylo (CSS) + taffy (layout) + Parley (text),<br/>usvg (SVG); painted into scene layers"]
     C["kinetograph-core: compositor on wgpu<br/>Skia (vectors, text, Canvas 2D), WGSL effects,<br/>GLSL via naga (WebGL), scene3d (glTF, PBR),<br/>ThorVG (Lottie), 2.5D camera, motion blur, layer cache"]
-    M["media: FFmpeg decode and encode<br/>(VideoToolbox / libx264)"]
+    M["media: FFmpeg decode and encode<br/>(libx264, VideoToolbox opt-in)"]
     DOM --> C
     M <--> C
   end

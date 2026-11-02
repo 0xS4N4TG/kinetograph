@@ -26,6 +26,8 @@ Install the system libraries:
 - macOS: `brew install ffmpeg pkgconf`. Without `pkg-config`, set `FFMPEG_DIR=$(brew --prefix ffmpeg)` instead.
 - Debian or Ubuntu: `sudo apt-get install libavcodec-dev libavformat-dev libswscale-dev libavutil-dev libclang-dev pkg-config`
 
+A build from source uses the ffmpeg on your `PATH` for libx264 when it has it (Homebrew's does).
+
 If Homebrew's `rustc` is first on your `PATH` and does not start, put rustup first:
 
 ```sh

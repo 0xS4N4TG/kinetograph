@@ -7,7 +7,7 @@
 //! video (`encode::mux_audio`).
 //!
 //! Where the program comes from, first match wins: `KINETOGRAPH_FFMPEG`, the path the host gave (`set_path`: the
-//! platform package's `bin/ffmpeg`), `ffmpeg` on the `PATH` when it lists libx264 (or, for the hardware encoders
+//! platform package's `bin/ffmpeg`), `ffmpeg` on the `PATH` (looked up in its directories) when it lists libx264 (or, for the hardware encoders
 //! below, the encoder asked for). An encoder is looked for in each of those in turn, so a `KINETOGRAPH_FFMPEG` that
 //! names a system ffmpeg with `h264_vaapi` does not hide the bundled program's `libx264`.
 //!
@@ -88,14 +88,38 @@ fn encoders_of(program: &Path) -> Probed {
 fn candidates(wanted: Option<&str>) -> Vec<(PathBuf, Vec<String>)> {
     let env = std::env::var_os("KINETOGRAPH_FFMPEG").filter(|v| !v.is_empty());
     let configured = CONFIGURED.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    candidates_in(
+        env.map(PathBuf::from),
+        configured,
+        std::env::var_os("PATH").as_deref(),
+        wanted,
+    )
+}
+
+/// The first `ffmpeg` (`ffmpeg.exe` on Windows) in the directories of `path_var`, found by looking, not by a shell.
+fn on_path(path_var: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
+    std::env::split_paths(path_var?)
+        .map(|dir| dir.join(PROGRAM))
+        .find(|candidate| candidate.is_file())
+}
+
+/// `candidates` with the three places given: `env` (`KINETOGRAPH_FFMPEG`), `configured` (the platform package's
+/// `bin/ffmpeg`) and the directories of `path_var` (`PATH`), in that order of preference.
+fn candidates_in(
+    env: Option<PathBuf>,
+    configured: Option<PathBuf>,
+    path_var: Option<&std::ffi::OsStr>,
+    wanted: Option<&str>,
+) -> Vec<(PathBuf, Vec<String>)> {
     let mut found: Vec<(PathBuf, Vec<String>)> = Vec::new();
-    for candidate in [env.map(PathBuf::from), configured].into_iter().flatten() {
+    for candidate in [env, configured].into_iter().flatten() {
         if let Some(list) = encoders_of(&candidate) {
             found.push((candidate, list));
         }
     }
-    let path = PathBuf::from(PROGRAM);
-    if let Some(list) = encoders_of(&path) {
+    if let Some(path) = on_path(path_var)
+        && let Some(list) = encoders_of(&path)
+    {
         let wanted_here = wanted.is_some_and(|w| is_hardware(w) && list.iter().any(|n| n == w));
         if wanted_here || list.iter().any(|n| n == encode::DEFAULT_ENCODER) {
             found.push((path, list));
@@ -340,6 +364,7 @@ fn probe(program: &Path, name: &str, hw: Hw, device: Option<&str>) -> Result<Ope
         container: "null",
         pix: Pix::Yuv420p,
         quality: Quality::Default,
+        x264_preset: "medium",
         prores_profile: 3,
         audio_codec: None,
         audio_bitrate: None,
@@ -489,6 +514,10 @@ fn encoder_args(settings: &Resolved, width: u32, height: u32, fps: f64) -> Vec<S
         a.push(v);
     };
     push("-c:v", settings.encoder.clone());
+    // The same keyframe interval the linked encoders get; libx264, libx265 and libvpx-vp9 keep their own.
+    if encode::sets_gop(&settings.encoder, settings.codec) {
+        push("-g", encode::gop_size(fps).to_string());
+    }
     match settings.encoder.as_str() {
         "libx264" | "libx265" => {
             let default_crf = if settings.encoder == "libx264" {
@@ -501,7 +530,7 @@ fn encoder_args(settings: &Resolved, width: u32, height: u32, fps: f64) -> Vec<S
                 Quality::Crf(crf) => push("-crf", crf.to_string()),
                 Quality::Default => push("-crf", default_crf.into()),
             }
-            push("-preset", "medium".into());
+            push("-preset", settings.x264_preset.into());
             if settings.encoder == "libx265" {
                 push("-x265-params", "log-level=error".into());
             }
@@ -910,6 +939,7 @@ mod tests {
             container: "mp4",
             pix,
             quality,
+            x264_preset: "medium",
             prores_profile: 3,
             audio_codec: None,
             audio_bitrate: None,
@@ -940,7 +970,7 @@ mod tests {
         assert_eq!(
             line("h264_vaapi", Pix::Yuv420p, Quality::Crf(20.0), Some(NODE)),
             format!(
-                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v h264_vaapi -qp 20 {TAGS}"
+                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v h264_vaapi -g 60 -qp 20 {TAGS}"
             )
         );
         assert_eq!(
@@ -951,13 +981,13 @@ mod tests {
                 Some(NODE)
             ),
             format!(
-                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v h264_vaapi -b:v 5000000 {TAGS}"
+                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v h264_vaapi -g 60 -b:v 5000000 {TAGS}"
             )
         );
         assert_eq!(
             line("h264_vaapi", Pix::Yuv420p, Quality::Default, Some(NODE)),
             format!(
-                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v h264_vaapi -b:v 12441600 {TAGS}"
+                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v h264_vaapi -g 60 -b:v 12441600 {TAGS}"
             )
         );
         // A CRF with a fraction is rounded: -qp is an integer.
@@ -967,18 +997,38 @@ mod tests {
     }
 
     #[test]
+    fn the_encoders_without_a_default_of_their_own_get_a_two_second_keyframe_interval() {
+        let args = |encoder: &str, codec: encode::Codec, fps: f64| {
+            let mut s = settings(encoder, Pix::Yuv420p, Quality::Default);
+            s.codec = codec;
+            encoder_args(&s, 1920, 1080, fps).join(" ")
+        };
+        assert!(
+            args("h264_vaapi", encode::Codec::H264, 30.0).starts_with("-c:v h264_vaapi -g 60 ")
+        );
+        assert!(args("hevc_qsv", encode::Codec::H265, 24.0).contains(" -g 48 "));
+        assert!(args("h264_nvenc", encode::Codec::H264, 30.0).contains(" -g 60 "));
+        // libx264, libx265 and libvpx-vp9 keep their own defaults; ProRes and GIF are intra-only.
+        assert!(!args("libx264", encode::Codec::H264, 30.0).contains(" -g "));
+        assert!(!args("libx265", encode::Codec::H265, 30.0).contains(" -g "));
+        assert!(!args("libvpx-vp9", encode::Codec::Vp9, 30.0).contains(" -g "));
+        assert!(!args("prores_ks", encode::Codec::ProRes, 30.0).contains(" -g "));
+        assert!(!args("gif", encode::Codec::Gif, 30.0).contains(" -g "));
+    }
+
+    #[test]
     fn hevc_vaapi_tags_hvc1_and_takes_ten_bit_as_p010() {
         assert_eq!(
             line("hevc_vaapi", Pix::Yuv420p, Quality::Crf(28.0), Some(NODE)),
             format!(
-                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v hevc_vaapi -qp 28 -tag:v hvc1 {TAGS}"
+                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v hevc_vaapi -g 60 -qp 28 -tag:v hvc1 {TAGS}"
             )
         );
         assert_eq!(
             line("hevc_vaapi", Pix::Yuv420p10, Quality::Crf(28.0), Some(NODE)),
             format!(
                 "-init_hw_device vaapi=va:{NODE} -filter_hw_device va -f rawvideo -pix_fmt yuv420p10le -s 1920x1080 -framerate 30/1 -i pipe:0 -an \
-                 -vf format=p010le,hwupload -c:v hevc_vaapi -qp 28 -profile:v main10 -tag:v hvc1 {TAGS}"
+                 -vf format=p010le,hwupload -c:v hevc_vaapi -g 60 -qp 28 -profile:v main10 -tag:v hvc1 {TAGS}"
             )
         );
     }
@@ -989,7 +1039,7 @@ mod tests {
             line("h264_qsv", Pix::Yuv420p, Quality::Crf(20.0), None),
             format!(
                 "-init_hw_device qsv=hw -filter_hw_device hw {INPUT_8} \
-                 -vf format=nv12,hwupload=extra_hw_frames=64,format=qsv -c:v h264_qsv -global_quality 20 {TAGS}"
+                 -vf format=nv12,hwupload=extra_hw_frames=64,format=qsv -c:v h264_qsv -g 60 -global_quality 20 {TAGS}"
             )
         );
         // A render node named by the user: the VAAPI device there, and Quick Sync derived from it.
@@ -1003,7 +1053,7 @@ mod tests {
             format!(
                 "-init_hw_device vaapi=va:/dev/dri/renderD129 -init_hw_device qsv=hw@va -filter_hw_device hw \
                  -f rawvideo -pix_fmt yuv420p10le -s 1920x1080 -framerate 30/1 -i pipe:0 -an \
-                 -vf format=p010le,hwupload=extra_hw_frames=64,format=qsv -c:v hevc_qsv -b:v 12441600 \
+                 -vf format=p010le,hwupload=extra_hw_frames=64,format=qsv -c:v hevc_qsv -g 60 -b:v 12441600 \
                  -profile:v main10 -tag:v hvc1 {TAGS}"
             )
         );
@@ -1013,7 +1063,7 @@ mod tests {
         );
         assert!(
             line("h264_qsv", Pix::Yuv420p, Quality::Bitrate(8_000_000), None)
-                .contains(" -c:v h264_qsv -b:v 8000000 ")
+                .contains(" -c:v h264_qsv -g 60 -b:v 8000000 ")
         );
     }
 
@@ -1027,6 +1077,22 @@ mod tests {
         // The software ones keep it, as ever.
         let text = line("libx264", Pix::Yuv444p, Quality::Crf(0.0), None);
         assert_eq!(text.matches("-pix_fmt").count(), 2, "{text}");
+    }
+
+    #[test]
+    fn the_x264_preset_is_the_preset_option_of_libx264_and_libx265() {
+        let text = |encoder: &str, preset: &'static str| {
+            let mut s = settings(encoder, Pix::Yuv420p, Quality::Crf(18.0));
+            s.x264_preset = preset;
+            encode_args(&s, 1920, 1080, 30.0, (30, 1), None)
+                .iter()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        assert!(text("libx264", "veryfast").contains(" -crf 18 -preset veryfast"));
+        assert!(text("libx265", "superfast").contains(" -preset superfast "));
+        assert!(line("libx264", Pix::Yuv420p, Quality::Default, None).contains(" -preset medium"));
     }
 
     #[test]
@@ -1122,6 +1188,70 @@ mod tests {
         program
     }
 
+    /// An `ffmpeg` that only lists `encoders` for `-encoders`, in `dir`.
+    #[cfg(unix)]
+    fn lister(dir: &Path, encoders: &[&str]) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::create_dir_all(dir).unwrap();
+        let program = dir.join("ffmpeg");
+        let rows: String = encoders
+            .iter()
+            .map(|n| format!(" V....D {n}  an encoder\\n"))
+            .collect();
+        let script = format!("#!/bin/sh\nprintf 'Encoders:\\n ------\\n{rows}'\n");
+        std::fs::write(&program, script).unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        program
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_ffmpeg_on_the_path_is_the_last_place_looked() {
+        let root = scratch("on-path");
+        let bundled = lister(&root.join("bundled"), &["libx264", "libx265"]);
+        let with_x264 = root.join("path-with");
+        lister(&with_x264, &["libx264"]);
+        let without = root.join("path-without");
+        lister(&without, &["libopenh264"]);
+        let names = |found: Vec<(PathBuf, Vec<String>)>| -> Vec<PathBuf> {
+            found.into_iter().map(|(p, _)| p).collect()
+        };
+        let path_of =
+            |dir: &Path| std::env::join_paths([root.join("empty"), dir.to_path_buf()]).unwrap();
+
+        // (a) No bundled program and no KINETOGRAPH_FFMPEG: the PATH's ffmpeg is used for libx264.
+        let found = names(candidates_in(
+            None,
+            None,
+            Some(&path_of(&with_x264)),
+            Some("libx264"),
+        ));
+        assert_eq!(found, [with_x264.join("ffmpeg")]);
+        // (b) A PATH ffmpeg without libx264 is ignored, so the chain goes on as before.
+        let found = candidates_in(None, None, Some(&path_of(&without)), Some("libx264"));
+        assert!(found.is_empty());
+        // (c) The bundled program comes first and the PATH's after it; KINETOGRAPH_FFMPEG comes before both.
+        let found = names(candidates_in(
+            None,
+            Some(bundled.clone()),
+            Some(&path_of(&with_x264)),
+            Some("libx264"),
+        ));
+        assert_eq!(found, [bundled.clone(), with_x264.join("ffmpeg")]);
+        let env = lister(&root.join("env"), &["libx264"]);
+        let found = names(candidates_in(
+            Some(env.clone()),
+            Some(bundled.clone()),
+            Some(&path_of(&with_x264)),
+            None,
+        ));
+        assert_eq!(found, [env, bundled, with_x264.join("ffmpeg")]);
+        // No PATH at all, or no ffmpeg on it.
+        assert!(candidates_in(None, None, None, None).is_empty());
+        assert!(on_path(Some(root.join("empty").as_os_str())).is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[cfg(unix)]
     fn scratch(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("kinetograph-hw-{tag}-{}", std::process::id()));
@@ -1160,12 +1290,12 @@ mod tests {
             calls[0],
             format!(
                 "-hide_banner -loglevel error -nostdin -y -init_hw_device vaapi=va:{NODE} -filter_hw_device va -f rawvideo -pix_fmt yuv420p -s 256x144 \
-                 -framerate 30/1 -i pipe:0 -an -vf format=nv12,hwupload -c:v h264_vaapi -b:v 221184 {TAGS} \
+                 -framerate 30/1 -i pipe:0 -an -vf format=nv12,hwupload -c:v h264_vaapi -g 60 -b:v 221184 {TAGS} \
                  -frames:v 4 -f null -"
             )
         );
         assert!(
-            calls[1].contains("-c:v h264_vaapi -b:v 221184 -low_power 1 "),
+            calls[1].contains("-c:v h264_vaapi -g 60 -b:v 221184 -low_power 1 "),
             "{}",
             calls[1]
         );

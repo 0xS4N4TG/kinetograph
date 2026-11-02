@@ -102,7 +102,7 @@ export interface BenchResult {
 export interface AudioPcm { sampleRate: number; /** One Float32Array per channel, equal lengths, samples in -1..1. */ channels: Float32Array[] }
 export interface VideoOptions {
   width: number; height: number; fps: number;
-  /** An ffmpeg H.264 encoder; default as the Rust CLI (h264_videotoolbox on macOS, else libx264 from the bundled ffmpeg program, then libopenh264). */
+  /** An ffmpeg H.264 encoder; default as the Rust CLI (libx264 from the bundled ffmpeg program, then on macOS h264_videotoolbox, then libopenh264). */
   encoder?: string;
 }
 export interface RenderSummary {
@@ -1148,6 +1148,7 @@ refusal says what to change.
 |---|---|
 | `--scale N` | Output size multiplier, above 0 and at most 8: `0.5` renders 1080p as 540p, `2` renders it as 4K. The compositor draws at the scaled size (the layers sit in a group scaled by N on a smaller or larger canvas), so nothing is resampled afterwards. Each side is `floor(side x N)` rounded down to an even number, at least 2, because 4:2:0 video needs even sizes: `--scale 0.3` of 64x36 is 18x10. `--draft` is `--scale 0.5` (both together is an error). Not given: `--width` and `--height`, which in Remotion re-lay the composition out at another size and would need the project to be opened at it |
 | `--codec h264\|h265\|prores\|vp9\|gif` | Default `h264`, except that a `.webm` path means `vp9` and a `.gif` path means `gif`. The extension must fit the codec: `.mp4` or `.mov` for h264 and h265, `.mov` for prores, `.webm` for vp9, `.gif` for gif |
+| `--x264-preset P` | libx264 and libx265 speed preset, as Remotion's `x264Preset`: `ultrafast`, `superfast`, `veryfast` (default), `faster`, `fast`, `medium`, `slow`, `slower`, `veryslow`, `placebo`. Faster renders sooner with bigger files; slower makes smaller files. `medium` matches Remotion and HyperFrames. An error with any other encoder |
 | `--crf N` or `--video-bitrate R` | Constant quality or a bit rate such as `8M` or `2500k`; giving both is an error. CRF is 0 to 51 for h264 and h265 and 0 to 63 for vp9, lower is better. Not for prores (its quality is the profile) or gif. Without either, the quality is as it always was: libx264 `crf 18`, VP9 `crf 30`, x265 `crf 28`, and 0.2 bits per pixel per frame for the VideoToolbox encoders |
 | `--prores-profile` | `proxy`, `light`, `standard`, `hq` (default), `4444`, `4444-xq`. The 4444 profiles are 4:4:4 10-bit; the others 4:2:2 10-bit. The alpha channel is dropped, as for every codec |
 | `--pixel-format` | `yuv420p` (default), `yuv422p`, `yuv444p`, `yuv420p10le`, `yuv422p10le`, `yuv444p10le`. ProRes takes the one its profile needs. Players handle 4:2:2, 4:4:4 and 10-bit H.264 and H.265 unevenly; 4:2:0 8-bit plays everywhere |
@@ -1156,15 +1157,20 @@ refusal says what to change.
 | `--every-nth-frame N` | gif only: draws every Nth frame of the range and plays them at the frame rate over N, so the GIF keeps its length with fewer frames. A project only (a `.json` scene is drawn whole) |
 | `--encoder NAME` | An ffmpeg encoder for the codec, in place of the choice below. Any encoder the built-in ffmpeg lacks runs in a separate ffmpeg program (`KINETOGRAPH_FFMPEG`, else the platform package's `bin/ffmpeg`, else `ffmpeg` on the `PATH` when it lists libx264 or the VAAPI/QSV encoder asked for). So `KINETOGRAPH_FFMPEG=$(which ffmpeg)` lets you use your system ffmpeg's encoders: `libx264`, and `h264_vaapi`, `hevc_vaapi`, `h264_qsv`, `hevc_qsv` on Intel and AMD GPUs (Linux; 4:2:0 only, HEVC also 10-bit; they must open a test encode, else the error says why). Decoding always uses the built-in ffmpeg |
 
-Encoder choice, when `--encoder` is not given. On macOS, ffmpeg's hardware encoders are used when it has them and they
-can do what was asked: `h264_videotoolbox`, `hevc_videotoolbox` (8-bit 4:2:0 only, so another `--pixel-format` selects
-the software encoder) and `prores_videotoolbox`. Otherwise, for H.264, the first of `libx264`, `libopenh264`, `h264_mf`,
-`h264_nvenc` and `h264_amf` that is available (and, for the last three, that opens on this machine). The ffmpeg linked
+Encoder choice, when `--encoder` is not given, is the same on every platform, as in Remotion and HyperFrames: software
+at constant quality. For H.264, `libx264` at `crf 18`; where it is missing, `h264_videotoolbox` on macOS, then the first
+of `libopenh264`, `h264_mf`, `h264_nvenc` and `h264_amf` that is available (and, for the last three, that opens on this
+machine). For H.265, `libx265`, else `hevc_videotoolbox` on macOS (8-bit 4:2:0 only). VideoToolbox is opt-in with
+`--encoder h264_videotoolbox` or `hevc_videotoolbox`; without `--video-bitrate` it gets 0.2 bits per pixel per frame.
+`prores_videotoolbox` is still what ProRes uses on macOS when it can do what was asked, else `prores_ks`. libx264, libx265 and
+libvpx-vp9 keep their own keyframe interval (250, 250, 128 frames), as in Remotion; every other encoder we drive but
+ProRes and GIF (intra-only) gets one of 2 seconds (`-g` = `fps x 2`, at least 1), because FFmpeg's generic default is
+12 frames (`encode::sets_gop`). The ffmpeg linked
 into the addon is LGPL-only and has no `libx264` or `libx265`; the platform packages ship a separate GPL `ffmpeg`
 program (`bin/ffmpeg`) that has them, and the addon runs it as a child process (raw pictures on a pipe, a video-only
 file out; the sound is muxed in by the linked ffmpeg). `KINETOGRAPH_FFMPEG=/path/to/ffmpeg` names another program and
 is tried before the bundled one (an encoder is looked up in each program in turn); with neither, an `ffmpeg` on the
-`PATH` is used if it lists libx264. Then `libx265`, `prores_ks` and `libvpx-vp9` (linked on macOS and Linux); `gif` has
+`PATH` is used if it lists libx264. For the other codecs: `libx265`, `prores_ks` and `libvpx-vp9` (linked on macOS and Linux); `gif` has
 one. See `/docs/ffmpeg-license/`.
 
 Intel and AMD GPU encoders on Linux: `h264_vaapi`, `hevc_vaapi` (VAAPI, any Intel or AMD GPU with a driver) and

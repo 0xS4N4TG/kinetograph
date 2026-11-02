@@ -32,6 +32,8 @@ Then add the MCP server so each CLI command is a tool: `npx kinetograph mcp` (st
 
 ## HTML pages and HyperFrames projects
 
+Render quality: libx264 at `--crf 18` by default; `--x264-preset` picks the speed (`veryfast` default, `medium` as in Remotion; `ultrafast` to `placebo`).
+
 Every command that opens a project (`still`, `strip`, `inspect`, `lint`, `doctor`, `studio`, `render`) takes an HTML page as it is: `npx kinetograph render index.html -o out.mp4`
 (or the page's directory). There is no rewrite and nothing runs in a browser.
 
