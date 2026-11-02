@@ -88,9 +88,9 @@ The first render downloads GSAP from the CDN and pins it in `kinetograph.lock.js
   <Tab value="Remotion">
 
 ```sh
-npx kinetograph compositions examples/hello/index.tsx
-npx kinetograph still examples/hello/index.tsx 15 -o out/hello-15.png
-npx kinetograph strip examples/hello/index.tsx -n 12 -o out/hello-strip.png
+npx kinetograph compositions index.tsx
+npx kinetograph still index.tsx 15 -o out/hello-15.png
+npx kinetograph strip index.tsx -n 12 -o out/hello-strip.png
 ```
 
   </Tab>
@@ -111,9 +111,9 @@ npx kinetograph strip index.html -n 12 -o out/hello-strip.png
 ## Check the project
 
 ```sh
-npx kinetograph inspect examples/hello/index.tsx --frame 30
-npx kinetograph lint examples/hello/index.tsx
-npx kinetograph check examples/hello/index.tsx
+npx kinetograph inspect index.tsx --frame 30
+npx kinetograph lint index.tsx
+npx kinetograph check index.tsx
 ```
 
 - `inspect` prints each layer at a frame, with its bounds.
@@ -128,7 +128,7 @@ These commands take an HTML page as they take a TSX entry.
   <Tab value="Remotion">
 
 ```sh
-npx kinetograph studio examples/hello/index.tsx
+npx kinetograph studio index.tsx
 ```
 
   </Tab>
@@ -149,8 +149,8 @@ npx kinetograph studio index.html
   <Tab value="Remotion">
 
 ```sh
-npx kinetograph render examples/hello/index.tsx -o out/hello.mp4 --draft
-npx kinetograph render examples/hello/index.tsx -o out/hello.mp4
+npx kinetograph render index.tsx -o out/hello.mp4 --draft
+npx kinetograph render index.tsx -o out/hello.mp4
 ```
 
   </Tab>
