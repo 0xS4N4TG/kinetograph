@@ -546,9 +546,11 @@ function piecesOf(path: string): Piece[] {
       case 'L': curve = { kind: 'L', x0: x, y0: y, x1: r.x, y1: r.y }; x = r.x; y = r.y; break;
       case 'C': {
         // A quadratic whose control point is its start is a straight line, measured as one (Remotion 4.0.539 also does it
-        // for the relative `q`); as a cubic it would be walked at an uneven pace.
+        // for the relative `q`); as a cubic it would be walked at an uneven pace. A `T` after any command but Q or T has
+        // nothing to reflect, so its control point is the current point (4.0.540 reads it that way too).
         const from = instructions[source];
-        if (from?.type === 'Q' && from.cpx === x && from.cpy === y) {
+        const before = instructions[source - 1]?.type;
+        if ((from?.type === 'Q' && from.cpx === x && from.cpy === y) || (from?.type === 'T' && before !== 'Q' && before !== 'T')) {
           curve = { kind: 'L', x0: x, y0: y, x1: r.x, y1: r.y };
           x = r.x;
           y = r.y;

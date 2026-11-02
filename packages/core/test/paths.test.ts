@@ -339,3 +339,53 @@ describe('translatePath with a path that starts with m (Remotion 4.0.539)', () =
     expect(P.centerPath('m 1 2 h 10 v 5 z m 4 4 l 2 2')).toBe('m -5 -3 h 10 v 5 Z m 4 4 l 2 2');
   });
 });
+
+/**
+ * Recorded from @remotion/paths 4.0.540: arcs with a zero radius are straight lines (4.0.539 measured them as a point at
+ * 0, 0), a T after any command but Q or T reflects nothing (it starts from the current point), and getBoundingBox() reads
+ * curves whose first control point sits on the start (a flat tangent).
+ */
+describe('zero-radius arcs, smooth quadratics and flat tangents (Remotion 4.0.540)', () => {
+  const groups = fixture('paths-4.0.540.json').groups as Record<string, any[]>;
+  const cases = Object.values(groups).flat();
+  const hasRealArc = (d: string) => P.parsePath(d).some((i) => (i.type === 'A' || i.type === 'a') && i.rx !== 0 && i.ry !== 0);
+
+  it('normalize and reduce to the same instructions', () => {
+    for (const c of cases) {
+      expect(P.normalizePath(c.d), c.d).toBe(c.normalize.value);
+      const got = P.reduceInstructions(P.parsePath(c.d));
+      expect(got.length, c.d).toBe(c.reduce.value.length);
+      got.forEach((r, i) => expectNumbersClose(r, c.reduce.value[i], hasRealArc(c.d) ? 1e-6 : 1e-12, `${c.d} #${i}`));
+    }
+  });
+
+  it('measure the same length and bounding box', () => {
+    for (const c of cases) {
+      const arcs = hasRealArc(c.d);
+      expectNumbersClose(P.getLength(c.d), c.length.value, arcs ? 1e-5 : hasQuad(c.d) ? 1e-7 : 1e-8, c.d);
+      const box = P.getBoundingBox(c.d);
+      expectNumbersClose(box, c.bbox.value, arcs ? 1e-4 : 1e-9, `bbox ${c.d}`);
+      expectPathClose(box.viewBox, c.bbox.value.viewBox, arcs ? 1e-4 : 1e-9, `viewBox ${c.d}`);
+    }
+  });
+
+  it('find the same points and tangents along the path', () => {
+    for (const c of cases) {
+      const arcs = hasRealArc(c.d);
+      for (const s of c.points) {
+        expectNumbersClose(P.getPointAtLength(c.d, s.at), s.point.value, arcs || hasQuad(c.d) ? 1e-3 : 1e-5, `${c.d} @${s.at}`);
+        // The published tangent of an arc, a zero-radius one too, points backwards along the path; ours points the way it goes.
+        // A curve whose control point sits on its end has no derivative there: the published tangent is 0, 0.
+        const flat = s.tangent.value.x === 0 && s.tangent.value.y === 0;
+        if (!hasArc(c.d) && !flat) expectNumbersClose(P.getTangentAtLength(c.d, s.at), s.tangent.value, 1e-4, `${c.d} tangent @${s.at}`);
+      }
+    }
+  });
+
+  it('walk a zero-radius arc as the straight line to its end', () => {
+    expect(P.getLength('M 0 0 A 0 0 0 0 1 100 0')).toBe(100);
+    expect(P.getPointAtLength('M 0 0 A 0 10 0 0 1 100 0', 25)).toEqual({ x: 25, y: 0 });
+    expect(P.getTangentAtLength('M 0 0 A 10 0 0 1 0 100 0 L 100 50', 40)).toEqual({ x: 1, y: 0 });
+    expect(P.evolvePath(0.5, 'M 0 0 A 0 0 0 0 1 100 0')).toEqual({ strokeDasharray: '100 100', strokeDashoffset: 50 });
+  });
+});
