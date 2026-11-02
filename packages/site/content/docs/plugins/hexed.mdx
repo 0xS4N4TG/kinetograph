@@ -15,16 +15,16 @@ Wrap any picture or clip in `<Hexed>`.
 import { Image, Video, staticFile } from '@kinetographdev/core';
 import { Hexed } from '@kinetographdev/hexed';
 
-<Hexed seed={42}><Video src={staticFile('clip.mp4')} /></Hexed>
+<Hexed seed={42}><Video src={staticFile('video/clip.mp4')} /></Hexed>
 
 // hold a slot, switch one off
 <Hexed seed={42} lock={{ grade: 'sepia-print' }} off={['mirror']}>
-  <Image src={staticFile('photo.jpg')} />
+  <Image src={staticFile('images/photo.jpg')} />
 </Hexed>
 
 // a saved look, at 70% strength
 <Hexed preset="moss-impact" amount={0.7} adjust={{ contrast: 20 }}>
-  <Image src={staticFile('photo.jpg')} />
+  <Image src={staticFile('images/photo.jpg')} />
 </Hexed>
 ```
 

@@ -16,7 +16,7 @@ import { Video, staticFile } from '@kinetographdev/core';
 import { Captions, HandCaptions, wordsFrom } from '@kinetographdev/kinetic-typography';
 
 const words = wordsFrom(asr.words, 30);
-const footage = { src: staticFile('me.mp4') };
+const footage = { src: staticFile('video/me.mp4') };
 
 <Video src={footage.src} />
 <Captions words={words} split={[3, 3]} big={['premium']} preset="highlighter" footage={footage} />

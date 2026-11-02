@@ -13,11 +13,11 @@ import { Video } from '@kinetographdev/core';
 
 <Sequence from={30}>
   <Video
-    src={staticFile('pig.mp4')}
+    src={staticFile('video/pig.mp4')}
     width={1920}
     height={1080}
     fit="cover"
-    datamosh={{ from: 0, to: 45, hold: { src: staticFile('clouds.mp4'), frame: 90 }, mix: 0.2 }}
+    datamosh={{ from: 0, to: 45, hold: { src: staticFile('video/clouds.mp4'), frame: 90 }, mix: 0.2 }}
   />
 </Sequence>
 ```

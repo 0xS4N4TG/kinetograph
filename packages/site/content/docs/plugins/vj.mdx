@@ -17,7 +17,7 @@ import { Blobs, thermal, type BlobTrack } from '@kinetographdev/vj';
 import track from './track/clip-blobs.json' with { type: 'json' };
 
 <Layer id="clip" effects={thermal()}>
-  <Video src={staticFile('clip.mp4')} width={1920} height={1080} fit="cover" muted />
+  <Video src={staticFile('video/clip.mp4')} width={1920} height={1080} fit="cover" muted />
 </Layer>
 <Blobs track={track as BlobTrack} box="corners" links="chain" />
 ```

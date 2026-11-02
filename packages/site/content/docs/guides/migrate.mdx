@@ -95,7 +95,7 @@ Follow these steps in order.
 5. **Render with `--strict`.** It stops on the first frame with something unsupported, so nothing is silently missing.
 6. **Write down what changed.** Note anything you left out or approximated. The video can differ from the Remotion one.
 
-The commands for steps 1, 2, 4 and 5 are below. They differ only in the entry. A Remotion project points at its entry file and picks a composition with `--comp`. A [HyperFrames](/docs/guides/migrate-hyperframes/) page points at its `index.html` or the directory that holds it.
+The commands for steps 1, 2, 4 and 5 are below. They differ only in the entry. A Remotion project points at its entry file and picks a composition with `--comp`. A [HyperFrames](/docs/guides/migrate-hyperframes/) page points at its `index.html` or the directory that holds it. Your project keeps its own layout. Only the files the commands write go in `out/`.
 
 <Tabs items={['Remotion', 'HyperFrames']}>
   <Tab value="Remotion">
@@ -104,8 +104,8 @@ The commands for steps 1, 2, 4 and 5 are below. They differ only in the entry. A
 npx kinetograph compositions src/index.ts
 npx kinetograph doctor src/index.ts
 npx kinetograph lint src/index.ts
-npx kinetograph strip src/index.ts -n 12 -o out/strip.png
-npx kinetograph render src/index.ts --comp <id> -o out/video.mp4 --strict
+npx kinetograph strip src/index.ts -n 12
+npx kinetograph render src/index.ts --comp <id> --strict
 ```
 
   </Tab>
@@ -114,8 +114,8 @@ npx kinetograph render src/index.ts --comp <id> -o out/video.mp4 --strict
 ```sh
 npx kinetograph compositions index.html
 npx kinetograph doctor index.html
-npx kinetograph strip index.html -n 12 -o out/strip.png
-npx kinetograph render index.html -o out/video.mp4 --strict
+npx kinetograph strip index.html -n 12
+npx kinetograph render index.html --strict
 ```
 
   </Tab>
@@ -124,7 +124,7 @@ npx kinetograph render index.html -o out/video.mp4 --strict
 ### Fixing findings
 
 - **Tooling imports** (`player`, `renderer`, `bundler`, `lambda`): remove them and use the CLI.
-  - `remotion render` becomes `kinetograph render <entry> --comp <id> -o out.mp4`.
+  - `remotion render` becomes `kinetograph render <entry> --comp <id>`.
   - `remotion studio` becomes `kinetograph studio <entry>`.
 - **`@remotion/three`**: rebuild the scene with `Scene3D`, `Camera3D`, lights, `Mesh` and `Model`. Rotations are in degrees. See [Authoring](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 6.6.
 - **`IFrame`**: rebuild the page as components, or use a screenshot.

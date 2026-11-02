@@ -14,6 +14,7 @@ Building from source takes 15 to 30 minutes and is only needed to work on the en
    1. Check `node -v` is 22 or newer. If it isn't, tell the user and stop.
    2. In the user's project folder: `npm install kinetograph`.
    3. Run `npx kinetograph doctor` and show the user its output. `addon: loaded` means it works.
+   4. For a new project, run `npx kinetograph init` (`--html` for an HTML page) in an empty folder and keep its layout.
 3. **From source:** follow [Installation: From source](https://kinetograph.dev/docs/getting-started/installation/#from-source).
    Ask the user before installing Rust, Homebrew packages or anything else system-wide. Then run
    `npx kinetograph doctor` from the clone.
