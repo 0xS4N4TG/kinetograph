@@ -22,6 +22,25 @@ Use `--strict` in CI and for final renders. Leave it off while you work.
 
 ### Check a project before you render
 
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
+
+```sh
+npx kinetograph doctor src/index.ts
+npx kinetograph render src/index.ts -o out.mp4 --strict
+```
+
+  </Tab>
+  <Tab value="HyperFrames">
+
+```sh
+npx kinetograph doctor index.html
+npx kinetograph render index.html -o out.mp4 --strict
+```
+
+  </Tab>
+</Tabs>
+
 - `kinetograph doctor <entry>` goes through every frame without the GPU. It lists what the engine can't draw, on which frames, and any scene a render would refuse. Run it before a long render.
 - If the project imports an unsupported package such as `@remotion/three`, `doctor` lists the import and its file, and still checks the frames it can.
 - `kinetograph lint` adds one `compat` warning per problem.
