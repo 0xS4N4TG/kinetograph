@@ -10,35 +10,50 @@ A HyperFrames project needs no rewrite. Kinetograph reads its `index.html`, the 
 | `npx hyperframes preview` | `npx kinetograph studio my-video` |
 | `npx hyperframes render` | `npx kinetograph render my-video -o out.mp4` |
 
-`my-video` is the project directory or its `index.html`. Install Kinetograph first: see [Installation](/docs/getting-started/installation/). The [CLI reference](/docs/reference/cli/) lists every command.
+`my-video` is the project directory or its `index.html`. [Install Kinetograph](/docs/getting-started/installation/) first. The [CLI reference](/docs/reference/cli/) lists every command.
 
 ## Move a project
 
 1. **Check the root element.** The outermost `data-composition-id` element gives the size (`data-width`, `data-height`) and the length (`data-duration`). The rate is 30 fps. A page without these renders at 1920 x 1080 for one second, with a warning.
-2. **Run doctor.** `npx kinetograph doctor my-video` lists what the engine can't draw, and the frames it happens on.
-3. **Look at it.** `npx kinetograph strip my-video -n 12 -o out/strip.png` draws twelve frames into one picture.
-4. **Render with `--strict`.** `npx kinetograph render my-video -o out.mp4 --strict` stops on the first frame with something unsupported.
+2. **Run doctor.** It lists what the engine can't draw, and the frames it happens on.
+3. **Look at it.** `strip` draws twelve frames into one picture.
+4. **Render with `--strict`.** It stops on the first frame with something unsupported.
+
+The commands for steps 2 to 4 differ only in the entry.
+
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
+
+```sh
+npx kinetograph doctor src/index.ts
+npx kinetograph strip src/index.ts -n 12 -o out/strip.png
+npx kinetograph render src/index.ts --comp <id> -o out.mp4 --strict
+```
+
+  </Tab>
+  <Tab value="HyperFrames">
+
+```sh
+npx kinetograph doctor my-video
+npx kinetograph strip my-video -n 12 -o out/strip.png
+npx kinetograph render my-video -o out.mp4 --strict
+```
+
+  </Tab>
+</Tabs>
 
 ### Downloads and the lock file
 
-Before the first frame, Kinetograph downloads what the page loads from the web. That means CDN scripts, ES modules, data files, remote pictures, media and Google Fonts.
+Before the first frame, Kinetograph downloads what the page loads from the web: CDN scripts, ES modules, data files, remote pictures, media and Google Fonts.
 
-- The files go in a local cache. Each one is pinned in `kinetograph.lock.json` beside the entry. Commit that file.
+- Each file goes in a local cache and is pinned in `kinetograph.lock.json` beside the entry. Commit that file.
 - `render`, `still`, `doctor` and `studio` do this step themselves. Run `npx kinetograph fetch-deps my-video` on its own in CI or to warm the cache.
 - A host other than the default CDNs needs `--allow-host`.
 - Add `--offline` to a render to make it read only the cache.
 
 ## What carries over
 
-These work as they do in HyperFrames. The details are in [HyperFrames projects](/docs/compat/#hyperframes-projects).
-
-- Compositions mounted with `data-composition-src`, `data-variable-values` and `getVariables()`.
-- Clips with `data-start`, `data-duration` and `data-hidden`.
-- Timelines on `window.__timelines`.
-- `<video>` and `<audio>`, with `data-media-start`, `data-playback-rate`, `data-volume` and fades.
-- Speed ramps and volume lanes (`data-automation`), audio effect chains (`data-fx-chain`) and colour grading (`data-color-grading`).
-- The 18 font families HyperFrames embeds, and its mapping of system font names onto them.
-- WebGPU shader blocks (`shaders.iife.js`), import maps and ES modules.
+Everything a HyperFrames page uses is read as it is. That covers `data-composition-src` compositions, clips (`data-start`, `data-duration`, `data-hidden`), `window.__timelines`, `<video>` and `<audio>` with their `data-*` attributes, speed ramps, audio effect chains, colour grading, the 18 embedded font families, WebGPU shader blocks, import maps and ES modules. The details are in [HyperFrames projects](/docs/compat/#hyperframes-projects).
 
 ## What to check
 
@@ -47,8 +62,4 @@ These work as they do in HyperFrames. The details are in [HyperFrames projects](
 - **Fonts.** Operating-system fonts are never read. CJK, Arabic, Devanagari and other scripts have no bundled font, so load one that has them.
 - **Variable fonts** that set `font-variation-settings` per element can measure wider than in Chrome. A line fitted by `measureText` may then wrap.
 
-The full list is in [Known issues](/docs/known-issues/#hyperframes-projects).
-
-## With an agent
-
-The `kinetograph` skill already covers HTML pages, so an agent can render and check a HyperFrames project with the same loop. See [Use with agents](/docs/guides/agents/).
+The full list is in [Known issues](/docs/known-issues/#hyperframes-projects). An agent can do all of this with the `kinetograph` skill: see [Use with agents](/docs/guides/agents/).
