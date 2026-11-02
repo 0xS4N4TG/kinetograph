@@ -35,6 +35,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - Studio custom panels come back after a restart. `plan/custom-<name>.json` now holds `{ draft, answer }` (the `{ name, title, blocks }` the agent sent, and `{ values }`) where it held `{ values }` alone, and `GET /api/plan/custom-<name>` returns the same. When Studio starts it reads each such file through the safe reader and shows the panel as answered, as it does for the other kinds; a file that is not a draft with an answer that fits it (one from before this holds values only), is a link, or sits in a `plan/` that leaves the project is left out.
 - Studio Review: a box dragged on the preview over empty space now gives the note a `box` with no `layer` (the viewer keeps the last dragged box, in composition pixels, for the panel); with a layer inside the box the note gets both. A click on the preview or a change of selection forgets the box.
 - Studio Review keeps the notes you have not sent: they are kept in the browser per project and panel, come back when the panel is shown again after being put away or the window reloads, and go when the review is sent or dismissed.
+- `parseVtt()` in `@remotion/captions` reads WebVTT. Cue text loses its tags (`<i>`, `<v Speaker>`, inline timestamps) and has its character references decoded, and the text of YouTube automatic captions is kept, as in Remotion 4.0.540.
 
 ### Changed
 
@@ -59,6 +60,10 @@ Kinetograph is in beta, so APIs can still change between versions.
 - `interpolate()` with `extrapolateLeft` or `extrapolateRight` set to `wrap` and more than two keyframes repeats the whole keyframe range, as Remotion 4.0.539 does. Before, only the first or last segment repeated: `interpolate(35, [0, 10, 30], [0, 100, 200], { extrapolateRight: 'wrap' })` is 50 (the value at 5), not 125. Numbers, tuples, `scale`, `translate`, `rotate` and `font-weight` outputs, per-segment easing, `posterize` and spring tails all follow, and so does `interpolatePaths()`.
 - `translatePath()` moves a path's leading relative `m` (it is relative to the origin), so `translatePath('m10 20 l30 40', 5, 5)` is `m 15 25 l 30 40`; `resetPath()` and `centerPath()` were off by the same amount for such paths. A quadratic whose control point is its start (`q 0 0 30 40`) is measured and walked as a straight line, so `getPointAtLength()` and `getTangentAtLength()` on it are exact (a point 10 along `M 10 20 q 0 0 30 40` was 0.008 off). Both match Remotion 4.0.539.
 - `audioBufferToDataUrl()` writes every channel of a buffer with three or more channels, interleaved. It wrote only channel 0 under a header that listed them all, as Remotion did before 4.0.539. Mono and stereo output is unchanged.
+- `skew()` takes a unit for each axis, `skew(10, 'deg', 20, 'rad')`, and the other `@remotion/animation-utils` transform helpers check their arguments, take their unit (`rotate(5, 'rad')`, `translateX(5, '%')`) and throw on a shape they do not accept, as Remotion 4.0.540 does. `scale(2, NaN)` throws; it wrote `scale(2, NaN)` before.
+- `getPointAtLength()` and `getTangentAtLength()` walk a `T` that follows anything but a `Q` or `T` as the straight line it is, at an even pace, as Remotion 4.0.540 does.
+- `getAudioData(src, { sampleRate })` decodes at that rate (it always used 48 kHz) and keeps one result per file and rate, so two rates no longer share one, as in Remotion 4.0.540.
+- `--props` reads a file saved with a UTF-8 byte order mark, and a boolean option takes `true` or `false` (`--offline false`, `--offline=false`), as `@remotion/cli` 4.0.540 does.
 
 ## 0.2.5 (2026-10-28)
 
