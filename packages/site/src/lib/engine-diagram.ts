@@ -26,14 +26,6 @@ export interface DiagramLabel {
   tone: 'ink' | 'muted';
   /** Degrees; each label sits a little off the baseline, like handwriting. */
   rot: number;
-  /** The box this label belongs to, so a highlighted box can put a halo behind its text. */
-  node?: string;
-}
-
-export interface DiagramStep {
-  node: string;
-  title: string;
-  caption: string;
 }
 
 export interface Diagram {
@@ -41,52 +33,9 @@ export interface Diagram {
   height: number;
   /** Boxes, group boxes and arrows, in drawing order. */
   ink: DiagramPath[];
-  /** The pale yellow wash of each stage box, by box id; drawn only for the active step. */
-  wash: Record<string, string>;
-  /** The thin yellow hatching over the wash. */
-  hatch: Record<string, DiagramPath[]>;
-  /** A box's own outline, so the active one can be redrawn in dark ink over the wash. */
-  outline: Record<string, DiagramPath[]>;
   labels: DiagramLabel[];
-  steps: DiagramStep[];
   alt: string;
 }
-
-/** One sentence per step, from "How one frame is made" in content/docs/internals/engine.mdx. */
-export const STEPS: DiagramStep[] = [
-  {
-    node: 'bundle',
-    title: 'Bundle',
-    caption:
-      'The CLI bundles the project with esbuild, and imports of remotion point at @kinetographdev/core, so a Remotion project runs unchanged.',
-  },
-  {
-    node: 'run',
-    title: 'Run frame N',
-    caption: 'Date, timers and Math.random follow the frame number, then React renders the component tree for that frame.',
-  },
-  {
-    node: 'layers',
-    title: 'Layers + DOM islands',
-    caption:
-      "Kinetograph's own elements become scene layers, and each run of plain HTML and SVG becomes a DOM island that goes to the addon as JSON.",
-  },
-  {
-    node: 'layout',
-    title: 'Lay out + paint',
-    caption: 'Stylo works out the styles, Taffy lays out the boxes, Parley shapes the text, and the result is painted into scene layers.',
-  },
-  {
-    node: 'composite',
-    title: 'Composite on the GPU',
-    caption: 'wgpu draws the layer tree, with Skia for vector shapes, text and Canvas 2D, and WGSL passes for effects.',
-  },
-  {
-    node: 'encode',
-    title: 'Encode',
-    caption: 'Each finished frame goes to FFmpeg on another thread while the GPU draws the next one, and offline audio is mixed in at the end.',
-  },
-];
 
 export const ALT =
   'Diagram of how Kinetograph makes a frame. A Remotion project (TSX) and a HyperFrames page (HTML) go into a bundle step with esbuild. ' +
@@ -200,9 +149,6 @@ export function buildDiagram(): Diagram {
   let seed = 11;
   const next = () => (seed += 17);
   const ink: DiagramPath[] = [];
-  const hatch: Record<string, DiagramPath[]> = {};
-  const wash: Record<string, string> = {};
-  const outline: Record<string, DiagramPath[]> = {};
   const labels: DiagramLabel[] = [];
   let n = 0;
   const label = (l: Omit<DiagramLabel, 'rot'>) => labels.push({ ...l, rot: ((n++ * 7) % 5) * 0.45 - 0.9 });
@@ -222,26 +168,7 @@ export function buildDiagram(): Diagram {
   }
 
   for (const b of BOXES) {
-    const box = toPaths(gen.rectangle(b.x, b.y, b.w, b.h, { ...SKETCH, seed: next() }));
-    ink.push(...box);
-    if (b.step) {
-      outline[b.id] = box;
-      wash[b.id] = round(
-        gen.toPaths(gen.rectangle(b.x, b.y, b.w, b.h, { roughness: 1.1, stroke: 'none', fill: '#000', fillStyle: 'solid', seed: next() }))[0].d,
-      );
-      hatch[b.id] = toPaths(
-        gen.rectangle(b.x, b.y, b.w, b.h, {
-          roughness: 1.1,
-          stroke: 'none',
-          fill: '#000',
-          fillStyle: 'hachure',
-          hachureAngle: -42,
-          hachureGap: 15,
-          fillWeight: 1.2,
-          seed: next(),
-        }),
-      );
-    }
+    ink.push(...toPaths(gen.rectangle(b.x, b.y, b.w, b.h, { ...SKETCH, seed: next() })));
     const cx = b.x + b.w / 2;
     const tall = b.h > 70;
     if (b.icon === 'play') {
@@ -259,9 +186,9 @@ export function buildDiagram(): Diagram {
       );
     }
     const y1 = b.icon ? b.y + 66 : b.sub ? (tall ? b.y + 38 : b.y + 28) : b.y + b.h / 2 + 8;
-    label({ x: cx, y: y1, text: b.label, size: 22, weight: 400, anchor: 'middle', tone: 'ink', node: b.id });
-    if (b.sub) label({ x: cx, y: y1 + (tall ? 24 : 22), text: b.sub, size: 18, weight: 400, anchor: 'middle', tone: 'muted', node: b.id });
-    if (b.step) label({ x: b.x + 10, y: b.y + b.h - 9, text: String(b.step), size: 16, weight: 700, anchor: 'start', tone: 'muted', node: b.id });
+    label({ x: cx, y: y1, text: b.label, size: 22, weight: 400, anchor: 'middle', tone: 'ink' });
+    if (b.sub) label({ x: cx, y: y1 + (tall ? 24 : 22), text: b.sub, size: 18, weight: 400, anchor: 'middle', tone: 'muted' });
+    if (b.step) label({ x: b.x + 10, y: b.y + b.h - 9, text: String(b.step), size: 16, weight: 700, anchor: 'start', tone: 'muted' });
   }
 
   for (const a of ARROWS) {
@@ -280,6 +207,6 @@ export function buildDiagram(): Diagram {
 
   for (const t of ARROW_LABELS) label({ ...t, size: 20, weight: 400, tone: 'muted' });
 
-  cached = { width: W, height: H, ink, wash, hatch, outline, labels, steps: STEPS, alt: ALT };
+  cached = { width: W, height: H, ink, labels, alt: ALT };
   return cached;
 }
