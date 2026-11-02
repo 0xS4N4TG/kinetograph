@@ -1,0 +1,24 @@
+---
+title: Props
+description: Input values you give a composition, from defaults, a zod schema or the --props option.
+---
+
+Props are the values a composition's component receives, such as a title or a colour. A composition sets `defaultProps`. You can change them without editing code.
+
+```sh
+npx kinetograph render src/index.tsx --comp Card --props '{"title":"Hello"}' -o out/card.mp4
+```
+
+`--props` takes a JSON object, or the path of a JSON file. The component gets `defaultProps` with the `--props` values merged over them. `getInputProps()` returns the `--props` object.
+
+Add a zod 4 `schema` to the composition and Studio draws a form from it, with a select, slider or switch for each field. Props saved as a preset are a JSON file in `presets/`.
+
+**Coming from Remotion:** the same `defaultProps`, `schema` and `getInputProps()`.
+**Coming from HyperFrames:** `data-variable-values` and `getVariables()`.
+
+## See also
+
+- [Authoring](/docs/guides/authoring/#compositions)
+- [Plugins: presets](/docs/guides/plugins/#presets)
+- [Studio](/docs/guides/studio/#props-and-presets)
+- [Composition](/docs/terminology/composition/)

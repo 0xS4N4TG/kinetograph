@@ -1,0 +1,23 @@
+---
+title: Public directory
+description: The public/ folder for images, video, sound and fonts, read with staticFile.
+---
+
+The public directory is a folder named `public/` next to your entry point. If there is none there, Kinetograph looks next to the nearest `package.json`.
+
+`staticFile('name')` gives the path of a file in it. Use it for images, video, sound and font files.
+
+```tsx
+<Audio src={staticFile('vo/line-1.wav')} />
+```
+
+`staticFile` is for local files. Passing it a web address is an error. Use the address directly instead, and Kinetograph downloads it once into its cache.
+
+**Coming from Remotion:** the same `public/` folder and `staticFile`.
+
+## See also
+
+- [Authoring: assets](/docs/guides/authoring/#assets)
+- [Audio](/docs/guides/audio/)
+- [Asset lock](/docs/terminology/asset-lock/)
+- [Fonts](/docs/terminology/fonts/)

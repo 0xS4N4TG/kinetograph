@@ -1,0 +1,26 @@
+---
+title: Render
+description: Drawing every frame of a composition and encoding them, with the sound, into a video file.
+---
+
+To render is to draw each frame and write the result to a video file.
+
+```sh
+npx kinetograph render src/index.tsx -o out/card.mp4
+```
+
+The extension of the output sets the container: `.mp4`, `.mov`, `.webm` or `.gif`. The codec is H.264 unless you ask for another with `--codec`: `h265`, `prores`, `vp9` or `gif`.
+
+Useful options are `--range 0..60` for part of the video, `--draft` for half size and `--strict` to fail on content the engine cannot draw. The export options follow Remotion's names.
+
+Studio has an Export button that does the same job and keeps a queue of renders.
+
+**Coming from Remotion:** `remotion render` becomes `kinetograph render <entry> --comp <id> -o out.mp4`.
+**Coming from HyperFrames:** `hyperframes render` becomes `kinetograph render my-video -o out.mp4`.
+
+## See also
+
+- [CLI reference](/docs/reference/cli/#render)
+- [Concurrency](/docs/terminology/concurrency/)
+- [Doctor](/docs/terminology/doctor/)
+- [Studio](/docs/terminology/studio/)

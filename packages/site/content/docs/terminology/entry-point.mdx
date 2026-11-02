@@ -1,0 +1,23 @@
+---
+title: Entry point
+description: The file you give to a command, which loads the project.
+---
+
+The entry point is the file a command opens, such as `npx kinetograph render src/index.tsx`. It can be one of three things.
+
+- A TSX, TS, JSX or JS file that calls `registerRoot`.
+- A `.json` scene file.
+- An HTML page, or the folder that holds its `index.html`.
+
+A file that only exports a component is not an entry point. The project needs a `registerRoot` call, or the command stops and says so.
+
+The entry point also decides where the [public directory](/docs/terminology/public-directory/) is, and where `kinetograph.lock.json` and the `presets/` folder go. Both sit beside it.
+
+**Coming from Remotion:** the same idea. It is the file that calls `registerRoot`, often `src/index.ts`.
+**Coming from HyperFrames:** the `index.html`.
+
+## See also
+
+- [CLI reference](/docs/reference/cli/)
+- [First video](/docs/getting-started/first-video/)
+- [Root](/docs/terminology/root/)
