@@ -5,70 +5,89 @@ description: What works when you render a Remotion project with Kinetograph, wha
 
 Kinetograph renders Remotion projects without a browser. Your `remotion` and `@remotion/*` imports run on Kinetograph's own version of those packages, and the engine draws every frame itself.
 
-Most projects just work. When something can't be drawn, Kinetograph tells you. For a package-by-package list with export counts, and the steps to move a project, see [Migrate from Remotion](/docs/guides/migrate/).
+Most projects just work. When something can't be drawn, Kinetograph tells you. To move a project, see [Migrate from Remotion](/docs/guides/migrate/). For gaps, see [Known issues](/docs/known-issues/).
 
 ## What happens to things the engine can't draw
 
-The engine skips them or draws something close, and prints a warning. It never switches to a browser.
+The engine never switches to a browser. It skips the item, or draws something close, and prints a warning.
 
-- **Skipped:** the frame is drawn without the item.
-- **Approximated:** the frame is drawn with something close to the item.
-- **Warned:** after drawing, `render`, `still` and `strip` print one line for each kind of problem. Each line names the element, the property, the reason and the frames it happened on. At most 12 lines are shown, and nothing is printed if there were no problems.
-
-The warning only appears on frames where the element is actually on screen. Elements with `display: none` or `visibility: hidden` are not checked.
+- `render`, `still` and `strip` print one line per kind of problem. Each line names the element, property, reason and frames. At most 12 lines are shown.
+- A warning appears only on frames where the element is on screen. `display: none` and `visibility: hidden` elements are not checked.
 
 ### Make unsupported content an error with `--strict`
 
-`render`, `still` and `strip` accept `--strict`. With it, the first frame that has anything unsupported stops the command with the error code `UNSUPPORTED_CONTENT`. The error exits with code 1, names the frame, and lists up to five items. A `render` that stops this way leaves no output file.
+`render`, `still` and `strip` accept `--strict`. The first frame with anything unsupported stops the command with the error code `UNSUPPORTED_CONTENT` and exit code 1. The error names the frame and lists up to five items. A stopped `render` leaves no output file.
 
-Use `--strict` in CI and for final renders, so you never ship a video with something missing. Without it, you get a video that may be slightly off, which is often more useful while you work.
-
-`--strict` does not compare your video with Chrome. It only checks whether anything unsupported was used.
+Use `--strict` in CI and for final renders. Leave it off while you work.
 
 ### Check a project before you render
 
-- `kinetograph doctor <entry>` goes through every frame without using the GPU. It reports what the engine can't draw and on which frames, and any scene the render would refuse (the same check the render runs, listed with its frames, exit code 1). Run it before a long render. If the project imports a package Kinetograph doesn't support, such as `@remotion/three`, `doctor` lists each import and the file that has it, and still checks the frames it can.
-- `kinetograph lint` adds one warning per problem, with rule `compat`. The frame still renders.
-- Both are also MCP tools. The `doctor` tool takes the same arguments, and `still`, `strip` and `render` take `strict`.
+- `kinetograph doctor <entry>` goes through every frame without the GPU. It lists what the engine can't draw, on which frames, and any scene a render would refuse. Run it before a long render.
+- If the project imports an unsupported package such as `@remotion/three`, `doctor` lists the import and its file, and still checks the frames it can.
+- `kinetograph lint` adds one `compat` warning per problem.
+- `doctor` is also an MCP tool, and `still`, `strip` and `render` take `strict` there.
+- With `--json`, the full list is in the result under `compat.leftOut` (`element`, `property`, `reason`, `values`, `frames`).
 
-`bench`, `onion` and `snapshot` draw frames as they are and do not warn. The studio shows a frame's unsupported items as a warning.
+`bench`, `onion` and `snapshot` don't warn. The studio shows a frame's unsupported items as a warning.
 
 ## What works
 
-These packages and APIs are supported. Gaps are listed in [Known issues](/docs/known-issues/).
+Plain HTML and SVG elements can sit next to Kinetograph's own elements in one tree. You don't switch compatibility on.
+
+### Remotion packages
 
 - `@remotion/transitions`: all 19 presentations and `useTransitionProgress`.
-- `@remotion/light-leaks`, `@remotion/starburst`, `@remotion/sfx`, `zod-types`, `timeline-utils`, and `canvas` (Canvas 2D).
-- `<canvas>` with a `webgl` or `webgl2` context, on the GPU with no browser: fragment shaders, framebuffers, points with `gl_PointSize`, instancing, `blitFramebuffer` (colour, depth and stencil), `texSubImage2D` and `gl_VertexID`. p5.brush's standalone build draws as it does in Chrome (its strokes, hatching and fills each differ by under 0.1 of 255 levels on average from Chrome). The depth and stencil tests, several colour outputs (`drawBuffers`), depth textures, colour, depth and stencil renderbuffers and texture levels as targets are drawn, each checked against Chrome. Lines and multisampled renderbuffers are not: see [Known issues](/docs/known-issues/).
-- `@remotion/media-utils` audio: `getAudioData`, `useAudioData`, `useWindowedAudioData`, `getAudioDurationInSeconds`, `visualizeAudio` and `getWaveformPortion`. `visualizeAudio` follows Remotion's documented behaviour, but its numbers are not identical.
-- `<Audio>` and `<Video>` from `@remotion/media`.
-- `onVideoFrame` on `<Video>`, `<OffthreadVideo>` and `<Html5Video>`: the frame the video shows is handed to your code as a canvas image source. `ctx.drawImage(frame, ...)` in all three forms, then `getImageData` reads its pixels (grayscale, a matte's alpha). `drawImage` of a `<video>` element works too. See [Video pixels](/docs/known-issues/#video-pixels) for the limits.
-- `toneFrequency` on `<Audio>` and `<Video>`, from 0.01 to 2. It changes the pitch and keeps the length.
+- `@remotion/light-leaks`, `starburst`, `sfx`, `zod-types`, `timeline-utils`, `canvas`, `motion-blur`, `layout-utils` and `captions`.
 - `@remotion/media-parser` and `@remotion/webcodecs`: partly supported.
-- `@remotion/skia` (and `@shopify/react-native-skia`, with Reanimated shared values driven by the frame) runs on real Skia in an optional add-on, on the CPU, `useVideo` included (without its sound). `@remotion/rive` plays with Rive's own runtime, with state machine inputs (`stateMachineInputs`), `onLoad`, `assetLoader`, `effects` and referenced assets. See [Known issues](/docs/known-issues/).
-- GSAP (core, free plugins, `Flip`): a paused timeline that you seek to the frame's time, or a tween that plays by itself. See [GSAP](#gsap).
-- `<Video datamosh>` is Kinetograph's own prop, not part of Remotion. See the [Datamosh guide](/docs/guides/datamosh/).
+- `@remotion/skia` and `@shopify/react-native-skia`: real Skia in an optional add-on, on the CPU. `useVideo` works without its sound.
+- `@remotion/rive`: Rive's own runtime, with `stateMachineInputs`, `onLoad`, `assetLoader`, `effects` and referenced assets.
 
-Plain HTML and SVG elements can sit next to Kinetograph's own elements in the same tree. You don't switch compatibility on.
+### Audio and video
 
-### Things your project can use as it is
+- `<Audio>` and `<Video>` from `@remotion/media`.
+- `@remotion/media-utils`: `getAudioData`, `useAudioData`, `useWindowedAudioData`, `getAudioDurationInSeconds`, `visualizeAudio` and `getWaveformPortion`. `visualizeAudio` follows Remotion's documented behaviour, but its numbers are not identical.
+- `toneFrequency` on `<Audio>` and `<Video>`, from 0.01 to 2. It changes the pitch and keeps the length.
+- `onVideoFrame` on `<Video>`, `<OffthreadVideo>` and `<Html5Video>` hands your code the frame as a canvas image source. Use `ctx.drawImage(frame, ...)` and `getImageData`. See [Video pixels](/docs/known-issues/#video-pixels).
+- `<Video datamosh>` is Kinetograph's own prop. See the [Datamosh guide](/docs/guides/datamosh/).
 
-- `import './index.css'` works. Local `@import`s in the file are inlined. Tailwind is built with your project's own Tailwind setup. `*.module.css` files export their scoped class names.
-- The entry file runs even when `package.json` has a `"sideEffects"` list that leaves it out, as Remotion's templates do.
-- `staticFile` reads `public/` next to the entry. If there is none, it reads `public/` next to the nearest `package.json`, which is Remotion's rule when the entry is in `src/`.
-- Fonts load from their files, whether you add them with `new FontFace(...)` and `document.fonts.add(face)` or with an `@font-face` rule. One file is kept for each family, weight and style. If a font is split by `unicodeRange`, the part covering basic Latin is used. WOFF and WOFF2 files are unpacked.
-- A variable font declared with a weight range (`font-weight: 300 1000`) follows the weight that text asks for within it, clamped to the range: in the DOM (`font-weight`, `font-variation-settings`) and on Canvas 2D (`ctx.font = '700 40px Name'`, which measures and draws at that weight). A single weight (`font-weight: 800`) holds the file at it, as a browser does.
-- HTML text can have an outline: `-webkit-text-stroke` (and its width and colour longhands) is drawn with the same miter joins as Chrome, and `paint-order: stroke fill` puts the stroke under the fill, as caption styles do. Both work with `text-shadow` (the shadow is stroked too), transforms, opacity and `background-clip: text`.
-- `transform-style: preserve-3d` planes that cross each other intersect: the planes of a 3D context are ordered by a BSP tree and cut where they cross, as Chrome does (two cards pushed through each other, a cube, a card flip). Measured against Chrome for Testing 154: 0.65 mean levels.
-- `background-repeat: space` and `round` with any number of tiles, gradients and pictures alike: past 150 tiles the tile is drawn once and the paint repeats it at its exact (fractional) period, as Chrome's pattern shader does.
-- `backdrop-filter: blur()` reads only the backdrop inside the element's border box, mirrored past its edges, as Chrome does. `filter: blur()`, `drop-shadow()` and `backdrop-filter` take any radius; past 532 px they are drawn 532 px wide, which is Chrome's limit. `drop-shadow()` blurs by its blur length as the deviation, as Chrome does. The same filter functions work on an element inside an `<svg>` (a `<path>`, a `<g>`), in user units, next to `filter: url(#id)`.
-- `transform-style: preserve-3d` is flattened where a browser flattens it. An element with `opacity` below 1, a `filter`, `backdrop-filter`, `clip-path`, `mask-image`, a `mix-blend-mode` other than `normal`, `isolation: isolate`, `contain: paint`, or an `overflow` other than `visible` or `clip` is drawn as a flat group with that effect, and its 3D children are painted into its plane in document order, as Chrome does (CSS Transforms 2, "grouping property values"). Its own `transform` and its parent's `perspective` still apply.
-- Kinetograph reads no fonts from your system, so a render looks the same on every machine. If your project loads no font, text is drawn in DM Sans, a font that ships with Kinetograph, and the warning and `doctor` say so (`font-family`, "font not loaded; drawn with the built-in fallback"). SVG `<text>` is covered too.
-- A character the font lacks (an arrow, a check mark, a maths sign, an emoji) is drawn in one of three fonts that ship with Kinetograph: Noto Sans Symbols 2, Noto Sans Math and Noto Emoji (monochrome, so an emoji takes the text colour). The rest of the `font-family` list is tried first. A character none of them has, such as CJK, is drawn as the font's box and reported (`font-family`, "no glyph for U+4E2D ..."), so `doctor` lists it and `--strict` fails. To draw it, load a font that has it.
+### Canvas and WebGL
+
+`<canvas>` with a `webgl` or `webgl2` context runs on the GPU, with no browser.
+
+- Supported: fragment shaders, framebuffers, `gl_PointSize`, instancing, `gl_VertexID`, `blitFramebuffer`, `texSubImage2D`, depth and stencil tests, `drawBuffers`, depth textures and renderbuffers.
+- Not drawn: lines and multisampled renderbuffers.
+- p5.brush's standalone build draws as it does in Chrome.
+
+### CSS and project files
+
+- `import './index.css'` works, and local `@import`s are inlined.
+- Tailwind is built with your project's own setup.
+- `*.module.css` files export their scoped class names.
+- `staticFile` reads `public/` next to the entry, else `public/` next to the nearest `package.json`.
+
+### Fonts and text
+
+- Fonts load from files, through `new FontFace(...)` with `document.fonts.add(face)`, or an `@font-face` rule.
+- One file is kept per family, weight and style. For a `unicodeRange` split, the basic Latin part is used.
+- A variable font with a weight range (`font-weight: 300 1000`) follows the requested weight in the DOM and on Canvas 2D.
+- Kinetograph reads no system fonts, so a render looks the same on every machine.
+- With no font loaded, text uses DM Sans, which ships with Kinetograph. `doctor` and the warning say so.
+- A missing character (arrow, check mark, maths sign, emoji) comes from a bundled font: Noto Sans Symbols 2, Noto Sans Math or Noto Emoji. Emoji are monochrome.
+- A character none of them has, such as CJK, is drawn as a box and reported. Load a font that has it.
+- `-webkit-text-stroke` and `paint-order: stroke fill` work, with `text-shadow`, transforms, opacity and `background-clip: text`.
+
+### 3D, backgrounds and filters
+
+- `transform-style: preserve-3d` planes that cross each other intersect, as in Chrome.
+- `preserve-3d` is flattened where a browser flattens it, for example on elements with `opacity` below 1, a `filter`, `clip-path`, `mask-image`, `mix-blend-mode` or a non-visible `overflow`.
+- `background-repeat: space` and `round` work for gradients and pictures.
+- `backdrop-filter: blur()` reads only the backdrop inside the element's border box, as Chrome does.
+- `filter: blur()`, `drop-shadow()` and `backdrop-filter` take any radius. Past 532 px they are drawn 532 px wide, which is Chrome's limit.
+- The same filter functions work inside an `<svg>`, next to `filter: url(#id)`.
 
 ### GSAP
 
-GSAP (core and the free plugins) works on the page's elements and SVG. Build a paused timeline in a layout effect and seek it to the frame, which is the pattern Remotion documents:
+GSAP (core, free plugins and `Flip`) works on the page's elements and SVG. Build a paused timeline in a layout effect and seek it to the frame, which is the pattern Remotion documents:
 
 ```tsx
 const frame = useCurrentFrame();
@@ -83,23 +102,22 @@ useLayoutEffect(() => {
 useLayoutEffect(() => { tl.current?.seek(frame / fps); }, [frame, fps]);
 ```
 
-- Tweens of `x`, `y`, `rotation`, `scale`, `skew`, `opacity`, colours, `width`, `height`, `borderRadius`, `boxShadow`, `filter`, `clipPath`, `letterSpacing` and the rest of the CSS the engine draws. Units such as `x: '50%'` are measured on the page.
-- SVG: `attr` (`cx`, `r`, `d`), `strokeDashoffset`, `fill`, and transforms (GSAP writes the `transform` attribute).
-- `TextPlugin`, `SplitText`, `DrawSVGPlugin`, `MotionPathPlugin` and `CustomEase`. `onUpdate` callbacks that write `textContent` work when you seek with `suppressEvents` set to `false`.
-- A frame renders the same by itself as in a full render, since a seek does not depend on time.
-- A tween that plays by itself works too: `gsap.to(...)` in a `useEffect`, with no paused timeline. GSAP's root clock is moved with the frame: Kinetograph takes the root timeline off GSAP's ticker (`gsap.ticker.remove(gsap.updateRoot)`), turns lag smoothing off, and calls `gsap.updateRoot(seconds)` with the frame's time before each frame renders. Nothing of GSAP is patched. The CLI finds your copy of GSAP when you `import 'gsap'` (or `'gsap/all'`); a page that loads GSAP's browser build, as a HyperFrames page does, is found at `window.gsap`. A tween made in an effect at frame 30 starts at frame 30, which is where a render of every frame has it; checked against Chrome (a paused timeline with the tween placed at 1 s), the mean difference is 0.02 at frames 30, 45 and 59.
-- A frame is the same alone as in a full render, and at any `--concurrency`. A jump to a later frame renders the frames it skips (nothing is drawn or read from them) so that an effect which makes a tween at frame 30 has run. A scene that starts over (going back a frame) keeps the tweens already made, as it keeps `requestAnimationFrame` callbacks, and the clock goes back with it: stop a tween in the effect's cleanup (`return () => tween.kill()`) so it does not outlive the scene.
-- A paused timeline that you seek yourself is not on the root clock and renders as before.
-- A tween on the root clock is warned about once (`render`, `still`, `doctor`). It renders the same here alone and in sequence, but a Remotion render moves it by the wall clock while frames are captured, and HyperFrames seeks only the timelines registered on `window.__timelines`, so there it depends on how each render worker got to its frames. Put it on a paused timeline seeked to the frame to render the same everywhere.
-- Motion blur samples a tween on the root clock at each sub-frame's time, with its `onUpdate`; `onStart`, `onComplete` and `onRepeat` run only on the frames themselves.
-- An SVG element's `getBoundingClientRect` is what Chrome gives: its geometry box (strokes, markers and filters are not in it, in Chrome either) through its `transform` attribute or CSS `transform`, nested `<svg>` viewports and the `<svg>`'s `viewBox` and `preserveAspectRatio`. Checked against Chrome for Testing 154 to 0.01 px.
-- A read of the layout that the engine can't answer is a warning, and GSAP gets the element's own style.
-- `Flip` works: `Flip.getState(...)`, a change to the layout, then `Flip.from(...)` on a paused timeline seeked to the frame renders as it does in Chrome (mean difference 0.00 at frames 0, 15, 30, 45 and 59).
-- `ScrollTrigger` and `Draggable` respond to scrolling and dragging, which a render does not have, so they do not apply.
+- You can tween transforms, `opacity`, colours, sizes, `boxShadow`, `filter`, `clipPath` and the rest of the CSS the engine draws.
+- SVG: `attr` (`cx`, `r`, `d`), `strokeDashoffset`, `fill` and transforms.
+- Plugins: `TextPlugin`, `SplitText`, `DrawSVGPlugin`, `MotionPathPlugin` and `CustomEase`.
+- `Flip.getState(...)`, then `Flip.from(...)` on a paused timeline seeked to the frame.
+- `ScrollTrigger` and `Draggable` don't apply, because a render has no scrolling or dragging.
+
+A tween that plays by itself, such as `gsap.to(...)` in a `useEffect`, also works. Kinetograph moves GSAP's root clock with the frame.
+
+- The CLI finds your GSAP through `import 'gsap'` or `'gsap/all'`, or at `window.gsap` for a HyperFrames page.
+- A tween made at frame 30 starts at frame 30. A frame renders the same alone as in a full render, at any `--concurrency`.
+- When a scene starts over, tweens already made are kept. Stop a tween in the effect's cleanup with `return () => tween.kill()`.
+- A tween on the root clock gets one warning. Remotion moves it by the wall clock, and HyperFrames seeks only timelines on `window.__timelines`. For the same result everywhere, use a paused timeline.
 
 ## HyperFrames projects
 
-`kinetograph render`, `still`, `doctor` and `studio` take a [HyperFrames](https://github.com/heygen-com/hyperframes) project as it is: pass its `index.html`, or the directory that holds it. There is no rewrite. Nothing runs in a browser.
+`kinetograph render`, `still`, `doctor` and `studio` take a [HyperFrames](https://github.com/heygen-com/hyperframes) project as it is. Pass its `index.html`, or the directory that holds it. Nothing is rewritten, and nothing runs in a browser. For the steps, see [Migrate from HyperFrames](/docs/guides/migrate-hyperframes/).
 
 ```sh
 kinetograph render my-video -o out.mp4   # downloads what the page loads from the web first, then renders offline
@@ -107,135 +125,99 @@ kinetograph render my-video -o out.mp4 --offline   # never downloads; a file tha
 kinetograph fetch-deps my-video          # the same download on its own (CI, a warm cache); --update refreshes it
 ```
 
-- **Size and time.** The root `data-composition-id` element gives the size (`data-width`, `data-height`) and length (`data-duration`, else the longest timeline or clip). The rate is 30 fps, as in HyperFrames.
-- **Clips.** An element with `data-start` shows from its start for `data-duration`, then is hidden, as HyperFrames does. `data-start` takes seconds or `clip-id`, `clip-id + 2`, `clip-id - 0.5`. A video or audio without `data-duration` lasts its file. An `<img>` with only `data-start` lasts 3 s.
-- **Compositions.** `data-composition-src` mounts the file's `<template>` into the host. The file's CSS is scoped to the composition, and its script sees only that composition (`document.querySelector`, GSAP string targets). `data-variable-values` and `getVariables()` work.
-- **The page's `html` and `body`.** They are the document's own, as in a browser: the page's rules for `html`, `body` and `:root` apply to them with their own specificity, `rem` counts the `html` font size, `body` passes its styles on, and a background on either fills the picture. To the page's scripts they are `document.documentElement` and `document.body` (`getComputedStyle(document.body)`, `document.documentElement.style.setProperty(...)`, `document.body.appendChild(...)`, `document.querySelector("body")`, `:root`). In a composition mounted with `data-composition-src`, `html`, `body` and `:root` rules still style the composition's host.
-- **Timelines.** Every frame, each `window.__timelines` entry is paused and seeked to its time: the root to the frame's time, the others to their host's local time (`data-playback-start`, `data-playback-rate`), held at both ends. A frame depends only on its number.
-- **Media.** `<video>` is decoded and drawn by the engine, frame-accurate, with `data-media-start` and `data-playback-rate` (`"2x"` is 2; kept to 0.1 to 10). `<audio>` and a `<video>` that is not `muted` (and has no `data-has-audio="false"`) are mixed, with `data-volume`, `data-fade-in` and `data-fade-out`. A media element inside a composition whose host has an in-point (`data-playback-start`) has its origin at the host's start less the in-point and is cut to the host's window; `data-hf-media-start-basis="global"` keeps a start that is already the project's. The host's own `data-playback-rate` moves its timeline only, as in HyperFrames.
-- **`data-hidden`.** A clip with `data-hidden` is taken out of the picture (`display: none`, the author's value back when the flag goes) and its audio, and that of anything inside it or in a hidden `<hf-audio-group>`, is dropped from the mix.
-- **Speed ramps and volume lanes (`data-automation`).** A `rate` lane (breakpoints in the clip's own seconds, with `curve` or `viaX`/`viaY` shaping) sets the file's time to the integral of the rate for a `<video>`, the local time of a composition host's timeline, and the length of a clip without a `data-duration`. A `volume` lane multiplies `data-volume` (capped at +12 dB) and replaces nothing else: fades and the group's `data-volume` and lane still apply. Audio plays a ramped file in quarter-second slices, each at the mean rate of its slice. HyperFrames has no pan lane; the `fx.*` lanes drive the audio effects (below).
-- **Audio effects (`data-fx-chain`).** The chain on an `<audio>` or audible `<video>`, on an `<hf-audio-group>` and on the root composition (the master bus) is played as HyperFrames' render plays it: all sixteen effects (`gain`, `peaking`, `lowshelf`, `highshelf`, `highpass` and `lowpass` with one or two poles, `compressor`, `limiter`, `truepeak`, `gate`, `saturate`, `bitcrush`, `pitchshift`, `delay`, `chorus`, `phaser`, `reverb`) with their parameters clamped to HyperFrames' ranges, bypassed nodes (`enabled: false`), a preset's nodes blended by `presetAmount`, and the `fx.<node>.<param>` and `fx.preset.<id>` lanes of `data-automation` on the knobs HyperFrames can automate (a lane on any other knob is inert, as in HyperFrames). The order is HyperFrames' mixer's: `data-volume` ahead of the element's chain, its `volume` lane and fades after it, an effect tail of up to 5 seconds past the clip's end (cut by a fade-out); a group's members summed into its bus, its chain with its lanes on the composition's clock, then its `data-volume` and `volume` lane; the master chain over the whole mix. The graph and its AudioWorklet processors are HyperFrames' own (Apache-2.0, ported), run on node-web-audio-api's `OfflineAudioContext`, with no browser; where Chrome's Web Audio differs from it (a feedback delay repeats a render quantum late; the saturation's 2x and 4x oversampling) the mix does what Chrome does. Measured against HyperFrames' own effects runtime in Chrome for Testing on a 4-second stereo test signal, 39 cases (every effect, its main settings, lanes on ten knobs, a preset blend and a voice chain): the level matches to 0.000 dB in all of them, with the difference -44 dB under the signal or less (most under -100 dB; the worst is a delay whose time a lane moves). A page with an element chain, a group bus and a master limiter, rendered by both: within 0.01 dB overall and 0.4 dB in any half second. A chain or a lane that cannot be read stops the audio mix with an error that names the element, as it stops HyperFrames' render.
-- **Colour grading (`data-color-grading` on `<video>`, `<img>`, `<canvas>`).** The whole grading shader of HyperFrames runs in the engine, as one GPU pass (the `colorGrade` effect, `crates/core/src/grade.rs`, `shaders/color_grade.wgsl`), with no browser: `adjust` (all ten controls, `shadows`, `highlights` and `vibrance` included, which weigh by each pixel's own luma and saturation), the three `wheels`, `curves` (4 curves at 1024 steps, 8-bit as in the original), `hueCurves`, up to four `secondaries`, a `.cube` `lut` read from the project, `intensity`, and `details` (vignette and film grain; the grain is seeded by the element's id and the whole 60ths of a second of the time, so a frame is the same alone, in a sequence or on two workers). Measured against HyperFrames' own stills of a colour chart at three frames, every group is within 0.03 mean levels with no pixel more than 16 off (the look-up table 0.11: the original rounds the table to 8 bits). The `effects` list is drawn as well, all 18 effects with their 64 controls and the `palette`, by the same pass (`shaders/color_grade.wgsl` for the per-pixel effects, `shaders/grade_prepass.wgsl` for blur, bloom and Kuwahara), in the order of HyperFrames' shader: the effects that move or smear the picture read it before the grade, the print and drawing effects draw over the grade and the grain, then bloom, scanlines, vignette and the CRT mask. The time-varying effects (tape, glitch, crosshatch's wave) run on the frame's time, film artifacts on the grain's seed, so a frame is the same alone or in a sequence. Measured against HyperFrames' own stills of a test picture (1280 x 720, three times each, 31 cases: every effect with its main controls, four presets and a combination), the mean difference is under 0.11 levels for 24 of them; the rest are bloom (0.4, 0.9 with a wide radius), kuwahara (0.3, 0.7 with a big radius), a strong blur (0.3) and the combination (0.3), and no case has more than 0.6 percent of its pixels more than 16 levels off. `--hf-color-grading-blur`, `-bloom`, `-kuwahara`, `-pixelate`, `-ascii` and `-dither` set by a tween are followed too. The same effects are available to your own components as the `colorGrade` effect (`{ type: "colorGrade", effects: { halftone: 0.9 } }`, see SCENE.md). `--hf-color-grading-intensity`, `-lut-intensity` and `-exposure` set inline by a tween are followed. Presets by name work.
-- **Fonts.** A page that names one of the 18 families HyperFrames embeds (Inter, Montserrat, Outfit, Nunito, Oswald, League Gothic, Archivo Black, Space Mono, IBM Plex Mono, JetBrains Mono, EB Garamond, Playfair Display, Source Code Pro, Noto Sans JP, Roboto, Open Sans, Lato, Poppins), or an operating-system name HyperFrames maps to one, gets that family in every weight Google serves, under the name the page used. As in HyperFrames, `Arial`, `Helvetica`, `Verdana`, `Calibri` and the other sans-serif system names are Inter (not a metric clone of Arial), `Consolas`, `Menlo`, `Courier New` and the other monospace ones are JetBrains Mono, and `Georgia`, `Times New Roman` and `Palatino` are EB Garamond. An `index.html` that is a fragment is wrapped as HyperFrames wraps it: margins and padding reset, black body, Inter. The files come from the font cache that `fetch-deps` fills; a render never downloads a font. Operating-system fonts are never read.
-- **Scripts.** Classic scripts share top-level `const`, `let` and `class` as in a browser. A page with no `data-duration` runs its scripts with layout (in a root of their own, before the first frame). A page's `<template>` keeps its content out of the document; `template.content.cloneNode(true)` is an `hf-fragment` element with `display: contents`. The page's CSS styles the shapes of an `<svg>` through the cascade, including shapes a script adds and rules inside `@media`.
-- **Seeking.** GSAP timelines are seeked as HyperFrames' runtime seeks them: a timeline that has never rendered is rendered at 0, and the root is rendered again from just below the instant so that steps at one time apply in authored order.
-- **Nothing is downloaded while a frame is drawn.** Before frame 0, `render`, `still`, `doctor`, `studio` and the other commands that open a project download what the page loads from the web (the scripts, modules, data, media, pictures and fonts below) into the cache and pin it in `kinetograph.lock.json` beside the entry; `--offline` skips the download. `kinetograph fetch-deps <entry>` runs the same step on its own. A URL on jsdelivr or unpkg resolves to the same package and version in a `node_modules` at or above the project; otherwise to `~/.cache/kinetograph/cdn`. If neither has it (`--offline`, or the download failed), the command stops and names the URL and `fetch-deps`. The download is over https from `cdn.jsdelivr.net`, `unpkg.com`, `cdnjs.cloudflare.com`, `esm.sh` and `cdn.skypack.dev` only (`--allow-host` adds one), over https from `cdn.jsdelivr.net`, `unpkg.com`, `cdnjs.cloudflare.com` and `esm.sh` only (`--allow-host` adds one), checks a script tag's `integrity`, and a render checks the hash it stored before running the file. Local `<script src>` files load from disk. Google Fonts `<link>`s load through the font cache.
-- **Data and media from the web.** `fetch-deps` also downloads the `https` files a script names on the same hosts (`d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")`; `--url` adds one a scan missed, which `doctor` lists when a render refused it) and the remote `<video>`, `<audio>` and `<source>` files the page plays (500 MB each, `--max-media-mb`). They follow the script rules: https only, the default hosts plus `--allow-host` (a host the page names is not allowed by naming it), no redirect off the list, a hash stored and checked on every read. `fetch()` of exactly such a URL reads the cache, and the frame waits for what the page fetched at load. A file that is not cached is a clear error on `fetch` and a note on every frame for media, never a silent blank.
-- **Remote pictures.** The pre-download step also fetches the `https` pictures the page names: `<img src>` and every `srcset` candidate (the render draws the one Chrome takes at device pixel ratio 1, measuring `w` descriptors against `sizes` and the composition's width), `<video poster>`, an SVG `<image href>`, and `url()` in `background`, `mask`, `border-image`, `list-style`, `content`, `shape-outside` and custom properties, in stylesheets, `<style>` and inline `style`. `http:` is refused, `data:` and relative paths are not remote. They follow the media rules (default hosts plus `--allow-host`, no redirect off the list, a hash stored and checked on every read) with a 50 MB cap each. A picture that is not cached is drawn without and reported on every frame with the command to run, for example `kinetograph fetch-deps index.html --allow-host www.transparenttextures.com`; `--strict` fails on it. A picture a script sets at run time (`img.src = url`, `el.style.backgroundImage = "url(https://...)"`) is read from the same cache: the step finds its URL in the page's own scripts, or runs the page's first frames when a script builds it.
-- **WebGPU shaders.** A page that draws with WebGPU (the `shaders.iife.js` blocks: `aurora`, `blob`, `ripples`, `swirl`, ...) is drawn natively, with textures, samplers, render passes into textures, compute passes with storage buffers and storage textures (`rgba32float`, `rgba16float`, `rgba8unorm`, `r32float` and the rest), and `copyExternalImageToTexture` of images, canvases and video frames. `hf-seek` events carry the frame's time, and the frame waits for the page to answer `waitUntil`. The body has no margin, as in HyperFrames. State a page carries from frame to frame in a compute pass or a texture is replayed from its history and reported on each frame that reads it. What a page asks of WebGPU that is not drawn (query sets, depth, multisampling, readback) is reported on every frame; see [Known issues](/docs/known-issues/#webgpu).
-- **The lock file.** `kinetograph.lock.json` maps each downloaded URL to the SHA-256 and size of its first download. It is written when a file is first downloaded (or when a cached file from another project joins it), sorted by URL so it diffs well, and meant to be committed. Every later run checks the cache against it: a file that was changed on disk, or that changed upstream since, stops the command and names the URL. `kinetograph fetch-deps <entry> --update` downloads everything again and rewrites the lock to accept new bytes. Fonts come from the font cache and are not in the lock.
-- **Import maps and ES modules.** `<script type="importmap">` (`imports`, `scopes`, trailing-slash prefixes, longest key first) is read, and each `<script type="module">`, inline or `src`, is bundled with its imports into one classic script that runs after the page's classic scripts, in document order. Imports resolve through the map or as URLs and relative paths; a remote module and everything it imports (`export * from`, esm.sh's `/v135/...` paths, a dynamic `import("...")` of a string or of a computed specifier, which the pre-pass finds by running the page's first frames) is downloaded in the pre-pass and read from the cache, locked. `import.meta.url` is the module's own URL (where a redirect ended, and relative imports inside it resolve from there, as in a browser; the lock records it as `final`), a bare name the map lacks is reported and the script is not run, and top-level `await` works (the runtime does not wait for it). An imported GSAP drives the GSAP clock as a CDN script does. An import map with a `src` is ignored and noted, as Chrome ignores it (browsers do not load external import maps): put its JSON inside the tag.
-- **Unsupported.** Three.js is reported on every frame (`--strict` fails). See [Known issues](/docs/known-issues/#hyperframes-projects).
+### Size, clips and compositions
+
+- The root `data-composition-id` element gives the size (`data-width`, `data-height`) and length (`data-duration`, else the longest timeline or clip). The rate is 30 fps.
+- An element with `data-start` shows from its start for `data-duration`. `data-start` takes seconds, or `clip-id`, `clip-id + 2`, `clip-id - 0.5`.
+- A video or audio without `data-duration` lasts its file. An `<img>` with only `data-start` lasts 3 s.
+- `data-hidden` removes a clip from the picture, and its audio from the mix.
+- `data-composition-src` mounts the file's `<template>` into the host. Its CSS and scripts are scoped to the composition.
+- `data-variable-values` and `getVariables()` work.
+- The page's `html` and `body` behave as in a browser. `rem` counts the `html` font size, and a background on either fills the picture.
+
+### Timelines and media
+
+- Every frame, each `window.__timelines` entry is paused and seeked. A frame depends only on its number.
+- `<video>` is decoded by the engine, frame-accurate. It follows `data-media-start` and `data-playback-rate` (kept to 0.1 to 10).
+- `<audio>` and unmuted `<video>` are mixed, with `data-volume`, `data-fade-in` and `data-fade-out`.
+- A media element in a composition whose host has `data-playback-start` is cut to the host's window. `data-hf-media-start-basis="global"` keeps a start that is already the project's.
+- `data-automation` takes `rate` lanes (speed ramps) and `volume` lanes (capped at +12 dB).
+
+### Audio effects and colour grading
+
+- `data-fx-chain` plays all sixteen HyperFrames effects: `gain`, `peaking`, `lowshelf`, `highshelf`, `highpass`, `lowpass`, `compressor`, `limiter`, `truepeak`, `gate`, `saturate`, `bitcrush`, `pitchshift`, `delay`, `chorus`, `phaser` and `reverb`.
+- It works on an element, an `<hf-audio-group>` and the master bus, with presets and `fx.*` lanes. HyperFrames' own processors run with no browser.
+- A chain or lane that can't be read stops the mix with an error that names the element.
+- `data-color-grading` on `<video>`, `<img>` and `<canvas>` runs HyperFrames' whole grading shader as one GPU pass. It covers `adjust`, `wheels`, `curves`, `hueCurves`, `secondaries`, `.cube` luts, `intensity`, `details`, all 18 `effects` and the `palette`.
+- Your own components can use `{ type: "colorGrade", effects: { halftone: 0.9 } }`. See SCENE.md.
+
+### Fonts
+
+- The 18 families HyperFrames embeds are available in every weight Google serves: Inter, Montserrat, Outfit, Nunito, Oswald, League Gothic, Archivo Black, Space Mono, IBM Plex Mono, JetBrains Mono, EB Garamond, Playfair Display, Source Code Pro, Noto Sans JP, Roboto, Open Sans, Lato and Poppins.
+- System names map as in HyperFrames. `Arial`, `Helvetica`, `Verdana` and `Calibri` become Inter. `Consolas`, `Menlo` and `Courier New` become JetBrains Mono. `Georgia`, `Times New Roman` and `Palatino` become EB Garamond.
+- Fonts come from the cache that `fetch-deps` fills. A render never downloads a font.
+
+### Downloads and the lock file
+
+Nothing is downloaded while a frame is drawn. Before frame 0, commands that open a project download what the page loads from the web. `--offline` skips this, and `kinetograph fetch-deps <entry>` runs it alone.
+
+- Allowed hosts are `cdn.jsdelivr.net`, `unpkg.com`, `cdnjs.cloudflare.com`, `esm.sh` and `cdn.skypack.dev`, over https. `--allow-host` adds one.
+- This covers scripts, modules, data files a script names, remote `<video>` and `<audio>` (500 MB each, `--max-media-mb`), and pictures (50 MB each). `--url` adds a file a scan missed.
+- If a file isn't cached, the command stops and names the URL and `fetch-deps`. A picture is drawn without and reported, and `--strict` fails on it.
+- `kinetograph.lock.json` beside the entry stores each file's SHA-256 and size. Commit it. A changed file stops the command.
+- `kinetograph fetch-deps <entry> --update` downloads everything again and accepts new bytes.
+
+### Scripts, modules and WebGPU
+
+- `<script type="importmap">` is read. Each `<script type="module">` is bundled with its imports and runs after the classic scripts.
+- A remote module and its imports are downloaded ahead of time. Top-level `await` works, but the runtime doesn't wait for it.
+- A page that draws with WebGPU, such as the `shaders.iife.js` blocks, is drawn natively. This includes render and compute passes, storage textures and `copyExternalImageToTexture`.
+- WebGPU features that aren't drawn are reported on every frame. See [Known issues](/docs/known-issues/#webgpu).
+- Three.js is reported on every frame, and `--strict` fails. See [Known issues](/docs/known-issues/#hyperframes-projects).
 
 ## Libraries
 
-Third-party libraries run unchanged on the engine's DOM, as long as the frame is what a seek or the frame number says. Checked against Chrome stills at frames 0, 30 and 59 (mean per-channel difference, 0 to 255, in brackets).
+Third-party libraries run unchanged on the engine's DOM, as long as each frame follows a seek or the frame number. These were checked against Chrome.
 
-- **d3** (scale, shape, selection): d3 makes the paths and React draws them, or `d3-selection` appends to a ref, including `join()` and `order()` (under 0.2).
-- **rough.js**: the SVG and Canvas 2D generators (under 0.5).
-- **Paper.js**: `paper-full` on a canvas (under 0.2). The bundle reads a package's `browser` map for imports that don't resolve (Paper.js drops `jsdom` and `canvas` there).
-- **Chart.js**: line charts on a canvas (under 1.4). Load a font before the chart, or it uses the built-in one.
-- **Recharts**: SVG charts with `isAnimationActive={false}` (under 0.3). Pass a fixed `width` and `height`. Recharts draws its marks through `createPortal`, which places children into the element a ref gave and into `document.body`.
-- **visx**: shapes, scales and axes (under 0.5).
-- **anime.js** v4: build a paused timeline and `seek(ms)` it to the frame (under 0.03).
-- **Motion**: vanilla `animate()` with `controls.time = seconds` on a paused animation, and `motion.div` with style values (under 0.4). Motion runs `opacity`, `transform` (also `x`, `scale` and the rest, as one group), `filter`, `clipPath` and colours on the Web Animations API, as in Chrome: the values match Chrome's to 0.0005, springs (as `linear()` easing) and `oklch()` colours included. See [Libraries that run their own frame loop](#libraries-that-run-their-own-frame-loop).
-- **The Web Animations API**: `element.animate()`, `KeyframeEffect`, `Animation` (`currentTime`, `startTime`, `playbackRate`, `play`, `pause`, `finish`, `cancel`, `reverse`, `updatePlaybackRate`, `commitStyles`, `ready`, `finished`, `onfinish`, `oncancel`), `getAnimations()` and `document.timeline`, on the frame's clock. Timing follows the spec (delay, end delay, fill, iterations, iteration start, direction), with easing as `cubic-bezier()`, `steps()` and `linear()`, both keyframe forms, offsets, and the `add` and `accumulate` composite modes. Values mix as in Chrome: legacy colours in sRGB with premultiplied alpha, other colours in Oklab, transform lists function by function or through their matrices, filter lists padded with neutral values. Checked against Chrome for Testing 154 on 27 cases (within one 8-bit colour step, else 0.002). An animation starts at the frame it is played on and its events fire on the frames, so a frame alone equals the frame in sequence. Motion-blur sub-frames show it at their own time.
-- **Matter.js** and **Rapier** (`@dimforge/rapier2d-compat`, WASM embedded): step the world from the frame number (under 0.2). A `delayRender` opened while the module loads holds frame 0 like any other frame.
-- **`@remotion/motion-blur`, `layout-utils` and `captions`** (under 1.1).
-- **Bklit UI** (visx, d3 and Motion charts): layout, animation timing, text and colours (`var()`, `oklch()`, `color-mix()` in SVG paint) match Chrome. Line, bar, pie and geo charts are under 0.15 once their entry animation has played.
+- **d3**: d3 makes the paths and React draws them, or `d3-selection` appends to a ref.
+- **rough.js**: the SVG and Canvas 2D generators.
+- **Paper.js**: `paper-full` on a canvas.
+- **Matter.js** and **Rapier**: step the world from the frame number.
+- **Chart.js**: line charts on a canvas. Load a font before the chart.
+- **Recharts**: SVG charts with `isAnimationActive={false}` and a fixed `width` and `height`.
+- **visx**: shapes, scales and axes.
+- **anime.js** v4: build a paused timeline and `seek(ms)` it to the frame.
+- **Motion**: vanilla `animate()` with `controls.time = seconds` on a paused animation, and `motion.div` with style values.
 
-Also available to libraries: `NodeList` and `HTMLCollection` as real classes, `HTMLElement` and `SVGElement` that tell the two apart, `compareDocumentPosition`, `document.defaultView`, `customElements`, `setAttributeNS` and its siblings, lookups of nodes appended to `document.body`, and SVG text `getBBox` and `getComputedTextLength` from the text engine.
+The Web Animations API works on the frame's clock: `element.animate()`, `Animation`, `getAnimations()` and `document.timeline`, with the spec's timing, easing and composite modes. An animation starts at the frame it is played on, so a frame alone equals the frame in sequence.
 
 ### Libraries that run their own frame loop
 
-`requestAnimationFrame` callbacks run once per frame with the frame's time, after the frame has rendered, and Web Animations update and fire their events just before them, as in a browser. A jump to a frame (a still, or a worker starting at frame 600) runs both through the frames it skips without rendering those, so a library that advances by the time between frames, such as Motion's mount animations, shows the same pixels in a still as in a render of every frame. Two limits:
+`requestAnimationFrame` callbacks run once per frame with the frame's time, after the frame has rendered. Web Animations update just before them.
 
-- Motion's frame loop clamps each step to 40 ms, so below 25 fps its animations run a little slow.
-- A scene that starts over (going back a frame) keeps the callbacks already asked for, because the library's own state outlives it. A loop of your own should cancel its `requestAnimationFrame` in the effect's cleanup.
+A jump to a frame (a still, or a worker starting at frame 600) runs both through the skipped frames without rendering them. So a still shows the same pixels as a full render, even for a library that advances by the time between frames.
+
+Two limits:
+
+- Motion clamps each step to 40 ms, so below 25 fps its animations run a little slow.
+- A scene that starts over keeps the callbacks already asked for. Cancel your own `requestAnimationFrame` in the effect's cleanup.
 
 ## Layout of HTML content
 
-CSS lays out HTML content the same way a browser would, with a few rules to know:
+CSS lays out HTML the way a browser would. A few rules are worth knowing:
 
 - A group of HTML elements is laid out as a box the size of the composition, as Remotion's root `div` is.
-- An `<AbsoluteFill>` or `<Sequence>` around HTML is an absolutely positioned column flex `div`, as in Remotion.
-- HTML inside a Kinetograph layer is laid out in the composition's box. It does not know the layer's own size.
-- A Kinetograph element inside HTML takes the size of its own box. A layer with no box, such as a group without `layout`, is 0 × 0. A `<GlslShader>` in the flow takes its `width` and `height` as a box, like an `<Image>`, and takes up that room.
-- Styles are read on every frame, so animation comes from your component re-rendering, as in Remotion. CSS `@keyframes` follow the frame's time.
-- A layer made from an HTML node takes its `id` attribute as its layer id if that is a valid id. Otherwise it gets where the node sits in the page, such as `$0.2`.
+- An `<AbsoluteFill>` or `<Sequence>` around HTML is an absolutely positioned column flex `div`.
+- HTML inside a Kinetograph layer is laid out in the composition's box, not the layer's.
+- A Kinetograph element inside HTML takes the size of its own box. A layer with no box, such as a group without `layout`, is 0 × 0.
+- Styles are read on every frame, so animation comes from your component re-rendering. CSS `@keyframes` follow the frame's time.
 
 ## Details
 
 <Accordions>
-<Accordion title="How a frame is drawn">
-
-1. The React tree runs for the frame. HTML elements (`div`, `span`, `svg` and the rest) keep their props, as Kinetograph's own elements do.
-2. Each outermost run of HTML elements is a DOM island. Its tags, attributes, inline styles, stylesheets and the frame's time go to the Rust engine.
-3. The engine styles the island with Stylo (Firefox's CSS engine), lays it out with taffy, and shapes its text with Parley. It paints the result in CSS paint order.
-4. Kinetograph's own elements inside an island are placed in the boxes that layout gives them.
-5. Anything the painter can't draw is reported for that frame.
-6. Every frame is drawn in order on the GPU and encoded.
-
-Each top-level layer an island produces is absolutely positioned, so a flex parent outside the island does not move it again.
-
-</Accordion>
-<Accordion title="The shape of the warning data">
-
-With `--json`, stderr stays quiet and the full list is in the result as:
-
-```ts
-compat: {
-  unsupportedFrames,
-  leftOut: [{ element, property, reason, values, frames, firstFrame, lastFrame }]
-}
-```
-
-The text output of `render` adds `unsupported content left out of N frames`.
-
-Internally, each unsupported item looks like this:
-
-```ts
-interface Unsupported {
-  path: string;            // where the element sits in the page and its tag: '$0.2.1 <div>'
-  element: string;         // 'div', 'svg > text', …
-  property: string | null; // 'transform'; null for an unsupported element
-  value: string | null;
-  reason: string;
-}
-```
-
-</Accordion>
-<Accordion title="The shape of the doctor report">
-
-`kinetograph doctor <entry> [--comp] [--props] [--range] [--json]` runs the JavaScript stage for every frame in the range, without the GPU.
-
-```ts
-interface DoctorReport {
-  comp: string; first: number; last: number; frames: number;
-  cleanFrames: number;          // frames with nothing unsupported: drawn in full
-  unsupportedFrames: number;    // frames with at least one unsupported item
-  cleanShare: number;           // 0..1
-  issues: DoctorIssue[];        // most frames first
-  notes?: string[];             // problems with the project's stylesheets that no frame shows (Tailwind that could not be built, …)
-  renderErrors?: { message: string; ranges: [first: number, last: number][]; frames: number }[];  // scene errors that fail a render; only when there are some
-}
-
-interface DoctorIssue {
-  element: string; property: string | null; reason: string;  // the group key
-  values: string[];                          // distinct values seen, at most 5
-  paths: string[];                           // distinct element paths, at most 5
-  ranges: [first: number, last: number][];   // inclusive, ascending
-  frames: number;
-}
-```
-
-</Accordion>
 <Accordion title="glTF models">
 
-If a `<Model>` file (or a `model` object's file) uses something the 3D layer can't read, it is listed like any other unsupported item, on every frame that draws the model. The element is `Model`, the property is the feature (for example `KHR_materials_clearcoat` or `texture coordinate sets above 0`), and the value is the file. Normal, metallic-roughness, occlusion and emissive textures are drawn.
-
-The CLI asks the addon once for each file. A file it can't read at all is not listed. The render fails on it instead. The scene format is described in [SCENE.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/SCENE.md).
+If a `<Model>` file uses something the 3D layer can't read, it is listed like any other unsupported item, on every frame that draws the model. The element is `Model`, the property is the feature (for example `KHR_materials_clearcoat`), and the value is the file. A file the CLI can't read at all fails the render instead. The scene format is described in [SCENE.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/SCENE.md).
 
 </Accordion>
 </Accordions>
