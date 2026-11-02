@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,13 +10,18 @@ import { CliError } from './errors.js';
 import { allOptions, type Command } from './commands/types.js';
 import { commands } from './commands/index.js';
 import { findPlugins, loadPluginTools, mcpToolName, type PluginTool } from './plugins.js';
+import { beginNotices, type NoticeSession } from './update-notice.js';
+import { cliVersion } from './version.js';
 
 export interface ChildResult {
   stdout: string;
   stderr: string;
   code: number | null;
 }
-/** Runs the CLI with `argv`. A child process, so that the server never installs a project's determinism shim. */
+/**
+ * Runs the CLI with `argv`. A child process, so that the server never installs a project's determinism shim. The child
+ * is quiet about updates: the server tells the agent itself (`createMcpServer`'s `notices`).
+ */
 export type Runner = (argv: string[]) => Promise<ChildResult>;
 
 // Next to this file once built; when the sources run directly (vitest), the built copy.
@@ -26,7 +30,7 @@ const CLI_JS = existsSync(BESIDE) ? BESIDE : fileURLToPath(new URL('../dist/cli.
 
 export const runCli: Runner = (argv) =>
   new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [CLI_JS, ...argv], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [CLI_JS, ...argv], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, KINETOGRAPH_NO_UPDATE_CHECK: '1' } });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString('utf8')));
@@ -252,14 +256,25 @@ function addStudioTools(server: McpServer, target: StudioTarget): void {
   );
 }
 
-export function createMcpServer(runner: Runner = runCli, plugins: LoadedPluginTool[] = [], studio?: StudioTarget): McpServer {
-  const version = (createRequire(import.meta.url)('../package.json') as { version: string }).version;
+/**
+ * `notices` are the update notices (update-notice.ts). A server's stderr is not shown to the model, so the first
+ * command or plugin tool result of the process gets them as a short text part at the end.
+ */
+export function createMcpServer(runner: Runner = runCli, plugins: LoadedPluginTool[] = [], studio?: StudioTarget, notices?: NoticeSession): McpServer {
+  const version = cliVersion();
   const server = new McpServer({ name: 'kinetograph', version });
+  let noticesSent = notices === undefined;
+  const withNotices = async <T extends { content: object[] }>(result: T): Promise<T> => {
+    if (noticesSent) return result;
+    noticesSent = true;
+    const lines = (await notices?.collect().catch(() => undefined)) ?? [];
+    return lines.length === 0 ? result : { ...result, content: [...result.content, { type: 'text', text: lines.join('\n') }] };
+  };
   for (const command of toolCommands()) {
     server.registerTool(
       toolName(command),
       { description: command.summary, inputSchema: inputShape(command) },
-      async (input: Record<string, unknown>) => callTool(command, input, runner),
+      async (input: Record<string, unknown>) => withNotices(await callTool(command, input, runner)),
     );
   }
   if (studio) addStudioTools(server, studio);
@@ -276,9 +291,9 @@ export function createMcpServer(runner: Runner = runCli, plugins: LoadedPluginTo
       (async (input: unknown) => {
         try {
           const result = await tool.run(input);
-          return { content: [{ type: 'text', text: JSON.stringify(result ?? null, null, 2) }] };
+          return await withNotices({ content: [{ type: 'text', text: JSON.stringify(result ?? null, null, 2) }] });
         } catch (error) {
-          return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: { code: 'TOOL', message: (error as Error).message } }) }] };
+          return await withNotices({ isError: true, content: [{ type: 'text', text: JSON.stringify({ error: { code: 'TOOL', message: (error as Error).message } }) }] });
         }
       }) as never,
     );
@@ -291,7 +306,7 @@ export async function startMcpServer(studioUrl?: string): Promise<void> {
   const plugins = await loadProjectTools(process.cwd(), (message) => process.stderr.write(`${message}\n`));
   const token = process.env.KINETOGRAPH_STUDIO_TOKEN;
   if (studioUrl !== undefined && !token) throw new CliError('INVALID_ARG', '--studio needs the studio token in the environment variable KINETOGRAPH_STUDIO_TOKEN');
-  const server = createMcpServer(runCli, plugins, studioUrl === undefined ? undefined : { url: studioUrl, token: token! });
+  const server = createMcpServer(runCli, plugins, studioUrl === undefined ? undefined : { url: studioUrl, token: token! }, beginNotices(cliVersion()));
   const transport = new StdioServerTransport();
   const closed = new Promise<void>((resolve) => {
     transport.onclose = resolve;

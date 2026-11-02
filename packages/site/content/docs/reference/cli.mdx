@@ -12,8 +12,9 @@ The entry is a project file (`.tsx`, `.ts`, `.jsx` or `.js`) or a `.json` scene.
 
 ## Behaviour shared by all commands
 
-- `--json` prints one JSON object on stdout instead of text. Progress goes to stderr, and stderr stays quiet with `--json`. A failure prints `{ "error": { "code", "message" } }` and exits with 1.
+- `--json` prints one JSON object on stdout instead of text. Progress goes to stderr, and stderr stays quiet with `--json` except for the update notice below. A failure prints `{ "error": { "code", "message" } }` and exits with 1.
 - `--help` or `-h` prints the command's usage.
+- Once a day the CLI checks npm for a newer `kinetograph` and looks for installed agent skills older than the CLI. It prints one line on stderr, and adds a `notices` array to the `--json` result. It never installs anything. `CI` or `KINETOGRAPH_NO_UPDATE_CHECK=1` turns it off.
 - `kinetograph --version` or `-v` prints the package version. `kinetograph --help` lists the commands.
 - Exit code 0 is success. Exit code 1 is an error. A check that fails also exits with 1: `check` with type errors, `lint` with errors, and `snapshot` with a mismatch or a missing approved image.
 
@@ -233,7 +234,7 @@ npx kinetograph doctor
 |---|---|
 | `--range <a..b>` | Frames to check. The default is all of them. |
 
-With no entry, `doctor` prints the Node version, the platform, whether the addon loaded and which renderer draws (`renderer`). If Skia is on the CPU because the GPU could not be used, `rendererReason` (`why not the GPU:` in the text) says why: the device, the driver and what it lacks.
+With no entry, `doctor` prints the Node version, the platform, whether the addon loaded and which renderer draws (`renderer`). It also reports the CLI version against the latest on npm (`cli`) and each installed agent skill with its version and whether it is current (`skills`). If Skia is on the CPU because the GPU could not be used, `rendererReason` (`why not the GPU:` in the text) says why: the device, the driver and what it lacks.
 
 ## studio
 

@@ -17,6 +17,11 @@ Run everything as `npx kinetograph <command>`. Add `--json` to get one JSON obje
 like the command (`audio analyze` is `audio_analyze`), with the same arguments; `still`, `strip` and `onion` return the image
 itself, and `output` is optional for them.)
 
+If a Kinetograph command prints that the CLI or the skills are out of date (a line on stderr, a `notices` field in
+`--json`, or an extra text part on the first MCP tool result), tell the user and ask whether to update. Don't update
+without a yes. The commands are `npm install kinetograph@latest` and `npx skills add 0xS4N4TG/kinetograph`;
+`kinetograph doctor` shows both versions.
+
 ## The loop
 
 1. **Write** a project file, e.g. `src/index.tsx`, that calls `registerRoot` (see below).
