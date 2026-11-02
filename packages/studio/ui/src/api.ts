@@ -19,12 +19,15 @@ import type {
   PluginSummary,
   PresetInfo,
   ProjectInfo,
+  QueuedMessage,
   RenderJob,
   RenderRequest,
   ServerMessage,
   StudioError,
   TimelineData,
   TimelineProgress,
+  ToolDiff,
+  ToolInput,
 } from '../../src/protocol.ts';
 
 export type {
@@ -42,12 +45,15 @@ export type {
   PluginSummary,
   PresetInfo,
   ProjectInfo,
+  QueuedMessage,
   RenderJob,
   RenderRequest,
   ServerMessage,
   StudioError,
   TimelineData,
   TimelineProgress,
+  ToolDiff,
+  ToolInput,
 };
 export type { SequenceJson } from '../../src/protocol.ts';
 export type { OpenPanel, PanelAnswer, PanelKind, PanelStatus } from '../../src/panels/types.ts';
