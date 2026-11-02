@@ -422,6 +422,8 @@ pub struct ExportOptions {
     pub encoder: Option<String>,
     /// Constant quality, lower is better. Not with `videoBitrate`.
     pub crf: Option<f64>,
+    /// libx264's and libx265's preset: `ultrafast` to `placebo` (default `medium`).
+    pub x264_preset: Option<String>,
     /// Bits per second.
     pub video_bitrate: Option<f64>,
     /// `yuv420p`, `yuv422p`, `yuv444p`, `yuv420p10le`, `yuv422p10le` or `yuv444p10le`.
@@ -612,6 +614,7 @@ fn settings_of(encoder: Option<String>, export: Option<ExportOptions>) -> Result
             settings.encoder = e.encoder;
         }
         settings.crf = e.crf;
+        settings.x264_preset = e.x264_preset;
         settings.video_bitrate = e
             .video_bitrate
             .map(|b| count("videoBitrate", b).map(|b| b as usize))

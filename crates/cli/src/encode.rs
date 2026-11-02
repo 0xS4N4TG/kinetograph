@@ -473,6 +473,8 @@ pub struct Settings {
     /// An ffmpeg encoder name; default per codec (`resolve`).
     pub encoder: Option<String>,
     pub crf: Option<f64>,
+    /// libx264's and libx265's `-preset` (`X264_PRESETS`); default medium.
+    pub x264_preset: Option<String>,
     /// Bits per second.
     pub video_bitrate: Option<usize>,
     pub pixel_format: Option<String>,
@@ -494,6 +496,8 @@ pub struct Resolved {
     /// The format frames are converted to for the encoder (`Pix::name`).
     pub pix: Pix,
     pub quality: Quality,
+    /// The `-preset` of libx264 and libx265; unused by the other encoders.
+    pub x264_preset: &'static str,
     /// 0 (proxy) to 5 (4444 XQ), for ProRes.
     pub prores_profile: u8,
     pub audio_codec: Option<AudioCodec>,
@@ -501,6 +505,20 @@ pub struct Resolved {
     /// 1 unless `Settings::every_nth_frame` says.
     pub every_nth_frame: u32,
 }
+
+/// The presets `--x264-preset` takes, fastest first: libx264's and libx265's `-preset` names.
+pub const X264_PRESETS: [&str; 10] = [
+    "ultrafast",
+    "superfast",
+    "veryfast",
+    "faster",
+    "fast",
+    "medium",
+    "slow",
+    "slower",
+    "veryslow",
+    "placebo",
+];
 
 /// The ProRes profile names `--prores-profile` takes, by the number ffmpeg's encoders use.
 const PRORES_PROFILES: [&str; 6] = ["proxy", "light", "standard", "hq", "4444", "4444-xq"];
@@ -632,6 +650,21 @@ pub fn resolve(
         _ => Quality::Default,
     };
 
+    // x264 preset.
+    let x264_preset = match &settings.x264_preset {
+        None => "medium",
+        Some(name) => X264_PRESETS
+            .iter()
+            .copied()
+            .find(|p| p.eq_ignore_ascii_case(name))
+            .ok_or_else(|| {
+                format!(
+                    "unknown x264 preset {name:?}: use {}",
+                    X264_PRESETS.join(", ")
+                )
+            })?,
+    };
+
     // ProRes profile.
     let profile = match (&settings.prores_profile, codec) {
         (Some(_), c) if c != Codec::ProRes => {
@@ -748,6 +781,11 @@ pub fn resolve(
             pick.to_string()
         }
     };
+    if settings.x264_preset.is_some() && !matches!(encoder.as_str(), DEFAULT_ENCODER | "libx265") {
+        return Err(format!(
+            "--x264-preset only applies to libx264 and libx265, not {encoder}"
+        ));
+    }
     let pix = match (encoder.as_str(), wanted) {
         ("prores_videotoolbox", Pix::Yuv422p10) => Pix::P210,
         ("prores_videotoolbox", Pix::Yuv444p10) => Pix::P416,
@@ -818,6 +856,7 @@ pub fn resolve(
         container,
         pix,
         quality,
+        x264_preset,
         prores_profile: profile,
         audio_codec,
         audio_bitrate: settings.audio_bitrate,
@@ -1034,7 +1073,7 @@ fn encoder_options(
                 Quality::Crf(crf) => options.set("crf", &crf.to_string()),
                 Quality::Default => options.set("crf", "18"),
             }
-            options.set("preset", "medium");
+            options.set("preset", settings.x264_preset);
         }
         "libx265" => {
             match settings.quality {
@@ -1042,7 +1081,7 @@ fn encoder_options(
                 Quality::Crf(crf) => options.set("crf", &crf.to_string()),
                 Quality::Default => options.set("crf", "28"),
             }
-            options.set("preset", "medium");
+            options.set("preset", settings.x264_preset);
             options.set("x265-params", "log-level=error");
         }
         "libvpx-vp9" => {
@@ -2390,6 +2429,47 @@ mod tests {
                 .contains("prores-profile")
         );
         assert!(ask(Some(Codec::Gif), "a.gif", |s| s.video_bitrate = Some(1)).is_err());
+    }
+
+    #[test]
+    fn the_x264_preset_defaults_to_medium_is_checked_and_needs_libx264_or_libx265() {
+        let with = |codec, out: &str, encoder: Option<&str>, preset: Option<&str>| {
+            let settings = Settings {
+                codec,
+                encoder: encoder.map(String::from),
+                x264_preset: preset.map(String::from),
+                ..Settings::default()
+            };
+            resolve(&settings, Path::new(out), false, |_| true)
+        };
+        assert_eq!(
+            with(None, "a.mp4", None, None).unwrap().x264_preset,
+            "medium"
+        );
+        for preset in X264_PRESETS {
+            assert_eq!(
+                with(None, "a.mp4", Some("libx264"), Some(preset))
+                    .unwrap()
+                    .x264_preset,
+                preset
+            );
+        }
+        assert_eq!(
+            with(Some(Codec::H265), "a.mp4", None, Some("VeryFast"))
+                .unwrap()
+                .x264_preset,
+            "veryfast"
+        );
+        let unknown = with(None, "a.mp4", None, Some("turbo")).unwrap_err();
+        assert!(
+            unknown.contains("unknown x264 preset") && unknown.contains("placebo"),
+            "{unknown}"
+        );
+        let other = with(None, "a.mp4", Some("h264_videotoolbox"), Some("fast")).unwrap_err();
+        assert!(
+            other.contains("only applies to libx264 and libx265"),
+            "{other}"
+        );
     }
 
     #[test]

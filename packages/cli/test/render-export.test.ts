@@ -175,6 +175,7 @@ describe.skipIf(!ready)('render export options', () => {
       [['--crf', '20', '--video-bitrate', '2M'], 'cannot be used together'],
       [['--crf', '99'], 'between 0 and 51'],
       [['--video-bitrate', 'fast'], '--video-bitrate'],
+      [['--x264-preset', 'turbo'], 'unknown x264 preset'],
       [['--scale', '0'], '--scale'],
       [['--codec', 'av1'], 'unknown codec'],
       [['--codec', 'prores', '--crf', '20'], 'prores-profile'],

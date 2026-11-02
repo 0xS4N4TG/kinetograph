@@ -364,6 +364,7 @@ fn probe(program: &Path, name: &str, hw: Hw, device: Option<&str>) -> Result<Ope
         container: "null",
         pix: Pix::Yuv420p,
         quality: Quality::Default,
+        x264_preset: "medium",
         prores_profile: 3,
         audio_codec: None,
         audio_bitrate: None,
@@ -529,7 +530,7 @@ fn encoder_args(settings: &Resolved, width: u32, height: u32, fps: f64) -> Vec<S
                 Quality::Crf(crf) => push("-crf", crf.to_string()),
                 Quality::Default => push("-crf", default_crf.into()),
             }
-            push("-preset", "medium".into());
+            push("-preset", settings.x264_preset.into());
             if settings.encoder == "libx265" {
                 push("-x265-params", "log-level=error".into());
             }
@@ -938,6 +939,7 @@ mod tests {
             container: "mp4",
             pix,
             quality,
+            x264_preset: "medium",
             prores_profile: 3,
             audio_codec: None,
             audio_bitrate: None,
@@ -1075,6 +1077,22 @@ mod tests {
         // The software ones keep it, as ever.
         let text = line("libx264", Pix::Yuv444p, Quality::Crf(0.0), None);
         assert_eq!(text.matches("-pix_fmt").count(), 2, "{text}");
+    }
+
+    #[test]
+    fn the_x264_preset_is_the_preset_option_of_libx264_and_libx265() {
+        let text = |encoder: &str, preset: &'static str| {
+            let mut s = settings(encoder, Pix::Yuv420p, Quality::Crf(18.0));
+            s.x264_preset = preset;
+            encode_args(&s, 1920, 1080, 30.0, (30, 1), None)
+                .iter()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        assert!(text("libx264", "veryfast").contains(" -crf 18 -preset veryfast"));
+        assert!(text("libx265", "superfast").contains(" -preset superfast "));
+        assert!(line("libx264", Pix::Yuv420p, Quality::Default, None).contains(" -preset medium"));
     }
 
     #[test]
