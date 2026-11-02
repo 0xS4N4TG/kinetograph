@@ -1,9 +1,10 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../src/app';
 import type { AgentEvent } from '../src/api';
+import { moved } from '../src/components/agent/up-next';
 import { MockServer } from './mock-server';
 
 async function start() {
@@ -32,15 +33,17 @@ describe('queueing messages while the agent works', () => {
     expect(prompts(server)).toHaveLength(1);
     // the server queues it and tells the window; the chat does not show it as said yet
     await say(server, { kind: 'queue', items: [{ id: 'q1', text: 'first thing', chips: [] }] });
-    const queued = screen.getByTestId('chat-queued');
-    expect(queued).toHaveTextContent('Queued');
-    expect(queued).toHaveTextContent('first thing');
+    // collapsed: one slim bar with the first line
+    expect(screen.getByTestId('queue-toggle')).toHaveTextContent('1 up next');
+    expect(screen.getByTestId('queue-first')).toHaveTextContent('first thing');
     expect(screen.queryByTestId('chat-user')).toBeNull();
     expect(screen.getByTestId('queue-count')).toHaveTextContent('1');
 
     await user.type(box, 'second thing{Enter}');
     expect(prompts(server)).toHaveLength(2);
     await say(server, { kind: 'queue', items: [{ id: 'q1', text: 'first thing', chips: [] }, { id: 'q2', text: 'second thing', chips: [] }] });
+    expect(screen.getByTestId('queue-toggle')).toHaveTextContent('2 up next');
+    await user.click(screen.getByTestId('queue-toggle'));
     expect(screen.getAllByTestId('chat-queued')).toHaveLength(2);
     expect(screen.getByTestId('queue-count')).toHaveTextContent('2');
     expect(screen.getByRole('button', { name: 'Send (2 queued)' })).toBeInTheDocument();
@@ -49,7 +52,7 @@ describe('queueing messages while the agent works', () => {
     await say(server, { kind: 'user', text: 'first thing', chips: [] });
     await say(server, { kind: 'user', text: 'second thing', chips: [] });
     await say(server, { kind: 'queue', items: [] });
-    expect(screen.queryByTestId('chat-queue')).toBeNull();
+    expect(screen.queryByTestId('up-next')).toBeNull();
     expect(screen.queryByTestId('queue-count')).toBeNull();
     expect(screen.getAllByTestId('chat-user').map((e) => e.textContent)).toEqual(['first thing', 'second thing']);
   });
@@ -58,6 +61,8 @@ describe('queueing messages while the agent works', () => {
     const { server, user } = await start();
     await busy(server);
     await say(server, { kind: 'queue', items: [{ id: 'q1', text: 'do this later', chips: ['Title · frame 0'] }] });
+    await user.click(screen.getByTestId('queue-toggle'));
+    expect(screen.getByTestId('queued-chips')).toHaveTextContent('Title · frame 0');
     await user.click(screen.getByRole('button', { name: /Remove queued message/ }));
     expect(server.agentMessages.at(-1)).toEqual({ type: 'agent.unqueue', id: 'q1' });
     // nothing is removed until the server says so
@@ -70,10 +75,12 @@ describe('queueing messages while the agent works', () => {
   });
 
   it('shows the queue again after a reload: the history comes first, then the queue', async () => {
-    const { server } = await start();
+    const { server, user } = await start();
     await act(() => server.send({ type: 'agent.history', items: [{ kind: 'user', text: 'earlier', chips: [] }] }));
     await say(server, { kind: 'queue', items: [{ id: 'q3', text: 'still waiting', chips: [] }] });
     expect(screen.getByTestId('chat-user')).toHaveTextContent('earlier');
+    expect(screen.getByTestId('queue-first')).toHaveTextContent('still waiting');
+    await user.click(screen.getByTestId('queue-toggle'));
     expect(screen.getByTestId('chat-queued')).toHaveTextContent('still waiting');
     // a history alone (a new conversation) starts with an empty queue
     await act(() => server.send({ type: 'agent.history', items: [] }));
@@ -89,6 +96,158 @@ describe('queueing messages while the agent works', () => {
     await say(server, { kind: 'user', text: 'tweak the title', chips: [] });
     await say(server, { kind: 'queue', items: [] });
     expect(screen.getAllByTestId('chat-user').map((e) => e.textContent)).toEqual(['[panel brief p_1 submitted] ok', 'tweak the title']);
+  });
+});
+
+describe('moved', () => {
+  it('moves one id to a place, and leaves the list alone for a place that is not there', () => {
+    expect(moved(['a', 'b', 'c'], 'c', 0)).toEqual(['c', 'a', 'b']);
+    expect(moved(['a', 'b', 'c'], 'a', 1)).toEqual(['b', 'a', 'c']);
+    const ids = ['a', 'b'];
+    expect(moved(ids, 'a', -1)).toBe(ids);
+    expect(moved(ids, 'b', 2)).toBe(ids);
+    expect(moved(ids, 'z', 0)).toBe(ids);
+  });
+});
+
+describe('the Up next tray', () => {
+  afterEach(() => vi.useRealTimers());
+  const three: AgentEvent = {
+    kind: 'queue',
+    items: [
+      { id: 'q1', text: 'make the title bigger\nand bolder\nthird line', chips: ['Title · frame 0', 'Logo · frame 0'] },
+      { id: 'q2', text: 'slow the intro', chips: [] },
+      { id: 'q3', text: 'warmer palette', chips: [], images: ['a.png'] },
+    ],
+  };
+  const cards = () => screen.getAllByTestId('chat-queued').map((c) => c.textContent);
+
+  it('is one slim bar when closed, with the count, the first line and the first thumbnails, and opens to a card each', async () => {
+    const { server, user } = await start();
+    await busy(server);
+    await say(server, three);
+    const bar = screen.getByTestId('queue-toggle');
+    expect(bar).toHaveTextContent('3 up next');
+    expect(bar).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByTestId('queue-first')).toHaveTextContent(/^make the title bigger$/);
+    expect(screen.queryByTestId('chat-queued')).toBeNull();
+    await user.click(bar);
+    expect(bar).toHaveAttribute('aria-expanded', 'true');
+    expect(cards()).toHaveLength(3);
+    const first = screen.getAllByTestId('chat-queued')[0]!;
+    // the first two lines, and the selection as its first chip plus the rest
+    expect(first).toHaveTextContent('make the title bigger');
+    expect(first).toHaveTextContent('and bolder');
+    expect(first).not.toHaveTextContent('third line');
+    expect(within(first).getByTestId('queued-chips')).toHaveTextContent('Title · frame 0 +1');
+    expect(within(screen.getAllByTestId('chat-queued')[2]!).getByRole('img')).toHaveAttribute('src', '/api/agent/image?name=a.png');
+  });
+
+  it('puts a message back in the prompt box to edit it, with its pictures, and asks the server to take it out', async () => {
+    const { server, user } = await start();
+    await busy(server);
+    await say(server, { kind: 'queue', items: [{ id: 'q9', text: 'tweak it', chips: [], images: ['a.png'] }] });
+    await user.click(screen.getByTestId('queue-toggle'));
+    await user.click(screen.getByRole('button', { name: /^Edit queued message/ }));
+    expect(server.agentMessages.at(-1)).toEqual({ type: 'agent.unqueue', id: 'q9', take: true });
+    // nothing moves until the server confirms with the message
+    expect(screen.getByLabelText('Message for the agent')).toHaveValue('');
+    const fetchMock = vi.fn(async () => new Response(new Blob(['pixels'], { type: 'image/png' }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await say(server, { kind: 'unqueued', item: { id: 'q9', text: 'tweak it', chips: [], images: ['a.png'] } });
+    await say(server, { kind: 'queue', items: [] });
+    expect(screen.getByLabelText('Message for the agent')).toHaveValue('tweak it');
+    await waitFor(() => expect(screen.getAllByTestId('image-chip')).toHaveLength(1));
+    vi.unstubAllGlobals();
+  });
+
+  it('reorders by drag and by keyboard, sending the new order to the server', async () => {
+    const { server, user } = await start();
+    await busy(server);
+    await say(server, three);
+    await user.click(screen.getByTestId('queue-toggle'));
+    // drag the last card onto the first
+    const [c1, , c3] = screen.getAllByTestId('chat-queued');
+    const data = { effectAllowed: '', dropEffect: '' };
+    fireEvent.dragStart(c3!, { dataTransfer: data });
+    fireEvent.dragOver(c1!, { dataTransfer: data });
+    fireEvent.drop(c1!, { dataTransfer: data });
+    expect(server.agentMessages.at(-1)).toEqual({ type: 'agent.requeue', order: ['q3', 'q1', 'q2'] });
+    // the keyboard: the grip of the first card, arrow down
+    const grips = screen.getAllByRole('button', { name: /^Move queued message/ });
+    grips[0]!.focus();
+    await user.keyboard('{ArrowDown}');
+    expect(server.agentMessages.at(-1)).toEqual({ type: 'agent.requeue', order: ['q2', 'q1', 'q3'] });
+    // the first card cannot go up: nothing is sent
+    const before = server.agentMessages.length;
+    await user.keyboard('{ArrowUp}');
+    expect(server.agentMessages.length).toBe(before);
+    // the server's answer is what the tray shows
+    await say(server, { kind: 'queue', items: [three.items[2]!, three.items[0]!, three.items[1]!] });
+    expect(cards()[0]).toContain('warmer palette');
+  });
+
+  it('removes one card, and Clear removes them all', async () => {
+    const { server, user } = await start();
+    await busy(server);
+    await say(server, three);
+    await user.click(screen.getByTestId('queue-toggle'));
+    await user.click(screen.getAllByRole('button', { name: /^Remove queued message/ })[1]!);
+    expect(server.agentMessages.at(-1)).toEqual({ type: 'agent.unqueue', id: 'q2' });
+    await user.click(screen.getByRole('button', { name: 'Clear' }));
+    const gone = server.agentMessages.filter((m) => m.type === 'agent.unqueue').map((m: any) => m.id);
+    expect(gone).toEqual(['q2', 'q1', 'q2', 'q3']);
+  });
+
+  it('"Send now" waits four seconds for an Undo, then stops the turn and sends that message next', async () => {
+    const { server } = await start();
+    await busy(server);
+    await say(server, three);
+    fireEvent.click(screen.getByTestId('queue-toggle'));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    fireEvent.click(screen.getAllByRole('button', { name: /^Send now/ })[1]!);
+    expect(screen.getByTestId('send-now-toast')).toHaveTextContent('Undo');
+    act(() => void vi.advanceTimersByTime(3900));
+    expect(server.agentMessages.some((m) => m.type === 'agent.sendnow')).toBe(false);
+    act(() => void vi.advanceTimersByTime(200));
+    expect(server.agentMessages.at(-1)).toEqual({ type: 'agent.sendnow', id: 'q2' });
+    expect(screen.queryByTestId('send-now-toast')).toBeNull();
+    // the rest are still queued
+    expect(cards()).toHaveLength(3);
+  });
+
+  it('Undo within the four seconds sends nothing', async () => {
+    const { server } = await start();
+    await busy(server);
+    await say(server, three);
+    fireEvent.click(screen.getByTestId('queue-toggle'));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    fireEvent.click(screen.getAllByRole('button', { name: /^Send now/ })[0]!);
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.queryByTestId('send-now-toast')).toBeNull();
+    act(() => void vi.advanceTimersByTime(10_000));
+    expect(server.agentMessages.some((m) => m.type === 'agent.sendnow')).toBe(false);
+  });
+
+  it('shows a waiting panel answer in the tray with its panel icon, and it cannot be edited, moved or removed', async () => {
+    const { server, user } = await start();
+    await busy(server);
+    await say(server, {
+      kind: 'queue',
+      items: [
+        { id: 'panel:p_1', text: '[panel brief p_1 submitted] ok', chips: [], panel: 'brief' },
+        { id: 'q1', text: 'mine', chips: [] },
+      ],
+    });
+    expect(screen.getByTestId('queue-toggle')).toHaveTextContent('2 up next');
+    await user.click(screen.getByTestId('queue-toggle'));
+    const panel = screen.getByTestId('chat-queued-panel');
+    expect(within(panel).getByTestId('panel-mark')).toHaveAttribute('title', 'Panel answer: brief');
+    expect(within(panel).queryByRole('button')).toBeNull();
+    expect(panel).not.toHaveAttribute('draggable', 'true');
+    // Clear leaves it alone
+    await user.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(server.agentMessages.filter((m) => m.type === 'agent.unqueue').map((m: any) => m.id)).toEqual(['q1']);
   });
 });
 

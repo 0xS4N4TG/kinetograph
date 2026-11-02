@@ -31,11 +31,13 @@ export interface ChatState {
   nextId: number;
   /** The messages sent while the agent was working, waiting for the turn to end (kept by the server). */
   queue: QueuedMessage[];
+  /** The message just taken out of the queue to be edited (`n` counts them, so taking the same one twice is seen). */
+  taken: { n: number; item: QueuedMessage } | null;
 }
 
 type NewItem = ChatItem extends infer T ? (T extends ChatItem ? Omit<T, 'id'> : never) : never;
 
-export const emptyChat: ChatState = { items: [], status: 'idle', command: null, image: false, nextId: 1, queue: [] };
+export const emptyChat: ChatState = { items: [], status: 'idle', command: null, image: false, nextId: 1, queue: [], taken: null };
 
 /** Adds the user's own message. */
 export function addUserMessage(state: ChatState, text: string, chips: string[], images: string[] = []): ChatState {
@@ -45,7 +47,7 @@ export function addUserMessage(state: ChatState, text: string, chips: string[], 
 
 /** Starts again: the conversation is cleared (the status stays). */
 export function clearChat(state: ChatState): ChatState {
-  return { ...emptyChat, status: state.status, command: state.command, image: state.image, nextId: state.nextId };
+  return { ...emptyChat, status: state.status, command: state.command, image: state.image, nextId: state.nextId, taken: state.taken };
 }
 
 /** Marks a permission as answered by the user, before the server confirms. */
@@ -122,6 +124,8 @@ export function reduceChat(state: ChatState, event: AgentEvent): ChatState {
       return addUserMessage(state, event.text, event.chips ?? [], event.images);
     case 'queue':
       return { ...state, queue: event.items };
+    case 'unqueued':
+      return { ...state, taken: { n: (state.taken?.n ?? 0) + 1, item: event.item } };
     case 'error':
       return push({ kind: 'error', text: event.message });
   }

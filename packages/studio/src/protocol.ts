@@ -238,8 +238,15 @@ export interface AgentAttachment {
 export type AgentClientMessage =
   | { type: 'agent.prompt'; text: string; context: string; image?: { data: string; mimeType: string }; chips?: string[]; attachments?: AgentAttachment[] }
   | { type: 'agent.cancel' }
-  /** Takes a message out of the queue (a prompt sent while the agent was working). */
-  | { type: 'agent.unqueue'; id: string }
+  /**
+   * Takes a message out of the queue (a prompt sent while the agent was working). With `take` the server answers with an
+   * `unqueued` event carrying the message, for the window to put back in the prompt box.
+   */
+  | { type: 'agent.unqueue'; id: string; take?: boolean }
+  /** Puts the queued messages in this order (ids it leaves out keep their places, after the others). */
+  | { type: 'agent.requeue'; order: string[] }
+  /** Stops the turn and sends this queued message next, alone; the rest stay queued. */
+  | { type: 'agent.sendnow'; id: string }
   /** The answer to a permission request; a null `optionId` denies it. */
   | { type: 'agent.permission'; id: string; optionId: string | null }
   /** Chooses the agent (one of `AgentInfo.presets`) and starts a new conversation. */
@@ -284,7 +291,9 @@ export type AgentEvent =
   /** A message the studio sent the agent for the person (a panel's answer), to show in the chat. */
   | { kind: 'user'; text: string; chips?: string[]; images?: string[] }
   /** The messages waiting for the agent's turn to end: the whole queue, sent again whenever it changes. */
-  | { kind: 'queue'; items: QueuedMessage[] };
+  | { kind: 'queue'; items: QueuedMessage[] }
+  /** The answer to `agent.unqueue` with `take`: the message that was taken out of the queue (not kept in the chat log). */
+  | { kind: 'unqueued'; item: QueuedMessage };
 
 /** A message the person sent while the agent was working, waiting for its turn to end. */
 export interface QueuedMessage {
@@ -293,6 +302,8 @@ export interface QueuedMessage {
   chips: string[];
   /** The attached pictures, as file names in public/refs. */
   images?: string[];
+  /** Set on a panel's answer waiting to be told to the agent: the kind of the panel. Such an item cannot be edited or moved. */
+  panel?: string;
 }
 
 /** The parts of an agent's tool input the chat shows. */

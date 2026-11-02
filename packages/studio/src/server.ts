@@ -38,6 +38,7 @@ import {
   type FrameRequest,
   type LiveProps,
   type PluginSummary,
+  type QueuedMessage,
   type ProjectInfo,
   type RenderJob,
   type RenderRequest,
@@ -176,7 +177,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   const panels = new PanelStore();
   restorePanels(panels, dirname(entry));
   /** What the person said while the agent was working, and the panel answers it has not heard yet; both wait for the end of the turn. */
-  const unheard: { id: string; text: string; seq: number }[] = [];
+  const unheard: { id: string; text: string; seq: number; kind: string }[] = [];
   const promptQueue: {
     id: string;
     text: string;
@@ -186,16 +187,25 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     /** The pictures attached to the message: their names in public/refs and, for an agent that takes pictures, a scaled copy. */
     attached: { name: string; image?: PromptImage }[];
     seq: number;
+    /** "Send now" was chosen: the next prompt is this message alone. */
+    now?: boolean;
   }[] = [];
   let arrivals = 0;
   let nextQueued = 1;
   /** The queue as the window shows it; sent whenever it changes (and after a replay), never kept in the chat log. */
   let queueShown = false;
+  const queuedView = (q: (typeof promptQueue)[number]): QueuedMessage => ({ id: q.id, text: q.text, chips: q.chips, ...(q.attached.length > 0 ? { images: q.attached.map((a) => a.name) } : {}) });
   const showQueue = (): void => {
     // A queue that is empty and was never shown needs no word.
-    if (promptQueue.length === 0 && !queueShown) return;
-    queueShown = promptQueue.length > 0;
-    if (owner) send(owner, { type: 'agent', event: { kind: 'queue', items: promptQueue.map((q) => ({ id: q.id, text: q.text, chips: q.chips, ...(q.attached.length > 0 ? { images: q.attached.map((a) => a.name) } : {}) })) } });
+    const waiting = promptQueue.length + unheard.length;
+    if (waiting === 0 && !queueShown) return;
+    queueShown = waiting > 0;
+    // The panel answers come first or among the messages by arrival; the window shows them in that order.
+    const items: (QueuedMessage & { seq: number })[] = [
+      ...unheard.map((u) => ({ id: `panel:${u.id}`, text: u.text, chips: [] as string[], panel: u.kind, seq: u.seq })),
+      ...promptQueue.map((q) => ({ ...queuedView(q), seq: q.seq })),
+    ].sort((a, b) => a.seq - b.seq);
+    if (owner) send(owner, { type: 'agent', event: { kind: 'queue', items: items.map(({ seq: _seq, ...item }) => item) } });
   };
   /**
    * Sends the agent everything waiting for it, as one prompt: the person's queued messages and the panel answers, in the
@@ -206,14 +216,18 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   function tellAgent(): void {
     if (agentOff || bridge.working) return;
     if (promptQueue.length === 0 && (unheard.length === 0 || !bridge.ready)) return;
+    // "Send now" sends that message alone; the others (and the panel answers) wait for the turn after.
+    const solo = promptQueue.find((q) => q.now);
+    const sending = solo ? [solo] : promptQueue;
     const waiting = [
-      ...unheard.splice(0).map((u) => ({ text: u.text, say: u.text, chips: [] as string[], images: [] as string[], seq: u.seq })),
-      ...promptQueue.map((q) => ({ text: q.text, say: withAttached(q.text, q.attached.map((a) => a.name)), chips: q.chips, images: q.attached.map((a) => a.name), seq: q.seq })),
+      ...(solo ? [] : unheard.splice(0)).map((u) => ({ text: u.text, say: u.text, chips: [] as string[], images: [] as string[], seq: u.seq })),
+      ...sending.map((q) => ({ text: q.text, say: withAttached(q.text, q.attached.map((a) => a.name)), chips: q.chips, images: q.attached.map((a) => a.name), seq: q.seq })),
     ].sort((x, y) => x.seq - y.seq);
-    const last = promptQueue.at(-1);
-    const selection = promptQueue.findLast((q) => q.image)?.image;
-    const pictures = [...promptQueue.flatMap((q) => q.attached.flatMap((a) => (a.image ? [a.image] : []))), ...(selection ? [selection] : [])];
-    promptQueue.length = 0;
+    const last = sending.at(-1);
+    const selection = sending.findLast((q) => q.image)?.image;
+    const pictures = [...sending.flatMap((q) => q.attached.flatMap((a) => (a.image ? [a.image] : []))), ...(selection ? [selection] : [])];
+    if (solo) promptQueue.splice(promptQueue.indexOf(solo), 1);
+    else promptQueue.length = 0;
     for (const w of waiting) {
       const images = w.images.length > 0 ? { images: w.images } : {};
       keep({ kind: 'user', text: w.text, chips: w.chips, ...images });
@@ -317,7 +331,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     }
     const closed = panels.close(id, 'submitted', answer as OpenPanel['answer'])!;
     closePanel(closed);
-    unheard.push({ id, text: closingMessage(closed), seq: arrivals++ });
+    unheard.push({ id, text: closingMessage(closed), seq: arrivals++, kind: closed.panel });
+    showQueue();
     tellAgent();
   }
 
@@ -325,7 +340,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     const closed = panels.close(id, 'dismissed');
     if (!closed) return;
     closePanel(closed);
-    unheard.push({ id, text: closingMessage(closed), seq: arrivals++ });
+    unheard.push({ id, text: closingMessage(closed), seq: arrivals++, kind: closed.panel });
+    showQueue();
     tellAgent();
   }
 
@@ -891,8 +907,32 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
         return;
       case 'agent.unqueue': {
         const at = promptQueue.findIndex((q) => q.id === message.id);
-        if (at >= 0) promptQueue.splice(at, 1);
+        const [taken] = at >= 0 ? promptQueue.splice(at, 1) : [];
+        if (taken && message.take === true) send(ws, { type: 'agent', event: { kind: 'unqueued', item: queuedView(taken) } });
         showQueue();
+        return;
+      }
+      case 'agent.requeue': {
+        if (!Array.isArray(message.order)) return bad('requeue needs the new order of the queued messages');
+        const rank = (id: string): number => {
+          const at = (message.order as unknown[]).indexOf(id);
+          return at < 0 ? Number.MAX_SAFE_INTEGER : at;
+        };
+        // The arrival numbers stay what they are, handed out again in the new order, so panel answers keep their places.
+        const seqs = promptQueue.map((q) => q.seq).sort((a, b) => a - b);
+        promptQueue.sort((a, b) => rank(a.id) - rank(b.id));
+        promptQueue.forEach((q, i) => (q.seq = seqs[i]!));
+        showQueue();
+        return;
+      }
+      case 'agent.sendnow': {
+        const found = promptQueue.find((q) => q.id === message.id);
+        if (!found) return;
+        for (const q of promptQueue) delete q.now;
+        found.now = true;
+        // Free already (the turn ended meanwhile): it goes now. Otherwise the turn is stopped and its end sends it.
+        if (bridge.working) void bridge.cancel();
+        else tellAgent();
         return;
       }
       case 'agent.cancel':

@@ -244,6 +244,12 @@ not call the tool again to check. The answer arrives as a message starting `[pan
 `dismissed` if the person closed it; in a terminal, the person tells you, and you read it with `studio_panel_result`.
 Read `plan/<panel>.json` before you build from it.
 
+A message that starts `Markup notes on <comp>` is the person's notes drawn on the preview: a numbered list in time order
+(frame, time, the mark in composition pixels, the layers under it, their comment), with each distinct frame attached as a
+picture that has the marks drawn on it (`public/refs/markup-<stamp>-<n>.png`, path in the message). Fix the notes in order,
+and end with a numbered list saying which you did and which you skipped and why. Frames over the cap come without a picture:
+use the frame number and the coordinates.
+
 Skip stages that don't fit the job: a caption fix needs no brief. Never animate against an unapproved storyboard
 without saying so.
 

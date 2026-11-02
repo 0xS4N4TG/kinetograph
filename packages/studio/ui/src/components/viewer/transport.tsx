@@ -170,7 +170,7 @@ export const Transport = memo(function Transport({ comp, player, audio, edges = 
         {state.fps === null ? '-' : state.fps.toFixed(1)} / {comp?.fps ?? '-'} fps
       </span>
       {audio && sound.available && (
-        <Hint label={sound.muted ? 'Unmute (M)' : 'Mute (M)'}>
+        <Hint label={sound.muted ? 'Unmute (Shift+M)' : 'Mute (Shift+M)'}>
           <Toggle
             aria-label="Mute"
             data-testid="mute"

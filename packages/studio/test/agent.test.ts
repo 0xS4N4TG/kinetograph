@@ -322,6 +322,62 @@ describe('the agent over the studio server', () => {
       client.close();
     });
 
+    it('takes a message out for editing: unqueue with take answers with the message, and a missing one answers nothing', async () => {
+      const { dir, entry } = writeProject('take');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const client = await Client.connect(server);
+      client.send({ type: 'agent.prompt', text: 'slow first', context: '' });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'status' && m.event.status === 'busy');
+      client.send({ type: 'agent.prompt', text: 'edit me', context: '', chips: ['Title'] });
+      await until(() => queues(client), (q) => q.some((items) => items.length === 1));
+      const id = (client.messages('agent').find((m: any) => m.event.kind === 'queue') as any).event.items[0].id;
+      client.send({ type: 'agent.unqueue', id, take: true });
+      client.send({ type: 'agent.unqueue', id: 'nope', take: true });
+      await until(() => queues(client), (q) => q.at(-1)?.length === 0);
+      const taken = client.messages('agent').flatMap((m: any) => (m.event.kind === 'unqueued' ? [m.event.item] : []));
+      expect(taken).toEqual([{ id, text: 'edit me', chips: ['Title'] }]);
+      await until(() => said(client), (t) => t.includes('got: slow first'));
+      expect(said(client)).not.toContain('edit me');
+      client.close();
+    });
+
+    it('reorders the queue, and the turn then sends the messages in the new order', async () => {
+      const { dir, entry } = writeProject('requeue');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const client = await Client.connect(server);
+      client.send({ type: 'agent.prompt', text: 'slow first', context: '' });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'status' && m.event.status === 'busy');
+      for (const text of ['one', 'two', 'three']) client.send({ type: 'agent.prompt', text, context: '' });
+      await until(() => queues(client), (q) => q.some((items) => items.length === 3));
+      const ids = (client.messages('agent').filter((m: any) => m.event.kind === 'queue').at(-1) as any).event.items.map((i: any) => i.id);
+      // three to the front; an id it does not know is ignored
+      client.send({ type: 'agent.requeue', order: [ids[2], 'ghost', ids[0]] });
+      await until(() => queues(client), (q) => q.at(-1)?.join() === 'three,one,two');
+      await until(() => said(client), (t) => t.includes('got: three'));
+      expect(said(client)).toContain('got: three\n\none\n\ntwo');
+      expect(users(client)).toEqual(['slow first', 'three', 'one', 'two']);
+      client.close();
+    });
+
+    it('sends one message next on "send now": alone, with the others queued for the turn after', async () => {
+      const { dir, entry } = writeProject('sendnow');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const client = await Client.connect(server);
+      client.send({ type: 'agent.prompt', text: 'slow first', context: '' });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'status' && m.event.status === 'busy');
+      for (const text of ['one', 'two', 'three']) client.send({ type: 'agent.prompt', text, context: '' });
+      await until(() => queues(client), (q) => q.some((items) => items.length === 3));
+      const ids = (client.messages('agent').filter((m: any) => m.event.kind === 'queue').at(-1) as any).event.items.map((i: any) => i.id);
+      client.send({ type: 'agent.sendnow', id: ids[1] });
+      await until(() => said(client), (t) => t.includes('got: two'));
+      // the next prompt is "two" alone; "one" and "three" are still waiting, then go together
+      expect(said(client)).not.toContain('got: two\n\n');
+      expect(users(client).slice(0, 2)).toEqual(['slow first', 'two']);
+      await until(() => said(client), (t) => t.includes('got: one\n\nthree'));
+      expect(users(client)).toEqual(['slow first', 'two', 'one', 'three']);
+      client.close();
+    });
+
     it('keeps the queue when the window reloads, and sends the queue after the history', async () => {
       const { dir, entry } = writeProject('queue-reload');
       const server = await start(entry, { agent: command, agentCwd: dir });
