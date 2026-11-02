@@ -3,13 +3,16 @@ title: Use with agents
 description: Give a coding agent the Kinetograph skill and MCP tools so it can write, check and render videos.
 ---
 
-An agent can't watch a video, so Kinetograph gives it two things instead. A skill teaches it a loop: write, look, check, render. The agent can write a Remotion-shaped TSX project or an HTML page (HyperFrames projects render as they are); the loop is the same. An MCP server lets it run each CLI command as a tool and see frames as images.
+An [agent](/docs/terminology/agent/) can't watch a video, so Kinetograph gives it two things:
 
-## What an agent gets
+- A **skill** that teaches it a loop: write, look, check, render. The agent can write a Remotion-style TSX project or an HTML page.
+- An **MCP server** that runs each CLI command as a tool and returns frames as images.
 
-**The skill** is a folder with a `SKILL.md` that the agent reads. It covers the loop below, how a project is laid out (`registerRoot`, `Composition`, the native elements and effects), sound, Remotion compatibility and `doctor`, and the CLI flags an agent needs.
+## The MCP server
 
-**The MCP server** is `npx kinetograph mcp`, over stdio. It has one tool for each CLI command except `studio`, which keeps running until stopped. Studio, the local editor, has its own chat with your coding agent and gives it these tools; see [Studio](/docs/guides/studio/#the-agent). A tool takes the same arguments as its command. Command names with a space use an underscore. An error comes back as `{ "error": { "code", "message" } }`.
+The server is `npx kinetograph mcp`, over stdio. It has one tool for each CLI command except `studio`, which keeps running until stopped. [Studio](/docs/guides/studio/#the-agent) has its own chat with your coding agent and gives it these tools.
+
+A tool takes the same arguments as its command. Command names with a space use an underscore, so `audio analyze` is `audio_analyze`. An error comes back as `{ "error": { "code", "message" } }`.
 
 | Tool | What it does |
 |---|---|
@@ -32,7 +35,7 @@ For `still`, `strip` and `onion`, `output` is optional: the server writes a temp
 
 ## Set up the MCP server
 
-Every client below runs the same command, `npx -y kinetograph mcp`. You need Node 22 or newer. A GPU is used when there is one, otherwise the CPU.
+Every client runs the same command, `npx -y kinetograph mcp`. You need Node 22 or newer.
 
 ### Claude Code
 
@@ -57,11 +60,11 @@ Open Settings, then Developer, then Edit Config. The file is `~/Library/Applicat
 }
 ```
 
-Quit and restart Claude Desktop after saving.
+Restart Claude Desktop after saving.
 
 ### Cursor
 
-Put this in `.cursor/mcp.json` in the project, or `~/.cursor/mcp.json` for every project.
+Put this in `.cursor/mcp.json` in the project, or `~/.cursor/mcp.json` for every project:
 
 ```json
 {
@@ -89,36 +92,33 @@ Or run `codex mcp add kinetograph -- npx -y kinetograph mcp`. `codex mcp list` s
 
 ## Install the skills
 
-There are two skills. `kinetograph` teaches the write, look, check, render loop. `kinetograph-migrate` moves an existing Remotion project onto Kinetograph: it runs `doctor`, fixes each finding with reference files for 3D, tooling and unsupported content, and renders with `--strict`. See [Migrate from Remotion](/docs/guides/migrate/).
+There are two skills:
 
-Install both from the GitHub repo with the `skills` CLI (it asks which agents to install them for):
+- `kinetograph` teaches the write, look, check, render loop. It covers how a project is laid out, sound, Remotion compatibility, `doctor` and the CLI flags an agent needs.
+- `kinetograph-migrate` moves an existing Remotion project onto Kinetograph. See [Migrate from Remotion](/docs/guides/migrate/).
+
+Install both from the GitHub repo with the [`skills`](https://www.npmjs.com/package/skills) CLI. It asks which agents to install them for:
 
 ```sh
-npx skills add 0xS4N4TG/kinetograph
+npx skills add 0xS4N4TG/kinetograph --list   # show what it found, install nothing
+npx skills add 0xS4N4TG/kinetograph          # install
 ```
 
-The skills also come inside the npm package. Once the package is installed in a project, you can copy them to where Claude Code looks for skills instead:
+The skills also come inside the npm package. To copy them to where Claude Code looks for skills:
 
 ```bash
 mkdir -p ~/.claude/skills
 cp -R node_modules/kinetograph/skills/kinetograph node_modules/kinetograph/skills/kinetograph-migrate ~/.claude/skills/
 ```
 
-For one project only, copy it to `.claude/skills/kinetograph/` in that project instead. Other agents that read `SKILL.md` files can use the same folder in their own skills folder.
-
-You can also install it from the repository with the [`skills`](https://www.npmjs.com/package/skills) CLI, which finds both skills in `packages/cli/skills/` and asks which agents to install it for:
-
-```bash
-npx skills add 0xS4N4TG/kinetograph --list   # show what it found, install nothing
-npx skills add 0xS4N4TG/kinetograph          # install
-```
+For one project only, copy them to `.claude/skills/` in that project instead. Other agents that read `SKILL.md` files can use the same folders.
 
 ## The loop the skill teaches
 
 1. **Write** a project file that calls `registerRoot`.
-2. **Look.** `strip` shows twelve labelled frames at once, `still` shows one, and `onion` shows a motion path. The agent reads the PNG.
-3. **Check** without looking at pixels. `inspect` gives each layer's final position and bounds at a frame. `lint` reports overflow, off-canvas layers, missing fonts and assets, with the frame and layer id. `check` catches type errors that render without complaint.
+2. **Look.** `strip` shows twelve labelled frames at once, `still` shows one, and `onion` shows a motion path.
+3. **Check** without looking at pixels. `inspect` gives each layer's position and bounds. `lint` reports overflow, off-canvas layers, and missing fonts and assets. `check` catches type errors.
 4. **Fix** and go back to step 2. A still takes well under a second.
-5. **Render** with `render`. Use `--draft` for a half-size look first, and `doctor` before a long render on a project that uses HTML elements or CSS, to see what the render will leave out.
+5. **Render** with `render`. Use `--draft` for a half-size look first. Run `doctor` before a long render of a project that uses HTML elements or CSS, to see what the render will leave out.
 
 A prompt as short as "make a 5 second title card for X, check it with strip and lint, and render it to out/title.mp4" is enough to start this loop.
