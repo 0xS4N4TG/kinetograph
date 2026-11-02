@@ -25,6 +25,149 @@ async function cli(...argv: string[]): Promise<{ code: number; json: any; text: 
 
 const files = (dir: string): string[] => (readdirSync(dir, { recursive: true }) as string[]).map((f) => f.replaceAll('\\', '/')).sort();
 
+describe('init', () => {
+  it('creates the standard layout with a starter', async () => {
+    const dir = join(scratch(), 'My Video');
+    const r = await cli('init', dir, '--json');
+    expect(r.code).toBe(0);
+    expect(r.json.entry).toBe('src/index.tsx');
+    expect(r.json.skipped).toEqual([]);
+    expect(files(dir)).toEqual([
+      '.gitignore',
+      'out',
+      'package.json',
+      'public',
+      'public/audio',
+      'public/audio/.gitkeep',
+      'public/fonts',
+      'public/fonts/.gitkeep',
+      'public/images',
+      'public/images/.gitkeep',
+      'public/video',
+      'public/video/.gitkeep',
+      'src',
+      'src/components',
+      'src/google-fonts.d.ts',
+      'src/index.tsx',
+      'src/lib',
+      'src/scenes',
+      'src/scenes/Title.tsx',
+      'tsconfig.json',
+    ]);
+    expect([...r.json.created].sort()).toEqual([
+      '.gitignore',
+      'package.json',
+      'public/audio/.gitkeep',
+      'public/fonts/.gitkeep',
+      'public/images/.gitkeep',
+      'public/video/.gitkeep',
+      'src/google-fonts.d.ts',
+      'src/index.tsx',
+      'src/scenes/Title.tsx',
+      'tsconfig.json',
+    ]);
+
+    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+    const own = JSON.parse(readFileSync(join(import.meta.dirname, '../package.json'), 'utf8')) as { version: string };
+    expect(pkg).toMatchObject({
+      name: 'my-video',
+      private: true,
+      type: 'module',
+      dependencies: { kinetograph: own.version },
+      scripts: {
+        still: 'kinetograph still src/index.tsx 15',
+        strip: 'kinetograph strip src/index.tsx',
+        render: 'kinetograph render src/index.tsx',
+        check: 'kinetograph check src/index.tsx',
+      },
+    });
+    expect(readFileSync(join(dir, '.gitignore'), 'utf8')).toBe('node_modules/\nout/\n');
+    expect(readFileSync(join(dir, 'src/index.tsx'), 'utf8')).toContain("import { Title } from './scenes/Title'");
+    expect(JSON.parse(readFileSync(join(dir, 'tsconfig.json'), 'utf8')).include).toEqual(['src']);
+    expect(r.json.next).toEqual(expect.arrayContaining(['npm install']));
+  });
+
+  it('uses the current directory by default and names the project after it', async () => {
+    const dir = join(scratch(), 'Cool_Reel!');
+    mkdirSync(dir);
+    const here = process.cwd();
+    process.chdir(dir);
+    try {
+      const r = await cli('init', '--json');
+      expect(r.code).toBe(0);
+      expect(r.json.next).not.toContain('cd .');
+    } finally {
+      process.chdir(here);
+    }
+    expect(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).name).toBe('cool_reel');
+  });
+
+  it('never overwrites a file: it skips it and says so', async () => {
+    const dir = scratch();
+    mkdirSync(join(dir, 'src'));
+    writeFileSync(join(dir, 'src/index.tsx'), '// mine');
+    writeFileSync(join(dir, 'package.json'), '{"name":"mine"}');
+    const r = await cli('init', dir, '--json');
+    expect(r.code).toBe(0);
+    expect(r.json.skipped).toEqual(['src/index.tsx', 'package.json']);
+    expect(r.json.created).not.toContain('src/index.tsx');
+    expect(readFileSync(join(dir, 'src/index.tsx'), 'utf8')).toBe('// mine');
+    expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe('{"name":"mine"}');
+    expect(existsSync(join(dir, 'src/scenes/Title.tsx'))).toBe(true);
+    expect((await cli('init', dir)).text).toContain('skipped 10 that already exist: src/index.tsx');
+  });
+
+  it('with --html makes html/index.html and no src/', async () => {
+    const dir = scratch();
+    const r = await cli('init', dir, '--html', '--json');
+    expect(r.code).toBe(0);
+    expect(r.json.entry).toBe('html/index.html');
+    expect(files(dir)).toEqual([
+      '.gitignore',
+      'html',
+      'html/index.html',
+      'out',
+      'package.json',
+      'public',
+      'public/audio',
+      'public/audio/.gitkeep',
+      'public/fonts',
+      'public/fonts/.gitkeep',
+      'public/images',
+      'public/images/.gitkeep',
+      'public/video',
+      'public/video/.gitkeep',
+    ]);
+    const html = readFileSync(join(dir, 'html/index.html'), 'utf8');
+    expect(html).toContain('data-composition-id="main"');
+    expect(html).toContain('window.__timelines = { main: tl }');
+    const scripts = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).scripts;
+    expect(scripts.still).toBe('kinetograph still html/index.html 15');
+    expect(scripts.lint).toBe('kinetograph lint html/index.html');
+    expect(scripts.check).toBeUndefined();
+  });
+
+  it('refuses a file, or a file where a folder is needed, and writes nothing', async () => {
+    const base = scratch();
+    const file = join(base, 'a-file');
+    writeFileSync(file, '');
+    const r = await cli('init', file, '--json');
+    expect(r.code).toBe(1);
+    expect(r.json.error).toEqual({ code: 'INVALID_ARG', message: `${file} is a file, not a folder` });
+
+    const dir = join(base, 'proj');
+    mkdirSync(dir);
+    writeFileSync(join(dir, 'src'), '');
+    const clash = await cli('init', dir, '--json');
+    expect(clash.json.error).toEqual({ code: 'INVALID_ARG', message: `${join(dir, 'src')} is a file, not a folder` });
+    expect(files(dir)).toEqual(['src']);
+  });
+
+  it('shows in --help', async () => {
+    expect((await cli('--help')).text).toMatch(/^ {2}init /m);
+  });
+});
+
 describe('default output paths', () => {
   let calls: Calls;
   beforeEach(() => {

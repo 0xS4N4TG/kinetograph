@@ -4,6 +4,7 @@ import { compositions, effects } from './basic.js';
 import { doctor } from './doctor.js';
 import { fetchDeps } from './fetch-deps.js';
 import { check, inspect, lint } from './check.js';
+import { init } from './init.js';
 import { mcp } from './mcp.js';
 import { plugins } from './plugins.js';
 import { render, still } from './render.js';
@@ -15,6 +16,7 @@ import type { Command } from './types.js';
 
 /** Every command, in the order of packages/cli/skills/kinetograph/references/AUTHORING.md §9. */
 export const commands: Command[] = [
+  init,
   compositions,
   still,
   render,
