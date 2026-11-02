@@ -47,6 +47,24 @@ describe('getAudioData and its hooks', () => {
     expect(calls).toEqual(['tone.wav']);
   });
 
+  it('decode once per sample rate and give each rate its own data (Remotion 4.0.540)', async () => {
+    const calls: string[] = [];
+    setAudioDecoder((path, sampleRate) => {
+      calls.push(`${path}@${sampleRate}`);
+      return { sampleRate, channels: [new Float32Array(sampleRate)] };
+    });
+    const at48 = await getAudioData('tone.wav');
+    const at22 = await getAudioData('tone.wav', { sampleRate: 22050 });
+    expect(at48.sampleRate).toBe(RATE);
+    expect(at22.sampleRate).toBe(22050);
+    expect(at22.durationInSeconds).toBe(1);
+    expect(at22.resultId).not.toBe(at48.resultId);
+    expect(await getAudioData('tone.wav', { sampleRate: 22050 })).toBe(at22);
+    expect(await getAudioData('tone.wav', { sampleRate: RATE })).toBe(at48);
+    expect(calls).toEqual([`tone.wav@${RATE}`, 'tone.wav@22050']);
+    await expect(getAudioData('tone.wav', { sampleRate: 0 })).rejects.toThrow(/sampleRate/);
+  });
+
   it('fail clearly for a file with no sound and for a URL', async () => {
     serve({ 'silent.mp4': [] });
     await expect(getAudioData('silent.mp4')).rejects.toThrow(/no audio stream/);
