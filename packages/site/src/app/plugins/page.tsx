@@ -78,7 +78,7 @@ export default function PluginsPage() {
         {groups.map((g, n) => (
           <div key={g.id} className={n === 0 ? 'mt-8' : 'mt-16'}>
             <h3 id={`kind-${g.id}`} className="scroll-mt-8 border-b border-ink/15 pb-2 font-dm text-[22px] leading-tight font-bold tracking-[-0.03em] text-ink">
-              {g.title} <span className="font-jb text-[12px] font-medium tracking-[0.04em] text-mute">{g.items.length}</span>
+              {g.title} <span className="font-jb text-[12px] font-medium tracking-[0.04em] text-mute">({g.items.length})</span>
             </h3>
             <ul className={componentGrid}>
               {g.items.map((t, i) => (
