@@ -45,3 +45,24 @@ describe('motion components in the catalog', () => {
     }
   });
 });
+
+const { tastes } = JSON.parse(readFileSync(join(site, 'content/catalog.json'), 'utf8')) as { tastes: Omit<Entry, 'category'>[] };
+
+describe('tastes in the catalog', () => {
+  it('has unique ids, a sentence each, and its clip and poster on disk', () => {
+    expect(new Set(tastes.map((t) => t.id)).size).toBe(tastes.length);
+    for (const t of tastes) {
+      expect(t.description, t.id).not.toBe('');
+      expect(t.hero, t.id).not.toBeNull();
+      expect(existsSync(join(site, 'public', t.hero!.video)), t.hero!.video).toBe(true);
+      expect(existsSync(join(site, 'public', t.hero!.src)), t.hero!.src).toBe(true);
+    }
+  });
+
+  it('says nothing about the private repository, a clone, or a source it was modelled on', () => {
+    const text = JSON.stringify(tastes.map((t) => [t.title, t.description])).toLowerCase();
+    for (const word of ['kinetograph-effects', 'github.com', 'open source', 'clone', 'remake', 'seamless', 'stunning', 'elevate', 'robust']) {
+      expect(text, word).not.toContain(word);
+    }
+  });
+});

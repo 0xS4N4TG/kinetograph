@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 
-import { KINDS, plugins, components } from '@/lib/catalog';
+import { KINDS, plugins, components, tastes } from '@/lib/catalog';
 import { CatalogPage, Draws, oneLine, Tile } from '@/sections/catalog';
 import { Heading } from '@/sections/heading';
 import { Label, body, link } from '@/sections/shared';
@@ -35,6 +35,8 @@ const groups = [
   { id: 'scenes', title: 'Scenes', items: scenes },
   ...KINDS.map((k) => ({ id: k.id, title: k.title, items: components.filter((c) => c.category === k.id) })),
 ].filter((g) => g.items.length > 0);
+/** The tastes follow the components as one more group; their clips are portrait, so the cards are narrower. */
+const tasteGrid = 'mt-6 grid grid-cols-1 gap-x-8 gap-y-12 md:grid-cols-3 md:items-start';
 
 export default function PluginsPage() {
   return (
@@ -73,6 +75,11 @@ export default function PluginsPage() {
                 {g.title}
               </a>
             ))}
+            {tastes.length > 0 && (
+              <a href="#kind-tastes" className={`${link} kc-press inline-block`}>
+                Tastes
+              </a>
+            )}
           </nav>
         </div>
         {groups.map((g, n) => (
@@ -89,6 +96,21 @@ export default function PluginsPage() {
             </ul>
           </div>
         ))}
+        {tastes.length > 0 && (
+          <div className="mt-16">
+            <h3 id="kind-tastes" className="scroll-mt-8 border-b border-ink/15 pb-2 font-dm text-[22px] leading-tight font-bold tracking-[-0.03em] text-ink">
+              Tastes <span className="font-jb text-[12px] font-medium tracking-[0.04em] text-mute">({tastes.length})</span>
+            </h3>
+            <p className="mt-3 max-w-[62ch] text-[15px] leading-[1.5] text-ink/75">A taste is a whole style for a video: its colours, type, motion and cuts.</p>
+            <ul className={tasteGrid}>
+              {tastes.map((t, i) => (
+                <Tile key={t.id} href={`/tastes/${t.id}/`} title={t.title} clip={t.hero} index={i % 3} className="md:max-w-[19rem]">
+                  <p className="line-clamp-3 text-[15px] leading-[1.5] text-ink/75">{oneLine(t.description)}</p>
+                </Tile>
+              ))}
+            </ul>
+          </div>
+        )}
         <p className="mt-16 text-[14px] text-mute">Photos: NASA, public domain.</p>
       </section>
     </CatalogPage>

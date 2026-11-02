@@ -26,8 +26,8 @@ export const oneLine = (text: string) => text.split(/(?<=[.!?])\s/)[0];
  * Small links above a page's heading so the catalog can be browsed without the back button: the section this page
  * belongs to and its own name on the left, the other section on the right.
  */
-export function Crumbs({ section: sec, current }: { section: 'plugins' | 'components'; current?: string }) {
-  const here = sec === 'plugins' ? { href: '/plugins/', name: 'Plugins' } : { href: '/plugins/#components', name: 'Components' };
+export function Crumbs({ section: sec, current }: { section: 'plugins' | 'components' | 'tastes'; current?: string }) {
+  const here = sec === 'plugins' ? { href: '/plugins/', name: 'Plugins' } : sec === 'tastes' ? { href: '/plugins/#kind-tastes', name: 'Tastes' } : { href: '/plugins/#components', name: 'Components' };
   const other = sec === 'plugins' ? { href: '/plugins/#components', name: 'Components' } : { href: '/plugins/', name: 'Plugins' };
   const cls = `${link} kc-press inline-block`;
   return (

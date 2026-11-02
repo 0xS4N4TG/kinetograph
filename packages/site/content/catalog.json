@@ -10035,5 +10035,91 @@
         }
       ]
     }
+  ],
+  "tastes": [
+    {
+      "id": "archive",
+      "title": "Archive",
+      "description": "Period photographs drift in layers under film flicker and dust, with typed dates and captions.",
+      "hero": {
+        "src": "/catalog/tastes/archive/hero.webp",
+        "w": 720,
+        "h": 1280,
+        "from": "effects/tastes/archive-reel/out/hold-still.mp4",
+        "at": 1,
+        "video": "/catalog/tastes/archive/hero.mp4",
+        "len": 4
+      }
+    },
+    {
+      "id": "collage",
+      "title": "Collage",
+      "description": "Paper cut-outs and torn labels sit over an old newspaper page and move in stop motion.",
+      "hero": {
+        "src": "/catalog/tastes/collage/hero.webp",
+        "w": 720,
+        "h": 1280,
+        "from": "effects/tastes/collage-reel/out/collage-intro.mp4",
+        "at": 1.6,
+        "video": "/catalog/tastes/collage/hero.mp4",
+        "len": 1.5
+      }
+    },
+    {
+      "id": "explainer",
+      "title": "Explainer",
+      "description": "Cut-out objects on textured paper under big type, with one colour for the key word and quick wipes between beats.",
+      "hero": {
+        "src": "/catalog/tastes/explainer/hero.webp",
+        "w": 720,
+        "h": 1280,
+        "from": "effects/tastes/explainer-tastes/out/all-tastes.mp4",
+        "at": 2,
+        "video": "/catalog/tastes/explainer/hero.mp4",
+        "len": 4
+      }
+    },
+    {
+      "id": "papercut",
+      "title": "Papercut",
+      "description": "A toy-like paper diorama of cut-paper characters and props, with the camera circling the set.",
+      "hero": {
+        "src": "/catalog/tastes/papercut/hero.webp",
+        "w": 720,
+        "h": 1280,
+        "from": "effects/tastes/papercut-reel/out/papercut-reel.mp4",
+        "at": 2,
+        "video": "/catalog/tastes/papercut/hero.mp4",
+        "len": 4
+      }
+    },
+    {
+      "id": "print",
+      "title": "Print",
+      "description": "Flat inks print in turn over paper, with a dot screen that jumps and a slight misregistration.",
+      "hero": {
+        "src": "/catalog/tastes/print/hero.webp",
+        "w": 720,
+        "h": 1280,
+        "from": "effects/tastes/print-reel/out/one-ink.mp4",
+        "at": 1,
+        "video": "/catalog/tastes/print/hero.mp4",
+        "len": 4
+      }
+    },
+    {
+      "id": "vox-style",
+      "title": "Vox style",
+      "description": "Tinted, halftoned photos on grid paper, caps that fill yellow, and numbers that roll like an odometer.",
+      "hero": {
+        "src": "/catalog/tastes/vox-style/hero.webp",
+        "w": 720,
+        "h": 1280,
+        "from": "effects/tastes/vox-reel/out/krakatoa.mp4",
+        "at": 1,
+        "video": "/catalog/tastes/vox-style/hero.mp4",
+        "len": 4
+      }
+    }
   ]
 }
