@@ -390,17 +390,20 @@ function resolve(files, expr) {
 }
 
 /** The rows for one schema field: the field itself, then (for a z.object) its own fields as `field.sub`. */
-function rowsFor(files, name, expr, dflt) {
+function rowsFor(files, name, expr, dflt, parentDoc = '') {
   const e = resolve(files, expr);
   const isColour = /^hex\b/.test(expr) || /regex\(\/\^#\[0-9a-fA-F\]\{6\}/.test(e);
-  const row = { name, type: isColour ? 'colour' : zodType(e, files), default: shortDefault(dflt), doc: describeOf(e) };
+  // A nested field with no .describe of its own is named in words, with its object's text after it when that says something.
+  const words = name.split('.').pop().replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+  const own = describeOf(e) || `${words.charAt(0).toUpperCase() + words.slice(1)}.${parentDoc.length > 8 ? ` ${parentDoc}` : ''}`;
+  const row = { name, type: isColour ? 'colour' : zodType(e, files), default: shortDefault(dflt), doc: own };
   const o = e.match(/^z\s*\.object\(\s*\{/);
   const body = o ? braceBody(e, e.indexOf('{', o.index)) : null;
   if (body === null) return [row];
   // A nested object is listed as its fields (`colors.ink`), each with its default when the defaults spell the object out.
   const dbody = dflt.trim().startsWith('{') ? braceBody(dflt, dflt.indexOf('{')) : null;
   const dv = new Map(dbody === null ? [] : fieldsOf(files, dbody).map((f) => [f.key, f.expr]));
-  return fieldsOf(files, body).flatMap((f) => rowsFor(files, `${name}.${f.key}`, f.expr, dv.get(f.key) ?? ''));
+  return fieldsOf(files, body).flatMap((f) => rowsFor(files, `${name}.${f.key}`, f.expr, dv.get(f.key) ?? '', describeOf(e)));
 }
 
 /**
@@ -411,13 +414,17 @@ export function readCompositions(dir) {
   const files = readdirSync(dir)
     .filter((f) => /\.tsx?$/.test(f))
     .map((f) => read(join(dir, f)));
-  const index = read(join(dir, 'index.tsx'));
-  return [...index.matchAll(/<Composition\b([\s\S]*?)\/>/g)].flatMap((m) => {
+  // Compositions are registered in index.tsx and, in some kinds, in a scenes file that index.tsx renders.
+  const registrars = files.filter((src) => /<Composition\b/.test(src)).join('\n');
+  const seen = new Set();
+  return [...registrars.matchAll(/<Composition\b([\s\S]*?)\/>/g)].flatMap((m) => {
     const attrs = m[1];
     const id = attrs.match(/\bid=["'](\w+)["']/)?.[1];
-    const schema = attrs.match(/\bschema=\{(\w+)\}/)?.[1];
+    // The schema is an attribute, or comes in through a shared `{...common}` object (`schema: name`).
+    const schema = attrs.match(/\bschema=\{(\w+)\}/)?.[1] ?? (/\{\.\.\.\w+\}/.test(attrs) ? registrars.match(/\bschema:\s*(\w+)/)?.[1] : undefined);
     const defaults = attrs.match(/\bdefaultProps=\{(\w+)\}/)?.[1];
-    if (!id) return [];
+    if (!id || seen.has(id)) return [];
+    seen.add(id);
     const body = schema ? literalOf(files, schema) : null;
     const dbody = defaults ? literalOf(files, defaults) : null;
     const dv = new Map(dbody === null ? [] : fieldsOf(files, dbody).map((f) => [f.key, f.expr]));

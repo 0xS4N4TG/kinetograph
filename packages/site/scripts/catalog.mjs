@@ -1,7 +1,8 @@
 // Writes content/catalog.json from the private kinetograph-effects checkout: its plugins and its reel components.
-//   KINETOGRAPH_EFFECTS=/path/to/kinetograph-effects node scripts/catalog.mjs [--media] [--kinds]
+//   KINETOGRAPH_EFFECTS=/path/to/kinetograph-effects node scripts/catalog.mjs [--media] [--kinds] [--tastes]
 // --kinds touches only the motion components (components/<kind>/ of the checkout, listed in KIND_DIRS): it keeps every plugin and
 // every other component of the committed catalog.json as it is, replaces the kind components, and with --media cuts only their clips.
+// --tastes does the same for the tastes (kit/tastes/ of the checkout, listed in TASTE_COPY).
 // Without the checkout it prints a message and leaves the committed catalog.json alone.
 // --media also extracts the stills and clips named in catalog-copy.mjs to public/catalog/. A still is a frame of a render in
 // the checkout's effects/<x>/out/ (or a png) as webp, 1280 px on the long side and under 250 KB. A clip is a cut of a render,
@@ -12,7 +13,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEMO_TEXT, EXPORT_NOTES, GENE_NOTES, PLUGIN_COPY, COMPONENT_COPY, KIND_COPY, KIND_DIRS } from './catalog-copy.mjs';
+import { DEMO_TEXT, EXPORT_NOTES, GENE_NOTES, PLUGIN_COPY, COMPONENT_COPY, KIND_COPY, KIND_DIRS, TASTE_COPY } from './catalog-copy.mjs';
 import { compositionIds, readCompositions, readExports, readHexed, readKinetic, readPaper, readVj } from './catalog-source.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -21,7 +22,8 @@ const out = join(here, '../content/catalog.json');
 const pub = join(here, '../public');
 const withMedia = process.argv.includes('--media');
 const kindsOnly = process.argv.includes('--kinds');
-if (withMedia && !kindsOnly && existsSync(join(root, 'plugins'))) rmSync(join(pub, 'catalog'), { recursive: true, force: true });
+const tastesOnly = process.argv.includes('--tastes');
+if (withMedia && !kindsOnly && !tastesOnly && existsSync(join(root, 'plugins'))) rmSync(join(pub, 'catalog'), { recursive: true, force: true });
 
 if (!existsSync(join(root, 'plugins'))) {
   console.log(`catalog: no kinetograph-effects at ${root}; set KINETOGRAPH_EFFECTS. Keeping ${out}.`);
@@ -310,6 +312,22 @@ function buildCore() {
 }
 
 /**
+ * A prop's doc as the site shows it: the checkout's comments sometimes say what a number was measured against or whose chart
+ * palette it follows. That never goes on the site, so those parentheses and sentences are dropped and the rest is kept.
+ */
+function cleanDoc(doc) {
+  const t = doc
+    .replace(/\s*\([^()]*\b(?:reference|bklit)\b[^()]*\)/gi, '')
+    .replace(/\bbklit\s+/gi, '')
+    .replace(/\bthe reference (curve|spacing)\b/gi, 'the default $1')
+    .split(/(?<=\.)\s+/)
+    .filter((sentence) => !/\breference\b/i.test(sentence))
+    .join(' ')
+    .trim();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+/**
  * The motion components: one entry per composition a components/<kind>/ folder registers and KIND_COPY has copy for, with the
  * kind as `category` and the props read from its zod schema. Maps are not in KIND_DIRS yet.
  */
@@ -321,7 +339,9 @@ function buildKinds() {
       console.log(`catalog: no components/${kind}/index.tsx; skipped`);
       continue;
     }
-    for (const { id: compId, props } of readCompositions(dir)) {
+    // KIND_COPY's order decides, not where the file registers them.
+    const order = (c) => Object.keys(KIND_COPY).indexOf(c.id);
+    for (const { id: compId, props } of readCompositions(dir).sort((a, b) => order(a) - order(b))) {
       const c = KIND_COPY[compId];
       if (!c) {
         console.log(`catalog: no copy for ${kind}/${compId}; left out`);
@@ -340,16 +360,35 @@ function buildKinds() {
         compositions: [compId],
         hero: hasPreview ? clip({ from, at: c.at, len: c.len, kb: 300 }, `components/${id}/hero`) : null,
         category: kind,
-        props,
+        props: props.map((p) => ({ ...p, doc: cleanDoc(p.doc) })),
       });
     }
   }
   return found;
 }
 
+/** The tastes: one entry per TASTE_COPY row whose kit/tastes/<dir> and demo render exist; the rest are left out with a message. */
+function buildTastes() {
+  const found = [];
+  for (const [id, c] of Object.entries(TASTE_COPY)) {
+    const hasKit = existsSync(join(root, 'kit/tastes', c.dir));
+    const hasRender = existsSync(join(root, c.src));
+    if (!hasKit || !hasRender) {
+      console.log(`catalog: taste ${id} left out (${hasKit ? 'no render ' + c.src : 'no kit/tastes/' + c.dir})`);
+      continue;
+    }
+    found.push({ id, title: c.title, description: c.description, hero: clip({ from: c.src, at: c.at, len: c.len, kb: 300 }, `tastes/${id}/hero`) });
+  }
+  return found;
+}
+
 let plugins, components, skipped;
-const kinds = buildKinds();
-if (kindsOnly) {
+const tastes = buildTastes();
+const kinds = tastesOnly ? [] : buildKinds();
+if (tastesOnly) {
+  ({ plugins, components } = JSON.parse(readFileSync(out, 'utf8')));
+  skipped = [];
+} else if (kindsOnly) {
   // Everything else stays as committed; the kind components replace the ones the last run wrote, in KIND_DIRS order after the rest.
   const kept = JSON.parse(readFileSync(out, 'utf8'));
   plugins = kept.plugins;
@@ -360,7 +399,7 @@ if (kindsOnly) {
   components.push(...kinds);
 }
 
-writeFileSync(out, JSON.stringify({ plugins, components }, null, 2) + '\n');
-console.log(`catalog: ${plugins.length} plugins, ${components.length} components -> ${out}`);
+writeFileSync(out, JSON.stringify({ plugins, components, tastes }, null, 2) + '\n');
+console.log(`catalog: ${plugins.length} plugins, ${components.length} components, ${tastes.length} tastes -> ${out}`);
 if (withMedia) console.log(`catalog: ${clipCount} clips, ${(mediaBytes / 1048576).toFixed(1)} MB of media added (clips and their posters, presets not counted)`);
 if (skipped.length) console.log(`catalog: skipped without index.tsx: ${skipped.join(', ')}`);

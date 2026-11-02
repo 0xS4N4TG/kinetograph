@@ -114,12 +114,21 @@ export const KINDS = [
   { id: 'charts', title: 'Charts' },
   { id: 'showcase', title: 'Showcase' },
   { id: 'backgrounds', title: 'Backgrounds' },
-  { id: 'audio', title: 'Audio' },
+  { id: 'audio-viz', title: 'Audio' },
   { id: 'effects', title: 'Effects' },
 ] as const;
 
 export const plugins = catalog.plugins as unknown as Plugin[];
 export const components = catalog.components as unknown as Component[];
+
+/** A taste: a reusable style (palette, type, motion), shown by a cut of its demo reel. */
+export interface Taste {
+  id: string;
+  title: string;
+  description: string;
+  hero: Clip | null;
+}
+export const tastes = (catalog as unknown as { tastes?: Taste[] }).tastes ?? [];
 
 /** A plugin's title by its package name. */
 export const pluginTitle = (name: string) => plugins.find((p) => p.name === name)?.title ?? name;

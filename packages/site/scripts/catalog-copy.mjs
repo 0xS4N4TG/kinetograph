@@ -411,7 +411,7 @@ export const EXPORT_NOTES = {
  * The motion components, one folder of the private checkout per kind (components/<dir>/). Maps are left out for now.
  * The order here is the order on the site.
  */
-export const KIND_DIRS = ['grids', 'carousels', 'charts', 'showcase', 'backgrounds', 'audio', 'effects'];
+export const KIND_DIRS = ['grids', 'carousels', 'charts', 'showcase', 'backgrounds', 'audio-viz', 'effects'];
 
 /**
  * Copy and media for each composition a kind folder registers, keyed by composition id. `preview` is the render in the
@@ -435,6 +435,7 @@ export const KIND_COPY = {
   ReelWall: { title: 'Spinning card ring', description: 'A 3D ring of tall cards spins to rest on one, which steps forward with its name.', preview: 'reel-wall.mp4', at: 1.5, len: 4 },
   OrbitGallery: { title: 'Orbit gallery', description: 'Nine photos spiral in around a title and settle on an ellipse.', preview: 'orbit-gallery.mp4', at: 0, len: 4 },
   GalleryPush: { title: 'Gallery wall push-in', description: 'A wall of photo columns unrolls from the middle while the camera pushes in.', preview: 'gallery-push.mp4', at: 0.3, len: 4 },
+  ShowcaseDrift: { title: 'Work card drift', description: 'Cards of work slide in behind a headline and settle without a bounce.', preview: 'showcase-drift.mp4', at: 0, len: 3 },
   // charts
   AreaChart: { title: 'Area chart', description: 'A gradient area draws in under a trucking camera and lands on a tooltip. Light or dark.', preview: 'area-chart.mp4', at: 0.2, len: 4 },
   LineTicker: { title: 'Line ticker', description: 'A climbing line with the camera chasing its head and a large live number above it. Light or dark.', preview: 'line-ticker.mp4', at: 0.3, len: 4 },
@@ -443,24 +444,54 @@ export const KIND_COPY = {
   ScatterBloom: { title: 'Scatter bloom', description: 'Points bloom onto a plane in coloured groups. The camera then tips and orbits to show their heights.', preview: 'scatter-bloom.mp4', at: 1, len: 4 },
   HexTally: { title: 'Hexagon tally', description: 'A unit chart of hexagons fills in beside a metric card that counts up.', preview: 'hex-tally.mp4', at: 0.5, len: 4 },
   TallyRise: { title: 'Currency counter', description: 'A currency amount rolls up like an odometer, its wheels locking from left to right.', preview: 'tally-rise.mp4', at: 0.3, len: 4 },
+  RadarChart: { title: 'Radar chart', description: 'A radar chart fills in axis by axis as the camera circles it, then a second series springs open.', preview: 'radar-chart.mp4', at: 1.5, len: 4 },
+  RingChart: { title: 'Ring chart', description: 'Rings fill one at a time with the camera riding each head, then it pulls back on the whole chart.', preview: 'ring-chart.mp4', at: 1.5, len: 4 },
+  FunnelChart: { title: 'Funnel chart', description: 'A funnel blooms stage by stage as the camera moves down it and each number counts up.', preview: 'funnel-chart.mp4', at: 1.5, len: 4 },
+  HeatmapChart: { title: 'Heatmap chart', description: 'A year of activity lights up week by week, then the camera leans in on the busiest day.', preview: 'heatmap-chart.mp4', at: 1.5, len: 4 },
+  SankeyChart: { title: 'Sankey chart', description: 'The camera follows the strongest flow, then every other link draws in around it.', preview: 'sankey-chart.mp4', at: 1.5, len: 4 },
+  CandlestickChart: { title: 'Candlestick chart', description: 'Candles print one by one while the camera rides the newest through a breakout.', preview: 'candlestick-chart.mp4', at: 2, len: 4 },
   // showcase
   ThreePhone: { title: 'Three phones fanned out', description: 'Three tilted phones fan out on an arc from the centre one. Each screen is drawn in, or is your own image.', preview: 'three-phone.mp4', at: 0.1, len: 4 },
   PhonePitch: { title: 'Phone with a pitch', description: 'A headline, a line of body text and a button sit beside a phone that lands with a settle.', preview: 'phone-pitch.mp4', at: 0, len: 4 },
   ScreenTunnel: { title: 'Phone tunnel', description: 'Phones recede down a corridor on either side of a headline.', preview: 'screen-tunnel.mp4', at: 0.3, len: 4 },
   LaptopOpen: { title: 'Laptop opening', description: 'A 3D laptop lid opens, the screen wakes, and the camera moves into the app.', preview: 'laptop-open.mp4', at: 0.5, len: 4.5 },
   ScreenTouch: { title: 'Touch to the next screen', description: 'A finger presses a button and the next screen opens outward from the touch point.', preview: 'screen-touch.mp4', at: 0.5, len: 4 },
+  CheckoutPush: { title: 'Checkout push', description: 'A phone checkout where the amount lands and the camera pushes in.', preview: 'checkout-push.mp4', at: 0, len: 2 },
+  VaultCount: { title: 'Wallet count-up', description: 'A wallet balance counts up beside a stack of payment cards.', preview: 'vault-count.mp4', at: 0, len: 3 },
+  BuildOut: { title: 'Send button zoom-out', description: 'A send button zooms out to show the whole app around it.', preview: 'build-out.mp4', at: 0, len: 3.8 },
+  RecapDial: { title: 'Year recap dial', description: 'A year in review on a dial that snaps month by month, with a sticker for each.', preview: 'recap-dial.mp4', at: 0.5, len: 4 },
+  LaunchFilm: { title: 'Launch film', description: 'A twenty-second product launch film, from a typed headline to the final mark.', preview: 'launch-film.mp4', at: 0, len: 6 },
   // backgrounds
   GrainGradient: { title: 'Grain gradient', description: 'A mesh gradient drifts under film grain. It loops with no join at whole-number speeds.', preview: 'grain-gradient.mp4', at: 0, len: 4 },
   Paper: { title: 'Paper texture', description: 'A paper height field lit by a raking light that circles slowly. It loops with no join at whole-number speeds.', preview: 'paper.mp4', at: 0, len: 4 },
   DotField: { title: 'Halftone dot field', description: 'A grid of halftone dots breathes on a ring-shaped wave. It loops with no join at whole-number speeds.', preview: 'dot-field.mp4', at: 0, len: 4 },
   Aurora: { title: 'Aurora ribbons', description: 'Ribbons of light drift and are blended so that overlaps never blow out. It loops with no join at whole-number speeds.', preview: 'aurora.mp4', at: 0, len: 4 },
-  // audio
-  Waveform: { title: 'Waveform', description: 'A mirrored waveform with a playhead. The bars near the playhead rise with the live loudness. It is drawn from the audio file itself.', preview: 'waveform.mp4', at: 0, len: 4 },
-  SpectrumBars: { title: 'Spectrum bars', description: 'Forty-eight frequency bands, spaced on a log scale, with a reflection and falling peak caps. It is drawn from the audio file itself.', preview: 'spectrum-bars.mp4', at: 2, len: 4 },
-  RadialVisualizer: { title: 'Radial audio visualiser', description: 'A ring of bars round a cover image that swells on the bass. It is drawn from the audio file itself.', preview: 'radial-visualizer.mp4', at: 1, len: 4 },
+  AuroraVeil: { title: 'Aurora veil', description: 'Skewed curtains of colour drift in from the top-right corner. It loops with no join.', preview: 'aurora-veil.mp4', at: 0, len: 4 },
+  LiquidGradient: { title: 'Liquid gradient', description: 'A plum, crimson and amber gradient swirls and settles. It loops with no join.', preview: 'liquid-gradient.mp4', at: 0, len: 4 },
+  GrainFlow: { title: 'Grain flow', description: 'Sheets of cobalt light flow past a navy valley under film grain. It loops with no join.', preview: 'grain-flow.mp4', at: 0, len: 4 },
+  DriftGradient: { title: 'Drift gradient', description: 'Soft pools of blue and cyan drift like defocused light through water. It loops with no join.', preview: 'drift-gradient.mp4', at: 0, len: 4 },
+  TideGradient: { title: 'Tide gradient', description: 'Pools of cyan, mint and steel blue swell and sink into black. It loops with no join.', preview: 'tide-gradient.mp4', at: 0, len: 4 },
+  GraphPaperTall: { title: 'Graph paper', description: 'A faint squared grid on off-white paper that fades towards the edges, cut tall for phones. It loops with no join.', preview: 'graph-paper-tall.mp4', at: 0, len: 4 },
+  // audio-viz
+  AudioScope: { title: 'Audio scope', description: 'An oscilloscope draws the sound as red and yellow traces over a dark grid. It is drawn from the audio file itself.', preview: 'AudioScope.mp4', at: 1, len: 4 },
+  AudioPlasma: { title: 'Audio plasma', description: 'A white-hot trace glows inside blue copies, with the running time in huge soft numerals. It is drawn from the audio file itself.', preview: 'AudioPlasma.mp4', at: 1, len: 4 },
   // effects
   LightLeak: { title: 'Light leak', description: 'A warm, streaked leak of light from one edge. It can cover a cut between two clips.', preview: 'light-leak.mp4', at: 1.2, len: 3.5 },
   Halation: { title: 'Halation', description: 'A red-orange halo round the bright parts of a picture, with film grain on top.', preview: 'halation.mp4', at: 0, len: 3 },
   GlassLens: { title: 'Glass lens', description: 'A glass ball moves over the picture and refracts what is behind it.', preview: 'glass-lens.mp4', at: 0, len: 4 },
   FilmBurn: { title: 'Film burn transition', description: 'A heat front scorches the first picture and reveals the second.', preview: 'film-burn.mp4', at: 1, len: 3 },
+};
+
+/**
+ * The tastes: reusable styles, one per folder of the checkout's kit/tastes/ (`dir`). The card plays a cut of the demo reel's
+ * render in effects/tastes/ (`src`, then `at` and `len` in seconds). The display name and the sentence are written here.
+ * The order here is the order on the site.
+ */
+export const TASTE_COPY = {
+  archive: { dir: 'archive', title: 'Archive', description: 'Period photographs drift in layers under film flicker and dust, with typed dates and captions.', src: 'effects/tastes/archive-reel/out/hold-still.mp4', at: 1, len: 4 },
+  collage: { dir: 'collage', title: 'Collage', description: 'Paper cut-outs and torn labels sit over an old newspaper page and move in stop motion.', src: 'effects/tastes/collage-reel/out/collage-intro.mp4', at: 1.6, len: 1.5 },
+  explainer: { dir: 'explainer', title: 'Explainer', description: 'Cut-out objects on textured paper under big type, with one colour for the key word and quick wipes between beats.', src: 'effects/tastes/explainer-tastes/out/all-tastes.mp4', at: 2, len: 4 },
+  papercut: { dir: 'papercut', title: 'Papercut', description: 'A toy-like paper diorama of cut-paper characters and props, with the camera circling the set.', src: 'effects/tastes/papercut-reel/out/papercut-reel.mp4', at: 2, len: 4 },
+  print: { dir: 'print', title: 'Print', description: 'Flat inks print in turn over paper, with a dot screen that jumps and a slight misregistration.', src: 'effects/tastes/print-reel/out/one-ink.mp4', at: 1, len: 4 },
+  'vox-style': { dir: 'vox', title: 'Vox style', description: 'Tinted, halftoned photos on grid paper, caps that fill yellow, and numbers that roll like an odometer.', src: 'effects/tastes/vox-reel/out/krakatoa.mp4', at: 1, len: 4 },
 };
