@@ -473,7 +473,7 @@ pub struct Settings {
     /// An ffmpeg encoder name; default per codec (`resolve`).
     pub encoder: Option<String>,
     pub crf: Option<f64>,
-    /// libx264's and libx265's `-preset` (`X264_PRESETS`); default medium.
+    /// libx264's and libx265's `-preset` (`X264_PRESETS`); default veryfast.
     pub x264_preset: Option<String>,
     /// Bits per second.
     pub video_bitrate: Option<usize>,
@@ -651,8 +651,9 @@ pub fn resolve(
     };
 
     // x264 preset.
+    // veryfast, not x264's medium: about 40% less encode time on the launch film for about 1 dB PSNR.
     let x264_preset = match &settings.x264_preset {
-        None => "medium",
+        None => "veryfast",
         Some(name) => X264_PRESETS
             .iter()
             .copied()
@@ -2444,7 +2445,7 @@ mod tests {
         };
         assert_eq!(
             with(None, "a.mp4", None, None).unwrap().x264_preset,
-            "medium"
+            "veryfast"
         );
         for preset in X264_PRESETS {
             assert_eq!(

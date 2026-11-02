@@ -9,7 +9,7 @@ Kinetograph is in beta, so APIs can still change between versions. The same list
 
 ### Added
 
-- `--x264-preset <preset>` (`ultrafast` to `placebo`, default `medium`) sets the `-preset` of libx264 and libx265, as Remotion's `x264Preset` does.
+- `--x264-preset <preset>` (`ultrafast` to `placebo`) sets the `-preset` of libx264 and libx265, as Remotion's `x264Preset` does. The default is `veryfast`: on the launch film it encodes in 28 s instead of medium's 49 s, for about 1 dB less PSNR. `medium` gives Remotion's and HyperFrames' output.
 - Plugins: a package whose `package.json` has a `kinetograph` field (`skill`, `panel`) is found from the project's dependencies. `kinetograph plugins [project]` and the `plugins` MCP tool list each one with the path of its `SKILL.md`, which agents read before using it. See `/docs/guides/plugins/`.
 - `CompositionInfo.propsSchema`: the JSON Schema of the composition's zod 4 `schema`, omitted when there is no schema or it cannot be converted. The Studio Props tab draws fields from it: a select for an enum, a slider and number box for a number with `min` and `max`, a switch for a boolean, a colour input for `zColor()`, a text area for `zTextarea()`, a labelled group for an object, and the field's `description` as helper text. A field with `kinetographPanel` meta is drawn by that plugin's panel, with an error box if the panel fails.
 - Studio presets: the Props tab has a Presets menu and a Save preset button. A preset is a file at `presets/<composition id>/<name>.json` beside the entry, served by `GET /api/presets` and `PUT /api/presets/<id>/<name>`.

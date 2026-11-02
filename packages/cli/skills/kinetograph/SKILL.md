@@ -192,7 +192,7 @@ One line each; the pointer has the detail. `kinetograph doctor` alone lists the 
   external `ffmpeg` program: the bundled GPL one (`libx264`, `libx265`), or your own. `KINETOGRAPH_FFMPEG=$(which ffmpeg)`
   makes your system ffmpeg's encoders available, including `h264_vaapi`, `hevc_vaapi`, `h264_qsv` and `hevc_qsv` for Intel
   and AMD GPUs on Linux (`--encoder` only; never the default). H.264 defaults to libx264 off macOS hardware; VP9 on macOS
-  and Linux; `--crf`, `--video-bitrate`. AUTHORING.md §9 (render flags), `/docs/ffmpeg-license/`.
+  and Linux; `--crf`, `--video-bitrate`, `--x264-preset` (default `veryfast`; `medium` matches Remotion). AUTHORING.md §9 (render flags), `/docs/ffmpeg-license/`.
 - **SVG files as pictures.** `<Img src={staticFile('a.svg')}>`, `<img>`, `background-image`, `data:` URLs; text inside
   an SVG picture is not drawn (warned). ENGINE.md "SVG files as pictures".
 - **Scene colours** take any CSS colour (`white`, `rgb()`, `hsl()`, `oklch()`, ...), not only hex. SCENE.md, top.
