@@ -423,7 +423,7 @@ Numbers may be plain numbers or keyframe lists (they pass through). Unknown prop
 | Element | Props | JSON |
 |---|---|---|
 | `<Layer>` | `preserve3d`, `layout`, children | `group` |
-| `<Shape>` | `kind` (`rect`, `roundedRect`, `ellipse`, `path`), `width`, `height`, `radius`, `d`, `fill`, `stroke` (`{ color, width }`) | `shape` |
+| `<Shape>` | `kind` (`rect`, `roundedRect`, `ellipse`, `path`), `width`, `height`, `radius`, `d`, `fill`, `stroke` (`{ color, width, cap?, join?, miterLimit?, dashArray?, dashOffset? }`, SCENE.md "shape") | `shape` |
 | `<Rect>` | `width`, `height`, `radius?`, `fill`, `stroke` | `shape` `rect`, or `roundedRect` when `radius > 0` |
 | `<Ellipse>` | `width`, `height`, `fill`, `stroke` | `shape` `ellipse` |
 | `<Path>` | `d`, `fill`, `stroke` | `shape` `path` |

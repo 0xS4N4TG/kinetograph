@@ -79,6 +79,14 @@ describe('common props', () => {
     });
   });
 
+  it('pass a stroke with its cap, join, miter limit and dashes through (#92)', () => {
+    const stroke = { color: '#ffffff', width: 8, cap: 'round', join: 'bevel', miterLimit: 6, dashArray: [16, 8], dashOffset: 4 } as const;
+    expect(layersOf(<Rect id="r" x={20} y={20} width={200} height={100} stroke={{ ...stroke, dashArray: [...stroke.dashArray] }} />)[0]).toMatchObject({
+      type: 'shape',
+      stroke,
+    });
+  });
+
   it('pass keyframe lists through', () => {
     const [layer] = layersOf(<Layer id="k" x={ramp} opacity={ramp} />);
     expect(layer).toMatchObject({ transform: { x: ramp }, opacity: ramp });

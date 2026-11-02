@@ -116,6 +116,8 @@ A shape has a `shape` object, a `fill` and an optional `stroke`:
 
 `shape.kind` is `rect`, `roundedRect`, `ellipse` or `path`. A `path` takes `d`, SVG path data in layer coordinates.
 
+A `stroke` can also take `cap` (`butt`, `round` or `square`), `join` (`miter`, `round` or `bevel`), `miterLimit`, `dashArray` (dash and gap lengths, alternating) and `dashOffset`, as SVG's can.
+
 A text layer names a font from `fonts`:
 
 ```json
