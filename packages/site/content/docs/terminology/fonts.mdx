@@ -3,9 +3,10 @@ title: Fonts
 description: Text uses fonts you register, never the fonts installed on the computer.
 ---
 
-Kinetograph never reads the operating system's fonts. A font is available only after you register it, and you must do so before text uses it.
+Kinetograph never reads the operating system's fonts. In a TSX project, register a font before text uses it.
 
-Google Fonts download once and are kept in `~/.cache/kinetograph/fonts`:
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
 
 ```tsx
 import { loadFont } from '@remotion/google-fonts/Inter';
@@ -13,12 +14,21 @@ import { loadFont } from '@remotion/google-fonts/Inter';
 const { fontFamily } = loadFont('normal', { weights: ['400'] });
 ```
 
-A font file in your project uses `loadFont` from `@remotion/fonts`, with the path from `staticFile`. In a `.json` scene, the `fonts` object maps family names to files.
+  </Tab>
+  <Tab value="HyperFrames">
 
-A character a font lacks falls back only to the symbol fonts that ship with Kinetograph. Scripts such as CJK and Arabic have no bundled font, so load one that has them.
+```html
+<style>#title { font-family: Inter; }</style>
+```
 
-**Coming from Remotion:** the same `loadFont` calls.
-**Coming from HyperFrames:** the 18 families it embeds are built in, and system names like `Arial` map to them as HyperFrames does.
+  </Tab>
+</Tabs>
+
+On a HyperFrames page, the 18 families HyperFrames embeds are built in, and names like `Arial` map to them as in HyperFrames.
+
+Google Fonts download once and are kept in `~/.cache/kinetograph/fonts`. A font file in your project uses `loadFont` from `@remotion/fonts`, with the path from `staticFile`. In a `.json` scene, the `fonts` object maps family names to files.
+
+CJK and Arabic have no bundled font, so load one that has them.
 
 ## See also
 

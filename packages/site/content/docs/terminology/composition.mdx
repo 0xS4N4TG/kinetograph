@@ -3,18 +3,28 @@ title: Composition
 description: A video you can render, with an id, a size, a frame rate and a length.
 ---
 
-A composition is one video in a project. It has an `id`, a `width` and `height`, an `fps` and a `durationInFrames`. It also has a component that draws each frame.
+A composition is one video in a project. It has an `id`, a size, an `fps` and a length. It also has the code that draws each frame.
+
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
 
 ```tsx
-<Composition id="Card" component={Card} durationInFrames={60} fps={30} width={640} height={360} />
+<Composition id="Intro" component={Intro} durationInFrames={90} fps={30} width={1920} height={1080} />
 ```
 
-One project can hold many compositions. Pick one with `--comp <id>`. Without it, the first one is used. List them with `npx kinetograph compositions <entry>`.
+  </Tab>
+  <Tab value="HyperFrames">
 
-A `<Composition>` draws nothing itself. It only declares the video. Ids may use letters, digits, CJK characters and `-`, and each must be unique.
+```html
+<div id="root" data-composition-id="intro" data-width="1920" data-height="1080" data-duration="3">...</div>
+```
 
-**Coming from Remotion:** the same name, the same props.
-**Coming from HyperFrames:** the outermost element with `data-composition-id`, sized by `data-width`, `data-height` and `data-duration`.
+  </Tab>
+</Tabs>
+
+The HyperFrames length is in seconds, at 30 fps. Three seconds is the same 90 frames.
+
+One project can hold many compositions. Pick one with `--comp <id>`. Without it, the first one is used. List them with `npx kinetograph compositions <entry>`. A `<Composition>` draws nothing itself. It only declares the video.
 
 ## See also
 

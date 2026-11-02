@@ -3,7 +3,10 @@ title: Sequence
 description: A piece of the timeline that shows its children from one frame for a set length.
 ---
 
-A sequence shows its children starting at frame `from`, for `durationInFrames` frames. Inside it, the children see their own frame 0 at the moment it starts.
+A sequence shows its children from a start point for a set length. Inside it, the children see their own frame 0 at the moment it starts. A component then does not need to know where it sits in the video.
+
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
 
 ```tsx
 <Sequence from={30} durationInFrames={60}>
@@ -11,12 +14,19 @@ A sequence shows its children starting at frame `from`, for `durationInFrames` f
 </Sequence>
 ```
 
-This means a component does not need to know where it sits in the video. It only reads its own frame.
+  </Tab>
+  <Tab value="HyperFrames">
 
-`Series` and `Loop` build on the same idea. `Series` plays sequences one after another. `Loop` repeats its children. Sound inside a sequence starts when the sequence does.
+```html
+<div id="title" data-start="1" data-duration="2">...</div>
+```
 
-**Coming from Remotion:** the same `Sequence`, with `trimBefore`, `playbackRate` and `loop` as well.
-**Coming from HyperFrames:** a clip, an element with `data-start` and `data-duration`. Those are in seconds, not frames.
+  </Tab>
+</Tabs>
+
+In HyperFrames a sequence is a clip. Its times are in seconds, so 1 second in and 2 seconds long match the 30 and 60 frames.
+
+`Series` plays sequences one after another. `Loop` repeats its children. Sound inside a sequence starts when the sequence does.
 
 ## See also
 
