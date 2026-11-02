@@ -199,7 +199,7 @@ export type ServerMessage =
  */
 export type ChatRecord =
   | { kind: 'event'; event: AgentEvent }
-  | { kind: 'user'; text: string; chips: string[] }
+  | { kind: 'user'; text: string; chips: string[]; images?: string[] }
   | { kind: 'answer'; id: string; optionId: string | null };
 
 // ---- the coding agent (ACP) ----
@@ -224,9 +224,19 @@ export interface AgentPreset {
   command: string;
 }
 
+/**
+ * A picture the person attached to a message. `name` is the file already stored in the project's public/refs (the
+ * upload comes first, `PUT /api/agent/image`); `data` is a smaller copy of it, in base64, for an agent that takes pictures.
+ */
+export interface AgentAttachment {
+  name: string;
+  data?: string;
+  mimeType?: string;
+}
+
 /** What the user says to the agent. `context` is the studio's description of what is selected. */
 export type AgentClientMessage =
-  | { type: 'agent.prompt'; text: string; context: string; image?: { data: string; mimeType: string }; chips?: string[] }
+  | { type: 'agent.prompt'; text: string; context: string; image?: { data: string; mimeType: string }; chips?: string[]; attachments?: AgentAttachment[] }
   | { type: 'agent.cancel' }
   /** Takes a message out of the queue (a prompt sent while the agent was working). */
   | { type: 'agent.unqueue'; id: string }
@@ -272,7 +282,7 @@ export type AgentEvent =
   /** A problem in plain words. */
   | { kind: 'error'; message: string }
   /** A message the studio sent the agent for the person (a panel's answer), to show in the chat. */
-  | { kind: 'user'; text: string; chips?: string[] }
+  | { kind: 'user'; text: string; chips?: string[]; images?: string[] }
   /** The messages waiting for the agent's turn to end: the whole queue, sent again whenever it changes. */
   | { kind: 'queue'; items: QueuedMessage[] };
 
@@ -281,6 +291,8 @@ export interface QueuedMessage {
   id: string;
   text: string;
   chips: string[];
+  /** The attached pictures, as file names in public/refs. */
+  images?: string[];
 }
 
 /** The parts of an agent's tool input the chat shows. */
