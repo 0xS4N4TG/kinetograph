@@ -17,7 +17,7 @@ A good report lets someone else see the problem on their own machine in a few mi
 - What you expected. For a Remotion project, a still of the same frame from Remotion is the clearest way to show it.
 - The output of `npx kinetograph doctor <entry>`, which lists what the engine can't draw and on which frames.
 
-Check [Known issues](/docs/known-issues/) first. If your problem is listed there, a comment on the matching issue with your project helps more than a new report.
+Check [What works](/docs/compat/) first. If your problem is listed there, a comment on the matching issue with your project helps more than a new report.
 
 ## Before a large change
 
@@ -75,7 +75,7 @@ A pull request that breaks one of these will be asked to change.
 - Add or update a test that fails without your change.
 - Visual changes include before-and-after stills or clips. A compatibility fix includes a comparison with what Remotion or Chrome draws for the same frame.
 - Add a line to `CHANGELOG.md` under Unreleased, and the same line to `packages/site/content/docs/changelog.mdx`.
-- Update the docs page that describes the behaviour you changed, and [Known issues](/docs/known-issues/) if you fixed one listed there.
+- Update the docs page that describes the behaviour you changed, and [What works](/docs/compat/) if you fixed a gap listed there.
 
 ## Licence
 

@@ -298,7 +298,7 @@ export function useEffectChain(options: EffectChainOptions): EffectChain {
   const runnable = enabled;
   const reportSkipped = (labels: string[], what: string): void => {
     const names = labels.join(', ');
-    warnOnce(`${component}.effects.webgpu`, `${component} draws without ${what} (${names}): it makes a WebGPU call that is not drawn (see /docs/known-issues/, "WebGPU").`);
+    warnOnce(`${component}.effects.webgpu`, `${component} draws without ${what} (${names}): it makes a WebGPU call that is not drawn (see /docs/compat/, "WebGPU").`);
     reportUnsupported(component.replace(/^<|>$/g, ''), 'effects', names, 'a WebGPU effect makes a call that is not drawn; the picture is drawn without it');
   };
 
@@ -349,7 +349,7 @@ export function useEffectChain(options: EffectChainOptions): EffectChain {
       const outcome = outcomeOf(0, 'onInit/onPaint', () => runPaint(paint, layerPicture(before, width, height), { width, height, cssWidth, cssHeight, pixelDensity }));
       if ('pass' in outcome) stack(outcome.pass);
       else if ('webgpu' in outcome) {
-        warnOnce(`${component}.paint.webgpu`, `${component} draws without onInit and onPaint: they make a WebGPU call that is not drawn (see /docs/known-issues/, "WebGPU").`);
+        warnOnce(`${component}.paint.webgpu`, `${component} draws without onInit and onPaint: they make a WebGPU call that is not drawn (see /docs/compat/, "WebGPU").`);
         reportUnsupported(component.replace(/^<|>$/g, ''), 'onPaint', 'webgpu', 'onInit and onPaint make a WebGPU call that is not drawn; the children are drawn without them');
       } else reportFailed(outcome.failed, 'onInit/onPaint', 'onPaint');
     }

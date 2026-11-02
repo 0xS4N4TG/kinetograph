@@ -1165,7 +1165,7 @@ program (`bin/ffmpeg`) that has them, and the addon runs it as a child process (
 file out; the sound is muxed in by the linked ffmpeg). `KINETOGRAPH_FFMPEG=/path/to/ffmpeg` names another program and
 is tried before the bundled one (an encoder is looked up in each program in turn); with neither, an `ffmpeg` on the
 `PATH` is used if it lists libx264. Then `libx265`, `prores_ks` and `libvpx-vp9` (linked on macOS and Linux); `gif` has
-one. See `/docs/ffmpeg-license/`.
+one. See `/docs/getting-started/installation/#ffmpeg-licence`.
 
 Intel and AMD GPU encoders on Linux: `h264_vaapi`, `hevc_vaapi` (VAAPI, any Intel or AMD GPU with a driver) and
 `h264_qsv`, `hevc_qsv` (Intel Quick Sync, oneVPL) run in a system ffmpeg that has them, never in the linked one (it
@@ -1571,7 +1571,7 @@ each file is hash-checked against the cache and the lock on every read. `<script
 scripts that run after the page's classic scripts (an `import()` of a computed specifier is answered from the cache at run time; the pre-pass runs the first frames to find them, so keep them to what frame 0 or a few sampled frames ask for, or expect a note and a one-time download in the render). A Remotion project's remote `<Img>`, `<Video>` and CSS `url()` files are
 found by scanning its bundle, downloaded the same way and locked in the same file; one first requested during a render is
 fetched once, added to the lock and noted. In the studio the download step runs again when a file of the project changes (a dependency added in a sub-composition or a local module needs no restart). Three.js is unsupported and reported. Full list:
-`/docs/compat/#hyperframes-projects`, `/docs/known-issues/#hyperframes-projects`.
+`/docs/compat/#hyperframes-projects`.
 
 ### 11.12 Motion tracking (`kinetograph track`, `useTrack`, `usePlaneTrack`)
 

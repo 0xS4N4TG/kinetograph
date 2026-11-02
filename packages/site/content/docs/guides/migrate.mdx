@@ -22,7 +22,7 @@ Kinetograph exports 309 of the 316 names in `remotion` and the 24 `@remotion/*` 
 Read the number with care:
 
 - It counts runtime names (functions, components, constants) in Remotion 4.0.536. Types are not counted.
-- A name that exists can still have gaps. [Known issues](/docs/known-issues/) lists them.
+- A name that exists can still have gaps. [What works](/docs/compat/) lists them.
 - It is not "99% of your project works". Run `doctor` to see what yours uses.
 - Names that Kinetograph adds are not counted. `remotion` alone has 105, such as `Layer` and `Scene3D`.
 
@@ -61,7 +61,7 @@ Status: **Works** means every export exists and you use the package as usual. **
 
 | Package | Status | Exports present | Notes |
 |---|---|---|---|
-| `@remotion/media-parser` | Partly | 13 of 13 | Local files only. There is no box tree and there are no sample callbacks. See [Known issues](/docs/known-issues/). |
+| `@remotion/media-parser` | Partly | 13 of 13 | Local files only. There is no box tree and there are no sample callbacks. See [What works](/docs/compat/#remotion-packages). |
 | `@remotion/webcodecs` | Partly | 24 of 24 | Encode and decode throw `UnsupportedApiError`. `convertMedia` writes sound to WAV. |
 | `@remotion/skia` | Partly | 1 of 1 | Needs the `@kinetographdev/skia` add-on. Some Skia features are not drawn. It also covers `@shopify/react-native-skia`. |
 
@@ -130,7 +130,7 @@ npx kinetograph render index.html -o out/video.mp4 --strict
 - **`IFrame`**: rebuild the page as components, or use a screenshot.
 - **A CSS property or element in the report**: change it to one the engine draws, or remove it.
 
-Nothing in this path starts a browser. If something can't be ported, leave it out or approximate it. See [Remotion compatibility](/docs/compat/) for how warnings work.
+Nothing in this path starts a browser. If something can't be ported, leave it out or approximate it. See [What works](/docs/compat/) for how warnings work.
 
 ## The agent skill
 

@@ -41,7 +41,7 @@ Most projects use these:
 - Layout and files: `AbsoluteFill`, `Img`, `staticFile`, `delayRender`.
 - Random values: `random(seed)`. The same seed gives the same value every time.
 
-[Remotion compatibility](/docs/compat/) lists what is supported. To move a project, see [Migrate from Remotion](/docs/guides/migrate/).
+[What works](/docs/compat/) lists what is supported. To move a project, see [Migrate from Remotion](/docs/guides/migrate/).
 
 ## Determinism
 
@@ -121,7 +121,7 @@ loadFont({ family: 'Brand', url: staticFile('DMSans-Medium.ttf') });
 
 `GlslShader` takes a fragment shader in GLSL ES 100 or `300 es`. Compute its `uniforms` from the frame, for example `uniforms={{ time: frame / fps }}`.
 
-See [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), sections 6.5 and 6.7, and [Known issues](/docs/known-issues/).
+See [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), sections 6.5 and 6.7, and [What works](/docs/compat/).
 
 ## 2.5D and 3D
 
@@ -129,6 +129,6 @@ For depth without a 3D scene, put a `Camera` in the composition and turn a `Laye
 
 For example, `<Camera perspective={1400} />` with `<Layer rotateY={spin} preserve3d>`.
 
-For a full 3D scene, use `Scene3D`, `Camera3D`, the lights and `Mesh` or `Model`. Rotations there are in degrees. See [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 6.6. Groups that intersect in 3D are drawn in painter's order; see [Known issues](/docs/known-issues/).
+For a full 3D scene, use `Scene3D`, `Camera3D`, the lights and `Mesh` or `Model`. Rotations there are in degrees. See [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 6.6. Groups that intersect in 3D are drawn in painter's order; see [What works](/docs/compat/#css-and-svg).
 
 To check your work as you write, see [First video](/docs/getting-started/first-video/) and the [CLI reference](/docs/reference/cli/).

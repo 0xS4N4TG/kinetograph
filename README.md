@@ -65,7 +65,7 @@ Everything else is on the docs site, [kinetograph.dev/docs](https://kinetograph.
 - [Authoring](https://kinetograph.dev/docs/guides/authoring/) and [Remotion compatibility](https://kinetograph.dev/docs/compat/)
 - [Studio](https://kinetograph.dev/docs/guides/studio/), the local editor
 - [Use with agents](https://kinetograph.dev/docs/guides/agents/)
-- [Engine](https://kinetograph.dev/docs/internals/engine/) and [Known issues](https://kinetograph.dev/docs/known-issues/)
+- [Engine](https://kinetograph.dev/docs/internals/engine/) and [What works](https://kinetograph.dev/docs/compat/)
 - [Changelog](CHANGELOG.md) and [Contributing](https://kinetograph.dev/docs/contributing/)
 
 <details>

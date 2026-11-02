@@ -51,7 +51,7 @@ npx kinetograph still <entry> <frame> -o <output.png> [options]
 | Option | Meaning |
 |---|---|
 | `-o, --output <path>` | Required. The PNG to write. |
-| `--strict` | Fail on the first frame with content the engine cannot draw. See [Remotion compatibility](/docs/compat/). |
+| `--strict` | Fail on the first frame with content the engine cannot draw. See [What works](/docs/compat/). |
 | `--dev-react` | Use React's development build. It prints React's warnings and is slower. |
 | `--comp`, `--props` | See above. |
 
@@ -110,7 +110,7 @@ A bad combination of export flags is refused before bundling, and the message na
 
 The built-in ffmpeg handles decoding and its own encoders. An encoder it lacks runs in a separate ffmpeg program: the one in the platform package, or the one `KINETOGRAPH_FFMPEG` names.
 
-To use your system ffmpeg, set `KINETOGRAPH_FFMPEG=$(which ffmpeg)`. This gives you `libx264`, and on Intel and AMD GPUs under Linux `h264_vaapi`, `hevc_vaapi`, `h264_qsv` and `hevc_qsv` (see [Known issues](/docs/known-issues/)). Licences are on the [FFmpeg licence](/docs/ffmpeg-license/) page.
+To use your system ffmpeg, set `KINETOGRAPH_FFMPEG=$(which ffmpeg)`. This gives you `libx264`, and on Intel and AMD GPUs under Linux `h264_vaapi`, `hevc_vaapi`, `h264_qsv` and `hevc_qsv` (see [What works](/docs/compat/#video-and-audio)). Licences are under [FFmpeg licence](/docs/getting-started/installation/#ffmpeg-licence).
 
 ## strip
 
@@ -236,7 +236,7 @@ npx kinetograph effects
 
 ## doctor
 
-Runs every frame in the range without the GPU and reports what the engine cannot draw, and where. Use it before a long render. See [Remotion compatibility](/docs/compat/#check-a-project-before-you-render).
+Runs every frame in the range without the GPU and reports what the engine cannot draw, and where. Use it before a long render. See [What works](/docs/compat/#when-the-engine-cant-draw-something).
 
 <Tabs items={['Remotion', 'HyperFrames']}>
   <Tab value="Remotion">

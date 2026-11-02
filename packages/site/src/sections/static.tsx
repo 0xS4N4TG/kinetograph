@@ -31,7 +31,7 @@ export function Start() {
       </div>
       <p className={`${body} mt-24 max-w-[62ch] text-[15px]`}>
         Source-available under the PolyForm Small Business licence: free for individuals and small companies.{' '}
-        See the <a className={link} href="/docs/known-issues/">known issues</a>.
+        See <a className={link} href="/docs/compat/">what works</a>.
       </p>
     </section>
   );

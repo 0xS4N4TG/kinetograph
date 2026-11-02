@@ -91,5 +91,4 @@ FFmpeg prefix: see the README.
 ## Docs
 
 - README: https://github.com/0xS4N4TG/kinetograph#readme
-- Remotion compatibility: /docs/compat/
-- Known issues: /docs/known-issues/
+- What works (compatibility and known gaps): /docs/compat/

@@ -64,6 +64,15 @@ kinetograph doctor <entry> reports what a project holds that the engine cannot d
 
 If the addon line says `NOT loaded`, the text after it gives the reason. If Skia draws on the CPU because the GPU could not be used, `doctor` says why.
 
+## FFmpeg licence
+
+Kinetograph uses two FFmpeg builds. The libraries linked into the native addon (`kinetograph.*.node`) are LGPL 2.1 or later, built by [`scripts/build-ffmpeg.sh`](https://github.com/0xS4N4TG/kinetograph/blob/main/scripts/build-ffmpeg.sh). They do all decoding and the default encoding. The `bin/ffmpeg` program (`bin/ffmpeg.exe` on Windows) in the same npm package is a separate executable under GPL 2 or later, built by [`scripts/build-ffmpeg-gpl.sh`](https://github.com/0xS4N4TG/kinetograph/blob/main/scripts/build-ffmpeg-gpl.sh) with libx264, libx265, libvpx and AAC. The addon runs it as a child process, only for `libx264` and `libx265`, and sends it raw pictures on a pipe. The two share no memory or code, so the PolyForm licence does not cover `bin/ffmpeg` and the GPL does not cover the addon.
+
+- Each `@kinetographdev/native-<platform>` package holds `LICENSE.md`, `FFMPEG-LICENSE.md`, `COPYING.GPLv2`, `COPYING.LGPLv2.1` and `bin/SOURCES.txt`, which lists the tag and commit of every library in the program.
+- The GPL program is built from unmodified upstream sources: FFmpeg 9.0.1 (tag `n9.0.1`, [github.com/FFmpeg/FFmpeg](https://github.com/FFmpeg/FFmpeg)), x264 (a pinned commit of the `stable` branch, [code.videolan.org/videolan/x264](https://code.videolan.org/videolan/x264)), x265 4.2 ([bitbucket.org/multicoreware/x265_git](https://bitbucket.org/multicoreware/x265_git)) and libvpx 1.15.0, BSD-3-Clause ([github.com/webmproject/libvpx](https://github.com/webmproject/libvpx)). The configure options and pinned refs are in `scripts/build-ffmpeg-gpl.sh`.
+- The addon's own encoders are VideoToolbox (macOS), OpenH264 (macOS, Linux), Media Foundation (Windows), NVENC, libvpx (macOS, Linux), ProRes, AAC and GIF.
+- To use your own `ffmpeg`, set `KINETOGRAPH_FFMPEG`. Each encoder is looked up there first, then in `bin/ffmpeg`, then in an `ffmpeg` on your `PATH`. To keep the GPL program out of your install, delete `bin/ffmpeg`. Then `--encoder libx264` and `--encoder libx265` fail with an error naming the missing encoder, unless `KINETOGRAPH_FFMPEG` or your `PATH` supplies one.
+
 ## Run the CLI
 
 `npx kinetograph <command>` runs the CLI. In a clone, run it from the repository root, or use `node packages/cli/dist/cli.js <command>`. The [CLI reference](/docs/reference/cli/) lists every command.
