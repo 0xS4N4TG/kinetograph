@@ -1,4 +1,4 @@
-// `@remotion/captions`: SRT parsing and writing, and TikTok-style paging of word
+// `@remotion/captions`: SRT and WebVTT parsing, SRT writing, and TikTok-style paging of word
 // timings. Written from the documented behaviour and checked against values
 // recorded from the published package (test/fixtures/captions.json).
 
@@ -36,6 +36,74 @@ export function parseSrt({ input }: { input: string }): { captions: Caption[] } 
       confidence: 1,
       timestampMs: (startMs + endMs) / 2,
     });
+  }
+  return { captions };
+}
+
+// ---- WebVTT ----
+
+function parseVttTimestamp(time: string): number {
+  const parts = time.trim().split(':');
+  if (parts.length < 2 || parts.length > 3) throw new Error(`Invalid timestamp:${time}`);
+  const [hours, minutes, rest] = parts.length === 3 ? [parts[0]!, parts[1]!, parts[2]!] : ['0', parts[0]!, parts[1]!];
+  const [seconds, millis] = rest.split(/[,.]/);
+  if (!hours || !minutes || !seconds || !millis) throw new Error(`Invalid timestamp:${time}`);
+  return parseInt(hours, 10) * 3_600_000 + parseInt(minutes, 10) * 60_000 + parseInt(seconds, 10) * 1000 + parseInt(millis, 10);
+}
+
+const VTT_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0', lrm: '\u200e', rlm: '\u200f' };
+
+/** Cue text without its markup (`<i>`, `<v Speaker>`, inline `<00:00:01.000>` timestamps), with character references decoded. */
+function vttCueText(lines: string[]): string {
+  return (
+    lines
+      .join('\n')
+      // Tags go first, so an escaped `&lt;i&gt;` stays the text `<i>`.
+      .replace(/<[^>]*>/g, '')
+      // One pass, so `&amp;lt;` is `&lt;` and not `<`. A reference to no character (0, a surrogate, past U+10FFFF) is kept as written.
+      .replace(/&(?:#(\d+)|#[xX]([\da-fA-F]+)|(amp|lt|gt|quot|apos|nbsp|lrm|rlm));/g, (match, decimal?: string, hex?: string, name?: string) => {
+        if (name) return VTT_ENTITIES[name]!;
+        const codePoint = decimal ? parseInt(decimal, 10) : parseInt(hex!, 16);
+        const none = codePoint === 0 || codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff);
+        return none ? match : String.fromCodePoint(codePoint);
+      })
+      .trim()
+  );
+}
+
+/**
+ * The cues of a WebVTT file. A `WEBVTT` header, `NOTE`, `STYLE` and `REGION` blocks, cue identifiers and cue settings are
+ * skipped. A cue runs to the next empty line, so a line of only spaces (YouTube's automatic captions start cues with one)
+ * belongs to the cue. The timestamps are `hh:mm:ss.mmm` or `mm:ss.mmm`.
+ */
+export function parseVtt({ input }: { input: string }): { captions: Caption[] } {
+  const lines = input.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  const captions: Caption[] = [];
+  let i = 0;
+  if (lines[i]?.trim().startsWith('WEBVTT')) i++;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    if (line.trim() === '') {
+      i++;
+      continue;
+    }
+    if (/^(NOTE|STYLE|REGION)(\s|$)/.test(line)) {
+      i++;
+      while (i < lines.length && lines[i]!.trim() !== '') i++;
+      continue;
+    }
+    const arrow = line.indexOf('-->');
+    if (arrow === -1) {
+      // A cue identifier: the timing line is the next one.
+      i++;
+      continue;
+    }
+    const startMs = parseVttTimestamp(line.slice(0, arrow));
+    const endMs = parseVttTimestamp(line.slice(arrow + 3).trim().split(/\s+/)[0]!);
+    i++;
+    const text: string[] = [];
+    while (i < lines.length && lines[i] !== '') text.push(lines[i++]!);
+    captions.push({ text: vttCueText(text), startMs, endMs, timestampMs: (startMs + endMs) / 2, confidence: 1 });
   }
   return { captions };
 }
