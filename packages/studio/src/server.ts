@@ -8,7 +8,7 @@ import type { AddressInfo } from 'node:net';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
-import { bundlePanel, cliVersion, CliError, findPlugins, pluginToolNames } from 'kinetograph';
+import { bundlePanel, cliVersion, CliError, findPlugins, pluginToolNames, projectRootOf } from 'kinetograph';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { REAL_ENGINE_FILE } from './worker-client.js';
 import { createCatalog, type CatalogSource } from './catalog.js';
@@ -549,7 +549,10 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     if (request.props !== undefined && !isObject(request.props)) throw invalid('props must be a JSON object');
     known(request.comp);
 
-    const output = resolve(dirname(entry), request.output ?? join('out', `${request.comp}.mp4`));
+    const output =
+      request.output !== undefined
+        ? resolve(dirname(entry), request.output)
+        : join(projectRootOf(entry), 'out', 'renders', `${request.comp.replace(/[^A-Za-z0-9._-]/g, '_')}.mp4`);
     const extension = extname(output).toLowerCase();
     if (extension !== '.mp4' && extension !== '.mov') throw invalid(`output must be a .mp4 or .mov file, got "${output}"`);
 

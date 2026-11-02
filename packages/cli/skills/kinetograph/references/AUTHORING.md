@@ -30,7 +30,7 @@ measured; Remotion APIs are written from Remotion's documentation, never from it
 ## 2. One frame, end to end
 
 ```
-kinetograph render src/index.tsx -o out.mp4
+kinetograph render src/index.tsx
   cli: esbuild bundles the entry (aliases `remotion` → @kinetographdev/core, …), installs the determinism shim, imports it
   user code: registerRoot(Root) with <Composition id="Main" component={Main} …/>
   core: createFrameRenderer("Main") → for each frame f: renderFrame(f)
@@ -1113,15 +1113,18 @@ true peak uses 4x oversampling.
 
 `npx kinetograph <command> <entry> …`; `<entry>` is a project file (`.tsx`, `.ts`, `.jsx`, `.js`) or a `.json` scene.
 Every command takes `--json` (one JSON object on stdout; errors as `{ "error": { "code", "message" } }` and exit code
-1), `--comp <id>` (default: the first composition) and `--props <json>`.
+1), `--comp <id>` (default: the first composition) and `--props <json>`. `-o` is optional on `still`, `render`, `strip` and `onion`:
+without it they write to `out/stills/<comp>-f<frame>.png`, `out/renders/<comp>.<ext>` (`mp4`; `mov`, `webm`, `gif` for `--codec prores`, `vp9`, `gif`),
+`out/sheets/<comp>-strip.png` and `out/sheets/<comp>-onion.png`, under the folder of the nearest `package.json` at or above the entry (else the entry's folder).
 
 | Command | Does |
 |---|---|
+| `init [dir] [--html]` | makes `src/` (`index.tsx`, `scenes/`, `components/`, `lib/`), `public/{images,fonts,audio,video}/`, `out/`, `package.json`, `tsconfig.json` and `.gitignore` with a working starter (`--html`: `html/index.html` instead of `src/`); skips files that exist |
 | `compositions <entry>` | lists compositions |
-| `still <entry> <frame> -o out.png [--strict] [--dev-react]` | one PNG; unsupported content is drawn without and warned about on stderr, `--strict` fails instead (the Remotion compatibility docs, `/docs/compat/`) |
-| `render <entry> -o out.mp4 [--range a..b] [--scale N] [--codec C] [--crf N \| --video-bitrate R] [--concurrency N] [--strict] [--dev-react] …` | video with audio; the export options are below; `--draft` is `--scale 0.5`; `--concurrency N` draws N frames at once (default half the cores, at most 4; below); unsupported content is drawn without and warned about, `--strict` fails on the first frame that has some (the Remotion compatibility docs, `/docs/compat/`); React runs in production mode unless `--dev-react` (below) |
-| `strip <entry> -n 12 -o sheet.png [--strict]` | contact sheet of evenly spaced frames, labelled, built as a scene and rendered by the engine |
-| `onion <entry> <range> -n 6 -o onion.png` | frames of the range blended over one another |
+| `still <entry> <frame> [-o file.png] [--strict] [--dev-react]` | one PNG; unsupported content is drawn without and warned about on stderr, `--strict` fails instead (the Remotion compatibility docs, `/docs/compat/`) |
+| `render <entry> [-o file.mp4] [--range a..b] [--scale N] [--codec C] [--crf N \| --video-bitrate R] [--concurrency N] [--strict] [--dev-react] …` | video with audio; the export options are below; `--draft` is `--scale 0.5`; `--concurrency N` draws N frames at once (default half the cores, at most 4; below); unsupported content is drawn without and warned about, `--strict` fails on the first frame that has some (the Remotion compatibility docs, `/docs/compat/`); React runs in production mode unless `--dev-react` (below) |
+| `strip <entry> -n 12 [-o file.png] [--strict]` | contact sheet of evenly spaced frames, labelled, built as a scene and rendered by the engine |
+| `onion <entry> <range> -n 6 [-o file.png]` | frames of the range blended over one another |
 | `inspect <entry> [--frame N]` | `InspectResult` |
 | `lint <entry>` | text overflowing its box or the canvas, layers off the canvas, overlapping text, missing fonts or assets, type errors (`type-error`, no frame), with frame and layer id |
 | `check <entry>` | `tsc --noEmit` on the project (the nearest `tsconfig.json`, else the entry alone): `{ ok, checked, tsconfig, errors, diagnostics: [{ file, line, column, code, message }] }`, exit 1 on errors. Rendering never type-checks (esbuild strips types), so this is how an agent sees a misspelled prop that §6.3 would otherwise ignore |

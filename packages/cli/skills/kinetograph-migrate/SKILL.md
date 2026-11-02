@@ -13,6 +13,8 @@ as a stopgap, for any reason.
 Run commands as `npx kinetograph <command>`. Add `--json` to get one JSON object. For the other commands and the
 project API, use the `kinetograph` skill.
 
+Keep the project's own folder layout; do not move files. Only what the commands generate goes under `out/`, which is their default.
+
 ## The loop
 
 1. **Find the entry and the compositions.** Read `package.json` (scripts, dependencies) and any `remotion.config.ts`
@@ -36,11 +38,11 @@ project API, use the `kinetograph` skill.
 4. **Lint.** `kinetograph lint <entry>` and `kinetograph check <entry>` (type errors). Fix every error. Errors that say
    "no declaration file" for `react` mean `@types/react` is not installed: add it as a dev dependency at the project's
    React version and tell the user. That is not a migration problem and does not block `render`.
-5. **Look.** `kinetograph strip <entry> -n 12 -o out/strip.png`, then open the PNG. Use `still <entry> <frame>` for one
+5. **Look.** `kinetograph strip <entry> -n 12` (it writes `out/sheets/<id>-strip.png` under the project folder), then open the PNG. Use `still <entry> <frame>` for one
    frame. Compare with what the project was meant to show (a Remotion render, a screenshot, the user's description; if
    you have none, check against the code and say that you could not compare). `doctor` and `lint` can both be clean
    while text is missing, so check that every title and caption is on screen (see Fonts).
-6. **Render.** `kinetograph render <entry> --comp <id> -o out/video.mp4 --strict` (`--range 0..30` first for a quick
+6. **Render.** `kinetograph render <entry> --comp <id> --strict` (it writes `out/renders/<id>.mp4`) (`--range 0..30` first for a quick
    test; `a..b` stops at b-1, `a..=b` includes b). `--strict` fails on the first frame
    with anything unsupported, so no video leaves with something missing.
 

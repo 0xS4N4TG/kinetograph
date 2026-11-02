@@ -16,7 +16,7 @@ export { bundlePanel, findPlugins, loadPluginTools, mcpToolName, pluginToolNames
 export type { PluginInfo, PluginTool } from './plugins.js';
 export { renderSource } from './render-job.js';
 export type { RenderJobOptions } from './render-job.js';
-export { checkFrame, frameRange, isSceneFile, listCompositions, openSource, parseProps } from './source.js';
+export { checkFrame, frameRange, isSceneFile, listCompositions, openSource, parseProps, projectRootOf } from './source.js';
 export type { FrameOutput, OpenOptions, Source } from './source.js';
 
 /** The `kinetograph` package version. */
