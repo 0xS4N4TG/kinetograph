@@ -50,3 +50,27 @@ describe('interpolateStyles', () => {
     }
   });
 });
+
+// Remotion 4.0.539 reads digits in a function name, so translate3d, scale3d, rotate3d and matrix3d stay whole.
+describe('interpolateStyles with 3D transforms (Remotion 4.0.539)', () => {
+  const style = (transform: string) => ({ transform });
+  const at = (from: string, to: string) => A.interpolateStyles(0.5, [0, 1], [style(from), style(to)]);
+
+  it('keeps the 3D function names intact', () => {
+    expect(at('translate3d(0px, 0px, 0px)', 'translate3d(100px, 200px, 300px)')).toEqual(style('translate3d(50px, 100px, 150px)'));
+    expect(at('scale3d(1, 1, 1)', 'scale3d(2, 3, 4)')).toEqual(style('scale3d(1.5, 2, 2.5)'));
+    expect(at('rotate3d(1, 0, 0, 0deg)', 'rotate3d(1, 0, 0, 90deg)')).toEqual(style('rotate3d(1, 0, 0, 45deg)'));
+    expect(at('matrix3d(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1)', 'matrix3d(2,0,0,0,0,2,0,0,0,0,2,0,10,20,30,1)')).toEqual(
+      style('matrix3d(1.5, 0, 0, 0, 0, 1.5, 0, 0, 0, 0, 1.5, 0, 5, 10, 15, 1)'),
+    );
+  });
+
+  it('interpolates chains that mix 2D and 3D functions, and the helpers output', () => {
+    expect(at('translateX(0px) rotate(0deg) translate3d(0px,0px,0px)', 'translateX(10px) rotate(90deg) translate3d(100px, 200px, 300px)')).toEqual(
+      style('translateX(5px) rotate(45deg) translate3d(50px, 100px, 150px)'),
+    );
+    expect(
+      at(A.makeTransform([A.translate3d(0, 0, 0), A.scale3d(1, 1, 1)]), A.makeTransform([A.translate3d(100, 200, 300), A.scale3d(2, 2, 2)])),
+    ).toEqual(style('translate3d(50px, 100px, 150px) scale3d(1.5, 1.5, 1.5)'));
+  });
+});
