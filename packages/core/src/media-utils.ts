@@ -88,7 +88,8 @@ export async function getVideoMetadata(src: string): Promise<VideoMetadata> {
 // ---- Audio data (packages/cli/skills/kinetograph/references/AUTHORING.md §11.7) ----
 //
 // `getAudioData` and its hooks decode the whole file once with the addon's `decodeAudio` (ffmpeg: any file with an
-// audio stream, video files included) at a fixed 48 kHz, and keep it per `src`. Decoding is synchronous, so
+// audio stream, video files included) at 48 kHz, or the `sampleRate` of `getAudioData`, and keep it per `src` and rate
+// (Remotion 4.0.540 does; before, a second rate got the data of the first). Decoding is synchronous, so
 // `useAudioData` has the data on the first frame it is called in, and every frame of a render sees the same samples.
 
 /** The addon's `decodeAudio`: the first audio stream of a file as planar float at `sampleRate`, or null. */
@@ -112,6 +113,7 @@ export interface MediaUtilsAudioData {
 let decodeOverride: DecodeAudio | null = null;
 let decodeNative: DecodeAudio | null = null;
 const audioCache = new Map<string, MediaUtilsAudioData>();
+const cacheKey = (src: string, sampleRate: number) => `${sampleRate}:${src}`;
 
 /** Sets the addon's `decodeAudio` (the host does, as with `setMediaProbe`; tests pass a stub, `null` goes back). */
 export function setAudioDecoder(fn: DecodeAudio | null): void {
@@ -134,17 +136,18 @@ function loadNativeDecoder(): DecodeAudio {
   );
 }
 
-/** The decoded samples of `src`, once per file. */
-export function readAudioData(src: string): MediaUtilsAudioData {
+/** The decoded samples of `src` at `sampleRate`, once per file and rate. */
+export function readAudioData(src: string, sampleRate: number = AUDIO_DATA_SAMPLE_RATE): MediaUtilsAudioData {
   if (typeof src !== 'string' || src === '') throw new TypeError(`src must be a file path, but got ${JSON.stringify(src)}`);
-  const known = audioCache.get(src);
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0) throw new TypeError(`sampleRate must be a positive number, but got ${sampleRate}`);
+  const known = audioCache.get(cacheKey(src, sampleRate));
   if (known) return known;
   if (/^https?:\/\//i.test(src)) {
     throw new Error(`Cannot read ${src}: remote files are not supported, download it and use staticFile() instead`);
   }
   let decode = decodeOverride;
   if (!decode) decode = decodeNative ??= loadNativeDecoder();
-  const pcm = decode(src, AUDIO_DATA_SAMPLE_RATE);
+  const pcm = decode(src, sampleRate);
   if (pcm === null || pcm.channels.length === 0) throw new Error(`${src} has no audio stream`);
   const length = pcm.channels[0]!.length;
   const data: MediaUtilsAudioData = {
@@ -152,16 +155,16 @@ export function readAudioData(src: string): MediaUtilsAudioData {
     sampleRate: pcm.sampleRate,
     durationInSeconds: length / pcm.sampleRate,
     numberOfChannels: pcm.channels.length,
-    resultId: `kinetograph-audio:${src}`,
+    resultId: sampleRate === AUDIO_DATA_SAMPLE_RATE ? `kinetograph-audio:${src}` : `kinetograph-audio:${sampleRate}:${src}`,
     isRemote: false,
   };
-  audioCache.set(src, data);
+  audioCache.set(cacheKey(src, sampleRate), data);
   return data;
 }
 
-/** The samples of the audio (or video's sound) at `src`. The options Remotion takes are accepted and not needed. */
-export async function getAudioData(src: string, _options?: { sampleRate?: number }): Promise<MediaUtilsAudioData> {
-  return readAudioData(src);
+/** The samples of the audio (or video's sound) at `src`, at `sampleRate` (48000 by default). `requestInit` is not needed. */
+export async function getAudioData(src: string, options?: { sampleRate?: number }): Promise<MediaUtilsAudioData> {
+  return readAudioData(src, options?.sampleRate);
 }
 
 /** As Remotion's hook, but the data is there on the first call (Remotion's is null until it has loaded). */

@@ -913,7 +913,7 @@ engine (ENGINE.md §10.3).
 | `@kinetographdev/core/shapes` | `@remotion/shapes` | `make*` functions (`makeRect`, `makeCircle`, `makeEllipse`, `makeTriangle`, `makeStar`, `makePolygon`, `makePie`, `makeHeart`, `makeArrow`, `makeCallout`, `makeSpark`) and the `Instruction` type; components render `<Path>`. `makeArrow`, `makeCallout` and `makeSpark` match the published package's paths exactly |
 | `@kinetographdev/core/layout-utils` | `@remotion/layout-utils` | `measureText`, `fitText`, `fillTextBox`, `fitTextOnNLines` through `layoutText` (§3), fonts from `getFonts()`; the box filling and the size search follow the published package step by step and give its results on a recorded set of texts |
 | `@kinetographdev/core/animation-utils` | `@remotion/animation-utils` | `interpolateStyles`, `makeTransform` |
-| `@kinetographdev/core/captions` | `@remotion/captions` | `parseSrt`, `serializeSrt`, `createTikTokStyleCaptions` |
+| `@kinetographdev/core/captions` | `@remotion/captions` | `parseSrt`, `parseVtt`, `serializeSrt`, `createTikTokStyleCaptions` |
 | `@kinetographdev/core/google-fonts` | `@remotion/google-fonts/*` | §7.2 |
 | `@kinetographdev/core/fonts` | `@remotion/fonts` | §7.2 |
 | `@kinetographdev/core/lottie` | `@remotion/lottie` | re-exports `<Lottie>`; `getLottieMetadata(animationData)` (`{ fps, durationInSeconds, durationInFrames, width, height }` or null, as the published package) |

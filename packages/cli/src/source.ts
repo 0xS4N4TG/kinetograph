@@ -101,6 +101,8 @@ export function parseProps(text: string | undefined): Record<string, unknown> {
   if (!text.trimStart().startsWith('{') && existsSync(text) && statSync(text).isFile()) {
     source = readFileSync(text, 'utf8');
   }
+  // A file saved with a UTF-8 byte order mark (Windows PowerShell 5.1, some editors) would not parse, as in Remotion 4.0.540.
+  source = source.replace(/^\uFEFF/, '');
   try {
     value = JSON.parse(source);
   } catch (error) {

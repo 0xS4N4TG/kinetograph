@@ -9,40 +9,262 @@ import { parseColor } from './colors.js';
 import { interpolate, type InterpolateOptions } from './interpolate.js';
 import { interpolateColors } from './interpolate-colors.js';
 
-type Length = number | string;
-type Angle = number | string;
+const LENGTH_UNITS = [
+  'px', 'em', 'rem', 'pt', 'cap', 'ch', 'ex', 'ic', 'lh', 'rlh', 'vmax', 'vmin', 'vb', 'vi', 'cqw', 'vh', 'vw', 'cqh', 'cqi',
+  'cqb', 'cqmin', 'cqmax', 'cm', 'mm', 'Q', 'in', 'pc',
+] as const;
+const ANGLE_UNITS = ['rad', 'deg', 'grad', 'turn'] as const;
+const LENGTH_PERCENTAGE_UNITS = ['%', ...LENGTH_UNITS] as const;
 
-const px = (value: Length) => (typeof value === 'number' ? `${value}px` : value);
-const deg = (value: Angle) => (typeof value === 'number' ? `${value}deg` : value);
+export type LengthUnit = (typeof LENGTH_UNITS)[number];
+export type AngleUnit = (typeof ANGLE_UNITS)[number];
+export type LengthPercentageUnit = (typeof LENGTH_PERCENTAGE_UNITS)[number];
+export type LengthUnitString = `${number}${LengthUnit}`;
+export type AngleUnitString = `${number}${AngleUnit}`;
+export type LengthPercentageUnitString = `${number}${LengthPercentageUnit}`;
 
-export function translate(x: Length, y?: Length): string {
-  return y === undefined ? `translate(${px(x)})` : `translate(${px(x)}, ${px(y)})`;
+/**
+ * True for a string with a value and a unit from `units` (`'10px'`), false for anything that is not a string. A string
+ * that does not end in one of the units, or has no value and unit, is an error.
+ */
+function isUnitString(input: unknown, units: readonly string[]): input is string {
+  if (typeof input !== 'string') return false;
+  if (!units.some((unit) => input.endsWith(unit))) {
+    throw new Error(`input ${input} does not end with a valid unit. Valid units are: ${units.join(', ')}`);
+  }
+  if (!/([0-9.]+)([a-z%]+)/.test(input)) {
+    throw new Error(
+      `input ${input} is not a valid transform. Must be a number or a string ending in one of the following units: ${LENGTH_UNITS.join(', ')}`,
+    );
+  }
+  return true;
 }
-export const translateX = (x: Length) => `translateX(${px(x)})`;
-export const translateY = (y: Length) => `translateY(${px(y)})`;
-export const translateZ = (z: Length) => `translateZ(${px(z)})`;
-export const translate3d = (x: Length, y: Length, z: Length) => `translate3d(${px(x)}, ${px(y)}, ${px(z)})`;
 
-export const scale = (x: number, y: number = x) => `scale(${x}, ${y})`;
-export const scaleX = (x: number) => `scaleX(${x})`;
-export const scaleY = (y: number) => `scaleY(${y})`;
-export const scaleZ = (z: number) => `scaleZ(${z})`;
-export const scale3d = (x: number, y: number, z: number) => `scale3d(${x}, ${y}, ${z})`;
+function checkNumber(num: unknown, param: string, api: string): asserts num is number {
+  if (typeof num === 'undefined') throw new TypeError(`Argument passed to "${api}" for param "${param}" is undefined`);
+  if (typeof num !== 'number') throw new TypeError(`Argument passed to "${api}" for param "${param}" is ${JSON.stringify(num)}`);
+  if (!Number.isFinite(num)) {
+    throw new TypeError(`Argument passed to "${api}" for param "${param}" is ${JSON.stringify(num)} (must be finite)`);
+  }
+}
 
-export const rotate = (angle: Angle) => `rotate(${deg(angle)})`;
-export const rotateX = (angle: Angle) => `rotateX(${deg(angle)})`;
-export const rotateY = (angle: Angle) => `rotateY(${deg(angle)})`;
-export const rotateZ = (angle: Angle) => `rotateZ(${deg(angle)})`;
-export const rotate3d = (x: number, y: number, z: number, angle: Angle) => `rotate3d(${x}, ${y}, ${z}, ${deg(angle)})`;
+/** A single-value function (`rotate`, `translateX`, ...): a unit string as written, or a number with a unit. */
+function withUnit(api: string, param: string, value: unknown, unit: string, units: readonly string[]): string {
+  if (isUnitString(value, units)) return `${api}(${value})`;
+  checkNumber(value, param, api);
+  return `${api}(${value}${unit})`;
+}
 
-export const skew = (x: Angle, y: Angle = x) => `skew(${deg(x)}, ${deg(y)})`;
-export const skewX = (x: Angle) => `skewX(${deg(x)})`;
-export const skewY = (y: Angle) => `skewY(${deg(y)})`;
+// Translate
 
-export const perspective = (distance: Length) => `perspective(${px(distance)})`;
-export const matrix = (a: number, b: number, c: number, d: number, tx: number, ty: number) =>
-  `matrix(${a}, ${b}, ${c}, ${d}, ${tx}, ${ty})`;
-export const matrix3d = (...values: number[]) => `matrix3d(${values.join(', ')})`;
+export function translate(x: LengthPercentageUnitString | number): string;
+export function translate(x: number, y: number): string;
+export function translate(x: LengthPercentageUnitString, y: LengthPercentageUnitString): string;
+export function translate(x: number, unit: LengthPercentageUnit): string;
+export function translate(x: number, unitX: LengthPercentageUnit, y: number, unitY: LengthPercentageUnit): string;
+export function translate(...args: unknown[]): string {
+  const [arg1, arg2, arg3, arg4] = args;
+  if (args.length === 1) {
+    if (isUnitString(arg1, LENGTH_PERCENTAGE_UNITS)) return `translate(${arg1})`;
+    checkNumber(arg1, 'x', 'translate');
+    return `translate(${arg1}px)`;
+  }
+  if (args.length === 2) {
+    if (typeof arg1 === 'number' && typeof arg2 === 'number') {
+      checkNumber(arg1, 'x', 'translate');
+      checkNumber(arg2, 'y', 'translate');
+      return `translate(${arg1}px, ${arg2}px)`;
+    }
+    if (isUnitString(arg1, LENGTH_PERCENTAGE_UNITS) && isUnitString(arg2, LENGTH_PERCENTAGE_UNITS)) {
+      return `translate(${arg1}, ${arg2})`;
+    }
+    if (typeof arg1 === 'number' && typeof arg2 !== 'number') {
+      checkNumber(arg1, 'x', 'translate');
+      return `translate(${arg1}${arg2})`;
+    }
+  }
+  if (args.length === 4 && typeof arg1 === 'number' && typeof arg3 === 'number') {
+    checkNumber(arg1, 'x', 'translate');
+    checkNumber(arg3, 'y', 'translate');
+    return `translate(${arg1}${arg2}, ${arg3}${arg4})`;
+  }
+  throw new TypeError(
+    [
+      'translate() supports only the following signatures:',
+      'translate(x: LengthPercentageUnitString)',
+      'translate(x: number)',
+      'translate(x: number, y: number)',
+      'translate(translation: number, unit: LengthPercentageUnit)',
+      'translate(x: number, unitX: LengthPercentageUnit, y: number, unitY: LengthPercentageUnit): string;',
+    ].join('\n'),
+  );
+}
+
+export function translate3d(
+  x: LengthPercentageUnitString | number,
+  y: LengthPercentageUnitString | number,
+  z: LengthPercentageUnitString | number,
+): string;
+export function translate3d(
+  x: number, unitX: LengthPercentageUnit, y: number, unitY: LengthPercentageUnit, z: number, unitZ: LengthUnit,
+): string;
+export function translate3d(...args: unknown[]): string {
+  if (args.length === 3) {
+    const axes = ['x', 'y', 'z'];
+    const parts = args.map((arg, i) => {
+      if (isUnitString(arg, LENGTH_PERCENTAGE_UNITS)) return arg;
+      checkNumber(arg, axes[i]!, 'translate3d');
+      return `${arg}px`;
+    });
+    return `translate3d(${parts.join(', ')})`;
+  }
+  if (args.length === 6) {
+    const [x, unitX, y, unitY, z, unitZ] = args;
+    if (typeof x === 'number' && typeof y === 'number' && typeof z === 'number') {
+      checkNumber(x, 'x', 'translate3d');
+      checkNumber(y, 'y', 'translate3d');
+      checkNumber(z, 'z', 'translate3d');
+      return `translate3d(${x}${unitX}, ${y}${unitY}, ${z}${unitZ})`;
+    }
+  }
+  throw new TypeError(
+    [
+      'translate3d() supports only the following signatures:',
+      'translate3d(x: LengthPercentageUnitString, y: LengthPercentageUnitString, z: LengthPercentageUnitString)',
+      'translate3d(x: number, unitX: LengthPercentageUnit, y: number, unitY: LengthPercentageUnit, z: number, unitZ: LengthUnit)',
+    ].join('\n'),
+  );
+}
+
+export const translateX = (x: LengthPercentageUnitString | number, unit: LengthPercentageUnit = 'px') =>
+  withUnit('translateX', 'x', x, unit, LENGTH_PERCENTAGE_UNITS);
+export const translateY = (y: LengthPercentageUnitString | number, unit: LengthPercentageUnit = 'px') =>
+  withUnit('translateY', 'y', y, unit, LENGTH_PERCENTAGE_UNITS);
+export const translateZ = (z: LengthUnitString | number, unit: LengthUnit = 'px') =>
+  withUnit('translateZ', 'z', z, unit, LENGTH_UNITS);
+
+// Scale
+
+export function scale(x: number, y: number = x): string {
+  checkNumber(x, 'x', 'scale');
+  checkNumber(y, 'y', 'scale');
+  return `scale(${x}, ${y})`;
+}
+export function scaleX(x: number): string {
+  checkNumber(x, 'x', 'scaleX');
+  return `scaleX(${x})`;
+}
+export function scaleY(y: number): string {
+  checkNumber(y, 'y', 'scaleY');
+  return `scaleY(${y})`;
+}
+export function scaleZ(z: number): string {
+  checkNumber(z, 'z', 'scaleZ');
+  return `scaleZ(${z})`;
+}
+export function scale3d(x: number, y: number, z: number): string {
+  checkNumber(x, 'x', 'scale3d');
+  checkNumber(y, 'y', 'scale3d');
+  checkNumber(z, 'z', 'scale3d');
+  return `scale3d(${x}, ${y}, ${z})`;
+}
+
+// Rotate
+
+export const rotate = (angle: AngleUnitString | number, unit: AngleUnit = 'deg') =>
+  withUnit('rotate', 'angle', angle, unit, ANGLE_UNITS);
+export const rotateX = (angle: AngleUnitString | number, unit: AngleUnit = 'deg') =>
+  withUnit('rotateX', 'angle', angle, unit, ANGLE_UNITS);
+export const rotateY = (angle: AngleUnitString | number, unit: AngleUnit = 'deg') =>
+  withUnit('rotateY', 'angle', angle, unit, ANGLE_UNITS);
+export const rotateZ = (angle: AngleUnitString | number, unit: AngleUnit = 'deg') =>
+  withUnit('rotateZ', 'angle', angle, unit, ANGLE_UNITS);
+
+export function rotate3d(x: number, y: number, z: number, angle: AngleUnitString | number, unit: AngleUnit = 'deg'): string {
+  checkNumber(x, 'x', 'rotate3d');
+  checkNumber(y, 'y', 'rotate3d');
+  checkNumber(z, 'z', 'rotate3d');
+  if (isUnitString(angle, ANGLE_UNITS)) return `rotate3d(${x}, ${y}, ${z}, ${angle})`;
+  checkNumber(angle, 'angle', 'rotate3d');
+  return `rotate3d(${x}, ${y}, ${z}, ${angle}${unit})`;
+}
+
+// Skew
+
+export function skew(angle: AngleUnitString | number): string;
+export function skew(angleX: AngleUnitString, angleY: AngleUnitString): string;
+export function skew(angle: number, unit: AngleUnit): string;
+export function skew(angleX: number, angleY: number): string;
+export function skew(angleX: number, unitX: AngleUnit, angleY: number, unitY: AngleUnit): string;
+export function skew(...args: unknown[]): string {
+  const [arg1, arg2, arg3, arg4] = args;
+  if (args.length === 1) {
+    if (isUnitString(arg1, ANGLE_UNITS)) return `skew(${arg1}, ${arg1})`;
+    checkNumber(arg1, 'angle', 'skew');
+    return `skew(${arg1}deg, ${arg1}deg)`;
+  }
+  if (args.length === 2) {
+    if (isUnitString(arg1, ANGLE_UNITS) && isUnitString(arg2, ANGLE_UNITS)) return `skew(${arg1}, ${arg2})`;
+    if (typeof arg1 === 'number' && typeof arg2 !== 'number') {
+      checkNumber(arg1, 'angle', 'skew');
+      return `skew(${arg1}${arg2}, ${arg1}${arg2})`;
+    }
+    if (typeof arg1 === 'number' && typeof arg2 === 'number') {
+      checkNumber(arg1, 'angle', 'skew');
+      checkNumber(arg2, 'angle', 'skew');
+      return `skew(${arg1}deg, ${arg2}deg)`;
+    }
+  }
+  // Each axis has its own unit, and the unit comes after its angle.
+  if (
+    args.length === 4 &&
+    typeof arg1 === 'number' &&
+    (ANGLE_UNITS as readonly unknown[]).includes(arg2) &&
+    typeof arg3 === 'number' &&
+    (ANGLE_UNITS as readonly unknown[]).includes(arg4)
+  ) {
+    checkNumber(arg1, 'angle', 'skew');
+    checkNumber(arg3, 'angle', 'skew');
+    return `skew(${arg1}${arg2}, ${arg3}${arg4})`;
+  }
+  throw new TypeError(
+    [
+      'skew() supports only the following signatures:',
+      'skew(angle: AngleUnitString): string;',
+      'skew(angle: AngleUnitString, angle2: AngleUnitString): string;',
+      'skew(angle: number, unit: AngleUnit): string;',
+      'skew(angleX: number, angleY: number): string;',
+      'skew(angleX: number, unitX: AngleUnit, angleY: number, unitY: AngleUnit): string;',
+    ].join('\n'),
+  );
+}
+export const skewX = (angle: AngleUnitString | number, unit: AngleUnit = 'deg') =>
+  withUnit('skewX', 'angle', angle, unit, ANGLE_UNITS);
+export const skewY = (angle: AngleUnitString | number, unit: AngleUnit = 'deg') =>
+  withUnit('skewY', 'angle', angle, unit, ANGLE_UNITS);
+
+// Perspective and matrices
+
+export const perspective = (length: LengthUnitString | number, unit: LengthUnit = 'px') =>
+  withUnit('perspective', 'length', length, unit, LENGTH_UNITS);
+
+export function matrix(a: number, b: number, c: number, d: number, tx: number, ty: number): string {
+  const values = { a, b, c, d, tx, ty };
+  for (const [name, value] of Object.entries(values)) checkNumber(value, name, 'matrix');
+  return `matrix(${a}, ${b}, ${c}, ${d}, ${tx}, ${ty})`;
+}
+
+const MATRIX3D_PARAMS = ['a1', 'b1', 'c1', 'd1', 'a2', 'b2', 'c2', 'd2', 'a3', 'b3', 'c3', 'd3', 'a4', 'b4', 'c4', 'd4'];
+export function matrix3d(
+  a1: number, b1: number, c1: number, d1: number,
+  a2: number, b2: number, c2: number, d2: number,
+  a3: number, b3: number, c3: number, d3: number,
+  a4: number, b4: number, c4: number, d4: number,
+): string {
+  const values = [a1, b1, c1, d1, a2, b2, c2, d2, a3, b3, c3, d3, a4, b4, c4, d4];
+  values.forEach((value, i) => checkNumber(value, MATRIX3D_PARAMS[i]!, 'matrix3d'));
+  return `matrix3d(${values.join(', ')})`;
+}
 
 /** Joins transform functions into one `transform` value. */
 export function makeTransform(transforms: string[]): string {

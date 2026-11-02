@@ -45,6 +45,23 @@ describe('parseCommandArgs', () => {
     }
   });
 
+  it('reads true or false after a boolean option, as Remotion 4.0.540 does', () => {
+    const on = parseCommandArgs(spec('render'), ['proj.tsx', '--draft', 'true', '--json', 'true', '-o', 'a.mp4']);
+    expect(on.options.draft).toBe(true);
+    expect(on.json).toBe(true);
+    const off = parseCommandArgs(spec('render'), ['proj.tsx', '--draft', 'false', '--json', 'false', '--offline=false', '-o', 'a.mp4']);
+    expect(off.options.draft).toBeUndefined();
+    expect(off.options.offline).toBeUndefined();
+    expect(off.options.output).toBe('a.mp4');
+    expect(off.json).toBe(false);
+    expect(parseCommandArgs(spec('render'), ['proj.tsx', '--draft=true']).options.draft).toBe(true);
+  });
+
+  it('leaves true and false alone after an option that takes a value, and as positionals', () => {
+    expect(parseCommandArgs(spec('render'), ['proj.tsx', '--comp', 'false']).options.comp).toBe('false');
+    expect(() => parseCommandArgs(spec('render'), ['proj.tsx', '--json', 'maybe'])).toThrow(/unexpected argument "maybe"/);
+  });
+
   it('collects a repeated option into a list (track --point)', () => {
     const args = parseCommandArgs(spec('track'), ['clip.mp4', '--point', '10,20', '--point', 'b=30,40', '--pattern', '31']);
     expect(args.positionals.video).toBe('clip.mp4');
