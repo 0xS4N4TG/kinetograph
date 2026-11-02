@@ -204,7 +204,7 @@ One line each; the pointer has the detail. `kinetograph doctor` alone lists the 
 - **GSAP** (core, free plugins, Flip): seek a paused timeline to `frame / fps`, or let `gsap.to` play by itself.
   AUTHORING.md §11.9, `/docs/compat/#gsap`.
 - **Plugins** `@kinetographdev/gsap`, `p5-brush`, `anime`, `motion`: seek a library with its own clock to the frame.
-  AUTHORING.md §11.10, `/docs/libraries/`.
+  AUTHORING.md §11.10, `/docs/plugins/library-adapters/`.
 - **Libraries that render:** Recharts, d3-selection, anime.js, Motion `animate()`, Paper.js, Bklit, rough.js, Chart.js,
   Plot, Vega, Shiki (code falls back to a bundled JetBrains Mono); Mermaid draws with its default HTML labels (`<foreignObject>`). AUTHORING.md §11.10.
 - **HyperFrames projects** render as they are: `render|still|doctor|studio <index.html|dir>`; the

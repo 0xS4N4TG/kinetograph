@@ -74,11 +74,11 @@ The Props tab draws a form from the composition's zod 4 `schema`:
 
 **Reset** returns every prop to the composition's defaults. Your edits are kept per project in the browser, so a reload keeps them. The Export dialog says whether it renders the edited props or the defaults.
 
-**Presets** is a menu at the top of the tab. **Save preset** asks for a name and saves the props you see. A preset is a file at `presets/<composition id>/<name>.json` beside the entry, so you can commit it, and `--props` renders it from the command line. See [Plugins](/docs/guides/plugins/#presets).
+**Presets** is a menu at the top of the tab. **Save preset** asks for a name and saves the props you see. A preset is a file at `presets/<composition id>/<name>.json` beside the entry, so you can commit it, and `--props` renders it from the command line. See [Plugins](/docs/plugins/#presets).
 
 ### Plugin cards
 
-A field that a [plugin](/docs/guides/plugins/) draws its own panel for shows as a card in place of the generated form. Clicking a card selects the layers its plugin made, and selecting such a layer opens its card. The card's menu copies the path of the plugin's `SKILL.md` and asks the agent about the plugin.
+A field that a [plugin](/docs/plugins/) draws its own panel for shows as a card in place of the generated form. Clicking a card selects the layers its plugin made, and selecting such a layer opens its card. The card's menu copies the path of the plugin's `SKILL.md` and asks the agent about the plugin.
 
 The **Plugins** list at the bottom of the tab has two parts. **In this project** is every plugin the project depends on. **Available** is the plugins on the Kinetograph site that the project does not have. A published one has **Ask the agent to add it**, and an unpublished one shows **Coming soon**. `--offline` stops Studio asking the site.
 
@@ -109,6 +109,6 @@ The agent also gets a Kinetograph MCP server with every `kinetograph` command, t
 - `studio_get_props` reads the props the preview shows, and `studio_set_props` sets them. The agent can try values while you watch the preview change.
 - `studio_open_panel` and `studio_panel_result` let it ask you for a decision in a panel.
 
-See [Studio's agent](/docs/guides/plugins/#studios-agent).
+See [Studio's agent](/docs/plugins/#studios-agent).
 
 Studio listens on `127.0.0.1` by default, and the agent needs the token in the address Studio opens. If you set `--host` so other computers can reach Studio, the agent is off unless you pass `--allow-remote-agent`.

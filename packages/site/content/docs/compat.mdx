@@ -96,7 +96,7 @@ A canvas's `getContext('webgpu')` records its calls, and the passes it submits a
 
 ## Libraries
 
-How to write code for GSAP, Motion, anime.js, d3, Chart.js, Recharts and the rest is in [Libraries](/docs/plugins/libraries/).
+How to write code for GSAP, Motion, anime.js, d3, Chart.js, Recharts and the rest is in [Libraries](/docs/plugins/library-adapters/).
 
 - `requestAnimationFrame` and Web Animations (`element.animate()`) run on the frame's clock, so a frame alone equals the frame in sequence. A pseudo-element animation is not drawn and warns once.
 - Motion clamps each step to 40 ms, so below 25 fps it runs a little slow. Motion components that mount mid-video start at the frame they mount on, but in a still or a later worker at their own first frame. Mount them at frame 0 or use `@kinetographdev/motion`.

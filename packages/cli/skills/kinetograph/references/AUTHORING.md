@@ -1536,7 +1536,7 @@ render does not have. What works and the gaps are on the site at `/docs/compat/#
 
 A library that runs its own clock or randomness must show what the frame number says. Four optional plugins seek the
 library to `frame / fps`; the library stays a peer dependency (`npm install @kinetographdev/<name> <library>`). Sources:
-`packages/plugins/*/src`; use and checks: `/docs/libraries/`.
+`packages/plugins/*/src`; use and checks: `/docs/plugins/library-adapters/`.
 
 | Package | Exports | For |
 |---|---|---|
@@ -1545,7 +1545,7 @@ library to `frame / fps`; the library stays a peer dependency (`npm install @kin
 | `@kinetographdev/motion` | `<MotionFrame>`, `useMotionTime()`, `useSpringAt({ to, stiffness, damping, mass, delay })`, `useAnimateAt(() => animate(...))` | Motion: `motion.*` components inside `<MotionFrame>`; `animate()` paused at `frame / fps`; a spring or `MotionValue` that is a pure function of the frame |
 | `@kinetographdev/p5-brush` | `<BrushCanvas seed draw origin background width height>` | p5.brush: clears, seeds and draws every frame in `draw(brush, frame, { width })`; `origin="top-left"` moves p5.brush's centre origin; needs the WebGL support |
 
-Libraries that need no plugin, only frame-pure use (details and snippets in `/docs/libraries/`, status in
+Libraries that need no plugin, only frame-pure use (details and snippets in `/docs/plugins/library-adapters/`, status in
 `/docs/compat/#libraries`): Recharts (`isAnimationActive={false}`, fixed `width`/`height`), d3 scales and shapes and
 `d3-selection` into a ref (no `d3-transition`/`d3-timer`), anime.js, Motion `animate()` (on the Web Animations API,
 which runs on the frame clock: `element.animate()`, `KeyframeEffect`, `Animation`, `getAnimations()`), Paper.js (clear and redraw each

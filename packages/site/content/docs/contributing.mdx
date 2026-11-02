@@ -52,7 +52,7 @@ cargo test -p kinetograph-core
 cargo test -p kinetograph-core --test golden
 ```
 
-The [golden](/docs/terminology/goldens/) tests compare rendered frames with stored images. If your change is meant to alter the picture, regenerate them with `UPDATE_GOLDEN=1 cargo test -p kinetograph-core --test golden`. Say in the pull request which images changed and why.
+The golden tests compare rendered frames with stored images. If your change is meant to alter the picture, regenerate them with `UPDATE_GOLDEN=1 cargo test -p kinetograph-core --test golden`. Say in the pull request which images changed and why.
 
 The GPU tests, the goldens and the benchmarks run on Apple Silicon. On Linux and Windows, CI builds the addon and renders a few frames.
 
