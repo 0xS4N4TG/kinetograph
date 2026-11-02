@@ -58,3 +58,40 @@ describe('assertValidInterpolatePosterizeOption', () => {
     }
   });
 });
+
+// Remotion 4.0.539: `wrap` repeats the whole keyframe range, not just the first or last segment. Expected values are what the
+// published 4.0.539 gives.
+describe('interpolate wrap over more than two keyframes (Remotion 4.0.539)', () => {
+  const both = { extrapolateLeft: 'wrap', extrapolateRight: 'wrap' } as const;
+
+  it('repeats every segment, numbers first', () => {
+    expect(interpolate(35, [0, 10, 30], [0, 100, 200], { extrapolateRight: 'wrap' })).toBe(50);
+    expect(interpolate(5, [0, 10, 30], [0, 100, 200], { extrapolateRight: 'wrap' })).toBe(50);
+    const cases: [number, number][] = [[-5, 175], [35, 50], [-25, 50], [65, 50], [30, 200], [31, 10], [-30, 0], [10, 100]];
+    for (const [input, expected] of cases) expectClose(interpolate(input, [0, 10, 30], [0, 100, 200], both), expected, 1e-9, `${input}`);
+  });
+
+  it('wraps only on the sides that ask for it', () => {
+    expect(interpolate(-5, [0, 10, 30], [0, 100, 200], { extrapolateRight: 'wrap' })).toBe(-50);
+    expect(interpolate(-5, [0, 10, 30], [0, 100, 200], { extrapolateLeft: 'wrap' })).toBe(175);
+    expect(interpolate(35, [0, 10, 30], [0, 100, 200], { extrapolateLeft: 'wrap' })).toBe(225);
+  });
+
+  it('chooses easing, posterize, strings, tuples and tails from the wrapped input', () => {
+    const easing = [Easing.ease, Easing.linear];
+    expectClose(interpolate(35, [0, 10, 30], [0, 100, 200], { ...both, easing }), 31.535681257253934, 1e-9);
+    expectClose(interpolate(35, [0, 10, 30], [0, 100, 200], { ...both, easing }), interpolate(5, [0, 10, 30], [0, 100, 200], { easing }), 1e-9);
+    expect(interpolate(37, [0, 10, 30], [0, 100, 200], { ...both, posterize: 5 })).toBe(50); // held at 35, which wraps to 5
+    expect(interpolate(35, [0, 10, 30], ['0px', '100px', '200px'], both)).toBe('50px');
+    expect(interpolate(35, [0, 10, 30], ['0deg', '100deg', '200deg'], { ...both, outputType: 'rotate' })).toBe('50deg');
+    expect(interpolate(35, [0, 10, 30], [1, 2, 3], { ...both, outputType: 'scale' })).toBe(1.5);
+    expect(interpolate(35, [0, 10, 30], [[0, 0], [100, 10], [200, 30]], both)).toEqual([50, 5]);
+    expect(interpolate(35, [0, 10, 30], ['normal', 'bold', 900], { ...both, outputType: 'font-weight' })).toBe(550);
+    expect(interpolate(35, [0, 10, 30], ['a', 'b', 'c'], { ...both, easing: Easing.step1 })).toBe('a');
+    expectClose(
+      interpolate(35, [0, 10, 30], [100, 200, 400], { ...both, easing: Easing.spring({ allowTail: true }) }),
+      210.414049529181,
+      1e-9,
+    );
+  });
+});

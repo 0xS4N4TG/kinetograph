@@ -69,6 +69,23 @@ describe('visualizeAudio', () => {
     expect(visualizeAudio({ audioData, frame: 15, fps: 30, numberOfSamples: 16 })).toEqual(bands);
   });
 
+  // Remotion 4.0.539: a silent waveform used to give NaN in every band (a division by its peak, which was 0) and a waveform
+  // of only negative samples a non-finite peak. Both are plain numbers now.
+  it('gives zeros for silence and finite bands for a waveform of only negative samples (Remotion 4.0.539)', () => {
+    const length = RATE;
+    serve({
+      'silence.wav': [new Float32Array(length), new Float32Array(length)],
+      'negative.wav': [new Float32Array(length).fill(-0.5), new Float32Array(length).fill(-0.5)],
+    });
+    for (const smoothing of [true, false]) {
+      const silence = visualizeAudio({ audioData: useAudioData('silence.wav')!, frame: 15, fps: 30, numberOfSamples: 16, smoothing });
+      expect(silence).toEqual(new Array(16).fill(0));
+      const negative = visualizeAudio({ audioData: useAudioData('negative.wav')!, frame: 15, fps: 30, numberOfSamples: 16, smoothing });
+      expect(negative).toHaveLength(16);
+      expect(negative.every((v) => Number.isFinite(v) && v >= 0 && v <= 1)).toBe(true);
+    }
+  });
+
   it('is silent outside the file and rejects a band count that is not a power of two', () => {
     serve({ 'tone.wav': sine(440, 1) });
     const audioData = useAudioData('tone.wav')!;

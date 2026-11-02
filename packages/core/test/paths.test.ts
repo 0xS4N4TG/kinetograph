@@ -287,3 +287,55 @@ describe('warpPath', () => {
     expect(cut).toBe('M 0 0 L 25 0 L 50 0 L 75 0 L 100 0');
   });
 });
+
+// Remotion 4.0.539. Expected values are what the published 4.0.539 gives.
+describe('relative quadratic segments with a control point on the start (Remotion 4.0.539)', () => {
+  const close = (a: number, b: number) => expect(a).toBeCloseTo(b, 9);
+
+  it('measure a straight line from the current point', () => {
+    close(P.getLength('M 10 20 q 0 0 30 40'), 50);
+    close(P.getLength('M 10 20 Q 10 20 40 60'), 50);
+    close(P.getLength('M 10 20 q 0 0 30 30'), 42.42640687119285);
+    close(P.getLength('M 0 0 q 0 0 -30 40'), 50);
+    close(P.getLength('M 10 20 q 0 0 30 40 l 10 0'), 60);
+  });
+
+  it('find points and tangents on that line', () => {
+    const d = 'M 10 20 q 0 0 30 40';
+    const points = [0, 10, 25, 50].map((at) => P.getPointAtLength(d, at));
+    [[10, 20], [16, 28], [25, 40], [40, 60]].forEach(([x, y], i) => {
+      close(points[i]!.x, x!);
+      close(points[i]!.y, y!);
+    });
+    const tangent = P.getTangentAtLength(d, 25);
+    close(tangent.x, 0.6);
+    close(tangent.y, 0.8);
+    const after = P.getPointAtLength('M 10 20 q 0 0 30 40 l 10 0', 60)!;
+    close(after.x, 50);
+    close(after.y, 60);
+  });
+
+  it('animate the stroke by the real length', () => {
+    expect(P.evolvePath(0.5, 'M 10 20 q 0 0 30 40')).toEqual({ strokeDasharray: '50 50', strokeDashoffset: 25 });
+  });
+});
+
+describe('translatePath with a path that starts with m (Remotion 4.0.539)', () => {
+  it('moves the first moveto and keeps the relative commands after it', () => {
+    expect(P.translatePath('m10 20 l30 40', 5, -7.5)).toBe('m 15 12.5 l 30 40');
+    expect(P.translatePath('m10 20 L40 60', 5, -7.5)).toBe('m 15 12.5 L 45 52.5');
+    expect(P.translatePath('M10 20 l30 40', 5, -7.5)).toBe('M 15 12.5 l 30 40');
+    expect(P.translatePath('m10 20 30 40', 5, -7.5)).toBe('m 15 12.5 l 30 40');
+    expect(P.translatePath('m10 20 l5 5 m3 3 l1 1', 5, -7.5)).toBe('m 15 12.5 l 5 5 m 3 3 l 1 1');
+    expect(P.translatePath('m 1 2 h 10 v 5 z m 4 4 l 2 2', 5, -7.5)).toBe('m 6 -5.5 h 10 v 5 Z m 4 4 l 2 2');
+  });
+
+  it('resets and centres such a path', () => {
+    expect(P.resetPath('m10 20 l30 40')).toBe('m 0 0 l 30 40');
+    expect(P.resetPath('m10 20 L40 60')).toBe('m 0 0 L 30 40');
+    expect(P.centerPath('m10 20 l30 40')).toBe('m -15 -20 l 30 40');
+    expect(P.centerPath('m10 20 L40 60')).toBe('m -15 -20 L 15 20');
+    expect(P.centerPath('m10 20 l5 5 m3 3 l1 1')).toBe('m -4.5 -4.5 l 5 5 m 3 3 l 1 1');
+    expect(P.centerPath('m 1 2 h 10 v 5 z m 4 4 l 2 2')).toBe('m -5 -3 h 10 v 5 Z m 4 4 l 2 2');
+  });
+});

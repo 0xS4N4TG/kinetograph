@@ -169,8 +169,8 @@ export function spring({
 
   if (passedDuration !== undefined && frame > passedDuration) return to;
   const value = calculate(scaled, fps, full, from, to).current;
-  // Clamping only limits what is returned (the oscillator underneath keeps swinging), and
-  // the published package only applies it to a rising spring.
-  if (full.overshootClamping && from < to && value > to) return to;
+  // Clamping only limits what is returned (the oscillator underneath keeps swinging). It stops the progress at
+  // the target whichever way the range runs (Remotion 4.0.539; before, only a rising spring was held).
+  if (full.overshootClamping && (from < to ? value > to : value < to)) return to;
   return value;
 }
