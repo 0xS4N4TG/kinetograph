@@ -29,6 +29,8 @@ import { Audio, Sequence, staticFile } from 'remotion';
 
 A clip starts at the frame where its `Sequence` starts. Inside a `<Freeze>`, an `Audio` clip is silent.
 
+A render where every `Audio`, `Video` and `OffthreadVideo` is muted or at volume 0 and no `onFrame` callback runs has no audio stream in the file.
+
 A volume that rises over the first second:
 
 ```tsx

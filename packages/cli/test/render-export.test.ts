@@ -75,14 +75,50 @@ const Main = () => <AbsoluteFill style={{ background: process.env.NODE_ENV === '
 registerRoot(() => <Composition id="Mode" component={Main} width={64} height={36} fps={30} durationInFrames={130} />);
 `;
 
+// Sources that are never heard (muted, volume 0) and ones that are, in a composition each.
+const SOUND = `
+import { AbsoluteFill, Audio, Composition, OffthreadVideo, Video, registerRoot, staticFile } from 'remotion';
+
+const style = { width: 64, height: 36 };
+const MutedOnly = () => (
+  <AbsoluteFill>
+    <Video src={staticFile('clip.mp4')} style={style} muted />
+    <OffthreadVideo src={staticFile('clip.mp4')} style={style} muted />
+    <Audio src={staticFile('tone.wav')} muted />
+    <Audio src={staticFile('tone.wav')} volume={0} />
+  </AbsoluteFill>
+);
+const Loud = () => <AbsoluteFill><OffthreadVideo src={staticFile('clip.mp4')} style={style} /></AbsoluteFill>;
+const MutedPlusLoud = () => (
+  <AbsoluteFill>
+    <Video src={staticFile('clip.mp4')} style={style} muted />
+    <Audio src={staticFile('tone.wav')} />
+  </AbsoluteFill>
+);
+const Sometimes = () => <AbsoluteFill><Audio src={staticFile('tone.wav')} volume={(f) => (f < 10 ? 0 : 1)} /></AbsoluteFill>;
+const none = <T,>(c: T) => c;
+registerRoot(() => (
+  <>
+    {[['MutedOnly', MutedOnly], ['Loud', Loud], ['MutedPlusLoud', MutedPlusLoud], ['Sometimes', Sometimes]].map(([id, component]) => (
+      <Composition key={id as string} id={id as string} component={none(component as React.FC)} width={64} height={36} fps={30} durationInFrames={20} />
+    ))}
+  </>
+));
+`;
+
 let dir = '';
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'kinetograph-export-'));
   writeFileSync(join(dir, 'package.json'), '{"name":"p","private":true}');
   writeFileSync(join(dir, 'index.tsx'), PROJECT);
   writeFileSync(join(dir, 'mode.tsx'), MODE);
+  writeFileSync(join(dir, 'sound.tsx'), SOUND);
   mkdirSync(join(dir, 'public'));
   writeFileSync(join(dir, 'public', 'tone.wav'), wav(3));
+  // A clip with a picture and a sound.
+  if (haveFfmpeg) {
+    spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc=size=64x36:rate=30:duration=1', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1', '-shortest', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', join(dir, 'public', 'clip.mp4')]);
+  }
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -214,6 +250,20 @@ describe.skipIf(!ready)('render export options', () => {
     expect(audio('a-prores.mov')!.codec_name).toBe('pcm_s16le');
     expect(audio('a-opus.webm')!.codec_name).toBe('opus');
     expect(audio('infer.gif')).toBeUndefined();
+  });
+
+  it('muxes no audio stream when every source is muted or at volume 0, and keeps it when one can be heard', () => {
+    const sound = (file: string, comp: string, extra: string[] = []): void => render(file, ['--comp', comp, ...extra], 'sound.tsx');
+    for (const [file, extra] of [['s-muted.mp4', []], ['s-muted.mov', ['--codec', 'prores']], ['s-muted.webm', []]] as [string, string[]][]) {
+      sound(file, 'MutedOnly', extra);
+      expect(audio(file)).toBeUndefined();
+      expect(video(file)).toBeDefined();
+    }
+    sound('s-loud.mp4', 'Loud');
+    sound('s-mixed.mp4', 'MutedPlusLoud');
+    // A volume callback that is 0 for some frames only is still heard.
+    sound('s-sometimes.mp4', 'Sometimes');
+    for (const file of ['s-loud.mp4', 's-mixed.mp4', 's-sometimes.mp4']) expect(audio(file)!.codec_name).toBe('aac');
   });
 
   it('--every-nth-frame draws every nth frame of a gif', () => {
