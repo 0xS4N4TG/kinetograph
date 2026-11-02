@@ -5,10 +5,7 @@ description: How a frame moves from the project through the DOM engine and the G
 
 Kinetograph has two halves. Node runs your project and turns each frame into a scene. A Rust addon, loaded into Node, draws that scene on the GPU. Frame data passes between them as JSON, and the pixels stay in Rust.
 
-<figure>
-  <img src="/docs/engine-path.svg" alt="A Remotion project and a HyperFrames page feed one compositor, which puts out a strip of frames." width="1460" height="822" />
-  <figcaption>Back: a Remotion project, its layers as stacked plates. Left: a HyperFrames page, its timed elements as pegs. Both feed one compositor, which draws each frame on the GPU. FFmpeg encodes the strip. No browser is involved.</figcaption>
-</figure>
+<EngineDiagram />
 
 ## How one frame is made
 

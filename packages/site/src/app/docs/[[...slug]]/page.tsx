@@ -1,3 +1,4 @@
+import { EngineDiagram } from '@/components/engine-diagram';
 import { source } from '@/lib/source';
 import { DocsBody, DocsDescription, DocsPage, DocsTitle, MarkdownCopyButton } from 'fumadocs-ui/layouts/docs/page';
 import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
@@ -19,7 +20,7 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
       </div>
       <DocsDescription>{page.data.description}</DocsDescription>
       <DocsBody>
-        <MDX components={{ ...defaultMdxComponents, Accordion, Accordions, Tab, Tabs }} />
+        <MDX components={{ ...defaultMdxComponents, Accordion, Accordions, EngineDiagram, Tab, Tabs }} />
       </DocsBody>
     </DocsPage>
   );
