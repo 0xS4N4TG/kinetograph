@@ -49,11 +49,13 @@ interface ParseSpec {
 export function parseCommandArgs(spec: ParseSpec, argv: string[]): ParsedArgs {
   // `-1` would be read as an option. Negative numbers go after `--`, where they are positionals, so the command can
   // refuse them with a message about frames instead of the parser's about unknown options.
+  const options = [...spec.options, JSON_OPTION];
   const flags: string[] = [];
   const negatives: string[] = [];
-  for (const arg of argv) (/^-\d/.test(arg) ? negatives : flags).push(arg);
+  for (const arg of withBooleanValues(argv, new Set(options.filter((o) => o.type === 'boolean').map((o) => `--${o.name}`)))) {
+    (/^-\d/.test(arg) ? negatives : flags).push(arg);
+  }
 
-  const options = [...spec.options, JSON_OPTION];
   let values: Record<string, string | boolean | string[] | undefined>;
   let positionals: string[];
   try {
@@ -95,6 +97,25 @@ export function parseCommandArgs(spec: ParseSpec, argv: string[]): ParsedArgs {
     const raw = values[o.name];
     if (raw === undefined) continue;
     out.options[o.name] = o.type === 'number' && !o.multiple ? toNumber(`--${o.name}`, raw as string) : raw;
+  }
+  return out;
+}
+
+/**
+ * A boolean option may be followed by `true` or `false` (`--offline false`, or `--offline=false`), as in Remotion 4.0.540.
+ * `true` is the flag alone; `false` leaves it out, as every boolean option is off unless given.
+ */
+function withBooleanValues(argv: string[], booleans: Set<string>): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    const [name, value] = arg.includes('=') ? [arg.slice(0, arg.indexOf('=')), arg.slice(arg.indexOf('=') + 1)] : [arg, argv[i + 1]];
+    if (!booleans.has(name!) || (value !== 'true' && value !== 'false')) {
+      out.push(arg);
+      continue;
+    }
+    if (!arg.includes('=')) i++;
+    if (value === 'true') out.push(name!);
   }
   return out;
 }
