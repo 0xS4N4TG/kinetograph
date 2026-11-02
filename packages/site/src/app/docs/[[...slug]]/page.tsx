@@ -1,6 +1,7 @@
 import { source } from '@/lib/source';
 import { DocsBody, DocsDescription, DocsPage, DocsTitle, MarkdownCopyButton } from 'fumadocs-ui/layouts/docs/page';
 import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import defaultMdxComponents from 'fumadocs-ui/mdx';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
@@ -18,7 +19,7 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
       </div>
       <DocsDescription>{page.data.description}</DocsDescription>
       <DocsBody>
-        <MDX components={{ ...defaultMdxComponents, Accordion, Accordions }} />
+        <MDX components={{ ...defaultMdxComponents, Accordion, Accordions, Tab, Tabs }} />
       </DocsBody>
     </DocsPage>
   );
