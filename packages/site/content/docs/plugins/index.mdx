@@ -12,7 +12,7 @@ Add the package to the `dependencies` of your project's `package.json`, then imp
 ```tsx
 import { Hexed } from '@kinetographdev/hexed';
 
-<Hexed seed={42}><Video src={staticFile('clip.mp4')} /></Hexed>
+<Hexed seed={42}><Video src={staticFile('video/clip.mp4')} /></Hexed>
 ```
 
 Kinetograph finds a project's plugins in the `dependencies` and `devDependencies` of the nearest `package.json` above the entry. `npx kinetograph plugins` lists them with the path of each plugin's `SKILL.md`. Add `--json` for a machine-readable list. Over MCP, use the `plugins` tool.

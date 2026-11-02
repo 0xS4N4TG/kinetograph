@@ -10,13 +10,13 @@ Kinetograph tracks points through a video with Blender's tracker (libmv). You ru
 Find the point in a still of the first frame. You can make one with `ffmpeg -i clip.mp4 -frames:v 1 first.png`. Then run:
 
 ```sh
-npx kinetograph track public/clip.mp4 --point 980,800
+npx kinetograph track public/video/clip.mp4 --point 980,800
 ```
 
-This writes `public/clip.mp4.track.json`. Repeat `--point` for more points. Use `name=x,y` to name one:
+This writes `public/video/clip.mp4.track.json`. Repeat `--point` for more points. Use `name=x,y` to name one:
 
 ```sh
-npx kinetograph track public/clip.mp4 --point anvil=980,800 --point sign=1690,640
+npx kinetograph track public/video/clip.mp4 --point anvil=980,800 --point sign=1690,640
 ```
 
 Points are in the video's own pixels. x goes right, y goes **down**, and 0,0 is the top-left corner.
@@ -27,7 +27,7 @@ Points are in the video's own pixels. x goes right, y goes **down**, and 0,0 is 
 import { useTrack } from '@kinetographdev/core';
 
 const Label = () => {
-  const { x, y, rotation, scale } = useTrack('clip.mp4.track.json', 'sign');
+  const { x, y, rotation, scale } = useTrack('video/clip.mp4.track.json', 'sign');
   return (
     <div style={{ position: 'absolute', left: x, top: y, transform: `translate(-50%, -50%) rotate(${rotation}deg) scale(${scale})` }}>
       Look here
@@ -70,7 +70,7 @@ All defaults are Blender's defaults for a new track.
 `--detect` finds corners with plenty of texture, at least 120 pixels apart, on the first frame tracked. Then it tracks them all, as Blender's **Detect Features** does.
 
 ```sh
-npx kinetograph track public/clip.mp4 --detect
+npx kinetograph track public/video/clip.mp4 --detect
 ```
 
 The points are named `p1`, `p2` and so on, after any `--point` you also give. The defaults find only the strongest few corners. To find more, lower the threshold or the distance.
@@ -87,7 +87,7 @@ The points are named `p1`, `p2` and so on, after any `--point` you also give. Th
 A plane track follows a flat surface, such as a screen, a sign or a wall. You make one from four or more tracked points on that surface, as Blender's **Create Plane Track** does:
 
 ```sh
-npx kinetograph track public/clip.mp4 --point 820,540 --point 1250,430 --point 820,360 --point 200,600 \
+npx kinetograph track public/video/clip.mp4 --point 820,540 --point 1250,430 --point 820,360 --point 200,600 \
   --plane screen=p1,p2,p3,p4 --plane-corners screen=700,300,1300,320,1280,700,720,680
 ```
 
@@ -101,8 +101,8 @@ In the composition, `usePlaneTrack()` gives the corners for the current frame, r
 import { Image, cornerPin, usePlaneTrack } from '@kinetographdev/core';
 
 const Screen = () => {
-  const { pin } = usePlaneTrack('clip.mp4.track.json', 'screen');
-  return <Image src={staticFile('poster.png')} width={1280} height={720} effects={[cornerPin(pin)]} />;
+  const { pin } = usePlaneTrack('video/clip.mp4.track.json', 'screen');
+  return <Image src={staticFile('images/poster.png')} width={1280} height={720} effects={[cornerPin(pin)]} />;
 };
 ```
 

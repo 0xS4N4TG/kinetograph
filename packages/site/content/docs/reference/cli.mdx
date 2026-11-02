@@ -18,6 +18,8 @@ The entry is a `.tsx`, `.ts`, `.jsx` or `.js` project file, a `.json` scene, or 
 - `kinetograph --version` or `-v` prints the package version.
 - Exit code 0 is success. Exit code 1 is an error, or a failed check: `check` with type errors, `lint` with errors, `snapshot` with a mismatch.
 
+Without `-o`, `still`, `strip`, `onion` and `render` write under `out/` in the project folder (the folder of the nearest `package.json`): `out/stills/`, `out/sheets/` and `out/renders/`, named after the composition.
+
 Commands that open a project take two more options. These are `still`, `render`, `strip`, `onion`, `inspect`, `lint`, `bench`, `audio analyze`, `snapshot` and `doctor`.
 
 | Option | Meaning |
@@ -33,6 +35,16 @@ A frame is a whole number from 0. A range is written `a..b`.
 - `..40` starts at 0. `10..` runs to the last frame.
 - `--frames` takes a comma-separated list, such as `0,30,60`.
 
+## init
+
+Creates a project folder with a starter title card.
+
+```sh
+npx kinetograph init [dir] [--html]
+```
+
+It writes `src/index.tsx`, `src/scenes/Title.tsx`, `package.json`, `tsconfig.json` and `.gitignore`, and makes the `src/`, `public/` and `out/` folders. With `--html` it writes `html/index.html` instead of the TSX files. `dir` defaults to the current folder. Files that already exist are skipped, never overwritten. It does not run `npm install`.
+
 ## compositions
 
 Lists the compositions in a project, with size, frame rate and length.
@@ -46,12 +58,12 @@ npx kinetograph compositions <entry>
 Renders one frame to a PNG.
 
 ```sh
-npx kinetograph still <entry> <frame> -o <output.png> [options]
+npx kinetograph still <entry> <frame> [-o <output.png>] [options]
 ```
 
 | Option | Meaning |
 |---|---|
-| `-o, --output <path>` | Required. The PNG to write. |
+| `-o, --output <path>` | The PNG to write. The default is `out/stills/<comp>-f<frame>.png`. |
 | `--strict` | Fail on the first frame with content the engine cannot draw. See [What works](/docs/compat/). |
 | `--dev-react` | Use React's development build. It prints React's warnings and is slower. |
 | `--comp`, `--props` | See above. |
@@ -64,14 +76,14 @@ Renders frames to a video with audio.
   <Tab value="Remotion">
 
 ```sh
-npx kinetograph render src/index.ts -o out.mp4
+npx kinetograph render src/index.tsx
 ```
 
   </Tab>
   <Tab value="HyperFrames">
 
 ```sh
-npx kinetograph render index.html -o out.mp4
+npx kinetograph render html/index.html
 ```
 
   </Tab>
@@ -82,12 +94,12 @@ For a HyperFrames page, `render` first downloads what the page loads from the we
 The general form is:
 
 ```sh
-npx kinetograph render <entry> -o <output.mp4> [options]
+npx kinetograph render <entry> [-o <output.mp4>] [options]
 ```
 
 | Option | Meaning |
 |---|---|
-| `-o, --output <path>` | Required. The video to write. The extension sets the container: `.mp4`, `.mov`, `.webm` or `.gif`. |
+| `-o, --output <path>` | The video to write. The default is `out/renders/<comp>.mp4`. The extension sets the container: `.mp4`, `.mov`, `.webm` or `.gif`. |
 | `--range <a..b>` | The frames to render. The default is all of them. |
 | `--draft` | Half size, for a quick look. Same as `--scale 0.5`. |
 | `--scale <n>` | Size multiplier, above 0 and at most 8. Each side rounds down to an even number. |
@@ -118,13 +130,13 @@ To use your system ffmpeg, set `KINETOGRAPH_FFMPEG=$(which ffmpeg)`. This gives 
 Writes a contact sheet of evenly spaced frames, labelled with frame number and time.
 
 ```sh
-npx kinetograph strip <entry> -n 12 -o <sheet.png> [options]
+npx kinetograph strip <entry> -n 12 [-o <sheet.png>] [options]
 ```
 
 | Option | Meaning |
 |---|---|
 | `-n, --count <n>` | Number of frames. The default is 12, the most is 64. |
-| `-o, --output <path>` | Required. The PNG to write. |
+| `-o, --output <path>` | The PNG to write. The default is `out/sheets/<comp>-strip.png`. |
 | `--range <a..b>` | The frames to sample. The default is the whole composition. |
 | `--cols <n>` | Columns. The default is 4 for landscape and 6 for portrait. |
 | `--strict` | See `still`. |
@@ -135,14 +147,14 @@ npx kinetograph strip <entry> -n 12 -o <sheet.png> [options]
 Blends frames of a range over one another, to show a motion path.
 
 ```sh
-npx kinetograph onion <entry> <a..b> -n 6 -o <onion.png> [options]
+npx kinetograph onion <entry> <a..b> -n 6 [-o <onion.png>] [options]
 ```
 
 | Option | Meaning |
 |---|---|
 | `<a..b>` | Required. The range to blend. |
 | `-n, --count <n>` | Number of frames to blend. The default is 6, the most is 64. |
-| `-o, --output <path>` | Required. The PNG to write. |
+| `-o, --output <path>` | The PNG to write. The default is `out/sheets/<comp>-onion.png`. |
 | `--comp`, `--props` | See above. |
 
 ## inspect

@@ -8,7 +8,7 @@ A HyperFrames project needs no rewrite. Kinetograph reads its `index.html`, the 
 | HyperFrames | Kinetograph |
 |---|---|
 | `npx hyperframes preview` | `npx kinetograph studio my-video` |
-| `npx hyperframes render` | `npx kinetograph render my-video -o out.mp4` |
+| `npx hyperframes render` | `npx kinetograph render my-video` |
 
 `my-video` is the project directory or its `index.html`. [Install Kinetograph](/docs/getting-started/installation/) first. The [CLI reference](/docs/reference/cli/) lists every command.
 
@@ -19,15 +19,15 @@ A HyperFrames project needs no rewrite. Kinetograph reads its `index.html`, the 
 3. **Look at it.** `strip` draws twelve frames into one picture.
 4. **Render with `--strict`.** It stops on the first frame with something unsupported.
 
-The commands for steps 2 to 4 differ only in the entry.
+The commands for steps 2 to 4 differ only in the entry. Your project keeps its own layout. Only the files the commands write go in `out/`.
 
 <Tabs items={['Remotion', 'HyperFrames']}>
   <Tab value="Remotion">
 
 ```sh
 npx kinetograph doctor src/index.ts
-npx kinetograph strip src/index.ts -n 12 -o out/strip.png
-npx kinetograph render src/index.ts --comp <id> -o out.mp4 --strict
+npx kinetograph strip src/index.ts -n 12
+npx kinetograph render src/index.ts --comp <id> --strict
 ```
 
   </Tab>
@@ -35,8 +35,8 @@ npx kinetograph render src/index.ts --comp <id> -o out.mp4 --strict
 
 ```sh
 npx kinetograph doctor my-video
-npx kinetograph strip my-video -n 12 -o out/strip.png
-npx kinetograph render my-video -o out.mp4 --strict
+npx kinetograph strip my-video -n 12
+npx kinetograph render my-video --strict
 ```
 
   </Tab>

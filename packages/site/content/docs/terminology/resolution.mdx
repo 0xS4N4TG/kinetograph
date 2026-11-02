@@ -1,0 +1,47 @@
+---
+title: Resolution
+description: The size a video is drawn at, and how --scale changes it.
+---
+
+A composition sets its own size in pixels. The width and height must be even numbers.
+
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
+
+```tsx
+<Composition id="Main" component={Title} durationInFrames={60} fps={30} width={1920} height={1080} />
+```
+
+  </Tab>
+  <Tab value="HyperFrames">
+
+```html
+<div id="root" data-composition-id="main" data-width="1920" data-height="1080" data-duration="2">
+```
+
+  </Tab>
+</Tabs>
+
+Common sizes:
+
+| Use | Size |
+|---|---|
+| 1080p, landscape | 1920 × 1080 |
+| 4K | 3840 × 2160 |
+| Vertical (Reels, Shorts, TikTok) | 1080 × 1920 |
+| Square | 1080 × 1080 |
+
+`render --scale <n>` draws the same composition bigger or smaller, from above 0 up to 8. `--scale 2` turns a 1080p composition into 4K. Each frame is drawn at the new size, not enlarged afterwards, so text and edges stay sharp. A 4K render takes about four times as long as 1080p. `--draft` is `--scale 0.5`, for a quick look.
+
+```sh
+npx kinetograph render src/index.tsx --scale 2
+```
+
+**Coming from Remotion:** the same `width`, `height` and `--scale`.
+**Coming from HyperFrames:** the same `data-width` and `data-height`.
+
+## See also
+
+- [Composition](/docs/terminology/composition/)
+- [Render](/docs/terminology/render/)
+- [CLI reference](/docs/reference/cli/#render)

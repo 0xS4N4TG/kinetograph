@@ -9,21 +9,25 @@ You can write the video as a Remotion-style TSX project or as an HTML page in th
 
 ## Write the project
 
-Make a folder and run `npm install kinetograph` in it. Then save one of these.
+Make an empty folder and run `init` in it, then install:
 
 <Tabs items={['Remotion', 'HyperFrames']}>
   <Tab value="Remotion">
 
-Save this as `index.tsx`:
+```sh
+npx kinetograph init
+npm install
+```
+
+`init` writes a starter title card. The scene is in `src/scenes/Title.tsx`:
 
 ```tsx
-import React from 'react';
-import { AbsoluteFill, Composition, Rect, Text, interpolate, registerRoot, useCurrentFrame } from '@kinetographdev/core';
+import { AbsoluteFill, Rect, Text, interpolate, useCurrentFrame } from '@kinetographdev/core';
 import { loadFont } from '@remotion/google-fonts/Inter';
 
 const { fontFamily } = loadFont('normal', { weights: ['400'] });
 
-const Title: React.FC = () => {
+export const Title = () => {
   const frame = useCurrentFrame();
   const width = interpolate(frame, [0, 30], [0, 640], { extrapolateRight: 'clamp' });
   return (
@@ -35,9 +39,16 @@ const Title: React.FC = () => {
     </AbsoluteFill>
   );
 };
+```
+
+`src/index.tsx` registers it:
+
+```tsx
+import { Composition, registerRoot } from '@kinetographdev/core';
+import { Title } from './scenes/Title';
 
 registerRoot(() => (
-  <Composition id="Title" component={Title} durationInFrames={60} fps={30} width={1280} height={720} />
+  <Composition id="Main" component={Title} durationInFrames={60} fps={30} width={1280} height={720} />
 ));
 ```
 
@@ -48,7 +59,12 @@ A [composition](/docs/terminology/composition/) is one video: `Composition` sets
   </Tab>
   <Tab value="HyperFrames">
 
-Save this as `index.html`:
+```sh
+npx kinetograph init --html
+npm install
+```
+
+`init --html` writes this page to `html/index.html`:
 
 ```html
 <!doctype html>
@@ -62,14 +78,14 @@ Save this as `index.html`:
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
 </head>
 <body>
-<div id="root" data-composition-id="hello" data-width="1280" data-height="720" data-duration="2">
+<div id="root" data-composition-id="main" data-width="1280" data-height="720" data-duration="2">
   <div id="title">Hello, Kinetograph</div>
   <div id="bar"></div>
 </div>
 <script>
   const tl = gsap.timeline({ paused: true });
   tl.to('#bar', { width: 640, duration: 1, ease: 'none' });
-  window.__timelines = { hello: tl };
+  window.__timelines = { main: tl };
 </script>
 </body>
 </html>
@@ -77,10 +93,19 @@ Save this as `index.html`:
 
 The root element gives the size and the length in seconds, at 30 fps. The GSAP timeline in `window.__timelines` is paused and moved to each frame's time.
 
-The first render downloads GSAP from the CDN and pins it in `kinetograph.lock.json`. `npx kinetograph fetch-deps index.html` does only that download. [HyperFrames projects](/docs/compat/#hyperframes-projects) lists what a page can use.
+The first render downloads GSAP from the CDN and pins it in `kinetograph.lock.json`. `npx kinetograph fetch-deps html/index.html` does only that download. [HyperFrames projects](/docs/compat/#hyperframes-projects) lists what a page can use.
 
   </Tab>
 </Tabs>
+
+Keep this layout as the project grows:
+
+```text
+src/       TSX code: index.tsx, scenes/, components/, lib/
+html/      HTML pages, for an HTML project
+public/    files for staticFile(): images/, fonts/, audio/, video/
+out/       everything Kinetograph writes: renders/, stills/, sheets/
+```
 
 ## Look at the frames
 
@@ -88,32 +113,32 @@ The first render downloads GSAP from the CDN and pins it in `kinetograph.lock.js
   <Tab value="Remotion">
 
 ```sh
-npx kinetograph compositions index.tsx
-npx kinetograph still index.tsx 15 -o out/hello-15.png
-npx kinetograph strip index.tsx -n 12 -o out/hello-strip.png
+npx kinetograph compositions src/index.tsx
+npx kinetograph still src/index.tsx 15
+npx kinetograph strip src/index.tsx -n 12
 ```
 
   </Tab>
   <Tab value="HyperFrames">
 
 ```sh
-npx kinetograph still index.html 15 -o out/hello-15.png
-npx kinetograph strip index.html -n 12 -o out/hello-strip.png
+npx kinetograph still html/index.html 15
+npx kinetograph strip html/index.html -n 12
 ```
 
   </Tab>
 </Tabs>
 
 - `compositions` lists each composition's id, size, frame rate and length.
-- `still` writes one frame as a PNG.
-- `strip` writes 12 evenly spaced frames on one sheet, labelled with the frame and the time.
+- `still` writes one frame as a PNG to `out/stills/`.
+- `strip` writes 12 evenly spaced frames on one sheet to `out/sheets/`, labelled with the frame and the time.
 
 ## Check the project
 
 ```sh
-npx kinetograph inspect index.tsx --frame 30
-npx kinetograph lint index.tsx
-npx kinetograph check index.tsx
+npx kinetograph inspect src/index.tsx --frame 30
+npx kinetograph lint src/index.tsx
+npx kinetograph check src/index.tsx
 ```
 
 - `inspect` prints each layer at a frame, with its bounds.
@@ -128,14 +153,14 @@ These commands take an HTML page as they take a TSX entry.
   <Tab value="Remotion">
 
 ```sh
-npx kinetograph studio index.tsx
+npx kinetograph studio src/index.tsx
 ```
 
   </Tab>
   <Tab value="HyperFrames">
 
 ```sh
-npx kinetograph studio index.html
+npx kinetograph studio html/index.html
 ```
 
   </Tab>
@@ -149,22 +174,22 @@ npx kinetograph studio index.html
   <Tab value="Remotion">
 
 ```sh
-npx kinetograph render index.tsx -o out/hello.mp4 --draft
-npx kinetograph render index.tsx -o out/hello.mp4
+npx kinetograph render src/index.tsx --draft
+npx kinetograph render src/index.tsx
 ```
 
   </Tab>
   <Tab value="HyperFrames">
 
 ```sh
-npx kinetograph render index.html -o out/hello-html.mp4 --draft
-npx kinetograph render index.html -o out/hello-html.mp4
+npx kinetograph render html/index.html --draft
+npx kinetograph render html/index.html
 ```
 
   </Tab>
 </Tabs>
 
-`--draft` renders at half size, for a quick look. Without it the video is 1280 by 720. The output is H.264 by default, in a `.mp4` or `.mov` file. `render` prints the frame count, the encoder and the time it took. Add `--json` to get one JSON object instead.
+`--draft` renders at half size, for a quick look. Without it the video is 1280 by 720. The video goes to `out/renders/Main.mp4`; pass `-o` to choose another path. The output is H.264 by default, in a `.mp4` or `.mov` file. `render` prints the frame count, the encoder and the time it took. Add `--json` to get one JSON object instead.
 
 ## Next steps
 

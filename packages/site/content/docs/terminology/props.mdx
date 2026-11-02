@@ -9,7 +9,7 @@ Props are the values a composition receives, such as a title or a colour. You ca
   <Tab value="Remotion">
 
 ```sh
-npx kinetograph render src/index.tsx --comp Card --props '{"title":"Hello"}' -o out/card.mp4
+npx kinetograph render src/index.tsx --comp Card --props '{"title":"Hello"}'
 ```
 
 The component gets `defaultProps` with the `--props` values merged over them. `getInputProps()` returns the `--props` object.

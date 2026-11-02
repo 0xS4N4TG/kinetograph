@@ -50,36 +50,20 @@ and ask before installing anything system-wide or installing the Kinetograph age
 
 ## Make a video
 
-Save this as `index.tsx`:
-
-```tsx
-import React from 'react';
-import { AbsoluteFill, Composition, Text, registerRoot } from '@kinetographdev/core';
-import { loadFont } from '@remotion/google-fonts/Inter';
-
-const { fontFamily } = loadFont('normal', { weights: ['400'] });
-
-const Title: React.FC = () => (
-  <AbsoluteFill style={{ backgroundColor: '#14171f' }}>
-    <Text x={320} y={300} font={fontFamily} size={96} color="#ffffff">Hello, Kinetograph</Text>
-  </AbsoluteFill>
-);
-
-registerRoot(() => (
-  <Composition id="Title" component={Title} durationInFrames={60} fps={30} width={1280} height={720} />
-));
-```
-
-Render a TSX project:
+Start a project in an empty folder:
 
 ```sh
-npx kinetograph render index.tsx -o out.mp4
+npx kinetograph init          # TSX, Remotion-style
+npx kinetograph init --html   # or an HTML / HyperFrames page
+npm install
 ```
 
-Render an HTML page or a HyperFrames project:
+`init` makes `src/` for code (or `html/` for a page), `public/` for images, fonts, audio and video, and `out/` for
+everything Kinetograph writes. It also writes a starter title card. Render it:
 
 ```sh
-npx kinetograph render index.html -o out.mp4
+npx kinetograph render src/index.tsx      # writes out/renders/Main.mp4
+npx kinetograph render html/index.html    # for an HTML project
 ```
 
 ## Docs

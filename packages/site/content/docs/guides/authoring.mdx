@@ -27,7 +27,7 @@ registerRoot(() => (
 `--props` takes a JSON object. The component gets `defaultProps` with the `--props` values merged over them. `getInputProps()` returns the `--props` object.
 
 ```sh
-npx kinetograph render src/index.tsx --comp Card --props '{"title":"Hello"}' -o out/card.mp4
+npx kinetograph render src/index.tsx --comp Card --props '{"title":"Hello"}'
 ```
 
 ## Remotion APIs
@@ -108,12 +108,12 @@ For a font file in the project, use `loadFont` from `@remotion/fonts`, with `sta
 import { loadFont } from '@remotion/fonts';
 import { staticFile } from 'remotion';
 
-loadFont({ family: 'Brand', url: staticFile('DMSans-Medium.ttf') });
+loadFont({ family: 'Brand', url: staticFile('fonts/DMSans-Medium.ttf') });
 ```
 
 ## Assets
 
-`staticFile('name')` gives the path of a file in `public/`, next to the entry. If there is no `public/` folder there, it looks next to the nearest `package.json`. The `src` of `Image`, `Video`, `Audio` and `Gif` takes these paths.
+`staticFile('name')` gives the path of a file in `public/`, next to the entry. If there is no `public/` folder there, it looks next to the nearest `package.json`. The `src` of `Image`, `Video`, `Audio` and `Gif` takes these paths. See [Project layout](/docs/terminology/project-layout/).
 
 ## Canvas and shaders
 

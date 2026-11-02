@@ -8,7 +8,7 @@ A HyperFrames page is a video written as HTML. The root element has `data-compos
 Kinetograph renders it without a rewrite and without a browser. Each timeline is paused and seeked to the frame's time.
 
 ```sh
-npx kinetograph render index.html -o out.mp4
+npx kinetograph render html/index.html
 ```
 
 Pass the `index.html`, or the folder that holds it. `still`, `strip`, `inspect`, `lint`, `doctor`, `studio` and `render` all take it. The rate is 30 fps.

@@ -18,7 +18,7 @@ The engine never switches to a browser. It skips the item or draws something clo
 
 ```sh
 npx kinetograph doctor src/index.ts
-npx kinetograph render src/index.ts -o out.mp4 --strict
+npx kinetograph render src/index.ts --strict
 ```
 
 ## Text and fonts
@@ -122,8 +122,8 @@ How to write code for GSAP, Motion, anime.js, d3, Chart.js, Recharts and the res
 Nothing is downloaded while a frame is drawn. Before frame 0, commands that open a project download what the page loads from the web.
 
 ```sh
-kinetograph render my-video -o out.mp4            # downloads first, then renders offline
-kinetograph render my-video -o out.mp4 --offline  # never downloads; an uncached file is an error
+kinetograph render my-video                       # downloads first, then renders offline
+kinetograph render my-video --offline             # never downloads; an uncached file is an error
 kinetograph fetch-deps my-video                   # the download alone; --update refreshes it
 ```
 

@@ -13,14 +13,14 @@ The entry point is the file a command opens. It can be one of three things.
   <Tab value="Remotion">
 
 ```sh
-npx kinetograph render src/index.tsx -o out/video.mp4
+npx kinetograph render src/index.tsx
 ```
 
   </Tab>
   <Tab value="HyperFrames">
 
 ```sh
-npx kinetograph render index.html -o out/video.mp4
+npx kinetograph render html/index.html
 ```
 
   </Tab>
@@ -28,10 +28,11 @@ npx kinetograph render index.html -o out/video.mp4
 
 A file that only exports a component is not an entry point. The project needs a `registerRoot` call, or the command stops and says so.
 
-`kinetograph.lock.json` and the `presets/` folder are kept beside the entry point.
+`kinetograph.lock.json` and the `presets/` folder are kept beside the entry point. `npx kinetograph init` makes `src/index.tsx`, or `html/index.html` with `--html`.
 
 ## See also
 
 - [CLI reference](/docs/reference/cli/)
 - [First video](/docs/getting-started/first-video/)
+- [Project layout](/docs/terminology/project-layout/)
 - [Root](/docs/terminology/root/)
