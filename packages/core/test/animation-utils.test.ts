@@ -4,6 +4,8 @@ import { Easing } from '../src/easing.js';
 import { expectClose, fixture } from './helpers.js';
 
 const data = fixture('animation-utils.json');
+/** Transform helpers called with units, per-axis units and bad arguments, recorded from 4.0.540. */
+const calls = fixture('animation-utils-4.0.540.json');
 
 /** Numbers inside a string compared to 1e-9, the text around them exactly. */
 function expectSame(actual: unknown, expected: unknown, label: string) {
@@ -29,6 +31,37 @@ describe('transform helpers', () => {
       // makeTransform's argument is a list of strings the other helpers wrote; the recorded one is that list.
       expect(fn(...c.args), `${c.name}(${JSON.stringify(c.args)})`).toBe(c.result.value);
     }
+  });
+});
+
+describe('transform helpers with units and bad arguments (Remotion 4.0.540)', () => {
+  // NaN and undefined do not survive JSON, so the recording wrote them as markers.
+  const revive = (v: any) => (v && typeof v === 'object' && 'num' in v ? Number(v.num) : v && typeof v === 'object' && 'undef' in v ? undefined : v);
+
+  it('write the same CSS, or throw the same error, as the published package', () => {
+    for (const c of calls.calls) {
+      const label = `${c.name}(${JSON.stringify(c.args)})`;
+      const run = () => (A as any)[c.name](...c.args.map(revive));
+      if (c.result.error) {
+        const [kind, ...message] = c.result.error.split(': ');
+        expect(run, label).toThrow(message.join(': '));
+        try {
+          run();
+        } catch (error) {
+          expect((error as Error).constructor.name, label).toBe(kind);
+        }
+      } else expect(run(), label).toBe(c.result.value);
+    }
+  });
+
+  it('skew() takes a unit for each axis', () => {
+    expect(A.skew(10, 'deg', 20, 'rad')).toBe('skew(10deg, 20rad)');
+    expect(A.skew(1, 'turn', 2, 'grad')).toBe('skew(1turn, 2grad)');
+  });
+
+  it('scale() refuses a y that is not a finite number', () => {
+    expect(() => A.scale(2, NaN)).toThrow('Argument passed to "scale" for param "y"');
+    expect(() => A.scale(2, '3' as unknown as number)).toThrow('is "3"');
   });
 });
 
