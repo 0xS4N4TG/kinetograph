@@ -13,7 +13,7 @@ import { body, Label, link, section, shell } from '@/sections/shared';
 export function CatalogPage({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen overflow-x-clip bg-ground font-dm text-ink selection:bg-flag selection:text-white">
-      <Nav />
+      <Nav themeSwitch />
       <main className={`${shell} ${section}`}>{children}</main>
     </div>
   );
@@ -143,7 +143,7 @@ export function Tile({ href, title, clip, fixed = false, index = 0, className, c
     <InView as="li" index={index} className={className}>
       <div data-tile className="kc-tile kc-press group relative">
         <div
-          className={cn('kc-media overflow-hidden bg-ink', fixed && 'aspect-[16/10]')}
+          className={cn('kc-media overflow-hidden bg-night', fixed && 'aspect-[16/10]')}
           style={!fixed && clip ? { aspectRatio: `${clip.w} / ${clip.h}` } : undefined}
         >
           {clip && <ClipPlayer clip={clip} label="" play="hover" className={cn('h-full w-full', fixed && portrait ? 'object-contain' : 'object-cover')} />}
@@ -166,7 +166,7 @@ export function Tile({ href, title, clip, fixed = false, index = 0, className, c
 export function Adjacent({ label, prev, next }: { label: string; prev: { href: string; title: string; image: Image | null }; next: { href: string; title: string; image: Image | null } }) {
   const side = (item: typeof prev, dir: 'Previous' | 'Next') => (
     <a href={item.href} className={cn('kc-press flex items-center gap-4 hover:text-cobalt', dir === 'Next' && 'flex-row-reverse text-right')}>
-      {item.image && <img src={item.image.src} width={item.image.w} height={item.image.h} alt="" loading="lazy" className="hidden aspect-[16/10] w-28 shrink-0 bg-ink object-cover sm:block" />}
+      {item.image && <img src={item.image.src} width={item.image.w} height={item.image.h} alt="" loading="lazy" className="hidden aspect-[16/10] w-28 shrink-0 bg-night object-cover sm:block" />}
       <span className="min-w-0">
         <Label>
           {dir} {label}

@@ -15,7 +15,7 @@ const FOOTER_COLUMNS = [
 
 export default function Page() {
   return (
-    <div className="min-h-screen overflow-x-clip bg-ground font-dm text-ink selection:bg-flag selection:text-white">
+    <div className="kg-light min-h-screen overflow-x-clip bg-ground font-dm text-ink selection:bg-flag selection:text-white">
       <SmoothScroll />
       <Nav />
       <main>
