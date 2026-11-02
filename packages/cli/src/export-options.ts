@@ -10,7 +10,7 @@ export const EXPORT_FLAGS: OptionSpec[] = [
   { name: 'scale', type: 'number', description: 'Output size multiplier: 0.5 renders 1080p as 540p, 2 renders it as 4K, drawn at that size (sides round down to even; default 1)' },
   { name: 'codec', type: 'string', description: 'h264 (default), h265, prores, vp9 or gif; .webm paths default to vp9 and .gif to gif' },
   { name: 'crf', type: 'number', description: 'Constant quality, lower is better (h264, h265 0..51, vp9 0..63); not with --video-bitrate' },
-  { name: 'x264-preset', type: 'string', description: 'libx264 and libx265 speed preset: ultrafast, superfast, veryfast (default), faster, fast, medium (Remotion's default), slow, slower, veryslow or placebo' },
+  { name: 'x264-preset', type: 'string', description: 'libx264 and libx265 speed preset: ultrafast, superfast, veryfast (default), faster, fast, medium (as in Remotion), slow, slower, veryslow or placebo' },
   { name: 'video-bitrate', type: 'string', description: 'Video bit rate, e.g. 8M or 2500k; not with --crf' },
   { name: 'pixel-format', type: 'string', description: 'yuv420p (default), yuv422p, yuv444p, or the 10-bit yuv420p10le, yuv422p10le, yuv444p10le' },
   { name: 'prores-profile', type: 'string', description: 'With --codec prores: proxy, light, standard, hq (default), 4444 or 4444-xq' },
