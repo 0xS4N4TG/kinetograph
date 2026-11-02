@@ -1,0 +1,37 @@
+---
+title: Props
+description: Input values you give a composition, from defaults, a zod schema or the --props option.
+---
+
+Props are the values a composition receives, such as a title or a colour. You can change them without editing the code.
+
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
+
+```sh
+npx kinetograph render src/index.tsx --comp Card --props '{"title":"Hello"}' -o out/card.mp4
+```
+
+The component gets `defaultProps` with the `--props` values merged over them. `getInputProps()` returns the `--props` object.
+
+  </Tab>
+  <Tab value="HyperFrames">
+
+```html
+<div data-composition-id="card" data-composition-src="compositions/card.html"
+     data-start="0" data-duration="3" data-variable-values='{"title":"Hello"}'></div>
+```
+
+Inside `card.html`, the script reads them with `window.__hyperframes.getVariables()`.
+
+  </Tab>
+</Tabs>
+
+`--props` takes a JSON object or the path of a JSON file. Add a zod 4 `schema` to a composition and Studio draws a form from it. Props saved as a preset are a JSON file in `presets/`.
+
+## See also
+
+- [Authoring](/docs/guides/authoring/#compositions)
+- [Plugins: presets](/docs/guides/plugins/#presets)
+- [Studio](/docs/guides/studio/#props-and-presets)
+- [Composition](/docs/terminology/composition/)
