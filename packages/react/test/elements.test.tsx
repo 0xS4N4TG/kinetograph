@@ -79,6 +79,19 @@ describe('common props', () => {
     });
   });
 
+  it('map scaleX and scaleY next to scale (#93)', () => {
+    expect(layersOf(<Layer id="s" scale={1.5} scaleX={2} scaleY={ramp} />)[0]).toEqual({
+      id: 's',
+      type: 'group',
+      children: [],
+      transform: { scale: 1.5, scaleX: 2, scaleY: ramp },
+    });
+    expect(layersOf(<Rect id="r" width={60} height={60} scaleX={2} scaleY={0.5} />)[0]).toMatchObject({
+      type: 'shape',
+      transform: { scaleX: 2, scaleY: 0.5 },
+    });
+  });
+
   it('pass a stroke with its cap, join, miter limit and dashes through (#92)', () => {
     const stroke = { color: '#ffffff', width: 8, cap: 'round', join: 'bevel', miterLimit: 6, dashArray: [16, 8], dashOffset: 4 } as const;
     expect(layersOf(<Rect id="r" x={20} y={20} width={200} height={100} stroke={{ ...stroke, dashArray: [...stroke.dashArray] }} />)[0]).toMatchObject({

@@ -99,9 +99,9 @@ Every layer has these fields:
 | `motionBlur` | none | Averages the layer over the shutter time. |
 | `layoutItem` | none | How the layer takes part in its parent's flexbox layout. |
 
-The `transform` fields are `x`, `y`, `scale`, `rotation` (in degrees, clockwise), `anchorX`, `anchorY`, `rotateX`, `rotateY`, `z`, `originX` and `originY`. Each is an animated number. The defaults are 0, except `scale` (1).
+The `transform` fields are `x`, `y`, `scale`, `scaleX`, `scaleY`, `rotation` (in degrees, clockwise), `anchorX`, `anchorY`, `rotateX`, `rotateY`, `z`, `originX` and `originY`. Each is an animated number. The defaults are 0, except `scale`, `scaleX` and `scaleY` (1). `scaleX` and `scaleY` stretch one axis and multiply with `scale`.
 
-The layer matrix is `translate(x, y) * rotate(rotation) * scale(scale) * translate(-anchorX, -anchorY)`. A child's matrix applies inside its parent's.
+The layer matrix is `translate(x, y) * rotate(rotation) * scale(scale * scaleX, scale * scaleY) * translate(-anchorX, -anchorY)`. A child's matrix applies inside its parent's.
 
 ## Layer types
 

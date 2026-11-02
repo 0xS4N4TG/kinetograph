@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { effectCatalog, type Effect, type EffectOf, type EffectType, type SceneJson, type Stroke } from '../src/index.js';
+import { effectCatalog, type Effect, type EffectOf, type EffectType, type SceneJson, type Stroke, type Transform } from '../src/index.js';
 
 /** One effect of every type with every field set. The `Required` makes the compiler insist on each field, so adding a
  *  field to a type here without the catalog (below) noticing fails the build or the test. */
@@ -233,5 +233,22 @@ describe('Stroke', () => {
       { color: '#fff', width: 1, dashArray: '4 2' },
     ];
     expect(bad).toHaveLength(3);
+  });
+});
+
+describe('Transform', () => {
+  it('has scaleX and scaleY next to scale (#93)', () => {
+    const transform: Required<Pick<Transform, 'scale' | 'scaleX' | 'scaleY'>> = { scale: 1.5, scaleX: 2, scaleY: [{ frame: 0, value: 0.5 }] };
+    const scene = {
+      width: 100,
+      height: 100,
+      fps: 10,
+      durationInFrames: 1,
+      layers: [{ id: 'g', type: 'group', children: [], transform }],
+    } satisfies SceneJson;
+    expect(JSON.parse(JSON.stringify(scene)).layers[0].transform).toEqual(transform);
+    // @ts-expect-error a scale on one axis is a number or keyframes
+    const bad: Transform = { scaleX: '2' };
+    expect(bad).toBeDefined();
   });
 });

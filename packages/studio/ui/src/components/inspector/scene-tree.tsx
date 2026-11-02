@@ -287,6 +287,11 @@ function LayerDetails({ layer }: { layer: InspectLayer }) {
         <Field name="scale">
           <span className="text-accent-foreground">{formatNumber(t.scale)}</span>
         </Field>
+        <Field name="scaleX / Y">
+          <span className="text-accent-foreground">
+            {formatNumber(t.scaleX)} / {formatNumber(t.scaleY)}
+          </span>
+        </Field>
         <Field name="rotation">
           <span className="text-accent-foreground">{formatNumber(t.rotation)}</span>
         </Field>

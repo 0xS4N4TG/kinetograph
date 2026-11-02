@@ -269,6 +269,10 @@ pub struct Transform {
     pub x: Num,
     pub y: Num,
     pub scale: Num,
+    /// Stretch along the layer's own x and y axes, multiplied with `scale`, about the same point
+    /// (default 1). They act before `rotation`, so a turned layer is stretched along its own edges.
+    pub scale_x: Num,
+    pub scale_y: Num,
     /// Degrees, clockwise.
     pub rotation: Num,
     pub anchor_x: Num,
@@ -335,6 +339,8 @@ impl Default for Transform {
             x: Num::Const(0.0),
             y: Num::Const(0.0),
             scale: Num::Const(1.0),
+            scale_x: Num::Const(1.0),
+            scale_y: Num::Const(1.0),
             rotation: Num::Const(0.0),
             anchor_x: Num::Const(0.0),
             anchor_y: Num::Const(0.0),
@@ -2520,8 +2526,9 @@ fn max_reach_with(
         let layer = change.map_or(original, |c| &c.layer);
         // A whole change is not reached into by the others.
         let changes = changes.filter(|_| change.is_none_or(|c| c.keep_children));
-        let t = &layer.transform.scale;
-        let scale = scale * t.max().abs().max(t.min().abs());
+        let largest = |n: &Num| n.max().abs().max(n.min().abs());
+        let t = &layer.transform;
+        let scale = scale * largest(&t.scale) * largest(&t.scale_x).max(largest(&t.scale_y));
         // A blur on a layer with wgpu content, or inside one, is cut at the texture's edge.
         let inside = wgpu_drawn || drawn_by_wgpu(&layer.kind);
         let children = match (&layer.kind, &original.kind) {
@@ -3293,6 +3300,32 @@ mod tests {
         );
         let msg = error(r#""effects": [{"type": "sepia", "amount": "lots"}],"#);
         assert!(msg.contains("did not match"), "{msg}");
+    }
+
+    #[test]
+    fn parses_scale_x_and_scale_y_and_counts_them_in_the_margin_scale() {
+        // Issue 93: per-axis scale, 1 by default, animatable like `scale`.
+        let scene = scene_with(
+            r#""transform": {"scaleX": 2, "scaleY": [{"frame": 0, "value": 0.5}, {"frame": 9, "value": 3}]},"#,
+        )
+        .unwrap();
+        let t = &scene.layers[0].transform;
+        assert_eq!((t.scale.at(0.0), t.scale_x.at(0.0), t.scale_y.at(0.0)), (1.0, 2.0, 0.5));
+        assert_eq!(t.scale_y.at(9.0), 3.0);
+        let plain = scene_with("").unwrap();
+        let t = &plain.layers[0].transform;
+        assert_eq!((t.scale_x.at(0.0), t.scale_y.at(0.0)), (1.0, 1.0));
+        // A reach in layer units is pixels times the largest stretch: a displace of 10 counts 5 at scale 1.
+        let reach = |transform: &str| {
+            scene_with(&format!(
+                r#""transform": {transform}, "effects": [{{"type": "displace", "scale": 10, "turbulence": {TORN}}}],"#
+            ))
+            .unwrap()
+            .margin()
+        };
+        assert_eq!(reach("{}"), 5);
+        assert_eq!(reach(r#"{"scale": 2, "scaleX": 1.5, "scaleY": 0.5}"#), 15);
+        assert!(scene_with(r#""transform": {"scaleX": "wide"},"#).is_err());
     }
 
     #[test]

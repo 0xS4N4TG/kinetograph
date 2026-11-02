@@ -123,6 +123,9 @@ export interface Transform {
   x?: Num;
   y?: Num;
   scale?: Num;
+  /** Stretch along the layer's own x or y axis, multiplied with `scale` and about the same point. Default 1. */
+  scaleX?: Num;
+  scaleY?: Num;
   /** Degrees, clockwise. */
   rotation?: Num;
   anchorX?: Num;

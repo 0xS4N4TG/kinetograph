@@ -26,7 +26,7 @@ export function layer(id: string, type: string, extra: Partial<InspectLayer> = {
     type,
     opacity: 1,
     blendMode: 'normal',
-    transform: { x: 0, y: 0, scale: 1, rotation: 0, anchorX: 0, anchorY: 0, rotateX: 0, rotateY: 0, z: 0 },
+    transform: { x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0, anchorX: 0, anchorY: 0, rotateX: 0, rotateY: 0, z: 0 },
     matrix: [1, 0, 0, 1, 0, 0],
     box: { x: 0, y: 0, width: 100, height: 50 },
     bounds: { x: 0, y: 0, width: 100, height: 50 },

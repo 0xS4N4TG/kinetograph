@@ -151,7 +151,7 @@ interface InspectResult {
 interface InspectLayer {
   id: string; type: string;                  // 'shape' | 'text' | 'image' | 'group' | 'noise' | 'meshGradient' | 'lottie' | 'video' | 'gif'
   opacity: number; blendMode: string;
-  transform: { x: number; y: number; scale: number; rotation: number; anchorX: number; anchorY: number;
+  transform: { x: number; y: number; scale: number; scaleX: number; scaleY: number; rotation: number; anchorX: number; anchorY: number;
                rotateX: number; rotateY: number; z: number };   // resolved, after layout (§4.1)
   matrix: [number, number, number, number, number, number];     // a b c d e f: the layer's 2D matrix on the canvas
   box: { x: number; y: number; width: number; height: number } | null;    // layer space (the `inset` box)
@@ -237,7 +237,7 @@ Numbers in both are animatable. Semantics:
 
 `transform.originX`, `transform.originY` (animatable, default `0`): a point of the layer's box as a fraction of its
 size. Like CSS's `transform-origin`, it moves the pivot and not the layer: with `(ox, oy)` the origin in pixels the
-matrix is `translate(x + ox, y + oy) * rotate * scale * translate(-(anchorX + ox), -(anchorY + oy))`, so with no turn
+matrix is `translate(x + ox, y + oy) * rotate * scale(scale * scaleX, scale * scaleY) * translate(-(anchorX + ox), -(anchorY + oy))`, so with no turn
 or scale the layer sits where it would without an origin, and `0.5, 0.5` scales and turns it about its centre without
 knowing its size. `(ox, oy)` is measured from the box's top-left corner, which for a path is its bounding box's,
 not `0, 0` (fixed on the M4: a path at x 300–360 with origin `0.5` turned about x 30). The 3D turn uses the same
@@ -413,7 +413,7 @@ All elements take the common props; none needs a `key` beyond React's usual rule
 | Common prop | JSON |
 |---|---|
 | `id` | `id`. Default: an automatic id, `$` + the host-tree index path (`$0.2.1`), stable while the tree's shape is. Ids beginning with `$` are reserved. Give an `id` to matte sources and to layers whose ids must survive structural changes. |
-| `x`, `y`, `scale`, `rotation`, `anchorX`, `anchorY`, `rotateX`, `rotateY`, `z`, `originX`, `originY` | `transform.*` |
+| `x`, `y`, `scale`, `scaleX`, `scaleY`, `rotation`, `anchorX`, `anchorY`, `rotateX`, `rotateY`, `z`, `originX`, `originY` | `transform.*` (`scaleX` and `scaleY` stretch one axis and multiply with `scale`) |
 | `origin` | `'center'` → `originX = originY = 0.5`; `[ox, oy]` |
 | `opacity`, `blendMode`, `effects`, `clip`, `mask`, `matte`, `layoutItem` | same name |
 | `motionBlur` | `{ samples?, shutter? }` → `motionBlur` (the frame loop fills `frames`, §7.3) |

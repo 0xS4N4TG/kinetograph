@@ -49,7 +49,7 @@ pub fn layer_world(t: &ResolvedTransform) -> Option<DMat4> {
     // `W`, which acts after them.
     let inner = css.map_or(DMat4::IDENTITY, |m| {
         let turn = DMat4::from_rotation_z(t.rotation.to_radians())
-            * DMat4::from_scale(DVec3::new(t.scale, t.scale, 1.0));
+            * DMat4::from_scale(DVec3::new(t.scale * t.scale_x, t.scale * t.scale_y, 1.0));
         turn * DMat4::from_cols_array(&m) * turn.inverse()
     });
     Some(
@@ -275,7 +275,7 @@ pub(crate) fn full_matrix(t: &ResolvedTransform) -> DMat4 {
         * DMat4::from_rotation_x(t.rotate_x.to_radians())
         * DMat4::from_rotation_y(t.rotate_y.to_radians())
         * DMat4::from_rotation_z(t.rotation.to_radians())
-        * DMat4::from_scale(DVec3::new(t.scale, t.scale, 1.0))
+        * DMat4::from_scale(DVec3::new(t.scale * t.scale_x, t.scale * t.scale_y, 1.0))
         * DMat4::from_translation(DVec3::new(
             -(t.anchor_x + t.origin_x),
             -(t.anchor_y + t.origin_y),
@@ -299,6 +299,8 @@ mod tests {
             x,
             y,
             scale,
+            scale_x: 1.0,
+            scale_y: 1.0,
             rotation,
             anchor_x: anchor.0,
             anchor_y: anchor.1,
