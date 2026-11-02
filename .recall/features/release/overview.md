@@ -21,7 +21,7 @@ Publishing Kinetograph: npm packages, the native CI matrix (native.yml), publish
 
 ## Plan 2026-10-30: next release is 0.3.0
 - Contents: Studio redesign + plugins (feat/studio-redesign), canvas sources table (fix/canvas-source-reuse), island-moves perf fix (fix/island-css-moves = perf/js-frame-loop rebased on main, unverified: needs cargo test -p kinetograph-dom + compat vitest on power), HF fixes fix/hf-svg-filter-shadows + fix/hf-fonts-video-blend, site catalog feat/site-catalog (copy decisions pending with user). CHANGELOG Unreleased now has studio + #71 (dcb0921a on the redesign branch).
-- Bump (package.json files, Cargo, tag) on release day only, after tests; never pre-bump.
+- Bump (package.json files, Cargo, tag) on release day only, after tests; never pre-bump. Also run `node scripts/stamp-skill-version.mjs` (skills' metadata.version; update-notice.test.ts fails on drift).
 
 ## Open threads
 - [ ] Changelog: #12-#16 done (in #16); #18 (GSAP clock, async effects, Flip), #19 (fetch-deps remote pictures), #20 (WebGPU textures + effects), #21 (preserve-3d), #22 (cli test types), #23 (HF grading GPU pass + readback island cache: claude-exchange 12.5->1.7 s, launch film 96->71 s lossless) wrote their own entries; main crates/node addon = #23 build; gate.sh now overwrites its md5 with ffmpeg -y (a stale md5 once gave a false IDENTICAL); add hf-svg-workarounds if it changes behaviour
