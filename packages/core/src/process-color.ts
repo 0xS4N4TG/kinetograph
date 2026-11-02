@@ -71,14 +71,16 @@ function component(text: string, full: number): number {
   return text.endsWith('%') ? (Number.parseFloat(text) / 100) * full : Number.parseFloat(text);
 }
 
-/** A hue in degrees; `deg`, `rad`, `grad`, `turn` or a bare number. */
+/** A hue in degrees, wrapped to one turn; `deg`, `rad`, `grad`, `turn` or a bare number. */
 function angle(text: string): number {
   if (text === 'none') return 0;
-  const value = Number.parseFloat(text);
-  if (text.endsWith('rad')) return (value * 180) / Math.PI;
-  if (text.endsWith('grad')) return value * 0.9;
-  if (text.endsWith('turn')) return value * 360;
-  return value;
+  let degrees = Number.parseFloat(text);
+  // `grad` ends in `rad`, so it is checked first.
+  if (text.endsWith('grad')) degrees *= 0.9;
+  else if (text.endsWith('rad')) degrees = (degrees * 180) / Math.PI;
+  else if (text.endsWith('turn')) degrees *= 360;
+  const wrapped = degrees % 360;
+  return wrapped < 0 ? (wrapped + 360) % 360 : wrapped;
 }
 
 function alphaOf(text: string | undefined): number {
