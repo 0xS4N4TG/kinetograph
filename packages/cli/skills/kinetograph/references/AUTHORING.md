@@ -1161,9 +1161,10 @@ at constant quality. For H.264, `libx264` at `crf 18`; where it is missing, `h26
 of `libopenh264`, `h264_mf`, `h264_nvenc` and `h264_amf` that is available (and, for the last three, that opens on this
 machine). For H.265, `libx265`, else `hevc_videotoolbox` on macOS (8-bit 4:2:0 only). VideoToolbox is opt-in with
 `--encoder h264_videotoolbox` or `hevc_videotoolbox`; without `--video-bitrate` it gets 0.2 bits per pixel per frame.
-`prores_videotoolbox` is still what ProRes uses on macOS when it can do what was asked, else `prores_ks`. Every encoder we
-drive but ProRes and GIF (intra-only) gets a keyframe interval of 2 seconds (`-g` = `fps x 2`, at least 1); FFmpeg's own
-default is 12 frames. The ffmpeg linked
+`prores_videotoolbox` is still what ProRes uses on macOS when it can do what was asked, else `prores_ks`. libx264, libx265 and
+libvpx-vp9 keep their own keyframe interval (250, 250, 128 frames), as in Remotion; every other encoder we drive but
+ProRes and GIF (intra-only) gets one of 2 seconds (`-g` = `fps x 2`, at least 1), because FFmpeg's generic default is
+12 frames (`encode::sets_gop`). The ffmpeg linked
 into the addon is LGPL-only and has no `libx264` or `libx265`; the platform packages ship a separate GPL `ffmpeg`
 program (`bin/ffmpeg`) that has them, and the addon runs it as a child process (raw pictures on a pipe, a video-only
 file out; the sound is muxed in by the linked ffmpeg). `KINETOGRAPH_FFMPEG=/path/to/ffmpeg` names another program and

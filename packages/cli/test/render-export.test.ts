@@ -200,24 +200,26 @@ describe.skipIf(!ready)('render export options', () => {
     }
   });
 
-  it('writes a keyframe every two seconds, with libx264 by default where it is there', () => {
-    // 90 frames at 30 fps: keyframes at 0 and 60 (FFmpeg's own default would put one every 12 frames). The box drifts
-    // slowly, so libx264 finds no scene cut to add another.
+  it('keeps x264 and x265 keyframe spacing, and gives VideoToolbox a keyframe every two seconds', () => {
+    // 90 frames at 30 fps. FFmpeg's generic default would put a keyframe every 12 frames; libx264 and libx265 keep their
+    // own (250), so the box, which drifts slowly and gives no scene cut, has the one keyframe at 0. VideoToolbox is
+    // given fps * 2 = 60: keyframes at 0 and 60.
     const keyframes = (file: string): number[] => {
       const out = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'frame=key_frame', '-of', 'csv=p=0', join(dir, file)], { encoding: 'utf8' }).stdout;
       return out.split('\n').filter((l) => l !== '').flatMap((l, i) => (l.startsWith('1') ? [i] : []));
     };
+    const gaps = (at: number[]): number[] => at.slice(1).map((k, i) => k - at[i]!);
     const x264 = (file: string): boolean => readFileSync(join(dir, file)).includes('x264 - core');
     render('gop-h264.mp4', [], 'gop.tsx');
-    expect(keyframes('gop-h264.mp4')).toEqual([0, 60]);
-    // VideoToolbox is opt-in, and gets the same interval.
+    expect(keyframes('gop-h264.mp4')[0]).toBe(0);
+    for (const gap of gaps(keyframes('gop-h264.mp4'))) expect(gap).toBeGreaterThan(12);
+    if (run('gop-x264.mp4', ['--encoder', 'libx264'], 'gop.tsx').status === 0) expect(x264('gop-h264.mp4')).toBe(true);
     if (run('gop-vt.mp4', ['--encoder', 'h264_videotoolbox'], 'gop.tsx').status === 0) {
       expect(keyframes('gop-vt.mp4')).toEqual([0, 60]);
       expect(x264('gop-vt.mp4')).toBe(false);
     }
-    if (run('gop-x264.mp4', ['--encoder', 'libx264'], 'gop.tsx').status === 0) expect(x264('gop-h264.mp4')).toBe(true);
     render('gop-h265.mp4', ['--codec', 'h265'], 'gop.tsx');
-    expect(keyframes('gop-h265.mp4')).toEqual([0, 60]);
+    for (const gap of gaps(keyframes('gop-h265.mp4'))) expect(gap).toBeGreaterThan(12);
   });
 
   it('--crf and --video-bitrate change the file size', () => {

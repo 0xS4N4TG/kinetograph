@@ -286,7 +286,7 @@ npx kinetograph mcp
 The `render` options that set the codec and quality follow Remotion's names. These are the defaults, unless a flag changes them:
 
 - H.264 uses `crf 18` with the software encoder (libx264; libopenh264 and the hardware encoders get a bit rate instead). VideoToolbox (opt-in with `--encoder h264_videotoolbox`) uses a bit rate of 0.2 bits per pixel per frame.
-- Every encoder but ProRes and GIF writes a keyframe every 2 seconds (`fps x 2` frames).
+- libx264, libx265 and VP9 keep their own keyframe interval. The encoders that would take FFmpeg's 12 frames (VideoToolbox, OpenH264, hardware encoders) write one every 2 seconds (`fps x 2` frames).
 - VP9 uses `crf 30`, and H.265 uses `crf 28`.
 - The audio bit rate is 96 kbit/s per channel. The encoder choice for each codec is in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 9.
 

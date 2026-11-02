@@ -85,8 +85,8 @@ libavformat-dev libswscale-dev libavutil-dev libclang-dev` on Debian and Ubuntu)
 - **Range.** `10..40` is frames 10 to 39 and `10..=40` is 10 to 40, as in Rust; either start or the end of `..` may be
   left out. The default is the whole scene. A range that is empty or runs past `durationInFrames` is an error.
 - **Encoder.** `--encoder` names any ffmpeg H.264 encoder. Without it, the first of `libx264`, then `h264_videotoolbox` (macOS only), `libopenh264`, `h264_mf`, `h264_nvenc`,
-  `h264_amf` that is available and can open; VideoToolbox is opt-in. Every encoder but ProRes and GIF gets `-g` of
-  `fps x 2` (`encode::gop_size`). The
+  `h264_amf` that is available and can open; VideoToolbox is opt-in. The encoders without a keyframe default of their own (not libx264,
+  libx265, libvpx-vp9, ProRes, GIF) get `-g` of `fps x 2` (`encode::sets_gop`, `encode::gop_size`). The
   ffmpeg linked into the npm packages' addon is LGPL-only, so it has no `libx264`; `libx264` and `libx265` run in a
   separate GPL `ffmpeg` program (`crates/cli/src/external.rs`: `KINETOGRAPH_FFMPEG`, then the platform package's
   `bin/ffmpeg`, then `ffmpeg` on the `PATH`), and the linked `libopenh264` (macOS, Linux) and `h264_mf` (Windows) are the

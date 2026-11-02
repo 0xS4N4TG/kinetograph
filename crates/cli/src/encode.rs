@@ -26,10 +26,19 @@ pub const DEFAULT_ENCODER: &str = "libx264";
 /// The macOS hardware H.264 encoder: opt-in with `--encoder`, and the fallback on macOS when libx264 is not there.
 pub const VIDEOTOOLBOX: &str = "h264_videotoolbox";
 
-/// The seconds between keyframes of the encoders we drive.
+/// The seconds between keyframes of the encoders that get an explicit interval (`sets_gop`).
 const KEYFRAME_SECONDS: f64 = 2.0;
 
-/// The keyframe interval in frames (`-g`): `KEYFRAME_SECONDS` of video, at least 1. FFmpeg's own default is 12 frames.
+/// Whether we set the keyframe interval of `encoder` (writing `codec`). libx264, libx265 and libvpx-vp9 keep their own
+/// defaults (250, 250 and 128 frames), as Remotion and HyperFrames leave them. The others take FFmpeg's generic
+/// `gop_size` of 12 frames unless told (VideoToolbox, OpenH264, Media Foundation, NVENC, AMF, VAAPI, Quick Sync). ProRes and
+/// GIF are intra-only.
+pub fn sets_gop(encoder: &str, codec: Codec) -> bool {
+    !matches!(codec, Codec::ProRes | Codec::Gif)
+        && !matches!(encoder, DEFAULT_ENCODER | "libx265" | "libvpx-vp9")
+}
+
+/// The keyframe interval in frames (`-g`): `KEYFRAME_SECONDS` of video, at least 1.
 pub fn gop_size(fps: f64) -> i32 {
     (fps * KEYFRAME_SECONDS)
         .round()
@@ -1014,8 +1023,8 @@ fn encoder_options(
 ) -> Dictionary<'static> {
     let mut options = Dictionary::new();
     let default_bits = bit_rate(width, height, fps);
-    // A keyframe every `KEYFRAME_SECONDS`, not FFmpeg's default of every 12 frames. ProRes and GIF are intra-only.
-    if !matches!(settings.codec, Codec::ProRes | Codec::Gif) {
+    // A keyframe every `KEYFRAME_SECONDS`, not FFmpeg's default of every 12 frames, where the encoder has no default of its own.
+    if sets_gop(&settings.encoder, settings.codec) {
         video.set_gop(gop_size(fps) as u32);
     }
     match settings.encoder.as_str() {
@@ -1766,6 +1775,32 @@ mod tests {
         assert_eq!(gop_size(29.97), 60);
         assert_eq!(gop_size(0.2), 1);
         assert_eq!(gop_size(0.001), 1);
+    }
+
+    #[test]
+    fn only_the_encoders_without_their_own_keyframe_default_are_given_one() {
+        for name in [
+            "h264_videotoolbox",
+            "hevc_videotoolbox",
+            "libopenh264",
+            "h264_mf",
+            "h264_nvenc",
+            "h264_amf",
+            "h264_vaapi",
+            "hevc_qsv",
+        ] {
+            let codec = if name.starts_with("hevc") {
+                Codec::H265
+            } else {
+                Codec::H264
+            };
+            assert!(sets_gop(name, codec), "{name}");
+        }
+        assert!(!sets_gop("libx264", Codec::H264));
+        assert!(!sets_gop("libx265", Codec::H265));
+        assert!(!sets_gop("libvpx-vp9", Codec::Vp9));
+        assert!(!sets_gop("prores_videotoolbox", Codec::ProRes));
+        assert!(!sets_gop("gif", Codec::Gif));
     }
 
     #[test]

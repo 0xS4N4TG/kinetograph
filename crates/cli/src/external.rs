@@ -489,8 +489,8 @@ fn encoder_args(settings: &Resolved, width: u32, height: u32, fps: f64) -> Vec<S
         a.push(v);
     };
     push("-c:v", settings.encoder.clone());
-    // The same keyframe interval the linked encoders get; ProRes and GIF are intra-only.
-    if !matches!(settings.codec, encode::Codec::ProRes | encode::Codec::Gif) {
+    // The same keyframe interval the linked encoders get; libx264, libx265 and libvpx-vp9 keep their own.
+    if encode::sets_gop(&settings.encoder, settings.codec) {
         push("-g", encode::gop_size(fps).to_string());
     }
     match settings.encoder.as_str() {
@@ -971,17 +971,21 @@ mod tests {
     }
 
     #[test]
-    fn every_encoder_but_the_intra_only_ones_gets_a_two_second_keyframe_interval() {
+    fn the_encoders_without_a_default_of_their_own_get_a_two_second_keyframe_interval() {
         let args = |encoder: &str, codec: encode::Codec, fps: f64| {
             let mut s = settings(encoder, Pix::Yuv420p, Quality::Default);
             s.codec = codec;
             encoder_args(&s, 1920, 1080, fps).join(" ")
         };
         assert!(
-            args("libx264", encode::Codec::H264, 30.0).starts_with("-c:v libx264 -g 60 -crf 18")
+            args("h264_vaapi", encode::Codec::H264, 30.0).starts_with("-c:v h264_vaapi -g 60 ")
         );
-        assert!(args("libx265", encode::Codec::H265, 24.0).contains(" -g 48 "));
-        assert!(args("libvpx-vp9", encode::Codec::Vp9, 30.0).contains(" -g 60 "));
+        assert!(args("hevc_qsv", encode::Codec::H265, 24.0).contains(" -g 48 "));
+        assert!(args("h264_nvenc", encode::Codec::H264, 30.0).contains(" -g 60 "));
+        // libx264, libx265 and libvpx-vp9 keep their own defaults; ProRes and GIF are intra-only.
+        assert!(!args("libx264", encode::Codec::H264, 30.0).contains(" -g "));
+        assert!(!args("libx265", encode::Codec::H265, 30.0).contains(" -g "));
+        assert!(!args("libvpx-vp9", encode::Codec::Vp9, 30.0).contains(" -g "));
         assert!(!args("prores_ks", encode::Codec::ProRes, 30.0).contains(" -g "));
         assert!(!args("gif", encode::Codec::Gif, 30.0).contains(" -g "));
     }
