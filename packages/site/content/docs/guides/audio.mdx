@@ -15,34 +15,22 @@ import { Audio, Sequence, staticFile } from 'remotion';
 </Sequence>
 ```
 
-`src` is a file path. Use `staticFile` for a file in `public/`. The props are Remotion's:
+`src` is a file path. Use `staticFile` for a file in `public/`. A clip starts at the frame where its `Sequence` starts, and it is silent inside a `<Freeze>`.
 
 | Prop | Meaning |
 |---|---|
-| `src` | The file. |
-| `volume` | A number, or a function of the frame. The frame is counted from the start of the enclosing `Sequence`. The default is 1. |
+| `volume` | A number, or a function of the frame. The default is 1. The frame counts from the start of the enclosing `Sequence`. |
 | `trimBefore`, `trimAfter` | Frames of the file to skip at the start, and the frame of the file where it stops. |
 | `playbackRate` | The speed. |
 | `loop` | Play the file again from the start when it ends. |
 | `muted` | Silence the clip. |
 | `toneFrequency` | Multiplies the pitch, from 0.01 to 2. The speed does not change. |
 
-A clip starts at the frame where its `Sequence` starts. Inside a `<Freeze>`, an `Audio` clip is silent.
-
-A volume that rises over the first second:
-
-```tsx
-<Audio
-  src={staticFile('tone.wav')}
-  volume={(frame) => interpolate(frame, [0, 30], [0, 1], { extrapolateRight: 'clamp' })}
-/>
-```
-
-`Video` plays the sound of its file too. Its `volume`, `muted` and `toneFrequency` props work the same way.
+To raise the volume over the first second, pass `volume={(frame) => interpolate(frame, [0, 30], [0, 1], { extrapolateRight: 'clamp' })}`. `Video` plays the sound of its file too, and its `volume`, `muted` and `toneFrequency` props work the same way.
 
 ## Synthesise sound
 
-`onFrame` schedules a function to run at a frame. The function gets a Web Audio context and the time to play at:
+`onFrame` runs a function at a frame. The function gets a Web Audio context and the time to play at:
 
 ```tsx
 import { onFrame } from '@kinetographdev/audio';
@@ -60,18 +48,10 @@ onFrame(4, (ctx, t) => {
 });
 ```
 
-A few rules apply:
-
 - Call `onFrame` at the top level of the module, not inside a component. Each call adds one callback for one frame.
 - `t` is in seconds from the start of the rendered range. Schedule against `t`, not `ctx.currentTime`.
 - The context is an `OfflineAudioContext` from node-web-audio-api. It runs on the CPU.
-- For noise, use `random` from `remotion` with a named seed. The same seed gives the same sound every render:
-
-```tsx
-import { random } from 'remotion';
-
-for (let i = 0; i < data.length; i++) data[i] = random(`whoosh-${i}`) * 2 - 1;
-```
+- For noise, use `random` from `remotion` with a named seed, such as `random('whoosh-' + i)`. The same seed gives the same sound every render.
 
 ## Mix and render
 
@@ -98,10 +78,6 @@ The command mixes the audio and prints:
 - the number of clipped samples,
 - the silences of 0.5 seconds or more below -60 dBFS.
 
-`--range` limits the frames that are mixed. `--scenes` measures frame ranges on their own, as well as the whole range. Add `--json` for the same numbers as an object, with the keys `integratedLufs`, `truePeakDb`, `clippedSamples`, `silences` and `scenes`.
+`--range` limits the frames that are mixed. `--scenes` also measures each frame range on its own. Add `--json` for an object with the keys `integratedLufs`, `truePeakDb`, `clippedSamples`, `silences` and `scenes`.
 
-## Code API
-
-`@kinetographdev/audio` exports `onFrame`, `clearOnFrame`, `renderAudio` and `analyzeAudio`, which the CLI uses. The signatures are in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 8.
-
-For the gaps in the audio elements, see [Known issues](/docs/known-issues/).
+`@kinetographdev/audio` also exports `clearOnFrame`, `renderAudio` and `analyzeAudio`. The signatures are in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 8. For gaps, see [Known issues](/docs/known-issues/).
