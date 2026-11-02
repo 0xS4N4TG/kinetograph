@@ -23,10 +23,10 @@ export function Hero() {
         <Heading
           as="h1"
           animate
-          lines={['video written as code,', 'drawn on the GPU.']}
-          hot="GPU"
+          lines={['blazingly fast', 'programmatic video engine.']}
+          hot="fast"
           tag="TRK 01  0.97"
-          className="mt-10 text-[clamp(38px,6.6vw,96px)]"
+          className="mt-10 text-[clamp(38px,6.6vw,80px)]"
         />
         <p className="mt-8 max-w-[44ch] font-dm text-[clamp(17px,1.5vw,20px)] leading-snug tracking-[-0.01em] text-ink/75">{TAGLINE}</p>
         <div className="mt-8 flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:gap-8">

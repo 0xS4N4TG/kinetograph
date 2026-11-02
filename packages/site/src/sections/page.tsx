@@ -9,6 +9,7 @@ import { commandBar } from '@/sections/hero';
 import { doc } from '@/sections/links';
 import renders from '@/sections/renders.json';
 import { body, h2Size, link, section, shell } from '@/sections/shared';
+import { Speed } from '@/sections/speed';
 
 interface Render {
   name: string;
@@ -79,7 +80,8 @@ export function Facts() {
     <section id="why" className={`${shell} ${section}`}>
       <div className="border-t border-cobalt/30 pt-[clamp(56px,8vw,112px)]">
         <Heading lines={['the renders, and how long they took.']} hot="took" tag="TRK 02  0.94" className={h2Size} />
-        <div className="mt-14 grid grid-cols-[repeat(auto-fill,minmax(min(100%,340px),1fr))] gap-x-8 gap-y-14">
+        <Speed />
+        <div className="mt-24 grid grid-cols-[repeat(auto-fill,minmax(min(100%,340px),1fr))] gap-x-8 gap-y-14">
           {(renders as Render[]).filter((r) => r.name !== 'launch').map((r) => (
             <RenderCard key={r.name} r={r} />
           ))}
@@ -121,7 +123,7 @@ export function Film() {
           )}
         </div>
         <p className={`${body} mt-6 max-w-[62ch]`}>
-          Kinetograph rendered this film: 1,184 frames in 26 seconds on a laptop. One TypeScript project makes all of it,
+          Kinetograph rendered this film: 1,184 frames in 29 seconds on a laptop. One TypeScript project makes all of it,
           sound effects included:{' '}
           <a className={link} href={doc('examples/launch')} target="_blank" rel="noreferrer">examples/launch</a>.
         </p>

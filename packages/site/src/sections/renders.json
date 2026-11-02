@@ -7,7 +7,7 @@
     "width": 1920,
     "height": 1080,
     "seconds_video": 39.47,
-    "render_median": 25.6,
+    "render_median": 29.24,
     "web": "film/launch.mp4",
     "poster": "film/poster.jpg"
   },
@@ -32,7 +32,7 @@
     "width": 1920,
     "height": 1080,
     "seconds_video": 37.12,
-    "render_median": 13.29,
+    "render_median": 11.44,
     "web": "examples/showcase.mp4",
     "poster": "examples/showcase.jpg"
   },
@@ -44,7 +44,7 @@
     "width": 1920,
     "height": 1080,
     "seconds_video": 6.0,
-    "render_median": 2.33,
+    "render_median": 2.9,
     "web": "examples/showcase-3d.mp4",
     "poster": "examples/showcase-3d.jpg"
   },
@@ -56,7 +56,7 @@
     "width": 1920,
     "height": 1080,
     "seconds_video": 6.0,
-    "render_median": 1.86,
+    "render_median": 2.06,
     "web": "examples/video-overlay.mp4",
     "poster": "examples/video-overlay.jpg"
   },
@@ -68,7 +68,7 @@
     "width": 860,
     "height": 420,
     "seconds_video": 2.0,
-    "render_median": 0.59,
+    "render_median": 0.7,
     "web": "examples/canvas.mp4",
     "poster": "examples/canvas.jpg"
   },
@@ -80,7 +80,7 @@
     "width": 1920,
     "height": 1080,
     "seconds_video": 5.0,
-    "render_median": 5.14,
+    "render_median": 3.99,
     "web": "examples/rajz-cards.mp4",
     "poster": "examples/rajz-cards.jpg"
   },
@@ -92,7 +92,7 @@
     "width": 1200,
     "height": 1000,
     "seconds_video": 5.0,
-    "render_median": 2.25,
+    "render_median": 1.81,
     "web": "examples/compat.mp4",
     "poster": "examples/compat.jpg"
   },
@@ -128,7 +128,7 @@
     "width": 640,
     "height": 360,
     "seconds_video": 2.0,
-    "render_median": 0.52,
+    "render_median": 0.48,
     "web": "examples/basic.mp4",
     "poster": "examples/basic.jpg"
   }
