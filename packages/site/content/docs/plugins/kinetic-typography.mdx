@@ -1,0 +1,65 @@
+---
+title: Kinetic typography
+description: Captions that move with the voice in fourteen styles, and handwritten captions that can follow a tracked subject.
+---
+
+<Callout>Coming; not published yet.</Callout>
+
+`<Captions>` sets a voiceover on screen. Each word arrives as it is said and the line leaves all together. A line with a big word is a hook: that word is set huge and the small words sit round it. `<HandCaptions>` writes the other way, one letter at a time in mixed handwriting.
+
+## Use it
+
+Both take a word list with frames. `wordsFrom` makes one from timestamps in seconds, such as a speech-to-text result.
+
+```tsx
+import { Video, staticFile } from '@kinetographdev/core';
+import { Captions, HandCaptions, wordsFrom } from '@kinetographdev/kinetic-typography';
+
+const words = wordsFrom(asr.words, 30);
+const footage = { src: staticFile('me.mp4') };
+
+<Video src={footage.src} />
+<Captions words={words} split={[3, 3]} big={['premium']} preset="highlighter" footage={footage} />
+```
+
+Hand captions with key words, hung off a tracked subject:
+
+```tsx
+import { pointAt } from '@kinetographdev/vj';
+
+<HandCaptions words={words} hot={['move']} anchor={(f) => pointAt(track, f, 30)} />
+```
+
+## Main exports
+
+| Export | What it does |
+|---|---|
+| `<Captions>` | A voiceover in one of fourteen ready-made styles. |
+| `<HandCaptions>` | Captions written on in many hands, hanging off a tracked subject or centred low. |
+| `wordsFrom` | Words from timestamps in seconds, starting on a given frame. |
+| `STYLE_NAMES` | The fourteen style names `preset` takes. |
+| `checkFrames` | Frames worth a still, to check that a hook and a caption both read. |
+
+Props of `<Captions>`:
+
+| Prop | What it does |
+|---|---|
+| `words` | The spoken words with their frames. |
+| `split` | Words per line. Default 3. |
+| `big` | Words set big. A line with one is a hook. |
+| `preset`, `look` | A style by name, and changes to it. |
+| `lines` | Changes for single lines, by index from 0. |
+| `footage` | The video under the captions. It can supply the accent colour and a readable shadow. |
+| `subject` | The subject on a frame, so the block sits in the open side. |
+
+Props of `<HandCaptions>`: `words`, `split`, `hot` (words that break out in a display face), `anchor` (the tracked subject on a frame), `size`, `halo` and `top`. The full lists are on the [Kinetic typography page](/plugins/kinetic-typography/).
+
+## In Studio and with an agent
+
+Studio gets a Captions panel: a card for each style drawn in its own type, controls for font, case, weight, size and colour, layout cards, and motion controls. Hook and caption pins sit on the preview and you drag them up or down.
+
+## Limits
+
+- `<HandCaptions>` has no panel.
+- The plugin has no agent tools. Its skill tells an agent to take word timestamps from your speech-to-text or voice-over tool, not to place frames by hand.
+- Tracked text needs a track made with the [VJ](/docs/plugins/vj/) plugin.
