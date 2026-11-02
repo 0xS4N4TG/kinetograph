@@ -102,7 +102,7 @@ export interface BenchResult {
 export interface AudioPcm { sampleRate: number; /** One Float32Array per channel, equal lengths, samples in -1..1. */ channels: Float32Array[] }
 export interface VideoOptions {
   width: number; height: number; fps: number;
-  /** An ffmpeg H.264 encoder; default as the Rust CLI (h264_videotoolbox on macOS, else libx264 from the bundled ffmpeg program, then libopenh264). */
+  /** An ffmpeg H.264 encoder; default as the Rust CLI (libx264 from the bundled ffmpeg program, then on macOS h264_videotoolbox, then libopenh264). */
   encoder?: string;
 }
 export interface RenderSummary {
@@ -1156,15 +1156,19 @@ refusal says what to change.
 | `--every-nth-frame N` | gif only: draws every Nth frame of the range and plays them at the frame rate over N, so the GIF keeps its length with fewer frames. A project only (a `.json` scene is drawn whole) |
 | `--encoder NAME` | An ffmpeg encoder for the codec, in place of the choice below. Any encoder the built-in ffmpeg lacks runs in a separate ffmpeg program (`KINETOGRAPH_FFMPEG`, else the platform package's `bin/ffmpeg`, else `ffmpeg` on the `PATH` when it lists libx264 or the VAAPI/QSV encoder asked for). So `KINETOGRAPH_FFMPEG=$(which ffmpeg)` lets you use your system ffmpeg's encoders: `libx264`, and `h264_vaapi`, `hevc_vaapi`, `h264_qsv`, `hevc_qsv` on Intel and AMD GPUs (Linux; 4:2:0 only, HEVC also 10-bit; they must open a test encode, else the error says why). Decoding always uses the built-in ffmpeg |
 
-Encoder choice, when `--encoder` is not given. On macOS, ffmpeg's hardware encoders are used when it has them and they
-can do what was asked: `h264_videotoolbox`, `hevc_videotoolbox` (8-bit 4:2:0 only, so another `--pixel-format` selects
-the software encoder) and `prores_videotoolbox`. Otherwise, for H.264, the first of `libx264`, `libopenh264`, `h264_mf`,
-`h264_nvenc` and `h264_amf` that is available (and, for the last three, that opens on this machine). The ffmpeg linked
+Encoder choice, when `--encoder` is not given, is the same on every platform, as in Remotion and HyperFrames: software
+at constant quality. For H.264, `libx264` at `crf 18`; where it is missing, `h264_videotoolbox` on macOS, then the first
+of `libopenh264`, `h264_mf`, `h264_nvenc` and `h264_amf` that is available (and, for the last three, that opens on this
+machine). For H.265, `libx265`, else `hevc_videotoolbox` on macOS (8-bit 4:2:0 only). VideoToolbox is opt-in with
+`--encoder h264_videotoolbox` or `hevc_videotoolbox`; without `--video-bitrate` it gets 0.2 bits per pixel per frame.
+`prores_videotoolbox` is still what ProRes uses on macOS when it can do what was asked, else `prores_ks`. Every encoder we
+drive but ProRes and GIF (intra-only) gets a keyframe interval of 2 seconds (`-g` = `fps x 2`, at least 1); FFmpeg's own
+default is 12 frames. The ffmpeg linked
 into the addon is LGPL-only and has no `libx264` or `libx265`; the platform packages ship a separate GPL `ffmpeg`
 program (`bin/ffmpeg`) that has them, and the addon runs it as a child process (raw pictures on a pipe, a video-only
 file out; the sound is muxed in by the linked ffmpeg). `KINETOGRAPH_FFMPEG=/path/to/ffmpeg` names another program and
 is tried before the bundled one (an encoder is looked up in each program in turn); with neither, an `ffmpeg` on the
-`PATH` is used if it lists libx264. Then `libx265`, `prores_ks` and `libvpx-vp9` (linked on macOS and Linux); `gif` has
+`PATH` is used if it lists libx264. For the other codecs: `libx265`, `prores_ks` and `libvpx-vp9` (linked on macOS and Linux); `gif` has
 one. See `/docs/ffmpeg-license/`.
 
 Intel and AMD GPU encoders on Linux: `h264_vaapi`, `hevc_vaapi` (VAAPI, any Intel or AMD GPU with a driver) and

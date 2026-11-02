@@ -29,7 +29,7 @@ architecture diagram are in the [README](../../../../../README.md); the DOM engi
    Skia's GPU backend cannot start (no Vulkan driver, a driver without what Graphite needs) Skia draws the same layers
    with its CPU backend and the result is uploaded to the wgpu textures; it says so once on stderr, and
    `KINETOGRAPH_SKIA_CPU=1` forces that path (to test it). It is slower, and its blurs are box approximations.
-6. **Encode.** Frames go to FFmpeg (VideoToolbox on macOS) on another thread while the GPU draws the next one; the
+6. **Encode.** Frames go to FFmpeg (libx264 by default) on another thread while the GPU draws the next one; the
    project's audio, rendered offline with the Web Audio API, is mixed and muxed at the end.
 
 ## Where the code is
@@ -84,8 +84,9 @@ libavformat-dev libswscale-dev libavutil-dev libclang-dev` on Debian and Ubuntu)
 
 - **Range.** `10..40` is frames 10 to 39 and `10..=40` is 10 to 40, as in Rust; either start or the end of `..` may be
   left out. The default is the whole scene. A range that is empty or runs past `durationInFrames` is an error.
-- **Encoder.** `--encoder` names any ffmpeg H.264 encoder. Without it, `h264_videotoolbox` is used on macOS when ffmpeg
-  has it, then the first of `libx264`, `libopenh264`, `h264_mf`, `h264_nvenc`, `h264_amf` that is available and can open. The
+- **Encoder.** `--encoder` names any ffmpeg H.264 encoder. Without it, the first of `libx264`, then `h264_videotoolbox` (macOS only), `libopenh264`, `h264_mf`, `h264_nvenc`,
+  `h264_amf` that is available and can open; VideoToolbox is opt-in. Every encoder but ProRes and GIF gets `-g` of
+  `fps x 2` (`encode::gop_size`). The
   ffmpeg linked into the npm packages' addon is LGPL-only, so it has no `libx264`; `libx264` and `libx265` run in a
   separate GPL `ffmpeg` program (`crates/cli/src/external.rs`: `KINETOGRAPH_FFMPEG`, then the platform package's
   `bin/ffmpeg`, then `ffmpeg` on the `PATH`), and the linked `libopenh264` (macOS, Linux) and `h264_mf` (Windows) are the

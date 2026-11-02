@@ -14,7 +14,7 @@ The design notes are in [ENGINE.md](https://github.com/0xS4N4TG/kinetograph/blob
 3. **Split the tree.** Kinetograph's own elements become scene layers. Each run of plain HTML and SVG becomes a DOM island. The island's tags, attributes, inline styles, stylesheets and the frame's time go to the addon as JSON. Canvas 2D and WebGL contexts record their calls, and the recorded calls become one layer.
 4. **Lay out and paint the DOM.** The addon builds a Blitz document for the island. Stylo, the CSS engine from Firefox, styles it. Taffy lays it out, and Parley shapes its text. The painter writes the result into scene layers in CSS paint order. Anything the painter cannot draw is reported for that frame.
 5. **Composite on the GPU.** wgpu draws the layer tree. Skia draws vector shapes, text and Canvas 2D. WGSL passes do blends, masks, blurs, shadows and the other effects. GLSL shaders are translated with naga. The 3D renderer draws meshes and glTF models, and ThorVG draws Lottie. Skia draws every 2D layer. The layers it cannot draw, such as 3D and GLSL groups, are drawn by the wgpu path, and Skia composites them.
-6. **Encode.** Each finished frame goes to FFmpeg on another thread, while the GPU draws the next one. On macOS, the VideoToolbox encoder is used when FFmpeg has it. The audio is rendered offline with the Web Audio API, then mixed and muxed at the end.
+6. **Encode.** Each finished frame goes to FFmpeg on another thread, while the GPU draws the next one. The default is libx264 on every platform, with a keyframe every 2 seconds; the VideoToolbox encoder on macOS is opt-in with `--encoder`. The audio is rendered offline with the Web Audio API, then mixed and muxed at the end.
 
 ## Rules the engine keeps
 

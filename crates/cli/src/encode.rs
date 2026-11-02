@@ -19,12 +19,22 @@ use ffmpeg::software::scaling::{self, Flags as ScaleFlags};
 use ffmpeg::util::color;
 use ffmpeg::{Dictionary, Packet, Rational, encoder, frame};
 
-/// The encoder `render` uses when `--encoder` is not given and the machine
-/// has no hardware one.
+/// The encoder `render` uses when `--encoder` is not given, on every platform, as Remotion and HyperFrames do:
+/// software, constant quality (CRF 18), a keyframe every two seconds.
 pub const DEFAULT_ENCODER: &str = "libx264";
 
-/// The macOS hardware H.264 encoder, preferred there when ffmpeg has it.
+/// The macOS hardware H.264 encoder: opt-in with `--encoder`, and the fallback on macOS when libx264 is not there.
 pub const VIDEOTOOLBOX: &str = "h264_videotoolbox";
+
+/// The seconds between keyframes of the encoders we drive.
+const KEYFRAME_SECONDS: f64 = 2.0;
+
+/// The keyframe interval in frames (`-g`): `KEYFRAME_SECONDS` of video, at least 1. FFmpeg's own default is 12 frames.
+pub fn gop_size(fps: f64) -> i32 {
+    (fps * KEYFRAME_SECONDS)
+        .round()
+        .clamp(1.0, f64::from(i32::MAX)) as i32
+}
 
 /// Bits per pixel per frame for the encoders that are given a bit rate
 /// rather than a quality (`bit_rate`).
@@ -40,8 +50,9 @@ pub fn init() {
     });
 }
 
-/// The H.264 encoders tried, in this order, when none is asked for and VideoToolbox is not there. `libx264` is GPL: the
-/// ffmpeg that ships with Kinetograph is LGPL-only and has none, so there it is the first of the rest that exists:
+/// The H.264 encoders tried, in this order, when none is asked for (`default_h264`). `libx264` is GPL: the ffmpeg that
+/// ships with Kinetograph is LGPL-only and has none, so there it is the first of the rest that exists (VideoToolbox
+/// first on macOS):
 /// `libopenh264` (BSD, software, macOS and Linux), `h264_mf` (Windows Media Foundation), `h264_nvenc` and `h264_amf`
 /// (the GPU's, loaded at run time). All take yuv420p.
 const H264_FALLBACKS: [&str; 5] = [
@@ -122,14 +133,19 @@ fn unavailable_message(name: &str, external: external::Availability) -> String {
     }
 }
 
-/// The H.264 encoder to use when none is asked for: `H264_FALLBACKS` in order.
-fn default_h264(has: &impl Fn(&str) -> bool) -> Option<&'static str> {
+/// The H.264 encoder to use when none is asked for: libx264, then (macOS only) VideoToolbox, then the rest of
+/// `H264_FALLBACKS` in order. VideoToolbox is never chosen over libx264.
+fn default_h264(macos: bool, has: &impl Fn(&str) -> bool) -> Option<&'static str> {
+    if has(DEFAULT_ENCODER) {
+        return Some(DEFAULT_ENCODER);
+    }
+    if macos && has(VIDEOTOOLBOX) {
+        return Some(VIDEOTOOLBOX);
+    }
     H264_FALLBACKS.into_iter().find(|name| has(name))
 }
 
-/// Picks the encoder: `requested` if given (and present), else VideoToolbox
-/// on macOS when `has` it, else the first of `H264_FALLBACKS` that `has`
-/// says exists.
+/// Picks the encoder: `requested` if given (and present), else the first that `default_h264` finds.
 pub fn select_encoder(
     requested: Option<&str>,
     macos: bool,
@@ -142,10 +158,7 @@ pub fn select_encoder(
             Err(unavailable(name))
         };
     }
-    if macos && has(VIDEOTOOLBOX) {
-        return Ok(VIDEOTOOLBOX.to_string());
-    }
-    if let Some(name) = default_h264(&has) {
+    if let Some(name) = default_h264(macos, &has) {
         return Ok(name.to_string());
     }
     Err(format!(
@@ -502,8 +515,8 @@ pub fn crf_to_quality(crf: f64) -> u32 {
     ((100.0 * (51.0 - crf) / 51.0).round() as i64).clamp(1, 100) as u32
 }
 
-/// Checks `settings` for the output `path` and picks the encoder (`macos`: the hardware ones are preferred, when
-/// `has` them and they can do what was asked), the pixel format, the container and the audio codec. Every refusal
+/// Checks `settings` for the output `path` and picks the encoder (`macos`: VideoToolbox is the fallback for H.264 and
+/// H.265 where the software encoder is missing, and what ProRes uses, when `has` it and it can do what was asked), the pixel format, the container and the audio codec. Every refusal
 /// says what to change.
 pub fn resolve(
     settings: &Settings,
@@ -694,16 +707,13 @@ pub fn resolve(
             let hardware =
                 |name: &'static str| (macos && has(name) && wanted == Pix::Yuv420p).then_some(name);
             let pick = match codec {
-                Codec::H264 => hardware(VIDEOTOOLBOX)
-                    .or_else(|| {
-                        // The software ones and the GPU ones take 4:2:0 only; libx264 alone takes the others.
-                        if wanted == Pix::Yuv420p {
-                            default_h264(&has)
-                        } else {
-                            Some(DEFAULT_ENCODER)
-                        }
-                    })
-                    .unwrap_or(DEFAULT_ENCODER),
+                // The software ones and the GPU ones take 4:2:0 only; libx264 alone takes the others.
+                Codec::H264 if wanted == Pix::Yuv420p => {
+                    default_h264(macos, &has).unwrap_or(DEFAULT_ENCODER)
+                }
+                Codec::H264 => DEFAULT_ENCODER,
+                // As for H.264: libx265, and the hardware encoder only where there is no libx265.
+                Codec::H265 if has("libx265") => "libx265",
                 Codec::H265 => hardware("hevc_videotoolbox").unwrap_or("libx265"),
                 Codec::ProRes => {
                     if macos && has("prores_videotoolbox") {
@@ -1004,6 +1014,10 @@ fn encoder_options(
 ) -> Dictionary<'static> {
     let mut options = Dictionary::new();
     let default_bits = bit_rate(width, height, fps);
+    // A keyframe every `KEYFRAME_SECONDS`, not FFmpeg's default of every 12 frames. ProRes and GIF are intra-only.
+    if !matches!(settings.codec, Codec::ProRes | Codec::Gif) {
+        video.set_gop(gop_size(fps) as u32);
+    }
     match settings.encoder.as_str() {
         DEFAULT_ENCODER => {
             match settings.quality {
@@ -1699,20 +1713,59 @@ mod tests {
     }
 
     #[test]
-    fn videotoolbox_is_the_default_only_on_macos_when_present() {
+    fn libx264_is_the_default_and_videotoolbox_the_fallback_on_macos() {
         let both = |name: &str| name == "libx264" || name == "h264_videotoolbox";
         let x264 = |name: &str| name == "libx264";
-        assert_eq!(
-            select_encoder(None, true, both).unwrap(),
-            "h264_videotoolbox"
-        );
+        let vt = |name: &str| name == "h264_videotoolbox";
+        // libx264 wins everywhere, macOS included: VideoToolbox is opt-in with --encoder.
+        assert_eq!(select_encoder(None, true, both).unwrap(), "libx264");
         assert_eq!(select_encoder(None, false, both).unwrap(), "libx264");
         assert_eq!(select_encoder(None, true, x264).unwrap(), "libx264");
+        // Without libx264, macOS falls back to VideoToolbox; other platforms never pick it.
+        assert_eq!(select_encoder(None, true, vt).unwrap(), "h264_videotoolbox");
+        assert!(select_encoder(None, false, vt).is_err());
+        assert_eq!(
+            select_encoder(Some("h264_videotoolbox"), true, both).unwrap(),
+            "h264_videotoolbox"
+        );
         let msg = select_encoder(None, false, |_| false).unwrap_err();
         assert!(
             msg.contains("libx264") && msg.contains("--encoder"),
             "{msg}"
         );
+    }
+
+    #[test]
+    fn the_default_h265_encoder_is_libx265_with_videotoolbox_opt_in() {
+        let path = Path::new("out.mp4");
+        let h265 = Settings {
+            codec: Some(Codec::H265),
+            ..Settings::default()
+        };
+        let both = |name: &str| matches!(name, "libx265" | "hevc_videotoolbox" | "aac");
+        let vt = |name: &str| matches!(name, "hevc_videotoolbox" | "aac");
+        assert_eq!(resolve(&h265, path, true, both).unwrap().encoder, "libx265");
+        assert_eq!(
+            resolve(&h265, path, true, vt).unwrap().encoder,
+            "hevc_videotoolbox"
+        );
+        let asked = Settings {
+            encoder: Some("hevc_videotoolbox".into()),
+            ..Settings::default()
+        };
+        assert_eq!(
+            resolve(&asked, path, true, both).unwrap().encoder,
+            "hevc_videotoolbox"
+        );
+    }
+
+    #[test]
+    fn a_keyframe_comes_every_two_seconds() {
+        assert_eq!(gop_size(30.0), 60);
+        assert_eq!(gop_size(24.0), 48);
+        assert_eq!(gop_size(29.97), 60);
+        assert_eq!(gop_size(0.2), 1);
+        assert_eq!(gop_size(0.001), 1);
     }
 
     #[test]
@@ -1731,7 +1784,7 @@ mod tests {
             select_encoder(None, false, only(&["h264_nvenc", "h264_amf"])).unwrap(),
             "h264_nvenc"
         );
-        // libx264 still wins where the ffmpeg has it (a developer's own build), VideoToolbox on macOS wins over both.
+        // libx264 still wins where the ffmpeg has it (a developer's own build), VideoToolbox on macOS comes before them.
         assert_eq!(
             select_encoder(None, false, only(&["libopenh264", "libx264"])).unwrap(),
             "libx264"
@@ -1745,7 +1798,7 @@ mod tests {
     #[test]
     fn an_encoder_only_the_external_ffmpeg_has_is_chosen_like_a_linked_one() {
         // `has` does not say where an encoder lives: libx264 beats libopenh264 whether it is linked or external,
-        // VideoToolbox still wins on macOS, and h265 and the explicit names resolve without being linked.
+        // and VideoToolbox, even on macOS, whether or not it is also there; h265 and the explicit names resolve without being linked.
         let external = |name: &str| matches!(name, "libx264" | "libx265" | "libopenh264" | "aac");
         assert_eq!(select_encoder(None, false, external).unwrap(), "libx264");
         let path = Path::new("out.mp4");
@@ -1763,10 +1816,7 @@ mod tests {
         };
         assert_eq!(plan(named, false, &external).codec, Codec::H265);
         let with_vt = |name: &str| external(name) || name == VIDEOTOOLBOX;
-        assert_eq!(
-            plan(Settings::default(), true, &with_vt).encoder,
-            VIDEOTOOLBOX
-        );
+        assert_eq!(plan(Settings::default(), true, &with_vt).encoder, "libx264");
         let yuv444 = Settings {
             pixel_format: Some("yuv444p".into()),
             ..Settings::default()
@@ -2312,10 +2362,17 @@ mod tests {
         if !has_encoder("h264_videotoolbox") {
             return;
         }
-        assert_eq!(
-            ask(None, "a.mp4", |_| {}).unwrap().encoder,
+        let default = if has_encoder("libx264") {
+            "libx264"
+        } else {
             "h264_videotoolbox"
-        );
+        };
+        assert_eq!(ask(None, "a.mp4", |_| {}).unwrap().encoder, default);
+        let r = ask(None, "a.mp4", |s| {
+            s.encoder = Some("h264_videotoolbox".into())
+        })
+        .unwrap();
+        assert_eq!(r.encoder, "h264_videotoolbox");
         let r = ask(None, "a.mp4", |s| s.pixel_format = Some("yuv444p".into())).unwrap();
         assert_eq!(r.encoder, "libx264");
         let r = ask(Some(Codec::ProRes), "a.mov", |_| {}).unwrap();

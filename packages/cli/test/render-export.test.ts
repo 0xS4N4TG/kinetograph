@@ -5,7 +5,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -75,12 +75,27 @@ const Main = () => <AbsoluteFill style={{ background: process.env.NODE_ENV === '
 registerRoot(() => <Composition id="Mode" component={Main} width={64} height={36} fps={30} durationInFrames={130} />);
 `;
 
+// A box drifting slowly: no scene cut, so the keyframes are the encoder's interval and nothing else.
+const DRIFT = `
+import { AbsoluteFill, Composition, registerRoot, useCurrentFrame } from 'remotion';
+const Box = () => {
+  const frame = useCurrentFrame();
+  return (
+    <AbsoluteFill style={{ background: '#102030' }}>
+      <div style={{ position: 'absolute', left: 4 + frame * 0.3, top: 8, width: 12, height: 12, background: 'rgb(240,80,40)' }} />
+    </AbsoluteFill>
+  );
+};
+registerRoot(() => <Composition id="Main" component={Box} width={64} height={36} fps={30} durationInFrames={90} />);
+`;
+
 let dir = '';
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'kinetograph-export-'));
   writeFileSync(join(dir, 'package.json'), '{"name":"p","private":true}');
   writeFileSync(join(dir, 'index.tsx'), PROJECT);
   writeFileSync(join(dir, 'mode.tsx'), MODE);
+  writeFileSync(join(dir, 'gop.tsx'), DRIFT);
   mkdirSync(join(dir, 'public'));
   writeFileSync(join(dir, 'public', 'tone.wav'), wav(3));
 });
@@ -183,6 +198,26 @@ describe.skipIf(!ready)('render export options', () => {
       expect(r.status).not.toBe(0);
       expect(r.stderr).toContain(`codec ${codec}`);
     }
+  });
+
+  it('writes a keyframe every two seconds, with libx264 by default where it is there', () => {
+    // 90 frames at 30 fps: keyframes at 0 and 60 (FFmpeg's own default would put one every 12 frames). The box drifts
+    // slowly, so libx264 finds no scene cut to add another.
+    const keyframes = (file: string): number[] => {
+      const out = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'frame=key_frame', '-of', 'csv=p=0', join(dir, file)], { encoding: 'utf8' }).stdout;
+      return out.split('\n').filter((l) => l !== '').flatMap((l, i) => (l.startsWith('1') ? [i] : []));
+    };
+    const x264 = (file: string): boolean => readFileSync(join(dir, file)).includes('x264 - core');
+    render('gop-h264.mp4', [], 'gop.tsx');
+    expect(keyframes('gop-h264.mp4')).toEqual([0, 60]);
+    // VideoToolbox is opt-in, and gets the same interval.
+    if (run('gop-vt.mp4', ['--encoder', 'h264_videotoolbox'], 'gop.tsx').status === 0) {
+      expect(keyframes('gop-vt.mp4')).toEqual([0, 60]);
+      expect(x264('gop-vt.mp4')).toBe(false);
+    }
+    if (run('gop-x264.mp4', ['--encoder', 'libx264'], 'gop.tsx').status === 0) expect(x264('gop-h264.mp4')).toBe(true);
+    render('gop-h265.mp4', ['--codec', 'h265'], 'gop.tsx');
+    expect(keyframes('gop-h265.mp4')).toEqual([0, 60]);
   });
 
   it('--crf and --video-bitrate change the file size', () => {

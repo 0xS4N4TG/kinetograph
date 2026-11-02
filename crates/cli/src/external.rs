@@ -489,6 +489,10 @@ fn encoder_args(settings: &Resolved, width: u32, height: u32, fps: f64) -> Vec<S
         a.push(v);
     };
     push("-c:v", settings.encoder.clone());
+    // The same keyframe interval the linked encoders get; ProRes and GIF are intra-only.
+    if !matches!(settings.codec, encode::Codec::ProRes | encode::Codec::Gif) {
+        push("-g", encode::gop_size(fps).to_string());
+    }
     match settings.encoder.as_str() {
         "libx264" | "libx265" => {
             let default_crf = if settings.encoder == "libx264" {
@@ -940,7 +944,7 @@ mod tests {
         assert_eq!(
             line("h264_vaapi", Pix::Yuv420p, Quality::Crf(20.0), Some(NODE)),
             format!(
-                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v h264_vaapi -qp 20 {TAGS}"
+                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v h264_vaapi -g 60 -qp 20 {TAGS}"
             )
         );
         assert_eq!(
@@ -951,13 +955,13 @@ mod tests {
                 Some(NODE)
             ),
             format!(
-                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v h264_vaapi -b:v 5000000 {TAGS}"
+                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v h264_vaapi -g 60 -b:v 5000000 {TAGS}"
             )
         );
         assert_eq!(
             line("h264_vaapi", Pix::Yuv420p, Quality::Default, Some(NODE)),
             format!(
-                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v h264_vaapi -b:v 12441600 {TAGS}"
+                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v h264_vaapi -g 60 -b:v 12441600 {TAGS}"
             )
         );
         // A CRF with a fraction is rounded: -qp is an integer.
@@ -967,18 +971,34 @@ mod tests {
     }
 
     #[test]
+    fn every_encoder_but_the_intra_only_ones_gets_a_two_second_keyframe_interval() {
+        let args = |encoder: &str, codec: encode::Codec, fps: f64| {
+            let mut s = settings(encoder, Pix::Yuv420p, Quality::Default);
+            s.codec = codec;
+            encoder_args(&s, 1920, 1080, fps).join(" ")
+        };
+        assert!(
+            args("libx264", encode::Codec::H264, 30.0).starts_with("-c:v libx264 -g 60 -crf 18")
+        );
+        assert!(args("libx265", encode::Codec::H265, 24.0).contains(" -g 48 "));
+        assert!(args("libvpx-vp9", encode::Codec::Vp9, 30.0).contains(" -g 60 "));
+        assert!(!args("prores_ks", encode::Codec::ProRes, 30.0).contains(" -g "));
+        assert!(!args("gif", encode::Codec::Gif, 30.0).contains(" -g "));
+    }
+
+    #[test]
     fn hevc_vaapi_tags_hvc1_and_takes_ten_bit_as_p010() {
         assert_eq!(
             line("hevc_vaapi", Pix::Yuv420p, Quality::Crf(28.0), Some(NODE)),
             format!(
-                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v hevc_vaapi -qp 28 -tag:v hvc1 {TAGS}"
+                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v hevc_vaapi -g 60 -qp 28 -tag:v hvc1 {TAGS}"
             )
         );
         assert_eq!(
             line("hevc_vaapi", Pix::Yuv420p10, Quality::Crf(28.0), Some(NODE)),
             format!(
                 "-init_hw_device vaapi=va:{NODE} -filter_hw_device va -f rawvideo -pix_fmt yuv420p10le -s 1920x1080 -framerate 30/1 -i pipe:0 -an \
-                 -vf format=p010le,hwupload -c:v hevc_vaapi -qp 28 -profile:v main10 -tag:v hvc1 {TAGS}"
+                 -vf format=p010le,hwupload -c:v hevc_vaapi -g 60 -qp 28 -profile:v main10 -tag:v hvc1 {TAGS}"
             )
         );
     }
@@ -989,7 +1009,7 @@ mod tests {
             line("h264_qsv", Pix::Yuv420p, Quality::Crf(20.0), None),
             format!(
                 "-init_hw_device qsv=hw -filter_hw_device hw {INPUT_8} \
-                 -vf format=nv12,hwupload=extra_hw_frames=64,format=qsv -c:v h264_qsv -global_quality 20 {TAGS}"
+                 -vf format=nv12,hwupload=extra_hw_frames=64,format=qsv -c:v h264_qsv -g 60 -global_quality 20 {TAGS}"
             )
         );
         // A render node named by the user: the VAAPI device there, and Quick Sync derived from it.
@@ -1003,7 +1023,7 @@ mod tests {
             format!(
                 "-init_hw_device vaapi=va:/dev/dri/renderD129 -init_hw_device qsv=hw@va -filter_hw_device hw \
                  -f rawvideo -pix_fmt yuv420p10le -s 1920x1080 -framerate 30/1 -i pipe:0 -an \
-                 -vf format=p010le,hwupload=extra_hw_frames=64,format=qsv -c:v hevc_qsv -b:v 12441600 \
+                 -vf format=p010le,hwupload=extra_hw_frames=64,format=qsv -c:v hevc_qsv -g 60 -b:v 12441600 \
                  -profile:v main10 -tag:v hvc1 {TAGS}"
             )
         );
@@ -1013,7 +1033,7 @@ mod tests {
         );
         assert!(
             line("h264_qsv", Pix::Yuv420p, Quality::Bitrate(8_000_000), None)
-                .contains(" -c:v h264_qsv -b:v 8000000 ")
+                .contains(" -c:v h264_qsv -g 60 -b:v 8000000 ")
         );
     }
 
@@ -1160,12 +1180,12 @@ mod tests {
             calls[0],
             format!(
                 "-hide_banner -loglevel error -nostdin -y -init_hw_device vaapi=va:{NODE} -filter_hw_device va -f rawvideo -pix_fmt yuv420p -s 256x144 \
-                 -framerate 30/1 -i pipe:0 -an -vf format=nv12,hwupload -c:v h264_vaapi -b:v 221184 {TAGS} \
+                 -framerate 30/1 -i pipe:0 -an -vf format=nv12,hwupload -c:v h264_vaapi -g 60 -b:v 221184 {TAGS} \
                  -frames:v 4 -f null -"
             )
         );
         assert!(
-            calls[1].contains("-c:v h264_vaapi -b:v 221184 -low_power 1 "),
+            calls[1].contains("-c:v h264_vaapi -g 60 -b:v 221184 -low_power 1 "),
             "{}",
             calls[1]
         );
