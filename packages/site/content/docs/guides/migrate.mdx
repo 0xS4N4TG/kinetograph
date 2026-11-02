@@ -88,12 +88,38 @@ Counts come from loading the built modules in Node and from each Remotion packag
 
 Follow these steps in order.
 
-1. **Find the entry.** The entry is the file that calls `registerRoot`, often `src/index.ts`. Run `npx kinetograph compositions src/index.ts` to check that it loads. If an import is not supported, the command stops and names it. Fix that first.
-2. **Run doctor.** `npx kinetograph doctor src/index.ts` goes through every frame without the GPU. It lists each element and property the engine can't draw, and the frames they happen on.
+1. **Find the entry.** It is the file that calls `registerRoot`, often `src/index.ts`. Check that it loads with `compositions`. If an import is not supported, the command stops and names it. Fix that first.
+2. **Run doctor.** It goes through every frame without the GPU. It lists each element and property the engine can't draw, and the frames they happen on.
 3. **Fix each finding.** The common cases are below.
-4. **Lint and look.** Run `kinetograph lint src/index.ts`. Then run `kinetograph strip src/index.ts -n 12 -o out/strip.png` and open the picture.
-5. **Render with `--strict`.** Run `kinetograph render src/index.ts --comp <id> -o out/video.mp4 --strict`. It stops on the first frame with something unsupported, so nothing is silently missing.
+4. **Lint and look.** `lint` checks the project. `strip` draws twelve frames into one picture. Open it.
+5. **Render with `--strict`.** It stops on the first frame with something unsupported, so nothing is silently missing.
 6. **Write down what changed.** Note anything you left out or approximated. The video can differ from the Remotion one.
+
+The commands for steps 1, 2, 4 and 5 are below. They differ only in the entry. A Remotion project points at its entry file and picks a composition with `--comp`. A [HyperFrames](/docs/guides/migrate-hyperframes/) page points at its `index.html` or the directory that holds it.
+
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
+
+```sh
+npx kinetograph compositions src/index.ts
+npx kinetograph doctor src/index.ts
+npx kinetograph lint src/index.ts
+npx kinetograph strip src/index.ts -n 12 -o out/strip.png
+npx kinetograph render src/index.ts --comp <id> -o out/video.mp4 --strict
+```
+
+  </Tab>
+  <Tab value="HyperFrames">
+
+```sh
+npx kinetograph compositions index.html
+npx kinetograph doctor index.html
+npx kinetograph strip index.html -n 12 -o out/strip.png
+npx kinetograph render index.html -o out/video.mp4 --strict
+```
+
+  </Tab>
+</Tabs>
 
 ### Fixing findings
 
