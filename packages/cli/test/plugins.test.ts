@@ -97,6 +97,11 @@ describe('parseProps with a file', () => {
     expect(parseProps('{"a":1}')).toEqual({ a: 1 });
   });
 
+  it('reads a file saved with a UTF-8 byte order mark (Remotion 4.0.540)', () => {
+    write(join(root, 'bom.json'), '\uFEFF{"title":"Warm"}');
+    expect(parseProps(join(root, 'bom.json'))).toEqual({ title: 'Warm' });
+  });
+
   it('still reports bad JSON, in a file or inline', () => {
     write(join(root, 'bad.json'), '[1]');
     expect(() => parseProps(join(root, 'bad.json'))).toThrow(/must be a JSON object/);
