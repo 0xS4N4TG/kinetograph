@@ -48,6 +48,9 @@ export interface CommonProps {
   x?: Num;
   y?: Num;
   scale?: Num;
+  /** Stretch along the layer's own x or y axis, multiplied with `scale`. */
+  scaleX?: Num;
+  scaleY?: Num;
   rotation?: Num;
   anchorX?: Num;
   anchorY?: Num;

@@ -71,13 +71,14 @@ Every layer has these fields:
 |---|---|---|
 | `x`, `y` | `0` | Where the anchor point lands in the parent, in pixels. |
 | `scale` | `1` | Uniform scale about the anchor. |
+| `scaleX`, `scaleY` | `1` | Stretch along the layer's own x and y axes, multiplied with `scale` and about the same pivot. They act before `rotation`, so a turned layer is stretched along its own edges. |
 | `rotation` | `0` | Degrees, clockwise. |
 | `anchorX`, `anchorY` | `0` | Anchor point in the layer's own coordinates. Scale and rotation pivot here. |
 | `rotateX`, `rotateY` | `0` | Degrees. Turn the layer in 3D about the horizontal and the vertical axis through its position, as CSS's `rotateX` and `rotateY`. See [3D transforms and the camera](#3d-transforms-and-the-camera). |
 | `z` | `0` | Pixels toward the viewer, as CSS's `translateZ`. |
 | `originX`, `originY` | `0` | A point of the layer's box as a fraction of its size, added to the anchor to make the pivot: see [Transform origin](#transform-origin). |
 
-The layer matrix is `translate(x, y) * rotate(rotation) * scale(scale) * translate(-anchorX, -anchorY)`. A child's
+The layer matrix is `translate(x, y) * rotate(rotation) * scale(scale * scaleX, scale * scaleY) * translate(-anchorX, -anchorY)`. A child's
 matrix is applied inside its parent's. `rotateX`, `rotateY` and `z` do not change it: they move the finished layer
 afterwards.
 
@@ -93,7 +94,7 @@ keeps the pivot at the anchor, even for a path.
 Like CSS's `transform-origin`, the origin changes the pivot and does not move the layer: with no turn and no scale the
 layer is where it would be without an origin, with its anchor at `(x, y)`, and the pivot sits at `(x, y)` plus the
 origin offset whatever `rotation` and `scale` do. The matrix is
-`translate(x + ox, y + oy) * rotate(rotation) * scale(scale) * translate(-(anchorX + ox), -(anchorY + oy))`, with
+`translate(x + ox, y + oy) * rotate(rotation) * scale(scale * scaleX, scale * scaleY) * translate(-(anchorX + ox), -(anchorY + oy))`, with
 `(ox, oy)` the origin in pixels. The 3D turn is about that same point.
 
 - Both are animatable numbers. The size is the box at that frame, so a text layer or an image whose size animates keeps
@@ -1059,8 +1060,10 @@ reach past a layer, at any keyframe on any layer (nested layers included), round
   from canvas positions, not from where the texture starts or how large it is, and `displace` gives the same bits at
   any margin. `halftone`, 3D transforms, `cornerPin` and the `noise` layer read the padded texture through the
   hardware filter or a matrix that includes the margin, and can differ by a level or so when it changes.
-- `blur` is not counted. It spreads a layer's own pixels and nothing needs room beyond them, so a scene that uses
-  only `blur` keeps margin 0.
+- `blur` is not counted for 2D layers, which Skia draws and blurs with room of its own: a scene that uses only `blur`
+  on them keeps margin 0. A `blur` on a `meshGradient`, `glsl` or `scene3d` layer, or on a group that holds one or is a
+  shader, Canvas 2D or `preserve3d` group, counts `3 * radius` (at most `3 * 128`), because the wgpu path draws those into
+  the padded canvas and the blur would otherwise fade at the canvas edge where the content runs past it.
 - `glow` counts `3 * radius`, and `chromaticAberration` counts `|amount|`.
 - `backdropBlur` counts `3 * radius` (it reads the canvas around a layer that sits at the edge); with
   `edgeMode: "mirror"` it counts nothing.
@@ -1078,7 +1081,7 @@ reach past a layer, at any keyframe on any layer (nested layers included), round
 - The colour filters, `gradientMap`, `lut`, `grain` and `dither` count nothing: they change pixels in place. `halftone`
   and `dotMatrix` count nothing either: their dots stay inside their cells.
 - `displace` counts `|scale| / 2` in layer pixels, so unlike the others it is multiplied by the largest product of
-  `scale` over the layer and its enclosing groups (a card scaled to 2 with a displacement of 10 counts 10).
+  `scale` over the layer and its enclosing groups, times the larger of `scaleX` and `scaleY` (a card scaled to 2 with a displacement of 10 counts 10).
 - A bigger margin costs time and memory, because every texture is bigger. Animating a shadow's offset to a large
   value for one frame makes the whole scene pay for it.
 - 3D transforms (`rotateX`, `rotateY`, `z`), the `camera` and `cornerPin` count nothing: they only move a finished

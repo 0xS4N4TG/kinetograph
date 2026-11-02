@@ -145,7 +145,7 @@ function pick(source: Props, keys: readonly string[]): Record<string, unknown> {
   return out;
 }
 
-const TRANSFORM_KEYS = ['x', 'y', 'scale', 'rotation', 'anchorX', 'anchorY', 'originX', 'originY', 'rotateX', 'rotateY', 'z'] as const;
+const TRANSFORM_KEYS = ['x', 'y', 'scale', 'scaleX', 'scaleY', 'rotation', 'anchorX', 'anchorY', 'originX', 'originY', 'rotateX', 'rotateY', 'z'] as const;
 
 function transformOf(props: Props, name: string): Transform | undefined {
   const transform: Record<string, unknown> = pick(props, TRANSFORM_KEYS);

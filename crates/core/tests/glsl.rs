@@ -1458,3 +1458,37 @@ fn tex_sub_image_2d_lays_a_picture_file_over_a_target_and_over_a_file_texture() 
     assert_eq!(px(&frame, 9, 8), [255, 0, 0, 255]);
     assert_eq!(px(&frame, 14, 8), [0, 0, 255, 255]);
 }
+
+/// A 64 x 64 canvas with a cream background and a group 30 px past it on every side holding a 124 x 124 `glsl`
+/// layer of one colour, blurred by `radius` (not at all if 0).
+fn overhanging_glsl(radius: u32) -> Scene {
+    let effects = if radius > 0 {
+        format!(r#""effects": [{{"type": "blur", "radius": {radius}}}],"#)
+    } else {
+        String::new()
+    };
+    let glsl = layer(
+        "precision mediump float; void main() { gl_FragColor = vec4(0.1, 0.2, 0.6, 1.0); }",
+        "",
+        &draw(""),
+    )
+    .replace(r#""width": 16, "height": 16"#, r#""width": 124, "height": 124"#)
+    .replace("[0, 0, 16, 16]", "[0, 0, 124, 124]");
+    let json = format!(
+        r##"{{"width": 64, "height": 64, "fps": 30, "durationInFrames": 1, "background": "#f6d9c3",
+            "layers": [{{"id": "over", "type": "group", {effects} "transform": {{"x": -30, "y": -30}},
+                "children": [{glsl}]}}]}}"##
+    );
+    Scene::from_json(&json, Path::new(env!("CARGO_MANIFEST_DIR")).join("tests")).unwrap()
+}
+
+#[test]
+fn a_blurred_glsl_layer_past_the_canvas_stays_opaque_at_the_edges() {
+    // Issue 91: what the wgpu path draws was cut at the canvas before the blur, which faded the frame's edges.
+    let sharp = render_still(overhanging_glsl(0), 0).unwrap();
+    let blurred = render_still(overhanging_glsl(6), 0).unwrap();
+    for (x, y) in [(0, 32), (1, 32), (32, 0), (32, 63), (63, 32), (0, 0), (63, 63)] {
+        let (a, b) = (px(&sharp, x, y), px(&blurred, x, y));
+        near(b, a, 5);
+    }
+}

@@ -75,7 +75,7 @@ export interface InspectLayer {
   opacity: number;
   blendMode: string;
   transform: {
-    x: number; y: number; scale: number; rotation: number; anchorX: number; anchorY: number;
+    x: number; y: number; scale: number; scaleX: number; scaleY: number; rotation: number; anchorX: number; anchorY: number;
     rotateX: number; rotateY: number; z: number;
   };
   matrix: [number, number, number, number, number, number];

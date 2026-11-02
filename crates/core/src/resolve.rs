@@ -151,6 +151,9 @@ pub struct ResolvedTransform {
     pub x: f64,
     pub y: f64,
     pub scale: f64,
+    /// Stretch along the layer's own axes, multiplied with `scale` (`scene::Transform::scale_x`).
+    pub scale_x: f64,
+    pub scale_y: f64,
     pub rotation: f64,
     pub anchor_x: f64,
     pub anchor_y: f64,
@@ -177,6 +180,8 @@ impl Default for ResolvedTransform {
             x: 0.0,
             y: 0.0,
             scale: 1.0,
+            scale_x: 1.0,
+            scale_y: 1.0,
             rotation: 0.0,
             anchor_x: 0.0,
             anchor_y: 0.0,
@@ -192,13 +197,15 @@ impl Default for ResolvedTransform {
 }
 
 impl ResolvedTransform {
-    /// Layer space to parent space: move the anchor to the origin, scale,
-    /// rotate, then translate to (x, y).
+    /// Layer space to parent space: move the anchor to the origin, scale
+    /// (`scale` times `scale_x` across, `scale` times `scale_y` down), rotate,
+    /// then translate to (x, y).
     ///
     /// The origin moves the pivot of the turn and the scale to the anchor plus
     /// the origin, and puts the layer back so that nothing moves while it is
     /// not turned or scaled: the pivot lands where it is without them.
     pub fn matrix(&self) -> Affine {
+        let stretch = Affine::scale_non_uniform(self.scale * self.scale_x, self.scale * self.scale_y);
         let css = self
             .matrix
             .filter(crate::scene::matrix_is_affine_2d)
@@ -208,7 +215,7 @@ impl ResolvedTransform {
         if self.origin_x != 0.0 || self.origin_y != 0.0 {
             return Affine::translate((self.x + self.origin_x, self.y + self.origin_y))
                 * Affine::rotate(self.rotation.to_radians())
-                * Affine::scale(self.scale)
+                * stretch
                 * css
                 * Affine::translate((
                     -(self.anchor_x + self.origin_x),
@@ -217,7 +224,7 @@ impl ResolvedTransform {
         }
         Affine::translate((self.x, self.y))
             * Affine::rotate(self.rotation.to_radians())
-            * Affine::scale(self.scale)
+            * stretch
             * css
             * Affine::translate((-self.anchor_x, -self.anchor_y))
     }
@@ -1508,6 +1515,8 @@ fn resolve_transform(t: &Transform, f: f64) -> ResolvedTransform {
         x: t.x.at(f),
         y: t.y.at(f),
         scale: t.scale.at(f),
+        scale_x: t.scale_x.at(f),
+        scale_y: t.scale_y.at(f),
         rotation: t.rotation.at(f),
         anchor_x: t.anchor_x.at(f),
         anchor_y: t.anchor_y.at(f),
@@ -1770,6 +1779,33 @@ mod tests {
             &r.layers[1].kind,
             ResolvedKind::Group { children, .. } if children.len() == 1
         ));
+    }
+
+    #[test]
+    fn scale_x_and_scale_y_multiply_with_scale_before_the_turn() {
+        let t = ResolvedTransform {
+            x: 10.0,
+            y: 20.0,
+            scale: 2.0,
+            scale_x: 3.0,
+            scale_y: 0.5,
+            anchor_x: 5.0,
+            anchor_y: 7.0,
+            ..ResolvedTransform::default()
+        };
+        // The anchor lands on (x, y); a point one unit right of it goes 6 right, one below it 1 down.
+        let m = t.matrix();
+        let at = |p: (f64, f64)| m * kurbo::Point::new(p.0, p.1);
+        assert_eq!(at((5.0, 7.0)), kurbo::Point::new(10.0, 20.0));
+        assert_eq!(at((6.0, 7.0)), kurbo::Point::new(16.0, 20.0));
+        assert_eq!(at((5.0, 8.0)), kurbo::Point::new(10.0, 21.0));
+        // Turned a quarter, the stretch is along the layer's own axes: its x axis now points down.
+        let turned = ResolvedTransform { rotation: 90.0, ..t };
+        let p = turned.matrix() * kurbo::Point::new(6.0, 7.0);
+        assert!((p.x - 10.0).abs() < 1e-9 && (p.y - 26.0).abs() < 1e-9, "{p:?}");
+        // The defaults stretch nothing: the matrix is the one `scale` alone makes.
+        let plain = ResolvedTransform { scale: 2.0, ..ResolvedTransform::default() };
+        assert_eq!(plain.matrix(), Affine::scale(2.0));
     }
 
     #[test]

@@ -1164,3 +1164,34 @@ fn bad_spot_light_and_fog_parameters_are_rejected_at_load() {
         assert!(msg.contains("my_layer"), "{bad} -> {msg}");
     }
 }
+
+/// A 64 x 64 canvas with a cream background and a group 30 px past it on every side holding a 124 x 124 `scene3d`
+/// layer of one unlit orange square that fills it, blurred by `radius` (not at all if 0).
+fn overhanging_scene3d(radius: u32) -> Scene {
+    let effects = if radius > 0 {
+        format!(r#""effects": [{{"type": "blur", "radius": {radius}}}],"#)
+    } else {
+        String::new()
+    };
+    let json = format!(
+        r##"{{"width": 64, "height": 64, "fps": 30, "durationInFrames": 1, "background": "#f6d9c3",
+            "layers": [{{"id": "over", "type": "group", {effects} "transform": {{"x": -30, "y": -30}}, "children": [
+              {{"id": "s", "type": "scene3d", "width": 124, "height": 124, {ORTHO},
+                "objects": [{}]}}]}}]}}"##,
+        quad("#ff8000", 12.0, 0.0, "")
+    );
+    Scene::from_json(&json, Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes")).unwrap()
+}
+
+#[test]
+fn a_blurred_scene3d_layer_past_the_canvas_stays_opaque_at_the_edges() {
+    // Issue 91: what the wgpu path draws was cut at the canvas before the blur, which faded the frame's edges.
+    let sharp = render_still(overhanging_scene3d(0), 0).unwrap();
+    let blurred = render_still(overhanging_scene3d(6), 0).unwrap();
+    for (x, y) in [(0, 32), (1, 32), (32, 0), (32, 63), (63, 32), (0, 0), (63, 63)] {
+        let (a, b) = (px(&sharp, x, y), px(&blurred, x, y));
+        for c in 0..3 {
+            assert!(a[c].abs_diff(b[c]) <= 5, "({x}, {y}): {a:?} vs {b:?}");
+        }
+    }
+}
