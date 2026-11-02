@@ -59,6 +59,27 @@ npx kinetograph still <entry> <frame> -o <output.png> [options]
 
 Renders frames to a video with audio.
 
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
+
+```sh
+npx kinetograph render src/index.ts -o out.mp4
+```
+
+  </Tab>
+  <Tab value="HyperFrames">
+
+```sh
+npx kinetograph render index.html -o out.mp4
+```
+
+  </Tab>
+</Tabs>
+
+For a HyperFrames page, `render` first downloads what the page loads from the web. Add `--offline` to skip that step. A directory that holds the `index.html` works too.
+
+The general form is:
+
 ```sh
 npx kinetograph render <entry> -o <output.mp4> [options]
 ```
@@ -215,18 +236,36 @@ npx kinetograph effects
 
 ## doctor
 
-Runs every frame in the range without the GPU and reports what the engine cannot draw, and where. Use it before a long render. See [Remotion compatibility](/docs/compat/#checking-a-project-with-doctor).
+Runs every frame in the range without the GPU and reports what the engine cannot draw, and where. Use it before a long render. See [Remotion compatibility](/docs/compat/#check-a-project-before-you-render).
+
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
 
 ```sh
-npx kinetograph doctor <entry> --range 0..120
-npx kinetograph doctor
+npx kinetograph doctor src/index.ts --range 0..120
 ```
+
+  </Tab>
+  <Tab value="HyperFrames">
+
+```sh
+npx kinetograph doctor index.html --range 0..120
+```
+
+  </Tab>
+</Tabs>
 
 | Option | Meaning |
 |---|---|
 | `--range <a..b>` | Frames to check. The default is all of them. |
 
-With no entry, `doctor` checks your install. It prints the Node version, the platform, whether the addon loaded, and which renderer draws (`renderer`). If Skia falls back to the CPU, `rendererReason` says why.
+With no entry, `doctor` checks your install:
+
+```sh
+npx kinetograph doctor
+```
+
+It prints the Node version, the platform, whether the addon loaded, and which renderer draws (`renderer`). If Skia falls back to the CPU, `rendererReason` says why.
 
 ## studio
 
@@ -256,10 +295,24 @@ Downloads what a project loads from the web (CDN scripts, ES modules, remote pic
 
 `render`, `still`, `doctor` and `studio` do this first on their own. Run `fetch-deps` to do it ahead of time, such as in CI. With `--offline` on those commands, a file that is not cached is an error.
 
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
+
 ```sh
-npx kinetograph fetch-deps index.html
-npx kinetograph fetch-deps index.html --update
+npx kinetograph fetch-deps src/index.ts --update
 ```
+
+  </Tab>
+  <Tab value="HyperFrames">
+
+```sh
+npx kinetograph fetch-deps index.html --allow-host www.example.com --update
+```
+
+  </Tab>
+</Tabs>
+
+For a Remotion project, `fetch-deps` fetches the remote pictures and videos its bundle names. Only `--update` applies. `--allow-host`, `--url` and `--max-media-mb` are for HyperFrames pages.
 
 | Option | Meaning |
 |---|---|
