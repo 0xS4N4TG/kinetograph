@@ -99,6 +99,21 @@ const extendsRight = (easing: EasingFunction): boolean => easing.remotionShouldE
 const heldInput = (input: number, posterize: number | undefined): number =>
   posterize === undefined ? input : Math.floor(input / posterize) * posterize;
 
+/**
+ * The held input, wrapped into the whole keyframe range when it lies past an end whose extrapolation is `wrap`, so the entire
+ * animation repeats rather than one end segment (Remotion 4.0.539).
+ */
+function wrappedInput(input: number, inputRange: readonly number[], options: InterpolateOptions | undefined): number {
+  const held = heldInput(input, options?.posterize);
+  const first = inputRange[0]!;
+  const last = inputRange[inputRange.length - 1]!;
+  if (inputRange.length === 1 || !((held < first && options?.extrapolateLeft === 'wrap') || (held > last && options?.extrapolateRight === 'wrap'))) {
+    return held;
+  }
+  const range = last - first;
+  return ((((held - first) % range) + range) % range) + first;
+}
+
 function interpolateNumber(
   input: number,
   inputRange: readonly number[],
@@ -109,7 +124,7 @@ function interpolateNumber(
   const output = options?.output ?? 'linear';
   const left = options?.extrapolateLeft ?? 'extend';
   const right = options?.extrapolateRight ?? 'extend';
-  const held = heldInput(input, options?.posterize);
+  const held = wrappedInput(input, inputRange, options);
   const segment = findSegment(held, inputRange);
   const segmentValue = (index: number, extrapolateRight: ExtrapolateType): number => {
     const easing = easingOf(options?.easing, index);
@@ -376,7 +391,7 @@ function interpolateString(
 ): string {
   const parsed = outputRange.map((output) => parseString(output, options?.outputType));
   const hasAxisRotation = parsed.some((p) => p.axisRotation);
-  const segment = inputRange.length === 1 ? 0 : findSegment(heldInput(input, options?.posterize), inputRange);
+  const segment = inputRange.length === 1 ? 0 : findSegment(wrappedInput(input, inputRange, options), inputRange);
   // With an axis rotation in the range, a plain angle is a rotation around some axis too: the z axis, or, for a zero
   // angle (which is the same turn about any axis), the axis of the neighbour it is moving to or from, so the axis does
   // not swing as the angle leaves zero.
