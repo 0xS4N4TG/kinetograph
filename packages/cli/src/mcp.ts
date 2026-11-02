@@ -55,10 +55,9 @@ export function inputShape(command: Command): Record<string, z.ZodType> {
     shape[p.name] = (p.optional ? base.optional() : base).describe(p.description);
   }
   for (const o of allOptions(command)) {
-    // Image tools write to a temp file when no output is given, so the agent need not choose a path.
-    const optional = o.name !== 'output' || command.name !== 'render';
+    // Image tools write to a temp file when no output is given (and return the image itself), a render to out/renders.
     const base = o.multiple ? z.array(z.string()) : o.type === 'number' ? z.number() : o.type === 'boolean' ? z.boolean() : z.string();
-    shape[o.name] = (optional ? base.optional() : base).describe(o.description);
+    shape[o.name] = base.optional().describe(o.description);
   }
   return shape;
 }

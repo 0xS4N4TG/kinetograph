@@ -14,7 +14,7 @@ import {
   ensureParentDir,
   newRenderer,
   openFromArgs,
-  requireOutput,
+  outputPath,
   type Command,
 } from './types.js';
 
@@ -50,7 +50,6 @@ export const strip: Command = {
     STRICT_OPTION,
   ],
   async run(args, context) {
-    const output = requireOutput(args);
     const count = whole('-n', args.options.count as number | undefined, 1, 12);
     if (count > MAX_FRAMES) throw new CliError('INVALID_ARG', `-n is at most ${MAX_FRAMES}`);
     const cols = args.options.cols === undefined ? undefined : whole('--cols', args.options.cols as number, 1);
@@ -59,6 +58,7 @@ export const strip: Command = {
     const started = nowMs();
     let dir: string | undefined;
     try {
+      const output = outputPath(args, 'sheets', source.composition.id, (stem) => `${stem}-strip.png`);
       const [first, last] = frameRange(args.options.range as string | undefined, source.composition.durationInFrames);
       const frames = evenFrames(first, last, count);
       const rendered = await renderFrames(frames, drawer);
@@ -90,7 +90,6 @@ export const onion: Command = {
     OUTPUT_OPTION,
   ],
   async run(args) {
-    const output = requireOutput(args);
     const count = whole('-n', args.options.count as number | undefined, 1, 6);
     if (count > MAX_FRAMES) throw new CliError('INVALID_ARG', `-n is at most ${MAX_FRAMES}`);
     const source = await openFromArgs(args);
@@ -98,6 +97,7 @@ export const onion: Command = {
     const started = nowMs();
     let dir: string | undefined;
     try {
+      const output = outputPath(args, 'sheets', source.composition.id, (stem) => `${stem}-onion.png`);
       const [first, last] = frameRange(String(args.positionals.range), source.composition.durationInFrames);
       const frames = evenFrames(first, last, count);
       const rendered = await renderFrames(frames, drawer);

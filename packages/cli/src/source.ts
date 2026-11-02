@@ -135,6 +135,19 @@ export function publicDirOf(entry: string): string {
   }
 }
 
+/**
+ * The project's folder: the one holding the nearest package.json at or above the entry (a directory entry counts as
+ * itself), else the entry's own folder. Generated files go under its `out/` (`still`, `strip`, `onion`, `render`).
+ */
+export function projectRootOf(entry: string): string {
+  const absolute = resolve(entry);
+  const start = existsSync(absolute) && statSync(absolute).isDirectory() ? absolute : dirname(absolute);
+  for (let dir = start; ; dir = dirname(dir)) {
+    if (existsSync(join(dir, 'package.json'))) return dir;
+    if (dirname(dir) === dir) return start;
+  }
+}
+
 async function loadProject(
   entry: string,
   bundleFile?: string,
