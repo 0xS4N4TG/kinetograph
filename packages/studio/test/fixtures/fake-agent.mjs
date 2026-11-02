@@ -2,6 +2,7 @@
 //   "edit"   asks permission, then writes notes.txt through the client and tries to read ../outside.txt
 //   "crash"  exits at once
 //   "slow"   takes 700 ms, then answers as below
+//   "tools"  runs a command and edits a file as tool calls (with raw input, output and a diff), then answers
 //   "mcp"    answers with the mcpServers that session/new was given, as JSON
 //   else     answers with what it was sent (the text, and whether a picture came with it)
 import { Readable, Writable } from 'node:stream';
@@ -36,6 +37,24 @@ agent({ name: 'fake-agent' })
     const images = blocks.filter((b) => b.type === 'image').length;
     if (text.includes('crash')) process.exit(3);
     if (text.includes('slow')) await new Promise((resolve) => setTimeout(resolve, 700));
+    if (text.includes('tools')) {
+      const cwd = process.env.FAKE_AGENT_CWD ?? process.cwd();
+      const tell = (update) => client.notify(methods.client.session.update, { sessionId: 's1', update });
+      await tell({ sessionUpdate: 'tool_call', toolCallId: 'c1', title: `cd ${cwd} && ls`, kind: 'execute', status: 'in_progress', rawInput: { command: `cd ${cwd} && ls`, description: 'List files' } });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      await tell({ sessionUpdate: 'tool_call_update', toolCallId: 'c1', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'a.txt\nb.txt' } }] });
+      await tell({
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'c2',
+        title: 'Edit a.txt',
+        kind: 'edit',
+        status: 'completed',
+        locations: [{ path: `${cwd}/a.txt` }],
+        content: [{ type: 'diff', path: `${cwd}/a.txt`, oldText: 'one\ntwo\n', newText: 'one\n2\nthree\n' }],
+      });
+      await say(client, 'did tools');
+      return { stopReason: 'end_turn' };
+    }
     if (text.includes('mcp')) {
       await say(client, JSON.stringify(sessionNew));
       return { stopReason: 'end_turn' };

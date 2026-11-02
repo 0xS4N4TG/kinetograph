@@ -8,7 +8,7 @@ import { AgentBridge } from '../src/agent-bridge.js';
 import { isInside, readTextFile, resolveInside, writeTextFile } from '../src/agent-fs.js';
 import { availableAgents, onPath } from '../src/agent-presets.js';
 import type { AgentEvent } from '../src/protocol.js';
-import { api, cleanup, Client, start, stopAll, tempDir, tokenOf, writeProject } from './helpers.js';
+import { api, cleanup, Client, start, stopAll, tempDir, tokenOf, until, writeProject } from './helpers.js';
 
 // Starting a studio starts workers, which is slow on a busy machine.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
@@ -134,6 +134,26 @@ describe('the ACP bridge against a fake agent', () => {
     await bridge.close();
   });
 
+  it('forwards what a tool call did: its input, output, diff and how long it took', async () => {
+    const root = tempDir();
+    process.env.FAKE_AGENT_CWD = root;
+    try {
+      const { bridge, events } = setup(root);
+      await bridge.prompt('use tools', '');
+      const tools = events.filter((e): e is Extract<AgentEvent, { kind: 'tool' }> => e.kind === 'tool');
+      const run = tools.filter((t) => t.id === 'c1');
+      expect(run[0]).toMatchObject({ toolKind: 'execute', status: 'in_progress', input: { command: `cd ${root} && ls`, description: 'List files' } });
+      expect(run[0]!.ms).toBeUndefined();
+      expect(run.at(-1)).toMatchObject({ status: 'completed', output: 'a.txt\nb.txt' });
+      expect(run.at(-1)!.ms).toBeGreaterThanOrEqual(25);
+      const edit = tools.find((t) => t.id === 'c2')!;
+      expect(edit).toMatchObject({ toolKind: 'edit', files: ['a.txt'], diffs: [{ path: 'a.txt', added: 2, removed: 1, lines: [' one', '-two', '+2', '+three'] }] });
+      await bridge.close();
+    } finally {
+      delete process.env.FAKE_AGENT_CWD;
+    }
+  });
+
   it('leaves the picture out when the agent does not take images', async () => {
     const root = tempDir();
     process.env.FAKE_AGENT_IMAGE = '0';
@@ -250,6 +270,262 @@ describe('the agent over the studio server', () => {
     expect(said).toContain('hello agent');
     expect(said).toContain('layer: Title');
     client.close();
+  });
+
+  describe('messages sent while the agent works', () => {
+    const said = (c: Client) =>
+      c
+        .messages('agent')
+        .flatMap((m: any) => (m.event.kind === 'message' ? [m.event.text] : []))
+        .join('');
+    const queues = (c: Client) => c.messages('agent').flatMap((m: any) => (m.event.kind === 'queue' ? [m.event.items.map((i: any) => i.text)] : []));
+    const users = (c: Client) => c.messages('agent').flatMap((m: any) => (m.event.kind === 'user' ? [m.event.text] : []));
+
+    it('queues them, shows the queue, and sends everything queued in the turn as one prompt when it ends', async () => {
+      const { dir, entry } = writeProject('queue');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const client = await Client.connect(server);
+      client.send({ type: 'agent.prompt', text: 'slow first', context: '' });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'status' && m.event.status === 'busy');
+      client.send({ type: 'agent.prompt', text: 'second', context: 'layer: A', chips: ['A'] });
+      client.send({ type: 'agent.prompt', text: 'third', context: 'layer: B' });
+      await until(() => queues(client), (q) => q.some((items) => items.length === 2));
+      expect(queues(client)).toEqual([['second'], ['second', 'third']]);
+      // not sent, not in the chat yet, and no refusal
+      expect(said(client)).not.toContain('second');
+      expect(client.messages('agent').some((m: any) => m.event.kind === 'error')).toBe(false);
+      await until(() => said(client), (t) => t.includes('got: second'));
+      // one prompt, joined with a blank line, with the newest message's selection
+      expect(said(client)).toContain('got: second\n\nthird');
+      expect(said(client)).toContain('layer: B');
+      expect(said(client)).not.toContain('layer: A');
+      expect(users(client)).toEqual(['slow first', 'second', 'third']);
+      expect(queues(client).at(-1)).toEqual([]);
+      client.close();
+    });
+
+    it('takes a message out of the queue, and Stop keeps the rest of it', async () => {
+      const { dir, entry } = writeProject('unqueue');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const client = await Client.connect(server);
+      client.send({ type: 'agent.prompt', text: 'slow first', context: '' });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'status' && m.event.status === 'busy');
+      client.send({ type: 'agent.prompt', text: 'drop me', context: '' });
+      client.send({ type: 'agent.prompt', text: 'keep me', context: '' });
+      await until(() => queues(client), (q) => q.some((items) => items.length === 2));
+      const id = (client.messages('agent').find((m: any) => m.event.kind === 'queue' && m.event.items.length === 1) as any).event.items[0].id;
+      client.send({ type: 'agent.unqueue', id });
+      await until(() => queues(client), (q) => q.at(-1)?.join() === 'keep me');
+      client.send({ type: 'agent.cancel' });
+      await until(() => said(client), (t) => t.includes('got: keep me'));
+      expect(said(client)).not.toContain('drop me');
+      client.close();
+    });
+
+    it('takes a message out for editing: unqueue with take answers with the message, and a missing one answers nothing', async () => {
+      const { dir, entry } = writeProject('take');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const client = await Client.connect(server);
+      client.send({ type: 'agent.prompt', text: 'slow first', context: '' });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'status' && m.event.status === 'busy');
+      client.send({ type: 'agent.prompt', text: 'edit me', context: '', chips: ['Title'] });
+      await until(() => queues(client), (q) => q.some((items) => items.length === 1));
+      const id = (client.messages('agent').find((m: any) => m.event.kind === 'queue') as any).event.items[0].id;
+      client.send({ type: 'agent.unqueue', id, take: true });
+      client.send({ type: 'agent.unqueue', id: 'nope', take: true });
+      await until(() => queues(client), (q) => q.at(-1)?.length === 0);
+      const taken = client.messages('agent').flatMap((m: any) => (m.event.kind === 'unqueued' ? [m.event.item] : []));
+      expect(taken).toEqual([{ id, text: 'edit me', chips: ['Title'] }]);
+      await until(() => said(client), (t) => t.includes('got: slow first'));
+      expect(said(client)).not.toContain('edit me');
+      client.close();
+    });
+
+    it('reorders the queue, and the turn then sends the messages in the new order', async () => {
+      const { dir, entry } = writeProject('requeue');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const client = await Client.connect(server);
+      client.send({ type: 'agent.prompt', text: 'slow first', context: '' });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'status' && m.event.status === 'busy');
+      for (const text of ['one', 'two', 'three']) client.send({ type: 'agent.prompt', text, context: '' });
+      await until(() => queues(client), (q) => q.some((items) => items.length === 3));
+      const ids = (client.messages('agent').filter((m: any) => m.event.kind === 'queue').at(-1) as any).event.items.map((i: any) => i.id);
+      // three to the front; an id it does not know is ignored
+      client.send({ type: 'agent.requeue', order: [ids[2], 'ghost', ids[0]] });
+      await until(() => queues(client), (q) => q.at(-1)?.join() === 'three,one,two');
+      await until(() => said(client), (t) => t.includes('got: three'));
+      expect(said(client)).toContain('got: three\n\none\n\ntwo');
+      expect(users(client)).toEqual(['slow first', 'three', 'one', 'two']);
+      client.close();
+    });
+
+    it('sends one message next on "send now": alone, with the others queued for the turn after', async () => {
+      const { dir, entry } = writeProject('sendnow');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const client = await Client.connect(server);
+      client.send({ type: 'agent.prompt', text: 'slow first', context: '' });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'status' && m.event.status === 'busy');
+      for (const text of ['one', 'two', 'three']) client.send({ type: 'agent.prompt', text, context: '' });
+      await until(() => queues(client), (q) => q.some((items) => items.length === 3));
+      const ids = (client.messages('agent').filter((m: any) => m.event.kind === 'queue').at(-1) as any).event.items.map((i: any) => i.id);
+      client.send({ type: 'agent.sendnow', id: ids[1] });
+      await until(() => said(client), (t) => t.includes('got: two'));
+      // the next prompt is "two" alone; "one" and "three" are still waiting, then go together
+      expect(said(client)).not.toContain('got: two\n\n');
+      expect(users(client).slice(0, 2)).toEqual(['slow first', 'two']);
+      await until(() => said(client), (t) => t.includes('got: one\n\nthree'));
+      expect(users(client)).toEqual(['slow first', 'two', 'one', 'three']);
+      client.close();
+    });
+
+    it('keeps the queue when the window reloads, and sends the queue after the history', async () => {
+      const { dir, entry } = writeProject('queue-reload');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const first = await Client.connect(server);
+      first.send({ type: 'agent.prompt', text: 'slow first', context: '' });
+      await first.waitForMessage('agent', (m) => m.event.kind === 'status' && m.event.status === 'busy');
+      first.send({ type: 'agent.prompt', text: 'later', context: '', chips: ['Title'] });
+      await until(() => queues(first), (q) => q.length > 0);
+      first.close();
+      await new Promise((r) => setTimeout(r, 50));
+      const again = await Client.connect(server);
+      const history = await again.waitFor((r) => r.kind === 'json' && r.message.type === 'agent.history');
+      const queue = await again.waitFor((r) => r.kind === 'json' && r.message.type === 'agent' && (r.message as any).event.kind === 'queue');
+      expect(history.at).toBeLessThanOrEqual(queue.at);
+      expect(queues(again)).toEqual([['later']]);
+      expect((queue as any).message.event.items[0]).toMatchObject({ text: 'later', chips: ['Title'] });
+      // the turn ends while it is the owner: the queued message goes out
+      await until(() => said(again), (t) => t.includes('got: later'));
+      again.close();
+    });
+
+    it('refuses more than twenty waiting messages in plain words', async () => {
+      const { dir, entry } = writeProject('queue-cap');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const client = await Client.connect(server);
+      client.send({ type: 'agent.prompt', text: 'slow first', context: '' });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'status' && m.event.status === 'busy');
+      for (let i = 0; i < 21; i++) client.send({ type: 'agent.prompt', text: `m${i}`, context: '' });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'error' && /Too many messages/.test(m.event.message));
+      client.close();
+    });
+  });
+
+  describe('pictures attached to a message', () => {
+    const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('pixels')]);
+    const said = (c: Client) =>
+      c
+        .messages('agent')
+        .flatMap((m: any) => (m.event.kind === 'message' ? [m.event.text] : []))
+        .join('');
+    const store = async (server: Awaited<ReturnType<typeof start>>, name: string): Promise<string> => {
+      const r = await fetch(`${server.url.split('?')[0]}api/agent/image?name=${name}&token=${tokenOf(server)}`, { method: 'PUT', body: PNG });
+      expect(r.status).toBe(201);
+      return ((await r.json()) as { file: string }).file;
+    };
+
+    it('stores the file, hands the agent the picture and always names the paths', async () => {
+      const { dir, entry } = writeProject('attach');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const a = await store(server, 'a.png');
+      const b = await store(server, 'b.png');
+      expect(readFileSync(join(dir, 'public', 'refs', a))).toEqual(PNG);
+      const client = await Client.connect(server);
+      client.send({ type: 'agent.prompt', text: 'use these', context: '', attachments: [{ name: a, data: 'AAAA', mimeType: 'image/png' }, { name: b }] });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'done');
+      // one picture block (the second came without data), and both paths named
+      expect(said(client)).toContain('images: 1');
+      expect(said(client)).toContain("Attached: public/refs/a.png, public/refs/b.png");
+      expect(said(client)).toContain("staticFile('refs/a.png')");
+      // the chat shows the person's own words and the picture names
+      const user = client.messages('agent').map((m: any) => m.event).find((e: any) => e.kind === 'user');
+      expect(user).toEqual({ kind: 'user', text: 'use these', chips: [], images: ['a.png', 'b.png'] });
+      client.close();
+    });
+
+    it('names the paths even when the agent does not take images', async () => {
+      process.env.FAKE_AGENT_IMAGE = '0';
+      try {
+        const { dir, entry } = writeProject('attach-noimg');
+        const server = await start(entry, { agent: command, agentCwd: dir });
+        const a = await store(server, 'a.png');
+        const client = await Client.connect(server);
+        client.send({ type: 'agent.prompt', text: 'look', context: '', attachments: [{ name: a, data: 'AAAA', mimeType: 'image/png' }] });
+        await client.waitForMessage('agent', (m) => m.event.kind === 'done');
+        expect(said(client)).toContain('images: 0');
+        expect(said(client)).toContain('Attached: public/refs/a.png');
+        client.close();
+      } finally {
+        delete process.env.FAKE_AGENT_IMAGE;
+      }
+    });
+
+    it('writes paths relative to the agent when it runs above the project', async () => {
+      const { dir, entry } = writeProject('attach-above');
+      const server = await start(entry, { agent: command, agentCwd: join(dir, '..') });
+      const a = await store(server, 'a.png');
+      const client = await Client.connect(server);
+      client.send({ type: 'agent.prompt', text: 'look', context: '', attachments: [{ name: a }] });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'done');
+      expect(said(client)).toContain(`Attached: ${dir.split('/').pop()}/public/refs/a.png`);
+      client.close();
+    });
+
+    it('lets a message that is only pictures through, and refuses names that are not stored pictures', async () => {
+      const { dir, entry } = writeProject('attach-only');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const a = await store(server, 'a.png');
+      const client = await Client.connect(server);
+      const errors = () => client.messages('agent').flatMap((m: any) => (m.event.kind === 'error' ? [m.event.message as string] : []));
+      client.send({ type: 'agent.prompt', text: '', context: '', attachments: [{ name: '../../etc/passwd' }] });
+      client.send({ type: 'agent.prompt', text: 'hi', context: '', attachments: [{ name: 'not-stored.png' }] });
+      client.send({ type: 'agent.prompt', text: 'hi', context: '', attachments: Array.from({ length: 7 }, () => ({ name: a })) });
+      await until(() => errors(), (e) => e.length === 3);
+      expect(errors()[0]).toMatch(/not valid/);
+      expect(errors()[1]).toMatch(/not stored in the project/);
+      expect(errors()[2]).toMatch(/At most 6/);
+      client.send({ type: 'agent.prompt', text: '', context: '', attachments: [{ name: a }] });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'done');
+      expect(said(client)).toContain('Attached: public/refs/a.png');
+      client.close();
+    });
+
+    it('keeps the pictures of a queued message, shows them in the queue and sends them when the turn ends', async () => {
+      const { dir, entry } = writeProject('attach-queue');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const a = await store(server, 'a.png');
+      const b = await store(server, 'b.png');
+      const client = await Client.connect(server);
+      client.send({ type: 'agent.prompt', text: 'slow first', context: '' });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'status' && m.event.status === 'busy');
+      client.send({ type: 'agent.prompt', text: 'with a', context: '', attachments: [{ name: a, data: 'AAAA', mimeType: 'image/png' }] });
+      client.send({ type: 'agent.prompt', text: 'with b', context: '', attachments: [{ name: b, data: 'BBBB', mimeType: 'image/png' }] });
+      await client.waitForMessage('agent', (m) => m.event.kind === 'queue' && m.event.items.length === 2);
+      const queue = client.messages('agent').map((m: any) => m.event).filter((e: any) => e.kind === 'queue').at(-1);
+      expect(queue.items.map((i: any) => i.images)).toEqual([['a.png'], ['b.png']]);
+      await until(() => said(client), (t) => t.includes('got: with a'));
+      expect(said(client)).toContain('images: 2');
+      expect(said(client)).toContain('with a\n\nAttached: public/refs/a.png');
+      expect(said(client)).toContain('with b\n\nAttached: public/refs/b.png');
+      const users = client.messages('agent').map((m: any) => m.event).filter((e: any) => e.kind === 'user');
+      expect(users.map((u: any) => u.images)).toEqual([undefined, ['a.png'], ['b.png']]);
+      client.close();
+    });
+
+    it('keeps the pictures in the history a reloaded window gets', async () => {
+      const { dir, entry } = writeProject('attach-history');
+      const server = await start(entry, { agent: command, agentCwd: dir });
+      const a = await store(server, 'a.png');
+      const first = await Client.connect(server);
+      first.send({ type: 'agent.prompt', text: 'see', context: '', attachments: [{ name: a }] });
+      await first.waitForMessage('agent', (m) => m.event.kind === 'done');
+      first.close();
+      await new Promise((r) => setTimeout(r, 100));
+      const again = await Client.connect(server);
+      const history = (await again.waitFor((r) => r.kind === 'json' && r.message.type === 'agent.history')) as any;
+      expect(history.message.items[0]).toEqual({ kind: 'user', text: 'see', chips: [], images: ['a.png'] });
+      again.close();
+    });
   });
 
   it('keeps the conversation when its window reloads, and replays it to the window that comes back', async () => {

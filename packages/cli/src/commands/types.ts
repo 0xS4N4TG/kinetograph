@@ -1,12 +1,11 @@
 import { mkdirSync } from 'node:fs';
 import type { Renderer } from '@kinetographdev/native';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { OptionSpec, ParsedArgs, PositionalSpec } from '../args.js';
 import { PROJECT_OPTIONS } from '../args.js';
-import { CliError } from '../errors.js';
 import { native } from '../native.js';
 import { setOffline } from '../prefetch.js';
-import { openSource, type OpenOptions, type Source } from '../source.js';
+import { openSource, projectRootOf, type OpenOptions, type Source } from '../source.js';
 
 export interface Context {
   /** Progress for people (stderr). Silent for `--json`. */
@@ -41,7 +40,7 @@ export const ENTRY: PositionalSpec = {
   description: 'A project file (.tsx, .ts, .jsx, .js), a .json scene, or a HyperFrames project (its index.html, or the directory holding it)',
 };
 
-export const OUTPUT_OPTION: OptionSpec = { name: 'output', short: 'o', type: 'string', description: 'Output file path' };
+export const OUTPUT_OPTION: OptionSpec = { name: 'output', short: 'o', type: 'string', description: 'Output file path (default: out/stills, out/sheets or out/renders under the project folder)' };
 
 /** `--strict`, on the commands that draw frames (kinetograph site, /docs/compat/). */
 export const STRICT_OPTION: OptionSpec = {
@@ -88,10 +87,19 @@ export function openFromArgs(args: ParsedArgs, extra: Pick<OpenOptions, 'unsuppo
   });
 }
 
-export function requireOutput(args: ParsedArgs): string {
+/** The composition id as a file name part. */
+function fileStem(id: string): string {
+  return id.replace(/[^A-Za-z0-9._-]+/g, '_') || 'video';
+}
+
+/**
+ * `-o` when given; else `out/<folder>/<file>` under the project folder (the nearest package.json at or above the entry,
+ * else the entry's folder), where `file` is built from the composition id by `name`.
+ */
+export function outputPath(args: ParsedArgs, folder: 'stills' | 'sheets' | 'renders', compId: string, name: (stem: string) => string): string {
   const output = args.options.output;
-  if (typeof output !== 'string' || output === '') throw new CliError('INVALID_ARG', 'missing -o <output>');
-  return output;
+  if (typeof output === 'string' && output !== '') return output;
+  return join(projectRootOf(String(args.positionals.entry)), 'out', folder, name(fileStem(compId)));
 }
 
 export function ensureParentDir(file: string): void {

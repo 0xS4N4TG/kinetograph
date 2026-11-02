@@ -20,3 +20,23 @@ Copyright HeyGen and the HyperFrames contributors, same licence. The port is cha
 node-web-audio-api's OfflineAudioContext instead of Chrome's, builds each graph once (no live updates), and adds what
 Chrome's Web Audio does that node-web-audio-api does not (a delay's feedback a render quantum late, Chrome's 2x and 4x
 WaveShaper oversampling).
+
+## Kalam (SIL Open Font License 1.1)
+
+The engine diagram on the docs site and in the README is lettered in Kalam, Copyright (c) 2014 Indian Type Foundry
+(info@indiantypefoundry.com), licensed under the SIL Open Font License, Version 1.1 (https://openfontlicense.org). The
+site serves the font files unchanged from the `@fontsource/kalam` package, which carries the full licence text; the
+README images have the text converted to outlines.
+
+## roughjs (MIT)
+
+The sketched strokes and hatching of the engine diagram are made with roughjs. Copyright (c) 2019 Preet Shihn,
+https://github.com/rough-stuff/rough, licensed under the MIT License: permission is granted, free of charge, to deal in
+the software without restriction, provided the copyright notice and permission notice are included in all copies or
+substantial portions; the software is provided "as is", without warranty of any kind.
+
+## opentype.js (MIT)
+
+`packages/site/scripts/engine-diagram.mjs` uses opentype.js, a build-time tool only (nothing from it ships), to turn the
+diagram's text into outlines. Copyright (c) 2020 Frederik De Bleser and the opentype.js contributors,
+https://github.com/opentypejs/opentype.js, licensed under the MIT License, on the same terms as above.

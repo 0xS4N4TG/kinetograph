@@ -5,7 +5,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -75,14 +75,65 @@ const Main = () => <AbsoluteFill style={{ background: process.env.NODE_ENV === '
 registerRoot(() => <Composition id="Mode" component={Main} width={64} height={36} fps={30} durationInFrames={130} />);
 `;
 
+// Sources that are never heard (muted, volume 0) and ones that are, in a composition each.
+const SOUND = `
+import { AbsoluteFill, Audio, Composition, OffthreadVideo, Video, registerRoot, staticFile } from 'remotion';
+
+const style = { width: 64, height: 36 };
+const MutedOnly = () => (
+  <AbsoluteFill>
+    <Video src={staticFile('clip.mp4')} style={style} muted />
+    <OffthreadVideo src={staticFile('clip.mp4')} style={style} muted />
+    <Audio src={staticFile('tone.wav')} muted />
+    <Audio src={staticFile('tone.wav')} volume={0} />
+  </AbsoluteFill>
+);
+const Loud = () => <AbsoluteFill><OffthreadVideo src={staticFile('clip.mp4')} style={style} /></AbsoluteFill>;
+const MutedPlusLoud = () => (
+  <AbsoluteFill>
+    <Video src={staticFile('clip.mp4')} style={style} muted />
+    <Audio src={staticFile('tone.wav')} />
+  </AbsoluteFill>
+);
+const Sometimes = () => <AbsoluteFill><Audio src={staticFile('tone.wav')} volume={(f) => (f < 10 ? 0 : 1)} /></AbsoluteFill>;
+const none = <T,>(c: T) => c;
+registerRoot(() => (
+  <>
+    {[['MutedOnly', MutedOnly], ['Loud', Loud], ['MutedPlusLoud', MutedPlusLoud], ['Sometimes', Sometimes]].map(([id, component]) => (
+      <Composition key={id as string} id={id as string} component={none(component as React.FC)} width={64} height={36} fps={30} durationInFrames={20} />
+    ))}
+  </>
+));
+`;
+
+// A box drifting slowly: no scene cut, so the keyframes are the encoder's interval and nothing else.
+const DRIFT = `
+import { AbsoluteFill, Composition, registerRoot, useCurrentFrame } from 'remotion';
+const Box = () => {
+  const frame = useCurrentFrame();
+  return (
+    <AbsoluteFill style={{ background: '#102030' }}>
+      <div style={{ position: 'absolute', left: 4 + frame * 0.3, top: 8, width: 12, height: 12, background: 'rgb(240,80,40)' }} />
+    </AbsoluteFill>
+  );
+};
+registerRoot(() => <Composition id="Main" component={Box} width={64} height={36} fps={30} durationInFrames={90} />);
+`;
+
 let dir = '';
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'kinetograph-export-'));
   writeFileSync(join(dir, 'package.json'), '{"name":"p","private":true}');
   writeFileSync(join(dir, 'index.tsx'), PROJECT);
   writeFileSync(join(dir, 'mode.tsx'), MODE);
+  writeFileSync(join(dir, 'sound.tsx'), SOUND);
+  writeFileSync(join(dir, 'gop.tsx'), DRIFT);
   mkdirSync(join(dir, 'public'));
   writeFileSync(join(dir, 'public', 'tone.wav'), wav(3));
+  // A clip with a picture and a sound.
+  if (haveFfmpeg) {
+    spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc=size=64x36:rate=30:duration=1', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1', '-shortest', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', join(dir, 'public', 'clip.mp4')]);
+  }
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -160,6 +211,7 @@ describe.skipIf(!ready)('render export options', () => {
       [['--crf', '20', '--video-bitrate', '2M'], 'cannot be used together'],
       [['--crf', '99'], 'between 0 and 51'],
       [['--video-bitrate', 'fast'], '--video-bitrate'],
+      [['--x264-preset', 'turbo'], 'unknown x264 preset'],
       [['--scale', '0'], '--scale'],
       [['--codec', 'av1'], 'unknown codec'],
       [['--codec', 'prores', '--crf', '20'], 'prores-profile'],
@@ -183,6 +235,28 @@ describe.skipIf(!ready)('render export options', () => {
       expect(r.status).not.toBe(0);
       expect(r.stderr).toContain(`codec ${codec}`);
     }
+  });
+
+  it('keeps x264 and x265 keyframe spacing, and gives VideoToolbox a keyframe every two seconds', () => {
+    // 90 frames at 30 fps. FFmpeg's generic default would put a keyframe every 12 frames; libx264 and libx265 keep their
+    // own (250), so the box, which drifts slowly and gives no scene cut, has the one keyframe at 0. VideoToolbox is
+    // given fps * 2 = 60: keyframes at 0 and 60.
+    const keyframes = (file: string): number[] => {
+      const out = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'frame=key_frame', '-of', 'csv=p=0', join(dir, file)], { encoding: 'utf8' }).stdout;
+      return out.split('\n').filter((l) => l !== '').flatMap((l, i) => (l.startsWith('1') ? [i] : []));
+    };
+    const gaps = (at: number[]): number[] => at.slice(1).map((k, i) => k - at[i]!);
+    const x264 = (file: string): boolean => readFileSync(join(dir, file)).includes('x264 - core');
+    render('gop-h264.mp4', [], 'gop.tsx');
+    expect(keyframes('gop-h264.mp4')[0]).toBe(0);
+    for (const gap of gaps(keyframes('gop-h264.mp4'))) expect(gap).toBeGreaterThan(12);
+    if (run('gop-x264.mp4', ['--encoder', 'libx264'], 'gop.tsx').status === 0) expect(x264('gop-h264.mp4')).toBe(true);
+    if (run('gop-vt.mp4', ['--encoder', 'h264_videotoolbox'], 'gop.tsx').status === 0) {
+      expect(keyframes('gop-vt.mp4')).toEqual([0, 60]);
+      expect(x264('gop-vt.mp4')).toBe(false);
+    }
+    render('gop-h265.mp4', ['--codec', 'h265'], 'gop.tsx');
+    for (const gap of gaps(keyframes('gop-h265.mp4'))) expect(gap).toBeGreaterThan(12);
   });
 
   it('--crf and --video-bitrate change the file size', () => {
@@ -214,6 +288,20 @@ describe.skipIf(!ready)('render export options', () => {
     expect(audio('a-prores.mov')!.codec_name).toBe('pcm_s16le');
     expect(audio('a-opus.webm')!.codec_name).toBe('opus');
     expect(audio('infer.gif')).toBeUndefined();
+  });
+
+  it('muxes no audio stream when every source is muted or at volume 0, and keeps it when one can be heard', () => {
+    const sound = (file: string, comp: string, extra: string[] = []): void => render(file, ['--comp', comp, ...extra], 'sound.tsx');
+    for (const [file, extra] of [['s-muted.mp4', []], ['s-muted.mov', ['--codec', 'prores']], ['s-muted.webm', []]] as [string, string[]][]) {
+      sound(file, 'MutedOnly', extra);
+      expect(audio(file)).toBeUndefined();
+      expect(video(file)).toBeDefined();
+    }
+    sound('s-loud.mp4', 'Loud');
+    sound('s-mixed.mp4', 'MutedPlusLoud');
+    // A volume callback that is 0 for some frames only is still heard.
+    sound('s-sometimes.mp4', 'Sometimes');
+    for (const file of ['s-loud.mp4', 's-mixed.mp4', 's-sometimes.mp4']) expect(audio(file)!.codec_name).toBe('aac');
   });
 
   it('--every-nth-frame draws every nth frame of a gif', () => {

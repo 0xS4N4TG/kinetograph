@@ -1,0 +1,58 @@
+---
+title: VJ
+description: Screen and sensor looks, tracking marks, a pop-art cut and a camera fly-through of clips.
+---
+
+<Callout>Coming; not published yet.</Callout>
+
+VJ makes a picture look like it came from a screen, a tape or a sensor. Brightness stands in for heat and depth, so these are looks, not measurements. It also draws tracking marks on whatever moves, cuts a person into a pop-art poster and builds a camera fly-through of clips.
+
+## Use it
+
+The looks are layer effects. Tracking runs once, offline, and the components draw the saved result.
+
+```tsx
+import { Layer, Video, staticFile } from '@kinetographdev/core';
+import { Blobs, thermal, type BlobTrack } from '@kinetographdev/vj';
+import track from './track/clip-blobs.json' with { type: 'json' };
+
+<Layer id="clip" effects={thermal()}>
+  <Video src={staticFile('video/clip.mp4')} width={1920} height={1080} fit="cover" muted />
+</Layer>
+<Blobs track={track as BlobTrack} box="corners" links="chain" />
+```
+
+## Looks
+
+| Effect | What it does |
+|---|---|
+| `crt()` | Curved glass, scanlines, aperture grille, static and dark corners. `switchOff(t)` folds the picture to a dot. |
+| `vhs()` | Line wobble, smeared colour, a head-switch tear, snow and dropouts. |
+| `oneBit()` | One bit a pixel, with an ordered dither. |
+| `thermal()`, `depthLook()` | A thermal palette, or near-white and far-black depth. |
+| `pixels()` | A magnifier that resolves into red, green and blue stripes. |
+| `acidHeat`, `nightVision`, `screenGlow`, `grainyBW` | Flash looks to cut on the beat. |
+
+`lookEffects(look)` turns a Studio panel value into effects.
+
+## Components
+
+| Component | What it does |
+|---|---|
+| `<Blobs>` | Boxes, labels and links on a tracked clip's blobs. Key props: `track`, `box`, `label`, `links`, `blend`. |
+| `<Reticle>` | A box with corner ticks and a label on one tracked point. Props: `track`, `size`, `label`, `jitter`. |
+| `<PopArt>` | Cuts a clip of a person to an anime poster. Props: `src`, `matte`, `cuts`, `flash`, `title`. |
+| `<Fragments>` | Clips seen through windows on planes at different depths, with a camera moving through them. Props: `pieces`, `camera`, `fog`. |
+
+`pointAt` and `blobsAt` read the saved tracks at a frame. The full lists are on the [VJ page](/plugins/vj/).
+
+## In Studio and with an agent
+
+Studio gets a VJ panel with a card for each look and its own sliders and colours. On the preview you drag and resize the CRT screen and drag the magnifier's centre. A second panel sets how the tracking marks look.
+
+## Limits
+
+- Tracking runs on your own machine ahead of time, so the panel only styles the result.
+- `PopArt` needs a matte of the person, which a bundled tool makes once per clip.
+- `Fragments` has no detection model. Whoever edits the video names the boxes.
+- The plugin adds no agent tools. Its skill walks an agent through tracking a clip, checking the debug images and rendering a still.

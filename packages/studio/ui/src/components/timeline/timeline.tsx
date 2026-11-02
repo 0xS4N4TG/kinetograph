@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import { buildTimeline, seekTarget, visibleRows, type Range, type TimelineNode } from '@/lib/timeline-model';
 import { buildRuler } from '@/lib/ruler';
 import { useReviewMarks } from '@/lib/review-marks';
+import { numberOf, useMarkup, useMarkupStore } from '@/lib/markup';
 import { useElementSize } from '@/lib/use-element-size';
 
 const MIN_ZOOM = 1;
@@ -322,6 +323,9 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
   const rulerRef = useRef<HTMLDivElement>(null);
   /** The notes of an open review, marked on the ruler. */
   const reviewMarks = useReviewMarks();
+  /** The notes of markup mode: a tick each on the ruler, and with the Range tool a drag on the ruler makes one. */
+  const markupStore = useMarkupStore();
+  const markup = useMarkup();
   /** What a press in the ruler or a lane is doing: scrubbing, or (for a press that may become a drag) waiting to see. */
   const drag = useRef<{ kind: 'scrub' } | { kind: 'pending'; anchor: number; x: number } | { kind: 'range'; anchor: number; base: FrameRange | null } | null>(null);
   const rangeRef = useRef(selectedRange);
@@ -374,9 +378,11 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
     [player, onSelectLayers, onSelectRange, duration],
   );
 
-  // Only the rows in (or near) view are drawn; before the scroller is measured, all of them.
+  // Only the rows in (or near) view are drawn; before the scroller is measured, all of them. The first row stops at the
+  // end of the list: scrolled down into the sounds below it, a larger spacer would push the sounds further down, the
+  // browser would follow them, and the timeline would grow without end and never scroll back to the top.
   const viewport = size.height;
-  const firstRow = viewport > 0 ? Math.max(0, Math.floor(Math.max(0, scrollTop - 36) / ROW_HEIGHT) - 8) : 0;
+  const firstRow = viewport > 0 ? Math.min(rows.length, Math.max(0, Math.floor(Math.max(0, scrollTop - 36) / ROW_HEIGHT) - 8)) : 0;
   const lastRow = viewport > 0 ? Math.min(rows.length, firstRow + Math.ceil(viewport / ROW_HEIGHT) + 16) : rows.length;
 
   const ruler = useMemo(() => buildRuler(fps, duration, pxPerFrame), [fps, duration, pxPerFrame]);
@@ -453,6 +459,12 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
     const d = drag.current;
     drag.current = null;
     if (d && d.kind !== 'range') player.endScrub();
+    // With the Range tool of markup mode, the span just dragged becomes a note (its bubble opens on the preview).
+    const picked = rangeRef.current;
+    if (d?.kind === 'range' && picked && comp && markupStore && markup.active && markup.tool === 'range') {
+      markupStore.add({ comp: comp.id, frame: picked.start, endFrame: picked.end, geom: { type: 'range' } });
+      onSelectRange(null);
+    }
   };
 
   const roots = model?.roots ?? [];
@@ -555,6 +567,19 @@ export const Timeline = memo(function Timeline({ comp, status, player, selectedL
                       title={`Note at frame ${frame}`}
                       className="pointer-events-none absolute top-0 h-3 w-[3px] -translate-x-1/2 rounded-b-sm bg-amber-400"
                       style={{ left: frame * pxPerFrame }}
+                    />
+                  ))}
+                {markup.notes
+                  .filter((n) => n.comp === comp.id)
+                  .map((note) => (
+                    <span
+                      key={`k${note.id}`}
+                      aria-hidden="true"
+                      data-testid="markup-tick"
+                      data-state={note.resolved ? 'resolved' : note.status}
+                      title={`Note ${numberOf(note, markup.notes) ?? ''} at frame ${note.frame}${note.endFrame > note.frame ? `-${note.endFrame}` : ''}`}
+                      className={cn('pointer-events-none absolute top-0 h-3 -translate-x-1/2 rounded-b-sm', note.status === 'sent' && 'opacity-50', note.resolved && 'opacity-40 grayscale')}
+                      style={{ left: note.frame * pxPerFrame, width: Math.max(3, (note.endFrame - note.frame) * pxPerFrame), background: note.color, ...(note.endFrame > note.frame ? { transform: 'none' } : {}) }}
                     />
                   ))}
                 {!open &&

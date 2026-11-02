@@ -12,7 +12,7 @@ import '@/index.css';
 export const metadata: Metadata = {
   title: 'Kinetograph',
   description:
-    "Kinetograph is a blazingly fast programmatic video engine, made for agents. Write video in TypeScript with Remotion's API, or as an HTML page (HyperFrames projects render as they are); it renders every frame on the GPU.",
+    "Kinetograph is a video engine made for agents. Write a video in TypeScript with Remotion's API, or as an HTML page (HyperFrames projects render as they are). A Rust compositor draws every frame on the GPU, with no browser.",
 };
 
 export const viewport: Viewport = {

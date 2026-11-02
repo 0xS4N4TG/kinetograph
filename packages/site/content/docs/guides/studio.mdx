@@ -3,163 +3,138 @@ title: Studio
 description: The local editor for a project, with a preview, a timeline, props and presets, plugins, export and a chat with your coding agent.
 ---
 
-Studio is a local editor. You open a project in it, look at the preview, change props, pick a layer or a span of time and
-ask your coding agent to change it. The engine draws the preview frames, so what you see is what a render makes.
+[Studio](/docs/terminology/studio/) is a local editor. You open a project in it, look at the preview, change props, pick a layer or a span of time and ask your coding agent to change it. The engine draws the preview frames, so what you see is what a render makes.
+
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
 
 ```sh
 npx kinetograph studio src/index.tsx
 ```
 
-It starts a server on `http://127.0.0.1:3000` and opens a browser. An entry can be a project file, a `.json` scene or an
-HTML page. The server runs until you stop it with Ctrl-C, and it rebuilds the project when a file changes. The
-[CLI reference](/docs/reference/cli/#studio) lists the options.
+  </Tab>
+  <Tab value="HyperFrames">
+
+```sh
+npx kinetograph studio index.html
+```
+
+  </Tab>
+</Tabs>
+
+Studio starts a server on `http://127.0.0.1:3000` and opens a browser. An entry can also be a `.json` scene. The server rebuilds the project when a file changes, and runs until you stop it with Ctrl-C. The [CLI reference](/docs/reference/cli/#studio) lists the options.
 
 ## The window
 
-A top bar sits over four panels that float over the window:
+Four [panels](/docs/terminology/panels/) float over the window:
 
-- **Top bar.** The project file and a composition switcher on the left, the command menu in the middle, and on the right
-  the theme, the inspector toggle and the Export button. A button on the left folds the agent. While renders run, a
-  progress pill shows the first one's percent and opens the render queue. A badge says `offline` when the window lost
-  the server.
+- **Top bar:** the project file and a composition switcher on the left, the command menu in the middle, and the theme, the inspector toggle and the Export button on the right. While renders run, a progress pill opens the render queue. A badge says `offline` when the window lost the server.
 - **Agent** on the left: the chat with your coding agent.
 - **Preview** in the middle, with the timeline under it.
-- **Inspector** on the right: the Props, Scene and Renders tabs.
+- **Inspector** on the right, with the Props, Scene and Renders tabs.
 
-Drag the edge of the agent, the inspector or the timeline to resize it, and double-click the edge to reset it. The sizes
-and the theme are kept in the browser.
+Drag the edge of a panel to resize it, and double-click to reset it.
 
 ### Command menu and shortcuts
 
-Cmd+K (Ctrl+K elsewhere) opens a menu that holds every action in the window: export, reload the project, go to a
-composition, the playback actions, zoom and safe zones, the three tools, opening each inspector tab, folding the panels,
-the timeline details, the theme, switching or restarting the agent, and the shortcuts. The key for an action is shown
-beside it. Type to filter.
+Cmd+K (Ctrl+K elsewhere) opens a menu with every action in the window. Type to filter. `?` lists the shortcuts. The main ones are:
 
-`?` opens the list of shortcuts. The keys do nothing while a field or a menu has focus.
+The keys do nothing while a field or a menu has focus.
 
-| Keys | Action |
-|---|---|
-| Space | Play or pause |
-| Left, Right | Previous or next frame (Shift: 10 frames) |
-| Home, End | First or last frame |
-| L | Loop on or off |
-| M | Mute the sound |
-| V, H, Z | Selection, Hand (drag to pan) and Zoom (click to zoom in, Alt-click to zoom out) |
-| 0, 1 | Fit the frame to the preview, or show it at 100% |
-| Ctrl or Cmd + wheel | Zoom the timeline's time axis |
+- Space plays or pauses. Left and Right step one frame (with Shift, 10 frames). Home and End go to the first and last frame.
+- L loops, and Shift+M mutes. M turns on markup mode (Esc leaves it).
+- V, H and Z pick the Selection, Hand (drag to pan) and Zoom tools.
+- 0 fits the frame to the preview, and 1 shows it at 100%.
+- Ctrl or Cmd with the wheel zooms the timeline's time axis.
 
 ## The preview
 
-The preview is as large as the window allows. Over it float the tools (top left), a **View** menu (top right) with
-**Layer controls** and **Safe zones** and the zoom steps (fit, 50%, 100%, 200%), and a transport at the bottom: play,
-previous and next frame, a timecode box, the frame count, a progress bar, the preview's frame rate, mute and loop. Type a
-second count (`2.4`), `mm:ss` or `mm:ss.ff` into the timecode box to jump there. The preview draws half-size JPEGs while
-it plays or you scrub, and full-size PNGs at rest.
+A transport at the bottom has play, previous and next frame, a timecode box, mute and loop. Type seconds (`2.4`), `mm:ss` or `mm:ss.ff` into the timecode box to jump there. A **View** menu at the top right has **Layer controls**, **Safe zones** and the zoom steps.
 
 Click a layer to select it. Shift-click adds to the selection, and dragging a box around layers selects them all.
 
+### Mark up the preview
+
+To show an agent what to change, press `M` (or the pen button beside the tools). The playhead pauses and four tools appear:
+
+- **Pin**: click a spot.
+- **Box**: drag a rectangle.
+- **Pen**: draw freehand, in one of four colours. The **Eraser** removes a whole stroke with a click.
+- **Range**: drag on the timeline ruler to mark a span of time instead of a place.
+
+After each mark a comment bubble opens next to it. Enter adds the note to the notes tray, and Cmd+Enter (Ctrl+Enter elsewhere) sends that note to the agent now. Esc in the bubble drops a new mark, and Esc outside it leaves markup mode. Click a marker to edit or delete its note.
+
+Marks are stored in composition pixels on the frame you drew them on, so they line up at any zoom or pan. A marker shows only while the playhead is on its frame (or inside its range), and each note is a tick on the timeline ruler.
+
+The notes tray sits above the message box. It lists the notes in time order, with buttons to jump to a note, edit it, mark it resolved (left out of the message) or delete it, and **Send N notes**. The agent gets one message with the notes in time order, such as `1. frame 120 (00:04.00), box 640,320 420x180 over Title: make this bigger`, and the names of the layers under each mark. For each distinct frame (up to 6) it also gets a picture of that frame with the marks drawn on it. The pictures are stored in `public/refs/` as `markup-<stamp>-<n>.png`, and their paths are always in the message. After sending, the notes stay as sent markers until you clear them with **Clear sent**.
+
 ### Sound
 
-If the composition has audio, the preview plays it. The server mixes the audio once, as a render does, and the window
-plays that mix with the Web Audio clock. While it plays, the picture follows the sound and drops frames rather than
-drift. Pausing, seeking and looping move the sound with the playhead, and scrubbing plays 80 ms snippets. `M` mutes, and
-the choice is kept in the browser. A composition without audio has no mute button.
+If the composition has audio, the preview plays it. The server mixes the audio once, as a render does, and the window plays that mix with the Web Audio clock. The picture follows the sound and drops frames rather than drift. Pausing, seeking and looping move the sound with the playhead, and scrubbing plays 80 ms snippets. `Shift+M` mutes, and the choice is kept in the browser. A composition without audio has no mute button.
 
 ## The timeline
 
-The timeline starts as a slim bar. The arrow at its left expands it into one row per layer; only the rows in view are
-drawn. **Show details** opens every layer, where it would otherwise fold repeated components into one row (the choice
-is kept in the browser). The search box filters rows by name, and the slider, the buttons or Ctrl/Cmd + wheel zoom the
-time axis.
+The timeline starts as a slim bar. The arrow at its left expands it into one row per layer. **Show details** opens every layer, where it would otherwise fold repeated components into one row.
 
-- **Clips** are coloured by kind: Sequence, text, shape, group, image and video, with the kind before the name
-  (`Text: Welcome`). Identical siblings fold into one row with a count.
-- **Video clips** show a film strip of thumbnails, and **audio clips** their waveform. Only the tiles in view are loaded.
-- **The ruler** counts in `mm:ss.ff` (the frame in the second), with its marks at true time positions, and a timecode
-  box shows the playhead.
-- Click the ruler or a row to move the playhead. Drag to pick a span of time instead.
+Clips are coloured by kind. Video clips show a film strip and audio clips show their waveform. Click the ruler or a row to move the playhead. Drag to pick a span of time instead.
 
 ### Giving the agent a span of time
 
-Drag across the ruler or an empty part of a row to pick a span. Click a clip to pick its span. Shift-click or Shift-drag
-extends it, and Escape clears the span and the selected layers. The span shows as a chip in the agent's message box.
+Drag across the ruler or an empty part of a row to pick a span. Click a clip to pick its span. Shift-click or Shift-drag extends it. Escape clears the span and the selected layers. The span shows as a chip in the agent's message box.
 
-When you send a message with a span, the agent is told the span (frames and times), the Sequences that overlap it and the
-layers visible at some point in it. Its picture is one contact sheet of up to eight frames across the span, each labelled
-with its time, in place of a single frame.
+When you send a message with a span, the agent is told the span, the Sequences that overlap it and the layers visible in it. It gets one contact sheet of up to eight frames across the span, in place of a single frame.
 
 ## Props and presets
 
-The Props tab is the first tab of the inspector. It draws a form from the composition's zod 4 `schema`:
+The Props tab draws a form from the composition's zod 4 `schema`:
 
-- A select for an enum, a slider with a number box for a number with `min` and `max`, a switch for a boolean.
+- A select for an enum, a slider for a number with `min` and `max`, and a switch for a boolean.
 - A colour input for `zColor()` and a text area for `zTextarea()`.
-- A labelled group for an object, with each field's `.describe()` text as help under its label.
-- A JSON box for anything else, and, with no schema, a field inferred from each default value.
+- A JSON box for anything else. With no schema, each field is inferred from its default value.
 
-An optional field with no value shows the control its type calls for, empty and tagged `default`. **Reset** returns every
-prop to the composition's defaults. Your edits are kept per project in the browser, so a reload keeps them. The
-**Export** dialog says whether it renders the edited props or the defaults.
+**Reset** returns every prop to the composition's defaults. Your edits are kept per project in the browser, so a reload keeps them. The Export dialog says whether it renders the edited props or the defaults.
 
-**Presets** is a menu at the top of the tab: it lists the saved presets and loads one into the form. **Save preset** asks
-for a name and saves the props you see. A preset is a file at `presets/<composition id>/<name>.json` beside the entry, so
-you can commit it, and `--props` renders it from the command line. See [Plugins](/docs/guides/plugins/#presets).
+**Presets** is a menu at the top of the tab. **Save preset** asks for a name and saves the props you see. A preset is a file at `presets/<composition id>/<name>.json` beside the entry, so you can commit it, and `--props` renders it from the command line. See [Plugins](/docs/plugins/#presets).
 
 ### Plugin cards
 
-A field that a [plugin](/docs/guides/plugins/) draws its own panel for shows as a card in place of the generated form: the
-plugin's icon, title, version, the field's name, a one-line description, and the panel. The card's menu copies the path of
-the plugin's `SKILL.md` and asks the agent about the plugin. A folded card shows the panel's own summary.
+A field that a [plugin](/docs/plugins/) draws its own panel for shows as a card in place of the generated form. Clicking a card selects the layers its plugin made, and selecting such a layer opens its card. The card's menu copies the path of the plugin's `SKILL.md` and asks the agent about the plugin.
 
-A card and the layers it draws are linked. Clicking the card selects the layers made by the plugin's components, and
-selecting such a layer opens its card. Where a plugin's panel draws on the picture (a guide, a handle), the overlay for
-the panel you are editing shows on the preview. A panel's own state, such as locks and open sections, is kept in the
-browser per plugin and composition. The **Plugins** list at the bottom of the tab shows every plugin the project depends
-on, whether this composition uses it or not.
-
-The list is always there. **In this project** is every plugin the project depends on, used here or not. **Available** is
-the plugins on the Kinetograph site that the project does not have, each with a link to its page. A plugin that is not
-published yet shows **Coming soon**; a published one has **Ask the agent to add it**, which asks the agent to install the
-package and read its `SKILL.md`. Studio reads the list from the site in the background and keeps the last answer, so it
-works offline too (`--offline` never asks the site).
+The **Plugins** list at the bottom of the tab has two parts. **In this project** is every plugin the project depends on. **Available** is the plugins on the Kinetograph site that the project does not have. A published one has **Ask the agent to add it**, and an unpublished one shows **Coming soon**. `--offline` stops Studio asking the site.
 
 ## The Scene and Renders tabs
 
-**Scene** is the tree of layers at the playhead, with each layer's resolved fields and a
-button that copies a message about the layer for a coding agent. **Renders** is the queue of exports, with progress,
-the output file and a cancel button.
+**Scene** is the tree of layers at the playhead, with each layer's resolved fields and a button that copies a message about the layer for a coding agent. **Renders** is the queue of exports, with progress, the output file and a cancel button.
 
 ## Export
 
 **Export** in the top bar (or Cmd+K) opens a dialog for the composition.
 
-- **Whole video** or **Custom**. A custom range has a start and an end, typed as seconds, `mm:ss` or `mm:ss.ff` with the
-  frame shown beside it, or taken from the playhead with **Set to playhead**, or set by dragging the handles of a trim
-  bar made of thumbnails.
-- **Output**: a `.mp4` or `.mov` path, relative to the project's folder. The default is `out/<composition id>.mp4`.
+- **Whole video** or **Custom.** A custom range has a start and an end. Type them as seconds, `mm:ss` or `mm:ss.ff`, take them from the playhead with **Set to playhead**, or drag the handles of the trim bar.
+- **Output:** a `.mp4` or `.mov` path, relative to the project's folder. The default is `out/renders/<composition id>.mp4`.
 - **Draft** renders at half size, for checking timing.
 
 The export uses the props you edited. It joins the Renders queue, and the top bar shows its progress.
 
 ## The agent
 
-The chat on the left talks to your coding agent over the Agent Client Protocol (ACP). Studio finds Claude Code, Codex or
-Gemini CLI on your computer; the command menu switches between them and restarts the chat, and `--agent <command>` names
-another one. Only Claude Code is tested so far. The agent works in the folder you started Studio in, and Studio asks
-you before it edits a file.
+The chat on the left talks to your coding agent over the Agent Client Protocol (ACP). Studio finds Claude Code, Codex or Gemini CLI on your computer. The command menu switches between them and restarts the chat, and `--agent <command>` names another one. Only Claude Code is tested so far.
 
-When you send a message, it carries the selection: the project file, the composition and the frame (or the span), and
-for each selected layer its name, kind, source file and line, position, size and current look, and the plugin that draws
-it. Keep the picture switch on to attach a picture of the selected area, or a contact sheet for a span.
+The agent works in the folder you started Studio in. Studio asks you before it edits a file.
 
-The agent's replies are rendered as markdown. Studio keeps that tight, since a project's files can steer what the agent
-writes: remote images are not loaded and show their alt text, only `http` and `https` links are followed, and the page's
-Content-Security-Policy only allows images from the page itself, `data:` and `blob:`.
+You can send a message while the agent is still working. It waits in the **Up next** tray above the message box, a slim bar ("2 up next") that opens into a card for each message. A card has **Edit** (puts the words and pictures back in the message box), **Send now** (stops the current turn and sends that message next, after four seconds with an Undo), **Remove**, and a grip to drag it to a new place. **Clear** removes them all. When the turn ends, everything queued goes to the agent as one prompt, and the chat shows each message on its own. A panel's answer that is waiting for the turn to end shows in the same tray. Stop ends the turn and keeps the queue, and a reload keeps it too.
 
-The agent also gets a Kinetograph MCP server, with every `kinetograph` command, the tools of your plugins, and four for
-the open window: `studio_get_props` reads the props the preview shows and `studio_set_props` sets them, so the agent can
-try values and you see the preview change; `studio_open_panel` and `studio_panel_result` let it ask you for a decision in a panel. See [Studio's agent](/docs/guides/plugins/#studios-agent).
+Drop images onto the agent, paste one, or use the attach button left of Send (up to 6 per message, 20 MB each; PNG, JPEG, WebP, GIF or AVIF). Each appears as a thumbnail in the message box. On Send, Studio stores the originals in `public/refs/` and tells the agent the paths, so it can use one with `staticFile('refs/name.png')`. An agent that takes images also sees a scaled-down copy. A queued message keeps its images.
 
-Studio listens on `127.0.0.1` by default, and the agent needs the token in the address Studio opens. With `--host` set so
-that other computers can reach it, the agent is off unless you pass `--allow-remote-agent`.
+Each tool call is one quiet line: an icon for what it did, the command (without its leading `cd`) or the file, a dot while it runs, a check when done, and how long it took. Click a line for the full command, output and diff. A run of calls folds into one block such as "Ran 3 commands · read 2 files".
+
+Each message carries the selection: the project file, the composition, and the frame or span. For each selected layer it adds the name, kind, source file and line, position, size and current look, and the plugin that draws it. Keep the picture switch on to attach a picture of the selected area, or a contact sheet for a span. With many layers selected the box shows three chips and "+N more", which lists them all (with Clear all); four or more layers of one kind fold into one chip, such as "28 shapes in showcase".
+
+The agent also gets a Kinetograph MCP server with every `kinetograph` command, the tools of your plugins, and four tools for the open window:
+
+- `studio_get_props` reads the props the preview shows, and `studio_set_props` sets them. The agent can try values while you watch the preview change.
+- `studio_open_panel` and `studio_panel_result` let it ask you for a decision in a panel.
+
+See [Studio's agent](/docs/plugins/#studios-agent).
+
+Studio listens on `127.0.0.1` by default, and the agent needs the token in the address Studio opens. If you set `--host` so other computers can reach Studio, the agent is off unless you pass `--allow-remote-agent`.

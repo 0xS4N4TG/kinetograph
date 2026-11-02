@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AudioClipJson } from '@kinetographdev/scene';
-import { joinClips } from '../src/index.js';
+import { hasAudibleClip, joinClips } from '../src/index.js';
 
 const clip = (over: Partial<AudioClipJson> = {}): AudioClipJson => ({
   id: 'a',
@@ -78,5 +78,23 @@ describe('joinClips', () => {
       { frame: 2, audio: [clip()] },
     ]);
     expect([...joined[0]!.volumes.keys()]).toEqual([0, 2]);
+  });
+});
+
+describe('hasAudibleClip', () => {
+  const heard = (frames: { frame: number; audio: AudioClipJson[] }[]): boolean => hasAudibleClip(joinClips(frames));
+
+  it('is false with no clips, and for clips that are muted or at volume 0 in every frame', () => {
+    expect(hasAudibleClip([])).toBe(false);
+    expect(heard([{ frame: 0, audio: [clip({ muted: true })] }, { frame: 1, audio: [clip({ muted: true })] }])).toBe(false);
+    expect(heard([{ frame: 0, audio: [clip({ volume: 0 })] }, { frame: 1, audio: [clip({ volume: 0 })] }])).toBe(false);
+    expect(heard([{ frame: 0, audio: [clip({ muted: true, video: true }), clip({ id: 'b', volume: 0 })] }])).toBe(false);
+  });
+
+  it('is true when one clip is heard in any frame, as a volume callback that is 0 only sometimes is', () => {
+    expect(heard([{ frame: 0, audio: [clip()] }])).toBe(true);
+    expect(heard([{ frame: 0, audio: [clip({ volume: 0 })] }, { frame: 1, audio: [clip({ volume: 0.2 })] }])).toBe(true);
+    expect(heard([{ frame: 0, audio: [clip({ muted: true })] }, { frame: 1, audio: [clip()] }])).toBe(true);
+    expect(heard([{ frame: 0, audio: [clip({ muted: true, video: true }), clip({ id: 'b', video: true })] }])).toBe(true);
   });
 });

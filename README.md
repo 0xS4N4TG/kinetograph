@@ -7,22 +7,84 @@
 <p align="center"><b>A blazingly fast programmatic video engine, made for agents.</b></p>
 
 <p align="center">
-  <a href="#rendered-with-kinetograph">Examples</a> ·
-  <a href="#the-editor">Editor</a> ·
-  <a href="#projects-in-tsx">Get started</a> ·
-  <a href="#html-pages-and-hyperframes-projects">HTML and HyperFrames</a> ·
-  <a href="packages/cli/skills/kinetograph/references/ENGINE.md">The engine</a> ·
-  <a href="packages/site/content/docs/guides/agents.mdx">Use with agents</a>
+  <a href="https://github.com/0xS4N4TG/kinetograph/stargazers"><img src="https://img.shields.io/github/stars/0xS4N4TG/kinetograph?style=flat&logo=github" alt="GitHub stars"></a>
+  <a href="https://www.npmjs.com/package/kinetograph"><img src="https://img.shields.io/npm/v/kinetograph?style=flat&logo=npm" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/kinetograph"><img src="https://img.shields.io/npm/dm/kinetograph?style=flat" alt="npm downloads"></a>
+  <a href="https://github.com/0xS4N4TG/kinetograph/actions/workflows/native.yml"><img src="https://github.com/0xS4N4TG/kinetograph/actions/workflows/native.yml/badge.svg" alt="Build"></a>
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-PolyForm%20Small%20Business-blue?style=flat" alt="License: PolyForm Small Business 1.0.0"></a>
+  <a href="https://kinetograph.dev/docs/"><img src="https://img.shields.io/badge/docs-kinetograph.dev-black?style=flat" alt="Docs"></a>
 </p>
 
-You (or an agent) write a video in TypeScript with Remotion's API, CSS, SVG, Canvas 2D, WebGL shaders and Web Audio;
-Node runs the code; a Rust GPU compositor, loaded into Node as an N-API addon, draws every frame. Existing Remotion
-projects render as they are: `remotion` and `@remotion/*` imports resolve to Kinetograph's own implementation of them.
-A video can also be a plain HTML page, and [HyperFrames](https://github.com/heygen-com/hyperframes) projects render as
-they are too, GSAP timelines included: `npx kinetograph render index.html -o out.mp4`.
+Kinetograph makes videos from code, without a browser. You (or an agent) write a video in TypeScript with Remotion's
+API, or as a plain HTML page. Node runs the code, and a Rust GPU compositor draws every frame: CSS, SVG, Canvas 2D,
+WebGL shaders, 3D and Web Audio. Existing Remotion projects render as they are, and so do
+[HyperFrames](https://github.com/heygen-com/hyperframes) projects. The film above is one TypeScript project in
+[`examples/launch`](examples/launch).
 
-**The film above is 1,184 frames of 1080p video, sound included, rendered in 26 seconds on a laptop.** It is one
-TypeScript project in [`examples/launch`](examples/launch).
+Kinetograph is in beta (version 0.2.5). APIs can still change between versions.
+
+## Install
+
+You need Node.js 22 or newer. The prebuilt package covers macOS on Apple Silicon, Linux x64 and Windows x64, and
+installs in about a minute with nothing else to set up:
+
+```sh
+npm install kinetograph
+npx kinetograph doctor
+```
+
+Building from source is only for working on the engine, or for a platform with no prebuilt package. It needs Rust and
+the FFmpeg libraries and takes 15 to 30 minutes: see
+[Installation: From source](https://kinetograph.dev/docs/getting-started/installation/#from-source).
+
+### Install with a coding agent
+
+Paste this into Claude Code, Codex or another coding agent:
+
+```text
+Set up Kinetograph (https://github.com/0xS4N4TG/kinetograph) for me by following its AGENTS.md:
+https://github.com/0xS4N4TG/kinetograph/blob/main/AGENTS.md
+Ask me first whether I want the prebuilt package (recommended) or a build from source,
+and ask before installing anything system-wide or installing the Kinetograph agent skills.
+```
+
+## Make a video
+
+Start a project in an empty folder:
+
+```sh
+npx kinetograph init          # TSX, Remotion-style
+npx kinetograph init --html   # or an HTML / HyperFrames page
+npm install
+```
+
+`init` makes `src/` for code (or `html/` for a page), `public/` for images, fonts, audio and video, and `out/` for
+everything Kinetograph writes. It also writes a starter title card. Render it:
+
+```sh
+npx kinetograph render src/index.tsx      # writes out/renders/Main.mp4
+npx kinetograph render html/index.html    # for an HTML project
+```
+
+## How it works
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/engine-dark.svg">
+  <img src="docs/readme/engine-light.svg" alt="Diagram of how Kinetograph makes a frame: a Remotion project or HyperFrames page is bundled, run in Node as layers and DOM islands, laid out and painted in the Rust addon, composited on the GPU and encoded to MP4, with Web Audio rendered offline as a side input" width="100%">
+</picture>
+
+Node runs your project and a Rust addon draws each frame on the GPU. The [Engine](https://kinetograph.dev/docs/internals/engine/) page walks through the six steps.
+
+## Docs
+
+Everything else is on the docs site, [kinetograph.dev/docs](https://kinetograph.dev/docs/):
+
+- [Installation](https://kinetograph.dev/docs/getting-started/installation/) and [First video](https://kinetograph.dev/docs/getting-started/first-video/)
+- [Authoring](https://kinetograph.dev/docs/guides/authoring/) and [Remotion compatibility](https://kinetograph.dev/docs/compat/)
+- [Studio](https://kinetograph.dev/docs/guides/studio/), the local editor
+- [Use with agents](https://kinetograph.dev/docs/guides/agents/)
+- [Engine](https://kinetograph.dev/docs/internals/engine/) and [What works](https://kinetograph.dev/docs/compat/)
+- [Changelog](CHANGELOG.md) and [Contributing](https://kinetograph.dev/docs/contributing/)
 
 <details>
 <summary>Credits for the film's footage</summary>
@@ -36,199 +98,11 @@ TypeScript project in [`examples/launch`](examples/launch).
 
 </details>
 
-## Rendered with Kinetograph
-
-Each clip is an example in this repo. Times are `kinetograph render --concurrency 4` on an Apple M4, the median of
-three runs.
-
-<table>
-  <tr>
-    <td width="50%"><img src="docs/readme/showcase.gif" alt="Showcase example"><br><b>Showcase</b><br><sub>928 frames · 1920×1080 · 37 s of video · <b>rendered in 13 s</b></sub></td>
-    <td width="50%"><img src="docs/readme/showcase-3d.gif" alt="3D scenes example"><br><b>3D scenes</b><br><sub>180 frames · 1920×1080 · 6 s of video · <b>rendered in 2.3 s</b></sub></td>
-  </tr>
-  <tr>
-    <td><img src="docs/readme/rajz-cards.gif" alt="Rajz cards example"><br><b>Rajz cards</b><br><sub>125 frames · 1920×1080 · 5 s of video · <b>rendered in 5.1 s</b></sub></td>
-    <td><img src="docs/readme/video-overlay.gif" alt="Video overlay example"><br><b>Video overlay</b><br><sub>180 frames · 1920×1080 · 6 s of video · <b>rendered in 1.9 s</b></sub></td>
-  </tr>
-  <tr>
-    <td><img src="docs/readme/compat.gif" alt="Remotion compatibility test"><br><b>Remotion compat test</b><br><sub>150 frames · 1200×1000 · 5 s of video · <b>rendered in 2.3 s</b></sub></td>
-    <td><img src="docs/readme/canvas.gif" alt="Canvas 2D example"><br><b>Canvas 2D</b><br><sub>60 frames · 860×420 · 2 s of video · <b>rendered in 0.6 s</b></sub></td>
-  </tr>
-  <tr>
-    <td><img src="docs/readme/bench-diorama.gif" alt="Diorama scene" width="60%"><br><b>Diorama scene (JSON)</b><br><sub>90 frames · 1080×1920 · 3 s of video · <b>rendered in 2.2 s</b></sub></td>
-    <td><img src="docs/readme/papercut-card.gif" alt="Papercut card scene" width="60%"><br><b>Papercut card (JSON)</b><br><sub>60 frames · 1080×1920 · 2 s of video · <b>rendered in 0.7 s</b></sub></td>
-  </tr>
-</table>
-
-### Papercut explainers
-
-Three reels made with [papercut-explainer](https://github.com/0xS4N4TG/papercut-explainer), my Remotion library and
-agent skills for cut-paper explainer reels, rendered by Kinetograph without changes. Times are the fastest of
-three runs with `--concurrency 4` on the same Apple M4.
-
-<table>
-  <tr>
-    <td width="33%"><img src="docs/readme/papercut-13-mods.gif" alt="Papercut explainer ep. 13: Mods"><br><b>Ep. 13: Mods</b><br><sub>988 frames · 1080×1920 · 33 s of video<br><b>rendered in 24 s</b></sub></td>
-    <td width="33%"><img src="docs/readme/papercut-12-mirofish.gif" alt="Papercut explainer ep. 12: Mirofish"><br><b>Ep. 12: Mirofish</b><br><sub>879 frames · 1080×1920 · 29 s of video<br><b>rendered in 31 s</b></sub></td>
-    <td width="33%"><img src="docs/readme/papercut-10-war.gif" alt="Papercut explainer ep. 10: The War Skill"><br><b>Ep. 10: The War Skill</b><br><sub>850 frames · 1080×1920 · 28 s of video<br><b>rendered in 55 s</b></sub></td>
-  </tr>
-</table>
-
-## The editor
-
-<p align="center">
-  <img src="docs/readme/studio.webp" alt="Kinetograph Studio: a top bar with the composition switcher and the command menu, the agent chat on the left, a large preview with a floating transport, the inspector on the right on the Props tab, and the timeline below with a strip of frames and a row per layer" width="100%">
-</p>
-
-`kinetograph studio src/index.tsx` opens a local editor for a project. The engine draws its preview frames, so what you
-see is what renders.
-
-- **Panels:** the agent chat, the preview with its timeline, and the inspector float over the window. Drag a panel's
-  edge to resize it, double-click to reset, and fold the agent or the inspector from the top bar. Cmd+K opens a command
-  menu with every action; `?` lists the shortcuts.
-- **Preview with sound:** a large preview with a floating transport and a View menu (layer controls, safe zones, zoom).
-  The composition's audio plays in the preview, with the audio clock leading the picture.
-- **Timeline:** a slim bar that expands to one row per layer. Clips are coloured by kind, video clips show a film strip
-  and audio clips their waveform, and the ruler counts in mm:ss.ff.
-- **Point and ask:** click a layer in the preview, or drag a box around several. On the timeline, drag to pick a span of
-  time. Then tell your coding agent what to change: it gets the selection or the span, the source locations and a
-  picture (one contact sheet of frames for a span). It talks to the agent over the Agent Client Protocol (ACP), with
-  presets for Claude Code, Codex and Gemini (tested with Claude Code so far), asks you before the agent edits a file,
-  and its replies are rendered as markdown. The agent can read and set the props the preview shows.
-- **Props and presets:** a form drawn from the composition's zod `schema`, with presets saved beside the project.
-  A plugin's fields are drawn by the plugin, as a card with its icon and description. Selecting a card selects the
-  layers it draws. Edited props survive a reload.
-- **Export and renders:** export the whole video or a range you type or trim, with a queue of renders in the same
-  window. The scene tree shows each layer's resolved fields.
-
-## Status
-
-**Beta, version 0.2.5.** It works and renders real projects, but APIs can still change between versions and some
-features are missing. The core renderer, effects, authoring layer, studio, Remotion compatibility on a native DOM
-engine (CSS, SVG, Canvas 2D, WebGL fragment shaders) and an own 3D layer are built. The papercut test project renders
-all 988 of its frames natively. What is left is listed under known issues on the kinetograph site
-(`/docs/known-issues/`).
-
-- [The DOM engine](packages/cli/skills/kinetograph/references/ENGINE.md), and Remotion compatibility on the kinetograph site (`/docs/compat/`)
-- [Authoring contract](packages/cli/skills/kinetograph/references/AUTHORING.md): the TS packages, the addon's API and how elements map to scenes
-- [Scene format](packages/cli/skills/kinetograph/references/SCENE.md)
-- [Changelog](CHANGELOG.md): what changed in each release. 0.2.5 adds motion tracking (`kinetograph track`), video
-  frames in canvases (`onVideoFrame`, `drawImage` of a `<video>`), the Web Animations API, GPU-deformed 3D models
-  with bevels and shadows from every light, HyperFrames audio effects and modules, and Intel and AMD GPU encoders on
-  Linux.
-
-## Architecture
-
-```mermaid
-flowchart TB
-  subgraph project["Your project (TSX)"]
-    P["Remotion API · CSS / SVG · Canvas 2D · WebGL · Web Audio<br/>native elements and effects from @kinetographdev/core"]
-  end
-
-  subgraph node["Node: the kinetograph CLI, studio and MCP server"]
-    B["esbuild bundle<br/>remotion, @remotion/* → @kinetographdev/core"]
-    D["determinism shim<br/>Date, Math.random, timers, rAF driven by the frame"]
-    R["@kinetographdev/react: React reconciler<br/>runs the tree once per frame"]
-    S["browser shims: DOM readback, Canvas 2D and WebGL<br/>contexts that record their calls"]
-    A["@kinetographdev/audio<br/>node-web-audio-api, OfflineAudioContext"]
-    E["emit: native elements → scene layers<br/>runs of HTML/SVG → DOM islands"]
-    B --> D --> R --> E
-    R <--> S
-  end
-
-  subgraph rust["Rust: the @kinetographdev/native addon (napi-rs)"]
-    DOM["kinetograph-dom: DOM engine<br/>blitz-dom + Stylo (CSS) + taffy (layout) + Parley (text),<br/>usvg (SVG); painted into scene layers"]
-    C["kinetograph-core: compositor on wgpu<br/>Skia (vectors, text, Canvas 2D), WGSL effects,<br/>GLSL via naga (WebGL), scene3d (glTF, PBR),<br/>ThorVG (Lottie), 2.5D camera, motion blur, layer cache"]
-    M["media: FFmpeg decode and encode<br/>(VideoToolbox / libx264)"]
-    DOM --> C
-    M <--> C
-  end
-
-  P --> B
-  E -- "scene JSON per frame" --> C
-  E -- "island JSON" --> DOM
-  A -- "PCM" --> M
-  C --> OUT["MP4 / MOV / PNG<br/>studio preview frames"]
-```
-
-No Chrome anywhere in rendering, including canvas and WebGL: every CSS, SVG and canvas feature
-is ported natively, and Chrome for Testing is used only by tests, as a reference to compare against. Node hosts the
-engine so every npm package and Web API is there; the engine is a native addon so pixels never cross into JavaScript.
-Existing crates do text shaping, layout, CSS and rasterising; Kinetograph writes the glue.
-
-## Projects in TSX
-
-Node 22 or later. The npm workspaces are `@kinetographdev/scene` (scene types and effect helpers), `@kinetographdev/react`
-(the reconciler and native elements), `@kinetographdev/core` (Remotion's API and packages, the frame loop, the
-determinism shim), `@kinetographdev/audio`, the `kinetograph` CLI, and `@kinetographdev/native` (the addon, `crates/node`).
-
-```sh
-npm ci
-npm run build                                   # TS packages and a debug addon
-npm run build:release -w @kinetographdev/native    # the addon for timing
-
-npx kinetograph still examples/rajz-cards/index.tsx 60 -o out/rajz-60.png
-npx kinetograph strip examples/rajz-cards/index.tsx -n 12 -o out/rajz-strip.png
-npx kinetograph render examples/rajz-cards/index.tsx -o out/rajz-cards.mp4
-npx kinetograph inspect examples/rajz-cards/index.tsx --frame 60 --json
-```
-
-A new project imports the API from `@kinetographdev/core`, which comes with `npm install kinetograph`; Remotion is
-not installed. A Remotion project keeps its `remotion` and `@remotion/*` imports, which the CLI maps onto the same code. Every command takes `--json`;
-`npx kinetograph mcp` serves the same commands over MCP; [Use with agents](packages/site/content/docs/guides/agents.mdx)
-has the client setup and the agent skill. `npm test` runs the CPU tests; the GPU ones run with
-`KINETOGRAPH_GPU_TESTS=1`.
-
-## HTML pages and HyperFrames projects
-
-A video can be an HTML page instead of a TSX project, and a HyperFrames project renders as it is, with no rewrite and
-no browser. The root element gives the size and length; GSAP timelines registered in `window.__timelines` are paused
-and seeked to each frame's time:
-
-```html
-<div id="root" data-composition-id="hello" data-width="1280" data-height="720" data-duration="2">
-  <div id="title">Hello, Kinetograph</div>
-  <div id="bar"></div>
-</div>
-<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
-<script>
-  const tl = gsap.timeline({ paused: true });
-  tl.to('#bar', { width: 640, duration: 1, ease: 'none' });
-  window.__timelines = { hello: tl };
-</script>
-```
-
-```sh
-npx kinetograph still index.html 15 -o frame.png   # the same commands as for a TSX project
-npx kinetograph render index.html -o out.mp4       # or the directory that holds index.html
-npx kinetograph fetch-deps index.html              # download what the page loads (CDN scripts, modules, media) ahead of time
-```
-
-`still`, `strip`, `inspect`, `lint`, `doctor`, `studio` and `render` all take the page. A render downloads what the page
-loads from the web first and pins it in `kinetograph.lock.json`; `--offline` never downloads. Clips (`data-start`,
-`data-duration`), nested compositions (`data-composition-src`), `<video>` and `<audio>`, `data-fx-chain` audio effects and
-`data-color-grading` work as in HyperFrames: the details are under "HyperFrames projects" on the kinetograph site's
-compatibility page (`/docs/compat/#hyperframes-projects`).
-
-## Build from source
-
-Use the rustup toolchain (stable, edition 2024) and a GPU that wgpu supports (Metal on macOS); no display is needed.
-`render` links FFmpeg, so building needs its development libraries and `pkg-config` to find them
-(`brew install ffmpeg pkgconf` on macOS). Without `pkg-config`, set `FFMPEG_DIR` to the FFmpeg prefix instead
-(`FFMPEG_DIR=$(brew --prefix ffmpeg)`).
-
-```sh
-cargo build --release
-./target/release/kinetograph render examples/papercut-card.json -o out/card.mp4
-```
-
-How a frame is made, the code map, the Rust CLI, the layer cache and frame reuse are in
-[packages/cli/skills/kinetograph/references/INTERNALS.md](packages/cli/skills/kinetograph/references/INTERNALS.md).
-
 ## License
 
-[PolyForm Small Business License 1.0.0](LICENSE.md): free for individuals, non-profits, and companies with fewer than
-100 people and under 1,000,000 USD (2019) revenue. Larger companies need a commercial licence; see
-[COMMERCIAL.md](COMMERCIAL.md). Vendored crates keep their own licences ([vendor/README.md](vendor/README.md)).
+[PolyForm Small Business License 1.0.0](LICENSE.md). Kinetograph is source-available: free for individuals,
+non-profits, and companies with fewer than 100 people and under 1,000,000 USD (2019) revenue. Larger companies need a
+commercial licence; see [COMMERCIAL.md](COMMERCIAL.md). Vendored crates keep their own licences
+([vendor/README.md](vendor/README.md)).
 
 Required Notice: Copyright 2026 Sanat Gupta (https://github.com/0xS4N4TG)

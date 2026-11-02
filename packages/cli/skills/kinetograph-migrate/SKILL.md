@@ -1,6 +1,8 @@
 ---
 name: kinetograph-migrate
 description: Move an existing Remotion project onto Kinetograph so it renders without a browser. Use when the user has a Remotion project (remotion or @remotion/* imports, `remotion render` scripts, @remotion/three, @remotion/player) and wants it to run, preview or render with Kinetograph, or asks what in a Remotion project will not work there.
+metadata:
+  version: "0.2.5"
 ---
 
 # Migrate a Remotion project to Kinetograph
@@ -12,6 +14,8 @@ as a stopgap, for any reason.
 
 Run commands as `npx kinetograph <command>`. Add `--json` to get one JSON object. For the other commands and the
 project API, use the `kinetograph` skill.
+
+Keep the project's own folder layout; do not move files. Only what the commands generate goes under `out/`, which is their default.
 
 ## The loop
 
@@ -36,11 +40,11 @@ project API, use the `kinetograph` skill.
 4. **Lint.** `kinetograph lint <entry>` and `kinetograph check <entry>` (type errors). Fix every error. Errors that say
    "no declaration file" for `react` mean `@types/react` is not installed: add it as a dev dependency at the project's
    React version and tell the user. That is not a migration problem and does not block `render`.
-5. **Look.** `kinetograph strip <entry> -n 12 -o out/strip.png`, then open the PNG. Use `still <entry> <frame>` for one
+5. **Look.** `kinetograph strip <entry> -n 12` (it writes `out/sheets/<id>-strip.png` under the project folder), then open the PNG. Use `still <entry> <frame>` for one
    frame. Compare with what the project was meant to show (a Remotion render, a screenshot, the user's description; if
    you have none, check against the code and say that you could not compare). `doctor` and `lint` can both be clean
    while text is missing, so check that every title and caption is on screen (see Fonts).
-6. **Render.** `kinetograph render <entry> --comp <id> -o out/video.mp4 --strict` (`--range 0..30` first for a quick
+6. **Render.** `kinetograph render <entry> --comp <id> --strict` (it writes `out/renders/<id>.mp4`) (`--range 0..30` first for a quick
    test; `a..b` stops at b-1, `a..=b` includes b). `--strict` fails on the first frame
    with anything unsupported, so no video leaves with something missing.
 
@@ -79,4 +83,4 @@ Needs no rewrite: `<Img src>` of an `.svg` file (text inside it is left out), na
 (`white`, `rgb()`, `oklch()`), `<TransitionSeries>` and `<Series>` children in a Fragment, `<canvas>` and `<Canvas>`,
 `-webkit-text-stroke`, and symbols or emoji missing from a font (bundled fallback; CJK needs a font you load). Libraries
 (Recharts, d3, rough.js, Chart.js, anime.js, Motion, Paper.js) run as they are when they draw from the frame; see
-`/docs/libraries/`. Mermaid draws with its default HTML labels (`<foreignObject>`); load the label font first.
+`/docs/plugins/library-adapters/`. Mermaid draws with its default HTML labels (`<foreignObject>`); load the label font first.

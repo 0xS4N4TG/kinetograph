@@ -246,3 +246,189 @@ export function readKinetic(pluginDir) {
 
 /** The id of every composition an effect folder's index registers. */
 export const compositionIds = (src) => [...src.matchAll(/<Composition\b[\s\S]*?\bid=["'](\w+)["']/g)].map((m) => m[1]);
+
+// Motion components (components/<kind>/): each folder's index registers one <Composition> per component, with a zod
+// schema (every field ends in .describe()) and a defaults object. Regex and a small bracket scanner, as above.
+
+/** The text between the brace that opens at `open` and its match, skipping strings and comments; null when unbalanced. */
+function braceBody(src, open) {
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    const c = src[i];
+    if (c === '"' || c === "'" || c === '`') {
+      for (i++; i < src.length && src[i] !== c; i++) if (src[i] === '\\') i++;
+    } else if (c === '/' && src[i + 1] === '/') {
+      while (i < src.length && src[i] !== '\n') i++;
+    } else if (c === '/' && src[i + 1] === '*') {
+      i = src.indexOf('*/', i + 2) + 1 || src.length;
+    } else if ('{(['.includes(c)) depth++;
+    else if ('})]'.includes(c) && --depth === 0) return src.slice(open + 1, i);
+  }
+  return null;
+}
+
+/** The entries of an object literal's body, split at top-level commas: ['...name', 'key: value', ...]. */
+function entriesOf(body) {
+  const out = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (c === '"' || c === "'" || c === '`') {
+      for (i++; i < body.length && body[i] !== c; i++) if (body[i] === '\\') i++;
+    } else if (c === '/' && body[i + 1] === '/') {
+      // A comment is dropped; the newline stays as whitespace.
+      const end = body.indexOf('\n', i);
+      body = body.slice(0, i) + (end < 0 ? '' : body.slice(end));
+      i--;
+    } else if ('{(['.includes(c)) depth++;
+    else if ('})]'.includes(c)) depth--;
+    else if (c === ',' && depth === 0) {
+      out.push(body.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  out.push(body.slice(start).trim());
+  return out.filter(Boolean);
+}
+
+/** The object literal assigned to `const name = ...`, optionally inside z.object( ), searched in every source file of the folder. */
+function literalOf(files, name) {
+  for (const src of files) {
+    const m = src.match(new RegExp(`(?:export )?const ${name}(?::[^=\\n]+)? = (?:z\\.object\\()?\\{`));
+    if (!m) continue;
+    const body = braceBody(src, m.index + m[0].length - 1);
+    if (body !== null) return body;
+  }
+  return null;
+}
+
+/** The last string literal in a .describe( ... ) call of a schema expression. */
+function describeOf(expr) {
+  const m = [...expr.matchAll(/\.describe\(\s*(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"|`((?:[^`\\]|\\.)*)`)\s*,?\s*\)/g)].pop();
+  return m ? (m[1] ?? m[2] ?? m[3]).replace(/\\(.)/g, '$1').replace(/\s+/g, ' ').trim() : '';
+}
+
+/** A short type for a zod expression: number, integer, string, boolean, a choice of strings, a list, or an object. */
+function zodType(expr, files = []) {
+  const e = expr.replace(/\s+/g, ' ').replace(/\bz \./g, 'z.').replace(/\) \./g, ').');
+  const en = e.match(/z\.enum\(\[([^\]]*)\]/);
+  if (en) return [...en[1].matchAll(/['"]([^'"]+)['"]/g)].map((x) => x[1]).join(' | ');
+  const named = e.match(/z\.enum\((\w+)/);
+  if (named) {
+    for (const src of files) {
+      const l = src.match(new RegExp(`const ${named[1]}(?::[^=\\n]+)? = \\[([^\\]]*)\\]`));
+      if (l) return [...l[1].matchAll(/['"]([^'"]+)['"]/g)].map((x) => x[1]).join(' | ');
+    }
+  }
+  const lit = e.match(/^z\.(?:union|literal)\b/);
+  if (lit) return 'choice';
+  if (/^z\.number\(\)/.test(e)) return /\.int\(\)/.test(e) ? 'integer' : 'number';
+  if (/^z\.(string|boolean)\(\)/.test(e)) return e.match(/^z\.(\w+)/)[1];
+  if (/^z\.array\(/.test(e)) return 'list';
+  if (/^z\.(object|record)\(/.test(e)) return 'object';
+  return 'value';
+}
+
+/** A default value as the page shows it: a short literal, or '' when it is a long list, an object or a reference. */
+function shortDefault(expr) {
+  const v = expr.replace(/\s+/g, ' ').trim();
+  if (v.length > 48 || /^[\[{]/.test(v) && v.length > 30) return '';
+  if (/^(?:-?[\d.]+|true|false|'[^']*'|"[^"]*")$/.test(v)) return v.replace(/^'(.*)'$/, '"$1"').replace(/^"(.*)"$/, '"$1"');
+  if (/^\[[^\[\]{}]*\]$/.test(v)) return v;
+  return '';
+}
+
+/** The fields of one object literal, with `...spread` names resolved through the folder's sources: [{ key, expr }]. */
+function fieldsOf(files, body, seen = new Set()) {
+  const out = [];
+  for (const entry of entriesOf(body)) {
+    const spread = entry.match(/^\.\.\.\s*(\w+)(?:\.shape)?$/);
+    if (spread) {
+      if (seen.has(spread[1])) continue;
+      const inner = literalOf(files, spread[1]);
+      if (inner !== null) out.push(...fieldsOf(files, inner, new Set([...seen, spread[1]])));
+      continue;
+    }
+    const f = entry.match(/^(\w+)\s*:\s*([\s\S]*)$/);
+    if (f) out.push({ key: f[1], expr: f[2].trim() });
+  }
+  // A later key replaces an earlier one, in the earlier one's place.
+  const byKey = new Map();
+  for (const f of out) byKey.set(f.key, f);
+  return [...byKey.values()];
+}
+
+/** The expression assigned to `const name = ...;` in the folder's sources, up to its top-level semicolon; null when absent. */
+function constExpr(files, name) {
+  for (const src of files) {
+    const m = src.match(new RegExp(`(?:export )?const ${name}(?::[^=\\n]+)? = `));
+    if (!m) continue;
+    const start = m.index + m[0].length;
+    let depth = 0;
+    for (let i = start; i < src.length; i++) {
+      const c = src[i];
+      if (c === '"' || c === "'" || c === '`') {
+        for (i++; i < src.length && src[i] !== c; i++) if (src[i] === '\\') i++;
+      } else if ('{(['.includes(c)) depth++;
+      else if ('})]'.includes(c)) depth--;
+      else if (c === ';' && depth === 0) return src.slice(start, i);
+    }
+  }
+  return null;
+}
+
+/**
+ * A field's schema expression with a leading shared name (hex, modeSchema, ...) replaced by what it is defined as, so
+ * its type and its .describe text can be read. A .describe on the field itself still wins (it comes last).
+ */
+function resolve(files, expr) {
+  const lead = expr.match(/^(\w+)(?=\.|$|\s)/);
+  if (!lead || lead[1] === 'z') return expr;
+  const base = constExpr(files, lead[1]);
+  return base === null ? expr : base + expr.slice(lead[1].length);
+}
+
+/** The rows for one schema field: the field itself, then (for a z.object) its own fields as `field.sub`. */
+function rowsFor(files, name, expr, dflt, parentDoc = '') {
+  const e = resolve(files, expr);
+  const isColour = /^hex\b/.test(expr) || /regex\(\/\^#\[0-9a-fA-F\]\{6\}/.test(e);
+  // A nested field with no .describe of its own is named in words, with its object's text after it when that says something.
+  const words = name.split('.').pop().replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+  const own = describeOf(e) || `${words.charAt(0).toUpperCase() + words.slice(1)}.${parentDoc.length > 8 ? ` ${parentDoc}` : ''}`;
+  const row = { name, type: isColour ? 'colour' : zodType(e, files), default: shortDefault(dflt), doc: own };
+  const o = e.match(/^z\s*\.object\(\s*\{/);
+  const body = o ? braceBody(e, e.indexOf('{', o.index)) : null;
+  if (body === null) return [row];
+  // A nested object is listed as its fields (`colors.ink`), each with its default when the defaults spell the object out.
+  const dbody = dflt.trim().startsWith('{') ? braceBody(dflt, dflt.indexOf('{')) : null;
+  const dv = new Map(dbody === null ? [] : fieldsOf(files, dbody).map((f) => [f.key, f.expr]));
+  return fieldsOf(files, body).flatMap((f) => rowsFor(files, `${name}.${f.key}`, f.expr, dv.get(f.key) ?? '', describeOf(e)));
+}
+
+/**
+ * The compositions a motion-component folder registers: { id, props: [{ name, type, default, doc }] }, one per
+ * <Composition id schema defaultProps>. Props come from the zod schema (type and .describe text) and the defaults object.
+ */
+export function readCompositions(dir) {
+  const files = readdirSync(dir)
+    .filter((f) => /\.tsx?$/.test(f))
+    .map((f) => read(join(dir, f)));
+  // Compositions are registered in index.tsx and, in some kinds, in a scenes file that index.tsx renders.
+  const registrars = files.filter((src) => /<Composition\b/.test(src)).join('\n');
+  const seen = new Set();
+  return [...registrars.matchAll(/<Composition\b([\s\S]*?)\/>/g)].flatMap((m) => {
+    const attrs = m[1];
+    const id = attrs.match(/\bid=["'](\w+)["']/)?.[1];
+    // The schema is an attribute, or comes in through a shared `{...common}` object (`schema: name`).
+    const schema = attrs.match(/\bschema=\{(\w+)\}/)?.[1] ?? (/\{\.\.\.\w+\}/.test(attrs) ? registrars.match(/\bschema:\s*(\w+)/)?.[1] : undefined);
+    const defaults = attrs.match(/\bdefaultProps=\{(\w+)\}/)?.[1];
+    if (!id || seen.has(id)) return [];
+    seen.add(id);
+    const body = schema ? literalOf(files, schema) : null;
+    const dbody = defaults ? literalOf(files, defaults) : null;
+    const dv = new Map(dbody === null ? [] : fieldsOf(files, dbody).map((f) => [f.key, f.expr]));
+    const props = body === null ? [] : fieldsOf(files, body).flatMap((f) => rowsFor(files, f.key, f.expr, dv.get(f.key) ?? ''));
+    return [{ id, props }];
+  });
+}

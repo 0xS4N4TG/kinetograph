@@ -80,6 +80,28 @@ describe('audioBufferToDataUrl', () => {
       expect(audioBufferToDataUrl(buffer), c.name).toBe(c.output);
     }
   });
+
+  // Remotion 4.0.539 writes every channel of a buffer with more than two (it wrote only channel 0 under a header that
+  // advertised them all, so a 6-channel 0.1 s buffer decoded as 0.0167 s of the wrong data).
+  it('interleaves every channel of a multichannel buffer (Remotion 4.0.539)', () => {
+    for (const numberOfChannels of [3, 4, 6, 8]) {
+      const length = 17;
+      const channels = Array.from({ length: numberOfChannels }, (_, c) => Float32Array.from({ length }, (_, i) => (c + 1) * 0.01 + i * 0.001));
+      const url = audioBufferToDataUrl({ numberOfChannels, sampleRate: 16000, getChannelData: (c) => channels[c]! });
+      const wav = Buffer.from(url.slice('data:audio/wav;base64,'.length), 'base64');
+      expect(wav.readUInt16LE(20), 'IEEE float').toBe(3);
+      expect(wav.readUInt16LE(22)).toBe(numberOfChannels);
+      expect(wav.readUInt32LE(24)).toBe(16000);
+      expect(wav.readUInt16LE(32), 'block align').toBe(numberOfChannels * 4);
+      expect(wav.readUInt32LE(40), 'data bytes').toBe(length * numberOfChannels * 4);
+      expect(wav.length).toBe(44 + length * numberOfChannels * 4);
+      for (let i = 0; i < length; i++) {
+        for (let c = 0; c < numberOfChannels; c++) {
+          expect(wav.readFloatLE(44 + (i * numberOfChannels + c) * 4), `${numberOfChannels} channels, frame ${i}, channel ${c}`).toBe(channels[c]![i]);
+        }
+      }
+    }
+  });
 });
 
 describe('getImageDimensions', () => {

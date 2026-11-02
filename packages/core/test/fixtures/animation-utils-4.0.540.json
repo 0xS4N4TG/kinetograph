@@ -1,0 +1,790 @@
+{
+ "recordedWith": "@remotion/animation-utils@4.0.540",
+ "how": "A scratch script outside the repo that only calls the published package public functions and writes the results to JSON. Remotion is not a dependency of this repo.",
+ "node": "v26.7.0",
+ "calls": [
+  {
+   "name": "skew",
+   "args": [
+    10
+   ],
+   "result": {
+    "value": "skew(10deg, 10deg)"
+   }
+  },
+  {
+   "name": "skew",
+   "args": [
+    "10deg"
+   ],
+   "result": {
+    "value": "skew(10deg, 10deg)"
+   }
+  },
+  {
+   "name": "skew",
+   "args": [
+    10,
+    20
+   ],
+   "result": {
+    "value": "skew(10deg, 20deg)"
+   }
+  },
+  {
+   "name": "skew",
+   "args": [
+    "10deg",
+    "20rad"
+   ],
+   "result": {
+    "value": "skew(10deg, 20rad)"
+   }
+  },
+  {
+   "name": "skew",
+   "args": [
+    "0.5turn",
+    "30deg"
+   ],
+   "result": {
+    "value": "skew(0.5turn, 30deg)"
+   }
+  },
+  {
+   "name": "skew",
+   "args": [
+    10,
+    "rad"
+   ],
+   "result": {
+    "value": "skew(10rad, 10rad)"
+   }
+  },
+  {
+   "name": "skew",
+   "args": [
+    10,
+    "deg",
+    20,
+    "rad"
+   ],
+   "result": {
+    "value": "skew(10deg, 20rad)"
+   }
+  },
+  {
+   "name": "skew",
+   "args": [
+    10,
+    "turn",
+    20,
+    "grad"
+   ],
+   "result": {
+    "value": "skew(10turn, 20grad)"
+   }
+  },
+  {
+   "name": "skew",
+   "args": [
+    1,
+    "deg",
+    2,
+    "deg"
+   ],
+   "result": {
+    "value": "skew(1deg, 2deg)"
+   }
+  },
+  {
+   "name": "skew",
+   "args": [
+    10,
+    "px",
+    20,
+    "deg"
+   ],
+   "result": {
+    "error": "TypeError: skew() supports only the following signatures:\nskew(angle: AngleUnitString): string;\nskew(angle: AngleUnitString, angle2: AngleUnitString): string;\nskew(angle: number, unit: AngleUnit): string;\nskew(angleX: number, angleY: number): string;\nskew(angleX: number, unitX: AngleUnit, angleY: number, unitY: AngleUnit): string;"
+   }
+  },
+  {
+   "name": "skew",
+   "args": [
+    10,
+    "deg",
+    20,
+    "px"
+   ],
+   "result": {
+    "error": "TypeError: skew() supports only the following signatures:\nskew(angle: AngleUnitString): string;\nskew(angle: AngleUnitString, angle2: AngleUnitString): string;\nskew(angle: number, unit: AngleUnit): string;\nskew(angleX: number, angleY: number): string;\nskew(angleX: number, unitX: AngleUnit, angleY: number, unitY: AngleUnit): string;"
+   }
+  },
+  {
+   "name": "skew",
+   "args": [
+    10,
+    "bogus",
+    20,
+    "deg"
+   ],
+   "result": {
+    "error": "TypeError: skew() supports only the following signatures:\nskew(angle: AngleUnitString): string;\nskew(angle: AngleUnitString, angle2: AngleUnitString): string;\nskew(angle: number, unit: AngleUnit): string;\nskew(angleX: number, angleY: number): string;\nskew(angleX: number, unitX: AngleUnit, angleY: number, unitY: AngleUnit): string;"
+   }
+  },
+  {
+   "name": "skew",
+   "args": [
+    {
+     "num": "NaN"
+    }
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"skew\" for param \"angle\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "skew",
+   "args": [
+    10,
+    {
+     "num": "NaN"
+    }
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"skew\" for param \"angle\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "skew",
+   "args": [
+    10,
+    "deg",
+    {
+     "num": "NaN"
+    },
+    "deg"
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"skew\" for param \"angle\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "skew",
+   "args": [
+    10,
+    "deg",
+    {
+     "num": "Infinity"
+    },
+    "rad"
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"skew\" for param \"angle\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "skew",
+   "args": [],
+   "result": {
+    "error": "TypeError: skew() supports only the following signatures:\nskew(angle: AngleUnitString): string;\nskew(angle: AngleUnitString, angle2: AngleUnitString): string;\nskew(angle: number, unit: AngleUnit): string;\nskew(angleX: number, angleY: number): string;\nskew(angleX: number, unitX: AngleUnit, angleY: number, unitY: AngleUnit): string;"
+   }
+  },
+  {
+   "name": "skew",
+   "args": [
+    "deg"
+   ],
+   "result": {
+    "error": "Error: input deg is not a valid transform. Must be a number or a string ending in one of the following units: px, em, rem, pt, cap, ch, ex, ic, lh, rlh, vmax, vmin, vb, vi, cqw, vh, vw, cqh, cqi, cqb, cqmin, cqmax, cm, mm, Q, in, pc"
+   }
+  },
+  {
+   "name": "scale",
+   "args": [
+    2
+   ],
+   "result": {
+    "value": "scale(2, 2)"
+   }
+  },
+  {
+   "name": "scale",
+   "args": [
+    2,
+    3
+   ],
+   "result": {
+    "value": "scale(2, 3)"
+   }
+  },
+  {
+   "name": "scale",
+   "args": [
+    2,
+    {
+     "undef": true
+    }
+   ],
+   "result": {
+    "value": "scale(2, 2)"
+   }
+  },
+  {
+   "name": "scale",
+   "args": [
+    2,
+    {
+     "num": "NaN"
+    }
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"scale\" for param \"y\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "scale",
+   "args": [
+    2,
+    {
+     "num": "Infinity"
+    }
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"scale\" for param \"y\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "scale",
+   "args": [
+    2,
+    "3"
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"scale\" for param \"y\" is \"3\""
+   }
+  },
+  {
+   "name": "scale",
+   "args": [
+    2,
+    null
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"scale\" for param \"y\" is null"
+   }
+  },
+  {
+   "name": "scale",
+   "args": [
+    {
+     "num": "NaN"
+    }
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"scale\" for param \"x\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "scale",
+   "args": [
+    "2"
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"scale\" for param \"x\" is \"2\""
+   }
+  },
+  {
+   "name": "scale",
+   "args": [
+    {
+     "undef": true
+    }
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"scale\" for param \"x\" is undefined"
+   }
+  },
+  {
+   "name": "scale",
+   "args": [
+    0.5,
+    -1
+   ],
+   "result": {
+    "value": "scale(0.5, -1)"
+   }
+  },
+  {
+   "name": "skewX",
+   "args": [
+    5
+   ],
+   "result": {
+    "value": "skewX(5deg)"
+   }
+  },
+  {
+   "name": "skewX",
+   "args": [
+    "5rad"
+   ],
+   "result": {
+    "value": "skewX(5rad)"
+   }
+  },
+  {
+   "name": "skewX",
+   "args": [
+    5,
+    "turn"
+   ],
+   "result": {
+    "value": "skewX(5turn)"
+   }
+  },
+  {
+   "name": "skewX",
+   "args": [
+    {
+     "num": "NaN"
+    }
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"skewX\" for param \"angle\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "skewY",
+   "args": [
+    5
+   ],
+   "result": {
+    "value": "skewY(5deg)"
+   }
+  },
+  {
+   "name": "skewY",
+   "args": [
+    5,
+    "grad"
+   ],
+   "result": {
+    "value": "skewY(5grad)"
+   }
+  },
+  {
+   "name": "skewY",
+   "args": [
+    "5deg"
+   ],
+   "result": {
+    "value": "skewY(5deg)"
+   }
+  },
+  {
+   "name": "skewY",
+   "args": [
+    {
+     "num": "Infinity"
+    }
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"skewY\" for param \"angle\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "rotate",
+   "args": [
+    5
+   ],
+   "result": {
+    "value": "rotate(5deg)"
+   }
+  },
+  {
+   "name": "rotate",
+   "args": [
+    5,
+    "rad"
+   ],
+   "result": {
+    "value": "rotate(5rad)"
+   }
+  },
+  {
+   "name": "rotate",
+   "args": [
+    "5turn"
+   ],
+   "result": {
+    "value": "rotate(5turn)"
+   }
+  },
+  {
+   "name": "rotate",
+   "args": [
+    {
+     "num": "NaN"
+    }
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"rotate\" for param \"angle\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "rotateX",
+   "args": [
+    5,
+    "rad"
+   ],
+   "result": {
+    "value": "rotateX(5rad)"
+   }
+  },
+  {
+   "name": "rotateZ",
+   "args": [
+    {
+     "num": "NaN"
+    }
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"rotateZ\" for param \"angle\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "scaleX",
+   "args": [
+    2
+   ],
+   "result": {
+    "value": "scaleX(2)"
+   }
+  },
+  {
+   "name": "scaleX",
+   "args": [
+    {
+     "num": "NaN"
+    }
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"scaleX\" for param \"x\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "scaleX",
+   "args": [
+    "2"
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"scaleX\" for param \"x\" is \"2\""
+   }
+  },
+  {
+   "name": "scaleY",
+   "args": [
+    {
+     "undef": true
+    }
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"scaleY\" for param \"y\" is undefined"
+   }
+  },
+  {
+   "name": "scaleZ",
+   "args": [
+    {
+     "num": "Infinity"
+    }
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"scaleZ\" for param \"z\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "scale3d",
+   "args": [
+    1,
+    2,
+    3
+   ],
+   "result": {
+    "value": "scale3d(1, 2, 3)"
+   }
+  },
+  {
+   "name": "scale3d",
+   "args": [
+    1,
+    {
+     "num": "NaN"
+    },
+    3
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"scale3d\" for param \"y\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "translate",
+   "args": [
+    10
+   ],
+   "result": {
+    "value": "translate(10px)"
+   }
+  },
+  {
+   "name": "translate",
+   "args": [
+    10,
+    20
+   ],
+   "result": {
+    "value": "translate(10px, 20px)"
+   }
+  },
+  {
+   "name": "translate",
+   "args": [
+    "10%",
+    20
+   ],
+   "result": {
+    "error": "TypeError: translate() supports only the following signatures:\ntranslate(x: LengthPercentageUnitString)\ntranslate(x: number)\ntranslate(x: number, y: number)\ntranslate(translation: number, unit: LengthPercentageUnit)\ntranslate(x: number, unitX: LengthPercentageUnit, y: number, unitY: LengthPercentageUnit): string;"
+   }
+  },
+  {
+   "name": "translate",
+   "args": [
+    {
+     "num": "NaN"
+    }
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"translate\" for param \"x\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "translate",
+   "args": [
+    10,
+    {
+     "num": "NaN"
+    }
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"translate\" for param \"y\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "translateX",
+   "args": [
+    10
+   ],
+   "result": {
+    "value": "translateX(10px)"
+   }
+  },
+  {
+   "name": "translateX",
+   "args": [
+    "5%"
+   ],
+   "result": {
+    "value": "translateX(5%)"
+   }
+  },
+  {
+   "name": "translateX",
+   "args": [
+    {
+     "num": "NaN"
+    }
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"translateX\" for param \"x\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "translate3d",
+   "args": [
+    1,
+    2,
+    3
+   ],
+   "result": {
+    "value": "translate3d(1px, 2px, 3px)"
+   }
+  },
+  {
+   "name": "translate3d",
+   "args": [
+    1,
+    2
+   ],
+   "result": {
+    "error": "TypeError: translate3d() supports only the following signatures:\ntranslate3d(x: LengthPercentageUnitString, y: LengthPercentageUnitString, z: LengthPercentageUnitString)\ntranslate3d(x: number, unitX: LengthPercentageUnit, y: number, unitY: LengthPercentageUnit, z: number, unitZ: LengthUnit)"
+   }
+  },
+  {
+   "name": "perspective",
+   "args": [
+    100
+   ],
+   "result": {
+    "value": "perspective(100px)"
+   }
+  },
+  {
+   "name": "perspective",
+   "args": [
+    "50em"
+   ],
+   "result": {
+    "value": "perspective(50em)"
+   }
+  },
+  {
+   "name": "perspective",
+   "args": [
+    {
+     "num": "NaN"
+    }
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"perspective\" for param \"length\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "matrix",
+   "args": [
+    1,
+    0,
+    0,
+    1,
+    5,
+    6
+   ],
+   "result": {
+    "value": "matrix(1, 0, 0, 1, 5, 6)"
+   }
+  },
+  {
+   "name": "matrix",
+   "args": [
+    1,
+    0,
+    0
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"matrix\" for param \"d\" is undefined"
+   }
+  },
+  {
+   "name": "matrix",
+   "args": [
+    1,
+    0,
+    0,
+    1,
+    5,
+    {
+     "num": "NaN"
+    }
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"matrix\" for param \"ty\" is null (must be finite)"
+   }
+  },
+  {
+   "name": "matrix3d",
+   "args": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "result": {
+    "value": "matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)"
+   }
+  },
+  {
+   "name": "matrix3d",
+   "args": [
+    1,
+    2
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"matrix3d\" for param \"c1\" is undefined"
+   }
+  },
+  {
+   "name": "rotate3d",
+   "args": [
+    1,
+    0,
+    0,
+    45
+   ],
+   "result": {
+    "value": "rotate3d(1, 0, 0, 45deg)"
+   }
+  },
+  {
+   "name": "rotate3d",
+   "args": [
+    1,
+    0,
+    0,
+    "45rad"
+   ],
+   "result": {
+    "value": "rotate3d(1, 0, 0, 45rad)"
+   }
+  },
+  {
+   "name": "rotate3d",
+   "args": [
+    1,
+    0,
+    0,
+    45,
+    "rad"
+   ],
+   "result": {
+    "value": "rotate3d(1, 0, 0, 45rad)"
+   }
+  },
+  {
+   "name": "rotate3d",
+   "args": [
+    {
+     "num": "NaN"
+    },
+    0,
+    0,
+    45
+   ],
+   "result": {
+    "error": "TypeError: Argument passed to \"rotate3d\" for param \"x\" is null (must be finite)"
+   }
+  }
+ ]
+}

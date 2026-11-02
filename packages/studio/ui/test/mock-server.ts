@@ -142,7 +142,7 @@ export class MockServer implements StudioApi {
     const job: RenderJob = {
       id: String(this.jobs.length + 1),
       comp: request.comp,
-      output: `/work/${request.output ?? `out/${request.comp}.mp4`}`,
+      output: `/work/${request.output ?? `out/renders/${request.comp}.mp4`}`,
       range: [first!, last!],
       props: request.props ?? {},
       status: 'queued',

@@ -1,0 +1,524 @@
+{
+ "recordedWith": "@remotion/captions@4.0.540",
+ "how": "A scratch script outside the repo that only calls the published package public functions and writes the results to JSON. Remotion is not a dependency of this repo.",
+ "node": "v26.7.0",
+ "cases": [
+  {
+   "label": "basic",
+   "input": "WEBVTT\n\n00:00:01.000 --> 00:00:03.500\nHello world\n\n00:00:04.000 --> 00:00:06.000\nSecond cue\nsecond line\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "Hello world",
+       "startMs": 1000,
+       "endMs": 3500,
+       "timestampMs": 2250,
+       "confidence": 1
+      },
+      {
+       "text": "Second cue\nsecond line",
+       "startMs": 4000,
+       "endMs": 6000,
+       "timestampMs": 5000,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "identifiers",
+   "input": "WEBVTT\n\nintro\n00:00:01.000 --> 00:00:02.000\nOne\n\n2\n00:00:02.000 --> 00:00:03.000\nTwo\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "One",
+       "startMs": 1000,
+       "endMs": 2000,
+       "timestampMs": 1500,
+       "confidence": 1
+      },
+      {
+       "text": "Two",
+       "startMs": 2000,
+       "endMs": 3000,
+       "timestampMs": 2500,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "no hours",
+   "input": "WEBVTT\n\n01:02.500 --> 01:04.000\nShort timestamps\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "Short timestamps",
+       "startMs": 62500,
+       "endMs": 64000,
+       "timestampMs": 63250,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "comma decimal",
+   "input": "WEBVTT\n\n00:00:01,250 --> 00:00:02,500\nComma\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "Comma",
+       "startMs": 1250,
+       "endMs": 2500,
+       "timestampMs": 1875,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "header text and bom",
+   "input": "﻿WEBVTT - a title\nKind: captions\n\n00:00:00.000 --> 00:00:01.000\nHi\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "Hi",
+       "startMs": 0,
+       "endMs": 1000,
+       "timestampMs": 500,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "crlf and cr",
+   "input": "WEBVTT\r\n\r\n00:00:01.000 --> 00:00:02.000\r\nA\r\nB\r\n\r\n00:00:03.000 --> 00:00:04.000\rC\r",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "A\nB",
+       "startMs": 1000,
+       "endMs": 2000,
+       "timestampMs": 1500,
+       "confidence": 1
+      },
+      {
+       "text": "C",
+       "startMs": 3000,
+       "endMs": 4000,
+       "timestampMs": 3500,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "cue settings",
+   "input": "WEBVTT\n\n00:00:01.000 --> 00:00:02.000 align:start position:10%\nSettings\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "Settings",
+       "startMs": 1000,
+       "endMs": 2000,
+       "timestampMs": 1500,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "note style region",
+   "input": "WEBVTT\n\nNOTE a comment\nover two lines\n\nSTYLE\n::cue { color: red }\n\nREGION\nid:r1\n\n00:00:01.000 --> 00:00:02.000\nAfter blocks\n\nNOTE\n\n00:00:02.000 --> 00:00:03.000\nAfter empty note\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "After blocks",
+       "startMs": 1000,
+       "endMs": 2000,
+       "timestampMs": 1500,
+       "confidence": 1
+      },
+      {
+       "text": "After empty note",
+       "startMs": 2000,
+       "endMs": 3000,
+       "timestampMs": 2500,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "tags",
+   "input": "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<v Speaker>Hello <i>there</i> <b>friend</b></v>\n\n00:00:02.000 --> 00:00:03.000\n<c.colorE5E5E5>styled</c><c> text</c>\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "Hello there friend",
+       "startMs": 1000,
+       "endMs": 2000,
+       "timestampMs": 1500,
+       "confidence": 1
+      },
+      {
+       "text": "styled text",
+       "startMs": 2000,
+       "endMs": 3000,
+       "timestampMs": 2500,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "inline timestamps",
+   "input": "WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nNever<00:00:01.500><c> gonna</c><00:00:02.000><c> give</c><00:00:02.500><c> you</c> up\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "Never gonna give you up",
+       "startMs": 1000,
+       "endMs": 3000,
+       "timestampMs": 2000,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "entities",
+   "input": "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nTom &amp; Jerry &lt;3 &gt; &quot;quotes&quot; &apos;single&apos; a&nbsp;b &lrm;&rlm;\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "Tom & Jerry <3 > \"quotes\" 'single' a b ‎‏",
+       "startMs": 1000,
+       "endMs": 2000,
+       "timestampMs": 1500,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "numeric entities",
+   "input": "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n&#65;&#x42;&#X43; &#128512; &#x1F600; &#0; &#xD800; &#1114112; &#xZZ; &#;\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "ABC 😀 😀 &#0; &#xD800; &#1114112; &#xZZ; &#;",
+       "startMs": 1000,
+       "endMs": 2000,
+       "timestampMs": 1500,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "escaped tags stay literal",
+   "input": "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n&lt;i&gt;not italic&lt;/i&gt; and &amp;lt; stays &lt;\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "<i>not italic</i> and &lt; stays <",
+       "startMs": 1000,
+       "endMs": 2000,
+       "timestampMs": 1500,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "unknown entity",
+   "input": "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n&copy; &unknown; &amp\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "&copy; &unknown; &amp",
+       "startMs": 1000,
+       "endMs": 2000,
+       "timestampMs": 1500,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "angle brackets unmatched",
+   "input": "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n3 < 4 and 5 > 2 <b\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "3  2 <b",
+       "startMs": 1000,
+       "endMs": 2000,
+       "timestampMs": 1500,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "youtube auto",
+   "input": "WEBVTT\nKind: captions\nLanguage: en\n\n00:00:00.320 --> 00:00:03.040 align:start position:0%\n \nwelcome<00:00:00.640><c> to</c><00:00:00.800><c> the</c><00:00:01.120><c> show</c>\n\n00:00:03.030 --> 00:00:03.040 align:start position:0%\nwelcome to the show\n \n\n00:00:03.040 --> 00:00:05.000 align:start position:0%\nwelcome to the show\ntoday<00:00:03.600><c> we</c>\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "welcome to the show",
+       "startMs": 320,
+       "endMs": 3040,
+       "timestampMs": 1680,
+       "confidence": 1
+      },
+      {
+       "text": "welcome to the show",
+       "startMs": 3030,
+       "endMs": 3040,
+       "timestampMs": 3035,
+       "confidence": 1
+      },
+      {
+       "text": "welcome to the show\ntoday we",
+       "startMs": 3040,
+       "endMs": 5000,
+       "timestampMs": 4020,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "whitespace only cue line",
+   "input": "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nfirst\n \nstill the first cue\n\n00:00:03.000 --> 00:00:04.000\nsecond\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "first\n \nstill the first cue",
+       "startMs": 1000,
+       "endMs": 2000,
+       "timestampMs": 1500,
+       "confidence": 1
+      },
+      {
+       "text": "second",
+       "startMs": 3000,
+       "endMs": 4000,
+       "timestampMs": 3500,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "trailing spaces and empty cue",
+   "input": "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n  padded text  \n\n00:00:02.000 --> 00:00:03.000\n\n00:00:03.000 --> 00:00:04.000\nafter empty\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "padded text",
+       "startMs": 1000,
+       "endMs": 2000,
+       "timestampMs": 1500,
+       "confidence": 1
+      },
+      {
+       "text": "",
+       "startMs": 2000,
+       "endMs": 3000,
+       "timestampMs": 2500,
+       "confidence": 1
+      },
+      {
+       "text": "after empty",
+       "startMs": 3000,
+       "endMs": 4000,
+       "timestampMs": 3500,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "no header",
+   "input": "00:00:01.000 --> 00:00:02.000\nNo header\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "No header",
+       "startMs": 1000,
+       "endMs": 2000,
+       "timestampMs": 1500,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "empty input",
+   "input": "",
+   "result": {
+    "value": {
+     "captions": []
+    }
+   }
+  },
+  {
+   "label": "header only",
+   "input": "WEBVTT\n",
+   "result": {
+    "value": {
+     "captions": []
+    }
+   }
+  },
+  {
+   "label": "short fraction",
+   "input": "WEBVTT\n\n00:00:01.5 --> 00:00:02.25\nFractions\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "Fractions",
+       "startMs": 1005,
+       "endMs": 2025,
+       "timestampMs": 1515,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "large hours",
+   "input": "WEBVTT\n\n100:00:01.000 --> 100:00:02.000\nHours\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "Hours",
+       "startMs": 360001000,
+       "endMs": 360002000,
+       "timestampMs": 360001500,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "bad timestamp",
+   "input": "WEBVTT\n\n1 --> 00:00:02.000\nBad\n",
+   "result": {
+    "error": "Invalid timestamp:1"
+   }
+  },
+  {
+   "label": "missing end",
+   "input": "WEBVTT\n\n00:00:01.000 -->\nBad\n",
+   "result": {
+    "error": "Invalid timestamp:"
+   }
+  },
+  {
+   "label": "missing millis",
+   "input": "WEBVTT\n\n00:00:01 --> 00:00:02\nNo millis\n",
+   "result": {
+    "error": "Invalid timestamp:00:00:01"
+   }
+  },
+  {
+   "label": "tabs around arrow",
+   "input": "WEBVTT\n\n00:00:01.000\t-->\t00:00:02.000\tline:0\nTabs\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "Tabs",
+       "startMs": 1000,
+       "endMs": 2000,
+       "timestampMs": 1500,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "tags across lines",
+   "input": "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<i>first\nsecond</i>\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "first\nsecond",
+       "startMs": 1000,
+       "endMs": 2000,
+       "timestampMs": 1500,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "text with arrow",
+   "input": "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\na --> b\n",
+   "result": {
+    "value": {
+     "captions": [
+      {
+       "text": "a --> b",
+       "startMs": 1000,
+       "endMs": 2000,
+       "timestampMs": 1500,
+       "confidence": 1
+      }
+     ]
+    }
+   }
+  }
+ ]
+}

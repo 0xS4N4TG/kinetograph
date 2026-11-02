@@ -1,0 +1,26 @@
+---
+title: Panels
+description: Boxes in Studio where a plugin edits a field, or where the agent asks you to decide.
+---
+
+The word has two uses in Studio.
+
+A plugin panel is a small editor that a plugin draws for one field of a composition's props. It replaces the generated form. It can also draw guides and handles on the preview.
+
+An agent panel is a question the agent puts to you. The agent calls the `studio_open_panel` tool with a brief, script, storyboard, styleframes, review or custom panel. It then ends its turn. Your answer comes back as a message and is saved under `plan/`.
+
+```ts
+genomeSchema.meta({ kinetographPanel: '@kinetographdev/hexed' })
+```
+
+That line, from a plugin's schema, points a field at the plugin's panel.
+
+**Coming from Remotion:** no equivalent.
+**Coming from HyperFrames:** no equivalent.
+
+## See also
+
+- [Plugins: the panel](/docs/plugins/writing-a-plugin/#the-panel)
+- [Plugins: Studio's agent](/docs/plugins/#studios-agent)
+- [Plugin](/docs/terminology/plugin/)
+- [Agent](/docs/terminology/agent/)

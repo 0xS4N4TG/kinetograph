@@ -4,6 +4,8 @@ import { Easing } from '../src/easing.js';
 import { expectClose, fixture } from './helpers.js';
 
 const data = fixture('animation-utils.json');
+/** Transform helpers called with units, per-axis units and bad arguments, recorded from 4.0.540. */
+const calls = fixture('animation-utils-4.0.540.json');
 
 /** Numbers inside a string compared to 1e-9, the text around them exactly. */
 function expectSame(actual: unknown, expected: unknown, label: string) {
@@ -32,6 +34,37 @@ describe('transform helpers', () => {
   });
 });
 
+describe('transform helpers with units and bad arguments (Remotion 4.0.540)', () => {
+  // NaN and undefined do not survive JSON, so the recording wrote them as markers.
+  const revive = (v: any) => (v && typeof v === 'object' && 'num' in v ? Number(v.num) : v && typeof v === 'object' && 'undef' in v ? undefined : v);
+
+  it('write the same CSS, or throw the same error, as the published package', () => {
+    for (const c of calls.calls) {
+      const label = `${c.name}(${JSON.stringify(c.args)})`;
+      const run = () => (A as any)[c.name](...c.args.map(revive));
+      if (c.result.error) {
+        const [kind, ...message] = c.result.error.split(': ');
+        expect(run, label).toThrow(message.join(': '));
+        try {
+          run();
+        } catch (error) {
+          expect((error as Error).constructor.name, label).toBe(kind);
+        }
+      } else expect(run(), label).toBe(c.result.value);
+    }
+  });
+
+  it('skew() takes a unit for each axis', () => {
+    expect(A.skew(10, 'deg', 20, 'rad')).toBe('skew(10deg, 20rad)');
+    expect(A.skew(1, 'turn', 2, 'grad')).toBe('skew(1turn, 2grad)');
+  });
+
+  it('scale() refuses a y that is not a finite number', () => {
+    expect(() => A.scale(2, NaN)).toThrow('Argument passed to "scale" for param "y"');
+    expect(() => A.scale(2, '3' as unknown as number)).toThrow('is "3"');
+  });
+});
+
 describe('interpolateStyles', () => {
   const easings: Record<string, (t: number) => number> = { quad: (t) => t * t, out: Easing.out(Easing.cubic) };
 
@@ -48,5 +81,29 @@ describe('interpolateStyles', () => {
         for (const key of Object.keys(c.result.value)) expectSame(got[key], c.result.value[key], `${label}.${key}`);
       }
     }
+  });
+});
+
+// Remotion 4.0.539 reads digits in a function name, so translate3d, scale3d, rotate3d and matrix3d stay whole.
+describe('interpolateStyles with 3D transforms (Remotion 4.0.539)', () => {
+  const style = (transform: string) => ({ transform });
+  const at = (from: string, to: string) => A.interpolateStyles(0.5, [0, 1], [style(from), style(to)]);
+
+  it('keeps the 3D function names intact', () => {
+    expect(at('translate3d(0px, 0px, 0px)', 'translate3d(100px, 200px, 300px)')).toEqual(style('translate3d(50px, 100px, 150px)'));
+    expect(at('scale3d(1, 1, 1)', 'scale3d(2, 3, 4)')).toEqual(style('scale3d(1.5, 2, 2.5)'));
+    expect(at('rotate3d(1, 0, 0, 0deg)', 'rotate3d(1, 0, 0, 90deg)')).toEqual(style('rotate3d(1, 0, 0, 45deg)'));
+    expect(at('matrix3d(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1)', 'matrix3d(2,0,0,0,0,2,0,0,0,0,2,0,10,20,30,1)')).toEqual(
+      style('matrix3d(1.5, 0, 0, 0, 0, 1.5, 0, 0, 0, 0, 1.5, 0, 5, 10, 15, 1)'),
+    );
+  });
+
+  it('interpolates chains that mix 2D and 3D functions, and the helpers output', () => {
+    expect(at('translateX(0px) rotate(0deg) translate3d(0px,0px,0px)', 'translateX(10px) rotate(90deg) translate3d(100px, 200px, 300px)')).toEqual(
+      style('translateX(5px) rotate(45deg) translate3d(50px, 100px, 150px)'),
+    );
+    expect(
+      at(A.makeTransform([A.translate3d(0, 0, 0), A.scale3d(1, 1, 1)]), A.makeTransform([A.translate3d(100, 200, 300), A.scale3d(2, 2, 2)])),
+    ).toEqual(style('translate3d(50px, 100px, 150px) scale3d(1.5, 1.5, 1.5)'));
   });
 });

@@ -3,12 +3,23 @@
 // byte, so `rgba(0,0,0,0.5)` reads back as 0.502, as the published package does
 // (test/fixtures/interpolate-colors.json).
 
-import { parseColor } from './colors.js';
+import { parseColor, type Rgba } from './colors.js';
+import { processColor } from './process-color.js';
 import { interpolate } from './interpolate.js';
 
 export interface InterpolateColorsOptions {
   /** Accepted for forward compatibility; the interpolation is always in RGB. */
   colorSpace?: 'rgb' | 'oklab';
+}
+
+/** The CSS Color 4 functions (`oklch()`, `lch()`, `lab()`, `oklab()`, `hwb()` with an angle unit or alpha), which `colors.ts` does not read. */
+function modernColor(color: string): Rgba | null {
+  try {
+    const argb = processColor(color);
+    return { r: (argb >>> 16) & 255, g: (argb >>> 8) & 255, b: argb & 255, a: argb >>> 24 };
+  } catch {
+    return null;
+  }
 }
 
 export function interpolateColors(
@@ -26,7 +37,7 @@ export function interpolateColors(
     );
   }
   const colors = outputRange.map((color) => {
-    const parsed = parseColor(color);
+    const parsed = parseColor(color) ?? modernColor(color);
     if (parsed === null) throw new TypeError(`invalid color string ${color} provided`);
     return parsed;
   });

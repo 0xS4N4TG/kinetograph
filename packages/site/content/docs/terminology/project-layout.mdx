@@ -1,0 +1,60 @@
+---
+title: Project layout
+description: The folders of a new project, made by kinetograph init, and where generated files go.
+---
+
+`npx kinetograph init` makes a project with the folders below. Keep them.
+
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
+
+```sh
+npx kinetograph init my-video
+```
+
+```
+my-video/
+  src/
+    index.tsx       registerRoot and the compositions
+    scenes/         one component per scene
+    components/     pieces used by more than one scene
+    lib/            helpers
+  public/
+    images/  fonts/  audio/  video/
+  out/              everything generated
+  package.json  tsconfig.json  .gitignore
+```
+
+  </Tab>
+  <Tab value="HyperFrames">
+
+```sh
+npx kinetograph init my-video --html
+```
+
+```
+my-video/
+  html/
+    index.html      the page
+  public/
+    images/  fonts/  audio/  video/
+  out/              everything generated
+  package.json  .gitignore
+```
+
+  </Tab>
+</Tabs>
+
+`public/` holds the files `staticFile('images/logo.png')` reads. `out/` holds what the commands write when you leave out `-o`: `out/stills/`, `out/sheets/` for `strip` and `onion`, and `out/renders/`. `out/` is in `.gitignore`.
+
+The project folder is the one with the nearest `package.json`, or the entry's folder if there is none. `init` never overwrites a file and does not run `npm install`.
+
+A project that already exists keeps its own layout. Only generated files go in `out/`.
+
+**Coming from Remotion:** `public/` is the same folder, read with the same `staticFile`.
+
+## See also
+
+- [Entry point](/docs/terminology/entry-point/)
+- [Public directory](/docs/terminology/public-directory/)
+- [CLI reference](/docs/reference/cli/#init)

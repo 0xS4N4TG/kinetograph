@@ -1,0 +1,25 @@
+---
+title: Concurrency
+description: How many worker threads draw frames at once during a render.
+---
+
+`render --concurrency <n>` sets how many frames are drawn at once, in worker threads. The default is half the cores, at most 4. A value of 1 draws every frame in the main thread.
+
+```sh
+npx kinetograph render src/index.tsx --concurrency 4
+```
+
+Each worker is a full renderer with its own GPU device and layer cache, so memory grows with the number of workers. Workers draw chunks of 60 frames, and the main thread puts them in order for the single encoder.
+
+Because a frame depends only on its number, the video is the same at any setting. A `.json` scene is drawn whole, without workers.
+
+Test the setting on your own machine with `kinetograph bench`.
+
+**Coming from Remotion:** the same `--concurrency` option, but workers here are threads, not browser tabs.
+**Coming from HyperFrames:** no equivalent.
+
+## See also
+
+- [CLI reference](/docs/reference/cli/#render)
+- [Engine: speed](/docs/internals/engine/#speed)
+- [Determinism](/docs/terminology/determinism/)

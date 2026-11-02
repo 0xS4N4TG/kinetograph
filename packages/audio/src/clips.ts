@@ -57,3 +57,12 @@ export function joinClips(frames: { frame: number; audio: AudioClipJson[] }[]): 
   return [...timelines.values()];
 }
 
+
+/**
+ * True if some clip can be heard: it is not muted in every frame and its volume is above 0 in at least one frame. A
+ * HyperFrames clip with effects counts whenever it is not muted, since its chain sets its own gain. A render with no
+ * audible clip and no `onFrame` callback has no sound to mux.
+ */
+export function hasAudibleClip(clips: AudioClipTimeline[]): boolean {
+  return clips.some((clip) => !clip.muted && (clip.hfFx !== undefined || [...clip.volumes.values()].some((v) => v > 0)));
+}

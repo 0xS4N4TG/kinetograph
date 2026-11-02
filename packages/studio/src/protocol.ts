@@ -215,7 +215,7 @@ export type ServerMessage =
  */
 export type ChatRecord =
   | { kind: 'event'; event: AgentEvent }
-  | { kind: 'user'; text: string; chips: string[] }
+  | { kind: 'user'; text: string; chips: string[]; images?: string[] }
   | { kind: 'answer'; id: string; optionId: string | null };
 
 // ---- the coding agent (ACP) ----
@@ -228,6 +228,8 @@ export interface AgentInfo {
   command: string | null;
   /** The directory the agent works in and may read and write. */
   cwd: string;
+  /** The home directory, so the chat can write `~` for it. */
+  home?: string;
   /** Why the agent is off, in plain words; absent when it is on. */
   disabled?: string;
 }
@@ -238,10 +240,29 @@ export interface AgentPreset {
   command: string;
 }
 
+/**
+ * A picture the person attached to a message. `name` is the file already stored in the project's public/refs (the
+ * upload comes first, `PUT /api/agent/image`); `data` is a smaller copy of it, in base64, for an agent that takes pictures.
+ */
+export interface AgentAttachment {
+  name: string;
+  data?: string;
+  mimeType?: string;
+}
+
 /** What the user says to the agent. `context` is the studio's description of what is selected. */
 export type AgentClientMessage =
-  | { type: 'agent.prompt'; text: string; context: string; image?: { data: string; mimeType: string }; chips?: string[] }
+  | { type: 'agent.prompt'; text: string; context: string; image?: { data: string; mimeType: string }; chips?: string[]; attachments?: AgentAttachment[] }
   | { type: 'agent.cancel' }
+  /**
+   * Takes a message out of the queue (a prompt sent while the agent was working). With `take` the server answers with an
+   * `unqueued` event carrying the message, for the window to put back in the prompt box.
+   */
+  | { type: 'agent.unqueue'; id: string; take?: boolean }
+  /** Puts the queued messages in this order (ids it leaves out keep their places, after the others). */
+  | { type: 'agent.requeue'; order: string[] }
+  /** Stops the turn and sends this queued message next, alone; the rest stay queued. */
+  | { type: 'agent.sendnow'; id: string }
   /** The answer to a permission request; a null `optionId` denies it. */
   | { type: 'agent.permission'; id: string; optionId: string | null }
   /** Chooses the agent (one of `AgentInfo.presets`) and starts a new conversation. */
@@ -262,14 +283,61 @@ export type AgentEvent =
   | { kind: 'message'; text: string }
   | { kind: 'thought'; text: string }
   /** A tool call or file edit; the same `id` again updates it. `files` are relative to the project. */
-  | { kind: 'tool'; id: string; title: string; toolKind: string; status: string; files: string[] }
+  | {
+      kind: 'tool';
+      id: string;
+      title: string;
+      toolKind: string;
+      status: string;
+      files: string[];
+      /** What the agent asked the tool to do, in the few fields worth showing; absent from updates that do not repeat it. */
+      input?: ToolInput;
+      /** What the tool printed, cut to a size the chat can keep. */
+      output?: string;
+      /** The files it changed. */
+      diffs?: ToolDiff[];
+      /** How long the call took, once it has ended. */
+      ms?: number;
+    }
   | { kind: 'permission'; id: string; title: string; files: string[]; options: AgentPermissionOption[] }
   | { kind: 'permission_done'; id: string }
   | { kind: 'done'; stopReason: string }
   /** A problem in plain words. */
   | { kind: 'error'; message: string }
   /** A message the studio sent the agent for the person (a panel's answer), to show in the chat. */
-  | { kind: 'user'; text: string };
+  | { kind: 'user'; text: string; chips?: string[]; images?: string[] }
+  /** The messages waiting for the agent's turn to end: the whole queue, sent again whenever it changes. */
+  | { kind: 'queue'; items: QueuedMessage[] }
+  /** The answer to `agent.unqueue` with `take`: the message that was taken out of the queue (not kept in the chat log). */
+  | { kind: 'unqueued'; item: QueuedMessage };
+
+/** A message the person sent while the agent was working, waiting for its turn to end. */
+export interface QueuedMessage {
+  id: string;
+  text: string;
+  chips: string[];
+  /** The attached pictures, as file names in public/refs. */
+  images?: string[];
+  /** Set on a panel's answer waiting to be told to the agent: the kind of the panel. Such an item cannot be edited or moved. */
+  panel?: string;
+}
+
+/** The parts of an agent's tool input the chat shows. */
+export interface ToolInput {
+  command?: string;
+  description?: string;
+  pattern?: string;
+  url?: string;
+  path?: string;
+}
+
+/** A file changed by a tool call: how many lines, and the changed lines with context, each starting with ' ', '+' or '-'. */
+export interface ToolDiff {
+  path: string;
+  added: number;
+  removed: number;
+  lines: string[];
+}
 
 /**
  * A frame is one binary message: a 4-byte little-endian length `n`, then `n` bytes of UTF-8 JSON (`FrameHeader`), then

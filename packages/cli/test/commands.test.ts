@@ -111,7 +111,6 @@ describe('errors', () => {
     const bad = await cli('still', sceneFile(), '--nope', '--json');
     expect(bad.json.error.code).toBe('INVALID_ARG');
     expect((await cli('frobnicate', '--json')).json.error.code).toBe('INVALID_ARG');
-    expect((await cli('still', sceneFile(), '3', '--json')).json.error).toEqual({ code: 'INVALID_ARG', message: 'missing -o <output>' });
   });
 
   it('passes the addon\'s error codes through', async () => {

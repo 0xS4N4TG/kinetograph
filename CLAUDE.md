@@ -3,9 +3,8 @@
 A browserless programmatic video engine: agents write Remotion-shaped TypeScript and Web Audio code, Node runs it,
 and a Rust GPU compositor (an N-API addon) renders it. "Kinetograph" is the final name (decided 2026-10-16).
 
-Docs: `README.md`, `packages/cli/skills/kinetograph/references/ENGINE.md`, `packages/cli/skills/kinetograph/references/AUTHORING.md` and `packages/cli/skills/kinetograph/references/SCENE.md`. The Remotion compatibility reference
-(what is drawn, what is unsupported, `doctor`) is on the kinetograph site at `/docs/compat/`, and the known gaps at
-`/docs/known-issues/`.
+Docs: `README.md`, `packages/cli/skills/kinetograph/references/ENGINE.md`, `packages/cli/skills/kinetograph/references/AUTHORING.md` and `packages/cli/skills/kinetograph/references/SCENE.md`. The compatibility reference
+(what is drawn, what is unsupported, known gaps, `doctor`) is on the kinetograph site at `/docs/compat/`.
 
 Use the rustup toolchain (`~/.cargo/bin`, `/opt/homebrew/opt/rustup/bin`); Homebrew's `/opt/homebrew/bin/rustc` is
 broken.

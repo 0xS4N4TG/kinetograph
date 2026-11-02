@@ -27,7 +27,7 @@ describe('the tool list', () => {
     const client = await connect(async () => ({ stdout: '{}', stderr: '', code: 0 }));
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
-      ['audio_analyze', 'bench', 'check', 'compositions', 'doctor', 'effects', 'inspect', 'lint', 'onion', 'plugins', 'render', 'snapshot', 'still', 'strip', 'track'],
+      ['audio_analyze', 'bench', 'check', 'compositions', 'doctor', 'effects', 'init', 'inspect', 'lint', 'onion', 'plugins', 'render', 'snapshot', 'still', 'strip', 'track'],
     );
     expect(toolCommands().map(toolName).sort()).toEqual(tools.map((t) => t.name).sort());
   });
@@ -40,9 +40,9 @@ describe('the tool list', () => {
     const still = by.still!.inputSchema as { properties: Record<string, { type: string }>; required: string[] };
     expect(Object.keys(still.properties).sort()).toEqual(['comp', 'dev-react', 'entry', 'frame', 'offline', 'output', 'props', 'strict']);
     expect(still.properties.frame!.type).toBe('number');
-    // The output of an image tool is optional (a temp file is used), a video's is not.
+    // The output is optional: an image tool uses a temp file, a render writes to out/renders.
     expect(still.required.sort()).toEqual(['entry', 'frame']);
-    expect((by.render!.inputSchema as { required: string[] }).required.sort()).toEqual(['entry', 'output']);
+    expect((by.render!.inputSchema as { required: string[] }).required).toEqual(['entry']);
     expect((by.render!.inputSchema as { properties: Record<string, { type: string }> }).properties.draft!.type).toBe('boolean');
 
     expect(Object.keys((by.effects!.inputSchema as { properties: object }).properties)).toEqual([]);

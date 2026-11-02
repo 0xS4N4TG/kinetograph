@@ -1,0 +1,35 @@
+---
+title: Public directory
+description: The public/ folder for images, video, sound and fonts, read with staticFile.
+---
+
+The public directory is a folder named `public/` next to your entry point. If there is none there, Kinetograph looks next to the nearest `package.json`. `staticFile('name')` gives the path of a file in it. `npx kinetograph init` makes `images/`, `fonts/`, `audio/` and `video/` inside.
+
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
+
+```tsx
+<Audio src={staticFile('audio/line-1.wav')} />
+```
+
+  </Tab>
+  <Tab value="HyperFrames">
+
+```html
+<audio src="assets/line-1.wav" data-start="0"></audio>
+```
+
+  </Tab>
+</Tabs>
+
+A HyperFrames page has no `public/` folder. It names files by a path from the page.
+
+`staticFile` is for local files. Passing it a web address is an error. Use the address directly instead, and Kinetograph downloads it once into its cache.
+
+## See also
+
+- [Project layout](/docs/terminology/project-layout/)
+- [Authoring: assets](/docs/guides/authoring/#assets)
+- [Audio](/docs/guides/audio/)
+- [Asset lock](/docs/terminology/asset-lock/)
+- [Fonts](/docs/terminology/fonts/)

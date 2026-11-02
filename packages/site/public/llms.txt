@@ -6,33 +6,40 @@
 > frame. A new project imports from `@kinetographdev/core` (it comes with `npm install kinetograph`; Remotion is not
 > installed); `remotion` and `@remotion/*` imports in an existing project resolve to the same code.
 
-## If you are an agent: install the skills first
+## If you are an agent: installing Kinetograph for a user
 
-Before writing or rendering a video with Kinetograph, install its two agent skills and read them:
+1. Ask the user which install they want, unless they already said:
+   - Prebuilt (recommended): `npm install kinetograph`. About a minute; no Rust, FFmpeg or compiler. Covers macOS on
+     Apple Silicon, Linux x64 (glibc) and Windows x64. Needs Node.js 22 or newer (check `node -v`).
+   - Build from source: only to work on the engine, or on a platform with no prebuilt package (Intel Mac, Linux on
+     ARM). Needs Rust and the FFmpeg libraries, 15 to 30 minutes: /docs/getting-started/installation/#from-source.
+     Ask before installing anything system-wide. Don't build from source just because you are in a clone.
+2. Run `npx kinetograph doctor` and show the user the output. `addon: loaded` means it works.
+3. For a new project, run `npx kinetograph init` (`--html` for an HTML page) in an empty folder and keep its layout.
+4. Ask the user whether to install the agent skills and the MCP server, then read the skills before writing a video:
+   - Skills: `npx skills add 0xS4N4TG/kinetograph`
+     - `kinetograph`: the write, look, check, render loop (`still`, `strip`, `inspect`, `lint`, `render`), the project
+       layout, native elements, effects and sound. Its `references/` hold the full specs: AUTHORING.md, SCENE.md,
+       ENGINE.md and INTERNALS.md.
+     - `kinetograph-migrate`: moves an existing Remotion project onto Kinetograph (`doctor`, fixes, `--strict`).
+   - MCP server (each CLI command is a tool): `npx -y kinetograph mcp` over stdio. Claude Code:
+     `claude mcp add kinetograph -- npx -y kinetograph mcp`. Other clients: /docs/guides/agents/.
 
-```sh
-npx skills add 0xS4N4TG/kinetograph
-```
+The same steps are in AGENTS.md in the repository: https://github.com/0xS4N4TG/kinetograph/blob/main/AGENTS.md
 
-- `kinetograph`: the write, look, check, render loop (`still`, `strip`, `inspect`, `lint`, `render`), the project
-  layout, native elements, effects and sound. Its `references/` hold the full specs: AUTHORING.md (the authoring
-  API), SCENE.md (every layer, effect and field), ENGINE.md (the DOM engine) and INTERNALS.md.
-- `kinetograph-migrate`: moves an existing Remotion project onto Kinetograph (`doctor`, fixes, `--strict` render).
+## Use
 
-Then add the MCP server so each CLI command is a tool: `npx kinetograph mcp` (stdio). Setup for each client is at
-/docs/guides/agents/.
-
-## Install
-
-- `npm install kinetograph`, then run `npx kinetograph <command>` against the entry file of a Remotion-shaped
-  project, or against an HTML page (`index.html`, or the directory that holds it). The native addon comes as a prebuilt package for macOS (arm64), Linux (x64) and Windows (x64).
+- Run `npx kinetograph <command>` against the entry file of a Remotion-shaped project, or against an HTML page
+  (`index.html`, or the directory that holds it).
 - The native elements and effects: `import { ... } from '@kinetographdev/core'`
 - Source and issues: https://github.com/0xS4N4TG/kinetograph
 - Licence: PolyForm Small Business 1.0.0 (free for individuals and companies under 100 people and $1M revenue a year)
 
 ## HTML pages and HyperFrames projects
 
-Every command that opens a project (`still`, `strip`, `inspect`, `lint`, `doctor`, `studio`, `render`) takes an HTML page as it is: `npx kinetograph render index.html -o out.mp4`
+Render quality: libx264 at `--crf 18` by default; `--x264-preset` picks the speed (`veryfast` default, `medium` as in Remotion; `ultrafast` to `placebo`).
+
+Every command that opens a project (`still`, `strip`, `inspect`, `lint`, `doctor`, `studio`, `render`) takes an HTML page as it is: `npx kinetograph render index.html`
 (or the page's directory). There is no rewrite and nothing runs in a browser.
 
 - Size and length come from the root element: `data-composition-id`, `data-width`, `data-height` and `data-duration`
@@ -60,14 +67,16 @@ Every command that opens a project (`still`, `strip`, `inspect`, `lint`, `doctor
 
 Every command takes `--json`. `npx kinetograph mcp` serves the same commands as an MCP server on stdio, one tool each.
 
-- `npx kinetograph still <entry> <frame> -o frame.png`: one frame to a PNG
-- `npx kinetograph strip <entry> -n 12 -o strip.png`: contact sheet of evenly spaced frames
+- `npx kinetograph init [dir] [--html]`: a new project: `src/index.tsx` (or `html/index.html`), `public/{images,fonts,audio,video}/`, `out/`
+- `npx kinetograph still <entry> <frame>`: one frame to a PNG
+- `npx kinetograph strip <entry> -n 12`: contact sheet of evenly spaced frames
 - `npx kinetograph inspect <entry> --frame 60`: the scene graph at a frame (layers, bounds, resolved styles)
 - `npx kinetograph lint <entry>`: overflowing text, off-canvas layers, missing fonts and assets, what cannot be drawn
 - `npx kinetograph doctor <entry>`: what the engine cannot draw, and in which frames
-- `npx kinetograph render <entry> -o out.mp4`: frames to a video with audio
+- `npx kinetograph render <entry>`: frames to a video with audio
 - `npx kinetograph studio <entry>`: local editor with a preview that plays sound, a timeline, props and presets, plugin cards, export, a render queue and a chat with your coding agent
 - `npx kinetograph fetch-deps <entry>`: download what an HTML page loads from the web, ahead of a render
+- Without `-o`, `still`, `strip`, `onion` and `render` write to `out/stills/`, `out/sheets/` and `out/renders/` in the project folder.
 - Also: `compositions`, `onion`, `check`, `bench`, `audio analyze`, `snapshot`, `effects`
 
 ## Native elements (from `@kinetographdev/core`)
@@ -91,5 +100,4 @@ FFmpeg prefix: see the README.
 ## Docs
 
 - README: https://github.com/0xS4N4TG/kinetograph#readme
-- Remotion compatibility: /docs/compat/
-- Known issues: /docs/known-issues/
+- What works (compatibility and known gaps): /docs/compat/

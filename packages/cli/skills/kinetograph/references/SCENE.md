@@ -626,7 +626,7 @@ GLSL fragment shader that mixes the scene going out with the scene coming in) ar
   engine. The mean difference over the picture is 0.3 of 255 or less for every shader presentation, `fade`, `slide`,
   `wipe`, `clock-wipe` and `iris`, and no more than 0.1% of pixels are over 48 levels off (edge pixels of the shapes).
   `<LightLeak>` differs by up to 3 at the end of its retraction, a smooth gradient, and `<Starburst>` by 0 to 0.1. The
-  exception is `flip`, which is the open `preserve-3d` issue (see the known issues, `/docs/known-issues/`). The goldens
+  exception is `flip`, which is the open `preserve-3d` issue (see `/docs/compat/`). The goldens
   `transition-*` in `crates/core/tests/golden` are six of these frames.
 
 ### Canvas passes

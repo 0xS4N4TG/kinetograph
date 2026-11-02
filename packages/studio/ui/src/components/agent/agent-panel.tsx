@@ -1,30 +1,26 @@
 import { Streamdown } from 'streamdown';
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import {
-  ArrowUpIcon,
-  CheckIcon,
-  FileTextIcon,
-  ImageIcon,
-  LoaderCircleIcon,
-  PencilIcon,
-  SearchIcon,
-  SparklesIcon,
-  SquareIcon,
-  TerminalIcon,
-  TriangleAlertIcon,
-  WrenchIcon,
-  XIcon,
-} from 'lucide-react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { ArrowUpIcon, ChevronRightIcon, FrameIcon, ImagePlusIcon, SparklesIcon, SquareIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
 
-import type { AgentInfo, CompositionInfo, InspectResult, PluginSummary, ProjectInfo, ReceivedFrame, TimelineData } from '@/api';
+import type { AgentAttachment, AgentInfo, CompositionInfo, InspectResult, PluginSummary, ProjectInfo, ReceivedFrame, TimelineData } from '@/api';
+import { AttachmentChips, MessageImages } from '@/components/agent/attachments';
+import { NotesTray } from '@/components/agent/notes-tray';
+import { UpNext } from '@/components/agent/up-next';
+import { ToolGroup } from '@/components/agent/tool-rows';
 import { Button } from '@/components/ui/button';
+import { Hint } from '@/components/ui/hint';
+import { Popover, PopoverPopup } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
+import { ACCEPT_IMAGES, MAX_ATTACHMENTS, acceptImages, attachmentUrl, dragHasFiles, filesOf, prepareAttachments, restoreAttachment, type Attachment } from '@/lib/attachments';
 import type { ChatItem } from '@/lib/chat';
 import { buildChatContext } from '@/lib/chat-context';
+import { MAX_CHIPS, selectionChips, type Chip } from '@/lib/chips';
 import { cropToPng } from '@/lib/crop';
 import { findLayer, type InspectLayer } from '@/lib/inspect';
 import { contactSheet } from '@/lib/contact-sheet';
 import { chipText, contactFrames, layerRect, rangeLabel, unionRect, type FrameRange } from '@/lib/selection';
+import type { ToolItem } from '@/lib/tool-summary';
+import { useStudioContext } from '@/lib/studio-context';
 import type { Chat } from '@/lib/use-chat';
 import { cn } from '@/lib/utils';
 
@@ -75,8 +71,6 @@ const MD_COMPONENTS = {
     typeof src === 'string' && src !== '' ? <img src={src} alt={alt ?? ''} className="max-w-full rounded-lg" /> : <span className="text-muted-foreground">{alt ? `[${alt}]` : '[image]'}</span>,
 };
 
-const basename = (path: string) => path.split('/').pop() ?? path;
-
 /** The words for a status of the connection to the agent. */
 function statusText(chat: Chat['state']): string {
   switch (chat.status) {
@@ -91,17 +85,134 @@ function statusText(chat: Chat['state']): string {
   }
 }
 
-const SUGGESTIONS = ['Make the title bigger', 'Try a warmer colour palette', 'Slow down the intro'];
-
-function ToolIcon({ kind }: { kind: string }) {
-  if (kind === 'edit' || kind === 'delete' || kind === 'move') return <PencilIcon aria-hidden="true" />;
-  if (kind === 'read') return <FileTextIcon aria-hidden="true" />;
-  if (kind === 'search') return <SearchIcon aria-hidden="true" />;
-  if (kind === 'execute') return <TerminalIcon aria-hidden="true" />;
-  return <WrenchIcon aria-hidden="true" />;
+/** The selection as chips: three at most, the rest behind "+N more" (and a kind with many layers as one chip) in a popover that lists every layer. */
+function SelectionChips({ chips, rangeChip, onClearRange, remove, clearAll }: { chips: Chip[]; rangeChip: string | null; onClearRange?(): void; remove(ids: string[]): void; clearAll(): void }) {
+  const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const anchor = useRef<HTMLDivElement>(null);
+  const shown = chips.slice(0, MAX_CHIPS);
+  const hidden = chips.slice(MAX_CHIPS).reduce((n, c) => n + c.ids.length, 0);
+  const total = chips.reduce((n, c) => n + c.ids.length, 0);
+  const pill = 'bg-accent text-accent-foreground flex max-w-full items-center gap-1 rounded-full py-0.5 pr-1 pl-2.5 text-xs';
+  const removeButton = (label: string, ids: string[]) => (
+    <button type="button" aria-label={`Remove ${label}`} onClick={() => remove(ids)} className="hover:bg-foreground/10 shrink-0 rounded-full p-0.5">
+      <XIcon className="size-3" aria-hidden="true" />
+    </button>
+  );
+  return (
+    <div ref={anchor} className="mb-1.5 flex max-h-[3.4rem] flex-wrap items-center gap-1.5 overflow-y-auto px-0.5" data-testid="selection-chips">
+      {rangeChip && (
+        <span className={pill}>
+          <span className="truncate">{rangeChip}</span>
+          <button type="button" aria-label={`Remove ${rangeChip}`} onClick={onClearRange} className="hover:bg-foreground/10 rounded-full p-0.5">
+            <XIcon className="size-3" aria-hidden="true" />
+          </button>
+        </span>
+      )}
+      {chips.length === 0 && !rangeChip ? (
+        <span className="text-muted-foreground text-xs">Nothing selected: the agent only knows the frame.</span>
+      ) : (
+        shown.map((chip) => (
+          <span key={chip.key} className={pill} data-testid={chip.kind === 'group' ? 'chip-group' : 'chip-layer'}>
+            {chip.kind === 'group' ? (
+              <button type="button" onClick={() => setOpen(true)} title={chip.text} className="min-w-0 truncate">
+                {chip.text}
+              </button>
+            ) : (
+              <span className="truncate" title={chip.text}>
+                {chip.text}
+              </span>
+            )}
+            {removeButton(chip.text, chip.ids)}
+          </span>
+        ))
+      )}
+      {chips.length > MAX_CHIPS && (
+        <button type="button" onClick={() => setOpen(true)} data-testid="chip-more" className="bg-muted text-muted-foreground hover:text-foreground rounded-full px-2.5 py-0.5 text-xs">
+          +{hidden} more
+        </button>
+      )}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverPopup anchor={anchor} side="top" align="start" className="w-80 max-w-[90vw]">
+          <div data-testid="chip-popover" className="flex w-full flex-col gap-2">
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span className="text-muted-foreground">{total} selected</span>
+              <button
+                type="button"
+                onClick={() => {
+                  clearAll();
+                  setOpen(false);
+                }}
+                className="text-foreground hover:bg-accent rounded-md px-2 py-1"
+              >
+                Clear all
+              </button>
+            </div>
+            <ul className="flex max-h-64 flex-col gap-0.5 overflow-y-auto">
+              {chips.map((chip) => {
+                const isOpen = expanded.has(chip.key);
+                return (
+                  <li key={chip.key} className="flex flex-col">
+                    <div className="hover:bg-accent/60 flex items-center gap-1 rounded-md px-1.5 py-1 text-xs">
+                      {chip.kind === 'group' ? (
+                        <button
+                          type="button"
+                          aria-expanded={isOpen}
+                          onClick={() => setExpanded((prev) => (prev.has(chip.key) ? new Set([...prev].filter((k) => k !== chip.key)) : new Set(prev).add(chip.key)))}
+                          className="flex min-w-0 flex-1 items-center gap-1 text-left"
+                        >
+                          <ChevronRightIcon className={cn('size-3 shrink-0 transition-transform motion-reduce:transition-none', isOpen && 'rotate-90')} aria-hidden="true" />
+                          <span className="truncate">{chip.text}</span>
+                        </button>
+                      ) : (
+                        <span className="min-w-0 flex-1 truncate" title={chip.text}>
+                          {chip.text}
+                        </span>
+                      )}
+                      {removeButton(chip.text, chip.ids)}
+                    </div>
+                    {chip.kind === 'group' && isOpen && (
+                      <ul className="border-border/60 ml-3 flex flex-col border-l pl-1.5">
+                        {chip.entries.map((entry) => (
+                          <li key={entry.id} className="hover:bg-accent/60 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs">
+                            <span className="min-w-0 flex-1 truncate" title={entry.text}>
+                              {entry.text}
+                            </span>
+                            {removeButton(entry.text, [entry.id])}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </PopoverPopup>
+      </Popover>
+    </div>
+  );
 }
 
-const Item = memo(function Item({ item, onAnswer }: { item: ChatItem; onAnswer(id: string, optionId: string | null): void }) {
+const SUGGESTIONS = ['Make the title bigger', 'Try a warmer colour palette', 'Slow down the intro'];
+
+type PlainItem = Exclude<ChatItem, { kind: 'tool' }>;
+type Segment = { kind: 'item'; item: PlainItem } | { kind: 'tools'; tools: ToolItem[]; last: boolean };
+
+/** The chat as it is drawn: consecutive tool calls become one group. */
+function segments(items: ChatItem[]): Segment[] {
+  const out: Segment[] = [];
+  items.forEach((item, index) => {
+    if (item.kind !== 'tool') return void out.push({ kind: 'item', item });
+    const tail = out.at(-1);
+    if (tail?.kind === 'tools') tail.tools.push(item);
+    else out.push({ kind: 'tools', tools: [item], last: false });
+    if (index === items.length - 1) (out.at(-1) as Extract<Segment, { kind: 'tools' }>).last = true;
+  });
+  return out;
+}
+
+const Item = memo(function Item({ item, onAnswer }: { item: PlainItem; onAnswer(id: string, optionId: string | null): void }) {
   switch (item.kind) {
     case 'user':
       return (
@@ -115,7 +226,10 @@ const Item = memo(function Item({ item, onAnswer }: { item: ChatItem; onAnswer(i
               ))}
             </div>
           )}
-          <p className="bg-primary text-primary-foreground max-w-[90%] rounded-2xl rounded-br-md px-3.5 py-2 text-[13.5px] leading-relaxed whitespace-pre-wrap">{item.text}</p>
+          {item.images && <MessageImages names={item.images} className="justify-end" />}
+          {item.text !== '' && (
+            <p className="bg-primary text-primary-foreground max-w-[90%] rounded-2xl rounded-br-md px-3.5 py-2 text-[13.5px] leading-relaxed whitespace-pre-wrap">{item.text}</p>
+          )}
         </div>
       );
     case 'agent':
@@ -126,35 +240,6 @@ const Item = memo(function Item({ item, onAnswer }: { item: ChatItem; onAnswer(i
           </Streamdown>
         </div>
       );
-    case 'tool': {
-      const done = item.status === 'completed';
-      const failed = item.status === 'failed';
-      return (
-        <div
-          className="bg-muted/70 text-muted-foreground flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] [&_svg]:size-3.5 [&_svg]:shrink-0"
-          data-testid="chat-tool"
-        >
-          <span className="bg-card text-foreground/80 flex size-6 shrink-0 items-center justify-center rounded-lg">
-            <ToolIcon kind={item.toolKind} />
-          </span>
-          <span className="text-foreground min-w-0 truncate font-medium">{item.title || 'Working'}</span>
-          {item.files.length > 0 && (
-            <span className="truncate font-mono text-[11px]" title={item.files.join(', ')}>
-              {item.files.map(basename).join(', ')}
-            </span>
-          )}
-          <span className="ml-auto shrink-0">
-            {done ? (
-              <CheckIcon className="text-success" aria-label="done" />
-            ) : failed ? (
-              <XIcon className="text-destructive" aria-label="failed" />
-            ) : (
-              <LoaderCircleIcon className="animate-spin" aria-label="working" />
-            )}
-          </span>
-        </div>
-      );
-    }
     case 'permission': {
       const chosen = item.answered === null ? null : (item.options.find((o) => o.id === item.answered)?.name ?? 'Cancelled');
       return (
@@ -198,11 +283,21 @@ const Item = memo(function Item({ item, onAnswer }: { item: ChatItem; onAnswer(i
 
 /** The conversation with the user's own coding agent about what is selected in the preview. */
 export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, selectedLayers, selectLayers, lastImage, range = null, onClearRange, thumbnailFrameUrl, chat, timeline, plugins, draft }: AgentPanelProps) {
+  const studio = useStudioContext();
   const [info, setInfo] = useState<AgentInfo | null>(null);
   const [text, setText] = useState('');
   const [withPicture, setWithPicture] = useState(true);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const pickerRef = useRef<HTMLInputElement>(null);
+  // Pictures dropped or pasted, kept until the message goes. The ref is the latest list, so two drops in a row count right.
+  const [attached, setAttached] = useState<Attachment[]>([]);
+  const attachedRef = useRef<Attachment[]>([]);
+  const nextAttachment = useRef(1);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
   const { state } = chat;
   const busy = state.status === 'busy';
   const frame = inspect?.frame ?? 0;
@@ -214,6 +309,52 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
       live = false;
     };
   }, [chat.loadInfo]);
+
+  const setAttachments = useCallback((next: Attachment[]) => {
+    attachedRef.current = next;
+    setAttached(next);
+  }, []);
+  const addImages = useCallback(
+    (files: File[]) => {
+      const { files: taken, error } = acceptImages(files, attachedRef.current.length);
+      setAttachError(error);
+      if (taken.length === 0) return;
+      const added = taken.map((file): Attachment => ({ id: nextAttachment.current++, file, preview: typeof URL.createObjectURL === 'function' ? URL.createObjectURL(file) : '' }));
+      setAttachments([...attachedRef.current, ...added]);
+    },
+    [setAttachments],
+  );
+  const removeImage = (id: number) => {
+    const gone = attachedRef.current.find((a) => a.id === id);
+    if (gone?.preview && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(gone.preview);
+    setAttachError(null);
+    setAttachments(attachedRef.current.filter((a) => a.id !== id));
+  };
+  useEffect(
+    () => () => {
+      if (typeof URL.revokeObjectURL === 'function') for (const a of attachedRef.current) if (a.preview) URL.revokeObjectURL(a.preview);
+    },
+    [],
+  );
+
+  // A queued message taken out to be edited comes back here: its words (before what is already typed) and its pictures.
+  const takenN = state.taken?.n ?? 0;
+  const seenTaken = useRef(takenN);
+  useEffect(() => {
+    const taken = state.taken?.item;
+    // The panel can mount again (a tab switch) with a message taken long ago: only a new one counts.
+    if (!taken || takenN === seenTaken.current) return;
+    seenTaken.current = takenN;
+    setText((now) => (now.trim() === '' ? taken.text : `${taken.text}\n${now}`));
+    inputRef.current?.focus();
+    const names = taken.images ?? [];
+    if (names.length === 0) return;
+    void Promise.all(names.map((name) => restoreAttachment(name))).then((restored) => {
+      const room = Math.max(0, MAX_ATTACHMENTS - attachedRef.current.length);
+      const added = restored.slice(0, room).map(({ file, stored }): Attachment => ({ id: nextAttachment.current++, file, stored, preview: attachmentUrl(stored) }));
+      setAttachments([...attachedRef.current, ...added]);
+    });
+  }, [takenN]);
 
   useEffect(() => {
     if (!draft) return;
@@ -241,24 +382,77 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
     });
   }, [inspect, selectedLayers]);
   const cwd = project?.cwd ?? '';
+  const paths = useMemo(() => ({ cwd: project?.cwd ?? info?.cwd ?? '', home: info?.home ?? '' }), [project?.cwd, info?.cwd, info?.home]);
+  const rows = useMemo(() => segments(state.items), [state.items]);
   const span = comp && range ? rangeLabel(range, comp.fps) : undefined;
   const chips = layers.map((layer) => chipText(layer, frame, cwd, span));
+  const chipList = useMemo(() => selectionChips(layers, chips, comp?.id ?? '', span ? ` · ${span}` : ` · frame ${frame}`), [layers, chips.join('\n'), comp?.id, span, frame]);
   /** With a span and no layer, the span has a chip of its own. */
   const rangeChip = span && layers.length === 0 ? `${comp!.id} · ${span}` : null;
 
-  const send = async (override?: string) => {
-    const message = (override ?? text).trim();
-    if (message === '' || busy) return;
-    let image: { data: string; mimeType: string } | undefined;
-    if (withPicture && comp && range && thumbnailFrameUrl) {
-      image = (await contactSheet(contactFrames(range), comp.fps, comp.width, comp.height, thumbnailFrameUrl)) ?? undefined;
-    } else if (withPicture && comp && layers.length > 0) {
-      const rect = unionRect(layers.flatMap((l: InspectLayer) => layerRect(l) ?? []), 24, comp.width, comp.height);
-      const last: ReceivedFrame | null = lastImage();
-      if (rect && last) image = (await cropToPng(last, comp.width, rect)) ?? undefined;
+  const send = async () => {
+    const message = text.trim();
+    if ((message === '' && attached.length === 0) || sending) return;
+    setSending(true);
+    setAttachError(null);
+    try {
+      // The originals are stored in the project first; the agent gets a smaller copy and the paths.
+      let attachments: AgentAttachment[] = [];
+      if (attachedRef.current.length > 0) {
+        try {
+          attachments = await prepareAttachments(attachedRef.current, (id, name) => setAttachments(attachedRef.current.map((a) => (a.id === id ? { ...a, stored: name } : a))));
+        } catch (error) {
+          setAttachError(error instanceof Error ? error.message : 'The images could not be stored.');
+          return;
+        }
+      }
+      let image: { data: string; mimeType: string } | undefined;
+      if (withPicture && comp && range && thumbnailFrameUrl) {
+        image = (await contactSheet(contactFrames(range), comp.fps, comp.width, comp.height, thumbnailFrameUrl)) ?? undefined;
+      } else if (withPicture && comp && layers.length > 0) {
+        const rect = unionRect(layers.flatMap((l: InspectLayer) => layerRect(l) ?? []), 24, comp.width, comp.height);
+        const last: ReceivedFrame | null = lastImage();
+        if (rect && last) image = (await cropToPng(last, comp.width, rect)) ?? undefined;
+      }
+      const context = comp && project ? buildChatContext({ entry: project.entry, cwd, comp, frame, layers, timeline, range, ...(plugins ? { plugins } : {}) }) : '';
+      if (chat.send(message, context, chips, image, attachments)) {
+        setText('');
+        for (const a of attachedRef.current) if (a.preview && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(a.preview);
+        setAttachments([]);
+      }
+    } finally {
+      setSending(false);
     }
-    const context = comp && project ? buildChatContext({ entry: project.entry, cwd, comp, frame, layers, timeline, range, ...(plugins ? { plugins } : {}) }) : '';
-    if (chat.send(message, context, chips, image)) setText('');
+  };
+  const onDragEnter = (event: DragEvent) => {
+    if (unavailable || !dragHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    dragDepth.current++;
+    setDragging(true);
+  };
+  const onDragOver = (event: DragEvent) => {
+    if (unavailable || !dragHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  };
+  const onDragLeave = (event: DragEvent) => {
+    if (!dragHasFiles(event.dataTransfer)) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragging(false);
+  };
+  const onDrop = (event: DragEvent) => {
+    if (!dragHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    if (!unavailable) addImages(filesOf(event.dataTransfer));
+  };
+  const onPaste = (event: ClipboardEvent) => {
+    const files = filesOf(event.clipboardData);
+    // Text pastes as it always did; only a picture on the clipboard is taken.
+    if (unavailable || !files.some((f) => f.type.startsWith('image/'))) return;
+    event.preventDefault();
+    addImages(files);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -272,7 +466,23 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
   const unavailable = noAgent || !!info?.disabled;
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="agent-panel">
+    <div
+      className="relative flex h-full min-h-0 flex-col"
+      data-testid="agent-panel"
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onPaste={onPaste}
+    >
+      {dragging && (
+        <div
+          className="bg-background/80 border-primary text-primary pointer-events-none absolute inset-1 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed text-sm font-medium backdrop-blur-[2px]"
+          data-testid="drop-overlay"
+        >
+          Drop images to attach
+        </div>
+      )}
       <div className="flex h-14 shrink-0 items-center gap-2 px-4">
         <SparklesIcon className="text-primary size-4 shrink-0" aria-hidden="true" />
         <h2 className="text-sm font-semibold">Agent</h2>
@@ -322,68 +532,94 @@ export const AgentPanel = memo(function AgentPanel({ comp, project, inspect, sel
             </div>
           </div>
         )}
-        {state.items.map((item) => (
-          <Item key={item.id} item={item} onAnswer={chat.answer} />
-        ))}
+        {rows.map((row) =>
+          row.kind === 'item' ? (
+            <Item key={row.item.id} item={row.item} onAnswer={chat.answer} />
+          ) : (
+            <ToolGroup key={row.tools[0]!.id} tools={row.tools} live={busy && (row.last || row.tools.some((t) => t.status !== 'completed' && t.status !== 'failed'))} ctx={paths} />
+          ),
+        )}
         {busy && state.items.at(-1)?.kind === 'user' && <p className="text-muted-foreground text-xs">Thinking…</p>}
       </div>
 
+      <NotesTray comp={comp} player={studio?.player ?? null} />
+      <UpNext items={state.queue} take={chat.take} remove={chat.unqueue} requeue={chat.requeue} sendNow={chat.sendNow} />
+
       <div className="shrink-0 p-3 pt-0">
         <div className="bg-background/60 border-input has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-ring/20 rounded-2xl border p-2.5 transition-[box-shadow,border-color] has-[textarea:focus-visible]:ring-[3px]">
-          <div className="mb-1.5 flex flex-wrap items-center gap-1.5 px-0.5" data-testid="selection-chips">
-            {rangeChip && (
-              <span className="bg-accent text-accent-foreground flex max-w-full items-center gap-1 rounded-full py-0.5 pr-1 pl-2.5 text-xs">
-                <span className="truncate">{rangeChip}</span>
-                <button type="button" aria-label={`Remove ${rangeChip}`} onClick={onClearRange} className="hover:bg-foreground/10 rounded-full p-0.5">
-                  <XIcon className="size-3" aria-hidden="true" />
-                </button>
-              </span>
-            )}
-            {chips.length === 0 && !rangeChip ? (
-              <span className="text-muted-foreground text-xs">Nothing selected: the agent only knows the frame.</span>
-            ) : (
-              layers.map((layer, index) => (
-                <span key={layer.id} className="bg-accent text-accent-foreground flex max-w-full items-center gap-1 rounded-full py-0.5 pr-1 pl-2.5 text-xs">
-                  <span className="truncate">{chips[index]}</span>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${chips[index]}`}
-                    onClick={() => selectLayers(selectedLayers.filter((id) => id !== layer.id))}
-                    className="hover:bg-foreground/10 rounded-full p-0.5"
-                  >
-                    <XIcon className="size-3" aria-hidden="true" />
-                  </button>
-                </span>
-              ))
-            )}
-          </div>
+          <AttachmentChips items={attached} remove={removeImage} />
+          {attachError && (
+            <p role="alert" className="text-destructive-foreground mb-1.5 px-1 text-xs" data-testid="attach-error">
+              {attachError}
+            </p>
+          )}
+          <SelectionChips
+            chips={chipList}
+            rangeChip={rangeChip}
+            {...(onClearRange ? { onClearRange } : {})}
+            remove={(ids) => selectLayers(selectedLayers.filter((id) => !ids.includes(id)))}
+            clearAll={() => selectLayers([])}
+          />
           <textarea
             ref={inputRef}
             aria-label="Message for the agent"
             value={text}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Ask the agent to change something"
+            placeholder={busy ? 'Queue a message for when the agent is done' : 'Ask the agent to change something \u2014 drop or paste images too'}
             rows={2}
             className="placeholder:text-muted-foreground/70 block max-h-40 min-h-[52px] w-full resize-none bg-transparent px-1 py-1 text-[13.5px] leading-relaxed outline-none"
           />
           <div className="mt-1 flex items-center gap-2">
-            <label className="text-muted-foreground flex items-center gap-2 text-xs select-none">
-              <Switch aria-label="Include a picture of the selection" checked={withPicture} onCheckedChange={(checked) => setWithPicture(checked)} className="sm:[--thumb-size:--spacing(3.5)]" />
-              <ImageIcon className="size-3.5" aria-hidden="true" />
-              Picture
-            </label>
-            <div className="ml-auto">
-              {busy ? (
+            <Hint label="Send a picture of the current frame with the message">
+              <label className="text-muted-foreground flex items-center gap-2 text-xs select-none">
+                <Switch aria-label="Send a picture of the current frame with the message" checked={withPicture} onCheckedChange={(checked) => setWithPicture(checked)} className="sm:[--thumb-size:--spacing(3.5)]" />
+                <FrameIcon className="size-3.5" aria-hidden="true" />
+                Frame
+              </label>
+            </Hint>
+            <div className="ml-auto flex items-center gap-2">
+              <input
+                ref={pickerRef}
+                type="file"
+                multiple
+                accept={ACCEPT_IMAGES}
+                hidden
+                data-testid="attach-input"
+                onChange={(event) => {
+                  addImages(Array.from(event.target.files ?? []));
+                  // the same file can be chosen again
+                  event.target.value = '';
+                }}
+              />
+              <Hint label="Attach images (or drop / paste)">
+                <Button size="icon" variant="ghost" aria-label="Attach images" disabled={unavailable} onClick={() => pickerRef.current?.click()} className="text-muted-foreground rounded-full">
+                  <ImagePlusIcon />
+                </Button>
+              </Hint>
+              {busy && (
                 <Button size="sm" variant="outline" onClick={chat.stop} className="rounded-full px-3.5">
                   <SquareIcon className="size-3 fill-current" aria-hidden="true" />
                   Stop
                 </Button>
-              ) : (
-                <Button size="icon" onClick={() => void send()} aria-label="Send" disabled={text.trim() === '' || unavailable} className="rounded-full">
-                  <ArrowUpIcon />
-                </Button>
               )}
+              <Button
+                size="icon"
+                onClick={() => void send()}
+                aria-label={state.queue.length > 0 ? `Send (${state.queue.length} queued)` : 'Send'}
+                disabled={(text.trim() === '' && attached.length === 0) || unavailable || sending}
+                className="relative rounded-full"
+              >
+                <ArrowUpIcon />
+                {state.queue.length > 0 && (
+                  <span
+                    data-testid="queue-count"
+                    className="bg-foreground text-background absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full text-[10px] leading-none font-medium"
+                  >
+                    {state.queue.length}
+                  </span>
+                )}
+              </Button>
             </div>
           </div>
         </div>

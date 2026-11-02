@@ -1,0 +1,24 @@
+---
+title: HyperFrames page
+description: An HTML page written for HyperFrames, which Kinetograph renders as it is.
+---
+
+A HyperFrames page is a video written as HTML. The root element has `data-composition-id`, `data-width`, `data-height` and `data-duration`. Clips use `data-start` and `data-duration`, and animation comes from GSAP timelines on `window.__timelines`.
+
+Kinetograph renders it without a rewrite and without a browser. Each timeline is paused and seeked to the frame's time.
+
+```sh
+npx kinetograph render html/index.html
+```
+
+Pass the `index.html`, or the folder that holds it. `still`, `strip`, `inspect`, `lint`, `doctor`, `studio` and `render` all take it. The rate is 30 fps.
+
+Before the first frame, a render downloads what the page loads from the web. See [Asset lock](/docs/terminology/asset-lock/).
+
+**Coming from HyperFrames:** use `kinetograph studio` where you used `hyperframes preview`, and `kinetograph render` where you used `hyperframes render`.
+
+## See also
+
+- [Migrate from HyperFrames](/docs/guides/migrate-hyperframes/)
+- [HyperFrames projects](/docs/compat/#hyperframes-projects)
+- [Sequence](/docs/terminology/sequence/)

@@ -1,0 +1,25 @@
+---
+title: Determinism
+description: A frame depends only on the project and its frame number, so it looks the same every time.
+---
+
+Kinetograph renders a frame as a pure function of the project and the frame number. Nothing reads the real clock.
+
+To keep this true, it replaces the sources of change a project might use. `Date.now()` and `performance.now()` return a time worked out from the frame. `Math.random()` is seeded from the frame. Timers and `requestAnimationFrame` run on the frame clock.
+
+When you want a random value that is the same in every render, use `random(seed)`. A number or string seed always gives the same number. It matches Remotion's `random` bit for bit.
+
+```tsx
+const wobble = random('card-1') * 10;
+```
+
+This is why a frame can be drawn alone, out of order, or on a worker thread, and still match a full render.
+
+**Coming from Remotion:** the same rule, and the same `random`.
+**Coming from HyperFrames:** GSAP timelines are paused and seeked to each frame's time.
+
+## See also
+
+- [Authoring: determinism](/docs/guides/authoring/#determinism)
+- [Frame](/docs/terminology/frame/)
+- [Concurrency](/docs/terminology/concurrency/)

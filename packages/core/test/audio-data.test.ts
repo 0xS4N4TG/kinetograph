@@ -47,6 +47,24 @@ describe('getAudioData and its hooks', () => {
     expect(calls).toEqual(['tone.wav']);
   });
 
+  it('decode once per sample rate and give each rate its own data (Remotion 4.0.540)', async () => {
+    const calls: string[] = [];
+    setAudioDecoder((path, sampleRate) => {
+      calls.push(`${path}@${sampleRate}`);
+      return { sampleRate, channels: [new Float32Array(sampleRate)] };
+    });
+    const at48 = await getAudioData('tone.wav');
+    const at22 = await getAudioData('tone.wav', { sampleRate: 22050 });
+    expect(at48.sampleRate).toBe(RATE);
+    expect(at22.sampleRate).toBe(22050);
+    expect(at22.durationInSeconds).toBe(1);
+    expect(at22.resultId).not.toBe(at48.resultId);
+    expect(await getAudioData('tone.wav', { sampleRate: 22050 })).toBe(at22);
+    expect(await getAudioData('tone.wav', { sampleRate: RATE })).toBe(at48);
+    expect(calls).toEqual([`tone.wav@${RATE}`, 'tone.wav@22050']);
+    await expect(getAudioData('tone.wav', { sampleRate: 0 })).rejects.toThrow(/sampleRate/);
+  });
+
   it('fail clearly for a file with no sound and for a URL', async () => {
     serve({ 'silent.mp4': [] });
     await expect(getAudioData('silent.mp4')).rejects.toThrow(/no audio stream/);
@@ -67,6 +85,23 @@ describe('visualizeAudio', () => {
     expect(bands[loudest]).toBeLessThanOrEqual(1);
     expect(bands[10]).toBeLessThan(0.01);
     expect(visualizeAudio({ audioData, frame: 15, fps: 30, numberOfSamples: 16 })).toEqual(bands);
+  });
+
+  // Remotion 4.0.539: a silent waveform used to give NaN in every band (a division by its peak, which was 0) and a waveform
+  // of only negative samples a non-finite peak. Both are plain numbers now.
+  it('gives zeros for silence and finite bands for a waveform of only negative samples (Remotion 4.0.539)', () => {
+    const length = RATE;
+    serve({
+      'silence.wav': [new Float32Array(length), new Float32Array(length)],
+      'negative.wav': [new Float32Array(length).fill(-0.5), new Float32Array(length).fill(-0.5)],
+    });
+    for (const smoothing of [true, false]) {
+      const silence = visualizeAudio({ audioData: useAudioData('silence.wav')!, frame: 15, fps: 30, numberOfSamples: 16, smoothing });
+      expect(silence).toEqual(new Array(16).fill(0));
+      const negative = visualizeAudio({ audioData: useAudioData('negative.wav')!, frame: 15, fps: 30, numberOfSamples: 16, smoothing });
+      expect(negative).toHaveLength(16);
+      expect(negative.every((v) => Number.isFinite(v) && v >= 0 && v <= 1)).toBe(true);
+    }
   });
 
   it('is silent outside the file and rejects a band count that is not a power of two', () => {

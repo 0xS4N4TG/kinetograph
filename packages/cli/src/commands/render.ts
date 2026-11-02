@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
-import { whole } from '../args.js';
+import { whole, type ParsedArgs } from '../args.js';
 import { describeLeftOut } from '../compat-report.js';
 import { EXPORT_FLAGS, parseExportFlags } from '../export-options.js';
 import { FrameDrawer } from '../frame-drawer.js';
@@ -17,7 +17,7 @@ import {
   ensureParentDir,
   newRenderer,
   openFromArgs,
-  requireOutput,
+  outputPath,
   setReactMode,
   type Command,
 } from './types.js';
@@ -29,7 +29,6 @@ export const still: Command = {
   positionals: [ENTRY, { name: 'frame', type: 'number', description: 'Frame number, from 0' }],
   options: [OUTPUT_OPTION, STRICT_OPTION, DEV_REACT_OPTION],
   async run(args, context) {
-    const output = requireOutput(args);
     const restoreReact = setReactMode(args.options['dev-react'] === true);
     let source;
     try {
@@ -44,6 +43,7 @@ export const still: Command = {
       }, progress: context.progress, strict: args.options.strict === true });
     try {
       const frame = checkFrame(args.positionals.frame as number, source.composition.durationInFrames);
+      const output = outputPath(args, 'stills', source.composition.id, (stem) => `${stem}-f${frame}.png`);
       const started = nowMs();
       const png = await drawer.png(frame);
       ensureParentDir(output);
@@ -66,6 +66,11 @@ export function defaultConcurrency(): number {
   return Math.min(4, Math.max(1, Math.floor(availableParallelism() / 2)));
 }
 
+/** The file extension a render takes by default for each `--codec`. */
+const CODEC_EXTENSION: Record<string, string> = { h264: 'mp4', h265: 'mp4', prores: 'mov', vp9: 'webm', gif: 'gif' };
+
+const explicit = (args: ParsedArgs): string | undefined => (typeof args.options.output === 'string' && args.options.output !== '' ? args.options.output : undefined);
+
 export const render: Command = {
   name: 'render',
   summary: 'Render frames to a video with audio',
@@ -74,7 +79,7 @@ export const render: Command = {
   options: [
     OUTPUT_OPTION,
     { name: 'range', type: 'string', description: 'Frames to render: 10..40 (10 to 39) or 10..=40 (10 to 40); default all' },
-    { name: 'encoder', type: 'string', description: 'ffmpeg encoder name for the codec (default: h264_videotoolbox / hevc_videotoolbox / prores_videotoolbox on macOS when ffmpeg has them and they can do what is asked, else libx264, libx265, prores_ks, libvpx-vp9). libx264 and libx265 come from the ffmpeg program bundled in the platform package, or the one KINETOGRAPH_FFMPEG names' },
+    { name: 'encoder', type: 'string', description: 'ffmpeg encoder name for the codec (default: libx264, libx265, libvpx-vp9 on every platform, prores_videotoolbox on macOS else prores_ks; h264_videotoolbox and hevc_videotoolbox are opt-in, and the macOS fallback when libx264 or libx265 is missing). The encoders that have no keyframe interval of their own (VideoToolbox and the other hardware ones, libopenh264) get one every 2 seconds. libx264 and libx265 come from the ffmpeg program bundled in the platform package, or the one KINETOGRAPH_FFMPEG names, then the ffmpeg on the PATH when it has libx264' },
     { name: 'draft', type: 'boolean', description: 'Half size, for a fast look (the same as --scale 0.5)' },
     ...EXPORT_FLAGS,
     { name: 'concurrency', type: 'number', description: 'Frames drawn at once, in worker threads (default: half the cores, at most 4; 1 draws every frame in the main thread; a .json scene is drawn whole)' },
@@ -82,12 +87,13 @@ export const render: Command = {
     DEV_REACT_OPTION,
   ],
   async run(args, context) {
-    const output = requireOutput(args);
     const concurrency = whole('--concurrency', args.options.concurrency as number | undefined, 1, defaultConcurrency());
     const flags = parseExportFlags(args.options);
     const devReact = args.options['dev-react'] === true;
     // Refused now, before the project is bundled and run, if the options do not fit the output path or this ffmpeg.
-    native().resolveExport(output, flags.export);
+    // Without `-o` the name comes from the composition, which is not known yet, so the check uses its extension.
+    const extension = CODEC_EXTENSION[flags.export.codec ?? 'h264'] ?? 'mp4';
+    native().resolveExport(explicit(args) ?? `video.${extension}`, flags.export);
     // React's production build unless asked otherwise: the development one is several times slower per frame. The
     // worker threads are told too (`devReact`).
     const restoreReact = setReactMode(devReact);
@@ -99,6 +105,7 @@ export const render: Command = {
       const started = nowMs();
       const renderer = newRenderer();
       stage('renderer made (GPU init)');
+      const output = outputPath(args, 'renders', source.composition.id, (stem) => `${stem}.${extension}`);
       context.progress(`renderer: ${renderer.backend()}`);
       ensureParentDir(output);
       const summary = await renderSource(source, renderer, {

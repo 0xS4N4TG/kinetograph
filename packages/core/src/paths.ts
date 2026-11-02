@@ -7,7 +7,7 @@
 // absolute coordinates. A few things follow the published package rather than
 // what one would guess; each is marked where it happens:
 //  - `translatePath` leaves relative instructions alone (they move with the
-//    path anyway, but a leading `m` does not move);
+//    path anyway), except a leading `m`, which is relative to the origin and moves (4.0.539);
 //  - `scalePath` and `reversePath` reduce the path first, so arcs, quadratics
 //    and shorthands come back as cubics and lines;
 //  - `reversePath` writes `Z` glued to the last number;
@@ -544,7 +544,23 @@ function piecesOf(path: string): Piece[] {
     switch (r.type) {
       case 'M': x = startX = r.x; y = startY = r.y; continue;
       case 'L': curve = { kind: 'L', x0: x, y0: y, x1: r.x, y1: r.y }; x = r.x; y = r.y; break;
-      case 'C': curve = { kind: 'C', x0: x, y0: y, x1: r.cp1x, y1: r.cp1y, x2: r.cp2x, y2: r.cp2y, x3: r.x, y3: r.y }; x = r.x; y = r.y; break;
+      case 'C': {
+        // A quadratic whose control point is its start is a straight line, measured as one (Remotion 4.0.539 also does it
+        // for the relative `q`); as a cubic it would be walked at an uneven pace. A `T` after any command but Q or T has
+        // nothing to reflect, so its control point is the current point (4.0.540 reads it that way too).
+        const from = instructions[source];
+        const before = instructions[source - 1]?.type;
+        if ((from?.type === 'Q' && from.cpx === x && from.cpy === y) || (from?.type === 'T' && before !== 'Q' && before !== 'T')) {
+          curve = { kind: 'L', x0: x, y0: y, x1: r.x, y1: r.y };
+          x = r.x;
+          y = r.y;
+          break;
+        }
+        curve = { kind: 'C', x0: x, y0: y, x1: r.cp1x, y1: r.cp1y, x2: r.cp2x, y2: r.cp2y, x3: r.x, y3: r.y };
+        x = r.x;
+        y = r.y;
+        break;
+      }
       case 'Z': curve = { kind: 'L', x0: x, y0: y, x1: startX, y1: startY }; x = startX; y = startY; break;
       case 'A': {
         const geometry = arcGeometry(x, y, r.rx, r.ry, r.xAxisRotation, r.largeArcFlag, r.sweepFlag, r.x, r.y);
@@ -794,11 +810,13 @@ function boundingBoxOf(reduced: ReducedInstruction[]): BoundingBox {
   return { x1, y1, x2, y2, viewBox: `${x1} ${y1} ${width} ${height}`, width, height };
 }
 
-/** Moves every absolute instruction by (x, y). Relative instructions are left as written. */
+/** Moves every absolute instruction, and a leading `m`, by (x, y). Other relative instructions are left as written. */
 export function translatePath(path: string, x: number, y: number): string {
   return serializeInstructions(
-    parsePath(path).map((i): Instruction => {
+    parsePath(path).map((i, index): Instruction => {
       switch (i.type) {
+        // The first moveto is relative to the origin, so it moves too (Remotion 4.0.539); a later `m` follows the path.
+        case 'm': return index === 0 ? { ...i, dx: i.dx + x, dy: i.dy + y } : i;
         case 'M': case 'L': case 'T': return { ...i, x: i.x + x, y: i.y + y };
         case 'H': return { ...i, x: i.x + x };
         case 'V': return { ...i, y: i.y + y };

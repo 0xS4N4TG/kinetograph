@@ -2,7 +2,7 @@
 
 The rule for all of these: draw without it or approximate it, warn, tell the user. `--strict` turns the warning into
 the error `UNSUPPORTED_CONTENT`. Never fill the gap with a browser, Chrome, Puppeteer or a hosted page. The list of
-known gaps is at `/docs/known-issues/` on the docs site.
+known gaps is at `/docs/compat/` on the docs site.
 
 ## IFrame
 

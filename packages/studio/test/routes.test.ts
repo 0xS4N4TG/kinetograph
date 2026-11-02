@@ -210,7 +210,7 @@ describe('render queue routes', () => {
     expect(r.status).toBe(201);
     expect(r.json).toMatchObject({
       comp: 'Main',
-      output: join(dir, 'out', 'Main.mp4'),
+      output: join(dir, 'out', 'renders', 'Main.mp4'),
       range: [0, 3],
       framesTotal: 4,
       props: { base: 1 },
@@ -227,7 +227,7 @@ describe('render queue routes', () => {
     expect(done.summary).toMatchObject({ frames: 4, first: 0, last: 3 });
     expect(done.msPerFrame).toBeGreaterThan(0);
     expect(done.finishedAt).toBeGreaterThanOrEqual(done.queuedAt);
-    expect(readFileSync(join(dir, 'out', 'Main.mp4'), 'utf8')).toBe('stub video Main 0..3');
+    expect(readFileSync(join(dir, 'out', 'renders', 'Main.mp4'), 'utf8')).toBe('stub video Main 0..3');
   });
 
   it('takes the output, encoder, draft and props, and ids count up from the first', async () => {

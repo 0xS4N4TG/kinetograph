@@ -30,7 +30,7 @@ measured; Remotion APIs are written from Remotion's documentation, never from it
 ## 2. One frame, end to end
 
 ```
-kinetograph render src/index.tsx -o out.mp4
+kinetograph render src/index.tsx
   cli: esbuild bundles the entry (aliases `remotion` → @kinetographdev/core, …), installs the determinism shim, imports it
   user code: registerRoot(Root) with <Composition id="Main" component={Main} …/>
   core: createFrameRenderer("Main") → for each frame f: renderFrame(f)
@@ -102,7 +102,7 @@ export interface BenchResult {
 export interface AudioPcm { sampleRate: number; /** One Float32Array per channel, equal lengths, samples in -1..1. */ channels: Float32Array[] }
 export interface VideoOptions {
   width: number; height: number; fps: number;
-  /** An ffmpeg H.264 encoder; default as the Rust CLI (h264_videotoolbox on macOS, else libx264 from the bundled ffmpeg program, then libopenh264). */
+  /** An ffmpeg H.264 encoder; default as the Rust CLI (libx264 from the bundled ffmpeg program, then on macOS h264_videotoolbox, then libopenh264). */
   encoder?: string;
 }
 export interface RenderSummary {
@@ -913,7 +913,7 @@ engine (ENGINE.md §10.3).
 | `@kinetographdev/core/shapes` | `@remotion/shapes` | `make*` functions (`makeRect`, `makeCircle`, `makeEllipse`, `makeTriangle`, `makeStar`, `makePolygon`, `makePie`, `makeHeart`, `makeArrow`, `makeCallout`, `makeSpark`) and the `Instruction` type; components render `<Path>`. `makeArrow`, `makeCallout` and `makeSpark` match the published package's paths exactly |
 | `@kinetographdev/core/layout-utils` | `@remotion/layout-utils` | `measureText`, `fitText`, `fillTextBox`, `fitTextOnNLines` through `layoutText` (§3), fonts from `getFonts()`; the box filling and the size search follow the published package step by step and give its results on a recorded set of texts |
 | `@kinetographdev/core/animation-utils` | `@remotion/animation-utils` | `interpolateStyles`, `makeTransform` |
-| `@kinetographdev/core/captions` | `@remotion/captions` | `parseSrt`, `serializeSrt`, `createTikTokStyleCaptions` |
+| `@kinetographdev/core/captions` | `@remotion/captions` | `parseSrt`, `parseVtt`, `serializeSrt`, `createTikTokStyleCaptions` |
 | `@kinetographdev/core/google-fonts` | `@remotion/google-fonts/*` | §7.2 |
 | `@kinetographdev/core/fonts` | `@remotion/fonts` | §7.2 |
 | `@kinetographdev/core/lottie` | `@remotion/lottie` | re-exports `<Lottie>`; `getLottieMetadata(animationData)` (`{ fps, durationInSeconds, durationInFrames, width, height }` or null, as the published package) |
@@ -1113,15 +1113,18 @@ true peak uses 4x oversampling.
 
 `npx kinetograph <command> <entry> …`; `<entry>` is a project file (`.tsx`, `.ts`, `.jsx`, `.js`) or a `.json` scene.
 Every command takes `--json` (one JSON object on stdout; errors as `{ "error": { "code", "message" } }` and exit code
-1), `--comp <id>` (default: the first composition) and `--props <json>`.
+1), `--comp <id>` (default: the first composition) and `--props <json>`. `-o` is optional on `still`, `render`, `strip` and `onion`:
+without it they write to `out/stills/<comp>-f<frame>.png`, `out/renders/<comp>.<ext>` (`mp4`; `mov`, `webm`, `gif` for `--codec prores`, `vp9`, `gif`),
+`out/sheets/<comp>-strip.png` and `out/sheets/<comp>-onion.png`, under the folder of the nearest `package.json` at or above the entry (else the entry's folder).
 
 | Command | Does |
 |---|---|
+| `init [dir] [--html]` | makes `src/` (`index.tsx`, `scenes/`, `components/`, `lib/`), `public/{images,fonts,audio,video}/`, `out/`, `package.json`, `tsconfig.json` and `.gitignore` with a working starter (`--html`: `html/index.html` instead of `src/`); skips files that exist |
 | `compositions <entry>` | lists compositions |
-| `still <entry> <frame> -o out.png [--strict] [--dev-react]` | one PNG; unsupported content is drawn without and warned about on stderr, `--strict` fails instead (the Remotion compatibility docs, `/docs/compat/`) |
-| `render <entry> -o out.mp4 [--range a..b] [--scale N] [--codec C] [--crf N \| --video-bitrate R] [--concurrency N] [--strict] [--dev-react] …` | video with audio; the export options are below; `--draft` is `--scale 0.5`; `--concurrency N` draws N frames at once (default half the cores, at most 4; below); unsupported content is drawn without and warned about, `--strict` fails on the first frame that has some (the Remotion compatibility docs, `/docs/compat/`); React runs in production mode unless `--dev-react` (below) |
-| `strip <entry> -n 12 -o sheet.png [--strict]` | contact sheet of evenly spaced frames, labelled, built as a scene and rendered by the engine |
-| `onion <entry> <range> -n 6 -o onion.png` | frames of the range blended over one another |
+| `still <entry> <frame> [-o file.png] [--strict] [--dev-react]` | one PNG; unsupported content is drawn without and warned about on stderr, `--strict` fails instead (the Remotion compatibility docs, `/docs/compat/`) |
+| `render <entry> [-o file.mp4] [--range a..b] [--scale N] [--codec C] [--crf N \| --video-bitrate R] [--concurrency N] [--strict] [--dev-react] …` | video with audio; the export options are below; `--draft` is `--scale 0.5`; `--concurrency N` draws N frames at once (default half the cores, at most 4; below); unsupported content is drawn without and warned about, `--strict` fails on the first frame that has some (the Remotion compatibility docs, `/docs/compat/`); React runs in production mode unless `--dev-react` (below) |
+| `strip <entry> -n 12 [-o file.png] [--strict]` | contact sheet of evenly spaced frames, labelled, built as a scene and rendered by the engine |
+| `onion <entry> <range> -n 6 [-o file.png]` | frames of the range blended over one another |
 | `inspect <entry> [--frame N]` | `InspectResult` |
 | `lint <entry>` | text overflowing its box or the canvas, layers off the canvas, overlapping text, missing fonts or assets, type errors (`type-error`, no frame), with frame and layer id |
 | `check <entry>` | `tsc --noEmit` on the project (the nearest `tsconfig.json`, else the entry alone): `{ ok, checked, tsconfig, errors, diagnostics: [{ file, line, column, code, message }] }`, exit 1 on errors. Rendering never type-checks (esbuild strips types), so this is how an agent sees a misspelled prop that §6.3 would otherwise ignore |
@@ -1148,6 +1151,7 @@ refusal says what to change.
 |---|---|
 | `--scale N` | Output size multiplier, above 0 and at most 8: `0.5` renders 1080p as 540p, `2` renders it as 4K. The compositor draws at the scaled size (the layers sit in a group scaled by N on a smaller or larger canvas), so nothing is resampled afterwards. Each side is `floor(side x N)` rounded down to an even number, at least 2, because 4:2:0 video needs even sizes: `--scale 0.3` of 64x36 is 18x10. `--draft` is `--scale 0.5` (both together is an error). Not given: `--width` and `--height`, which in Remotion re-lay the composition out at another size and would need the project to be opened at it |
 | `--codec h264\|h265\|prores\|vp9\|gif` | Default `h264`, except that a `.webm` path means `vp9` and a `.gif` path means `gif`. The extension must fit the codec: `.mp4` or `.mov` for h264 and h265, `.mov` for prores, `.webm` for vp9, `.gif` for gif |
+| `--x264-preset P` | libx264 and libx265 speed preset, as Remotion's `x264Preset`: `ultrafast`, `superfast`, `veryfast` (default), `faster`, `fast`, `medium`, `slow`, `slower`, `veryslow`, `placebo`. Faster renders sooner with bigger files; slower makes smaller files. `medium` matches Remotion and HyperFrames. An error with any other encoder |
 | `--crf N` or `--video-bitrate R` | Constant quality or a bit rate such as `8M` or `2500k`; giving both is an error. CRF is 0 to 51 for h264 and h265 and 0 to 63 for vp9, lower is better. Not for prores (its quality is the profile) or gif. Without either, the quality is as it always was: libx264 `crf 18`, VP9 `crf 30`, x265 `crf 28`, and 0.2 bits per pixel per frame for the VideoToolbox encoders |
 | `--prores-profile` | `proxy`, `light`, `standard`, `hq` (default), `4444`, `4444-xq`. The 4444 profiles are 4:4:4 10-bit; the others 4:2:2 10-bit. The alpha channel is dropped, as for every codec |
 | `--pixel-format` | `yuv420p` (default), `yuv422p`, `yuv444p`, `yuv420p10le`, `yuv422p10le`, `yuv444p10le`. ProRes takes the one its profile needs. Players handle 4:2:2, 4:4:4 and 10-bit H.264 and H.265 unevenly; 4:2:0 8-bit plays everywhere |
@@ -1156,16 +1160,21 @@ refusal says what to change.
 | `--every-nth-frame N` | gif only: draws every Nth frame of the range and plays them at the frame rate over N, so the GIF keeps its length with fewer frames. A project only (a `.json` scene is drawn whole) |
 | `--encoder NAME` | An ffmpeg encoder for the codec, in place of the choice below. Any encoder the built-in ffmpeg lacks runs in a separate ffmpeg program (`KINETOGRAPH_FFMPEG`, else the platform package's `bin/ffmpeg`, else `ffmpeg` on the `PATH` when it lists libx264 or the VAAPI/QSV encoder asked for). So `KINETOGRAPH_FFMPEG=$(which ffmpeg)` lets you use your system ffmpeg's encoders: `libx264`, and `h264_vaapi`, `hevc_vaapi`, `h264_qsv`, `hevc_qsv` on Intel and AMD GPUs (Linux; 4:2:0 only, HEVC also 10-bit; they must open a test encode, else the error says why). Decoding always uses the built-in ffmpeg |
 
-Encoder choice, when `--encoder` is not given. On macOS, ffmpeg's hardware encoders are used when it has them and they
-can do what was asked: `h264_videotoolbox`, `hevc_videotoolbox` (8-bit 4:2:0 only, so another `--pixel-format` selects
-the software encoder) and `prores_videotoolbox`. Otherwise, for H.264, the first of `libx264`, `libopenh264`, `h264_mf`,
-`h264_nvenc` and `h264_amf` that is available (and, for the last three, that opens on this machine). The ffmpeg linked
+Encoder choice, when `--encoder` is not given, is the same on every platform, as in Remotion and HyperFrames: software
+at constant quality. For H.264, `libx264` at `crf 18`; where it is missing, `h264_videotoolbox` on macOS, then the first
+of `libopenh264`, `h264_mf`, `h264_nvenc` and `h264_amf` that is available (and, for the last three, that opens on this
+machine). For H.265, `libx265`, else `hevc_videotoolbox` on macOS (8-bit 4:2:0 only). VideoToolbox is opt-in with
+`--encoder h264_videotoolbox` or `hevc_videotoolbox`; without `--video-bitrate` it gets 0.2 bits per pixel per frame.
+`prores_videotoolbox` is still what ProRes uses on macOS when it can do what was asked, else `prores_ks`. libx264, libx265 and
+libvpx-vp9 keep their own keyframe interval (250, 250, 128 frames), as in Remotion; every other encoder we drive but
+ProRes and GIF (intra-only) gets one of 2 seconds (`-g` = `fps x 2`, at least 1), because FFmpeg's generic default is
+12 frames (`encode::sets_gop`). The ffmpeg linked
 into the addon is LGPL-only and has no `libx264` or `libx265`; the platform packages ship a separate GPL `ffmpeg`
 program (`bin/ffmpeg`) that has them, and the addon runs it as a child process (raw pictures on a pipe, a video-only
 file out; the sound is muxed in by the linked ffmpeg). `KINETOGRAPH_FFMPEG=/path/to/ffmpeg` names another program and
 is tried before the bundled one (an encoder is looked up in each program in turn); with neither, an `ffmpeg` on the
-`PATH` is used if it lists libx264. Then `libx265`, `prores_ks` and `libvpx-vp9` (linked on macOS and Linux); `gif` has
-one. See `/docs/ffmpeg-license/`.
+`PATH` is used if it lists libx264. For the other codecs: `libx265`, `prores_ks` and `libvpx-vp9` (linked on macOS and Linux); `gif` has
+one. See `/docs/getting-started/installation/#ffmpeg-licence`.
 
 Intel and AMD GPU encoders on Linux: `h264_vaapi`, `hevc_vaapi` (VAAPI, any Intel or AMD GPU with a driver) and
 `h264_qsv`, `hevc_qsv` (Intel Quick Sync, oneVPL) run in a system ffmpeg that has them, never in the linked one (it
@@ -1536,7 +1545,7 @@ render does not have. What works and the gaps are on the site at `/docs/compat/#
 
 A library that runs its own clock or randomness must show what the frame number says. Four optional plugins seek the
 library to `frame / fps`; the library stays a peer dependency (`npm install @kinetographdev/<name> <library>`). Sources:
-`packages/plugins/*/src`; use and checks: `/docs/libraries/`.
+`packages/plugins/*/src`; use and checks: `/docs/plugins/library-adapters/`.
 
 | Package | Exports | For |
 |---|---|---|
@@ -1545,7 +1554,7 @@ library to `frame / fps`; the library stays a peer dependency (`npm install @kin
 | `@kinetographdev/motion` | `<MotionFrame>`, `useMotionTime()`, `useSpringAt({ to, stiffness, damping, mass, delay })`, `useAnimateAt(() => animate(...))` | Motion: `motion.*` components inside `<MotionFrame>`; `animate()` paused at `frame / fps`; a spring or `MotionValue` that is a pure function of the frame |
 | `@kinetographdev/p5-brush` | `<BrushCanvas seed draw origin background width height>` | p5.brush: clears, seeds and draws every frame in `draw(brush, frame, { width })`; `origin="top-left"` moves p5.brush's centre origin; needs the WebGL support |
 
-Libraries that need no plugin, only frame-pure use (details and snippets in `/docs/libraries/`, status in
+Libraries that need no plugin, only frame-pure use (details and snippets in `/docs/plugins/library-adapters/`, status in
 `/docs/compat/#libraries`): Recharts (`isAnimationActive={false}`, fixed `width`/`height`), d3 scales and shapes and
 `d3-selection` into a ref (no `d3-transition`/`d3-timer`), anime.js, Motion `animate()` (on the Web Animations API,
 which runs on the frame clock: `element.animate()`, `KeyframeEffect`, `Animation`, `getAnimations()`), Paper.js (clear and redraw each
@@ -1571,7 +1580,7 @@ each file is hash-checked against the cache and the lock on every read. `<script
 scripts that run after the page's classic scripts (an `import()` of a computed specifier is answered from the cache at run time; the pre-pass runs the first frames to find them, so keep them to what frame 0 or a few sampled frames ask for, or expect a note and a one-time download in the render). A Remotion project's remote `<Img>`, `<Video>` and CSS `url()` files are
 found by scanning its bundle, downloaded the same way and locked in the same file; one first requested during a render is
 fetched once, added to the lock and noted. In the studio the download step runs again when a file of the project changes (a dependency added in a sub-composition or a local module needs no restart). Three.js is unsupported and reported. Full list:
-`/docs/compat/#hyperframes-projects`, `/docs/known-issues/#hyperframes-projects`.
+`/docs/compat/#hyperframes-projects`.
 
 ### 11.12 Motion tracking (`kinetograph track`, `useTrack`, `usePlaneTrack`)
 
