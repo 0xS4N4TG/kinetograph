@@ -9,7 +9,7 @@ import { Start } from '@/sections/static';
 
 const FOOTER_COLUMNS = [
   { title: 'Site', links: [{ label: 'Why', href: '#why' }, { label: 'The engine', href: '#engine' }, { label: 'Agents', href: '#agents' }, { label: 'The film', href: '#film' }, { label: 'Get started', href: '#start' }] },
-  { title: 'Docs', links: [{ label: 'README', href: `${GITHUB}#readme` }, { label: 'DOM engine', href: doc('packages/cli/skills/kinetograph/references/ENGINE.md') }, { label: 'What works', href: '/docs/compat/' }, { label: 'Changelog', href: '/docs/changelog/' }] },
+  { title: 'Docs', links: [{ label: 'Overview', href: '/docs/' }, { label: 'Installation', href: '/docs/getting-started/installation/' }, { label: 'First video', href: '/docs/getting-started/first-video/' }, { label: 'How the engine works', href: '/docs/internals/engine/' }, { label: 'What works', href: '/docs/compat/' }, { label: 'Changelog', href: '/docs/changelog/' }] },
   { title: 'Project', links: [{ label: 'GitHub', href: GITHUB }, { label: 'Licence', href: doc('LICENSE.md') }, { label: 'Commercial licence', href: doc('COMMERCIAL.md') }, { label: 'llms.txt', href: '/llms.txt' }] },
 ];
 
