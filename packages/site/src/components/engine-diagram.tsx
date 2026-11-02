@@ -80,15 +80,15 @@ export function EngineDiagram() {
               <g
                 key={node}
                 data-hatch={node}
-                fill="none"
-                stroke="var(--hatch)"
-                strokeLinecap="round"
                 className="transition-opacity duration-200 motion-reduce:transition-none"
-                opacity={active?.node === node ? 0.85 : 0}
+                opacity={active?.node === node ? 1 : 0}
               >
-                {diagram.hatch[node].map((p, i) => (
-                  <path key={i} d={p.d} strokeWidth={p.w} />
-                ))}
+                <path d={diagram.wash[node]} fill="#fff3b8" stroke="none" />
+                <g fill="none" stroke="#e2a900" strokeLinecap="round" opacity={0.55}>
+                  {diagram.hatch[node].map((p, i) => (
+                    <path key={i} d={p.d} strokeWidth={p.w} />
+                  ))}
+                </g>
               </g>
             ))}
             <g fill="none" stroke="var(--ink)" strokeLinecap="round" strokeLinejoin="round">
@@ -96,6 +96,13 @@ export function EngineDiagram() {
                 <path key={i} d={p.d} strokeWidth={p.w} strokeDasharray={p.dash} />
               ))}
             </g>
+            {active && (
+              <g fill="none" stroke="#1d1b18" strokeLinecap="round" strokeLinejoin="round">
+                {diagram.outline[active.node].map((p, i) => (
+                  <path key={i} d={p.d} strokeWidth={p.w} />
+                ))}
+              </g>
+            )}
             <g aria-hidden="true" textAnchor="start">
               {diagram.labels.map((l, i) => (
                 <text
@@ -105,11 +112,8 @@ export function EngineDiagram() {
                   fontSize={l.size}
                   fontWeight={l.weight}
                   textAnchor={l.anchor}
-                  fill={l.tone === 'ink' || (l.node && l.node === active?.node) ? 'var(--ink)' : 'var(--muted)'}
+                  fill={l.node && l.node === active?.node ? '#1d1b18' : l.tone === 'ink' ? 'var(--ink)' : 'var(--muted)'}
                   transform={`rotate(${l.rot} ${l.x} ${l.y})`}
-                  {...(l.node && l.node === active?.node
-                    ? { stroke: 'var(--paper)', strokeWidth: 6, strokeLinejoin: 'round', paintOrder: 'stroke' }
-                    : {})}
                 >
                   {l.text}
                 </text>

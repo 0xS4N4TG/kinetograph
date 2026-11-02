@@ -41,8 +41,12 @@ export interface Diagram {
   height: number;
   /** Boxes, group boxes and arrows, in drawing order. */
   ink: DiagramPath[];
-  /** The yellow hatching of each box, by box id; drawn only for the active step. */
+  /** The pale yellow wash of each stage box, by box id; drawn only for the active step. */
+  wash: Record<string, string>;
+  /** The thin yellow hatching over the wash. */
   hatch: Record<string, DiagramPath[]>;
+  /** A box's own outline, so the active one can be redrawn in dark ink over the wash. */
+  outline: Record<string, DiagramPath[]>;
   labels: DiagramLabel[];
   steps: DiagramStep[];
   alt: string;
@@ -197,6 +201,8 @@ export function buildDiagram(): Diagram {
   const next = () => (seed += 17);
   const ink: DiagramPath[] = [];
   const hatch: Record<string, DiagramPath[]> = {};
+  const wash: Record<string, string> = {};
+  const outline: Record<string, DiagramPath[]> = {};
   const labels: DiagramLabel[] = [];
   let n = 0;
   const label = (l: Omit<DiagramLabel, 'rot'>) => labels.push({ ...l, rot: ((n++ * 7) % 5) * 0.45 - 0.9 });
@@ -216,8 +222,13 @@ export function buildDiagram(): Diagram {
   }
 
   for (const b of BOXES) {
-    ink.push(...toPaths(gen.rectangle(b.x, b.y, b.w, b.h, { ...SKETCH, seed: next() })));
+    const box = toPaths(gen.rectangle(b.x, b.y, b.w, b.h, { ...SKETCH, seed: next() }));
+    ink.push(...box);
     if (b.step) {
+      outline[b.id] = box;
+      wash[b.id] = round(
+        gen.toPaths(gen.rectangle(b.x, b.y, b.w, b.h, { roughness: 1.1, stroke: 'none', fill: '#000', fillStyle: 'solid', seed: next() }))[0].d,
+      );
       hatch[b.id] = toPaths(
         gen.rectangle(b.x, b.y, b.w, b.h, {
           roughness: 1.1,
@@ -225,8 +236,8 @@ export function buildDiagram(): Diagram {
           fill: '#000',
           fillStyle: 'hachure',
           hachureAngle: -42,
-          hachureGap: 11,
-          fillWeight: 1.8,
+          hachureGap: 15,
+          fillWeight: 1.2,
           seed: next(),
         }),
       );
@@ -269,6 +280,6 @@ export function buildDiagram(): Diagram {
 
   for (const t of ARROW_LABELS) label({ ...t, size: 20, weight: 400, tone: 'muted' });
 
-  cached = { width: W, height: H, ink, hatch, labels, steps: STEPS, alt: ALT };
+  cached = { width: W, height: H, ink, wash, hatch, outline, labels, steps: STEPS, alt: ALT };
   return cached;
 }
