@@ -23,6 +23,7 @@ Building from source takes 15 to 30 minutes and is only needed to work on the en
    - MCP server, for Claude Code: `claude mcp add kinetograph -- npx -y kinetograph mcp`. Other agents:
      [Use with agents](https://kinetograph.dev/docs/guides/agents/).
 5. Point the user to [First video](https://kinetograph.dev/docs/getting-started/first-video/).
+6. If a Kinetograph command says the CLI or the skills are out of date, tell the user and ask before updating.
 
 Don't build from source just because you are in a clone of this repository. Ask first.
 
