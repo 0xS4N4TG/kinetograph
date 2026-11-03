@@ -425,6 +425,21 @@ describe('an effect with an implementation for each backend (createEffect({ impl
     expect(() => renderDom(<Solid width={8} height={8} effects={[multi({})]} />)).toThrow(/preferredEffectBackend must be "auto", "webgpu", "webgl2" or "2d", got metal/);
   });
 
+  it('an effect that throws is drawn without, with the message reported for the frame', () => {
+    const broken = createEffect<object, unknown>({
+      type: 'test/broken',
+      label: 'Broken',
+      documentationLink: null,
+      calculateKey: () => 'broken',
+      schema: {},
+      validateParams: () => undefined,
+      implementations: { webgl2: createEffectImplementation({ setup: () => ({}), apply: () => { throw new Error('no curve sampler'); }, cleanup: () => undefined }) },
+    });
+    const tree = renderDom(<Solid width={8} height={8} color="#f00" effects={[broken({}), shaded()]} />);
+    expect(chainOf(tree.layers)).toHaveLength(1);
+    expect(reportedUnsupported()).toEqual([expect.objectContaining({ element: 'Solid', property: 'effects', value: 'error' })]);
+  });
+
   it('needs at least one implementation', () => {
     expect(() => createEffect({ type: 'test/none', label: 'None', documentationLink: null, calculateKey: () => '', schema: {}, validateParams: () => undefined, implementations: {} })).toThrow(/at least one implementation/);
   });

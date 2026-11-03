@@ -196,15 +196,20 @@ function runImplementation(
   return { pass: target.pass() };
 }
 
+/** Throws unless the item of `effects` is what `createEffect` returned. */
+function assertEffect(effect: EffectDescriptor<unknown>): void {
+  const { definition } = effect;
+  if (typeof definition?.apply !== 'function' || typeof definition.setup !== 'function' || typeof definition.cleanup !== 'function') {
+    throw new TypeError('An item of `effects` is not an effect: make one with an effect function such as the ones createEffect() returns.');
+  }
+}
+
 /**
  * Runs one effect on a fresh canvas. An effect with several backends runs the one it prefers; one that can't draw
  * (a WebGPU call that isn't drawn, or an error) hands the frame to the next, and only the last one's failure is the effect's.
  */
 function runEffect(effect: EffectDescriptor<unknown>, source: EffectSource, width: number, height: number): Outcome | Pending {
   const { definition } = effect;
-  if (typeof definition?.apply !== 'function' || typeof definition.setup !== 'function' || typeof definition.cleanup !== 'function') {
-    throw new TypeError('An item of `effects` is not an effect: make one with an effect function such as the ones createEffect() returns.');
-  }
   const candidates = implementationsOf(definition);
   const attempt = (index: number): Outcome | Pending => {
     const last = index === candidates.length - 1;
@@ -396,8 +401,8 @@ export function useEffectChain(options: EffectChainOptions): EffectChain {
     return { pass: result.partial };
   };
   const reportFailed = (message: string, what: string, property: string): void => {
-    warnOnce(`${component}.async.${what}`, `${component} ${what} rejected: ${message}. The picture is drawn without it.`);
-    reportUnsupported(component.replace(/^<|>$/g, ''), property, 'async', `${what} returned a promise that rejected (${message}); the picture is drawn without it`);
+    warnOnce(`${component}.failed.${what}`, `${component} ${what} failed: ${message}. The picture is drawn without it.`);
+    reportUnsupported(component.replace(/^<|>$/g, ''), property, 'error', `${what} threw, or returned a promise that rejected (${message}); the picture is drawn without it`);
   };
 
   const render = (source: ReactNode): ReactNode => {
@@ -423,7 +428,17 @@ export function useEffectChain(options: EffectChainOptions): EffectChain {
       } else reportFailed(outcome.failed, 'onInit/onPaint', 'onPaint');
     }
     runnable.forEach((effect, index) => {
-      const outcome = outcomeOf(index + 1, `effect "${effect.definition.label}"`, () => runEffect(effect, layerPicture(before, width, height), width, height));
+      // An effect that throws is drawn without, with the message reported for the frame (`--strict` fails on it).
+      const outcome = outcomeOf(index + 1, `effect "${effect.definition.label}"`, () => {
+        assertEffect(effect);
+        // A setting that is not a backend is the project's mistake, not the effect's: it stops the frame.
+        preferredEffectBackend();
+        try {
+          return runEffect(effect, layerPicture(before, width, height), width, height);
+        } catch (error) {
+          return outcomeOfError(error);
+        }
+      });
       if ('pass' in outcome) stack(outcome.pass);
       else if ('webgpu' in outcome) reportSkipped([effect.definition.label], 'a WebGPU effect');
       else reportFailed(outcome.failed, `effect "${effect.definition.label}"`, 'effects');

@@ -105,7 +105,7 @@ describe('an async effect', () => {
     register(true);
     const r = createFrameRenderer('A');
     const frame = await r.renderFrame(3);
-    expect(frame.unsupported).toEqual([expect.objectContaining({ element: 'Solid', property: 'effects', value: 'async', reason: expect.stringContaining('the device was lost') })]);
+    expect(frame.unsupported).toEqual([expect.objectContaining({ element: 'Solid', property: 'effects', value: 'error', reason: expect.stringContaining('the device was lost') })]);
     expect(fills(frame.scene.layers)).toEqual([]);
     // The next frame is reported on its own.
     expect((await r.renderFrame(4)).unsupported).toHaveLength(1);
