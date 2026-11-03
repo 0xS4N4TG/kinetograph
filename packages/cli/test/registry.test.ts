@@ -7,6 +7,7 @@ import { run } from '../src/index.js';
 import { addItems } from '../src/registry/install.js';
 import { buildRegistry } from '../src/registry/build.js';
 import { itemJsonSchema, registryItemSchema } from '../src/registry/item.js';
+import { installCommand, spawnSpec } from '../src/registry/packages.js';
 import { openRegistry } from '../src/registry/source.js';
 import { toArgv } from '../src/mcp.js';
 
@@ -291,6 +292,32 @@ describe('npm dependencies', () => {
     const r = await addItems(options(dir, {}));
     expect(r.dependencies).toMatchObject({ missing: {}, status: 'none' });
     expect(r.dependencies.command).toBeUndefined();
+  });
+});
+
+describe('starting the package manager', () => {
+  const install = (manager: 'npm' | 'pnpm' | 'yarn' | 'bun', packages: Record<string, string> = { zod: '4.6.7', react: '>=19 <20' }) => installCommand(manager, packages);
+
+  it('runs it directly, with the argument array, on macOS and Linux', () => {
+    expect(spawnSpec(install('pnpm'), 'darwin')).toEqual({ command: 'pnpm', args: ['add', 'zod@4.6.7', 'react@>=19 <20'], shell: false });
+    expect(spawnSpec(install('npm'), 'linux')).toMatchObject({ command: 'npm', shell: false });
+  });
+
+  it('uses bun.exe, and the .cmd shims of npm, pnpm and yarn, on Windows', () => {
+    expect(spawnSpec(install('bun'), 'win32')).toEqual({ command: 'bun.exe', args: ['add', 'zod@4.6.7', 'react@>=19 <20'], shell: false });
+    for (const manager of ['npm', 'pnpm', 'yarn'] as const) {
+      const spec = spawnSpec(install(manager), 'win32');
+      expect(spec.command).toBe(`${manager}.cmd`);
+      // Node will not start a .cmd without a shell; every argument is quoted, so a range's < > | mean nothing to it.
+      expect(spec).toMatchObject({ shell: true });
+      expect(spec.args.at(-1)).toBe('"react@>=19 <20"');
+    }
+  });
+
+  it('refuses an argument with a shell metacharacter on Windows', () => {
+    for (const bad of ['1" & calc & "', '1.0.0%PATH%', '1;rm', '$(x)', '1\n2', '!x']) {
+      expect(() => spawnSpec(install('npm', { zod: bad }), 'win32'), bad).toThrow(/not installing/);
+    }
   });
 });
 

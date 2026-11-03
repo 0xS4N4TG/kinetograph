@@ -54,11 +54,41 @@ export function installCommand(manager: PackageManager, packages: Record<string,
 /** The command as a person would type it. */
 export const showCommand = ({ command, args }: InstallCommand): string => [command, ...args.map((a) => (/^[\w@./^~=*-]+$/.test(a) ? a : `'${a}'`))].join(' ');
 
+export interface SpawnSpec {
+  command: string;
+  args: string[];
+  shell: boolean;
+}
+
+// What an install argument may hold (package name, `@`, a version or range). Checked again here, so that nothing a
+// registry wrote can reach a Windows shell with a metacharacter in it: no quotes, `%`, `!`, `&`, `(`, `)`, `;`, `$`.
+const SHELL_SAFE = /^[\w@./^~=*<>|+ -]+$/;
+
+/**
+ * How to start `command` on `platform`. Elsewhere it is run directly with the argument array. On Windows `bun.exe` is
+ * too; npm, pnpm and yarn are `.cmd` shims, which Node (20.12 and later) refuses to start without a shell, so those
+ * run through one with every argument checked against SHELL_SAFE and double-quoted (nothing inside quotes means
+ * anything to cmd.exe).
+ */
+export function spawnSpec({ command, args }: InstallCommand, platform: NodeJS.Platform = process.platform): SpawnSpec {
+  if (platform !== 'win32') return { command, args, shell: false };
+  if (command === 'bun') return { command: 'bun.exe', args, shell: false };
+  for (const arg of args) if (!SHELL_SAFE.test(arg)) throw new Error(`not installing: "${arg}" is not a plain package name or version`);
+  return { command: `${command}.cmd`, args: args.map((a) => `"${a}"`), shell: true };
+}
+
 /** Runs the command in the project, its output going to stderr so that `--json` stays clean. Rejects when it fails. */
-export function runInstall({ command, args }: InstallCommand, cwd: string): Promise<void> {
+export function runInstall(install: InstallCommand, cwd: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: ['ignore', 2, 2] });
+    let spec: SpawnSpec;
+    try {
+      spec = spawnSpec(install);
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    const child = spawn(spec.command, spec.args, { cwd, stdio: ['ignore', 2, 2], shell: spec.shell });
     child.on('error', reject);
-    child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`${command} exited with code ${code}`))));
+    child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`${install.command} exited with code ${code}`))));
   });
 }
