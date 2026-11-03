@@ -90,6 +90,8 @@ KINETOGRAPH_REGISTRY=<out-dir> npx kinetograph add title-card
 
 A sample item is in `packages/cli/test/fixtures/registry-src/title-card/`.
 
+The items on kinetograph.dev are made from the `kinetograph-ui` checkout by `packages/site/scripts/registry.mjs` (`npm run registry -w @kinetographdev/site`, or `node packages/site/scripts/registry.mjs [path/to/kinetograph-ui]`; `KINETOGRAPH_UI` also sets the path). It writes `packages/site/public/r/`.
+
 ## What the CLI checks
 
 The CLI treats every item as untrusted data and never executes anything from it. Targets must be relative paths under

@@ -1,0 +1,106 @@
+{
+  "$schema": "https://kinetograph.dev/r/schema.json",
+  "name": "vault-count",
+  "type": "template",
+  "title": "Wallet count-up",
+  "description": "A wallet balance counts up beside a stack of payment cards.",
+  "kinetograph": "0.3.0",
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "files": [
+    {
+      "path": "index.tsx",
+      "target": "src/templates/vault-count/index.tsx",
+      "content": "import React from 'react';\nimport { Composition, registerRoot } from 'remotion';\nimport { VaultCount, vaultCountDefaults, vaultCountSchema, W as VW, H as VH, FPS as VF, DURATION as VD } from './scenes/vault-count.js';\n\nregisterRoot(() => (\n  <>\n    <Composition id=\"VaultCount\" component={VaultCount} schema={vaultCountSchema} defaultProps={vaultCountDefaults}\n      durationInFrames={VD} fps={VF} width={VW} height={VH} />\n  </>\n));\n"
+    },
+    {
+      "path": "scenes/lib.ts",
+      "target": "src/templates/vault-count/scenes/lib.ts",
+      "content": "// Small timing and drawing helpers shared by the showcase components. Every function is pure in the frame number.\n\nimport { Easing, interpolate } from 'remotion';\nimport { makeGoogleFont } from '@kinetographdev/core/google-fonts';\n\nexport const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;\n\n/** slow in, slow out: the default for anything that travels */\nexport const ease = Easing.bezier(0.45, 0, 0.15, 1);\n/** fast start, long settle: things arriving */\nexport const easeOut = Easing.bezier(0.16, 1, 0.3, 1);\n/** slow start, fast end: things leaving at speed */\nexport const easeIn = Easing.bezier(0.7, 0, 0.84, 0);\n\n/** from `from` at frame a to `to` at frame b, held outside */\nexport const ramp = (f: number, a: number, b: number, from: number, to: number, easing: (t: number) => number = ease) =>\n  interpolate(f, [a, b], [from, to], { ...clamp, easing });\n\n/** 0 to 1 over [a, b], eased */\nexport const prog = (f: number, a: number, b: number, easing: (t: number) => number = ease) => ramp(f, a, b, 0, 1, easing);\n\n/** Keyframes [[frame, value], ...] with one easing on every segment. */\nexport function keys(f: number, k: [number, number][], easing: (t: number) => number = ease): number {\n  if (f <= k[0][0]) return k[0][1];\n  for (let i = 1; i < k.length; i++) {\n    if (f <= k[i][0]) {\n      const [a, va] = k[i - 1];\n      const [b, vb] = k[i];\n      return va + (vb - va) * easing((f - a) / (b - a));\n    }\n  }\n  return k[k.length - 1][1];\n}\n\n/** A damped spring from 0 at frame `a` to 1: overshoots, then settles. `bounce` 0.2 is gentle, 0.5 lively. */\nexport function spring(f: number, a: number, dur = 30, bounce = 0.25): number {\n  const t = (f - a) / dur;\n  if (t <= 0) return 0;\n  if (t >= 1.6) return 1;\n  const damp = 5.5;\n  const w = Math.PI * 2 * (0.6 + bounce * 1.4);\n  return 1 - Math.exp(-damp * t) * Math.cos(w * t);\n}\n\n/** Path data for a w x h rounded rectangle at the origin. */\nexport const rr = (w: number, h: number, r: number): string => {\n  r = Math.min(r, w / 2, h / 2);\n  return `M${r} 0H${w - r}A${r} ${r} 0 0 1 ${w} ${r}V${h - r}A${r} ${r} 0 0 1 ${w - r} ${h}H${r}A${r} ${r} 0 0 1 0 ${h - r}V${r}A${r} ${r} 0 0 1 ${r} 0Z`;\n};\n\nexport const clipRR = (w: number, h: number, r: number) => ({ kind: 'path' as const, d: rr(w, h, r) });\n\n/** Registers a Google Fonts family and returns the name to put in `font`. */\nexport const useFamily = (family: string, weights: string[] = ['400', '500', '600'], italic = false): string => {\n  const mod = makeGoogleFont(family.replace(/\\s+/g, ''));\n  if (italic) mod.loadFont('italic', { weights });\n  return mod.loadFont('normal', { weights }).fontFamily;\n};\n\n/** A point on a circle, for arcs: angle in degrees from straight up, clockwise. */\nexport const onArc = (cx: number, cy: number, r: number, deg: number) => ({\n  x: cx + r * Math.sin((deg * Math.PI) / 180),\n  y: cy - r * Math.cos((deg * Math.PI) / 180),\n});\n\n/** A smooth hash noise in [-1, 1] of a time and a seed: slow handheld drift without Math.random. */\nexport const drift = (f: number, seed: number, speed = 0.02): number => {\n  const t = f * speed;\n  const i = Math.floor(t);\n  const h = (n: number) => {\n    const s = Math.sin((n + seed * 97.13) * 127.1) * 43758.5453;\n    return (s - Math.floor(s)) * 2 - 1;\n  };\n  const u = t - i;\n  const s = u * u * (3 - 2 * u);\n  return h(i) * (1 - s) + h(i + 1) * s;\n};\n"
+    },
+    {
+      "path": "scenes/vault-count.tsx",
+      "target": "src/templates/vault-count/scenes/vault-count.tsx",
+      "content": "// Vault Count: a phone wallet balance ticking up while the payments that fed it drift past. The phone holds still (and\n// at the end drops out of the bottom of the frame); all the motion is the number and the cards behind it. The counter\n// does not tick on a fixed interval: its gaps run 10, 8, 6, 6, 4, 4 frames and then settle into a steady 15 a second.\n// Each card loses contrast and gains blur as it rises, so the stack reads as depth rather than a list scrolling.\n// Timed to a measured reference at 60 fps; names and copy are generic.\n\nimport React from 'react';\nimport { z } from 'zod';\nimport { Ellipse, Layer, Path, Rect, Text, blur, grain, linearGradient, radialGradient } from '@kinetographdev/core';\nimport { useCurrentFrame } from 'remotion';\nimport { keys, useFamily } from './lib.js';\n\nexport const W = 1920;\nexport const H = 1080;\nexport const FPS = 60;\nexport const DURATION = 184;\n\nconst hex = z.string().describe('A CSS colour.');\n\nexport const vaultCountSchema = z.object({\n  label: z.string().describe('Small line above the balance.'),\n  chip: z.string().describe('Text of the pill at the top left of the screen.'),\n  clock: z.string().describe('The status bar time.'),\n  footer: z.string().describe('The line at the foot of the screen.'),\n  opening: z.number().int().describe('The opening balance. The count adds one per tick.'),\n  currency: z.string().describe('Currency symbol before the balance and the amounts.'),\n  entries: z\n    .array(\n      z.object({\n        name: z.string().describe('What was paid for.'),\n        letter: z.string().max(1).describe('The one-letter mark.'),\n        color: hex.describe('Colour of the mark.'),\n        amount: z.number().describe('The amount paid.'),\n        share: z.string().describe('The small line under the amount (empty for none).'),\n        side: z.enum(['left', 'right']).describe('Which side of the phone the card drifts up.'),\n        at: z.number().describe('Frame at which the card top reaches the bottom edge of the frame.'),\n      }),\n    )\n    .describe('The payments that drift past, in order.'),\n  font: z.string().describe('Google Fonts family.'),\n  background: hex.describe('Ground colour (a pale wash).'),\n  card: hex.describe('Card colour.'),\n  deviceBody: hex.describe('Phone frame colour.'),\n  screenTop: hex.describe('Screen colour at the top right.'),\n  screenBottom: hex.describe('Screen colour at the bottom.'),\n  speed: z.number().min(0.5).max(2).describe('Speed of the count.'),\n  grain: z.number().min(0).max(0.2).describe('Film grain over the frame.'),\n});\nexport type VaultCountProps = z.infer<typeof vaultCountSchema>;\n\nexport const vaultCountDefaults: VaultCountProps = {\n  label: 'Northline Vault',\n  chip: 'Vault',\n  clock: '3:14',\n  footer: 'Transactions',\n  opening: 500,\n  currency: '$',\n  entries: [\n    { name: 'Pro pack', letter: 'P', color: '#e8832f', amount: 149, share: 'Creator share $14.90', side: 'left', at: -26 },\n    { name: 'Add-ons', letter: 'A', color: '#2f9d5c', amount: 19, share: 'Creator share $1.90', side: 'right', at: 35 },\n    { name: 'Studio', letter: 'S', color: '#4a7ad8', amount: 99, share: 'Creator share $9.90', side: 'left', at: 80 },\n    { name: 'Templates', letter: 'T', color: '#8a8d96', amount: 29, share: 'Creator share $2.90', side: 'right', at: 165 },\n  ],\n  font: 'Geist',\n  background: '#eef6fb',\n  card: '#fbfaf6',\n  deviceBody: '#151314',\n  screenTop: '#6d8cd6',\n  screenBottom: '#1c2a4b',\n  speed: 1,\n  grain: 0.02,\n};\n\n// frames of each tick: the first five gaps are 10, 8, 6, 6, 4 and then it is steady at every 4th frame\nconst tickFrames = (n: number): number[] => {\n  const out = [24, 32, 38, 44, 48];\n  while (out.length < n) out.push(out[out.length - 1] + 4);\n  return out;\n};\n\nconst PWID = 846;\nconst PX = 538;\nconst BEZ = 34;\nconst SWID = PWID - BEZ * 2;\n\nexport const VaultCount: React.FC<VaultCountProps> = (p) => {\n  const f = useCurrentFrame();\n  const ui = useFamily(p.font, ['400', '500', '600']);\n\n  const count = tickFrames(80).filter((t) => t / p.speed <= f).length;\n  const balance = p.opening + count;\n\n  // phone top in reference px: still, then it drops away\n  const top = keys(f, [[0, 189], [100, 189], [120, 196], [140, 240], [150, 285], [160, 363], [170, 502], [178, 600]], (t) => t);\n\n  return (\n    <Layer id=\"vc-root\" effects={p.grain > 0 ? [grain(p.grain, { seed: 9, size: 1.3 })] : undefined}>\n      <Rect id=\"vc-bg\" width={W} height={H} fill={linearGradient(['#f3fafd', p.background, '#e9f3fa'], { angle: 135 })} />\n\n      {p.entries.map((e, i) => {\n        const y = 540 - 2 * (f - e.at); // reference px of the card top\n        if (y > 560 || y < -170) return null;\n        const t = Math.min(1, Math.max(0, (330 - y) / 300));\n        const r = 22 * t;\n        const op = Math.max(0, 1 - 1.15 * t) * (1 - Math.min(1, Math.max(0, (f - 156) / 16)));\n        const x = e.side === 'left' ? 108 : 1400;\n        return (\n          <Layer key={i} id={`vc-c${i}`} x={x} y={y * 2} opacity={op} effects={r >= 1 ? [blur(r)] : undefined}>\n            <Rect id={`vc-c${i}-bg`} width={388} height={308} radius={48} fill={p.card} />\n            <Ellipse id={`vc-c${i}-dot`} x={40} y={40} width={48} height={48} fill=\"#ffffff\" />\n            <Text id={`vc-c${i}-l`} font={ui} weight={600} size={30} color={e.color} x={40} y={50} maxWidth={48} align=\"center\">\n              {e.letter}\n            </Text>\n            <Text id={`vc-c${i}-n`} font={ui} weight={400} size={34} color=\"#8d8d89\" x={120} y={47} maxWidth={240}>\n              {e.name}\n            </Text>\n            <Text id={`vc-c${i}-a`} font={ui} weight={400} size={88} color=\"#78777b\" x={36} y={128} maxWidth={300}>\n              {`${p.currency}${e.amount}`}\n            </Text>\n            <Text id={`vc-c${i}-p`} font={ui} weight={400} size={34} color=\"#9c9b99\" x={36 + 46.7 * (`${e.amount}`.length + 1) + 16} y={183} maxWidth={120}>\n              paid\n            </Text>\n            {e.share ? (\n              <Text id={`vc-c${i}-s`} font={ui} weight={400} size={22} color=\"#8d8d89\" x={36} y={267} maxWidth={330}>\n                {e.share}\n              </Text>\n            ) : null}\n          </Layer>\n        );\n      })}\n\n      <Layer id=\"vc-phone\" x={PX} y={top * 2}>\n        <Rect id=\"vc-body\" width={PWID} height={1400} radius={116} fill={p.deviceBody} />\n        <Layer id=\"vc-screen\" x={BEZ} y={BEZ} clip={{ kind: 'path', d: `M84 0H${SWID - 84}A84 84 0 0 1 ${SWID} 84V1400H0V84A84 84 0 0 1 84 0Z` }}>\n          <Rect id=\"vc-s0\" width={SWID} height={1400} fill={linearGradient([[0, '#4a69b3'], [0.22, '#2c4786'], [0.5, '#223a68'], [1, p.screenBottom]], { angle: 180 })} />\n          <Ellipse id=\"vc-s1\" x={SWID - 520} y={-160} width={760} height={760} fill={radialGradient([[0, '#7f9be2c0'], [0.55, '#6f8ed666'], [1, '#6f8ed600']])} />\n          <Text id=\"vc-time\" font={ui} weight={600} size={32} color=\"#ffffff\" x={36} y={37} maxWidth={140}>\n            {p.clock}\n          </Text>\n          <Rect id=\"vc-sig1\" x={582} y={42} width={8} height={22} radius={2} fill=\"#ffffff\" />\n          <Rect id=\"vc-sig2\" x={598} y={42} width={8} height={22} radius={2} fill=\"#ffffff\" />\n          <Path id=\"vc-wifi1\" d=\"M614 52Q628 40 642 52\" stroke={{ color: '#ffffff', width: 4, cap: 'round' } as never} />\n          <Path id=\"vc-wifi2\" d=\"M620 59Q628 52 636 59\" stroke={{ color: '#ffffff', width: 4, cap: 'round' } as never} />\n          <Ellipse id=\"vc-wifi3\" x={625} y={63} width={6} height={6} fill=\"#ffffff\" />\n          <Rect id=\"vc-bat\" x={678} y={42} width={8} height={22} radius={3} fill=\"#ffffff\" />\n          <Rect id=\"vc-chip\" x={48} y={98} width={160} height={64} radius={32} fill=\"#1f3a7a99\" />\n          <Ellipse id=\"vc-chip-dot\" x={56} y={106} width={48} height={48} fill=\"#ffffff\" />\n          <Text id=\"vc-chip-v\" font={ui} weight={600} size={28} color=\"#25468e\" x={56} y={114} maxWidth={48} align=\"center\">\n            {p.chip.slice(0, 1)}\n          </Text>\n          <Text id=\"vc-chip-t\" font={ui} weight={500} size={30} color=\"#ffffff\" x={116} y={113} maxWidth={90}>\n            {p.chip}\n          </Text>\n          <Text id=\"vc-label\" font={ui} weight={400} size={38} color=\"#e8eefb\" x={0} y={292} maxWidth={SWID} align=\"center\">\n            {p.label}\n          </Text>\n          <Text id=\"vc-balance\" font={ui} weight={500} size={128} color=\"#ffffff\" x={0} y={338} maxWidth={SWID} align=\"center\">\n            {`${p.currency}${balance}`}\n          </Text>\n          <Text id=\"vc-foot\" font={ui} weight={400} size={30} color=\"#dfe6f6\" x={42} y={593} maxWidth={400}>\n            {p.footer}\n          </Text>\n        </Layer>\n        <Rect id=\"vc-island\" x={342} y={64} width={164} height={50} radius={25} fill=\"#000000\" />\n      </Layer>\n    </Layer>\n  );\n};\n"
+    }
+  ],
+  "props": [
+    {
+      "name": "label",
+      "type": "string",
+      "doc": "Small line above the balance."
+    },
+    {
+      "name": "chip",
+      "type": "string",
+      "doc": "Text of the pill at the top left of the screen."
+    },
+    {
+      "name": "clock",
+      "type": "string",
+      "doc": "The status bar time."
+    },
+    {
+      "name": "footer",
+      "type": "string",
+      "doc": "The line at the foot of the screen."
+    },
+    {
+      "name": "opening",
+      "type": "integer",
+      "doc": "The opening balance. The count adds one per tick."
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "doc": "Currency symbol before the balance and the amounts."
+    },
+    {
+      "name": "entries",
+      "type": "left | right",
+      "doc": "The payments that drift past, in order."
+    },
+    {
+      "name": "font",
+      "type": "string",
+      "doc": "Google Fonts family."
+    },
+    {
+      "name": "background",
+      "type": "colour",
+      "doc": "Ground colour (a pale wash)."
+    },
+    {
+      "name": "card",
+      "type": "colour",
+      "doc": "Card colour."
+    },
+    {
+      "name": "deviceBody",
+      "type": "colour",
+      "doc": "Phone frame colour."
+    },
+    {
+      "name": "screenTop",
+      "type": "colour",
+      "doc": "Screen colour at the top right."
+    },
+    {
+      "name": "screenBottom",
+      "type": "colour",
+      "doc": "Screen colour at the bottom."
+    },
+    {
+      "name": "speed",
+      "type": "number",
+      "doc": "Speed of the count."
+    },
+    {
+      "name": "grain",
+      "type": "number",
+      "doc": "Film grain over the frame."
+    }
+  ],
+  "access": "free"
+}

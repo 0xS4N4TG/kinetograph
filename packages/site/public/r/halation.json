@@ -1,0 +1,87 @@
+{
+  "$schema": "https://kinetograph.dev/r/schema.json",
+  "name": "halation",
+  "type": "component",
+  "title": "Halation",
+  "description": "A red-orange halo round the bright parts of a picture, with film grain on top.",
+  "kinetograph": "0.3.0",
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "files": [
+    {
+      "path": "index.tsx",
+      "target": "src/components/halation/index.tsx",
+      "content": "// Halation. The glow film puts round bright things: light passes through the emulsion, bounces off the film base and\n// exposes the layer again, so highlights get a soft warm-red halo that spills past their edges. Highlights above a\n// threshold are gathered (two rings of taps, a tight one and a wide one), tinted and added back, then film grain goes on\n// top. The picture drifts in very slowly so the halo breathes against a held frame.\n//\n// Principles: restraint (two effects, halation and grain, nothing else), slow in and slow out (the strength eases on over\n// 36 frames, the push-in eases in and out), secondary action (the slow push-in, the grain), appeal (every still holds\n// up: the halo hugs the highlights and never greys the shadows), timing (a 5 s hold: long enough to read the glow).\n\nimport React from 'react';\nimport { z } from 'zod';\nimport { Layer, grain, shader } from '@kinetographdev/core';\nimport { Easing, useCurrentFrame } from 'remotion';\nimport { NOISE, colorUniforms } from './shaders.js';\nimport { H, Picture, W } from './picture.js';\n\nconst hex = z.string().describe('A CSS colour (hex).');\n\nexport const halationSchema = z.object({\n  src: z.string().describe('Picture in public/ (used when no children are given).'),\n  strength: z.number().min(0).max(2).describe('How much glow is added back. 0 is off, 1 is a visible but gentle halo.'),\n  radius: z.number().min(4).max(120).describe('Reach of the tight halo in pixels (the wide one is 3.2 times that).'),\n  threshold: z.number().min(0).max(1).describe('How bright a pixel must be (linear) before it glows. Lower glows more of the picture.'),\n  tint: hex.describe('The colour of the halo. Film halation is red-orange.'),\n  tintMix: z.number().min(0).max(1).describe(\"0 glows in the highlight's own colour, 1 in the tint.\"),\n  grain: z.number().min(0).max(0.3).describe('Film grain amount (0 for none).'),\n  grainSize: z.number().min(0.5).max(4).describe('Grain size in pixels.'),\n  fadeIn: z.number().int().min(0).max(120).describe('Frames the glow takes to come on at the start.'),\n  push: z.number().min(0).max(0.12).describe('How far the picture pushes in over the shot (0.04 is 4 percent).'),\n});\nexport type HalationProps = z.infer<typeof halationSchema>;\n\nexport const halationDefaults: HalationProps = {\n  src: 'images/halation/photos/nasa-city-2.jpg',\n  strength: 1,\n  radius: 30,\n  threshold: 0.14,\n  tint: '#ff5a2a',\n  tintMix: 0.62,\n  grain: 0.07,\n  grainSize: 1.4,\n  fadeIn: 36,\n  push: 0.04,\n};\n\nconst CODE = /* wgsl */ `\n${NOISE}\nfn glowOf(p: vec2<f32>) -> vec3<f32> {\n  let c = layer(p).rgb;\n  let k = smoothstep(u.thr, u.thr + 0.3, luma(c));\n  return c * k;\n}\nfn ring(px: vec2<f32>, r: f32, jitter: f32) -> vec3<f32> {\n  var acc = vec3<f32>(0.0, 0.0, 0.0);\n  var ws = 0.0;\n  for (var i = 0; i < 40; i = i + 1) {\n    let fi = f32(i) + 0.5;\n    let t = sqrt(fi / 40.0);\n    let a = fi * 2.39996323 + jitter;\n    let w = exp(-t * t * 2.4);\n    acc = acc + glowOf(px + vec2<f32>(cos(a), sin(a)) * t * r) * w;\n    ws = ws + w;\n  }\n  return acc / ws;\n}\nfn effect(px: vec2<f32>) -> vec4<f32> {\n  let base = layer(px);\n  let j = hash21(px) * 6.2831853;\n  let tight = ring(px, u.radius, j);\n  let wide = ring(px, u.radius * 3.2, j + 1.7);\n  let halo = tight * 0.95 + wide * 0.85;\n  let tint = vec3<f32>(u.tintr, u.tintg, u.tintb);\n  let hl = luma(halo);\n  // Halation is mostly red: keep a share of the highlight's own colour, push the rest into the tint.\n  let colour = mix(halo, tint * hl * 5.0, u.mixv);\n  let outc = base.rgb + colour * u.amount;\n  return vec4<f32>(outc, base.a);\n}\n`;\n\nexport const Halation: React.FC<HalationProps & { children?: React.ReactNode }> = (p) => {\n  const f = useCurrentFrame();\n  const amount = (p.fadeIn > 0 ? Easing.inOut(Easing.cubic)(Math.min(1, f / p.fadeIn)) : 1) * p.strength * 1.6 * (1 + 0.08 * Math.sin(f * 0.07));\n  const push = 1 + p.push * Easing.inOut(Easing.quad)(Math.min(1, f / 150));\n  return (\n    <Layer\n      id=\"halation\"\n      effects={[\n        shader({ code: CODE, uniforms: { amount, radius: p.radius, thr: p.threshold, mixv: p.tintMix, ...colorUniforms('tint', p.tint) }, padding: 0 }),\n        ...(p.grain > 0 ? [grain(p.grain, { size: p.grainSize, seed: 7, animate: true, monochrome: true })] : []),\n      ]}\n    >\n      <Picture id=\"hal-pic\" src={p.src} scale={push}>{p.children}</Picture>\n    </Layer>\n  );\n};\n"
+    },
+    {
+      "path": "picture.tsx",
+      "target": "src/components/halation/picture.tsx",
+      "content": "// The picture the effect components wrap: their children when given, else a photo from public/ covering the frame.\n\nimport React from 'react';\nimport { Image, Layer, staticFile } from '@kinetographdev/core';\n\nexport const W = 1920;\nexport const H = 1080;\n\nexport const Picture: React.FC<{ id: string; src: string; children?: React.ReactNode; scale?: number; x?: number; y?: number }> = ({ id, src, children, scale = 1, x = 0, y = 0 }) => (\n  <Layer id={id} x={x} y={y} scale={scale} origin=\"center\">\n    {children ?? <Image id={`${id}-img`} src={staticFile(src)} width={W} height={H} fit=\"cover\" />}\n  </Layer>\n);\n"
+    },
+    {
+      "path": "public/images/photos/nasa-city-2.jpg",
+      "target": "public/images/halation/photos/nasa-city-2.jpg",
+      "url": "files/halation/public/images/photos/nasa-city-2.jpg",
+      "sha256": "af87ad81d7a820dddc07f00cacbf1c46edfd33008ba1218d274c55bae5d4902b"
+    },
+    {
+      "path": "shaders.ts",
+      "target": "src/components/halation/shaders.ts",
+      "content": "// WGSL shared by the effect components (Kinetograph's `shader` effect: `fn effect(px) -> vec4<f32>`, linear premultiplied,\n// `layer(px)` reads the layer). Everything is a pure function of px, the frame and the uniforms: the noise is a hash of\n// the pixel, never a clock or a random number.\n\n/** An sRGB hex colour as linear floats (for uniforms). */\nexport const linear = (hex: string): [number, number, number] => {\n  const h = hex.replace('#', '');\n  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;\n  return [0, 2, 4].map((i) => {\n    const v = parseInt(full.slice(i, i + 2), 16) / 255;\n    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;\n  }) as [number, number, number];\n};\n\n/** Uniform entries `${name}r`, `${name}g`, `${name}b` for a colour. */\nexport const colorUniforms = (name: string, hex: string): Record<string, number> => {\n  const [r, g, b] = linear(hex);\n  return { [`${name}r`]: r, [`${name}g`]: g, [`${name}b`]: b };\n};\n\nexport const NOISE = /* wgsl */ `\nfn hash21(p: vec2<f32>) -> f32 {\n  var q = fract(p * vec2<f32>(0.1031, 0.1030));\n  q = q + dot(q, q.yx + vec2<f32>(33.33, 33.33));\n  return fract((q.x + q.y) * q.x);\n}\nfn vnoise(p: vec2<f32>) -> f32 {\n  let i = floor(p);\n  let f = fract(p);\n  let w = f * f * (vec2<f32>(3.0, 3.0) - 2.0 * f);\n  let a = hash21(i);\n  let b = hash21(i + vec2<f32>(1.0, 0.0));\n  let c = hash21(i + vec2<f32>(0.0, 1.0));\n  let d = hash21(i + vec2<f32>(1.0, 1.0));\n  return mix(mix(a, b, w.x), mix(c, d, w.x), w.y);\n}\nfn fbm(p: vec2<f32>) -> f32 {\n  var s = 0.0;\n  var a = 0.5;\n  var q = p;\n  for (var i = 0; i < 5; i = i + 1) {\n    s = s + a * vnoise(q);\n    q = q * 2.03 + vec2<f32>(17.1, 9.2);\n    a = a * 0.5;\n  }\n  return s;\n}\nfn luma(c: vec3<f32>) -> f32 {\n  return dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));\n}\n`;\n"
+    }
+  ],
+  "props": [
+    {
+      "name": "src",
+      "type": "string",
+      "doc": "Picture in public/ (used when no children are given)."
+    },
+    {
+      "name": "strength",
+      "type": "number",
+      "doc": "How much glow is added back. 0 is off, 1 is a visible but gentle halo."
+    },
+    {
+      "name": "radius",
+      "type": "number",
+      "doc": "Reach of the tight halo in pixels (the wide one is 3.2 times that)."
+    },
+    {
+      "name": "threshold",
+      "type": "number",
+      "doc": "How bright a pixel must be (linear) before it glows. Lower glows more of the picture."
+    },
+    {
+      "name": "tint",
+      "type": "colour",
+      "doc": "The colour of the halo. Film halation is red-orange."
+    },
+    {
+      "name": "tintMix",
+      "type": "number",
+      "doc": "0 glows in the highlight's own colour, 1 in the tint."
+    },
+    {
+      "name": "grain",
+      "type": "number",
+      "doc": "Film grain amount (0 for none)."
+    },
+    {
+      "name": "grainSize",
+      "type": "number",
+      "doc": "Grain size in pixels."
+    },
+    {
+      "name": "fadeIn",
+      "type": "integer",
+      "doc": "Frames the glow takes to come on at the start."
+    },
+    {
+      "name": "push",
+      "type": "number",
+      "doc": "How far the picture pushes in over the shot (0.04 is 4 percent)."
+    }
+  ],
+  "access": "free"
+}

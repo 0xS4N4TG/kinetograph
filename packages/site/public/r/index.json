@@ -1,0 +1,530 @@
+{
+  "$schema": "https://kinetograph.dev/r/schema.json",
+  "items": [
+    {
+      "name": "app-launch",
+      "type": "template",
+      "title": "App launch film",
+      "description": "A 21 second launch film for an app, in six beats: a typed question, a chat bar drawn on by guide lines, a wall of screens, and a closing mark.",
+      "access": "free"
+    },
+    {
+      "name": "archive",
+      "type": "taste",
+      "title": "Archive",
+      "description": "Period photographs drift in layers under film flicker and dust, with typed dates and captions.",
+      "access": "free"
+    },
+    {
+      "name": "area-chart",
+      "type": "component",
+      "title": "Area chart",
+      "description": "A gradient area draws in under a trucking camera and lands on a tooltip. Light or dark.",
+      "access": "free"
+    },
+    {
+      "name": "audio-plasma",
+      "type": "component",
+      "title": "Audio plasma",
+      "description": "A white-hot trace glows inside blue copies, with the running time in huge soft numerals. It is drawn from the audio file itself.",
+      "access": "free"
+    },
+    {
+      "name": "audio-scope",
+      "type": "component",
+      "title": "Audio scope",
+      "description": "An oscilloscope draws the sound as red and yellow traces over a dark grid. It is drawn from the audio file itself.",
+      "access": "free"
+    },
+    {
+      "name": "aurora",
+      "type": "component",
+      "title": "Aurora ribbons",
+      "description": "Ribbons of light drift and are blended so that overlaps never blow out. It loops with no join at whole-number speeds.",
+      "access": "free"
+    },
+    {
+      "name": "aurora-veil",
+      "type": "component",
+      "title": "Aurora veil",
+      "description": "Skewed curtains of colour drift in from the top-right corner. It loops with no join.",
+      "access": "free"
+    },
+    {
+      "name": "bar-chart",
+      "type": "component",
+      "title": "Bar chart",
+      "description": "Bars grow in turn, then focus racks and the camera pushes in on the winner. A small gap between bars makes it a histogram.",
+      "access": "free"
+    },
+    {
+      "name": "build-out",
+      "type": "template",
+      "title": "Send button zoom-out",
+      "description": "A send button zooms out to show the whole app around it.",
+      "access": "free"
+    },
+    {
+      "name": "candlestick-chart",
+      "type": "component",
+      "title": "Candlestick chart",
+      "description": "Candles print one by one while the camera rides the newest through a breakout.",
+      "access": "free"
+    },
+    {
+      "name": "card-rail",
+      "type": "component",
+      "title": "Card rail",
+      "description": "Portrait cards sit on a tilted plane and are flicked along it in two throws, each with a label.",
+      "access": "free"
+    },
+    {
+      "name": "checkout-push",
+      "type": "template",
+      "title": "Checkout push",
+      "description": "A phone checkout where the amount lands and the camera pushes in.",
+      "access": "free"
+    },
+    {
+      "name": "circle-carousel-1",
+      "type": "component",
+      "title": "Growing circle carousel",
+      "description": "Square covers sit on a ring that grows from tiny to large as it turns.",
+      "access": "free"
+    },
+    {
+      "name": "circle-carousel-2",
+      "type": "component",
+      "title": "Spiral carousel",
+      "description": "Covers wind inward on a spiral. They are born at the rim and swallowed at the centre.",
+      "access": "free"
+    },
+    {
+      "name": "circle-carousel-3",
+      "type": "component",
+      "title": "U-shaped carousel",
+      "description": "Covers are filed into a U and sit askew, like prints that have been handled.",
+      "access": "free"
+    },
+    {
+      "name": "collage",
+      "type": "taste",
+      "title": "Collage",
+      "description": "Paper cut-outs and torn labels sit over an old newspaper page and move in stop motion.",
+      "access": "free"
+    },
+    {
+      "name": "collage-burst",
+      "type": "template",
+      "title": "Screenshot card burst",
+      "description": "A wordmark fades in on black, then a cluster of screenshot cards bursts out of one point as the camera flies in. The cards settle into a dense wall, drift, and whip off to the right. Big white type finishes it: two short lines, each starting as a single word.",
+      "access": "free"
+    },
+    {
+      "name": "donut-chart",
+      "type": "component",
+      "title": "Donut chart",
+      "description": "One sweep draws the segments, then the leading segment steps out with a callout. Light or dark.",
+      "access": "free"
+    },
+    {
+      "name": "dostoevsky",
+      "type": "template",
+      "title": "History explainer",
+      "description": "A 39 second history explainer in the collage taste: dolly-throughs on old maps, taped photos on kraft paper, posters, a portrait montage, and clouds over a city plan. The pictures are public domain.",
+      "access": "free"
+    },
+    {
+      "name": "dot-field",
+      "type": "component",
+      "title": "Halftone dot field",
+      "description": "A grid of halftone dots breathes on a ring-shaped wave. It loops with no join at whole-number speeds.",
+      "access": "free"
+    },
+    {
+      "name": "drift-gradient",
+      "type": "component",
+      "title": "Drift gradient",
+      "description": "Soft pools of blue and cyan drift like defocused light through water. It loops with no join.",
+      "access": "free"
+    },
+    {
+      "name": "explainer",
+      "type": "taste",
+      "title": "Explainer",
+      "description": "Cut-out objects on textured paper under big type, with one colour for the key word and quick wipes between beats.",
+      "access": "free"
+    },
+    {
+      "name": "film-burn",
+      "type": "component",
+      "title": "Film burn transition",
+      "description": "A heat front scorches the first picture and reveals the second.",
+      "access": "free"
+    },
+    {
+      "name": "film-intro",
+      "type": "template",
+      "title": "Film opening",
+      "description": "An old film fades up as a field of soft ink dots and pushes slowly in. A thin serif line types itself across it, lifts away in a blur, and a second line follows before a title.",
+      "access": "free"
+    },
+    {
+      "name": "funnel-chart",
+      "type": "component",
+      "title": "Funnel chart",
+      "description": "A funnel blooms stage by stage as the camera moves down it and each number counts up.",
+      "access": "free"
+    },
+    {
+      "name": "gallery-push",
+      "type": "component",
+      "title": "Gallery wall push-in",
+      "description": "A wall of photo columns unrolls from the middle while the camera pushes in.",
+      "access": "free"
+    },
+    {
+      "name": "glass-lens",
+      "type": "component",
+      "title": "Glass lens",
+      "description": "A glass ball moves over the picture and refracts what is behind it.",
+      "access": "free"
+    },
+    {
+      "name": "grain-flow",
+      "type": "component",
+      "title": "Grain flow",
+      "description": "Sheets of cobalt light flow past a navy valley under film grain. It loops with no join.",
+      "access": "free"
+    },
+    {
+      "name": "grain-gradient",
+      "type": "component",
+      "title": "Grain gradient",
+      "description": "A mesh gradient drifts under film grain. It loops with no join at whole-number speeds.",
+      "access": "free"
+    },
+    {
+      "name": "graph-paper-tall",
+      "type": "component",
+      "title": "Graph paper",
+      "description": "A faint squared grid on off-white paper that fades towards the edges, cut tall for phones. It loops with no join.",
+      "access": "free"
+    },
+    {
+      "name": "greeting-intro",
+      "type": "template",
+      "title": "App window greeting",
+      "description": "A gradient wordmark on a soft off-white ground shrinks away as an app window grows in behind it. The camera pushes into the window, tilted, and types a greeting and a question in large perspective type. Four suggestion cards slide in, then the camera pulls back and flattens to the whole window.",
+      "access": "free"
+    },
+    {
+      "name": "grid-center-orient",
+      "type": "component",
+      "title": "Photo rosette",
+      "description": "A grid in which every card turns to point at the centre. The twist travels outward into a rosette while the camera rolls and pushes in.",
+      "access": "free"
+    },
+    {
+      "name": "grid-face-screen",
+      "type": "component",
+      "title": "Photo ring facing the screen",
+      "description": "A carousel ring where every card turns to face the screen. It steps one card at a time with a rest between steps, while the camera lifts and closes in.",
+      "access": "free"
+    },
+    {
+      "name": "grid-forward-orient",
+      "type": "component",
+      "title": "Photo ring facing forward",
+      "description": "A ring of cards on a tilted turntable, each turned to face the way it travels. The camera orbits and closes in during one slow stroke.",
+      "access": "free"
+    },
+    {
+      "name": "grid-path",
+      "type": "component",
+      "title": "Photos along a curve",
+      "description": "Upright photo cards follow a curve: a wave, a triangle, a square or an infinity sign. The line draws on, the leading card sets off, and the camera trucks along the line.",
+      "access": "free"
+    },
+    {
+      "name": "grid-path-orient",
+      "type": "component",
+      "title": "Photo loop on a triangle",
+      "description": "Cards ride a rounded triangle, each turned to the direction of the path. The camera looks down and orbits as the cards swing through the corners.",
+      "access": "free"
+    },
+    {
+      "name": "grid-radial",
+      "type": "component",
+      "title": "Photo rings",
+      "description": "Three concentric rings of photos at different depths open from the centre. The camera swings side to side, then pushes in as focus racks from the inner ring to the outer one.",
+      "access": "free"
+    },
+    {
+      "name": "grid-rect",
+      "type": "component",
+      "title": "Rectangular photo grid",
+      "description": "A wall of photo cards ripples in from the middle card, then the camera pulls back, trucks across and pushes in on a new card.",
+      "access": "free"
+    },
+    {
+      "name": "grid-reel",
+      "type": "template",
+      "title": "Grid opener",
+      "description": "A 3 by 3 grid sits over every shot. The cells flash white and come sharp one by one while words land in them. A cut-out subject then stands over changing backgrounds, and the grid opens on a wordmark card.",
+      "access": "free"
+    },
+    {
+      "name": "grid-spherical",
+      "type": "component",
+      "title": "Photo sphere",
+      "description": "Cards sit tangent to a sphere. It assembles from its centre and turns a full orbit, then settles on one hero card and pushes in.",
+      "access": "free"
+    },
+    {
+      "name": "halation",
+      "type": "component",
+      "title": "Halation",
+      "description": "A red-orange halo round the bright parts of a picture, with film grain on top.",
+      "access": "free"
+    },
+    {
+      "name": "heatmap-chart",
+      "type": "component",
+      "title": "Heatmap chart",
+      "description": "A year of activity lights up week by week, then the camera leans in on the busiest day.",
+      "access": "free"
+    },
+    {
+      "name": "hex-tally",
+      "type": "component",
+      "title": "Hexagon tally",
+      "description": "A unit chart of hexagons fills in beside a metric card that counts up.",
+      "access": "free"
+    },
+    {
+      "name": "laptop-open",
+      "type": "template",
+      "title": "Laptop opening",
+      "description": "A 3D laptop lid opens, the screen wakes, and the camera moves into the app.",
+      "access": "free"
+    },
+    {
+      "name": "launch-film",
+      "type": "template",
+      "title": "Launch film",
+      "description": "A twenty-second product launch film, from a typed headline to the final mark.",
+      "access": "free"
+    },
+    {
+      "name": "light-leak",
+      "type": "component",
+      "title": "Light leak",
+      "description": "A warm, streaked leak of light from one edge. It can cover a cut between two clips.",
+      "access": "free"
+    },
+    {
+      "name": "line-ticker",
+      "type": "component",
+      "title": "Line ticker",
+      "description": "A climbing line with the camera chasing its head and a large live number above it. Light or dark.",
+      "access": "free"
+    },
+    {
+      "name": "liquid-gradient",
+      "type": "component",
+      "title": "Liquid gradient",
+      "description": "A plum, crimson and amber gradient swirls and settles. It loops with no join.",
+      "access": "free"
+    },
+    {
+      "name": "orbit-gallery",
+      "type": "component",
+      "title": "Orbit gallery",
+      "description": "Nine photos spiral in around a title and settle on an ellipse.",
+      "access": "free"
+    },
+    {
+      "name": "paper",
+      "type": "component",
+      "title": "Paper texture",
+      "description": "A paper height field lit by a raking light that circles slowly. It loops with no join at whole-number speeds.",
+      "access": "free"
+    },
+    {
+      "name": "papercut",
+      "type": "taste",
+      "title": "Papercut",
+      "description": "A toy-like paper diorama of cut-paper characters and props, with the camera circling the set.",
+      "access": "free"
+    },
+    {
+      "name": "phone-orbit",
+      "type": "template",
+      "title": "Social post on a phone",
+      "description": "A phone showing a social post starts as a close-up of its lower edge, pulls back and glides to rest. Chat bubbles, avatars and icon chips pop in around it. A hand reaches into the photo and lifts the phone, and the screen swaps to a second one as the view count reaches its cap.",
+      "access": "free"
+    },
+    {
+      "name": "phone-pitch",
+      "type": "template",
+      "title": "Phone with a pitch",
+      "description": "A headline, a line of body text and a button sit beside a phone that lands with a settle.",
+      "access": "free"
+    },
+    {
+      "name": "print",
+      "type": "taste",
+      "title": "Print",
+      "description": "Flat inks print in turn over paper, with a dot screen that jumps and a slight misregistration.",
+      "access": "free"
+    },
+    {
+      "name": "prompt-intro",
+      "type": "template",
+      "title": "Prompt intro",
+      "description": "An arrow shrinks and slides left, a prompt types on beside it, then deletes itself into the next line under a blue flash. The answer types on and everything drops out for the cut.",
+      "access": "free"
+    },
+    {
+      "name": "prompt-reply",
+      "type": "template",
+      "title": "Chat prompt to reply",
+      "description": "A chat prompt types itself into a rounded box and sends. The shot cuts to the reply, built on a page the camera scrolls through. Two activity rows, a status line, a serif reply, a brand chip, a small table and a row of action icons fade up one after another.",
+      "access": "free"
+    },
+    {
+      "name": "radar-chart",
+      "type": "component",
+      "title": "Radar chart",
+      "description": "A radar chart fills in axis by axis as the camera circles it, then a second series springs open.",
+      "access": "free"
+    },
+    {
+      "name": "recap-dial",
+      "type": "template",
+      "title": "Year recap dial",
+      "description": "A year in review on a dial that snaps month by month, with a sticker for each.",
+      "access": "free"
+    },
+    {
+      "name": "reel-wall",
+      "type": "component",
+      "title": "Spinning card ring",
+      "description": "A 3D ring of tall cards spins to rest on one, which steps forward with its name.",
+      "access": "free"
+    },
+    {
+      "name": "ring-chart",
+      "type": "component",
+      "title": "Ring chart",
+      "description": "Rings fill one at a time with the camera riding each head, then it pulls back on the whole chart.",
+      "access": "free"
+    },
+    {
+      "name": "sankey-chart",
+      "type": "component",
+      "title": "Sankey chart",
+      "description": "The camera follows the strongest flow, then every other link draws in around it.",
+      "access": "free"
+    },
+    {
+      "name": "save-reel",
+      "type": "template",
+      "title": "App save reel",
+      "description": "A 39 second app reel: a post is liked and saved, the save gets lost in the collection, and a reminder brings it back. Flat screens on a pale canvas, a camera that whips between details, and hand-written notes.",
+      "access": "free"
+    },
+    {
+      "name": "scatter-bloom",
+      "type": "component",
+      "title": "Scatter bloom",
+      "description": "Points bloom onto a plane in coloured groups. The camera then tips and orbits to show their heights.",
+      "access": "free"
+    },
+    {
+      "name": "scrapline",
+      "type": "template",
+      "title": "Scrapline cut-outs",
+      "description": "A hand-drawn border round a cut-out subject, on a sheet of torn paper. The line can be a wobbly marker, pencil, crayon, scribble or brush. Line and paper redraw a few times a second, like hand animation.",
+      "access": "free"
+    },
+    {
+      "name": "screen-touch",
+      "type": "template",
+      "title": "Touch to the next screen",
+      "description": "A finger presses a button and the next screen opens outward from the touch point.",
+      "access": "free"
+    },
+    {
+      "name": "screen-tunnel",
+      "type": "template",
+      "title": "Phone tunnel",
+      "description": "Phones recede down a corridor on either side of a headline.",
+      "access": "free"
+    },
+    {
+      "name": "showcase-drift",
+      "type": "component",
+      "title": "Work card drift",
+      "description": "Cards of work slide in behind a headline and settle without a bounce.",
+      "access": "free"
+    },
+    {
+      "name": "stack-credits",
+      "type": "template",
+      "title": "Stacked credits",
+      "description": "Three stacked double-exposure panels on black, two shots cut hard, credits fading in and a film burn out. Made tall, for phones.",
+      "access": "free"
+    },
+    {
+      "name": "tally-rise",
+      "type": "component",
+      "title": "Currency counter",
+      "description": "A currency amount rolls up like an odometer, its wheels locking from left to right.",
+      "access": "free"
+    },
+    {
+      "name": "three-phone",
+      "type": "template",
+      "title": "Three phones fanned out",
+      "description": "Three tilted phones fan out on an arc from the centre one. Each screen is drawn in, or is your own image.",
+      "access": "free"
+    },
+    {
+      "name": "tide-gradient",
+      "type": "component",
+      "title": "Tide gradient",
+      "description": "Pools of cyan, mint and steel blue swell and sink into black. It loops with no join.",
+      "access": "free"
+    },
+    {
+      "name": "vault-count",
+      "type": "template",
+      "title": "Wallet count-up",
+      "description": "A wallet balance counts up beside a stack of payment cards.",
+      "access": "free"
+    },
+    {
+      "name": "vox-style",
+      "type": "taste",
+      "title": "Vox style",
+      "description": "Tinted, halftoned photos on grid paper, caps that fill yellow, and numbers that roll like an odometer.",
+      "access": "free"
+    },
+    {
+      "name": "wait-ship",
+      "type": "template",
+      "title": "Two lines on a focus pull",
+      "description": "Seven photo cards float round the edges of a near-black frame, out of focus. The camera pulls back and racks focus. A first line comes up out of the blur and a second line replaces it. The scene slides off to the right as the left card sharpens.",
+      "access": "free"
+    },
+    {
+      "name": "word-flash",
+      "type": "template",
+      "title": "Words cut to the beat",
+      "description": "A 9.4 second black-and-white type spot, cut on every hit of its track. Each cut shows one word or a two-word lockup on a ground that flips between black and white. A last word types on, then blurs away.",
+      "access": "free"
+    }
+  ]
+}

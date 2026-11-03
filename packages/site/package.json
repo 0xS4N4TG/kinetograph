@@ -11,6 +11,7 @@
     "start": "npx serve out",
     "preview": "npx serve out",
     "catalog": "node scripts/catalog.mjs",
+    "registry": "node scripts/registry.mjs",
     "test": "vitest run",
     "engine-diagram": "node scripts/engine-diagram.mjs"
   },

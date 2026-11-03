@@ -1,0 +1,101 @@
+{
+  "$schema": "https://kinetograph.dev/r/schema.json",
+  "name": "screen-touch",
+  "type": "template",
+  "title": "Touch to the next screen",
+  "description": "A finger presses a button and the next screen opens outward from the touch point.",
+  "kinetograph": "0.3.0",
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "files": [
+    {
+      "path": "index.tsx",
+      "target": "src/templates/screen-touch/index.tsx",
+      "content": "import React from 'react';\nimport { Composition, registerRoot } from 'remotion';\nimport { ScreenTouch, screenTouchDefaults, screenTouchSchema, W as TW, H as TH, FPS as TF, DURATION as TD } from './scenes/screen-touch.js';\n\nregisterRoot(() => (\n  <>\n    <Composition id=\"ScreenTouch\" component={ScreenTouch} schema={screenTouchSchema} defaultProps={screenTouchDefaults}\n      durationInFrames={TD} fps={TF} width={TW} height={TH} />\n  </>\n));\n"
+    },
+    {
+      "path": "scenes/lib.ts",
+      "target": "src/templates/screen-touch/scenes/lib.ts",
+      "content": "// Small timing and drawing helpers shared by the showcase components. Every function is pure in the frame number.\n\nimport { Easing, interpolate } from 'remotion';\nimport { makeGoogleFont } from '@kinetographdev/core/google-fonts';\n\nexport const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;\n\n/** slow in, slow out: the default for anything that travels */\nexport const ease = Easing.bezier(0.45, 0, 0.15, 1);\n/** fast start, long settle: things arriving */\nexport const easeOut = Easing.bezier(0.16, 1, 0.3, 1);\n/** slow start, fast end: things leaving at speed */\nexport const easeIn = Easing.bezier(0.7, 0, 0.84, 0);\n\n/** from `from` at frame a to `to` at frame b, held outside */\nexport const ramp = (f: number, a: number, b: number, from: number, to: number, easing: (t: number) => number = ease) =>\n  interpolate(f, [a, b], [from, to], { ...clamp, easing });\n\n/** 0 to 1 over [a, b], eased */\nexport const prog = (f: number, a: number, b: number, easing: (t: number) => number = ease) => ramp(f, a, b, 0, 1, easing);\n\n/** Keyframes [[frame, value], ...] with one easing on every segment. */\nexport function keys(f: number, k: [number, number][], easing: (t: number) => number = ease): number {\n  if (f <= k[0][0]) return k[0][1];\n  for (let i = 1; i < k.length; i++) {\n    if (f <= k[i][0]) {\n      const [a, va] = k[i - 1];\n      const [b, vb] = k[i];\n      return va + (vb - va) * easing((f - a) / (b - a));\n    }\n  }\n  return k[k.length - 1][1];\n}\n\n/** A damped spring from 0 at frame `a` to 1: overshoots, then settles. `bounce` 0.2 is gentle, 0.5 lively. */\nexport function spring(f: number, a: number, dur = 30, bounce = 0.25): number {\n  const t = (f - a) / dur;\n  if (t <= 0) return 0;\n  if (t >= 1.6) return 1;\n  const damp = 5.5;\n  const w = Math.PI * 2 * (0.6 + bounce * 1.4);\n  return 1 - Math.exp(-damp * t) * Math.cos(w * t);\n}\n\n/** Path data for a w x h rounded rectangle at the origin. */\nexport const rr = (w: number, h: number, r: number): string => {\n  r = Math.min(r, w / 2, h / 2);\n  return `M${r} 0H${w - r}A${r} ${r} 0 0 1 ${w} ${r}V${h - r}A${r} ${r} 0 0 1 ${w - r} ${h}H${r}A${r} ${r} 0 0 1 0 ${h - r}V${r}A${r} ${r} 0 0 1 ${r} 0Z`;\n};\n\nexport const clipRR = (w: number, h: number, r: number) => ({ kind: 'path' as const, d: rr(w, h, r) });\n\n/** Registers a Google Fonts family and returns the name to put in `font`. */\nexport const useFamily = (family: string, weights: string[] = ['400', '500', '600'], italic = false): string => {\n  const mod = makeGoogleFont(family.replace(/\\s+/g, ''));\n  if (italic) mod.loadFont('italic', { weights });\n  return mod.loadFont('normal', { weights }).fontFamily;\n};\n\n/** A point on a circle, for arcs: angle in degrees from straight up, clockwise. */\nexport const onArc = (cx: number, cy: number, r: number, deg: number) => ({\n  x: cx + r * Math.sin((deg * Math.PI) / 180),\n  y: cy - r * Math.cos((deg * Math.PI) / 180),\n});\n\n/** A smooth hash noise in [-1, 1] of a time and a seed: slow handheld drift without Math.random. */\nexport const drift = (f: number, seed: number, speed = 0.02): number => {\n  const t = f * speed;\n  const i = Math.floor(t);\n  const h = (n: number) => {\n    const s = Math.sin((n + seed * 97.13) * 127.1) * 43758.5453;\n    return (s - Math.floor(s)) * 2 - 1;\n  };\n  const u = t - i;\n  const s = u * u * (3 - 2 * u);\n  return h(i) * (1 - s) + h(i + 1) * s;\n};\n"
+    },
+    {
+      "path": "scenes/screen-touch.tsx",
+      "target": "src/templates/screen-touch/scenes/screen-touch.tsx",
+      "content": "// Screen Touch, scene tap-through: a phone hangs in the dark with a feed on it; the camera falls down the glass\n// until the two actions at the bottom are all that is left; one is tapped (a scale and a flash together); the fall keeps\n// going until the frame is the phone's own milled edge; and then the picture is gone and only the sentence is left.\n// Four beats, three hard cuts.\n//\n// The whole shot lives on one plane, so the camera is a projective map: per frame the phone's half width, its tilt and the\n// row of its bottom edge, fitted to the reference and played back through one perspective. The tilt flips nothing and the\n// lens never leaves the glass, which is what makes the fall read as a fall rather than a zoom.\n//\n// Principles: staging (feed, then the two buttons alone, then type), anticipation (the press is a quick scale down before\n// the flash), follow through (the button springs back inside four frames, the flash outlives the press), slow in and out\n// (the fall in the first beat accelerates in), timing (the closing lines climb slowly so they never sit dead).\n\nimport React from 'react';\nimport { z } from 'zod';\nimport { Camera, Ellipse, Layer, Path, Rect, Text, blur, grain, linearGradient } from '@kinetographdev/core';\nimport { useCurrentFrame } from 'remotion';\nimport { easeIn, easeOut, prog, ramp, useFamily } from './lib.js';\n\nexport const W = 1920;\nexport const H = 1080;\nexport const FPS = 60;\nexport const DURATION = 156;\n\nconst hex = z.string().describe('A CSS colour.');\n\nexport const screenTouchSchema = z.object({\n  tabs: z.array(z.string()).length(2).describe('The two tabs at the top of the feed.'),\n  posts: z\n    .array(\n      z.object({\n        name: z.string().describe('Who posted.'),\n        tag: z.string().describe('The small blue chip after the name.'),\n        age: z.string().describe('How long ago.'),\n        subject: z.string().describe('The bold subject line.'),\n        stat: z.string().describe('The number after the subject.'),\n        delta: z.string().describe('The green change after the number.'),\n        body: z.array(z.string()).max(2).describe('Up to two lines of text.'),\n        likes: z.string().describe('The count beside the heart.'),\n      }),\n    )\n    .length(2)\n    .describe('The two posts on the feed.'),\n  actions: z.array(z.string()).length(2).describe('The two buttons: the plain one, then the one that is tapped.'),\n  line1: z.string().describe('The first closing line.'),\n  line2: z.array(z.string()).length(2).describe('The second closing line: a bright part, then a dimmer part.'),\n  tapAt: z.number().int().min(30).max(80).describe('The frame the press lands on.'),\n  font: z.string().describe('Google Fonts family of the screen and the closing lines.'),\n  buttonFont: z.string().describe('Google Fonts family (with italics) of the button labels.'),\n  ground: hex.describe('The dark ground.'),\n  glass: hex.describe('The phone glass.'),\n  rim: hex.describe('The phone edge.'),\n  action: hex.describe('The colour of the tapped button.'),\n  speed: z.number().min(0.5).max(2).describe('Playback speed of the move.'),\n  grain: z.number().min(0).max(0.2).describe('Film grain over the whole frame.'),\n});\nexport type ScreenTouchProps = z.infer<typeof screenTouchSchema>;\n\nexport const screenTouchDefaults: ScreenTouchProps = {\n  tabs: ['Global', 'Friends'],\n  posts: [\n    { name: 'Maya', tag: 'Shipped', age: '44s', subject: 'scene-pack', stat: '1,284', delta: '+12', body: ['Shipped the launch video this morning.', 'Wrote none of the animation. Own all of it.'], likes: '293' },\n    { name: 'Maya', tag: 'Shipped', age: '59s', subject: 'scene-pack', stat: '1,272', delta: '+9', body: ['One afternoon, one install.', 'The demo is in the pull request already.'], likes: '165' },\n  ],\n  actions: ['Docs', 'Install'],\n  line1: 'the code is yours',\n  line2: ['and so is', 'the credit'],\n  tapAt: 55,\n  font: 'Geist',\n  buttonFont: 'Inter',\n  ground: '#05060f',\n  glass: '#070918',\n  rim: '#41425e',\n  action: '#0bb644',\n  speed: 1,\n  grain: 0,\n};\n\n// ---- the camera, fitted to the reference ---------------------------------------------------------------------------\nconst P = 1400; // reference pixels\nconst K = 2;\n// beat two: one sample every 3 frames from frame 21\nconst F0 = 21;\nconst SW = [344.5, 408.8, 427.6, 455.0, 455.7, 464.4, 466.3, 469.9, 472.1, 478.4, 482.2, 489.5, 494.6, 503.2, 509.2, 531.0, 541.8];\nconst TH = [17.4, 25.6, 29.4, 34.9, 34.6, 35.2, 35.0, 34.7, 34.9, 36.2, 36.8, 37.4, 38.3, 38.8, 39.3, 41.8, 42.7];\nconst YB = [453, 487, 479, 471, 465, 459, 456, 452, 450, 447, 446, 444, 444, 441, 441, 437, 434, 430, 427, 409, 396, 335, 253, 150];\n\nfunction samp(tab: number[], f: number): number {\n  const u = Math.max(0, (f - F0) / 3);\n  const i = Math.min(tab.length - 2, Math.floor(u));\n  const t = Math.min(1, u - i);\n  const at = (j: number) => tab[Math.max(0, Math.min(tab.length - 1, j))];\n  const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);\n  return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t);\n}\n\nconst CUT1 = 20; // feed to buttons\nconst CUT2 = 88; // buttons to type\n\nconst pose = (f: number) => {\n  if (f < CUT1) {\n    // the feed: near head-on, the phone rising as the lens drops down the glass\n    const shift = 44 * easeIn(prog(f, 0, 19, (t) => t));\n    return { sw: 247, th: 1.5, yb: 5 + 1013 - shift };\n  }\n  const last = F0 + 3 * (SW.length - 1); // 69\n  if (f <= last) return { sw: samp(SW, f), th: samp(TH, f), yb: samp(YB, f) };\n  const d = f - last;\n  // the fall carries on: the glass swells and the bottom edge sweeps up through the frame\n  return { sw: SW[SW.length - 1] * Math.exp(0.02 * d + 0.0002 * d * d), th: TH[TH.length - 1] + 0.3 * d, yb: ybLate(f) };\n};\nconst ybLate = (f: number) => {\n  const pts: [number, number][] = [[69, 434], [72, 430], [75, 427], [78, 409], [81, 396], [84, 335], [87, 253]];\n  for (let i = 1; i < pts.length; i++) if (f <= pts[i][0]) return pts[i - 1][1] + ((pts[i][1] - pts[i - 1][1]) * (f - pts[i - 1][0])) / (pts[i][0] - pts[i - 1][0]);\n  return 253 - (f - 87) * 40;\n};\n\nconst PW = 390;\nconst PH = 800;\n\nexport const ScreenTouch: React.FC<ScreenTouchProps> = (p) => {\n  const frame = useCurrentFrame();\n  const f = frame * p.speed;\n  const ui = useFamily(p.font, ['400', '500', '600', '700']);\n  const btn = useFamily(p.buttonFont, ['600', '700'], true);\n\n  // the press: a scale and a flash together\n  const dt = f - p.tapAt;\n  const press = dt < 0 ? 1 : dt < 2 ? 1 - 0.13 * (dt / 2) : dt < 6 ? 0.87 + 0.13 * ((dt - 2) / 4) : 1;\n  const flash = dt < 0 ? 0 : dt < 3 ? 0.36 * (dt / 3) : dt < 11 ? 0.36 * (1 - (dt - 3) / 8) : 0;\n\n  const phoneLayer = (() => {\n    const ps = pose(f);\n    const s = (4 * ps.sw) / PW; // plane units to render pixels\n    return (\n      <Layer id=\"tt-plane\" x={W / 2} y={K * ps.yb} anchorX={(PW / 2) * s} anchorY={PH * s} rotateX={ps.th}>\n        <Layer id=\"tt-scale\" scale={s}>\n          <Rect id=\"tt-glow\" x={-30} y={-30} width={PW + 60} height={PH + 60} radius={90} fill=\"#2342d8\" opacity={f < CUT1 ? 0.08 : 0} effects={[blur(60)]} />\n          <Rect id=\"tt-body\" width={PW} height={PH} radius={62} fill={p.glass} />\n          <Rect id=\"tt-rim\" x={1.5} y={1.5} width={PW - 3} height={PH - 3} radius={61} stroke={{ color: p.rim, width: 3 }} />\n          {f < CUT1 ? <Feed ui={ui} p={p} /> : null}\n          <Buttons ui={btn} p={p} press={press} flash={flash} />\n        </Layer>\n      </Layer>\n    );\n  })();\n\n  // the closing lines\n  const t1 = f - CUT2;\n  const climb = (a: number) => a * -0.55;\n  const showLine1 = f >= 90 && f < 119;\n  const showLine2 = f >= 119;\n\n  return (\n    <Layer id=\"tt-root\" effects={p.grain > 0 ? [grain(p.grain, { seed: 4, size: 1.3 })] : undefined}>\n      <Camera perspective={P * K} />\n      <Rect id=\"tt-ground\" width={W} height={H} fill={p.ground} />\n      {f < CUT2 ? phoneLayer : null}\n      {showLine1 ? (\n        <Text id=\"tt-l1\" font={ui} weight={500} size={170} color=\"#ffffff\" align=\"center\" x={0} y={H / 2 - 85 + 80 - (f - 92) * 5} maxWidth={W} lineHeight={1} opacity={prog(f, 90, 92, (t) => t)}>\n          {p.line1}\n        </Text>\n      ) : null}\n      {showLine2 ? (\n        <Layer id=\"tt-l2\" y={-(f - 119) * 0.6}>\n          <Text id=\"tt-l2a\" font={ui} weight={500} size={86} color=\"#ffffff\" align=\"left\" x={533} y={H / 2 - 43} maxWidth={W} lineHeight={1}>\n            {p.line2[0]}\n          </Text>\n          <Text id=\"tt-l2b\" font={ui} weight={400} size={86} color=\"#c9cbd6\" align=\"left\" x={533 + ([...p.line2[0]].length + 1) * 41} y={H / 2 - 43} maxWidth={W} lineHeight={1} opacity={prog(f, 124, 128, (t) => t)}>\n            {p.line2[1]}\n          </Text>\n        </Layer>\n      ) : null}\n      <Rect id=\"tt-void\" width={0} height={0} fill=\"#000\" opacity={t1 > 0 ? 0 : 0} />\n    </Layer>\n  );\n};\n\nconst Feed: React.FC<{ ui: string; p: ScreenTouchProps }> = ({ ui, p }) => (\n  <Layer id=\"tt-feed\">\n    <Text id=\"tt-time\" font={ui} weight={600} size={17} color=\"#ffffff\" x={70} y={28} lineHeight={1}>9:41</Text>\n    <Rect id=\"tt-bat\" x={314} y={30} width={26} height={12} radius={4} fill=\"#ffffff\" />\n    <Text id=\"tt-tab0\" font={ui} weight={600} size={14} color=\"#ffffff\" align=\"center\" x={72} y={68} maxWidth={100} lineHeight={1}>{p.tabs[0]}</Text>\n    <Text id=\"tt-tab1\" font={ui} weight={400} size={14} color=\"#7d7f95\" align=\"center\" x={203} y={68} maxWidth={100} lineHeight={1}>{p.tabs[1]}</Text>\n    <Rect id=\"tt-ul\" x={72} y={92} width={100} height={3} radius={1.5} fill=\"#2b59ff\" />\n    {p.posts.map((po, i) => {\n      const y = 112 + i * 137;\n      return (\n        <Layer id={`tt-post${i}`} key={i} y={y}>\n          <Rect id={`tt-card${i}`} x={21} y={0} width={348} height={124} radius={14} fill=\"#0b0d22\" />\n          <Ellipse id={`tt-av${i}`} x={31} y={14} width={24} height={24} fill=\"#3c4468\" />\n          <Text id={`tt-avl${i}`} font={ui} weight={600} size={11} color=\"#ffffff\" align=\"center\" x={31} y={21} maxWidth={24} lineHeight={1}>{po.name.slice(0, 1)}</Text>\n          <Text id={`tt-nm${i}`} font={ui} weight={600} size={11} color=\"#ffffff\" x={65} y={13} lineHeight={1}>{po.name}</Text>\n          <Rect id={`tt-chip${i}`} x={103} y={12} width={40} height={14} radius={4} fill=\"#1b2a6b\" />\n          <Text id={`tt-chipt${i}`} font={ui} weight={500} size={9} color=\"#6f8cff\" align=\"center\" x={103} y={15} maxWidth={40} lineHeight={1}>{po.tag}</Text>\n          <Text id={`tt-age${i}`} font={ui} weight={400} size={10} color=\"#7d7f95\" x={150} y={14} lineHeight={1}>{po.age}</Text>\n          <Ellipse id={`tt-ic${i}`} x={63} y={32} width={14} height={14} fill=\"#3c4468\" />\n          <Text id={`tt-sj${i}`} font={ui} weight={600} size={13} color=\"#ffffff\" x={82} y={31} lineHeight={1}>{po.subject}</Text>\n          <Text id={`tt-st${i}`} font={ui} weight={500} size={12} color=\"#e9eaf3\" x={168} y={32} lineHeight={1}>{po.stat}</Text>\n          <Text id={`tt-dl${i}`} font={ui} weight={500} size={11} color=\"#27c46a\" x={208} y={33} lineHeight={1}>{`▲ ${po.delta}`}</Text>\n          <Ellipse id={`tt-dot${i}`} x={248} y={36} width={6} height={6} fill=\"#2b59ff\" />\n          {po.body.map((l, j) => (\n            <Text id={`tt-b${i}-${j}`} key={j} font={ui} weight={400} size={10} color=\"#b6b8cc\" x={65} y={56 + j * 17} lineHeight={1}>{l}</Text>\n          ))}\n          <Text id={`tt-lk${i}`} font={ui} weight={400} size={10} color=\"#8c8ea4\" x={80} y={102} lineHeight={1}>{`♡ ${po.likes}`}</Text>\n        </Layer>\n      );\n    })}\n  </Layer>\n);\n\nconst Buttons: React.FC<{ ui: string; p: ScreenTouchProps; press: number; flash: number }> = ({ ui, p, press, flash }) => (\n  <Layer id=\"tt-btns\">\n    <Layer id=\"tt-b0\" x={22} y={690}>\n      <Rect id=\"tt-b0bg\" width={170} height={46} radius={23} fill=\"#000000\" />\n      <Text id=\"tt-b0t\" font={ui} weight={700} fontStyle=\"italic\" size={19} color=\"#ffffff\" align=\"center\" x={0} y={13} maxWidth={170} lineHeight={1}>{p.actions[0]}</Text>\n    </Layer>\n    <Layer id=\"tt-b1\" x={197 + 85} y={690 + 23} anchorX={85} anchorY={23} scale={press}>\n      <Rect id=\"tt-b1bg\" width={170} height={46} radius={23} fill={p.action} />\n      <Rect id=\"tt-b1fl\" width={170} height={46} radius={23} fill=\"#ffffff\" opacity={flash} />\n      <Text id=\"tt-b1t\" font={ui} weight={700} fontStyle=\"italic\" size={19} color=\"#ffffff\" align=\"center\" x={0} y={13} maxWidth={170} lineHeight={1}>{p.actions[1]}</Text>\n    </Layer>\n  </Layer>\n);\nexport { easeOut, ramp, Path, linearGradient };\n"
+    }
+  ],
+  "props": [
+    {
+      "name": "tabs",
+      "type": "list",
+      "doc": "The two tabs at the top of the feed."
+    },
+    {
+      "name": "posts",
+      "type": "list",
+      "doc": "The two posts on the feed."
+    },
+    {
+      "name": "actions",
+      "type": "list",
+      "doc": "The two buttons: the plain one, then the one that is tapped."
+    },
+    {
+      "name": "line1",
+      "type": "string",
+      "doc": "The first closing line."
+    },
+    {
+      "name": "line2",
+      "type": "list",
+      "doc": "The second closing line: a bright part, then a dimmer part."
+    },
+    {
+      "name": "tapAt",
+      "type": "integer",
+      "doc": "The frame the press lands on."
+    },
+    {
+      "name": "font",
+      "type": "string",
+      "doc": "Google Fonts family of the screen and the closing lines."
+    },
+    {
+      "name": "buttonFont",
+      "type": "string",
+      "doc": "Google Fonts family (with italics) of the button labels."
+    },
+    {
+      "name": "ground",
+      "type": "colour",
+      "doc": "The dark ground."
+    },
+    {
+      "name": "glass",
+      "type": "colour",
+      "doc": "The phone glass."
+    },
+    {
+      "name": "rim",
+      "type": "colour",
+      "doc": "The phone edge."
+    },
+    {
+      "name": "action",
+      "type": "colour",
+      "doc": "The colour of the tapped button."
+    },
+    {
+      "name": "speed",
+      "type": "number",
+      "doc": "Playback speed of the move."
+    },
+    {
+      "name": "grain",
+      "type": "number",
+      "doc": "Film grain over the whole frame."
+    }
+  ],
+  "access": "free"
+}

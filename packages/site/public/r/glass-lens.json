@@ -1,0 +1,82 @@
+{
+  "$schema": "https://kinetograph.dev/r/schema.json",
+  "name": "glass-lens",
+  "type": "component",
+  "title": "Glass lens",
+  "description": "A glass ball moves over the picture and refracts what is behind it.",
+  "kinetograph": "0.3.0",
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "files": [
+    {
+      "path": "index.tsx",
+      "target": "src/components/glass-lens/index.tsx",
+      "content": "// Glass Lens. A disc of glass slides in, rests near centre-right over the reef, drifts a little and leaves. Inside it the picture is refracted the way a\n// ball lens bends it (a real refraction of the view ray at the sphere's surface, with a touch of dispersion so the edges\n// split into colour); the rim catches light, a soft highlight sits upper left, and the lens throws a faint shadow on the\n// picture. The rest of the picture is untouched.\n//\n// Principles: arcs (the lens travels a curve, never a straight line), slow in and slow out (it eases across), solid\n// drawing (one light, upper left: the highlight, the rim and the shadow all agree), follow through (the shadow trails the\n// lens by a few frames), secondary action (the picture's own slow push-in), restraint (no bloom, no flares: glass is\n// shown by what it bends).\n\nimport React from 'react';\nimport { z } from 'zod';\nimport { Layer, shader } from '@kinetographdev/core';\nimport { Easing, useCurrentFrame } from 'remotion';\nimport { NOISE } from './shaders.js';\nimport { H, Picture, W } from './picture.js';\n\nexport const glassLensSchema = z.object({\n  src: z.string().describe('Picture in public/ (used when no children are given).'),\n  radius: z.number().min(60).max(520).describe('Radius of the lens in pixels.'),\n  path: z.array(z.tuple([z.number(), z.number(), z.number()])).min(2).describe('Where the lens is: [frame, x, y] keys, x and y as fractions of the frame width and height. It eases (slow in, slow out) between keys, so a key is a rest; two close keys make a hold with a little drift.'),\n  ior: z.number().min(1.05).max(2).describe('Index of refraction of the glass. 1.5 is crown glass; higher bends more.'),\n  depth: z.number().min(0.2).max(2).describe('How thick the lens is, as a share of its radius. More depth is more magnification.'),\n  dispersion: z.number().min(0).max(0.08).describe('How far the colours split at the edge (0 for none).'),\n  rim: z.number().min(0).max(1).describe('Strength of the bright rim and highlight.'),\n  shadow: z.number().min(0).max(0.6).describe(\"Darkness of the lens's shadow on the picture.\"),\n  push: z.number().min(0).max(0.12).describe('How far the picture pushes in over the shot.'),\n});\nexport type GlassLensProps = z.infer<typeof glassLensSchema>;\n\nexport const glassLensDefaults: GlassLensProps = {\n  src: 'images/glass-lens/photos/nasa-reef-1.jpg',\n  radius: 300,\n  path: [\n    [0, -0.1, 0.62],\n    [16, 0.3, 0.52],\n    [52, 0.58, 0.44],\n    [96, 0.66, 0.5],\n    [128, 0.76, 0.46],\n    [150, 1.2, 0.4],\n  ],\n  ior: 1.5,\n  depth: 0.55,\n  dispersion: 0.025,\n  rim: 0.55,\n  shadow: 0.3,\n  push: 0.03,\n};\n\nconst CODE = /* wgsl */ `\n${NOISE}\nfn bend(px: vec2<f32>, c: vec2<f32>, R: f32, ior: f32) -> vec2<f32> {\n  let n = (px - c) / R;\n  let r2 = min(dot(n, n), 0.9801);\n  let nz = sqrt(1.0 - r2);\n  let N = vec3<f32>(n.x, n.y, nz);\n  let rd = refract(vec3<f32>(0.0, 0.0, -1.0), N, 1.0 / ior);\n  let travel = R * u.depth / max(-rd.z, 0.25);\n  return clamp(px + rd.xy * travel, vec2<f32>(1.0, 1.0), globals.canvas - vec2<f32>(1.0, 1.0));\n}\nfn effect(px: vec2<f32>) -> vec4<f32> {\n  let c = vec2<f32>(u.cx, u.cy);\n  let R = u.radius;\n  let d = px - c;\n  let dist = length(d);\n  let t = dist / R;\n  // The light is upper left; the shadow falls lower right, and trails the lens (u.lagx, u.lagy).\n  let sd = (px - c - vec2<f32>(u.lagx, u.lagy) - vec2<f32>(R * 0.08, R * 0.14)) / (R * 1.04);\n  let sh = (1.0 - smoothstep(0.55, 1.18, length(sd))) * u.shadow;\n\n  let base = layer(px);\n  let lr = layer(bend(px, c, R, u.ior * (1.0 - u.disp))).r;\n  let lg = layer(bend(px, c, R, u.ior)).g;\n  let lb = layer(bend(px, c, R, u.ior * (1.0 + u.disp))).b;\n  var glass = vec3<f32>(lr, lg, lb);\n\n  let n = d / R;\n  let inside = 1.0 - smoothstep(R - 0.9, R + 0.9, dist);\n  // Glass is a little darker and cooler towards its edge (more glass in the way).\n  glass = glass * (1.0 - 0.2 * smoothstep(0.55, 1.0, t));\n  glass = glass * vec3<f32>(0.985, 1.0, 1.01);\n  // The rim: a fresnel-like rise at the edge, stronger on the lit side, plus a hairline right on the edge.\n  let lit = clamp(0.5 - 0.5 * dot(normalize(n + vec2<f32>(0.0001, 0.0)), vec2<f32>(0.7071, 0.7071)), 0.0, 1.0);\n  let fres = pow(clamp(t, 0.0, 1.0), 5.0);\n  let hair = smoothstep(R - 3.0, R - 0.5, dist) * (1.0 - smoothstep(R - 0.5, R + 0.8, dist));\n  glass = glass + vec3<f32>(1.0, 0.98, 0.95) * (fres * 0.28 * (0.4 + 0.9 * lit) + hair * 0.55 * (0.3 + 0.9 * lit)) * u.rim;\n  // The highlight: a soft elongated spot upper left, and a faint counter-glow on the opposite rim.\n  let hp = (n - vec2<f32>(-0.40, -0.44)) * vec2<f32>(1.0, 1.7);\n  let spec = (1.0 - smoothstep(0.0, 0.34, length(hp))) * 0.55;\n  let cp = n - vec2<f32>(0.52, 0.56);\n  let counter = (1.0 - smoothstep(0.0, 0.42, length(cp))) * 0.10 * smoothstep(0.55, 1.0, t);\n  glass = glass + vec3<f32>(1.0, 0.99, 0.97) * (spec + counter) * u.rim;\n\n  let shaded = base.rgb * (1.0 - sh * (1.0 - inside));\n  let outc = mix(shaded, glass, inside);\n  return vec4<f32>(outc, base.a);\n}\n`;\n\nexport const GlassLens: React.FC<GlassLensProps & { children?: React.ReactNode }> = (p) => {\n  const f = useCurrentFrame();\n  const ease = Easing.bezier(0.45, 0, 0.15, 1);\n  const at = (frame: number) => {\n    const k = p.path;\n    if (frame <= k[0][0]) return [k[0][1] * W, k[0][2] * H] as const;\n    let i = 1;\n    while (i < k.length - 1 && frame > k[i][0]) i++;\n    const [f0, x0, y0] = k[i - 1];\n    const [f1, x1, y1] = k[i];\n    const t = ease(Math.min(1, Math.max(0, (frame - f0) / (f1 - f0))));\n    return [(x0 + (x1 - x0) * t) * W, (y0 + (y1 - y0) * t) * H] as const;\n  };\n  const [cx, cy] = at(f);\n  const [px, py] = at(f - 4);\n  const push = 1 + p.push * Easing.inOut(Easing.quad)(Math.min(1, f / 150));\n  return (\n    <Layer\n      id=\"glass-lens\"\n      effects={[\n        shader({\n          code: CODE,\n          uniforms: { cx, cy, radius: p.radius, ior: p.ior, depth: p.depth, disp: p.dispersion, rim: p.rim, shadow: p.shadow, lagx: px - cx, lagy: py - cy },\n          padding: 0,\n        }),\n      ]}\n    >\n      <Picture id=\"lens-pic\" src={p.src} scale={push}>{p.children}</Picture>\n    </Layer>\n  );\n};\n"
+    },
+    {
+      "path": "picture.tsx",
+      "target": "src/components/glass-lens/picture.tsx",
+      "content": "// The picture the effect components wrap: their children when given, else a photo from public/ covering the frame.\n\nimport React from 'react';\nimport { Image, Layer, staticFile } from '@kinetographdev/core';\n\nexport const W = 1920;\nexport const H = 1080;\n\nexport const Picture: React.FC<{ id: string; src: string; children?: React.ReactNode; scale?: number; x?: number; y?: number }> = ({ id, src, children, scale = 1, x = 0, y = 0 }) => (\n  <Layer id={id} x={x} y={y} scale={scale} origin=\"center\">\n    {children ?? <Image id={`${id}-img`} src={staticFile(src)} width={W} height={H} fit=\"cover\" />}\n  </Layer>\n);\n"
+    },
+    {
+      "path": "public/images/photos/nasa-reef-1.jpg",
+      "target": "public/images/glass-lens/photos/nasa-reef-1.jpg",
+      "url": "files/glass-lens/public/images/photos/nasa-reef-1.jpg",
+      "sha256": "a92b76b11f7df5f1512fc8344937b465d145e3b99b643402aed79006c8670cb5"
+    },
+    {
+      "path": "shaders.ts",
+      "target": "src/components/glass-lens/shaders.ts",
+      "content": "// WGSL shared by the effect components (Kinetograph's `shader` effect: `fn effect(px) -> vec4<f32>`, linear premultiplied,\n// `layer(px)` reads the layer). Everything is a pure function of px, the frame and the uniforms: the noise is a hash of\n// the pixel, never a clock or a random number.\n\n/** An sRGB hex colour as linear floats (for uniforms). */\nexport const linear = (hex: string): [number, number, number] => {\n  const h = hex.replace('#', '');\n  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;\n  return [0, 2, 4].map((i) => {\n    const v = parseInt(full.slice(i, i + 2), 16) / 255;\n    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;\n  }) as [number, number, number];\n};\n\n/** Uniform entries `${name}r`, `${name}g`, `${name}b` for a colour. */\nexport const colorUniforms = (name: string, hex: string): Record<string, number> => {\n  const [r, g, b] = linear(hex);\n  return { [`${name}r`]: r, [`${name}g`]: g, [`${name}b`]: b };\n};\n\nexport const NOISE = /* wgsl */ `\nfn hash21(p: vec2<f32>) -> f32 {\n  var q = fract(p * vec2<f32>(0.1031, 0.1030));\n  q = q + dot(q, q.yx + vec2<f32>(33.33, 33.33));\n  return fract((q.x + q.y) * q.x);\n}\nfn vnoise(p: vec2<f32>) -> f32 {\n  let i = floor(p);\n  let f = fract(p);\n  let w = f * f * (vec2<f32>(3.0, 3.0) - 2.0 * f);\n  let a = hash21(i);\n  let b = hash21(i + vec2<f32>(1.0, 0.0));\n  let c = hash21(i + vec2<f32>(0.0, 1.0));\n  let d = hash21(i + vec2<f32>(1.0, 1.0));\n  return mix(mix(a, b, w.x), mix(c, d, w.x), w.y);\n}\nfn fbm(p: vec2<f32>) -> f32 {\n  var s = 0.0;\n  var a = 0.5;\n  var q = p;\n  for (var i = 0; i < 5; i = i + 1) {\n    s = s + a * vnoise(q);\n    q = q * 2.03 + vec2<f32>(17.1, 9.2);\n    a = a * 0.5;\n  }\n  return s;\n}\nfn luma(c: vec3<f32>) -> f32 {\n  return dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));\n}\n`;\n"
+    }
+  ],
+  "props": [
+    {
+      "name": "src",
+      "type": "string",
+      "doc": "Picture in public/ (used when no children are given)."
+    },
+    {
+      "name": "radius",
+      "type": "number",
+      "doc": "Radius of the lens in pixels."
+    },
+    {
+      "name": "path",
+      "type": "list",
+      "doc": "Where the lens is: [frame, x, y] keys, x and y as fractions of the frame width and height. It eases (slow in, slow out) between keys, so a key is a rest; two close keys make a hold with a little drift."
+    },
+    {
+      "name": "ior",
+      "type": "number",
+      "doc": "Index of refraction of the glass. 1.5 is crown glass; higher bends more."
+    },
+    {
+      "name": "depth",
+      "type": "number",
+      "doc": "How thick the lens is, as a share of its radius. More depth is more magnification."
+    },
+    {
+      "name": "dispersion",
+      "type": "number",
+      "doc": "How far the colours split at the edge (0 for none)."
+    },
+    {
+      "name": "rim",
+      "type": "number",
+      "doc": "Strength of the bright rim and highlight."
+    },
+    {
+      "name": "shadow",
+      "type": "number",
+      "doc": "Darkness of the lens's shadow on the picture."
+    },
+    {
+      "name": "push",
+      "type": "number",
+      "doc": "How far the picture pushes in over the shot."
+    }
+  ],
+  "access": "free"
+}

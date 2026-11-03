@@ -1,0 +1,151 @@
+{
+  "$schema": "https://kinetograph.dev/r/schema.json",
+  "name": "grid-rect",
+  "type": "component",
+  "title": "Rectangular photo grid",
+  "description": "A wall of photo cards ripples in from the middle card, then the camera pulls back, trucks across and pushes in on a new card.",
+  "kinetograph": "0.3.0",
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "files": [
+    {
+      "path": "index.tsx",
+      "target": "src/components/grid-rect/index.tsx",
+      "content": "// Rectangular grid: a wall of photos on one plane. The shot opens full frame on a single photo, pulls back as the wall\n// assembles round it (each ring of cards lands as the pull reaches it), holds on the whole wall, winds up with a small\n// move away, then whip-pans with motion blur to a second hero that steps forward out of the wall and takes the focus\n// as the camera lands on it, with an overshoot and a settle.\n//\n// Principles: staging (hero, wall, second hero), anticipation (the wind-up before the whip), slow in and slow out,\n// overlap (the ripple is staggered by distance from the middle), arcs (the whip is a truck with a yaw swing),\n// overshoot and settle, solid drawing (one perspective, fog and depth of field agree), holds.\n\nimport React from 'react';\nimport { z } from 'zod';\nimport { Stage, commonDefaults, commonShape, camDrift, themeOf, track, ramp, out, shutterFor, projectPoint, rack, type Cam, type Item, type V3 } from './kit.js';\nimport { useCurrentFrame } from '@kinetographdev/core';\n\nexport const rectangularSchema = z.object({\n  ...commonShape,\n  cols: z.number().int().min(1).max(15).describe('Cards across.'),\n  rows: z.number().int().min(1).max(11).describe('Cards down.'),\n  cardWidth: z.number().min(60).max(900).describe('Card width, world px (1:1 at the focal distance).'),\n  cardHeight: z.number().min(60).max(900).describe('Card height, world px.'),\n  gap: z.number().min(0).max(200).describe('Space between cards, world px.'),\n  stagger: z.number().min(0).max(8).describe('Frames of delay per card of distance from the middle, for the ripple in.'),\n  startDistance: z.number().min(300).max(4000).describe('Eye distance of the opening shot (a single card fills the frame at about 1000).'),\n  endDistance: z.number().min(300).max(6000).describe('Eye distance of the wide shot.'),\n  orbit: z.number().min(0).max(40).describe('Degrees the camera turns about the wall for the wide shot and the truck.'),\n  truck: z.number().min(0).max(1500).describe('World px the camera slides sideways for the last move.'),\n  tilt: z.number().min(0).max(30).describe('Degrees the camera looks down on the wall in the wide shot.'),\n  hold: z.number().int().min(0).max(120).describe('Frames the opening shot holds before the pull back.'),\n  heroCol: z.number().int().min(-7).max(7).describe('Columns from the middle of the second hero.'),\n  heroRow: z.number().int().min(-5).max(5).describe('Rows from the middle of the second hero.'),\n  motionBlur: z.number().min(0).max(1).describe('Camera motion blur shutter in frames, used while the camera moves fast. 0 turns it off.'),\n});\nexport type RectangularProps = z.infer<typeof rectangularSchema>;\n\nexport const rectangularDefaults: RectangularProps = {\n  ...commonDefaults,\n  caption: 'Rectangular',\n  cols: 9,\n  rows: 5,\n  cardWidth: 320,\n  cardHeight: 410,\n  gap: 44,\n  stagger: 2.6,\n  startDistance: 800,\n  endDistance: 3800,\n  orbit: 14,\n  truck: 720,\n  tilt: 10,\n  hold: 14,\n  aperture: 0,\n  heroCol: 3,\n  heroRow: 1,\n  motionBlur: 0,\n};\n\nexport const RECT_DURATION = 216;\n\nexport const Rectangular: React.FC<Partial<RectangularProps>> = (partial) => {\n  const p = { ...rectangularDefaults, ...partial };\n  const f = useCurrentFrame();\n  const { cols, rows } = p;\n  const px = p.cardWidth + p.gap;\n  const py = p.cardHeight + p.gap;\n  const cc = (cols - 1) / 2;\n  const cr = (rows - 1) / 2;\n  // beats\n  const h0 = p.hold; // opening hold\n  const pullEnd = h0 + 78; // wall fully pulled back\n  const windA = pullEnd + 26; // anticipation starts\n  const whipA = windA + 12; // whip starts\n  const whipB = whipA + 17; // whip lands\n  const settle = whipB + 26;\n  const heroX = p.heroCol * px;\n  const heroY = p.heroRow * py;\n  const items: Item[] = [];\n  for (let r = 0; r < rows; r += 1) {\n    for (let c = 0; c < cols; c += 1) {\n      const dc = c - cc;\n      const dr = r - cr;\n      const d = Math.hypot(dc, dr * 1.2);\n      const isHero1 = dc === 0 && dr === 0;\n      const isHero2 = dc === p.heroCol - cc + cc - 0 && false;\n      const second = c - cc === p.heroCol && r - cr === p.heroRow;\n      // each ring lands as the pull reaches it\n      const t0 = h0 + 4 + d * p.stagger * 1.3;\n      const a = isHero1 ? 1 : ramp(f, t0, t0 + 24, out);\n      // the second hero steps forward as the whip arrives; the rest of the wall sits back from it\n      const lift = second ? 240 * ramp(f, whipA + 6, whipB + 8, out) : 0;\n      const back = -260 * ramp(f, whipA + 4, whipB + 8, out) * (second ? 0 : 1);\n      void isHero2;\n      items.push({\n        key: r * cols + c,\n        pos: [dc * px, dr * py, -(1 - a) * 420 + lift + back],\n        photo: (r * cols + c + (cols * rows - Math.floor(cols * rows / 2))) % 24,\n        w: p.cardWidth,\n        h: p.cardHeight,\n        opacity: a,\n        scale: 0.9 + 0.1 * a,\n        shade: (second ? 0 : 0.5 * ramp(f, whipA + 8, settle)) + (isHero1 ? 0 : 0.0),\n      });\n    }\n  }\n  const dd = camDrift(f, p.drift * 0.6);\n  const close = p.startDistance;\n  const camAt = (t: number): Cam => ({\n    yaw:\n      track(t, [[0, 0], [h0, 0], [pullEnd, -p.orbit * 0.5], [pullEnd + 24, -p.orbit * 0.35], [windA, -p.orbit * 0.3], [windA + 10, -p.orbit * 0.5], [whipA + 8, p.orbit * 0.9], [whipB + 6, -p.orbit * 0.12], [settle, 0]]),\n    pitch: track(t, [[0, 0], [h0, 0], [pullEnd, p.tilt], [windA, p.tilt * 0.8], [whipB, 1], [settle, 0]]),\n    roll: track(t, [[0, -1.8], [h0 + 30, 0.4], [windA, 0.6], [whipA + 8, -2.6], [whipB + 6, 0.5], [settle, 0]]),\n    dist: track(\n      t,\n      [[0, close], [h0, close * 0.99], [pullEnd - 6, p.endDistance * 1.03], [pullEnd + 12, p.endDistance], [windA + 10, p.endDistance * 1.04], [whipB - 4, close * 1.45], [whipB + 6, close * 1.05 + 40], [settle, close * 1.32]],\n    ),\n    focal: 1700,\n    target: [\n      track(t, [[0, 0], [pullEnd + 10, 0], [windA + 10, -px * 0.35], [whipB - 2, heroX + px * 0.05], [whipB + 8, heroX - 22], [settle, heroX]]),\n      track(t, [[0, 0], [pullEnd + 10, 0], [windA + 10, py * 0.1], [whipB - 2, heroY], [settle, heroY]]),\n      0,\n    ],\n    pan: [0, 0],\n  });\n  const cam = camAt(f);\n  cam.pan = dd.pan;\n  cam.roll += dd.roll;\n  // focus: the middle card, then the plane of the wall, then the second hero as the whip lands on it\n  const heroPos: V3 = [heroX, heroY, 240];\n  const wallD = cam.dist;\n  const focus = rack(f, whipB - 4, whipB + 6, wallD, projectPoint(heroPos, cam).dist);\n  const probes: V3[] = [[0, 0, 0], [px * 2, 0, 0], [0, py * 1.5, 0], [heroX, heroY, 0]];\n  const shutter = p.motionBlur > 0 ? shutterFor(camAt, f, probes, 8, p.motionBlur) : 0;\n  return (\n    <Stage\n      cam={cam}\n      items={items}\n      photos={p.photos}\n      look={{ focus, aperture: p.aperture, fogStart: wallD * 1.4, fogLen: wallD * 1.2, fogMax: 0.55, radius: p.radius }}\n      theme={themeOf(p.colors)}\n      hud={{ caption: p.caption, showHud: p.showHud }}\n      shutter={shutter}\n    />\n  );\n};\n"
+    },
+    {
+      "path": "kit.tsx",
+      "target": "src/components/grid-rect/kit.tsx",
+      "content": "// What the eight arrangements share: a small 3D layout engine (hand projection, so a frame is a pure function of the\n// frame number and the camera can go anywhere), the photo card, the stage (ground, depth of field, fog, grain, a quiet\n// caption) and the timing helpers.\n//\n// The engine places each card by hand: a card's centre is projected with a perspective camera (position and scale at\n// that depth), and its tilt is the layer's own rotateX / rotateY / rotation, seen through a scene `<Camera>` whose\n// perspective is the same focal length, so a tilted card foreshortens exactly as the projection says it should.\n// Cards are drawn far to near.\n\nimport React from 'react';\nimport { z } from 'zod';\nimport { Camera, Image, Layer, Rect, Text, blur, grain, radialGradient, staticFile, useCurrentFrame } from '@kinetographdev/core';\nimport { loadFont } from '@remotion/google-fonts/Geist';\n\nexport const W = 1920;\nexport const H = 1080;\nexport const FPS = 30;\n\nexport const FONT = loadFont('normal', { weights: ['400'] }).fontFamily;\n\n// ---- timing ---------------------------------------------------------------------------------------------------\n\nexport const clamp = (v: number, a = 0, b = 1) => Math.min(b, Math.max(a, v));\nexport const lerp = (a: number, b: number, t: number) => a + (b - a) * t;\n/** Slow in, slow out. */\nexport const inOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);\n/** Quick start, long settle. */\nexport const out = (t: number) => 1 - Math.pow(1 - t, 3);\nexport const outQuint = (t: number) => 1 - Math.pow(1 - t, 5);\nexport const inCubic = (t: number) => t * t * t;\n/** A settle that overshoots by about 4% and comes back. */\nexport const outBack = (t: number) => {\n  const c1 = 1.1;\n  const c3 = c1 + 1;\n  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);\n};\n/** 0 before `a`, 1 after `b`, `ease` between. */\nexport const ramp = (f: number, a: number, b: number, ease: (t: number) => number = inOut) => ease(clamp((f - a) / Math.max(1e-6, b - a)));\n/** Pose-to-pose keys: [frame, value] pairs, each segment eased slow in and slow out, so the value rests at every key. */\nexport const track = (f: number, keys: [number, number][], ease: (t: number) => number = inOut): number => {\n  if (f <= keys[0]![0]) return keys[0]![1];\n  for (let i = 1; i < keys.length; i += 1) {\n    const [f1, v1] = keys[i]!;\n    if (f <= f1) {\n      const [f0, v0] = keys[i - 1]!;\n      return lerp(v0, v1, ease((f - f0) / (f1 - f0)));\n    }\n  }\n  return keys[keys.length - 1]![1];\n};\n/** Straight-ahead life on a long hold: a few slow sines, `amp` in the unit of the value. The phases come from `seed`. */\nexport const drift = (f: number, amp: number, seed: number) =>\n  amp * (0.55 * Math.sin(f * 0.043 + seed * 2.1) + 0.3 * Math.sin(f * 0.091 + seed * 5.3) + 0.15 * Math.sin(f * 0.17 + seed * 1.7));\n\n// ---- 3D -------------------------------------------------------------------------------------------------------\n\nexport type V3 = [number, number, number];\n/** Row-major 3x3. Axes as CSS: x right, y down, z toward the viewer. */\nexport type M3 = [number, number, number, number, number, number, number, number, number];\nconst rad = (d: number) => (d * Math.PI) / 180;\nconst deg = (r: number) => (r * 180) / Math.PI;\n\nexport const I3: M3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];\nexport const rotX = (d: number): M3 => {\n  const c = Math.cos(rad(d));\n  const s = Math.sin(rad(d));\n  return [1, 0, 0, 0, c, -s, 0, s, c];\n};\nexport const rotY = (d: number): M3 => {\n  const c = Math.cos(rad(d));\n  const s = Math.sin(rad(d));\n  return [c, 0, s, 0, 1, 0, -s, 0, c];\n};\n/** Clockwise on screen. */\nexport const rotZ = (d: number): M3 => {\n  const c = Math.cos(rad(d));\n  const s = Math.sin(rad(d));\n  return [c, -s, 0, s, c, 0, 0, 0, 1];\n};\nexport const mul = (a: M3, b: M3): M3 => {\n  const r = new Array<number>(9).fill(0);\n  for (let i = 0; i < 3; i += 1) for (let j = 0; j < 3; j += 1) for (let k = 0; k < 3; k += 1) r[i * 3 + j]! += a[i * 3 + k]! * b[k * 3 + j]!;\n  return r as M3;\n};\nexport const transpose = (m: M3): M3 => [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];\nexport const apply = (m: M3, v: V3): V3 => [\n  m[0] * v[0] + m[1] * v[1] + m[2] * v[2],\n  m[3] * v[0] + m[4] * v[1] + m[5] * v[2],\n  m[6] * v[0] + m[7] * v[1] + m[8] * v[2],\n];\n\nexport interface Cam {\n  /** Degrees. Turns the world about the vertical axis through `target`: the orbit. */\n  yaw: number;\n  /** Degrees. Positive tips the near side up (looks up from below); negative looks down on the scene. */\n  pitch: number;\n  /** Degrees, clockwise. */\n  roll: number;\n  /** Eye to `target`, in world units. With `focal` equal to it, the target plane is drawn at 1:1. */\n  dist: number;\n  focal: number;\n  target: V3;\n  /** Pixels the frame is shifted on screen after projection (a truck without parallax). */\n  pan?: [number, number];\n}\n\nexport const camMatrix = (c: Cam): M3 => mul(rotZ(c.roll), mul(rotX(c.pitch), rotY(c.yaw)));\n\nexport interface Item {\n  key: number | string;\n  pos: V3;\n  /** Card to world. Identity: upright, facing +z. `'camera'`: always facing the screen. */\n  orient?: M3 | 'camera';\n  /** With `'camera'`, a turn in the card's own plane, degrees. */\n  spin?: number;\n  photo: number;\n  w: number;\n  h: number;\n  opacity?: number;\n  scale?: number;\n  /** 0..1 extra darkening. */\n  shade?: number;\n  /** Draw only while the face is turned toward the eye (a card drawn twice, one face each way, is double sided). */\n  cull?: boolean;\n  /** The number the counter shows for this card (defaults to the key). */\n  n?: number;\n}\n\nexport interface Look {\n  /** Distance (eye to card) that is in focus, world units; `'auto'` follows the cards near the middle of the frame. */\n  focus: number | 'auto';\n  /** Blur in px of a card one `focus` away from the focus plane; 0 for none. */\n  aperture: number;\n  /** Eye distance where the fog starts and how long it takes to reach `fogMax`. */\n  fogStart: number;\n  fogLen: number;\n  fogMax: number;\n  /** Corner radius of the card, px at 1:1. */\n  radius: number;\n  /** Cards closer to the eye than this fade out (an eye that passes through them). 0 for none. */\n  near?: number;\n}\n\nexport const rrPath = (w: number, h: number, r: number) => {\n  const k = Math.min(r, w / 2, h / 2);\n  return `M${k} 0H${w - k}Q${w} 0 ${w} ${k}V${h - k}Q${w} ${h} ${w - k} ${h}H${k}Q0 ${h} 0 ${h - k}V${k}Q0 0 ${k} 0Z`;\n};\n\n/** One photo, cover-fitted, with a shade, and a hairline edge only if `edge` is set (not 'none'). */\nexport const PhotoCard: React.FC<{ src: string; w: number; h: number; radius: number; shade: number; edge: string }> = ({ src, w, h, radius, shade, edge }) => (\n  <>\n    <Image src={src} width={w} height={h} fit=\"cover\" clip={{ kind: 'path', d: rrPath(w, h, radius) }} />\n    {shade > 0.01 ? <Rect width={w} height={h} radius={radius} fill=\"#040507\" opacity={clamp(shade)} /> : null}\n    {edge && edge !== 'none' ? <Rect width={w} height={h} radius={radius} stroke={{ color: edge, width: 1.5 }} /> : null}\n  </>\n);\n\nconst photoSrc = (photos: string[], i: number) => staticFile(`photos/${photos[((i % photos.length) + photos.length) % photos.length]}`);\n\nexport interface Placed {\n  item: Item;\n  sx: number;\n  sy: number;\n  s: number;\n  dist: number;\n  rx: number;\n  ry: number;\n  rz: number;\n  front: boolean;\n}\n\n/** Project items through `cam`: where each lands, how big, how it is turned, and whether you see its face. */\nexport const project = (items: Item[], cam: Cam): Placed[] => {\n  const R = camMatrix(cam);\n  const out: Placed[] = [];\n  for (const item of items) {\n    const q = apply(R, [item.pos[0] - cam.target[0], item.pos[1] - cam.target[1], item.pos[2] - cam.target[2]]);\n    const dist = cam.dist - q[2];\n    if (dist < 60) continue;\n    const s = cam.focal / dist;\n    const sx = W / 2 + q[0] * s + (cam.pan?.[0] ?? 0);\n    const sy = H / 2 + q[1] * s + (cam.pan?.[1] ?? 0);\n    // the card in camera space\n    const M: M3 = item.orient === 'camera' ? rotZ(item.spin ?? 0) : mul(R, item.orient ?? I3);\n    const m02 = clamp(M[2], -1, 1);\n    const b = Math.asin(m02);\n    const cb = Math.cos(b);\n    let a: number;\n    let c: number;\n    if (cb > 1e-4) {\n      a = Math.atan2(-M[5], M[8]);\n      c = Math.atan2(-M[1], M[0]);\n    } else {\n      a = 0;\n      c = Math.atan2(M[3], M[4]);\n    }\n    // normal (third column) against the way to the eye\n    const n: V3 = [M[2], M[5], M[8]];\n    const toEye: V3 = [-q[0], -q[1], cam.dist - q[2]];\n    const front = n[0] * toEye[0] + n[1] * toEye[1] + n[2] * toEye[2] > 0;\n    out.push({ item, sx, sy, s, dist, rx: deg(a), ry: deg(b), rz: deg(c), front });\n  }\n  return out.sort((p, q) => q.dist - p.dist);\n};\n\n/** Where a world point lands on screen. */\nexport const projectPoint = (pos: V3, cam: Cam): { x: number; y: number; s: number; dist: number } => {\n  const q = apply(camMatrix(cam), [pos[0] - cam.target[0], pos[1] - cam.target[1], pos[2] - cam.target[2]]);\n  const dist = Math.max(60, cam.dist - q[2]);\n  const s = cam.focal / dist;\n  return { x: W / 2 + q[0] * s + (cam.pan?.[0] ?? 0), y: H / 2 + q[1] * s + (cam.pan?.[1] ?? 0), s, dist };\n};\n\nexport interface Theme {\n  ground: string;\n  ground2: string;\n  ink: string;\n  edge: string;\n}\n\nexport const THEME: Theme = { ground: '#0a0b0d', ground2: '#171a1f', ink: '#e9e6df', edge: 'none' };\n\nexport interface HudProps {\n  caption: string;\n  showHud: boolean;\n}\n\n/** The stage: ground, cards far to near with depth of field and fog, a quiet caption and a little grain. */\nexport const Stage: React.FC<{\n  cam: Cam;\n  items: Item[];\n  photos: string[];\n  look: Look;\n  theme: Theme;\n  hud: HudProps;\n  /** 0..1 fade of the whole frame in and out. */\n  fade?: number;\n  /** Drawn under the cards, over the ground (a path line, say). */\n  under?: React.ReactNode;\n  grainAmount?: number;\n  /** Shutter in frames for camera motion blur (0 or undefined: off). */\n  shutter?: number;\n  /** Number of cards the counter names (defaults to the item count). */\n  total?: number;\n}> = ({ cam, items, photos, look, theme, hud, fade = 1, under, grainAmount = 0.03, shutter = 0, total }) => {\n  const placed = project(items, cam);\n  // the card nearest the middle of the frame is the one the counter names\n  let near: Placed | undefined;\n  let best = 1e9;\n  for (const p of placed) {\n    if ((p.item.opacity ?? 1) < 0.6 || !p.front || p.dist < 120) continue;\n    const d = Math.hypot(p.sx - W / 2, (p.sy - H / 2) * 1.2) / p.s;\n    if (d < best) { best = d; near = p; }\n  }\n  let focusDist = typeof look.focus === 'number' ? look.focus : cam.dist;\n  if (look.focus === 'auto') {\n    let wsum = 0;\n    let dsum = 0;\n    for (const p of placed) {\n      if ((p.item.opacity ?? 1) < 0.3) continue;\n      const d2 = (p.sx - W / 2) ** 2 + (p.sy - H / 2) ** 2;\n      const w = Math.exp(-d2 / (2 * 330 * 330));\n      wsum += w;\n      dsum += w * p.dist;\n    }\n    if (wsum > 1e-3) focusDist = dsum / wsum;\n  }\n  const counter = near ? `${pad2((near.item.n ?? Number(near.item.key)) + 1)} / ${pad2(total ?? items.length)}` : '';\n  return (\n    <Layer id=\"shutter\" motionBlur={shutter > 0 ? { samples: 8, shutter } : undefined}>\n    <Layer id=\"stage\" effects={grainAmount > 0 ? [grain(grainAmount, { seed: 11, size: 1.3, animate: true, monochrome: true })] : []}>\n      <Rect id=\"ground\" width={W} height={H} fill={radialGradient([[0, theme.ground2], [1, theme.ground]], { cx: 0.5, cy: 0.46, r: 0.75 })} />\n      {under}\n      <Camera perspective={cam.focal} />\n      <Layer id=\"cards\" opacity={fade}>\n        {placed.map((p) => {\n          const { item } = p;\n          const sc = p.s * (item.scale ?? 1);\n          if (item.cull && !p.front) return null;\n          const nearFade = look.near ? clamp((p.dist - look.near * 0.5) / (look.near * 0.5)) : 1;\n          if (sc <= 0.002 || (item.opacity ?? 1) * nearFade <= 0.002) return null;\n          const fog = look.fogLen > 0 ? clamp((p.dist - look.fogStart) / look.fogLen) * look.fogMax : 0;\n          const shade = clamp(Math.max(fog, item.shade ?? 0) + (p.front || item.cull ? 0 : 0.5));\n          const coc = look.aperture > 0 ? (look.aperture * Math.abs(p.dist - focusDist)) / focusDist : 0;\n          const r = Math.round(coc * 2) / 2;\n          return (\n            <Layer\n              key={item.key}\n              id={`c${item.key}`}\n              x={p.sx}\n              y={p.sy}\n              anchorX={item.w / 2}\n              anchorY={item.h / 2}\n              scale={sc}\n              rotateX={p.rx}\n              rotateY={p.ry}\n              rotation={p.rz}\n              opacity={(item.opacity ?? 1) * nearFade}\n              effects={r >= 1 ? [blur(Math.min(r, 28) / Math.max(sc, 0.2))] : []}\n            >\n              <PhotoCard src={photoSrc(photos, item.photo)} w={item.w} h={item.h} radius={look.radius} shade={shade} edge={theme.edge} />\n            </Layer>\n          );\n        })}\n      </Layer>\n      {hud.showHud ? <Hud caption={hud.caption} counter={counter} theme={theme} fade={fade} /> : null}\n    </Layer>\n    </Layer>\n  );\n};\n\nconst Hud: React.FC<{ caption: string; counter: string; theme: Theme; fade: number }> = ({ caption, counter, theme, fade }) => (\n  <Layer id=\"hud\" opacity={0.62 * fade}>\n    <Text id=\"hud-caption\" x={72} y={H - 96} font={FONT} size={22} color={theme.ink}>{caption}</Text>\n    <Text id=\"hud-counter\" x={W - 72 - 300} y={H - 96} font={FONT} size={22} color={theme.ink} align=\"right\" maxWidth={300}>{counter}</Text>\n  </Layer>\n);\n\nexport const pad2 = (n: number) => String(Math.max(0, n)).padStart(2, '0');\n\nexport const useFrame = () => useCurrentFrame();\n\n// ---- props every component shares -----------------------------------------------------------------------------\n\nexport const DEFAULT_PHOTOS = [\n  'nasa-earth-1.jpg', 'nasa-nebula-2.jpg', 'nasa-aurora-1.jpg', 'nasa-mars-2.jpg', 'nasa-jupiter-2.jpg', 'nasa-mars-1.jpg',\n  'nasa-galaxy-2.jpg', 'nasa-storm-1.jpg', 'nasa-city-1.jpg', 'nasa-glacier-1.jpg', 'nasa-reef-1.jpg', 'nasa-volcano-1.jpg',\n  'nasa-telescope-1.jpg', 'nasa-desert-2.jpg', 'nasa-iss-1.jpg', 'nasa-sun-1.jpg', 'nasa-astronaut-1.jpg', 'nasa-river-1.jpg',\n  'nasa-moon-1.jpg', 'nasa-mountains-2.jpg', 'nasa-nebula-1.jpg', 'nasa-clouds-1.jpg', 'nasa-aurora-2.jpg', 'nasa-city-2.jpg',\n];\n\nconst hex = z.string().describe('A CSS colour.');\n\nexport const commonShape = {\n  photos: z.array(z.string()).min(1).describe('Photo file names inside public/photos, in order. Items take them in turn and repeat when there are more items than photos.'),\n  caption: z.string().describe('Small line at the bottom left. Empty for none.'),\n  showHud: z.boolean().describe('Show the caption and the counter.'),\n  aperture: z.number().min(0).max(80).describe('Depth of field: blur, in px, of a card one focus distance away from the focus plane. 0 keeps everything sharp.'),\n  drift: z.number().min(0).max(3).describe('Handheld drift on the camera, as a multiple of the default (about 0.4 degrees and 6 px). 0 for a locked-off camera.'),\n  radius: z.number().min(0).max(80).describe('Corner radius of the cards, px.'),\n  colors: z\n    .object({\n      ground: hex.describe('Frame edge.'),\n      ground2: hex.describe('Frame centre, slightly lighter.'),\n      ink: hex.describe('Caption type.'),\n      edge: hex.describe(\"Hairline round every card, or 'none' (the default) for clean edges.\"),\n    })\n    .describe('Colours.'),\n};\n\nexport const commonDefaults = {\n  photos: DEFAULT_PHOTOS,\n  caption: '',\n  showHud: true,\n  aperture: 0,\n  drift: 1,\n  radius: 14,\n  colors: { ground: THEME.ground, ground2: THEME.ground2, ink: THEME.ink, edge: THEME.edge },\n};\n\n/** The arrays and objects zod hands over may be partial in Studio; fill from the defaults. */\nexport const themeOf = (c: Partial<Theme> | undefined): Theme => ({ ...THEME, ...(c ?? {}) });\n\nexport const camDrift = (f: number, amount: number): { roll: number; yaw: number; pan: [number, number] } => ({\n  roll: drift(f, 0.35 * amount, 1),\n  yaw: drift(f, 0.5 * amount, 2),\n  pan: [drift(f, 6 * amount, 3), drift(f, 5 * amount, 4)],\n});\n\n// ---- camera helpers -------------------------------------------------------------------------------------------\n\n/**\n * The yaw, pitch and distance that put the eye at `eye` and aim it at `target` (world, y down). Roll is left to the\n * caller. Inverse of the offset `dist * (-sin(yaw) cos(pitch), sin(pitch), cos(yaw) cos(pitch))`.\n */\nexport const lookFrom = (eye: V3, target: V3): { yaw: number; pitch: number; dist: number } => {\n  const dx = eye[0] - target[0];\n  const dy = eye[1] - target[1];\n  const dz = eye[2] - target[2];\n  const dist = Math.hypot(dx, dy, dz);\n  return { yaw: deg(Math.atan2(-dx, dz)), pitch: deg(Math.asin(clamp(dy / Math.max(1e-6, dist), -1, 1))), dist };\n};\n\n/** Where the eye sits, world. */\nexport const eyeOf = (c: Cam): V3 => {\n  const y = rad(c.yaw);\n  const p = rad(c.pitch);\n  return [c.target[0] + c.dist * -Math.sin(y) * Math.cos(p), c.target[1] + c.dist * Math.sin(p), c.target[2] + c.dist * Math.cos(y) * Math.cos(p)];\n};\n\n/**\n * Motion blur shutter for frame `f`: the screen speed of a few probe points in the scene (px per frame) decides whether\n * the shot is moving fast enough to need it. `0` while the camera is slow, so still shots cost nothing.\n */\nexport const shutterFor = (camAt: (f: number) => Cam, f: number, probes: V3[], threshold = 7, shutter = 0.5): number => {\n  const a = camAt(f - 0.5);\n  const b = camAt(f + 0.5);\n  let top = 0;\n  for (const p of probes) {\n    const pa = projectPoint(p, a);\n    const pb = projectPoint(p, b);\n    top = Math.max(top, Math.hypot(pb.x - pa.x, pb.y - pa.y));\n  }\n  return top > threshold ? shutter : 0;\n};\n\n/** A distance that moves from `a` to `b` on a ramp, for rack focus. */\nexport const rack = (f: number, f0: number, f1: number, a: number, b: number) => lerp(a, b, ramp(f, f0, f1, inOut));\n"
+    }
+  ],
+  "props": [
+    {
+      "name": "photos",
+      "type": "list",
+      "doc": "Photo file names inside public/photos, in order. Items take them in turn and repeat when there are more items than photos."
+    },
+    {
+      "name": "caption",
+      "type": "string",
+      "doc": "Small line at the bottom left. Empty for none."
+    },
+    {
+      "name": "showHud",
+      "type": "boolean",
+      "doc": "Show the caption and the counter."
+    },
+    {
+      "name": "aperture",
+      "type": "number",
+      "doc": "Depth of field: blur, in px, of a card one focus distance away from the focus plane. 0 keeps everything sharp."
+    },
+    {
+      "name": "drift",
+      "type": "number",
+      "doc": "Handheld drift on the camera, as a multiple of the default (about 0.4 degrees and 6 px). 0 for a locked-off camera."
+    },
+    {
+      "name": "radius",
+      "type": "number",
+      "doc": "Corner radius of the cards, px."
+    },
+    {
+      "name": "colors.ground",
+      "type": "colour",
+      "doc": "Frame edge."
+    },
+    {
+      "name": "colors.ground2",
+      "type": "colour",
+      "doc": "Frame centre, slightly lighter."
+    },
+    {
+      "name": "colors.ink",
+      "type": "colour",
+      "doc": "Caption type."
+    },
+    {
+      "name": "colors.edge",
+      "type": "colour",
+      "doc": "Hairline round every card, or 'none' (the default) for clean edges."
+    },
+    {
+      "name": "cols",
+      "type": "integer",
+      "doc": "Cards across."
+    },
+    {
+      "name": "rows",
+      "type": "integer",
+      "doc": "Cards down."
+    },
+    {
+      "name": "cardWidth",
+      "type": "number",
+      "doc": "Card width, world px (1:1 at the focal distance)."
+    },
+    {
+      "name": "cardHeight",
+      "type": "number",
+      "doc": "Card height, world px."
+    },
+    {
+      "name": "gap",
+      "type": "number",
+      "doc": "Space between cards, world px."
+    },
+    {
+      "name": "stagger",
+      "type": "number",
+      "doc": "Frames of delay per card of distance from the middle, for the ripple in."
+    },
+    {
+      "name": "startDistance",
+      "type": "number",
+      "doc": "Eye distance of the opening shot (a single card fills the frame at about 1000)."
+    },
+    {
+      "name": "endDistance",
+      "type": "number",
+      "doc": "Eye distance of the wide shot."
+    },
+    {
+      "name": "orbit",
+      "type": "number",
+      "doc": "Degrees the camera turns about the wall for the wide shot and the truck."
+    },
+    {
+      "name": "truck",
+      "type": "number",
+      "doc": "World px the camera slides sideways for the last move."
+    },
+    {
+      "name": "tilt",
+      "type": "number",
+      "doc": "Degrees the camera looks down on the wall in the wide shot."
+    },
+    {
+      "name": "hold",
+      "type": "integer",
+      "doc": "Frames the opening shot holds before the pull back."
+    },
+    {
+      "name": "heroCol",
+      "type": "integer",
+      "doc": "Columns from the middle of the second hero."
+    },
+    {
+      "name": "heroRow",
+      "type": "integer",
+      "doc": "Rows from the middle of the second hero."
+    },
+    {
+      "name": "motionBlur",
+      "type": "number",
+      "doc": "Camera motion blur shutter in frames, used while the camera moves fast. 0 turns it off."
+    }
+  ],
+  "access": "free"
+}

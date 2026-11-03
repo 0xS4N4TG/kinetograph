@@ -1,0 +1,96 @@
+{
+  "$schema": "https://kinetograph.dev/r/schema.json",
+  "name": "graph-paper-tall",
+  "type": "component",
+  "title": "Graph paper",
+  "description": "A faint squared grid on off-white paper that fades towards the edges, cut tall for phones. It loops with no join.",
+  "kinetograph": "0.3.0",
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "files": [
+    {
+      "path": "index.tsx",
+      "target": "src/components/graph-paper-tall/index.tsx",
+      "content": "// Graph Paper: the faint squared grid that sits behind so many explainer reels, under cut-out objects and big type: thin\n// grey lines (or dots, or plus marks at the crossings) on an off-white ground, strongest round a focus and fading out\n// towards the edges, with a soft light and a slow drift of the grid so the frame is never quite still. The drift moves\n// a whole number of cells a loop, so it loops without a seam.\n//\n// Principles: restraint (lines at half strength, one ink, no motion above a cell in ten seconds), staging (the fade\n// pulls the eye to the focus, where the subject goes), slow in and out (the drift is linear, the light is a slow sine),\n// texture on the whole frame (grain on the root layer).\n\nimport React from 'react';\nimport { z } from 'zod';\nimport { GlslShader, Layer, grain } from '@kinetographdev/core';\nimport { useCurrentFrame, useVideoConfig } from 'remotion';\nimport { phase, rgb } from './lib.js';\n\nexport const DURATION = 300;\n\nconst hex = z.string().describe('A CSS colour.');\n\nexport const graphPaperSchema = z.object({\n  ground: hex.describe('Paper colour.'),\n  ink: hex.describe('Colour of the grid.'),\n  kind: z.enum(['lines', 'dots', 'crosses']).describe('Ruled lines, a dot at each crossing, or a plus mark at each crossing.'),\n  cell: z.number().min(12).max(200).describe('Grid cell, in pixels.'),\n  line: z.number().min(0.5).max(4).describe('Line width (or dot radius), in pixels.'),\n  major: z.number().int().min(0).max(10).describe('A stronger line every this many cells; 0 for none.'),\n  strength: z.number().min(0).max(1).describe('How dark the grid is over the paper.'),\n  focusX: z.number().min(0).max(1).describe('Where the grid is strongest, across (0 left, 1 right).'),\n  focusY: z.number().min(0).max(1).describe('Where the grid is strongest, down (0 top, 1 bottom).'),\n  fade: z.number().min(0.2).max(2).describe('How far from the focus the grid has faded out, as a fraction of the frame height. 2 for no fade.'),\n  drift: z.enum(['none', 'up', 'left', 'diagonal']).describe('Which way the grid slides.'),\n  speed: z.number().int().min(0).max(4).describe('Cells the grid slides per loop. Whole numbers, so it loops.'),\n  light: z.number().min(0).max(0.4).describe('How much the corners darken round a soft light.'),\n  grain: z.number().min(0).max(0.3).describe('Grain amount over the whole frame.'),\n});\nexport type GraphPaperProps = z.infer<typeof graphPaperSchema>;\n\nexport const graphPaperDefaults: GraphPaperProps = {\n  ground: '#f3f2ee',\n  ink: '#a9a8a3',\n  kind: 'lines',\n  cell: 56,\n  line: 1.2,\n  major: 0,\n  strength: 0.5,\n  focusX: 0.5,\n  focusY: 0.45,\n  fade: 0.85,\n  drift: 'diagonal',\n  speed: 1,\n  light: 0.12,\n  grain: 0.04,\n};\n\nconst FRAGMENT = `\nprecision highp float;\nuniform vec2 u_res; uniform vec2 u_off;\nuniform float u_cell; uniform float u_line; uniform float u_major; uniform float u_kind;\nuniform vec3 u_bg; uniform vec3 u_ink; uniform float u_str;\nuniform vec2 u_focus; uniform float u_fade; uniform float u_light; uniform float u_ph;\n\n// distance in px from p to the nearest grid line, on each axis\nvec2 toLine(vec2 p, float cell){ return abs(fract(p / cell - 0.5) - 0.5) * cell; }\n\nvoid main(){\n  vec2 px = gl_FragCoord.xy;\n  vec2 p = px + u_off;\n  float aa = 0.8;\n  float lw = u_line * 0.5;\n  vec2 f = toLine(p, u_cell);\n  float cov = 0.0;\n  if (u_kind < 0.5) {\n    cov = smoothstep(lw + aa, lw - aa, min(f.x, f.y));\n    if (u_major > 0.5) {\n      vec2 fm = toLine(p, u_cell * u_major);\n      float m = smoothstep(lw * 1.8 + aa, lw * 1.8 - aa, min(fm.x, fm.y));\n      cov = max(cov * 0.6, m);\n    }\n  } else if (u_kind < 1.5) {\n    float r = u_line * 1.3;\n    cov = smoothstep(r + aa, r - aa, length(f));\n  } else {\n    float arm = u_cell * 0.11;\n    float h = smoothstep(lw + aa, lw - aa, f.y) * smoothstep(arm + aa, arm - aa, f.x);\n    float v = smoothstep(lw + aa, lw - aa, f.x) * smoothstep(arm + aa, arm - aa, f.y);\n    cov = max(h, v);\n  }\n  // strongest round the focus, gone by u_fade frame-heights away\n  vec2 q = (px - u_focus * u_res) / u_res.y;\n  float keep = u_fade >= 1.99 ? 1.0 : 1.0 - smoothstep(u_fade * 0.3, u_fade, length(q));\n  // a soft light that breathes a little round the focus\n  vec2 l = (px - (u_focus + vec2(0.03 * cos(u_ph), 0.02 * sin(u_ph))) * u_res) / u_res.y;\n  vec3 bg = u_bg * (1.0 - u_light * smoothstep(0.25, 1.3, length(l)));\n  gl_FragColor = vec4(mix(bg, u_ink, cov * u_str * keep), 1.0);\n}\n`;\n\n/** Faint graph paper on an off-white ground, fading out from a focus, sliding slowly. `id` prefixes its layer ids, for\n *  two papers on screen at once (a camera pan between scenes). */\nexport const GraphPaper: React.FC<GraphPaperProps & { id?: string }> = (p) => {\n  const frame = useCurrentFrame();\n  const { width: W, height: H } = useVideoConfig();\n  const ph = phase(frame, DURATION, 1);\n  const slide = ((frame % DURATION) / DURATION) * p.speed * p.cell;\n  // gl_FragCoord runs up, so \"up\" on screen adds to y\n  const dir = p.drift === 'up' ? [0, -1] : p.drift === 'left' ? [1, 0] : p.drift === 'diagonal' ? [1, -1] : [0, 0];\n  return (\n    <Layer id={`${p.id ?? 'gp'}-root`} effects={p.grain > 0 ? [grain(p.grain, { seed: 11, size: 1.2 })] : undefined}>\n      <GlslShader\n        id={`${p.id ?? 'gp'}-shader`}\n        width={W}\n        height={H}\n        fragment={FRAGMENT}\n        uniforms={{\n          u_res: [W, H], u_off: [dir[0]! * slide, dir[1]! * slide], u_cell: p.cell, u_line: p.line, u_major: p.major,\n          u_kind: p.kind === 'lines' ? 0 : p.kind === 'dots' ? 1 : 2, u_bg: rgb(p.ground), u_ink: rgb(p.ink), u_str: p.strength,\n          u_focus: [p.focusX, 1 - p.focusY], u_fade: p.fade, u_light: p.light, u_ph: ph,\n        }}\n      />\n    </Layer>\n  );\n};\n"
+    },
+    {
+      "path": "lib.ts",
+      "target": "src/components/graph-paper-tall/lib.ts",
+      "content": "// Shared bits for the backgrounds: colour parsing for shader uniforms, the loop phase, and the GLSL noise every shader uses.\n\n/** \"#rrggbb\" or \"#rgb\" to [r, g, b] in 0..1 for a vec3 uniform. */\nexport const rgb = (hex: string): [number, number, number] => {\n  let h = hex.replace('#', '');\n  if (h.length === 3) h = h.split('').map((c) => c + c).join('');\n  const n = parseInt(h.slice(0, 6), 16);\n  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];\n};\n\n/** Phase in radians that completes a whole turn over `loop` frames, scaled by speed. A whole number of turns per loop\n *  (speed 1, 2, 3 ...) makes the clip loop without a seam; other speeds drift without looping. */\nexport const phase = (frame: number, loop: number, speed: number) => (2 * Math.PI * frame * speed) / loop;\n\nexport const NOISE_GLSL = `\nfloat hash(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }\nfloat vnoise(vec2 p){\n  vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);\n  float a=hash(i); float b=hash(i+vec2(1.0,0.0)); float c=hash(i+vec2(0.0,1.0)); float d=hash(i+vec2(1.0,1.0));\n  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);\n}\nfloat fbm(vec2 p){\n  float v=0.0; float a=0.5;\n  for(int i=0;i<5;i++){ v+=a*vnoise(p); p=p*2.02+17.1; a*=0.5; }\n  return v;\n}\n`;\n"
+    }
+  ],
+  "props": [
+    {
+      "name": "ground",
+      "type": "colour",
+      "doc": "Paper colour."
+    },
+    {
+      "name": "ink",
+      "type": "colour",
+      "doc": "Colour of the grid."
+    },
+    {
+      "name": "kind",
+      "type": "lines | dots | crosses",
+      "doc": "Ruled lines, a dot at each crossing, or a plus mark at each crossing."
+    },
+    {
+      "name": "cell",
+      "type": "number",
+      "doc": "Grid cell, in pixels."
+    },
+    {
+      "name": "line",
+      "type": "number",
+      "doc": "Line width (or dot radius), in pixels."
+    },
+    {
+      "name": "major",
+      "type": "integer",
+      "doc": "A stronger line every this many cells; 0 for none."
+    },
+    {
+      "name": "strength",
+      "type": "number",
+      "doc": "How dark the grid is over the paper."
+    },
+    {
+      "name": "focusX",
+      "type": "number",
+      "doc": "Where the grid is strongest, across (0 left, 1 right)."
+    },
+    {
+      "name": "focusY",
+      "type": "number",
+      "doc": "Where the grid is strongest, down (0 top, 1 bottom)."
+    },
+    {
+      "name": "fade",
+      "type": "number",
+      "doc": "How far from the focus the grid has faded out, as a fraction of the frame height. 2 for no fade."
+    },
+    {
+      "name": "drift",
+      "type": "none | up | left | diagonal",
+      "doc": "Which way the grid slides."
+    },
+    {
+      "name": "speed",
+      "type": "integer",
+      "doc": "Cells the grid slides per loop. Whole numbers, so it loops."
+    },
+    {
+      "name": "light",
+      "type": "number",
+      "doc": "How much the corners darken round a soft light."
+    },
+    {
+      "name": "grain",
+      "type": "number",
+      "doc": "Grain amount over the whole frame."
+    }
+  ],
+  "access": "free"
+}

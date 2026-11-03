@@ -1,0 +1,108 @@
+{
+  "$schema": "https://kinetograph.dev/r/schema.json",
+  "name": "film-burn",
+  "type": "component",
+  "title": "Film burn transition",
+  "description": "A heat front scorches the first picture and reveals the second.",
+  "kinetograph": "0.3.0",
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "files": [
+    {
+      "path": "index.tsx",
+      "target": "src/components/film-burn/index.tsx",
+      "content": "// Film Burn. A transition between two pictures made the way a burnt film end is: a heat front crosses the frame along an\n// organic, noisy edge. Ahead of it the first picture scorches and warms; at the front the emulsion glows white, then\n// yellow, orange and red; behind it the second picture shows through, over-exposed at first and settling to its own\n// colours. One shared field decides where the front is, and three layers read it: the scorched picture, the revealed\n// picture, and a screen-blended glow.\n//\n// Principles: anticipation (the first picture warms and darkens ahead of the front before anything burns), slow in and\n// slow out (the front eases across), follow through (the afterglow trails the front and the second picture settles from\n// over-exposed), staging (the glow is the only bright thing, the cut happens inside it), timing (a 3.5 s burn with a long afterglow),\n// exaggeration (the front's colour is pushed, the pictures are not), restraint (no sparks, no shake).\n\nimport React from 'react';\nimport { z } from 'zod';\nimport { Layer, Rect, grain, shader } from '@kinetographdev/core';\nimport { Easing, useCurrentFrame } from 'remotion';\nimport { NOISE, colorUniforms } from './shaders.js';\nimport { H, Picture, W } from './picture.js';\n\nconst hex = z.string().describe('A CSS colour (hex).');\n\nexport const filmBurnSchema = z.object({\n  src: z.string().describe('First picture in public/.'),\n  toSrc: z.string().describe('Second picture in public/.'),\n  startFrame: z.number().int().min(0).max(300).describe('Frame the heat starts to reach the picture.'),\n  duration: z.number().int().min(15).max(240).describe('Frames the burn takes to cross the frame.'),\n  angle: z.number().min(0).max(360).describe('Direction the front travels, in degrees clockwise from the right (0 sweeps left to right).'),\n  width: z.number().min(0.03).max(0.4).describe('How wide the glowing front is, as a share of the frame.'),\n  roughness: z.number().min(0).max(1).describe('How ragged the front is (0 is a straight line, 1 is very organic).'),\n  scorch: z.number().min(0).max(1).describe('How much the first picture darkens and warms ahead of the front.'),\n  flash: z.number().min(0).max(1).describe('How much the whole frame is washed with warm light at the front\\'s peak.'),\n  grain: z.number().min(0).max(0.2).describe('Film grain over the whole frame (0 for none).'),\n  colors: z\n    .object({\n      hot: hex.describe('The white-hot inside of the front.'),\n      mid: hex.describe('Yellow-orange body.'),\n      outer: hex.describe('Deep red and brown at the outer edge.'),\n    })\n    .describe('Colours of the heat, from hottest to coolest.'),\n});\nexport type FilmBurnProps = z.infer<typeof filmBurnSchema>;\n\nexport const filmBurnDefaults: FilmBurnProps = {\n  src: 'images/film-burn/photos/nasa-volcano-1.jpg',\n  toSrc: 'images/film-burn/photos/nasa-earth-2.jpg',\n  startFrame: 12,\n  duration: 104,\n  angle: 20,\n  width: 0.13,\n  roughness: 0.7,\n  scorch: 0.7,\n  flash: 0.4,\n  grain: 0.05,\n  colors: { hot: '#fff4d6', mid: '#ff9b2e', outer: '#8f1d0a' },\n};\n\n/** The field every layer reads: 0 at the side the burn starts, 1 at the far side, bent by noise. */\nconst FIELD = /* wgsl */ `\n${NOISE}\nfn field(px: vec2<f32>) -> f32 {\n  let size = globals.canvas;\n  let uv = px / size - vec2<f32>(0.5, 0.5);\n  let dir = vec2<f32>(cos(u.ang), sin(u.ang));\n  // Along the travel direction, scaled so the front crosses the whole frame (0..1).\n  let reach = abs(dir.x) * size.x / size.y + abs(dir.y);\n  let g = dot(uv * vec2<f32>(size.x / size.y, 1.0), dir) / reach + 0.5;\n  let nz = fbm(px / size.y * 3.2 + vec2<f32>(3.7, 1.3)) * 0.75 + fbm(px / size.y * 11.0) * 0.25;\n  return g + (nz - 0.5) * u.rough * 0.9;\n}\n`;\n\nconst SCORCHED = /* wgsl */ `\n${FIELD}\nfn effect(px: vec2<f32>) -> vec4<f32> {\n  let c = layer(px);\n  let x = field(px) - u.front;           // negative behind the front, positive ahead\n  let ahead = clamp(x, 0.0, 1.0);\n  // Heat soaks in ahead of the front: warm, then darker as it chars.\n  let soak = exp(-ahead / (u.width * 2.6));\n  let char = exp(-ahead / (u.width * 0.9));\n  let warm = vec3<f32>(1.0, 0.55, 0.22);\n  var rgb = c.rgb * mix(vec3<f32>(1.0, 1.0, 1.0), warm, soak * 0.6 * u.scorch);\n  rgb = rgb * (1.0 - 0.55 * char * u.scorch);\n  return vec4<f32>(rgb, c.a);\n}\n`;\n\nconst REVEAL = /* wgsl */ `\n${FIELD}\nfn effect(px: vec2<f32>) -> vec4<f32> {\n  let c = layer(px);\n  let x = field(px) - u.front;\n  // Visible behind the front, over-exposed and warm, settling as the front moves on.\n  let vis = 1.0 - smoothstep(-0.012, 0.012, x);\n  let behind = clamp(-x, 0.0, 1.0);\n  let over = exp(-behind / (u.width * 5.0));\n  let rgb = (c.rgb + vec3<f32>(1.0, 0.62, 0.28) * over * 0.55) * (1.0 + over * 0.35);\n  return vec4<f32>(min(rgb, vec3<f32>(1.0, 1.0, 1.0)) * vis, vis);\n}\n`;\n\nconst GLOW = /* wgsl */ `\n${FIELD}\nfn ramp(h: f32) -> vec3<f32> {\n  let hot = vec3<f32>(u.hr, u.hg, u.hb);\n  let mid = vec3<f32>(u.mr, u.mg, u.mb);\n  let outer = vec3<f32>(u.outr, u.outg, u.outb);\n  let a = mix(vec3<f32>(0.0, 0.0, 0.0), outer, smoothstep(0.0, 0.35, h));\n  let b = mix(a, mid, smoothstep(0.25, 0.7, h));\n  return mix(b, hot, smoothstep(0.65, 1.0, h));\n}\nfn effect(px: vec2<f32>) -> vec4<f32> {\n  let x = field(px) - u.front;\n  // Heat: sharp ahead of the front, a long afterglow behind it.\n  let k = select(exp(-(x * x) / (u.width * u.width * 0.18)), exp(-(x * x) / (u.width * u.width * 9.0)), x < 0.0);\n  let crackle = 0.82 + 0.35 * fbm(px * 0.045 + vec2<f32>(globals.frame * 0.7, 0.0)) ;\n  let h = clamp(k * crackle * u.live, 0.0, 1.0);\n  // A wash of warm light over everything at the burn's peak.\n  let wash = u.flash * u.live * (0.55 + 0.45 * fbm(px / globals.canvas.y * 1.6 + vec2<f32>(5.0, 2.0)));\n  var rgb = ramp(h) * (0.9 + 0.7 * h) + vec3<f32>(u.mr, u.mg * 0.8, u.mb * 0.5) * wash * 0.28;\n  // Embers: where the front has passed the char keeps glowing, in patches that crawl, and dies away over a second.\n  let behind = clamp(-x, 0.0, 1.0);\n  let blotch = pow(fbm(px * 0.011 + vec2<f32>(0.0, globals.frame * 0.05)), 2.6) * 5.0;\n  let emb = u.ember * smoothstep(0.02, 0.35, behind) * clamp(blotch, 0.0, 1.0);\n  let rgb2 = rgb + (vec3<f32>(u.outr, u.outg, u.outb) * 1.7 + vec3<f32>(u.mr, u.mg, u.mb) * 0.35) * emb * (0.7 + 0.5 * crackle);\n  let a = clamp(max(max(rgb2.x, rgb2.y), rgb2.z), 0.0, 1.0);\n  return vec4<f32>(rgb2, a);\n}\n`;\n\nexport const FilmBurn: React.FC<FilmBurnProps> = (p) => {\n  const f = useCurrentFrame();\n  const t = Math.min(1, Math.max(0, (f - p.startFrame) / p.duration));\n  // The front crosses from before the frame to past it; an ease-in-out, a little slower at the start (heat builds).\n  const front = -0.15 + 1.4 * Easing.bezier(0.38, 0, 0.62, 1)(t);\n  // The glow is alive while the front is in the frame, and ebbs afterwards.\n  const live = Math.sin(Math.PI * Math.min(1, Math.max(0, (front + 0.15) / 1.4))) ** 0.45 * (t > 0 ? 1 : 0);\n  const flashPeak = Math.exp(-(((t - 0.5) / 0.22) ** 2)) * p.flash;\n  const ember = Math.min(1, Math.max(0, (front - 0.2) * 3)) * Math.exp(-Math.max(0, f - (p.startFrame + p.duration * 0.8)) / 20);\n  const ang = (p.angle * Math.PI) / 180;\n  const shared = { front, ang, rough: p.roughness, width: p.width };\n  return (\n    <Layer id=\"film-burn\" effects={p.grain > 0 ? [grain(p.grain, { size: 1.3, seed: 23, animate: true, monochrome: true })] : []}>\n      <Layer id=\"burn-a\" effects={[shader({ code: SCORCHED, uniforms: { ...shared, scorch: p.scorch }, padding: 0 })]}>\n        <Picture id=\"burn-a-pic\" src={p.src} scale={1 + 0.02 * Math.min(1, f / 120)} />\n      </Layer>\n      <Layer id=\"burn-b\" effects={[shader({ code: REVEAL, uniforms: shared, padding: 0 })]}>\n        <Picture id=\"burn-b-pic\" src={p.toSrc} scale={1.03 - 0.02 * Math.min(1, Math.max(0, f - p.startFrame) / 120)} />\n      </Layer>\n      <Rect\n        id=\"burn-glow\"\n        width={W}\n        height={H}\n        fill=\"#000000\"\n        blendMode=\"screen\"\n        effects={[shader({ code: GLOW, uniforms: { ...shared, live, flash: flashPeak, ember, ...colorUniforms('h', p.colors.hot), ...colorUniforms('m', p.colors.mid), ...colorUniforms('out', p.colors.outer) }, padding: 0 })]}\n      />\n    </Layer>\n  );\n};\n"
+    },
+    {
+      "path": "picture.tsx",
+      "target": "src/components/film-burn/picture.tsx",
+      "content": "// The picture the effect components wrap: their children when given, else a photo from public/ covering the frame.\n\nimport React from 'react';\nimport { Image, Layer, staticFile } from '@kinetographdev/core';\n\nexport const W = 1920;\nexport const H = 1080;\n\nexport const Picture: React.FC<{ id: string; src: string; children?: React.ReactNode; scale?: number; x?: number; y?: number }> = ({ id, src, children, scale = 1, x = 0, y = 0 }) => (\n  <Layer id={id} x={x} y={y} scale={scale} origin=\"center\">\n    {children ?? <Image id={`${id}-img`} src={staticFile(src)} width={W} height={H} fit=\"cover\" />}\n  </Layer>\n);\n"
+    },
+    {
+      "path": "public/images/photos/nasa-earth-2.jpg",
+      "target": "public/images/film-burn/photos/nasa-earth-2.jpg",
+      "url": "files/film-burn/public/images/photos/nasa-earth-2.jpg",
+      "sha256": "8b5b47e5e92e24daf23b6bec23fb184cf6cb2125a7dcd11bd2c483b4e229c77d"
+    },
+    {
+      "path": "public/images/photos/nasa-volcano-1.jpg",
+      "target": "public/images/film-burn/photos/nasa-volcano-1.jpg",
+      "url": "files/film-burn/public/images/photos/nasa-volcano-1.jpg",
+      "sha256": "e7a4e46081cc2d1597a441a0b2eaa907119c1934a2bb06c99a3f67f3f3e351e0"
+    },
+    {
+      "path": "shaders.ts",
+      "target": "src/components/film-burn/shaders.ts",
+      "content": "// WGSL shared by the effect components (Kinetograph's `shader` effect: `fn effect(px) -> vec4<f32>`, linear premultiplied,\n// `layer(px)` reads the layer). Everything is a pure function of px, the frame and the uniforms: the noise is a hash of\n// the pixel, never a clock or a random number.\n\n/** An sRGB hex colour as linear floats (for uniforms). */\nexport const linear = (hex: string): [number, number, number] => {\n  const h = hex.replace('#', '');\n  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;\n  return [0, 2, 4].map((i) => {\n    const v = parseInt(full.slice(i, i + 2), 16) / 255;\n    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;\n  }) as [number, number, number];\n};\n\n/** Uniform entries `${name}r`, `${name}g`, `${name}b` for a colour. */\nexport const colorUniforms = (name: string, hex: string): Record<string, number> => {\n  const [r, g, b] = linear(hex);\n  return { [`${name}r`]: r, [`${name}g`]: g, [`${name}b`]: b };\n};\n\nexport const NOISE = /* wgsl */ `\nfn hash21(p: vec2<f32>) -> f32 {\n  var q = fract(p * vec2<f32>(0.1031, 0.1030));\n  q = q + dot(q, q.yx + vec2<f32>(33.33, 33.33));\n  return fract((q.x + q.y) * q.x);\n}\nfn vnoise(p: vec2<f32>) -> f32 {\n  let i = floor(p);\n  let f = fract(p);\n  let w = f * f * (vec2<f32>(3.0, 3.0) - 2.0 * f);\n  let a = hash21(i);\n  let b = hash21(i + vec2<f32>(1.0, 0.0));\n  let c = hash21(i + vec2<f32>(0.0, 1.0));\n  let d = hash21(i + vec2<f32>(1.0, 1.0));\n  return mix(mix(a, b, w.x), mix(c, d, w.x), w.y);\n}\nfn fbm(p: vec2<f32>) -> f32 {\n  var s = 0.0;\n  var a = 0.5;\n  var q = p;\n  for (var i = 0; i < 5; i = i + 1) {\n    s = s + a * vnoise(q);\n    q = q * 2.03 + vec2<f32>(17.1, 9.2);\n    a = a * 0.5;\n  }\n  return s;\n}\nfn luma(c: vec3<f32>) -> f32 {\n  return dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));\n}\n`;\n"
+    }
+  ],
+  "props": [
+    {
+      "name": "src",
+      "type": "string",
+      "doc": "First picture in public/."
+    },
+    {
+      "name": "toSrc",
+      "type": "string",
+      "doc": "Second picture in public/."
+    },
+    {
+      "name": "startFrame",
+      "type": "integer",
+      "doc": "Frame the heat starts to reach the picture."
+    },
+    {
+      "name": "duration",
+      "type": "integer",
+      "doc": "Frames the burn takes to cross the frame."
+    },
+    {
+      "name": "angle",
+      "type": "number",
+      "doc": "Direction the front travels, in degrees clockwise from the right (0 sweeps left to right)."
+    },
+    {
+      "name": "width",
+      "type": "number",
+      "doc": "How wide the glowing front is, as a share of the frame."
+    },
+    {
+      "name": "roughness",
+      "type": "number",
+      "doc": "How ragged the front is (0 is a straight line, 1 is very organic)."
+    },
+    {
+      "name": "scorch",
+      "type": "number",
+      "doc": "How much the first picture darkens and warms ahead of the front."
+    },
+    {
+      "name": "flash",
+      "type": "number",
+      "doc": "How much the whole frame is washed with warm light at the front's peak."
+    },
+    {
+      "name": "grain",
+      "type": "number",
+      "doc": "Film grain over the whole frame (0 for none)."
+    },
+    {
+      "name": "colors.hot",
+      "type": "colour",
+      "doc": "The white-hot inside of the front."
+    },
+    {
+      "name": "colors.mid",
+      "type": "colour",
+      "doc": "Yellow-orange body."
+    },
+    {
+      "name": "colors.outer",
+      "type": "colour",
+      "doc": "Deep red and brown at the outer edge."
+    }
+  ],
+  "access": "free"
+}

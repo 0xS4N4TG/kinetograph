@@ -1,0 +1,66 @@
+{
+  "$schema": "https://kinetograph.dev/r/schema.json",
+  "name": "paper",
+  "type": "component",
+  "title": "Paper texture",
+  "description": "A paper height field lit by a raking light that circles slowly. It loops with no join at whole-number speeds.",
+  "kinetograph": "0.3.0",
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "files": [
+    {
+      "path": "index.tsx",
+      "target": "src/components/paper/index.tsx",
+      "content": "// Paper: a sheet of fibrous paper under a raking light. A crumple of soft folds, oriented fibres and fine tooth is\n// lit by a light that circles very slowly, so the grain catches and loses the light; a broad falloff gives the sheet\n// one bright side. Drawn by a fragment shader, so it is one flat layer that sits behind anything.\n//\n// Principles: slow in and out (the light's orbit is a sine), secondary action (the falloff and the raking light move\n// on different periods), solid drawing (one light, shadows consistent with its direction), texture makes it made, restraint.\n\nimport React from 'react';\nimport { z } from 'zod';\nimport { GlslShader, Layer, grain } from '@kinetographdev/core';\nimport { useCurrentFrame } from 'remotion';\nimport { NOISE_GLSL, phase, rgb } from './lib.js';\n\nexport const W = 1920;\nexport const H = 1080;\nexport const FPS = 30;\nexport const DURATION = 300;\n\nconst hex = z.string().describe('A CSS colour.');\n\nexport const paperSchema = z.object({\n  paper: hex.describe('The colour of the sheet where the light is full.'),\n  shade: hex.describe('The colour of the sheet in its shadows and blotches.'),\n  fibre: z.number().min(0).max(2).describe('How much fibre shows. 0 is smooth stock; 1 is a handmade sheet.'),\n  relief: z.number().min(0).max(3).describe('How strongly the light picks out the surface. Higher is rougher.'),\n  scale: z.number().min(0.4).max(3).describe('Size of the texture: higher is coarser.'),\n  speed: z.number().min(0).max(4).describe('How fast the light moves. Whole numbers loop seamlessly over 10 seconds.'),\n  falloff: z.number().min(0).max(1).describe('How much darker the far side of the sheet is.'),\n  grain: z.number().min(0).max(0.3).describe('Extra grain over the whole frame.'),\n});\nexport type PaperProps = z.infer<typeof paperSchema>;\n\nexport const paperDefaults: PaperProps = {\n  paper: '#f4efe4',\n  shade: '#d9d0bd',\n  fibre: 1,\n  relief: 1,\n  scale: 1,\n  speed: 1,\n  falloff: 0.55,\n  grain: 0.03,\n};\n\nconst FRAGMENT = `\nprecision highp float;\nuniform vec2 u_res;\nuniform float u_ph;\nuniform vec3 u_paper; uniform vec3 u_shade;\nuniform float u_fibre; uniform float u_relief; uniform float u_scale; uniform float u_fall;\n${NOISE_GLSL}\nfloat crumple(vec2 p){\n  // soft folds: ridged noise, two octaves, so the sheet has creases and swells the light can rake across\n  float r1 = 1.0 - abs(2.0 * fbm(p * 1.15 + 9.0) - 1.0);\n  float r2 = 1.0 - abs(2.0 * fbm(p * 2.6 + 3.0) - 1.0);\n  return 0.75 * r1 * r1 + 0.28 * r2 * r2 + 0.25 * fbm(p * 0.8);\n}\nfloat fine(vec2 p){\n  float h = 0.0;\n  for (int i = 0; i < 4; i++) {\n    float a = float(i) * 1.37 + 0.4;\n    mat2 r = mat2(cos(a), -sin(a), sin(a), cos(a));\n    vec2 q = r * (p + float(i) * 3.7);\n    h += u_fibre * 0.012 * vnoise(vec2(q.x * 60.0, q.y * 420.0));\n  }\n  h += 0.05 * vnoise(p * 520.0) + 0.03 * vnoise(p * 210.0);\n  return h;\n}\nvoid main(){\n  vec2 uv = gl_FragCoord.xy / u_res;\n  float asp = u_res.x / u_res.y;\n  vec2 p = vec2(uv.x * asp, uv.y) / u_scale;\n  float e = 1.0 / 900.0 / u_scale;\n  float c0 = crumple(p);\n  float cx = crumple(p + vec2(e, 0.0));\n  float cy = crumple(p + vec2(0.0, e));\n  float f0 = fine(p);\n  float fx = fine(p + vec2(e, 0.0));\n  float fy = fine(p + vec2(0.0, e));\n  vec2 g = vec2(c0 - cx, c0 - cy) / e * 0.03 + vec2(f0 - fx, f0 - fy) / e * 0.011;\n  vec3 n = normalize(vec3(g * u_relief, 1.0));\n  // a raking light from the upper left that circles enough to move the shadows of the folds\n  vec3 L = normalize(vec3(-0.6 + 0.3 * cos(u_ph), 0.55 + 0.25 * sin(u_ph), 0.42));\n  float lit = dot(n, L);\n  float blotch = smoothstep(0.3, 0.8, fbm(p * 1.3 + 4.0));\n  vec3 col = mix(u_paper, u_shade, blotch * 0.5 + 0.35 * clamp(0.9 - c0, 0.0, 1.0) * 0.5);\n  col *= 0.74 + 0.40 * lit;\n  // a broad falloff: bright upper left, darker far side; its centre sways on another period\n  vec2 lc = vec2(0.28 + 0.1 * sin(u_ph * 2.0), 0.78 + 0.06 * cos(u_ph));\n  float fo = smoothstep(1.35, 0.0, length((uv - lc) * vec2(1.0, 0.8)));\n  col *= 1.0 - u_fall * 0.34 * (1.0 - fo);\n  col += (fo - 0.5) * 0.03;\n  gl_FragColor = vec4(col, 1.0);\n}\n`;\n\nexport const Paper: React.FC<PaperProps> = (p) => {\n  const frame = useCurrentFrame();\n  const ph = phase(frame, DURATION, p.speed);\n  return (\n    <Layer id=\"pa-root\" effects={p.grain > 0 ? [grain(p.grain, { seed: 2, size: 1.1 })] : undefined}>\n      <GlslShader\n        id=\"pa-shader\"\n        width={W}\n        height={H}\n        fragment={FRAGMENT}\n        uniforms={{ u_res: [W, H], u_ph: ph, u_paper: rgb(p.paper), u_shade: rgb(p.shade), u_fibre: p.fibre, u_relief: p.relief, u_scale: p.scale, u_fall: p.falloff }}\n      />\n    </Layer>\n  );\n};\n"
+    },
+    {
+      "path": "lib.ts",
+      "target": "src/components/paper/lib.ts",
+      "content": "// Shared bits for the backgrounds: colour parsing for shader uniforms, the loop phase, and the GLSL noise every shader uses.\n\n/** \"#rrggbb\" or \"#rgb\" to [r, g, b] in 0..1 for a vec3 uniform. */\nexport const rgb = (hex: string): [number, number, number] => {\n  let h = hex.replace('#', '');\n  if (h.length === 3) h = h.split('').map((c) => c + c).join('');\n  const n = parseInt(h.slice(0, 6), 16);\n  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];\n};\n\n/** Phase in radians that completes a whole turn over `loop` frames, scaled by speed. A whole number of turns per loop\n *  (speed 1, 2, 3 ...) makes the clip loop without a seam; other speeds drift without looping. */\nexport const phase = (frame: number, loop: number, speed: number) => (2 * Math.PI * frame * speed) / loop;\n\nexport const NOISE_GLSL = `\nfloat hash(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }\nfloat vnoise(vec2 p){\n  vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);\n  float a=hash(i); float b=hash(i+vec2(1.0,0.0)); float c=hash(i+vec2(0.0,1.0)); float d=hash(i+vec2(1.0,1.0));\n  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);\n}\nfloat fbm(vec2 p){\n  float v=0.0; float a=0.5;\n  for(int i=0;i<5;i++){ v+=a*vnoise(p); p=p*2.02+17.1; a*=0.5; }\n  return v;\n}\n`;\n"
+    }
+  ],
+  "props": [
+    {
+      "name": "paper",
+      "type": "colour",
+      "doc": "The colour of the sheet where the light is full."
+    },
+    {
+      "name": "shade",
+      "type": "colour",
+      "doc": "The colour of the sheet in its shadows and blotches."
+    },
+    {
+      "name": "fibre",
+      "type": "number",
+      "doc": "How much fibre shows. 0 is smooth stock; 1 is a handmade sheet."
+    },
+    {
+      "name": "relief",
+      "type": "number",
+      "doc": "How strongly the light picks out the surface. Higher is rougher."
+    },
+    {
+      "name": "scale",
+      "type": "number",
+      "doc": "Size of the texture: higher is coarser."
+    },
+    {
+      "name": "speed",
+      "type": "number",
+      "doc": "How fast the light moves. Whole numbers loop seamlessly over 10 seconds."
+    },
+    {
+      "name": "falloff",
+      "type": "number",
+      "doc": "How much darker the far side of the sheet is."
+    },
+    {
+      "name": "grain",
+      "type": "number",
+      "doc": "Extra grain over the whole frame."
+    }
+  ],
+  "access": "free"
+}

@@ -1,0 +1,141 @@
+{
+  "$schema": "https://kinetograph.dev/r/schema.json",
+  "name": "orbit-gallery",
+  "type": "component",
+  "title": "Orbit gallery",
+  "description": "Nine photos spiral in around a title and settle on an ellipse.",
+  "kinetograph": "0.3.0",
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "files": [
+    {
+      "path": "index.tsx",
+      "target": "src/components/orbit-gallery/index.tsx",
+      "content": "// Orbit Gallery: photographs spiral in from beyond the frame, round a title, and settle onto an ellipse. Each one arrives\n// on its own arc (a swirl that unwinds as it comes in), small and turning, and lands slightly askew; they arrive one after\n// another so the eye follows a single spiral rather than a crowd. The title sits still in the middle the whole time;\n// once the ring has settled, it floats a hair. The camera opens tight on the title, then follows the arrivals (it leans\n// toward the photograph that has just been launched, so the eye rides each arc), pulls out past the mark when the ring\n// closes to show the whole ring, and pushes back in on the title as it settles. Motion blur while it moves fast.\n\nimport React from 'react';\nimport { z } from 'zod';\nimport { Easing, random, useCurrentFrame } from 'remotion';\nimport { Layer, Text, dropShadow } from '@kinetographdev/core';\nimport { Rig, shutterOf, keys, DEFAULT_PHOTOS, Ground, H, Photo, W, easeCam, hex, imagesSchema, lerp, pick, prog, ramp, useFont, useFontItalic } from './kit.js';\n\nexport const orbitGallerySchema = z.object({\n  images: imagesSchema,\n  count: z.number().int().min(4).max(18).describe('How many photographs land on the ring.'),\n  title: z.string().describe('The title in the middle.'),\n  subtitle: z.string().describe('A small line under the title. Empty for none.'),\n  radiusX: z.number().min(200).max(900).describe('Half the width of the ring they settle on, in px.'),\n  radiusY: z.number().min(100).max(480).describe('Half the height of the ring they settle on, in px.'),\n  photoWidth: z.number().min(120).max(400).describe('Width of a photograph, in px.'),\n  photoHeight: z.number().min(120).max(460).describe('Height of a photograph, in px.'),\n  swirl: z.number().min(0).max(720).describe('How many degrees each photograph winds round the title on its way in.'),\n  startDistance: z.number().min(1.5).max(6).describe('How far out they start, as a multiple of the ring.'),\n  firstFrame: z.number().int().min(0).describe('Frame the first photograph starts moving.'),\n  stagger: z.number().min(1).max(14).describe('Frames between one photograph setting off and the next.'),\n  travelFrames: z.number().int().min(20).describe('Frames each photograph takes to arrive.'),\n  tilt: z.number().min(0).max(14).describe('How far each photograph lies from square once settled, in degrees.'),\n  seed: z.number().int().describe('Seed for the tilt and the order. Same seed, same ring.'),\n  motionBlur: z.number().min(0).max(1).describe('Camera motion blur shutter in frames, used while the camera moves fast. 0 turns it off.'),\n  openZoom: z.number().min(1).max(3).describe('Zoom of the opening shot on the title.'),\n  push: z.number().min(0).max(0.3).describe('How far the camera pushes in once the ring has settled (0.06 is 6 percent).'),\n  font: z.string().describe('Google Fonts family for the subtitle.'),\n  serif: z.string().describe('Google Fonts family for the title.'),\n  colors: z.object({ ground: hex.describe('Background.'), ink: hex.describe('Title.'), muted: hex.describe('Subtitle.') }).describe('Colours.'),\n});\nexport type OrbitGalleryProps = z.infer<typeof orbitGallerySchema>;\n\nexport const orbitGalleryDefaults: OrbitGalleryProps = {\n  images: DEFAULT_PHOTOS.slice(2),\n  count: 9,\n  title: 'Orbit',\n  subtitle: 'Nine photographs, one ring',\n  radiusX: 770,\n  radiusY: 385,\n  photoWidth: 210,\n  photoHeight: 250,\n  swirl: 300,\n  startDistance: 2.7,\n  firstFrame: 8,\n  stagger: 7,\n  travelFrames: 78,\n  tilt: 6,\n  seed: 3,\n  push: 0.06,\n  motionBlur: 0,\n  openZoom: 1.5,\n  font: 'Geist',\n  serif: 'Instrument Serif',\n  colors: { ground: '#f1eee7', ink: '#17150f', muted: '#8a8574' },\n};\n\nexport const ORBIT_DURATION = 240;\nconst arrive = Easing.bezier(0.18, 0.72, 0.2, 1);\n\nexport const OrbitGallery = (p: OrbitGalleryProps) => {\n  const f = useCurrentFrame();\n  const font = useFont(p.font);\n  const serif = useFontItalic(p.serif);\n  const serifUpright = useFont(p.serif, ['400']);\n  const settled = p.firstFrame + (p.count - 1) * p.stagger + p.travelFrames;\n  const titleIn = prog(f, 4, 40, arrive);\n  const placeAt = (i: number, t: number) => {\n    const k = prog(t, p.firstFrame + i * p.stagger, p.firstFrame + i * p.stagger + p.travelFrames, arrive);\n    const theta = (-90 + (i * 360) / p.count + 20) * (Math.PI / 180) + ((p.swirl * (1 - k)) * Math.PI) / 180;\n    const o = lerp(p.startDistance, 1, k);\n    return { x: Math.cos(theta) * p.radiusX * o, y: Math.sin(theta) * p.radiusY * o, k };\n  };\n  // the camera: tight on the title, leaning after the latest launch, out past the mark, then back in on the title\n  const pullA = settled - 34;\n  const camAt = (t: number) => {\n    const fr = Math.min(p.count - 1, Math.max(0, (t - p.firstFrame) / p.stagger));\n    const a0 = placeAt(Math.floor(fr), t);\n    const a1 = placeAt(Math.ceil(fr), t);\n    const lead = { x: lerp(a0.x, a1.x, fr - Math.floor(fr)), y: lerp(a0.y, a1.y, fr - Math.floor(fr)) };\n    const follow = prog(t, 10, 40, easeCam) * (1 - prog(t, pullA, pullA + 24, easeCam));\n    const pull = prog(t, pullA, pullA + 36, easeCam);\n    const over = 1 + 0.035 * Math.sin(prog(t, pullA + 30, pullA + 64) * Math.PI);\n    const settle = prog(t, settled + 20, ORBIT_DURATION - 1, easeCam);\n    const zoomRide = keys(t, [[0, p.openZoom], [40, 1.22], [pullA, 1.12]], easeCam);\n    const zoom = lerp(zoomRide, 0.94, pull) * (pull >= 1 ? over : 1) * (1 + p.push * 1.4 * settle);\n    return { cx: lead.x * 0.15 * follow, cy: lead.y * 0.15 * follow, zoom, roll: lerp(-2.2, 0, prog(t, 0, pullA + 20, easeCam)) };\n  };\n  const cam = camAt(f);\n  const shutter = p.motionBlur > 0 ? shutterOf(camAt, f, 500, 24, p.motionBlur) : 0;\n  const items = Array.from({ length: p.count }, (_, i) => {\n    const { x, y, k: t } = placeAt(i, f);\n    const lean = (random(`lean${p.seed}-${i}`) - 0.5) * 2 * p.tilt;\n    const rot = lerp(lean + (i % 2 ? 40 : -40), lean, t);\n    const sc = lerp(0.35, 1, t);\n    const float = f > settled - 20 ? Math.sin((f - i * 11) * 0.045) * 5 * prog(f, settled - 20, settled + 20) : 0;\n    return { i, x, y: y + float, rot, sc, op: ramp(f, p.firstFrame + i * p.stagger, p.firstFrame + i * p.stagger + 10, 0, 1) };\n  });\n  return (\n    <Layer id=\"root\">\n      <Ground color={p.colors.ground} />\n      <Rig cx={cam.cx} cy={cam.cy} zoom={cam.zoom} roll={cam.roll} shutter={shutter}>\n      <Layer id=\"world\">\n        <Text id=\"title\" font={serifUpright} size={190} color={p.colors.ink} x={-600} y={-130 + (1 - titleIn) * 24} maxWidth={1200} align=\"center\" opacity={titleIn}>{p.title}</Text>\n        {p.subtitle ? (\n          <Text id=\"subtitle\" font={font} weight={500} size={24} color={p.colors.muted} x={-400} y={86 + (1 - titleIn) * 24} maxWidth={800} align=\"center\" opacity={titleIn * ramp(f, 24, 56, 0, 1)}>{p.subtitle}</Text>\n        ) : null}\n        {items.map(({ i, x, y, rot, sc, op }) => (\n          <Layer\n            key={i}\n            id={`orb${i}`}\n            x={x}\n            y={y}\n            rotation={rot}\n            scale={sc}\n            opacity={op}\n            effects={[dropShadow({ x: 0, y: 14, blur: 26, color: 'rgba(30,24,10,0.25)' })]}\n          >\n            <Photo file={pick(p.images, i)} w={p.photoWidth} h={i % 3 === 1 ? p.photoWidth : p.photoHeight} radius={4} />\n          </Layer>\n        ))}\n      </Layer>\n      </Rig>\n    </Layer>\n  );\n};\n"
+    },
+    {
+      "path": "kit.tsx",
+      "target": "src/components/orbit-gallery/kit.tsx",
+      "content": "// Shared by the carousel components: easing, key frames, the default photo set, a photo card and font loading.\n// Every function is a pure function of the frame number.\n\nimport React from 'react';\nimport { z } from 'zod';\nimport { Easing, interpolate, staticFile } from 'remotion';\nimport { Image, Layer, Rect, Text } from '@kinetographdev/core';\nimport { makeGoogleFont } from '@kinetographdev/core/google-fonts';\n\nexport const W = 1920;\nexport const H = 1080;\n\nexport const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const;\n/** slow in, slow out */\nexport const ease = Easing.bezier(0.45, 0, 0.15, 1);\n/** fast start, long settle: a flick that dies away */\nexport const easeOut = Easing.bezier(0.16, 1, 0.3, 1);\n/** gentle start, then speed */\nexport const easeIn = Easing.bezier(0.7, 0, 0.84, 0);\n/** a soft in and out for camera moves */\nexport const easeCam = Easing.bezier(0.5, 0, 0.1, 1);\n\n/** from `a` at frame f0 to `b` at frame f1, held outside, with an easing */\nexport const ramp = (f: number, f0: number, f1: number, a: number, b: number, e: (t: number) => number = ease) =>\n  interpolate(f, [f0, f1], [a, b], { ...clamp, easing: e });\n\n/** 0 to 1 over [f0, f1] with an easing */\nexport const prog = (f: number, f0: number, f1: number, e: (t: number) => number = ease) => ramp(f, f0, f1, 0, 1, e);\n\n/** Piecewise through [frame, value] keys, one easing per segment. */\nexport function keys(f: number, k: [number, number][], e: (t: number) => number = ease): number {\n  if (f <= k[0][0]) return k[0][1];\n  for (let i = 1; i < k.length; i++) {\n    if (f <= k[i][0]) {\n      const [a, va] = k[i - 1];\n      const [b, vb] = k[i];\n      return va + (vb - va) * e((f - a) / (b - a));\n    }\n  }\n  return k[k.length - 1][1];\n}\n\nexport const lerp = (a: number, b: number, t: number) => a + (b - a) * t;\nexport const smooth = (t: number) => {\n  const c = Math.min(1, Math.max(0, t));\n  return c * c * (3 - 2 * c);\n};\n\nexport const hex = z.string().describe('A CSS colour.');\n\n/** The photo set the components default to: public-domain NASA pictures, see photos/CREDITS.md. */\nexport const DEFAULT_PHOTOS = [\n  'nasa-earth-2', 'nasa-nebula-1', 'nasa-mars-1', 'nasa-moon-1', 'nasa-saturn-1',\n  'nasa-storm-1', 'nasa-desert-1', 'nasa-galaxy-1', 'nasa-glacier-1', 'nasa-city-1', 'nasa-jupiter-1',\n  'nasa-reef-1', 'nasa-iss-1', 'nasa-clouds-1', 'nasa-nebula-2', 'nasa-aurora-2',\n  'nasa-mountains-1', 'nasa-telescope-1', 'nasa-sun-1', 'nasa-river-1', 'nasa-galaxy-2', 'nasa-moon-2', 'nasa-storm-2'\n].map((n) => `photos/${n}.jpg`);\n\nexport const imagesSchema = z\n  .array(z.string())\n  .min(1)\n  .describe('Pictures, as paths under public/ (or full URLs). They repeat when there are fewer than the count.');\n\n/** A path under public/ or a URL, as an image source. */\nexport const src = (s: string) => (/^(https?:|data:|\\/)/.test(s) ? s : staticFile(s));\n\n/** Loads a Google font and returns the family name that is registered. */\nexport const useFont = (family: string, weights: string[] = ['400', '500']): string =>\n  makeGoogleFont(family).loadFont('normal', { weights }).fontFamily;\n\nexport const useFontItalic = (family: string, weights: string[] = ['400']): string =>\n  makeGoogleFont(family).loadFont('italic', { weights }).fontFamily;\n\n/** A picture cropped to a rounded card of w x h, centred on the layer's origin. */\nexport const Photo = ({ file, w, h, radius = 0, opacity, id, reveal = 1 }: { file: string; w: number; h: number; radius?: number; opacity?: number; id?: string; reveal?: number }) => (\n  <Image\n    id={id}\n    src={src(file)}\n    x={-w / 2}\n    y={-h / 2}\n    width={w}\n    height={h}\n    fit=\"cover\"\n    opacity={opacity}\n    clip={radius > 0 || reveal < 1 ? { kind: 'inset', radius, bottom: (1 - reveal) * h } : undefined}\n  />\n);\n\n/** A flat ground. */\nexport const Ground = ({ color }: { color: string }) => <Rect id=\"ground\" width={W} height={H} fill={color} />;\n\nexport const pick = <T,>(list: T[], i: number): T => list[((i % list.length) + list.length) % list.length];\n\nexport { Layer };\n\n/** A quiet two-line label: a title and a smaller line under it. */\nexport const Label = ({ x, y, title, sub, font, ink, muted, opacity = 1, align = 'left' }: { x: number; y: number; title: string; sub: string; font: string; ink: string; muted: string; opacity?: number; align?: 'left' | 'right' }) => {\n  const maxWidth = 700;\n  const ox = align === 'right' ? -maxWidth : 0;\n  return (\n    <Layer id=\"label\" x={x} y={y} opacity={opacity}>\n      {title ? <Text id=\"label-title\" font={font} weight={500} size={30} color={ink} x={ox} y={0} maxWidth={maxWidth} align={align}>{title}</Text> : null}\n      {sub ? <Text id=\"label-sub\" font={font} weight={400} size={21} color={muted} x={ox} y={title ? 44 : 0} maxWidth={maxWidth} align={align}>{sub}</Text> : null}\n    </Layer>\n  );\n};\n\n/** \"nasa-earth-2\" in photos/nasa-earth-2.jpg becomes \"Earth\". Used for default card labels. */\nexport const nameOf = (file: string) => {\n  const m = /nasa-([a-z]+)-/.exec(file);\n  return m ? m[1][0].toUpperCase() + m[1].slice(1) : '';\n};\n\n/**\n * A 2D camera: the world point (cx, cy) sits at the middle of the frame, `zoom` scales about it and `roll` turns the\n * frame (degrees, clockwise). `shutter` is the motion blur in frames (0 for none).\n */\nexport const Rig = ({ cx, cy, zoom, roll = 0, shutter = 0, children }: { cx: number; cy: number; zoom: number; roll?: number; shutter?: number; children: React.ReactNode }) => (\n  <Layer id=\"rig\" motionBlur={shutter > 0 ? { samples: 20, shutter } : undefined}>\n    <Layer id=\"rig-eye\" x={W / 2} y={H / 2} scale={zoom} rotation={roll}>\n      <Layer id=\"rig-world\" x={-cx} y={-cy}>\n        {children}\n      </Layer>\n    </Layer>\n  </Layer>\n);\n\n/** Motion blur shutter from how far a 2D camera moves between two moments: 0 while it is slow. */\nexport const shutterOf = (camAt: (f: number) => { cx: number; cy: number; zoom: number; roll?: number }, f: number, span = 400, threshold = 7, shutter = 0.5) => {\n  const a = camAt(f - 0.5);\n  const b = camAt(f + 0.5);\n  const d = Math.hypot((b.cx - a.cx) * b.zoom, (b.cy - a.cy) * b.zoom) + Math.abs(Math.log(b.zoom / a.zoom)) * span + Math.abs((b.roll ?? 0) - (a.roll ?? 0)) * 8;\n  return d > threshold ? shutter : 0;\n};\n\nexport interface ChainCam {\n  count: number;\n  stagger: number;\n  /** Where the cover at position u sits and how big it is, in world px. */\n  where: (u: number) => { x: number; y: number; size: number };\n  /** Conveyor position at frame t, in turns. */\n  shiftAt: (t: number) => number;\n  /** The world point shown at the middle of the frame in the ring shot, and its zoom. */\n  rest: { cx: number; cy: number; zoom: number };\n  rideZoom: number;\n  push: number;\n  /** Frames: pull out starts and lands, push starts and lands. */\n  pullA: number;\n  pullB: number;\n  pushA: number;\n  pushB: number;\n  /** Roll in degrees at the start, the end of the ride and at rest. */\n  roll: [number, number];\n}\n\n/**\n * The camera of a conveyor of covers: it rides the front of the entrance sweep (the cover being born), zoomed so the\n * covers it follows stay about 190 px across, pulls out past the mark and back to the ring shot, holds, then pushes\n * into the biggest cover once the conveyor has stopped.\n */\nexport const chainCamera = (o: ChainCam) => {\n  let hero = o.where(0);\n  const endShift = o.shiftAt(1e6);\n  for (let i = 0; i < o.count; i += 1) {\n    const w = o.where((((i / o.count + endShift) % 1) + 1) % 1);\n    if (i === 0 || w.size > hero.size - 0.001) hero = w;\n  }\n  const io = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);\n  return (t: number) => {\n    const front = Math.min(o.count - 1, Math.max(0, (t - 5) / o.stagger));\n    const fw = o.where((((front / o.count + o.shiftAt(t)) % 1) + 1) % 1);\n    const zRide = Math.min(o.rideZoom, Math.max(o.rest.zoom, 190 / Math.max(fw.size, 24)));\n    const kRing = prog(t, o.pullA, o.pullB, io);\n    const over = 1 + 0.045 * Math.sin(prog(t, o.pullB - 4, o.pullB + 26, (x: number) => x) * Math.PI);\n    let cx = lerp(fw.x, o.rest.cx, kRing);\n    let cy = lerp(fw.y, o.rest.cy, kRing);\n    let zoom = lerp(zRide, o.rest.zoom, kRing) * (kRing >= 1 ? over : 1);\n    const kPush = prog(t, o.pushA, o.pushB, (x: number) => 1 - Math.pow(1 - x, 3));\n    // re-centre on the hero only as far as the push goes in: with no push the ring stays framed whole\n    const aim = Math.min(1, o.push * 3);\n    cx = lerp(cx, lerp(cx, hero.x, aim), kPush);\n    cy = lerp(cy, lerp(cy, hero.y, aim), kPush);\n    zoom = lerp(zoom, o.rest.zoom * (1 + o.push), kPush);\n    const roll = keys(t, [[0, o.roll[0]], [o.pullA, o.roll[1]], [o.pullB + 24, 0], [o.pushB, 0]]);\n    return { cx, cy, zoom, roll };\n  };\n};\n"
+    }
+  ],
+  "props": [
+    {
+      "name": "images",
+      "type": "list",
+      "doc": "Pictures, as paths under public/ (or full URLs). They repeat when there are fewer than the count."
+    },
+    {
+      "name": "count",
+      "type": "integer",
+      "doc": "How many photographs land on the ring."
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "doc": "The title in the middle."
+    },
+    {
+      "name": "subtitle",
+      "type": "string",
+      "doc": "A small line under the title. Empty for none."
+    },
+    {
+      "name": "radiusX",
+      "type": "number",
+      "doc": "Half the width of the ring they settle on, in px."
+    },
+    {
+      "name": "radiusY",
+      "type": "number",
+      "doc": "Half the height of the ring they settle on, in px."
+    },
+    {
+      "name": "photoWidth",
+      "type": "number",
+      "doc": "Width of a photograph, in px."
+    },
+    {
+      "name": "photoHeight",
+      "type": "number",
+      "doc": "Height of a photograph, in px."
+    },
+    {
+      "name": "swirl",
+      "type": "number",
+      "doc": "How many degrees each photograph winds round the title on its way in."
+    },
+    {
+      "name": "startDistance",
+      "type": "number",
+      "doc": "How far out they start, as a multiple of the ring."
+    },
+    {
+      "name": "firstFrame",
+      "type": "integer",
+      "doc": "Frame the first photograph starts moving."
+    },
+    {
+      "name": "stagger",
+      "type": "number",
+      "doc": "Frames between one photograph setting off and the next."
+    },
+    {
+      "name": "travelFrames",
+      "type": "integer",
+      "doc": "Frames each photograph takes to arrive."
+    },
+    {
+      "name": "tilt",
+      "type": "number",
+      "doc": "How far each photograph lies from square once settled, in degrees."
+    },
+    {
+      "name": "seed",
+      "type": "integer",
+      "doc": "Seed for the tilt and the order. Same seed, same ring."
+    },
+    {
+      "name": "motionBlur",
+      "type": "number",
+      "doc": "Camera motion blur shutter in frames, used while the camera moves fast. 0 turns it off."
+    },
+    {
+      "name": "openZoom",
+      "type": "number",
+      "doc": "Zoom of the opening shot on the title."
+    },
+    {
+      "name": "push",
+      "type": "number",
+      "doc": "How far the camera pushes in once the ring has settled (0.06 is 6 percent)."
+    },
+    {
+      "name": "font",
+      "type": "string",
+      "doc": "Google Fonts family for the subtitle."
+    },
+    {
+      "name": "serif",
+      "type": "string",
+      "doc": "Google Fonts family for the title."
+    },
+    {
+      "name": "colors.ground",
+      "type": "colour",
+      "doc": "Background."
+    },
+    {
+      "name": "colors.ink",
+      "type": "colour",
+      "doc": "Title."
+    },
+    {
+      "name": "colors.muted",
+      "type": "colour",
+      "doc": "Subtitle."
+    }
+  ],
+  "access": "free"
+}

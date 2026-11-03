@@ -1,0 +1,56 @@
+{
+  "$schema": "https://kinetograph.dev/r/schema.json",
+  "name": "grain-gradient",
+  "type": "component",
+  "title": "Grain gradient",
+  "description": "A mesh gradient drifts under film grain. It loops with no join at whole-number speeds.",
+  "kinetograph": "0.3.0",
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "files": [
+    {
+      "path": "index.tsx",
+      "target": "src/components/grain-gradient/index.tsx",
+      "content": "// Grain Gradient: a soft mesh of colour that drifts slowly, with fine film grain over it. Twelve mesh points take colours\n// from the palette and each wanders on a small closed loop, so the field breathes and comes back to where it began. The\n// mesh is drawn past the frame and blurred, so its patches never show.\n//\n// Principles: slow in and out (every point moves on a sine), overlap (each point has its own phase, so nothing moves\n// together), arcs (closed elliptical paths), restraint (movement under a tenth of a cell), texture makes it made (grain on\n// the whole frame, not per element).\n\nimport React from 'react';\nimport { z } from 'zod';\nimport { Layer, MeshGradient, Rect, blur, grain } from '@kinetographdev/core';\nimport { useCurrentFrame } from 'remotion';\nimport { phase } from './lib.js';\n\nexport const W = 1920;\nexport const H = 1080;\nexport const FPS = 30;\nexport const DURATION = 300;\n\nconst hex = z.string().describe('A CSS colour.');\n\nexport const grainGradientSchema = z.object({\n  palette: z.array(hex).min(2).max(8).describe('Colours of the mesh, spread over its points in a fixed pattern. Two to eight.'),\n  speed: z.number().min(0).max(4).describe('How fast the field drifts. Whole numbers loop seamlessly over 10 seconds.'),\n  scale: z.number().min(0.3).max(3).describe('How far the points wander, as a multiple of the default. 1 is about a tenth of a cell.'),\n  softness: z.number().min(0).max(120).describe('Blur over the mesh in pixels: higher is smoother, lower shows more of the patches.'),\n  grain: z.number().min(0).max(0.5).describe('Grain amount. 0.1 is a visible film grain.'),\n  grainSize: z.number().min(1).max(4).describe('Size of a grain cell in pixels.'),\n});\nexport type GrainGradientProps = z.infer<typeof grainGradientSchema>;\n\nexport const grainGradientDefaults: GrainGradientProps = {\n  palette: ['#f6d9c3', '#e9a58d', '#7b8fd6', '#f3efe6', '#4a5aa8'],\n  speed: 1,\n  scale: 1,\n  softness: 0,\n  grain: 0.14,\n  grainSize: 1.3,\n};\n\nconst COLS = 4;\nconst ROWS = 3;\nconst OVER = 420; // how far the mesh extends past the frame\n\nexport const GrainGradient: React.FC<GrainGradientProps> = (p) => {\n  const frame = useCurrentFrame();\n  const ph = phase(frame, DURATION, p.speed);\n  const bw = W + 2 * OVER;\n  const bh = H + 2 * OVER;\n  const cw = bw / (COLS - 1);\n  const ch = bh / (ROWS - 1);\n  const amp = 0.18 * p.scale;\n  const points: [number, number][] = [];\n  const colors: string[] = [];\n  for (let r = 0; r < ROWS; r++) {\n    for (let c = 0; c < COLS; c++) {\n      const i = r * COLS + c;\n      // edge points slide along the edge only, so the mesh keeps covering the frame\n      const dx = c === 0 || c === COLS - 1 ? 0 : amp * cw * Math.sin(ph * (1 + (i % 2)) + i * 1.9);\n      const dy = r === 0 || r === ROWS - 1 ? 0 : amp * ch * Math.cos(ph * (1 + ((i + 1) % 2)) + i * 2.7);\n      const ex = r === 0 || r === ROWS - 1 ? amp * cw * 0.8 * Math.sin(ph + i * 1.3) : 0;\n      const ey = c === 0 || c === COLS - 1 ? amp * ch * 0.8 * Math.cos(ph + i * 0.9) : 0;\n      points.push([c * cw + dx + ex, r * ch + dy + ey]);\n      colors.push(p.palette[(r * 2 + c * 3 + (r % 2)) % p.palette.length]);\n    }\n  }\n  return (\n    <Layer id=\"gg-root\" effects={p.grain > 0 ? [grain(p.grain, { seed: 3, size: p.grainSize })] : undefined}>\n      <Rect id=\"gg-base\" width={W} height={H} fill={p.palette[0]} />\n      <Layer id=\"gg-mesh\" x={-OVER} y={-OVER} effects={p.softness > 0 ? [blur(p.softness)] : undefined}>\n        <MeshGradient id=\"gg-m\" width={bw} height={bh} columns={COLS} rows={ROWS} points={points} colors={colors} />\n      </Layer>\n    </Layer>\n  );\n};\n"
+    },
+    {
+      "path": "lib.ts",
+      "target": "src/components/grain-gradient/lib.ts",
+      "content": "// Shared bits for the backgrounds: colour parsing for shader uniforms, the loop phase, and the GLSL noise every shader uses.\n\n/** \"#rrggbb\" or \"#rgb\" to [r, g, b] in 0..1 for a vec3 uniform. */\nexport const rgb = (hex: string): [number, number, number] => {\n  let h = hex.replace('#', '');\n  if (h.length === 3) h = h.split('').map((c) => c + c).join('');\n  const n = parseInt(h.slice(0, 6), 16);\n  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];\n};\n\n/** Phase in radians that completes a whole turn over `loop` frames, scaled by speed. A whole number of turns per loop\n *  (speed 1, 2, 3 ...) makes the clip loop without a seam; other speeds drift without looping. */\nexport const phase = (frame: number, loop: number, speed: number) => (2 * Math.PI * frame * speed) / loop;\n\nexport const NOISE_GLSL = `\nfloat hash(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }\nfloat vnoise(vec2 p){\n  vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);\n  float a=hash(i); float b=hash(i+vec2(1.0,0.0)); float c=hash(i+vec2(0.0,1.0)); float d=hash(i+vec2(1.0,1.0));\n  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);\n}\nfloat fbm(vec2 p){\n  float v=0.0; float a=0.5;\n  for(int i=0;i<5;i++){ v+=a*vnoise(p); p=p*2.02+17.1; a*=0.5; }\n  return v;\n}\n`;\n"
+    }
+  ],
+  "props": [
+    {
+      "name": "palette",
+      "type": "list",
+      "doc": "Colours of the mesh, spread over its points in a fixed pattern. Two to eight."
+    },
+    {
+      "name": "speed",
+      "type": "number",
+      "doc": "How fast the field drifts. Whole numbers loop seamlessly over 10 seconds."
+    },
+    {
+      "name": "scale",
+      "type": "number",
+      "doc": "How far the points wander, as a multiple of the default. 1 is about a tenth of a cell."
+    },
+    {
+      "name": "softness",
+      "type": "number",
+      "doc": "Blur over the mesh in pixels: higher is smoother, lower shows more of the patches."
+    },
+    {
+      "name": "grain",
+      "type": "number",
+      "doc": "Grain amount. 0.1 is a visible film grain."
+    },
+    {
+      "name": "grainSize",
+      "type": "number",
+      "doc": "Size of a grain cell in pixels."
+    }
+  ],
+  "access": "free"
+}

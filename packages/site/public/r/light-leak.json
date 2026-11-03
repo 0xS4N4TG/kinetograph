@@ -1,0 +1,108 @@
+{
+  "$schema": "https://kinetograph.dev/r/schema.json",
+  "name": "light-leak",
+  "type": "component",
+  "title": "Light leak",
+  "description": "A warm, streaked leak of light from one edge. It can cover a cut between two clips.",
+  "kinetograph": "0.3.0",
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "files": [
+    {
+      "path": "index.tsx",
+      "target": "src/components/light-leak/index.tsx",
+      "content": "// Light Leak. A warm leak sweeps across the picture the way light gets into a film back: it enters from an edge, swells\n// into a soft streaked glow (pale core, orange body, deep red fringe), washes the frame at its peak and ebbs away. With a\n// second picture, the cut is made at the peak, hidden inside the glow.\n//\n// Principles: anticipation (the leak builds from a thin edge glow before it floods), slow in and slow out (a sine-squared\n// envelope: it eases on and off), arcs (the leak's centre travels along the edge on an eased path, not a line at constant\n// speed), staging (it covers the cut, so the eye is on the light and not the swap), timing (a 2.3 s leak, peaking on\n// the cut), exaggeration (the peak is pushed, the shoulders are quiet), restraint (one effect, three colours).\n\nimport React from 'react';\nimport { z } from 'zod';\nimport { Layer, Rect, grain, shader } from '@kinetographdev/core';\nimport { Easing, useCurrentFrame } from 'remotion';\nimport { NOISE, colorUniforms } from './shaders.js';\nimport { H, Picture, W } from './picture.js';\n\nconst hex = z.string().describe('A CSS colour (hex).');\n\nexport const lightLeakSchema = z.object({\n  src: z.string().describe('Picture in public/ (used when no children are given).'),\n  toSrc: z.string().describe('Second picture, cut to at the peak of the leak. Empty for a single picture.'),\n  peakFrame: z.number().int().min(10).max(300).describe('Frame the leak is at its fullest (and the cut, when there is a second picture).'),\n  duration: z.number().int().min(24).max(240).describe('Frames the whole leak lasts, from first glow to gone.'),\n  strength: z.number().min(0).max(1.5).describe('How strong the leak is at its peak. 1 floods most of the frame in warm light; 0.5 is a glow at the edge.'),\n  edge: z.enum(['left', 'right', 'top', 'bottom']).describe('The edge the light comes in from.'),\n  sweep: z.number().min(0).max(1).describe('How far the leak travels along the edge while it plays (0 holds it in place).'),\n  softness: z.number().min(0.4).max(2).describe('How far the glow spreads into the frame. Higher is a larger, softer leak.'),\n  streaks: z.number().min(0).max(1).describe('How much the glow breaks into streaks (0 is a smooth gradient).'),\n  grain: z.number().min(0).max(0.2).describe('Film grain over the whole frame (0 for none).'),\n  colors: z\n    .object({\n      core: hex.describe('The hot centre of the leak.'),\n      body: hex.describe('The body of the leak.'),\n      fringe: hex.describe('The outer fringe.'),\n    })\n    .describe('Colours.'),\n});\nexport type LightLeakProps = z.infer<typeof lightLeakSchema>;\n\nexport const lightLeakDefaults: LightLeakProps = {\n  src: 'images/light-leak/photos/nasa-desert-1.jpg',\n  toSrc: 'images/light-leak/photos/nasa-clouds-1.jpg',\n  peakFrame: 66,\n  duration: 72,\n  strength: 0.9,\n  edge: 'right',\n  sweep: 0.5,\n  softness: 1,\n  streaks: 0.6,\n  grain: 0.05,\n  colors: { core: '#fff1c9', body: '#ff8a2b', fringe: '#c2160f' },\n};\n\nconst CODE = /* wgsl */ `\n${NOISE}\nfn sq(x: f32) -> f32 { return x * x; }\nfn effect(px: vec2<f32>) -> vec4<f32> {\n  let size = globals.canvas;\n  // Coordinates in a frame where the light comes in from the left edge: x is the depth into the frame (0 at the edge,\n  // measured in frame heights), y runs along the edge.\n  var q = px / size.y;\n  let ar = size.x / size.y;\n  var depth = q.x;\n  var along = q.y;\n  var len = ar;\n  if (u.edge > 2.5) {          // bottom: light comes up from the bottom edge\n    depth = (size.y - px.y) / size.y;\n    along = px.x / size.y;\n    len = 1.0;\n  } else if (u.edge > 1.5) {   // top\n    depth = px.y / size.y;\n    along = px.x / size.y;\n    len = 1.0;\n  } else if (u.edge > 0.5) {   // right\n    depth = (size.x - px.x) / size.y;\n    along = q.y;\n  }\n  let span = select(1.0, ar, u.edge > 1.5);\n  let amt = u.amt;\n  // Where along the edge the leak's heart sits (moves with the sweep), and how far it reaches into the frame.\n  let heart = mix(0.18, 0.82, u.pos) * span;\n  let reach = mix(0.1, 0.95, amt) * u.soft;\n  let spread = mix(0.22, 0.95, amt) * span * 0.5 + 0.12;\n  let lat = exp(-sq((along - heart) / spread));\n  // Streaks: the light is broken by the film gate, so brightness varies along the edge and slowly drifts.\n  let drift = globals.frame * 0.006;\n  let sn = fbm(vec2<f32>(along * 3.2 + drift, depth * 0.9 - drift * 0.5));\n  let sn2 = fbm(vec2<f32>(along * 9.0 - drift * 1.7, depth * 2.5));\n  let streak = mix(1.0, 0.45 + 0.9 * sn + 0.35 * (sn2 - 0.5), u.streaks);\n  let fall = exp(-max(depth, 0.0) / reach);\n  var L = fall * (0.35 + 0.65 * lat) * streak;\n  // A second, wider, fainter lobe so the leak has a body and not just a hot spot.\n  let L2 = exp(-max(depth, 0.0) / (reach * 2.2)) * exp(-sq((along - heart * 0.9 - 0.2 * span) / (spread * 1.8))) * 0.45;\n  L = clamp((L + L2) * amt * 1.05, 0.0, 1.3);\n  let core = vec3<f32>(u.cr, u.cg, u.cb);\n  let body = vec3<f32>(u.br, u.bg, u.bb);\n  let fringe = vec3<f32>(u.fr, u.fg, u.fb);\n  let hot = smoothstep(0.55, 1.25, L);\n  var col = mix(fringe, body, smoothstep(0.04, 0.55, L));\n  col = mix(col, core, hot);\n  let a = clamp(L, 0.0, 1.0);\n  // Screen blend: premultiplied colour with alpha a.\n  return vec4<f32>(col * a * (0.55 + 0.55 * L), a);\n}\n`;\n\nconst EDGE = { left: 0, right: 1, top: 2, bottom: 3 } as const;\n\nexport const LightLeak: React.FC<LightLeakProps & { children?: React.ReactNode }> = (p) => {\n  const f = useCurrentFrame();\n  const start = p.peakFrame - p.duration * 0.46;\n  const t = Math.min(1, Math.max(0, (f - start) / p.duration));\n  // The envelope is skewed: a slower build to the peak, a longer ebb.\n  const env = Math.sin(Math.PI * t) ** 2;\n  const amt = env * p.strength;\n  const pos = 0.5 + p.sweep * (Easing.inOut(Easing.cubic)(t) - 0.5);\n  const showTo = p.toSrc !== '' && f >= p.peakFrame;\n  return (\n    <Layer id=\"light-leak\" effects={p.grain > 0 ? [grain(p.grain, { size: 1.3, seed: 11, animate: true, monochrome: true })] : []}>\n      {showTo ? <Picture id=\"leak-b\" src={p.toSrc} scale={1.03 - 0.01 * Math.min(1, (f - p.peakFrame) / 60)} /> : <Picture id=\"leak-a\" src={p.src} scale={1 + 0.02 * Math.min(1, f / p.peakFrame)}>{p.children}</Picture>}\n      <Rect\n        id=\"leak\"\n        width={W}\n        height={H}\n        fill=\"#000000\"\n        blendMode=\"screen\"\n        effects={[\n          shader({\n            code: CODE,\n            uniforms: { amt, pos, soft: p.softness, streaks: p.streaks, edge: EDGE[p.edge], ...colorUniforms('c', p.colors.core), ...colorUniforms('b', p.colors.body), ...colorUniforms('f', p.colors.fringe) },\n            padding: 0,\n          }),\n        ]}\n      />\n    </Layer>\n  );\n};\n"
+    },
+    {
+      "path": "picture.tsx",
+      "target": "src/components/light-leak/picture.tsx",
+      "content": "// The picture the effect components wrap: their children when given, else a photo from public/ covering the frame.\n\nimport React from 'react';\nimport { Image, Layer, staticFile } from '@kinetographdev/core';\n\nexport const W = 1920;\nexport const H = 1080;\n\nexport const Picture: React.FC<{ id: string; src: string; children?: React.ReactNode; scale?: number; x?: number; y?: number }> = ({ id, src, children, scale = 1, x = 0, y = 0 }) => (\n  <Layer id={id} x={x} y={y} scale={scale} origin=\"center\">\n    {children ?? <Image id={`${id}-img`} src={staticFile(src)} width={W} height={H} fit=\"cover\" />}\n  </Layer>\n);\n"
+    },
+    {
+      "path": "public/images/photos/nasa-clouds-1.jpg",
+      "target": "public/images/light-leak/photos/nasa-clouds-1.jpg",
+      "url": "files/light-leak/public/images/photos/nasa-clouds-1.jpg",
+      "sha256": "5931f5ab0a0d91cc37ddefbd26fe2234b810b2930541eff63958e85dac9a2318"
+    },
+    {
+      "path": "public/images/photos/nasa-desert-1.jpg",
+      "target": "public/images/light-leak/photos/nasa-desert-1.jpg",
+      "url": "files/light-leak/public/images/photos/nasa-desert-1.jpg",
+      "sha256": "d60e89fc790105680ac810f0049a30cdbfcc0e9ac01ff504919556687b230152"
+    },
+    {
+      "path": "shaders.ts",
+      "target": "src/components/light-leak/shaders.ts",
+      "content": "// WGSL shared by the effect components (Kinetograph's `shader` effect: `fn effect(px) -> vec4<f32>`, linear premultiplied,\n// `layer(px)` reads the layer). Everything is a pure function of px, the frame and the uniforms: the noise is a hash of\n// the pixel, never a clock or a random number.\n\n/** An sRGB hex colour as linear floats (for uniforms). */\nexport const linear = (hex: string): [number, number, number] => {\n  const h = hex.replace('#', '');\n  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;\n  return [0, 2, 4].map((i) => {\n    const v = parseInt(full.slice(i, i + 2), 16) / 255;\n    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;\n  }) as [number, number, number];\n};\n\n/** Uniform entries `${name}r`, `${name}g`, `${name}b` for a colour. */\nexport const colorUniforms = (name: string, hex: string): Record<string, number> => {\n  const [r, g, b] = linear(hex);\n  return { [`${name}r`]: r, [`${name}g`]: g, [`${name}b`]: b };\n};\n\nexport const NOISE = /* wgsl */ `\nfn hash21(p: vec2<f32>) -> f32 {\n  var q = fract(p * vec2<f32>(0.1031, 0.1030));\n  q = q + dot(q, q.yx + vec2<f32>(33.33, 33.33));\n  return fract((q.x + q.y) * q.x);\n}\nfn vnoise(p: vec2<f32>) -> f32 {\n  let i = floor(p);\n  let f = fract(p);\n  let w = f * f * (vec2<f32>(3.0, 3.0) - 2.0 * f);\n  let a = hash21(i);\n  let b = hash21(i + vec2<f32>(1.0, 0.0));\n  let c = hash21(i + vec2<f32>(0.0, 1.0));\n  let d = hash21(i + vec2<f32>(1.0, 1.0));\n  return mix(mix(a, b, w.x), mix(c, d, w.x), w.y);\n}\nfn fbm(p: vec2<f32>) -> f32 {\n  var s = 0.0;\n  var a = 0.5;\n  var q = p;\n  for (var i = 0; i < 5; i = i + 1) {\n    s = s + a * vnoise(q);\n    q = q * 2.03 + vec2<f32>(17.1, 9.2);\n    a = a * 0.5;\n  }\n  return s;\n}\nfn luma(c: vec3<f32>) -> f32 {\n  return dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));\n}\n`;\n"
+    }
+  ],
+  "props": [
+    {
+      "name": "src",
+      "type": "string",
+      "doc": "Picture in public/ (used when no children are given)."
+    },
+    {
+      "name": "toSrc",
+      "type": "string",
+      "doc": "Second picture, cut to at the peak of the leak. Empty for a single picture."
+    },
+    {
+      "name": "peakFrame",
+      "type": "integer",
+      "doc": "Frame the leak is at its fullest (and the cut, when there is a second picture)."
+    },
+    {
+      "name": "duration",
+      "type": "integer",
+      "doc": "Frames the whole leak lasts, from first glow to gone."
+    },
+    {
+      "name": "strength",
+      "type": "number",
+      "doc": "How strong the leak is at its peak. 1 floods most of the frame in warm light; 0.5 is a glow at the edge."
+    },
+    {
+      "name": "edge",
+      "type": "left | right | top | bottom",
+      "doc": "The edge the light comes in from."
+    },
+    {
+      "name": "sweep",
+      "type": "number",
+      "doc": "How far the leak travels along the edge while it plays (0 holds it in place)."
+    },
+    {
+      "name": "softness",
+      "type": "number",
+      "doc": "How far the glow spreads into the frame. Higher is a larger, softer leak."
+    },
+    {
+      "name": "streaks",
+      "type": "number",
+      "doc": "How much the glow breaks into streaks (0 is a smooth gradient)."
+    },
+    {
+      "name": "grain",
+      "type": "number",
+      "doc": "Film grain over the whole frame (0 for none)."
+    },
+    {
+      "name": "colors.core",
+      "type": "colour",
+      "doc": "The hot centre of the leak."
+    },
+    {
+      "name": "colors.body",
+      "type": "colour",
+      "doc": "The body of the leak."
+    },
+    {
+      "name": "colors.fringe",
+      "type": "colour",
+      "doc": "The outer fringe."
+    }
+  ],
+  "access": "free"
+}

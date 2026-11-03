@@ -1,0 +1,51 @@
+{
+  "$schema": "https://kinetograph.dev/r/schema.json",
+  "name": "tide-gradient",
+  "type": "component",
+  "title": "Tide gradient",
+  "description": "Pools of cyan, mint and steel blue swell and sink into black. It loops with no join.",
+  "kinetograph": "0.3.0",
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "files": [
+    {
+      "path": "index.tsx",
+      "target": "src/components/tide-gradient/index.tsx",
+      "content": "// Tide Gradient: quick, soft pools of cyan, mint, teal and steel blue that swell, slide over one another and sink into\n// black, like light moving under water. Matched to a 15 s gradient reference: its palette (black through deep teal and\n// steel blue to mint and cyan), the size of its pools (each a half to two thirds of the frame), their softness, the\n// black that opens between them, and their pace (much faster than the other gradients: the picture\n// changes by about a tenth of its brightness every half second). The reference does not loop; this one loops on 10 s.\n//\n// One fragment shader: six pools, each with its own colour, travelling on its own closed path (whole-number multiples\n// of the loop phase, so the loop is exact) and swelling and fading on its own beat. Each pixel's colour is the pools'\n// colours averaged by how close it is to each (a mesh gradient), and its brightness is how strongly any pool reaches it,\n// so where no pool reaches the frame falls to black. A slow noise warp keeps the pools from being perfect circles.\n//\n// Principles: overlap (six paths and six beats that never line up), slow in and out (every path and beat is a sine),\n// arcs (closed curved paths), restraint (one cool family; no grain, no light streaks).\n\nimport React from 'react';\nimport { z } from 'zod';\nimport { GlslShader } from '@kinetographdev/core';\nimport { useCurrentFrame } from 'remotion';\nimport { rgb } from './lib.js';\n\nexport const W = 1920;\nexport const H = 1080;\nexport const LOOP = 300;\n\nconst hex = z.string().describe('A CSS colour as #rrggbb.');\n\nexport const tideGradientSchema = z.object({\n  colors: z.array(hex).length(6).describe('The six pool colours: by default cyan, mint, sea green, blue, steel and deep teal.'),\n  ground: hex.describe('What shows where no pool reaches (black).'),\n  scale: z.number().min(0.4).max(3).describe('Size of the pools: higher is larger.'),\n  depth: z.number().min(0).max(2).describe('How much black opens between the pools. 1 matches the reference; 0 fills the frame.'),\n  speed: z.number().min(0).max(4).describe('Loops per 10 seconds. Whole numbers loop seamlessly.'),\n});\nexport type TideGradientProps = z.infer<typeof tideGradientSchema>;\n\nexport const tideGradientDefaults: TideGradientProps = {\n  colors: ['#40eafd', '#2ad0ae', '#1a8a7e', '#2a8ed0', '#1b5d7c', '#0d3a52'],\n  ground: '#000000',\n  scale: 1,\n  depth: 1,\n  speed: 1,\n};\n\nconst FRAGMENT = `\nprecision highp float;\nuniform vec2 u_res;\nuniform float u_ph;\nuniform vec3 u_c0; uniform vec3 u_c1; uniform vec3 u_c2; uniform vec3 u_c3; uniform vec3 u_c4; uniform vec3 u_c5;\nuniform vec3 u_ground;\nuniform float u_scale; uniform float u_depth;\n\nfloat hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }\nfloat vnoise(vec2 p){\n  vec2 i = floor(p); vec2 f = fract(p); f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);\n  float a = hash(i); float b = hash(i + vec2(1.0, 0.0)); float c = hash(i + vec2(0.0, 1.0)); float d = hash(i + vec2(1.0, 1.0));\n  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);\n}\n\nvec3 acc; float wsum; float reach;\n// a pool of colour c, radius s, at centre m, with strength k (0..1): a soft body, brightest at its centre\nvoid pool(vec2 p, vec2 m, float s, vec3 c, float k){\n  float d = length(p - m) / (s * u_scale);\n  float body = exp(-d * d * 1.5);\n  float w = k * body + 1e-4;\n  acc += c * w * w; wsum += w * w;\n  reach += w;\n}\n\nvoid main(){\n  vec2 uv = gl_FragCoord.xy / u_res;\n  uv.y = 1.0 - uv.y;\n  float asp = u_res.x / u_res.y;\n  vec2 p = vec2(uv.x * asp, uv.y);\n  float ph = u_ph;\n\n  // a slow warp so the pools wobble; its offsets go round a circle once per loop\n  vec2 o = 0.8 * vec2(cos(u_ph), sin(u_ph));\n  p += 0.1 * (vec2(vnoise(p * 1.6 + o), vnoise(p * 1.6 + vec2(3.7, 8.1) - o)) - 0.5);\n\n  acc = vec3(0.0); wsum = 0.0; reach = 0.0;\n  pool(p, vec2(0.55 + 0.55 * cos(2.0 * ph + 0.3) + 0.15 * cos(3.0 * ph), 0.3 + 0.32 * sin(3.0 * ph + 1.0)), 0.48, u_c0, 0.65 + 0.35 * sin(2.0 * ph + 0.5));\n  pool(p, vec2(0.6 + 0.5 * cos(3.0 * ph + 2.2), 0.55 + 0.4 * sin(2.0 * ph + 3.0) + 0.1 * sin(ph)), 0.58, u_c1, 0.7 + 0.3 * sin(3.0 * ph + 2.0));\n  pool(p, vec2(0.45 + 0.45 * sin(ph + 4.0) + 0.2 * sin(3.0 * ph + 1.0), 0.45 + 0.35 * cos(2.0 * ph + 0.4)), 0.62, u_c2, 0.75 + 0.25 * sin(ph + 1.0));\n  pool(p, vec2(1.35 + 0.45 * cos(2.0 * ph + 1.4) + 0.12 * sin(3.0 * ph + 1.0), 0.6 + 0.4 * sin(3.0 * ph + 2.6)), 0.66, u_c3, 0.75 + 0.3 * sin(2.0 * ph + 4.0));\n  pool(p, vec2(1.2 + 0.55 * sin(3.0 * ph + 5.0), 0.35 + 0.45 * cos(2.0 * ph + 0.9)), 0.66, u_c4, 0.8 + 0.2 * sin(3.0 * ph + 0.2));\n  pool(p, vec2(0.9 + 0.7 * cos(ph + 3.3) + 0.2 * cos(2.0 * ph), 0.75 + 0.3 * sin(3.0 * ph + 1.7)), 0.7, u_c5, 0.75 + 0.25 * sin(2.0 * ph + 5.5));\n\n  vec3 col = acc / wsum;\n  // brightness follows how strongly the pools reach a pixel, so each pool glows at its heart, overlaps run brighter,\n  // and the gaps sink to the ground colour\n  float lit = smoothstep(0.1 * u_depth, 0.1 * u_depth + 1.15, reach);\n  col = mix(u_ground, col * (0.7 + 0.4 * lit), pow(lit, 1.25));\n  gl_FragColor = vec4(col, 1.0);\n}\n`;\n\nexport const TideGradient: React.FC<TideGradientProps> = (p) => {\n  const frame = useCurrentFrame();\n  const ph = (2 * Math.PI * frame * p.speed) / LOOP;\n  const c = (i: number) => rgb(p.colors[i]);\n  return (\n    <GlslShader\n      id=\"tg-shader\"\n      width={W}\n      height={H}\n      fragment={FRAGMENT}\n      uniforms={{\n        u_res: [W, H],\n        u_ph: ph,\n        u_c0: c(0), u_c1: c(1), u_c2: c(2), u_c3: c(3), u_c4: c(4), u_c5: c(5),\n        u_ground: rgb(p.ground),\n        u_scale: p.scale,\n        u_depth: p.depth,\n      }}\n    />\n  );\n};\n"
+    },
+    {
+      "path": "lib.ts",
+      "target": "src/components/tide-gradient/lib.ts",
+      "content": "// Shared bits for the backgrounds: colour parsing for shader uniforms, the loop phase, and the GLSL noise every shader uses.\n\n/** \"#rrggbb\" or \"#rgb\" to [r, g, b] in 0..1 for a vec3 uniform. */\nexport const rgb = (hex: string): [number, number, number] => {\n  let h = hex.replace('#', '');\n  if (h.length === 3) h = h.split('').map((c) => c + c).join('');\n  const n = parseInt(h.slice(0, 6), 16);\n  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];\n};\n\n/** Phase in radians that completes a whole turn over `loop` frames, scaled by speed. A whole number of turns per loop\n *  (speed 1, 2, 3 ...) makes the clip loop without a seam; other speeds drift without looping. */\nexport const phase = (frame: number, loop: number, speed: number) => (2 * Math.PI * frame * speed) / loop;\n\nexport const NOISE_GLSL = `\nfloat hash(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }\nfloat vnoise(vec2 p){\n  vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);\n  float a=hash(i); float b=hash(i+vec2(1.0,0.0)); float c=hash(i+vec2(0.0,1.0)); float d=hash(i+vec2(1.0,1.0));\n  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);\n}\nfloat fbm(vec2 p){\n  float v=0.0; float a=0.5;\n  for(int i=0;i<5;i++){ v+=a*vnoise(p); p=p*2.02+17.1; a*=0.5; }\n  return v;\n}\n`;\n"
+    }
+  ],
+  "props": [
+    {
+      "name": "colors",
+      "type": "list",
+      "doc": "The six pool colours: by default cyan, mint, sea green, blue, steel and deep teal."
+    },
+    {
+      "name": "ground",
+      "type": "colour",
+      "doc": "What shows where no pool reaches (black)."
+    },
+    {
+      "name": "scale",
+      "type": "number",
+      "doc": "Size of the pools: higher is larger."
+    },
+    {
+      "name": "depth",
+      "type": "number",
+      "doc": "How much black opens between the pools."
+    },
+    {
+      "name": "speed",
+      "type": "number",
+      "doc": "Loops per 10 seconds. Whole numbers loop seamlessly."
+    }
+  ],
+  "access": "free"
+}

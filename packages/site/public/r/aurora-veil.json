@@ -1,0 +1,56 @@
+{
+  "$schema": "https://kinetograph.dev/r/schema.json",
+  "name": "aurora-veil",
+  "type": "component",
+  "title": "Aurora veil",
+  "description": "Skewed curtains of colour drift in from the top-right corner. It loops with no join.",
+  "kinetograph": "0.3.0",
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "files": [
+    {
+      "path": "index.tsx",
+      "target": "src/components/aurora-veil/index.tsx",
+      "content": "// Aurora Veil: soft curtains of colour drifting across the frame like the northern lights, after the Aurora background\n// on shadcn.io. Two bands of repeating colour stripes, skewed 12 degrees, slide past each other in opposite directions\n// (one stripe every 10 s and every 17 s), over a faint wash that fills the gaps. The layer fades out from the top right\n// corner and sits at an opacity set by `intensity`, paler on a light ground and brighter on a dark one.\n//\n// It is one fragment shader: each pixel is un-skewed into the curtain box, sampled from the two stripe gradients and the\n// wash (premultiplied, as a browser composites them), masked by the corner ellipse and laid over the ground. The drift is\n// a pure function of the frame.\n//\n// Principles: restraint (two bands, no blur, no flicker), overlap (two periods that never line up), slow in and out\n// (nothing starts or stops; the motion is constant like the real thing), staging (the fade keeps one corner lit and the\n// rest of the frame free for content).\n\nimport React from 'react';\nimport { z } from 'zod';\nimport { GlslShader } from '@kinetographdev/core';\nimport { useCurrentFrame } from 'remotion';\nimport { rgb } from './lib.js';\n\nexport const W = 1920;\nexport const H = 1080;\nexport const FPS = 30;\n\nconst hex = z.string().describe('A CSS colour as #rrggbb.');\n\nexport const auroraVeilSchema = z.object({\n  colors: z\n    .array(hex)\n    .min(1)\n    .max(5)\n    .describe('Up to five curtain colours, repeated when there are fewer. The third is the brightest band.'),\n  mode: z.enum(['dark', 'light']).describe('Dark or light ground; the curtains are brighter on dark.'),\n  ground: hex.describe('Ground colour. Leave empty to use the mode default (#0a0a0a dark, #ffffff light).').or(z.literal('')),\n  intensity: z.enum(['subtle', 'medium', 'strong']).describe('How strongly the curtains show over the ground.'),\n  fade: z.boolean().describe('Fade the curtains out from the top-right corner; off fills the whole frame.'),\n  speed: z.number().min(0).max(6).describe('Drift speed: 2 is twice as fast, 0.5 half as fast.'),\n});\nexport type AuroraVeilProps = z.infer<typeof auroraVeilSchema>;\n\nexport const auroraVeilDefaults: AuroraVeilProps = {\n  // emerald, bright emerald, mint, light teal, teal\n  colors: ['#00bc7d', '#00d492', '#5ee9b5', '#00d5be', '#00bba7'],\n  mode: 'dark',\n  ground: '',\n  intensity: 'medium',\n  fade: true,\n  speed: 1,\n};\n\n/** The layer's opacity per intensity, [light, dark]. */\nconst INTENSITY = { subtle: [0.4, 0.5], medium: [0.6, 0.75], strong: [0.8, 0.95] } as const;\n\nconst FRAGMENT = `\nprecision highp float;\nuniform vec2 u_res;\nuniform float u_t;\nuniform vec3 u_bg;\nuniform vec3 u_c1; uniform vec3 u_c2; uniform vec3 u_c3; uniform vec3 u_c4; uniform vec3 u_c5;\nuniform float u_opacity;\nuniform float u_fade;\n\n// a colour at an alpha, premultiplied\nvec4 pm(vec3 c, float a){ return vec4(c * a, a); }\n\n// a gradient through stops (position, premultiplied colour), clamped at both ends\nvec4 ramp4(float x, float p0, vec4 s0, float p1, vec4 s1, float p2, vec4 s2, float p3, vec4 s3){\n  if (x <= p0) return s0;\n  if (x < p1) return mix(s0, s1, (x - p0) / (p1 - p0));\n  if (x < p2) return mix(s1, s2, (x - p1) / (p2 - p1));\n  if (x < p3) return mix(s2, s3, (x - p2) / (p3 - p2));\n  return s3;\n}\nvec4 ramp5(float x, float p0, vec4 s0, float p1, vec4 s1, float p2, vec4 s2, float p3, vec4 s3, float p4, vec4 s4){\n  if (x < p3) return ramp4(x, p0, s0, p1, s1, p2, s2, p3, s3);\n  if (x < p4) return mix(s3, s4, (x - p3) / (p4 - p3));\n  return s4;\n}\nvec4 over(vec4 src, vec4 dst){ return src + dst * (1.0 - src.a); }\n\nvoid main(){\n  float Wd = u_res.x; float Hd = u_res.y;\n  // CSS pixels: x right, y down\n  vec2 p = vec2(gl_FragCoord.x, Hd - gl_FragCoord.y);\n  // undo skewX(-12deg) about the box centre\n  float k = tan(radians(12.0));\n  float xl = p.x + k * (p.y - Hd * 0.5);\n  // the box runs 11% of the height past each side\n  float bw = Wd + 0.22 * Hd;\n  float u = xl + 0.11 * Hd;\n\n  vec4 none = vec4(0.0);\n  // the wash under the bands\n  vec4 wash = ramp4(u / bw, 0.0, pm(u_c1, 0.18), 1.0/3.0, pm(u_c4, 0.22), 2.0/3.0, pm(u_c3, 0.14), 1.0, pm(u_c5, 0.22));\n\n  // band A: stripes a quarter of the box wide, sliding left one stripe every 10 s\n  float sA = 0.25 * bw;\n  float tA = fract(u_t / 10.0) * sA;\n  float fa = fract((u + tA) / sA);\n  vec4 bandA = ramp5(fa, 0.08, none, 0.30, pm(u_c1, 0.6), 0.48, pm(u_c3, 1.0), 0.62, pm(u_c4, 0.7), 0.88, none);\n\n  // band B: stripes a fifth of the box wide, starting 20% to the left, sliding right one stripe every 17 s\n  float sB = 0.2 * bw;\n  float tB = fract(u_t / 17.0) * sB;\n  float fb = fract((u + 0.2 * bw - tB) / sB);\n  vec4 bandB = ramp4(fb, 0.15, none, 0.40, pm(u_c2, 0.55), 0.55, pm(u_c5, 0.8), 0.80, none);\n\n  vec4 layer = over(bandB, over(bandA, wash));\n\n  // the fade: an ellipse at the top-right corner, through the far corner, solid to 10% and gone by 75%\n  float d = length(vec2((p.x - Wd) / (Wd * 1.41421356), p.y / (Hd * 1.41421356)));\n  float mask = mix(1.0, 1.0 - clamp((d - 0.10) / 0.65, 0.0, 1.0), u_fade);\n\n  float a = u_opacity * mask;\n  vec3 col = u_bg * (1.0 - layer.a * a) + layer.rgb * a;\n  gl_FragColor = vec4(col, 1.0);\n}\n`;\n\nexport const AuroraVeil: React.FC<AuroraVeilProps> = (p) => {\n  const frame = useCurrentFrame();\n  const c = (n: number) => rgb(p.colors[n % p.colors.length]);\n  const dark = p.mode === 'dark';\n  const ground = p.ground || (dark ? '#0a0a0a' : '#ffffff');\n  return (\n    <GlslShader\n      id=\"av-shader\"\n      width={W}\n      height={H}\n      fragment={FRAGMENT}\n      uniforms={{\n        u_res: [W, H],\n        u_t: (frame / FPS) * p.speed,\n        u_bg: rgb(ground),\n        u_c1: c(0), u_c2: c(1), u_c3: c(2), u_c4: c(3), u_c5: c(4),\n        u_opacity: INTENSITY[p.intensity][dark ? 1 : 0],\n        u_fade: p.fade ? 1 : 0,\n      }}\n    />\n  );\n};\n"
+    },
+    {
+      "path": "lib.ts",
+      "target": "src/components/aurora-veil/lib.ts",
+      "content": "// Shared bits for the backgrounds: colour parsing for shader uniforms, the loop phase, and the GLSL noise every shader uses.\n\n/** \"#rrggbb\" or \"#rgb\" to [r, g, b] in 0..1 for a vec3 uniform. */\nexport const rgb = (hex: string): [number, number, number] => {\n  let h = hex.replace('#', '');\n  if (h.length === 3) h = h.split('').map((c) => c + c).join('');\n  const n = parseInt(h.slice(0, 6), 16);\n  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];\n};\n\n/** Phase in radians that completes a whole turn over `loop` frames, scaled by speed. A whole number of turns per loop\n *  (speed 1, 2, 3 ...) makes the clip loop without a seam; other speeds drift without looping. */\nexport const phase = (frame: number, loop: number, speed: number) => (2 * Math.PI * frame * speed) / loop;\n\nexport const NOISE_GLSL = `\nfloat hash(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }\nfloat vnoise(vec2 p){\n  vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);\n  float a=hash(i); float b=hash(i+vec2(1.0,0.0)); float c=hash(i+vec2(0.0,1.0)); float d=hash(i+vec2(1.0,1.0));\n  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);\n}\nfloat fbm(vec2 p){\n  float v=0.0; float a=0.5;\n  for(int i=0;i<5;i++){ v+=a*vnoise(p); p=p*2.02+17.1; a*=0.5; }\n  return v;\n}\n`;\n"
+    }
+  ],
+  "props": [
+    {
+      "name": "colors",
+      "type": "list",
+      "doc": "Up to five curtain colours, repeated when there are fewer. The third is the brightest band."
+    },
+    {
+      "name": "mode",
+      "type": "dark | light",
+      "doc": "Dark or light ground; the curtains are brighter on dark."
+    },
+    {
+      "name": "ground",
+      "type": "colour",
+      "doc": "Ground colour. Leave empty to use the mode default (#0a0a0a dark, #ffffff light)."
+    },
+    {
+      "name": "intensity",
+      "type": "subtle | medium | strong",
+      "doc": "How strongly the curtains show over the ground."
+    },
+    {
+      "name": "fade",
+      "type": "boolean",
+      "doc": "Fade the curtains out from the top-right corner; off fills the whole frame."
+    },
+    {
+      "name": "speed",
+      "type": "number",
+      "doc": "Drift speed: 2 is twice as fast, 0.5 half as fast."
+    }
+  ],
+  "access": "free"
+}

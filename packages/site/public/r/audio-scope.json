@@ -1,0 +1,192 @@
+{
+  "$schema": "https://kinetograph.dev/r/schema.json",
+  "name": "audio-scope",
+  "type": "component",
+  "title": "Audio scope",
+  "description": "An oscilloscope draws the sound as red and yellow traces over a dark grid. It is drawn from the audio file itself.",
+  "kinetograph": "0.3.0",
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "files": [
+    {
+      "path": "index.tsx",
+      "target": "src/components/audio-scope/index.tsx",
+      "content": "// Audio Visualiser, after a reel on stylised waveforms (\"not the boring default ones\"): the trick is the stack, not the\n// effect. The same audio is drawn several times, each copy in its own style (analog lines, analog dots or digital bars),\n// its own colour and a slight offset, so they layer into one signal; two glows on top of each other give it the hot\n// analog bloom, and grain over everything takes the digital edge off.\n//\n// Two looks ship as presets, both drawn from the audio itself (waveform.ts reads the decoded samples per frame):\n//   scope   an oscilloscope: a dark graticule, two red line traces either side of a yellow digital trace, condensed\n//           type with a script word, a slow push in\n//   plasma  a white-hot trace in a blue bloom, a playhead, and the running time in huge soft numerals behind\n//\n// Measured on the reference: scope traces 58 px apart (red #fc453d, 4 px core, dark-red bloom to about 40 px), the\n// digital trace a dot every 13 px, graticule cells of 62 px on #0f0f0f.\n//\n// Principles: staging (the signal on the centre line, type above it), timing (everything that moves is driven by the\n// audio; the only free motion is the slow push), secondary action (the bloom and the push breathe with the loudness),\n// appeal (layered colour rather than one flat trace).\n\nimport React from 'react';\nimport { z } from 'zod';\nimport { Audio } from 'remotion';\nimport { Ellipse, Layer, Path, Rect, Text, blur, chromaticAberration, glow, grain, linearGradient, staticFile } from '@kinetographdev/core';\nimport { makeGoogleFont } from '@kinetographdev/core/google-fonts';\nimport { useAudioData } from '@kinetographdev/core/media-utils';\nimport { measureText } from '@remotion/layout-utils';\nimport { useCurrentFrame, useVideoConfig } from 'remotion';\nimport { level, scope } from './waveform.js';\n\nconst hex = z.string().describe('A CSS colour.');\n\nconst layerSchema = z.object({\n  style: z.enum(['lines', 'dots', 'digital']).describe('Analog lines (a trace), analog dots (a dot per sample) or digital (mirrored bars).'),\n  color: hex.describe('Colour of this copy of the signal.'),\n  y: z.number().describe('Offset from the centre line, px (stack copies a little apart).'),\n  height: z.number().min(0).max(900).describe('Maximum height of the signal, px (the loudest sample reaches this).'),\n  thickness: z.number().min(0.5).max(40).describe('Line width, dot size or bar width, px.'),\n  samples: z.number().int().min(8).max(400).describe('Points across the width (After Effects: displayed samples).'),\n  windowMs: z.number().min(5).max(2000).describe('How much audio is spread across the width, ms (After Effects: audio duration).'),\n  delayMs: z.number().describe('Shift this copy in time, ms (After Effects: audio offset).'),\n  opacity: z.number().min(0).max(1).describe('Opacity of this copy.'),\n  glow: z.boolean().describe('Put this copy under the two stacked glows.'),\n});\nexport type WaveLayer = z.infer<typeof layerSchema>;\n\nexport const audioVizSchema = z.object({\n  audio: z.string().describe('The audio file in public/ the signal is read from (and that plays).'),\n  layers: z.array(layerSchema).min(1).max(8).describe('The copies of the signal, bottom first.'),\n  ground: hex.describe('Background.'),\n  grid: z\n    .object({\n      show: z.boolean().describe('Draw the graticule.'),\n      cell: z.number().min(10).max(400).describe('Grid cell size, px.'),\n      color: hex.describe('Grid line colour.'),\n      width: z.number().min(0.5).max(8).describe('Grid line width, px.'),\n    })\n    .describe('The oscilloscope graticule.'),\n  glowNear: z.number().min(0).max(60).describe('Radius of the tight glow, px (the first of the two stacked glows).'),\n  glowFar: z.number().min(0).max(200).describe('Radius of the wide bloom, px (the second glow).'),\n  bloomStrength: z.number().min(0).max(2).describe('Strength of the wide bloom (keep it low where copies of different colours meet, or they smear together).'),\n  bloomWithLevel: z.number().min(0).max(2).describe('How much the bloom swells with the loudness.'),\n  bloomTint: z.string().describe('Colour of the wide bloom; empty to bloom in each copy\\'s own colour.'),\n  push: z.number().min(0).max(0.5).describe('Slow camera push over the whole clip (0.08 = 8% closer at the end).'),\n  bump: z.number().min(0).max(0.1).describe('How much the frame swells on loud hits.'),\n  title: z\n    .object({\n      kicker: z.string().describe('Small line above the headline. Empty for none.'),\n      headline: z.string().describe('The big word. Empty for none.'),\n      script: z.string().describe('Script word overlapping the headline. Empty for none.'),\n      y: z.number().min(0).max(1).describe('Vertical position of the headline, as a fraction of the height.'),\n      kickerColor: hex,\n      headlineColor: hex,\n      scriptColor: hex,\n      headlineFont: z.string().describe('Google Fonts family, condensed.'),\n      scriptFont: z.string().describe('Google Fonts family, italic serif.'),\n      headlineSize: z.number().min(20).max(500),\n    })\n    .describe('Type.'),\n  timecode: z\n    .object({\n      show: z.boolean().describe('Show the running time as huge soft numerals and a playhead.'),\n      color: hex,\n      blur: z.number().min(0).max(30).describe('Softness of the numerals, px.'),\n      playhead: hex.describe('Colour of the playhead line.'),\n    })\n    .describe('Running time.'),\n  streak: z.number().min(0).max(1).describe('A horizontal light streak along the centre line (anamorphic flare), swelling with the loudness.'),\n  streakColor: hex.describe('Colour of the streak.'),\n  grain: z.number().min(0).max(0.3).describe('Film grain over everything.'),\n  chroma: z.number().min(0).max(6).describe('Chromatic aberration, px.'),\n});\nexport type AudioVizProps = z.infer<typeof audioVizSchema>;\n\nconst red = '#fc453d';\n\nexport const scopeDefaults: AudioVizProps = {\n  audio: 'audio/audio-scope/beat.wav',\n  layers: [\n    { style: 'lines', color: red, y: -29, height: 8, thickness: 4, samples: 220, windowMs: 140, delayMs: 0, opacity: 1, glow: true },\n    { style: 'lines', color: red, y: 29, height: 8, thickness: 4, samples: 220, windowMs: 140, delayMs: 18, opacity: 1, glow: true },\n    { style: 'digital', color: '#f6ea5a', y: 0, height: 7, thickness: 7, samples: 83, windowMs: 140, delayMs: 8, opacity: 1, glow: true },\n  ],\n  ground: '#050505',\n  grid: { show: true, cell: 62, color: '#4a4a4a', width: 2 },\n  glowNear: 3,\n  glowFar: 10,\n  bloomStrength: 0.2,\n  bloomWithLevel: 0.5,\n  bloomTint: '',\n  push: 0.12,\n  bump: 0.012,\n  title: {\n    kicker: 'LISTEN TO',\n    headline: 'SIGNAL',\n    script: 'in colour',\n    y: 0.3,\n    kickerColor: '#d8d8d8',\n    headlineColor: red,\n    scriptColor: '#f6ea5a',\n    headlineFont: 'Bebas Neue',\n    scriptFont: 'Instrument Serif',\n    headlineSize: 230,\n  },\n  timecode: { show: false, color: '#5a5d63', blur: 3, playhead: '#7fb2ff' },\n  streak: 0,\n  streakColor: '#ff6a5a',\n  grain: 0.035,\n  chroma: 1,\n};\n\nexport const plasmaDefaults: AudioVizProps = {\n  audio: 'audio/audio-scope/beat.wav',\n  layers: [\n    { style: 'lines', color: '#2a63ff', y: 0, height: 22, thickness: 22, samples: 240, windowMs: 90, delayMs: 0, opacity: 0.55, glow: true },\n    { style: 'lines', color: '#a9c8ff', y: 0, height: 22, thickness: 8, samples: 240, windowMs: 90, delayMs: 0, opacity: 0.9, glow: true },\n    { style: 'lines', color: '#ffffff', y: 0, height: 22, thickness: 3.5, samples: 240, windowMs: 90, delayMs: 0, opacity: 1, glow: true },\n  ],\n  ground: '#070a12',\n  grid: { show: false, cell: 120, color: '#14181f', width: 1.5 },\n  glowNear: 8,\n  glowFar: 42,\n  bloomStrength: 0.8,\n  bloomWithLevel: 1,\n  bloomTint: '#2f6bff',\n  push: 0.05,\n  bump: 0.02,\n  title: {\n    kicker: '',\n    headline: 'ON AIR?',\n    script: '',\n    y: 0.5,\n    kickerColor: '#d8d8d8',\n    headlineColor: '#f4f7ff',\n    scriptColor: '#9cc1ff',\n    headlineFont: 'Bebas Neue',\n    scriptFont: 'Instrument Serif',\n    headlineSize: 170,\n  },\n  timecode: { show: true, color: '#4d525b', blur: 4, playhead: '#7fb2ff' },\n  streak: 0.85,\n  streakColor: '#7fa8ff',\n  grain: 0.05,\n  chroma: 2.2,\n};\n\n/** One copy of the signal, centred on y = 0, x from 0 to w. */\nconst Wave: React.FC<{ id: string; v: number[]; w: number; layer: WaveLayer }> = ({ id, v, w, layer }) => {\n  const n = v.length;\n  const xs = (k: number) => (k / Math.max(1, n - 1)) * w;\n  if (layer.style === 'lines') {\n    const d = v.map((s, k) => `${k ? 'L' : 'M'}${xs(k).toFixed(1)} ${(-s * layer.height).toFixed(1)}`).join(' ');\n    return (\n      <Path\n        id={id}\n        d={d}\n        stroke={{ color: layer.color, width: layer.thickness, cap: 'round', join: 'round' } as unknown as { color: string; width: number }}\n      />\n    );\n  }\n  if (layer.style === 'dots') {\n    const r = layer.thickness / 2;\n    return (\n      <Layer id={id}>\n        {v.map((s, k) => (\n          <Ellipse key={k} id={`${id}-${k}`} x={xs(k) - r} y={-s * layer.height - r} width={2 * r} height={2 * r} fill={layer.color} />\n        ))}\n      </Layer>\n    );\n  }\n  // digital: a mirrored bar per sample (side A and B), never shorter than a dot\n  const bw = layer.thickness;\n  return (\n    <Layer id={id}>\n      {v.map((s, k) => {\n        const h = Math.max(bw, Math.abs(s) * layer.height * 2);\n        return <Rect key={k} id={`${id}-${k}`} x={xs(k) - bw / 2} y={-h / 2} width={bw} height={h} radius={bw / 2} fill={layer.color} />;\n      })}\n    </Layer>\n  );\n};\n\nexport const AudioViz: React.FC<AudioVizProps> = (p) => {\n  const f = useCurrentFrame();\n  const { fps, width: W, height: H, durationInFrames } = useVideoConfig();\n  const t = f / fps;\n  const src = staticFile(p.audio);\n  const data = useAudioData(src);\n  const lv = data ? level(data, t) : 0;\n\n  const head = makeGoogleFont(p.title.headlineFont.replace(/\\s+/g, '')).loadFont('normal', { weights: ['400'] }).fontFamily;\n  const script = makeGoogleFont(p.title.scriptFont.replace(/\\s+/g, '')).loadFont('italic', { weights: ['400'] }).fontFamily;\n\n  // the camera: a slow push over the clip, and a small swell with the loudness\n  const s = 1 + p.push * (f / Math.max(1, durationInFrames - 1)) + p.bump * lv;\n  const bloom = 1 + p.bloomWithLevel * lv;\n\n  const glows = (on: boolean) =>\n    on && (p.glowNear > 0 || p.glowFar > 0)\n      ? [\n          glow({ radius: p.glowNear, intensity: 1.1 }),\n          glow({ radius: p.glowFar * bloom, intensity: p.bloomStrength * (1 + 0.6 * lv), ...(p.bloomTint ? { color: p.bloomTint } : {}) }),\n        ]\n      : undefined;\n  // type keeps its letters: a tight glow and a modest halo, never the signal's full bloom\n  const typeGlow = [glow({ radius: 3, intensity: 0.9 }), glow({ radius: 18, intensity: 0.45, ...(p.bloomTint ? { color: p.bloomTint } : {}) })];\n\n  const waves = p.layers.map((l, i) => (data ? scope(data, t, l.windowMs, l.samples, l.delayMs) : new Array(l.samples).fill(0)));\n\n  const hs = p.title.headlineSize;\n  const headW = p.title.headline ? measureText({ text: p.title.headline, fontFamily: head, fontSize: hs, fontWeight: '400' }).width : 0;\n  const kickW = p.title.kicker ? measureText({ text: p.title.kicker, fontFamily: head, fontSize: hs * 0.42, fontWeight: '400' }).width : 0;\n  const scriptSize = hs * 0.5;\n  const scriptW = p.title.script ? measureText({ text: p.title.script, fontFamily: script, fontSize: scriptSize, fontWeight: '400', fontStyle: 'italic' }).width : 0;\n  const ty = H * p.title.y;\n  const secs = Math.floor(t);\n  const tc1 = `0:${String(secs).padStart(2, '0')}`;\n  const tc2 = `00:${String(Math.floor((t % 1) * 100)).padStart(2, '0')}`;\n\n  return (\n    <Layer id=\"av\" effects={[...(p.chroma > 0 ? [chromaticAberration(p.chroma)] : []), ...(p.grain > 0 ? [grain(p.grain, { seed: 11, size: 1.4 })] : [])]}>\n      <Audio src={src} />\n      <Rect id=\"av-ground\" width={W} height={H} fill={p.ground} />\n      <Layer id=\"av-cam\" x={W / 2} y={H / 2} anchorX={W / 2} anchorY={H / 2} scale={s}>\n        {p.grid.show ? (\n          <Layer id=\"av-grid\">\n            {Array.from({ length: Math.ceil(W / p.grid.cell) + 1 }, (_, i) => (\n              <Rect key={`v${i}`} id={`av-gv${i}`} x={W / 2 + (i - Math.floor(W / p.grid.cell / 2)) * p.grid.cell - p.grid.width / 2} y={0} width={p.grid.width} height={H} fill={p.grid.color} />\n            ))}\n            {Array.from({ length: Math.ceil(H / p.grid.cell) + 1 }, (_, i) => (\n              <Rect key={`h${i}`} id={`av-gh${i}`} x={0} y={H / 2 + (i - Math.floor(H / p.grid.cell / 2)) * p.grid.cell - p.grid.width / 2} width={W} height={p.grid.width} fill={p.grid.color} />\n            ))}\n          </Layer>\n        ) : null}\n\n        {p.timecode.show ? (\n          <Layer id=\"av-tc\" effects={[blur(p.timecode.blur)]}>\n            <Text id=\"av-tc1\" font={head} weight={400} size={300} color={p.timecode.color} x={-30} y={H * 0.2}>\n              {tc1}\n            </Text>\n            <Text id=\"av-tc2\" font={head} weight={400} size={230} color={p.timecode.color} x={W * 0.58} y={H * 0.72} opacity={0.8}>\n              {tc2}\n            </Text>\n            <Rect id=\"av-playhead\" x={W * 0.15} y={H * 0.36} width={3} height={H * 0.28} fill={p.timecode.playhead} opacity={0.55} />\n          </Layer>\n        ) : null}\n\n        {p.title.kicker ? (\n          <Text id=\"av-kicker\" font={head} weight={400} size={hs * 0.42} color={p.title.kickerColor} x={W / 2 - kickW / 2} y={ty - hs * 0.95}>\n            {p.title.kicker}\n          </Text>\n        ) : null}\n\n        {/* the streak: a thin horizontal flare along the centre line, brightest in the middle, swelling with the loudness */}\n        {p.streak > 0 ? (\n          <Layer id=\"av-streak\" y={H / 2} opacity={p.streak * (0.55 + 0.45 * lv)} effects={[blur(10)]}>\n            <Rect id=\"av-streak-wide\" x={0} y={-14} width={W} height={28} fill={linearGradient([[0, `${p.streakColor}00`], [0.5, `${p.streakColor}cc`], [1, `${p.streakColor}00`]], { angle: 90 })} />\n            <Rect id=\"av-streak-core\" x={W * 0.1} y={-3} width={W * 0.8} height={6} fill={linearGradient([[0, '#ffffff00'], [0.5, '#ffffffee'], [1, '#ffffff00']], { angle: 90 })} />\n          </Layer>\n        ) : null}\n\n        {/* the signal: every copy on the centre line, each under the two stacked glows */}\n        <Layer id=\"av-signal\" x={0} y={H / 2}>\n          {p.layers.map((l, i) => (\n            <Layer key={i} id={`av-l${i}`} y={l.y} opacity={l.opacity} effects={glows(l.glow)}>\n              <Wave id={`av-w${i}`} v={waves[i]} w={W} layer={l} />\n            </Layer>\n          ))}\n        </Layer>\n\n        {p.title.headline ? (\n          <Layer id=\"av-head\" effects={typeGlow}>\n            <Text id=\"av-headline\" font={head} weight={400} size={hs} color={p.title.headlineColor} x={W / 2 - headW / 2} y={ty - hs * 0.55}>\n              {p.title.headline}\n            </Text>\n          </Layer>\n        ) : null}\n        {p.title.script ? (\n          <Layer id=\"av-script\" effects={[glow({ radius: 6, intensity: 0.8 })]}>\n            <Text id=\"av-scripttext\" font={script} fontStyle=\"italic\" weight={400} size={scriptSize} color={p.title.scriptColor} x={W / 2 + headW / 2 - scriptW * 0.85} y={ty + hs * 0.18}>\n              {p.title.script}\n            </Text>\n          </Layer>\n        ) : null}\n      </Layer>\n    </Layer>\n  );\n};\n"
+    },
+    {
+      "path": "public/audio/beat.wav",
+      "target": "public/audio/audio-scope/beat.wav",
+      "url": "files/audio-scope/public/audio/beat.wav",
+      "sha256": "6a0a5d1dc634000c2d7558190a1866dd274d37173b6f2644b36232d8ec821101"
+    },
+    {
+      "path": "waveform.ts",
+      "target": "src/components/audio-scope/waveform.ts",
+      "content": "// The signal behind the visualisers, read from the decoded audio (useAudioData). It works like After Effects' Audio\n// Waveform effect: at each frame a short window of the raw signal (windowMs, centred on the frame's time) is drawn as\n// `samples` points, each the signed mean of a few samples at that point, so a bass note reads as a slow wave and a hat as\n// fuzz. Values come out in -1..1 against the file's own peak.\n\nimport type { MediaUtilsAudioData } from '@kinetographdev/core/media-utils';\n\nconst peaks = new WeakMap<MediaUtilsAudioData, { peak: number; rms: number }>();\n\n/** The loudest sample and the loudest 50 ms RMS of the file (for normalising), once per file. */\nfunction stats(data: MediaUtilsAudioData) {\n  const known = peaks.get(data);\n  if (known) return known;\n  const ch = data.channelWaveforms[0];\n  let peak = 0;\n  for (let i = 0; i < ch.length; i++) peak = Math.max(peak, Math.abs(ch[i]));\n  const win = Math.round(data.sampleRate * 0.05);\n  let rms = 0;\n  for (let s = 0; s + win < ch.length; s += win) {\n    let sum = 0;\n    for (let i = s; i < s + win; i++) sum += ch[i] * ch[i];\n    rms = Math.max(rms, Math.sqrt(sum / win));\n  }\n  const out = { peak: peak || 1, rms: rms || 1 };\n  peaks.set(data, out);\n  return out;\n}\n\n/** Channel 0..n-1 averaged, at sample index i (0 outside the file). */\nconst at = (data: MediaUtilsAudioData, i: number) => {\n  if (i < 0 || i >= data.channelWaveforms[0].length) return 0;\n  let v = 0;\n  for (const ch of data.channelWaveforms) v += ch[i];\n  return v / data.channelWaveforms.length;\n};\n\n/** The waveform at time t (seconds): `samples` signed values in -1..1 over `windowMs`, shifted by `delayMs`. */\nexport function scope(data: MediaUtilsAudioData, t: number, windowMs: number, samples: number, delayMs = 0): number[] {\n  const { peak } = stats(data);\n  const sr = data.sampleRate;\n  const span = (windowMs / 1000) * sr;\n  const start = (t - delayMs / 1000) * sr - span / 2;\n  // A few samples per point, not the whole stretch: After Effects picks points off the raw signal, so a hat or a\n  // vocal edge stays as jitter on the trace instead of being averaged into a smooth sine.\n  const block = Math.max(1, Math.min(6, Math.floor(span / samples)));\n  const out: number[] = [];\n  for (let k = 0; k < samples; k++) {\n    const c = Math.round(start + (k / Math.max(1, samples - 1)) * span);\n    let sum = 0;\n    for (let j = -Math.floor(block / 2); j < Math.ceil(block / 2); j++) sum += at(data, c + j);\n    out.push(Math.max(-1, Math.min(1, sum / block / peak)));\n  }\n  return out;\n}\n\n/** Loudness at time t, 0..1: the RMS of the 50 ms before t against the file's loudest 50 ms, with a fast attack and a\n *  120 ms release (followed back from t, so it is a pure function of the frame). */\nexport function level(data: MediaUtilsAudioData, t: number): number {\n  const { rms } = stats(data);\n  const sr = data.sampleRate;\n  const hop = 0.01;\n  let env = 0;\n  for (let back = 0.3; back >= 0; back -= hop) {\n    const end = Math.round((t - back) * sr);\n    const win = Math.round(0.05 * sr);\n    let sum = 0;\n    for (let i = end - win; i < end; i++) {\n      const v = at(data, i);\n      sum += v * v;\n    }\n    const x = Math.sqrt(sum / win) / rms;\n    env = x > env ? x : env * Math.exp(-hop / 0.12);\n  }\n  return Math.min(1, env);\n}\n"
+    }
+  ],
+  "props": [
+    {
+      "name": "audio",
+      "type": "string",
+      "doc": "The audio file in public/ the signal is read from (and that plays)."
+    },
+    {
+      "name": "layers",
+      "type": "list",
+      "doc": "The copies of the signal, bottom first."
+    },
+    {
+      "name": "ground",
+      "type": "colour",
+      "doc": "Background."
+    },
+    {
+      "name": "grid.show",
+      "type": "boolean",
+      "doc": "Draw the graticule."
+    },
+    {
+      "name": "grid.cell",
+      "type": "number",
+      "doc": "Grid cell size, px."
+    },
+    {
+      "name": "grid.color",
+      "type": "colour",
+      "doc": "Grid line colour."
+    },
+    {
+      "name": "grid.width",
+      "type": "number",
+      "doc": "Grid line width, px."
+    },
+    {
+      "name": "glowNear",
+      "type": "number",
+      "doc": "Radius of the tight glow, px (the first of the two stacked glows)."
+    },
+    {
+      "name": "glowFar",
+      "type": "number",
+      "doc": "Radius of the wide bloom, px (the second glow)."
+    },
+    {
+      "name": "bloomStrength",
+      "type": "number",
+      "doc": "Strength of the wide bloom (keep it low where copies of different colours meet, or they smear together)."
+    },
+    {
+      "name": "bloomWithLevel",
+      "type": "number",
+      "doc": "How much the bloom swells with the loudness."
+    },
+    {
+      "name": "bloomTint",
+      "type": "string",
+      "doc": "Colour of the wide bloom; empty to bloom in each copy's own colour."
+    },
+    {
+      "name": "push",
+      "type": "number",
+      "doc": "Slow camera push over the whole clip (0.08 = 8% closer at the end)."
+    },
+    {
+      "name": "bump",
+      "type": "number",
+      "doc": "How much the frame swells on loud hits."
+    },
+    {
+      "name": "title.kicker",
+      "type": "string",
+      "doc": "Small line above the headline. Empty for none."
+    },
+    {
+      "name": "title.headline",
+      "type": "string",
+      "doc": "The big word. Empty for none."
+    },
+    {
+      "name": "title.script",
+      "type": "string",
+      "doc": "Script word overlapping the headline. Empty for none."
+    },
+    {
+      "name": "title.y",
+      "type": "number",
+      "doc": "Vertical position of the headline, as a fraction of the height."
+    },
+    {
+      "name": "title.kickerColor",
+      "type": "colour",
+      "doc": "A CSS colour."
+    },
+    {
+      "name": "title.headlineColor",
+      "type": "colour",
+      "doc": "A CSS colour."
+    },
+    {
+      "name": "title.scriptColor",
+      "type": "colour",
+      "doc": "A CSS colour."
+    },
+    {
+      "name": "title.headlineFont",
+      "type": "string",
+      "doc": "Google Fonts family, condensed."
+    },
+    {
+      "name": "title.scriptFont",
+      "type": "string",
+      "doc": "Google Fonts family, italic serif."
+    },
+    {
+      "name": "title.headlineSize",
+      "type": "number",
+      "doc": "Headline size."
+    },
+    {
+      "name": "timecode.show",
+      "type": "boolean",
+      "doc": "Show the running time as huge soft numerals and a playhead."
+    },
+    {
+      "name": "timecode.color",
+      "type": "colour",
+      "doc": "A CSS colour."
+    },
+    {
+      "name": "timecode.blur",
+      "type": "number",
+      "doc": "Softness of the numerals, px."
+    },
+    {
+      "name": "timecode.playhead",
+      "type": "colour",
+      "doc": "Colour of the playhead line."
+    },
+    {
+      "name": "streak",
+      "type": "number",
+      "doc": "A horizontal light streak along the centre line (anamorphic flare), swelling with the loudness."
+    },
+    {
+      "name": "streakColor",
+      "type": "colour",
+      "doc": "Colour of the streak."
+    },
+    {
+      "name": "grain",
+      "type": "number",
+      "doc": "Film grain over everything."
+    },
+    {
+      "name": "chroma",
+      "type": "number",
+      "doc": "Chromatic aberration, px."
+    }
+  ],
+  "access": "free"
+}

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://kinetograph.dev/r/schema.json",
+  "name": "dot-field",
+  "type": "component",
+  "title": "Halftone dot field",
+  "description": "A grid of halftone dots breathes on a ring-shaped wave. It loops with no join at whole-number speeds.",
+  "kinetograph": "0.3.0",
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "files": [
+    {
+      "path": "index.tsx",
+      "target": "src/components/dot-field/index.tsx",
+      "content": "// Dot Field: a halftone grid whose dots swell and shrink on a slow wave. Two waves cross, a ring that travels out from\n// a point off the centre and a long diagonal swell, so the field never looks mechanical, and the dots take their\n// colour from where they sit in the wave. Dots are anti-aliased in the shader, so edges stay clean at any scale.\n//\n// Principles: slow in and out (sine waves), overlap (two waves at different periods), arcs (the ring's centre drifts on a\n// small circle), restraint (one colour pair, small dots), solid drawing (a soft light falloff behind the grid).\n\nimport React from 'react';\nimport { z } from 'zod';\nimport { GlslShader, Layer, grain } from '@kinetographdev/core';\nimport { useCurrentFrame } from 'remotion';\nimport { phase, rgb } from './lib.js';\n\nexport const W = 1920;\nexport const H = 1080;\nexport const FPS = 30;\nexport const DURATION = 300;\n\nconst hex = z.string().describe('A CSS colour.');\n\nexport const dotFieldSchema = z.object({\n  ground: hex.describe('Background colour.'),\n  dot: hex.describe('Colour of the dots where the wave is low.'),\n  dotHigh: hex.describe('Colour of the dots at the crest of the wave.'),\n  spacing: z.number().min(10).max(80).describe('Distance between dot centres, in pixels.'),\n  size: z.number().min(0.2).max(1).describe('The largest dot, as a fraction of the spacing.'),\n  waveLength: z.number().min(0.4).max(3).describe('Length of the waves as a multiple of the default. Higher is calmer.'),\n  speed: z.number().min(0).max(4).describe('How fast the wave travels. Whole numbers loop seamlessly over 10 seconds.'),\n  grain: z.number().min(0).max(0.3).describe('Grain amount over the whole frame.'),\n});\nexport type DotFieldProps = z.infer<typeof dotFieldSchema>;\n\nexport const dotFieldDefaults: DotFieldProps = {\n  ground: '#efede6',\n  dot: '#c9c5b8',\n  dotHigh: '#2b3a22',\n  spacing: 34,\n  size: 0.62,\n  waveLength: 1,\n  speed: 1,\n  grain: 0.05,\n};\n\nconst FRAGMENT = `\nprecision highp float;\nuniform vec2 u_res;\nuniform float u_ph;\nuniform vec3 u_bg; uniform vec3 u_lo; uniform vec3 u_hi;\nuniform float u_sp; uniform float u_size; uniform float u_wl;\nvoid main(){\n  vec2 p = gl_FragCoord.xy;\n  vec2 c = (floor(p / u_sp) + 0.5) * u_sp;\n  float asp = u_res.x / u_res.y;\n  vec2 q = vec2(c.x / u_res.x * asp, c.y / u_res.y);\n  // ring wave from a centre that drifts on a small circle\n  vec2 o = vec2(0.5 * asp + 0.12 * cos(u_ph), 0.5 + 0.08 * sin(u_ph));\n  float ring = sin(length(q - o) * 7.0 / u_wl - u_ph * 2.0);\n  // a long diagonal swell\n  float swell = sin((q.x * 0.9 + q.y * 1.4) * 2.6 / u_wl + u_ph);\n  float w = clamp(0.5 + 0.32 * ring + 0.26 * swell, 0.0, 1.0);\n  float r = u_sp * 0.5 * u_size * (0.12 + 0.88 * w * w);\n  float dist = length(p - c);\n  float cover = smoothstep(r + 0.75, r - 0.75, dist);\n  vec3 dotc = mix(u_lo, u_hi, w * w);\n  vec2 uv = gl_FragCoord.xy / u_res;\n  vec3 bg = u_bg * (0.94 + 0.08 * smoothstep(1.1, 0.0, length((uv - vec2(0.3, 0.75)) * vec2(1.0, 0.9))));\n  vec3 col = mix(bg, dotc, cover);\n  gl_FragColor = vec4(col, 1.0);\n}\n`;\n\nexport const DotField: React.FC<DotFieldProps> = (p) => {\n  const frame = useCurrentFrame();\n  const ph = phase(frame, DURATION, p.speed);\n  return (\n    <Layer id=\"df-root\" effects={p.grain > 0 ? [grain(p.grain, { seed: 6, size: 1.2 })] : undefined}>\n      <GlslShader\n        id=\"df-shader\"\n        width={W}\n        height={H}\n        fragment={FRAGMENT}\n        uniforms={{ u_res: [W, H], u_ph: ph, u_bg: rgb(p.ground), u_lo: rgb(p.dot), u_hi: rgb(p.dotHigh), u_sp: p.spacing, u_size: p.size, u_wl: p.waveLength }}\n      />\n    </Layer>\n  );\n};\n"
+    },
+    {
+      "path": "lib.ts",
+      "target": "src/components/dot-field/lib.ts",
+      "content": "// Shared bits for the backgrounds: colour parsing for shader uniforms, the loop phase, and the GLSL noise every shader uses.\n\n/** \"#rrggbb\" or \"#rgb\" to [r, g, b] in 0..1 for a vec3 uniform. */\nexport const rgb = (hex: string): [number, number, number] => {\n  let h = hex.replace('#', '');\n  if (h.length === 3) h = h.split('').map((c) => c + c).join('');\n  const n = parseInt(h.slice(0, 6), 16);\n  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];\n};\n\n/** Phase in radians that completes a whole turn over `loop` frames, scaled by speed. A whole number of turns per loop\n *  (speed 1, 2, 3 ...) makes the clip loop without a seam; other speeds drift without looping. */\nexport const phase = (frame: number, loop: number, speed: number) => (2 * Math.PI * frame * speed) / loop;\n\nexport const NOISE_GLSL = `\nfloat hash(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }\nfloat vnoise(vec2 p){\n  vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);\n  float a=hash(i); float b=hash(i+vec2(1.0,0.0)); float c=hash(i+vec2(0.0,1.0)); float d=hash(i+vec2(1.0,1.0));\n  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);\n}\nfloat fbm(vec2 p){\n  float v=0.0; float a=0.5;\n  for(int i=0;i<5;i++){ v+=a*vnoise(p); p=p*2.02+17.1; a*=0.5; }\n  return v;\n}\n`;\n"
+    }
+  ],
+  "props": [
+    {
+      "name": "ground",
+      "type": "colour",
+      "doc": "Background colour."
+    },
+    {
+      "name": "dot",
+      "type": "colour",
+      "doc": "Colour of the dots where the wave is low."
+    },
+    {
+      "name": "dotHigh",
+      "type": "colour",
+      "doc": "Colour of the dots at the crest of the wave."
+    },
+    {
+      "name": "spacing",
+      "type": "number",
+      "doc": "Distance between dot centres, in pixels."
+    },
+    {
+      "name": "size",
+      "type": "number",
+      "doc": "The largest dot, as a fraction of the spacing."
+    },
+    {
+      "name": "waveLength",
+      "type": "number",
+      "doc": "Length of the waves as a multiple of the default. Higher is calmer."
+    },
+    {
+      "name": "speed",
+      "type": "number",
+      "doc": "How fast the wave travels. Whole numbers loop seamlessly over 10 seconds."
+    },
+    {
+      "name": "grain",
+      "type": "number",
+      "doc": "Grain amount over the whole frame."
+    }
+  ],
+  "access": "free"
+}

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://kinetograph.dev/r/schema.json",
+  "name": "drift-gradient",
+  "type": "component",
+  "title": "Drift gradient",
+  "description": "Soft pools of blue and cyan drift like defocused light through water. It loops with no join.",
+  "kinetograph": "0.3.0",
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "files": [
+    {
+      "path": "index.tsx",
+      "target": "src/components/drift-gradient/index.tsx",
+      "content": "// Drift Gradient: big, out-of-focus pools of ultramarine and cyan that drift across an electric-blue field, with a teal\n// cast along the edges, like a defocused light through water. Matched to a looping blue-gradient reference: its palette,\n// the size of its pools (each about half the frame), their softness and their pace (a pool crosses a third of the frame\n// in about four seconds). The reference loops every two minutes; this loops seamlessly every 10 s.\n//\n// One fragment shader: a few soft blobs, dark and bright, each travelling on its own closed Lissajous path (whole-number\n// frequencies of the loop phase, so the loop is exact), blended into one field over a mid-blue base, gently warped by slow\n// noise so the pools are never perfect circles, and mapped through the ramp navy, ultramarine, azure, sky, cyan. A second\n// field of blobs near the edges tints toward teal.\n//\n// Principles: slow in and out (every path is a sine), overlap (each pool has its own path and period), arcs (closed\n// curved paths), restraint (one hue family, no edges anywhere, no grain).\n\nimport React from 'react';\nimport { z } from 'zod';\nimport { GlslShader } from '@kinetographdev/core';\nimport { useCurrentFrame } from 'remotion';\nimport { rgb } from './lib.js';\n\nexport const W = 1920;\nexport const H = 1080;\nexport const LOOP = 300;\n\nconst hex = z.string().describe('A CSS colour as #rrggbb.');\n\nexport const driftGradientSchema = z.object({\n  deep: hex.describe('The darkest pools (navy ultramarine).'),\n  mid: hex.describe('The body of the field (electric blue).'),\n  light: hex.describe('The lighter field around the bright pools (sky blue).'),\n  glow: hex.describe('The brightest pools (cyan).'),\n  tint: hex.describe('The cast along the edges (teal).'),\n  scale: z.number().min(0.4).max(3).describe('Size of the pools: higher is larger.'),\n  contrast: z.number().min(0).max(2).describe('How dark the dark pools and how bright the bright ones get. 1 matches the reference.'),\n  speed: z.number().min(0).max(4).describe('Loops per 10 seconds. Whole numbers loop seamlessly.'),\n});\nexport type DriftGradientProps = z.infer<typeof driftGradientSchema>;\n\nexport const driftGradientDefaults: DriftGradientProps = {\n  deep: '#000c8c',\n  mid: '#0052d0',\n  light: '#00a2ee',\n  glow: '#00dcf6',\n  tint: '#0b8eaa',\n  scale: 1,\n  contrast: 1,\n  speed: 1,\n};\n\nconst FRAGMENT = `\nprecision highp float;\nuniform vec2 u_res;\nuniform float u_ph;\nuniform vec3 u_deep; uniform vec3 u_mid; uniform vec3 u_light; uniform vec3 u_glow; uniform vec3 u_tint;\nuniform float u_scale; uniform float u_contrast;\n\nfloat hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }\nfloat vnoise(vec2 p){\n  vec2 i = floor(p); vec2 f = fract(p); f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);\n  float a = hash(i); float b = hash(i + vec2(1.0, 0.0)); float c = hash(i + vec2(0.0, 1.0)); float d = hash(i + vec2(1.0, 1.0));\n  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);\n}\n// a soft pool of radius s at c\n// stretched along the rising diagonal, as the reference's pools are\nfloat blob(vec2 p, vec2 c, float s){\n  vec2 d = (p - c) / (s * u_scale);\n  d = mat2(0.866, 0.5, -0.5, 0.866) * d;\n  d.x *= 0.62;\n  return exp(-dot(d, d));\n}\n\nvoid main(){\n  vec2 uv = gl_FragCoord.xy / u_res;\n  uv.y = 1.0 - uv.y;\n  float asp = u_res.x / u_res.y;\n  vec2 p = vec2(uv.x * asp, uv.y);\n  float ph = u_ph;\n\n  // a slow warp so the pools wobble out of round; its offsets go round a circle once per loop\n  vec2 o = 0.6 * vec2(cos(ph), sin(ph));\n  p += 0.12 * (vec2(vnoise(p * 1.4 + o), vnoise(p * 1.4 + vec2(5.3, 2.1) - o)) - 0.5);\n\n  // the pools, each a value (0 the darkest, 1 the brightest) that pulls the field toward it near its centre: a weighted\n  // average, like a mesh gradient, so overlapping pools blend instead of piling up\n  float acc = 0.0; float wsum = 0.0; float w;\n  #define POOL(v, c, s) w = pow(blob(p, c, s), 1.8); acc += w * (0.55 + ((v) - 0.55) * u_contrast); wsum += w;\n  POOL(0.05, vec2(0.62 * asp + 0.42 * cos(ph + 2.4), 0.42 + 0.28 * sin(ph + 0.9) + 0.06 * sin(2.0 * ph)), 0.5)\n  POOL(0.22, vec2(0.3 * asp + 0.35 * cos(ph + 5.0) + 0.1 * cos(2.0 * ph + 1.0), 0.78 + 0.22 * sin(ph + 3.9)), 0.42)\n  POOL(0.3,  vec2(0.8 * asp + 0.3 * cos(2.0 * ph + 0.3), 0.82 + 0.18 * cos(ph + 1.7)), 0.42)\n  POOL(0.42, vec2(0.15 * asp + 0.25 * cos(ph + 0.6), 0.55 + 0.3 * sin(ph + 5.6)), 0.4)\n  POOL(1.0,  vec2(0.7 * asp + 0.4 * cos(ph + 0.4), 0.45 + 0.3 * sin(ph + 4.3) + 0.05 * cos(2.0 * ph + 2.0)), 0.5)\n  POOL(0.88, vec2(0.25 * asp + 0.4 * sin(ph + 1.2), 0.2 + 0.2 * cos(ph + 0.2)), 0.42)\n  POOL(0.78, vec2(0.55 * asp + 0.35 * cos(2.0 * ph + 4.1), 0.05 + 0.12 * sin(ph + 2.2)), 0.36)\n  // the electric-blue field everywhere between them\n  acc += 0.02 * 0.55; wsum += 0.02;\n  float f = clamp(acc / wsum, 0.0, 1.0);\n\n  // the ramp: navy, ultramarine, electric blue, sky, cyan\n  vec3 col = mix(u_deep, u_mid, smoothstep(0.05, 0.45, f));\n  col = mix(col, u_light, smoothstep(0.34, 0.74, f));\n  col = mix(col, u_glow, smoothstep(0.72, 1.0, f));\n\n  // the teal cast, strongest near the left and top edges, drifting along them\n  float tl = blob(p, vec2(-0.05 + 0.08 * cos(ph + 1.0), 0.35 + 0.3 * sin(ph + 0.4)), 0.42)\n           + 0.7 * blob(p, vec2(0.35 * asp + 0.4 * cos(ph + 3.0), -0.08), 0.35);\n  col = mix(col, u_tint, clamp(tl, 0.0, 1.0) * 0.38 * smoothstep(0.15, 0.55, f) * smoothstep(0.95, 0.6, f));\n\n  gl_FragColor = vec4(col, 1.0);\n}\n`;\n\nexport const DriftGradient: React.FC<DriftGradientProps> = (p) => {\n  const frame = useCurrentFrame();\n  const ph = (2 * Math.PI * frame * p.speed) / LOOP;\n  return (\n    <GlslShader\n      id=\"dg-shader\"\n      width={W}\n      height={H}\n      fragment={FRAGMENT}\n      uniforms={{\n        u_res: [W, H],\n        u_ph: ph,\n        u_deep: rgb(p.deep),\n        u_mid: rgb(p.mid),\n        u_light: rgb(p.light),\n        u_glow: rgb(p.glow),\n        u_tint: rgb(p.tint),\n        u_scale: p.scale,\n        u_contrast: p.contrast,\n      }}\n    />\n  );\n};\n"
+    },
+    {
+      "path": "lib.ts",
+      "target": "src/components/drift-gradient/lib.ts",
+      "content": "// Shared bits for the backgrounds: colour parsing for shader uniforms, the loop phase, and the GLSL noise every shader uses.\n\n/** \"#rrggbb\" or \"#rgb\" to [r, g, b] in 0..1 for a vec3 uniform. */\nexport const rgb = (hex: string): [number, number, number] => {\n  let h = hex.replace('#', '');\n  if (h.length === 3) h = h.split('').map((c) => c + c).join('');\n  const n = parseInt(h.slice(0, 6), 16);\n  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];\n};\n\n/** Phase in radians that completes a whole turn over `loop` frames, scaled by speed. A whole number of turns per loop\n *  (speed 1, 2, 3 ...) makes the clip loop without a seam; other speeds drift without looping. */\nexport const phase = (frame: number, loop: number, speed: number) => (2 * Math.PI * frame * speed) / loop;\n\nexport const NOISE_GLSL = `\nfloat hash(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }\nfloat vnoise(vec2 p){\n  vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);\n  float a=hash(i); float b=hash(i+vec2(1.0,0.0)); float c=hash(i+vec2(0.0,1.0)); float d=hash(i+vec2(1.0,1.0));\n  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);\n}\nfloat fbm(vec2 p){\n  float v=0.0; float a=0.5;\n  for(int i=0;i<5;i++){ v+=a*vnoise(p); p=p*2.02+17.1; a*=0.5; }\n  return v;\n}\n`;\n"
+    }
+  ],
+  "props": [
+    {
+      "name": "deep",
+      "type": "colour",
+      "doc": "The darkest pools (navy ultramarine)."
+    },
+    {
+      "name": "mid",
+      "type": "colour",
+      "doc": "The body of the field (electric blue)."
+    },
+    {
+      "name": "light",
+      "type": "colour",
+      "doc": "The lighter field around the bright pools (sky blue)."
+    },
+    {
+      "name": "glow",
+      "type": "colour",
+      "doc": "The brightest pools (cyan)."
+    },
+    {
+      "name": "tint",
+      "type": "colour",
+      "doc": "The cast along the edges (teal)."
+    },
+    {
+      "name": "scale",
+      "type": "number",
+      "doc": "Size of the pools: higher is larger."
+    },
+    {
+      "name": "contrast",
+      "type": "number",
+      "doc": "How dark the dark pools and how bright the bright ones get."
+    },
+    {
+      "name": "speed",
+      "type": "number",
+      "doc": "Loops per 10 seconds. Whole numbers loop seamlessly."
+    }
+  ],
+  "access": "free"
+}
