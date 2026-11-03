@@ -14,6 +14,8 @@ export const PARAMS = {
   curves: { points: [[0, 0], [0.5, 0.3], [1, 1]] }, uvTranslate: { u: 0.1, v: 0.1 }, xyTranslate: { x: 40, y: 30 },
   filmBurn: { progress: 0.5 }, radialWipe: { progress: 0.5 }, irisWipe: { outerRadius: 0.6 }, rainFall: { time: 1 }, snowFall: { time: 1 },
   chromaticAberration: { amount: 12 },
+  // With an edge simplification the outline polygonizes the source's alpha, which reads its pixels on the CPU.
+  outline: { edgeSimplification: 6 },
 };
 
 /** Effects whose picture depends on the source's alpha: they run on a shape on a transparent canvas. */

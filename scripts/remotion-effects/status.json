@@ -191,7 +191,6 @@
     "2d"
    ],
    "status": "supported",
-   "note": "The 2D backend draws nothing (reads source pixels); WebGPU and WebGL 2 are used",
    "measured": {
     "webgl2": {
      "psnr": 100.506241,
@@ -202,8 +201,8 @@
      "ssim": 1
     },
     "2d": {
-     "psnr": 1.71088,
-     "ssim": 0.000003
+     "psnr": 61.247579,
+     "ssim": 0.99994
     }
    }
   },
@@ -215,7 +214,6 @@
     "2d"
    ],
    "status": "supported",
-   "note": "The 2D backend draws nothing (reads source pixels); WebGPU and WebGL 2 are used",
    "measured": {
     "webgl2": {
      "psnr": 999,
@@ -226,8 +224,8 @@
      "ssim": 1
     },
     "2d": {
-     "psnr": 2.618856,
-     "ssim": 0.246892
+     "psnr": 86.398469,
+     "ssim": 1
     }
    }
   },
@@ -919,7 +917,6 @@
     "webgl2"
    ],
    "status": "supported",
-   "note": "On WebGL 2 the effect reads source pixels on the CPU; WebGPU is used",
    "measured": {
     "webgpu": {
      "psnr": 999,
@@ -1383,20 +1380,19 @@
     "webgpu",
     "2d"
    ],
-   "status": "not yet",
-   "note": "Reads the source pixels on the CPU (`getImageData` of a layer), which the engine does not give a script yet",
+   "status": "supported",
    "measured": {
     "webgl2": {
-     "psnr": 3.738303,
-     "ssim": 0.221844
+     "psnr": 999,
+     "ssim": 1
     },
     "webgpu": {
-     "psnr": 3.738303,
-     "ssim": 0.221844
+     "psnr": 999,
+     "ssim": 1
     },
     "2d": {
-     "psnr": 3.738303,
-     "ssim": 0.221844
+     "psnr": 999,
+     "ssim": 1
     }
    }
   },

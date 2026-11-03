@@ -15,6 +15,7 @@ import { vignette } from '@remotion/effects/vignette';
 
 - `effects` works on `<Solid>`, `<CanvasImage>`, `<AnimatedImage>`, `<HtmlInCanvas>` and Rive. Not yet on `<Img>`, `<Video>`, `<Gif>` or the `@remotion/shapes` components.
 - Most effects have a WebGPU and a WebGL 2 implementation, a few also a 2D one. Kinetograph tries WebGPU, then WebGL 2, then 2D, and uses the first that draws the frame. It warns once when it falls back. Set `KINETOGRAPH_PREFERRED_EFFECT_BACKEND` to `webgpu`, `webgl2` or `2d` to try one first.
+- An effect that reads the pixels of its picture (`tile()`, `outline()`, the 2D `brightness()` and `contrast()`) makes the frame one extra draw of the layer, a few milliseconds at 960 × 540. If the pixels cannot be read, the picture is drawn without the effect and the frame reports it, so `--strict` fails.
 - State from `setup` doesn't carry to the next frame. See [What works](/docs/compat/).
 
 ## Status
@@ -22,21 +23,21 @@ import { vignette } from '@remotion/effects/vignette';
 Each effect is rendered by Remotion in Chrome and by Kinetograph, at frame 0, 960 × 540, and compared by PSNR. Supported means 50 dB or more on the backend Kinetograph picks. The table is generated from that run, with one set of parameters per effect.
 
 {/* effects:start */}
-85 of 89 are supported, 2 approximated, 2 not yet. Measured against Remotion 4.0.540 in Chrome.
+86 of 89 are supported, 2 approximated, 1 not yet. Measured against Remotion 4.0.540 in Chrome.
 
 | Effect | Backends | Status |
 | --- | --- | --- |
 | `barrelDistortion()` | webgpu, webgl2 | Supported |
 | `bevelAlpha()` | webgpu, webgl2 | Supported |
 | `blur()` | webgpu, webgl2 | Supported |
-| `brightness()` | webgl2, webgpu, 2d | Supported. The 2D backend draws nothing (reads source pixels); WebGPU and WebGL 2 are used |
+| `brightness()` | webgl2, webgpu, 2d | Supported |
 | `burlap()` | webgpu, webgl2 | Supported |
 | `checkerboard()` | webgpu, webgl2 | Supported |
 | `chromaticAberration()` | webgpu, webgl2 | Supported |
 | `colorCorrection()` | webgpu, webgl2 | Supported |
 | `colorKey()` | webgpu, webgl2 | Supported |
 | `contourLines()` | webgpu, webgl2 | Supported |
-| `contrast()` | webgl2, webgpu, 2d | Supported. The 2D backend draws nothing (reads source pixels); WebGPU and WebGL 2 are used |
+| `contrast()` | webgl2, webgpu, 2d | Supported |
 | `cornerPin()` | webgpu, webgl2 | Supported |
 | `curves()` | webgpu, webgl2 | Not yet. Needs `createCurveSampler`, which Kinetograph does not have yet |
 | `cylinder()` | webgpu, webgl2 | Supported |
@@ -73,7 +74,7 @@ Each effect is rendered by Remotion in Chrome and by Kinetograph, at frame 0, 96
 | `mirror()` | webgpu, webgl2 | Supported |
 | `noise()` | webgpu, webgl2 | Supported |
 | `noiseDisplacement()` | webgpu, webgl2 | Supported |
-| `outline()` | webgpu, webgl2 | Supported. On WebGL 2 the effect reads source pixels on the CPU; WebGPU is used |
+| `outline()` | webgpu, webgl2 | Supported |
 | `pageTurn()` | webgpu, webgl2 | Supported |
 | `paper()` | webgpu, webgl2 | Supported |
 | `pattern()` | webgpu, webgl2 | Supported |
@@ -100,7 +101,7 @@ Each effect is rendered by Remotion in Chrome and by Kinetograph, at frame 0, 96
 | `starburst()` | webgpu, webgl2 | Supported |
 | `tear()` | webgpu, webgl2 | Approximated. Same picture; pixels on the tear's edge differ (39 dB) |
 | `thermalVision()` | webgpu, webgl2 | Supported |
-| `tile()` | webgl2, webgpu, 2d | Not yet. Reads the source pixels on the CPU (`getImageData` of a layer), which the engine does not give a script yet |
+| `tile()` | webgl2, webgpu, 2d | Supported |
 | `tint()` | webgl2, webgpu, 2d | Supported |
 | `turbulentDisplace()` | webgpu, webgl2 | Supported |
 | `tvSignalOff()` | webgpu, webgl2 | Supported |
