@@ -115,9 +115,9 @@ jobs:
           set -e
           publish() { (cd "$1" && npm publish --access public --provenance --tag "$TAG" $DRY); }
           # The platform packages first, then the package that lists them, then the rest, each after what it depends on:
-          # scene; compat (scene); react (compat); core (compat, native, react); audio (native); cli (all of those);
-          # studio (core, native, cli); plugins (core, react and the library they wrap are peers).
+          # scene; compat (scene); react (compat); core (compat, native, react); audio (native); studio (core, native; cli is a
+          # peer); cli (all of those, studio included, so studio goes first); plugins (core, react and the library they wrap are peers).
           for d in crates/node/npm/*; do publish "$d"; done
-          for d in crates/node packages/scene packages/compat packages/react packages/core packages/audio packages/cli packages/studio packages/plugins/gsap packages/plugins/p5-brush packages/plugins/anime packages/plugins/motion; do
+          for d in crates/node packages/scene packages/compat packages/react packages/core packages/audio packages/studio packages/cli packages/plugins/gsap packages/plugins/p5-brush packages/plugins/anime packages/plugins/motion; do
             publish "$d"
           done

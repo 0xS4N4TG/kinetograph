@@ -1,6 +1,6 @@
 // Packs the built packages and the native addon, installs the tarballs into an empty project outside the repository and
 // renders a small project there, the way a user would. Run after the addon is built into crates/node and the TS
-// packages are built (scene, compat, react, core, audio, cli). Prints which backend drew and which encoder wrote the
+// packages are built (scene, compat, react, core, audio, cli, studio and its UI). Prints which backend drew and which encoder wrote the
 // file; exits 1 if the render fails or the frame count is wrong. Whether Skia drew on the GPU or (no GPU it can use)
 // on the CPU is reported, not failed.
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -30,7 +30,7 @@ const platformDir = path.join(tmp, 'platform');
 fs.cpSync(path.join(root, 'crates/node/npm', platform), platformDir, { recursive: true });
 fs.copyFileSync(built, path.join(platformDir, nodeFile));
 files.push(pack(platformDir));
-for (const dir of ['crates/node', 'packages/scene', 'packages/compat', 'packages/react', 'packages/core', 'packages/audio', 'packages/cli']) {
+for (const dir of ['crates/node', 'packages/scene', 'packages/compat', 'packages/react', 'packages/core', 'packages/audio', 'packages/cli', 'packages/studio']) {
   files.push(pack(path.join(root, dir)));
 }
 

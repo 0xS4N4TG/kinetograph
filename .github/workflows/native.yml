@@ -244,6 +244,8 @@ jobs:
         shell: bash
         run: |
           for p in scene compat react core audio cli; do npm run build -w "packages/$p"; done
+          npm run build -w @kinetographdev/studio-ui
+          npm run build -w @kinetographdev/studio
 
       # Packs the packages and the addon, installs them into an empty project outside the repository, renders 30 frames.
       - name: Clean install and render
