@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { createElement, Fragment, useEffect, type ReactNode } from 'react';
+import { createElement, Fragment, useEffect, type ReactNode, type Ref } from 'react';
 import { resolveRemoteAsset } from '@kinetographdev/compat/dom';
 import type {
   AudioClipJson,
@@ -71,6 +71,8 @@ export interface CommonProps {
 }
 
 export interface LayerProps extends CommonProps {
+  /** The layer's element in the tree (for `emitLayerOf`), set when it is committed. */
+  ref?: Ref<unknown>;
   preserve3d?: boolean;
   /**
    * The children blend with what is behind the layer, not only with each other (a `<Sequence>` or `<AbsoluteFill>` is

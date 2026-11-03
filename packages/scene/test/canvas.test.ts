@@ -6,6 +6,7 @@ import {
   ImageData,
   internSources,
   layerPicture,
+  layerSourcesOf,
   parseCssColor,
   Path2D,
   toSceneColor,
@@ -825,6 +826,19 @@ describe('the picture of a layer', () => {
   it('is a pattern too', () => {
     const ctx = make();
     expect(ctx.createPattern(layerPicture('child', 4, 4), 'repeat')).not.toBeNull();
+  });
+
+  it('is found among the commands, in the canvases they draw and in patterns, each id once', () => {
+    const inner = make({ width: 8, height: 8 });
+    inner.drawImage(layerPicture('deep', 8, 8), 0, 0);
+    const ctx = make();
+    ctx.drawImage(layerPicture('a', 40, 20), 0, 0);
+    ctx.drawImage(layerPicture('a', 40, 20), 5, 5);
+    ctx.fillStyle = ctx.createPattern(layerPicture('b', 4, 4), 'repeat')!;
+    ctx.fillRect(0, 0, 10, 10);
+    ctx.drawImage({ [CANVAS_SOURCE]: () => inner.pictureSource(8, 8) && { source: inner.pictureSource(8, 8), width: 8, height: 8 } } as never, 0, 0);
+    expect(layerSourcesOf(ctx.commands).sort()).toEqual(['a', 'b', 'deep']);
+    expect(layerSourcesOf(make().commands)).toEqual([]);
   });
 });
 
