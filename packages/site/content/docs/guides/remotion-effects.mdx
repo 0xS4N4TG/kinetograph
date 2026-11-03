@@ -27,7 +27,7 @@ import { vignette } from '@remotion/effects/vignette';
 Each effect is rendered by Remotion in Chrome and by Kinetograph, at frame 0, 960 × 540, and compared by PSNR. Supported means 50 dB or more on the backend Kinetograph picks. The table is generated from that run, with one set of parameters per effect.
 
 {/* effects:start */}
-86 of 89 are supported, 2 approximated, 1 not yet. Measured against Remotion 4.0.540 in Chrome.
+89 of 89 are supported, 0 approximated, 0 not yet. Measured against Remotion 4.0.540 in Chrome.
 
 | Effect | Backends | Status |
 | --- | --- | --- |
@@ -43,7 +43,7 @@ Each effect is rendered by Remotion in Chrome and by Kinetograph, at frame 0, 96
 | `contourLines()` | webgpu, webgl2 | Supported |
 | `contrast()` | webgl2, webgpu, 2d | Supported |
 | `cornerPin()` | webgpu, webgl2 | Supported |
-| `curves()` | webgpu, webgl2 | Supported. On WebGL 2 the engine has no float textures; WebGPU is used |
+| `curves()` | webgpu, webgl2 | Supported |
 | `cylinder()` | webgpu, webgl2 | Supported |
 | `dotGrid()` | webgpu, webgl2 | Supported |
 | `dropShadow()` | webgpu, webgl2 | Supported |
@@ -74,7 +74,7 @@ Each effect is rendered by Remotion in Chrome and by Kinetograph, at frame 0, 96
 | `lines()` | webgpu, webgl2 | Supported |
 | `liquidContours()` | webgpu, webgl2 | Supported |
 | `longShadows()` | webgpu, webgl2 | Supported |
-| `lut()` | webgpu, webgl2 | Supported. On WebGL 2 the engine has no 3D textures; WebGPU is used |
+| `lut()` | webgpu, webgl2 | Supported |
 | `mirror()` | webgpu, webgl2 | Supported |
 | `noise()` | webgpu, webgl2 | Supported |
 | `noiseDisplacement()` | webgpu, webgl2 | Supported |
@@ -87,7 +87,7 @@ Each effect is rendered by Remotion in Chrome and by Kinetograph, at frame 0, 96
 | `radialProgressiveBlur()` | webgpu, webgl2 | Supported |
 | `radialProgressivePixelate()` | webgpu, webgl2 | Supported |
 | `radialWipe()` | webgpu, webgl2 | Supported |
-| `rainFall()` | webgpu, webgl2 | Supported. On WebGL 2 the engine can't read a texture in the vertex shader; WebGPU is used |
+| `rainFall()` | webgpu, webgl2 | Supported |
 | `regionBlur()` | webgpu, webgl2 | Supported |
 | `rings()` | webgpu, webgl2 | Supported |
 | `roughenEdges()` | webgpu, webgl2 | Supported |
@@ -99,7 +99,7 @@ Each effect is rendered by Remotion in Chrome and by Kinetograph, at frame 0, 96
 | `shine()` | webgpu, webgl2 | Supported |
 | `shrinkwrap()` | webgpu, webgl2 | Supported |
 | `skew()` | webgl2, webgpu | Supported |
-| `snowFall()` | webgpu, webgl2 | Supported. On WebGL 2 the engine can't read a texture in the vertex shader; WebGPU is used |
+| `snowFall()` | webgpu, webgl2 | Supported |
 | `speckle()` | webgpu, webgl2 | Supported |
 | `sphere()` | webgpu, webgl2 | Supported |
 | `starburst()` | webgpu, webgl2 | Supported |
@@ -133,5 +133,5 @@ The same check on components other than `<CanvasImage>`: `blur`, `grayscale` and
 | `<Video>` with blur, grayscale, vignette | webgl2 53.1 dB, SSIM 0.999; webgpu 53.1 dB, SSIM 0.999 | Supported |
 | `<Rect>` with blur, grayscale, vignette | webgl2 identical, SSIM 1.000; webgpu identical, SSIM 1.000 | Supported |
 | `<Star>` with blur, grayscale, vignette | webgl2 34.7 dB, SSIM 0.990; webgpu 34.7 dB, SSIM 0.990 | Approximated. Shape and blur match; the vignette over the shape's transparent pixels darkens the background less than in Remotion (the same on a `<CanvasImage>` of a transparent picture, so it is the effect's alpha, not the component; 34.7 dB) |
-| `<Img>` with rainFall | webgpu 78.5 dB, SSIM 1.000 | Supported. On WebGL 2 the engine can't read a texture in the vertex shader; WebGPU is used |
+| `<Img>` with rainFall | webgl2 54.7 dB, SSIM 0.999; webgpu 78.5 dB, SSIM 1.000 | Supported |
 {/* components:end */}

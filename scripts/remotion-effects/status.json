@@ -254,7 +254,6 @@
     "webgl2"
    ],
    "status": "supported",
-   "note": "On WebGL 2 the engine has no float textures; WebGPU is used",
    "measured": {
     "webgpu": {
      "psnr": 106.526841,
@@ -792,7 +791,6 @@
     "webgl2"
    ],
    "status": "supported",
-   "note": "On WebGL 2 the engine has no 3D textures; WebGPU is used",
    "measured": {
     "webgpu": {
      "psnr": 106.526841,
@@ -1063,14 +1061,14 @@
     "webgl2"
    ],
    "status": "supported",
-   "note": "On WebGL 2 the engine can't read a texture in the vertex shader; WebGPU is used",
    "measured": {
     "webgpu": {
      "psnr": 78.538034,
      "ssim": 0.999999
     },
     "webgl2": {
-     "error": "render failed: glsl: unsupported: a texture read in the vertex shader (vertex texture fetch)"
+     "psnr": 54.687389,
+     "ssim": 0.999463
     }
    }
   },
@@ -1200,6 +1198,7 @@
     "webgl2"
    ],
    "status": "supported",
+   "note": "On WebGL 2 pixels on the edges of the shards differ a little (35 dB); WebGPU is used and matches",
    "measured": {
     "webgpu": {
      "psnr": 83.855124,
@@ -1209,8 +1208,7 @@
      "psnr": 35.389296,
      "ssim": 0.995919
     }
-   },
-   "note": "On WebGL 2 pixels on the edges of the shards differ a little (35 dB); WebGPU is used and matches"
+   }
   },
   "shine": {
    "sub": "shine",
@@ -1291,14 +1289,14 @@
     "webgl2"
    ],
    "status": "supported",
-   "note": "On WebGL 2 the engine can't read a texture in the vertex shader; WebGPU is used",
    "measured": {
     "webgpu": {
      "psnr": 92.267154,
      "ssim": 1
     },
     "webgl2": {
-     "error": "render failed: glsl: unsupported: a texture read in the vertex shader (vertex texture fetch)"
+     "psnr": 71.485305,
+     "ssim": 0.999988
     }
    }
   },
@@ -1345,6 +1343,7 @@
     "webgl2"
    ],
    "status": "supported",
+   "note": "On WebGL 2 pixels on the tear's edge differ a little (50 dB); WebGPU is used and matches",
    "measured": {
     "webgpu": {
      "psnr": 92.909563,
@@ -1354,8 +1353,7 @@
      "psnr": 50.012713,
      "ssim": 0.999853
     }
-   },
-   "note": "On WebGL 2 pixels on the tear's edge differ a little (50 dB); WebGPU is used and matches"
+   }
   },
   "thermalVision": {
    "sub": "thermal-vision",
@@ -1744,6 +1742,7 @@
     "webgpu"
    ],
    "status": "approximated",
+   "note": "Shape and blur match; the vignette over the shape's transparent pixels darkens the background less than in Remotion (the same on a `<CanvasImage>` of a transparent picture, so it is the effect's alpha, not the component; 34.7 dB)",
    "measured": {
     "webgl2": {
      "psnr": 34.703248,
@@ -1753,8 +1752,7 @@
      "psnr": 34.703246,
      "ssim": 0.989689
     }
-   },
-   "note": "Shape and blur match; the vignette over the shape's transparent pixels darkens the background less than in Remotion (the same on a `<CanvasImage>` of a transparent picture, so it is the effect's alpha, not the component; 34.7 dB)"
+   }
   },
   "img-rainFall": {
    "sub": "(<Img> with rainFall)",
@@ -1765,14 +1763,14 @@
    "status": "supported",
    "measured": {
     "webgl2": {
-     "error": "not rendered"
+     "psnr": 54.687389,
+     "ssim": 0.999463
     },
     "webgpu": {
      "psnr": 78.538034,
      "ssim": 0.999999
     }
-   },
-   "note": "On WebGL 2 the engine can't read a texture in the vertex shader; WebGPU is used"
+   }
   }
  }
 }
