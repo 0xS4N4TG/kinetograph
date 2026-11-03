@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import { CodeBlock } from '@/components/code';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { plugins, type Clip, type Export, type GeneSlot, type Look, type Plugin } from '@/lib/catalog';
-import { Adjacent, Badges, Block, CatalogPage, Crumbs, Draws, Figure, oneLine, PageHero, Still } from '@/sections/catalog';
+import { Adjacent, Badges, Block, CatalogPage, Crumbs, Draws, Figure, oneLine, PageHero, SourceLink, Still } from '@/sections/catalog';
 import { Label, body, link } from '@/sections/shared';
 
 type Params = { slug: string };
@@ -312,10 +312,13 @@ export default async function PluginPage(props: { params: Promise<Params> }) {
       <PageHero title={p.title} tag="PLUGIN  1.00" line={oneLine(p.description)} clip={p.hero} alt={`${p.title}, a clip from its demo`}>
         <div className="mt-4 space-y-2">
           <Draws names={p.components} />
-          <p className="text-[14px] text-mute">Coming; not published yet.</p>
-          <a href="#reference" className={`${link} kc-press inline-block font-jb text-[12px] tracking-[0.04em]`}>
-            Jump to reference
-          </a>
+          <p className="text-[14px] text-mute">Not on npm yet. Its source is on GitHub.</p>
+          <div className="flex flex-wrap gap-x-5 gap-y-2">
+            <SourceLink path={p.source} />
+            <a href="#reference" className={`${link} kc-press inline-block font-jb text-[12px] tracking-[0.04em]`}>
+              Jump to reference
+            </a>
+          </div>
         </div>
       </PageHero>
 

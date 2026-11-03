@@ -72,6 +72,8 @@ export interface Plugin {
   studio: { panel: string; tools: { name: string; text: string }[]; note: string; installed: string } | null;
   hero: Clip | null;
   demos: Demo[];
+  /** The plugin's folder in the kinetograph-ui repo, for the Source link. */
+  source: string;
   /** Hexed: the genes each slot can roll. */
   genes?: GeneSlot[];
   /** VJ: the look kinds and the export that draws each. */
@@ -102,9 +104,11 @@ export interface Component {
   plugins: string[];
   compositions: string[];
   hero: Clip | null;
-  /** The kind of a motion component (one of KINDS). The first seven components have none: they are the scenes. */
+  /** The kind of a motion component (one of KINDS). Templates have none. */
   category?: string;
   props?: ComponentProp[];
+  /** The item's folder in the kinetograph-ui repo, for the Source link. */
+  source: string;
 }
 
 /** The kinds of motion component, in page order. */
@@ -112,7 +116,6 @@ export const KINDS = [
   { id: 'grids', title: 'Grids' },
   { id: 'carousels', title: 'Carousels' },
   { id: 'charts', title: 'Charts' },
-  { id: 'showcase', title: 'Showcase' },
   { id: 'backgrounds', title: 'Backgrounds' },
   { id: 'audio-viz', title: 'Audio' },
   { id: 'effects', title: 'Effects' },
@@ -120,6 +123,8 @@ export const KINDS = [
 
 export const plugins = catalog.plugins as unknown as Plugin[];
 export const components = catalog.components as unknown as Component[];
+/** Templates are whole videos you start from. They share the Component shape; none has a category. */
+export const templates = (catalog as unknown as { templates: Component[] }).templates;
 
 /** A taste: a reusable style (palette, type, motion), shown by a cut of its demo reel. */
 export interface Taste {
@@ -127,6 +132,7 @@ export interface Taste {
   title: string;
   description: string;
   hero: Clip | null;
+  source: string;
 }
 export const tastes = (catalog as unknown as { tastes?: Taste[] }).tastes ?? [];
 

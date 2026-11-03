@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 import { tastes, type Taste } from '@/lib/catalog';
-import { Adjacent, CatalogPage, Crumbs, oneLine, PageHero } from '@/sections/catalog';
+import { Adjacent, CatalogPage, Crumbs, Install, oneLine, PageHero } from '@/sections/catalog';
 
 type Params = { id: string };
 
@@ -32,7 +32,7 @@ export default async function TastePage(props: { params: Promise<Params> }) {
     <CatalogPage>
       <Crumbs section="tastes" current={t.title} />
       <PageHero title={t.title} tag="TASTE  1.00" line={oneLine(t.description)} clip={t.hero} alt={`${t.title}, a clip of its demo video`}>
-        <p className="mt-4 text-[14px] text-mute">Coming; not published yet.</p>
+        <Install name={t.id} source={t.source} />
       </PageHero>
       <Adjacent label="taste" prev={toItem(prev)} next={toItem(next)} />
     </CatalogPage>

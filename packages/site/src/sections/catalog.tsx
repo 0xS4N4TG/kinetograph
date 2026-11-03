@@ -1,12 +1,14 @@
 import type { CSSProperties, ReactNode } from 'react';
 
 import { ClipPlayer } from '@/components/clip-player';
+import { CommandBar } from '@/components/code';
 import { InView } from '@/components/in-view';
 import { Badge } from '@/components/ui/badge';
 import type { Clip, Image } from '@/lib/catalog';
 import { cn } from '@/lib/utils';
 import { Nav } from '@/sections/nav';
 import { Heading } from '@/sections/heading';
+import { commandBar } from '@/sections/hero';
 import { body, Label, link, section, shell } from '@/sections/shared';
 
 /** The page frame the catalog pages share: the nav, then the shell. */
@@ -26,8 +28,15 @@ export const oneLine = (text: string) => text.split(/(?<=[.!?])\s/)[0];
  * Small links above a page's heading so the catalog can be browsed without the back button: the section this page
  * belongs to and its own name on the left, the other section on the right.
  */
-export function Crumbs({ section: sec, current }: { section: 'plugins' | 'components' | 'tastes'; current?: string }) {
-  const here = sec === 'plugins' ? { href: '/plugins/', name: 'Plugins' } : sec === 'tastes' ? { href: '/plugins/#kind-tastes', name: 'Tastes' } : { href: '/plugins/#components', name: 'Components' };
+export function Crumbs({ section: sec, current }: { section: 'plugins' | 'templates' | 'components' | 'tastes'; current?: string }) {
+  const here =
+    sec === 'plugins'
+      ? { href: '/plugins/', name: 'Plugins' }
+      : sec === 'tastes'
+        ? { href: '/plugins/#kind-tastes', name: 'Tastes' }
+        : sec === 'templates'
+          ? { href: '/plugins/#templates', name: 'Templates' }
+          : { href: '/plugins/#components', name: 'Components' };
   const other = sec === 'plugins' ? { href: '/plugins/#components', name: 'Components' } : { href: '/plugins/', name: 'Plugins' };
   const cls = `${link} kc-press inline-block`;
   return (
@@ -75,6 +84,28 @@ export function PageHero({ title, tag, line, clip, alt, children }: { title: str
           <ClipPlayer clip={clip} label={alt} />
         </InView>
       )}
+    </div>
+  );
+}
+
+/** Where the catalog's items live on GitHub. */
+export const UI_REPO = 'https://github.com/0xS4N4TG/kinetograph-ui';
+
+/** The link to an item's folder in the kinetograph-ui repo. */
+export function SourceLink({ path }: { path: string }) {
+  return (
+    <a href={`${UI_REPO}/tree/main/${path}`} className={`${link} kc-press inline-block font-jb text-[12px] tracking-[0.04em]`}>
+      Source
+    </a>
+  );
+}
+
+/** The install command of a registry item with its copy button, and the link to its source. */
+export function Install({ name, source }: { name: string; source: string }) {
+  return (
+    <div className="mt-6 max-w-lg space-y-3">
+      <CommandBar command={`npx kinetograph add ${name}`} className={commandBar} />
+      <SourceLink path={source} />
     </div>
   );
 }

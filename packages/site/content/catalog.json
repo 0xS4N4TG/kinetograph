@@ -22,7 +22,7 @@
             "src": "/catalog/plugins/hexed/feature-1.webp",
             "w": 1280,
             "h": 720,
-            "from": "effects/hexed-demo/out/RickReel-10s.mp4",
+            "from": "templates/hexed-demo/out/RickReel-10s.mp4",
             "at": 0,
             "video": "/catalog/plugins/hexed/feature-1.mp4",
             "len": 4,
@@ -36,7 +36,7 @@
             "src": "/catalog/plugins/hexed/feature-2.webp",
             "w": 1280,
             "h": 720,
-            "from": "effects/hexed-demo/out/dream.mp4",
+            "from": "templates/hexed-demo/out/dream.mp4",
             "at": 1,
             "video": "/catalog/plugins/hexed/feature-2.mp4",
             "len": 4,
@@ -50,7 +50,7 @@
             "src": "/catalog/plugins/hexed/feature-3.webp",
             "w": 1280,
             "h": 720,
-            "from": "effects/hexed-demo/out/RickLook.mp4",
+            "from": "templates/hexed-demo/out/RickLook.mp4",
             "at": 0,
             "video": "/catalog/plugins/hexed/feature-3.mp4",
             "len": 4,
@@ -331,13 +331,13 @@
         "panel": "Studio gets a Hexed panel: a card for each slot with its effect, a strength slider, a lock and a shuffle button. Shuffle rerolls everything except the locked slots, and a menu holds your presets. It follows Studio's light and dark theme.",
         "tools": [],
         "note": "An agent can roll a look, list what each slot accepts and read your presets. It then writes the look it settles on into your code or saves it as a preset, so the look does not live only in Studio.",
-        "installed": "It installs as a package you add to your project. Its skill comes with it, so an agent can use it without being taught."
+        "installed": "It is a package in the source repository. Its skill comes with it, so an agent can use it without being taught."
       },
       "hero": {
         "src": "/catalog/plugins/hexed/hero.webp",
         "w": 1280,
         "h": 720,
-        "from": "effects/hexed-demo/out/RickReel-10s.mp4",
+        "from": "templates/hexed-demo/out/RickReel-10s.mp4",
         "at": 5,
         "video": "/catalog/plugins/hexed/hero.mp4",
         "len": 4
@@ -372,7 +372,7 @@
               "src": "/catalog/plugins/hexed/demo-hexed-demo-1.webp",
               "w": 1280,
               "h": 720,
-              "from": "effects/hexed-demo/out/reel.mp4",
+              "from": "templates/hexed-demo/out/reel.mp4",
               "at": 1,
               "video": "/catalog/plugins/hexed/demo-hexed-demo-1.mp4",
               "len": 4,
@@ -382,7 +382,7 @@
               "src": "/catalog/plugins/hexed/feature-2.webp",
               "w": 1280,
               "h": 720,
-              "from": "effects/hexed-demo/out/dream.mp4",
+              "from": "templates/hexed-demo/out/dream.mp4",
               "at": 1,
               "video": "/catalog/plugins/hexed/feature-2.mp4",
               "len": 4,
@@ -406,6 +406,7 @@
           "clips": []
         }
       ],
+      "source": "plugins/hexed",
       "genes": [
         {
           "slot": "crop",
@@ -811,10 +812,11 @@
       "slug": "kinetic-typography",
       "name": "@kinetographdev/kinetic-typography",
       "title": "Kinetic typography",
-      "description": "Captions that move with the voice, in fourteen ready-made styles. A hook word is set huge, and handwritten captions can follow a tracked subject.",
+      "description": "Captions that move with the voice, in fifteen ready-made styles. A hook word is set huge, and handwritten captions can follow a tracked subject.",
       "components": [
         "HandCaptions",
-        "Captions"
+        "Captions",
+        "BoilStack"
       ],
       "hasPanel": true,
       "hasTools": false,
@@ -822,7 +824,7 @@
       "intro": "Captions sets a voiceover on screen. Each word arrives as it is said and the line leaves all together. A line with a big word is a hook: that word is set huge and the small words sit round it. HandCaptions writes the other way, one letter at a time in mixed handwriting.",
       "features": [
         {
-          "title": "Fourteen caption styles",
+          "title": "Fifteen caption styles",
           "text": "Highlighter, typewriter, a text-selection sweep, a shine, a difference-blend prism and more. Pick one by name, then change its fonts, motion and colours. The accent colour and a readable shadow can come from your footage.",
           "clip": null
         },
@@ -833,7 +835,7 @@
             "src": "/catalog/plugins/kinetic-typography/feature-1.webp",
             "w": 1280,
             "h": 720,
-            "from": "effects/kinetic-type-demo/out/Centred.mp4",
+            "from": "templates/kinetic-type-demo/out/Centred.mp4",
             "at": 0,
             "video": "/catalog/plugins/kinetic-typography/feature-1.mp4",
             "len": 4,
@@ -847,7 +849,7 @@
             "src": "/catalog/plugins/kinetic-typography/feature-2.webp",
             "w": 1280,
             "h": 720,
-            "from": "effects/kinetic-type-demo/out/tracked.mp4",
+            "from": "templates/kinetic-type-demo/out/tracked.mp4",
             "at": 0,
             "video": "/catalog/plugins/kinetic-typography/feature-2.mp4",
             "len": 4,
@@ -1030,7 +1032,7 @@
         {
           "name": "Captions",
           "kind": "component",
-          "summary": "Sets a voiceover on screen in one of fourteen ready-made styles. Each word arrives as it is said and the line leaves all together. A line with a big word is a hook.",
+          "summary": "Sets a voiceover on screen in one of fifteen ready-made styles. Each word arrives as it is said and the line leaves all together. A line with a big word is a hook.",
           "detail": "",
           "propsOf": "CaptionsProps",
           "props": [
@@ -1177,7 +1179,7 @@
         {
           "name": "STYLES",
           "kind": "constant",
-          "summary": "The fourteen ready-made styles, by name.",
+          "summary": "The fifteen ready-made styles, by name.",
           "detail": "Each is a patch on BASE."
         },
         {
@@ -1189,7 +1191,7 @@
         {
           "name": "TREATMENTS",
           "kind": "constant",
-          "summary": "How the big word is dressed as it arrives. box-first: a box grows, then the word lands in it. typewriter: typed a letter at a time with a cursor. select: a blue text selection sweeps across it. highlight: a colour sweeps in behind it, like a highlighter pen. underline: a bar draws under it.",
+          "summary": "How the big word is dressed as it arrives. box-first: a box grows, then the word lands in it. typewriter: typed a letter at a time with a cursor. select: a blue text selection sweeps across it. highlight: a colour sweeps in behind it, like a highlighter pen. underline: a bar draws under it. boil: the whole line drawn by hand a word to a row, boiling on twelves, painted into knocked-out bands as it holds (the poster-boil style; see boil-captions.tsx).",
           "detail": ""
         },
         {
@@ -1257,6 +1259,63 @@
           "kind": "constant",
           "summary": "One kind of text, the caption or the big text.",
           "detail": ""
+        },
+        {
+          "name": "BOIL_DEFAULTS",
+          "kind": "constant",
+          "summary": "",
+          "detail": ""
+        },
+        {
+          "name": "BOIL_FRAMES",
+          "kind": "constant",
+          "summary": "The length of the animation in reference frames (12 fps).",
+          "detail": ""
+        },
+        {
+          "name": "BoilStack",
+          "kind": "component",
+          "summary": "",
+          "detail": "",
+          "propsOf": "BoilStackProps",
+          "props": [
+            {
+              "name": "lines",
+              "type": "[string, string, string]",
+              "optional": true,
+              "doc": "Three lines, top to bottom. Short words read best (the reference's are 5, 3 and 5 letters)."
+            },
+            {
+              "name": "colors",
+              "type": "[string, string, string]",
+              "optional": true,
+              "doc": "The three colours, in the order they land on the lines at the end: top, middle, bottom."
+            },
+            {
+              "name": "ground",
+              "type": "string",
+              "optional": true,
+              "doc": "The ground."
+            },
+            {
+              "name": "knockout",
+              "type": "string",
+              "optional": true,
+              "doc": "The colour letters turn when their band is painted over; empty takes a near-black of each band's own hue."
+            },
+            {
+              "name": "marks",
+              "type": "boolean",
+              "optional": true,
+              "doc": "The white marks round the block."
+            },
+            {
+              "name": "from",
+              "type": "number",
+              "optional": true,
+              "doc": "The film's frame the animation starts on."
+            }
+          ]
         }
       ],
       "presets": [],
@@ -1279,13 +1338,13 @@
         "panel": "Studio gets a Captions panel: a card for each style drawn in its own type, a Caption or Big text switch for font, case, weight, size, tracking and colour, layout cards, motion controls with an In and Out switch, and an accent colour you can take from the footage. Hook and Caption pins sit on the preview and you drag them up or down. HandCaptions has no panel.",
         "tools": [],
         "note": "There are no agent tools. The skill tells an agent to take word timestamps from your speech-to-text or voice-over tool instead of placing frames by hand, choose the lines and the big words, and render a settled hook frame and caption frame to check that both read. For tracked text it tracks the subject with the VJ plugin.",
-        "installed": "It installs as a package you add to your project. Its skill comes with it, so an agent can use it without being taught."
+        "installed": "It is a package in the source repository. Its skill comes with it, so an agent can use it without being taught."
       },
       "hero": {
         "src": "/catalog/plugins/kinetic-typography/hero.webp",
         "w": 1280,
         "h": 720,
-        "from": "effects/kinetic-type-demo/out/tracked.mp4",
+        "from": "templates/kinetic-type-demo/out/tracked.mp4",
         "at": 0.6,
         "video": "/catalog/plugins/kinetic-typography/hero.mp4",
         "len": 4
@@ -1294,17 +1353,70 @@
         {
           "id": "kinetic-type-demo",
           "title": "Caption styles and hand captions",
-          "text": "The fourteen caption styles over a talking head, and a line written beside a tracked anvil in archive film, then centred low.",
+          "text": "The caption styles over a talking head and over wide shots, the hand-drawn boiling lettering, the fonts, and a line written beside a tracked anvil in archive film, then centred low. Captions also change layout (over, centre, left, beside, one line, plain), treatment (box first, typewriter, select, highlight, underline, boil), finish (flat, shine, glow), and how each word comes in and the line goes out.",
           "compositions": [
             "Tracked",
-            "Centred"
+            "Centred",
+            "BoilStack",
+            "PosterBoil",
+            "BoilStackTall"
           ],
           "clips": [
+            {
+              "src": "/catalog/plugins/kinetic-typography/demo-kinetic-type-demo-1.webp",
+              "w": 720,
+              "h": 1280,
+              "from": "templates/kinetic-type-demo/out/styles.mp4",
+              "at": 0,
+              "video": "/catalog/plugins/kinetic-typography/demo-kinetic-type-demo-1.mp4",
+              "len": 12,
+              "caption": "The styles in turn. All fifteen: clean-hook, red-headline, lime-serif, prism, editorial-serif, shine-headline, selected-text, highlighter, typewriter, box-first, bold-captions, soft-minimal, cinematic-caps, side-note, poster-boil."
+            },
+            {
+              "src": "/catalog/plugins/kinetic-typography/demo-kinetic-type-demo-2.webp",
+              "w": 1280,
+              "h": 720,
+              "from": "templates/kinetic-type-demo/out/wide.mp4",
+              "at": 1,
+              "video": "/catalog/plugins/kinetic-typography/demo-kinetic-type-demo-2.mp4",
+              "len": 5,
+              "caption": "Wide shots: cinematic-caps, then side-note."
+            },
+            {
+              "src": "/catalog/plugins/kinetic-typography/demo-kinetic-type-demo-3.webp",
+              "w": 720,
+              "h": 1280,
+              "from": "templates/kinetic-type-demo/out/poster-boil.mp4",
+              "at": 0,
+              "video": "/catalog/plugins/kinetic-typography/demo-kinetic-type-demo-3.mp4",
+              "len": 6,
+              "caption": "poster-boil: a word to a row, drawn by hand and boiling, painted into bands as the line holds."
+            },
+            {
+              "src": "/catalog/plugins/kinetic-typography/demo-kinetic-type-demo-4.webp",
+              "w": 1024,
+              "h": 1280,
+              "from": "templates/kinetic-type-demo/out/boil-stack.mp4",
+              "at": 0,
+              "video": "/catalog/plugins/kinetic-typography/demo-kinetic-type-demo-4.mp4",
+              "len": 5,
+              "caption": "The same boiling lettering in a tall stack."
+            },
+            {
+              "src": "/catalog/plugins/kinetic-typography/demo-kinetic-type-demo-5.webp",
+              "w": 720,
+              "h": 1280,
+              "from": "templates/kinetic-type-demo/out/fonts.mp4",
+              "at": 0,
+              "video": "/catalog/plugins/kinetic-typography/demo-kinetic-type-demo-5.mp4",
+              "len": 8,
+              "caption": "The fonts the styles can use: Switzer, Kineta, Figtree, Geist Serif, Poppins, Barlow Condensed, Inter, Anton, Archivo Black, Bebas Neue, Montserrat, Oswald, Playfair Display, Bodoni Moda, Instrument Serif, DM Serif Display, Space Grotesk, JetBrains Mono."
+            },
             {
               "src": "/catalog/plugins/kinetic-typography/feature-2.webp",
               "w": 1280,
               "h": 720,
-              "from": "effects/kinetic-type-demo/out/tracked.mp4",
+              "from": "templates/kinetic-type-demo/out/tracked.mp4",
               "at": 0,
               "video": "/catalog/plugins/kinetic-typography/feature-2.mp4",
               "len": 4,
@@ -1314,7 +1426,7 @@
               "src": "/catalog/plugins/kinetic-typography/feature-1.webp",
               "w": 1280,
               "h": 720,
-              "from": "effects/kinetic-type-demo/out/Centred.mp4",
+              "from": "templates/kinetic-type-demo/out/Centred.mp4",
               "at": 0,
               "video": "/catalog/plugins/kinetic-typography/feature-1.mp4",
               "len": 4,
@@ -1338,6 +1450,7 @@
           "clips": []
         }
       ],
+      "source": "plugins/kinetic-typography",
       "faces": {
         "hands": [
           "Caveat",
@@ -1377,7 +1490,7 @@
             "src": "/catalog/plugins/paper/feature-1.webp",
             "w": 720,
             "h": 1280,
-            "from": "effects/match-cut/out/web.mp4",
+            "from": "templates/match-cut/out/web.mp4",
             "at": 0,
             "video": "/catalog/plugins/paper/feature-1.mp4",
             "len": 4,
@@ -1391,7 +1504,7 @@
             "src": "/catalog/plugins/paper/feature-2.webp",
             "w": 720,
             "h": 1280,
-            "from": "effects/paper-photo/out/FoldOutDesk.mp4",
+            "from": "templates/paper-photo/out/FoldOutDesk.mp4",
             "at": 0,
             "video": "/catalog/plugins/paper/feature-2.mp4",
             "len": 2,
@@ -1405,7 +1518,7 @@
             "src": "/catalog/plugins/paper/feature-3.webp",
             "w": 1280,
             "h": 720,
-            "from": "effects/scrapline/out/scrapline-demo.mp4",
+            "from": "templates/scrapline/out/scrapline-demo.mp4",
             "at": 20,
             "video": "/catalog/plugins/paper/feature-3.mp4",
             "len": 4,
@@ -2233,7 +2346,7 @@
             "src": "/catalog/plugins/paper/preset-broadsheet.webp",
             "w": 720,
             "h": 1280,
-            "from": "effects/match-cut/out/Broadsheet.mp4",
+            "from": "templates/match-cut/out/Broadsheet.mp4",
             "at": 1
           }
         },
@@ -2244,7 +2357,7 @@
             "src": "/catalog/plugins/paper/preset-clean.webp",
             "w": 720,
             "h": 1280,
-            "from": "effects/match-cut/out/Clean.mp4",
+            "from": "templates/match-cut/out/Clean.mp4",
             "at": 1
           }
         },
@@ -2255,7 +2368,7 @@
             "src": "/catalog/plugins/paper/preset-crumpled.webp",
             "w": 720,
             "h": 1280,
-            "from": "effects/match-cut/out/Crumpled.mp4",
+            "from": "templates/match-cut/out/Crumpled.mp4",
             "at": 1
           }
         },
@@ -2266,7 +2379,7 @@
             "src": "/catalog/plugins/paper/preset-web.webp",
             "w": 720,
             "h": 1280,
-            "from": "effects/match-cut/out/web.mp4",
+            "from": "templates/match-cut/out/web.mp4",
             "at": 1
           }
         }
@@ -2286,13 +2399,13 @@
         "panel": "Studio gets a Paper panel for MatchCut: a card for each look, a page layout picker, sliders for keyword size, cuts per second, push-in, blur, streak, crumple and grain, colour pickers for the highlight and the paper, and a box on the preview that you drag onto the keyword. CutOut and FoldOut get a sheet view with edge and paper cards, sliders for creases and shadow, and a handle to place the picture.",
         "tools": [],
         "note": "The plugin adds no agent tools. An agent sets values in Studio, checks the preview, then writes the look it settled on into your code or a preset.",
-        "installed": "It installs as a package you add to your project. Its skill comes with it, so an agent can use it without being taught."
+        "installed": "It is a package in the source repository. Its skill comes with it, so an agent can use it without being taught."
       },
       "hero": {
         "src": "/catalog/plugins/paper/hero.webp",
         "w": 720,
         "h": 1280,
-        "from": "effects/match-cut/out/Broadsheet.mp4",
+        "from": "templates/match-cut/out/Broadsheet.mp4",
         "at": 1,
         "video": "/catalog/plugins/paper/hero.mp4",
         "len": 4
@@ -2310,7 +2423,7 @@
               "src": "/catalog/plugins/paper/demo-match-cut-1.webp",
               "w": 720,
               "h": 1280,
-              "from": "effects/match-cut/out/Crumpled.mp4",
+              "from": "templates/match-cut/out/Crumpled.mp4",
               "at": 0,
               "video": "/catalog/plugins/paper/demo-match-cut-1.mp4",
               "len": 4,
@@ -2320,7 +2433,7 @@
               "src": "/catalog/plugins/paper/demo-match-cut-2.webp",
               "w": 720,
               "h": 1280,
-              "from": "effects/match-cut/out/Clean.mp4",
+              "from": "templates/match-cut/out/Clean.mp4",
               "at": 0,
               "video": "/catalog/plugins/paper/demo-match-cut-2.mp4",
               "len": 4,
@@ -2342,7 +2455,7 @@
               "src": "/catalog/plugins/paper/demo-paper-photo-1.webp",
               "w": 720,
               "h": 1280,
-              "from": "effects/paper-photo/out/FoldOut.mp4",
+              "from": "templates/paper-photo/out/FoldOut.mp4",
               "at": 0,
               "video": "/catalog/plugins/paper/demo-paper-photo-1.mp4",
               "len": 2,
@@ -2352,7 +2465,7 @@
               "src": "/catalog/plugins/paper/feature-2.webp",
               "w": 720,
               "h": 1280,
-              "from": "effects/paper-photo/out/FoldOutDesk.mp4",
+              "from": "templates/paper-photo/out/FoldOutDesk.mp4",
               "at": 0,
               "video": "/catalog/plugins/paper/feature-2.mp4",
               "len": 2,
@@ -2376,6 +2489,7 @@
           "clips": []
         }
       ],
+      "source": "plugins/paper",
       "stocks": [
         "white",
         "newsprint",
@@ -2421,6 +2535,7 @@
       "components": [
         "PopArt",
         "Blobs",
+        "HalftonePoster",
         "Fragments",
         "Reticle"
       ],
@@ -2436,7 +2551,7 @@
             "src": "/catalog/plugins/vj/feature-1.webp",
             "w": 1280,
             "h": 720,
-            "from": "effects/vj-demo/out/Crt.mp4",
+            "from": "templates/vj-demo/out/Crt.mp4",
             "at": 0,
             "video": "/catalog/plugins/vj/feature-1.mp4",
             "len": 4,
@@ -2450,7 +2565,7 @@
             "src": "/catalog/plugins/vj/feature-2.webp",
             "w": 1280,
             "h": 720,
-            "from": "effects/vj-demo/out/Thermal.mp4",
+            "from": "templates/vj-demo/out/Thermal.mp4",
             "at": 0,
             "video": "/catalog/plugins/vj/feature-2.mp4",
             "len": 4,
@@ -2464,7 +2579,7 @@
             "src": "/catalog/plugins/vj/feature-3.webp",
             "w": 1280,
             "h": 720,
-            "from": "effects/hexed-demo/out/flash.mp4",
+            "from": "templates/hexed-demo/out/flash.mp4",
             "at": 3,
             "video": "/catalog/plugins/vj/feature-3.mp4",
             "len": 4,
@@ -2478,7 +2593,7 @@
             "src": "/catalog/plugins/vj/feature-4.webp",
             "w": 1280,
             "h": 720,
-            "from": "effects/vj-demo/out/PopArt.mp4",
+            "from": "templates/vj-demo/out/PopArt.mp4",
             "at": 1.2,
             "video": "/catalog/plugins/vj/feature-4.mp4",
             "len": 4,
@@ -2492,7 +2607,7 @@
             "src": "/catalog/plugins/vj/feature-5.webp",
             "w": 1280,
             "h": 720,
-            "from": "effects/vj-demo/out/Blobs.mp4",
+            "from": "templates/vj-demo/out/Blobs.mp4",
             "at": 0,
             "video": "/catalog/plugins/vj/feature-5.mp4",
             "len": 4,
@@ -2963,6 +3078,129 @@
           "detail": ""
         },
         {
+          "name": "HalftonePoster",
+          "kind": "component",
+          "summary": "A clip printed as a halftone poster: panels of ink-on-paper dots, the person over flat ground, an off-register shadow and a title.",
+          "detail": "",
+          "propsOf": "HalftonePosterProps",
+          "props": [
+            {
+              "name": "src",
+              "type": "string",
+              "optional": false,
+              "doc": ""
+            },
+            {
+              "name": "matte",
+              "type": "string",
+              "optional": true,
+              "doc": "The person's matte (white = person), timed as src. Without it the whole picture is printed."
+            },
+            {
+              "name": "width",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "height",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "rate",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "trimBefore",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "panels",
+              "type": "PosterPanel[]",
+              "optional": true,
+              "doc": "Side by side; default one panel, blue on yellow."
+            },
+            {
+              "name": "changes",
+              "type": "{ at: number; panels: PosterPanel[] }[]",
+              "optional": true,
+              "doc": "Panel sets that cut in on composition frames, as a poster series flicking over."
+            },
+            {
+              "name": "size",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "angle",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "punch",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "bias",
+              "type": "number",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "shape",
+              "type": "'circle' | 'line' | 'square'",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "offset",
+              "type": "[number, number]",
+              "optional": true,
+              "doc": "With a matte: the person's silhouette in each panel's shadow colour, this many px off. Without a matte: a second print of the picture in shadow ink, multiplied over, this far off."
+            },
+            {
+              "name": "backdrop",
+              "type": "'flat' | 'dots'",
+              "optional": true,
+              "doc": "With a matte: the ground flat, or the clip behind the person faintly in the panel's ink. Default flat."
+            },
+            {
+              "name": "title",
+              "type": "PosterTitle",
+              "optional": true,
+              "doc": ""
+            },
+            {
+              "name": "steps",
+              "type": "number",
+              "optional": true,
+              "doc": "Drawings a second; the picture holds between them. 0 for every frame. Default 12."
+            },
+            {
+              "name": "id",
+              "type": "string",
+              "optional": true,
+              "doc": ""
+            }
+          ]
+        },
+        {
+          "name": "halftonePoster",
+          "kind": "effect",
+          "summary": "The halftone look as layer effects: the layer printed as ink dots on paper.",
+          "detail": ""
+        },
+        {
           "name": "Fragments",
           "kind": "component",
           "summary": "Clips seen through windows on planes at different depths, with a camera moving through them.",
@@ -3162,13 +3400,13 @@
         "panel": "Studio gets a VJ panel with a card for each look and that look's own sliders and colours. Switching looks keeps the settings of the others. On the preview you drag and resize the CRT screen and drag the magnifier's centre. A second panel sets how the tracking marks look: box style, labels, links, blend, how many blobs to show, line width and colour.",
         "tools": [],
         "note": "Tracking runs on your own machine ahead of time, so the panel only styles the result. The plugin adds no agent tools. The skill walks an agent through tracking a clip, checking the debug images, tuning the tracker and rendering a still to check. For Fragments it has the agent name the boxes from stills of each clip.",
-        "installed": "It installs as a package you add to your project. Its skill comes with it, so an agent can use it without being taught."
+        "installed": "It is a package in the source repository. Its skill comes with it, so an agent can use it without being taught."
       },
       "hero": {
         "src": "/catalog/plugins/vj/hero.webp",
         "w": 1280,
         "h": 720,
-        "from": "effects/vj-demo/out/Vhs.mp4",
+        "from": "templates/vj-demo/out/Vhs.mp4",
         "at": 0,
         "video": "/catalog/plugins/vj/hero.mp4",
         "len": 4
@@ -3205,7 +3443,7 @@
               "src": "/catalog/plugins/vj/feature-4.webp",
               "w": 1280,
               "h": 720,
-              "from": "effects/vj-demo/out/PopArt.mp4",
+              "from": "templates/vj-demo/out/PopArt.mp4",
               "at": 1.2,
               "video": "/catalog/plugins/vj/feature-4.mp4",
               "len": 4,
@@ -3215,7 +3453,7 @@
               "src": "/catalog/plugins/vj/feature-5.webp",
               "w": 1280,
               "h": 720,
-              "from": "effects/vj-demo/out/Blobs.mp4",
+              "from": "templates/vj-demo/out/Blobs.mp4",
               "at": 0,
               "video": "/catalog/plugins/vj/feature-5.mp4",
               "len": 4,
@@ -3225,7 +3463,7 @@
               "src": "/catalog/plugins/vj/feature-2.webp",
               "w": 1280,
               "h": 720,
-              "from": "effects/vj-demo/out/Thermal.mp4",
+              "from": "templates/vj-demo/out/Thermal.mp4",
               "at": 0,
               "video": "/catalog/plugins/vj/feature-2.mp4",
               "len": 4,
@@ -3235,7 +3473,7 @@
               "src": "/catalog/plugins/vj/feature-1.webp",
               "w": 1280,
               "h": 720,
-              "from": "effects/vj-demo/out/Crt.mp4",
+              "from": "templates/vj-demo/out/Crt.mp4",
               "at": 0,
               "video": "/catalog/plugins/vj/feature-1.mp4",
               "len": 4,
@@ -3244,6 +3482,7 @@
           ]
         }
       ],
+      "source": "plugins/vj",
       "looks": [
         {
           "kind": "none",
@@ -3299,180 +3538,16 @@
           "kind": "grainy",
           "uses": "grainyBW",
           "summary": "Grainy black and white."
+        },
+        {
+          "kind": "halftone",
+          "uses": "halftonePoster",
+          "summary": "The halftone look as layer effects: the layer printed as ink dots on paper."
         }
       ]
     }
   ],
   "components": [
-    {
-      "id": "collage-burst",
-      "title": "Screenshot card burst",
-      "description": "A wordmark fades in on black, then a cluster of screenshot cards bursts out of one point as the camera flies in. The cards settle into a dense wall, drift, and whip off to the right. Big white type finishes it: two short lines, each starting as a single word.",
-      "change": [
-        "The brand name and the word after it in the wordmark (or none), and the two closing lines.",
-        "Your own screenshots or photos on the cards, and the words printed on the cards. With none, every card is drawn.",
-        "The three typefaces (wordmark and cards, terminal, serif) and the colours: canvas, text, accent, paper and dark cards.",
-        "The seed, which sets the tilt and timing of the burst."
-      ],
-      "plugins": [],
-      "compositions": [
-        "CollageBurst"
-      ],
-      "hero": {
-        "src": "/catalog/components/collage-burst/hero.webp",
-        "w": 1280,
-        "h": 720,
-        "from": "effects/collage-burst/out/collage-burst.mp4",
-        "at": 0.3,
-        "video": "/catalog/components/collage-burst/hero.mp4",
-        "len": 4
-      }
-    },
-    {
-      "id": "greeting-intro",
-      "title": "App window greeting",
-      "description": "A gradient wordmark on a soft off-white ground shrinks away as an app window grows in behind it. The camera pushes into the window, tilted, and types a greeting and a question in large perspective type. Four suggestion cards slide in, then the camera pulls back and flattens to the whole window.",
-      "change": [
-        "The brand name, the name in the greeting, the question under it and the placeholder in the prompt box.",
-        "One to four suggestion cards, with your own labels, and the small caption at the bottom (or none).",
-        "The typeface, and the colours: ground, glows, window, cards, text and the wordmark and greeting gradients.",
-        "Whether it moves in two-frame steps or smoothly at 60 frames a second."
-      ],
-      "plugins": [],
-      "compositions": [
-        "GreetingIntro"
-      ],
-      "hero": {
-        "src": "/catalog/components/greeting-intro/hero.webp",
-        "w": 1280,
-        "h": 720,
-        "from": "effects/greeting-intro/out/greeting-intro.mp4",
-        "at": 0,
-        "video": "/catalog/components/greeting-intro/hero.mp4",
-        "len": 3.5
-      }
-    },
-    {
-      "id": "phone-orbit",
-      "title": "Social post on a phone",
-      "description": "A phone showing a social post starts as a close-up of its lower edge, pulls back and glides to rest. Chat bubbles, avatars and icon chips pop in around it. A hand reaches into the photo and lifts the phone, and the screen swaps to a second one as the view count reaches its cap.",
-      "change": [
-        "The brand name in the post header, the caption pill and the two-part subtitle on the photo.",
-        "The view count: where it starts, where it stops, and its unit.",
-        "The three chat bubbles, and the words on the second screen.",
-        "Your own photo for the post, a second picture for the swap, a logo and four avatars. Without them, all of it is drawn.",
-        "The typefaces and colours, and whether the motion steps at 24 frames a second or runs smooth at 60."
-      ],
-      "plugins": [],
-      "compositions": [
-        "PhoneOrbit"
-      ],
-      "hero": {
-        "src": "/catalog/components/phone-orbit/hero.webp",
-        "w": 1280,
-        "h": 720,
-        "from": "effects/phone-orbit/out/phone-orbit-stock.mp4",
-        "at": 0.65,
-        "video": "/catalog/components/phone-orbit/hero.mp4",
-        "len": 2.55
-      }
-    },
-    {
-      "id": "prompt-reply",
-      "title": "Chat prompt to reply",
-      "description": "A chat prompt types itself into a rounded box and sends. The shot cuts to the reply, built on a page the camera scrolls through. Two activity rows, a status line, a serif reply, a brand chip, a small table and a row of action icons fade up one after another.",
-      "change": [
-        "The prompt, the two activity rows, the status line and the reply.",
-        "The brand chip, and the table: three column heads and one row.",
-        "The three typefaces (interface, mono chip, serif reply).",
-        "The colours: background, panel, text, the warm typing tint, labels, links and icons."
-      ],
-      "plugins": [],
-      "compositions": [
-        "PromptReply"
-      ],
-      "hero": {
-        "src": "/catalog/components/prompt-reply/hero.webp",
-        "w": 1280,
-        "h": 720,
-        "from": "effects/prompt-reply/out/prompt-reply.mp4",
-        "at": 0,
-        "video": "/catalog/components/prompt-reply/hero.mp4",
-        "len": 5
-      }
-    },
-    {
-      "id": "scrapline",
-      "title": "Scrapline cut-outs",
-      "description": "A hand-drawn border round a cut-out subject, on a sheet of torn paper. The line can be a wobbly marker, pencil, crayon, scribble or brush. Line and paper redraw a few times a second, like hand animation.",
-      "change": [
-        "The subject: a video with a black and white matte, a video with alpha, an image with alpha, or an SVG path.",
-        "The line style (Marker, Pencil, Crayon, Scribble or Brush), the paper (White, Kraft, Binder, Cardboard, your own picture or none), the line colour, the gap to the subject and the seed."
-      ],
-      "plugins": [
-        "@kinetographdev/paper"
-      ],
-      "compositions": [
-        "ScraplineDemo",
-        "ScraplineStill"
-      ],
-      "hero": {
-        "src": "/catalog/components/scrapline/hero.webp",
-        "w": 1280,
-        "h": 720,
-        "from": "effects/scrapline/out/scrapline-demo.mp4",
-        "at": 20,
-        "video": "/catalog/components/scrapline/hero.mp4",
-        "len": 5
-      }
-    },
-    {
-      "id": "wait-ship",
-      "title": "Two lines on a focus pull",
-      "description": "Seven photo cards float round the edges of a near-black frame, out of focus. The camera pulls back and racks focus. A first line comes up out of the blur and a second line replaces it. The scene slides off to the right as the left card sharpens.",
-      "change": [
-        "The two lines, and a product name in the second.",
-        "Your own photos on the seven cards. Any card you leave out keeps its drawn picture.",
-        "The typeface, weight, size, tracking and text colour, and the two colours of the background.",
-        "How strong the focus blur, the film grain and the closing slide are, and the frame where the first line gives way to the second."
-      ],
-      "plugins": [],
-      "compositions": [
-        "WaitShip"
-      ],
-      "hero": {
-        "src": "/catalog/components/wait-ship/hero.webp",
-        "w": 1280,
-        "h": 720,
-        "from": "effects/wait-ship/out/wait-ship.mp4",
-        "at": 0,
-        "video": "/catalog/components/wait-ship/hero.mp4",
-        "len": 2.45
-      }
-    },
-    {
-      "id": "word-flash",
-      "title": "Words cut to the beat",
-      "description": "A 9.4 second black-and-white type spot, cut on every hit of its track. Each cut shows one word or a two-word lockup on a ground that flips between black and white. A last word types on, then blurs away.",
-      "change": [
-        "The words: an intro, a run with one word per cut, and an outro. The word count has to match the number of cuts.",
-        "The track. A small tool finds its strongest hits and gives you the cuts.",
-        "The typeface. Another face lands in the same places."
-      ],
-      "plugins": [],
-      "compositions": [
-        "WordFlash"
-      ],
-      "hero": {
-        "src": "/catalog/components/word-flash/hero.webp",
-        "w": 720,
-        "h": 1280,
-        "from": "effects/word-flash/out/word-flash.mp4",
-        "at": 2.5,
-        "video": "/catalog/components/word-flash/hero.mp4",
-        "len": 5
-      }
-    },
     {
       "id": "grid-rect",
       "title": "Rectangular photo grid",
@@ -3492,6 +3567,7 @@
         "len": 4
       },
       "category": "grids",
+      "source": "components/grids",
       "props": [
         {
           "name": "photos",
@@ -3664,6 +3740,7 @@
         "len": 4
       },
       "category": "grids",
+      "source": "components/grids",
       "props": [
         {
           "name": "photos",
@@ -3824,6 +3901,7 @@
         "len": 4
       },
       "category": "grids",
+      "source": "components/grids",
       "props": [
         {
           "name": "photos",
@@ -4002,6 +4080,7 @@
         "len": 4
       },
       "category": "grids",
+      "source": "components/grids",
       "props": [
         {
           "name": "photos",
@@ -4150,6 +4229,7 @@
         "len": 4
       },
       "category": "grids",
+      "source": "components/grids",
       "props": [
         {
           "name": "photos",
@@ -4298,6 +4378,7 @@
         "len": 4
       },
       "category": "grids",
+      "source": "components/grids",
       "props": [
         {
           "name": "photos",
@@ -4440,6 +4521,7 @@
         "len": 4
       },
       "category": "grids",
+      "source": "components/grids",
       "props": [
         {
           "name": "photos",
@@ -4600,6 +4682,7 @@
         "len": 4
       },
       "category": "grids",
+      "source": "components/grids",
       "props": [
         {
           "name": "photos",
@@ -4748,6 +4831,7 @@
         "len": 4
       },
       "category": "carousels",
+      "source": "components/carousels",
       "props": [
         {
           "name": "images",
@@ -4890,6 +4974,7 @@
         "len": 4
       },
       "category": "carousels",
+      "source": "components/carousels",
       "props": [
         {
           "name": "images",
@@ -5050,6 +5135,7 @@
         "len": 4
       },
       "category": "carousels",
+      "source": "components/carousels",
       "props": [
         {
           "name": "images",
@@ -5204,6 +5290,7 @@
         "len": 4
       },
       "category": "carousels",
+      "source": "components/carousels",
       "props": [
         {
           "name": "images",
@@ -5364,6 +5451,7 @@
         "len": 4
       },
       "category": "carousels",
+      "source": "components/carousels",
       "props": [
         {
           "name": "images",
@@ -5512,6 +5600,7 @@
         "len": 4
       },
       "category": "carousels",
+      "source": "components/carousels",
       "props": [
         {
           "name": "images",
@@ -5672,6 +5761,7 @@
         "len": 4
       },
       "category": "carousels",
+      "source": "components/carousels",
       "props": [
         {
           "name": "images",
@@ -5838,6 +5928,7 @@
         "len": 3
       },
       "category": "carousels",
+      "source": "components/carousels",
       "props": [
         {
           "name": "headline",
@@ -5938,6 +6029,7 @@
         "len": 4
       },
       "category": "charts",
+      "source": "components/charts",
       "props": [
         {
           "name": "data",
@@ -6086,6 +6178,7 @@
         "len": 4
       },
       "category": "charts",
+      "source": "components/charts",
       "props": [
         {
           "name": "headline",
@@ -6192,6 +6285,7 @@
         "len": 4
       },
       "category": "charts",
+      "source": "components/charts",
       "props": [
         {
           "name": "label",
@@ -6340,6 +6434,7 @@
         "len": 4
       },
       "category": "charts",
+      "source": "components/charts",
       "props": [
         {
           "name": "data",
@@ -6488,6 +6583,7 @@
         "len": 4
       },
       "category": "charts",
+      "source": "components/charts",
       "props": [
         {
           "name": "eyebrow",
@@ -6594,6 +6690,7 @@
         "len": 4
       },
       "category": "charts",
+      "source": "components/charts",
       "props": [
         {
           "name": "title",
@@ -6664,6 +6761,7 @@
         "len": 4
       },
       "category": "charts",
+      "source": "components/charts",
       "props": [
         {
           "name": "label",
@@ -6770,6 +6868,7 @@
         "len": 4
       },
       "category": "charts",
+      "source": "components/charts",
       "props": [
         {
           "name": "metrics",
@@ -6888,6 +6987,7 @@
         "len": 4
       },
       "category": "charts",
+      "source": "components/charts",
       "props": [
         {
           "name": "data",
@@ -7024,6 +7124,7 @@
         "len": 4
       },
       "category": "charts",
+      "source": "components/charts",
       "props": [
         {
           "name": "data",
@@ -7130,6 +7231,7 @@
         "len": 4
       },
       "category": "charts",
+      "source": "components/charts",
       "props": [
         {
           "name": "data",
@@ -7230,6 +7332,7 @@
         "len": 4
       },
       "category": "charts",
+      "source": "components/charts",
       "props": [
         {
           "name": "nodes",
@@ -7342,6 +7445,7 @@
         "len": 4
       },
       "category": "charts",
+      "source": "components/charts",
       "props": [
         {
           "name": "data",
@@ -7454,1120 +7558,6 @@
       ]
     },
     {
-      "id": "three-phone",
-      "title": "Three phones fanned out",
-      "description": "Three tilted phones fan out on an arc from the centre one. Each screen is drawn in, or is your own image.",
-      "change": [],
-      "plugins": [],
-      "compositions": [
-        "ThreePhone"
-      ],
-      "hero": {
-        "src": "/catalog/components/three-phone/hero.webp",
-        "w": 1280,
-        "h": 720,
-        "from": "components/showcase/out/three-phone.mp4",
-        "at": 0.1,
-        "video": "/catalog/components/three-phone/hero.mp4",
-        "len": 4
-      },
-      "category": "showcase",
-      "props": [
-        {
-          "name": "screens",
-          "type": "list",
-          "default": "['hero', 'dashboard', 'chart']",
-          "doc": "Left, centre and right screen. A built-in drawn screen (hero, dashboard, chart, plan) or a path to an image under public/, such as photos/nasa-earth-1.jpg."
-        },
-        {
-          "name": "font",
-          "type": "string",
-          "default": "\"Geist\"",
-          "doc": "Google Fonts family for the type drawn on the built-in screens."
-        },
-        {
-          "name": "accent",
-          "type": "colour",
-          "default": "\"#d9f26b\"",
-          "doc": "The sample app's accent colour."
-        },
-        {
-          "name": "ground",
-          "type": "colour",
-          "default": "\"#eef0e5\"",
-          "doc": "The pale ground."
-        },
-        {
-          "name": "groundShade",
-          "type": "colour",
-          "default": "\"#dfe3d2\"",
-          "doc": "The ground at the lower right, away from the light."
-        },
-        {
-          "name": "frame",
-          "type": "colour",
-          "default": "\"#26272b\"",
-          "doc": "Phone frame colour."
-        },
-        {
-          "name": "fanAngle",
-          "type": "number",
-          "default": "24",
-          "doc": "How far the outer phones turn in towards the centre one, in degrees."
-        },
-        {
-          "name": "spread",
-          "type": "number",
-          "default": "470",
-          "doc": "Distance of the outer phones from the centre one, in pixels."
-        },
-        {
-          "name": "size",
-          "type": "number",
-          "default": "1",
-          "doc": "Phone scale: 1 is 800 px tall at the wide shot."
-        },
-        {
-          "name": "speed",
-          "type": "number",
-          "default": "1",
-          "doc": "Playback speed of the move: 2 is twice as fast."
-        },
-        {
-          "name": "startZoom",
-          "type": "number",
-          "default": "2.2",
-          "doc": "How tight the camera is on the centre phone's screen at the start and on each screen it visits."
-        },
-        {
-          "name": "grain",
-          "type": "number",
-          "default": "0.035",
-          "doc": "Film grain over the whole frame."
-        }
-      ]
-    },
-    {
-      "id": "phone-pitch",
-      "title": "Phone with a pitch",
-      "description": "A headline, a line of body text and a button sit beside a phone that lands with a settle.",
-      "change": [],
-      "plugins": [],
-      "compositions": [
-        "PhonePitch"
-      ],
-      "hero": {
-        "src": "/catalog/components/phone-pitch/hero.webp",
-        "w": 1280,
-        "h": 720,
-        "from": "components/showcase/out/phone-pitch.mp4",
-        "at": 0,
-        "video": "/catalog/components/phone-pitch/hero.mp4",
-        "len": 4
-      },
-      "category": "showcase",
-      "props": [
-        {
-          "name": "headline",
-          "type": "list",
-          "default": "['Let Orbit', 'handle it']",
-          "doc": "The two headline lines, set a word at a time."
-        },
-        {
-          "name": "contact",
-          "type": "string",
-          "default": "\"Orbit\"",
-          "doc": "The name under the avatar in the thread header."
-        },
-        {
-          "name": "thread",
-          "type": "me | them",
-          "default": "",
-          "doc": "The conversation, in order."
-        },
-        {
-          "name": "typing.from",
-          "type": "integer",
-          "default": "368",
-          "doc": "From. The frames the typing dots show for, before the last message."
-        },
-        {
-          "name": "typing.to",
-          "type": "integer",
-          "default": "402",
-          "doc": "To. The frames the typing dots show for, before the last message."
-        },
-        {
-          "name": "headlineFont",
-          "type": "string",
-          "default": "\"Geist\"",
-          "doc": "Google Fonts family of the headline."
-        },
-        {
-          "name": "uiFont",
-          "type": "string",
-          "default": "\"Inter\"",
-          "doc": "Google Fonts family of the thread."
-        },
-        {
-          "name": "ground",
-          "type": "colour",
-          "default": "\"#effafe\"",
-          "doc": "The ground behind the phone."
-        },
-        {
-          "name": "ink",
-          "type": "colour",
-          "default": "\"#0f1a24\"",
-          "doc": "Headline colour."
-        },
-        {
-          "name": "bubble",
-          "type": "colour",
-          "default": "\"#3f8cf7\"",
-          "doc": "The blue of your own bubbles."
-        },
-        {
-          "name": "frame",
-          "type": "colour",
-          "default": "\"#1d1e22\"",
-          "doc": "Phone frame colour."
-        },
-        {
-          "name": "flip",
-          "type": "boolean",
-          "default": "false",
-          "doc": "Mirror the layout: phone on the left, headline on the right."
-        },
-        {
-          "name": "speed",
-          "type": "number",
-          "default": "1",
-          "doc": "Playback speed of the move."
-        },
-        {
-          "name": "grain",
-          "type": "number",
-          "default": "0",
-          "doc": "Film grain over the whole frame."
-        }
-      ]
-    },
-    {
-      "id": "screen-tunnel",
-      "title": "Phone tunnel",
-      "description": "Phones recede down a corridor on either side of a headline.",
-      "change": [],
-      "plugins": [],
-      "compositions": [
-        "ScreenTunnel"
-      ],
-      "hero": {
-        "src": "/catalog/components/screen-tunnel/hero.webp",
-        "w": 1280,
-        "h": 720,
-        "from": "components/showcase/out/screen-tunnel.mp4",
-        "at": 0.3,
-        "video": "/catalog/components/screen-tunnel/hero.mp4",
-        "len": 4
-      },
-      "category": "showcase",
-      "props": [
-        {
-          "name": "opening",
-          "type": "list",
-          "default": "['One', 'camera move.']",
-          "doc": "The line the shot opens on: a muted first word, then the rest in the accent."
-        },
-        {
-          "name": "words",
-          "type": "list",
-          "default": "",
-          "doc": "The sentence that builds at the end, one entry per word."
-        },
-        {
-          "name": "uiFont",
-          "type": "string",
-          "default": "\"Geist\"",
-          "doc": "Google Fonts family of the headline."
-        },
-        {
-          "name": "ground",
-          "type": "colour",
-          "default": "\"#ffffff\"",
-          "doc": "The ground, which fills the corridor."
-        },
-        {
-          "name": "accent",
-          "type": "colour",
-          "default": "\"#5a3cf0\"",
-          "doc": "The headline accent."
-        },
-        {
-          "name": "muted",
-          "type": "colour",
-          "default": "\"#8d8a99\"",
-          "doc": "The muted opening word."
-        },
-        {
-          "name": "frame",
-          "type": "colour",
-          "default": "\"#1b1c1e\"",
-          "doc": "Phone frame colour."
-        },
-        {
-          "name": "tint",
-          "type": "colour",
-          "default": "\"#efebfe\"",
-          "doc": "The ground colour of the screens on the walls."
-        },
-        {
-          "name": "tiles",
-          "type": "list",
-          "default": "",
-          "doc": "The four colours of the tiles and dots drawn on the screens."
-        },
-        {
-          "name": "pullBack",
-          "type": "number",
-          "default": "1",
-          "doc": "How far the camera pulls back: 1 is the full move, 0 a still camera on the corridor."
-        },
-        {
-          "name": "speed",
-          "type": "number",
-          "default": "1",
-          "doc": "Playback speed of the move."
-        },
-        {
-          "name": "gap",
-          "type": "number",
-          "default": "0.12",
-          "doc": "Space left between neighbouring phones, as a share of each wall: 0 has the phones meet at the seams, 0.12 the default spacing."
-        },
-        {
-          "name": "shadow",
-          "type": "number",
-          "default": "1",
-          "doc": "Strength of the drop shadows under the headline: 0 is flat type, 1 the default lift."
-        },
-        {
-          "name": "grain",
-          "type": "number",
-          "default": "0",
-          "doc": "Film grain over the whole frame."
-        }
-      ]
-    },
-    {
-      "id": "laptop-open",
-      "title": "Laptop opening",
-      "description": "A 3D laptop lid opens, the screen wakes, and the camera moves into the app.",
-      "change": [],
-      "plugins": [],
-      "compositions": [
-        "LaptopOpen"
-      ],
-      "hero": {
-        "src": "/catalog/components/laptop-open/hero.webp",
-        "w": 1280,
-        "h": 720,
-        "from": "components/showcase/out/laptop-open.mp4",
-        "at": 0.5,
-        "video": "/catalog/components/laptop-open/hero.mp4",
-        "len": 4.5
-      },
-      "category": "showcase",
-      "props": [
-        {
-          "name": "headline",
-          "type": "string",
-          "default": "\"Make it look this good\"",
-          "doc": "The line over the opening glass, before the lens pulls back."
-        },
-        {
-          "name": "tagline",
-          "type": "string",
-          "default": "\"Every screen, shipped\"",
-          "doc": "The line that types itself over the field at the end."
-        },
-        {
-          "name": "screen",
-          "type": "string",
-          "default": "\"blank\"",
-          "doc": "The glass: \"blank\" (a lit empty screen), \"desk\" (a drawn analytics app) or a path to an image under public/."
-        },
-        {
-          "name": "uiFont",
-          "type": "string",
-          "default": "\"Geist\"",
-          "doc": "Google Fonts family for the headline, the tagline and the drawn screen."
-        },
-        {
-          "name": "accent",
-          "type": "colour",
-          "default": "\"#d9f26b\"",
-          "doc": "The drawn app's accent colour."
-        },
-        {
-          "name": "glass",
-          "type": "colour",
-          "default": "\"#eeeeee\"",
-          "doc": "The lit glass colour, also the colour of the opening frames."
-        },
-        {
-          "name": "deck",
-          "type": "colour",
-          "default": "\"#858282\"",
-          "doc": "The aluminium deck, mid tone (the gradient is built round it)."
-        },
-        {
-          "name": "fieldA",
-          "type": "colour",
-          "default": "\"#fcfcfc\"",
-          "doc": "The end field: the light base."
-        },
-        {
-          "name": "fieldB",
-          "type": "colour",
-          "default": "\"#bb9cf7\"",
-          "doc": "The end field: the colour that rises from the lower left."
-        },
-        {
-          "name": "focus",
-          "type": "number",
-          "default": "1",
-          "doc": "Depth of field strength: how soft the opening is. 0 starts sharp."
-        },
-        {
-          "name": "zoomInto",
-          "type": "boolean",
-          "default": "true",
-          "doc": "Push in until the glass is the frame, then cut to the field. Off holds on the laptop."
-        },
-        {
-          "name": "speed",
-          "type": "number",
-          "default": "1",
-          "doc": "Playback speed of the move."
-        },
-        {
-          "name": "grain",
-          "type": "number",
-          "default": "0",
-          "doc": "Film grain over the whole frame."
-        }
-      ]
-    },
-    {
-      "id": "screen-touch",
-      "title": "Touch to the next screen",
-      "description": "A finger presses a button and the next screen opens outward from the touch point.",
-      "change": [],
-      "plugins": [],
-      "compositions": [
-        "ScreenTouch"
-      ],
-      "hero": {
-        "src": "/catalog/components/screen-touch/hero.webp",
-        "w": 1280,
-        "h": 720,
-        "from": "components/showcase/out/screen-touch.mp4",
-        "at": 0.5,
-        "video": "/catalog/components/screen-touch/hero.mp4",
-        "len": 4
-      },
-      "category": "showcase",
-      "props": [
-        {
-          "name": "tabs",
-          "type": "list",
-          "default": "['Global', 'Friends']",
-          "doc": "The two tabs at the top of the feed."
-        },
-        {
-          "name": "posts",
-          "type": "list",
-          "default": "",
-          "doc": "The two posts on the feed."
-        },
-        {
-          "name": "actions",
-          "type": "list",
-          "default": "['Docs', 'Install']",
-          "doc": "The two buttons: the plain one, then the one that is tapped."
-        },
-        {
-          "name": "line1",
-          "type": "string",
-          "default": "\"the code is yours\"",
-          "doc": "The first closing line."
-        },
-        {
-          "name": "line2",
-          "type": "list",
-          "default": "['and so is', 'the credit']",
-          "doc": "The second closing line: a bright part, then a dimmer part."
-        },
-        {
-          "name": "tapAt",
-          "type": "integer",
-          "default": "55",
-          "doc": "The frame the press lands on."
-        },
-        {
-          "name": "font",
-          "type": "string",
-          "default": "\"Geist\"",
-          "doc": "Google Fonts family of the screen and the closing lines."
-        },
-        {
-          "name": "buttonFont",
-          "type": "string",
-          "default": "\"Inter\"",
-          "doc": "Google Fonts family (with italics) of the button labels."
-        },
-        {
-          "name": "ground",
-          "type": "colour",
-          "default": "\"#05060f\"",
-          "doc": "The dark ground."
-        },
-        {
-          "name": "glass",
-          "type": "colour",
-          "default": "\"#070918\"",
-          "doc": "The phone glass."
-        },
-        {
-          "name": "rim",
-          "type": "colour",
-          "default": "\"#41425e\"",
-          "doc": "The phone edge."
-        },
-        {
-          "name": "action",
-          "type": "colour",
-          "default": "\"#0bb644\"",
-          "doc": "The colour of the tapped button."
-        },
-        {
-          "name": "speed",
-          "type": "number",
-          "default": "1",
-          "doc": "Playback speed of the move."
-        },
-        {
-          "name": "grain",
-          "type": "number",
-          "default": "0",
-          "doc": "Film grain over the whole frame."
-        }
-      ]
-    },
-    {
-      "id": "checkout-push",
-      "title": "Checkout push",
-      "description": "A phone checkout where the amount lands and the camera pushes in.",
-      "change": [],
-      "plugins": [],
-      "compositions": [
-        "CheckoutPush"
-      ],
-      "hero": {
-        "src": "/catalog/components/checkout-push/hero.webp",
-        "w": 1280,
-        "h": 720,
-        "from": "components/showcase/out/checkout-push.mp4",
-        "at": 0,
-        "video": "/catalog/components/checkout-push/hero.mp4",
-        "len": 2
-      },
-      "category": "showcase",
-      "props": [
-        {
-          "name": "payee",
-          "type": "string",
-          "default": "\"Northline Studio\"",
-          "doc": "Who is being paid, shown on the dim checkout card."
-        },
-        {
-          "name": "amount",
-          "type": "string",
-          "default": "\"$48.00\"",
-          "doc": "The amount on the checkout card."
-        },
-        {
-          "name": "note",
-          "type": "string",
-          "default": "\"Annual plan\"",
-          "doc": "The line under the amount."
-        },
-        {
-          "name": "screen",
-          "type": "string",
-          "default": "\"photos/nasa-earth-1.jpg\"",
-          "doc": "Image under public/ shown on the phone screen."
-        },
-        {
-          "name": "font",
-          "type": "string",
-          "default": "\"Geist\"",
-          "doc": "Google Fonts family for the checkout card."
-        },
-        {
-          "name": "background",
-          "type": "colour",
-          "default": "\"#0a0a0b\"",
-          "doc": "The dark ground."
-        },
-        {
-          "name": "card",
-          "type": "colour",
-          "default": "\"#131416\"",
-          "doc": "The checkout card colour."
-        },
-        {
-          "name": "deviceBody",
-          "type": "colour",
-          "default": "\"#17181b\"",
-          "doc": "Phone frame colour."
-        },
-        {
-          "name": "speed",
-          "type": "number",
-          "default": "1",
-          "doc": "Playback speed of the move."
-        },
-        {
-          "name": "grain",
-          "type": "number",
-          "default": "0.03",
-          "doc": "Film grain over the frame."
-        },
-        {
-          "name": "motionBlur",
-          "type": "number",
-          "default": "0.7",
-          "doc": "Shutter in frames on the camera move; 0 for none."
-        }
-      ]
-    },
-    {
-      "id": "vault-count",
-      "title": "Wallet count-up",
-      "description": "A wallet balance counts up beside a stack of payment cards.",
-      "change": [],
-      "plugins": [],
-      "compositions": [
-        "VaultCount"
-      ],
-      "hero": {
-        "src": "/catalog/components/vault-count/hero.webp",
-        "w": 1280,
-        "h": 720,
-        "from": "components/showcase/out/vault-count.mp4",
-        "at": 0,
-        "video": "/catalog/components/vault-count/hero.mp4",
-        "len": 3
-      },
-      "category": "showcase",
-      "props": [
-        {
-          "name": "label",
-          "type": "string",
-          "default": "\"Northline Vault\"",
-          "doc": "Small line above the balance."
-        },
-        {
-          "name": "chip",
-          "type": "string",
-          "default": "\"Vault\"",
-          "doc": "Text of the pill at the top left of the screen."
-        },
-        {
-          "name": "clock",
-          "type": "string",
-          "default": "\"3:14\"",
-          "doc": "The status bar time."
-        },
-        {
-          "name": "footer",
-          "type": "string",
-          "default": "\"Transactions\"",
-          "doc": "The line at the foot of the screen."
-        },
-        {
-          "name": "opening",
-          "type": "integer",
-          "default": "500",
-          "doc": "The opening balance. The count adds one per tick."
-        },
-        {
-          "name": "currency",
-          "type": "string",
-          "default": "\"$\"",
-          "doc": "Currency symbol before the balance and the amounts."
-        },
-        {
-          "name": "entries",
-          "type": "left | right",
-          "default": "",
-          "doc": "The payments that drift past, in order."
-        },
-        {
-          "name": "font",
-          "type": "string",
-          "default": "\"Geist\"",
-          "doc": "Google Fonts family."
-        },
-        {
-          "name": "background",
-          "type": "colour",
-          "default": "\"#eef6fb\"",
-          "doc": "Ground colour (a pale wash)."
-        },
-        {
-          "name": "card",
-          "type": "colour",
-          "default": "\"#fbfaf6\"",
-          "doc": "Card colour."
-        },
-        {
-          "name": "deviceBody",
-          "type": "colour",
-          "default": "\"#151314\"",
-          "doc": "Phone frame colour."
-        },
-        {
-          "name": "screenTop",
-          "type": "colour",
-          "default": "\"#6d8cd6\"",
-          "doc": "Screen colour at the top right."
-        },
-        {
-          "name": "screenBottom",
-          "type": "colour",
-          "default": "\"#1c2a4b\"",
-          "doc": "Screen colour at the bottom."
-        },
-        {
-          "name": "speed",
-          "type": "number",
-          "default": "1",
-          "doc": "Speed of the count."
-        },
-        {
-          "name": "grain",
-          "type": "number",
-          "default": "0.02",
-          "doc": "Film grain over the frame."
-        }
-      ]
-    },
-    {
-      "id": "build-out",
-      "title": "Send button zoom-out",
-      "description": "A send button zooms out to show the whole app around it.",
-      "change": [],
-      "plugins": [],
-      "compositions": [
-        "BuildOut"
-      ],
-      "hero": {
-        "src": "/catalog/components/build-out/hero.webp",
-        "w": 1280,
-        "h": 720,
-        "from": "components/showcase/out/build-out.mp4",
-        "at": 0,
-        "video": "/catalog/components/build-out/hero.mp4",
-        "len": 3.8
-      },
-      "category": "showcase",
-      "props": [
-        {
-          "name": "prompt",
-          "type": "string",
-          "default": "",
-          "doc": "The prompt typed into the box, and shown again in the app's chat."
-        },
-        {
-          "name": "reply",
-          "type": "string",
-          "default": "",
-          "doc": "The assistant line under the prompt in the app's chat."
-        },
-        {
-          "name": "notes",
-          "type": "list",
-          "default": "",
-          "doc": "Two paragraphs of the assistant's working notes in the chat column."
-        },
-        {
-          "name": "wordmark",
-          "type": "string",
-          "default": "\"OAKLINE\"",
-          "doc": "The shop name in the app header. Shown in spaced capitals, then re-set in an italic serif."
-        },
-        {
-          "name": "tiles",
-          "type": "list",
-          "default": "",
-          "doc": "The three grid cards: title, small line, and tag."
-        },
-        {
-          "name": "presence",
-          "type": "list",
-          "default": "['Design', 'QA / UX']",
-          "doc": "The two collaborator labels that pop on the page, in order."
-        },
-        {
-          "name": "uiFont",
-          "type": "string",
-          "default": "\"Figtree\"",
-          "doc": "Google Fonts family for the interface."
-        },
-        {
-          "name": "serifFont",
-          "type": "string",
-          "default": "\"Instrument Serif\"",
-          "doc": "Google Fonts family the wordmark is re-set in (used italic)."
-        },
-        {
-          "name": "accent",
-          "type": "colour",
-          "default": "\"#3074dd\"",
-          "doc": "The send button, the app's buttons and the field."
-        },
-        {
-          "name": "accentB",
-          "type": "colour",
-          "default": "\"#8a58c8\"",
-          "doc": "The far corner of the field behind the app."
-        },
-        {
-          "name": "cream",
-          "type": "colour",
-          "default": "\"#faf8f5\"",
-          "doc": "The ground behind the app and the opening."
-        },
-        {
-          "name": "speed",
-          "type": "number",
-          "default": "1",
-          "doc": "Playback speed of the move."
-        }
-      ]
-    },
-    {
-      "id": "recap-dial",
-      "title": "Year recap dial",
-      "description": "A year in review on a dial that snaps month by month, with a sticker for each.",
-      "change": [],
-      "plugins": [],
-      "compositions": [
-        "RecapDial"
-      ],
-      "hero": {
-        "src": "/catalog/components/recap-dial/hero.webp",
-        "w": 720,
-        "h": 1280,
-        "from": "components/showcase/out/recap-dial.mp4",
-        "at": 0.5,
-        "video": "/catalog/components/recap-dial/hero.mp4",
-        "len": 4
-      },
-      "category": "showcase",
-      "props": [
-        {
-          "name": "labels",
-          "type": "list",
-          "default": "",
-          "doc": "The twelve labels round the dial, in order (the months by default)."
-        },
-        {
-          "name": "items",
-          "type": "list",
-          "default": "",
-          "doc": "The stickers on the inner ring."
-        },
-        {
-          "name": "brand",
-          "type": "string",
-          "default": "\"lumen\"",
-          "doc": "Wordmark at the top left."
-        },
-        {
-          "name": "tag",
-          "type": "string",
-          "default": "\"RECAP 25\"",
-          "doc": "Small line at the top right."
-        },
-        {
-          "name": "footer",
-          "type": "list",
-          "default": "",
-          "doc": "The three small words along the bottom: left, middle, right."
-        },
-        {
-          "name": "accent",
-          "type": "colour",
-          "default": "\"#e3141c\"",
-          "doc": "The red of the squiggle, the badges and the heart."
-        },
-        {
-          "name": "ground",
-          "type": "colour",
-          "default": "\"#000000\"",
-          "doc": "Background colour."
-        },
-        {
-          "name": "font",
-          "type": "string",
-          "default": "\"Inter\"",
-          "doc": "Google Fonts family for the labels and most stickers."
-        },
-        {
-          "name": "display",
-          "type": "string",
-          "default": "\"Anton\"",
-          "doc": "Google Fonts family for the badge stack (a condensed bold)."
-        },
-        {
-          "name": "serif",
-          "type": "string",
-          "default": "\"Instrument Serif\"",
-          "doc": "Google Fonts family for the handwritten line (italic)."
-        },
-        {
-          "name": "blur",
-          "type": "boolean",
-          "default": "true",
-          "doc": "Motion blur on each snap."
-        }
-      ]
-    },
-    {
-      "id": "launch-film",
-      "title": "Launch film",
-      "description": "A twenty-second product launch film, from a typed headline to the final mark.",
-      "change": [],
-      "plugins": [],
-      "compositions": [
-        "LaunchFilm"
-      ],
-      "hero": {
-        "src": "/catalog/components/launch-film/hero.webp",
-        "w": 1280,
-        "h": 720,
-        "from": "components/showcase/out/launch-film.mp4",
-        "at": 0,
-        "video": "/catalog/components/launch-film/hero.mp4",
-        "len": 6
-      },
-      "category": "showcase",
-      "props": [
-        {
-          "name": "product",
-          "type": "string",
-          "default": "\"Lumen\"",
-          "doc": "The product name: in the headline, the closing line and the wordmark."
-        },
-        {
-          "name": "version",
-          "type": "string",
-          "default": "\"5\"",
-          "doc": "The version, set in the accent colour in the headline."
-        },
-        {
-          "name": "headline",
-          "type": "string",
-          "default": "\"Meet {product} {version}\"",
-          "doc": "The typed headline. {product} and {version} are replaced; the version is set in the accent colour."
-        },
-        {
-          "name": "dock",
-          "type": "list",
-          "default": "",
-          "doc": "The five app icons in the dock, left to right. The product icon joins between the third and fourth."
-        },
-        {
-          "name": "prompt",
-          "type": "string",
-          "default": "",
-          "doc": "The text typed into the prompt box. It wraps at the box width; a newline starts a new line."
-        },
-        {
-          "name": "tags",
-          "type": "list",
-          "default": "['Web', 'Page', 'UI']",
-          "doc": "The three chips that pop above the prompt box."
-        },
-        {
-          "name": "connecting",
-          "type": "string",
-          "default": "\"Connecting with {product}\"",
-          "doc": "The line scrambled over the dots. {product} is replaced."
-        },
-        {
-          "name": "glyphs",
-          "type": "string",
-          "default": "\"qCFbN</>\"",
-          "doc": "Loose characters that fly across the dashboard."
-        },
-        {
-          "name": "dashWord",
-          "type": "string",
-          "default": "\"Code\"",
-          "doc": "The word the loose letters settle into on the dashboard."
-        },
-        {
-          "name": "dashTitle",
-          "type": "string",
-          "default": "\"Services\"",
-          "doc": "The dashboard page title."
-        },
-        {
-          "name": "dashNav",
-          "type": "list",
-          "default": "",
-          "doc": "The nine sidebar entries; the seventh is the selected one."
-        },
-        {
-          "name": "dashPill",
-          "type": "string",
-          "default": "\"Money infos....\"",
-          "doc": "The label in the pill beside the logo."
-        },
-        {
-          "name": "dashPanel",
-          "type": "list",
-          "default": "['MANAGE YOUR', 'MONEY STATS']",
-          "doc": "The two lines of the panel at the lower left (the first in small grey capitals)."
-        },
-        {
-          "name": "dashSearch",
-          "type": "string",
-          "default": "\"Search for the best result\"",
-          "doc": "The placeholder in the panel search field."
-        },
-        {
-          "name": "dashTiles",
-          "type": "list",
-          "default": "['%30', '%70']",
-          "doc": "The two stat tiles."
-        },
-        {
-          "name": "dashCta",
-          "type": "string",
-          "default": "\"Manage my business\"",
-          "doc": "The coral button at the lower left."
-        },
-        {
-          "name": "dashStats",
-          "type": "list",
-          "default": "",
-          "doc": "The two cards at the top of the dashboard."
-        },
-        {
-          "name": "dashRows",
-          "type": "list",
-          "default": "",
-          "doc": "The six table rows."
-        },
-        {
-          "name": "dashCols",
-          "type": "list",
-          "default": "",
-          "doc": "The two lines repeated in each table column."
-        },
-        {
-          "name": "dashAction",
-          "type": "string",
-          "default": "\"View Details\"",
-          "doc": "The outlined button at the end of each row."
-        },
-        {
-          "name": "filmTitle",
-          "type": "string",
-          "default": "\"{product} {version}\"",
-          "doc": "The title over the footage box and on the grid. {product} and {version} are replaced."
-        },
-        {
-          "name": "tryLine",
-          "type": "list",
-          "default": "",
-          "doc": "The closing line on the grid, in three words or phrases. {product} and {version} are replaced."
-        },
-        {
-          "name": "markLetter",
-          "type": "string",
-          "default": "\"\"",
-          "doc": "The letter that strikes, extrudes, spins and lands as the closing mark. Empty uses the first letter of the product."
-        },
-        {
-          "name": "accent",
-          "type": "colour",
-          "default": "\"#d4553f\"",
-          "doc": "The product tile, the version in the headline, the prompt button flash, the mark on black and the call to action."
-        },
-        {
-          "name": "ground",
-          "type": "colour",
-          "default": "\"#ecebec\"",
-          "doc": "The light ground."
-        },
-        {
-          "name": "ink",
-          "type": "colour",
-          "default": "\"#111111\"",
-          "doc": "The text colour on the light ground."
-        },
-        {
-          "name": "markA",
-          "type": "colour",
-          "default": "\"#ff58f4\"",
-          "doc": "Closing mark gradient, light end."
-        },
-        {
-          "name": "markB",
-          "type": "colour",
-          "default": "\"#b72fdc\"",
-          "doc": "Closing mark gradient, deep end."
-        },
-        {
-          "name": "uiFont",
-          "type": "string",
-          "default": "\"Inter\"",
-          "doc": "Google Fonts family for interface text and the closing letter."
-        },
-        {
-          "name": "headlineFont",
-          "type": "string",
-          "default": "\"Source Sans 3\"",
-          "doc": "Google Fonts family for the typed headline."
-        },
-        {
-          "name": "serifFont",
-          "type": "string",
-          "default": "\"Fraunces\"",
-          "doc": "Google Fonts family for the wordmark."
-        },
-        {
-          "name": "photos",
-          "type": "list",
-          "default": "",
-          "doc": "Pictures for the poster burst: names of files under public/photos, without \".jpg\". The defaults are public-domain artworks and posters from Wikimedia Commons."
-        },
-        {
-          "name": "footage",
-          "type": "list",
-          "default": "",
-          "doc": "The footage shots, in order: names of files under public/photos, without \".jpg\". The first two are shown in black and white. The defaults are public-domain photos of runners from Wikimedia Commons."
-        }
-      ]
-    },
-    {
       "id": "grain-gradient",
       "title": "Grain gradient",
       "description": "A mesh gradient drifts under film grain. It loops with no join at whole-number speeds.",
@@ -8586,6 +7576,7 @@
         "len": 4
       },
       "category": "backgrounds",
+      "source": "components/backgrounds",
       "props": [
         {
           "name": "palette",
@@ -8644,6 +7635,7 @@
         "len": 4
       },
       "category": "backgrounds",
+      "source": "components/backgrounds",
       "props": [
         {
           "name": "paper",
@@ -8714,6 +7706,7 @@
         "len": 4
       },
       "category": "backgrounds",
+      "source": "components/backgrounds",
       "props": [
         {
           "name": "ground",
@@ -8784,6 +7777,7 @@
         "len": 4
       },
       "category": "backgrounds",
+      "source": "components/backgrounds",
       "props": [
         {
           "name": "groundTop",
@@ -8854,6 +7848,7 @@
         "len": 4
       },
       "category": "backgrounds",
+      "source": "components/backgrounds",
       "props": [
         {
           "name": "colors",
@@ -8912,6 +7907,7 @@
         "len": 4
       },
       "category": "backgrounds",
+      "source": "components/backgrounds",
       "props": [
         {
           "name": "deep",
@@ -8976,6 +7972,7 @@
         "len": 4
       },
       "category": "backgrounds",
+      "source": "components/backgrounds",
       "props": [
         {
           "name": "ground",
@@ -9040,6 +8037,7 @@
         "len": 4
       },
       "category": "backgrounds",
+      "source": "components/backgrounds",
       "props": [
         {
           "name": "deep",
@@ -9110,6 +8108,7 @@
         "len": 4
       },
       "category": "backgrounds",
+      "source": "components/backgrounds",
       "props": [
         {
           "name": "colors",
@@ -9162,6 +8161,7 @@
         "len": 4
       },
       "category": "backgrounds",
+      "source": "components/backgrounds",
       "props": [
         {
           "name": "ground",
@@ -9268,6 +8268,7 @@
         "len": 4
       },
       "category": "audio-viz",
+      "source": "components/audio-viz",
       "props": [
         {
           "name": "audio",
@@ -9482,6 +8483,7 @@
         "len": 4
       },
       "category": "audio-viz",
+      "source": "components/audio-viz",
       "props": [
         {
           "name": "audio",
@@ -9696,6 +8698,7 @@
         "len": 3.5
       },
       "category": "effects",
+      "source": "components/effects",
       "props": [
         {
           "name": "src",
@@ -9796,6 +8799,7 @@
         "len": 3
       },
       "category": "effects",
+      "source": "components/effects",
       "props": [
         {
           "name": "src",
@@ -9878,6 +8882,7 @@
         "len": 4
       },
       "category": "effects",
+      "source": "components/effects",
       "props": [
         {
           "name": "src",
@@ -9954,6 +8959,7 @@
         "len": 3
       },
       "category": "effects",
+      "source": "components/effects",
       "props": [
         {
           "name": "src",
@@ -10036,6 +9042,1592 @@
       ]
     }
   ],
+  "templates": [
+    {
+      "id": "collage-burst",
+      "title": "Screenshot card burst",
+      "description": "A wordmark fades in on black, then a cluster of screenshot cards bursts out of one point as the camera flies in. The cards settle into a dense wall, drift, and whip off to the right. Big white type finishes it: two short lines, each starting as a single word.",
+      "change": [
+        "The brand name and the word after it in the wordmark (or none), and the two closing lines.",
+        "Your own screenshots or photos on the cards, and the words printed on the cards. With none, every card is drawn.",
+        "The three typefaces (wordmark and cards, terminal, serif) and the colours: canvas, text, accent, paper and dark cards.",
+        "The seed, which sets the tilt and timing of the burst."
+      ],
+      "plugins": [],
+      "compositions": [
+        "CollageBurst"
+      ],
+      "hero": {
+        "src": "/catalog/components/collage-burst/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "templates/collage-burst/out/collage-burst.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/collage-burst/hero.mp4",
+        "len": 4
+      },
+      "source": "templates/collage-burst"
+    },
+    {
+      "id": "dostoevsky",
+      "title": "History explainer",
+      "description": "A 39 second history explainer in the collage taste: dolly-throughs on old maps, taped photos on kraft paper, posters, a portrait montage, and clouds over a city plan. The pictures are public domain.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "Dostoevsky"
+      ],
+      "hero": {
+        "src": "/catalog/components/dostoevsky/hero.webp",
+        "w": 720,
+        "h": 1280,
+        "from": "templates/dostoevsky/out/dostoevsky.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/dostoevsky/hero.mp4",
+        "len": 4
+      },
+      "source": "templates/dostoevsky"
+    },
+    {
+      "id": "film-intro",
+      "title": "Film opening",
+      "description": "An old film fades up as a field of soft ink dots and pushes slowly in. A thin serif line types itself across it, lifts away in a blur, and a second line follows before a title.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "FilmIntro"
+      ],
+      "hero": {
+        "src": "/catalog/components/film-intro/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "templates/film-intro/out/film-intro.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/film-intro/hero.mp4",
+        "len": 4
+      },
+      "source": "templates/film-intro"
+    },
+    {
+      "id": "greeting-intro",
+      "title": "App window greeting",
+      "description": "A gradient wordmark on a soft off-white ground shrinks away as an app window grows in behind it. The camera pushes into the window, tilted, and types a greeting and a question in large perspective type. Four suggestion cards slide in, then the camera pulls back and flattens to the whole window.",
+      "change": [
+        "The brand name, the name in the greeting, the question under it and the placeholder in the prompt box.",
+        "One to four suggestion cards, with your own labels, and the small caption at the bottom (or none).",
+        "The typeface, and the colours: ground, glows, window, cards, text and the wordmark and greeting gradients.",
+        "Whether it moves in two-frame steps or smoothly at 60 frames a second."
+      ],
+      "plugins": [],
+      "compositions": [
+        "GreetingIntro"
+      ],
+      "hero": {
+        "src": "/catalog/components/greeting-intro/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "templates/greeting-intro/out/greeting-intro.mp4",
+        "at": 0,
+        "video": "/catalog/components/greeting-intro/hero.mp4",
+        "len": 3.5
+      },
+      "source": "templates/greeting-intro"
+    },
+    {
+      "id": "grid-reel",
+      "title": "Grid opener",
+      "description": "A 3 by 3 grid sits over every shot. The cells flash white and come sharp one by one while words land in them. A cut-out subject then stands over changing backgrounds, and the grid opens on a wordmark card.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "Opener"
+      ],
+      "hero": {
+        "src": "/catalog/components/grid-reel/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "templates/grid-reel/out/opener.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/grid-reel/hero.mp4",
+        "len": 4
+      },
+      "source": "templates/grid-reel"
+    },
+    {
+      "id": "phone-orbit",
+      "title": "Social post on a phone",
+      "description": "A phone showing a social post starts as a close-up of its lower edge, pulls back and glides to rest. Chat bubbles, avatars and icon chips pop in around it. A hand reaches into the photo and lifts the phone, and the screen swaps to a second one as the view count reaches its cap.",
+      "change": [
+        "The brand name in the post header, the caption pill and the two-part subtitle on the photo.",
+        "The view count: where it starts, where it stops, and its unit.",
+        "The three chat bubbles, and the words on the second screen.",
+        "Your own photo for the post, a second picture for the swap, a logo and four avatars. Without them, all of it is drawn.",
+        "The typefaces and colours, and whether the motion steps at 24 frames a second or runs smooth at 60."
+      ],
+      "plugins": [],
+      "compositions": [
+        "PhoneOrbit"
+      ],
+      "hero": {
+        "src": "/catalog/components/phone-orbit/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "templates/phone-orbit/out/phone-orbit-stock.mp4",
+        "at": 0.65,
+        "video": "/catalog/components/phone-orbit/hero.mp4",
+        "len": 2.55
+      },
+      "source": "templates/phone-orbit"
+    },
+    {
+      "id": "prompt-reply",
+      "title": "Chat prompt to reply",
+      "description": "A chat prompt types itself into a rounded box and sends. The shot cuts to the reply, built on a page the camera scrolls through. Two activity rows, a status line, a serif reply, a brand chip, a small table and a row of action icons fade up one after another.",
+      "change": [
+        "The prompt, the two activity rows, the status line and the reply.",
+        "The brand chip, and the table: three column heads and one row.",
+        "The three typefaces (interface, mono chip, serif reply).",
+        "The colours: background, panel, text, the warm typing tint, labels, links and icons."
+      ],
+      "plugins": [],
+      "compositions": [
+        "PromptReply"
+      ],
+      "hero": {
+        "src": "/catalog/components/prompt-reply/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "templates/prompt-reply/out/prompt-reply.mp4",
+        "at": 0,
+        "video": "/catalog/components/prompt-reply/hero.mp4",
+        "len": 5
+      },
+      "source": "templates/prompt-reply"
+    },
+    {
+      "id": "save-reel",
+      "title": "App save reel",
+      "description": "A 39 second app reel: a post is liked and saved, the save gets lost in the collection, and a reminder brings it back. Flat screens on a pale canvas, a camera that whips between details, and hand-written notes.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "SaveReel"
+      ],
+      "hero": {
+        "src": "/catalog/components/save-reel/hero.webp",
+        "w": 1280,
+        "h": 960,
+        "from": "templates/save-reel/out/save-reel.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/save-reel/hero.mp4",
+        "len": 4
+      },
+      "source": "templates/save-reel"
+    },
+    {
+      "id": "scrapline",
+      "title": "Scrapline cut-outs",
+      "description": "A hand-drawn border round a cut-out subject, on a sheet of torn paper. The line can be a wobbly marker, pencil, crayon, scribble or brush. Line and paper redraw a few times a second, like hand animation.",
+      "change": [
+        "The subject: a video with a black and white matte, a video with alpha, an image with alpha, or an SVG path.",
+        "The line style (Marker, Pencil, Crayon, Scribble or Brush), the paper (White, Kraft, Binder, Cardboard, your own picture or none), the line colour, the gap to the subject and the seed."
+      ],
+      "plugins": [
+        "@kinetographdev/paper"
+      ],
+      "compositions": [
+        "ScraplineDemo",
+        "ScraplineStill"
+      ],
+      "hero": {
+        "src": "/catalog/components/scrapline/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "templates/scrapline/out/scrapline-demo.mp4",
+        "at": 20,
+        "video": "/catalog/components/scrapline/hero.mp4",
+        "len": 5
+      },
+      "source": "templates/scrapline"
+    },
+    {
+      "id": "stack-credits",
+      "title": "Stacked credits",
+      "description": "Three stacked double-exposure panels on black, two shots cut hard, credits fading in and a film burn out. Made tall, for phones.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "StackCredits"
+      ],
+      "hero": {
+        "src": "/catalog/components/stack-credits/hero.webp",
+        "w": 720,
+        "h": 1280,
+        "from": "templates/stack-credits/out/stack-credits.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/stack-credits/hero.mp4",
+        "len": 4
+      },
+      "source": "templates/stack-credits"
+    },
+    {
+      "id": "wait-ship",
+      "title": "Two lines on a focus pull",
+      "description": "Seven photo cards float round the edges of a near-black frame, out of focus. The camera pulls back and racks focus. A first line comes up out of the blur and a second line replaces it. The scene slides off to the right as the left card sharpens.",
+      "change": [
+        "The two lines, and a product name in the second.",
+        "Your own photos on the seven cards. Any card you leave out keeps its drawn picture.",
+        "The typeface, weight, size, tracking and text colour, and the two colours of the background.",
+        "How strong the focus blur, the film grain and the closing slide are, and the frame where the first line gives way to the second."
+      ],
+      "plugins": [],
+      "compositions": [
+        "WaitShip"
+      ],
+      "hero": {
+        "src": "/catalog/components/wait-ship/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "templates/wait-ship/out/wait-ship.mp4",
+        "at": 0,
+        "video": "/catalog/components/wait-ship/hero.mp4",
+        "len": 2.45
+      },
+      "source": "templates/wait-ship"
+    },
+    {
+      "id": "word-flash",
+      "title": "Words cut to the beat",
+      "description": "A 9.4 second black-and-white type spot, cut on every hit of its track. Each cut shows one word or a two-word lockup on a ground that flips between black and white. A last word types on, then blurs away.",
+      "change": [
+        "The words: an intro, a run with one word per cut, and an outro. The word count has to match the number of cuts.",
+        "The track. A small tool finds its strongest hits and gives you the cuts.",
+        "The typeface. Another face lands in the same places."
+      ],
+      "plugins": [],
+      "compositions": [
+        "WordFlash"
+      ],
+      "hero": {
+        "src": "/catalog/components/word-flash/hero.webp",
+        "w": 720,
+        "h": 1280,
+        "from": "templates/word-flash/out/word-flash.mp4",
+        "at": 2.5,
+        "video": "/catalog/components/word-flash/hero.mp4",
+        "len": 5
+      },
+      "source": "templates/word-flash"
+    },
+    {
+      "id": "three-phone",
+      "title": "Three phones fanned out",
+      "description": "Three tilted phones fan out on an arc from the centre one. Each screen is drawn in, or is your own image.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "ThreePhone"
+      ],
+      "hero": {
+        "src": "/catalog/components/three-phone/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/showcase/out/three-phone.mp4",
+        "at": 0.1,
+        "video": "/catalog/components/three-phone/hero.mp4",
+        "len": 4
+      },
+      "props": [
+        {
+          "name": "screens",
+          "type": "list",
+          "default": "['hero', 'dashboard', 'chart']",
+          "doc": "Left, centre and right screen. A built-in drawn screen (hero, dashboard, chart, plan) or a path to an image under public/, such as photos/nasa-earth-1.jpg."
+        },
+        {
+          "name": "font",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family for the type drawn on the built-in screens."
+        },
+        {
+          "name": "accent",
+          "type": "colour",
+          "default": "\"#d9f26b\"",
+          "doc": "The sample app's accent colour."
+        },
+        {
+          "name": "ground",
+          "type": "colour",
+          "default": "\"#eef0e5\"",
+          "doc": "The pale ground."
+        },
+        {
+          "name": "groundShade",
+          "type": "colour",
+          "default": "\"#dfe3d2\"",
+          "doc": "The ground at the lower right, away from the light."
+        },
+        {
+          "name": "frame",
+          "type": "colour",
+          "default": "\"#26272b\"",
+          "doc": "Phone frame colour."
+        },
+        {
+          "name": "fanAngle",
+          "type": "number",
+          "default": "24",
+          "doc": "How far the outer phones turn in towards the centre one, in degrees."
+        },
+        {
+          "name": "spread",
+          "type": "number",
+          "default": "470",
+          "doc": "Distance of the outer phones from the centre one, in pixels."
+        },
+        {
+          "name": "size",
+          "type": "number",
+          "default": "1",
+          "doc": "Phone scale: 1 is 800 px tall at the wide shot."
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": "1",
+          "doc": "Playback speed of the move: 2 is twice as fast."
+        },
+        {
+          "name": "startZoom",
+          "type": "number",
+          "default": "2.2",
+          "doc": "How tight the camera is on the centre phone's screen at the start and on each screen it visits."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0.035",
+          "doc": "Film grain over the whole frame."
+        }
+      ],
+      "source": "components/showcase"
+    },
+    {
+      "id": "phone-pitch",
+      "title": "Phone with a pitch",
+      "description": "A headline, a line of body text and a button sit beside a phone that lands with a settle.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "PhonePitch"
+      ],
+      "hero": {
+        "src": "/catalog/components/phone-pitch/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/showcase/out/phone-pitch.mp4",
+        "at": 0,
+        "video": "/catalog/components/phone-pitch/hero.mp4",
+        "len": 4
+      },
+      "props": [
+        {
+          "name": "headline",
+          "type": "list",
+          "default": "['Let Orbit', 'handle it']",
+          "doc": "The two headline lines, set a word at a time."
+        },
+        {
+          "name": "contact",
+          "type": "string",
+          "default": "\"Orbit\"",
+          "doc": "The name under the avatar in the thread header."
+        },
+        {
+          "name": "thread",
+          "type": "me | them",
+          "default": "",
+          "doc": "The conversation, in order."
+        },
+        {
+          "name": "typing.from",
+          "type": "integer",
+          "default": "368",
+          "doc": "From. The frames the typing dots show for, before the last message."
+        },
+        {
+          "name": "typing.to",
+          "type": "integer",
+          "default": "402",
+          "doc": "To. The frames the typing dots show for, before the last message."
+        },
+        {
+          "name": "headlineFont",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family of the headline."
+        },
+        {
+          "name": "uiFont",
+          "type": "string",
+          "default": "\"Inter\"",
+          "doc": "Google Fonts family of the thread."
+        },
+        {
+          "name": "ground",
+          "type": "colour",
+          "default": "\"#effafe\"",
+          "doc": "The ground behind the phone."
+        },
+        {
+          "name": "ink",
+          "type": "colour",
+          "default": "\"#0f1a24\"",
+          "doc": "Headline colour."
+        },
+        {
+          "name": "bubble",
+          "type": "colour",
+          "default": "\"#3f8cf7\"",
+          "doc": "The blue of your own bubbles."
+        },
+        {
+          "name": "frame",
+          "type": "colour",
+          "default": "\"#1d1e22\"",
+          "doc": "Phone frame colour."
+        },
+        {
+          "name": "flip",
+          "type": "boolean",
+          "default": "false",
+          "doc": "Mirror the layout: phone on the left, headline on the right."
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": "1",
+          "doc": "Playback speed of the move."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0",
+          "doc": "Film grain over the whole frame."
+        }
+      ],
+      "source": "components/showcase"
+    },
+    {
+      "id": "screen-tunnel",
+      "title": "Phone tunnel",
+      "description": "Phones recede down a corridor on either side of a headline.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "ScreenTunnel"
+      ],
+      "hero": {
+        "src": "/catalog/components/screen-tunnel/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/showcase/out/screen-tunnel.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/screen-tunnel/hero.mp4",
+        "len": 4
+      },
+      "props": [
+        {
+          "name": "opening",
+          "type": "list",
+          "default": "['One', 'camera move.']",
+          "doc": "The line the shot opens on: a muted first word, then the rest in the accent."
+        },
+        {
+          "name": "words",
+          "type": "list",
+          "default": "",
+          "doc": "The sentence that builds at the end, one entry per word."
+        },
+        {
+          "name": "uiFont",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family of the headline."
+        },
+        {
+          "name": "ground",
+          "type": "colour",
+          "default": "\"#ffffff\"",
+          "doc": "The ground, which fills the corridor."
+        },
+        {
+          "name": "accent",
+          "type": "colour",
+          "default": "\"#5a3cf0\"",
+          "doc": "The headline accent."
+        },
+        {
+          "name": "muted",
+          "type": "colour",
+          "default": "\"#8d8a99\"",
+          "doc": "The muted opening word."
+        },
+        {
+          "name": "frame",
+          "type": "colour",
+          "default": "\"#1b1c1e\"",
+          "doc": "Phone frame colour."
+        },
+        {
+          "name": "tint",
+          "type": "colour",
+          "default": "\"#efebfe\"",
+          "doc": "The ground colour of the screens on the walls."
+        },
+        {
+          "name": "tiles",
+          "type": "list",
+          "default": "",
+          "doc": "The four colours of the tiles and dots drawn on the screens."
+        },
+        {
+          "name": "pullBack",
+          "type": "number",
+          "default": "1",
+          "doc": "How far the camera pulls back: 1 is the full move, 0 a still camera on the corridor."
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": "1",
+          "doc": "Playback speed of the move."
+        },
+        {
+          "name": "gap",
+          "type": "number",
+          "default": "0.12",
+          "doc": "Space left between neighbouring phones, as a share of each wall: 0 has the phones meet at the seams, 0.12 the default spacing."
+        },
+        {
+          "name": "shadow",
+          "type": "number",
+          "default": "1",
+          "doc": "Strength of the drop shadows under the headline: 0 is flat type, 1 the default lift."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0",
+          "doc": "Film grain over the whole frame."
+        }
+      ],
+      "source": "components/showcase"
+    },
+    {
+      "id": "laptop-open",
+      "title": "Laptop opening",
+      "description": "A 3D laptop lid opens, the screen wakes, and the camera moves into the app.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "LaptopOpen"
+      ],
+      "hero": {
+        "src": "/catalog/components/laptop-open/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/showcase/out/laptop-open.mp4",
+        "at": 0.5,
+        "video": "/catalog/components/laptop-open/hero.mp4",
+        "len": 4.5
+      },
+      "props": [
+        {
+          "name": "headline",
+          "type": "string",
+          "default": "\"Make it look this good\"",
+          "doc": "The line over the opening glass, before the lens pulls back."
+        },
+        {
+          "name": "tagline",
+          "type": "string",
+          "default": "\"Every screen, shipped\"",
+          "doc": "The line that types itself over the field at the end."
+        },
+        {
+          "name": "screen",
+          "type": "string",
+          "default": "\"blank\"",
+          "doc": "The glass: \"blank\" (a lit empty screen), \"desk\" (a drawn analytics app) or a path to an image under public/."
+        },
+        {
+          "name": "uiFont",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family for the headline, the tagline and the drawn screen."
+        },
+        {
+          "name": "accent",
+          "type": "colour",
+          "default": "\"#d9f26b\"",
+          "doc": "The drawn app's accent colour."
+        },
+        {
+          "name": "glass",
+          "type": "colour",
+          "default": "\"#eeeeee\"",
+          "doc": "The lit glass colour, also the colour of the opening frames."
+        },
+        {
+          "name": "deck",
+          "type": "colour",
+          "default": "\"#858282\"",
+          "doc": "The aluminium deck, mid tone (the gradient is built round it)."
+        },
+        {
+          "name": "fieldA",
+          "type": "colour",
+          "default": "\"#fcfcfc\"",
+          "doc": "The end field: the light base."
+        },
+        {
+          "name": "fieldB",
+          "type": "colour",
+          "default": "\"#bb9cf7\"",
+          "doc": "The end field: the colour that rises from the lower left."
+        },
+        {
+          "name": "focus",
+          "type": "number",
+          "default": "1",
+          "doc": "Depth of field strength: how soft the opening is. 0 starts sharp."
+        },
+        {
+          "name": "zoomInto",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Push in until the glass is the frame, then cut to the field. Off holds on the laptop."
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": "1",
+          "doc": "Playback speed of the move."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0",
+          "doc": "Film grain over the whole frame."
+        }
+      ],
+      "source": "components/showcase"
+    },
+    {
+      "id": "screen-touch",
+      "title": "Touch to the next screen",
+      "description": "A finger presses a button and the next screen opens outward from the touch point.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "ScreenTouch"
+      ],
+      "hero": {
+        "src": "/catalog/components/screen-touch/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/showcase/out/screen-touch.mp4",
+        "at": 0.5,
+        "video": "/catalog/components/screen-touch/hero.mp4",
+        "len": 4
+      },
+      "props": [
+        {
+          "name": "tabs",
+          "type": "list",
+          "default": "['Global', 'Friends']",
+          "doc": "The two tabs at the top of the feed."
+        },
+        {
+          "name": "posts",
+          "type": "list",
+          "default": "",
+          "doc": "The two posts on the feed."
+        },
+        {
+          "name": "actions",
+          "type": "list",
+          "default": "['Docs', 'Install']",
+          "doc": "The two buttons: the plain one, then the one that is tapped."
+        },
+        {
+          "name": "line1",
+          "type": "string",
+          "default": "\"the code is yours\"",
+          "doc": "The first closing line."
+        },
+        {
+          "name": "line2",
+          "type": "list",
+          "default": "['and so is', 'the credit']",
+          "doc": "The second closing line: a bright part, then a dimmer part."
+        },
+        {
+          "name": "tapAt",
+          "type": "integer",
+          "default": "55",
+          "doc": "The frame the press lands on."
+        },
+        {
+          "name": "font",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family of the screen and the closing lines."
+        },
+        {
+          "name": "buttonFont",
+          "type": "string",
+          "default": "\"Inter\"",
+          "doc": "Google Fonts family (with italics) of the button labels."
+        },
+        {
+          "name": "ground",
+          "type": "colour",
+          "default": "\"#05060f\"",
+          "doc": "The dark ground."
+        },
+        {
+          "name": "glass",
+          "type": "colour",
+          "default": "\"#070918\"",
+          "doc": "The phone glass."
+        },
+        {
+          "name": "rim",
+          "type": "colour",
+          "default": "\"#41425e\"",
+          "doc": "The phone edge."
+        },
+        {
+          "name": "action",
+          "type": "colour",
+          "default": "\"#0bb644\"",
+          "doc": "The colour of the tapped button."
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": "1",
+          "doc": "Playback speed of the move."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0",
+          "doc": "Film grain over the whole frame."
+        }
+      ],
+      "source": "components/showcase"
+    },
+    {
+      "id": "checkout-push",
+      "title": "Checkout push",
+      "description": "A phone checkout where the amount lands and the camera pushes in.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "CheckoutPush"
+      ],
+      "hero": {
+        "src": "/catalog/components/checkout-push/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/showcase/out/checkout-push.mp4",
+        "at": 0,
+        "video": "/catalog/components/checkout-push/hero.mp4",
+        "len": 2
+      },
+      "props": [
+        {
+          "name": "payee",
+          "type": "string",
+          "default": "\"Northline Studio\"",
+          "doc": "Who is being paid, shown on the dim checkout card."
+        },
+        {
+          "name": "amount",
+          "type": "string",
+          "default": "\"$48.00\"",
+          "doc": "The amount on the checkout card."
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "default": "\"Annual plan\"",
+          "doc": "The line under the amount."
+        },
+        {
+          "name": "screen",
+          "type": "string",
+          "default": "\"photos/nasa-earth-1.jpg\"",
+          "doc": "Image under public/ shown on the phone screen."
+        },
+        {
+          "name": "font",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family for the checkout card."
+        },
+        {
+          "name": "background",
+          "type": "colour",
+          "default": "\"#0a0a0b\"",
+          "doc": "The dark ground."
+        },
+        {
+          "name": "card",
+          "type": "colour",
+          "default": "\"#131416\"",
+          "doc": "The checkout card colour."
+        },
+        {
+          "name": "deviceBody",
+          "type": "colour",
+          "default": "\"#17181b\"",
+          "doc": "Phone frame colour."
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": "1",
+          "doc": "Playback speed of the move."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0.03",
+          "doc": "Film grain over the frame."
+        },
+        {
+          "name": "motionBlur",
+          "type": "number",
+          "default": "0.7",
+          "doc": "Shutter in frames on the camera move; 0 for none."
+        }
+      ],
+      "source": "components/showcase"
+    },
+    {
+      "id": "vault-count",
+      "title": "Wallet count-up",
+      "description": "A wallet balance counts up beside a stack of payment cards.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "VaultCount"
+      ],
+      "hero": {
+        "src": "/catalog/components/vault-count/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/showcase/out/vault-count.mp4",
+        "at": 0,
+        "video": "/catalog/components/vault-count/hero.mp4",
+        "len": 3
+      },
+      "props": [
+        {
+          "name": "label",
+          "type": "string",
+          "default": "\"Northline Vault\"",
+          "doc": "Small line above the balance."
+        },
+        {
+          "name": "chip",
+          "type": "string",
+          "default": "\"Vault\"",
+          "doc": "Text of the pill at the top left of the screen."
+        },
+        {
+          "name": "clock",
+          "type": "string",
+          "default": "\"3:14\"",
+          "doc": "The status bar time."
+        },
+        {
+          "name": "footer",
+          "type": "string",
+          "default": "\"Transactions\"",
+          "doc": "The line at the foot of the screen."
+        },
+        {
+          "name": "opening",
+          "type": "integer",
+          "default": "500",
+          "doc": "The opening balance. The count adds one per tick."
+        },
+        {
+          "name": "currency",
+          "type": "string",
+          "default": "\"$\"",
+          "doc": "Currency symbol before the balance and the amounts."
+        },
+        {
+          "name": "entries",
+          "type": "left | right",
+          "default": "",
+          "doc": "The payments that drift past, in order."
+        },
+        {
+          "name": "font",
+          "type": "string",
+          "default": "\"Geist\"",
+          "doc": "Google Fonts family."
+        },
+        {
+          "name": "background",
+          "type": "colour",
+          "default": "\"#eef6fb\"",
+          "doc": "Ground colour (a pale wash)."
+        },
+        {
+          "name": "card",
+          "type": "colour",
+          "default": "\"#fbfaf6\"",
+          "doc": "Card colour."
+        },
+        {
+          "name": "deviceBody",
+          "type": "colour",
+          "default": "\"#151314\"",
+          "doc": "Phone frame colour."
+        },
+        {
+          "name": "screenTop",
+          "type": "colour",
+          "default": "\"#6d8cd6\"",
+          "doc": "Screen colour at the top right."
+        },
+        {
+          "name": "screenBottom",
+          "type": "colour",
+          "default": "\"#1c2a4b\"",
+          "doc": "Screen colour at the bottom."
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": "1",
+          "doc": "Speed of the count."
+        },
+        {
+          "name": "grain",
+          "type": "number",
+          "default": "0.02",
+          "doc": "Film grain over the frame."
+        }
+      ],
+      "source": "components/showcase"
+    },
+    {
+      "id": "build-out",
+      "title": "Send button zoom-out",
+      "description": "A send button zooms out to show the whole app around it.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "BuildOut"
+      ],
+      "hero": {
+        "src": "/catalog/components/build-out/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/showcase/out/build-out.mp4",
+        "at": 0,
+        "video": "/catalog/components/build-out/hero.mp4",
+        "len": 3.8
+      },
+      "props": [
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": "",
+          "doc": "The prompt typed into the box, and shown again in the app's chat."
+        },
+        {
+          "name": "reply",
+          "type": "string",
+          "default": "",
+          "doc": "The assistant line under the prompt in the app's chat."
+        },
+        {
+          "name": "notes",
+          "type": "list",
+          "default": "",
+          "doc": "Two paragraphs of the assistant's working notes in the chat column."
+        },
+        {
+          "name": "wordmark",
+          "type": "string",
+          "default": "\"OAKLINE\"",
+          "doc": "The shop name in the app header. Shown in spaced capitals, then re-set in an italic serif."
+        },
+        {
+          "name": "tiles",
+          "type": "list",
+          "default": "",
+          "doc": "The three grid cards: title, small line, and tag."
+        },
+        {
+          "name": "presence",
+          "type": "list",
+          "default": "['Design', 'QA / UX']",
+          "doc": "The two collaborator labels that pop on the page, in order."
+        },
+        {
+          "name": "uiFont",
+          "type": "string",
+          "default": "\"Figtree\"",
+          "doc": "Google Fonts family for the interface."
+        },
+        {
+          "name": "serifFont",
+          "type": "string",
+          "default": "\"Instrument Serif\"",
+          "doc": "Google Fonts family the wordmark is re-set in (used italic)."
+        },
+        {
+          "name": "accent",
+          "type": "colour",
+          "default": "\"#3074dd\"",
+          "doc": "The send button, the app's buttons and the field."
+        },
+        {
+          "name": "accentB",
+          "type": "colour",
+          "default": "\"#8a58c8\"",
+          "doc": "The far corner of the field behind the app."
+        },
+        {
+          "name": "cream",
+          "type": "colour",
+          "default": "\"#faf8f5\"",
+          "doc": "The ground behind the app and the opening."
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": "1",
+          "doc": "Playback speed of the move."
+        }
+      ],
+      "source": "components/showcase"
+    },
+    {
+      "id": "recap-dial",
+      "title": "Year recap dial",
+      "description": "A year in review on a dial that snaps month by month, with a sticker for each.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "RecapDial"
+      ],
+      "hero": {
+        "src": "/catalog/components/recap-dial/hero.webp",
+        "w": 720,
+        "h": 1280,
+        "from": "components/showcase/out/recap-dial.mp4",
+        "at": 0.5,
+        "video": "/catalog/components/recap-dial/hero.mp4",
+        "len": 4
+      },
+      "props": [
+        {
+          "name": "labels",
+          "type": "list",
+          "default": "",
+          "doc": "The twelve labels round the dial, in order (the months by default)."
+        },
+        {
+          "name": "items",
+          "type": "list",
+          "default": "",
+          "doc": "The stickers on the inner ring."
+        },
+        {
+          "name": "brand",
+          "type": "string",
+          "default": "\"lumen\"",
+          "doc": "Wordmark at the top left."
+        },
+        {
+          "name": "tag",
+          "type": "string",
+          "default": "\"RECAP 25\"",
+          "doc": "Small line at the top right."
+        },
+        {
+          "name": "footer",
+          "type": "list",
+          "default": "",
+          "doc": "The three small words along the bottom: left, middle, right."
+        },
+        {
+          "name": "accent",
+          "type": "colour",
+          "default": "\"#e3141c\"",
+          "doc": "The red of the squiggle, the badges and the heart."
+        },
+        {
+          "name": "ground",
+          "type": "colour",
+          "default": "\"#000000\"",
+          "doc": "Background colour."
+        },
+        {
+          "name": "font",
+          "type": "string",
+          "default": "\"Inter\"",
+          "doc": "Google Fonts family for the labels and most stickers."
+        },
+        {
+          "name": "display",
+          "type": "string",
+          "default": "\"Anton\"",
+          "doc": "Google Fonts family for the badge stack (a condensed bold)."
+        },
+        {
+          "name": "serif",
+          "type": "string",
+          "default": "\"Instrument Serif\"",
+          "doc": "Google Fonts family for the handwritten line (italic)."
+        },
+        {
+          "name": "blur",
+          "type": "boolean",
+          "default": "true",
+          "doc": "Motion blur on each snap."
+        }
+      ],
+      "source": "components/showcase"
+    },
+    {
+      "id": "launch-film",
+      "title": "Launch film",
+      "description": "A twenty-second product launch film, from a typed headline to the final mark.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "LaunchFilm"
+      ],
+      "hero": {
+        "src": "/catalog/components/launch-film/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/showcase/out/launch-film.mp4",
+        "at": 0,
+        "video": "/catalog/components/launch-film/hero.mp4",
+        "len": 6
+      },
+      "props": [
+        {
+          "name": "product",
+          "type": "string",
+          "default": "\"Lumen\"",
+          "doc": "The product name: in the headline, the closing line and the wordmark."
+        },
+        {
+          "name": "version",
+          "type": "string",
+          "default": "\"5\"",
+          "doc": "The version, set in the accent colour in the headline."
+        },
+        {
+          "name": "headline",
+          "type": "string",
+          "default": "\"Meet {product} {version}\"",
+          "doc": "The typed headline. {product} and {version} are replaced; the version is set in the accent colour."
+        },
+        {
+          "name": "dock",
+          "type": "list",
+          "default": "",
+          "doc": "The five app icons in the dock, left to right. The product icon joins between the third and fourth."
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": "",
+          "doc": "The text typed into the prompt box. It wraps at the box width; a newline starts a new line."
+        },
+        {
+          "name": "tags",
+          "type": "list",
+          "default": "['Web', 'Page', 'UI']",
+          "doc": "The three chips that pop above the prompt box."
+        },
+        {
+          "name": "connecting",
+          "type": "string",
+          "default": "\"Connecting with {product}\"",
+          "doc": "The line scrambled over the dots. {product} is replaced."
+        },
+        {
+          "name": "glyphs",
+          "type": "string",
+          "default": "\"qCFbN</>\"",
+          "doc": "Loose characters that fly across the dashboard."
+        },
+        {
+          "name": "dashWord",
+          "type": "string",
+          "default": "\"Code\"",
+          "doc": "The word the loose letters settle into on the dashboard."
+        },
+        {
+          "name": "dashTitle",
+          "type": "string",
+          "default": "\"Services\"",
+          "doc": "The dashboard page title."
+        },
+        {
+          "name": "dashNav",
+          "type": "list",
+          "default": "",
+          "doc": "The nine sidebar entries; the seventh is the selected one."
+        },
+        {
+          "name": "dashPill",
+          "type": "string",
+          "default": "\"Money infos....\"",
+          "doc": "The label in the pill beside the logo."
+        },
+        {
+          "name": "dashPanel",
+          "type": "list",
+          "default": "['MANAGE YOUR', 'MONEY STATS']",
+          "doc": "The two lines of the panel at the lower left (the first in small grey capitals)."
+        },
+        {
+          "name": "dashSearch",
+          "type": "string",
+          "default": "\"Search for the best result\"",
+          "doc": "The placeholder in the panel search field."
+        },
+        {
+          "name": "dashTiles",
+          "type": "list",
+          "default": "['%30', '%70']",
+          "doc": "The two stat tiles."
+        },
+        {
+          "name": "dashCta",
+          "type": "string",
+          "default": "\"Manage my business\"",
+          "doc": "The coral button at the lower left."
+        },
+        {
+          "name": "dashStats",
+          "type": "list",
+          "default": "",
+          "doc": "The two cards at the top of the dashboard."
+        },
+        {
+          "name": "dashRows",
+          "type": "list",
+          "default": "",
+          "doc": "The six table rows."
+        },
+        {
+          "name": "dashCols",
+          "type": "list",
+          "default": "",
+          "doc": "The two lines repeated in each table column."
+        },
+        {
+          "name": "dashAction",
+          "type": "string",
+          "default": "\"View Details\"",
+          "doc": "The outlined button at the end of each row."
+        },
+        {
+          "name": "filmTitle",
+          "type": "string",
+          "default": "\"{product} {version}\"",
+          "doc": "The title over the footage box and on the grid. {product} and {version} are replaced."
+        },
+        {
+          "name": "tryLine",
+          "type": "list",
+          "default": "",
+          "doc": "The closing line on the grid, in three words or phrases. {product} and {version} are replaced."
+        },
+        {
+          "name": "markLetter",
+          "type": "string",
+          "default": "\"\"",
+          "doc": "The letter that strikes, extrudes, spins and lands as the closing mark. Empty uses the first letter of the product."
+        },
+        {
+          "name": "accent",
+          "type": "colour",
+          "default": "\"#d4553f\"",
+          "doc": "The product tile, the version in the headline, the prompt button flash, the mark on black and the call to action."
+        },
+        {
+          "name": "ground",
+          "type": "colour",
+          "default": "\"#ecebec\"",
+          "doc": "The light ground."
+        },
+        {
+          "name": "ink",
+          "type": "colour",
+          "default": "\"#111111\"",
+          "doc": "The text colour on the light ground."
+        },
+        {
+          "name": "markA",
+          "type": "colour",
+          "default": "\"#ff58f4\"",
+          "doc": "Closing mark gradient, light end."
+        },
+        {
+          "name": "markB",
+          "type": "colour",
+          "default": "\"#b72fdc\"",
+          "doc": "Closing mark gradient, deep end."
+        },
+        {
+          "name": "uiFont",
+          "type": "string",
+          "default": "\"Inter\"",
+          "doc": "Google Fonts family for interface text and the closing letter."
+        },
+        {
+          "name": "headlineFont",
+          "type": "string",
+          "default": "\"Source Sans 3\"",
+          "doc": "Google Fonts family for the typed headline."
+        },
+        {
+          "name": "serifFont",
+          "type": "string",
+          "default": "\"Fraunces\"",
+          "doc": "Google Fonts family for the wordmark."
+        },
+        {
+          "name": "photos",
+          "type": "list",
+          "default": "",
+          "doc": "Pictures for the poster burst: names of files under public/photos, without \".jpg\". The defaults are public-domain artworks and posters from Wikimedia Commons."
+        },
+        {
+          "name": "footage",
+          "type": "list",
+          "default": "",
+          "doc": "The footage shots, in order: names of files under public/photos, without \".jpg\". The first two are shown in black and white. The defaults are public-domain photos of runners from Wikimedia Commons."
+        }
+      ],
+      "source": "components/showcase"
+    },
+    {
+      "id": "prompt-intro",
+      "title": "Prompt intro",
+      "description": "An arrow shrinks and slides left, a prompt types on beside it, then deletes itself into the next line under a blue flash. The answer types on and everything drops out for the cut.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "PromptIntro"
+      ],
+      "hero": {
+        "src": "/catalog/components/prompt-intro/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/showcase/out/prompt-intro.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/prompt-intro/hero.mp4",
+        "len": 3
+      },
+      "props": [
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": "\"I need a film for my business\"",
+          "doc": "The first line, typed then deleted."
+        },
+        {
+          "name": "answer",
+          "type": "string",
+          "default": "\"Stop cutting reels manually.\"",
+          "doc": "The second line; its first word lands amber."
+        },
+        {
+          "name": "palette",
+          "type": "value",
+          "default": "\"liquid\"",
+          "doc": "The glow at the bottom: a RiseGlow palette."
+        },
+        {
+          "name": "ink",
+          "type": "string",
+          "default": "\"#edebef\"",
+          "doc": "The text and arrows."
+        },
+        {
+          "name": "tint",
+          "type": "string",
+          "default": "\"#e0b4b8\"",
+          "doc": "The tint that sweeps along the typing."
+        },
+        {
+          "name": "flash",
+          "type": "boolean",
+          "default": "true",
+          "doc": "The blue flash and orange flare as the prompt deletes."
+        }
+      ],
+      "source": "components/showcase"
+    },
+    {
+      "id": "app-launch",
+      "title": "App launch film",
+      "description": "A 21 second launch film for an app, in six beats: a typed question, a chat bar drawn on by guide lines, a wall of screens, and a closing mark.",
+      "change": [],
+      "plugins": [],
+      "compositions": [
+        "AppLaunch"
+      ],
+      "hero": {
+        "src": "/catalog/components/app-launch/hero.webp",
+        "w": 1280,
+        "h": 720,
+        "from": "components/showcase/out/app-launch.mp4",
+        "at": 0.3,
+        "video": "/catalog/components/app-launch/hero.mp4",
+        "len": 4
+      },
+      "props": [
+        {
+          "name": "product",
+          "type": "string",
+          "default": "\"Recap AI\"",
+          "doc": "The product name, typed in the pill and under the app icon."
+        },
+        {
+          "name": "mark",
+          "type": "string",
+          "default": "\"R\"",
+          "doc": "The product mark: one or two letters, on the button, the app icon and the end mark."
+        },
+        {
+          "name": "problem",
+          "type": "string",
+          "default": "\"Who said what in that call?\"",
+          "doc": "Beat 1: the problem, typed then deleted."
+        },
+        {
+          "name": "answer",
+          "type": "string",
+          "default": "\"Stop taking notes by hand.\"",
+          "doc": "Beat 1: the answer."
+        },
+        {
+          "name": "request",
+          "type": "string",
+          "default": "\"Summarise my call with the team\"",
+          "doc": "Beat 2: what the user types in the chat bar."
+        },
+        {
+          "name": "chips",
+          "type": "list",
+          "default": "",
+          "doc": "Beat 2: the four chips above the bar: what the product can make."
+        },
+        {
+          "name": "chipIcons",
+          "type": "hex | tri | diamond | dots | lines | check | flag | mail",
+          "default": "",
+          "doc": "Beat 2: each chip's icon."
+        },
+        {
+          "name": "actions",
+          "type": "list",
+          "default": "",
+          "doc": "Beat 3, third screen: action items as [owner initial, task, due]."
+        },
+        {
+          "name": "summary.keyLines",
+          "type": "value",
+          "default": "[1, 3, 6]",
+          "doc": "Which transcript lines (index, 1 = first after the comment) the scan picks out."
+        },
+        {
+          "name": "summary.bullets",
+          "type": "value",
+          "default": "",
+          "doc": "What those lines become on the summary card."
+        },
+        {
+          "name": "summary.owners",
+          "type": "value",
+          "default": "['Jon', 'Leo', 'Priya']",
+          "doc": "The owners' names under their avatars."
+        },
+        {
+          "name": "summary.title",
+          "type": "string",
+          "default": "\"Summary\"",
+          "doc": "The summary card's title."
+        },
+        {
+          "name": "summary.sent",
+          "type": "string",
+          "default": "\"Recap sent to 6 people\"",
+          "doc": "The message the recap folds into."
+        },
+        {
+          "name": "screens",
+          "type": "value",
+          "default": "",
+          "doc": "Beat 3: the three screens."
+        },
+        {
+          "name": "transcript",
+          "type": "list",
+          "default": "",
+          "doc": "Beat 3, first screen: the lines that type on (up to 15; the first is a comment)."
+        },
+        {
+          "name": "cards",
+          "type": "value",
+          "default": "",
+          "doc": "Beat 3, second screen: card label, big figure, small figure, chip figure."
+        },
+        {
+          "name": "closing",
+          "type": "string",
+          "default": "\"From call to notes. In seconds.\"",
+          "doc": "Beat 6: the closing line."
+        },
+        {
+          "name": "palette",
+          "type": "value",
+          "default": "\"liquid\"",
+          "doc": "The glow under every beat: a RiseGlow palette."
+        },
+        {
+          "name": "accent",
+          "type": "string",
+          "default": "\"#dc3a21\"",
+          "doc": "The mark on the app icon."
+        }
+      ],
+      "source": "components/showcase"
+    }
+  ],
   "tastes": [
     {
       "id": "archive",
@@ -10045,11 +10637,12 @@
         "src": "/catalog/tastes/archive/hero.webp",
         "w": 720,
         "h": 1280,
-        "from": "effects/tastes/archive-reel/out/hold-still.mp4",
+        "from": "tastes/archive/demo/out/hold-still.mp4",
         "at": 1,
         "video": "/catalog/tastes/archive/hero.mp4",
         "len": 4
-      }
+      },
+      "source": "tastes/archive"
     },
     {
       "id": "collage",
@@ -10059,11 +10652,12 @@
         "src": "/catalog/tastes/collage/hero.webp",
         "w": 720,
         "h": 1280,
-        "from": "effects/tastes/collage-reel/out/collage-intro.mp4",
+        "from": "tastes/collage/demo/out/collage-intro.mp4",
         "at": 1.6,
         "video": "/catalog/tastes/collage/hero.mp4",
         "len": 1.5
-      }
+      },
+      "source": "tastes/collage"
     },
     {
       "id": "explainer",
@@ -10073,11 +10667,12 @@
         "src": "/catalog/tastes/explainer/hero.webp",
         "w": 720,
         "h": 1280,
-        "from": "effects/tastes/explainer-tastes/out/all-tastes.mp4",
+        "from": "tastes/explainer/demo-tastes/out/all-tastes.mp4",
         "at": 2,
         "video": "/catalog/tastes/explainer/hero.mp4",
         "len": 4
-      }
+      },
+      "source": "tastes/explainer"
     },
     {
       "id": "papercut",
@@ -10087,11 +10682,12 @@
         "src": "/catalog/tastes/papercut/hero.webp",
         "w": 720,
         "h": 1280,
-        "from": "effects/tastes/papercut-reel/out/papercut-reel.mp4",
+        "from": "tastes/papercut/demo/out/papercut-reel.mp4",
         "at": 2,
         "video": "/catalog/tastes/papercut/hero.mp4",
         "len": 4
-      }
+      },
+      "source": "tastes/papercut"
     },
     {
       "id": "print",
@@ -10101,11 +10697,12 @@
         "src": "/catalog/tastes/print/hero.webp",
         "w": 720,
         "h": 1280,
-        "from": "effects/tastes/print-reel/out/one-ink.mp4",
+        "from": "tastes/print/demo/out/one-ink.mp4",
         "at": 1,
         "video": "/catalog/tastes/print/hero.mp4",
         "len": 4
-      }
+      },
+      "source": "tastes/print"
     },
     {
       "id": "vox-style",
@@ -10115,11 +10712,12 @@
         "src": "/catalog/tastes/vox-style/hero.webp",
         "w": 720,
         "h": 1280,
-        "from": "effects/tastes/vox-reel/out/krakatoa.mp4",
+        "from": "tastes/vox/demo/out/krakatoa.mp4",
         "at": 1,
         "video": "/catalog/tastes/vox-style/hero.mp4",
         "len": 4
-      }
+      },
+      "source": "tastes/vox"
     }
   ]
 }

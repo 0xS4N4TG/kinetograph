@@ -1,11 +1,14 @@
-// Writes content/catalog.json from the private kinetograph-effects checkout: its plugins and its reel components.
-//   KINETOGRAPH_EFFECTS=/path/to/kinetograph-effects node scripts/catalog.mjs [--media] [--kinds] [--tastes]
-// --kinds touches only the motion components (components/<kind>/ of the checkout, listed in KIND_DIRS): it keeps every plugin and
-// every other component of the committed catalog.json as it is, replaces the kind components, and with --media cuts only their clips.
-// --tastes does the same for the tastes (kit/tastes/ of the checkout, listed in TASTE_COPY).
+// Writes content/catalog.json from the kinetograph-ui checkout: its plugins, components, templates and tastes.
+//   KINETOGRAPH_UI=/path/to/kinetograph-ui node scripts/catalog.mjs [--media] [--missing] [--kinds] [--templates] [--tastes]
+// --missing, with --media, cuts only the clips and stills that are not in public/catalog yet and keeps the others as they are.
+// The checkout defaults to the folder next to this repo (../kinetograph-ui).
+// --kinds touches only the motion components (components/<kind>/ of the checkout, listed in KIND_DIRS): it keeps everything else of the
+// committed catalog.json as it is, replaces the kind components, and with --media cuts only their clips.
+// --templates does the same for the templates (templates/<id>/ and the pieces in components/showcase, see SHOWCASE_COPY).
+// --tastes does the same for the tastes (tastes/<dir>/ of the checkout, listed in TASTE_COPY).
 // Without the checkout it prints a message and leaves the committed catalog.json alone.
 // --media also extracts the stills and clips named in catalog-copy.mjs to public/catalog/. A still is a frame of a render in
-// the checkout's effects/<x>/out/ (or a png) as webp, 1280 px on the long side and under 250 KB. A clip is a cut of a render,
+// the checkout's templates/<x>/out/ (or a png) as webp, 1280 px on the long side and under 250 KB. A clip is a cut of a render,
 // 4 s by default and 6 s at most, as H.264 at 1280 px on the long side, no audio, at most about 1.5 MB, with its first frame as
 // the poster. It needs ffmpeg, ffprobe, libx264 and cwebp. It clears public/catalog first and prints the media total.
 import { execFileSync } from 'node:child_process';
@@ -13,24 +16,25 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEMO_TEXT, EXPORT_NOTES, GENE_NOTES, PLUGIN_COPY, COMPONENT_COPY, KIND_COPY, KIND_DIRS, TASTE_COPY } from './catalog-copy.mjs';
+import { DEMO_TEXT, EXPORT_NOTES, GENE_NOTES, PLUGIN_COPY, TEMPLATE_COPY, KIND_COPY, KIND_DIRS, SHOWCASE_COPY, TASTE_COPY } from './catalog-copy.mjs';
 import { compositionIds, readCompositions, readExports, readHexed, readKinetic, readPaper, readVj } from './catalog-source.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(process.env.KINETOGRAPH_EFFECTS ?? join(here, '../../../../kinetograph-effects'));
+const root = resolve(process.env.KINETOGRAPH_UI ?? join(here, '../../../../kinetograph-ui'));
 const out = join(here, '../content/catalog.json');
 const pub = join(here, '../public');
 const withMedia = process.argv.includes('--media');
 const kindsOnly = process.argv.includes('--kinds');
 const tastesOnly = process.argv.includes('--tastes');
-if (withMedia && !kindsOnly && !tastesOnly && existsSync(join(root, 'plugins'))) rmSync(join(pub, 'catalog'), { recursive: true, force: true });
+const templatesOnly = process.argv.includes('--templates');
+if (withMedia && !kindsOnly && !tastesOnly && !templatesOnly && !process.argv.includes('--missing') && existsSync(join(root, 'plugins'))) rmSync(join(pub, 'catalog'), { recursive: true, force: true });
 
 if (!existsSync(join(root, 'plugins'))) {
-  console.log(`catalog: no kinetograph-effects at ${root}; set KINETOGRAPH_EFFECTS. Keeping ${out}.`);
+  console.log(`catalog: no kinetograph-ui at ${root}; set KINETOGRAPH_UI. Keeping ${out}.`);
   process.exit(0);
 }
 
-/** Showrooms of a plugin: listed under the plugins they demo (folder names), never as components. */
+/** Showrooms of a plugin: listed under the plugins they demo (folder names), never as templates. */
 const DEMOS = {
   'match-cut': { title: 'Match cut presets', plugins: ['paper'] },
   'paper-photo': { title: 'Paper photo effects', plugins: ['paper'] },
@@ -39,8 +43,8 @@ const DEMOS = {
   'hexed-demo': { title: 'Hexed rolls', plugins: ['hexed'] },
   'plugin-ui-demo': { title: 'Studio panels', plugins: ['hexed', 'paper', 'vj', 'kinetic-typography'] },
 };
-/** Studies, not for sale. */
-const EXCLUDED = new Set(['save-reel', 'cyberpunk-reel', 'lyric-reel', 'wish-reel', 'mikiwho-reel']);
+/** Folders of templates/ that stay off the site. */
+const EXCLUDED = new Set(['mikiwho-reel', 'inside', 'cyberpunk-reel', 'wish-reel', 'lyric-reel', 'looks-demo', 'papercut-demo']);
 
 const read = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : '');
 const dirs = (p) => readdirSync(p, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort();
@@ -83,11 +87,11 @@ function leadingComment(src) {
   return firstParagraph(lines.join('\n'));
 }
 
-const repoReadme = read(join(root, 'README.md'));
-/** The repo README's bullet for `effects/<id>/`, minus its path. */
+const repoReadme = read(join(root, 'templates/README.md'));
+/** The templates README's bullet for `<id>`, minus its name. */
 function bulletFor(id) {
   const lines = repoReadme.split('\n');
-  const i = lines.findIndex((l) => l.startsWith(`- \`effects/${id}/\`:`));
+  const i = lines.findIndex((l) => l.startsWith(`- \`${id}\`:`));
   if (i < 0) return '';
   const text = [lines[i].replace(/^- `[^`]*`:\s*/, '')];
   for (let j = i + 1; j < lines.length && /^ {2}\S/.test(lines[j]); j++) text.push(lines[j].trim());
@@ -101,13 +105,16 @@ function sizeOf(file) {
     .trim().split(',').map(Number);
   return { w, h };
 }
+/** Whether to write `file` now: with --media, and with --templates or --missing only when it is not there yet (committed clips stay as they are). */
+const missingOnly = templatesOnly || process.argv.includes('--missing');
+const cut = (file) => withMedia && !(missingOnly && existsSync(file));
 /**
  * One still: a media entry { from, at?, caption? } becomes public/catalog/<dest>.webp (extracted when --media is on).
  * Returns what the pages read: the src, the size, and where it came from, so the catalog says how to make it again.
  */
 function still(entry, dest) {
   const file = join(pub, 'catalog', `${dest}.webp`);
-  if (withMedia) {
+  if (cut(file)) {
     const src = join(root, entry.from);
     const [sw, sh] = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', src], { encoding: 'utf8' })
       .trim().split(',').map(Number);
@@ -144,13 +151,13 @@ let clipCount = 0;
  */
 function clip(entry, dest) {
   const at = entry.at ?? 0;
-  const len = Math.min(entry.len ?? 4, 6);
+  const len = Math.min(entry.len ?? 4, entry.max ?? 6);
   const key = `${entry.from}|${at}|${len}`;
   let hit = clipCache.get(key);
   if (!hit) {
     const file = join(pub, 'catalog', `${dest}.mp4`);
     const poster = still({ from: entry.from, at }, dest);
-    if (withMedia) {
+    if (cut(file)) {
       const src = join(root, entry.from);
       const portrait = poster.h > poster.w;
       mkdirSync(dirname(file), { recursive: true });
@@ -237,6 +244,7 @@ function buildCore() {
       studio: c?.studio ?? null,
       hero: c?.media.hero ? clip(c.media.hero, `plugins/${d}/hero`) : null,
       demos: [],
+      source: `plugins/${d}`,
     };
     if (d === 'hexed') {
       const h = readHexed(pdir, GENE_NOTES);
@@ -250,7 +258,7 @@ function buildCore() {
   });
   const byDir = Object.fromEntries(pluginDirs.map((d, i) => [d, plugins[i]]));
 
-  // Effects: demos go under the plugins they import, the rest are components.
+  // Templates: demos go under the plugins they import, the rest are templates.
   function sources(dir) {
     const found = [];
     const walk = (p) => {
@@ -275,11 +283,11 @@ function buildCore() {
     return [...used];
   }
 
-  const components = [];
+  const templates = [];
   const skipped = [];
-  for (const id of dirs(join(root, 'effects'))) {
+  for (const id of dirs(join(root, 'templates'))) {
     if (EXCLUDED.has(id)) continue;
-    const dir = join(root, 'effects', id);
+    const dir = join(root, 'templates', id);
     const readme = read(join(dir, 'README.md'));
     const index = read(join(dir, 'index.tsx'));
     if (DEMOS[id]) {
@@ -292,13 +300,13 @@ function buildCore() {
       continue;
     }
     if (!index) {
-      skipped.push(id); // nothing to render: a reference folder only
+      skipped.push(id); // nothing to render: no entry file
       continue;
     }
     const heading = readme.match(/^#\s+(.+)$/m)?.[1];
-    const c = COMPONENT_COPY[id];
-    if (!c) console.log(`catalog: no copy for component ${id}; its description comes from its README`);
-    components.push({
+    const c = TEMPLATE_COPY[id];
+    if (!c) console.log(`catalog: no copy for template ${id}; its description comes from its README`);
+    templates.push({
       id,
       title: c?.title ?? (heading && heading !== id ? heading.replace(/\s*\(.*\)\s*$/, '') : titleCase(id)),
       description: c?.description ?? (firstParagraph(readme) || bulletFor(id) || leadingComment(index)),
@@ -306,9 +314,10 @@ function buildCore() {
       plugins: importedPlugins(dir).map((d) => byDir[d].name),
       compositions: compositionIds(index),
       hero: c?.media?.hero ? clip(c.media.hero, `components/${id}/hero`) : null,
+      source: `templates/${id}`,
     });
   }
-  return { plugins, components, skipped };
+  return { plugins, templates, skipped };
 }
 
 /**
@@ -360,6 +369,7 @@ function buildKinds() {
         compositions: [compId],
         hero: hasPreview ? clip({ from, at: c.at, len: c.len, kb: 300 }, `components/${id}/hero`) : null,
         category: kind,
+        source: `components/${kind}`,
         props: props.map((p) => ({ ...p, doc: cleanDoc(p.doc) })),
       });
     }
@@ -367,39 +377,77 @@ function buildKinds() {
   return found;
 }
 
-/** The tastes: one entry per TASTE_COPY row whose kit/tastes/<dir> and demo render exist; the rest are left out with a message. */
-function buildTastes() {
+/**
+ * The device and product pieces of components/showcase, listed as templates: one entry per composition the folder registers and
+ * SHOWCASE_COPY has copy for, in SHOWCASE_COPY's order. A piece whose render is missing gets no media.
+ */
+function buildShowcase() {
+  const dir = join(root, 'components/showcase');
+  const order = (c) => Object.keys(SHOWCASE_COPY).indexOf(c.id);
   const found = [];
-  for (const [id, c] of Object.entries(TASTE_COPY)) {
-    const hasKit = existsSync(join(root, 'kit/tastes', c.dir));
-    const hasRender = existsSync(join(root, c.src));
-    if (!hasKit || !hasRender) {
-      console.log(`catalog: taste ${id} left out (${hasKit ? 'no render ' + c.src : 'no kit/tastes/' + c.dir})`);
+  for (const { id: compId, props } of readCompositions(dir).sort((a, b) => order(a) - order(b))) {
+    const c = SHOWCASE_COPY[compId];
+    if (!c) {
+      console.log(`catalog: no copy for showcase/${compId}; left out`);
       continue;
     }
-    found.push({ id, title: c.title, description: c.description, hero: clip({ from: c.src, at: c.at, len: c.len, kb: 300 }, `tastes/${id}/hero`) });
+    const id = compId.replace(/([a-z])([A-Z0-9])/g, '$1-$2').toLowerCase();
+    const from = `components/showcase/out/${c.preview}`;
+    const hasPreview = existsSync(join(root, from));
+    if (!hasPreview) console.log(`catalog: missing preview ${from}; ${id} has no media`);
+    found.push({
+      id,
+      title: c.title,
+      description: c.description,
+      change: [],
+      plugins: [],
+      compositions: [compId],
+      hero: hasPreview ? clip({ from, at: c.at, len: c.len, kb: 300 }, `components/${id}/hero`) : null,
+      props: props.map((p) => ({ ...p, doc: cleanDoc(p.doc) })),
+      source: 'components/showcase',
+    });
   }
   return found;
 }
 
-let plugins, components, skipped;
-const tastes = buildTastes();
-const kinds = tastesOnly ? [] : buildKinds();
-if (tastesOnly) {
-  ({ plugins, components } = JSON.parse(readFileSync(out, 'utf8')));
-  skipped = [];
-} else if (kindsOnly) {
-  // Everything else stays as committed; the kind components replace the ones the last run wrote, in KIND_DIRS order after the rest.
-  const kept = JSON.parse(readFileSync(out, 'utf8'));
-  plugins = kept.plugins;
-  components = [...kept.components.filter((c) => !c.category), ...kinds];
-  skipped = [];
-} else {
-  ({ plugins, components, skipped } = buildCore());
-  components.push(...kinds);
+/** The tastes: one entry per TASTE_COPY row whose tastes/<dir> and demo render exist; the rest are left out with a message. */
+function buildTastes() {
+  const found = [];
+  for (const [id, c] of Object.entries(TASTE_COPY)) {
+    const hasKit = existsSync(join(root, 'tastes', c.dir));
+    const hasRender = existsSync(join(root, c.src));
+    if (!hasKit || !hasRender) {
+      console.log(`catalog: taste ${id} left out (${hasKit ? 'no render ' + c.src : 'no tastes/' + c.dir})`);
+      continue;
+    }
+    found.push({ id, title: c.title, description: c.description, hero: clip({ from: c.src, at: c.at, len: c.len, kb: 300 }, `tastes/${id}/hero`), source: `tastes/${c.dir}` });
+  }
+  return found;
 }
 
-writeFileSync(out, JSON.stringify({ plugins, components, tastes }, null, 2) + '\n');
-console.log(`catalog: ${plugins.length} plugins, ${components.length} components, ${tastes.length} tastes -> ${out}`);
+let plugins, components, templates, skipped;
+const tastes = buildTastes();
+const kinds = tastesOnly || templatesOnly ? [] : buildKinds();
+const showcase = tastesOnly || kindsOnly ? [] : buildShowcase();
+if (tastesOnly) {
+  ({ plugins, components, templates } = JSON.parse(readFileSync(out, 'utf8')));
+  skipped = [];
+} else if (kindsOnly || templatesOnly) {
+  // Everything else stays as committed. --kinds replaces the kind components; --templates the templates, the showcase pieces last.
+  const kept = JSON.parse(readFileSync(out, 'utf8'));
+  plugins = kept.plugins;
+  // A catalog from before templates had their own list has the scenes and the showcase pieces among its components: drop them.
+  const keptComponents = kept.components.filter((c) => c.category && c.category !== 'showcase');
+  components = kindsOnly ? kinds : keptComponents;
+  templates = kindsOnly ? (kept.templates ?? []) : [...buildCore().templates, ...showcase];
+  skipped = [];
+} else {
+  ({ plugins, templates, skipped } = buildCore());
+  templates.push(...showcase);
+  components = kinds;
+}
+
+writeFileSync(out, JSON.stringify({ plugins, components, templates, tastes }, null, 2) + '\n');
+console.log(`catalog: ${plugins.length} plugins, ${components.length} components, ${templates.length} templates, ${tastes.length} tastes -> ${out}`);
 if (withMedia) console.log(`catalog: ${clipCount} clips, ${(mediaBytes / 1048576).toFixed(1)} MB of media added (clips and their posters, presets not counted)`);
 if (skipped.length) console.log(`catalog: skipped without index.tsx: ${skipped.join(', ')}`);
