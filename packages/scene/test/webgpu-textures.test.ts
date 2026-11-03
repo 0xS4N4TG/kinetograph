@@ -362,6 +362,30 @@ describe('render passes into textures and sampling them', () => {
     device.queue.submit([encoder.finish()]);
   }
 
+  it('keeps an upload that a submitted pass sampled when the texture is destroyed after the submit', async () => {
+    const { device, context } = await setup();
+    const source = texture(device, { size: [8, 8] });
+    const module = device.createShaderModule({ code: WGSL });
+    const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module }, fragment: { module, targets: [{ format: 'rgba8unorm' }] } });
+    const group = device.createBindGroup({
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: source.createView() },
+        { binding: 1, resource: device.createSampler({}) },
+      ],
+    });
+    device.queue.copyExternalImageToTexture({ source: layerPicture('layer', 8, 8) as never }, { texture: source }, [8, 8]);
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store' }] });
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, group);
+    pass.draw(3);
+    pass.end();
+    device.queue.submit([encoder.finish()]);
+    source.destroy();
+    expect(context.content().webgpu!.passes.map((p) => p.k)).toEqual(['upload', 'render']);
+  });
+
   it('records the pass into the texture before the pass that samples it, with the view and the sampler', async () => {
     const { device, context } = await setup();
     const offscreen = texture(device, { size: [8, 8] });

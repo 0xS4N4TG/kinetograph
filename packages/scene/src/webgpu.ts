@@ -1393,9 +1393,14 @@ export class GPUDeviceShim extends EventTarget {
     this.worked = false;
     this.frame += 1;
   }
-  /** A destroyed texture's (or buffer's) steps go. */
+  /**
+   * A destroyed texture's (or buffer's) steps go, unless a step still held reads what they wrote: work that was
+   * submitted before `destroy()` runs before it, as on a device (an effect that uploads, draws and destroys in one call).
+   */
   forget(owner: GPUTextureShim | GPUBufferShim): void {
-    this.steps = this.steps.filter((s) => !(s.writes.length > 0 && s.writes.every((w) => w.owner === owner)));
+    const ownedOnly = (s: LogStep): boolean => s.writes.length > 0 && s.writes.every((w) => w.owner === owner);
+    const readByOthers = (s: LogStep): boolean => s.writes.some((w) => this.steps.some((other) => other !== s && !ownedOnly(other) && other.reads.has(w.key)));
+    this.steps = this.steps.filter((s) => !ownedOnly(s) || readByOthers(s));
   }
   append(entry: LogStep): void {
     entry.frame = this.frame;
