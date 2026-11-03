@@ -28,6 +28,8 @@ export interface RenderJobOptions {
   everyNthFrame?: number;
   /** Run React's development build in the worker threads (the main thread is set by the caller). */
   devReact?: boolean;
+  /** `--preferred-effect-backend`, told to the worker threads (the main thread is set by the caller). */
+  preferredEffectBackend?: string;
   /**
    * Fail with `UNSUPPORTED_CONTENT` on the first frame that holds something the engine cannot draw (kinetograph site, /docs/compat/), instead of drawing it without. Default off: the report says what was left out.
    */
@@ -150,6 +152,7 @@ export async function renderSource(
         scale,
         convertFormat: plan.convertFormat,
         devReact: options.devReact ?? false,
+        preferredEffectBackend: options.preferredEffectBackend,
         origin: first,
         step,
         workers,

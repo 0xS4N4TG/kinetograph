@@ -45,6 +45,7 @@ export interface ParallelOptions {
   convertFormat: string;
   /** Run React's development build in the workers. */
   devReact: boolean;
+  preferredEffectBackend?: string;
   workers: number;
   /** The frames drawn are numbered `0..count-1` here; index `i` is frame `origin + i * step` of the composition. */
   origin: number;
@@ -243,6 +244,7 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
         scale: options.scale,
         convertFormat: options.convertFormat,
         devReact: options.devReact,
+        preferredEffectBackend: options.preferredEffectBackend,
         origin: options.origin,
         step: options.step,
       };

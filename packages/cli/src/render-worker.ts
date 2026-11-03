@@ -4,6 +4,7 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import type { ArtifactRecord } from '@kinetographdev/core';
 import type { SceneJson, Unsupported, AudioClipJson } from '@kinetographdev/scene';
+import { setPreferredEffectBackend } from './effects.js';
 import { native } from './native.js';
 import { ProfileLog, now, profiling, takeAddon, takeJs } from './profile.js';
 import { scaleScene } from './scenes.js';
@@ -15,6 +16,7 @@ export interface WorkerInit {
   /** The pixel format to convert drawn frames to (`resolveExport`'s `convertFormat`). */
   convertFormat: string;
   devReact: boolean;
+  preferredEffectBackend?: string;
   /** Index `i` of a chunk is frame `origin + i * step` of the composition (`step` is above 1 for a GIF's `--every-nth-frame`). */
   origin: number;
   step: number;
@@ -41,7 +43,8 @@ export type FromWorker =
 const port = parentPort!;
 const post = (message: FromWorker, transfer: ArrayBuffer[] = []): void => port.postMessage(message, transfer);
 
-const { spec, scale, convertFormat, devReact, origin, step } = workerData as WorkerInit;
+const { spec, scale, convertFormat, devReact, preferredEffectBackend, origin, step } = workerData as WorkerInit;
+setPreferredEffectBackend(preferredEffectBackend);
 // React reads this when the bundle imports it, which `openSource` below does.
 process.env.NODE_ENV = devReact ? 'development' : 'production';
 
