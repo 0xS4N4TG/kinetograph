@@ -1,0 +1,15 @@
+{
+  "name": "title-card",
+  "type": "component",
+  "title": "Title card",
+  "description": "A title and an optional subtitle on a plain background, with a small accent dot that fades in.",
+  "kinetograph": "0.2.0",
+  "access": "free",
+  "dependencies": { "zod": "4.6.7" },
+  "props": [
+    { "name": "title", "type": "string", "doc": "The big line." },
+    { "name": "subtitle", "type": "string", "optional": true, "doc": "A smaller line under the title." },
+    { "name": "background", "type": "string", "optional": true, "doc": "Background colour." },
+    { "name": "color", "type": "string", "optional": true, "doc": "Text colour." }
+  ]
+}

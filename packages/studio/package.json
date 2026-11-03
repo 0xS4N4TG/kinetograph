@@ -48,8 +48,10 @@
     "@kinetographdev/core": "0.2.5",
     "@kinetographdev/native": "0.2.5",
     "@kinetographdev/scene": "0.2.5",
-    "kinetograph": "0.2.5",
     "ws": "8.22.0"
+  },
+  "peerDependencies": {
+    "kinetograph": "0.2.5"
   },
   "devDependencies": {
     "@types/ws": "8.18.2"

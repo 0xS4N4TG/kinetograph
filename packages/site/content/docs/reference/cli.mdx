@@ -45,6 +45,17 @@ npx kinetograph init [dir] [--html]
 
 It writes `src/index.tsx`, `src/scenes/Title.tsx`, `package.json`, `tsconfig.json` and `.gitignore`, and makes the `src/`, `public/` and `out/` folders. With `--html` it writes `html/index.html` instead of the TSX files. `dir` defaults to the current folder. Files that already exist are skipped, never overwritten. It does not run `npm install`.
 
+## add
+
+Installs a component, template or taste from the Kinetograph registry into the project.
+
+```sh
+npx kinetograph add <name...> [--overwrite] [--yes] [--dir <folder>]
+npx kinetograph add --list [--type component|template|taste]
+```
+
+Components go to `src/components/<name>/`, templates to `src/templates/<name>/`, tastes to `src/tastes/<name>/`, and their pictures, fonts and audio to `public/<kind>/<name>/`. Items an item depends on are installed first. A file that already exists is skipped and reported; `--overwrite` replaces it. If the item needs npm packages the project lacks, the command shows them and asks before installing (`--yes` skips the question; with `--json` or no terminal it only prints the install command). Run it inside a project made by `init`. An item that is not published yet says so and installs nothing.
+
 ## compositions
 
 Lists the compositions in a project, with size, frame rate and length.
@@ -302,7 +313,7 @@ npx kinetograph studio <entry>
 | `--allow-remote-agent` | Keep the agent on when `--host` lets other computers in. It is off then by default. |
 | `--offline` | Never download what a HyperFrames project loads from the web. It must be cached. |
 
-The studio is the `@kinetographdev/studio` package, which must be installed next to `kinetograph`. Stop it with Ctrl-C.
+The studio is the `@kinetographdev/studio` package, which installs with `kinetograph`. Stop it with Ctrl-C.
 
 The **Available** list in the Props tab comes from `https://kinetograph.dev/api/catalog`, cached in `~/.cache/kinetograph/plugin-catalog.json`. `--offline` (or `KINETOGRAPH_OFFLINE=1`) never asks the site. `KINETOGRAPH_CATALOG_URL` reads the list from another address.
 

@@ -1,3 +1,4 @@
+import { add } from './add.js';
 import { audioAnalyze } from './audio.js';
 import { bench } from './bench.js';
 import { compositions, effects } from './basic.js';
@@ -17,6 +18,7 @@ import type { Command } from './types.js';
 /** Every command, in the order of packages/cli/skills/kinetograph/references/AUTHORING.md §9. */
 export const commands: Command[] = [
   init,
+  add,
   compositions,
   still,
   render,
