@@ -266,6 +266,33 @@ test('renderCanvas draws a canvas layer on a transparent canvas, as RGBA or a PN
   );
 });
 
+test('renderCanvas draws the layers its commands name as the children of a canvas pass, at the frame asked for', { skip }, () => {
+  // A red square that moves 1 pixel a frame, as a child; the canvas draws it twice (the second time 4 pixels down).
+  const child = { id: 'src', type: 'shape', shape: { kind: 'rect', width: 4, height: 4 }, fill: '#ff0000', transform: { x: [{ frame: 0, value: 0 }, { frame: 10, value: 10 }], y: 0 } };
+  const source = { kind: 'layer', id: 'src', width: 16, height: 8 };
+  const request = (extra = {}) =>
+    JSON.stringify({
+      width: 16,
+      height: 8,
+      commands: [{ op: 'image', source, dx: 0, dy: 0, dw: 16, dh: 8 }],
+      layers: [child],
+      fps: 30,
+      durationInFrames: 11,
+      fonts: {},
+      baseDir: repo,
+      ...extra,
+    });
+  const at = (rgba, x, y) => [...rgba.subarray((y * 16 + x) * 4, (y * 16 + x) * 4 + 4)];
+  const first = native.renderCanvas(request());
+  assert.deepEqual(at(first, 1, 1), [255, 0, 0, 255], 'the child, drawn');
+  assert.deepEqual(at(first, 8, 1), [0, 0, 0, 0]);
+  const later = native.renderCanvas(request({ frame: 5 }));
+  assert.deepEqual(at(later, 1, 1), [0, 0, 0, 0], 'frame 5: the child has moved');
+  assert.deepEqual(at(later, 6, 1), [255, 0, 0, 255]);
+  // A layer that is not among the children is a scene error.
+  rejects(() => native.renderCanvas(request({ layers: [{ ...child, id: 'other' }] })), 'SCENE_INVALID', /not one of its children/);
+});
+
 test('renderCanvas reuses one renderer: sizes alternate, a failed call changes nothing, and it is fast', { skip }, () => {
   const request = (width, color) =>
     JSON.stringify({

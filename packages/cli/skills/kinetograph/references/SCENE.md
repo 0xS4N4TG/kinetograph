@@ -652,7 +652,7 @@ pass, no `layout`, and is not `preserve3d`. A `layer` source outside such a grou
 
 The group is drawn by the wgpu path (Skia counts it as a fallback, "canvas group"): the children are drawn as layers,
 and Skia draws the canvas's commands with each child's texture as the image of its `layer` source (shadows and filters
-included). A pattern of a `layer` source repeats the child's picture as a pattern of any canvas does. `getImageData` of a layer picture is not available to a script.
+included). A pattern of a `layer` source repeats the child's picture as a pattern of any canvas does. `renderCanvas` takes `layers` (the layers the commands name, drawn as the children of a canvas pass at `frame`, `fps` and `durationInFrames`), which is how `getImageData` of a canvas that drew a layer picture reads it inside an effect.
 
 ### scene3d
 

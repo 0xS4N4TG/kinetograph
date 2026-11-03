@@ -20,8 +20,9 @@ use kinetograph_core::{Renderer, Scene};
 /// (`Renderer::set_scene`), and a frame is the same as a new renderer's.
 static RENDERER: Mutex<Option<Renderer>> = Mutex::new(None);
 
-/// `{ width, height, commands, sources, fonts, baseDir, format }` as JSON in (`sources` is the layer's table of
-/// pictures the commands refer to, left out when none does); straight alpha RGBA, or a PNG with `format: "png"`, out.
+/// `{ width, height, commands, sources, layers, frame, fps, durationInFrames, camera, margin, blendSpace, fonts, baseDir,
+/// format }` as JSON in (`sources` is the layer's table of pictures the commands refer to, left out when none does;
+/// `layers` are the layers the commands name as `layer` sources, drawn as the children of a canvas pass at `frame`); straight alpha RGBA, or a PNG with `format: "png"`, out.
 pub fn render_canvas(request_json: &str) -> Result<Buffer> {
     let request: Value =
         serde_json::from_str(request_json).map_err(|e| invalid(format!("renderCanvas: {e}")))?;
@@ -32,22 +33,50 @@ pub fn render_canvas(request_json: &str) -> Result<Buffer> {
             .ok_or_else(|| invalid(format!("renderCanvas: {name} must be 1 to 8192")))
     };
     let (width, height) = (side("width")?, side("height")?);
-    let scene = json!({
-        "width": width, "height": height, "fps": 30, "durationInFrames": 1,
+    // The layers the commands draw (a canvas effect's `source`, `{ "kind": "layer", "id" }`) are the children of a
+    // canvas pass, as they are in a frame: the canvas is the pass and the pictures are drawn by the compositor, so
+    // what is read is what the frame would draw. The frame, `fps` and `durationInFrames` are the frame's own, so
+    // that a video or an animated value in a child is where it is in the frame.
+    let children = request
+        .get("layers")
+        .and_then(Value::as_array)
+        .filter(|layers| !layers.is_empty());
+    let canvas = json!({
+        "width": width, "height": height,
+        "commands": request.get("commands").cloned().unwrap_or_else(|| json!([])),
+        "sources": request.get("sources").cloned().unwrap_or_else(|| json!([])),
+    });
+    let layer = match children {
+        Some(children) => json!({
+            "id": "kinetograph-readback", "type": "group", "canvas": canvas, "children": children,
+        }),
+        None => {
+            let mut layer = canvas;
+            layer["id"] = json!("canvas");
+            layer["type"] = json!("canvas");
+            layer
+        }
+    };
+    let frame = request["frame"].as_u64().unwrap_or(0).min(u64::from(u32::MAX - 1));
+    let mut scene = json!({
+        "width": width, "height": height,
+        "fps": request["fps"].as_f64().filter(|f| *f > 0.0).unwrap_or(30.0),
+        "durationInFrames": request["durationInFrames"].as_u64().unwrap_or(1).max(frame + 1),
         "background": "#00000000",
         "fonts": request.get("fonts").cloned().unwrap_or_else(|| json!({})),
-        "layers": [{
-            "id": "canvas", "type": "canvas", "width": width, "height": height,
-            "commands": request.get("commands").cloned().unwrap_or_else(|| json!([])),
-            "sources": request.get("sources").cloned().unwrap_or_else(|| json!([])),
-        }],
+        "layers": [layer],
     });
+    for key in ["camera", "margin", "blendSpace"] {
+        if let Some(value) = request.get(key).filter(|v| !v.is_null()) {
+            scene[key] = value.clone();
+        }
+    }
     let base_dir = request["baseDir"]
         .as_str()
         .map(PathBuf::from)
         .unwrap_or_default();
     let scene = Scene::from_json(&scene.to_string(), base_dir).map_err(from_core)?;
-    let resolved = scene.resolve(0).map_err(from_core)?;
+    let resolved = scene.resolve(frame as u32).map_err(from_core)?;
     let frame = {
         let mut held = RENDERER.lock().unwrap_or_else(|e| e.into_inner());
         match held.as_mut() {

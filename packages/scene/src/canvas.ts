@@ -1122,6 +1122,26 @@ export function unsupportedFilters(commands: readonly CanvasCommand[]): string[]
   return [...found];
 }
 
+/**
+ * The ids of the layers `commands` draw or fill with (`layerPicture`), each once, in the canvases they draw too: the
+ * pictures that are another layer's, which only the renderer can make.
+ */
+export function layerSourcesOf(commands: readonly CanvasCommand[]): string[] {
+  const found = new Set<string>();
+  const visitSource = (source: CanvasSource): void => {
+    if (source.kind === 'layer') found.add(source.id);
+    else if (source.kind === 'canvas') visit(source.commands);
+  };
+  const visit = (list: readonly CanvasCommand[]): void => {
+    for (const command of list) {
+      if (command.op === 'image') visitSource(command.source);
+      else if ((command.op === 'fill' || command.op === 'stroke' || command.op === 'text') && command.paint.type === 'pattern') visitSource(command.paint.source);
+    }
+  };
+  visit(commands);
+  return [...found];
+}
+
 /** A source this long (a `data:` URL, say) is worth writing once; a path is not. */
 const SHARED_SRC_LENGTH = 256;
 

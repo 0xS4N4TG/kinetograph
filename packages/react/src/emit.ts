@@ -831,9 +831,12 @@ export function finishIslands(layers: LayerJson[]): LayerJson[] {
   return finished;
 }
 
-/** The scene JSON of a host tree (the children of the root). */
-export function emit(roots: HostNode[], options?: EmitOptions): RenderedTree {
-  const emitter = new Emitter(options, roots);
+/**
+ * The scene JSON of a host tree (the children of the root). `tree` is the whole tree the roots are in, when they are part
+ * of one: the document-wide CSS is the tree's.
+ */
+export function emit(roots: HostNode[], options?: EmitOptions, tree: HostNode[] = roots): RenderedTree {
+  const emitter = new Emitter(options, tree);
   const layers = emitter.children(roots, '', 'the root of the tree');
   // Shader inputs are gathered once the started islands' layers are in (`finishIslands`).
   if (!emitter.deferred) gatherShaderInputs(layers);

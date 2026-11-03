@@ -40,6 +40,29 @@ export interface SceneRoot {
   unmount(): void;
 }
 
+/** A part of the tree emitted on its own: its layers and what a scene that draws them needs besides. */
+export interface EmittedLayer {
+  layers: RenderedTree['layers'];
+  camera: RenderedTree['camera'];
+  margin?: number;
+  blendSpace?: 'srgb';
+}
+
+/**
+ * The layer a ref to a `<Layer>` gave, emitted as it stands in the tree now, for a scene of its own to draw (the
+ * picture of a layer an effect reads). The whole of it is emitted: its DOM islands are drawn, not started, whatever the
+ * frame loop is doing. Null when `host` is not an element of a root that is mounted.
+ */
+export function emitLayerOf(host: unknown): EmittedLayer | null {
+  const node = host as HostNode | null | undefined;
+  if (node === null || node === undefined || node.kind !== 'element') return null;
+  const container = hostMeta.get(node)?.container;
+  if (container === undefined) return null;
+  const { subFrameLayers: _unused, ...options } = container.options;
+  const tree = emit([node], options, container.children);
+  return { layers: tree.layers, camera: tree.camera, ...(tree.margin !== undefined && { margin: tree.margin }), ...(tree.blendSpace !== null && tree.blendSpace !== undefined && { blendSpace: tree.blendSpace }) };
+}
+
 /** What a child learns about its place: the type of the nearest host parent, or `root`. */
 type HostContext = string;
 const ROOT_CONTEXT: HostContext = 'root';
@@ -264,7 +287,7 @@ const MAX_SETTLE_PASSES = 100;
  * resolves later can update the tree seen by `snapshot`.
  */
 export function createSceneRoot(options: EmitOptions = {}): SceneRoot {
-  const container: Container = { children: [], generation: 0, commits: 0, readFailures: new Map(), readback: null, measuredGenerations: new Set(), media: new Set() };
+  const container: Container = { children: [], generation: 0, commits: 0, readFailures: new Map(), readback: null, measuredGenerations: new Set(), media: new Set(), options };
   container.readback = createReadback(container, options);
   registerReadbackRoot(container.readback, { adoptPending: !options.ignoreDom });
   // `window.innerWidth`, `matchMedia` and `document.documentElement` report the composition's size.
