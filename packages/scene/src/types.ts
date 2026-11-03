@@ -811,6 +811,15 @@ export interface GlslTexture {
   luminance?: boolean;
   /** `texSubImage2D` of pictures over parts of the texture, in order, after `src`, `pixels` or `layer`. */
   patches?: GlslPatch[];
+  /** A 3D texture (`texImage3D`) of `width` by `height` by this many layers, its texels `pixels` (RGBA8) or `floats`; left out for a 2D texture. */
+  depth?: number;
+  /**
+   * A float texture (`R32F`, `RGBA16F` and the like), 2D or 3D: base64 little-endian `f32`s, four for each texel (x
+   * fastest, then y, then z; what the format lacks is 0, and alpha 1). Kept as half floats, or as 32-bit ones with `float32`.
+   */
+  floats?: string;
+  /** The floats are `R32F`, `RG32F`, `RGB32F` or `RGBA32F`: kept in full, and sampled only `NEAREST` (a browser has no linear filter for them). */
+  float32?: boolean;
 }
 
 /** A picture over a rectangle of a texture (`texSubImage2D`): rows counted as the texture's, the first GL's bottom one. */
@@ -877,6 +886,8 @@ export interface GlslSampler {
   mag: string;
   wrapS: string;
   wrapT: string;
+  /** `TEXTURE_WRAP_R`, for a 3D texture. */
+  wrapR?: string;
   /** `TEXTURE_MAX_LEVEL`, when it was set: the last level read, so fewer levels can be complete. */
   maxLevel?: number;
 }
