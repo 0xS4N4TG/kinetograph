@@ -36,7 +36,6 @@ export {
   Text3D,
   TimelineContext,
   useTimeline,
-  Video,
   OffthreadVideo,
 } from '@kinetographdev/react';
 // Remotion's names for the plain HTML media tags, which are the engine's <Audio> and <Video> here.
@@ -70,9 +69,7 @@ export type {
   TextProps,
   TimelineState,
   VideoConfig,
-  VideoProps,
   DatamoshOptions,
-  GifProps,
 } from '@kinetographdev/react';
 
 // <Video datamosh> on a codec without motion vectors is reported as unsupported (AUTHORING.md §11.8).
@@ -80,8 +77,12 @@ import './datamosh.js';
 // `onVideoFrame` of <Video> hands the project a frame it can draw on a canvas (AUTHORING.md §7.1).
 import './video-frame.js';
 
-// <Gif> with the duration lookup that `loopBehavior="unmount-after-finish"` needs (AUTHORING.md §11.3).
+// <Gif> with the duration lookup that `loopBehavior="unmount-after-finish"` needs (AUTHORING.md §11.3), and Remotion's `effects`.
 export { Gif } from './gif.js';
+export type { GifProps } from './gif.js';
+// <Video> with Remotion's `effects` (the engine's own <Video> without them).
+export { Video } from './video.js';
+export type { VideoProps } from './video.js';
 
 // ---- time ----
 export { useCurrentFrame, useVideoConfig, useIsInsideNonPremountFreeze, Sequence, Series, Loop, Freeze } from './timeline.js';
@@ -140,7 +141,8 @@ export type {
   HtmlInCanvasPixelDensity,
   HtmlInCanvasProps,
 } from './html-in-canvas.js';
-export { createEffect, Solid, CanvasImage } from './effects.js';
+export { createEffect, createEffectImplementation, Solid, CanvasImage } from './effects.js';
+export { Internals, NoReactInternals } from './internals.js';
 export { AnimatedImage } from './animated-image.js';
 export type { AnimatedImageLoopBehavior, AnimatedImageProps } from './animated-image.js';
 export type {
@@ -151,6 +153,9 @@ export type {
   EffectDefinition,
   EffectDescriptor,
   EffectFactory,
+  EffectImplementation,
+  MultiBackendEffectDefinition,
+  PreferredEffectBackend,
   EffectsOutputSize,
   EffectsProp,
   SolidProps,

@@ -495,10 +495,8 @@ What is drawn:
   above 16): `filterGraph` sheet of 39 filters, per tile 0.0 to 1.9 (the noise ones 1.2 to 2.9; Chrome rounds noise
   positions to whole pixels, and so do we); the same on turned and scaled layers 1.0 to 6.0; the papercut `torn` and
   `rough` filters on `div`s 0.06; the SVG pages: shapes 1.9, features 2.6, text and transforms 1.7. What is left is
-  edge anti-aliasing and **blending in linear light**: a translucent layer over another (an `opacity` of 0.93 with
-  `multiply`, a mask's fade, the soft edge of a shape) is mixed in linear light here and in sRGB by Chrome, which
-  darkens or lightens it by up to 20 levels. That is the engine's rule for layers (`SCENE.md`), not the SVG painter's;
-  it needs a compositor-level option to go away.
+  edge anti-aliasing. (Layers blend in sRGB by default, as Chrome does; before that, a translucent layer over another
+  was mixed in linear light here, which darkened or lightened it by up to 20 levels.)
 - `crates/dom/tests/svg_golden.rs` and `crates/core/tests/{filter,svg_paint,golden}.rs` hold the tests; the goldens
   are in `crates/dom/tests/golden` and `crates/core/tests/golden`. `cargo run -p kinetograph-dom --example svg_scene
   -- page.html scene.json W H` makes a scene from the `<svg>`s of an HTML page, to compare with a browser.
@@ -579,8 +577,8 @@ the style stops declaring one is not cancelled.
 `crates/dom/src/paint/` turns a styled, laid-out Blitz document into scene layers. `paint(doc, request)` returns the
 `IslandOutput`: `layers`, `unsupported`, `camera` (never set: perspective is folded into matrices), and two new
 optional fields, `margin` (the least scene `margin`: how far its blurs reach, so a shadow near the canvas edge is
-blurred from real pixels) and `blendSpace` (always `"srgb"`: **the scene that holds the island's layers must set
-`blendSpace: "srgb"`**, see below).
+blurred from real pixels) and `blendSpace` (always `"srgb"`, which is the scene default; a scene that sets `blendSpace: "linear"`
+draws the island's layers wrongly), see below).
 
 ### What the front half must do
 
@@ -754,7 +752,7 @@ or Rgba16Float for an `rgba16float` canvas, whose half floats reach the linear c
 and turned into sRGB primaries there (values clipped to 0..1 first, as the standard tone mapping does, and colours outside
 sRGB clipped at the video's encode, the output being SDR). The buffer is flushed first because earlier glsl layers' place
 passes read it. The dom painter reads every module with naga
-(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (query sets, bundles, depth, multisampling, readback, `extended` tone mapping), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
+(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (query sets, bundles, depth, a multisampled texture that is sampled or copied, readback, `extended` tone mapping), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
 A module wgpu then refuses is a warning on stderr and a transparent canvas, never a panic.
 
 WebGPU compute. `createComputePipeline` and `createComputePipelineAsync` record a `computePipelines` entry (module, entry point,
@@ -808,7 +806,7 @@ cube and a flipped card 0.65), backdrop blur 0.27 (mirrored in the box, up to 30
 clipped positioned boxes 0.16, transforms 0.28, tiled backgrounds 0.38, shadows 0.55, filters 1.1, lists and outline
 1.3, gradients 1.6, border images 2.6, borders 3.6 (dotted dot spacing), `background-clip: text` 5.0 (synthetic bold),
 text 13 (Chrome's heavier text rendering), masks 22 (Chrome blocks a `file:` mask picture, so the other three agree).
-The same cases blended in linear light were 3 to 15 times worse for anything translucent (shadows 8.4, filters 4.6).
+The same cases blended in linear light (`blendSpace: linear`) were 3 to 15 times worse for anything translucent (shadows 8.4, filters 4.6).
 
 ### Scene changes
 
@@ -821,8 +819,8 @@ The same cases blended in linear light were 3 to 15 times worse for anything tra
 - Gradient tiles and `space` tiles are one layer each up to 150. Past that the tile is drawn once and the paint repeats
   it (`Gradient.tile`, `ImagePaint.spaceX`/`spaceY`), at any fractional period: `background_space_many_tiles` is 3.3
   mean levels from Chrome (`space` 0.5 to 5.8 by quarter, `round` 1.1, a 10 px picture 6.1, Chrome's sharper downscale).
-- `blendSpace: srgb` converts at every composite (a power function per pixel in the blend pass); blurs and colour filters
-  stay in linear light, so a blurred translucent shape is not exactly Chrome's.
+- `blendSpace: srgb` (the default) converts at every composite (a power function per pixel in the blend pass); blurs and colour filters
+  stay in linear light in the compositor, so a blurred translucent shape is not exactly Chrome's.
 - Synthetic bold is a stroke of a 48th of the size; Chrome's is a little heavier.
 - A hoisted z-index context inside a context that Blitz does not know (`mix-blend-mode` only) is listed in the nearest
   context Blitz does know.

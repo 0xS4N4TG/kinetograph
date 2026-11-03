@@ -536,7 +536,6 @@ function mostMips(width: number, height: number): number {
 export class GPUTextureShim extends GpuObject {
   readonly dimension = '2d';
   readonly depthOrArrayLayers = 1;
-  readonly sampleCount = 1;
   readonly uid: number;
   readonly bytes: number;
   destroyed = false;
@@ -549,6 +548,8 @@ export class GPUTextureShim extends GpuObject {
     readonly usage: number,
     readonly mipLevelCount: number,
     label?: string,
+    /** 1, or 4 for a multisampled texture: one a pass draws into and resolves into another. */
+    readonly sampleCount = 1,
   ) {
     super(label);
     this.uid = canvas === null ? device.nextTextureId() : 0;
@@ -556,7 +557,7 @@ export class GPUTextureShim extends GpuObject {
     if (canvas === null) {
       let total = 0;
       for (let level = 0; level < mipLevelCount; level += 1) total += Math.max(1, width >> level) * Math.max(1, height >> level) * (FORMATS[format]?.bytes ?? 4);
-      this.bytes = total;
+      this.bytes = total * sampleCount;
       device.reserveTexture(total);
     }
   }
@@ -600,6 +601,8 @@ interface Attachment {
   texture: GPUTextureShim | null;
   mip: number;
   clear: [number, number, number, number] | null;
+  /** The texture a multisampled `texture` resolves into when the pass ends. */
+  resolve?: { texture: GPUTextureShim; mip: number };
 }
 
 type PassCommand =
@@ -644,6 +647,9 @@ export class GPURenderPassEncoderShim extends GpuObject {
     const target = pipeline.descriptor.fragment?.targets[0];
     if (texture !== null && target && target.format !== texture.format) {
       throw new RangeError(`OperationError: setPipeline: the pipeline draws ${target.format} and the pass draws into a ${texture.format} texture`);
+    }
+    if ((pipeline.descriptor.samples ?? 1) !== (texture?.sampleCount ?? 1)) {
+      throw new RangeError(`OperationError: setPipeline: the pipeline has ${pipeline.descriptor.samples ?? 1} samples and the pass draws into ${texture?.sampleCount ?? 1}`);
     }
     this.add({ c: 'pipeline', pipeline });
   }
@@ -861,6 +867,7 @@ function regionOf(call: string, what: string, info: { texture: GPUTextureShim; m
   if (!(texture instanceof GPUTextureShim)) throw new TypeError(`${call}: ${what} texture is not a GPUTexture`);
   if (texture.canvas !== null) throw texture.device.unsupported(`${call} with the canvas's texture`);
   if (texture.destroyed) throw new Error(`OperationError: ${call}: the ${what} texture was destroyed`);
+  if (texture.sampleCount > 1) throw new RangeError(`OperationError: ${call}: the ${what} texture is multisampled; resolve it into a texture first`);
   if ((texture.usage & usage) === 0) throw new RangeError(`OperationError: ${call}: the ${what} texture was made without GPUTextureUsage.${usageName}`);
   if (info.aspect !== undefined && info.aspect !== 'all') throw texture.device.unsupported(`${call} of the aspect ${info.aspect}`);
   const mip = whole(call, 'mipLevel', info.mipLevel ?? 0, 0);
@@ -891,7 +898,6 @@ export class GPUCommandEncoderShim extends GpuObject {
     if (descriptor.depthStencilAttachment) throw this.device.unsupported('a depth or stencil attachment');
     if (descriptor.occlusionQuerySet) throw this.device.unsupported('occlusion queries');
     const attachment = attachments[0]!;
-    if (attachment.resolveTarget) throw this.device.unsupported('a resolve target (multisampling)');
     const view = attachment.view;
     if (!(view instanceof GPUTextureViewShim)) throw new TypeError('beginRenderPass: the colour attachment has no view');
     const clear = (attachment.loadOp ?? 'clear') === 'load' ? null : colorOf(attachment.clearValue);
@@ -900,7 +906,22 @@ export class GPUCommandEncoderShim extends GpuObject {
     if (texture.destroyed) throw new Error('OperationError: beginRenderPass: the texture was destroyed');
     if ((texture.usage & GPU_TEXTURE_USAGE.RENDER_ATTACHMENT) === 0) throw new RangeError('OperationError: beginRenderPass: the texture was made without GPUTextureUsage.RENDER_ATTACHMENT');
     if (view.mips !== 1) throw new RangeError('OperationError: beginRenderPass: a colour attachment is one mip level');
-    return new GPURenderPassEncoderShim(this, { context: null, texture, mip: view.baseMip, clear });
+    const resolveTarget = attachment.resolveTarget;
+    let resolve: Attachment['resolve'];
+    if (resolveTarget) {
+      if (!(resolveTarget instanceof GPUTextureViewShim)) throw new TypeError('beginRenderPass: the resolve target has no view');
+      const to = resolveTarget.texture;
+      if (texture.sampleCount === 1) throw new TypeError('OperationError: beginRenderPass: a resolve target needs a multisampled colour attachment');
+      if (to.canvas !== null) throw this.device.unsupported("a resolve target that is the canvas's texture; resolve into a texture of your own");
+      if (to.destroyed) throw new Error('OperationError: beginRenderPass: the resolve target was destroyed');
+      if (to.sampleCount !== 1 || resolveTarget.mips !== 1) throw new TypeError('OperationError: beginRenderPass: the resolve target is one level of a texture of one sample');
+      if (to.format !== texture.format || to.extent(resolveTarget.baseMip).width !== texture.width || to.extent(resolveTarget.baseMip).height !== texture.height) {
+        throw new RangeError('OperationError: beginRenderPass: the resolve target has the size and format of the colour attachment');
+      }
+      if ((to.usage & GPU_TEXTURE_USAGE.RENDER_ATTACHMENT) === 0) throw new RangeError('OperationError: beginRenderPass: the resolve target was made without GPUTextureUsage.RENDER_ATTACHMENT');
+      resolve = { texture: to, mip: resolveTarget.baseMip };
+    }
+    return new GPURenderPassEncoderShim(this, { context: null, texture, mip: view.baseMip, clear, ...(resolve ? { resolve } : {}) });
   }
   beginComputePass(descriptor?: { label?: string; timestampWrites?: unknown }): GPUComputePassEncoderShim {
     if (descriptor?.timestampWrites) throw this.device.unsupported('timestampWrites on a compute pass (query sets)');
@@ -1079,7 +1100,7 @@ export class GPUCanvasContextShim {
         for (const [id, value] of s.tables[key] as Map<string, never>) (merged[key] as Map<string, unknown>).set(id, value);
       }
       for (const texture of s.textures) {
-        if (!textures.has(texture)) textures.set(texture, { width: texture.width, height: texture.height, mips: texture.mipLevelCount, format: texture.format });
+        if (!textures.has(texture)) textures.set(texture, { width: texture.width, height: texture.height, mips: texture.mipLevelCount, format: texture.format, ...(texture.sampleCount > 1 ? { samples: texture.sampleCount } : {}) });
       }
     }
     const webgpu: WebGpuContent = {
@@ -1393,9 +1414,14 @@ export class GPUDeviceShim extends EventTarget {
     this.worked = false;
     this.frame += 1;
   }
-  /** A destroyed texture's (or buffer's) steps go. */
+  /**
+   * A destroyed texture's (or buffer's) steps go, unless a step still held reads what they wrote: work that was
+   * submitted before `destroy()` runs before it, as on a device (an effect that uploads, draws and destroys in one call).
+   */
   forget(owner: GPUTextureShim | GPUBufferShim): void {
-    this.steps = this.steps.filter((s) => !(s.writes.length > 0 && s.writes.every((w) => w.owner === owner)));
+    const ownedOnly = (s: LogStep): boolean => s.writes.length > 0 && s.writes.every((w) => w.owner === owner);
+    const readByOthers = (s: LogStep): boolean => s.writes.some((w) => this.steps.some((other) => other !== s && !ownedOnly(other) && other.reads.has(w.key)));
+    this.steps = this.steps.filter((s) => !ownedOnly(s) || readByOthers(s));
   }
   append(entry: LogStep): void {
     entry.frame = this.frame;
@@ -1578,6 +1604,7 @@ export class GPUDeviceShim extends EventTarget {
     const pass: WebGpuPass = {
       k: 'render',
       ...(target === null ? {} : { target: { texture: target.id, mip: attachment.mip } }),
+      ...(attachment.resolve ? { resolve: { texture: attachment.resolve.texture.id, mip: attachment.resolve.mip } } : {}),
       clear: attachment.clear,
       commands: out,
     };
@@ -1585,6 +1612,11 @@ export class GPUDeviceShim extends EventTarget {
     if (target !== null) {
       textures.add(target);
       all.push({ key: levelKey(target, attachment.mip), whole: attachment.clear !== null, owner: target });
+    }
+    // What the pass resolves into is replaced whole.
+    if (attachment.resolve) {
+      textures.add(attachment.resolve.texture);
+      all.push({ key: levelKey(attachment.resolve.texture, attachment.resolve.mip), whole: true, owner: attachment.resolve.texture });
     }
     this.append({ step: pass, canvas, tables, textures, gpuBuffers, reads, writes: all });
   }
@@ -1735,7 +1767,9 @@ export class GPUDeviceShim extends EventTarget {
     label?: string;
   }): GPURenderPipelineShim {
     if (descriptor.depthStencil) throw this.unsupported('a depth or stencil state in a render pipeline');
-    if ((descriptor.multisample?.count ?? 1) > 1 || descriptor.multisample?.alphaToCoverageEnabled) throw this.unsupported('multisampled pipelines');
+    const samples = descriptor.multisample?.count ?? 1;
+    if (samples !== 1 && samples !== 4) throw new RangeError(`OperationError: createRenderPipeline: multisample.count ${samples}; it is 1 or 4`);
+    if (descriptor.multisample?.alphaToCoverageEnabled) throw this.unsupported('alphaToCoverage');
     for (const stage of [descriptor.vertex, descriptor.fragment]) {
       if (stage?.constants && Object.keys(stage.constants).length > 0) throw this.unsupported('pipeline-overridable constants');
       if (stage && !(stage.module instanceof GPUShaderModuleShim)) throw new TypeError('createRenderPipeline: module is not a GPUShaderModule');
@@ -1757,6 +1791,7 @@ export class GPUDeviceShim extends EventTarget {
         frontFace: descriptor.primitive?.frontFace ?? 'ccw',
         cullMode: descriptor.primitive?.cullMode ?? 'none',
       },
+      ...(samples === 1 ? {} : { samples }),
     };
     if (descriptor.vertex.entryPoint !== undefined) pipeline.vertex.entryPoint = descriptor.vertex.entryPoint;
     if (descriptor.primitive?.stripIndexFormat !== undefined) pipeline.primitive.stripIndexFormat = descriptor.primitive.stripIndexFormat;
@@ -1794,6 +1829,7 @@ export class GPUDeviceShim extends EventTarget {
       if (resource instanceof GPUTextureViewShim) {
         if (resource.texture.canvas !== null) throw this.unsupported("a bind group with the canvas's texture; render into a texture of your own to sample it");
         if (resource.texture.destroyed) throw new Error('OperationError: createBindGroup: the texture was destroyed');
+        if (resource.texture.sampleCount > 1) throw this.unsupported('a bind group with a multisampled texture; resolve it into a texture and sample that');
         const storage = layoutEntry?.type === 'storage-texture';
         const need = layoutEntry === undefined ? GPU_TEXTURE_USAGE.TEXTURE_BINDING | GPU_TEXTURE_USAGE.STORAGE_BINDING : storage ? GPU_TEXTURE_USAGE.STORAGE_BINDING : GPU_TEXTURE_USAGE.TEXTURE_BINDING;
         if ((resource.texture.usage & need) === 0) {
@@ -1855,7 +1891,8 @@ export class GPUDeviceShim extends EventTarget {
   createTexture(descriptor: { size: unknown; format: string; usage: number; dimension?: string; mipLevelCount?: number; sampleCount?: number; viewFormats?: Iterable<string>; label?: string }): GPUTextureShim {
     const call = 'createTexture';
     if ((descriptor.dimension ?? '2d') !== '2d') throw this.unsupported(`a ${descriptor.dimension} texture; only 2D textures are drawn`);
-    if ((descriptor.sampleCount ?? 1) !== 1) throw this.unsupported('a multisampled texture');
+    const samples = descriptor.sampleCount ?? 1;
+    if (samples !== 1 && samples !== 4) throw new RangeError(`OperationError: createTexture: sampleCount ${samples}; it is 1 or 4`);
     if (descriptor.viewFormats !== undefined && [...descriptor.viewFormats].length > 0) throw this.unsupported('viewFormats on a texture');
     const size = sizeOf(call, descriptor.size);
     if (size.depth !== 1) throw this.unsupported('a texture with more than one array layer (or a 3D texture)');
@@ -1870,7 +1907,13 @@ export class GPUDeviceShim extends EventTarget {
     if (usage & GPU_TEXTURE_USAGE.STORAGE_BINDING && FORMATS[format]!.storage === 'none') {
       throw new TypeError(`OperationError: ${call}: ${format} cannot have GPUTextureUsage.STORAGE_BINDING (it needs an optional feature)`);
     }
-    return new GPUTextureShim(this, null, size.width, size.height, format, usage, mips, descriptor.label);
+    if (samples > 1) {
+      if (mips !== 1) throw new RangeError(`OperationError: ${call}: a multisampled texture has one mip level`);
+      if (usage & GPU_TEXTURE_USAGE.STORAGE_BINDING || (usage & GPU_TEXTURE_USAGE.RENDER_ATTACHMENT) === 0) {
+        throw new TypeError(`OperationError: ${call}: a multisampled texture is a render attachment and has no STORAGE_BINDING`);
+      }
+    }
+    return new GPUTextureShim(this, null, size.width, size.height, format, usage, mips, descriptor.label, samples);
   }
   createSampler(descriptor: SamplerDescriptor = {}): GPUSamplerShim {
     const d = descriptor ?? {};

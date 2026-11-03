@@ -2,8 +2,10 @@
 
 import { describeIssue, groupRenderErrors, summarize, type DoctorReport } from '@kinetographdev/compat/doctor';
 import type { Unsupported } from '@kinetographdev/scene';
-import { relative } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { dirname, relative } from 'node:path';
 import type { UnsupportedImport } from '../bundle.js';
+import { effectsReport } from '../effects.js';
 import { CliError } from '../errors.js';
 import { native } from '../native.js';
 import { formatUpdateReport, updateReport } from '../update-notice.js';
@@ -164,7 +166,11 @@ export const doctor: Command = {
       if (scanned.errors.length > 0) report.renderErrors = groupRenderErrors(scanned.errors);
       const notes = source.notes?.() ?? [];
       if (notes.length > 0) report.notes = notes;
-      return { ...withImports(report, formatReport(report)), ...(report.renderErrors ? { exitCode: 1 } : {}) };
+      // The project's own @remotion/effects: its version against the one the parity run used, and the effects it uses that are not fully supported.
+      const effects = source.worker === undefined ? null : effectsReport(dirname(source.entry), readFileSync(source.worker.bundleFile, 'utf8'));
+      const shown = withImports(report, formatReport(report));
+      const out = effects === null ? shown : { data: { ...shown.data, effects }, text: `${shown.text}\n\n${effects.lines.join('\n')}` };
+      return { ...out, ...(report.renderErrors ? { exitCode: 1 } : {}) };
     } catch (error) {
       if (imports.length === 0) throw error;
       return failed(error);

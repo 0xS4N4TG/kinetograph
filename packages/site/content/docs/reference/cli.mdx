@@ -77,6 +77,7 @@ npx kinetograph still <entry> <frame> [-o <output.png>] [options]
 | `-o, --output <path>` | The PNG to write. The default is `out/stills/<comp>-f<frame>.png`. |
 | `--strict` | Fail on the first frame with content the engine cannot draw. See [What works](/docs/compat/). |
 | `--dev-react` | Use React's development build. It prints React's warnings and is slower. |
+| `--preferred-effect-backend <name>` | The backend `@remotion/effects` tries first: `webgpu`, `webgl2` or `2d`. See [Remotion effects](/docs/guides/remotion-effects/). |
 | `--comp`, `--props` | See above. |
 
 ## render
@@ -126,6 +127,7 @@ npx kinetograph render <entry> [-o <output.mp4>] [options]
 | `--every-nth-frame <n>` | With `--codec gif`. Draws every nth frame and keeps the length. |
 | `--strict` | Fail on the first frame with content the engine cannot draw. No output file is left. |
 | `--dev-react` | Use React's development build. |
+| `--preferred-effect-backend <name>` | See `still`. |
 | `--comp`, `--props` | See above. |
 
 A bad combination of export flags is refused before bundling, and the message names the flag to change.
@@ -151,6 +153,7 @@ npx kinetograph strip <entry> -n 12 [-o <sheet.png>] [options]
 | `--range <a..b>` | The frames to sample. The default is the whole composition. |
 | `--cols <n>` | Columns. The default is 4 for landscape and 6 for portrait. |
 | `--strict` | See `still`. |
+| `--preferred-effect-backend <name>` | See `still`. |
 | `--comp`, `--props` | See above. |
 
 ## onion
@@ -166,6 +169,7 @@ npx kinetograph onion <entry> <a..b> -n 6 [-o <onion.png>] [options]
 | `<a..b>` | Required. The range to blend. |
 | `-n, --count <n>` | Number of frames to blend. The default is 6, the most is 64. |
 | `-o, --output <path>` | The PNG to write. The default is `out/sheets/<comp>-onion.png`. |
+| `--preferred-effect-backend <name>` | See `still`. |
 | `--comp`, `--props` | See above. |
 
 ## inspect

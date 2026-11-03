@@ -11,7 +11,7 @@ const BACKGROUND: [u8; 4] = [0x20, 0x30, 0x40, 0xff];
 /// `body` (the JSON after its `type`).
 fn scene(body: &str) -> Scene {
     let json = format!(
-        r##"{{"width": 100, "height": 100, "fps": 30, "durationInFrames": 30,
+        r##"{{"blendSpace": "linear", "width": 100, "height": 100, "fps": 30, "durationInFrames": 30,
              "background": "#203040",
              "fonts": {{"DM Sans": "../../../../assets/fonts/DMSans-Medium.ttf"}},
              "layers": [{{"id": "s", "type": "scene3d", "width": 100, "height": 100, {body}}}]}}"##

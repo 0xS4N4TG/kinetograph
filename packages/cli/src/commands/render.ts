@@ -2,6 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { whole, type ParsedArgs } from '../args.js';
 import { describeLeftOut } from '../compat-report.js';
+import { parsePreferredEffectBackend } from '../effects.js';
 import { EXPORT_FLAGS, parseExportFlags } from '../export-options.js';
 import { FrameDrawer } from '../frame-drawer.js';
 import { renderSource, type RenderResult } from '../render-job.js';
@@ -13,6 +14,7 @@ import {
   DEV_REACT_OPTION,
   ENTRY,
   OUTPUT_OPTION,
+  PREFERRED_EFFECT_BACKEND_OPTION,
   STRICT_OPTION,
   ensureParentDir,
   newRenderer,
@@ -27,7 +29,7 @@ export const still: Command = {
   summary: 'Render one frame to a PNG',
   project: true,
   positionals: [ENTRY, { name: 'frame', type: 'number', description: 'Frame number, from 0' }],
-  options: [OUTPUT_OPTION, STRICT_OPTION, DEV_REACT_OPTION],
+  options: [OUTPUT_OPTION, STRICT_OPTION, PREFERRED_EFFECT_BACKEND_OPTION, DEV_REACT_OPTION],
   async run(args, context) {
     const restoreReact = setReactMode(args.options['dev-react'] === true);
     let source;
@@ -84,6 +86,7 @@ export const render: Command = {
     ...EXPORT_FLAGS,
     { name: 'concurrency', type: 'number', description: 'Frames drawn at once, in worker threads (default: half the cores, at most 4; 1 draws every frame in the main thread; a .json scene is drawn whole)' },
     STRICT_OPTION,
+    PREFERRED_EFFECT_BACKEND_OPTION,
     DEV_REACT_OPTION,
   ],
   async run(args, context) {
@@ -116,6 +119,7 @@ export const render: Command = {
         export: flags.export,
         everyNthFrame: flags.everyNthFrame,
         devReact,
+        preferredEffectBackend: parsePreferredEffectBackend(args.options['preferred-effect-backend']),
         strict: args.options.strict === true,
         concurrency,
         progress: context.progress,

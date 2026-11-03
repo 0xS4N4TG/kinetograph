@@ -195,6 +195,9 @@ pub struct Pipeline {
     pub vertex: VertexState,
     pub fragment: Option<FragmentState>,
     pub primitive: Primitive,
+    /// `multisample.count`.
+    #[serde(default = "one")]
+    pub samples: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -239,6 +242,9 @@ pub struct Texture {
     #[serde(default = "one")]
     pub mips: u32,
     pub format: String,
+    /// 4 for a multisampled texture: a pass draws into it and resolves it into another texture.
+    #[serde(default = "one")]
+    pub samples: u32,
 }
 
 /// A `GPUSamplerDescriptor` without the comparison (depth textures are not drawn).
@@ -350,6 +356,9 @@ pub struct Pass {
     /// The texture drawn into; none is the canvas.
     #[serde(default)]
     pub target: Option<PassTarget>,
+    /// A multisampled `target` resolves into this level of another texture when the pass ends.
+    #[serde(default)]
+    pub resolve: Option<PassTarget>,
     /// The clear colour; none loads what the canvas (or the texture) holds.
     pub clear: Option<[f64; 4]>,
     #[serde(default)]
@@ -853,6 +862,9 @@ fn level_of(texture: &Texture, id: &str, level: u32) -> Result<(u32, u32), Strin
 /// A view of the texture: its levels are the texture's.
 fn view_of(content: &WebGpuContent, view: &TextureView) -> Result<(), String> {
     let texture = texture_of(content, &view.id)?;
+    if texture.samples != 1 {
+        return Err(format!("a view of the multisampled texture {}, which no shader binds", view.id));
+    }
     let end = view.base_mip.checked_add(view.mips).ok_or("a view's mip range overflows")?;
     if view.mips == 0 || end > texture.mips {
         return Err(format!("a view of the levels {}..{end} of the texture {}, which has {}", view.base_mip, view.id, texture.mips));
@@ -914,7 +926,12 @@ pub fn validate_with(content: &WebGpuContent, limits: &Limits) -> Result<(), Str
     }
     let mut total = 0u64;
     for (id, texture) in &content.textures {
-        let bytes = texture_bytes(texture, max_dim).map_err(|e| format!("texture {id}: {e}"))?;
+        if texture.samples != 1 && (texture.samples != 4 || texture.mips != 1) {
+            return Err(format!("texture {id}: {} samples and {} levels; a texture has 1 sample, or 4 and one level", texture.samples, texture.mips));
+        }
+        let bytes = texture_bytes(texture, max_dim)
+            .map_err(|e| format!("texture {id}: {e}"))?
+            .saturating_mul(u64::from(texture.samples));
         total = total.checked_add(bytes).ok_or("the textures together overflow")?;
     }
     let cap = max_texture_bytes(max_dim);
@@ -1118,7 +1135,16 @@ fn validate_step(content: &WebGpuContent, step: &Step, limits: &Limits, dispatch
         Step::Render(pass) => {
             if let Some(target) = &pass.target {
                 let texture = texture_of(content, &target.texture)?;
-                level_of(texture, &target.texture, target.mip)?;
+                let (width, height) = level_of(texture, &target.texture, target.mip)?;
+                if let Some(resolve) = &pass.resolve {
+                    let to = texture_of(content, &resolve.texture)?;
+                    let (w, h) = level_of(to, &resolve.texture, resolve.mip)?;
+                    if texture.samples == 1 || to.samples != 1 || to.format != texture.format || (w, h) != (width, height) {
+                        return Err(format!("a pass resolves {} into {}: the first is multisampled and the second is not, of its size and format", target.texture, resolve.texture));
+                    }
+                }
+            } else if pass.resolve.is_some() {
+                return Err("a pass resolves the canvas".into());
             }
             if let Some(clear) = pass.clear
                 && !clear.iter().all(|c| c.is_finite())
@@ -1301,6 +1327,7 @@ mod tests {
             height,
             mips,
             format: format.into(),
+            samples: 1,
         }
     }
 
@@ -1471,16 +1498,47 @@ mod tests {
     }
 
     #[test]
+    fn a_multisampled_pass_resolves_into_a_texture_of_its_size_and_format() {
+        let pass = |target: &str, resolve: Option<&str>| {
+            Step::Render(Pass {
+                target: Some(PassTarget { texture: target.into(), mip: 0 }),
+                resolve: resolve.map(|r| PassTarget { texture: r.into(), mip: 0 }),
+                clear: None,
+                commands: Vec::new(),
+            })
+        };
+        let mut c = WebGpuContent::default();
+        c.textures.insert("m".into(), Texture { samples: 4, ..texture(8, 4, 1, "rgba8unorm") });
+        c.textures.insert("r".into(), texture(8, 4, 1, "rgba8unorm"));
+        c.textures.insert("small".into(), texture(4, 4, 1, "rgba8unorm"));
+        c.textures.insert("srgb".into(), texture(8, 4, 1, "rgba8unorm-srgb"));
+        c.passes.push(pass("m", Some("r")));
+        assert!(validate(&c, 8192).is_ok());
+        let refuse = |step: Step| {
+            let mut c = c.clone();
+            c.passes.push(step);
+            validate(&c, 8192).unwrap_err()
+        };
+        for step in [pass("r", Some("m")), pass("m", Some("small")), pass("m", Some("srgb")), pass("r", Some("r"))] {
+            assert!(refuse(step).contains("resolves"));
+        }
+        let canvas = Step::Render(Pass { target: None, resolve: Some(PassTarget { texture: "r".into(), mip: 0 }), clear: None, commands: Vec::new() });
+        assert!(refuse(canvas).contains("resolves the canvas"));
+        c.textures.insert("odd".into(), Texture { samples: 3, ..texture(8, 4, 1, "rgba8unorm") });
+        assert!(validate(&c, 8192).unwrap_err().contains("3 samples"));
+    }
+
+    #[test]
     fn a_pass_target_and_a_bound_view_name_levels_that_exist() {
         let mut c = recording();
-        c.passes.push(Step::Render(Pass {
+        c.passes.push(Step::Render(Pass { resolve: None,
             target: Some(PassTarget { texture: "t".into(), mip: 2 }),
             clear: Some([0.0; 4]),
             commands: Vec::new(),
         }));
         assert!(validate(&c, 8192).is_ok());
         refused(
-            Step::Render(Pass {
+            Step::Render(Pass { resolve: None,
                 target: Some(PassTarget { texture: "t".into(), mip: 3 }),
                 clear: None,
                 commands: Vec::new(),
@@ -1488,7 +1546,7 @@ mod tests {
             "mip level 3",
         );
         refused(
-            Step::Render(Pass {
+            Step::Render(Pass { resolve: None,
                 target: Some(PassTarget { texture: "gone".into(), mip: 0 }),
                 clear: None,
                 commands: Vec::new(),
@@ -1496,7 +1554,7 @@ mod tests {
             "texture gone",
         );
         refused(
-            Step::Render(Pass {
+            Step::Render(Pass { resolve: None,
                 target: None,
                 clear: Some([f64::NAN, 0.0, 0.0, 0.0]),
                 commands: Vec::new(),
@@ -1569,7 +1627,7 @@ mod tests {
     fn too_many_steps_are_refused() {
         let mut c = recording();
         for _ in 0..=MAX_STEPS {
-            c.passes.push(Step::Render(Pass { target: None, clear: None, commands: Vec::new() }));
+            c.passes.push(Step::Render(Pass { resolve: None, target: None, clear: None, commands: Vec::new() }));
         }
         assert!(validate(&c, 8192).unwrap_err().contains("steps in a frame"));
     }
@@ -2056,7 +2114,7 @@ mod tests {
     fn a_render_pass_binds_groups_the_recording_holds() {
         let mut c = compute_recording();
         let bind = |index: u32, group: &str| {
-            Step::Render(Pass {
+            Step::Render(Pass { resolve: None,
                 target: None,
                 clear: None,
                 commands: vec![Command::Bind { index, group: group.into(), offsets: vec![] }],

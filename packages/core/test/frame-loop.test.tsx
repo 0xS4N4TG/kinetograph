@@ -152,6 +152,22 @@ describe('the frame loop', () => {
     expect('margin' in scene).toBe(false);
   });
 
+  it('blends in sRGB unless the composition asks for linear light', async () => {
+    registerRoot(() => (
+      <>
+        <Composition id="Default" component={Mover} width={100} height={50} fps={24} durationInFrames={10} />
+        <Composition id="Srgb" component={Mover} width={100} height={50} fps={24} durationInFrames={10} blendSpace="srgb" />
+        <Composition id="Linear" component={Mover} width={100} height={50} fps={24} durationInFrames={10} blendSpace="linear" />
+      </>
+    ));
+    // The engine's default is sRGB, so the scene says nothing unless it asks for linear.
+    expect('blendSpace' in (await createFrameRenderer('Default').renderFrame(1)).scene).toBe(false);
+    expect('blendSpace' in (await createFrameRenderer('Srgb').renderFrame(1)).scene).toBe(false);
+    expect((await createFrameRenderer('Linear').renderFrame(1)).scene.blendSpace).toBe('linear');
+    registerRoot(() => <Composition id="Bad" component={Mover} width={10} height={10} fps={30} durationInFrames={5} blendSpace={'p3' as 'srgb'} />);
+    expect(() => getCompositions()).toThrow(/"blendSpace" of composition "Bad"/);
+  });
+
   it('rejects a margin that is not a whole number of pixels', () => {
     for (const margin of [-1, 4.5, Number.NaN, '4']) {
       registerRoot(() => (

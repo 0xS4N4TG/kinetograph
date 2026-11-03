@@ -121,7 +121,7 @@ class Renderer implements FrameRenderer {
 
   private async drawFrame(frame: number): Promise<FrameResult> {
     if (this.disposed) throw new Error('This FrameRenderer was disposed');
-    const { config, component, margin, background } = await this.readyPromise;
+    const { config, component, margin, background, blendSpace } = await this.readyPromise;
     if (!Number.isInteger(frame) || frame < 0 || frame >= config.durationInFrames) {
       throw new RangeError(
         `Frame ${frame} is outside composition "${config.id}", which has ${config.durationInFrames} frames (0 to ${config.durationInFrames - 1})`,
@@ -248,8 +248,8 @@ class Renderer implements FrameRenderer {
       layers,
     };
     if (main.camera !== null) sceneJson.camera = main.camera;
-    // DOM islands are painted for CSS's sRGB compositing; the scene that holds them must say so.
-    if (main.blendSpace === 'srgb') sceneJson.blendSpace = 'srgb';
+    // Layers blend in sRGB unless the composition asks for linear light.
+    if (blendSpace === 'linear') sceneJson.blendSpace = 'linear';
     // The scene's margin is the largest of the composition's and what the DOM islands' blurs need.
     const needed = Math.max(margin ?? 0, main.margin ?? 0);
     if (margin !== undefined || needed > 0) sceneJson.margin = needed;

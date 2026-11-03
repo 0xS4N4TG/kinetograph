@@ -58,7 +58,7 @@ Every layer has these fields:
 | `layoutItem` | object | none | How the layer takes part in its parent group's flex layout. See [Layout](#layout). |
 | `transform` | object | identity | See below. |
 | `opacity` | number | `1` | Clamped to 0..1. |
-| `blendMode` | string | `normal` | `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `colorDodge`, `colorBurn`, `hardLight`, `softLight`, `difference`, `exclusion`, `hue`, `saturation`, `color`, `luminosity`. These are the 16 modes of W3C Compositing and Blending Level 1, evaluated in linear light, then mixed in with the layer's `opacity`. |
+| `blendMode` | string | `normal` | `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `colorDodge`, `colorBurn`, `hardLight`, `softLight`, `difference`, `exclusion`, `hue`, `saturation`, `color`, `luminosity`. These are the 16 modes of W3C Compositing and Blending Level 1, evaluated in the scene's [blend space](#blend-space) (sRGB unless it says `linear`), then mixed in with the layer's `opacity`. |
 | `effects` | array | `[]` | Applied in order to the layer's own pixels, before it is blended. See [Effects](#effects). |
 | `clip` | object | none | Cuts the layer to a shape. See [Clip paths](#clip-paths). |
 | `mask` | object | none | Fades the layer by a gradient. See [Gradient masks](#gradient-masks). |
@@ -104,8 +104,8 @@ origin offset whatever `rotation` and `scale` do. The matrix is
 - A text layer's box is its laid-out box, so measuring it needs its font: a scene with an origin on text is resolved with
   the renderer's text engine.
 
-Layers are blended bottom-up in linear light (not in sRGB as CSS does, so `multiply`, `screen` and `softLight` look
-different from a browser).
+Layers are blended bottom-up in sRGB, like a browser. Set `blendSpace: 'linear'` for linear-light blending (see
+[Blend space](#blend-space)).
 
 ### shape
 
@@ -515,7 +515,7 @@ Nobody writes this by hand: `<GlslShader>` and `glslShader()` make it from a fra
 | `width`, `height` | required | Animatable, not negative. The drawing buffer's size in pixels (rounded). |
 | `programs` | `{}` | By id: `vertex` and `fragment` (GLSL ES 100, or 300 es with `#version 300 es`) and the `attributes` (name to location) the link gave the vertex shader. |
 | `buffers` | `{}` | By id: base64 bytes. |
-| `textures` | `{}` | By id: `src` (a picture file of the scene or a `data:` URL), `pixels` (base64 straight-alpha RGBA8 with `width` and `height`) or `layer` (a shader group's child), `flipY`, `premultiply` (as `UNPACK_FLIP_Y_WEBGL` and `UNPACK_PREMULTIPLY_ALPHA_WEBGL` were when it was uploaded), `mipmaps` (`generateMipmap` was called) and `patches` (`texSubImage2D` since: each `x`, `y`, `width`, `height`, one of `src`, `pixels` or `layer`, and its own `flipY` and `premultiply`, laid over the picture in order). `target: true` with `width` and `height` and no pixels is a render target (below): `format` `depth`, `stencil` or `depthStencil` for a depth or stencil buffer (colour without), `levels` for a colour one with mip levels, `luminance` for a WebGL 1 depth texture. |
+| `textures` | `{}` | By id: `src` (a picture file of the scene or a `data:` URL), `pixels` (base64 straight-alpha RGBA8 with `width` and `height`) or `layer` (a shader group's child), `flipY`, `premultiply` (as `UNPACK_FLIP_Y_WEBGL` and `UNPACK_PREMULTIPLY_ALPHA_WEBGL` were when it was uploaded), `mipmaps` (`generateMipmap` was called) and `patches` (`texSubImage2D` since: each `x`, `y`, `width`, `height`, one of `src`, `pixels` or `layer`, and its own `flipY` and `premultiply`, laid over the picture in order). `target: true` with `width` and `height` and no pixels is a render target (below): `format` `depth`, `stencil` or `depthStencil` for a depth or stencil buffer (colour without), `levels` for a colour one with mip levels, `luminance` for a WebGL 1 depth texture. `depth` makes a 3D texture (`texImage3D`, WebGL 2): `width` x `height` x `depth` texels, in `pixels` (RGBA8) or `floats`; its sampler adds `wrapR`. `floats` (base64 `f32`s, four a texel) is also a 2D float texture (`texImage2D` of `R32F`, `RGBA16F` and the other float formats): kept as half floats, or in full with `float32`, which like a browser samples only `NEAREST` (any other filter reads black). |
 | `ops` | `[]` | In order. A `clear` (`color`: r, g, b, a; `depth`: the value the depth buffer is cleared to; `stencil`: the stencil's; any of them) of the drawing buffer that takes the colour throws away every draw to the drawing buffer before it (unless a `blit` reads the drawing buffer in between, or the draws tested depth or stencil and the clear leaves that buffer). A `draw` runs one program. Both say where they go: nothing for the drawing buffer; for a framebuffer `target` (the colour attachment of output 0, at `level`), or `outputs` (the attachments of outputs 0 and up, `{ "target", "level" }` or `null` for `NONE`), and `depthStencil` (the target that is its depth or stencil buffer, which the ops that test or clear depth and stencil name). A `blit` (`blitFramebuffer`) copies `from` `[x0, y0, x1, y1]` of `src` (a target at `srcLevel`, or the drawing buffer without one) over `to` of `target` (same, at `level`), `linear` for `LINEAR`, with the `scissor` if the test was on; reversed corners mirror. With `aspect` (`depth`, `stencil` or `depthStencil`) it copies those buffers instead, texel for texel, and `src` and `target` name depth and stencil targets (the drawing buffer's without one). An `upload` (`texSubImage2D`) writes `pixels` (base64 straight-alpha RGBA8, `width` x `height`), a picture file `src` or a child `layer` (`flipY` and `premultiply` as the unpack flags were) at `x`, `y` of a target, in order with the draws. |
 | `premultipliedAlpha`, `alpha` | `true` | The context's attributes of those names: what the buffer holds is read as premultiplied (or straight) colour; `alpha: false` makes it opaque. |
 | `depth`, `stencil` | `true`, `false` | The context's attributes of those names: whether the drawing buffer has a depth buffer and a stencil buffer. |
@@ -537,11 +537,12 @@ was off or the buffer has no stencil). Each unit's sampler also has `maxLevel` w
 How it is drawn:
 
 - The program is read by naga's GLSL frontend after a rewrite to the Vulkan flavour it reads (`attribute`, `varying`
-  and `in`/`out` get locations, loose uniforms become one block, a `sampler2D` becomes a texture and a sampler,
+  and `in`/`out` get locations, loose uniforms become one block, a `sampler2D` or `sampler3D` becomes a texture and a sampler,
   `gl_FragColor` an output). `gl_FragCoord` counts up from the bottom row and clip depth is taken from GL's -w..w to
   wgpu's 0..w, so the shaders mean what they mean in a browser. Arrays of scalars and of `vec2`, `bool` and `mat2`
   uniforms travel packed (naga and Metal lay them out differently). A shader naga cannot read fails when the scene
-  loads, with the line of the page's source (`layer "sky": glsl program "p": fragment shader: 3:15: ...`).
+  loads, with the line of the page's source (`layer "sky": glsl program "p": fragment shader: 3:15: ...`). A vertex
+  shader can read textures; its `texture` calls read level 0, as in GL, and a sampler both stages declare is one unit.
 - A draw with `depth` is tested against a 32-bit float depth buffer: the drawing buffer's, or the `depthStencil` target
   its framebuffer names (shared by every framebuffer that attaches it), 1 until cleared and not carried from one frame
   to the next. Window depth is clip depth taken from -w..w to 0..1 and then through `near` and `far`; `polygonOffset`
@@ -582,12 +583,13 @@ point's number in a draw of points; `gl_InstanceID` the instance's. Instanced po
 
 Not drawn, and reported as `unsupported:` with what to do instead (never accepted and ignored):
 multisampled renderbuffers, `readPixels`, lines, instanced points, a `vertexAttribDivisor` above 1, integer and
-constant (`vertexAttrib`) attributes, cube map, 3D and array textures, float and sRGB textures, pixels uploaded to
+constant (`vertexAttrib`) attributes, cube map and array textures, sRGB textures, float textures from a picture, a float texture as a render target or a `texSubImage2D` target, pixels uploaded to
 texture levels other than 0 (call `generateMipmap`), uniform blocks and struct uniforms, array outputs, a framebuffer
-texture that is not RGBA or holds uploaded pixels, attachments of different sizes in one framebuffer, a texture read in
-the vertex shader, `drawImage` or `toDataURL` of a WebGL canvas. Edges are not multisampled (a browser's default
-`antialias: true` smooths them); a full-screen quad has none. The context keeps the rules a multisampled canvas has in
-Chrome, though: with `antialias`, `blitFramebuffer` into the canvas, or out of it into a rectangle of another size,
+texture that is not RGBA or holds uploaded pixels, attachments of different sizes in one framebuffer, `drawImage` or `toDataURL` of a WebGL canvas. With `antialias: true` (the default) the canvas is
+4x multisampled, so the edges of what is drawn into it are smooth as in Chrome (a framebuffer of your own is not
+multisampled). A context that blits into the canvas, or copies its depth or stencil, is drawn without multisampling.
+The context keeps the rules a multisampled canvas has in
+Chrome: with `antialias`, `blitFramebuffer` into the canvas, or out of it into a rectangle of another size,
 sets `INVALID_OPERATION`. The shaders' maths is the GPU's: a `sin` of a large
 argument can differ from Chrome's last digits.
 
@@ -652,7 +654,7 @@ pass, no `layout`, and is not `preserve3d`. A `layer` source outside such a grou
 
 The group is drawn by the wgpu path (Skia counts it as a fallback, "canvas group"): the children are drawn as layers,
 and Skia draws the canvas's commands with each child's texture as the image of its `layer` source (shadows and filters
-included). A pattern of a `layer` source repeats the child's picture as a pattern of any canvas does. `getImageData` of a layer picture is not available to a script.
+included). A pattern of a `layer` source repeats the child's picture as a pattern of any canvas does. `renderCanvas` takes `layers` (the layers the commands name, drawn as the children of a canvas pass at `frame`, `fps` and `durationInFrames`), which is how `getImageData` of a canvas that drew a layer picture reads it inside an effect.
 
 ### scene3d
 
@@ -1816,7 +1818,7 @@ Common fields:
 | `tile` | none | Paint the gradient in one tile and repeat the tile, which is CSS `background-repeat` of a gradient: `{ "x", "y", "width", "height", "spaceX", "spaceY", "repeatX", "repeatY" }`. The tile is `width` x `height` with its top-left corner at (`x`, `y`) (default 0) in the painted layer's space, and the gradient's coordinates are the tile's: (0, 0) at its corner, `box` units fractions of the tile. It repeats every `width + spaceX` (`height + spaceY`; the spaces default to 0) along the axes with `repeatX` / `repeatY`; along the others there is the one tile. Any number of tiles costs one shape: the tile is drawn once and repeated by the paint, at any fractional period. The DOM painter writes it for `background-repeat` (`repeat`, `round` and `space`) with more than 150 tiles of a gradient. |
 
 Colours blend in sRGB with premultiplied alpha, as in CSS, so a stop fading to `#ffffff00` fades to transparent white
-and not through grey. (Layers themselves are still blended in linear light.) A gradient with no extent paints the last
+and not through grey. A gradient with no extent paints the last
 stop's colour everywhere: a linear gradient whose two points coincide, a radial one with `r` 0, or a repeating one
 whose first and last stop have the same offset. The ramp between stops is sampled at 512 steps.
 
@@ -2236,11 +2238,14 @@ file, or a `data:` URL, which is decoded from memory (an `image` layer's `src` c
 
 ### Blend space
 
-The scene's `"blendSpace"` is `"linear"` (default, as always) or `"srgb"`. In `srgb` every layer is composited, and
-every blend mode evaluated, on sRGB-encoded values as CSS does: a half-transparent black over white is mid grey (128)
-and not light grey (188), a translucent shadow is as dark as a browser's, and `multiply` and `screen` give a browser's
-numbers. Blurs, colour filters and everything inside one layer are unchanged. The DOM painter's output asks for
-`srgb` (`IslandOutput::blend_space`).
+Layers blend in sRGB, like a browser. Set `blendSpace: 'linear'` for linear-light blending.
+
+The scene's `"blendSpace"` is `"srgb"` (default) or `"linear"`. In `srgb` every layer is composited, and every blend
+mode evaluated, on sRGB-encoded values as CSS does: a half-transparent black over white is mid grey (128) and not
+light grey (188), a translucent shadow is as dark as a browser's, and `multiply` and `screen` give a browser's numbers.
+Blurs, colour filters and everything inside one layer are unchanged. `linear` composites in linear light, which is
+physically right but not what Chrome does. A Remotion `<Composition>` takes the same value as its `blendSpace` prop.
+In an `srgb` scene a `luminance` mask or matte weighs the encoded colour, as `srgbLuminance` does.
 
 ## Limits in this version
 

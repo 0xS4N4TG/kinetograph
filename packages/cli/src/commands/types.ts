@@ -3,6 +3,7 @@ import type { Renderer } from '@kinetographdev/native';
 import { dirname, join } from 'node:path';
 import type { OptionSpec, ParsedArgs, PositionalSpec } from '../args.js';
 import { PROJECT_OPTIONS } from '../args.js';
+import { PREFERRED_EFFECT_BACKEND_OPTION, parsePreferredEffectBackend, setPreferredEffectBackend } from '../effects.js';
 import { native } from '../native.js';
 import { setOffline } from '../prefetch.js';
 import { openSource, projectRootOf, type OpenOptions, type Source } from '../source.js';
@@ -49,6 +50,8 @@ export const STRICT_OPTION: OptionSpec = {
   description: 'Fail on a frame holding content the engine cannot draw (Remotion compat), instead of drawing it without and warning',
 };
 
+export { PREFERRED_EFFECT_BACKEND_OPTION };
+
 /** `--dev-react`, on the commands that run a project to render it (packages/cli/skills/kinetograph/references/AUTHORING.md §9). */
 export const DEV_REACT_OPTION: OptionSpec = {
   name: 'dev-react',
@@ -77,6 +80,8 @@ export function allOptions(command: Command): OptionSpec[] {
 export function openFromArgs(args: ParsedArgs, extra: Pick<OpenOptions, 'unsupportedImports'> = {}): Promise<Source> {
   const offline = args.options.offline === true;
   setOffline(offline);
+  // Before the project loads: a project that sets `window.remotion_preferredEffectBackend` itself has the last word.
+  setPreferredEffectBackend(parsePreferredEffectBackend(args.options['preferred-effect-backend']));
   return openSource(String(args.positionals.entry), {
     offline,
     // The pre-download step speaks on stderr, unless the command prints JSON.

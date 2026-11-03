@@ -746,8 +746,10 @@ Mapping onto the engine:
     and `flipSourceY` is `true` (every source is a canvas as the DOM holds it): upload with
     `gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, flipSourceY)`. WebGL 2 targets are made as Remotion's pool makes them
     (`premultipliedAlpha`, `preserveDrawingBuffer`, `UNPACK_PREMULTIPLY_ALPHA_WEBGL` on). A 2D effect draws the source
-    with `ctx.drawImage(source, ...)`, filters, shadows, clips and composite operations included; `getImageData` of the
-    source is not available. **State:** a frame is a function of the frame, so `setup(target)`, `apply` and
+    with `ctx.drawImage(source, ...)`, filters, shadows, clips and composite operations included; `getImageData` of a
+    canvas it drew `source` on returns the pixels of the layer (the source is drawn by the renderer, so the effect waits
+    for the frame's commit, which costs one more draw of the layer: the `tile`, 2D `brightness` and `contrast` and
+    `outline` effects read it); an effect that cannot read it is drawn without and reported. **State:** a frame is a function of the frame, so `setup(target)`, `apply` and
     `cleanup(state)` run in that order for every frame on a canvas that starts empty; Remotion keeps `setup`'s state from
     frame to frame, which differs only for an effect whose picture depends on what earlier frames left in it. A
     `webgpu` effect runs on a recording device (`gpuDevice`) and canvas: copy the picture with

@@ -71,6 +71,10 @@ pub struct GlslContent {
     /// The context's `stencil` attribute: whether it has a stencil buffer.
     #[serde(default)]
     pub stencil: bool,
+    /// The context's `antialias` attribute: the drawing buffer is multisampled (4 samples, as a browser's is), so the
+    /// edges of what is drawn into it are partly covered.
+    #[serde(default)]
+    pub antialias: bool,
     /// By id.
     #[serde(default)]
     pub programs: BTreeMap<String, GlslProgram>,
@@ -141,6 +145,16 @@ pub struct GlslTexture {
     /// `texSubImage2D` of pictures over parts of an uploaded texture, in order.
     #[serde(default)]
     pub patches: Vec<GlslPatch>,
+    /// A 3D texture (`texImage3D`): the number of layers it is `width` x `height`; 0 for a 2D one. Its
+    /// texels are `pixels` (RGBA8, `width * height * depth * 4` bytes, x fastest, then y, then z) or `floats`.
+    #[serde(default)]
+    pub depth: u32,
+    /// A float texture, 2D or 3D (`R32F`, `RGBA16F`, ...): base64 little-endian `f32`s, four for each texel,
+    /// kept as half floats, or in full with `float32`.
+    pub floats: Option<String>,
+    /// The floats are of a 32-bit format: they are kept in full, and a browser filters them with `NEAREST` only.
+    #[serde(default)]
+    pub float32: bool,
 }
 
 /// What a depth or stencil target holds.
@@ -438,6 +452,9 @@ pub struct GlslSampler {
     pub wrap_s: String,
     #[serde(default = "repeat")]
     pub wrap_t: String,
+    /// `TEXTURE_WRAP_R`, for a 3D texture.
+    #[serde(default = "repeat")]
+    pub wrap_r: String,
     /// `TEXTURE_MAX_LEVEL`, when it was set: the last level sampling reads.
     pub max_level: Option<u32>,
 }
@@ -766,12 +783,28 @@ impl PackedArray {
 #[derive(Clone, Debug, Default)]
 pub struct Varyings(pub BTreeMap<String, (u32, String)>);
 
+/// What a sampler reads: a 2D texture or a 3D one (`sampler3D`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SamplerDim {
+    D2,
+    D3,
+}
+
+/// A sampler uniform of one stage, with the slot it holds in the program: the stages of a program
+/// share their samplers, so a name binds at the same place in both.
+#[derive(Clone, Debug)]
+struct SamplerDecl {
+    name: String,
+    dim: SamplerDim,
+    slot: u32,
+}
+
 #[derive(Debug)]
 struct Rewritten {
     source: String,
     uniforms: Vec<UniformDecl>,
-    /// The `sampler2D` uniforms, in binding order.
-    samplers: Vec<String>,
+    /// The `sampler2D` and `sampler3D` uniforms this stage declares.
+    samplers: Vec<SamplerDecl>,
     /// The `bool` uniforms: name, GLSL type.
     bools: Vec<(String, String)>,
     /// The `mat2` uniforms (naga cannot lay out a `matCx2` in a uniform
@@ -801,6 +834,8 @@ struct RewriteInput<'a> {
     flip_y: bool,
     /// The program draws points: each is a quad of six vertices, one instance.
     points: bool,
+    /// The program's sampler uniforms by name, in slot order; the first stage to declare one adds it.
+    slots: &'a mut Vec<(String, SamplerDim)>,
 }
 
 /// What a word of code is renamed by: the stage and how the program is drawn.
@@ -848,6 +883,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         varyings,
         flip_y,
         points,
+        slots,
     } = input;
     let src = strip_comments(src);
     let fragment = stage == ShaderStage::Fragment;
@@ -875,7 +911,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
     let mut next_varying = 0u32;
     let mut has_out = false;
     let mut uses_point_size = false;
-    let mut declared_samplers: Vec<String> = Vec::new();
+    let mut declared_samplers: Vec<(String, SamplerDim)> = Vec::new();
 
     // First pass over the whole text to learn the sampler names, so that a
     // use can precede nothing (declarations come first in GLSL) but a
@@ -909,6 +945,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
                     has_out: &mut has_out,
                     uses_point_size: &mut uses_point_size,
                     points,
+                    slots,
                 },
             )?;
             let name = directive.trim_start();
@@ -946,6 +983,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
             has_out: &mut has_out,
             uses_point_size: &mut uses_point_size,
             points,
+            slots,
         },
     )?;
     // The text ended with the newline added to its last line.
@@ -997,10 +1035,14 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
             "layout(set=0, binding={binding}) uniform _KU {{ {members}}}; "
         ));
     }
-    for (i, name) in r.samplers.iter().enumerate() {
-        let b = 2 + 2 * i;
+    for SamplerDecl { name, dim, slot } in &r.samplers {
+        let b = 2 + 2 * slot;
+        let texture = match dim {
+            SamplerDim::D2 => "texture2D",
+            SamplerDim::D3 => "texture3D",
+        };
         prelude.push_str(&format!(
-            "layout(set=0, binding={b}) uniform texture2D _k_t_{name}; \
+            "layout(set=0, binding={b}) uniform {texture} _k_t_{name}; \
              layout(set=0, binding={}) uniform sampler _k_s_{name}; ",
             b + 1
         ));
@@ -1127,11 +1169,27 @@ struct Ctx<'a, 'b> {
     has_out: &'b mut bool,
     uses_point_size: &'b mut bool,
     points: bool,
+    slots: &'b mut Vec<(String, SamplerDim)>,
+}
+
+/// The call that reads level 0 in place of the sampling function `word`, if it is one a vertex
+/// shader cannot use as it is.
+fn implicit_lod(word: &str) -> Option<&'static str> {
+    match word {
+        "texture" | "texture2D" => Some("textureLod"),
+        "textureProj" | "texture2DProj" => Some("textureProjLod"),
+        _ => None,
+    }
 }
 
 /// A directive other than `#version` and `#extension`: its words go through
 /// the same renaming as code (`#define SAMPLE(uv) texture2D(tex, uv)`).
-fn rewrite_directive(text: &str, samplers: &[String], mode: Mode, r: &mut Rewritten) -> String {
+fn rewrite_directive(
+    text: &str,
+    samplers: &[(String, SamplerDim)],
+    mode: Mode,
+    r: &mut Rewritten,
+) -> String {
     let toks = tokenize(text);
     let mut out = String::new();
     let mut last = 0;
@@ -1167,7 +1225,12 @@ fn rewrite_directive(text: &str, samplers: &[String], mode: Mode, r: &mut Rewrit
 }
 
 /// What a word of code becomes, if it is renamed.
-fn rename(word: &str, prev: Option<&str>, samplers: &[String], mode: Mode) -> Option<String> {
+fn rename(
+    word: &str,
+    prev: Option<&str>,
+    samplers: &[(String, SamplerDim)],
+    mode: Mode,
+) -> Option<String> {
     let Mode { fragment, points } = mode;
     if prev == Some(".") {
         return None;
@@ -1187,8 +1250,11 @@ fn rename(word: &str, prev: Option<&str>, samplers: &[String], mode: Mode) -> Op
         "gl_InstanceID" if !fragment && points => "0".into(),
         "gl_InstanceID" if !fragment => "int(gl_InstanceIndex)".into(),
         "gl_PointCoord" if fragment => "_k_PointCoord".into(),
-        w if samplers.iter().any(|s| s == w) => format!("sampler2D(_k_t_{w}, _k_s_{w})"),
-        _ => return None,
+        w => match samplers.iter().find(|(name, _)| name == w) {
+            Some((_, SamplerDim::D2)) => format!("sampler2D(_k_t_{w}, _k_s_{w})"),
+            Some((_, SamplerDim::D3)) => format!("sampler3D(_k_t_{w}, _k_s_{w})"),
+            None => return None,
+        },
     })
 }
 
@@ -1197,7 +1263,7 @@ fn flush_chunk(
     body: &mut String,
     depth: &mut i32,
     r: &mut Rewritten,
-    samplers: &mut Vec<String>,
+    samplers: &mut Vec<(String, SamplerDim)>,
     ctx: &mut Ctx<'_, '_>,
 ) -> std::result::Result<(), String> {
     if chunk.is_empty() {
@@ -1217,11 +1283,38 @@ fn rewrite_chunk(
     text: &str,
     depth: &mut i32,
     r: &mut Rewritten,
-    samplers: &mut Vec<String>,
+    samplers: &mut Vec<(String, SamplerDim)>,
     ctx: &mut Ctx<'_, '_>,
 ) -> std::result::Result<String, String> {
     let fragment = ctx.stage == ShaderStage::Fragment;
     let toks = tokenize(text);
+    // A vertex shader has no derivatives: its `texture` calls read level 0, so each gets the argument
+    // naga wants. `lod_close` holds the tokens of the `)` that close such calls.
+    let mut lod_close = std::collections::HashSet::new();
+    if !fragment {
+        for (k, t) in toks.iter().enumerate() {
+            if t.kind == Kind::Ident
+                && implicit_lod(word(text, t)).is_some()
+                && toks.get(k + 1).map(|t| word(text, t)) == Some("(")
+                && k.checked_sub(1).map(|p| word(text, &toks[p])) != Some(".")
+            {
+                let mut depth = 0;
+                for (m, t) in toks.iter().enumerate().skip(k + 1) {
+                    match word(text, t) {
+                        "(" => depth += 1,
+                        ")" => {
+                            depth -= 1;
+                            if depth == 0 {
+                                lod_close.insert(m);
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
     let mut out = String::new();
     let mut last = 0usize;
     let mut i = 0usize;
@@ -1232,15 +1325,27 @@ fn rewrite_chunk(
                 to: usize,
                 r: &mut Rewritten,
                 ctx: &mut Ctx<'_, '_>,
-                samplers: &[String]| {
+                samplers: &[(String, SamplerDim)]| {
         let mut k = from;
         while k < to {
             let t = &toks[k];
             out.push_str(&text[*last..t.start]);
+            if lod_close.contains(&k) {
+                out.push_str(", 0.0");
+            }
             *last = t.end;
             let w = word(text, t);
             let prev = k.checked_sub(1).map(|p| word(text, &toks[p]));
             if t.kind == Kind::Ident {
+                if !fragment
+                    && prev != Some(".")
+                    && toks.get(k + 1).map(|t| word(text, t)) == Some("(")
+                    && let Some(lod) = implicit_lod(w)
+                {
+                    out.push_str(lod);
+                    k += 1;
+                    continue;
+                }
                 if w == "gl_FragData" {
                     // `gl_FragData[0]`.
                     if toks.get(k + 1).map(|t| word(text, t)) == Some("[")
@@ -1391,7 +1496,7 @@ fn declaration(
     stmt: &[Tok],
     has_body: bool,
     r: &mut Rewritten,
-    samplers: &mut Vec<String>,
+    samplers: &mut Vec<(String, SamplerDim)>,
     ctx: &mut Ctx<'_, '_>,
 ) -> std::result::Result<Option<String>, String> {
     let fragment = ctx.stage == ShaderStage::Fragment;
@@ -1509,15 +1614,36 @@ fn declaration(
     match storage {
         "uniform" => {
             for (name, array) in declared.names {
-                if ty == "sampler2D" {
+                if ty == "sampler2D" || ty == "sampler3D" {
                     if array.is_some() {
                         return Err(unsupported(format!("`{name}`: an array of samplers")));
                     }
-                    r.samplers.push(name.clone());
-                    samplers.push(name);
+                    let dim = if ty == "sampler2D" {
+                        SamplerDim::D2
+                    } else {
+                        SamplerDim::D3
+                    };
+                    let slot = match ctx.slots.iter().position(|(n, _)| *n == name) {
+                        Some(slot) if ctx.slots[slot].1 == dim => slot,
+                        Some(_) => {
+                            return Err(format!(
+                                "the sampler `{name}` is not of the same type in both shaders"
+                            ));
+                        }
+                        None => {
+                            ctx.slots.push((name.clone(), dim));
+                            ctx.slots.len() - 1
+                        }
+                    };
+                    r.samplers.push(SamplerDecl {
+                        name: name.clone(),
+                        dim,
+                        slot: slot as u32,
+                    });
+                    samplers.push((name, dim));
                 } else if ty.contains("sampler") {
                     return Err(unsupported(format!(
-                        "`{name}`: a `{ty}` uniform; only `sampler2D` textures are available"
+                        "`{name}`: a `{ty}` uniform; only `sampler2D` and `sampler3D` textures are available"
                     )));
                 } else if ty.starts_with('b') && is_builtin_type(&ty) {
                     if array.is_some() {
@@ -1692,11 +1818,12 @@ pub enum ScalarKind {
     Uint,
 }
 
-/// A texture the fragment shader samples and the bindings of its texture and
-/// its sampler.
+/// A texture a stage samples and the bindings of its texture and its sampler,
+/// which are the same in both stages of a program.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SamplerBinding {
     pub name: String,
+    pub dim: SamplerDim,
     pub texture: u32,
     pub sampler: u32,
 }
@@ -1738,6 +1865,15 @@ impl std::fmt::Debug for Stage {
 pub struct Translated {
     pub vertex: Stage,
     pub fragment: Stage,
+    /// The samplers either stage reads, in binding order, with the stages that read each.
+    pub samplers: Vec<(SamplerBinding, SamplerStages)>,
+}
+
+/// Which stages of a program read a sampler.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SamplerStages {
+    pub vertex: bool,
+    pub fragment: bool,
 }
 
 /// Reads `rewritten` with naga, checks it, and works out its interface.
@@ -1778,11 +1914,11 @@ fn parse_stage(stage: ShaderStage, r: Rewritten) -> std::result::Result<Stage, S
     let mut samplers: Vec<SamplerBinding> = r
         .samplers
         .iter()
-        .enumerate()
-        .map(|(i, name)| SamplerBinding {
-            name: name.clone(),
-            texture: 2 + 2 * i as u32,
-            sampler: 3 + 2 * i as u32,
+        .map(|d| SamplerBinding {
+            name: d.name.clone(),
+            dim: d.dim,
+            texture: 2 + 2 * d.slot,
+            sampler: 3 + 2 * d.slot,
         })
         .collect();
     let mut fbh_offset = None;
@@ -1911,6 +2047,7 @@ pub fn translate(
     points: bool,
 ) -> std::result::Result<Translated, String> {
     let mut varyings = Varyings::default();
+    let mut slots = Vec::new();
     let vr = rewrite(RewriteInput {
         src: &program.vertex,
         stage: ShaderStage::Vertex,
@@ -1918,6 +2055,7 @@ pub fn translate(
         varyings: &mut varyings,
         flip_y,
         points,
+        slots: &mut slots,
     })?;
     let fr = rewrite(RewriteInput {
         src: &program.fragment,
@@ -1926,10 +2064,33 @@ pub fn translate(
         varyings: &mut varyings,
         flip_y,
         points,
+        slots: &mut slots,
     })?;
+    let vertex = parse_stage(ShaderStage::Vertex, vr)?;
+    let fragment = parse_stage(ShaderStage::Fragment, fr)?;
+    let mut samplers: Vec<(SamplerBinding, SamplerStages)> = Vec::new();
+    for (stage, is_vertex) in [(&vertex, true), (&fragment, false)] {
+        for s in &stage.samplers {
+            match samplers.iter_mut().find(|(b, _)| b.texture == s.texture) {
+                Some((_, stages)) => {
+                    stages.vertex |= is_vertex;
+                    stages.fragment |= !is_vertex;
+                }
+                None => samplers.push((
+                    s.clone(),
+                    SamplerStages {
+                        vertex: is_vertex,
+                        fragment: !is_vertex,
+                    },
+                )),
+            }
+        }
+    }
+    samplers.sort_by_key(|(b, _)| b.texture);
     Ok(Translated {
-        vertex: parse_stage(ShaderStage::Vertex, vr)?,
-        fragment: parse_stage(ShaderStage::Fragment, fr)?,
+        vertex,
+        fragment,
+        samplers,
     })
 }
 
@@ -2097,6 +2258,109 @@ pub fn decode_picture(
         }
         _ => Err("a picture has either a src or pixels".into()),
     }
+}
+
+/// The texels of a float or 3D texture, as the device holds them.
+#[derive(Debug, PartialEq)]
+pub enum Texels {
+    /// RGBA8, four bytes a texel.
+    Rgba8(Vec<u8>),
+    /// RGBA16F, eight bytes a texel (little-endian half floats).
+    Rgba16F(Vec<u8>),
+    /// RGBA32F, sixteen bytes a texel (little-endian floats).
+    Rgba32F(Vec<u8>),
+}
+
+/// The texels of a texture with `floats` or a 3D texture: its `pixels`, or its `floats` rounded to half
+/// floats (kept in full with `float32`), as `texImage2D` and `texImage3D` of a float format do.
+pub fn decode_texels(texture: &GlslTexture) -> std::result::Result<Texels, String> {
+    use base64::Engine as _;
+    let (w, h, d) = (
+        texture.width as usize,
+        texture.height as usize,
+        (texture.depth as usize).max(1),
+    );
+    if w == 0 || h == 0 {
+        return Err(format!("a texture of {w} x {h} x {d} has no texels"));
+    }
+    let texels = w * h * d;
+    let decode = |data: &str| {
+        base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .map_err(|e| format!("a 3D texture's texels are not base64: {e}"))
+    };
+    match (&texture.pixels, &texture.floats) {
+        (Some(pixels), None) => {
+            let bytes = decode(pixels)?;
+            if bytes.len() != texels * 4 {
+                return Err(format!(
+                    "a texture of {w} x {h} x {d} needs {} bytes of RGBA, got {}",
+                    texels * 4,
+                    bytes.len()
+                ));
+            }
+            Ok(Texels::Rgba8(bytes))
+        }
+        (None, Some(floats)) => {
+            let bytes = decode(floats)?;
+            if bytes.len() != texels * 16 {
+                return Err(format!(
+                    "a texture of {w} x {h} x {d} needs {} bytes of RGBA floats, got {}",
+                    texels * 16,
+                    bytes.len()
+                ));
+            }
+            if texture.float32 {
+                return Ok(Texels::Rgba32F(bytes));
+            }
+            let halves = bytes
+                .chunks_exact(4)
+                .flat_map(|f| {
+                    let v = f32::from_le_bytes([f[0], f[1], f[2], f[3]]);
+                    f32_to_f16(v).to_le_bytes()
+                })
+                .collect();
+            Ok(Texels::Rgba16F(halves))
+        }
+        _ => Err("a texture has either pixels or floats".into()),
+    }
+}
+
+/// `value` as an IEEE half float, rounded to nearest even; too large a value is infinite.
+pub fn f32_to_f16(value: f32) -> u16 {
+    let bits = value.to_bits();
+    let sign = ((bits >> 16) & 0x8000) as u16;
+    let exp = ((bits >> 23) & 0xff) as i32;
+    let man = bits & 0x7f_ffff;
+    if exp == 0xff {
+        return sign | 0x7c00 | if man != 0 { 0x200 } else { 0 };
+    }
+    let e = exp - 127 + 15;
+    if e >= 0x1f {
+        return sign | 0x7c00;
+    }
+    if e <= 0 {
+        // A subnormal half, or zero.
+        if e < -10 {
+            return sign;
+        }
+        let m = man | 0x80_0000;
+        let shift = (14 - e) as u32;
+        let mut half = (m >> shift) as u16;
+        let rest = m & ((1 << shift) - 1);
+        let middle = 1 << (shift - 1);
+        if rest > middle || (rest == middle && half & 1 == 1) {
+            half += 1;
+        }
+        return sign | half;
+    }
+    let mut half = ((e as u32) << 10) | (man >> 13);
+    let rest = man & 0x1fff;
+    if rest > 0x1000 || (rest == 0x1000 && half & 1 == 1) {
+        // A carry into the exponent is the right next value, up to infinity.
+        half += 1;
+    }
+    sign | half as u16
 }
 
 /// Straight RGBA8 rows of `width` as an upload with these flags leaves them:
@@ -2357,6 +2621,136 @@ mod tests {
         ))
         .unwrap_err();
         assert!(e.contains("v_missing"), "{e}");
+    }
+
+    #[test]
+    fn a_vertex_shader_reads_textures_at_level_zero_and_shares_the_binding_with_the_fragment_shader() {
+        let t = translate(&program(
+            "#version 300 es\nin vec2 a_pos; uniform sampler2D u_tex; uniform sampler2D u_height; out vec2 v_uv;\n\
+             void main() {\n  float h = texture(u_height, a_pos).r + texture2D(u_tex, a_pos * 0.5).g\n\
+                 + texelFetch(u_tex, ivec2(1, 0), 0).b + float(textureSize(u_tex, 0).x);\n\
+               v_uv = a_pos; gl_Position = vec4(a_pos, h, 1.0); }",
+            "#version 300 es\nprecision highp float; in vec2 v_uv; uniform sampler2D u_tex; out vec4 o;\n\
+             void main() { o = texture(u_tex, v_uv); }",
+        ))
+        .unwrap();
+        assert_eq!(t.vertex.samplers.len(), 2);
+        // `u_tex` binds where it does in the fragment shader, and both stages read it.
+        let vertex_tex = t.vertex.samplers.iter().find(|s| s.name == "u_tex").unwrap();
+        assert_eq!(t.fragment.samplers.len(), 1);
+        assert_eq!(&t.fragment.samplers[0], vertex_tex);
+        assert_eq!(t.samplers.len(), 2);
+        let (_, stages) = t.samplers.iter().find(|(b, _)| b.name == "u_tex").unwrap();
+        assert!(stages.vertex && stages.fragment);
+        let (_, stages) = t.samplers.iter().find(|(b, _)| b.name == "u_height").unwrap();
+        assert!(stages.vertex && !stages.fragment);
+    }
+
+    #[test]
+    fn a_fragment_sampler_declared_first_in_the_vertex_shader_does_not_move() {
+        // The fragment shader declares `b` then `a`; the vertex shader only `a`.
+        let t = translate(&program(
+            "#version 300 es\nin vec2 p; uniform sampler2D a;\n\
+             void main() { gl_Position = vec4(p, texture(a, p).x, 1.0); }",
+            "#version 300 es\nprecision highp float; uniform sampler2D b; uniform sampler2D a; out vec4 o;\n\
+             void main() { o = texture(b, vec2(0.5)) + texture(a, vec2(0.5)); }",
+        ))
+        .unwrap();
+        let at = |stage: &Stage, n: &str| stage.samplers.iter().find(|s| s.name == n).unwrap().clone();
+        assert_eq!(at(&t.vertex, "a"), at(&t.fragment, "a"));
+        assert_ne!(at(&t.fragment, "a").texture, at(&t.fragment, "b").texture);
+    }
+
+    #[test]
+    fn a_sampler_of_another_type_in_the_other_stage_is_refused() {
+        let e = translate(&program(
+            "#version 300 es\nin vec2 p; uniform sampler2D a;\n\
+             void main() { gl_Position = vec4(p, texture(a, p).x, 1.0); }",
+            "#version 300 es\nprecision highp float; uniform sampler3D a; out vec4 o;\n\
+             void main() { o = texture(a, vec3(0.5)); }",
+        ))
+        .unwrap_err();
+        assert!(e.contains("not of the same type"), "{e}");
+    }
+
+    #[test]
+    fn a_sampler_3d_reads_with_texel_fetch_and_texture() {
+        let t = translate(&program(
+            "#version 300 es\nin vec2 a_pos; out vec2 v_uv;\n\
+             void main() { v_uv = a_pos; gl_Position = vec4(a_pos, 0.0, 1.0); }",
+            "#version 300 es\nprecision highp float; precision highp sampler3D;\n\
+             in vec2 v_uv; uniform sampler3D u_lut; uniform int u_size; out vec4 o;\n\
+             void main() { o = texelFetch(u_lut, ivec3(1, 0, 0), 0) + texture(u_lut, vec3(v_uv, 0.5))\n\
+                 + vec4(float(textureSize(u_lut, 0).z)); }",
+        ))
+        .unwrap();
+        assert_eq!(t.fragment.samplers.len(), 1);
+        assert_eq!(t.fragment.samplers[0].dim, SamplerDim::D3);
+    }
+
+    #[test]
+    fn half_floats_round_to_nearest_even() {
+        for (value, half) in [
+            (0.0f32, 0x0000u16),
+            (-0.0, 0x8000),
+            (1.0, 0x3c00),
+            (0.5, 0x3800),
+            (-2.0, 0xc000),
+            (65504.0, 0x7bff),
+            (65520.0, 0x7c00),
+            (f32::INFINITY, 0x7c00),
+            (f32::NEG_INFINITY, 0xfc00),
+            // The smallest subnormal, and what is below half of it.
+            (5.960_464_5e-8, 0x0001),
+            (1.0e-9, 0x0000),
+            // 1 + 2^-11 is halfway between two halves: the even one, 1.
+            (1.000_488_3, 0x3c00),
+            // 1 + 3 * 2^-11 is halfway as well: the even one, 1 + 2^-9.
+            (1.001_464_8, 0x3c02),
+        ] {
+            assert_eq!(f32_to_f16(value), half, "{value}");
+        }
+        assert_eq!(f32_to_f16(f32::NAN) & 0x7c00, 0x7c00);
+        assert_ne!(f32_to_f16(f32::NAN) & 0x3ff, 0);
+    }
+
+    #[test]
+    fn a_3d_texture_decodes_its_pixels_or_its_floats() {
+        use base64::Engine as _;
+        let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
+        let texture = |pixels: Option<String>, floats: Option<String>| GlslTexture {
+            src: None,
+            pixels,
+            layer: None,
+            width: 2,
+            height: 1,
+            flip_y: false,
+            premultiply: false,
+            mipmaps: false,
+            target: false,
+            format: None,
+            levels: 1,
+            luminance: false,
+            patches: Vec::new(),
+            depth: 2,
+            floats,
+            float32: false,
+        };
+        let rgba8 = decode_texels(&texture(Some(b64(&[7; 16])), None)).unwrap();
+        assert_eq!(rgba8, Texels::Rgba8(vec![7; 16]));
+        let floats: Vec<u8> = (0..16).flat_map(|_| 1.0f32.to_le_bytes()).collect();
+        let Texels::Rgba16F(halves) = decode_texels(&texture(None, Some(b64(&floats)))).unwrap()
+        else {
+            panic!("half floats");
+        };
+        assert_eq!(halves.len(), 32);
+        assert_eq!(&halves[..2], &0x3c00u16.to_le_bytes());
+        // A 2D texture of 32-bit floats is kept in full.
+        let mut full = texture(None, Some(b64(&floats[..32])));
+        (full.depth, full.float32) = (0, true);
+        assert_eq!(decode_texels(&full).unwrap(), Texels::Rgba32F(floats[..32].to_vec()));
+        let e = decode_texels(&texture(Some(b64(&[0; 15])), None)).unwrap_err();
+        assert!(e.contains("needs 16 bytes"), "{e}");
     }
 
     #[test]

@@ -323,7 +323,7 @@ fn filled(format: &str, colour: [f32; 4], extra: Value, opacity: f64) -> Frame {
         webgpu[k] = v.clone();
     }
     let layer = json!({"id": "g", "type": "glsl", "width": 16, "height": 16, "opacity": opacity, "webgpu": webgpu});
-    let scene = json!({"width": 16, "height": 16, "fps": 30, "durationInFrames": 1, "background": "#000000", "layers": [layer]});
+    let scene = json!({"blendSpace": "linear", "width": 16, "height": 16, "fps": 30, "durationInFrames": 1, "background": "#000000", "layers": [layer]});
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
     render_still(Scene::from_json(&scene.to_string(), base).unwrap(), 0).unwrap()
 }

@@ -811,6 +811,15 @@ export interface GlslTexture {
   luminance?: boolean;
   /** `texSubImage2D` of pictures over parts of the texture, in order, after `src`, `pixels` or `layer`. */
   patches?: GlslPatch[];
+  /** A 3D texture (`texImage3D`) of `width` by `height` by this many layers, its texels `pixels` (RGBA8) or `floats`; left out for a 2D texture. */
+  depth?: number;
+  /**
+   * A float texture (`R32F`, `RGBA16F` and the like), 2D or 3D: base64 little-endian `f32`s, four for each texel (x
+   * fastest, then y, then z; what the format lacks is 0, and alpha 1). Kept as half floats, or as 32-bit ones with `float32`.
+   */
+  floats?: string;
+  /** The floats are `R32F`, `RG32F`, `RGB32F` or `RGBA32F`: kept in full, and sampled only `NEAREST` (a browser has no linear filter for them). */
+  float32?: boolean;
 }
 
 /** A picture over a rectangle of a texture (`texSubImage2D`): rows counted as the texture's, the first GL's bottom one. */
@@ -877,6 +886,8 @@ export interface GlslSampler {
   mag: string;
   wrapS: string;
   wrapT: string;
+  /** `TEXTURE_WRAP_R`, for a 3D texture. */
+  wrapR?: string;
   /** `TEXTURE_MAX_LEVEL`, when it was set: the last level read, so fewer levels can be complete. */
   maxLevel?: number;
 }
@@ -990,6 +1001,8 @@ export interface GlslContent {
   depth?: boolean;
   /** The context's `stencil` attribute (default false): whether the drawing buffer has a stencil buffer. */
   stencil?: boolean;
+  /** The context's `antialias` attribute: the drawing buffer is multisampled (4 samples). */
+  antialias?: boolean;
   programs: Record<string, GlslProgram>;
   /** Base64 bytes. */
   buffers: Record<string, string>;
@@ -1031,6 +1044,8 @@ export interface WebGpuPipeline {
   vertex: { module: string; entryPoint?: string; buffers: WebGpuVertexLayout[] };
   fragment?: { module: string; entryPoint?: string; targets: (WebGpuTarget | null)[] };
   primitive: { topology: string; stripIndexFormat?: string; frontFace: string; cullMode: string };
+  /** `multisample.count`; 1 when left out. */
+  samples?: number;
 }
 
 export interface WebGpuBindingLayout {
@@ -1073,6 +1088,8 @@ export interface WebGpuTexture {
   height: number;
   mips: number;
   format: string;
+  /** 4 for a multisampled texture (a pass draws into it and resolves it into another); 1 when left out. */
+  samples?: number;
 }
 
 export interface WebGpuSampler {
@@ -1109,6 +1126,8 @@ export interface WebGpuPass {
   k: 'render';
   /** A level of the texture drawn into; the canvas when left out. */
   target?: { texture: string; mip: number };
+  /** A multisampled `target` resolves into this level of another texture when the pass ends. */
+  resolve?: { texture: string; mip: number };
   /** The clear colour, or null for `loadOp: 'load'`. */
   clear: [number, number, number, number] | null;
   commands: WebGpuCommand[];
@@ -1535,8 +1554,8 @@ export interface SceneJson {
    */
   margin?: number;
   /**
-   * The space layers are composited in: `linear` (default) or `srgb`, as CSS does (SCENE.md "Blend space"). A tree with
-   * DOM islands asks for `srgb`: the painter writes its layers for it (ENGINE.md §10.1).
+   * The space layers are composited in: `srgb` (default), as CSS does, or `linear` (SCENE.md "Blend space"). The DOM
+   * painter writes its layers for `srgb` (ENGINE.md §10.1).
    */
   blendSpace?: 'linear' | 'srgb';
   /** Font key to font file. */

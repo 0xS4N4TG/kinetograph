@@ -80,11 +80,13 @@ describe('createTexture, createView and createSampler', () => {
     expect(() => texture(device, { format: 'rgba32float' })).not.toThrow();
     expect(() => texture(device, { dimension: '3d' })).toThrow(/3d texture/);
     expect(() => texture(device, { size: [8, 4, 2] })).toThrow(/array layer/);
-    expect(() => texture(device, { sampleCount: 4 })).toThrow(/multisampled/);
+    expect(() => texture(device, { sampleCount: 3 })).toThrow(/sampleCount 3/);
+    expect(() => texture(device, { sampleCount: 4, mipLevelCount: 2 })).toThrow(/one mip level/);
+    expect(() => texture(device, { sampleCount: 4, usage: GPU_TEXTURE_USAGE.STORAGE_BINDING })).toThrow(/render attachment/);
     expect(() => texture(device, { viewFormats: ['rgba8unorm-srgb'] })).toThrow(/viewFormats/);
     expect(() => texture(device, { usage: GPU_TEXTURE_USAGE.STORAGE_BINDING })).not.toThrow();
     expect(() => texture(device, { usage: GPU_TEXTURE_USAGE.STORAGE_BINDING, format: 'rgba8unorm-srgb' })).toThrow(/STORAGE_BINDING/);
-    expect(context.content().webgpu!.notes).toHaveLength(6);
+    expect(context.content().webgpu!.notes).toHaveLength(5);
   });
 
   it('holds all the levels of all the textures to a cap', async () => {
@@ -362,6 +364,30 @@ describe('render passes into textures and sampling them', () => {
     device.queue.submit([encoder.finish()]);
   }
 
+  it('keeps an upload that a submitted pass sampled when the texture is destroyed after the submit', async () => {
+    const { device, context } = await setup();
+    const source = texture(device, { size: [8, 8] });
+    const module = device.createShaderModule({ code: WGSL });
+    const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module }, fragment: { module, targets: [{ format: 'rgba8unorm' }] } });
+    const group = device.createBindGroup({
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: source.createView() },
+        { binding: 1, resource: device.createSampler({}) },
+      ],
+    });
+    device.queue.copyExternalImageToTexture({ source: layerPicture('layer', 8, 8) as never }, { texture: source }, [8, 8]);
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store' }] });
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, group);
+    pass.draw(3);
+    pass.end();
+    device.queue.submit([encoder.finish()]);
+    source.destroy();
+    expect(context.content().webgpu!.passes.map((p) => p.k)).toEqual(['upload', 'render']);
+  });
+
   it('records the pass into the texture before the pass that samples it, with the view and the sampler', async () => {
     const { device, context } = await setup();
     const offscreen = texture(device, { size: [8, 8] });
@@ -434,6 +460,39 @@ describe('render passes into textures and sampling them', () => {
     // A partial write does not cover.
     write(a, [2, 2]);
     expect(uploads(context.content().webgpu!)).toHaveLength(3);
+  });
+
+  it('records a multisampled pass that resolves into a texture, and refuses what does not fit', async () => {
+    const { device, context } = await setup();
+    const module = device.createShaderModule({ code: WGSL });
+    const pipeline = (samples: number) => device.createRenderPipeline({ layout: 'auto', vertex: { module }, fragment: { module, targets: [{ format: 'rgba8unorm' }] }, multisample: { count: samples } });
+    const multi = texture(device, { size: [8, 8], usage: RENDER_ATTACHMENT, sampleCount: 4 });
+    const resolved = texture(device, { size: [8, 8] });
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginRenderPass({ colorAttachments: [{ view: multi.createView(), resolveTarget: resolved.createView(), loadOp: 'clear', storeOp: 'discard' }] });
+    expect(() => pass.setPipeline(pipeline(1))).toThrow(/1 samples and the pass draws into 4/);
+    pass.setPipeline(pipeline(4));
+    pass.draw(3);
+    pass.end();
+    const canvasPass = encoder.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store' }] });
+    expect(() => canvasPass.setPipeline(pipeline(4))).toThrow(/4 samples and the pass draws into 1/);
+    const single = pipeline(1);
+    canvasPass.setPipeline(single);
+    canvasPass.setBindGroup(0, device.createBindGroup({ layout: single.getBindGroupLayout(0), entries: [{ binding: 0, resource: resolved.createView() }, { binding: 1, resource: device.createSampler({}) }] }));
+    canvasPass.draw(3);
+    canvasPass.end();
+    device.queue.submit([encoder.finish()]);
+    const content = context.content().webgpu!;
+    const render = content.passes.find((p) => p.k === 'render' && p.target);
+    expect(render).toMatchObject({ target: { texture: multi.id, mip: 0 }, resolve: { texture: resolved.id, mip: 0 } });
+    expect(content.textures[multi.id]).toMatchObject({ samples: 4 });
+    expect(content.textures[resolved.id]!.samples).toBeUndefined();
+    const begin = (attachment: object) => () => device.createCommandEncoder().beginRenderPass({ colorAttachments: [{ loadOp: 'clear', storeOp: 'store', ...attachment } as never] });
+    expect(begin({ view: resolved.createView(), resolveTarget: texture(device, { size: [8, 8] }).createView() })).toThrow(/multisampled colour attachment/);
+    expect(begin({ view: multi.createView(), resolveTarget: multi.createView() })).toThrow(/one sample/);
+    expect(begin({ view: multi.createView(), resolveTarget: texture(device, { size: [4, 4] }).createView() })).toThrow(/size and format/);
+    expect(begin({ view: multi.createView(), resolveTarget: context.getCurrentTexture().createView() })).toThrow(/canvas/);
+    expect(() => device.queue.writeTexture({ texture: multi }, new Uint8Array(4), { bytesPerRow: 256 }, [1, 1])).toThrow(/multisampled/);
   });
 
   it('refuses a pass whose texture, level or pipeline do not fit', async () => {

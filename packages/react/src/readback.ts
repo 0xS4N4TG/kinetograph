@@ -30,6 +30,8 @@ export interface Container {
   measuredGenerations: Set<number>;
   /** The `<img>`, `<video>` and `<audio>` elements made so far (their load events are delivered, see `settle`). */
   media: Set<HostElement>;
+  /** What the root was made with: a part of the tree is emitted with it (`emitLayerOf`). */
+  options: EmitOptions;
 }
 
 /** What the reconciler learns about a host node as it is placed: where it hangs, and in which root. */

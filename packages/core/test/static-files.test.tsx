@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Video as NativeVideo } from '@kinetographdev/react';
 import {
   Audio,
   Config,
@@ -88,7 +89,8 @@ describe('MediaPlaybackError', () => {
 describe('Html5Audio and Html5Video', () => {
   it('are the engine\'s <Audio> and <Video>', () => {
     expect(Html5Audio).toBe(Audio);
-    expect(Html5Video).toBe(Video);
+    // `Video` is the same element with Remotion's `effects` (@remotion/media's); Remotion's Html5Video has none.
+    expect(Html5Video).toBe(NativeVideo);
   });
 });
 

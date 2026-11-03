@@ -7,7 +7,7 @@ use kinetograph_core::{Frame, Scene, render_still};
 
 fn render(layers: &str) -> Frame {
     let json = format!(
-        r##"{{"width": 100, "height": 100, "fps": 30, "durationInFrames": 1,
+        r##"{{"blendSpace": "linear", "width": 100, "height": 100, "fps": 30, "durationInFrames": 1,
               "background": "#00000000", "layers": {layers}}}"##
     );
     render_still(Scene::from_json(&json, PathBuf::new()).unwrap(), 0).unwrap()

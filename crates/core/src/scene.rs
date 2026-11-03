@@ -59,12 +59,13 @@ pub struct Scene {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BlendSpace {
-    /// Linear light: physically right, and what the scene format has always
-    /// done.
-    #[default]
+    /// Linear light: physically right, but not what a browser does. Opt in
+    /// with `"blendSpace": "linear"`.
     Linear,
     /// sRGB-encoded values, as CSS and every browser composite: a half
     /// transparent black over white is mid grey (128), not light grey (188).
+    /// The default.
+    #[default]
     Srgb,
 }
 

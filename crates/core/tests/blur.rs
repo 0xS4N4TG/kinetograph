@@ -3,8 +3,10 @@ use std::path::PathBuf;
 
 use kinetograph_core::{Frame, Scene, render_still};
 
+/// Rendered blending in linear light: these tests measure the blur on linear values.
 fn render(json: &str) -> Frame {
-    render_still(Scene::from_json(json, PathBuf::new()).unwrap(), 0).unwrap()
+    let json = json.replacen('{', r#"{"blendSpace": "linear","#, 1);
+    render_still(Scene::from_json(&json, PathBuf::new()).unwrap(), 0).unwrap()
 }
 
 fn to_linear(v: u8) -> f64 {

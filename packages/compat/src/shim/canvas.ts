@@ -11,6 +11,7 @@ import {
   createGpuCanvasContext,
   createWebGLContext,
   internSources,
+  layerSourcesOf,
   type GPUCanvasContextShim,
   WebGLContext,
   WebGLUnsupportedError,
@@ -18,6 +19,7 @@ import {
   type CanvasContextOptions,
   type CanvasPicture,
   type DeviceInfo,
+  type LayerJson,
 } from '@kinetographdev/scene';
 import { addonFunction, hasAddonFunction } from '../addon.js';
 import { getDomEnvironment } from '../environment.js';
@@ -35,6 +37,36 @@ export function setCanvasFonts(fonts: () => Record<string, string>): void {
 /** The registered fonts: font key → file. */
 export function registeredFonts(): Record<string, string> {
   return fontsOf();
+}
+
+/**
+ * The layers a canvas drew with `layerPicture` (an effect's `source`), as the scene draws them: what `getImageData` of
+ * such a canvas needs, since the pixels of a layer are the renderer's to make.
+ */
+export interface LayerPictures {
+  /** The layers named `ids`, as scene layers, with the frame they are drawn at and what the scene around them holds. */
+  layers: LayerJson[];
+  frame: number;
+  fps: number;
+  durationInFrames: number;
+  camera?: unknown;
+  margin?: number;
+  blendSpace?: 'srgb';
+}
+
+/** Thrown when the layers a canvas drew are not known yet (the tree they are in is not committed): the caller waits for them and draws again. */
+export class LayerPicturesNotReady extends Error {
+  override name = 'LayerPicturesNotReady';
+  constructor(public readonly ids: readonly string[]) {
+    super(`the picture of ${ids.map((id) => `"${id}"`).join(', ')} is not drawn yet`);
+  }
+}
+
+let layerPictures: ((ids: readonly string[]) => LayerPictures) | null = null;
+
+/** The effect chain hands over how the layers of the tree are found (`LayerPictures`); null takes it back. */
+export function setLayerPictures(provider: ((ids: readonly string[]) => LayerPictures) | null): void {
+  layerPictures = provider;
 }
 
 /** The text engine and the pixels, from the addon when it has them. */
@@ -96,10 +128,20 @@ function readPicture(
   }
 }
 
-/** What the addon draws of `commands` on a transparent canvas: straight-alpha RGBA, or a PNG. */
+/**
+ * What the addon draws of `commands` on a transparent canvas: straight-alpha RGBA, or a PNG. The layers the commands
+ * draw (`layerPicture`) are drawn by the renderer too, as the children of a canvas pass; they have to be known
+ * (`LayerPicturesNotReady`), and a canvas that draws one with no way to find it cannot be read.
+ */
 function renderCanvas(commands: CanvasCommand[], size: { width: number; height: number }, format: 'rgba' | 'png'): Uint8Array {
   const { commands: written, sources } = internSources(commands);
-  const request = { width: size.width, height: size.height, commands: written, ...(sources !== undefined && { sources }), fonts: fontsOf(), baseDir: getDomEnvironment().baseDir, format };
+  const ids = layerSourcesOf(commands);
+  let layers: Partial<LayerPictures> = {};
+  if (ids.length > 0) {
+    if (layerPictures === null) throw new Error(`the canvas draws the picture of the layer ${ids.map((id) => `"${id}"`).join(', ')}, which only the renderer can draw: it can be read inside an effect only`);
+    layers = layerPictures(ids);
+  }
+  const request = { width: size.width, height: size.height, commands: written, ...(sources !== undefined && { sources }), ...layers, fonts: fontsOf(), baseDir: getDomEnvironment().baseDir, format };
   return addonFunction('renderCanvas')(JSON.stringify(request));
 }
 

@@ -2,7 +2,7 @@
 name: kinetograph
 description: Make videos and motion graphics with Kinetograph. Write Remotion-shaped TSX (useCurrentFrame, interpolate, spring, Sequence, native elements) and Web Audio code, or an HTML page with GSAP (HyperFrames projects render as they are), look at frames with `kinetograph still` and `strip`, check them with `inspect` and `lint`, then `render` to MP4. Use when asked to build, edit, preview or render a video, animation, title card or sound design with Kinetograph.
 metadata:
-  version: "0.2.5"
+  version: "0.3.0"
 ---
 
 # Working with Kinetograph

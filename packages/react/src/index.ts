@@ -5,7 +5,8 @@
 export { TimelineContext, useTimeline } from './timeline.js';
 export type { TimelineState, VideoConfig } from './timeline.js';
 
-export { createSceneRoot } from './root.js';
+export { createSceneRoot, emitLayerOf } from './root.js';
+export type { EmittedLayer } from './root.js';
 export { finishIslands } from './emit.js';
 export type { RenderedTree, SceneRoot } from './root.js';
 export type { LayerNames } from './emit.js';

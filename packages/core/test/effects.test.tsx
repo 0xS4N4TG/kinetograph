@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CanvasCommand, GroupLayer, LayerJson } from '@kinetographdev/scene';
-import { CanvasImage, createEffect, HtmlInCanvas, Solid } from '../src/index.js';
+import { CanvasImage, createEffect, createEffectImplementation, HtmlInCanvas, Internals, Solid } from '../src/index.js';
 import { clearReportedUnsupported, reportedUnsupported } from '../src/unsupported.js';
 import { resetWarnings } from '../src/warn.js';
 import { renderDom, useFakeDom } from './dom-harness.js';
@@ -383,5 +383,104 @@ describe('WebGPU', () => {
     const frame = await renderer.renderFrame(0);
     expect(frame.unsupported).toEqual([expect.objectContaining({ element: 'Solid', property: 'effects' })]);
     renderer.dispose();
+  });
+});
+
+describe('an effect with an implementation for each backend (createEffect({ implementations }))', () => {
+  const fromBackend = (descriptor: { definition: { setup: never; apply: never; cleanup: never } }) =>
+    createEffectImplementation<object, unknown>({ setup: descriptor.definition.setup, apply: descriptor.definition.apply, cleanup: descriptor.definition.cleanup });
+  const multi = createEffect<object, unknown>({
+    type: 'test/multi',
+    label: 'Multi',
+    documentationLink: null,
+    calculateKey: () => 'multi',
+    schema: {},
+    validateParams: () => undefined,
+    // The WebGPU one asks for something that is not drawn, the WebGL 2 one draws.
+    implementations: { webgpu: fromBackend(gpuCompute({}) as never), webgl2: fromBackend(shaded() as never) },
+  });
+  afterEach(() => {
+    delete process.env.KINETOGRAPH_PREFERRED_EFFECT_BACKEND;
+  });
+
+  it('hands a frame the preferred backend cannot draw to the next, with one warning and nothing reported', () => {
+    const tree = renderDom(<Solid width={8} height={8} color="#f00" effects={[multi({})]} />);
+    const [group] = chainOf(tree.layers);
+    expect((group!.glsl as { webgpu?: unknown }).webgpu).toBeUndefined();
+    expect(Object.keys((group!.glsl as { programs: object }).programs)).toHaveLength(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toMatch(/Effect "Multi" can't draw with webgpu .*it draws with webgl2/);
+    expect(reportedUnsupported()).toEqual([]);
+  });
+
+  it('tries the backend KINETOGRAPH_PREFERRED_EFFECT_BACKEND names first', () => {
+    process.env.KINETOGRAPH_PREFERRED_EFFECT_BACKEND = 'webgl2';
+    const tree = renderDom(<Solid width={8} height={8} color="#f00" effects={[multi({})]} />);
+    expect(chainOf(tree.layers)).toHaveLength(1);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('tries the backend of PreferredEffectBackendContext first, and the environment variable overrides it', () => {
+    const { PreferredEffectBackendContext } = Internals;
+    const tree = renderDom(
+      <PreferredEffectBackendContext.Provider value="webgl2">
+        <Solid width={8} height={8} color="#f00" effects={[multi({})]} />
+      </PreferredEffectBackendContext.Provider>,
+    );
+    expect(chainOf(tree.layers)).toHaveLength(1);
+    expect(warn).not.toHaveBeenCalled();
+    // The variable names webgpu, which can't draw: the context's webgl2 is not tried first.
+    process.env.KINETOGRAPH_PREFERRED_EFFECT_BACKEND = 'webgpu';
+    renderDom(
+      <PreferredEffectBackendContext.Provider value="webgl2">
+        <Solid width={8} height={8} color="#f00" effects={[multi({})]} />
+      </PreferredEffectBackendContext.Provider>,
+    );
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('tries window.remotion_preferredEffectBackend first, and the context goes before it', () => {
+    const w = globalThis as { window?: { remotion_preferredEffectBackend?: string } };
+    const before = w.window;
+    w.window = { remotion_preferredEffectBackend: 'webgl2' };
+    try {
+      renderDom(<Solid width={8} height={8} color="#f00" effects={[multi({})]} />);
+      expect(warn).not.toHaveBeenCalled();
+      renderDom(
+        <Internals.PreferredEffectBackendContext.Provider value="webgpu">
+          <Solid width={8} height={8} color="#f00" effects={[multi({})]} />
+        </Internals.PreferredEffectBackendContext.Provider>,
+      );
+      expect(warn).toHaveBeenCalledTimes(1);
+      w.window = { remotion_preferredEffectBackend: 'metal' };
+      expect(() => renderDom(<Solid width={8} height={8} effects={[multi({})]} />)).toThrow(/got metal/);
+    } finally {
+      if (before === undefined) delete w.window;
+      else w.window = before;
+    }
+  });
+
+  it('refuses a backend that is not one, as Remotion does', () => {
+    process.env.KINETOGRAPH_PREFERRED_EFFECT_BACKEND = 'metal';
+    expect(() => renderDom(<Solid width={8} height={8} effects={[multi({})]} />)).toThrow(/preferredEffectBackend must be "auto", "webgpu", "webgl2" or "2d", got metal/);
+  });
+
+  it('an effect that throws is drawn without, with the message reported for the frame', () => {
+    const broken = createEffect<object, unknown>({
+      type: 'test/broken',
+      label: 'Broken',
+      documentationLink: null,
+      calculateKey: () => 'broken',
+      schema: {},
+      validateParams: () => undefined,
+      implementations: { webgl2: createEffectImplementation({ setup: () => ({}), apply: () => { throw new Error('no curve sampler'); }, cleanup: () => undefined }) },
+    });
+    const tree = renderDom(<Solid width={8} height={8} color="#f00" effects={[broken({}), shaded()]} />);
+    expect(chainOf(tree.layers)).toHaveLength(1);
+    expect(reportedUnsupported()).toEqual([expect.objectContaining({ element: 'Solid', property: 'effects', value: 'error' })]);
+  });
+
+  it('needs at least one implementation', () => {
+    expect(() => createEffect({ type: 'test/none', label: 'None', documentationLink: null, calculateKey: () => '', schema: {}, validateParams: () => undefined, implementations: {} })).toThrow(/at least one implementation/);
   });
 });

@@ -20,7 +20,7 @@ WebGL shaders, 3D and Web Audio. Existing Remotion projects render as they are, 
 [HyperFrames](https://github.com/heygen-com/hyperframes) projects. The film above is one TypeScript project in
 [`examples/launch`](examples/launch).
 
-Kinetograph is in beta (version 0.2.5). APIs can still change between versions.
+Kinetograph is in beta (version 0.3.0). APIs can still change between versions.
 
 ## Install
 
