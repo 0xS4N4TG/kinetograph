@@ -53,6 +53,8 @@ struct Uploaded {
     view: wgpu::TextureView,
     mipmapped: bool,
     depth: bool,
+    /// A 32-bit float texture: it cannot be filtered, so a browser reads it `NEAREST` or not at all.
+    float32: bool,
 }
 
 /// The format of the drawing buffer and of every colour target.
@@ -193,8 +195,9 @@ pub(super) struct GlslGpu {
     /// it writes, by the child's place among those a group samples.
     input: Option<Blit>,
     inputs: Vec<Option<Target>>,
-    /// What a texture that is not complete samples as: opaque black.
+    /// What a texture that is not complete samples as: opaque black (a 2D one and a 3D one).
     black: Option<Arc<Uploaded>>,
+    black_3d: Option<Arc<Uploaded>>,
     /// The modules, layouts and pipelines of WebGPU layers.
     webgpu: webgpu::WebGpuCache,
 }
@@ -1252,7 +1255,7 @@ impl Compositor {
 
         // The textures the fragment shader samples, and which of them are depth buffers.
         let mut sampled = Vec::new();
-        for binding in &program.translated.fragment.samplers {
+        for (binding, _) in &program.translated.samplers {
             let unit = draw
                 .uniforms
                 .get(&binding.name)
@@ -1267,7 +1270,18 @@ impl Compositor {
                             state.texture
                         ))
                     })?;
-                    let uploaded = if texture.layer.is_some()
+                    if (texture.depth > 0) != (binding.dim == gl::SamplerDim::D3) {
+                        return Err(render_error(format!(
+                            "the sampler `{}` reads a {} texture, but unit {unit} holds a {} one (WebGL \
+                             refuses such a draw with INVALID_OPERATION)",
+                            binding.name,
+                            if binding.dim == gl::SamplerDim::D3 { "3D" } else { "2D" },
+                            if texture.depth > 0 { "3D" } else { "2D" },
+                        )));
+                    }
+                    let uploaded = if texture.depth > 0 || texture.floats.is_some() {
+                        self.glsl_texture_texels(&state.texture, texture)?
+                    } else if texture.layer.is_some()
                         || texture.patches.iter().any(|p| p.layer.is_some())
                     {
                         self.glsl_composed(&state.texture, texture, base_dir, inputs)?
@@ -1305,6 +1319,7 @@ impl Compositor {
                             mipmapped: levels > 1
                                 && (levels == full || state.max_level.is_some_and(|m| m < levels)),
                             depth: target.ds.is_some(),
+                            float32: false,
                         })
                     } else {
                         self.glsl_texture(&state.texture, texture, base_dir)?
@@ -1317,7 +1332,7 @@ impl Compositor {
         }
         let depths: Vec<bool> = sampled
             .iter()
-            .map(|(_, t)| t.as_ref().is_some_and(|(_, u)| u.depth))
+            .map(|(_, t)| t.as_ref().is_some_and(|(_, u)| u.depth || u.float32))
             .collect();
 
         // Pipeline.
@@ -1371,15 +1386,16 @@ impl Compositor {
         let mut sampler_views = Vec::new();
         for (binding, texture) in sampled {
             let (view, sampler) = match texture {
-                Some((state, uploaded)) => self.glsl_sampler(state, uploaded),
+                Some((state, uploaded)) => self.glsl_sampler(state, uploaded, binding.dim),
                 None => {
-                    let black = self.glsl_black();
+                    let black = self.glsl_black(binding.dim);
                     let nearest = GlslSampler {
                         texture: String::new(),
                         min: "NEAREST".into(),
                         mag: "NEAREST".into(),
                         wrap_s: "CLAMP_TO_EDGE".into(),
                         wrap_t: "CLAMP_TO_EDGE".into(),
+                        wrap_r: "CLAMP_TO_EDGE".into(),
                         max_level: None,
                     };
                     (black.view.clone(), self.glsl_sampler_for(&nearest, false))
@@ -1516,11 +1532,6 @@ impl Compositor {
             return Ok(p.clone());
         }
         let translated = gl::translate(spec, flip_y, points).map_err(render_error)?;
-        if !translated.vertex.samplers.is_empty() {
-            return Err(render_error(
-                "unsupported: a texture read in the vertex shader (vertex texture fetch)",
-            ));
-        }
         let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let module = |stage: &Stage, label| {
             self.device
@@ -1536,20 +1547,21 @@ impl Compositor {
             entries.push(uniform_entry(0, wgpu::ShaderStages::VERTEX));
         }
         entries.push(uniform_entry(1, wgpu::ShaderStages::FRAGMENT));
-        for s in &translated.fragment.samplers {
+        for (s, stages) in &translated.samplers {
+            let visibility = sampler_visibility(*stages);
             entries.push(wgpu::BindGroupLayoutEntry {
                 binding: s.texture,
-                visibility: wgpu::ShaderStages::FRAGMENT,
+                visibility,
                 ty: wgpu::BindingType::Texture {
                     sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
+                    view_dimension: view_dimension(s.dim),
                     multisampled: false,
                 },
                 count: None,
             });
             entries.push(wgpu::BindGroupLayoutEntry {
                 binding: s.sampler,
-                visibility: wgpu::ShaderStages::FRAGMENT,
+                visibility,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             });
@@ -1601,20 +1613,21 @@ impl Compositor {
             entries.push(uniform_entry(0, wgpu::ShaderStages::VERTEX));
         }
         entries.push(uniform_entry(1, wgpu::ShaderStages::FRAGMENT));
-        for (s, depth) in program.translated.fragment.samplers.iter().zip(depths) {
+        for ((s, stages), depth) in program.translated.samplers.iter().zip(depths) {
+            let visibility = sampler_visibility(*stages);
             entries.push(wgpu::BindGroupLayoutEntry {
                 binding: s.texture,
-                visibility: wgpu::ShaderStages::FRAGMENT,
+                visibility,
                 ty: wgpu::BindingType::Texture {
                     sample_type: wgpu::TextureSampleType::Float { filterable: !depth },
-                    view_dimension: wgpu::TextureViewDimension::D2,
+                    view_dimension: view_dimension(s.dim),
                     multisampled: false,
                 },
                 count: None,
             });
             entries.push(wgpu::BindGroupLayoutEntry {
                 binding: s.sampler,
-                visibility: wgpu::ShaderStages::FRAGMENT,
+                visibility,
                 ty: wgpu::BindingType::Sampler(if *depth {
                     wgpu::SamplerBindingType::NonFiltering
                 } else {
@@ -1908,6 +1921,75 @@ impl Compositor {
             view: gpu.create_view(&wgpu::TextureViewDescriptor::default()),
             mipmapped: levels > 1,
             depth: false,
+            float32: false,
+        });
+        self.glsl.textures.insert(key, uploaded.clone());
+        Ok(uploaded)
+    }
+
+    /// A 3D texture (`texImage3D`) or a float one (`R32F`, `RGBA16F`, ...), uploaded the first time and kept by
+    /// what it is made from.
+    fn glsl_texture_texels(&mut self, id: &str, texture: &GlslTexture) -> Result<Arc<Uploaded>> {
+        let key = format!("{id}|texels");
+        if let Some(t) = self.glsl.textures.get(&key) {
+            return Ok(t.clone());
+        }
+        let texels = gl::decode_texels(texture).map_err(render_error)?;
+        let three_d = texture.depth > 0;
+        let limits = self.device.limits();
+        let limit = if three_d {
+            limits.max_texture_dimension_3d
+        } else {
+            limits.max_texture_dimension_2d
+        };
+        let (width, height, depth) = (texture.width, texture.height, texture.depth.max(1));
+        if width.max(height).max(depth) > limit {
+            return Err(render_error(format!(
+                "unsupported: a {width} x {height} x {depth} texture; the device holds {limit} across"
+            )));
+        }
+        let (format, bytes, per_texel) = match &texels {
+            gl::Texels::Rgba8(b) => (COLOR_FORMAT, b, 4),
+            gl::Texels::Rgba16F(b) => (wgpu::TextureFormat::Rgba16Float, b, 8),
+            gl::Texels::Rgba32F(b) => (wgpu::TextureFormat::Rgba32Float, b, 16),
+        };
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: depth,
+        };
+        let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("glsl texture"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: if three_d {
+                wgpu::TextureDimension::D3
+            } else {
+                wgpu::TextureDimension::D2
+            },
+            format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.queue.write_texture(
+            gpu.as_image_copy(),
+            bytes,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * per_texel),
+                rows_per_image: Some(height),
+            },
+            size,
+        );
+        if self.glsl.textures.len() >= MAX_TEXTURES {
+            self.glsl.textures.clear();
+        }
+        let uploaded = Arc::new(Uploaded {
+            view: gpu.create_view(&wgpu::TextureViewDescriptor::default()),
+            mipmapped: false,
+            depth: false,
+            float32: matches!(texels, gl::Texels::Rgba32F(_)),
         });
         self.glsl.textures.insert(key, uploaded.clone());
         Ok(uploaded)
@@ -1939,6 +2021,7 @@ impl Compositor {
                 view: input(layer, texture.flip_y, texture.premultiply)?.0.clone(),
                 mipmapped: false,
                 depth: false,
+                float32: false,
             }));
         }
         if texture.mipmaps {
@@ -2043,11 +2126,16 @@ impl Compositor {
             view: gpu.create_view(&wgpu::TextureViewDescriptor::default()),
             mipmapped: false,
             depth: false,
+            float32: false,
         }))
     }
 
-    fn glsl_black(&mut self) -> Arc<Uploaded> {
-        if let Some(b) = &self.glsl.black {
+    fn glsl_black(&mut self, dim: gl::SamplerDim) -> Arc<Uploaded> {
+        let cached = match dim {
+            gl::SamplerDim::D2 => &self.glsl.black,
+            gl::SamplerDim::D3 => &self.glsl.black_3d,
+        };
+        if let Some(b) = cached {
             return b.clone();
         }
         let texture = self.device.create_texture_with_data(
@@ -2061,7 +2149,10 @@ impl Compositor {
                 },
                 mip_level_count: 1,
                 sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
+                dimension: match dim {
+                    gl::SamplerDim::D2 => wgpu::TextureDimension::D2,
+                    gl::SamplerDim::D3 => wgpu::TextureDimension::D3,
+                },
                 format: wgpu::TextureFormat::Rgba8Unorm,
                 usage: wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
@@ -2073,8 +2164,12 @@ impl Compositor {
             view: texture.create_view(&wgpu::TextureViewDescriptor::default()),
             mipmapped: false,
             depth: false,
+            float32: false,
         });
-        self.glsl.black = Some(black.clone());
+        match dim {
+            gl::SamplerDim::D2 => self.glsl.black = Some(black.clone()),
+            gl::SamplerDim::D3 => self.glsl.black_3d = Some(black.clone()),
+        }
         black
     }
 
@@ -2085,9 +2180,21 @@ impl Compositor {
         &mut self,
         state: &GlslSampler,
         texture: Arc<Uploaded>,
+        dim: gl::SamplerDim,
     ) -> (wgpu::TextureView, wgpu::Sampler) {
-        // A depth buffer is read texel for texel.
-        if texture.depth {
+        // A 32-bit float texture is complete only when it is read `NEAREST`; any other filter makes it
+        // incomplete, which samples as opaque black.
+        if texture.float32 && !(state.min == "NEAREST" && state.mag == "NEAREST") {
+            let black = self.glsl_black(dim);
+            let nearest = GlslSampler {
+                min: "NEAREST".into(),
+                mag: "NEAREST".into(),
+                ..state.clone()
+            };
+            return (black.view.clone(), self.glsl_sampler_for(&nearest, false));
+        }
+        // A depth buffer, or float texture, is read texel for texel.
+        if texture.depth || texture.float32 {
             let nearest = GlslSampler {
                 min: "NEAREST".into(),
                 mag: "NEAREST".into(),
@@ -2098,7 +2205,7 @@ impl Compositor {
         }
         let (_, _, wants_mips) = min_filter(&state.min);
         if wants_mips && !texture.mipmapped {
-            let black = self.glsl_black();
+            let black = self.glsl_black(dim);
             let sampler = self.glsl_sampler_for(state, false);
             return (black.view.clone(), sampler);
         }
@@ -2108,8 +2215,8 @@ impl Compositor {
 
     fn glsl_sampler_for(&mut self, state: &GlslSampler, mipmapped: bool) -> wgpu::Sampler {
         let key = format!(
-            "{}|{}|{}|{}|{mipmapped}|{:?}",
-            state.min, state.mag, state.wrap_s, state.wrap_t, state.max_level
+            "{}|{}|{}|{}|{}|{mipmapped}|{:?}",
+            state.min, state.mag, state.wrap_s, state.wrap_t, state.wrap_r, state.max_level
         );
         if let Some(s) = self.glsl.samplers.get(&key) {
             return s.clone();
@@ -2124,6 +2231,7 @@ impl Compositor {
             label: Some("glsl sampler"),
             address_mode_u: wrap(&state.wrap_s),
             address_mode_v: wrap(&state.wrap_t),
+            address_mode_w: wrap(&state.wrap_r),
             mag_filter: if state.mag == "NEAREST" {
                 wgpu::FilterMode::Nearest
             } else {
@@ -2991,6 +3099,25 @@ fn blit_geometry(
             (bottom - top) as u32,
         ],
     ))
+}
+
+/// The stages that read a sampler.
+fn sampler_visibility(stages: gl::SamplerStages) -> wgpu::ShaderStages {
+    let mut visibility = wgpu::ShaderStages::NONE;
+    if stages.vertex {
+        visibility |= wgpu::ShaderStages::VERTEX;
+    }
+    if stages.fragment {
+        visibility |= wgpu::ShaderStages::FRAGMENT;
+    }
+    visibility
+}
+
+fn view_dimension(dim: gl::SamplerDim) -> wgpu::TextureViewDimension {
+    match dim {
+        gl::SamplerDim::D2 => wgpu::TextureViewDimension::D2,
+        gl::SamplerDim::D3 => wgpu::TextureViewDimension::D3,
+    }
 }
 
 fn uniform_entry(binding: u32, visibility: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {

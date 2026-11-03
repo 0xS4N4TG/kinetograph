@@ -1492,3 +1492,281 @@ fn a_blurred_glsl_layer_past_the_canvas_stays_opaque_at_the_edges() {
         near(b, a, 5);
     }
 }
+
+// ---- vertex texture fetch and 3D textures ----
+
+const ES3_QUAD_FRAGMENT: &str = "#version 300 es\nprecision highp float; in vec4 v_col; out vec4 o; \
+    void main() { o = v_col; }";
+
+/// A 2 x 1 texture, red then green, as the layer's `textures`.
+fn red_green() -> String {
+    format!(
+        r#", "textures": {{"t": {{"pixels": "{}", "width": 2, "height": 1}}}}"#,
+        b64(&[255, 0, 0, 255, 0, 255, 0, 255])
+    )
+}
+
+#[test]
+fn a_vertex_shader_reads_a_texture_at_level_zero() {
+    // `texture` in a vertex shader has no derivatives: it reads level 0, with the unit's filter.
+    for read in [
+        "texture(u_tex, vec2(0.75, 0.5))",
+        "texelFetch(u_tex, ivec2(1, 0), 0)",
+    ] {
+        let vertex = format!(
+            "#version 300 es\nin vec2 a_pos; out vec4 v_col; uniform sampler2D u_tex; \
+             void main() {{ v_col = {read}; gl_Position = vec4(a_pos, 0.0, 1.0); }}"
+        );
+        let frame = render(&layer_with_vertex(
+            &vertex,
+            &[("p", ES3_QUAD_FRAGMENT)],
+            "",
+            &red_green(),
+            &draw(&sampling("t")),
+        ));
+        assert_eq!(px(&frame, 8, 8), [0, 255, 0, 255], "{read}");
+    }
+}
+
+#[test]
+fn both_stages_share_one_sampler_and_one_unit() {
+    // The vertex shader reads the green texel, the fragment shader adds the red one.
+    let vertex = "#version 300 es\nin vec2 a_pos; out vec4 v_col; uniform sampler2D u_tex; \
+        void main() { v_col = texelFetch(u_tex, ivec2(1, 0), 0); \
+        gl_Position = vec4(a_pos, 0.0, 1.0); }";
+    let fragment = "#version 300 es\nprecision highp float; in vec4 v_col; uniform sampler2D u_tex; \
+        out vec4 o; void main() { o = v_col + texelFetch(u_tex, ivec2(0, 0), 0); }";
+    let frame = render(&layer_with_vertex(
+        vertex,
+        &[("p", fragment)],
+        "",
+        &red_green(),
+        &draw(&sampling("t")),
+    ));
+    assert_eq!(px(&frame, 8, 8)[..3], [255, 255, 0]);
+}
+
+#[test]
+fn a_vertex_shader_that_moves_vertices_by_a_texture_draws_them_there() {
+    // The texel decides the quad's x offset: red (1.0) moves it out of the clip volume, so nothing is drawn.
+    let vertex = "#version 300 es\nin vec2 a_pos; out vec4 v_col; uniform sampler2D u_tex; \
+        void main() { float shift = texelFetch(u_tex, ivec2(0, 0), 0).r * 4.0; \
+        v_col = vec4(1.0); gl_Position = vec4(a_pos.x + shift, a_pos.y, 0.0, 1.0); }";
+    let frame = render(&layer_with_vertex(
+        vertex,
+        &[("p", ES3_QUAD_FRAGMENT)],
+        "",
+        &red_green(),
+        &draw(&sampling("t")),
+    ));
+    assert_eq!(px(&frame, 8, 8), [0, 0, 0, 255]);
+}
+
+/// A 2 x 2 x 2 RGBA8 texture whose texel (x, y, z) is (x, y, z, 1).
+fn volume() -> String {
+    let mut texels = Vec::new();
+    for z in 0..2u8 {
+        for y in 0..2u8 {
+            for x in 0..2u8 {
+                texels.extend([x * 255, y * 255, z * 255, 255]);
+            }
+        }
+    }
+    format!(
+        r#", "textures": {{"v": {{"pixels": "{}", "width": 2, "height": 2, "depth": 2}}}}"#,
+        b64(&texels)
+    )
+}
+
+fn volume_unit(filter: &str) -> String {
+    format!(
+        r#""uniforms": {{"u_vol": [{{"kind": "i", "value": [0]}}]}},
+            "units": {{"0": {{"texture": "v", "min": "{filter}", "mag": "{filter}",
+                "wrapS": "CLAMP_TO_EDGE", "wrapT": "CLAMP_TO_EDGE", "wrapR": "CLAMP_TO_EDGE"}}}}"#
+    )
+}
+
+fn volume_fragment(read: &str) -> String {
+    format!(
+        "#version 300 es\nprecision highp float; precision highp sampler3D; in vec2 v_uv; \
+         uniform sampler3D u_vol; out vec4 o; void main() {{ o = {read}; }}"
+    )
+}
+
+#[test]
+fn a_3d_texture_is_fetched_and_sampled_by_x_y_and_z() {
+    let fetch = volume_fragment("vec4(texelFetch(u_vol, ivec3(1, 0, 1), 0).rgb, 1.0)");
+    let frame = render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", &fetch)],
+        "",
+        &volume(),
+        &draw(&volume_unit("NEAREST")),
+    ));
+    assert_eq!(px(&frame, 8, 8), [255, 0, 255, 255]);
+    // Sampled at z = 0.75 (the second layer), x and y from the picture: GL's y counts up.
+    let sample = volume_fragment("vec4(texture(u_vol, vec3(v_uv, 0.75)).rgb, 1.0)");
+    let frame = render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", &sample)],
+        "",
+        &volume(),
+        &draw(&volume_unit("NEAREST")),
+    ));
+    assert_eq!(px(&frame, 12, 3), [255, 255, 255, 255]);
+    assert_eq!(px(&frame, 3, 12), [0, 0, 255, 255]);
+}
+
+#[test]
+fn a_3d_texture_filters_trilinearly() {
+    let sample = volume_fragment("vec4(texture(u_vol, vec3(0.5, 0.5, 0.5)).rgb, 1.0)");
+    let frame = render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", &sample)],
+        "",
+        &volume(),
+        &draw(&volume_unit("LINEAR")),
+    ));
+    near(px(&frame, 8, 8), [128, 128, 128, 255], 2);
+}
+
+#[test]
+fn a_3d_texture_of_half_floats_keeps_values_beyond_one() {
+    use base64::Engine as _;
+    // Two texels: (0.5, 0.25, 2.0, 1.0) and (4.0, 0.0, 0.0, 1.0).
+    let floats: Vec<u8> = [0.5f32, 0.25, 2.0, 1.0, 4.0, 0.0, 0.0, 1.0]
+        .iter()
+        .flat_map(|f| f.to_le_bytes())
+        .collect();
+    let content = format!(
+        r#", "textures": {{"v": {{"floats": "{}", "width": 2, "height": 1, "depth": 1}}}}"#,
+        base64::engine::general_purpose::STANDARD.encode(floats)
+    );
+    // 2.0 and 4.0 are kept, not clamped to 1: halved, they are 1.0 and 2.0.
+    let read = volume_fragment(
+        "vec4(texelFetch(u_vol, ivec3(0, 0, 0), 0).rgb * vec3(1.0, 1.0, 0.5) \
+         + texelFetch(u_vol, ivec3(1, 0, 0), 0).rgb * 0.0, 1.0)",
+    );
+    let frame = render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", &read)],
+        "",
+        &content,
+        &draw(&volume_unit("NEAREST")),
+    ));
+    near(px(&frame, 8, 8), [128, 64, 255, 255], 2);
+    let big = volume_fragment("vec4(texelFetch(u_vol, ivec3(1, 0, 0), 0).r * 0.25, 0.0, 0.0, 1.0)");
+    let frame = render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", &big)],
+        "",
+        &content,
+        &draw(&volume_unit("NEAREST")),
+    ));
+    assert_eq!(px(&frame, 8, 8), [255, 0, 0, 255]);
+}
+
+#[test]
+fn a_3d_sampler_with_no_texture_reads_black() {
+    let fetch = volume_fragment("texture(u_vol, vec3(0.5))");
+    let frame = render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", &fetch)],
+        "",
+        "",
+        &draw(r#""uniforms": {"u_vol": [{"kind": "i", "value": [0]}]}"#),
+    ));
+    assert_eq!(px(&frame, 8, 8), [0, 0, 0, 255]);
+}
+
+#[test]
+fn a_3d_sampler_on_a_unit_holding_a_2d_texture_is_refused() {
+    let fetch = volume_fragment("texture(u_vol, vec3(0.5))");
+    let e = render_error(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", &fetch)],
+        "",
+        &red_green(),
+        &draw(&volume_unit("NEAREST").replace(r#""v""#, r#""t""#)),
+    ));
+    assert!(e.contains("3D") && e.contains("2D"), "{e}");
+}
+
+const QUAD_VERTEX_ES1_AS_ES3: &str = "#version 300 es\nin vec2 a_pos; out vec2 v_uv; \
+    void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }";
+
+/// A float texture of `values` (four floats a texel) as the layer's `textures`.
+fn float_texture(values: &[f32], width: u32, float32: bool) -> String {
+    use base64::Engine as _;
+    let bytes: Vec<u8> = values.iter().flat_map(|f| f.to_le_bytes()).collect();
+    format!(
+        r#", "textures": {{"f": {{"floats": "{}", "width": {width}, "height": 1, "float32": {float32}}}}}"#,
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    )
+}
+
+fn float_unit(filter: &str) -> String {
+    format!(
+        r#""uniforms": {{"u_tex": [{{"kind": "i", "value": [0]}}]}},
+            "units": {{"0": {{"texture": "f", "min": "{filter}", "mag": "{filter}",
+                "wrapS": "CLAMP_TO_EDGE", "wrapT": "CLAMP_TO_EDGE"}}}}"#
+    )
+}
+
+fn float_fragment(read: &str) -> String {
+    format!(
+        "#version 300 es\nprecision highp float; in vec2 v_uv; uniform highp sampler2D u_tex; \
+         out vec4 o; void main() {{ o = vec4(vec3({read}), 1.0); }}"
+    )
+}
+
+fn render_floats(texture: &str, filter: &str, read: &str) -> Frame {
+    render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", &float_fragment(read))],
+        "",
+        texture,
+        &draw(&float_unit(filter)),
+    ))
+}
+
+// R32F texels, as the red channel and (r, 0, 0, 1).
+const R32F: [f32; 16] = [
+    0.0, 0.0, 0.0, 1.0, 0.25, 0.0, 0.0, 1.0, 0.5, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 1.0,
+];
+
+#[test]
+fn a_32_bit_float_texture_is_fetched_and_sampled_nearest() {
+    let texture = float_texture(&R32F, 4, true);
+    let frame = render_floats(&texture, "NEAREST", "texelFetch(u_tex, ivec2(2, 0), 0).r");
+    near(px(&frame, 8, 8), [128, 128, 128, 255], 1);
+    // Sampled at x = 0.4, the texel [0.25, 0.5): 0.25 / texel 1.
+    let frame = render_floats(&texture, "NEAREST", "texture(u_tex, vec2(0.4, 0.5)).r");
+    near(px(&frame, 8, 8), [64, 64, 64, 255], 1);
+    // Values beyond one are kept (2.0 draws as white), and what the format lacks reads (0, 0, 1).
+    let frame = render_floats(&texture, "NEAREST", "texelFetch(u_tex, ivec2(3, 0), 0).r");
+    assert_eq!(px(&frame, 8, 8), [255, 255, 255, 255]);
+    let frame = render_floats(&texture, "NEAREST", "texelFetch(u_tex, ivec2(3, 0), 0).a * 0.5");
+    near(px(&frame, 8, 8), [128, 128, 128, 255], 1);
+}
+
+#[test]
+fn a_32_bit_float_texture_with_a_linear_filter_is_incomplete_and_reads_black() {
+    // WebGL 2 filters them only with an extension: without it the texture samples (0, 0, 0, 1).
+    let texture = float_texture(&R32F, 4, true);
+    for filter in ["LINEAR", "NEAREST_MIPMAP_LINEAR"] {
+        let frame = render_floats(&texture, filter, "texture(u_tex, vec2(0.4, 0.5)).r");
+        assert_eq!(px(&frame, 8, 8), [0, 0, 0, 255], "{filter}");
+    }
+}
+
+#[test]
+fn a_16_bit_float_texture_filters_and_keeps_values_beyond_one() {
+    // Two texels of red: 0 and 1; halfway between them is 0.5.
+    let texture = float_texture(&[0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0], 2, false);
+    let frame = render_floats(&texture, "LINEAR", "texture(u_tex, vec2(0.5, 0.5)).r");
+    near(px(&frame, 8, 8), [128, 128, 128, 255], 2);
+    let texture = float_texture(&[4.0, 0.0, 0.0, 1.0], 1, false);
+    let frame = render_floats(&texture, "NEAREST", "texelFetch(u_tex, ivec2(0), 0).r * 0.25");
+    assert_eq!(px(&frame, 8, 8), [255, 255, 255, 255]);
+}

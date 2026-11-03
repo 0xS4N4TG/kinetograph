@@ -515,7 +515,7 @@ Nobody writes this by hand: `<GlslShader>` and `glslShader()` make it from a fra
 | `width`, `height` | required | Animatable, not negative. The drawing buffer's size in pixels (rounded). |
 | `programs` | `{}` | By id: `vertex` and `fragment` (GLSL ES 100, or 300 es with `#version 300 es`) and the `attributes` (name to location) the link gave the vertex shader. |
 | `buffers` | `{}` | By id: base64 bytes. |
-| `textures` | `{}` | By id: `src` (a picture file of the scene or a `data:` URL), `pixels` (base64 straight-alpha RGBA8 with `width` and `height`) or `layer` (a shader group's child), `flipY`, `premultiply` (as `UNPACK_FLIP_Y_WEBGL` and `UNPACK_PREMULTIPLY_ALPHA_WEBGL` were when it was uploaded), `mipmaps` (`generateMipmap` was called) and `patches` (`texSubImage2D` since: each `x`, `y`, `width`, `height`, one of `src`, `pixels` or `layer`, and its own `flipY` and `premultiply`, laid over the picture in order). `target: true` with `width` and `height` and no pixels is a render target (below): `format` `depth`, `stencil` or `depthStencil` for a depth or stencil buffer (colour without), `levels` for a colour one with mip levels, `luminance` for a WebGL 1 depth texture. |
+| `textures` | `{}` | By id: `src` (a picture file of the scene or a `data:` URL), `pixels` (base64 straight-alpha RGBA8 with `width` and `height`) or `layer` (a shader group's child), `flipY`, `premultiply` (as `UNPACK_FLIP_Y_WEBGL` and `UNPACK_PREMULTIPLY_ALPHA_WEBGL` were when it was uploaded), `mipmaps` (`generateMipmap` was called) and `patches` (`texSubImage2D` since: each `x`, `y`, `width`, `height`, one of `src`, `pixels` or `layer`, and its own `flipY` and `premultiply`, laid over the picture in order). `target: true` with `width` and `height` and no pixels is a render target (below): `format` `depth`, `stencil` or `depthStencil` for a depth or stencil buffer (colour without), `levels` for a colour one with mip levels, `luminance` for a WebGL 1 depth texture. `depth` makes a 3D texture (`texImage3D`, WebGL 2): `width` x `height` x `depth` texels, in `pixels` (RGBA8) or `floats`; its sampler adds `wrapR`. `floats` (base64 `f32`s, four a texel) is also a 2D float texture (`texImage2D` of `R32F`, `RGBA16F` and the other float formats): kept as half floats, or in full with `float32`, which like a browser samples only `NEAREST` (any other filter reads black). |
 | `ops` | `[]` | In order. A `clear` (`color`: r, g, b, a; `depth`: the value the depth buffer is cleared to; `stencil`: the stencil's; any of them) of the drawing buffer that takes the colour throws away every draw to the drawing buffer before it (unless a `blit` reads the drawing buffer in between, or the draws tested depth or stencil and the clear leaves that buffer). A `draw` runs one program. Both say where they go: nothing for the drawing buffer; for a framebuffer `target` (the colour attachment of output 0, at `level`), or `outputs` (the attachments of outputs 0 and up, `{ "target", "level" }` or `null` for `NONE`), and `depthStencil` (the target that is its depth or stencil buffer, which the ops that test or clear depth and stencil name). A `blit` (`blitFramebuffer`) copies `from` `[x0, y0, x1, y1]` of `src` (a target at `srcLevel`, or the drawing buffer without one) over `to` of `target` (same, at `level`), `linear` for `LINEAR`, with the `scissor` if the test was on; reversed corners mirror. With `aspect` (`depth`, `stencil` or `depthStencil`) it copies those buffers instead, texel for texel, and `src` and `target` name depth and stencil targets (the drawing buffer's without one). An `upload` (`texSubImage2D`) writes `pixels` (base64 straight-alpha RGBA8, `width` x `height`), a picture file `src` or a child `layer` (`flipY` and `premultiply` as the unpack flags were) at `x`, `y` of a target, in order with the draws. |
 | `premultipliedAlpha`, `alpha` | `true` | The context's attributes of those names: what the buffer holds is read as premultiplied (or straight) colour; `alpha: false` makes it opaque. |
 | `depth`, `stencil` | `true`, `false` | The context's attributes of those names: whether the drawing buffer has a depth buffer and a stencil buffer. |
@@ -537,11 +537,12 @@ was off or the buffer has no stencil). Each unit's sampler also has `maxLevel` w
 How it is drawn:
 
 - The program is read by naga's GLSL frontend after a rewrite to the Vulkan flavour it reads (`attribute`, `varying`
-  and `in`/`out` get locations, loose uniforms become one block, a `sampler2D` becomes a texture and a sampler,
+  and `in`/`out` get locations, loose uniforms become one block, a `sampler2D` or `sampler3D` becomes a texture and a sampler,
   `gl_FragColor` an output). `gl_FragCoord` counts up from the bottom row and clip depth is taken from GL's -w..w to
   wgpu's 0..w, so the shaders mean what they mean in a browser. Arrays of scalars and of `vec2`, `bool` and `mat2`
   uniforms travel packed (naga and Metal lay them out differently). A shader naga cannot read fails when the scene
-  loads, with the line of the page's source (`layer "sky": glsl program "p": fragment shader: 3:15: ...`).
+  loads, with the line of the page's source (`layer "sky": glsl program "p": fragment shader: 3:15: ...`). A vertex
+  shader can read textures; its `texture` calls read level 0, as in GL, and a sampler both stages declare is one unit.
 - A draw with `depth` is tested against a 32-bit float depth buffer: the drawing buffer's, or the `depthStencil` target
   its framebuffer names (shared by every framebuffer that attaches it), 1 until cleared and not carried from one frame
   to the next. Window depth is clip depth taken from -w..w to 0..1 and then through `near` and `far`; `polygonOffset`
@@ -582,10 +583,9 @@ point's number in a draw of points; `gl_InstanceID` the instance's. Instanced po
 
 Not drawn, and reported as `unsupported:` with what to do instead (never accepted and ignored):
 multisampled renderbuffers, `readPixels`, lines, instanced points, a `vertexAttribDivisor` above 1, integer and
-constant (`vertexAttrib`) attributes, cube map, 3D and array textures, float and sRGB textures, pixels uploaded to
+constant (`vertexAttrib`) attributes, cube map and array textures, sRGB textures, float textures from a picture, a float texture as a render target or a `texSubImage2D` target, pixels uploaded to
 texture levels other than 0 (call `generateMipmap`), uniform blocks and struct uniforms, array outputs, a framebuffer
-texture that is not RGBA or holds uploaded pixels, attachments of different sizes in one framebuffer, a texture read in
-the vertex shader, `drawImage` or `toDataURL` of a WebGL canvas. Edges are not multisampled (a browser's default
+texture that is not RGBA or holds uploaded pixels, attachments of different sizes in one framebuffer, `drawImage` or `toDataURL` of a WebGL canvas. Edges are not multisampled (a browser's default
 `antialias: true` smooths them); a full-screen quad has none. The context keeps the rules a multisampled canvas has in
 Chrome, though: with `antialias`, `blitFramebuffer` into the canvas, or out of it into a rectangle of another size,
 sets `INVALID_OPERATION`. The shaders' maths is the GPU's: a `sin` of a large
