@@ -203,7 +203,7 @@
     },
     "2d": {
      "psnr": 1.71088,
-     "ssim": 0.000003
+     "ssim": 3e-06
     }
    }
   },
@@ -255,14 +255,16 @@
     "webgpu",
     "webgl2"
    ],
-   "status": "not yet",
-   "note": "Needs `createCurveSampler`, which Kinetograph does not have yet",
+   "status": "supported",
+   "note": "On WebGL 2 the engine has no float textures; WebGPU is used",
    "measured": {
     "webgpu": {
-     "error": "curves(): `createCurveSampler` is not implemented yet in Kinetograph."
+     "psnr": 106.526841,
+     "ssim": 1
     },
     "webgl2": {
-     "error": "curves(): `createCurveSampler` is not implemented yet in Kinetograph."
+     "psnr": 106.526841,
+     "ssim": 1
     }
    }
   },

@@ -22,7 +22,7 @@ import { vignette } from '@remotion/effects/vignette';
 Each effect is rendered by Remotion in Chrome and by Kinetograph, at frame 0, 960 × 540, and compared by PSNR. Supported means 50 dB or more on the backend Kinetograph picks. The table is generated from that run, with one set of parameters per effect.
 
 {/* effects:start */}
-85 of 89 are supported, 2 approximated, 2 not yet. Measured against Remotion 4.0.540 in Chrome.
+86 of 89 are supported, 2 approximated, 1 not yet. Measured against Remotion 4.0.540 in Chrome.
 
 | Effect | Backends | Status |
 | --- | --- | --- |
@@ -38,7 +38,7 @@ Each effect is rendered by Remotion in Chrome and by Kinetograph, at frame 0, 96
 | `contourLines()` | webgpu, webgl2 | Supported |
 | `contrast()` | webgl2, webgpu, 2d | Supported. The 2D backend draws nothing (reads source pixels); WebGPU and WebGL 2 are used |
 | `cornerPin()` | webgpu, webgl2 | Supported |
-| `curves()` | webgpu, webgl2 | Not yet. Needs `createCurveSampler`, which Kinetograph does not have yet |
+| `curves()` | webgpu, webgl2 | Supported. On WebGL 2 the engine has no float textures; WebGPU is used |
 | `cylinder()` | webgpu, webgl2 | Supported |
 | `dotGrid()` | webgpu, webgl2 | Supported |
 | `dropShadow()` | webgpu, webgl2 | Supported |
