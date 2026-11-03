@@ -99,21 +99,29 @@ function folderRegistry(root: string, fetchImpl: typeof fetch): Registry {
       return parseJson(Buffer.from(readInside(path, MAX_JSON_BYTES)).toString('utf8'), path);
     },
     async readFile(_itemName, url) {
-      if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return download(fileUrl(new URL('https://registry.invalid/'), url), MAX_FILE_BYTES, fetchImpl);
+      // A folder has no origin, so a file it names must be in the folder; an absolute URL can only be refused.
+      if (/^[a-z][a-z0-9+.-]*:|^\/\//i.test(url)) fileUrl(undefined, url);
       return readInside(url, MAX_FILE_BYTES);
     },
   };
 }
 
-/** `url` against the item's own URL, which must come out as https. */
-function fileUrl(itemUrl: URL, url: string): URL {
+/**
+ * `url` against the item's own URL. It must come out as https (INSECURE_URL) and on the same origin as the item
+ * (UNSAFE_URL: scheme, host and port), so a registry cannot send the CLI to fetch from somewhere else. Without an
+ * `itemUrl` (a folder registry) no absolute URL is allowed.
+ */
+function fileUrl(itemUrl: URL | undefined, url: string): URL {
   let resolved: URL;
   try {
-    resolved = new URL(url, itemUrl);
+    resolved = new URL(url, itemUrl ?? 'https://folder.invalid/');
   } catch {
     throw new CliError('INVALID_ITEM', `"${url}" is not a URL`);
   }
   if (resolved.protocol !== 'https:') throw new CliError('INSECURE_URL', `${resolved.href} is not an https URL`);
+  if (resolved.origin !== (itemUrl ?? resolved).origin || itemUrl === undefined) {
+    throw new CliError('UNSAFE_URL', `${resolved.href} is not on the registry's own origin${itemUrl ? ` (${itemUrl.origin})` : ''}`);
+  }
   return resolved;
 }
 

@@ -94,5 +94,5 @@ A sample item is in `packages/cli/test/fixtures/registry-src/title-card/`.
 
 The CLI treats every item as untrusted data and never executes anything from it. Targets must be relative paths under
 `src/` or `public/`: no absolute paths, `..`, backslashes or control characters, and no symbolic link anywhere on the
-way. Files are fetched over `https` only (redirects included) with size limits (4 MB per JSON file, 100 MB per
+way. Files are fetched over `https` only (redirects included), a binary's `url` must be on the same origin as the item (scheme, host and port; a folder registry allows no absolute URLs), with size limits (4 MB per JSON file, 100 MB per
 binary), and nothing is written until every item and download has been checked.

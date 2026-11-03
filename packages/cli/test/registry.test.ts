@@ -357,7 +357,7 @@ describe('what a registry may not do', () => {
     writeFileSync(secret, 'secret');
     symlinkSync(secret, join(registry, 'linked.bin'));
     const asset = (url: string) => ({ path: 'a.bin', target: 'public/images/leak/a.bin', url });
-    for (const [url, code] of [['../secret.txt', 'UNSAFE_PATH'], [secret, 'UNSAFE_PATH'], ['linked.bin', 'UNSAFE_PATH'], ['http://example.com/a.bin', 'INSECURE_URL'], ['file:///etc/passwd', 'INSECURE_URL']] as const) {
+    for (const [url, code] of [['../secret.txt', 'UNSAFE_PATH'], [secret, 'UNSAFE_PATH'], ['linked.bin', 'UNSAFE_PATH'], ['http://example.com/a.bin', 'INSECURE_URL'], ['https://example.com/a.bin', 'UNSAFE_URL'], ['//example.com/a.bin', 'UNSAFE_URL'], ['file:///etc/passwd', 'INSECURE_URL']] as const) {
       writeFileSync(join(registry, 'leak.json'), JSON.stringify(fileItem('leak', { files: [asset(url)] })));
       process.env.KINETOGRAPH_REGISTRY = registry;
       const dir = await project();
@@ -403,6 +403,18 @@ describe('over https', () => {
     const dir = await project();
     await expect(addItems({ names: ['plain'], dir, registry: openRegistry({ spec: 'https://example.test/r', fetch }), overwrite: false, yes: false })).rejects.toMatchObject({ code: 'INSECURE_URL' });
     expect(seen).toEqual(['https://example.test/r/plain.json']);
+  });
+
+  it('refuses a file url on another origin: host, port or scheme', async () => {
+    for (const url of ['https://cdn.example.test/a.bin', 'https://example.test:8443/a.bin', '//evil.test/a.bin', 'https://example.test.evil.test/a.bin', 'https://user@evil.test/a.bin']) {
+      const { fetch, seen } = answer({
+        'https://example.test/r/other.json': { body: JSON.stringify(fileItem('other', { files: [{ path: 'a.bin', target: 'public/images/other/a.bin', url }] })) },
+      });
+      const dir = await project();
+      await expect(addItems({ names: ['other'], dir, registry: openRegistry({ spec: 'https://example.test/r', fetch }), overwrite: false, yes: false }), url).rejects.toMatchObject({ code: 'UNSAFE_URL' });
+      expect(seen, url).toEqual(['https://example.test/r/other.json']);
+      expect(existsSync(join(dir, 'public/images/other'))).toBe(false);
+    }
   });
 
   it('refuses a redirect to http', async () => {
