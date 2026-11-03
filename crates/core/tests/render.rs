@@ -1,7 +1,7 @@
 
 use std::path::{Path, PathBuf};
 
-use kinetograph_core::{Error, Renderer, Scene, render_still};
+use kinetograph_core::{Error, Frame, Renderer, Scene, render_still};
 
 fn example() -> Scene {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/basic.json");
@@ -65,21 +65,35 @@ fn out_of_range_frames_error_before_rendering() {
     assert!(render_still(scene, duration - 1).is_ok());
 }
 
-#[test]
-fn blends_in_linear_light() {
-    let json = r##"{
+/// 50% white over black, in the scene's blend space.
+fn half_white(space: &str) -> Frame {
+    let json = format!(
+        r##"{{
         "width": 8, "height": 8, "fps": 30, "durationInFrames": 1,
-        "background": "#000000",
+        "background": "#000000" {space},
         "layers": [
-            {"id": "white", "type": "shape", "opacity": 0.5,
-             "shape": {"kind": "rect", "width": 8, "height": 8}, "fill": "#ffffff"}
+            {{"id": "white", "type": "shape", "opacity": 0.5,
+             "shape": {{"kind": "rect", "width": 8, "height": 8}}, "fill": "#ffffff"}}
         ]
-    }"##;
-    let scene = Scene::from_json(json, PathBuf::new()).unwrap();
-    let frame = render_still(scene, 0).unwrap();
+    }}"##
+    );
+    render_still(Scene::from_json(&json, PathBuf::new()).unwrap(), 0).unwrap()
+}
+
+#[test]
+fn blends_in_srgb_by_default_as_a_browser_does() {
+    // 50% white over black is 128 on the encoded values, as in CSS.
+    for chunk in half_white("").rgba.chunks(4) {
+        assert!(chunk[0].abs_diff(128) <= 1, "got {chunk:?}");
+        assert_eq!(chunk[0], chunk[1]);
+        assert_eq!(chunk[3], 255);
+    }
+}
+
+#[test]
+fn blends_in_linear_light_when_asked() {
     // 50% white over black is 0.5 in linear light, which is 188 in sRGB.
-    // (Blending in sRGB space, as CSS does, would give 128.)
-    for chunk in frame.rgba.chunks(4) {
+    for chunk in half_white(r#", "blendSpace": "linear""#).rgba.chunks(4) {
         assert!(chunk[0].abs_diff(188) <= 1, "got {chunk:?}");
         assert_eq!(chunk[0], chunk[1]);
         assert_eq!(chunk[3], 255);

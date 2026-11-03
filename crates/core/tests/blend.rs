@@ -209,7 +209,7 @@ fn all_blend_modes_match_the_spec_formulas() {
         }
     }
     let json = format!(
-        r#"{{"width": {}, "height": {}, "fps": 30, "durationInFrames": 1,
+        r#"{{"blendSpace": "linear", "width": {}, "height": {}, "fps": 30, "durationInFrames": 1,
             "background": "transparent", "layers": [{}]}}"#,
         MODES.len() as u32 * CELL,
         PAIRS.len() as u32 * CELL,

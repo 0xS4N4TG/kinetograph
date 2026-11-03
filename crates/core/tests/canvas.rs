@@ -9,7 +9,7 @@ use kinetograph_core::{Error, Frame, Scene, render_still};
 /// A 16 x 16 scene, black background, with one canvas layer of `commands`.
 fn render(commands: &str) -> Frame {
     let json = format!(
-        r##"{{"width": 16, "height": 16, "fps": 30, "durationInFrames": 1, "background": "#000000",
+        r##"{{"blendSpace": "linear", "width": 16, "height": 16, "fps": 30, "durationInFrames": 1, "background": "#000000",
             "fonts": {{"DM Sans": "../../../assets/fonts/DMSans-Medium.ttf"}},
             "layers": [{{"id": "c", "type": "canvas", "width": 16, "height": 16, "commands": {commands}}}]}}"##
     );

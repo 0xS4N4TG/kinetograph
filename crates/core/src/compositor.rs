@@ -267,7 +267,7 @@ pub struct Compositor {
     /// The canvas, which `read_rgba8` copies out of the middle of a texture.
     canvas: (u32, u32),
     margin: u32,
-    /// Blend and composite layers on sRGB-encoded values (`Scene::blend_space`).
+    /// Blend and composite layers on sRGB-encoded values (`Scene::blend_space`, sRGB unless a scene asks for linear).
     srgb_blend: bool,
     layout: wgpu::BindGroupLayout,
     /// Skia's sRGB-encoded premultiplied output to linear light.
@@ -598,7 +598,7 @@ impl Compositor {
             height: height + 2 * margin,
             canvas: (width, height),
             margin,
-            srgb_blend: false,
+            srgb_blend: true,
             to_linear_premul: pipeline(&shader, "fs_to_linear_premul", LINEAR_FORMAT),
             to_srgb_premul: pipeline(&shader, "fs_to_srgb_premul", LINEAR_FORMAT),
             copy: pipeline(&shader, "fs_copy", LINEAR_FORMAT),

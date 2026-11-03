@@ -5,7 +5,7 @@
 //! and the layers the wgpu path draws, which Skia samples, are read back to the CPU first (`backend.rs`).
 //!
 //! Skia draws the frame's layers into one texture that wgpu owns, on the device and queue wgpu uses: for
-//! a scene that blends in linear light (`blendSpace`) Rgba16Float in linear light, else Rgba8 holding sRGB-encoded
+//! a scene that blends in linear light (`blendSpace: "linear"`) Rgba16Float in linear light, else (the default) Rgba8 holding sRGB-encoded
 //! values (premultiplied). The compositor then copies or converts that texture to the
 //! linear canvas and the readback runs as it always does. A layer Skia cannot draw (`draw::gaps`) is drawn by the
 //! wgpu path into a texture, which Skia draws as an image.

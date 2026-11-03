@@ -8,7 +8,7 @@ use kinetograph_core::{Error, Frame, Scene, render_still};
 
 fn scene_of(layers: &str) -> Scene {
     let json = format!(
-        r##"{{"width": 16, "height": 16, "fps": 30, "durationInFrames": 1, "background": "#000000",
+        r##"{{"blendSpace": "linear", "width": 16, "height": 16, "fps": 30, "durationInFrames": 1, "background": "#000000",
             "layers": [{layers}]}}"##
     );
     Scene::from_json(&json, Path::new(env!("CARGO_MANIFEST_DIR")).join("tests")).unwrap()
