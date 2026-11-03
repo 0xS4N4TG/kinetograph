@@ -1,0 +1,1689 @@
+{
+ "version": "4.0.540",
+ "frame": 0,
+ "size": "960x540",
+ "effects": {
+  "barrelDistortion": {
+   "sub": "barrel-distortion",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 80.273716,
+     "ssim": 0.999999
+    },
+    "webgl2": {
+     "psnr": 79.580789,
+     "ssim": 0.999999
+    }
+   }
+  },
+  "bevelAlpha": {
+   "sub": "bevel-alpha",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "blur": {
+   "sub": "blur",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 69.259297,
+     "ssim": 0.999896
+    },
+    "webgl2": {
+     "psnr": 69.259297,
+     "ssim": 0.999896
+    }
+   }
+  },
+  "burlap": {
+   "sub": "burlap",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 98.745328,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 98.745328,
+     "ssim": 1
+    }
+   }
+  },
+  "fractalNoise": {
+   "sub": "fractal-noise",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 82.039778,
+     "ssim": 0.999994
+    },
+    "webgl2": {
+     "psnr": 82.039778,
+     "ssim": 0.999994
+    }
+   }
+  },
+  "flannel": {
+   "sub": "flannel",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 76.106339,
+     "ssim": 0.999997
+    },
+    "webgl2": {
+     "psnr": 76.106339,
+     "ssim": 0.999997
+    }
+   }
+  },
+  "checkerboard": {
+   "sub": "checkerboard",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "chromaticAberration": {
+   "sub": "chromatic-aberration",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 88.818321,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 88.818321,
+     "ssim": 1
+    }
+   }
+  },
+  "colorKey": {
+   "sub": "color-key",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 80.480981,
+     "ssim": 0.999994
+    },
+    "webgl2": {
+     "psnr": 80.480981,
+     "ssim": 0.999994
+    }
+   }
+  },
+  "colorCorrection": {
+   "sub": "color-correction",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 111.298053,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 111.298053,
+     "ssim": 1
+    }
+   }
+  },
+  "brightness": {
+   "sub": "brightness",
+   "backends": [
+    "webgl2",
+    "webgpu",
+    "2d"
+   ],
+   "status": "supported",
+   "note": "The 2D backend draws nothing (reads source pixels); WebGPU and WebGL 2 are used",
+   "measured": {
+    "webgl2": {
+     "psnr": 100.506241,
+     "ssim": 1
+    },
+    "webgpu": {
+     "psnr": 100.506241,
+     "ssim": 1
+    },
+    "2d": {
+     "psnr": 1.71088,
+     "ssim": 0.000003
+    }
+   }
+  },
+  "contrast": {
+   "sub": "contrast",
+   "backends": [
+    "webgl2",
+    "webgpu",
+    "2d"
+   ],
+   "status": "supported",
+   "note": "The 2D backend draws nothing (reads source pixels); WebGPU and WebGL 2 are used",
+   "measured": {
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "2d": {
+     "psnr": 2.618856,
+     "ssim": 0.246892
+    }
+   }
+  },
+  "contourLines": {
+   "sub": "contour-lines",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 88.745328,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 88.745328,
+     "ssim": 1
+    }
+   }
+  },
+  "curves": {
+   "sub": "curves",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "not yet",
+   "note": "Needs `createCurveSampler`, which Kinetograph does not have yet",
+   "measured": {
+    "webgpu": {
+     "error": "curves(): `createCurveSampler` is not implemented yet in Kinetograph."
+    },
+    "webgl2": {
+     "error": "curves(): `createCurveSampler` is not implemented yet in Kinetograph."
+    }
+   }
+  },
+  "cylinder": {
+   "sub": "cylinder",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 95.500217,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 95.500217,
+     "ssim": 1
+    }
+   }
+  },
+  "dropShadow": {
+   "sub": "drop-shadow",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "duotone": {
+   "sub": "duotone",
+   "backends": [
+    "webgl2",
+    "webgpu"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "emboss": {
+   "sub": "emboss",
+   "backends": [
+    "webgl2",
+    "webgpu"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgl2": {
+     "psnr": 79.41721,
+     "ssim": 0.999999
+    },
+    "webgpu": {
+     "psnr": 79.41721,
+     "ssim": 0.999999
+    }
+   }
+  },
+  "evolve": {
+   "sub": "evolve",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 74.544854,
+     "ssim": 0.999983
+    },
+    "webgl2": {
+     "psnr": 74.537522,
+     "ssim": 0.999983
+    }
+   }
+  },
+  "exposure": {
+   "sub": "exposure",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 103.516541,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 103.516541,
+     "ssim": 1
+    }
+   }
+  },
+  "filmBurn": {
+   "sub": "film-burn",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 73.099983,
+     "ssim": 0.99999
+    },
+    "webgl2": {
+     "psnr": 73.095382,
+     "ssim": 0.99999
+    }
+   }
+  },
+  "fisheye": {
+   "sub": "fisheye",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 79.41158,
+     "ssim": 0.999999
+    },
+    "webgl2": {
+     "psnr": 79.194868,
+     "ssim": 0.999999
+    }
+   }
+  },
+  "cornerPin": {
+   "sub": "corner-pin",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 106.526841,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 106.526841,
+     "ssim": 1
+    }
+   }
+  },
+  "glow": {
+   "sub": "glow",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "gridlines": {
+   "sub": "gridlines",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 106.526841,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 106.526841,
+     "ssim": 1
+    }
+   }
+  },
+  "halftone": {
+   "sub": "halftone",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "halftoneLinearGradient": {
+   "sub": "halftone-linear-gradient",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 78.379927,
+     "ssim": 0.999999
+    },
+    "webgl2": {
+     "psnr": 78.379927,
+     "ssim": 0.999999
+    }
+   }
+  },
+  "pixelDissolve": {
+   "sub": "pixel-dissolve",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 82.947492,
+     "ssim": 0.999998
+    },
+    "webgl2": {
+     "psnr": 82.947492,
+     "ssim": 0.999998
+    }
+   }
+  },
+  "pixelate": {
+   "sub": "pixelate",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "grayscale": {
+   "sub": "grayscale",
+   "backends": [
+    "webgl2",
+    "webgpu",
+    "2d"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgl2": {
+     "psnr": 106.526841,
+     "ssim": 1
+    },
+    "webgpu": {
+     "psnr": 106.526841,
+     "ssim": 1
+    },
+    "2d": {
+     "psnr": 64.820118,
+     "ssim": 0.999652
+    }
+   }
+  },
+  "hue": {
+   "sub": "hue",
+   "backends": [
+    "webgl2",
+    "webgpu",
+    "2d"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgl2": {
+     "psnr": 106.526841,
+     "ssim": 1
+    },
+    "webgpu": {
+     "psnr": 106.526841,
+     "ssim": 1
+    },
+    "2d": {
+     "psnr": 62.495464,
+     "ssim": 0.999795
+    }
+   }
+  },
+  "invert": {
+   "sub": "invert",
+   "backends": [
+    "webgl2",
+    "webgpu",
+    "2d"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "2d": {
+     "psnr": 57.436632,
+     "ssim": 0.994044
+    }
+   }
+  },
+  "lines": {
+   "sub": "lines",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "linearGradient": {
+   "sub": "linear-gradient",
+   "backends": [
+    "webgl2",
+    "webgpu"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "linearGradientTint": {
+   "sub": "linear-gradient-tint",
+   "backends": [
+    "webgl2",
+    "webgpu"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgl2": {
+     "psnr": 74.660102,
+     "ssim": 0.999992
+    },
+    "webgpu": {
+     "psnr": 74.660102,
+     "ssim": 0.999992
+    }
+   }
+  },
+  "liquidContours": {
+   "sub": "liquid-contours",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 101.755628,
+     "ssim": 1
+    }
+   }
+  },
+  "linearProgressiveBlur": {
+   "sub": "linear-progressive-blur",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 68.798003,
+     "ssim": 0.999865
+    },
+    "webgl2": {
+     "psnr": 68.714075,
+     "ssim": 0.999863
+    }
+   }
+  },
+  "linearProgressivePixelate": {
+   "sub": "linear-progressive-pixelate",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 72.987038,
+     "ssim": 0.999958
+    },
+    "webgl2": {
+     "psnr": 72.987038,
+     "ssim": 0.999958
+    }
+   }
+  },
+  "irisWipe": {
+   "sub": "iris-wipe",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 106.526841,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 106.526841,
+     "ssim": 1
+    }
+   }
+  },
+  "lensBlur": {
+   "sub": "lens-blur",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 70.339737,
+     "ssim": 0.999915
+    },
+    "webgl2": {
+     "psnr": 70.445861,
+     "ssim": 0.999917
+    }
+   }
+  },
+  "levels": {
+   "sub": "levels",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 106.526841,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 106.526841,
+     "ssim": 1
+    }
+   }
+  },
+  "longShadows": {
+   "sub": "long-shadows",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 80.399002,
+     "ssim": 0.999999
+    },
+    "webgl2": {
+     "psnr": 80.399002,
+     "ssim": 0.999999
+    }
+   }
+  },
+  "lut": {
+   "sub": "lut",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "note": "On WebGL 2 the engine has no 3D textures; WebGPU is used",
+   "measured": {
+    "webgpu": {
+     "psnr": 106.526841,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 106.526841,
+     "ssim": 1
+    }
+   }
+  },
+  "lightLeak": {
+   "sub": "light-leak",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 83.182303,
+     "ssim": 0.999997
+    },
+    "webgl2": {
+     "psnr": 83.189011,
+     "ssim": 0.999997
+    }
+   }
+  },
+  "lightTrail": {
+   "sub": "light-trail",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 96.984416,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 96.984416,
+     "ssim": 1
+    }
+   }
+  },
+  "dotGrid": {
+   "sub": "dot-grid",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 74.153918,
+     "ssim": 0.999993
+    },
+    "webgl2": {
+     "psnr": 74.153918,
+     "ssim": 0.999993
+    }
+   }
+  },
+  "mirror": {
+   "sub": "mirror",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 103.516541,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 103.516541,
+     "ssim": 1
+    }
+   }
+  },
+  "noise": {
+   "sub": "noise",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 103.516541,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 103.516541,
+     "ssim": 1
+    }
+   }
+  },
+  "noiseDisplacement": {
+   "sub": "noise-displacement",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 76.350943,
+     "ssim": 0.999987
+    },
+    "webgl2": {
+     "psnr": 76.108968,
+     "ssim": 0.999987
+    }
+   }
+  },
+  "outline": {
+   "sub": "outline",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "note": "On WebGL 2 the effect reads source pixels on the CPU; WebGPU is used",
+   "measured": {
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "pageTurn": {
+   "sub": "page-turn",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "paper": {
+   "sub": "paper",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 77.248007,
+     "ssim": 0.999997
+    },
+    "webgl2": {
+     "psnr": 64.639337,
+     "ssim": 0.999928
+    }
+   }
+  },
+  "roughenEdges": {
+   "sub": "roughen-edges",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 84.038937,
+     "ssim": 0.999997
+    },
+    "webgl2": {
+     "psnr": 83.444755,
+     "ssim": 1
+    }
+   }
+  },
+  "pattern": {
+   "sub": "pattern",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "radialProgressiveBlur": {
+   "sub": "radial-progressive-blur",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 68.125571,
+     "ssim": 0.999839
+    },
+    "webgl2": {
+     "psnr": 68.102829,
+     "ssim": 0.999839
+    }
+   }
+  },
+  "radialProgressivePixelate": {
+   "sub": "radial-progressive-pixelate",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 73.207846,
+     "ssim": 0.99996
+    },
+    "webgl2": {
+     "psnr": 73.207172,
+     "ssim": 0.99996
+    }
+   }
+  },
+  "radialWipe": {
+   "sub": "radial-wipe",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 106.526841,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 106.526841,
+     "ssim": 1
+    }
+   }
+  },
+  "rainFall": {
+   "sub": "rain-fall",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "note": "On WebGL 2 the engine can't read a texture in the vertex shader; WebGPU is used",
+   "measured": {
+    "webgpu": {
+     "psnr": 78.538034,
+     "ssim": 0.999999
+    },
+    "webgl2": {
+     "error": "render failed: glsl: unsupported: a texture read in the vertex shader (vertex texture fetch)"
+    }
+   }
+  },
+  "regionBlur": {
+   "sub": "region-blur",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 74.007216,
+     "ssim": 0.99996
+    },
+    "webgl2": {
+     "psnr": 74.007216,
+     "ssim": 0.99996
+    }
+   }
+  },
+  "rings": {
+   "sub": "rings",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "saturation": {
+   "sub": "saturation",
+   "backends": [
+    "webgl2",
+    "webgpu",
+    "2d"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgl2": {
+     "psnr": 106.526841,
+     "ssim": 1
+    },
+    "webgpu": {
+     "psnr": 106.526841,
+     "ssim": 1
+    },
+    "2d": {
+     "psnr": 64.79663,
+     "ssim": 0.999658
+    }
+   }
+  },
+  "scanlines": {
+   "sub": "scanlines",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "scale": {
+   "sub": "scale",
+   "backends": [
+    "webgl2",
+    "webgpu",
+    "2d"
+   ],
+   "status": "supported",
+   "note": "The 2D backend is approximate (32 dB); WebGPU and WebGL 2 match",
+   "measured": {
+    "webgl2": {
+     "psnr": 87.215654,
+     "ssim": 1
+    },
+    "webgpu": {
+     "psnr": 87.215654,
+     "ssim": 1
+    },
+    "2d": {
+     "psnr": 31.937786,
+     "ssim": 0.989371
+    }
+   }
+  },
+  "shadowsHighlights": {
+   "sub": "shadows-highlights",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 106.526841,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 106.526841,
+     "ssim": 1
+    }
+   }
+  },
+  "shatter": {
+   "sub": "shatter",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "approximated",
+   "note": "Same picture; pixels on the edges of the shards differ (28 dB)",
+   "measured": {
+    "webgpu": {
+     "psnr": 28.232934,
+     "ssim": 0.978763
+    },
+    "webgl2": {
+     "psnr": 28.232998,
+     "ssim": 0.978763
+    }
+   }
+  },
+  "shine": {
+   "sub": "shine",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 74.153079,
+     "ssim": 0.999995
+    },
+    "webgl2": {
+     "psnr": 74.153079,
+     "ssim": 0.999995
+    }
+   }
+  },
+  "shrinkwrap": {
+   "sub": "shrinkwrap",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 79.569106,
+     "ssim": 0.999997
+    },
+    "webgl2": {
+     "psnr": 81.049094,
+     "ssim": 0.999997
+    }
+   }
+  },
+  "skew": {
+   "sub": "skew",
+   "backends": [
+    "webgl2",
+    "webgpu"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgl2": {
+     "psnr": 82.138781,
+     "ssim": 0.999999
+    },
+    "webgpu": {
+     "psnr": 82.484207,
+     "ssim": 1
+    }
+   }
+  },
+  "speckle": {
+   "sub": "speckle",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 84.063497,
+     "ssim": 0.999999
+    },
+    "webgl2": {
+     "psnr": 83.1224,
+     "ssim": 0.999998
+    }
+   }
+  },
+  "snowFall": {
+   "sub": "snow-fall",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "note": "On WebGL 2 the engine can't read a texture in the vertex shader; WebGPU is used",
+   "measured": {
+    "webgpu": {
+     "psnr": 92.267154,
+     "ssim": 1
+    },
+    "webgl2": {
+     "error": "render failed: glsl: unsupported: a texture read in the vertex shader (vertex texture fetch)"
+    }
+   }
+  },
+  "sphere": {
+   "sub": "sphere",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 84.413855,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 84.413855,
+     "ssim": 1
+    }
+   }
+  },
+  "starburst": {
+   "sub": "starburst",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "tear": {
+   "sub": "tear",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "approximated",
+   "note": "Same picture; pixels on the tear's edge differ (39 dB)",
+   "measured": {
+    "webgpu": {
+     "psnr": 39.080278,
+     "ssim": 0.997768
+    },
+    "webgl2": {
+     "psnr": 39.080277,
+     "ssim": 0.997768
+    }
+   }
+  },
+  "thermalVision": {
+   "sub": "thermal-vision",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 95.735028,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 95.616036,
+     "ssim": 1
+    }
+   }
+  },
+  "tile": {
+   "sub": "tile",
+   "backends": [
+    "webgl2",
+    "webgpu",
+    "2d"
+   ],
+   "status": "not yet",
+   "note": "Reads the source pixels on the CPU (`getImageData` of a layer), which the engine does not give a script yet",
+   "measured": {
+    "webgl2": {
+     "psnr": 3.738303,
+     "ssim": 0.221844
+    },
+    "webgpu": {
+     "psnr": 3.738303,
+     "ssim": 0.221844
+    },
+    "2d": {
+     "psnr": 3.738303,
+     "ssim": 0.221844
+    }
+   }
+  },
+  "tint": {
+   "sub": "tint",
+   "backends": [
+    "webgl2",
+    "webgpu",
+    "2d"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgl2": {
+     "psnr": 108.287753,
+     "ssim": 1
+    },
+    "webgpu": {
+     "psnr": 108.287753,
+     "ssim": 1
+    },
+    "2d": {
+     "psnr": 56.580033,
+     "ssim": 0.996955
+    }
+   }
+  },
+  "uvTranslate": {
+   "sub": "translate",
+   "backends": [
+    "webgl2",
+    "webgpu",
+    "2d"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgl2": {
+     "psnr": 106.526841,
+     "ssim": 1
+    },
+    "webgpu": {
+     "psnr": 106.526841,
+     "ssim": 1
+    },
+    "2d": {
+     "psnr": 90.963816,
+     "ssim": 1
+    }
+   }
+  },
+  "xyTranslate": {
+   "sub": "translate",
+   "backends": [
+    "webgl2",
+    "webgpu",
+    "2d"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgl2": {
+     "psnr": 106.526841,
+     "ssim": 1
+    },
+    "webgpu": {
+     "psnr": 106.526841,
+     "ssim": 1
+    },
+    "2d": {
+     "psnr": 90.963816,
+     "ssim": 1
+    }
+   }
+  },
+  "turbulentDisplace": {
+   "sub": "turbulent-displace",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 79.488198,
+     "ssim": 0.999999
+    },
+    "webgl2": {
+     "psnr": 78.654598,
+     "ssim": 0.999999
+    }
+   }
+  },
+  "tvSignalOff": {
+   "sub": "tv-signal-off",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 91.475341,
+     "ssim": 0.999999
+    },
+    "webgl2": {
+     "psnr": 91.475341,
+     "ssim": 0.999999
+    }
+   }
+  },
+  "venetianBlinds": {
+   "sub": "venetian-blinds",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "vibrance": {
+   "sub": "vibrance",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 106.526841,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 106.526841,
+     "ssim": 1
+    }
+   }
+  },
+  "vignette": {
+   "sub": "vignette",
+   "backends": [
+    "webgl2",
+    "webgpu"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgl2": {
+     "psnr": 105.277454,
+     "ssim": 1
+    },
+    "webgpu": {
+     "psnr": 106.526841,
+     "ssim": 1
+    }
+   }
+  },
+  "wave": {
+   "sub": "wave",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 82.797721,
+     "ssim": 0.999999
+    },
+    "webgl2": {
+     "psnr": 82.742862,
+     "ssim": 0.999999
+    }
+   }
+  },
+  "waves": {
+   "sub": "waves",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "whiteBalance": {
+   "sub": "white-balance",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 108.287753,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 108.287753,
+     "ssim": 1
+    }
+   }
+  },
+  "whiteNoise": {
+   "sub": "white-noise",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 74.581697,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 74.581697,
+     "ssim": 1
+    }
+   }
+  },
+  "zoomBlur": {
+   "sub": "zoom-blur",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 70.530557,
+     "ssim": 0.999924
+    },
+    "webgl2": {
+     "psnr": 70.523648,
+     "ssim": 0.999924
+    }
+   }
+  },
+  "zigzag": {
+   "sub": "zigzag",
+   "backends": [
+    "webgpu",
+    "webgl2"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "chain": {
+   "sub": "(chain of blur, grayscale, vignette)",
+   "backends": [
+    "webgl2",
+    "webgpu"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgl2": {
+     "psnr": 77.041081,
+     "ssim": 0.999993
+    },
+    "webgpu": {
+     "psnr": 77.052504,
+     "ssim": 0.999993
+    }
+   }
+  }
+ }
+}
