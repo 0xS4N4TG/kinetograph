@@ -113,7 +113,12 @@ jobs:
           TAG: ${{ inputs.tag }}
         run: |
           set -e
-          publish() { (cd "$1" && npm publish --access public --provenance --tag "$TAG" $DRY); }
+          # A package whose version is already on npm is skipped, so a run that stopped partway can be started again.
+          publish() {
+            n=$(node -p "require('./$1/package.json').name"); v=$(node -p "require('./$1/package.json').version")
+            if npm view "$n@$v" version >/dev/null 2>&1; then echo "$n@$v is already published, skipping"; return; fi
+            (cd "$1" && npm publish --access public --provenance --tag "$TAG" $DRY)
+          }
           # The platform packages first, then the package that lists them, then the rest, each after what it depends on:
           # scene; compat (scene); react (compat); core (compat, native, react); audio (native); studio (core, native; cli is a
           # peer); cli (all of those, studio included, so studio goes first); plugins (core, react and the library they wrap are peers).
