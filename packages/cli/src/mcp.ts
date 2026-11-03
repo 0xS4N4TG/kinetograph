@@ -55,7 +55,7 @@ const IMAGE_TOOLS = new Set(['still', 'strip', 'onion']);
 export function inputShape(command: Command): Record<string, z.ZodType> {
   const shape: Record<string, z.ZodType> = {};
   for (const p of command.positionals) {
-    const base = p.type === 'number' ? z.number() : z.string();
+    const base = p.variadic ? z.array(z.string()) : p.type === 'number' ? z.number() : z.string();
     shape[p.name] = (p.optional ? base.optional() : base).describe(p.description);
   }
   for (const o of allOptions(command)) {
@@ -70,7 +70,10 @@ export function inputShape(command: Command): Record<string, z.ZodType> {
 export function toArgv(command: Command, input: Record<string, unknown>): string[] {
   const argv = command.name.split(' ');
   for (const p of command.positionals) {
-    if (input[p.name] !== undefined) argv.push(String(input[p.name]));
+    const value = input[p.name];
+    if (value === undefined) continue;
+    if (Array.isArray(value)) argv.push(...value.map(String));
+    else argv.push(String(value));
   }
   for (const o of allOptions(command)) {
     const value = input[o.name];
