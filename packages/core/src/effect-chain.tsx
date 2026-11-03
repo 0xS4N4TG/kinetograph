@@ -40,7 +40,7 @@ import {
   type WebGLContext,
 } from '@kinetographdev/scene';
 import { continueRender, delayRender } from './assets.js';
-import type { EffectDescriptor, EffectsOutputSize, EffectsProp } from './effects.js';
+import type { Backend, EffectDefinition, EffectDescriptor, EffectImplementation, EffectsOutputSize, EffectsProp } from './effects.js';
 import { reportUnsupported } from './unsupported.js';
 import { warnOnce } from './warn.js';
 
@@ -69,6 +69,11 @@ export class RecordingCanvas {
     public width: number,
     public height: number,
   ) {}
+
+  /** `canvas.ownerDocument`: effects make their helper canvases with `target.ownerDocument.createElement('canvas')`. */
+  get ownerDocument(): unknown {
+    return (globalThis as { document?: unknown }).document;
+  }
 
   /** The recording device of a WebGPU effect (`gpuDevice` of `apply`): one for the canvas, made on first use. */
   gpuDevice(): GPUDeviceShim {
@@ -136,36 +141,100 @@ function outcomeOfError(error: unknown): Outcome {
   return { failed: error instanceof Error ? error.message : String(error) };
 }
 
-/** Runs one effect on a fresh canvas. */
-function runEffect(effect: EffectDescriptor<unknown>, source: EffectSource, width: number, height: number): Outcome | Pending {
-  const { definition, params } = effect;
-  if (typeof definition?.apply !== 'function' || typeof definition.setup !== 'function' || typeof definition.cleanup !== 'function') {
-    throw new TypeError('An item of `effects` is not an effect: make one with an effect function such as the ones createEffect() returns.');
+/** The order `auto` tries an effect's backends in: Remotion's. */
+const AUTO_ORDER: readonly Backend[] = ['webgpu', 'webgl2', '2d'];
+
+/** The backend to try first: `--preferred-effect-backend`, as `KINETOGRAPH_PREFERRED_EFFECT_BACKEND`, or `auto`. Remotion's `validatePreferredEffectBackend` message. */
+export function preferredEffectBackend(): Backend | 'auto' {
+  const value = process.env.KINETOGRAPH_PREFERRED_EFFECT_BACKEND ?? 'auto';
+  if (value !== 'auto' && value !== 'webgpu' && value !== 'webgl2' && value !== '2d') {
+    throw new TypeError(`preferredEffectBackend must be "auto", "webgpu", "webgl2" or "2d", got ${value}`);
   }
+  return value;
+}
+
+/** The implementations of an effect in the order to try them: the preferred backend first, then the rest as `auto` has them. */
+function implementationsOf(definition: EffectDefinition<unknown, unknown>): { backend: Backend; implementation: EffectImplementation<unknown, unknown> }[] {
+  const all = definition.implementations ?? { [definition.backend]: definition };
+  const preferred = preferredEffectBackend();
+  const order = preferred === 'auto' ? AUTO_ORDER : [preferred, ...AUTO_ORDER.filter((b) => b !== preferred)];
+  return order.flatMap((backend) => (all[backend] === undefined ? [] : [{ backend, implementation: all[backend] as EffectImplementation<unknown, unknown> }]));
+}
+
+/** Runs one implementation of an effect on a fresh canvas. */
+function runImplementation(
+  effect: EffectDescriptor<unknown>,
+  { backend, implementation }: { backend: Backend; implementation: EffectImplementation<unknown, unknown> },
+  source: EffectSource,
+  width: number,
+  height: number,
+): Outcome | Pending {
+  const { params } = effect;
   const target = new RecordingCanvas(width, height);
   try {
-    const state = definition.setup(target);
+    const state = implementation.setup(target);
     let result: unknown;
     try {
       // Every picture here is a canvas as the DOM holds it (row 0 on top), which is what `flipSourceY` says to a WebGL effect.
-      result = definition.apply({ source: source as never, target, state, params, width, height, gpuDevice: definition.backend === 'webgpu' ? target.gpuDevice() : null, flipSourceY: definition.backend !== 'webgpu' });
+      result = implementation.apply({ source: source as never, target, state, params, width, height, gpuDevice: backend === 'webgpu' ? target.gpuDevice() : null, flipSourceY: backend !== 'webgpu' });
     } catch (error) {
-      definition.cleanup(state);
+      implementation.cleanup(state);
       throw error;
     }
     if (isThenable(result)) {
       const pending = Promise.resolve(result)
         .then((): Outcome => ({ pass: target.pass() }), outcomeOfError)
-        .finally(() => definition.cleanup(state))
+        .finally(() => implementation.cleanup(state))
         .catch(outcomeOfError);
       return { partial: target.pass(), pending };
     }
-    definition.cleanup(state);
+    implementation.cleanup(state);
   } catch (error) {
     if (error instanceof WebGpuUnsupportedError) return { webgpu: true };
     throw error;
   }
   return { pass: target.pass() };
+}
+
+/**
+ * Runs one effect on a fresh canvas. An effect with several backends runs the one it prefers; one that can't draw
+ * (a WebGPU call that isn't drawn, or an error) hands the frame to the next, and only the last one's failure is the effect's.
+ */
+function runEffect(effect: EffectDescriptor<unknown>, source: EffectSource, width: number, height: number): Outcome | Pending {
+  const { definition } = effect;
+  if (typeof definition?.apply !== 'function' || typeof definition.setup !== 'function' || typeof definition.cleanup !== 'function') {
+    throw new TypeError('An item of `effects` is not an effect: make one with an effect function such as the ones createEffect() returns.');
+  }
+  const candidates = implementationsOf(definition);
+  const attempt = (index: number): Outcome | Pending => {
+    const last = index === candidates.length - 1;
+    let result: Outcome | Pending;
+    try {
+      result = runImplementation(effect, candidates[index]!, source, width, height);
+    } catch (error) {
+      if (last) throw error;
+      return fallback(index, error instanceof Error ? error.message : String(error), attempt);
+    }
+    if (last) return result;
+    if ('pending' in result) {
+      return {
+        partial: result.partial,
+        pending: result.pending.then((outcome) => {
+          if (!('webgpu' in outcome) && !('failed' in outcome)) return outcome;
+          const next = fallback(index, 'failed' in outcome ? outcome.failed : 'a WebGPU call that is not drawn', attempt);
+          return 'pending' in next ? next.pending : next;
+        }),
+      };
+    }
+    return 'webgpu' in result ? fallback(index, 'a WebGPU call that is not drawn', attempt) : result;
+  };
+  const fallback = (index: number, why: string, again: (i: number) => Outcome | Pending): Outcome | Pending => {
+    const from = candidates[index]!.backend;
+    const to = candidates[index + 1]!.backend;
+    warnOnce(`effect.${definition.type}.${from}`, `Effect "${definition.label}" can't draw with ${from} (${why}); it draws with ${to}.`);
+    return again(index + 1);
+  };
+  return attempt(0);
 }
 
 /** The `HtmlInCanvas` stage that runs before the effects: `onInit`, then `onPaint`. */

@@ -31,11 +31,23 @@ export interface EffectApplyParams<P, S> {
   readonly flipSourceY: boolean;
 }
 
+/** One backend's `setup`, `apply` and `cleanup` of an effect that has several (Remotion's `createEffectImplementation`). */
+export interface EffectImplementation<P, S> {
+  readonly setup: (target: EffectCanvas) => S;
+  readonly apply: (params: EffectApplyParams<P, S>) => void | Promise<void>;
+  readonly cleanup: (state: S) => void;
+}
+
+/** What `--preferred-effect-backend` and `preferredEffectBackend` take: a backend to try first, or `auto`. */
+export type PreferredEffectBackend = Backend | 'auto';
+
 export interface EffectDefinition<P, S = unknown> {
   readonly type: string;
   readonly label: string;
   readonly documentationLink: string | null;
   readonly backend: Backend;
+  /** The effect's other backends, when it has several: the chain runs the one it prefers, and falls back to the next when a backend can't draw. */
+  readonly implementations?: Partial<Record<Backend, EffectImplementation<P, unknown>>>;
   /** Two descriptors of one definition with the same key are the same effect. */
   readonly calculateKey: (params: P) => string;
   readonly setup: (target: EffectCanvas) => S;
@@ -46,6 +58,11 @@ export interface EffectDefinition<P, S = unknown> {
   /** Throws when mandatory params are missing or invalid. `createEffect`'s factory calls it first. */
   readonly validateParams: (params: P) => void;
 }
+
+/** An effect with an implementation per backend: `createEffect` takes it in place of one `backend`, `setup`, `apply` and `cleanup`. */
+export type MultiBackendEffectDefinition<P> = Omit<EffectDefinition<P>, 'backend' | 'setup' | 'apply' | 'cleanup' | 'implementations'> & {
+  readonly implementations: Partial<Record<Backend, EffectImplementation<P, unknown>>>;
+};
 
 export interface EffectDescriptor<P = unknown> {
   readonly definition: EffectDefinition<P, unknown>;
@@ -72,7 +89,11 @@ export const disabledEffectField = { type: 'boolean', default: false, descriptio
  * Defines an effect and returns its factory, `blur({ radius: 4 })`, which validates the params and returns a
  * descriptor to put in a component's `effects`. `disabled` is part of the descriptor's key, as in Remotion.
  */
-export function createEffect<P, S>(definition: EffectDefinition<P, S>): EffectFactory<P> {
+export function createEffect<P, S = unknown>(input: EffectDefinition<P, S> | MultiBackendEffectDefinition<P>): EffectFactory<P> {
+  // Remotion's choice of the definition's own backend: webgpu, then webgl2, then 2d (the chain picks per frame, below).
+  const backend = 'backend' in input ? input.backend : (['webgpu', 'webgl2', '2d'] as const).find((b) => input.implementations[b]);
+  if (backend === undefined) throw new Error(`Effect "${input.type}" must provide at least one implementation`);
+  const definition = ('backend' in input ? input : { ...input, ...input.implementations[backend]!, backend }) as EffectDefinition<P, S>;
   const widened = {
     ...definition,
     documentationLink: definition.documentationLink ?? null,
@@ -84,6 +105,11 @@ export function createEffect<P, S>(definition: EffectDefinition<P, S>): EffectFa
     return { definition: widened, params, effectKey: widened.calculateKey(params), memoized: false };
   };
   return factory as unknown as EffectFactory<P>;
+}
+
+/** Remotion's `createEffectImplementation`: the implementation as it is, typed. */
+export function createEffectImplementation<P, S>(implementation: EffectImplementation<P, S>): EffectImplementation<P, unknown> {
+  return implementation as unknown as EffectImplementation<P, unknown>;
 }
 
 /**

@@ -140,7 +140,8 @@ export type {
   HtmlInCanvasPixelDensity,
   HtmlInCanvasProps,
 } from './html-in-canvas.js';
-export { createEffect, Solid, CanvasImage } from './effects.js';
+export { createEffect, createEffectImplementation, Solid, CanvasImage } from './effects.js';
+export { Internals, NoReactInternals } from './internals.js';
 export { AnimatedImage } from './animated-image.js';
 export type { AnimatedImageLoopBehavior, AnimatedImageProps } from './animated-image.js';
 export type {
@@ -151,6 +152,9 @@ export type {
   EffectDefinition,
   EffectDescriptor,
   EffectFactory,
+  EffectImplementation,
+  MultiBackendEffectDefinition,
+  PreferredEffectBackend,
   EffectsOutputSize,
   EffectsProp,
   SolidProps,
