@@ -3,6 +3,8 @@
 //
 //   node scripts/remotion-effects/table.mjs [status.json] [page.mdx]
 //
+// It also writes packages/cli/assets/remotion-effects.json (the version measured and each effect's status), which `doctor` reads.
+//
 // The table sits between the markers `{/* effects:start */}` and `{/* effects:end */}`.
 
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -30,4 +32,7 @@ const start = page.indexOf('{/* effects:start */}');
 const end = page.indexOf('{/* effects:end */}');
 if (start === -1 || end === -1) throw new Error(`${pageFile} has no effects:start and effects:end markers`);
 writeFileSync(pageFile, `${page.slice(0, start)}{/* effects:start */}\n${summary}\n\n${table}\n${page.slice(end)}`);
+// What `kinetograph doctor` knows of the run: the version it was measured against, and each effect's status.
+const slim = Object.fromEntries(Object.entries(effects).sort(([a], [b]) => a.localeCompare(b)).map(([name, e]) => [name, { sub: e.sub, status: e.status }]));
+writeFileSync(join(here, '..', '..', 'packages', 'cli', 'assets', 'remotion-effects.json'), `{\n "version": ${JSON.stringify(version)},\n "effects": {\n${Object.entries(slim).map(([name, e]) => `  ${JSON.stringify(name)}: ${JSON.stringify(e)}`).join(',\n')}\n }\n}\n`);
 console.log(summary);
