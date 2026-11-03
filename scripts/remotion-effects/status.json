@@ -201,8 +201,8 @@
      "ssim": 1
     },
     "2d": {
-     "psnr": 61.247579,
-     "ssim": 0.99994
+     "psnr": 95.735028,
+     "ssim": 1
     }
    }
   },
@@ -224,7 +224,7 @@
      "ssim": 1
     },
     "2d": {
-     "psnr": 86.398469,
+     "psnr": 99.537141,
      "ssim": 1
     }
    }
@@ -553,8 +553,8 @@
      "ssim": 1
     },
     "2d": {
-     "psnr": 64.820118,
-     "ssim": 0.999652
+     "psnr": 65.221252,
+     "ssim": 0.999682
     }
    }
   },
@@ -576,8 +576,8 @@
      "ssim": 1
     },
     "2d": {
-     "psnr": 62.495464,
-     "ssim": 0.999795
+     "psnr": 62.551148,
+     "ssim": 0.999801
     }
    }
   },
@@ -599,7 +599,7 @@
      "ssim": 1
     },
     "2d": {
-     "psnr": 57.436632,
+     "psnr": 57.438775,
      "ssim": 0.994044
     }
    }
@@ -1126,8 +1126,8 @@
      "ssim": 1
     },
     "2d": {
-     "psnr": 64.79663,
-     "ssim": 0.999658
+     "psnr": 65.014982,
+     "ssim": 0.999677
     }
    }
   },
@@ -1157,7 +1157,7 @@
     "2d"
    ],
    "status": "supported",
-   "note": "The 2D backend is approximate (32 dB: the edges of thin translucent lines blend in linear light, not in sRGB as Chrome does); WebGPU and WebGL 2 match",
+   "note": "The 2D backend is approximate (32 dB: the edges of thin lines are resampled a little differently); WebGPU and WebGL 2 match",
    "measured": {
     "webgl2": {
      "psnr": 87.215654,
@@ -1168,8 +1168,8 @@
      "ssim": 1
     },
     "2d": {
-     "psnr": 31.937786,
-     "ssim": 0.989371
+     "psnr": 32.008751,
+     "ssim": 0.989487
     }
    }
   },
@@ -1414,8 +1414,8 @@
      "ssim": 1
     },
     "2d": {
-     "psnr": 56.580033,
-     "ssim": 0.996955
+     "psnr": 57.132281,
+     "ssim": 0.995963
     }
    }
   },
@@ -1437,7 +1437,7 @@
      "ssim": 1
     },
     "2d": {
-     "psnr": 90.963816,
+     "psnr": 106.526841,
      "ssim": 1
     }
    }
@@ -1460,7 +1460,7 @@
      "ssim": 1
     },
     "2d": {
-     "psnr": 90.963816,
+     "psnr": 106.526841,
      "ssim": 1
     }
    }
@@ -1741,16 +1741,15 @@
     "webgl2",
     "webgpu"
    ],
-   "status": "approximated",
-   "note": "Shape and blur match; the vignette over the shape's transparent pixels darkens the background less than in Remotion (the same on a `<CanvasImage>` of a transparent picture, so it is the effect's alpha, not the component; 34.7 dB)",
+   "status": "supported",
    "measured": {
     "webgl2": {
-     "psnr": 34.703248,
-     "ssim": 0.989689
+     "psnr": 76.16721,
+     "ssim": 0.999985
     },
     "webgpu": {
-     "psnr": 34.703246,
-     "ssim": 0.989689
+     "psnr": 76.16721,
+     "ssim": 0.999985
     }
    }
   },

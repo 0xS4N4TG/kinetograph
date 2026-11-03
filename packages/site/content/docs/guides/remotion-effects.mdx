@@ -3,7 +3,7 @@ title: Remotion effects
 description: Which @remotion/effects effects Kinetograph draws, and how it runs them.
 ---
 
-`@remotion/effects` is Remotion's package of shader effects (`blur()`, `vignette()`, `glow()`) for canvas components. Kinetograph runs the copy in your project's `node_modules`. It ships none of Remotion's effect code, so install the package yourself, at the same version as `remotion`.
+`@remotion/effects` is Remotion's package of shader effects (`blur()`, `vignette()`, `glow()`) for canvas components. Kinetograph runs the copy in your project's `node_modules`. It ships none of Remotion's effect code, so install the package yourself, at the same version as `remotion`. The package is covered by Remotion's licence, and a company may need a Remotion Company License to use it; Kinetograph ships none of its code.
 
 ```tsx
 import { CanvasImage } from 'remotion';
@@ -91,7 +91,7 @@ Each effect is rendered by Remotion in Chrome and by Kinetograph, at frame 0, 96
 | `rings()` | webgpu, webgl2 | Supported |
 | `roughenEdges()` | webgpu, webgl2 | Supported |
 | `saturation()` | webgl2, webgpu, 2d | Supported |
-| `scale()` | webgl2, webgpu, 2d | Supported. The 2D backend is approximate (32 dB: the edges of thin translucent lines blend in linear light, not in sRGB as Chrome does); WebGPU and WebGL 2 match |
+| `scale()` | webgl2, webgpu, 2d | Supported. The 2D backend is approximate (32 dB: the edges of thin lines are resampled a little differently); WebGPU and WebGL 2 match |
 | `scanlines()` | webgpu, webgl2 | Supported |
 | `shadowsHighlights()` | webgpu, webgl2 | Supported |
 | `shatter()` | webgpu, webgl2 | Supported. On WebGL 2 pixels on the edges of the shards differ a little (35 dB); WebGPU is used and matches |
@@ -131,6 +131,6 @@ The same check on components other than `<CanvasImage>`: `blur`, `grayscale` and
 | `<Img>` with blur, grayscale, vignette | webgl2 77.0 dB, SSIM 1.000; webgpu 77.1 dB, SSIM 1.000 | Supported |
 | `<Video>` with blur, grayscale, vignette | webgl2 53.1 dB, SSIM 0.999; webgpu 53.1 dB, SSIM 0.999 | Supported |
 | `<Rect>` with blur, grayscale, vignette | webgl2 identical, SSIM 1.000; webgpu identical, SSIM 1.000 | Supported |
-| `<Star>` with blur, grayscale, vignette | webgl2 34.7 dB, SSIM 0.990; webgpu 34.7 dB, SSIM 0.990 | Approximated. Shape and blur match; the vignette over the shape's transparent pixels darkens the background less than in Remotion (the same on a `<CanvasImage>` of a transparent picture, so it is the effect's alpha, not the component; 34.7 dB) |
+| `<Star>` with blur, grayscale, vignette | webgl2 76.2 dB, SSIM 1.000; webgpu 76.2 dB, SSIM 1.000 | Supported |
 | `<Img>` with rainFall | webgl2 54.7 dB, SSIM 0.999; webgpu 78.5 dB, SSIM 1.000 | Supported |
 {/* components:end */}
