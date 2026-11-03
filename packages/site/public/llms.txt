@@ -26,7 +26,7 @@
      `claude mcp add kinetograph -- npx -y kinetograph mcp`. Other clients: /docs/guides/agents/.
    - Optional, from https://github.com/0xS4N4TG/kinetograph-ui (`npx skills add 0xS4N4TG/kinetograph-ui`):
      `kinetograph-taste-clone` turns a reference reel into a measured spec and a reusable taste (TASTE.md and
-     taste.json); `kinetograph-foundation-motion` is motion design guidance for UI and video. /docs/guides/taste/
+     taste.json). /docs/guides/taste/
 5. If a Kinetograph command says the CLI or the skills are out of date, tell the user and ask before updating.
 
 The same steps are in AGENTS.md in the repository: https://github.com/0xS4N4TG/kinetograph/blob/main/AGENTS.md

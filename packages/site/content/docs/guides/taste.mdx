@@ -1,6 +1,6 @@
 ---
 title: Match a reel, keep its taste
-description: Two agent skills that turn a reference video into a measured spec, or into a reusable style for new videos.
+description: An agent skill that turns a reference video into a measured spec, or into a reusable style for new videos.
 ---
 
 `kinetograph-taste-clone` gives an agent a reel or reference video. It downloads the video, reads every frame and writes a spec of numbers: timing, layout, colour, type, shadows and transitions. It builds from the spec and checks each shot against the reference, side by side, before it shows you anything.
@@ -9,7 +9,7 @@ It works with Kinetograph, Remotion or any frame-based renderer. The scripts nee
 
 ## Install
 
-Both skills come from [kinetograph-ui](https://github.com/0xS4N4TG/kinetograph-ui) (MIT):
+The skill comes from [kinetograph-ui](https://github.com/0xS4N4TG/kinetograph-ui) (MIT):
 
 ```sh
 npx skills add 0xS4N4TG/kinetograph-ui
@@ -40,9 +40,5 @@ Then save its taste so we can make more videos like it.
 | `taste.json` | The same values, for code to read as defaults |
 
 Downloaded media stays in a git-ignored folder and is never committed.
-
-## The companion skill
-
-`kinetograph-foundation-motion` is motion design guidance for UI and video: the twelve principles of animation, with a mode that builds motion and a mode that audits it.
 
 Other skills are in [Use with agents](/docs/guides/agents/).

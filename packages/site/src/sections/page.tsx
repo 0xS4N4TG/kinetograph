@@ -174,8 +174,8 @@ export function Taste() {
             each shot against the reference before you see it.
           </p>
           <p className={`${body} mt-6 max-w-[44ch]`}>
-            Works with Kinetograph, Remotion or any frame-based renderer. The install also adds a motion design skill
-            for UI and video. <a className={link} href="/docs/guides/taste/">How it works</a>.
+            Works with Kinetograph, Remotion or any frame-based renderer.{' '}
+            <a className={link} href="/docs/guides/taste/">How it works</a>.
           </p>
           <CommandBar command="npx skills add 0xS4N4TG/kinetograph-ui" className={`mt-6 ${commandBar}`} />
         </div>
