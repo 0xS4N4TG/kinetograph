@@ -585,9 +585,11 @@ Not drawn, and reported as `unsupported:` with what to do instead (never accepte
 multisampled renderbuffers, `readPixels`, lines, instanced points, a `vertexAttribDivisor` above 1, integer and
 constant (`vertexAttrib`) attributes, cube map and array textures, sRGB textures, float textures from a picture, a float texture as a render target or a `texSubImage2D` target, pixels uploaded to
 texture levels other than 0 (call `generateMipmap`), uniform blocks and struct uniforms, array outputs, a framebuffer
-texture that is not RGBA or holds uploaded pixels, attachments of different sizes in one framebuffer, `drawImage` or `toDataURL` of a WebGL canvas. Edges are not multisampled (a browser's default
-`antialias: true` smooths them); a full-screen quad has none. The context keeps the rules a multisampled canvas has in
-Chrome, though: with `antialias`, `blitFramebuffer` into the canvas, or out of it into a rectangle of another size,
+texture that is not RGBA or holds uploaded pixels, attachments of different sizes in one framebuffer, `drawImage` or `toDataURL` of a WebGL canvas. With `antialias: true` (the default) the canvas is
+4x multisampled, so the edges of what is drawn into it are smooth as in Chrome (a framebuffer of your own is not
+multisampled). A context that blits into the canvas, or copies its depth or stencil, is drawn without multisampling.
+The context keeps the rules a multisampled canvas has in
+Chrome: with `antialias`, `blitFramebuffer` into the canvas, or out of it into a rectangle of another size,
 sets `INVALID_OPERATION`. The shaders' maths is the GPU's: a `sin` of a large
 argument can differ from Chrome's last digits.
 

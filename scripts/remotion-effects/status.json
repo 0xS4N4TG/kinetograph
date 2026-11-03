@@ -1159,7 +1159,7 @@
     "2d"
    ],
    "status": "supported",
-   "note": "The 2D backend is approximate (32 dB); WebGPU and WebGL 2 match",
+   "note": "The 2D backend is approximate (32 dB: the edges of thin translucent lines blend in linear light, not in sRGB as Chrome does); WebGPU and WebGL 2 match",
    "measured": {
     "webgl2": {
      "psnr": 87.215654,
@@ -1199,18 +1199,18 @@
     "webgpu",
     "webgl2"
    ],
-   "status": "approximated",
-   "note": "Same picture; pixels on the edges of the shards differ (28 dB)",
+   "status": "supported",
    "measured": {
     "webgpu": {
-     "psnr": 28.232934,
-     "ssim": 0.978763
+     "psnr": 83.855124,
+     "ssim": 1
     },
     "webgl2": {
-     "psnr": 28.232998,
-     "ssim": 0.978763
+     "psnr": 35.389296,
+     "ssim": 0.995919
     }
-   }
+   },
+   "note": "On WebGL 2 pixels on the edges of the shards differ a little (35 dB); WebGPU is used and matches"
   },
   "shine": {
    "sub": "shine",
@@ -1344,18 +1344,18 @@
     "webgpu",
     "webgl2"
    ],
-   "status": "approximated",
-   "note": "Same picture; pixels on the tear's edge differ (39 dB)",
+   "status": "supported",
    "measured": {
     "webgpu": {
-     "psnr": 39.080278,
-     "ssim": 0.997768
+     "psnr": 92.909563,
+     "ssim": 1
     },
     "webgl2": {
-     "psnr": 39.080277,
-     "ssim": 0.997768
+     "psnr": 50.012713,
+     "ssim": 0.999853
     }
-   }
+   },
+   "note": "On WebGL 2 pixels on the tear's edge differ a little (50 dB); WebGPU is used and matches"
   },
   "thermalVision": {
    "sub": "thermal-vision",

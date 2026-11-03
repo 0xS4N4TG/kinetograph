@@ -1001,6 +1001,8 @@ export interface GlslContent {
   depth?: boolean;
   /** The context's `stencil` attribute (default false): whether the drawing buffer has a stencil buffer. */
   stencil?: boolean;
+  /** The context's `antialias` attribute: the drawing buffer is multisampled (4 samples). */
+  antialias?: boolean;
   programs: Record<string, GlslProgram>;
   /** Base64 bytes. */
   buffers: Record<string, string>;
@@ -1042,6 +1044,8 @@ export interface WebGpuPipeline {
   vertex: { module: string; entryPoint?: string; buffers: WebGpuVertexLayout[] };
   fragment?: { module: string; entryPoint?: string; targets: (WebGpuTarget | null)[] };
   primitive: { topology: string; stripIndexFormat?: string; frontFace: string; cullMode: string };
+  /** `multisample.count`; 1 when left out. */
+  samples?: number;
 }
 
 export interface WebGpuBindingLayout {
@@ -1084,6 +1088,8 @@ export interface WebGpuTexture {
   height: number;
   mips: number;
   format: string;
+  /** 4 for a multisampled texture (a pass draws into it and resolves it into another); 1 when left out. */
+  samples?: number;
 }
 
 export interface WebGpuSampler {
@@ -1120,6 +1126,8 @@ export interface WebGpuPass {
   k: 'render';
   /** A level of the texture drawn into; the canvas when left out. */
   target?: { texture: string; mip: number };
+  /** A multisampled `target` resolves into this level of another texture when the pass ends. */
+  resolve?: { texture: string; mip: number };
   /** The clear colour, or null for `loadOp: 'load'`. */
   clear: [number, number, number, number] | null;
   commands: WebGpuCommand[];

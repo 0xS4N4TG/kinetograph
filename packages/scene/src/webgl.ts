@@ -890,6 +890,7 @@ export class WebGLContext {
       alpha: this.attributes.alpha,
       ...(this.attributes.depth ? {} : { depth: false }),
       ...(this.attributes.stencil ? { stencil: true } : {}),
+      ...(this.attributes.antialias ? { antialias: true } : {}),
       programs: Object.fromEntries(this.programs),
       buffers: Object.fromEntries(this.buffers),
       textures: Object.fromEntries(this.textures),

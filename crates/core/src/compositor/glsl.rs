@@ -57,6 +57,9 @@ struct Uploaded {
     float32: bool,
 }
 
+/// The samples of a multisampled drawing buffer: the 4 of a browser's.
+const MSAA_SAMPLES: u32 = 4;
+
 /// The format of the drawing buffer and of every colour target.
 const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
@@ -142,6 +145,13 @@ struct Pass<'c> {
     draws: Vec<Prepared>,
 }
 
+impl Pass<'_> {
+    /// Whether the pass draws into the drawing buffer alone.
+    fn to_canvas(&self) -> bool {
+        self.colors == [Some((None, 0))]
+    }
+}
+
 /// What the replay does, in order: a render pass, or pixels written into a
 /// target (`texSubImage2D`).
 enum Step<'c> {
@@ -183,6 +193,10 @@ pub(super) struct GlslGpu {
     textures: HashMap<String, Arc<Uploaded>>,
     samplers: HashMap<String, wgpu::Sampler>,
     target: Option<Target>,
+    /// The multisampled drawing buffer of an `antialias` context, the size of `target`, which it resolves into.
+    msaa: Option<((u32, u32), wgpu::TextureView, wgpu::Texture)>,
+    /// Whether the replay in hand draws into `msaa` (see `glsl_multisampled`).
+    msaa_on: bool,
     blit: Option<Blit>,
     /// The pass behind `blitFramebuffer`.
     copy: Option<Blit>,
@@ -466,6 +480,38 @@ impl Compositor {
         }
     }
 
+    /// Whether the drawing buffer is multisampled: the context asked for `antialias` and no blit writes the drawing
+    /// buffer or copies its depth or stencil (a browser refuses the first, and the second reads a multisampled depth
+    /// buffer that a pass cannot sample), so every pass into it is a plain draw.
+    fn glsl_multisampled(content: &GlslContent) -> bool {
+        content.antialias
+            && !content.ops.iter().any(|op| {
+                matches!(op, GlslOp::Blit(b) if b.target.is_none() || (b.aspect.is_some() && b.src.is_none()))
+            })
+    }
+
+    /// The multisampled drawing buffer, made when there is none of `size`.
+    fn msaa_buffer(&mut self, size: (u32, u32)) {
+        if self.glsl.msaa.as_ref().is_none_or(|(s, ..)| *s != size) {
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("glsl multisampled drawing buffer"),
+                size: wgpu::Extent3d {
+                    width: size.0,
+                    height: size.1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: MSAA_SAMPLES,
+                dimension: wgpu::TextureDimension::D2,
+                format: COLOR_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            self.glsl.msaa = Some((size, view, texture));
+        }
+    }
+
     /// Records the draws into the drawing buffer. `inputs` are the pictures
     /// of a group's children.
     fn glsl_draw(
@@ -476,6 +522,10 @@ impl Compositor {
         inputs: &Inputs,
     ) -> Result<()> {
         self.drawing_buffer(size, wgpu::TextureFormat::Rgba8Unorm);
+        self.glsl.msaa_on = Self::glsl_multisampled(content);
+        if self.glsl.msaa_on {
+            self.msaa_buffer(size);
+        }
 
         // Everything drawn to the drawing buffer before its last clear is gone
         // with it, unless a blit reads the drawing buffer in between. A
@@ -716,6 +766,13 @@ impl Compositor {
                 }));
             }
             let shape: Vec<bool> = colors.iter().map(Option::is_some).collect();
+            let samples = if self.glsl.msaa_on
+                && (colors.as_slice() == [Some((None, 0))] || ds == Some(CANVAS_DS))
+            {
+                MSAA_SAMPLES
+            } else {
+                1
+            };
             let prepared = match op {
                 GlslOp::Draw(draw) => self
                     .glsl_prepare(
@@ -725,7 +782,7 @@ impl Compositor {
                         (base_dir, inputs, &depth_copies),
                         &mut buffers,
                         &mut targets,
-                        (&shape, ds_format),
+                        (&shape, ds_format, samples),
                     )?
                     .into_iter()
                     .collect(),
@@ -828,7 +885,11 @@ impl Compositor {
                 }
                 Step::Pass(pass) => pass,
             };
+            // With a multisampled drawing buffer a pass into it draws there and resolves into the drawing buffer.
+            let multisampled = self.glsl.msaa_on && pass.to_canvas();
+            let msaa_view = self.glsl.msaa.as_ref().map(|(_, view, _)| view);
             let view_of = |id: Option<&str>, level: u32| match id {
+                None if multisampled => msaa_view.expect("made above"),
                 None => &canvas.view,
                 Some(id) => &targets[id].levels[level as usize],
             };
@@ -840,7 +901,7 @@ impl Compositor {
                     slot.map(|(id, level)| wgpu::RenderPassColorAttachment {
                         view: view_of(id, level),
                         depth_slice: None,
-                        resolve_target: None,
+                        resolve_target: (multisampled && id.is_none()).then_some(&canvas.view),
                         ops: wgpu::Operations {
                             load: match load {
                                 Some([r, g, b, a]) => wgpu::LoadOp::Clear(wgpu::Color {
@@ -986,7 +1047,12 @@ impl Compositor {
                     depth_or_array_layers: 1,
                 },
                 mip_level_count: levels,
-                sample_count: 1,
+                // The drawing buffer's depth and stencil are multisampled with it.
+                sample_count: if id == CANVAS_DS && self.glsl.msaa_on {
+                    MSAA_SAMPLES
+                } else {
+                    1
+                },
                 dimension: wgpu::TextureDimension::D2,
                 format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
@@ -1075,7 +1141,7 @@ impl Compositor {
         (base_dir, inputs, depth_copies): (&Path, &Inputs, &HashMap<&str, wgpu::TextureView>),
         buffers: &mut HashMap<&'c str, (Vec<u8>, Option<wgpu::Buffer>)>,
         targets: &mut HashMap<&'c str, Target>,
-        (shape, ds): (&[bool], Option<TargetFormat>),
+        (shape, ds, samples): (&[bool], Option<TargetFormat>, u32),
     ) -> Result<Option<Prepared>> {
         let program_spec = content.programs.get(&draw.program).ok_or_else(|| {
             render_error(format!(
@@ -1337,7 +1403,7 @@ impl Compositor {
 
         // Pipeline.
         let key = format!(
-            "{:p}|{layouts:?}|{topology:?}|{}|{:?}|{:?}|{:?}|{:?}|{:?}|{shape:?}|{ds:?}|{:?}|{depths:?}",
+            "{:p}|{layouts:?}|{topology:?}|{}|{:?}|{:?}|{:?}|{:?}|{:?}|{shape:?}|{ds:?}|{samples}|{:?}|{depths:?}",
             Arc::as_ptr(&program),
             index_list.is_some() && topology == wgpu::PrimitiveTopology::TriangleStrip,
             draw.blend.as_ref().map(blend_key),
@@ -1360,7 +1426,7 @@ impl Compositor {
                     &layouts,
                     (topology, index_list.is_some()),
                     draw,
-                    (shape, ds),
+                    (shape, ds, samples),
                 )?;
                 self.glsl.pipelines.insert(key, p.clone());
                 p
@@ -1665,7 +1731,7 @@ impl Compositor {
         layouts: &[(u32, wgpu::VertexFormat, u64, u64, wgpu::VertexStepMode)],
         (topology, indexed): (wgpu::PrimitiveTopology, bool),
         draw: &GlslDraw,
-        (shape, ds): (&[bool], Option<TargetFormat>),
+        (shape, ds, samples): (&[bool], Option<TargetFormat>, u32),
     ) -> Result<wgpu::RenderPipeline> {
         let attributes: Vec<[wgpu::VertexAttribute; 1]> = layouts
             .iter()
@@ -1801,7 +1867,10 @@ impl Compositor {
                     ..Default::default()
                 },
                 depth_stencil,
-                multisample: wgpu::MultisampleState::default(),
+                multisample: wgpu::MultisampleState {
+                    count: samples,
+                    ..Default::default()
+                },
                 multiview_mask: None,
                 cache: None,
             });

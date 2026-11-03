@@ -754,7 +754,7 @@ or Rgba16Float for an `rgba16float` canvas, whose half floats reach the linear c
 and turned into sRGB primaries there (values clipped to 0..1 first, as the standard tone mapping does, and colours outside
 sRGB clipped at the video's encode, the output being SDR). The buffer is flushed first because earlier glsl layers' place
 passes read it. The dom painter reads every module with naga
-(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (query sets, bundles, depth, multisampling, readback, `extended` tone mapping), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
+(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (query sets, bundles, depth, a multisampled texture that is sampled or copied, readback, `extended` tone mapping), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
 A module wgpu then refuses is a warning on stderr and a transparent canvas, never a panic.
 
 WebGPU compute. `createComputePipeline` and `createComputePipelineAsync` record a `computePipelines` entry (module, entry point,
