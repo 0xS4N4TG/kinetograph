@@ -1,0 +1,48 @@
+---
+title: Match a reel, keep its taste
+description: Two agent skills that turn a reference video into a measured spec, or into a reusable style for new videos.
+---
+
+`kinetograph-taste-clone` gives an agent a reel or reference video. It downloads the video, reads every frame and writes a spec of numbers: timing, layout, colour, type, shadows and transitions. It builds from the spec and checks each shot against the reference, side by side, before it shows you anything.
+
+It works with Kinetograph, Remotion or any frame-based renderer. The scripts need `ffmpeg`, `python3` and, for URLs, `yt-dlp`.
+
+## Install
+
+Both skills come from [kinetograph-ui](https://github.com/0xS4N4TG/kinetograph-ui) (MIT):
+
+```sh
+npx skills add 0xS4N4TG/kinetograph-ui
+```
+
+## Try it
+
+```text
+Here is a reel: <url>. Match it with our own words and objects.
+Then save its taste so we can make more videos like it.
+```
+
+1. The agent downloads the reel and writes `SPEC.md`, with a number for every timing and layout value.
+2. It builds each shot from the spec and compares it with the reference at full size. A shot that fails is fixed before you see it.
+3. It writes the taste, and you ask for new videos in it.
+
+## Two modes
+
+- **Match.** Your words, objects and brand, with the reference's timing, camera, layout, type, light and transitions. The reference's own text, logos and people are swapped out.
+- **Taste.** Only the style is kept: palette, type, how text writes on, light and shadows, entrances, transitions and rhythm. Content and exact frame numbers are left out. A taste written from a match that passed its checks is measured; one written from watching alone is a guess.
+
+## What it writes
+
+| File | What it holds |
+|---|---|
+| `SPEC.md` | The reference, shot by shot, in measured numbers |
+| `TASTE.md` | The style in prose and tables, for people and agents |
+| `taste.json` | The same values, for code to read as defaults |
+
+Downloaded media stays in a git-ignored folder and is never committed.
+
+## The companion skill
+
+`kinetograph-foundation-motion` is motion design guidance for UI and video: the twelve principles of animation, with a mode that builds motion and a mode that audits it.
+
+Other skills are in [Use with agents](/docs/guides/agents/).

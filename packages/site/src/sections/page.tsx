@@ -160,3 +160,26 @@ export function About() {
     </section>
   );
 }
+
+/** The taste skills: point an agent at a reel, get its style as a reusable taste. */
+export function Taste() {
+  return (
+    <section id="taste" className={`${shell} ${section}`}>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-x-16 gap-y-10 border-t border-cobalt/30 pt-[clamp(56px,8vw,112px)] md:grid-cols-2">
+        <Heading lines={['point your agent at a reel, keep its taste.']} hot="taste" tag="TRK 05  0.93" className="text-[clamp(32px,3.6vw,52px)]" />
+        <div>
+          <p className={`${body} max-w-[44ch]`}>
+            Give an agent a reel or any reference video. It downloads the video, reads every frame and writes down the
+            timing, layout, colour, type and shadows as numbers. Then it makes your own videos in that style, and checks
+            each shot against the reference before you see it.
+          </p>
+          <p className={`${body} mt-6 max-w-[44ch]`}>
+            Works with Kinetograph, Remotion or any frame-based renderer. The install also adds a motion design skill
+            for UI and video. <a className={link} href="/docs/guides/taste/">How it works</a>.
+          </p>
+          <CommandBar command="npx skills add 0xS4N4TG/kinetograph-ui" className={`mt-6 ${commandBar}`} />
+        </div>
+      </div>
+    </section>
+  );
+}
