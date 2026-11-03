@@ -14,7 +14,8 @@ import { vignette } from '@remotion/effects/vignette';
 ```
 
 - `effects` works on `<Solid>`, `<CanvasImage>`, `<AnimatedImage>`, `<HtmlInCanvas>` and Rive. Not yet on `<Img>`, `<Video>`, `<Gif>` or the `@remotion/shapes` components.
-- Most effects have a WebGPU and a WebGL 2 implementation, a few also a 2D one. Kinetograph tries WebGPU, then WebGL 2, then 2D, and uses the first that draws the frame. It warns once when it falls back. Set `KINETOGRAPH_PREFERRED_EFFECT_BACKEND` to `webgpu`, `webgl2` or `2d` to try one first.
+- Most effects have a WebGPU and a WebGL 2 implementation, a few also a 2D one. Kinetograph tries WebGPU, then WebGL 2, then 2D, and uses the first that draws the frame. It warns once when it falls back. Pass `--preferred-effect-backend webgpu|webgl2|2d` to `render`, `still`, `strip` or `onion` to try one first. The same choice comes from `window.remotion_preferredEffectBackend` or a `PreferredEffectBackendContext` provider, as in Remotion, and the context wins over the window value. The environment variable `KINETOGRAPH_PREFERRED_EFFECT_BACKEND` overrides all three.
+- `kinetograph doctor <entry>` prints the installed `@remotion/effects` version, warns when it differs from the one the table below was measured with, and lists the effects your project imports that are approximated or not yet supported.
 - State from `setup` doesn't carry to the next frame. See [What works](/docs/compat/).
 
 ## Status
