@@ -2,7 +2,9 @@
 // Compares the oracle's PNGs with Kinetograph's: PSNR and SSIM (ffmpeg, over RGBA) for each (effect, backend), and writes
 // the status of each effect.
 //
-//   node scripts/remotion-effects/compare.mjs <rDir> <kDir> <effects.json> <out.json>
+//   node scripts/remotion-effects/compare.mjs <rDir> <kDir> <effects.json> <out.json> [id,id,...]
+//
+// With ids, only those are measured and merged into <out.json> (the rest of it stays), for a partial run such as the components.
 //
 // status: "supported" when the picture of the backend `auto` picks (webgpu, webgl2, 2d: the first Kinetograph draws) matches at 50 dB PSNR or more; "approximated"
 // from 25 to 50 dB (edges and rounding differ, the picture is the same); "not yet" when it failed or is below that.
@@ -13,7 +15,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { NOTES } from './notes.mjs';
 
-const [rDir, kDir, effectsFile, outFile] = process.argv.slice(2).map((p) => resolve(p));
+const [rDir, kDir, effectsFile, outFile] = process.argv.slice(2, 6).map((p) => resolve(p));
+const only = process.argv[6]?.split(',');
 const { version, effects } = JSON.parse(readFileSync(effectsFile, 'utf8'));
 const metric = (a, b, filter, pattern) => {
   const { stderr } = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'info', '-i', a, '-i', b, '-lavfi', `[0:v]format=rgba[a];[1:v]format=rgba[b];[a][b]${filter}`, '-f', 'null', '-'], { encoding: 'utf8' });
@@ -30,6 +33,7 @@ for (const file of ['report-webgl2.json', 'report-webgpu.json', 'report-2d.json'
 }
 const result = {};
 for (const [id, info] of Object.entries(effects)) {
+  if (only && !only.includes(id)) continue;
   const backends = {};
   for (const backend of info.impls ?? []) {
     const a = join(rDir, `r-${id}-${backend}.png`);
@@ -47,6 +51,7 @@ for (const [id, info] of Object.entries(effects)) {
   const status = auto === undefined ? 'not yet' : auto.psnr >= 50 ? 'supported' : auto.psnr >= 25 ? 'approximated' : 'not yet';
   result[id] = { sub: info.sub, backends: info.impls, status, ...(NOTES[id] ? { note: NOTES[id] } : {}), measured: backends };
 }
-writeFileSync(outFile, JSON.stringify({ version, frame: 0, size: '960x540', effects: result }, null, 1));
+const kept = only && existsSync(outFile) ? JSON.parse(readFileSync(outFile, 'utf8')).effects : {};
+writeFileSync(outFile, JSON.stringify({ version, frame: 0, size: '960x540', effects: { ...kept, ...result } }, null, 1));
 const count = (s) => Object.values(result).filter((e) => e.status === s).length;
 console.log(`${Object.keys(result).length} effects: ${count('supported')} supported, ${count('approximated')} approximated, ${count('not yet')} not yet`);

@@ -5,10 +5,11 @@
 // DOM elements they are in Remotion, `div` and `img`, which compat mode maps
 // (kinetograph site, /docs/compat/).
 
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { Image, Layer, Rect } from '@kinetographdev/react';
 import type { Layout } from '@kinetographdev/scene';
 import { parseColor } from './colors.js';
+import { CanvasImage, hasEffects, type EffectsOutputSize, type EffectsProp } from './effects.js';
 import { useVideoConfig } from './timeline.js';
 
 /** CSS-like style keys that map onto the engine (AUTHORING.md §7.1). */
@@ -172,10 +173,34 @@ export interface ImgProps {
   id?: string;
   /** Not read by the layer mapping: with it, `Img` is an `img` (and compat mode reports the class). */
   className?: string;
+  /** Remotion's effects: with one that is not disabled the image is drawn on a canvas, as `<CanvasImage>` does, and run through them. */
+  effects?: EffectsProp;
+  effectsOutputSize?: EffectsOutputSize;
 }
 
 /** An image whose CSS-style `width`, `height` and `objectFit` become the layer's box and fit. */
-export function Img({ src, style = {}, width, height, id, className }: ImgProps): ReactNode {
+export function Img({ src, style = {}, width, height, id, className, effects, effectsOutputSize }: ImgProps): ReactNode {
+  if (hasEffects(effects)) {
+    // As Remotion's: an <Img> with effects renders a <CanvasImage>, which sizes its canvas in numbers.
+    if (typeof width === 'string' || typeof height === 'string') {
+      throw new Error('The "width" and "height" props must be numbers on <Img> when effects are passed, because <Img> renders a <CanvasImage>. Use numeric props or CSS dimensions in "style".');
+    }
+    const { objectFit, width: styleWidth, height: styleHeight, ...css } = style;
+    const fit = objectFit === 'fill' || objectFit === 'contain' || objectFit === 'cover' ? objectFit : 'fill';
+    return (
+      <CanvasImage
+        src={src}
+        width={px(styleWidth) ?? width}
+        height={px(styleHeight) ?? height}
+        fit={fit}
+        effects={effects}
+        effectsOutputSize={effectsOutputSize}
+        id={id}
+        className={className}
+        style={Object.keys(css).length > 0 ? (css as CSSProperties) : undefined}
+      />
+    );
+  }
   // Pixels for the size and a fit the image layer has are the layer mapping; a percentage, `auto`, `object-fit: none`
   // are CSS (packages/cli/skills/kinetograph/references/ENGINE.md §10.1).
   const layerFit = style.objectFit === undefined || ['fill', 'contain', 'cover', 'scale-down'].includes(String(style.objectFit));

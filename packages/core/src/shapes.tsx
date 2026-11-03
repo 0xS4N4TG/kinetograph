@@ -10,8 +10,9 @@
 // (test/fixtures/shapes-arrow-callout-spark.json).
 
 import type { ReactNode } from 'react';
-import { Path, type CommonProps } from '@kinetographdev/react';
+import { Layer, Path, type CommonProps } from '@kinetographdev/react';
 import type { Paint, Stroke } from '@kinetographdev/scene';
+import { assertValidPixelDensity, EffectsBox, hasEffects, splitEffects, withCommonProps, withoutCommonProps, type EffectsOutputSize, type MixedEffects } from './effects.js';
 import { getBoundingBox, parsePath, serializeInstructions, translatePath, type Instruction } from './paths.js';
 
 export type { Instruction } from './paths.js';
@@ -799,7 +800,16 @@ type SvgPaintProps = {
   strokeWidth?: number;
 };
 
-type ShapeComponentProps<O> = O & SvgPaintProps & Omit<CommonProps, 'id'> & { id?: string };
+/** Remotion's `effects` of a shape (run over the shape drawn on a canvas of its size), `effectsOutputSize` and `pixelDensity`. */
+type ShapeEffectProps = {
+  /** Remotion's effects and the engine's own `effects` may stand in one array. */
+  effects?: MixedEffects;
+  effectsOutputSize?: EffectsOutputSize | null;
+  /** The resolution of the canvas the effects run on: `ceil(width * pixelDensity)` pixels across. */
+  pixelDensity?: number;
+};
+
+type ShapeComponentProps<O> = O & SvgPaintProps & ShapeEffectProps & Omit<CommonProps, 'id' | 'effects'> & { id?: string };
 
 function strokeOf(stroke: Stroke | string | undefined, strokeWidth: number | undefined): Stroke | undefined {
   if (stroke === undefined) return undefined;
@@ -807,52 +817,76 @@ function strokeOf(stroke: Stroke | string | undefined, strokeWidth: number | und
   return stroke;
 }
 
-function draw(info: ShapeInfo, props: SvgPaintProps & CommonProps): ReactNode {
-  const { fill, stroke, strokeWidth, ...common } = props;
-  return <Path {...common} d={info.path} fill={fill} stroke={strokeOf(stroke, strokeWidth)} />;
+function draw(component: string, info: ShapeInfo, props: SvgPaintProps & ShapeEffectProps & Omit<CommonProps, 'effects'>): ReactNode {
+  const { fill, stroke, strokeWidth, effects, effectsOutputSize, pixelDensity, ...common } = props;
+  const { chain, native } = splitEffects(effects);
+  const path = (extra: object = {}): ReactNode => <Path {...extra} d={info.path} fill={fill} stroke={strokeOf(stroke, strokeWidth)} />;
+  if (!hasEffects(chain)) return path({ ...common, ...(native === undefined ? {} : { effects: native }) });
+  assertValidPixelDensity(component, pixelDensity);
+  // As Remotion's: the shape is the SVG of its size in an <HtmlInCanvas> of that size, so what is outside it is cut off.
+  const width = Math.ceil(info.width);
+  const height = Math.ceil(info.height);
+  return withCommonProps(
+    common,
+    native,
+    { width, height },
+    <EffectsBox
+      component={component}
+      effects={chain}
+      effectsOutputSize={effectsOutputSize}
+      width={width}
+      height={height}
+      pixelDensity={pixelDensity}
+      source={(size) => (
+        <Layer scaleX={size.width / width} scaleY={size.height / height}>
+          {path(withoutCommonProps(common))}
+        </Layer>
+      )}
+    />,
+  );
 }
 
 export function Rect(props: ShapeComponentProps<MakeRectOptions>): ReactNode {
   const { width, height, cornerRadius, edgeRoundness, ...paint } = props;
-  return draw(makeRect({ width, height, cornerRadius, edgeRoundness }), paint);
+  return draw('<Rect>', makeRect({ width, height, cornerRadius, edgeRoundness }), paint);
 }
 export function Circle(props: ShapeComponentProps<{ radius: number }>): ReactNode {
   const { radius, ...paint } = props;
-  return draw(makeCircle({ radius }), paint);
+  return draw('<Circle>', makeCircle({ radius }), paint);
 }
 export function Ellipse(props: ShapeComponentProps<{ rx: number; ry: number }>): ReactNode {
   const { rx, ry, ...paint } = props;
-  return draw(makeEllipse({ rx, ry }), paint);
+  return draw('<Ellipse>', makeEllipse({ rx, ry }), paint);
 }
 export function Triangle(props: ShapeComponentProps<MakeTriangleOptions>): ReactNode {
   const { length, direction, cornerRadius, edgeRoundness, ...paint } = props;
-  return draw(makeTriangle({ length, direction, cornerRadius, edgeRoundness }), paint);
+  return draw('<Triangle>', makeTriangle({ length, direction, cornerRadius, edgeRoundness }), paint);
 }
 export function Star(props: ShapeComponentProps<MakeStarOptions>): ReactNode {
   const { points, innerRadius, outerRadius, cornerRadius, edgeRoundness, ...paint } = props;
-  return draw(makeStar({ points, innerRadius, outerRadius, cornerRadius, edgeRoundness }), paint);
+  return draw('<Star>', makeStar({ points, innerRadius, outerRadius, cornerRadius, edgeRoundness }), paint);
 }
 export function Polygon(props: ShapeComponentProps<MakePolygonOptions>): ReactNode {
   const { points, radius, cornerRadius, edgeRoundness, ...paint } = props;
-  return draw(makePolygon({ points, radius, cornerRadius, edgeRoundness }), paint);
+  return draw('<Polygon>', makePolygon({ points, radius, cornerRadius, edgeRoundness }), paint);
 }
 export function Pie(props: ShapeComponentProps<MakePieOptions>): ReactNode {
   const { radius, progress, closePath, counterClockwise, rotation, ...paint } = props;
-  return draw(makePie({ radius, progress, closePath, counterClockwise, rotation }), paint);
+  return draw('<Pie>', makePie({ radius, progress, closePath, counterClockwise, rotation }), paint);
 }
 export function Heart(props: ShapeComponentProps<MakeHeartOptions>): ReactNode {
   const { height, aspectRatio, bottomRoundnessAdjustment, depthAdjustment, ...paint } = props;
-  return draw(makeHeart({ height, aspectRatio, bottomRoundnessAdjustment, depthAdjustment }), paint);
+  return draw('<Heart>', makeHeart({ height, aspectRatio, bottomRoundnessAdjustment, depthAdjustment }), paint);
 }
 export function Arrow(props: ShapeComponentProps<MakeArrowProps>): ReactNode {
   const { length, headWidth, headLength, shaftWidth, direction, cornerRadius, ...paint } = props;
-  return draw(makeArrow({ length, headWidth, headLength, shaftWidth, direction, cornerRadius }), paint);
+  return draw('<Arrow>', makeArrow({ length, headWidth, headLength, shaftWidth, direction, cornerRadius }), paint);
 }
 export function Callout(props: ShapeComponentProps<MakeCalloutProps>): ReactNode {
   const { width, height, pointerLength, pointerBaseWidth, pointerPosition, pointerDirection, edgeRoundness, cornerRadius, ...paint } = props;
-  return draw(makeCallout({ width, height, pointerLength, pointerBaseWidth, pointerPosition, pointerDirection, edgeRoundness, cornerRadius }), paint);
+  return draw('<Callout>', makeCallout({ width, height, pointerLength, pointerBaseWidth, pointerPosition, pointerDirection, edgeRoundness, cornerRadius }), paint);
 }
 export function Spark(props: ShapeComponentProps<MakeSparkProps>): ReactNode {
   const { width, height, edgeRoundness, cornerRadius, ...paint } = props;
-  return draw(makeSpark({ width, height, edgeRoundness, cornerRadius }), paint);
+  return draw('<Spark>', makeSpark({ width, height, edgeRoundness, cornerRadius }), paint);
 }

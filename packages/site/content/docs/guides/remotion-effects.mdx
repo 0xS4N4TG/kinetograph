@@ -13,7 +13,9 @@ import { vignette } from '@remotion/effects/vignette';
 <CanvasImage src={staticFile('photo.png')} effects={[blur({ radius: 12 }), vignette()]} />;
 ```
 
-- `effects` works on `<Solid>`, `<CanvasImage>`, `<AnimatedImage>`, `<HtmlInCanvas>` and Rive. Not yet on `<Img>`, `<Video>`, `<Gif>` or the `@remotion/shapes` components.
+- `effects` works on every component Remotion gives it to: `<Solid>`, `<Img>`, `<CanvasImage>`, `<AnimatedImage>`, `<Gif>`, `<Video>` (from `@remotion/media`), `<HtmlInCanvas>`, Rive and the `@remotion/shapes` components (`<Rect>`, `<Circle>`, `<Triangle>`, `<Star>`, `<Ellipse>`, `<Pie>`, `<Polygon>`, `<Heart>`, `<Arrow>`, `<Callout>`, `<Spark>`). `<OffthreadVideo>` and `<Html5Video>` take none in Remotion either.
+- The canvas an effect draws on is the picture's own size: the video's or GIF's pixels, the shape's box (times `pixelDensity`), or `effectsOutputSize`. A `<Video>` with effects is fitted to its box with `objectFit`, `contain` by default.
+- `<Video>`, `<Gif>` and the shapes also take the engine's own `effects` (`blur(8)`) in the same array. Those apply to the finished picture, after Remotion's.
 - Most effects have a WebGPU and a WebGL 2 implementation, a few also a 2D one. Kinetograph tries WebGPU, then WebGL 2, then 2D, and uses the first that draws the frame. It warns once when it falls back. Pass `--preferred-effect-backend webgpu|webgl2|2d` to `render`, `still`, `strip` or `onion` to try one first. The same choice comes from `window.remotion_preferredEffectBackend` or a `PreferredEffectBackendContext` provider, as in Remotion, and the context wins over the window value. The environment variable `KINETOGRAPH_PREFERRED_EFFECT_BACKEND` overrides all three.
 - `kinetograph doctor <entry>` prints the installed `@remotion/effects` version, warns when it differs from the one the table below was measured with, and lists the effects your project imports that are approximated or not yet supported.
 - State from `setup` doesn't carry to the next frame. See [What works](/docs/compat/).
@@ -117,3 +119,17 @@ Each effect is rendered by Remotion in Chrome and by Kinetograph, at frame 0, 96
 | `zigzag()` | webgpu, webgl2 | Supported |
 | `zoomBlur()` | webgpu, webgl2 | Supported |
 {/* effects:end */}
+
+## Components
+
+The same check on components other than `<CanvasImage>`: `blur`, `grayscale` and `vignette` in a chain (and `rainFall`, a heavy WebGPU effect) on an `<Img>`, a frame of a `<Video>` and two shapes, at 960 × 540. A video is compared with its colour matrix tagged (BT.709): an untagged file is read with another matrix by Chrome and Kinetograph.
+
+{/* components:start */}
+| Case | PSNR and SSIM against Remotion | Status |
+| --- | --- | --- |
+| `<Img>` with blur, grayscale, vignette | webgl2 77.0 dB, SSIM 1.000; webgpu 77.1 dB, SSIM 1.000 | Supported |
+| `<Video>` with blur, grayscale, vignette | webgl2 53.1 dB, SSIM 0.999; webgpu 53.1 dB, SSIM 0.999 | Supported |
+| `<Rect>` with blur, grayscale, vignette | webgl2 identical, SSIM 1.000; webgpu identical, SSIM 1.000 | Supported |
+| `<Star>` with blur, grayscale, vignette | webgl2 34.7 dB, SSIM 0.990; webgpu 34.7 dB, SSIM 0.990 | Approximated. Shape and blur match; the vignette over the shape's transparent pixels darkens the background less than in Remotion (the same on a `<CanvasImage>` of a transparent picture, so it is the effect's alpha, not the component; 34.7 dB) |
+| `<Img>` with rainFall | webgpu 78.5 dB, SSIM 1.000 | Supported. On WebGL 2 the engine can't read a texture in the vertex shader; WebGPU is used |
+{/* components:end */}

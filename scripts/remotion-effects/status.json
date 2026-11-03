@@ -1686,6 +1686,97 @@
      "ssim": 0.999993
     }
    }
+  },
+  "img-fx3": {
+   "sub": "(<Img> with blur, grayscale, vignette)",
+   "backends": [
+    "webgl2",
+    "webgpu"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgl2": {
+     "psnr": 77.041081,
+     "ssim": 0.999993
+    },
+    "webgpu": {
+     "psnr": 77.052504,
+     "ssim": 0.999993
+    }
+   }
+  },
+  "video-fx3": {
+   "sub": "(<Video> with blur, grayscale, vignette)",
+   "backends": [
+    "webgl2",
+    "webgpu"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgl2": {
+     "psnr": 53.095625,
+     "ssim": 0.998867
+    },
+    "webgpu": {
+     "psnr": 53.095618,
+     "ssim": 0.998867
+    }
+   }
+  },
+  "rect-fx3": {
+   "sub": "(<Rect> with blur, grayscale, vignette)",
+   "backends": [
+    "webgl2",
+    "webgpu"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgl2": {
+     "psnr": 999,
+     "ssim": 1
+    },
+    "webgpu": {
+     "psnr": 999,
+     "ssim": 1
+    }
+   }
+  },
+  "star-fx3": {
+   "sub": "(<Star> with blur, grayscale, vignette)",
+   "backends": [
+    "webgl2",
+    "webgpu"
+   ],
+   "status": "approximated",
+   "measured": {
+    "webgl2": {
+     "psnr": 34.703248,
+     "ssim": 0.989689
+    },
+    "webgpu": {
+     "psnr": 34.703246,
+     "ssim": 0.989689
+    }
+   },
+   "note": "Shape and blur match; the vignette over the shape's transparent pixels darkens the background less than in Remotion (the same on a `<CanvasImage>` of a transparent picture, so it is the effect's alpha, not the component; 34.7 dB)"
+  },
+  "img-rainFall": {
+   "sub": "(<Img> with rainFall)",
+   "backends": [
+    "webgl2",
+    "webgpu"
+   ],
+   "status": "supported",
+   "measured": {
+    "webgl2": {
+     "error": "not rendered"
+    },
+    "webgpu": {
+     "psnr": 78.538034,
+     "ssim": 0.999999
+    }
+   },
+   "note": "On WebGL 2 the engine can't read a texture in the vertex shader; WebGPU is used"
   }
  }
 }
