@@ -970,41 +970,29 @@ impl Translator {
                     if g.radius >= 1.0 && g.intensity > 0.0 {
                         let input = filter.take();
                         let sg = g.radius / s;
-                        let mut halo = image_filters::blur((sg, sg), TileMode::Decal, input.clone(), None);
-                        if self.linear() {
-                            // The compositor's halo: the blurred layer, or the colour times its alpha; times the intensity; one
-                            // brighter than opaque is scaled back to alpha 1, which keeps its colour.
-                            let fx = self.runtime("glowHalo", "uniform shader src; uniform float k; uniform float tinted; uniform float4 tint;
-                                half4 main(float2 xy) { half4 b = src.eval(xy); float4 h = tinted > 0.5 ? tint * b.a : float4(b); h *= k;
-                                  if (h.a > 1.0) { h /= h.a; } return half4(h); }");
-                            let tint = g.color.map(|c| c.linear_premultiplied().map(|v| v as f32));
-                            filter = fx.and_then(|fx| {
-                                let mut b = skia_safe::runtime_effect::RuntimeShaderBuilder::new(fx);
-                                b.set_uniform_float("k", &[g.intensity]).ok()?;
-                                b.set_uniform_float("tinted", &[if tint.is_some() { 1.0 }  else { 0.0 }]).ok()?;
-                                b.set_uniform_float("tint", &tint.unwrap_or([0.0; 4])).ok()?;
-                                image_filters::blend(SkBlend::DstOver, input, image_filters::runtime_shader(&b, "src", halo), None)
-                            });
-                            continue;
-                        }
-                        if let Some(c) = g.color {
-                            let c = color4(c);
-                            let tint = color_filters::matrix_row_major(
-                                &[0.0, 0.0, 0.0, 0.0, c.r, 0.0, 0.0, 0.0, 0.0, c.g, 0.0, 0.0, 0.0, 0.0, c.b, 0.0, 0.0, 0.0, c.a, 0.0],
-                                None,
-                            );
-                            halo = image_filters::color_filter(tint, halo, None);
-                        }
-                        // layer + halo * (1 - layer alpha): the halo under the layer.
-                        filter = image_filters::blend(SkBlend::DstOver, halo.and_then(|h| {
-                            let k = g.intensity;
-                            image_filters::color_filter(
-                                color_filters::matrix_row_major(&[k, 0.0, 0.0, 0.0, 0.0, 0.0, k, 0.0, 0.0, 0.0, 0.0, 0.0, k, 0.0, 0.0, 0.0, 0.0, 0.0, k, 0.0], None),
-                                Some(h),
-                                None,
-                            )
-                        }), input, None);
-                        self.stats.approx("glow halo (sRGB, clamped) approximates linear-light glow");
+                        let halo = image_filters::blur((sg, sg), TileMode::Decal, input.clone(), None);
+                        // The compositor's halo: the blurred layer, or the colour times its alpha; times the intensity; one
+                        // brighter than opaque is scaled back to alpha 1, which keeps its colour. In sRGB the same shader runs
+                        // on encoded values, with the tint encoded too.
+                        let fx = self.runtime("glowHalo", "uniform shader src; uniform float k; uniform float tinted; uniform float4 tint;
+                            half4 main(float2 xy) { half4 b = src.eval(xy); float4 h = tinted > 0.5 ? tint * b.a : float4(b); h *= k;
+                              if (h.a > 1.0) { h /= h.a; } return half4(h); }");
+                        let tint = g.color.map(|c| {
+                            if self.linear() {
+                                c.linear_premultiplied().map(|v| v as f32)
+                            } else {
+                                let c = color4(c);
+                                [c.r * c.a, c.g * c.a, c.b * c.a, c.a]
+                            }
+                        });
+                        filter = fx.and_then(|fx| {
+                            let mut b = skia_safe::runtime_effect::RuntimeShaderBuilder::new(fx);
+                            b.set_uniform_float("k", &[g.intensity]).ok()?;
+                            b.set_uniform_float("tinted", &[if tint.is_some() { 1.0 }  else { 0.0 }]).ok()?;
+                            b.set_uniform_float("tint", &tint.unwrap_or([0.0; 4])).ok()?;
+                            image_filters::blend(SkBlend::DstOver, input, image_filters::runtime_shader(&b, "src", halo), None)
+                        });
+                        continue;
                     }
                 }
                 ResolvedEffect::GradientMap(gm) => {
