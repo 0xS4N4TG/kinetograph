@@ -45,8 +45,8 @@ export default function PluginsPage() {
         such as a chart, a grid or a background.
       </p>
       <p className="mt-1 max-w-[62ch] text-[14px] text-mute">
-        Every template, component and taste installs with <code className="font-jb text-[13px]">npx kinetograph add &lt;name&gt;</code>. Plugins are not on npm
-        yet; their source is on GitHub.
+        Every template, component and taste installs with <code className="font-jb text-[13px]">npx kinetograph add &lt;name&gt;</code>. Plugins install
+        from npm: <code className="font-jb text-[13px]">npm install @kinetographdev/&lt;name&gt;</code>.
       </p>
 
       <section className="mt-12" aria-labelledby="plugins">
