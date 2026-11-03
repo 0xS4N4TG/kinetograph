@@ -11,7 +11,6 @@
   <a href="https://www.npmjs.com/package/kinetograph"><img src="https://img.shields.io/npm/v/kinetograph?style=flat&logo=npm" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/kinetograph"><img src="https://img.shields.io/npm/dm/kinetograph?style=flat" alt="npm downloads"></a>
   <a href="https://github.com/0xS4N4TG/kinetograph/actions/workflows/native.yml"><img src="https://github.com/0xS4N4TG/kinetograph/actions/workflows/native.yml/badge.svg" alt="Build"></a>
-  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-PolyForm%20Small%20Business-blue?style=flat" alt="License: PolyForm Small Business 1.0.0"></a>
   <a href="https://kinetograph.dev/docs/"><img src="https://img.shields.io/badge/docs-kinetograph.dev-black?style=flat" alt="Docs"></a>
 </p>
 
