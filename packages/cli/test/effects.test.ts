@@ -126,9 +126,10 @@ describe('doctor and @remotion/effects', () => {
     seam.source = () => project('4.0.540', ['blur', 'tile']);
     const r = await cli('doctor', 'index.tsx');
     expect(r.text).toContain('@remotion/effects 4.0.540');
-    expect(r.text).toContain('tile(): not yet');
+    // Every effect of the package is supported in the last parity run, so there is nothing to list.
+    expect(r.text).not.toContain('tile(): ');
     expect(r.text).not.toContain('blur(): ');
     const json = (await cli('doctor', 'index.tsx', '--json')).json;
-    expect(json.effects).toMatchObject({ installed: '4.0.540', tested: '4.0.540', gaps: [{ name: 'tile', status: 'not yet' }] });
+    expect(json.effects).toMatchObject({ installed: '4.0.540', tested: '4.0.540', gaps: [] });
   });
 });
