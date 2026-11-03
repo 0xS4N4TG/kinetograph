@@ -5,6 +5,8 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ## Unreleased
 
+## 0.3.0 (2026-11-03)
+
 ### Added
 
 - `--preferred-effect-backend webgpu|webgl2|2d` on `render`, `still`, `strip` and `onion` (and so the MCP tools), as Remotion's CLI names it. It sets `window.remotion_preferredEffectBackend`; `PreferredEffectBackendContext` is supported and wins over it, and `KINETOGRAPH_PREFERRED_EFFECT_BACKEND` still overrides both.

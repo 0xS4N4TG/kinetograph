@@ -1,6 +1,6 @@
 {
   "name": "@kinetographdev/studio",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "description": "kinetograph studio: a local web server and browser UI whose preview frames the addon renders",
   "license": "PolyForm-Small-Business-1.0.0",
   "repository": {
@@ -44,14 +44,14 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^2.0.2",
-    "@kinetographdev/audio": "0.2.5",
-    "@kinetographdev/core": "0.2.5",
-    "@kinetographdev/native": "0.2.5",
-    "@kinetographdev/scene": "0.2.5",
+    "@kinetographdev/audio": "0.3.0",
+    "@kinetographdev/core": "0.3.0",
+    "@kinetographdev/native": "0.3.0",
+    "@kinetographdev/scene": "0.3.0",
     "ws": "8.22.0"
   },
   "peerDependencies": {
-    "kinetograph": "0.2.5"
+    "kinetograph": "0.3.0"
   },
   "devDependencies": {
     "@types/ws": "8.18.2"
