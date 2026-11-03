@@ -39,6 +39,12 @@ const REMOTION_PACKAGES = new Set([
   'skia',
 ]);
 
+/**
+ * `@remotion/*` packages the project's own install runs as it is. `@remotion/effects` is Remotion's own code (its
+ * shaders, its draw calls), written against `createEffect` of `remotion`, which is the core's: nothing of it ships here.
+ */
+const INSTALLED_REMOTION_PACKAGES = new Set(['effects']);
+
 export type Resolution =
   | { kind: 'path'; target: string }
   | { kind: 'font'; family: string }
@@ -61,6 +67,7 @@ export function resolveSpecifier(specifier: string): Resolution | null {
   if (remotion) {
     const [, pkg, rest] = remotion as unknown as [string, string, string | undefined];
     if (pkg === 'google-fonts' && rest && !rest.includes('/')) return { kind: 'font', family: familyFromModule(rest) };
+    if (INSTALLED_REMOTION_PACKAGES.has(pkg)) return null;
     if (REMOTION_PACKAGES.has(pkg)) {
       return { kind: 'path', target: `@kinetographdev/core/${pkg}${rest ? `/${rest}` : ''}` };
     }

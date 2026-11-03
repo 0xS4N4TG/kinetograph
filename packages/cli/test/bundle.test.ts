@@ -34,6 +34,11 @@ describe('resolveSpecifier', () => {
     expect(resolveSpecifier('@remotion/google-fonts')).toEqual({ kind: 'path', target: '@kinetographdev/core/google-fonts' });
   });
 
+  it('leaves @remotion/effects to the project: its own install runs, on the core\'s createEffect', () => {
+    expect(resolveSpecifier('@remotion/effects')).toBeNull();
+    expect(resolveSpecifier('@remotion/effects/blur')).toBeNull();
+  });
+
   it('turns @remotion/google-fonts/<Family> into a font module with the family name', () => {
     expect(resolveSpecifier('@remotion/google-fonts/Inter')).toEqual({ kind: 'font', family: 'Inter' });
     expect(resolveSpecifier('@remotion/google-fonts/DMSans')).toEqual({ kind: 'font', family: 'DM Sans' });
