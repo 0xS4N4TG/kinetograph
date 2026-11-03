@@ -39,6 +39,11 @@ export interface CompositionProps<P extends Record<string, unknown> = Record<str
    */
   margin?: number;
   /**
+   * The colour space layers are blended in (SCENE.md "Blend space"): `srgb` (default), as a browser does, or `linear`
+   * for linear-light blending.
+   */
+  blendSpace?: 'srgb' | 'linear';
+  /**
    * The scene's background colour (SCENE.md `background`), the same in every frame. Unlike a full-size rect at the
    * bottom, it also fills the margin, which `backdropBlur` at the canvas edge reads. Default: transparent.
    */
@@ -61,6 +66,7 @@ export type StillProps<P extends Record<string, unknown> = Record<string, unknow
 /** A registered composition, with what is needed to render it. */
 export interface CompositionEntry extends CompositionInfo {
   margin?: number;
+  blendSpace?: 'srgb' | 'linear';
   background?: string;
   component?: ComponentType<any>;
   lazyComponent?: () => Promise<{ default: ComponentType<any> }>;
@@ -104,6 +110,13 @@ function checkMargin(id: string, value: unknown): number {
   return value;
 }
 
+function checkBlendSpace(id: string, value: unknown): 'srgb' | 'linear' {
+  if (value !== 'srgb' && value !== 'linear') {
+    throw new TypeError(`The "blendSpace" of composition "${id}" must be "srgb" or "linear", but got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
 function checkBackground(id: string, value: unknown): string {
   if (typeof value !== 'string' || value.trim() === '') {
     throw new TypeError(`The "background" of composition "${id}" must be a colour string, but got ${JSON.stringify(value)}`);
@@ -131,6 +144,7 @@ function entryFrom(props: CompositionProps<any>, folder: string[], isStill: bool
     durationInFrames: isStill ? 1 : checkPositiveInteger(id, 'durationInFrames', props.durationInFrames),
     defaultProps: (props.defaultProps as Record<string, unknown> | undefined) ?? {},
     margin: props.margin === undefined ? undefined : checkMargin(id, props.margin),
+    blendSpace: props.blendSpace === undefined ? undefined : checkBlendSpace(id, props.blendSpace),
     background: props.background === undefined ? undefined : checkBackground(id, props.background),
     component: props.component,
     lazyComponent: props.lazyComponent,
@@ -283,6 +297,8 @@ export interface ResolvedComposition {
   component: ComponentType<any>;
   /** The `margin` from `calculateMetadata`, else the `margin` prop, if either is set. */
   margin?: number;
+  /** The `blendSpace` prop, if the composition has one. */
+  blendSpace?: 'srgb' | 'linear';
   /** The `background` prop, if the composition has one. */
   background?: string;
 }
@@ -322,6 +338,7 @@ export function resolveComposition(
     config: applyMetadata(entry, props, result),
     component,
     margin: result.margin === undefined ? entry.margin : checkMargin(entry.id, result.margin),
+    blendSpace: entry.blendSpace,
     background: entry.background,
   });
   const metadata = entry.calculateMetadata
