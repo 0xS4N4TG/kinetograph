@@ -3,6 +3,7 @@
 // from 'remotion'` is this object. Nothing else of Remotion's internals is promised.
 
 import { createCurveSampler } from './curve-sampler.js';
+import { PreferredEffectBackendContext, validatePreferredEffectBackend } from './effect-chain.js';
 import { createEffect, createEffectImplementation } from './effects.js';
 import { processColor } from './process-color.js';
 
@@ -11,6 +12,13 @@ function createWebGL2ContextError(effectName: string): Error {
   return new Error(`Failed to acquire WebGL2 context for ${effectName}.`);
 }
 
-export const Internals = { createEffect, createEffectImplementation, createWebGL2ContextError, createCurveSampler };
+export const Internals = {
+  createEffect,
+  createEffectImplementation,
+  createWebGL2ContextError,
+  createCurveSampler,
+  PreferredEffectBackendContext,
+  validatePreferredEffectBackend,
+};
 
 export const NoReactInternals = { processColor };

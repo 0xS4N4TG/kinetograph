@@ -22,7 +22,7 @@
 // promise settles, the way the HyperFrames runtime holds it for `hf-seek`, and the stage's result is kept for the frame
 // so the render that follows draws what it recorded. A rejection is reported for the frame and the stage is drawn without.
 
-import { useContext, useId, useReducer, useRef, type CSSProperties, type ReactNode } from 'react';
+import { createContext, useContext, useId, useReducer, useRef, type CSSProperties, type ReactNode } from 'react';
 import { canvasEnvironment, rasterizeCanvas, webgpuDeviceInfo } from '@kinetographdev/compat/shim';
 import { Layer, TimelineContext } from '@kinetographdev/react';
 import {
@@ -144,19 +144,30 @@ function outcomeOfError(error: unknown): Outcome {
 /** The order `auto` tries an effect's backends in: Remotion's. */
 const AUTO_ORDER: readonly Backend[] = ['webgpu', 'webgl2', '2d'];
 
-/** The backend to try first: `--preferred-effect-backend`, as `KINETOGRAPH_PREFERRED_EFFECT_BACKEND`, or `auto`. Remotion's `validatePreferredEffectBackend` message. */
-export function preferredEffectBackend(): Backend | 'auto' {
-  const value = process.env.KINETOGRAPH_PREFERRED_EFFECT_BACKEND ?? 'auto';
+/** Remotion's `validatePreferredEffectBackend`, with its message. */
+export function validatePreferredEffectBackend(value: unknown): Backend | 'auto' {
   if (value !== 'auto' && value !== 'webgpu' && value !== 'webgl2' && value !== '2d') {
-    throw new TypeError(`preferredEffectBackend must be "auto", "webgpu", "webgl2" or "2d", got ${value}`);
+    throw new TypeError(`preferredEffectBackend must be "auto", "webgpu", "webgl2" or "2d", got ${String(value)}`);
   }
   return value;
 }
 
+/** Remotion's `PreferredEffectBackendContext` (`Internals`): a provider sets the backend to try first for the effects below it. */
+export const PreferredEffectBackendContext = createContext<Backend | 'auto' | null>(null);
+
+/**
+ * The backend to try first. `KINETOGRAPH_PREFERRED_EFFECT_BACKEND` is an override for the machine; else, as in Remotion, the
+ * nearest `PreferredEffectBackendContext`, then `window.remotion_preferredEffectBackend` (what `--preferred-effect-backend`
+ * sets), else `auto`.
+ */
+export function preferredEffectBackend(fromContext: Backend | 'auto' | null = null): Backend | 'auto' {
+  const global = (globalThis as { window?: { remotion_preferredEffectBackend?: unknown } }).window?.remotion_preferredEffectBackend;
+  return validatePreferredEffectBackend(process.env.KINETOGRAPH_PREFERRED_EFFECT_BACKEND ?? fromContext ?? global ?? 'auto');
+}
+
 /** The implementations of an effect in the order to try them: the preferred backend first, then the rest as `auto` has them. */
-function implementationsOf(definition: EffectDefinition<unknown, unknown>): { backend: Backend; implementation: EffectImplementation<unknown, unknown> }[] {
+function implementationsOf(definition: EffectDefinition<unknown, unknown>, preferred: Backend | 'auto'): { backend: Backend; implementation: EffectImplementation<unknown, unknown> }[] {
   const all = definition.implementations ?? { [definition.backend]: definition };
-  const preferred = preferredEffectBackend();
   const order = preferred === 'auto' ? AUTO_ORDER : [preferred, ...AUTO_ORDER.filter((b) => b !== preferred)];
   return order.flatMap((backend) => (all[backend] === undefined ? [] : [{ backend, implementation: all[backend] as EffectImplementation<unknown, unknown> }]));
 }
@@ -208,9 +219,9 @@ function assertEffect(effect: EffectDescriptor<unknown>): void {
  * Runs one effect on a fresh canvas. An effect with several backends runs the one it prefers; one that can't draw
  * (a WebGPU call that isn't drawn, or an error) hands the frame to the next, and only the last one's failure is the effect's.
  */
-function runEffect(effect: EffectDescriptor<unknown>, source: EffectSource, width: number, height: number): Outcome | Pending {
+function runEffect(effect: EffectDescriptor<unknown>, source: EffectSource, width: number, height: number, preferred: Backend | 'auto'): Outcome | Pending {
   const { definition } = effect;
-  const candidates = implementationsOf(definition);
+  const candidates = implementationsOf(definition, preferred);
   const attempt = (index: number): Outcome | Pending => {
     const last = index === candidates.length - 1;
     let result: Outcome | Pending;
@@ -381,6 +392,7 @@ export function useEffectChain(options: EffectChainOptions): EffectChain {
   // The outcome of each async stage of the frame being rendered, kept so the render that follows the promise's settling
   // draws it instead of running the stage again. A new frame (or other effects, or size) starts empty.
   const timeline = useContext(TimelineContext);
+  const contextBackend = useContext(PreferredEffectBackendContext);
   const [, rerender] = useReducer((n: number) => n + 1, 0);
   const kept = useRef<{ key: string; stages: Map<number, Outcome | Pending> } | null>(null);
   const key = `${timeline?.frame ?? 0}|${runnable.map((effect) => effect.effectKey).join(',')}|${width}x${height}|${pixelDensity}`;
@@ -432,9 +444,9 @@ export function useEffectChain(options: EffectChainOptions): EffectChain {
       const outcome = outcomeOf(index + 1, `effect "${effect.definition.label}"`, () => {
         assertEffect(effect);
         // A setting that is not a backend is the project's mistake, not the effect's: it stops the frame.
-        preferredEffectBackend();
+        const preferred = preferredEffectBackend(contextBackend);
         try {
-          return runEffect(effect, layerPicture(before, width, height), width, height);
+          return runEffect(effect, layerPicture(before, width, height), width, height, preferred);
         } catch (error) {
           return outcomeOfError(error);
         }
