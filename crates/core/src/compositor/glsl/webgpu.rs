@@ -245,6 +245,10 @@ impl Compositor {
             if storage {
                 usage |= wgpu::TextureUsages::STORAGE_BINDING;
             }
+            // A multisampled texture is drawn into and resolved, nothing else.
+            if t.samples > 1 {
+                usage = wgpu::TextureUsages::RENDER_ATTACHMENT;
+            }
             // A format keeps to the usages it has (rgba32float cannot be blended, rgba8unorm-srgb is not a storage format).
             usage &= format
                 .guaranteed_format_features(device.features())
@@ -259,7 +263,7 @@ impl Compositor {
                         depth_or_array_layers: 1,
                     },
                     mip_level_count: t.mips,
-                    sample_count: 1,
+                    sample_count: t.samples,
                     dimension: wgpu::TextureDimension::D2,
                     format,
                     usage,
@@ -460,6 +464,20 @@ impl Compositor {
             }
         };
         let canvas = pass.target.is_none();
+        // A multisampled target resolves into its texture's level.
+        let resolve_view = match &pass.resolve {
+            None => None,
+            Some(r) => Some(
+                res.textures
+                    .get(r.texture.as_str())
+                    .ok_or("a pass resolves into a texture that was not made")?
+                    .create_view(&wgpu::TextureViewDescriptor {
+                        base_mip_level: r.mip,
+                        mip_level_count: Some(1),
+                        ..Default::default()
+                    }),
+            ),
+        };
         let load = match pass.clear {
             Some(c) => wgpu::LoadOp::Clear(color(c)),
             None => wgpu::LoadOp::Load,
@@ -469,7 +487,7 @@ impl Compositor {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &view,
                 depth_slice: None,
-                resolve_target: None,
+                resolve_target: resolve_view.as_ref(),
                 ops: wgpu::Operations {
                     load,
                     store: wgpu::StoreOp::Store,
@@ -1082,7 +1100,10 @@ impl Compositor {
                     ..Default::default()
                 },
                 depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
+                multisample: wgpu::MultisampleState {
+                    count: spec.samples,
+                    ..Default::default()
+                },
                 multiview_mask: None,
                 cache: None,
             });
@@ -1731,6 +1752,7 @@ mod tests {
             height: 4,
             mips: 1,
             format: format.into(),
+            samples: 1,
         };
         let upload = |x, y, w, h, flip_y, premultiply| wg::Upload {
             texture: "t".into(),

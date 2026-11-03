@@ -71,6 +71,10 @@ pub struct GlslContent {
     /// The context's `stencil` attribute: whether it has a stencil buffer.
     #[serde(default)]
     pub stencil: bool,
+    /// The context's `antialias` attribute: the drawing buffer is multisampled (4 samples, as a browser's is), so the
+    /// edges of what is drawn into it are partly covered.
+    #[serde(default)]
+    pub antialias: bool,
     /// By id.
     #[serde(default)]
     pub programs: BTreeMap<String, GlslProgram>,
