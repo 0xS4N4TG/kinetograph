@@ -2,7 +2,8 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import type { MediaInfo } from '@kinetographdev/native';
-import { Audio, Video } from '@kinetographdev/react';
+import { Audio } from '@kinetographdev/react';
+import { Video } from '../src/video.js';
 import { preloadGif } from '../src/gif.js';
 import { getLottieMetadata, type LottieAnimationData } from '../src/lottie.js';
 import { experimental_Audio, experimental_Video, getTargetSampleRate, Audio as MediaAudio, Video as MediaVideo } from '../src/media.js';
