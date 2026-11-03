@@ -1554,8 +1554,8 @@ export interface SceneJson {
    */
   margin?: number;
   /**
-   * The space layers are composited in: `linear` (default) or `srgb`, as CSS does (SCENE.md "Blend space"). A tree with
-   * DOM islands asks for `srgb`: the painter writes its layers for it (ENGINE.md §10.1).
+   * The space layers are composited in: `srgb` (default), as CSS does, or `linear` (SCENE.md "Blend space"). The DOM
+   * painter writes its layers for `srgb` (ENGINE.md §10.1).
    */
   blendSpace?: 'linear' | 'srgb';
   /** Font key to font file. */

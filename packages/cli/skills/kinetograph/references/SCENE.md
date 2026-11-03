@@ -58,7 +58,7 @@ Every layer has these fields:
 | `layoutItem` | object | none | How the layer takes part in its parent group's flex layout. See [Layout](#layout). |
 | `transform` | object | identity | See below. |
 | `opacity` | number | `1` | Clamped to 0..1. |
-| `blendMode` | string | `normal` | `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `colorDodge`, `colorBurn`, `hardLight`, `softLight`, `difference`, `exclusion`, `hue`, `saturation`, `color`, `luminosity`. These are the 16 modes of W3C Compositing and Blending Level 1, evaluated in linear light, then mixed in with the layer's `opacity`. |
+| `blendMode` | string | `normal` | `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `colorDodge`, `colorBurn`, `hardLight`, `softLight`, `difference`, `exclusion`, `hue`, `saturation`, `color`, `luminosity`. These are the 16 modes of W3C Compositing and Blending Level 1, evaluated in the scene's [blend space](#blend-space) (sRGB unless it says `linear`), then mixed in with the layer's `opacity`. |
 | `effects` | array | `[]` | Applied in order to the layer's own pixels, before it is blended. See [Effects](#effects). |
 | `clip` | object | none | Cuts the layer to a shape. See [Clip paths](#clip-paths). |
 | `mask` | object | none | Fades the layer by a gradient. See [Gradient masks](#gradient-masks). |
@@ -104,8 +104,8 @@ origin offset whatever `rotation` and `scale` do. The matrix is
 - A text layer's box is its laid-out box, so measuring it needs its font: a scene with an origin on text is resolved with
   the renderer's text engine.
 
-Layers are blended bottom-up in linear light (not in sRGB as CSS does, so `multiply`, `screen` and `softLight` look
-different from a browser).
+Layers are blended bottom-up in sRGB, like a browser. Set `blendSpace: 'linear'` for linear-light blending (see
+[Blend space](#blend-space)).
 
 ### shape
 
@@ -1818,7 +1818,7 @@ Common fields:
 | `tile` | none | Paint the gradient in one tile and repeat the tile, which is CSS `background-repeat` of a gradient: `{ "x", "y", "width", "height", "spaceX", "spaceY", "repeatX", "repeatY" }`. The tile is `width` x `height` with its top-left corner at (`x`, `y`) (default 0) in the painted layer's space, and the gradient's coordinates are the tile's: (0, 0) at its corner, `box` units fractions of the tile. It repeats every `width + spaceX` (`height + spaceY`; the spaces default to 0) along the axes with `repeatX` / `repeatY`; along the others there is the one tile. Any number of tiles costs one shape: the tile is drawn once and repeated by the paint, at any fractional period. The DOM painter writes it for `background-repeat` (`repeat`, `round` and `space`) with more than 150 tiles of a gradient. |
 
 Colours blend in sRGB with premultiplied alpha, as in CSS, so a stop fading to `#ffffff00` fades to transparent white
-and not through grey. (Layers themselves are still blended in linear light.) A gradient with no extent paints the last
+and not through grey. A gradient with no extent paints the last
 stop's colour everywhere: a linear gradient whose two points coincide, a radial one with `r` 0, or a repeating one
 whose first and last stop have the same offset. The ramp between stops is sampled at 512 steps.
 
@@ -2238,11 +2238,14 @@ file, or a `data:` URL, which is decoded from memory (an `image` layer's `src` c
 
 ### Blend space
 
-The scene's `"blendSpace"` is `"linear"` (default, as always) or `"srgb"`. In `srgb` every layer is composited, and
-every blend mode evaluated, on sRGB-encoded values as CSS does: a half-transparent black over white is mid grey (128)
-and not light grey (188), a translucent shadow is as dark as a browser's, and `multiply` and `screen` give a browser's
-numbers. Blurs, colour filters and everything inside one layer are unchanged. The DOM painter's output asks for
-`srgb` (`IslandOutput::blend_space`).
+Layers blend in sRGB, like a browser. Set `blendSpace: 'linear'` for linear-light blending.
+
+The scene's `"blendSpace"` is `"srgb"` (default) or `"linear"`. In `srgb` every layer is composited, and every blend
+mode evaluated, on sRGB-encoded values as CSS does: a half-transparent black over white is mid grey (128) and not
+light grey (188), a translucent shadow is as dark as a browser's, and `multiply` and `screen` give a browser's numbers.
+Blurs, colour filters and everything inside one layer are unchanged. `linear` composites in linear light, which is
+physically right but not what Chrome does. A Remotion `<Composition>` takes the same value as its `blendSpace` prop.
+In an `srgb` scene a `luminance` mask or matte weighs the encoded colour, as `srgbLuminance` does.
 
 ## Limits in this version
 

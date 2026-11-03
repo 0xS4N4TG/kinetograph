@@ -7,6 +7,8 @@ Kinetograph renders Remotion and HyperFrames projects without a browser. Your `r
 
 Each section lists what works, then the gaps. "Reported" means it shows in the render warnings and in [`doctor`](/docs/terminology/doctor/).
 
+Layers blend in sRGB, like a browser. Set `blendSpace: 'linear'` for linear-light blending.
+
 ## When the engine can't draw something
 
 The engine never switches to a browser. It skips the item or draws something close, and warns.
