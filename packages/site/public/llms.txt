@@ -24,6 +24,7 @@
      - `kinetograph-migrate`: moves an existing Remotion project onto Kinetograph (`doctor`, fixes, `--strict`).
    - MCP server (each CLI command is a tool): `npx -y kinetograph mcp` over stdio. Claude Code:
      `claude mcp add kinetograph -- npx -y kinetograph mcp`. Other clients: /docs/guides/agents/.
+5. If a Kinetograph command says the CLI or the skills are out of date, tell the user and ask before updating.
 
 The same steps are in AGENTS.md in the repository: https://github.com/0xS4N4TG/kinetograph/blob/main/AGENTS.md
 

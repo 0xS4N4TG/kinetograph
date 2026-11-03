@@ -15,10 +15,14 @@ export interface PositionalSpec {
   description: string;
   type?: 'string' | 'number';
   optional?: boolean;
+  /** The last positional only: takes every remaining argument (`add a b c`). `ParsedArgs.lists` holds them all. */
+  variadic?: boolean;
 }
 
 export interface ParsedArgs {
   positionals: Record<string, string | number | undefined>;
+  /** Every value of a variadic positional, by name (the first is also in `positionals`). */
+  lists: Record<string, string[]>;
   options: Record<string, string | number | boolean | string[] | undefined>;
   json: boolean;
 }
@@ -84,14 +88,16 @@ export function parseCommandArgs(spec: ParseSpec, argv: string[]): ParsedArgs {
   if (positionals.length < required.length) {
     throw new CliError('INVALID_ARG', `missing <${required[positionals.length]!.name}>\n${usage(spec)}`);
   }
-  if (positionals.length > spec.positionals.length) {
+  const variadic = spec.positionals.at(-1)?.variadic === true;
+  if (!variadic && positionals.length > spec.positionals.length) {
     throw new CliError('INVALID_ARG', `unexpected argument "${positionals[spec.positionals.length]}"\n${usage(spec)}`);
   }
 
-  const out: ParsedArgs = { positionals: {}, options: {}, json: values.json === true };
+  const out: ParsedArgs = { positionals: {}, lists: {}, options: {}, json: values.json === true };
   spec.positionals.forEach((p, i) => {
     const raw = positionals[i];
     out.positionals[p.name] = raw === undefined ? undefined : p.type === 'number' ? toNumber(p.name, raw) : raw;
+    if (p.variadic) out.lists[p.name] = positionals.slice(i);
   });
   for (const o of spec.options) {
     const raw = values[o.name];
@@ -127,7 +133,7 @@ function toNumber(what: string, raw: string): number {
 }
 
 export function usage(spec: ParseSpec): string {
-  const positionals = spec.positionals.map((p) => (p.optional ? `[${p.name}]` : `<${p.name}>`)).join(' ');
+  const positionals = spec.positionals.map((p) => (p.optional ? `[${p.name}${p.variadic ? '...' : ''}]` : `<${p.name}${p.variadic ? '...' : ''}>`)).join(' ');
   const lines = [`usage: kinetograph ${spec.name}${positionals ? ' ' + positionals : ''} [options]`];
   for (const o of [...spec.options, JSON_OPTION]) {
     const flag = `${o.short ? `-${o.short}, ` : '    '}--${o.name}${o.type === 'boolean' ? '' : ` <${o.type}>`}${o.multiple ? ' ...' : ''}`;

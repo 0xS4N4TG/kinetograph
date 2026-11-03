@@ -12,6 +12,8 @@ const REGISTRY_URL = 'https://registry.npmjs.org/kinetograph/latest';
 const TIMEOUT_MS = 1500;
 const SKILL_NAMES = ['kinetograph', 'kinetograph-migrate'];
 export const SKILLS_UPDATE_COMMAND = 'npx skills add 0xS4N4TG/kinetograph';
+/** Ends each notice, so an agent whose skills predate the notice rule still asks the user. */
+export const AGENT_HINT = ' (coding agents: tell the user and ask first)';
 
 interface Version {
   core: [number, number, number];
@@ -228,12 +230,12 @@ export function skillIsCurrent(skill: InstalledSkill, cliVersion: string): boole
 // ---- the notices ----
 
 export function cliNotice(latest: string, current: string): string {
-  return `kinetograph ${latest} is out (you have ${current}): npm install kinetograph@latest`;
+  return `kinetograph ${latest} is out (you have ${current}): npm install kinetograph@latest${AGENT_HINT}`;
 }
 
 export function skillsNotice(oldest: string | null, cliVersion: string): string {
   const have = oldest === null ? 'have no version stamp' : `are ${oldest}`;
-  return `Your Kinetograph agent skills ${have} and the CLI is ${cliVersion}: update them with ${SKILLS_UPDATE_COMMAND}`;
+  return `Your Kinetograph agent skills ${have} and the CLI is ${cliVersion}: update them with ${SKILLS_UPDATE_COMMAND}${AGENT_HINT}`;
 }
 
 export interface NoticeSession {

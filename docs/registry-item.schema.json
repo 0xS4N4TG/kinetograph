@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+      "description": "The id used in `kinetograph add <name>`: lowercase words joined by hyphens."
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "component",
+        "template",
+        "taste"
+      ]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "kinetograph": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "The oldest kinetograph CLI that can use this item."
+    },
+    "dependencies": {
+      "description": "npm packages the item imports, with versions. Missing ones are installed after the person agrees.",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "maxLength": 214,
+        "pattern": "^(@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9A-Za-z^~<>=.*|+ -]{1,64}$"
+      }
+    },
+    "registryDependencies": {
+      "description": "Other registry items, installed first.",
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 64,
+        "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+      }
+    },
+    "files": {
+      "maxItems": 200,
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "maxLength": 240,
+                "description": "Where the file sits inside the item, a relative path with no \"..\" or leading \"/\"."
+              },
+              "target": {
+                "type": "string",
+                "maxLength": 240,
+                "description": "Where it installs in the project: a relative path under src/ or public/ (src/components/<name>/index.tsx, public/images/<name>/logo.png)."
+              },
+              "content": {
+                "type": "string",
+                "description": "The file text (UTF-8)."
+              }
+            },
+            "required": [
+              "path",
+              "target",
+              "content"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "maxLength": 240,
+                "description": "Where the file sits inside the item, a relative path with no \"..\" or leading \"/\"."
+              },
+              "target": {
+                "type": "string",
+                "maxLength": 240,
+                "description": "Where it installs in the project: a relative path under src/ or public/ (src/components/<name>/index.tsx, public/images/<name>/logo.png)."
+              },
+              "url": {
+                "type": "string",
+                "maxLength": 2048,
+                "description": "Where a binary file (image, font, audio) is fetched from: https, or relative to this JSON file."
+              },
+              "sha256": {
+                "description": "Hex SHA-256 of the file; when present the download is checked against it.",
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "path",
+              "target",
+              "url"
+            ]
+          }
+        ]
+      }
+    },
+    "props": {
+      "description": "The props summary shown in the catalog.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "description": "The prop type as written in TypeScript."
+          },
+          "optional": {
+            "type": "boolean"
+          },
+          "doc": {
+            "description": "The description from `.describe()`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      }
+    },
+    "access": {
+      "description": "Default \"free\". A \"paid\" item cannot be installed yet.",
+      "type": "string",
+      "enum": [
+        "free",
+        "paid"
+      ]
+    }
+  },
+  "required": [
+    "name",
+    "type",
+    "title",
+    "description",
+    "kinetograph",
+    "files"
+  ],
+  "title": "Kinetograph registry item",
+  "$id": "https://kinetograph.dev/r/schema.json"
+}
