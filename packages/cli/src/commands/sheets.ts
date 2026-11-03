@@ -10,6 +10,7 @@ import { nowMs } from '../time.js';
 import {
   ENTRY,
   OUTPUT_OPTION,
+  PREFERRED_EFFECT_BACKEND_OPTION,
   STRICT_OPTION,
   ensureParentDir,
   newRenderer,
@@ -48,6 +49,7 @@ export const strip: Command = {
     { name: 'range', type: 'string', description: 'Frames to sample, as 10..40; default all' },
     { name: 'cols', type: 'number', description: 'Columns of the sheet (default 4 for landscape, 6 for portrait)' },
     STRICT_OPTION,
+    PREFERRED_EFFECT_BACKEND_OPTION,
   ],
   async run(args, context) {
     const count = whole('-n', args.options.count as number | undefined, 1, 12);
@@ -88,6 +90,7 @@ export const onion: Command = {
   options: [
     { name: 'count', short: 'n', type: 'number', description: `Number of frames (default 6, at most ${MAX_FRAMES})` },
     OUTPUT_OPTION,
+    PREFERRED_EFFECT_BACKEND_OPTION,
   ],
   async run(args) {
     const count = whole('-n', args.options.count as number | undefined, 1, 6);

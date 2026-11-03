@@ -1,6 +1,6 @@
 // What the table says about an effect beyond its status: where Kinetograph differs, and why. Edit when a gap closes.
 export const NOTES = {
-  curves: 'Needs `createCurveSampler`, which Kinetograph does not have yet',
+  curves: 'On WebGL 2 the engine has no float textures; WebGPU is used',
   tile: 'Reads the source pixels on the CPU (`getImageData` of a layer), which the engine does not give a script yet',
   shatter: 'Same picture; pixels on the edges of the shards differ (28 dB)',
   tear: 'Same picture; pixels on the tear\'s edge differ (39 dB)',

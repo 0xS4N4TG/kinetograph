@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CanvasCommand, GroupLayer, LayerJson } from '@kinetographdev/scene';
-import { CanvasImage, createEffect, createEffectImplementation, HtmlInCanvas, Solid } from '../src/index.js';
+import { CanvasImage, createEffect, createEffectImplementation, HtmlInCanvas, Internals, Solid } from '../src/index.js';
 import { clearReportedUnsupported, reportedUnsupported } from '../src/unsupported.js';
 import { resetWarnings } from '../src/warn.js';
 import { renderDom, useFakeDom } from './dom-harness.js';
@@ -418,6 +418,46 @@ describe('an effect with an implementation for each backend (createEffect({ impl
     const tree = renderDom(<Solid width={8} height={8} color="#f00" effects={[multi({})]} />);
     expect(chainOf(tree.layers)).toHaveLength(1);
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('tries the backend of PreferredEffectBackendContext first, and the environment variable overrides it', () => {
+    const { PreferredEffectBackendContext } = Internals;
+    const tree = renderDom(
+      <PreferredEffectBackendContext.Provider value="webgl2">
+        <Solid width={8} height={8} color="#f00" effects={[multi({})]} />
+      </PreferredEffectBackendContext.Provider>,
+    );
+    expect(chainOf(tree.layers)).toHaveLength(1);
+    expect(warn).not.toHaveBeenCalled();
+    // The variable names webgpu, which can't draw: the context's webgl2 is not tried first.
+    process.env.KINETOGRAPH_PREFERRED_EFFECT_BACKEND = 'webgpu';
+    renderDom(
+      <PreferredEffectBackendContext.Provider value="webgl2">
+        <Solid width={8} height={8} color="#f00" effects={[multi({})]} />
+      </PreferredEffectBackendContext.Provider>,
+    );
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('tries window.remotion_preferredEffectBackend first, and the context goes before it', () => {
+    const w = globalThis as { window?: { remotion_preferredEffectBackend?: string } };
+    const before = w.window;
+    w.window = { remotion_preferredEffectBackend: 'webgl2' };
+    try {
+      renderDom(<Solid width={8} height={8} color="#f00" effects={[multi({})]} />);
+      expect(warn).not.toHaveBeenCalled();
+      renderDom(
+        <Internals.PreferredEffectBackendContext.Provider value="webgpu">
+          <Solid width={8} height={8} color="#f00" effects={[multi({})]} />
+        </Internals.PreferredEffectBackendContext.Provider>,
+      );
+      expect(warn).toHaveBeenCalledTimes(1);
+      w.window = { remotion_preferredEffectBackend: 'metal' };
+      expect(() => renderDom(<Solid width={8} height={8} effects={[multi({})]} />)).toThrow(/got metal/);
+    } finally {
+      if (before === undefined) delete w.window;
+      else w.window = before;
+    }
   });
 
   it('refuses a backend that is not one, as Remotion does', () => {
