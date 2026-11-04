@@ -38,11 +38,14 @@ export function MobileMenu({
             </a>
           ))}
           <GithubStars initial={counts} className="py-4 font-jb text-[13px] font-medium tracking-[0.24em] text-ink uppercase" />
-          <div className="mt-2 flex items-center justify-between rounded-lg border border-ink/10 py-1.5 pr-1.5 pl-3 text-sm text-mute">
+        </SheetPanel>
+        {/* Pinned to the bottom, as in the docs sidebar's footer. */}
+        <div className="mt-auto px-6 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+          <div className="flex items-center justify-between rounded-lg border border-ink/10 py-1.5 pr-1.5 pl-3 text-sm text-mute">
             <span>Theme</span>
             <ThemeSwitch mode="light-dark-system" className="border-0 p-0" />
           </div>
-        </SheetPanel>
+        </div>
       </SheetPopup>
     </Sheet>
   );
