@@ -84,8 +84,9 @@ impl<'a> Painter<'a> {
         if let Some(rest) = s.strip_prefix("data:") {
             return self.data_source(rest);
         }
-        let path = if crate::net::drive_path(s).is_some() {
-            self.resolve_relative(s)
+        let decoded = percent_decode(s);
+        let path = if crate::net::drive_path(&decoded).is_some() {
+            self.resolve_relative(&decoded)
         } else if let Ok(u) = url::Url::parse(s) {
             match u.scheme() {
                 "file" => u.to_file_path().ok(),
@@ -97,7 +98,7 @@ impl<'a> Painter<'a> {
                 _ => None,
             }
         } else {
-            self.resolve_relative(&percent_decode(s))
+            self.resolve_relative(&decoded)
         };
         let Some(path) = path.filter(|p| p.is_file()) else {
             return Source::Unsupported(format!("the picture {s} is not a file the project has"));
