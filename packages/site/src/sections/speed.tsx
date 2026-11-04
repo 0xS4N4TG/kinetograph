@@ -18,7 +18,7 @@ export function Speed() {
   return (
     <div id="benchmark" className="mt-14 scroll-mt-8">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:grid-rows-2">
-        <div className={`${tile} min-h-[280px] bg-cobalt text-white sm:col-span-2 lg:row-span-2`}>
+        <div className={`${tile} min-h-[280px] bg-cobalt text-white dark:bg-[#2238c4] sm:col-span-2 lg:row-span-2`}>
           <Label className="text-white/75">A reel drawn from shapes</Label>
           <div className="mt-10">
             <p className={`${numeral} text-[clamp(88px,15vw,200px)]`}>
@@ -33,7 +33,7 @@ export function Speed() {
           </div>
         </div>
         {SMALL.map((t) => (
-          <div key={t.label} className={`${tile} min-h-[200px] bg-paper/60`}>
+          <div key={t.label} className={`${tile} min-h-[200px] bg-paper/60 dark:bg-card`}>
             <p className={`${numeral} text-[clamp(56px,6vw,84px)] text-cobalt`}>
               {t.big}
               <span className="ml-[0.12em] text-[0.34em] tracking-[-0.02em]">{t.unit}</span>

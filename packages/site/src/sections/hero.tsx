@@ -15,8 +15,8 @@ export function Hero() {
       {/* The film's vignette: paper falling off to a darker edge, faded out toward the page. */}
       <div
         aria-hidden
-        className="absolute inset-0 -z-10 [mask-image:linear-gradient(to_bottom,black_55%,transparent)]"
-        style={{ background: 'radial-gradient(ellipse 75% 85% at 50% 40%, #eceae6 35%, #cfccc7 130%)' }}
+        className="absolute inset-0 -z-10 [--vignette:#cfccc7] [mask-image:linear-gradient(to_bottom,black_55%,transparent)] dark:[--vignette:#050506]"
+        style={{ background: 'radial-gradient(ellipse 75% 85% at 50% 40%, var(--ground) 35%, var(--vignette) 130%)' }}
       />
       <div className={`${shell} pt-[clamp(32px,5vw,72px)] pb-[clamp(48px,6vw,88px)]`}>
         <Label>A video engine, made for agents</Label>

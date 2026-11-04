@@ -116,7 +116,7 @@ export function Film() {
               className="group absolute inset-0 flex items-center justify-center"
               aria-label="Play the launch film"
             >
-              <span className="flex size-20 items-center justify-center bg-cobalt text-white transition-transform duration-300 group-hover:scale-105 group-active:scale-[0.97]">
+              <span className="flex size-20 items-center justify-center bg-cobalt text-white transition-transform dark:bg-[#2238c4] duration-300 group-hover:scale-105 group-active:scale-[0.97]">
                 <PlayIcon className="ml-1 size-7 fill-current" />
               </span>
             </button>

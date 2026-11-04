@@ -13,8 +13,8 @@ const LINKS = [
   { href: '/docs/', label: 'Docs' },
 ];
 
-/** `themeSwitch` adds the light, dark and system toggle; only pages under a theme provider can have it. */
-export async function Nav({ themeSwitch = false }: { themeSwitch?: boolean }) {
+/** The site nav, with the light, dark and system toggle; every page that uses it is under a theme provider. */
+export async function Nav() {
   const counts = await repoCounts();
   return (
     <header className="relative z-40">
@@ -29,7 +29,7 @@ export async function Nav({ themeSwitch = false }: { themeSwitch?: boolean }) {
             </a>
           ))}
           <GithubStars initial={counts} className="font-jb text-[11px] font-medium tracking-[0.24em] text-ink uppercase" />
-          {themeSwitch && <ThemeSwitch mode="light-dark-system" />}
+          <ThemeSwitch mode="light-dark-system" />
         </nav>
         <div className="flex items-center gap-3 md:hidden">
           <a
@@ -41,7 +41,7 @@ export async function Nav({ themeSwitch = false }: { themeSwitch?: boolean }) {
           >
             <GithubMark className="size-5" />
           </a>
-          <MobileMenu links={LINKS} counts={counts} extra={themeSwitch && <ThemeSwitch mode="light-dark-system" />} />
+          <MobileMenu links={LINKS} counts={counts} />
         </div>
       </div>
     </header>

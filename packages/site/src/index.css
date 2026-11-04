@@ -130,10 +130,8 @@
   100% {
     translate: 0 0;}}}
 
-/* Cobalt toile: cobalt ink on cream paper. coss ui reads these same shadcn tokens.
-   .kg-light is the landing page's own scope: it keeps the toile when a dark theme was picked on another page. */
-:root,
-.kg-light {
+/* Cobalt toile: cobalt ink on cream paper. coss ui reads these same shadcn tokens. */
+:root {
   color-scheme: light;
   --ink: #111111;
   --mute: #5e5952;

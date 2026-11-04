@@ -15,7 +15,7 @@ import { body, Label, link, section, shell } from '@/sections/shared';
 export function CatalogPage({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen overflow-x-clip bg-ground font-dm text-ink selection:bg-flag selection:text-white">
-      <Nav themeSwitch />
+      <Nav />
       <main className={`${shell} ${section}`}>{children}</main>
     </div>
   );
