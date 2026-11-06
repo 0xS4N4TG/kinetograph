@@ -238,7 +238,7 @@ fn an_fe_image_in_a_canvas_filter_is_a_transparent_flood_and_is_reported() {
     );
     let out = paintkit::paint_html(&paintkit::page(&body), 200, 100);
     assert_eq!(out.unsupported.len(), 1, "{:?}", out.unsupported);
-    assert_eq!(out.unsupported[0].element, "canvas");
+    assert_eq!(out.unsupported[0].element, "canvas", "{:?}", out.unsupported);
     assert_eq!(out.unsupported[0].value.as_deref(), Some("url(#pic)"));
     let canvas = find(&out.layers, "c").expect("a canvas layer");
     let primitives = &canvas["commands"][0]["filter"][0]["graph"]["primitives"];

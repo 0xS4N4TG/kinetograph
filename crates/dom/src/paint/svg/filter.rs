@@ -14,6 +14,7 @@ use blitz_dom::{BaseDocument, NodeData, NodeId};
 use kinetograph_core::filter::Aspect;
 use serde_json::{Map, Value, json};
 
+use super::super::images;
 use super::css;
 use super::serialize::{Note, canonical_attr, canonical_tag, computed_color};
 use super::{UNREADABLE_PICTURE, assets, roots};
@@ -427,13 +428,15 @@ fn primitive(
 
 /// An `feImage` of a picture file, drawn as it is in the primitive subregion
 /// (the core fits it by `preserveAspectRatio`): `p` holds the subregion and
-/// `result` already. The picture goes in as a `data:` URL, as an SVG `<image>`'s
-/// does, so no file is named in the scene.
+/// `result` already. The file is named in the scene by its canonical path, as
+/// an `image` layer's is, so the core reads and keeps it once however many
+/// frames use it.
 ///
 /// An `href` to an element of the document is not drawn (`None`: the caller
-/// puts a transparent flood in its place and says so). A file that cannot be
-/// read, from under the project's directories, is said so and is a transparent
-/// flood too.
+/// puts a transparent flood in its place and says so). The href is read as an
+/// HTML picture's is (`file:` URL, drive path, percent-encoding, `public/`), and
+/// the file must be under the project's directories. A file that cannot be
+/// read, or is no picture, is said so and is a transparent flood too.
 fn image(
     el: &Element,
     request: &IslandRequest,
@@ -459,18 +462,21 @@ fn image(
     }
     let roots = roots(request);
     let roots: Vec<&std::path::Path> = roots.iter().map(std::path::PathBuf::as_path).collect();
-    let bytes = assets::resolve_under(&roots, value).and_then(|file| std::fs::read(file).ok());
-    let Some(bytes) = bytes else {
+    let file = images::file_named(&request.base_dir, request.public_dir.as_deref(), value)
+        // Canonical first, so that a `..` in a project directory's own name is not mistaken for one in the href; the
+        // file must still be under a project directory once links are followed.
+        .and_then(|file| assets::resolve_under(&roots, file.canonicalize().ok()?.to_str()?));
+    let Some(file) = file else {
         note(UNREADABLE_PICTURE);
         return Some(transparent(p));
     };
-    let Some(ext) = assets::picture_ext(&bytes) else {
+    if images::raster_dimensions(&file).is_err() {
         note(
-            "feImage reads a PNG, JPEG or WebP picture; this file is another kind, so it is not drawn",
+            "feImage reads a raster picture (PNG, JPEG, WebP); this file is another kind, so it is not drawn",
         );
         return Some(transparent(p));
-    };
-    p.insert("href".into(), json!(assets::data_url(ext, &bytes)));
+    }
+    p.insert("href".into(), json!(file.to_string_lossy()));
     // An invalid `preserveAspectRatio` is the default one, as in a browser.
     if let Some(a) = el
         .prop("preserveAspectRatio")
@@ -576,12 +582,8 @@ mod tests {
         let p = e["primitives"].as_array().unwrap();
         assert_eq!(p.len(), 3);
         assert_eq!(p[0]["primitive"], "feImage");
-        assert!(
-            p[0]["href"]
-                .as_str()
-                .unwrap()
-                .starts_with("data:image/png;base64,")
-        );
+        // The file is named, not inlined.
+        assert_eq!(p[0]["href"], json!(map.to_string_lossy()));
         assert_eq!(p[0]["preserveAspectRatio"], "xMinYMax slice");
         assert_eq!(p[0]["result"], "map");
         assert_eq!(
@@ -614,6 +616,47 @@ mod tests {
             panic!("an image node")
         };
         assert_eq!(*aspect, Aspect::default());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_fe_image_href_is_read_as_an_html_picture_is() {
+        let dir = project("forms");
+        let spaced = dir.join("public/fx dir/ca map.png");
+        std::fs::create_dir_all(spaced.parent().unwrap()).unwrap();
+        std::fs::copy(dir.join("public/fx/map.png"), &spaced).unwrap();
+        let file_url = url::Url::from_file_path(&spaced).unwrap().to_string();
+        assert!(file_url.contains("%20"), "{file_url}");
+        let outside = url::Url::from_file_path(dir.join("outside/secret.png")).unwrap();
+        let r = request(&dir.join("base"), Some(&dir.join("public")));
+        for (href, drawn) in [
+            ("fx%20dir/ca%20map.png".to_string(), true),
+            ("/fx%20dir/ca%20map.png".to_string(), true),
+            ("fx dir/ca map.png".to_string(), true),
+            (file_url, true),
+            (spaced.display().to_string(), true),
+            // Containment is kept: out by a file URL, or by an encoded `..`.
+            (outside.to_string(), false),
+            (
+                "fx%20dir/%2e%2e/%2e%2e/outside/secret.png".to_string(),
+                false,
+            ),
+        ] {
+            let d = doc(&format!(
+                r##"<svg><filter id="f"><feImage href="{href}" result="i"/></filter></svg>"##
+            ));
+            let mut notes = Vec::new();
+            let e = effect(&d, &r, "f", None, [1.0, 1.0], &mut notes).unwrap();
+            let p = &e["primitives"][0];
+            if drawn {
+                assert!(notes.is_empty(), "{href}: {notes:?}");
+                assert_eq!(p["primitive"], "feImage", "{href}");
+                assert_eq!(p["href"], json!(spaced.to_string_lossy()), "{href}");
+            } else {
+                assert_eq!(notes.len(), 1, "{href}: {notes:?}");
+                assert_eq!(p["primitive"], "feFlood", "{href}");
+            }
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 

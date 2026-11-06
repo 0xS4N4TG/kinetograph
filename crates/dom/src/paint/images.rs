@@ -17,7 +17,7 @@ type SizeKey = (PathBuf, u64, Option<std::time::SystemTime>);
 /// A document built for each frame paints its background pictures again, and
 /// opening each file to read its header cost more than the rest of the paint;
 /// a changed file has a new key, so a size is never stale.
-fn raster_dimensions(path: &Path) -> image::ImageResult<(u32, u32)> {
+pub(super) fn raster_dimensions(path: &Path) -> image::ImageResult<(u32, u32)> {
     static SIZES: OnceLock<Mutex<HashMap<SizeKey, (u32, u32)>>> = OnceLock::new();
     let key = std::fs::metadata(path)
         .ok()
@@ -48,27 +48,7 @@ impl<'a> Painter<'a> {
     /// A relative reference against the request's directories: the project
     /// first, then `public/`.
     pub fn resolve_relative(&self, s: &str) -> Option<PathBuf> {
-        let s = s.trim();
-        if s.is_empty() {
-            return None;
-        }
-        let p = Path::new(s);
-        if p.is_absolute() && p.exists() {
-            return Some(p.to_path_buf());
-        }
-        let rel = s.trim_start_matches("./").trim_start_matches('/');
-        let base = Path::new(&self.req.base_dir);
-        let c = base.join(rel);
-        if c.exists() {
-            return Some(c);
-        }
-        if let Some(public) = &self.req.public_dir {
-            let c = Path::new(public).join(rel);
-            if c.exists() {
-                return Some(c);
-            }
-        }
-        None
+        find_relative(&self.req.base_dir, self.req.public_dir.as_deref(), s)
     }
 
     /// The file a computed `url()` names.
@@ -84,21 +64,14 @@ impl<'a> Painter<'a> {
         if let Some(rest) = s.strip_prefix("data:") {
             return self.data_source(rest);
         }
-        let path = if crate::net::drive_path(s).is_some() {
-            self.resolve_relative(s)
-        } else if let Ok(u) = url::Url::parse(s) {
-            match u.scheme() {
-                "file" => u.to_file_path().ok(),
-                "http" | "https" => {
-                    return Source::Unsupported(format!(
-                        "{s} is a remote picture; a render reads no network"
-                    ));
-                }
-                _ => None,
-            }
-        } else {
-            self.resolve_relative(&percent_decode(s))
-        };
+        if crate::net::drive_path(s).is_none()
+            && url::Url::parse(s).is_ok_and(|u| matches!(u.scheme(), "http" | "https"))
+        {
+            return Source::Unsupported(format!(
+                "{s} is a remote picture; a render reads no network"
+            ));
+        }
+        let path = file_named(&self.req.base_dir, self.req.public_dir.as_deref(), s);
         let Some(path) = path.filter(|p| p.is_file()) else {
             return Source::Unsupported(format!("the picture {s} is not a file the project has"));
         };
@@ -168,6 +141,44 @@ impl<'a> Painter<'a> {
             },
             None => Source::Unsupported("cannot read a data: picture".to_string()),
         }
+    }
+}
+
+/// A relative reference against the project directory, then `public/`; an
+/// absolute path that exists is taken as it is.
+fn find_relative(base_dir: &str, public_dir: Option<&str>, s: &str) -> Option<PathBuf> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let p = Path::new(s);
+    if p.is_absolute() && p.exists() {
+        return Some(p.to_path_buf());
+    }
+    let rel = s.trim_start_matches("./").trim_start_matches('/');
+    let c = Path::new(base_dir).join(rel);
+    if c.exists() {
+        return Some(c);
+    }
+    let c = Path::new(public_dir?).join(rel);
+    c.exists().then_some(c)
+}
+
+/// The file a picture URL or path string names, as the HTML pictures read it: a
+/// Windows drive path, a `file:` URL, or a path (percent-encoded or not) from the
+/// project directory or `public/`. `None` for anything else (a remote URL, a
+/// `data:` URL). The file may be anywhere the path says: a reader that must stay
+/// inside the project checks that itself (`svg::assets::resolve_under`).
+pub(super) fn file_named(base_dir: &str, public_dir: Option<&str>, s: &str) -> Option<PathBuf> {
+    if crate::net::drive_path(s).is_some() {
+        find_relative(base_dir, public_dir, s)
+    } else if let Ok(u) = url::Url::parse(s) {
+        match u.scheme() {
+            "file" => u.to_file_path().ok(),
+            _ => None,
+        }
+    } else {
+        find_relative(base_dir, public_dir, &percent_decode(s))
     }
 }
 

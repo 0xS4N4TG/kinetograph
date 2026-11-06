@@ -25,16 +25,6 @@ pub fn data_url(ext: &str, bytes: &[u8]) -> String {
     )
 }
 
-/// The extension `data_url` takes for the picture `bytes` hold, if it is a PNG, a JPEG or a WebP.
-pub fn picture_ext(bytes: &[u8]) -> Option<&'static str> {
-    match image::guess_format(bytes).ok()? {
-        image::ImageFormat::Png => Some("png"),
-        image::ImageFormat::Jpeg => Some("jpg"),
-        image::ImageFormat::WebP => Some("webp"),
-        _ => None,
-    }
-}
-
 /// The file `href` names under one of `roots`, canonicalized, or `None`: the
 /// path must have no `..`, exist, and resolve (through links) to somewhere
 /// under the canonical form of that root. An absolute path is accepted only
@@ -45,7 +35,10 @@ pub fn resolve_under(roots: &[&Path], href: &str) -> Option<PathBuf> {
         || rel.components().any(|c| {
             !matches!(
                 c,
-                Component::Normal(_) | Component::CurDir | Component::RootDir
+                Component::Normal(_)
+                    | Component::CurDir
+                    | Component::RootDir
+                    | Component::Prefix(_)
             )
         })
     {
