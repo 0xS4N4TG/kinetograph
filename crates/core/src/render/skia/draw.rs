@@ -650,7 +650,7 @@ impl Translator {
 
     fn clip_path(&mut self, clip: &ResolvedClip, layer: &ResolvedLayer) -> Option<Path> {
         match clip {
-            ResolvedClip::Polygon { points } => {
+            ResolvedClip::Polygon { points, fill_rule } => {
                 let mut pb = PathBuilder::new();
                 for (i, &(x, y)) in points.iter().enumerate() {
                     if i == 0 {
@@ -660,6 +660,7 @@ impl Translator {
                     }
                 }
                 pb.close();
+                pb.set_fill_type(if *fill_rule == FillRule::EvenOdd { PathFillType::EvenOdd } else { PathFillType::Winding });
                 Some(pb.detach())
             }
             ResolvedClip::Inset { top, right, bottom, left, radius } => {
@@ -690,7 +691,7 @@ impl Translator {
                 );
                 Some(pb.detach())
             }
-            ResolvedClip::Path { d } => self.svg_path(d, false),
+            ResolvedClip::Path { d, fill_rule } => self.svg_path(d, *fill_rule == FillRule::EvenOdd),
         }
     }
 
@@ -2258,13 +2259,13 @@ impl Translator {
     }
 
     /// `path` (layer space) in opaque white: its alpha is the clip's coverage.
-    pub fn raster_clip(&mut self, canvas: &Canvas, path: &BezPath, matrix: Affine) {
+    pub fn raster_clip(&mut self, canvas: &Canvas, path: &BezPath, matrix: Affine, even_odd: bool) {
         canvas.save();
         canvas.concat(&mat(matrix));
         let mut p = Paint::default();
         p.set_anti_alias(true);
         p.set_color4f(Color4f::new(1.0, 1.0, 1.0, 1.0), None);
-        canvas.draw_path(&bez_to_path(path, false), &p);
+        canvas.draw_path(&bez_to_path(path, even_odd), &p);
         self.stats.draws += 1;
         canvas.restore();
     }
@@ -2282,10 +2283,10 @@ impl Translator {
     }
 
     /// Starts a group's clip: what follows, up to the matching `raster_pop`, is cut by `path`.
-    pub fn raster_push_clip(&mut self, canvas: &Canvas, path: &BezPath, matrix: Affine) {
+    pub fn raster_push_clip(&mut self, canvas: &Canvas, path: &BezPath, matrix: Affine, even_odd: bool) {
         canvas.save();
         canvas.concat(&mat(matrix));
-        canvas.clip_path(&bez_to_path(path, false), ClipOp::Intersect, true);
+        canvas.clip_path(&bez_to_path(path, even_odd), ClipOp::Intersect, true);
     }
 
     pub fn raster_pop(&mut self, canvas: &Canvas) {

@@ -1770,10 +1770,10 @@ group. Every number is animatable.
 
 | `kind` | Fields | Notes |
 |---|---|---|
-| `polygon` | `points`: array of `[x, y]` pairs, at least 3 | Each coordinate is an animatable number. Non-zero fill rule, so a self-crossing star is filled throughout. |
+| `polygon` | `points`: array of `[x, y]` pairs, at least 3; `fillRule` | Each coordinate is an animatable number. `fillRule` is `nonzero` (default, a self-crossing star is filled throughout) or `evenodd` (its centre is cut out). |
 | `inset` | `top`, `right`, `bottom`, `left`, `radius` (all default `0`) | The layer's own box shrunk by the four distances, like CSS `inset()`. A negative distance grows the box. `radius` rounds the corners, is at least 0 and is limited to half the shorter side. If the sides cross, nothing is kept. |
 | `ellipse` | `cx`, `cy`, `rx`, `ry` | Centre and radii, at least 0. A radius of 0 keeps nothing. |
-| `path` | `d`: SVG path data | Non-zero fill rule. The path is not animated (like a shape's `path`). |
+| `path` | `d`: SVG path data; `fillRule` | `fillRule` is `nonzero` (default) or `evenodd` (holes stay holes). The path is not animated (like a shape's `path`). |
 
 The layer's own box, which `inset` is measured from:
 
