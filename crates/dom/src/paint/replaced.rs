@@ -599,6 +599,30 @@ impl<'a> Painter<'a> {
                         if let Some(o) = graph.as_object_mut() {
                             o.remove("type");
                         }
+                        // The scene refuses a picture in a canvas's filter graph: it is a transparent flood.
+                        let mut pictures = false;
+                        for primitive in graph
+                            .get_mut("primitives")
+                            .and_then(Value::as_array_mut)
+                            .into_iter()
+                            .flatten()
+                            .filter_map(Value::as_object_mut)
+                            .filter(|p| p.get("primitive") == Some(&json!("feImage")))
+                        {
+                            primitive.remove("href");
+                            primitive.remove("preserveAspectRatio");
+                            primitive.insert("primitive".into(), json!("feFlood"));
+                            primitive.insert("floodOpacity".into(), json!(0));
+                            pictures = true;
+                        }
+                        if pictures {
+                            self.report(
+                                node,
+                                "filter",
+                                &url,
+                                "an feImage in a canvas's filter is not drawn: a transparent image takes its place",
+                            );
+                        }
                         *f = json!({ "type": "graph", "graph": graph });
                         self.unsupported.extend(fe.unsupported);
                     }

@@ -342,6 +342,7 @@ impl<'a> Emitter<'a> {
                         urls.push(url.as_str());
                         if let Some(e) = filter::effect(
                             self.doc,
+                            self.request,
                             url,
                             Some(bbox),
                             self.viewport,

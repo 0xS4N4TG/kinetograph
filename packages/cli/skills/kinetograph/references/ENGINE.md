@@ -483,10 +483,12 @@ What is drawn:
   `lighting-color` usvg cannot read (`var(--x)`, `oklch()`, `oklab()`, `color-mix()`, `rgb(r g b / a)`, `rebeccapurple`)
   goes through Stylo's colour parser, as an HTML colour does, and is written as a plain `rgb` (`svg/color.rs`); one
   that cannot be resolved is an `Unsupported` item. Tests: `crates/dom/tests/svg_cascade.rs`.
-- **Filters** (`filterGraph`, `filter_graph`): all 17 primitives but `feImage`, which becomes a transparent flood and an
-  `Unsupported` item. CSS filter functions on an element inside an `<svg>` are drawn too (`svg/css_filter.rs` reads the
-  `filter` text into the same effects the box painter makes, lengths in user units; `opacity()` multiplies the group's).
-- `Unsupported` items: `feImage`; `transform-box` other than `view-box`; a
+- **Filters** (`filterGraph`, `filter_graph`): all 17 primitives. An `feImage` of a PNG, JPEG or WebP file under
+  `base_dir` or `public_dir` goes in as a `data:` URL (`svg/filter.rs`); one of an element (`href="#id"`), a file that
+  cannot be read, or one in a canvas's filter becomes a transparent flood and an `Unsupported` item. CSS filter
+  functions on an element inside an `<svg>` are drawn too (`svg/css_filter.rs` reads the `filter` text into the same
+  effects the box painter makes, lengths in user units; `opacity()` multiplies the group's).
+- `Unsupported` items: `feImage` of an element; `transform-box` other than `view-box`; a
   skewed or mirrored pattern, image, or filtered element (drawn unturned for the filter); a GIF or WebP `<image>`;
   text when the request registers no font.
 - Reads of files (`<image href>`) are limited to `base_dir` and `public_dir`: relative, no `..`, canonical path

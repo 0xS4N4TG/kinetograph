@@ -227,6 +227,29 @@ fn a_url_filter_on_a_canvas_is_the_pages_filter_or_is_reported() {
 }
 
 #[test]
+fn an_fe_image_in_a_canvas_filter_is_a_transparent_flood_and_is_reported() {
+    // The scene refuses a picture in a canvas's filter graph, so the page's `feImage` (a file of the test assets)
+    // becomes a transparent flood there, with a note; the primitives around it are kept.
+    let commands = r##"[{"op":"fill","path":"M0 0H5V5Z","paint":{"type":"color","color":"#ff0000"},"filter":[{"type":"url","url":"url(#pic)"}]}]"##;
+    let body = format!(
+        "<svg width=\"0\" height=\"0\" style=\"position:absolute\"><filter id=\"pic\">\
+         <feImage href=\"photo.png\" result=\"p\"/><feGaussianBlur in=\"p\" stdDeviation=\"1\"/></filter></svg>\
+         <canvas id=\"c\" width=\"50\" height=\"20\" data-kg-canvas='{commands}' style=\"display:block\"></canvas>"
+    );
+    let out = paintkit::paint_html(&paintkit::page(&body), 200, 100);
+    assert_eq!(out.unsupported.len(), 1, "{:?}", out.unsupported);
+    assert_eq!(out.unsupported[0].element, "canvas");
+    assert_eq!(out.unsupported[0].value.as_deref(), Some("url(#pic)"));
+    let canvas = find(&out.layers, "c").expect("a canvas layer");
+    let primitives = &canvas["commands"][0]["filter"][0]["graph"]["primitives"];
+    assert_eq!(primitives[0]["primitive"], "feFlood");
+    assert_eq!(primitives[0]["floodOpacity"], 0);
+    assert!(primitives[0].get("href").is_none());
+    assert_eq!(primitives[0]["result"], "p");
+    assert_eq!(primitives[1]["primitive"], "feGaussianBlur");
+}
+
+#[test]
 fn canvas_url_filter() {
     // `ctx.filter = 'url(#id)'` with SVG filters of the page: a blur, a flood in objectBoundingBox units (whose box
     // is the canvas), and a colour matrix after a blur() in one list, against Chrome's.

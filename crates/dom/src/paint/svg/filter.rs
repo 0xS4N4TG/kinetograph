@@ -11,10 +11,13 @@
 use std::str::FromStr;
 
 use blitz_dom::{BaseDocument, NodeData, NodeId};
+use kinetograph_core::filter::Aspect;
 use serde_json::{Map, Value, json};
 
 use super::css;
 use super::serialize::{Note, canonical_attr, canonical_tag, computed_color};
+use super::{UNREADABLE_PICTURE, assets, roots};
+use crate::request::IslandRequest;
 
 /// A number as JSON: whole numbers as integers, which the scene wants for
 /// `numOctaves` and friends.
@@ -124,9 +127,11 @@ fn color(doc: &BaseDocument, el: &Element, s: &str) -> Option<String> {
 
 /// The `filterGraph` for the `<filter>` with `id` anywhere in `doc`, or `None`
 /// if there is none. `bbox` is `[x, y, width, height]` of what the filter is
-/// on; `viewport` the size percentages in user units are of.
+/// on; `viewport` the size percentages in user units are of. `request` says
+/// where an `feImage` may read its picture from.
 pub fn effect(
     doc: &BaseDocument,
+    request: &IslandRequest,
     id: &str,
     bbox: Option<[f64; 4]>,
     viewport: [f64; 2],
@@ -195,7 +200,7 @@ pub fn effect(
         if !tag.starts_with("fe") {
             continue;
         }
-        match primitive(doc, &child, &tag, prim_bbox, viewport, notes) {
+        match primitive(doc, request, &child, &tag, prim_bbox, viewport, notes) {
             Some(p) => primitives.push(p),
             None => {
                 notes.push(Note {
@@ -221,6 +226,7 @@ pub fn effect(
 /// transparent flood, so that later primitives can still read its result).
 fn primitive(
     doc: &BaseDocument,
+    request: &IslandRequest,
     el: &Element,
     tag: &str,
     prim_bbox: bool,
@@ -413,18 +419,73 @@ fn primitive(
             // A lighting filter with no light is an error, which draws nothing.
             p.insert("light".into(), light?);
         }
-        "feImage" => {
-            notes.push(Note {
-                element: tag.to_string(),
-                property: Some("href".into()),
-                value: el.prop("href").or_else(|| el.prop("xlink:href")),
-                reason: "feImage is not supported".into(),
-            });
-            return None;
-        }
+        "feImage" => return image(el, request, p, notes),
         _ => return None,
     }
     Some(Value::Object(p))
+}
+
+/// An `feImage` of a picture file, drawn as it is in the primitive subregion
+/// (the core fits it by `preserveAspectRatio`): `p` holds the subregion and
+/// `result` already. The picture goes in as a `data:` URL, as an SVG `<image>`'s
+/// does, so no file is named in the scene.
+///
+/// An `href` to an element of the document is not drawn (`None`: the caller
+/// puts a transparent flood in its place and says so). A file that cannot be
+/// read, from under the project's directories, is said so and is a transparent
+/// flood too.
+fn image(
+    el: &Element,
+    request: &IslandRequest,
+    mut p: Map<String, Value>,
+    notes: &mut Vec<Note>,
+) -> Option<Value> {
+    let href = el.prop("href").or_else(|| el.prop("xlink:href"));
+    let value = href.as_deref().map(str::trim).unwrap_or_default();
+    let mut note = |reason: &str| {
+        notes.push(Note {
+            element: "feImage".into(),
+            property: Some("href".into()),
+            value: href.clone(),
+            reason: reason.into(),
+        });
+    };
+    if value.is_empty() || value.starts_with('#') {
+        note(
+            "feImage of an element of the document is not supported: only a picture file \
+             (PNG, JPEG or WebP) in the project is",
+        );
+        return None;
+    }
+    let roots = roots(request);
+    let roots: Vec<&std::path::Path> = roots.iter().map(std::path::PathBuf::as_path).collect();
+    let bytes = assets::resolve_under(&roots, value).and_then(|file| std::fs::read(file).ok());
+    let Some(bytes) = bytes else {
+        note(UNREADABLE_PICTURE);
+        return Some(transparent(p));
+    };
+    let Some(ext) = assets::picture_ext(&bytes) else {
+        note(
+            "feImage reads a PNG, JPEG or WebP picture; this file is another kind, so it is not drawn",
+        );
+        return Some(transparent(p));
+    };
+    p.insert("href".into(), json!(assets::data_url(ext, &bytes)));
+    // An invalid `preserveAspectRatio` is the default one, as in a browser.
+    if let Some(a) = el
+        .prop("preserveAspectRatio")
+        .filter(|a| Aspect::parse(a).is_some())
+    {
+        p.insert("preserveAspectRatio".into(), json!(a.trim()));
+    }
+    Some(Value::Object(p))
+}
+
+/// The primitive `p` (its subregion and `result`) as a flood of nothing.
+fn transparent(mut p: Map<String, Value>) -> Value {
+    p.insert("primitive".into(), json!("feFlood"));
+    p.insert("floodOpacity".into(), json!(0));
+    Value::Object(p)
 }
 
 fn rename(p: &mut Map<String, Value>, from: &str, to: &str) {
@@ -436,9 +497,12 @@ fn rename(p: &mut Map<String, Value>, from: &str, to: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::request::{DomNode, Size};
     use blitz_dom::DocumentConfig;
     use blitz_html::HtmlDocument;
     use blitz_traits::shell::{ColorScheme, Viewport};
+    use std::collections::BTreeMap;
+    use std::path::{Path, PathBuf};
 
     fn doc(html: &str) -> BaseDocument {
         let mut doc = HtmlDocument::from_html(
@@ -453,6 +517,159 @@ mod tests {
         doc
     }
 
+    /// A request whose directories hold no picture.
+    fn nowhere() -> IslandRequest {
+        request(Path::new("/nowhere"), None)
+    }
+
+    fn request(base: &Path, public: Option<&Path>) -> IslandRequest {
+        IslandRequest {
+            root: DomNode::Text {
+                text: String::new(),
+            },
+            stylesheets: Vec::new(),
+            viewport: Size {
+                width: 200.0,
+                height: 200.0,
+            },
+            fonts: BTreeMap::new(),
+            base_dir: base.to_string_lossy().into_owned(),
+            public_dir: public.map(|p| p.to_string_lossy().into_owned()),
+            time: 0.0,
+            path: "$0".into(),
+            history: Vec::new(),
+        }
+    }
+
+    /// A project with `public/fx/map.png` (a 1 x 1 PNG) and `outside/secret.png`; returns its directory.
+    fn project(tag: &str) -> PathBuf {
+        use base64::Engine as _;
+        let dir = std::env::temp_dir().join(format!("kg-fe-image-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("public/fx")).unwrap();
+        std::fs::create_dir_all(dir.join("outside")).unwrap();
+        let png = base64::engine::general_purpose::STANDARD
+            .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
+            .unwrap();
+        std::fs::write(dir.join("public/fx/map.png"), &png).unwrap();
+        std::fs::write(dir.join("outside/secret.png"), &png).unwrap();
+        dir.canonicalize().unwrap()
+    }
+
+    #[test]
+    fn an_fe_image_of_a_project_picture_is_a_node_with_its_subregion_and_fit() {
+        let dir = project("file");
+        let map = dir.join("public/fx/map.png");
+        let d = doc(&format!(
+            r##"<svg><filter id="ca" filterUnits="userSpaceOnUse" x="0" y="0" width="100" height="50">
+            <feImage xlink:href="{}" x="10" y="5" width="20" height="30" preserveAspectRatio="xMinYMax slice" result="map"/>
+            <feImage href="{}" result="whole" preserveAspectRatio="bogus"/>
+            <feDisplacementMap in="SourceGraphic" in2="map" scale="8" xChannelSelector="R" yChannelSelector="G"/>
+        </filter></svg>"##,
+            map.display(),
+            map.display()
+        ));
+        let r = request(&dir.join("base"), Some(&dir.join("public")));
+        let mut notes = Vec::new();
+        let e = effect(&d, &r, "ca", None, [200.0, 200.0], &mut notes).unwrap();
+        assert!(notes.is_empty(), "{notes:?}");
+        let p = e["primitives"].as_array().unwrap();
+        assert_eq!(p.len(), 3);
+        assert_eq!(p[0]["primitive"], "feImage");
+        assert!(
+            p[0]["href"]
+                .as_str()
+                .unwrap()
+                .starts_with("data:image/png;base64,")
+        );
+        assert_eq!(p[0]["preserveAspectRatio"], "xMinYMax slice");
+        assert_eq!(p[0]["result"], "map");
+        assert_eq!(
+            [p[0]["x"].clone(), p[0]["width"].clone()],
+            [json!(10), json!(20)]
+        );
+        // No subregion: the primitive has none, so it is the filter region; a bad aspect is the default.
+        assert!(p[1].get("x").is_none() && p[1].get("preserveAspectRatio").is_none());
+        assert_eq!(p[2]["in2"], "map");
+
+        // The core reads it as a node that the displacement map takes as `in2`, with the subregion and fit.
+        use kinetograph_core::filter::{Aspect, FeInput, FeOp, FilterGraph};
+        let graph: FilterGraph = serde_json::from_value(e).unwrap();
+        graph.validate("l", true).unwrap();
+        let resolved = graph.resolve(0.0);
+        assert_eq!(
+            resolved.nodes[2].inputs,
+            [FeInput::Source, FeInput::Node(0)]
+        );
+        let plan = resolved.plan(None).unwrap();
+        assert_eq!(plan.nodes[1].sub, kurbo::Rect::new(0.0, 0.0, 100.0, 50.0));
+        let FeOp::Image { aspect, .. } = &plan.nodes[0].op else {
+            panic!("an image node")
+        };
+        assert_eq!(
+            aspect.fit(plan.nodes[0].sub, 1.0, 1.0),
+            kurbo::Rect::new(10.0, 5.0, 40.0, 35.0)
+        );
+        let FeOp::Image { aspect, .. } = &plan.nodes[1].op else {
+            panic!("an image node")
+        };
+        assert_eq!(*aspect, Aspect::default());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_fe_image_of_an_element_keeps_its_unsupported_note() {
+        let d = doc(
+            r##"<svg><rect id="base"/><filter id="f"><feImage href="#base" result="i"/><feOffset in="i" dx="1"/></filter></svg>"##,
+        );
+        let mut notes = Vec::new();
+        let e = effect(&d, &nowhere(), "f", None, [1.0, 1.0], &mut notes).unwrap();
+        let note = notes.iter().find(|n| n.element == "feImage").unwrap();
+        assert_eq!(note.value.as_deref(), Some("#base"));
+        assert!(note.reason.contains("element"), "{}", note.reason);
+        // It is a transparent flood the offset can still read.
+        assert_eq!(e["primitives"][0]["primitive"], "feFlood");
+        assert_eq!(e["primitives"][0]["result"], "i");
+    }
+
+    #[test]
+    fn an_fe_image_of_a_missing_or_outside_file_is_transparent_and_says_so() {
+        let dir = project("missing");
+        let outside = dir.join("outside/secret.png");
+        for href in [
+            "fx/nope.png".to_string(),
+            outside.display().to_string(),
+            "../outside/secret.png".to_string(),
+        ] {
+            let d = doc(&format!(
+                r##"<svg><filter id="f"><feImage href="{href}" x="2" result="i"/></filter></svg>"##
+            ));
+            let r = request(&dir.join("base"), Some(&dir.join("public")));
+            let mut notes = Vec::new();
+            let e = effect(&d, &r, "f", None, [1.0, 1.0], &mut notes).unwrap();
+            assert_eq!(notes.len(), 1, "{href:?}: {notes:?}");
+            assert_eq!(notes[0].element, "feImage");
+            assert_eq!(notes[0].value.as_deref(), Some(href.as_str()));
+            assert!(notes[0].reason.contains("not a readable file"));
+            let p = &e["primitives"][0];
+            assert_eq!(p["primitive"], "feFlood", "{href:?}");
+            assert_eq!(p["floodOpacity"], json!(0));
+            assert_eq!(
+                [p["x"].clone(), p["result"].clone()],
+                [json!(2), json!("i")]
+            );
+        }
+        // A file that is not a PNG, JPEG or WebP.
+        std::fs::write(dir.join("public/fx/a.gif"), b"GIF89a....").unwrap();
+        let d = doc(r##"<svg><filter id="f"><feImage href="fx/a.gif"/></filter></svg>"##);
+        let r = request(&dir.join("base"), Some(&dir.join("public")));
+        let mut notes = Vec::new();
+        let e = effect(&d, &r, "f", None, [1.0, 1.0], &mut notes).unwrap();
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert_eq!(e["primitives"][0]["primitive"], "feFlood");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn a_filter_becomes_a_filter_graph_with_its_attributes() {
         let d = doc(
@@ -464,6 +681,7 @@ mod tests {
         let mut notes = Vec::new();
         let e = effect(
             &d,
+            &nowhere(),
             "torn",
             Some([0.0, 0.0, 100.0, 50.0]),
             [200.0, 200.0],
@@ -504,7 +722,7 @@ mod tests {
         </filter></svg>"##,
         );
         let mut notes = Vec::new();
-        let e = effect(&d, "f", None, [200.0, 100.0], &mut notes).unwrap();
+        let e = effect(&d, &nowhere(), "f", None, [200.0, 100.0], &mut notes).unwrap();
         assert_eq!(e["filterUnits"], "userSpaceOnUse");
         assert_eq!(e["width"], json!(100));
         let p = e["primitives"].as_array().unwrap();
@@ -518,8 +736,8 @@ mod tests {
     fn a_missing_or_wrong_element_is_none() {
         let d = doc(r##"<svg><rect id="r"/></svg>"##);
         let mut notes = Vec::new();
-        assert!(effect(&d, "nope", None, [1.0, 1.0], &mut notes).is_none());
-        assert!(effect(&d, "r", None, [1.0, 1.0], &mut notes).is_none());
+        assert!(effect(&d, &nowhere(), "nope", None, [1.0, 1.0], &mut notes).is_none());
+        assert!(effect(&d, &nowhere(), "r", None, [1.0, 1.0], &mut notes).is_none());
     }
 
     #[test]
@@ -529,10 +747,10 @@ mod tests {
             <filter id="derived" href="#base" filterUnits="userSpaceOnUse" x="0" y="0" width="9" height="9"/>
             <filter id="img"><feImage href="#base" result="i"/><feOffset in="i" dx="1"/></filter></svg>"##);
         let mut notes = Vec::new();
-        let e = effect(&d, "derived", None, [1.0, 1.0], &mut notes).unwrap();
+        let e = effect(&d, &nowhere(), "derived", None, [1.0, 1.0], &mut notes).unwrap();
         assert_eq!(e["primitives"].as_array().unwrap().len(), 1);
         assert_eq!(e["filterUnits"], "userSpaceOnUse");
-        let e = effect(&d, "img", None, [1.0, 1.0], &mut notes).unwrap();
+        let e = effect(&d, &nowhere(), "img", None, [1.0, 1.0], &mut notes).unwrap();
         assert_eq!(e["primitives"].as_array().unwrap().len(), 2);
         assert_eq!(e["primitives"][0]["result"], "i");
         assert!(notes.iter().any(|n| n.element == "feImage"));
