@@ -1,8 +1,9 @@
-import { writeFileSync } from 'node:fs';
+import { existsSync, statSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { whole, type ParsedArgs } from '../args.js';
 import { describeLeftOut } from '../compat-report.js';
 import { parsePreferredEffectBackend } from '../effects.js';
+import { CliError } from '../errors.js';
 import { EXPORT_FLAGS, SCALE_OPTION, SEQUENCE_FLAGS, parseExportFlags, parseSequenceFlags } from '../export-options.js';
 import { FrameDrawer } from '../frame-drawer.js';
 import { renderSource, type RenderResult } from '../render-job.js';
@@ -75,6 +76,16 @@ export function defaultConcurrency(): number {
 /** The file extension a render takes by default for each `--codec`. */
 const CODEC_EXTENSION: Record<string, string> = { h264: 'mp4', h265: 'mp4', prores: 'mov', vp9: 'webm', gif: 'gif' };
 
+/** A sequence goes in a folder: refused now, before the project is bundled, if the path is a file or names a video or image. */
+function checkSequenceFolder(path: string): void {
+  if (/\.(mp4|mov|webm|gif|png|jpe?g)$/i.test(path)) {
+    throw new CliError('INVALID_ARG', `--sequence writes a folder of images: -o "${path}" looks like a file, name a folder`);
+  }
+  if (existsSync(path) && !statSync(path).isDirectory()) {
+    throw new CliError('INVALID_ARG', `--sequence writes a folder of images: -o "${path}" exists and is not a folder`);
+  }
+}
+
 const explicit = (args: ParsedArgs): string | undefined => (typeof args.options.output === 'string' && args.options.output !== '' ? args.options.output : undefined);
 
 export const render: Command = {
@@ -104,6 +115,7 @@ export const render: Command = {
     // A sequence of images has no encoder to check against.
     const extension = CODEC_EXTENSION[flags.export.codec ?? 'h264'] ?? 'mp4';
     if (!format) native().resolveExport(explicit(args) ?? `video.${extension}`, flags.export);
+    else if (explicit(args)) checkSequenceFolder(explicit(args)!);
     // React's production build unless asked otherwise: the development one is several times slower per frame. The
     // worker threads are told too (`devReact`).
     const restoreReact = setReactMode(devReact);
@@ -118,7 +130,8 @@ export const render: Command = {
       // A sequence goes in a folder, by default out/renders/<id>/.
       const output = outputPath(args, 'renders', source.composition.id, (stem) => (format ? stem : `${stem}.${extension}`));
       context.progress(`renderer: ${renderer.backend()}`);
-      if (!format) ensureParentDir(output);
+      if (format) checkSequenceFolder(output);
+      else ensureParentDir(output);
       const summary = await renderSource(source, renderer, {
         output,
         sequence: format && { format, stem: fileStem(source.composition.id) },

@@ -59,8 +59,10 @@ export interface RenderJobOptions {
 /** What a render did, beside the encoder's `RenderSummary`. */
 export type RenderResult = RenderSummary & {
   compat: CompatReport;
-  /** The `<Artifact>` files written beside the video, as the names they have in its folder. */
+  /** The `<Artifact>` files written beside the video (beside the sequence's folder), as the names they have in it. */
   artifacts: string[];
+  /** `--sequence` only: what the render did not do, e.g. that audio is not written (also on stderr, which `--json` silences). */
+  warnings?: string[];
 };
 
 /**
@@ -158,10 +160,13 @@ async function renderSequence(
     }
     artifactRecords = source.artifacts?.() ?? [];
   }
+  const warnings: string[] = [];
   if (hasAudibleClip(joinClips(clipFrames)) || hasOnFrame(first, last)) {
-    options.progress?.('audio is not written: --sequence writes images only (render without it for a video with sound)');
+    warnings.push('audio is not written: --sequence writes images only (render without it for a video with sound)');
   }
-  const artifacts = await writeArtifacts(source, renderer, folder, first, last, scale, artifactRecords);
+  for (const warning of warnings) options.progress?.(warning);
+  // Beside the folder, as a video's are beside the video: a `*.png` of the folder holds frames only.
+  const artifacts = await writeArtifacts(source, renderer, dirname(folder), first, last, scale, artifactRecords);
   const ms = nowMs() - started;
   return {
     output: folder,
@@ -179,6 +184,7 @@ async function renderSequence(
     repeated: 0,
     compat: leftOut.report(),
     artifacts,
+    warnings,
   };
 }
 

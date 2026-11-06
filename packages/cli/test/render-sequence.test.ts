@@ -2,7 +2,7 @@
 // project; the parallel test runs the real `renderInParallel` and `render-worker` with `Worker` replaced by an
 // in-process stand-in, so the same files must come out of one worker and of several. Pixels are for the M4.
 
-import { existsSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -87,7 +87,7 @@ const sceneObject = (over: Partial<SceneJson> = {}): SceneJson => ({
 });
 
 /** A project stand-in: each frame's scene carries the frame number in a layer id; 120 frames, so frame numbers have 3 digits. */
-function fakeProject(options: { audio?: (frame: number) => AudioClipJson[]; failAt?: number; notes?: string[] } = {}): Source {
+function fakeProject(options: { audio?: (frame: number) => AudioClipJson[]; failAt?: number; unsupportedAt?: number; notes?: string[]; artifacts?: { filename: string; content: string; frame: number }[] } = {}): Source {
   const dir = scratch();
   return {
     kind: 'project',
@@ -98,10 +98,14 @@ function fakeProject(options: { audio?: (frame: number) => AudioClipJson[]; fail
     async frame(frame) {
       if (frame === options.failAt) throw new Error('component threw');
       const scene = sceneObject({ layers: [{ id: `frame-${frame}`, type: 'shape', shape: { kind: 'rect', width: 8, height: 8 }, fill: '#fff' }] });
-      return { sceneJson: JSON.stringify(scene), audio: options.audio?.(frame) ?? [], jsMs: 2, stringifyMs: 0.5 };
+      return { sceneJson: JSON.stringify(scene), audio: options.audio?.(frame) ?? [],
+        unsupported: frame === options.unsupportedAt ? [{ path: '$0 <div>', element: 'div', property: 'filter', value: 'blur(2px)', reason: 'not drawn' }] : [],
+        jsMs: 2,
+        stringifyMs: 0.5,
+      };
     },
     notes: () => options.notes ?? [],
-    artifacts: () => [],
+    artifacts: () => (options.artifacts ?? []) as never,
     clearArtifacts() {},
     dispose() {},
   };
@@ -167,6 +171,26 @@ describe('render --sequence flags', () => {
     expect(calls.still).toHaveLength(0);
   });
 
+  it('refuses an -o that is a file or looks like one, before the project is opened', async () => {
+    let opened = false;
+    seam.override = () => {
+      opened = true;
+      return fakeProject();
+    };
+    const dir = scratch();
+    const file = join(dir, 'taken');
+    writeFileSync(file, 'x');
+    for (const out of [file, join(dir, 'v.mp4'), join(dir, 'frame.png'), join(dir, 'x.JPEG')]) {
+      const r = await cli('render', 'index.tsx', '--sequence', '-o', out, '--json');
+      expect(r.code).toBe(1);
+      expect(r.json.error).toMatchObject({ code: 'INVALID_ARG' });
+      expect(r.json.error.message).toContain('--sequence');
+    }
+    expect(opened).toBe(false);
+    expect(existsSync(join(dir, 'v.mp4'))).toBe(false);
+    expect(readFileSync(file, 'utf8')).toBe('x');
+  });
+
   it('does not ask the addon to plan a video, and keeps --scale and --draft', async () => {
     const resolved = vi.fn();
     const fake = fakeNative({ resolveExport: resolved });
@@ -220,7 +244,7 @@ describe('render --sequence', () => {
   it('draws a .json scene frame by frame too', async () => {
     seam.override = undefined;
     const scene = join(scratch(), 'scene.json');
-    (await import('node:fs')).writeFileSync(scene, JSON.stringify(sceneObject({ durationInFrames: 12 })));
+    writeFileSync(scene, JSON.stringify(sceneObject({ durationInFrames: 12 })));
     const dir = join(scratch(), 'frames');
     const r = await cli('render', scene, '--sequence', '--range', '8..', '-o', dir, '--json');
     expect(r.code).toBe(0);
@@ -236,12 +260,17 @@ describe('render --sequence', () => {
     expect(loud.code).toBe(0);
     expect(loud.err).toContain('audio is not written');
     expect(loud.text).toContain('no audio');
+    // --json hides progress, so the result carries the warning.
+    const json = await cli('render', 'index.tsx', '--sequence', '--range', '0..2', '--concurrency', '1', '-o', join(scratch(), 'f'), '--json');
+    expect(json.json.warnings).toEqual([expect.stringContaining('audio is not written')]);
     const workers = await cli('render', 'index.tsx', '--sequence', '--range', '0..9', '--concurrency', '2', '-o', join(scratch(), 'f'));
     expect(workers.err).toContain('audio is not written');
     seam.override = () => fakeProject();
     const quiet = await cli('render', 'index.tsx', '--sequence', '--range', '0..2', '-o', join(scratch(), 'f'));
     expect(quiet.code).toBe(0);
     expect(quiet.err).not.toContain('audio');
+    const quietJson = await cli('render', 'index.tsx', '--sequence', '--range', '0..2', '-o', join(scratch(), 'f'), '--json');
+    expect(quietJson.json.warnings).toEqual([]);
     onFrame(1, () => {});
     const synth = await cli('render', 'index.tsx', '--sequence', '--range', '0..2', '-o', join(scratch(), 'f'));
     expect(synth.err).toContain('audio is not written');
@@ -254,6 +283,46 @@ describe('render --sequence', () => {
     expect(r.code).toBe(1);
     expect(r.json.error.message).toBe('component threw');
     expect(files(dir)).toEqual(['Main-000.png', 'Main-001.png']);
+  });
+});
+
+describe('render --sequence artifacts and --strict', () => {
+  it('writes <Artifact> files beside the folder, so the frames folder holds frames only', async () => {
+    seam.override = () =>
+      fakeProject({ artifacts: [{ filename: 'notes.txt', content: 'hello', frame: 11 }, { filename: 'thumb.png', content: 'thumbnail', frame: 12 }] });
+    const parent = scratch();
+    const dir = join(parent, 'frames');
+    const r = await cli('render', 'index.tsx', '--sequence', '--range', '10..14', '--concurrency', '1', '-o', dir, '--json');
+    expect(r.code).toBe(0);
+    expect(r.json.artifacts).toEqual(['notes.txt', 'thumb.png']);
+    expect(readFileSync(join(parent, 'notes.txt'), 'utf8')).toBe('hello');
+    expect(existsSync(join(parent, 'thumb.png'))).toBe(true);
+    expect(files(dir)).toEqual(['Main-010.png', 'Main-011.png', 'Main-012.png', 'Main-013.png']);
+  });
+
+  it('--strict with workers fails on the first frame with unsupported content, with only the frames before it written', async () => {
+    seam.override = () => fakeProject({ unsupportedAt: 25 });
+    const dir = join(scratch(), 'frames');
+    const r = await cli('render', 'index.tsx', '--sequence', '--strict', '--range', '10..=45', '--concurrency', '3', '-o', dir, '--json');
+    expect(port.spawned).toBe(3);
+    expect(r.code).toBe(1);
+    expect(r.json.error.code).toBe('UNSUPPORTED_CONTENT');
+    expect(r.json.error.message).toContain('frame 25');
+    expect(files(dir)).toEqual(Array.from({ length: 15 }, (_, i) => `Main-0${10 + i}.png`));
+  });
+});
+
+describe('render (video) --concurrency', () => {
+  it('feeds the writer every frame once, in order, from the workers', async () => {
+    const r = await cli('render', 'index.tsx', '--range', '10..=45', '--concurrency', '3', '-o', join(scratch(), 'p.mp4'), '--json');
+    expect(r.err).toBe('');
+    expect(r.code).toBe(0);
+    expect(port.spawned).toBe(3);
+    expect(calls.yuv.map((y) => y.index)).toEqual(Array.from({ length: 36 }, (_, i) => i));
+    // The frame the worker drew at each index: frame 10 + index.
+    expect(calls.yuv.map((y) => (y.data[0]! << 8) | y.data[1]!)).toEqual(Array.from({ length: 36 }, (_, i) => 10 + i));
+    expect(calls.finished).toEqual([undefined]);
+    expect(calls.pushed).toHaveLength(0);
   });
 });
 

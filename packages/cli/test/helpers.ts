@@ -52,6 +52,8 @@ export interface Calls {
   render: { scene: unknown; output: string; options: unknown }[];
   bench: { scene: unknown; options: unknown }[];
   pushed: { scene: unknown; frame: number }[];
+  /** `pushYuv`: the writer's index of the frame, and the bytes `rgbaToYuv` made of it (the fake draws a frame as its number in 2 bytes). */
+  yuv: { index: number; data: Buffer }[];
   begun: { output: string; options: unknown }[];
   finished: unknown[];
   aborted: number;
@@ -59,7 +61,7 @@ export interface Calls {
 
 /** A stand-in for the addon that records its calls and opens no GPU. */
 export function fakeNative(overrides: Partial<Record<string, unknown>> = {}): { native: Native; calls: Calls } {
-  const calls: Calls = { still: [], preview: [], render: [], bench: [], pushed: [], begun: [], finished: [], aborted: 0 };
+  const calls: Calls = { still: [], preview: [], render: [], bench: [], pushed: [], yuv: [], begun: [], finished: [], aborted: 0 };
   const summary = (output: string, over: object = {}) => ({
     output, encoder: 'libx264', codec: 'h264', pixelFormat: 'yuv420p', width: 64, height: 36, fps: 30, frames: 3, first: 0, last: 2, ms: 10, msPerFrame: 3.3, audio: false,
     ...over,
@@ -68,6 +70,9 @@ export function fakeNative(overrides: Partial<Record<string, unknown>> = {}): { 
     constructor(private output: string) {}
     pushFrame(scene: string, frame: number): void {
       calls.pushed.push({ scene: JSON.parse(scene), frame });
+    }
+    pushYuv(data: Buffer, index: number): void {
+      calls.yuv.push({ index, data: Buffer.from(data) });
     }
     finish(audio?: unknown) {
       calls.finished.push(audio);
@@ -94,6 +99,14 @@ export function fakeNative(overrides: Partial<Record<string, unknown>> = {}): { 
       return { width: 4, height: 4, mime: 'image/jpeg', data: Buffer.from([0xff, 0xd8, 0xff, 0xfe, 0x00, 0x04, frame >> 8, frame & 0xff, 0xff, 0xd9]) };
     }
     forgetFrame(): void {}
+    private started: number[] = [];
+    startFrame(_scene: string, frame: number): void {
+      this.started.push(frame);
+    }
+    finishFrame() {
+      const frame = this.started.shift()!;
+      return { width: 1, height: 1, data: Buffer.from([frame >> 8, frame & 0xff, 0, 255]), repeated: false };
+    }
     render(scene: string, output: string, options: unknown) {
       calls.render.push({ scene: JSON.parse(scene), output, options });
       return summary(output);
@@ -125,6 +138,7 @@ export function fakeNative(overrides: Partial<Record<string, unknown>> = {}): { 
     resolveExport: () => ({
       codec: 'h264', encoder: 'libx264', container: 'mp4', pixelFormat: 'yuv420p', convertFormat: 'yuv420p', audioCodec: 'aac',
     }),
+    rgbaToYuv: (rgba: Buffer) => Buffer.from(rgba),
     Renderer,
     ...overrides,
   } as unknown as Native;
