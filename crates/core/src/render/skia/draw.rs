@@ -1402,7 +1402,7 @@ impl Translator {
                     let mut fill = Paint::default();
                     fill.set_anti_alias(true);
                     fill.set_shader(gradient_shader_for(g, Some(cell), self.linear()));
-                    let shader = tile_shader(cell, (t.x, t.y), (t.space_x, t.space_y), (t.repeat_x, t.repeat_y), |c| {
+                    let shader = tile_shader(cell, (t.x, t.y), (t.space_x, t.space_y), (t.repeat_x, t.repeat_y), skia_safe::FilterMode::Linear, |c| {
                         c.draw_rect(cell, &fill);
                     });
                     set_tile_shader(p, shader);
@@ -1426,7 +1426,7 @@ impl Translator {
                 if (i.repeat_x && i.space_x > 0.0) || (i.repeat_y && i.space_y > 0.0) {
                     // Copies apart: the picture in one tile, repeated with the gaps.
                     let cell = Rect::from_wh(i.width as f32, i.height as f32);
-                    let shader = tile_shader(cell, (i.x, i.y), (i.space_x, i.space_y), (i.repeat_x, i.repeat_y), |c| {
+                    let shader = tile_shader(cell, (i.x, i.y), (i.space_x, i.space_y), (i.repeat_x, i.repeat_y), sampling.filter, |c| {
                         c.draw_image_rect_with_sampling_options(&img, None, cell, sampling, &Paint::default());
                     });
                     set_tile_shader(p, shader);
@@ -2317,7 +2317,7 @@ fn set_tile_shader(p: &mut Paint, shader: Option<skia_safe::Shader>) {
 
 /// A shader of what `draw` paints in `cell` (a tile at the origin), moved to `at` and repeated every cell plus `space`
 /// along the axes that `repeat` (once along the others): a picture shader, which keeps a fractional period exact.
-fn tile_shader(cell: Rect, at: (f64, f64), space: (f64, f64), repeat: (bool, bool), draw: impl FnOnce(&Canvas)) -> Option<skia_safe::Shader> {
+fn tile_shader(cell: Rect, at: (f64, f64), space: (f64, f64), repeat: (bool, bool), filter: skia_safe::FilterMode, draw: impl FnOnce(&Canvas)) -> Option<skia_safe::Shader> {
     if cell.is_empty() {
         return None;
     }
@@ -2327,5 +2327,5 @@ fn tile_shader(cell: Rect, at: (f64, f64), space: (f64, f64), repeat: (bool, boo
     let period = Rect::from_wh(cell.width() + space.0 as f32, cell.height() + space.1 as f32);
     let mode = |r: bool| if r { TileMode::Repeat } else { TileMode::Decal };
     let local = Matrix::translate((at.0 as f32, at.1 as f32));
-    Some(picture.to_shader((mode(repeat.0), mode(repeat.1)), skia_safe::FilterMode::Linear, &local, &period))
+    Some(picture.to_shader((mode(repeat.0), mode(repeat.1)), filter, &local, &period))
 }
