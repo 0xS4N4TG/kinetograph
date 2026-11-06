@@ -665,8 +665,7 @@ fn encode_args(
 }
 
 /// The filter that tags the raw pictures as the linked encoder does: BT.709, limited range.
-const BT709_TAGS: &str =
-    "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv";
+const BT709_TAGS: &str = "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv";
 
 /// A running ffmpeg taking raw pictures of one pixel format on its standard input and writing a video-only file.
 pub struct ExternalEncoder {
@@ -994,10 +993,7 @@ mod tests {
             for encoder in ["libx264", "libx265"] {
                 let text = line(encoder, pix, Quality::Default, None);
                 let at = text.find(" -vf ").unwrap();
-                assert!(
-                    text[at + 5..].starts_with(SET.trim_end_matches(',')),
-                    "{text}"
-                );
+                assert!(text[at + 5..].starts_with(SET.trim_end_matches(',')), "{text}");
                 assert!(at < text.find(" -c:v ").unwrap(), "{text}");
                 assert_eq!(text.matches("-vf").count(), 1, "{text}");
             }
@@ -1005,10 +1001,7 @@ mod tests {
         // Hardware: the same tags first, then the plan's own filter.
         for encoder in HARDWARE {
             let text = line(encoder, Pix::Yuv420p, Quality::Default, Some(NODE));
-            assert!(
-                text.contains(&format!(" -vf {SET}format=nv12,hwupload")),
-                "{text}"
-            );
+            assert!(text.contains(&format!(" -vf {SET}format=nv12,hwupload")), "{text}");
         }
     }
 
