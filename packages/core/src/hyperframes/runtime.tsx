@@ -50,10 +50,13 @@ const g = globalThis as AnyRecord;
 const doc = (): AnyRecord => g.document;
 
 /**
- * The rule every HyperFrames page gets before its own: the hidden clips' contents. The page's `<html>` and `<body>` are
- * the island document's own (`setPageDocument`), with no margin, as HyperFrames renders pages flush.
+ * The rules every HyperFrames page gets before its own: the hidden clips' contents, and the composition's height on
+ * `html` and `body`, so a root of `height: 100%` has something to be a percentage of (a page's own rule for either
+ * wins: `:where` adds no specificity). The page's `<html>` and `<body>` are the island document's own
+ * (`setPageDocument`), with no margin, as HyperFrames renders pages flush.
  */
-const baseCss = `
+const baseCss = (height: number): string => `
+:where(html, body) { height: ${height}px; box-sizing: border-box; }
 [${HIDDEN_ATTR}], [${HIDDEN_ATTR}] * { visibility: hidden !important; }
 `;
 
@@ -615,6 +618,29 @@ class Runtime {
     for (const note of this.gradingNotes) reportUnsupported('data-color-grading', null, null, note);
     for (const failure of this.seekFailures) reportUnsupported('HyperFrames', null, null, failure);
     for (const failure of this.scriptFailures) reportUnsupported('HyperFrames', null, null, failure);
+    this.reportCollapsedRoot();
+  }
+
+  /**
+   * The root composition, with children, laid out to no width or no height: it clips them, so the page draws nothing and
+   * looks fine. Read once, on the first frame this runtime draws (a layout readback costs ~3 ms a frame), and said on
+   * every frame; a page whose script collapses the root later is not caught.
+   */
+  private collapsedRoot: string | null | undefined;
+  private reportCollapsedRoot(): void {
+    if (this.collapsedRoot === undefined) {
+      const root = doc().querySelector(`[data-composition-id="${attrValue(this.plan.compositionId)}"]`) as AnyRecord | null;
+      this.collapsedRoot = null;
+      if (root !== null && (root.children?.length ?? 0) > 0) {
+        const { width, height } = root.getBoundingClientRect();
+        if (!(width > 0 && height > 0)) {
+          this.collapsedRoot =
+            `the root composition #${root.id || this.plan.compositionId} is laid out ${width}x${height}, so its contents are clipped or not drawn: ` +
+            'give it a size in pixels, or a percentage of a parent that has one (html and body default to the composition height)';
+        }
+      }
+    }
+    if (this.collapsedRoot !== null) reportUnsupported('HyperFrames', null, null, this.collapsedRoot);
   }
 }
 
@@ -662,7 +688,7 @@ function remotePictureResolver(plan: HfPlan): (url: string) => string | null {
 }
 
 export function defineHyperframes(plan: HfPlan): void {
-  registerStylesheet(baseCss, 'hyperframes');
+  registerStylesheet(baseCss(plan.height), 'hyperframes');
   for (const sheet of plan.stylesheets) registerStylesheet(sheet.css, sheet.file);
   for (const request of fontRequests(plan)) {
     try {
