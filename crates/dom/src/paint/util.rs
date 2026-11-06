@@ -6,6 +6,33 @@ use style::color::{AbsoluteColor, ColorSpace};
 use style::properties::ComputedValues;
 use style::values::computed::{Color, Length, LengthPercentage};
 
+/// Whether `image-rendering` asks for hard pixel edges (`pixelated`, and `crisp-edges`, which browsers draw the same
+/// way on pictures).
+pub fn nearest_sampling(style: &ComputedValues) -> bool {
+    use style::values::computed::ImageRendering;
+    matches!(
+        style.get_inherited_box().image_rendering,
+        ImageRendering::Pixelated | ImageRendering::CrispEdges
+    )
+}
+
+/// Sets the nearest-pixel sampling on the pictures in `layer`: a picture layer, an image paint, and what is below.
+pub fn mark_nearest(layer: &mut Value) {
+    let Some(o) = layer.as_object_mut() else {
+        return;
+    };
+    if o.get("type").and_then(Value::as_str) == Some("image") {
+        o.insert("sampling".into(), json!("nearest"));
+    }
+    for key in ["fill", "children"] {
+        match o.get_mut(key) {
+            Some(Value::Array(list)) => list.iter_mut().for_each(mark_nearest),
+            Some(v) => mark_nearest(v),
+            None => {}
+        }
+    }
+}
+
 /// A number rounded to 1/1000, which is far below a pixel and keeps the JSON
 /// short and stable.
 pub fn num(v: f64) -> Value {

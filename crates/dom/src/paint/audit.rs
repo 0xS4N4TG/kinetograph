@@ -27,13 +27,14 @@ impl<'a> Painter<'a> {
 
         let dbg = |v: &dyn std::fmt::Debug| format!("{v:?}").to_lowercase();
 
-        let ir = dbg(&style.get_inherited_box().image_rendering);
-        if ir != "auto" {
+        // Pictures (`<img>`, backgrounds, border and mask images) are drawn with it; a video and a canvas are
+        // resampled smoothly.
+        if super::util::nearest_sampling(style) && matches!(tag.as_str(), "video" | "canvas") {
             self.report(
                 node,
                 "image-rendering",
-                ir,
-                "pictures are always smoothly resampled",
+                dbg(&style.get_inherited_box().image_rendering),
+                "a video and a canvas are always smoothly resampled",
             );
         }
         if style

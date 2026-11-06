@@ -875,3 +875,146 @@ fn colour_stops_all_at_one_position_are_a_hard_edge() {
     assert_eq!(z["type"], "linear", "{z}");
     assert_eq!(z["stops"][1]["offset"], 0);
 }
+
+/// Every picture the painter wrote: `image` layers and image paints (a shape's fill).
+fn pictures(layers: &[Value]) -> Vec<&Value> {
+    flat(layers)
+        .into_iter()
+        .flat_map(|l| [l, &l["fill"]])
+        .filter(|v| v["type"] == "image" && v.get("src").is_some())
+        .collect()
+}
+
+fn tile_url() -> String {
+    let tile = paintkit::repo_root()
+        .join("crates/dom/tests/assets/tile.png")
+        .canonicalize()
+        .unwrap();
+    format!("file://{}", tile.display())
+}
+
+fn drawn_nearest(out: &kinetograph_dom::IslandOutput) -> Vec<bool> {
+    pictures(&out.layers)
+        .iter()
+        .map(|p| p["sampling"] == "nearest")
+        .collect()
+}
+
+fn not_reported(out: &kinetograph_dom::IslandOutput) -> bool {
+    !out.unsupported
+        .iter()
+        .any(|u| u.property.as_deref() == Some("image-rendering"))
+}
+
+#[test]
+fn a_pixelated_img_samples_the_nearest_pixel() {
+    for value in ["pixelated", "crisp-edges"] {
+        let out = paint(
+            &format!(
+                r#"<img id="i" src="{}" style="width:96px;height:96px;image-rendering:{value}">"#,
+                tile_url()
+            ),
+            200,
+            200,
+        );
+        assert_eq!(find(&out.layers, "i.img")["sampling"], "nearest", "{value}");
+        assert!(not_reported(&out), "{value}: {:?}", out.unsupported);
+    }
+}
+
+#[test]
+fn image_rendering_is_inherited_by_an_img() {
+    let out = paint(
+        &format!(
+            r#"<div style="image-rendering:pixelated"><img id="i" src="{}" style="width:96px;height:96px"></div>"#,
+            tile_url()
+        ),
+        200,
+        200,
+    );
+    assert_eq!(find(&out.layers, "i.img")["sampling"], "nearest");
+}
+
+#[test]
+fn a_pixelated_background_image_samples_the_nearest_pixel() {
+    // Repeating (one shape with an image paint) and single (a rect with one picture).
+    let out = paint(
+        &format!(
+            r#"<div id="a" style="width:100px;height:80px;image-rendering:pixelated;background:url({u}) 0 0/64px 64px, url({u}) no-repeat 0 0/32px 32px"></div>"#,
+            u = tile_url()
+        ),
+        200,
+        100,
+    );
+    assert_eq!(drawn_nearest(&out), [true, true]);
+    assert!(not_reported(&out), "{:?}", out.unsupported);
+}
+
+#[test]
+fn a_pixelated_border_image_samples_the_nearest_pixel() {
+    let out = paint(
+        &format!(
+            r#"<div id="a" style="width:90px;height:60px;border:12px solid transparent;image-rendering:pixelated;border-image:url({}) 16 round"></div>"#,
+            tile_url()
+        ),
+        200,
+        200,
+    );
+    let nearest = drawn_nearest(&out);
+    assert!(
+        !nearest.is_empty() && nearest.iter().all(|n| *n),
+        "{nearest:?}"
+    );
+    assert!(not_reported(&out), "{:?}", out.unsupported);
+}
+
+#[test]
+fn a_pixelated_mask_image_samples_the_nearest_pixel() {
+    let out = paint(
+        &format!(
+            r#"<div id="a" style="width:90px;height:60px;background:#000;image-rendering:pixelated;mask-image:url({}) ;mask-size:64px 64px"></div>"#,
+            tile_url()
+        ),
+        200,
+        200,
+    );
+    assert!(drawn_nearest(&out).iter().any(|n| *n), "{:?}", out.layers);
+    assert!(not_reported(&out), "{:?}", out.unsupported);
+}
+
+#[test]
+fn pictures_carry_no_sampling_unless_image_rendering_asks() {
+    let u = tile_url();
+    for style in ["", "image-rendering:auto"] {
+        let out = paint(
+            &format!(
+                r#"<img src="{u}" style="{style}"><div style="width:100px;height:80px;border:12px solid transparent;border-image:url({u}) 16 round;background:url({u});{style}"></div>"#
+            ),
+            300,
+            300,
+        );
+        let drawn = pictures(&out.layers);
+        assert!(drawn.len() >= 3, "{style}");
+        assert!(
+            drawn.iter().all(|p| p.get("sampling").is_none()),
+            "{style}: {drawn:?}"
+        );
+        assert!(not_reported(&out), "{style}: {:?}", out.unsupported);
+    }
+}
+
+#[test]
+fn pixelated_is_still_reported_where_it_is_not_drawn() {
+    let out = paint(
+        r#"<canvas id="c" width="4" height="4" style="image-rendering:pixelated"></canvas>"#,
+        100,
+        100,
+    );
+    assert!(!not_reported(&out), "{:?}", out.unsupported);
+    let none = paint(
+        r#"<div style="image-rendering:pixelated;width:10px;height:10px"></div>"#,
+        100,
+        100,
+    );
+    assert!(not_reported(&none), "{:?}", none.unsupported);
+}

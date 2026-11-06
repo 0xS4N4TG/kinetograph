@@ -170,6 +170,9 @@ impl<'a> Painter<'a> {
                 }
             }
         }
+        if !is_video && super::util::nearest_sampling(&style) {
+            layer = layer.set("sampling", json!("nearest"));
+        }
         let lx = origin.0 + content.x + pic.x;
         let ly = origin.1 + content.y + pic.y;
         layer = layer.at(lx, ly);
