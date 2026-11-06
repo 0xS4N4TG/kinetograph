@@ -3,7 +3,7 @@ import { availableParallelism } from 'node:os';
 import { whole, type ParsedArgs } from '../args.js';
 import { describeLeftOut } from '../compat-report.js';
 import { parsePreferredEffectBackend } from '../effects.js';
-import { EXPORT_FLAGS, SCALE_OPTION, parseExportFlags } from '../export-options.js';
+import { EXPORT_FLAGS, SCALE_OPTION, SEQUENCE_FLAGS, parseExportFlags, parseSequenceFlags } from '../export-options.js';
 import { FrameDrawer } from '../frame-drawer.js';
 import { renderSource, type RenderResult } from '../render-job.js';
 import { scaledSize } from '../scenes.js';
@@ -18,6 +18,7 @@ import {
   PREFERRED_EFFECT_BACKEND_OPTION,
   STRICT_OPTION,
   ensureParentDir,
+  fileStem,
   newRenderer,
   openFromArgs,
   outputPath,
@@ -87,6 +88,7 @@ export const render: Command = {
     { name: 'encoder', type: 'string', description: 'ffmpeg encoder name for the codec (default: libx264, libx265, libvpx-vp9 on every platform, prores_videotoolbox on macOS else prores_ks; h264_videotoolbox and hevc_videotoolbox are opt-in, and the macOS fallback when libx264 or libx265 is missing). The encoders that have no keyframe interval of their own (VideoToolbox and the other hardware ones, libopenh264) get one every 2 seconds. libx264 and libx265 come from the ffmpeg program bundled in the platform package, or the one KINETOGRAPH_FFMPEG names, then the ffmpeg on the PATH when it has libx264' },
     { name: 'draft', type: 'boolean', description: 'Half size, for a fast look (the same as --scale 0.5)' },
     ...EXPORT_FLAGS,
+    ...SEQUENCE_FLAGS,
     { name: 'concurrency', type: 'number', description: 'Frames drawn at once, in worker threads (default: half the cores, at most 4; 1 draws every frame in the main thread; a .json scene is drawn whole)' },
     STRICT_OPTION,
     PREFERRED_EFFECT_BACKEND_OPTION,
@@ -94,12 +96,14 @@ export const render: Command = {
   ],
   async run(args, context) {
     const concurrency = whole('--concurrency', args.options.concurrency as number | undefined, 1, defaultConcurrency());
+    const format = parseSequenceFlags(args.options);
     const flags = parseExportFlags(args.options);
     const devReact = args.options['dev-react'] === true;
     // Refused now, before the project is bundled and run, if the options do not fit the output path or this ffmpeg.
     // Without `-o` the name comes from the composition, which is not known yet, so the check uses its extension.
+    // A sequence of images has no encoder to check against.
     const extension = CODEC_EXTENSION[flags.export.codec ?? 'h264'] ?? 'mp4';
-    native().resolveExport(explicit(args) ?? `video.${extension}`, flags.export);
+    if (!format) native().resolveExport(explicit(args) ?? `video.${extension}`, flags.export);
     // React's production build unless asked otherwise: the development one is several times slower per frame. The
     // worker threads are told too (`devReact`).
     const restoreReact = setReactMode(devReact);
@@ -111,11 +115,13 @@ export const render: Command = {
       const started = nowMs();
       const renderer = newRenderer();
       stage('renderer made (GPU init)');
-      const output = outputPath(args, 'renders', source.composition.id, (stem) => `${stem}.${extension}`);
+      // A sequence goes in a folder, by default out/renders/<id>/.
+      const output = outputPath(args, 'renders', source.composition.id, (stem) => (format ? stem : `${stem}.${extension}`));
       context.progress(`renderer: ${renderer.backend()}`);
-      ensureParentDir(output);
+      if (!format) ensureParentDir(output);
       const summary = await renderSource(source, renderer, {
         output,
+        sequence: format && { format, stem: fileStem(source.composition.id) },
         range: args.options.range as string | undefined,
         encoder: args.options.encoder as string | undefined,
         scale: flags.scale,
@@ -134,7 +140,7 @@ export const render: Command = {
       });
       stage('renderSource returned');
       for (const line of describeLeftOut(summary.compat)) context.progress(line);
-      return result(summary, nowMs() - started);
+      return result(summary, nowMs() - started, format !== undefined);
     } finally {
       source?.dispose();
       restoreReact();
@@ -142,9 +148,18 @@ export const render: Command = {
   },
 };
 
-function result(summary: RenderResult, wallMs: number) {
+function result(summary: RenderResult, wallMs: number, sequence: boolean) {
   const left = summary.compat.unsupportedFrames;
   const unsupported = left > 0 ? `, unsupported content left out of ${left} frame${left === 1 ? '' : 's'}` : '';
+  if (sequence) {
+    return {
+      data: { ...summary, wallMs },
+      text:
+        `wrote ${summary.frames} ${summary.codec} frames to ${summary.output} (${summary.width}x${summary.height}, ` +
+        `${summary.first}..=${summary.last} at ${summary.fps} fps, no audio${unsupported}, ${wallMs.toFixed(0)} ms in all)` +
+        (summary.artifacts.length > 0 ? `; also wrote ${summary.artifacts.join(', ')}` : ''),
+    };
+  }
   return {
     data: { ...summary, wallMs },
     text:

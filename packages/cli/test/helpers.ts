@@ -48,6 +48,7 @@ export function fakeParseRange(range: string, duration: number): [number, number
 
 export interface Calls {
   still: { scene: unknown; frame: number; baseDir?: string | null }[];
+  preview: { scene: unknown; frame: number; options: unknown; baseDir?: string | null }[];
   render: { scene: unknown; output: string; options: unknown }[];
   bench: { scene: unknown; options: unknown }[];
   pushed: { scene: unknown; frame: number }[];
@@ -58,7 +59,7 @@ export interface Calls {
 
 /** A stand-in for the addon that records its calls and opens no GPU. */
 export function fakeNative(overrides: Partial<Record<string, unknown>> = {}): { native: Native; calls: Calls } {
-  const calls: Calls = { still: [], render: [], bench: [], pushed: [], begun: [], finished: [], aborted: 0 };
+  const calls: Calls = { still: [], preview: [], render: [], bench: [], pushed: [], begun: [], finished: [], aborted: 0 };
   const summary = (output: string, over: object = {}) => ({
     output, encoder: 'libx264', codec: 'h264', pixelFormat: 'yuv420p', width: 64, height: 36, fps: 30, frames: 3, first: 0, last: 2, ms: 10, msPerFrame: 3.3, audio: false,
     ...over,
@@ -87,6 +88,12 @@ export function fakeNative(overrides: Partial<Record<string, unknown>> = {}): { 
       calls.still.push({ scene: JSON.parse(scene), frame, baseDir });
       return solidPng(4, 4, [frame % 256, 0, 0, 255]);
     }
+    /** A JPEG (SOI, then the frame number in a COM segment, EOI) in place of the addon's. */
+    preview(scene: string, frame: number, options: unknown, baseDir?: string | null) {
+      calls.preview.push({ scene: JSON.parse(scene), frame, options, baseDir });
+      return { width: 4, height: 4, mime: 'image/jpeg', data: Buffer.from([0xff, 0xd8, 0xff, 0xfe, 0x00, 0x04, frame >> 8, frame & 0xff, 0xff, 0xd9]) };
+    }
+    forgetFrame(): void {}
     render(scene: string, output: string, options: unknown) {
       calls.render.push({ scene: JSON.parse(scene), output, options });
       return summary(output);
