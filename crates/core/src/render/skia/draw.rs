@@ -2320,3 +2320,123 @@ fn tile_shader(cell: Rect, at: (f64, f64), space: (f64, f64), repeat: (bool, boo
     let local = Matrix::translate((at.0 as f32, at.1 as f32));
     Some(picture.to_shader((mode(repeat.0), mode(repeat.1)), skia_safe::FilterMode::Linear, &local, &period))
 }
+
+#[cfg(test)]
+mod tests {
+    //! The fill rule of a clip, on a CPU raster surface (no GPU).
+    use super::*;
+    use skia_safe::{AlphaType, ColorType, ImageInfo, Surface};
+
+    const HOLE: &str = "M0 0H20V20H0Z M5 5H15V15H5Z";
+    const STAR: &str = "[[10, 1], [16, 19], [1, 7], [19, 7], [4, 19]]";
+
+    fn surface() -> Surface {
+        skia_safe::surfaces::raster(&ImageInfo::new((20, 20), ColorType::RGBA8888, AlphaType::Premul, None), None, None)
+            .unwrap()
+    }
+
+    /// The alpha of pixel (x, y).
+    fn alpha(s: &mut Surface, x: i32, y: i32) -> u8 {
+        let mut px = [0u8; 4];
+        let info = ImageInfo::new((1, 1), ColorType::RGBA8888, AlphaType::Premul, None);
+        assert!(s.read_pixels(&info, &mut px, 4, (x, y)));
+        px[3]
+    }
+
+    fn white() -> Paint {
+        let mut p = Paint::default();
+        p.set_color4f(Color4f::new(1.0, 1.0, 1.0, 1.0), None);
+        p
+    }
+
+    fn scene_with(clip: &str) -> Scene {
+        let json = format!(
+            r##"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [{{"id": "a", "type": "shape",
+               "shape": {{"kind": "rect", "width": 20, "height": 20}}, "fill": "#fff", "clip": {clip}}}]}}"##
+        );
+        Scene::from_json(&json, PathBuf::new()).unwrap()
+    }
+
+    /// The whole canvas painted white through the layer's own clip (the direct route).
+    fn direct(clip: &str) -> Surface {
+        let scene = scene_with(clip);
+        let resolved = scene.resolve(0).unwrap();
+        let mut tr = Translator::new(&scene);
+        let mut s = surface();
+        tr.apply_clip(s.canvas(), &resolved.layers[0]);
+        s.canvas().draw_paint(&white());
+        s
+    }
+
+    /// The clip's path as the wgpu route uses it: a group's pushed clip, and a clip matte. The rule is taken through
+    /// `render::clip_even_odd`, as `Renderer` takes it.
+    fn by_ops(clip: &str) -> (Surface, Surface) {
+        let scene = scene_with(clip);
+        let resolved = scene.resolve(0).unwrap();
+        let rc = resolved.layers[0].clip.as_ref().unwrap();
+        let even_odd = crate::render::clip_even_odd(rc);
+        let path = match rc {
+            ResolvedClip::Path { d, .. } => BezPath::from_svg(d).unwrap(),
+            ResolvedClip::Polygon { points, .. } => {
+                let mut b = BezPath::new();
+                for (i, &(x, y)) in points.iter().enumerate() {
+                    if i == 0 {
+                        b.move_to((x, y));
+                    } else {
+                        b.line_to((x, y));
+                    }
+                }
+                b.close_path();
+                b
+            }
+            _ => unreachable!(),
+        };
+        let mut tr = Translator::new(&scene);
+        let mut pushed = surface();
+        tr.raster_push_clip(pushed.canvas(), &path, Affine::IDENTITY, even_odd);
+        pushed.canvas().draw_paint(&white());
+        tr.raster_pop(pushed.canvas());
+        let mut matte = surface();
+        tr.raster_clip(matte.canvas(), &path, Affine::IDENTITY, even_odd);
+        (pushed, matte)
+    }
+
+    fn path_clip(rule: &str) -> String {
+        format!(r#"{{"kind": "path", "d": "{HOLE}", "fillRule": "{rule}"}}"#)
+    }
+
+    fn star_clip(rule: &str) -> String {
+        format!(r#"{{"kind": "polygon", "points": {STAR}, "fillRule": "{rule}"}}"#)
+    }
+
+    /// (a pixel in the ring or an arm of the star, a pixel in the hole or the star's middle).
+    type Pixels = ((i32, i32), (i32, i32));
+    const PATH_PX: Pixels = ((2, 10), (10, 10));
+    const STAR_PX: Pixels = ((10, 4), (10, 10));
+
+    fn check(mut s: Surface, px: Pixels, hole_open: bool, what: &str) {
+        assert_eq!(alpha(&mut s, px.0.0, px.0.1), 255, "{what}: the ring is filled");
+        let inside = alpha(&mut s, px.1.0, px.1.1);
+        assert_eq!(inside, if hole_open { 0 } else { 255 }, "{what}: the hole");
+    }
+
+    #[test]
+    fn a_direct_clip_honours_the_fill_rule() {
+        check(direct(&path_clip("evenodd")), PATH_PX, true, "path evenodd");
+        check(direct(&path_clip("nonzero")), PATH_PX, false, "path nonzero");
+        check(direct(&format!(r#"{{"kind": "path", "d": "{HOLE}"}}"#)), PATH_PX, false, "path default");
+        check(direct(&star_clip("evenodd")), STAR_PX, true, "star evenodd");
+        check(direct(&star_clip("nonzero")), STAR_PX, false, "star nonzero");
+    }
+
+    #[test]
+    fn a_pushed_clip_and_a_clip_matte_honour_the_fill_rule() {
+        for (rule, hole_open) in [("evenodd", true), ("nonzero", false)] {
+            for (clip, px, name) in [(path_clip(rule), PATH_PX, "path"), (star_clip(rule), STAR_PX, "star")] {
+                let (pushed, matte) = by_ops(&clip);
+                check(pushed, px, hole_open, &format!("{name} pushed {rule}"));
+                check(matte, px, hole_open, &format!("{name} matte {rule}"));
+            }
+        }
+    }
+}
