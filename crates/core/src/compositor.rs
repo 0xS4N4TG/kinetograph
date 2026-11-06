@@ -239,6 +239,12 @@ struct LutTexture {
     domain_max: [f32; 3],
 }
 
+/// A picture of an `feImage` on the GPU: premultiplied, sRGB-encoded, its size in texels.
+struct FilterImage {
+    view: wgpu::TextureView,
+    size: [u32; 2],
+}
+
 /// A frame's pixels on their way back from the GPU (`start_readback`).
 pub struct Readback {
     buffer: wgpu::Buffer,
@@ -345,6 +351,8 @@ pub struct Compositor {
     lut: wgpu::RenderPipeline,
     /// The scene's tables, by the `src` the scene spells them with.
     luts: HashMap<String, LutTexture>,
+    /// The pictures of the scene's `feImage` primitives, by the `href` the scene spells them with.
+    filter_images: HashMap<String, FilterImage>,
     /// For custom shaders: the layer, a sampler, the frame clock and the
     /// scene's named uniforms.
     shader_layout: wgpu::BindGroupLayout,
@@ -644,6 +652,7 @@ impl Compositor {
             lut_layout,
             lut,
             luts,
+            filter_images: HashMap::new(),
             shader_layout,
             shader_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("shader effect"),
@@ -782,6 +791,60 @@ impl Compositor {
             let texture = upload_lut(&self.device, &self.queue, lut);
             self.luts.insert(src.clone(), texture);
         }
+    }
+
+    /// Whether the picture `src` of an `feImage` is on the GPU.
+    pub fn has_filter_image(&self, src: &str) -> bool {
+        self.filter_images.contains_key(src)
+    }
+
+    /// Drops the picture `src`, which now stands for another file.
+    pub fn forget_filter_image(&mut self, src: &str) {
+        self.filter_images.remove(src);
+    }
+
+    /// Uploads the picture `src` of an `feImage`: `rgba` is `width` x `height` straight sRGB bytes. A picture larger than
+    /// the GPU's textures is not kept, and the `feImage` draws nothing.
+    pub fn set_filter_image(&mut self, src: &str, width: u32, height: u32, rgba: &[u8]) {
+        let most = self.device.limits().max_texture_dimension_2d;
+        if width == 0 || height == 0 || width > most || height > most {
+            return;
+        }
+        // Premultiplied, with the colour still sRGB-encoded: what a result in sRGB is (`filter_graph.rs`).
+        let mut texels = Vec::with_capacity(rgba.len() * 2);
+        for px in rgba.chunks_exact(4) {
+            let a = f32::from(px[3]) / 255.0;
+            for c in &px[..3] {
+                texels.extend(half::f16::from_f32(f32::from(*c) / 255.0 * a).to_le_bytes());
+            }
+            texels.extend(half::f16::from_f32(a).to_le_bytes());
+        }
+        let texture = self.device.create_texture_with_data(
+            &self.queue,
+            &wgpu::TextureDescriptor {
+                label: Some("feImage"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: LINEAR_FORMAT,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            wgpu::util::TextureDataOrder::LayerMajor,
+            &texels,
+        );
+        self.filter_images.insert(
+            src.to_string(),
+            FilterImage {
+                view: texture.create_view(&wgpu::TextureViewDescriptor::default()),
+                size: [width, height],
+            },
+        );
     }
 
     /// The encoder the passes record into, until the next `submit`.

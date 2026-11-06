@@ -28,7 +28,7 @@ use crate::resolve::{
 };
 use crate::reuse;
 use crate::scene::{
-    BlendMode, DotOrder, LayerKind, MaskMode, MatteMode, Paint, Scene, ShapeLayer, TextLayer, walk_layers,
+    BlendMode, DotOrder, Effect, LayerKind, MaskMode, MatteMode, Paint, Scene, ShapeLayer, TextLayer, walk_layers,
 };
 use crate::scene3d::draw::{Assets3d, Texture};
 use crate::scene3d::environment::Environment;
@@ -250,6 +250,7 @@ impl Renderer {
         renderer.skia = Some(skia::init(&renderer.device, &renderer.queue, &renderer.scene)?);
         renderer.install_assets(fresh);
         renderer.add_shaders();
+        renderer.add_filter_images();
         Ok(renderer)
     }
 
@@ -305,6 +306,7 @@ impl Renderer {
         self.install_assets(fresh);
         self.scene = scene;
         self.add_shaders();
+        self.add_filter_images();
         Ok(())
     }
 
@@ -328,6 +330,8 @@ impl Renderer {
         }
         self.loaded.fonts = fresh.fonts;
         for (src, id, image) in fresh.images {
+            // The `feImage` copy, if any, is of the file this name stood for.
+            self.compositor.forget_filter_image(&src);
             self.images.insert(src.clone(), image);
             self.loaded.images.insert(src, id);
         }
@@ -367,6 +371,24 @@ impl Renderer {
     /// compositor does not have.
     fn add_shaders(&mut self) {
         self.compositor.add_shaders(&self.scene.shader_sources());
+    }
+
+    /// Puts the pictures of the scene's `feImage` primitives on the GPU, those
+    /// the compositor does not have yet.
+    fn add_filter_images(&mut self) {
+        for src in filter_image_sources(&self.scene) {
+            if self.compositor.has_filter_image(&src) {
+                continue;
+            }
+            if let Some(image) = self.images.get(&src) {
+                self.compositor.set_filter_image(
+                    &src,
+                    image.width,
+                    image.height,
+                    image.data.data(),
+                );
+            }
+        }
     }
 
     /// Empties the layer cache, giving its textures back to the pool.
@@ -2574,7 +2596,7 @@ fn geometry_path(geometry: &ResolvedGeometry) -> Result<BezPath> {
 fn image_sources(scene: &Scene) -> Vec<String> {
     // `walk_layers` also visits motion-blur copies, which can hold images of
     // their own.
-    let mut sources = Vec::new();
+    let mut sources = filter_image_sources(scene);
     walk_layers(&scene.layers, &mut |layer| match &layer.kind {
         LayerKind::Image(i) => sources.push(i.src.clone()),
         // A picture as a fill or a text colour (`scene::Paint::Image`).
@@ -2589,6 +2611,19 @@ fn image_sources(scene: &Scene) -> Vec<String> {
         // The pictures a canvas's commands draw.
         LayerKind::Canvas(c) => canvas::sources(&c.commands.0, &mut sources),
         _ => {}
+    });
+    sources
+}
+
+/// The `href` of every `feImage` in the scene's filter graphs, in order of use.
+fn filter_image_sources(scene: &Scene) -> Vec<String> {
+    let mut sources = Vec::new();
+    walk_layers(&scene.layers, &mut |layer| {
+        for effect in &layer.effects {
+            if let Effect::FilterGraph(graph) = effect {
+                sources.extend(graph.image_sources().map(str::to_string));
+            }
+        }
     });
     sources
 }
@@ -3701,6 +3736,25 @@ mod tests {
         let fresh = read_assets(&scene, &loaded, true).unwrap();
         assert!(fresh.rebound && fresh.luts.len() == 1);
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn the_picture_of_an_fe_image_is_read_once_like_an_image() {
+        let media = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes/media");
+        let graph = serde_json::json!({
+            "type": "filterGraph", "filterUnits": "userSpaceOnUse", "x": 0, "y": 0, "width": 8, "height": 8,
+            "primitives": [{"primitive": "feImage", "href": "flat.png"},
+                           {"primitive": "feImage", "href": "flat.png", "x": 1}],
+        });
+        let json = serde_json::json!({
+            "width": 8, "height": 8, "fps": 30, "durationInFrames": 1,
+            "layers": [{ "id": "a", "type": "group", "children": [], "effects": [graph] }],
+        });
+        let scene = Scene::from_json(&json.to_string(), media).unwrap();
+        assert_eq!(filter_image_sources(&scene), ["flat.png", "flat.png"]);
+        let fresh = read_assets(&scene, &Loaded::default(), false).unwrap();
+        assert_eq!(fresh.images.len(), 1);
+        assert_eq!(fresh.images[0].0, "flat.png");
     }
 
     #[test]

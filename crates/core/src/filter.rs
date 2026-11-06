@@ -199,6 +199,83 @@ pub enum FilterOp {
         lighting_color: Option<Color>,
         light: Light,
     },
+    /// A picture file (or `data:` URL), spelled as an `image` layer's `src`,
+    /// drawn in the primitive subregion. An `href` to an element of a
+    /// document is not a scene thing.
+    #[serde(rename = "feImage", rename_all = "camelCase")]
+    Image {
+        href: String,
+        /// SVG's `preserveAspectRatio` (`xMidYMid meet` if left out).
+        preserve_aspect_ratio: Option<String>,
+    },
+}
+
+/// `preserveAspectRatio`: where an image of one shape goes in a box of
+/// another.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Aspect {
+    /// The fraction of the spare room before the image on each axis (0 for
+    /// `xMin`, 0.5 for `xMid`, 1 for `xMax`); `None` stretches the image to the
+    /// box (`none`).
+    pub align: Option<[f64; 2]>,
+    /// `slice`: the image covers the box and is cut by it. Otherwise (`meet`)
+    /// it fits inside it.
+    pub slice: bool,
+}
+
+impl Default for Aspect {
+    /// `xMidYMid meet`.
+    fn default() -> Aspect {
+        Aspect {
+            align: Some([0.5, 0.5]),
+            slice: false,
+        }
+    }
+}
+
+impl Aspect {
+    /// `[defer] <align> [meet | slice]`; `None` if it is not that.
+    pub fn parse(s: &str) -> Option<Aspect> {
+        let mut words = s.split_whitespace().peekable();
+        if words.peek() == Some(&"defer") {
+            words.next();
+        }
+        let align = match words.next()? {
+            "none" => None,
+            a => {
+                let (x, y) = (a.get(..4)?, a.get(4..)?);
+                let part = |s: &str, axis: char| match s.strip_prefix(axis)? {
+                    "Min" => Some(0.0),
+                    "Mid" => Some(0.5),
+                    "Max" => Some(1.0),
+                    _ => None,
+                };
+                Some([part(x, 'x')?, part(y, 'Y')?])
+            }
+        };
+        let slice = match words.next() {
+            None | Some("meet") => false,
+            Some("slice") => true,
+            Some(_) => return None,
+        };
+        words.next().is_none().then_some(Aspect { align, slice })
+    }
+
+    /// Where an image of `width` x `height` pixels is drawn in `into`: the
+    /// rectangle of the whole image, which `slice` makes larger than `into`.
+    pub fn fit(&self, into: Rect, width: f64, height: f64) -> Rect {
+        let (Some([ax, ay]), true) = (self.align, width > 0.0 && height > 0.0) else {
+            return into;
+        };
+        let (kx, ky) = (into.width() / width, into.height() / height);
+        let k = if self.slice { kx.max(ky) } else { kx.min(ky) };
+        let (w, h) = (width * k, height * k);
+        let (x, y) = (
+            into.x0 + (into.width() - w) * ax,
+            into.y0 + (into.height() - h) * ay,
+        );
+        Rect::new(x, y, x + w, y + h)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -424,6 +501,14 @@ impl FilterGraph {
         (push + if push > 0.0 { blur } else { 0.0 }) * layer_scale
     }
 
+    /// The pictures the graph's `feImage` primitives draw, as their `href`s.
+    pub fn image_sources(&self) -> impl Iterator<Item = &str> {
+        self.primitives.iter().filter_map(|p| match &p.op {
+            FilterOp::Image { href, .. } => Some(href.as_str()),
+            _ => None,
+        })
+    }
+
     /// The load-time checks: an error naming `layer`.
     pub fn validate(&self, layer: &str, has_box: bool) -> Result<()> {
         let bad = |msg: String| Err(Error::Scene(format!("layer {layer:?}: filterGraph {msg}")));
@@ -563,6 +648,21 @@ impl FilterGraph {
                 } if e.min() < 1.0 || e.max() > 128.0 => {
                     return bad(what("specularExponent must be from 1 to 128"));
                 }
+                FilterOp::Image {
+                    href,
+                    preserve_aspect_ratio,
+                } => {
+                    if href.trim().is_empty() || href.starts_with('#') {
+                        return bad(what("href must be a picture file or a data: URL"));
+                    }
+                    if let Some(a) = preserve_aspect_ratio
+                        && Aspect::parse(a).is_none()
+                    {
+                        return bad(what(&format!(
+                            "preserveAspectRatio {a:?} is not like \"xMidYMid slice\" or \"none\""
+                        )));
+                    }
+                }
                 _ => {}
             }
         }
@@ -590,6 +690,7 @@ impl FilterOp {
             FilterOp::ConvolveMatrix { .. } => "feConvolveMatrix",
             FilterOp::DiffuseLighting { .. } => "feDiffuseLighting",
             FilterOp::SpecularLighting { .. } => "feSpecularLighting",
+            FilterOp::Image { .. } => "feImage",
         }
     }
 }
@@ -744,6 +845,11 @@ pub enum FeOp {
         /// Straight sRGB.
         color: [f32; 3],
         light: ResolvedLight,
+    },
+    /// A picture, drawn in the subregion; its colour is sRGB.
+    Image {
+        src: String,
+        aspect: Aspect,
     },
 }
 
@@ -1096,6 +1202,21 @@ impl FilterGraph {
                             light: resolve_light(light, f),
                         },
                         vec![first],
+                    ));
+                }
+                FilterOp::Image {
+                    href,
+                    preserve_aspect_ratio,
+                } => {
+                    nodes.push(node(
+                        FeOp::Image {
+                            src: href.clone(),
+                            aspect: preserve_aspect_ratio
+                                .as_deref()
+                                .and_then(Aspect::parse)
+                                .unwrap_or_default(),
+                        },
+                        vec![],
                     ));
                 }
             }
@@ -1657,6 +1778,105 @@ mod tests {
             .validate("g", false)
             .is_ok()
         );
+    }
+
+    #[test]
+    fn an_image_primitive_has_no_input_and_the_region_for_a_subregion() {
+        let g = graph(
+            r##"{"filterUnits": "userSpaceOnUse", "x": 0, "y": 0, "width": 100, "height": 50,
+                 "primitives": [
+                   {"primitive": "feImage", "href": "fx/map.png", "result": "map",
+                    "preserveAspectRatio": "xMinYMax slice"},
+                   {"primitive": "feImage", "href": "data:image/png;base64,AA==",
+                    "x": 10, "y": 5, "width": 20, "height": 30},
+                   {"primitive": "feDisplacementMap", "in": "SourceGraphic", "in2": "map", "scale": 8}]}"##,
+        );
+        assert!(g.validate("l", true).is_ok());
+        assert_eq!(
+            g.image_sources().collect::<Vec<_>>(),
+            ["fx/map.png", "data:image/png;base64,AA=="]
+        );
+        let r = g.resolve(0.0);
+        let aspect = Aspect {
+            align: Some([0.0, 1.0]),
+            slice: true,
+        };
+        assert_eq!(
+            r.nodes[0].op,
+            FeOp::Image {
+                src: "fx/map.png".into(),
+                aspect
+            }
+        );
+        assert!(r.nodes[0].inputs.is_empty());
+        // A name for the picture is a result like any other: `in2` reads it.
+        assert_eq!(r.nodes[2].inputs, vec![FeInput::Source, FeInput::Node(0)]);
+        let plan = r.plan(None).unwrap();
+        assert_eq!(plan.nodes[0].sub, Rect::new(0.0, 0.0, 100.0, 50.0));
+        assert_eq!(plan.nodes[1].sub, Rect::new(10.0, 5.0, 30.0, 35.0));
+        assert!(matches!(
+            &r.nodes[1].op,
+            FeOp::Image { aspect, .. } if *aspect == Aspect::default()
+        ));
+    }
+
+    #[test]
+    fn an_image_primitive_needs_a_file_and_a_preserve_aspect_ratio_that_parses() {
+        let bad = |prim: &str| {
+            graph(&format!(r##"{{"primitives": [{prim}]}}"##))
+                .validate("card", true)
+                .unwrap_err()
+                .to_string()
+        };
+        assert!(bad(r##"{"primitive": "feImage", "href": ""}"##).contains("href"));
+        assert!(bad(r##"{"primitive": "feImage", "href": "#base"}"##).contains("feImage"));
+        let e =
+            bad(r##"{"primitive": "feImage", "href": "a.png", "preserveAspectRatio": "middle"}"##);
+        assert!(
+            e.contains("preserveAspectRatio") && e.contains("card"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn preserve_aspect_ratio_places_a_picture_in_a_box() {
+        let into = Rect::new(10.0, 20.0, 110.0, 70.0); // 100 x 50
+        let fit = |s: &str, w: f64, h: f64| {
+            let r = Aspect::parse(s).unwrap().fit(into, w, h);
+            [r.x0, r.y0, r.x1, r.y1]
+        };
+        let all = [into.x0, into.y0, into.x1, into.y1];
+        // meet: inside, centred. A square picture is 50 x 50.
+        assert_eq!(fit("xMidYMid meet", 10.0, 10.0), [35.0, 20.0, 85.0, 70.0]);
+        assert_eq!(
+            fit("xMidYMid", 10.0, 10.0),
+            fit("xMidYMid meet", 10.0, 10.0)
+        );
+        assert_eq!(fit("xMinYMin", 10.0, 10.0), [10.0, 20.0, 60.0, 70.0]);
+        assert_eq!(fit("xMaxYMax meet", 10.0, 10.0), [60.0, 20.0, 110.0, 70.0]);
+        // slice: covers the box, 100 x 100, cut by the box; YMax puts its bottom at the box's.
+        assert_eq!(
+            fit("xMidYMax slice", 10.0, 10.0),
+            [10.0, -30.0, 110.0, 70.0]
+        );
+        // none stretches; `defer` is allowed and ignored.
+        assert_eq!(fit("none", 10.0, 10.0), all);
+        assert_eq!(fit("defer xMinYMid slice", 20.0, 10.0), all);
+        // A picture of the box's own shape fills it.
+        assert_eq!(fit("xMidYMid meet", 200.0, 100.0), all);
+        for bad in [
+            "",
+            "xMid",
+            "xMidYMid fit",
+            "xMidYMid meet more",
+            "XMidYMid",
+            "xMidYMi",
+            "xMidYMidd",
+        ] {
+            assert_eq!(Aspect::parse(bad), None, "{bad:?}");
+        }
+        // No size to fit: the box.
+        assert_eq!(Aspect::default().fit(into, 0.0, 5.0), into);
     }
 
     #[test]
