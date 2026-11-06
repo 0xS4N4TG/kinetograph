@@ -1018,3 +1018,38 @@ fn pixelated_is_still_reported_where_it_is_not_drawn() {
     );
     assert!(not_reported(&none), "{:?}", none.unsupported);
 }
+
+const PNG_1X1: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+fn svg_image_samplings(svg_attrs: &str, image_attrs: &str) -> (Vec<Value>, kinetograph_dom::IslandOutput) {
+    let out = paint(
+        &format!(
+            r#"<svg id="s" width="96" height="96" {svg_attrs}><image href="{PNG_1X1}" width="96" height="96" {image_attrs}/></svg>"#
+        ),
+        200,
+        200,
+    );
+    let got = flat(&out.layers)
+        .into_iter()
+        .filter(|l| l["type"] == "image")
+        .map(|l| l["sampling"].clone())
+        .collect();
+    (got, out)
+}
+
+#[test]
+fn an_svg_image_takes_image_rendering_from_the_style_or_the_attribute() {
+    let nearest = serde_json::json!("nearest");
+    for (svg, image) in [
+        (r#"style="image-rendering:pixelated""#, ""),
+        (r#"style="image-rendering:crisp-edges""#, ""),
+        ("", r#"image-rendering="pixelated""#),
+        ("", r#"image-rendering="optimizeSpeed""#),
+    ] {
+        let (got, out) = svg_image_samplings(svg, image);
+        assert_eq!(got, [nearest.clone()], "{svg} {image}: {:?}", out.layers);
+        assert!(not_reported(&out), "{svg} {image}: {:?}", out.unsupported);
+    }
+    let (got, out) = svg_image_samplings("", "");
+    assert_eq!(got, [Value::Null], "{:?}", out.layers);
+}

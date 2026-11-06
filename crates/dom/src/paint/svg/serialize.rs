@@ -631,6 +631,16 @@ impl Writer<'_> {
                 _ => attrs.push((name.into_owned(), value)),
             }
         }
+        // usvg reads these values of `image-rendering` from CSS only, and browsers from the attribute as well.
+        if let Some(i) = attrs.iter().position(|(n, v)| {
+            n == "image-rendering"
+                && matches!(v.as_str(), "smooth" | "high-quality" | "crisp-edges" | "pixelated")
+        }) {
+            let (n, v) = attrs.remove(i);
+            if !decls.iter().any(|(d, _)| *d == n) {
+                decls.push((n, v));
+            }
+        }
         let color = self.current_color(id);
         for (n, v) in attrs.iter_mut().chain(decls.iter_mut()) {
             if v.contains("currentColor") {
