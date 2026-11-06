@@ -399,7 +399,7 @@ impl<'a> Painter<'a> {
         }
         for (family, chars) in missing {
             let reason = format!(
-                "no glyph for {} in the font-family list or the bundled fallback fonts; drawn as the font's missing-glyph box",
+                "no glyph for {} in the font-family list or the bundled fallback fonts; drawn as the font's missing-glyph box (system fonts are not used: load a font that has it with loadFont)",
                 kinetograph_core::fallback_fonts::describe(&chars)
             );
             self.report(node, "font-family", family, &reason);
