@@ -353,6 +353,11 @@ pub struct Compositor {
     luts: HashMap<String, LutTexture>,
     /// The pictures of the scene's `feImage` primitives, by the `href` the scene spells them with.
     filter_images: HashMap<String, FilterImage>,
+    /// The `href`s of pictures that could not be put on the GPU (larger than its textures).
+    filter_images_refused: std::collections::HashSet<String>,
+    /// What this compositor could not draw since `take_unsupported`, by what it was and how many times: the Skia
+    /// translator's `Stats::unsupported`, which the frame merges it into.
+    unsupported: std::collections::BTreeMap<String, u32>,
     /// For custom shaders: the layer, a sampler, the frame clock and the
     /// scene's named uniforms.
     shader_layout: wgpu::BindGroupLayout,
@@ -653,6 +658,8 @@ impl Compositor {
             lut,
             luts,
             filter_images: HashMap::new(),
+            filter_images_refused: Default::default(),
+            unsupported: Default::default(),
             shader_layout,
             shader_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("shader effect"),
@@ -793,21 +800,28 @@ impl Compositor {
         }
     }
 
-    /// Whether the picture `src` of an `feImage` is on the GPU.
+    /// Whether the picture `src` of an `feImage` has been put on the GPU, or refused (`set_filter_image`).
     pub fn has_filter_image(&self, src: &str) -> bool {
-        self.filter_images.contains_key(src)
+        self.filter_images.contains_key(src) || self.filter_images_refused.contains(src)
     }
 
     /// Drops the picture `src`, which now stands for another file.
     pub fn forget_filter_image(&mut self, src: &str) {
         self.filter_images.remove(src);
+        self.filter_images_refused.remove(src);
+    }
+
+    /// What was not drawn since the last call (`feImage` of a picture that is not on the GPU), with counts.
+    pub fn take_unsupported(&mut self) -> std::collections::BTreeMap<String, u32> {
+        std::mem::take(&mut self.unsupported)
     }
 
     /// Uploads the picture `src` of an `feImage`: `rgba` is `width` x `height` straight sRGB bytes. A picture larger than
-    /// the GPU's textures is not kept, and the `feImage` draws nothing.
+    /// the GPU's textures is not kept: the `feImage` draws nothing, and says so each time (`take_unsupported`).
     pub fn set_filter_image(&mut self, src: &str, width: u32, height: u32, rgba: &[u8]) {
         let most = self.device.limits().max_texture_dimension_2d;
         if width == 0 || height == 0 || width > most || height > most {
+            self.filter_images_refused.insert(src.to_string());
             return;
         }
         // Premultiplied, with the colour still sRGB-encoded: what a result in sRGB is (`filter_graph.rs`).

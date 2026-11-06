@@ -343,6 +343,10 @@ impl Renderer {
                 *tr.stats.approximated.entry(what).or_default() += n;
             }
         }
+        // What the wgpu path left out (a picture too large for its textures) is reported with what Skia left out.
+        for (what, n) in self.compositor.take_unsupported() {
+            *tr.stats.unsupported.entry(what).or_default() += n;
+        }
         if let Some(e) = tr.error.take() {
             // The recording is abandoned: whatever was queued is dropped with it.
             if let Some(rec) = rec.as_ref() {

@@ -849,6 +849,12 @@ impl Compositor {
                     .get(src)
                     .map(|img| (img.view.clone(), img.size))
                 else {
+                    let what = if self.filter_images_refused.contains(src) {
+                        "feImage (picture larger than the GPU's textures)"
+                    } else {
+                        "feImage (picture not loaded)"
+                    };
+                    *self.unsupported.entry(what.to_string()).or_default() += 1;
                     return (self.empty(), true);
                 };
                 let a = spare(self, g);
