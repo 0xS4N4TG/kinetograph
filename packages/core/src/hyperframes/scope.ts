@@ -25,8 +25,12 @@ export function scopedDocument(env: ScopeEnv): AnyRecord {
     const root = env.root();
     return root === null || node === root || root.contains(node);
   };
+  // A mounted file's root element is the host; the planner keeps the id the file gave it as `data-hf-root-id`.
+  const rootIdOf = (): string | null => env.root()?.getAttribute?.('data-hf-root-id') ?? null;
   const all = (selector: string): AnyRecord[] => {
-    const found = Array.from(env.document.querySelectorAll(selector) as ArrayLike<AnyRecord>);
+    const rootId = rootIdOf();
+    const text = rootId === null ? selector : selector.replace(new RegExp(`#${rootId.replace(/[^\w-]/g, '\\$&')}(?![\\w-])`, 'g'), `[data-hf-root-id="${rootId.replace(/"/g, '\\"')}"]`);
+    const found = Array.from(env.document.querySelectorAll(text) as ArrayLike<AnyRecord>);
     return env.root() === null ? found : found.filter(inside);
   };
   const byId = (id: string): AnyRecord | null => {
@@ -34,7 +38,7 @@ export function scopedDocument(env: ScopeEnv): AnyRecord {
     if (found !== null && found !== undefined && inside(found)) return found;
     const root = env.root();
     if (root === null) return found ?? null;
-    if (root.id === id) return root;
+    if (root.id === id || rootIdOf() === id) return root;
     return root.querySelector(`[id="${String(id).replace(/"/g, '\\"')}"]`) ?? null;
   };
   return new Proxy(env.document, {
