@@ -1523,7 +1523,7 @@ pub fn mux_audio(
 
     let mut input =
         format::input(video).map_err(err(&format!("cannot read {}", video.display())))?;
-    let (video_in, in_time_base, avg_frame_rate, parameters) = {
+    let (video_in, in_time_base, avg_frame_rate, parameters, alpha_mode) = {
         let stream = input
             .streams()
             .best(ffmpeg::media::Type::Video)
@@ -1533,6 +1533,7 @@ pub fn mux_audio(
             stream.time_base(),
             stream.avg_frame_rate(),
             stream.parameters(),
+            stream.metadata().get("alpha_mode").map(str::to_string),
         )
     };
 
@@ -1545,6 +1546,13 @@ pub fn mux_audio(
             .map_err(err("cannot add the video stream"))?;
         stream.set_parameters(parameters);
         stream.set_avg_frame_rate(avg_frame_rate);
+        // The temporary file's decoder parameters say yuv420p (ffmpeg's VP9 decoder drops the alpha plane), so the
+        // WebM muxer writes AlphaMode only from this tag; without it players ignore the alpha packets.
+        if let Some(alpha_mode) = &alpha_mode {
+            let mut metadata = Dictionary::new();
+            metadata.set("alpha_mode", alpha_mode);
+            stream.set_metadata(metadata);
+        }
         // A tag from the temporary file's container may not fit this one. ProRes keeps its own (it says the profile,
         // and both files are MOV); HEVC is tagged for QuickTime.
         // SAFETY: the stream's parameters are live and owned by `octx`.
@@ -3106,6 +3114,91 @@ mod tests {
             assert_eq!(format, "YUVA420P");
             check_alpha_bands(&frames, 2, 4);
         }
+    }
+
+    /// Writes `alpha_bands()` with `settings`, adds a tone with `mux_audio` (what a render with sound does), and
+    /// returns the decoded pictures, the AlphaMode tag the muxed file's video stream reads back with, and whether it
+    /// has an audio stream.
+    fn muxed_alpha(
+        settings: &Resolved,
+        decoder: Option<&str>,
+        file: &str,
+    ) -> (Vec<Vec<u8>>, Option<String>, bool) {
+        let dir = std::env::temp_dir().join(format!(
+            "kinetograph-alpha-mux-{file}-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (video, out) = (
+            dir.join(format!("video-{file}")),
+            dir.join(format!("out-{file}")),
+        );
+        let (w, h, rgba) = alpha_bands();
+        let mut encoder = VideoEncoder::create(&video, w, h, 30.0, settings).unwrap();
+        for _ in 0..FRAMES {
+            encoder.push(&rgba).unwrap();
+        }
+        encoder.finish().unwrap();
+        let tone: Vec<f32> = (0..48000 * 4 / 3)
+            .map(|i| (i as f32 * 440.0 * std::f32::consts::TAU / 48000.0).sin() * 0.5)
+            .collect();
+        mux_audio(
+            &video,
+            &out,
+            &AudioPcm {
+                sample_rate: 48000,
+                channels: &[&tone],
+            },
+            settings,
+        )
+        .unwrap();
+        let input = format::input(&out).unwrap();
+        let alpha_mode = input
+            .streams()
+            .best(ffmpeg::media::Type::Video)
+            .unwrap()
+            .metadata()
+            .get("alpha_mode")
+            .map(str::to_string);
+        let audio = input.streams().best(ffmpeg::media::Type::Audio).is_some();
+        drop(input);
+        let decoded = decode_with_alpha(&out, decoder).1;
+        let _ = std::fs::remove_dir_all(&dir);
+        (decoded, alpha_mode, audio)
+    }
+
+    #[test]
+    fn prores_4444_keeps_alpha_when_audio_is_muxed() {
+        let settings = plan_alpha(
+            Codec::ProRes,
+            "alpha.mov",
+            "yuva444p10le",
+            Some("4444"),
+            false,
+            Some("prores_ks"),
+        )
+        .unwrap();
+        let (frames, _, audio) = muxed_alpha(&settings, None, "prores.mov");
+        assert!(audio);
+        check_alpha_bands(&frames, 1, 3);
+    }
+
+    #[test]
+    fn vp9_alpha_flag_survives_muxing_audio() {
+        let settings = plan_alpha(
+            Codec::Vp9,
+            "alpha.webm",
+            "yuva420p",
+            None,
+            false,
+            Some("libvpx-vp9"),
+        )
+        .unwrap();
+        let (frames, alpha_mode, audio) = muxed_alpha(&settings, Some("libvpx-vp9"), "vp9.webm");
+        assert!(audio);
+        // Without this tag the WebM has no AlphaMode element and players show the picture opaque.
+        assert_eq!(alpha_mode.as_deref(), Some("1"));
+        check_alpha_bands(&frames, 2, 4);
     }
 
     #[test]
