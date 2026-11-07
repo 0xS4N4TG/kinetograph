@@ -528,7 +528,7 @@ impl Walk<'_> {
         space: Option<Space>,
     ) -> Option<Rect> {
         let local = match r.clip.as_ref()? {
-            ResolvedClip::Polygon { points } => points
+            ResolvedClip::Polygon { points, .. } => points
                 .iter()
                 .map(|&(x, y)| Point::new(x, y))
                 .fold(None, |r: Option<Rect>, p| {
@@ -553,7 +553,7 @@ impl Walk<'_> {
                     Rect::new(cx - rx, cy - ry, cx + rx, cy + ry)
                 }
             }
-            ResolvedClip::Path { d } => BezPath::from_svg(d).ok()?.bounding_box(),
+            ResolvedClip::Path { d, .. } => BezPath::from_svg(d).ok()?.bounding_box(),
         };
         let flat = bounds::transformed(matrix, local);
         match placement(r, parent, space) {

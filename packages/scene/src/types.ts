@@ -164,10 +164,10 @@ export interface GlyphRun {
 }
 
 export type Clip =
-  | { kind: 'polygon'; points: [Num, Num][] }
+  | { kind: 'polygon'; points: [Num, Num][]; fillRule?: 'nonzero' | 'evenodd' }
   | { kind: 'inset'; top?: Num; right?: Num; bottom?: Num; left?: Num; radius?: Num }
   | { kind: 'ellipse'; cx: Num; cy: Num; rx: Num; ry: Num }
-  | { kind: 'path'; d: string };
+  | { kind: 'path'; d: string; fillRule?: 'nonzero' | 'evenodd' };
 
 export interface Mask {
   gradient: Gradient;

@@ -546,8 +546,9 @@ fn upload_pixmap(queue: &wgpu::Queue, pixmap: &skia_safe::Pixmap, texture: &wgpu
 pub(in super::super) enum RasterOp<'a> {
     /// A leaf under the matrix that takes its layer space to canvas pixels.
     Leaf(&'a ResolvedLayer, Affine),
-    /// The start of a group's clip: the path in the group's space, and the matrix of that space.
-    Clip(BezPath, Affine),
+    /// The start of a group's clip: the path in the group's space, the matrix of that space, and whether the path
+    /// fills even-odd.
+    Clip(BezPath, Affine, bool),
     /// The end of the innermost clip.
     Pop,
 }
@@ -567,9 +568,10 @@ impl Renderer {
         self.skia_raster(region, |tr, canvas| tr.raster_coverage(canvas, layer, matrix))
     }
 
-    /// A clip `path` (layer space, under `matrix`) in opaque white; its alpha is the clip's coverage within `keep`.
-    pub(in super::super) fn skia_clip(&mut self, path: &BezPath, matrix: Affine, keep: PixelRect) -> Result<Tex> {
-        self.skia_raster(keep, |tr, canvas| tr.raster_clip(canvas, path, matrix))
+    /// A clip `path` (layer space, under `matrix`, filled even-odd or non-zero) in opaque white; its alpha is the
+    /// clip's coverage within `keep`.
+    pub(in super::super) fn skia_clip(&mut self, path: &BezPath, matrix: Affine, keep: PixelRect, even_odd: bool) -> Result<Tex> {
+        self.skia_raster(keep, |tr, canvas| tr.raster_clip(canvas, path, matrix, even_odd))
     }
 
     /// The gradient of `mask` over `region`, laid out as it is for `layer` under `matrix`.
@@ -583,7 +585,7 @@ impl Renderer {
             for op in ops {
                 match op {
                     RasterOp::Leaf(layer, matrix) => tr.raster_leaf(canvas, layer, *matrix),
-                    RasterOp::Clip(path, matrix) => tr.raster_push_clip(canvas, path, *matrix),
+                    RasterOp::Clip(path, matrix, even_odd) => tr.raster_push_clip(canvas, path, *matrix, *even_odd),
                     RasterOp::Pop => tr.raster_pop(canvas),
                 }
             }

@@ -391,10 +391,58 @@ fn clip_path_shapes_resolve_calc_against_the_reference_box() {
     );
 }
 
+/// Whether any layer in `layers` (nested ones too) is a shape with this fill rule.
+fn has_fill_rule(layers: &[Value], rule: &str) -> bool {
+    flat(layers).iter().any(|l| l["fillRule"] == rule)
+}
+
+#[test]
+fn an_svg_clip_path_with_clip_rule_evenodd_keeps_its_holes() {
+    // A full-frame path with a hole cut out, used as a clip.
+    let out = paint(
+        r##"<svg id="s" width="100" height="100" viewBox="0 0 100 100"><defs><clipPath id="c"><path clip-rule="evenodd" d="M0 0H100V100H0Z M20 20H80V80H20Z"/></clipPath></defs><rect id="r" width="100" height="100" fill="#f00" clip-path="url(#c)"/></svg>"##,
+        100,
+        100,
+    );
+    assert!(out.unsupported.is_empty(), "{:?}", out.unsupported);
+    let all = Value::Array(out.layers.clone());
+    assert!(has_fill_rule(&out.layers, "evenodd"), "{all}");
+    // The single-nonzero-path shortcut must not take it.
+    assert!(!all.to_string().contains(r#""clip""#), "{all}");
+}
+
+#[test]
+fn an_svg_clip_path_defaults_to_nonzero() {
+    let out = paint(
+        r##"<svg id="s" width="100" height="100" viewBox="0 0 100 100"><defs><clipPath id="c"><path d="M0 0H100V100H0Z M20 20H80V80H20Z"/></clipPath></defs><rect id="r" width="100" height="100" fill="#f00" clip-path="url(#c)"/></svg>"##,
+        100,
+        100,
+    );
+    let all = Value::Array(out.layers.clone());
+    assert!(!has_fill_rule(&out.layers, "evenodd"), "{all}");
+    assert!(all.to_string().contains(r#""clip""#), "{all}");
+}
+
+#[test]
+fn css_clip_path_evenodd_is_drawn_with_the_rule() {
+    let out = paint(
+        r#"<div id="a" style="width:100px;height:100px;background:#000;clip-path:path(evenodd,'M0 0H100V100H0Z M20 20H80V80H20Z')"></div>
+<div id="b" style="width:100px;height:100px;background:#000;clip-path:polygon(evenodd,0 0,100% 0,50% 100%)"></div>
+<div id="c" style="width:100px;height:100px;background:#000;clip-path:polygon(0 0,100% 0,50% 100%)"></div>"#,
+        200,
+        400,
+    );
+    assert!(out.unsupported.is_empty(), "{:?}", out.unsupported);
+    assert_eq!(find(&out.layers, "a")["clip"]["fillRule"], "evenodd");
+    assert_eq!(find(&out.layers, "b")["clip"]["fillRule"], "evenodd");
+    // Nonzero is the default and is not written.
+    assert!(find(&out.layers, "c")["clip"].get("fillRule").is_none());
+}
+
 #[test]
 fn what_cannot_be_drawn_is_reported_not_drawn_wrong() {
     let out = paint(
-        r#"<div id="a" style="width:100px;height:50px;background:#000;clip-path:polygon(evenodd,0 0,100% 0,50% 100%)"></div>
+        r#"<div id="a" style="width:100px;height:50px;background:#000;clip-path:shape(from 0 0, line to 100% 0, line to 50% 100%)"></div>
 <div id="b" style="width:100px;height:50px;background:conic-gradient(in oklch,red,blue)"></div>"#,
         200,
         200,
