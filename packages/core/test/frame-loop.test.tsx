@@ -16,6 +16,7 @@ import {
 import { installDeterminism, resetVirtualClock, uninstallDeterminism } from '../src/determinism.js';
 import { clearFonts, getFonts, registerFont, trackFontLoad } from '../src/font-registry.js';
 import { createFrameRenderer } from '../src/frame-loop.js';
+import { AbsoluteFill } from '../src/fill.js';
 import { interpolate } from '../src/interpolate.js';
 import { Sequence, useCurrentFrame, useVideoConfig } from '../src/timeline.js';
 
@@ -245,6 +246,31 @@ describe('the frame loop', () => {
     }
     expect((await createFrameRenderer('Lazy').renderFrame(1)).scene.background).toBe('white');
     expect((await createFrameRenderer('Plain').renderFrame(1)).scene.background).toBe('transparent');
+  });
+
+  it('leaves a frame with no background and a plain AbsoluteFill with nothing opaque to composite (alpha output)', async () => {
+    registerRoot(() => (
+      <Composition
+        id="Overlay"
+        component={() => (
+          <AbsoluteFill>
+            <Rect id="lower-third" width={40} height={10} fill="#fff" />
+          </AbsoluteFill>
+        )}
+        width={100}
+        height={50}
+        fps={24}
+        durationInFrames={10}
+      />
+    ));
+    const { scene } = await createFrameRenderer('Overlay').renderFrame(2);
+    // The scene says "transparent" (the engine draws it as no colour), as it is JSON, so a worker sees the same.
+    expect(JSON.parse(JSON.stringify(scene)).background).toBe('transparent');
+    // The AbsoluteFill is one group holding only the author's layer: no full-size rect painted under it.
+    const [fill, ...rest] = scene.layers as GroupLayer[];
+    expect(rest).toEqual([]);
+    expect(fill!.type).toBe('group');
+    expect((fill!.children ?? []).map((c) => (c as ShapeLayer).id)).toEqual(['lower-third']);
   });
 
   it('rejects a background that is not a colour string', () => {
