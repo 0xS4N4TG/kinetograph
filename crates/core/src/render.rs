@@ -28,7 +28,7 @@ use crate::resolve::{
 };
 use crate::reuse;
 use crate::scene::{
-    BlendMode, DotOrder, Effect, LayerKind, MaskMode, MatteMode, Paint, Scene, ShapeLayer, TextLayer, walk_layers,
+    BlendMode, DotOrder, LayerKind, MaskMode, MatteMode, Paint, Scene, ShapeLayer, TextLayer, walk_layers,
 };
 use crate::scene3d::draw::{Assets3d, Texture};
 use crate::scene3d::environment::Environment;
@@ -2620,7 +2620,7 @@ fn filter_image_sources(scene: &Scene) -> Vec<String> {
     let mut sources = Vec::new();
     walk_layers(&scene.layers, &mut |layer| {
         for effect in &layer.effects {
-            if let Effect::FilterGraph(graph) = effect {
+            if let crate::scene::Effect::FilterGraph(graph) = effect {
                 sources.extend(graph.image_sources().map(str::to_string));
             }
         }
