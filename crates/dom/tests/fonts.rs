@@ -283,6 +283,17 @@ fn painted(root: Value, fonts: Value) -> kinetograph_dom::request::IslandOutput 
     kinetograph_dom::paint::paint(&island.doc, &parsed)
 }
 
+#[test]
+fn the_unloaded_font_reasons_point_to_loadfont_not_the_system_fonts() {
+    for reason in [
+        kinetograph_dom::fonts::UNLOADED_REASON,
+        kinetograph_dom::fonts::FALLBACK_REASON,
+    ] {
+        assert!(reason.starts_with("font not loaded; drawn with"), "{reason}");
+        assert!(reason.contains("loadFont") && reason.contains("@font-face"), "{reason}");
+    }
+}
+
 fn fallback_only() -> Value {
     json!({ kinetograph_dom::fonts::FALLBACK_KEY: dm_sans() })
 }
@@ -553,6 +564,8 @@ fn a_character_no_font_has_is_reported_with_its_code_point_and_the_font_list() {
     assert_eq!(notes[0].property.as_deref(), Some("font-family"));
     assert!(notes[0].reason.contains("U+0378"), "{}", notes[0].reason);
     assert!(notes[0].value.as_deref().unwrap().contains("DM Sans"));
+    // Chrome would look in the system's fonts; the engine does not, so the report says what to do instead.
+    assert!(notes[0].reason.contains("loadFont") && notes[0].reason.contains("@font-face"), "{}", notes[0].reason);
 
     // Spaces and other characters that are not drawn are not gaps.
     let root = el(
