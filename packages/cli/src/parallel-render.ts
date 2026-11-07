@@ -3,10 +3,10 @@
 // frame), so a frame is the same whichever worker draws it.
 
 import { Worker } from 'node:worker_threads';
-import type { VideoWriter } from '@kinetographdev/native';
 import type { ArtifactRecord } from '@kinetographdev/core';
 import type { AudioClipJson, Unsupported } from '@kinetographdev/scene';
 import { CliError } from './errors.js';
+import type { ImageFormat } from './image-sequence.js';
 import { ProfileLog, now, profiling, stage } from './profile.js';
 import type { FromWorker, ToWorker, WorkerInit } from './render-worker.js';
 import type { WorkerSpec } from './source.js';
@@ -41,8 +41,10 @@ export interface ParallelOptions {
   spec: WorkerSpec;
   /** `render --scale`: the factor the scenes are drawn at (1 for full size). */
   scale: number;
-  /** The pixel format the workers convert to, which the writer's encoder takes (`resolveExport`'s `convertFormat`). */
+  /** The pixel format the workers convert to, which the writer's encoder takes (`resolveExport`'s `convertFormat`); unused with `sequence`. */
   convertFormat: string;
+  /** Draw each frame as an image file of this format (`render --sequence`) instead of converting it for an encoder. */
+  sequence?: ImageFormat;
   /** Run React's development build in the workers. */
   devReact: boolean;
   preferredEffectBackend?: string;
@@ -51,9 +53,10 @@ export interface ParallelOptions {
   origin: number;
   step: number;
   count: number;
-  writer: VideoWriter;
+  /** Takes frame `index` once, in order: its converted pixels, or with `sequence` the bytes of its image file. */
+  push(index: number, data: Buffer): void;
   /**
-   * Called for each frame (by its index) in order, before it is pushed to the encoder; throwing stops the render.
+   * Called for each frame (by its index) in order, before it is pushed; throwing stops the render.
    * `repeated`: the frame was not drawn, being the same as the one before it.
    */
   onFrame(index: number, audio: AudioClipJson[], unsupported: Unsupported[], repeated: boolean): void;
@@ -78,7 +81,7 @@ interface Lane {
 }
 
 /**
- * Draws frames `first..=last` with `workers` workers and pushes them to `writer` in order. Returns the `<Artifact>`
+ * Draws frames `first..=last` with `workers` workers and pushes them in order. Returns the `<Artifact>`
  * files the frames asked for (the one a later frame recorded wins, as it does in one run).
  *
  * Chunks are handed out in frame order, none starting further than a window of frames past the next frame the encoder
@@ -86,7 +89,7 @@ interface Lane {
  * goes to the idle worker. So the heavy stretches of a film are shared and the render does not wait on one chunk.
  */
 export async function renderInParallel(options: ParallelOptions): Promise<ArtifactRecord[]> {
-  const { writer, workers: count } = options;
+  const { workers: count } = options;
   const first = 0;
   const last = options.count - 1;
   const window = windowFrames(count);
@@ -168,7 +171,7 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
           arrived.delete(nextFrame);
           options.onFrame(nextFrame, message.audio, message.unsupported, message.repeated);
           const t = log ? now() : 0;
-          writer.pushYuv(Buffer.from(message.yuv), nextFrame);
+          options.push(nextFrame, Buffer.from(message.data));
           if (log) pushMs += now() - t;
           options.onPushed?.(nextFrame);
           nextFrame += 1;
@@ -243,6 +246,7 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
         spec: options.spec,
         scale: options.scale,
         convertFormat: options.convertFormat,
+        sequence: options.sequence,
         devReact: options.devReact,
         preferredEffectBackend: options.preferredEffectBackend,
         origin: options.origin,

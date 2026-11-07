@@ -5,9 +5,12 @@
 import type { ExportOptions } from '@kinetographdev/native';
 import type { OptionSpec } from './args.js';
 import { CliError } from './errors.js';
+import { IMAGE_FORMATS, type ImageFormat } from './image-sequence.js';
+
+export const SCALE_OPTION: OptionSpec = { name: 'scale', type: 'number', description: 'Output size multiplier: 0.5 renders 1080p as 540p, 2 renders it as 4K, drawn at that size (sides round down to even; default 1)' };
 
 export const EXPORT_FLAGS: OptionSpec[] = [
-  { name: 'scale', type: 'number', description: 'Output size multiplier: 0.5 renders 1080p as 540p, 2 renders it as 4K, drawn at that size (sides round down to even; default 1)' },
+  SCALE_OPTION,
   { name: 'codec', type: 'string', description: 'h264 (default), h265, prores, vp9 or gif; .webm paths default to vp9 and .gif to gif' },
   { name: 'crf', type: 'number', description: 'Constant quality, lower is better (h264, h265 0..51, vp9 0..63); not with --video-bitrate' },
   { name: 'x264-preset', type: 'string', description: 'libx264 and libx265 speed preset: ultrafast, superfast, veryfast (default), faster, fast, medium (as in Remotion), slow, slower, veryslow or placebo' },
@@ -18,6 +21,32 @@ export const EXPORT_FLAGS: OptionSpec[] = [
   { name: 'audio-bitrate', type: 'string', description: 'Audio bit rate, e.g. 320k (aac and opus)' },
   { name: 'every-nth-frame', type: 'number', description: 'gif only: draw every nth frame and play at the frame rate over n (default 1)' },
 ];
+
+export const SEQUENCE_FLAGS: OptionSpec[] = [
+  { name: 'sequence', type: 'boolean', description: 'Write one image per frame into the -o directory instead of a video, named <id>-<frame>.png with the composition frame number zero-padded to the width of its last frame (Main-042.png); no audio is written, and the video flags (codec, quality, pixel format, audio, --encoder, --every-nth-frame) are refused' },
+  { name: 'image-format', type: 'string', description: 'With --sequence: png (default; the frame as drawn, alpha included) or jpeg (quality 80, no alpha: flattened over black)' },
+];
+
+/** The flags that shape a video file, which a sequence of images has none of. */
+const VIDEO_ONLY_FLAGS = ['codec', 'encoder', 'crf', 'x264-preset', 'video-bitrate', 'pixel-format', 'prores-profile', 'audio-codec', 'audio-bitrate', 'every-nth-frame'];
+
+/** The image format of `render --sequence`, or `undefined` for a video. Refused with `INVALID_ARG` when a flag does not fit. */
+export function parseSequenceFlags(options: Options): ImageFormat | undefined {
+  const format = options['image-format'] as string | undefined;
+  if (options.sequence !== true) {
+    if (format !== undefined) throw new CliError('INVALID_ARG', '--image-format needs --sequence: a video has no image format');
+    return undefined;
+  }
+  const given = VIDEO_ONLY_FLAGS.filter((name) => options[name] !== undefined);
+  if (given.length > 0) {
+    throw new CliError('INVALID_ARG', `--sequence writes images, not a video: leave out ${given.map((name) => `--${name}`).join(', ')}`);
+  }
+  if (format === undefined) return 'png';
+  if (!(IMAGE_FORMATS as readonly string[]).includes(format)) {
+    throw new CliError('INVALID_ARG', `--image-format must be ${IMAGE_FORMATS.join(' or ')}, got "${format}"`);
+  }
+  return format as ImageFormat;
+}
 
 /** `8M` as 8,000,000 bit/s, `2500k` as 2,500,000, `128000` as itself. */
 export function parseBitrate(flag: string, text: string): number {
