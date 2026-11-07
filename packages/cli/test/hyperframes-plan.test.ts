@@ -97,6 +97,18 @@ describe('mounting compositions', () => {
     expect(plan.mediaDurations[join(dir, 'assets', 'clip.mp4')]).toBe(4);
   });
 
+  it("keeps the file root's id on the host as data-hf-root-id, beside the host's own id (#109)", async () => {
+    const dir = project({ 'index.html': index.replace(' id="a"', ''), 'compositions/card.html': card, 'assets/clip.mp4': 'x' });
+    const { plan } = await buildPlan(join(dir, 'index.html'), { probeDuration: () => 4 });
+    const withoutId = find(plan.body, (n) => attr(n, 'data-composition-id') === 'card')!;
+    expect(attr(withoutId, 'id')).toBeUndefined();
+    expect(attr(withoutId, 'data-hf-root-id')).toBe('inner');
+    const withId = project({ 'index.html': index, 'compositions/card.html': card, 'assets/clip.mp4': 'x' });
+    const planned = (await buildPlan(join(withId, 'index.html'), { probeDuration: () => 4 })).plan;
+    const a = find(planned.body, (n) => attr(n, 'id') === 'a')!;
+    expect(attr(a, 'data-hf-root-id')).toBe('inner');
+  });
+
   it('a missing composition file is a note, not a failure', async () => {
     const dir = project({ 'index.html': index.replace('compositions/card.html', 'compositions/none.html') });
     const { plan } = await buildPlan(join(dir, 'index.html'));
