@@ -32,6 +32,8 @@ use skia_safe::{
 };
 
 mod canvas2d;
+#[cfg(test)]
+mod fe_image_tests;
 
 #[derive(Default, Clone)]
 pub struct Stats {
@@ -769,8 +771,9 @@ impl Translator {
                     let g = grow / s;
                     let content = r;
                     r = Rect::new(r.left - g, r.top - g, r.right + g, r.bottom + g);
-                    // A tile repeats over the whole filter region, not just where the layer draws.
-                    if fg.nodes.iter().any(|n| matches!(n.op, FeOp::Tile)) {
+                    // A tile repeats over the whole filter region, not just where the layer draws; a picture fills its
+                    // subregion.
+                    if fg.nodes.iter().any(|n| matches!(n.op, FeOp::Tile | FeOp::Image { .. })) {
                         let content = kurbo::Rect::new(content.left as f64, content.top as f64, content.right as f64, content.bottom as f64);
                         let reg = fg.plan(Some(content))?.region;
                         r = Rect::new(r.left.min(reg.x0 as f32), r.top.min(reg.y0 as f32), r.right.max(reg.x1 as f32), r.bottom.max(reg.y1 as f32));
@@ -1176,9 +1179,28 @@ impl Translator {
                     };
                     image_filters::blend(mode, input(1, &results), input(0, &results), None)
                 }
+                FeOp::Image { src, aspect } => match self.image(src) {
+                    Some(img) => {
+                        let (w, h) = (img.width() as f32, img.height() as f32);
+                        // Placed in the subregion; with no layer box the subregion is not known, and the picture is drawn
+                        // at its own size from the layer's origin.
+                        let dst = match &plan {
+                            Some(p) => sk(&aspect.fit(p.nodes[idx].sub, f64::from(w), f64::from(h))),
+                            None => {
+                                self.stats.approx("feImage placed without a layer box (drawn at its own size)");
+                                Rect::new(0.0, 0.0, w, h)
+                            }
+                        };
+                        image_filters::image(img, None, &dst, SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None))
+                    }
+                    None => {
+                        self.stats.no("feImage (picture not readable)");
+                        Some(image_filters::empty())
+                    }
+                },
             };
             let out = match out {
-                Some(f) if lin != surface_lin && !matches!(op, FeOp::Flood { .. }) => {
+                Some(f) if lin != surface_lin && !matches!(op, FeOp::Flood { .. } | FeOp::Image { .. }) => {
                     let back = if lin { color_filters::linear_to_srgb_gamma() } else { color_filters::srgb_to_linear_gamma() };
                     image_filters::color_filter(back, f, None)
                 }
@@ -1443,7 +1465,7 @@ impl Translator {
                 let (w, h) = (w.ceil().max(1.0) as u32, h.ceil().max(1.0) as u32);
                 image::RgbaImage::from_raw(w, h, pic.paint(w, h)?).map(image::DynamicImage::ImageRgba8)
             })
-        } else if let Some(bytes) = data_uri_bytes(src) {
+        } else if let Some(bytes) = crate::scene::data_uri_bytes(src) {
             image::load_from_memory(&bytes).ok()
         } else {
             image::open(self.base_dir.join(src)).ok()
@@ -1898,17 +1920,6 @@ fn transfer(f: &crate::filter::ResolvedTransfer, c: f32) -> f32 {
         3 => f.p[0] * c + f.p[1],
         4 => f.p[0] * c.max(0.0).powf(f.p[1]) + f.p[2],
         _ => c,
-    }
-}
-
-fn data_uri_bytes(src: &str) -> Option<Vec<u8>> {
-    let rest = src.strip_prefix("data:")?;
-    let (head, body) = rest.split_once(',')?;
-    if head.ends_with(";base64") {
-        use base64::Engine;
-        base64::engine::general_purpose::STANDARD.decode(body.trim()).ok()
-    } else {
-        None
     }
 }
 
