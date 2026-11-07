@@ -97,10 +97,10 @@ describe.skipIf(!ready)('the size of a HyperFrames page without a height on html
     expect(pixel(png, 25, 565)).toEqual(BACKGROUND);
   });
 
-  it('warns in doctor, and fails render --strict, for a root that still lays out to no height, and not for one that does not', () => {
+  it('warns in doctor, and fails render --strict, for a clipping root that lays out to no height, and not for one that does not', () => {
     const collapsed = page('collapsed', 'html, body { height: auto } #root { position: relative; width: 100%; height: 100%; overflow: hidden; }');
     const bad = spawnSync(process.execPath, [cli, 'doctor', collapsed, '--range', '0..=2'], { encoding: 'utf8' });
-    expect(bad.stdout).toContain('the root composition #root is laid out 640x0');
+    expect(bad.stdout).toContain('the root composition #root clips its contents and is laid out 640x0');
     const strict = spawnSync(process.execPath, [cli, 'render', collapsed, '-o', join(dir, 'collapsed.mp4'), '--range', '0..=2', '--strict'], { encoding: 'utf8' });
     expect(strict.status).not.toBe(0);
 
@@ -108,5 +108,33 @@ describe.skipIf(!ready)('the size of a HyperFrames page without a height on html
     const good = spawnSync(process.execPath, [cli, 'doctor', fine, '--range', '0..=2'], { encoding: 'utf8' });
     expect(good.stdout).not.toContain('the root composition');
     expect(good.stdout).toContain('clean');
+  });
+
+  it('does not warn for a root that does not clip: its absolutely positioned children are drawn at any size', () => {
+    // The repo's own fixture: a #root with no CSS and only absolute children lays out 320x0 and draws correctly.
+    const fixture = spawnSync(process.execPath, [cli, 'doctor', join(here, 'fixtures', 'hf-document'), '--range', '0..=2'], { encoding: 'utf8' });
+    expect(fixture.stdout).not.toContain('the root composition');
+    const visible = page('visible', 'html, body { height: auto } #root { position: relative; width: 100%; height: 0; overflow: visible; }');
+    const run = spawnSync(process.execPath, [cli, 'doctor', visible, '--range', '0..=2'], { encoding: 'utf8' });
+    expect(run.stdout).not.toContain('the root composition');
+    const strict = spawnSync(process.execPath, [cli, 'render', visible, '-o', join(dir, 'visible.mp4'), '--range', '0..=2', '--strict'], { encoding: 'utf8' });
+    expect(strict.status, strict.stderr).toBe(0);
+  });
+
+  it('decides the warning on every frame: only on the frames where a clipping root is empty', () => {
+    // A timeline that collapses the root for the first 0.2 s (frames 0 to 5 at 30 fps) and restores it after.
+    const resized = page(
+      'resized',
+      'html, body { height: auto } #root { position: relative; width: 100%; overflow: hidden; }',
+      `<script>window.__timelines = { main: { duration: () => 1, seek(t) { document.getElementById('root').style.height = t < 0.2 ? '0px' : '640px'; } } };</script>`,
+    );
+    const run = spawnSync(process.execPath, [cli, 'doctor', resized, '--range', '0..=11', '--json'], { encoding: 'utf8' });
+    const report = JSON.parse(run.stdout);
+    expect(report.issues).toHaveLength(1);
+    expect(report.issues[0].reason).toContain('laid out 640x0');
+    expect(report.issues[0].ranges).toEqual([[0, 5]]);
+    // Starting later, the frames that warn are the same: they do not depend on which frame was drawn first.
+    const late = spawnSync(process.execPath, [cli, 'doctor', resized, '--range', '4..=11', '--json'], { encoding: 'utf8' });
+    expect(JSON.parse(late.stdout).issues[0].ranges).toEqual([[4, 5]]);
   });
 });
