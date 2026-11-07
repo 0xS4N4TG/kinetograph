@@ -2341,7 +2341,7 @@ fn tile_shader(cell: Rect, at: (f64, f64), space: (f64, f64), repeat: (bool, boo
 }
 
 #[cfg(test)]
-mod tests {
+mod fe_image_tests {
     use super::*;
     use crate::filter::FilterGraph;
     use base64::Engine as _;
