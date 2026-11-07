@@ -236,14 +236,24 @@ fn svg_files_have_an_intrinsic_size() {
 #[test]
 fn background_image_with_spaces_in_path_loads() {
     let dir = Dir::new("bg-spaces");
-    let file = dir.png("xp/Close Buttons.png", 16, 16);
-    let forward_path = file.to_str().unwrap().replace('\\', "/");
-    let style = format!("width: 16px; height: 16px; background-image: url('{forward_path}')");
+    let style_url = if cfg!(windows) {
+        let file = dir.png("xp/Close Buttons.png", 16, 16);
+        let forward = file.to_str().unwrap().replace('\\', "/");
+        forward.replace(' ', "%20")
+    } else {
+        dir.png("c:/xp/Close Buttons.png", 16, 16);
+        "c:/xp/Close%20Buttons.png".to_string()
+    };
+    let style = format!("width: 16px; height: 16px; background-image: url('{style_url}')");
     let root = el("div", "$0", &style, vec![]);
-    let island = resolve(&with_dirs(request(root), &dir, None));
+    let req = with_dirs(request(root), &dir, Some(&dir));
+    let island = resolve(&req);
     let node = island.doc.get_node(island.node("$0").unwrap()).unwrap();
     let element = node.element_data().unwrap();
     let image = element.background_images[0].as_ref().expect("an image slot");
     assert_eq!(image.status, Status::Ok);
     assert!(island.missing.is_empty(), "{:?}", island.missing);
+
+    let output = kinetograph_dom::paint::paint(&island.doc, &parse(&req));
+    assert!(output.unsupported.is_empty(), "{:?}", output.unsupported);
 }

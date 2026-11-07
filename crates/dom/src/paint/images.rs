@@ -177,3 +177,21 @@ fn percent_decode(s: &str) -> String {
         .decode_utf8_lossy()
         .into_owned()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn percent_decode_decodes_spaces_in_drive_paths() {
+        let raw = "c:/projects/demo/public/xp/Close%20Buttons.png";
+        let decoded = percent_decode(raw);
+        assert_eq!(decoded, "c:/projects/demo/public/xp/Close Buttons.png");
+        assert_eq!(
+            crate::net::drive_path(&decoded),
+            Some(std::path::PathBuf::from(
+                "c:/projects/demo/public/xp/Close Buttons.png"
+            ))
+        );
+    }
+}

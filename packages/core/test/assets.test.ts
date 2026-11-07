@@ -43,12 +43,15 @@ describe('staticFile', () => {
     expect(staticFile('x.png')).toBe(norm('assets/x.png'));
   });
 
-  it('returns forward slashes on Windows for CSS url compatibility', () => {
-    setPublicDir('C:\\projects\\demo\\public');
-    expect(staticFile('xp/Close Buttons.png')).toBe('C:/projects/demo/public/xp/Close Buttons.png');
-    expect(staticFile('xp\\Close Buttons.png')).toBe('C:/projects/demo/public/xp/Close Buttons.png');
-    expect(staticFile('Close Buttons.png')).not.toContain('\\');
-  });
+  (process.platform === 'win32' ? it : it.skip)(
+    'returns forward slashes on Windows for CSS url compatibility',
+    () => {
+      setPublicDir('C:\\projects\\demo\\public');
+      expect(staticFile('xp/Close Buttons.png')).toBe('C:/projects/demo/public/xp/Close Buttons.png');
+      expect(staticFile('xp\\Close Buttons.png')).toBe('C:/projects/demo/public/xp/Close Buttons.png');
+      expect(staticFile('Close Buttons.png')).not.toContain('\\');
+    }
+  );
 
   it('refuses URLs and empty names', () => {
     expect(() => staticFile('https://example.com/a.png')).toThrow(/not URLs/);
