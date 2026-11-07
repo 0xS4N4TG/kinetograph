@@ -62,7 +62,7 @@ impl<'a> Painter<'a> {
     /// The file a URL or path string names.
     pub fn source_of(&self, s: &str) -> Source {
         if let Some(rest) = s.strip_prefix("data:") {
-            return self.data_source(rest);
+            return data_source(rest);
         }
         if crate::net::drive_path(s).is_none()
             && url::Url::parse(s).is_ok_and(|u| matches!(u.scheme(), "http" | "https"))
@@ -95,52 +95,76 @@ impl<'a> Painter<'a> {
             Err(e) => Source::Unsupported(format!("cannot read {}: {e}", path.display())),
         }
     }
+}
 
-    /// A `data:` URL: the scene decodes it from memory (no file is written),
-    /// so the layer's `src` is the URL itself.
-    fn data_source(&self, rest: &str) -> Source {
-        let Some((meta, data)) = rest.split_once(',') else {
-            return Source::Unsupported("a malformed data: URL".to_string());
-        };
-        let is_base64 = meta.ends_with(";base64");
-        let mime = meta.split(';').next().unwrap_or("");
-        match mime {
-            "image/png" | "image/jpeg" | "image/jpg" | "image/gif" | "image/webp" => {}
-            "image/svg+xml" => {
-                let src = format!("data:{rest}");
-                return match svg_picture::natural_size(Path::new(""), &src) {
-                    Ok((w, h)) => Source::Raster { path: src, w, h },
-                    Err(e) => Source::Unsupported(format!("cannot read a data: SVG picture: {e}")),
-                };
-            }
-            other => {
-                return Source::Unsupported(format!("the picture type {other:?} is not drawn"));
-            }
+/// The natural sizes of the `data:` pictures already decoded, by a hash of the URL.
+fn data_sizes() -> &'static Mutex<HashMap<u64, (u32, u32)>> {
+    static SIZES: OnceLock<Mutex<HashMap<u64, (u32, u32)>>> = OnceLock::new();
+    SIZES.get_or_init(Mutex::default)
+}
+
+/// A `data:` URL: the scene decodes it from memory (no file is written),
+/// so the layer's `src` is the URL itself.
+pub(super) fn data_source(rest: &str) -> Source {
+    let Some((meta, data)) = rest.split_once(',') else {
+        return Source::Unsupported("a malformed data: URL".to_string());
+    };
+    let is_base64 = meta.ends_with(";base64");
+    let mime = meta.split(';').next().unwrap_or("");
+    match mime {
+        "image/png" | "image/jpeg" | "image/jpg" | "image/gif" | "image/webp" => {}
+        "image/svg+xml" => {
+            let src = format!("data:{rest}");
+            return match svg_picture::natural_size(Path::new(""), &src) {
+                Ok((w, h)) => Source::Raster { path: src, w, h },
+                Err(e) => Source::Unsupported(format!("cannot read a data: SVG picture: {e}")),
+            };
         }
-        let bytes = if is_base64 {
-            let clean: String = percent_decode(data)
-                .chars()
-                .filter(|c| !c.is_whitespace())
-                .collect();
-            match base64::engine::general_purpose::STANDARD.decode(clean.as_bytes()) {
-                Ok(b) => b,
-                Err(e) => return Source::Unsupported(format!("a data: URL with bad base64: {e}")),
-            }
-        } else {
-            percent_encoding::percent_decode_str(data).collect()
-        };
-        let size = image::ImageReader::new(std::io::Cursor::new(bytes))
-            .with_guessed_format()
-            .ok()
-            .and_then(|r| r.into_dimensions().ok());
-        match size {
-            Some((w, h)) => Source::Raster {
-                path: format!("data:{rest}"),
-                w: f64::from(w),
-                h: f64::from(h),
-            },
-            None => Source::Unsupported("cannot read a data: picture".to_string()),
+        other => {
+            return Source::Unsupported(format!("the picture type {other:?} is not drawn"));
         }
+    }
+    // A document built for each frame meets the same `data:` URL again: its size is remembered, not decoded anew.
+    let key = {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        rest.hash(&mut hasher);
+        hasher.finish()
+    };
+    let known = data_sizes().lock().ok().and_then(|sizes| sizes.get(&key).copied());
+    if let Some((w, h)) = known {
+        return Source::Raster {
+            path: format!("data:{rest}"),
+            w: f64::from(w),
+            h: f64::from(h),
+        };
+    }
+    let bytes = if is_base64 {
+        let clean: String = percent_decode(data)
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        match base64::engine::general_purpose::STANDARD.decode(clean.as_bytes()) {
+            Ok(b) => b,
+            Err(e) => return Source::Unsupported(format!("a data: URL with bad base64: {e}")),
+        }
+    } else {
+        percent_encoding::percent_decode_str(data).collect()
+    };
+    let size = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .ok()
+        .and_then(|r| r.into_dimensions().ok());
+    if let (Some(size), Ok(mut sizes)) = (size, data_sizes().lock()) {
+        sizes.insert(key, size);
+    }
+    match size {
+        Some((w, h)) => Source::Raster {
+            path: format!("data:{rest}"),
+            w: f64::from(w),
+            h: f64::from(h),
+        },
+        None => Source::Unsupported("cannot read a data: picture".to_string()),
     }
 }
 

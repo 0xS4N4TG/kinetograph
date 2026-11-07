@@ -1465,7 +1465,7 @@ impl Translator {
                 let (w, h) = (w.ceil().max(1.0) as u32, h.ceil().max(1.0) as u32);
                 image::RgbaImage::from_raw(w, h, pic.paint(w, h)?).map(image::DynamicImage::ImageRgba8)
             })
-        } else if let Some(bytes) = data_uri_bytes(src) {
+        } else if let Some(bytes) = crate::scene::data_uri_bytes(src) {
             image::load_from_memory(&bytes).ok()
         } else {
             image::open(self.base_dir.join(src)).ok()
@@ -1920,17 +1920,6 @@ fn transfer(f: &crate::filter::ResolvedTransfer, c: f32) -> f32 {
         3 => f.p[0] * c + f.p[1],
         4 => f.p[0] * c.max(0.0).powf(f.p[1]) + f.p[2],
         _ => c,
-    }
-}
-
-fn data_uri_bytes(src: &str) -> Option<Vec<u8>> {
-    let rest = src.strip_prefix("data:")?;
-    let (head, body) = rest.split_once(',')?;
-    if head.ends_with(";base64") {
-        use base64::Engine;
-        base64::engine::general_purpose::STANDARD.decode(body.trim()).ok()
-    } else {
-        None
     }
 }
 

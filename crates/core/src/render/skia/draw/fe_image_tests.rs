@@ -12,13 +12,26 @@ fn two_colours() -> String {
 
 #[test]
 fn an_fe_image_fills_its_subregion_on_a_cpu_surface() {
+    fills_its_subregion(&two_colours());
+}
+
+#[test]
+fn an_fe_image_data_url_with_a_line_break_and_an_escape_is_read_as_an_img_reads_it() {
+    let url = two_colours();
+    // A break inside the base64, and `%2B`-style escapes for its letters, as the DOM lets `<img>` carry them.
+    let (head, body) = url.split_at(url.find(',').unwrap() + 1);
+    let escaped = body.replacen("iV", "%69V", 1);
+    fills_its_subregion(&format!("{head}{}\n{}", &escaped[..10], &escaped[10..]));
+}
+
+fn fills_its_subregion(href: &str) {
     let scene = Scene::from_json(r#"{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": []}"#, PathBuf::new()).unwrap();
     let mut tr = Translator::new(&scene);
     tr.srgb = true;
     // The picture is stretched over the right half of the 20 x 20 region: red on its left, blue on its right.
     let graph: FilterGraph = serde_json::from_value(serde_json::json!({
         "filterUnits": "userSpaceOnUse", "x": 0, "y": 0, "width": 20, "height": 20,
-        "primitives": [{"primitive": "feImage", "href": two_colours(), "preserveAspectRatio": "none",
+        "primitives": [{"primitive": "feImage", "href": href, "preserveAspectRatio": "none",
                         "x": 10, "y": 0, "width": 10, "height": 20}]
     }))
     .unwrap();

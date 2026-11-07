@@ -432,6 +432,9 @@ fn primitive(
 /// an `image` layer's is, so the core reads and keeps it once however many
 /// frames use it.
 ///
+/// A `data:` URL is a picture of the scene as it is (the core decodes it once); a malformed or non-raster one is a
+/// transparent flood, as an unreadable file is.
+///
 /// An `href` to an element of the document is not drawn (`None`: the caller
 /// puts a transparent flood in its place and says so). The href is read as an
 /// HTML picture's is (`file:` URL, drive path, percent-encoding, `public/`), and
@@ -460,6 +463,21 @@ fn image(
         );
         return None;
     }
+    if let Some(rest) = value.strip_prefix("data:") {
+        // The picture stays in the URL, which the core decodes from memory once and keeps, as it does for an `image`
+        // layer's `src`; here it is only checked that it is a raster picture.
+        match images::data_source(rest) {
+            images::Source::Raster { path, .. } if !path.starts_with("data:image/svg") => {
+                p.insert("href".into(), json!(value));
+                return Some(with_aspect(el, p));
+            }
+            images::Source::Raster { .. } => note(NOT_RASTER),
+            images::Source::Unsupported(why) => {
+                note(&format!("feImage reads a raster picture: {why}, so it is not drawn"));
+            }
+        }
+        return Some(transparent(p));
+    }
     let roots = roots(request);
     let roots: Vec<&std::path::Path> = roots.iter().map(std::path::PathBuf::as_path).collect();
     let file = images::file_named(&request.base_dir, request.public_dir.as_deref(), value)
@@ -471,20 +489,25 @@ fn image(
         return Some(transparent(p));
     };
     if images::raster_dimensions(&file).is_err() {
-        note(
-            "feImage reads a raster picture (PNG, JPEG, WebP); this file is another kind, so it is not drawn",
-        );
+        note(NOT_RASTER);
         return Some(transparent(p));
     }
     p.insert("href".into(), json!(file.to_string_lossy()));
-    // An invalid `preserveAspectRatio` is the default one, as in a browser.
+    Some(with_aspect(el, p))
+}
+
+const NOT_RASTER: &str =
+    "feImage reads a raster picture (PNG, JPEG, WebP); this is another kind, so it is not drawn";
+
+/// The primitive `p` with the element's `preserveAspectRatio`; an invalid one is the default, as in a browser.
+fn with_aspect(el: &Element, mut p: Map<String, Value>) -> Value {
     if let Some(a) = el
         .prop("preserveAspectRatio")
         .filter(|a| Aspect::parse(a).is_some())
     {
         p.insert("preserveAspectRatio".into(), json!(a.trim()));
     }
-    Some(Value::Object(p))
+    Value::Object(p)
 }
 
 /// The primitive `p` (its subregion and `result`) as a flood of nothing.
@@ -658,6 +681,41 @@ mod tests {
             }
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_fe_image_of_a_data_url_reaches_the_graph_and_a_bad_one_is_transparent() {
+        let png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+        let hrefs = [
+            (png.to_string(), true),
+            // A line break or a percent-escape in the base64: `<img>` accepts both, and the core reads them.
+            (png.replace("iVBOR", "iVBO%52"), true),
+            (png.replace("AAAANSUh", "AAAA\nNSUh"), true),
+            ("data:image/png;base64,!!!".to_string(), false),
+            ("data:image/png;base64,AAAA".to_string(), false),
+            ("data:image/svg+xml,%3Csvg/%3E".to_string(), false),
+            ("data:text/plain,hello".to_string(), false),
+        ];
+        for (href, drawn) in hrefs {
+            let d = doc(&format!(
+                r##"<svg><filter id="f"><feImage href="{href}" x="2" result="i"/></filter></svg>"##
+            ));
+            let mut notes = Vec::new();
+            let e = effect(&d, &nowhere(), "f", None, [1.0, 1.0], &mut notes).unwrap();
+            let p = &e["primitives"][0];
+            if drawn {
+                assert!(notes.is_empty(), "{href}: {notes:?}");
+                assert_eq!(p["primitive"], "feImage", "{href}");
+                assert_eq!(p["href"], json!(href), "{href}");
+                let graph: kinetograph_core::filter::FilterGraph = serde_json::from_value(e).unwrap();
+                graph.validate("l", true).unwrap();
+            } else {
+                assert_eq!(notes.len(), 1, "{href}: {notes:?}");
+                assert!(!notes[0].reason.contains("not a readable file"), "{href}: {}", notes[0].reason);
+                assert_eq!(p["primitive"], "feFlood", "{href}");
+                assert_eq!(p["result"], "i");
+            }
+        }
     }
 
     #[test]
