@@ -384,6 +384,10 @@ describe('<Text>', () => {
 });
 
 describe('<Image>, <Noise>, <MeshGradient>', () => {
+  it('<Image> passes sampling through, and writes nothing without it', () => {
+    expect(layersOf(<Image id="i" src="a.png" sampling="nearest" />)[0]).toEqual({ id: 'i', type: 'image', src: 'a.png', sampling: 'nearest' });
+    expect(layersOf(<Image id="i" src="a.png" />)[0]).not.toHaveProperty('sampling');
+  });
   it('<Image> maps src, width, height and fit', () => {
     expect(layersOf(<Image id="i" src="/abs/model.jpg" fit="cover" />)[0]).toEqual({ id: 'i', type: 'image', src: '/abs/model.jpg', fit: 'cover' });
     expect(layersOf(<Image id="i" src="a.png" width={256} height={ramp} />)[0]).toEqual({

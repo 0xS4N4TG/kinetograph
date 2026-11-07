@@ -688,7 +688,7 @@ class Emitter {
         return { ...layer, ...commonOf(props, name) } as unknown as LayerJson;
       }
       case 'kg-image':
-        return { id, type: 'image', ...pick(props, ['width', 'height', 'fit']), ...localSrc(props), ...commonOf(props, name) } as LayerJson;
+        return { id, type: 'image', ...pick(props, ['width', 'height', 'fit', 'sampling']), ...localSrc(props), ...commonOf(props, name) } as LayerJson;
       case 'kg-noise':
         return {
           id,

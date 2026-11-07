@@ -19,7 +19,7 @@ use crate::resolve::{
     ResolvedLayer, ResolvedPaint, ResolvedScene, ShapeStyle, TextStroke,
 };
 use crate::scene::{
-    BlendMode, Extend, FillRule, Fit, MaskMode, MatteMode, Scene, StrokeCap, StrokeJoin, TextPaintOrder, Units,
+    BlendMode, Extend, FillRule, Fit, MaskMode, MatteMode, Sampling, Scene, StrokeCap, StrokeJoin, TextPaintOrder, Units,
 };
 use crate::text::TextEngine;
 
@@ -32,6 +32,15 @@ use skia_safe::{
 };
 
 mod canvas2d;
+
+/// Skia's sampling for a picture's `Sampling`: bilinear, or the nearest pixel.
+fn sampling_options(sampling: Sampling) -> SamplingOptions {
+    let filter = match sampling {
+        Sampling::Linear => skia_safe::FilterMode::Linear,
+        Sampling::Nearest => skia_safe::FilterMode::Nearest,
+    };
+    SamplingOptions::new(filter, skia_safe::MipmapMode::None)
+}
 
 #[derive(Default, Clone)]
 pub struct Stats {
@@ -1273,19 +1282,19 @@ impl Translator {
                 self.draw_shape(canvas, layer, geometry, fill.as_ref(), stroke.as_ref(), style, comp)
             }
             ResolvedKind::Text { .. } => self.draw_text(canvas, layer, comp),
-            ResolvedKind::Image { src, width, height, fit } => {
-                self.draw_image(canvas, src, (*width, *height), *fit, comp)
+            ResolvedKind::Image { src, width, height, fit, sampling } => {
+                self.draw_image(canvas, src, (*width, *height), *fit, *sampling, comp)
             }
             ResolvedKind::Video { src, width, height, fit, time, mosh } => {
                 let moshed = mosh.as_ref().and_then(|m| self.mosh_image(&layer.id, src, m));
                 match moshed.or_else(|| self.video_image(src, time.ts)) {
-                    Some(img) => self.draw_picture(canvas, &img, (*width, *height), *fit, comp),
+                    Some(img) => self.draw_picture(canvas, &img, (*width, *height), *fit, Sampling::Linear, comp),
                     None => self.stats.no("video layer (decode failed)"),
                 }
             }
             ResolvedKind::Canvas { width, height, ops } => self.draw_canvas_layer(canvas, (*width, *height), ops),
             ResolvedKind::Gif { src, width, height, fit, time, looped } => match self.gif_image(src, *time, *looped) {
-                Some(img) => self.draw_picture(canvas, &img, (*width, *height), *fit, comp),
+                Some(img) => self.draw_picture(canvas, &img, (*width, *height), *fit, Sampling::Linear, comp),
                 None => self.stats.no("gif layer (not loaded)"),
             },
             ResolvedKind::Lottie { src, width, height, time, looped } => self.draw_lottie(canvas, src, (*width, *height), *time, *looped, comp),
@@ -1393,7 +1402,7 @@ impl Translator {
                     let mut fill = Paint::default();
                     fill.set_anti_alias(true);
                     fill.set_shader(gradient_shader_for(g, Some(cell), self.linear()));
-                    let shader = tile_shader(cell, (t.x, t.y), (t.space_x, t.space_y), (t.repeat_x, t.repeat_y), |c| {
+                    let shader = tile_shader(cell, (t.x, t.y), (t.space_x, t.space_y), (t.repeat_x, t.repeat_y), skia_safe::FilterMode::Linear, |c| {
                         c.draw_rect(cell, &fill);
                     });
                     set_tile_shader(p, shader);
@@ -1413,11 +1422,11 @@ impl Translator {
                     self.stats.no("image paint (file)");
                     return;
                 };
-                let sampling = SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None);
+                let sampling = sampling_options(if crate::svg_picture::is_svg(&i.src) { Sampling::Linear } else { i.sampling });
                 if (i.repeat_x && i.space_x > 0.0) || (i.repeat_y && i.space_y > 0.0) {
                     // Copies apart: the picture in one tile, repeated with the gaps.
                     let cell = Rect::from_wh(i.width as f32, i.height as f32);
-                    let shader = tile_shader(cell, (i.x, i.y), (i.space_x, i.space_y), (i.repeat_x, i.repeat_y), |c| {
+                    let shader = tile_shader(cell, (i.x, i.y), (i.space_x, i.space_y), (i.repeat_x, i.repeat_y), sampling.filter, |c| {
                         c.draw_image_rect_with_sampling_options(&img, None, cell, sampling, &Paint::default());
                     });
                     set_tile_shader(p, shader);
@@ -1500,7 +1509,7 @@ impl Translator {
         img
     }
 
-    fn draw_image(&mut self, canvas: &Canvas, src: &str, size: (f64, f64), fit: Fit, comp: Comp) {
+    fn draw_image(&mut self, canvas: &Canvas, src: &str, size: (f64, f64), fit: Fit, sampling: Sampling, comp: Comp) {
         if crate::svg_picture::is_svg(src) {
             let (sx, sy) = (size.0, size.1);
             let img = self.svg_image(canvas, src, |n| {
@@ -1512,7 +1521,8 @@ impl Translator {
                 }
             });
             if let Some(img) = img {
-                self.draw_picture(canvas, &img, size, fit, comp);
+                // A vector picture is painted for the size it is drawn at: there is nothing to resample.
+                self.draw_picture(canvas, &img, size, fit, Sampling::Linear, comp);
             }
             return;
         }
@@ -1520,7 +1530,7 @@ impl Translator {
             self.stats.no("image (file)");
             return;
         };
-        self.draw_picture(canvas, &img, size, fit, comp);
+        self.draw_picture(canvas, &img, size, fit, sampling, comp);
     }
 
     fn video_image(&mut self, src: &str, ts: i64) -> Option<Image> {
@@ -1693,7 +1703,7 @@ impl Translator {
         canvas.restore();
     }
 
-    fn draw_picture(&mut self, canvas: &Canvas, img: &Image, size: (f64, f64), fit: Fit, comp: Comp) {
+    fn draw_picture(&mut self, canvas: &Canvas, img: &Image, size: (f64, f64), fit: Fit, sampling: Sampling, comp: Comp) {
         let (iw, ih) = (img.width() as f64, img.height() as f64);
         let (sx, sy) = (size.0 / iw, size.1 / ih);
         let placed = match fit {
@@ -1709,7 +1719,7 @@ impl Translator {
         }
         canvas.concat(&mat(placed));
         let p = Self::base_paint(comp);
-        canvas.draw_image_with_sampling_options(img, (0.0, 0.0), SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None), Some(&p));
+        canvas.draw_image_with_sampling_options(img, (0.0, 0.0), sampling_options(sampling), Some(&p));
         self.stats.draws += 1;
         canvas.restore();
     }
@@ -2307,7 +2317,7 @@ fn set_tile_shader(p: &mut Paint, shader: Option<skia_safe::Shader>) {
 
 /// A shader of what `draw` paints in `cell` (a tile at the origin), moved to `at` and repeated every cell plus `space`
 /// along the axes that `repeat` (once along the others): a picture shader, which keeps a fractional period exact.
-fn tile_shader(cell: Rect, at: (f64, f64), space: (f64, f64), repeat: (bool, bool), draw: impl FnOnce(&Canvas)) -> Option<skia_safe::Shader> {
+fn tile_shader(cell: Rect, at: (f64, f64), space: (f64, f64), repeat: (bool, bool), filter: skia_safe::FilterMode, draw: impl FnOnce(&Canvas)) -> Option<skia_safe::Shader> {
     if cell.is_empty() {
         return None;
     }
@@ -2317,5 +2327,5 @@ fn tile_shader(cell: Rect, at: (f64, f64), space: (f64, f64), repeat: (bool, boo
     let period = Rect::from_wh(cell.width() + space.0 as f32, cell.height() + space.1 as f32);
     let mode = |r: bool| if r { TileMode::Repeat } else { TileMode::Decal };
     let local = Matrix::translate((at.0 as f32, at.1 as f32));
-    Some(picture.to_shader((mode(repeat.0), mode(repeat.1)), skia_safe::FilterMode::Linear, &local, &period))
+    Some(picture.to_shader((mode(repeat.0), mode(repeat.1)), filter, &local, &period))
 }

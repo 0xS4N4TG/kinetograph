@@ -298,7 +298,10 @@ impl<'a> Painter<'a> {
                 _ => {}
             }
             let lid = format!("{id}.{i}");
-            if let Some(l) = self.image_layer(node, geom, current, &spec, &lid, true) {
+            if let Some(mut l) = self.image_layer(node, geom, current, &spec, &lid, true) {
+                if super::util::nearest_sampling(style) {
+                    super::util::mark_nearest(&mut l);
+                }
                 layers.push(l);
             }
         }
