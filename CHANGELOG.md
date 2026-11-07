@@ -3,6 +3,13 @@
 All notable changes to Kinetograph. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kinetograph is in beta, so APIs can still change between versions.
 
+## Unreleased
+
+### Fixed
+
+- `staticFile()` returns forward slashes on Windows so CSS `url()` paths are not corrupted by backslash escapes (#100).
+- Paint decodes percent-encoded Windows drive paths with spaces in CSS background and border images (#100).
+
 ## 0.3.0 (2026-11-03)
 
 ### Added
