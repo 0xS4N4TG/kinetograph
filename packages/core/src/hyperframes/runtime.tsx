@@ -50,10 +50,13 @@ const g = globalThis as AnyRecord;
 const doc = (): AnyRecord => g.document;
 
 /**
- * The rule every HyperFrames page gets before its own: the hidden clips' contents. The page's `<html>` and `<body>` are
- * the island document's own (`setPageDocument`), with no margin, as HyperFrames renders pages flush.
+ * The rules every HyperFrames page gets before its own: the hidden clips' contents, and the composition's height on
+ * `html` and `body`, so a root of `height: 100%` has something to be a percentage of (a page's own rule for either
+ * wins: `:where` adds no specificity). The page's `<html>` and `<body>` are the island document's own
+ * (`setPageDocument`), with no margin, as HyperFrames renders pages flush.
  */
-const baseCss = `
+const baseCss = (height: number): string => `
+:where(html, body) { height: ${height}px; }
 [${HIDDEN_ATTR}], [${HIDDEN_ATTR}] * { visibility: hidden !important; }
 `;
 
@@ -615,6 +618,30 @@ class Runtime {
     for (const note of this.gradingNotes) reportUnsupported('data-color-grading', null, null, note);
     for (const failure of this.seekFailures) reportUnsupported('HyperFrames', null, null, failure);
     for (const failure of this.scriptFailures) reportUnsupported('HyperFrames', null, null, failure);
+    this.reportCollapsedRoot();
+  }
+
+  /**
+   * The root composition, with children, that clips (`overflow` hidden, clip, scroll or auto) and is laid out to no width
+   * or no height: it draws nothing and looks fine. Decided on every frame, as a script can resize the root over time.
+   * The layout readback (~3 ms a frame) is made only for a root that clips: one that does not still draws its
+   * absolutely positioned children whatever its size.
+   */
+  private reportCollapsedRoot(): void {
+    const root = doc().querySelector(`[data-composition-id="${attrValue(this.plan.compositionId)}"]`) as AnyRecord | null;
+    if (root === null || (root.children?.length ?? 0) === 0) return;
+    const style = g.getComputedStyle(root) as AnyRecord;
+    const clips = (value: unknown): boolean => value !== 'visible' && value !== '' && value !== undefined && value !== null;
+    if (!clips(style.overflowX) && !clips(style.overflowY)) return;
+    const { width, height } = root.getBoundingClientRect();
+    if (width > 0 && height > 0) return;
+    reportUnsupported(
+      'HyperFrames',
+      null,
+      null,
+      `the root composition #${root.id || this.plan.compositionId} clips its contents and is laid out ${width}x${height}, so they are not drawn: ` +
+        'give it a size in pixels, or a percentage of a parent that has one (html and body default to the composition height)',
+    );
   }
 }
 
@@ -662,7 +689,7 @@ function remotePictureResolver(plan: HfPlan): (url: string) => string | null {
 }
 
 export function defineHyperframes(plan: HfPlan): void {
-  registerStylesheet(baseCss, 'hyperframes');
+  registerStylesheet(baseCss(plan.height), 'hyperframes');
   for (const sheet of plan.stylesheets) registerStylesheet(sheet.css, sheet.file);
   for (const request of fontRequests(plan)) {
     try {
