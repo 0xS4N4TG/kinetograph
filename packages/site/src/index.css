@@ -460,7 +460,7 @@ figure.shiki button[data-checked] {
   --shiki-dark: var(--color-fd-muted-foreground);
 }
 
-/* Docs sidebar: full width at the window edge, with more room at the edges, between links and between groups.
+/* Docs sidebar: full width at the window edge, with more room at the edges, between links and between groups. */
 :root {
   --fd-sidebar-width: 288px;
 }
