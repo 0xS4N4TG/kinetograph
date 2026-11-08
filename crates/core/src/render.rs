@@ -28,7 +28,7 @@ use crate::resolve::{
 };
 use crate::reuse;
 use crate::scene::{
-    BlendMode, DotOrder, LayerKind, MaskMode, MatteMode, Paint, Scene, ShapeLayer, TextLayer, walk_layers,
+    BlendMode, DotOrder, FillRule, LayerKind, MaskMode, MatteMode, Paint, Scene, ShapeLayer, TextLayer, walk_layers,
 };
 use crate::scene3d::draw::{Assets3d, Texture};
 use crate::scene3d::environment::Environment;
@@ -744,7 +744,7 @@ impl Renderer {
                     if self.path_bounds(&path, matrix).is_empty() {
                         return Ok(());
                     }
-                    run.push(FlatOp::Clip(path, matrix));
+                    run.push(FlatOp::Clip(path, matrix, clip_even_odd(clip)));
                     true
                 }
                 None => false,
@@ -787,7 +787,7 @@ impl Renderer {
             .drain(..)
             .map(|op| match op {
                 FlatOp::Leaf(layer, matrix, _) => skia::RasterOp::Leaf(layer, matrix),
-                FlatOp::Clip(path, matrix) => skia::RasterOp::Clip(path, matrix),
+                FlatOp::Clip(path, matrix, even_odd) => skia::RasterOp::Clip(path, matrix, even_odd),
                 FlatOp::Pop => skia::RasterOp::Pop,
             })
             .collect();
@@ -1647,7 +1647,8 @@ impl Renderer {
                 self.compositor.release(src);
                 src = self.timed(Stage::Composite, |s| s.compositor.empty());
             } else if !src.bounds.is_empty() {
-                let clip = self.timed(Stage::Raster, |s| s.skia_clip(&path, matrix, keep))?;
+                let even_odd = clip_even_odd(clip);
+                let clip = self.timed(Stage::Raster, |s| s.skia_clip(&path, matrix, keep, even_odd))?;
                 src = self.timed(Stage::Composite, |s| {
                     s.compositor.matte(src, clip, 1.0, MatteMode::Alpha)
                 });
@@ -1794,7 +1795,7 @@ impl Renderer {
     /// The clip as a path in layer space. Empty when it keeps nothing.
     fn clip_path(&mut self, clip: &ResolvedClip, layer: &ResolvedLayer) -> Result<BezPath> {
         Ok(match clip {
-            ResolvedClip::Polygon { points } => {
+            ResolvedClip::Polygon { points, .. } => {
                 let mut path = BezPath::new();
                 for (i, &(x, y)) in points.iter().enumerate() {
                     if i == 0 {
@@ -1825,7 +1826,7 @@ impl Renderer {
                     Ellipse::new((*cx, *cy), (*rx, *ry), 0.0).to_path(SHAPE_TOLERANCE)
                 }
             }
-            ResolvedClip::Path { d } => BezPath::from_svg(d)
+            ResolvedClip::Path { d, .. } => BezPath::from_svg(d)
                 .map_err(|e| Error::Scene(format!("bad clip SVG path {d:?}: {e}")))?,
         })
     }
@@ -2182,8 +2183,18 @@ fn shifted(shift: (f64, f64), parent: Affine) -> Affine {
 enum FlatOp<'a> {
     /// A leaf, the matrix that takes its layer space to canvas pixels, and the pixels it can touch.
     Leaf(&'a ResolvedLayer, Affine, PixelRect),
-    Clip(BezPath, Affine),
+    /// The clip's path, its matrix and whether it fills even-odd.
+    Clip(BezPath, Affine, bool),
     Pop,
+}
+
+/// Whether `clip` keeps what the even-odd rule fills, rather than the non-zero rule.
+fn clip_even_odd(clip: &ResolvedClip) -> bool {
+    matches!(
+        clip,
+        ResolvedClip::Polygon { fill_rule: FillRule::EvenOdd, .. }
+            | ResolvedClip::Path { fill_rule: FillRule::EvenOdd, .. }
+    )
 }
 
 /// A layer drawn and waiting to be blended onto its canvas.

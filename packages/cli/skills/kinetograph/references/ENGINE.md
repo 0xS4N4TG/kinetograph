@@ -790,7 +790,7 @@ than 16 off); a frame drawn alone, in sequence and by two workers has one hash.
 
 `image-rendering`, `background-attachment: fixed`, `box-decoration-break: clone`, non-horizontal
 `writing-mode`, multi-column, the old `clip`, `list-style-image`,
-form controls, iframes, `evenodd` clip paths, `shape()`,
+form controls, iframes, `shape()`,
 `mask-composite` other than add, `backdrop-filter` functions other than `blur()`, a `margin-box` clip reference, a
 `conic-gradient` in a colour space other than sRGB, `filter`, `mix-blend-mode`, `clip-path` and `mask` on an inline
 (non-atomic) element, remote URLs, fonts that are not project font files, inside list

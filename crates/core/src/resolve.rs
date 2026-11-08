@@ -444,6 +444,7 @@ pub struct ResolvedShadow {
 pub enum ResolvedClip {
     Polygon {
         points: Vec<(f64, f64)>,
+        fill_rule: FillRule,
     },
     Inset {
         top: f64,
@@ -460,6 +461,7 @@ pub enum ResolvedClip {
     },
     Path {
         d: String,
+        fill_rule: FillRule,
     },
 }
 
@@ -1484,8 +1486,9 @@ fn resolve_stops(stops: &[Stop], f: f64) -> Vec<(f64, Color)> {
 
 fn resolve_clip(clip: &Clip, f: f64) -> ResolvedClip {
     match clip {
-        Clip::Polygon { points } => ResolvedClip::Polygon {
+        Clip::Polygon { points, fill_rule } => ResolvedClip::Polygon {
             points: points.iter().map(|[x, y]| (x.at(f), y.at(f))).collect(),
+            fill_rule: *fill_rule,
         },
         Clip::Inset {
             top,
@@ -1506,7 +1509,7 @@ fn resolve_clip(clip: &Clip, f: f64) -> ResolvedClip {
             rx: rx.at(f).max(0.0),
             ry: ry.at(f).max(0.0),
         },
-        Clip::Path { d } => ResolvedClip::Path { d: d.clone() },
+        Clip::Path { d, fill_rule } => ResolvedClip::Path { d: d.clone(), fill_rule: *fill_rule },
     }
 }
 
@@ -1876,7 +1879,7 @@ mod tests {
             .unwrap()
             .resolve(5)
             .unwrap();
-        let Some(ResolvedClip::Polygon { points }) = &r.layers[0].clip else {
+        let Some(ResolvedClip::Polygon { points, .. }) = &r.layers[0].clip else {
             panic!("not a polygon");
         };
         assert_eq!(points, &[(0.0, 0.0), (20.0, 0.0), (0.0, 40.0)]);
@@ -1884,6 +1887,34 @@ mod tests {
             &r.layers[1].clip,
             Some(ResolvedClip::Ellipse { rx, ry, .. }) if *rx == 4.0 && *ry == 4.0
         ));
+    }
+
+    #[test]
+    fn a_clip_takes_a_fill_rule_and_defaults_to_nonzero() {
+        let json = r##"{
+            "width": 100, "height": 100, "fps": 30, "durationInFrames": 10,
+            "layers": [
+              {"id": "a", "type": "shape", "shape": {"kind": "rect", "width": 50, "height": 50}, "fill": "#fff",
+               "clip": {"kind": "path", "d": "M0 0H9V9H0Z M2 2H5V5H2Z", "fillRule": "evenodd"}},
+              {"id": "b", "type": "shape", "shape": {"kind": "rect", "width": 50, "height": 50}, "fill": "#fff",
+               "clip": {"kind": "polygon", "points": [[0, 0], [9, 0], [0, 9]], "fillRule": "evenodd"}},
+              {"id": "c", "type": "shape", "shape": {"kind": "rect", "width": 50, "height": 50}, "fill": "#fff",
+               "clip": {"kind": "path", "d": "M0 0H9V9H0Z M2 2H5V5H2Z"}},
+              {"id": "d", "type": "shape", "shape": {"kind": "rect", "width": 50, "height": 50}, "fill": "#fff",
+               "clip": {"kind": "polygon", "points": [[0, 0], [9, 0], [0, 9]]}}]
+        }"##;
+        let r = Scene::from_json(json, PathBuf::new())
+            .unwrap()
+            .resolve(0)
+            .unwrap();
+        let rule = |i: usize| match &r.layers[i].clip {
+            Some(ResolvedClip::Path { fill_rule, .. } | ResolvedClip::Polygon { fill_rule, .. }) => *fill_rule,
+            other => panic!("not a path or polygon clip: {other:?}"),
+        };
+        assert_eq!(
+            [rule(0), rule(1), rule(2), rule(3)],
+            [FillRule::EvenOdd, FillRule::EvenOdd, FillRule::NonZero, FillRule::NonZero]
+        );
     }
 
     #[test]
