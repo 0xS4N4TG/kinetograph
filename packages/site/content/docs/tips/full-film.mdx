@@ -3,7 +3,7 @@ title: A full film, prompt by prompt
 description: Ten prompts that take a 30 second launch film from an empty folder to a checked render, one stage at a time.
 ---
 
-Build a film in stages, and look after each one. The order is: project, plan, look, hook, the rest, voice, polish, review, check, render. The product, words and files below are made up, so swap in yours. This is a plan of what to say, not a record of a render.
+Build a film in stages, and look after each one: project, plan, look, hook, the rest, voice, polish, review, check, render. The product, words and files are made up, so swap in yours. This is a plan of what to say, not a record of a render.
 
 ## 1. Start the project
 
@@ -11,15 +11,13 @@ Build a film in stages, and look after each one. The order is: project, plan, lo
 /kinetograph-create A new project for a 30 second vertical launch film, 1080 by 1920 at 30 fps, for a notes app called Fieldnote. Register fonts Newsreader and Inter. Put my logo, public/images/logo.svg, in the project.
 ```
 
-Check: `npx kinetograph compositions src/index.tsx` lists the composition at 900 frames.
-
 ## 2. Plan before animating
 
 ```txt title="Suggested prompt"
 /kinetograph-studio Open Studio on src/index.tsx. Ask me for a brief, then a storyboard, in the panels. Wait for my answers before you build anything.
 ```
 
-Fill in the brief (audience, takeaway, length), then edit the storyboard cards. See [Storyboards](/docs/tips/storyboards/). Your answers are saved in `plan/`.
+See [Storyboards](/docs/tips/storyboards/).
 
 ## 3. Fix the look
 
@@ -27,7 +25,7 @@ Fill in the brief (audience, takeaway, length), then edit the storyboard cards. 
 /kinetograph-studio Read plan/storyboard.json. Make three styleframes of the hook at frame 30, each in a different look: a cream paper one, a dark one, a bright one. Open them in the styleframes panel so I can pick, then save the palette and fonts of the one I pick in src/lib/brand.ts.
 ```
 
-Pick one, and from now on every scene imports the brand file. Or start from a [taste](/docs/tips/matching/).
+Or start from a [taste](/docs/tips/matching/).
 
 ## 4. Build the hook and look at it
 
@@ -35,15 +33,13 @@ Pick one, and from now on every scene imports the brand file. Or start from a [t
 /kinetograph-markup Build scene 1, 0:00 to 0:04, from the storyboard. The words "Notes that find you" write on over 20 frames. Show a strip of the scene and run lint.
 ```
 
-The first seconds decide whether anyone stays. Get them right before you spend time on the rest.
+The first seconds decide whether anyone stays. Get them right before the rest.
 
 ## 5. Build the rest
 
 ```txt title="Suggested prompt"
 /kinetograph-markup Build scenes 2 to 5 from the storyboard in the same way, joined with the transitions it names. Keep the total at 30 seconds. Show a strip of the whole film and run lint and doctor.
 ```
-
-If `doctor` lists something the engine can't draw, fix it now: it will be drawn without otherwise.
 
 ## 6. Voice and captions
 
@@ -67,13 +63,11 @@ Do this last. Effects hide problems that the earlier checks would have shown.
 
 ## 9. Review in Studio
 
-Press `M`, mark what is wrong with pins, boxes and spans, and send the notes.
+Press `M`, mark what is wrong, and send the notes.
 
 ```txt title="Suggested prompt"
 /kinetograph-studio Fix my markup notes in order, then list what you did and what you skipped.
 ```
-
-Then lock the frames you approve: ask for `snapshot --update` at a handful of frames, so the next change shows what it moved.
 
 ## 10. Check and render
 
@@ -81,8 +75,4 @@ Then lock the frames you approve: ask for `snapshot --update` at a handful of fr
 /kinetograph-render Run doctor on the whole film, then render a half-size draft with --strict and show me the strip. If it is clean, render the full video to out/renders/fieldnote.mp4, run audio analyze on it and report the loudness and the true peak.
 ```
 
-A draft is for timing, and `--strict` fails on the first frame the engine can't draw. Render the full version only after both are clean.
-
-## What to carry over
-
-Keep brand and taste in files, give every prompt a time or a frame, check after each stage, and change one thing per message. See [Ask for a great video](/docs/tips/).
+See [Ask for a great video](/docs/tips/) for what to carry over.

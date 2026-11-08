@@ -17,15 +17,9 @@ Install the [Kinetograph skills](/docs/agents/skills/) and connect the MCP serve
 | `/kinetograph-studio` | Working with you in [Studio](/docs/studio/) |
 | `/kinetograph-taste-clone` | Working from a reference video. See [Match a reference](/docs/agents/taste/) |
 
-## Describe it, or hand it something
+## Hand it material
 
-Write the video in words, or give the agent material to work from: a script, a product page you pasted in, logos and photos. Put files in `public/` and name them by path. A Remotion project reads local files only, so a link to a picture is not enough. In [Studio's chat](/docs/agents/studio-agent/) you can also drop an image onto the agent. Studio saves it in `public/refs/` and tells the agent the path.
-
-## Plan first, or build now
-
-- **Build now.** Fine for a title card or a small change.
-- **Let it ask.** Add "ask me what you need before you start". The agent comes back with a few questions.
-- **Plan in Studio.** For a longer piece, ask the agent to open Studio's brief, script and storyboard panels and wait for your answers. See [Panels](/docs/studio/panels/) and [Storyboards](/docs/tips/storyboards/).
+Give the agent a script, a product page you pasted in, logos and photos. Put files in `public/` and name them by path, because a link to a picture is not enough. In [Studio's chat](/docs/agents/studio-agent/) you can drop an image onto the agent. For a longer piece, ask it to open Studio's brief, script and storyboard panels first: see [Panels](/docs/studio/panels/) and [Storyboards](/docs/tips/storyboards/).
 
 ## The shape of a strong prompt
 
@@ -36,8 +30,6 @@ Five parts cover most of it. Leave out any that don't matter to you.
 - **Exact copy in quotes.** Put every word that appears on screen in quotation marks. Unquoted copy gets paraphrased.
 - **The look.** Colours as hex values, fonts by name, one word for the mood ("calm", "loud"), and a [taste](/docs/tips/matching/) or [template](/docs/tips/brand-templates/) if you have one.
 - **Negatives.** What not to do: "no zoom on the title", "no stock music", "nothing bounces".
-
-Inside a beat, say what is on screen, how it moves, where it sits and when it arrives.
 
 ```txt title="Suggested prompt"
 /kinetograph-markup A 20 second vertical video, 1080 by 1920 at 30 fps, for a note-taking app.
@@ -51,25 +43,11 @@ Colours: background #f6f0e4, text #1d1a16, accent #e0553a. Font: Newsreader. Cal
 No bouncing, no shadows on text. Show me a strip before you render.
 ```
 
-## How much to specify
-
-- **Mood words.** "Warm and slow". The agent chooses everything else. Good for a first look.
-- **Named parts.** Hex colours, fonts, "ease out over 12 frames", "a 15 frame slide". Pin what must be exact: copy, brand colours, fonts and timings.
-- **A full spec.** Positions in pixels, every duration, the order of effects. Use it to match a layout you already have, and expect to spend time writing it.
-
-The more you pin, the less the agent can improve. Pin only what you would notice if it were different.
+Pin only what you would notice if it were different: copy, brand colours, fonts and timings. The more you pin, the less the agent can improve.
 
 ## Check what you get
 
-The agent can't watch a video, so ask it to look at frames. Add "show me a strip" to a prompt.
-
-- `strip` is a contact sheet of 12 labelled frames. It shows timing and layout at once.
-- `still` draws one frame, `onion` blends a range to show a motion path.
-- `lint` finds text running out of its box or off the canvas, missing fonts and missing files.
-- `doctor` lists what the engine can't draw, and in which frames, before a long render.
-- `render --draft` draws at half size for a quick look.
-
-See the [CLI reference](/docs/reference/cli/).
+The agent can't watch a video, so add "show me a strip" to a prompt. A strip is a contact sheet of 12 labelled frames that shows timing and layout at once. Ask for `lint` to find overflowing text and missing files, and `doctor` before a long render to list what the engine can't draw. See the [CLI reference](/docs/reference/cli/).
 
 ## Iterate toward the look
 
@@ -80,19 +58,6 @@ Change one thing per message. Two changes at once and you can't tell which one h
 - Say what stays: "keep the colours, change the order".
 
 In Studio, press `M` and drop a pin or a box on the preview, or drag across the timeline to mark a span of time, and write the note beside it. The agent gets the frame, the coordinates and the layers under your mark. See [Studio's markup](/docs/studio/#mark-up-the-preview).
-
-## Common mistakes
-
-| Mistake | Instead |
-|---|---|
-| "Make it pop" | Name the change: a glow, a faster ease, a bigger headline |
-| Copy written as a description | Put the exact words in quotes |
-| A link to a logo or photo | Put the file in `public/` and give its path |
-| A font name with no file | Name a Google Fonts family or put the file in `public/fonts/` |
-| No length or size | State seconds, width, height and fps |
-| Five changes in one message | One change, then look |
-| Asking for Three.js or a browser API | Ask for what you want to see. For 3D, see [Colour, effects and 3D](/docs/tips/colour-effects-3d/) |
-| Rendering before checking | Ask for a strip first, and `doctor` before a long render |
 
 ## More
 
