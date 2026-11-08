@@ -89,12 +89,36 @@ npx kinetograph render index.html --strict
 
 ### Fixing findings
 
-- **Tooling imports** (`player`, `renderer`, `bundler`, `lambda`): remove them and use the CLI.
-  - `remotion render` becomes `kinetograph render <entry> --comp <id>`.
-  - `remotion studio` becomes `kinetograph studio <entry>`.
-- **`@remotion/three`**: rebuild the scene with `Scene3D`, `Camera3D`, lights, `Mesh` and `Model`. Rotations are in degrees. See [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph-markup/references/AUTHORING.md), section 6.6.
-- **`IFrame`**: rebuild the page as components, or use a screenshot.
+- **Tooling imports** (`player`, `renderer`, `bundler`, `lambda`, `cli`): delete them and use the CLI. See the table below.
+- **`@remotion/three`**: rebuild the scene with the 3D layer. See [Move from @remotion/three](/docs/migrating/three/).
+- **`IFrame`**: a web page needs a browser, so it is not drawn. Rebuild a page you own as components. For a third-party page, a map or an embed, use a screenshot saved to `public/` and drawn with `<Img>`, or a labelled box. Say that it is now a still picture.
+- **`@remotion/webcodecs` and `@remotion/media-parser`**: `parseMedia` works on local files, and `convertMedia` writes a file's sound to WAV. Encoding, decoding and `extractFrames` throw `UnsupportedApiError`. Play clips with `<Video>` and `<Audio>`, and prepare frames ahead of time with ffmpeg.
+- **`@remotion/rive` and `@remotion/skia`**: Rive plays, with the state machine set through `stateMachineInputs`. Skia needs `npm install @kinetographdev/skia`, draws on the CPU, and animates from `useCurrentFrame()`, not clock animations such as `withTiming`.
+- **Fonts**: text in a font that is not registered can be drawn as nothing. A `fontFamily` that names only system fonts is the usual cause. Load one with `@remotion/google-fonts`, `registerFont` or `@font-face`. See [Fonts](/docs/making-videos/fonts/).
 - **A CSS property or element in the report**: change it to one the engine draws, or remove it.
+- **No network**: `fetch` reads project files only. Copy remote assets into `public/` and use `staticFile`.
+
+If `lint` or `check` says there is no declaration file for `react`, add `@types/react` as a dev dependency at the project's React version. It does not stop `render`.
+
+### Commands and tooling
+
+| Remotion | Kinetograph |
+|---|---|
+| `remotion studio <entry>` | `kinetograph studio <entry>` |
+| `remotion render <entry> <id> out.mp4` | `kinetograph render <entry> --comp <id> -o out.mp4` |
+| `remotion still <entry> <id> out.png --frame=45` | `kinetograph still <entry> 45 --comp <id> -o out.png` |
+| `--props='{"a":1}'` | `--props '{"a":1}'`, or the path of a JSON file |
+| `--frames=10-40` | `--range 10..=40` (`10..40` stops at 39) |
+| `--gif-every-nth-frame` | `--every-nth-frame` |
+| `--codec`, `--crf`, `--scale`, `--concurrency` | the same flags |
+| `--browser-executable`, `--gl`, `--public-dir` | not needed: there is no browser, and `staticFile` reads `public/` next to the entry |
+| `remotion.config.ts` | put the options on the `render` command, in your `package.json` scripts |
+| `@remotion/renderer` `renderMedia` | run `kinetograph render --comp --props`, or `--json` and parse the result |
+| `@remotion/bundler`, `@remotion/tailwind` | nothing: `render` bundles the entry and builds Tailwind itself |
+| `@remotion/lambda`, `@remotion/cloudrun` | no cloud renderer: run `render` on a machine with a GPU |
+| `@remotion/player` | no embeddable player; [Studio](/docs/studio/) is the preview |
+
+Keep `remotion` and the video's `@remotion/*` packages if your type checking needs their types. Add `kinetograph` as a dev dependency, and remove the tooling packages once nothing imports them. A page that embeds `<Player>` is not part of the video: leave it, and it keeps using Remotion's player.
 
 Nothing in this path starts a browser. If something can't be ported, leave it out or approximate it. See [What works](/docs/compat/) for how warnings work.
 

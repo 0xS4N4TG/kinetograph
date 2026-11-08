@@ -1,0 +1,58 @@
+---
+title: Move from @remotion/three
+description: Rebuild a three.js or React Three Fiber scene with Kinetograph's own 3D layer.
+---
+
+Kinetograph has no `@remotion/three`, `three` or `@react-three/fiber`. A `<ThreeCanvas>` import stops the build with `"@remotion/three" is not supported by Kinetograph yet`. Rebuild the scene with the 3D layer from `@kinetographdev/core`. The GPU compositor draws it with the rest of the frame, so it needs no WebGL. See [3D scenes](/docs/making-videos/transforms/#3d-scenes).
+
+## Mapping
+
+| three.js or react-three-fiber | Kinetograph |
+|---|---|
+| `<ThreeCanvas width height>` | `<Scene3D width height>`, a layer that takes `x`, `y`, `effects`, `opacity` |
+| `<PerspectiveCamera fov position>` | `<Camera3D fov position target>`; `type="orthographic"` with `height` |
+| `<ambientLight>`, `<pointLight>` | `<AmbientLight intensity>`, `<PointLight position intensity range>` |
+| `<directionalLight position>` | `<DirectionalLight direction castShadow>`; it takes a direction, so use `target - position` |
+| `<mesh><boxGeometry/><meshStandardMaterial/></mesh>` | `<Mesh geometry={{ kind: 'box' }} material={{ color, roughness, metallic }} />`; kinds are `box`, `sphere`, `plane`, `cylinder`, `torus` |
+| `useGLTF`, `GLTFLoader` | `<Model src={staticFile('a.glb')} />`; `animation` and `time` pose a clip |
+| `<group>` | `<Group3D>` |
+| drei `<Text>`, `TextGeometry` | `<Text3D font size depth>`; register the font first |
+| `ExtrudeGeometry` from an SVG path | `<Extrude path size depth>` |
+| `<Environment files>` | the `environment` prop of `<Scene3D>`: an equirectangular `.hdr`, `.png` or `.jpg` |
+| `useFrame`, `useThree` | not needed: compute from `useCurrentFrame()` and pass plain props |
+
+Three rules change the numbers. Rotation is in **degrees**, so multiply radians by `180 / Math.PI`. `metalness` is `metallic`. Geometry sizes are plain numbers (`width`, `height`, `depth`), and you animate `scale` instead. 3D elements must sit inside `<Scene3D>`.
+
+## Example
+
+```tsx
+import { useCurrentFrame, useVideoConfig } from 'remotion';
+import { AmbientLight, Camera3D, DirectionalLight, Mesh, Scene3D } from '@kinetographdev/core';
+
+export const Spin = () => {
+  const frame = useCurrentFrame();
+  const { width, height } = useVideoConfig();
+  return (
+    <Scene3D width={width} height={height}>
+      <Camera3D fov={40} position={[0, 0, 5]} target={[0, 0, 0]} />
+      <AmbientLight intensity={0.4} />
+      <DirectionalLight direction={[-3, -4, -5]} intensity={1.5} />
+      <Mesh
+        geometry={{ kind: 'box', width: 1.5, height: 1.5, depth: 1.5 }}
+        rotation={[0.4 * (180 / Math.PI), frame * 0.05 * (180 / Math.PI), 0]}
+        material={{ color: '#e66', roughness: 0.5 }}
+      />
+    </Scene3D>
+  );
+};
+```
+
+## Lights
+
+A point light falls off with distance squared, and its `intensity` is what a directional light of that intensity gives at distance 1. `range` is a limit, and 0 means none. three.js falls off the same way, so `intensity={60}` at about 7 units is a fair start. Directional and ambient values of about 0.4 to 2 carry over. Tune from a `still`, and expect the lighting to be approximate.
+
+## What has no equivalent
+
+Custom shaders (`shaderMaterial`, `extend`), `@react-three/postprocessing` and physics have no match. Approximate them with materials and the `effects` list on the `<Scene3D>` (`glow`, `blur`, `grain`, `chromaticAberration`), or leave them out. Run `doctor`: a model that uses a glTF feature the layer does not read is listed with the feature's name. See [What works](/docs/compat/#3d).
+
+If the picture is the wrong size, back to front or dark, check the camera, the scale and the light direction with `inspect --frame N`.
