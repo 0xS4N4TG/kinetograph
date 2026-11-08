@@ -368,3 +368,23 @@
 .dark pre span[style*='--shiki-dark:#6A737D'] {
   --shiki-dark: #8b949e !important;
 }
+
+/* Docs file trees (components/docs/mdx.tsx): branches recede, folders read as the structure, trailing notes are muted.
+   A line height near the font's own keeps the vertical bars joined from row to row. */
+.kg-tree code {
+  line-height: 1.34;
+}
+/* Fumadocs colours code spans from --shiki-light and --shiki-dark, so set those, not color. */
+.kg-tree-branch {
+  --shiki-light: color-mix(in oklab, var(--color-fd-muted-foreground) 55%, transparent);
+  --shiki-dark: color-mix(in oklab, var(--color-fd-muted-foreground) 55%, transparent);
+}
+.kg-tree-folder {
+  --shiki-light: var(--color-fd-primary);
+  --shiki-dark: var(--color-fd-primary);
+  font-weight: 600;
+}
+.kg-tree-note {
+  --shiki-light: var(--color-fd-muted-foreground);
+  --shiki-dark: var(--color-fd-muted-foreground);
+}
