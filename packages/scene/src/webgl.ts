@@ -394,6 +394,12 @@ const FLOAT_FORMATS: Record<number, { channels: number; format: number; bits: 16
   [GL2.RGBA16F]: { channels: 4, format: GL.RGBA, bits: 16 },
 };
 
+/** `MAX_VERTEX_ATTRIBS`. */
+const MAX_VERTEX_ATTRIBS = 16;
+
+/** What a disabled attribute array reads until `vertexAttrib*` sets it. */
+const DEFAULT_ATTRIBUTE: readonly [number, number, number, number] = [0, 0, 0, 1];
+
 /** `MAX_3D_TEXTURE_SIZE`: the longest side of a 3D texture. */
 const MAX_3D_TEXTURE_SIZE = 2048;
 
@@ -542,12 +548,10 @@ interface VertexAttribute {
   stride: number;
   offset: number;
   divisor: number;
-  /** `vertexAttrib4f`'s value, used while the array is disabled. */
-  constant: [number, number, number, number] | null;
 }
 
 function newAttribute(): VertexAttribute {
-  return { enabled: false, buffer: null, size: 4, type: GL.FLOAT, normalized: false, stride: 0, offset: 0, divisor: 0, constant: null };
+  return { enabled: false, buffer: null, size: 4, type: GL.FLOAT, normalized: false, stride: 0, offset: 0, divisor: 0 };
 }
 
 interface Declaration {
@@ -898,6 +902,8 @@ export class WebGLContext {
   private program: WebGLProgram | null = null;
   private arrayBuffer: WebGLBuffer | null = null;
   private defaultVao = new WebGLVertexArrayObject();
+  /** What `vertexAttrib*` set: the value each disabled attribute array reads (a context's, not a vertex array object's). */
+  private readonly currentAttributes: [number, number, number, number][] = [];
   private vao: WebGLVertexArrayObject = this.defaultVao;
   /** What draws and clears go to, and what `readPixels` and blits would read (WebGL 2); null is the canvas. */
   private drawFramebuffer: WebGLFramebuffer | null = null;
@@ -1057,7 +1063,7 @@ export class WebGLContext {
       case GL.MAX_VIEWPORT_DIMS:
         return new Int32Array([8192, 8192]);
       case GL.MAX_VERTEX_ATTRIBS:
-        return 16;
+        return MAX_VERTEX_ATTRIBS;
       case GL.MAX_VERTEX_UNIFORM_VECTORS:
       case GL.MAX_FRAGMENT_UNIFORM_VECTORS:
         return 256;
@@ -1927,7 +1933,7 @@ export class WebGLContext {
     this.vao = vao ?? this.defaultVao;
   }
   private attribute(index: number): VertexAttribute | null {
-    if (!(index >= 0 && index < 16)) {
+    if (!(index >= 0 && index < MAX_VERTEX_ATTRIBS)) {
       this.fail(GL.INVALID_VALUE);
       return null;
     }
@@ -1964,9 +1970,39 @@ export class WebGLContext {
   vertexAttrib3f(index: number, x: number, y: number, z: number): void {
     this.vertexAttrib4f(index, x, y, z, 1);
   }
+  /** The value a disabled array reads: context state, not part of a vertex array object. */
   vertexAttrib4f(index: number, x: number, y: number, z: number, w: number): void {
-    const a = this.attribute(index);
-    if (a) a.constant = [x, y, z, w];
+    if (!(index >= 0 && index < MAX_VERTEX_ATTRIBS)) return this.fail(GL.INVALID_VALUE);
+    this.currentAttributes[index] = [Number(x), Number(y), Number(z), Number(w)];
+  }
+  vertexAttrib1fv(index: number, values: ArrayLike<number>): void {
+    this.vertexAttribv(index, values, 1);
+  }
+  vertexAttrib2fv(index: number, values: ArrayLike<number>): void {
+    this.vertexAttribv(index, values, 2);
+  }
+  vertexAttrib3fv(index: number, values: ArrayLike<number>): void {
+    this.vertexAttribv(index, values, 3);
+  }
+  vertexAttrib4fv(index: number, values: ArrayLike<number>): void {
+    this.vertexAttribv(index, values, 4);
+  }
+  private vertexAttribv(index: number, values: ArrayLike<number>, count: number): void {
+    if (values === null || values === undefined || values.length < count) return this.fail(GL.INVALID_VALUE);
+    const [x = 0, y = 0, z = 0, w = 1] = Array.from({ length: count }, (_, i) => values[i]!);
+    this.vertexAttrib4f(index, x, count > 1 ? y : 0, count > 2 ? z : 0, count > 3 ? w : 1);
+  }
+  vertexAttribI4i(): never {
+    throw new WebGLUnsupportedError('integer attributes (vertexAttribI4i, vertexAttribI4ui and their v forms); use float attributes');
+  }
+  vertexAttribI4iv(): never {
+    return this.vertexAttribI4i();
+  }
+  vertexAttribI4ui(): never {
+    return this.vertexAttribI4i();
+  }
+  vertexAttribI4uiv(): never {
+    return this.vertexAttribI4i();
   }
 
   // ---- textures ----
@@ -2969,10 +3005,13 @@ export class WebGLContext {
     for (const d of program.attributeDeclarations) {
       const at = program.attributes.get(d.name)!;
       const a = this.vao.attributes[at];
-      if (a === undefined || !a.enabled || a.buffer === null) {
-        if (a?.constant) throw new WebGLUnsupportedError(`the attribute "${d.name}" is read as a constant (vertexAttrib4f); give it a buffer`);
+      if (a === undefined || !a.enabled) {
+        // A disabled array reads the current value; the renderer reads it only for the attributes the shader keeps.
+        const value = this.currentAttributes[at] ?? DEFAULT_ATTRIBUTE;
+        draw.attributes[d.name] = { buffer: `constant:${value.join(',')}`, size: 4, type: 'f32', constant: [...value] };
         continue;
       }
+      if (a.buffer === null) continue;
       if (a.divisor > 1) throw new WebGLUnsupportedError(`vertexAttribDivisor(${a.divisor}, ...) of the attribute "${d.name}"; use 0 or 1`);
       if (a.divisor === 1 && named === 'points') throw new WebGLUnsupportedError('instanced attributes of points');
       const type = ({ [GL.FLOAT]: 'f32', [GL.UNSIGNED_BYTE]: 'u8', [GL.BYTE]: 'i8', [GL.UNSIGNED_SHORT]: 'u16', [GL.SHORT]: 'i16' } as Record<number, GlslDraw['attributes'][string]['type']>)[a.type];

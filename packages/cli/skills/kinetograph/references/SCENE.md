@@ -525,7 +525,7 @@ A `draw` carries `program`, `mode` (`points`, `triangles`, `triangleStrip`, `tri
 `instances` (default 1), `indices`
 (`drawElements`: `buffer`, `type` `u8`, `u16` or `u32`, byte `offset`), `attributes` by the shader's names (`buffer`,
 `size`, `type` `f32`, or `u8`, `i8`, `u16`, `i16` with `normalized`, byte `stride` and `offset`, and `divisor` 1 for an
-attribute that advances for each instance), `uniforms` by name
+attribute that advances for each instance; a disabled array is `constant`, its four values, for every vertex: `vertexAttrib*`, default 0, 0, 0, 1, with `buffer` only a name and `size` 4), `uniforms` by name
 (a list of calls: `kind` `f`, `i` or `m` for column-major matrices, `value`, and `index` for an element of an array),
 `units` (the texture units by number, each with its `texture` and the `min`, `mag`, `wrapS` and `wrapT` it was set
 to, as the GL names), `viewport`, `scissor` (both with y up from the bottom row, as GL's), `blend` (the factors,
@@ -584,8 +584,8 @@ volume is not drawn, and culling does not apply. `gl_VertexID` is the vertex's n
 point's number in a draw of points; `gl_InstanceID` the instance's. Instanced points are not drawn.
 
 Not drawn, and reported as `unsupported:` with what to do instead (never accepted and ignored):
-multisampled renderbuffers, `readPixels`, lines, instanced points, a `vertexAttribDivisor` above 1, integer and
-constant (`vertexAttrib`) attributes, mipmaps of 3D and array textures, cube map levels above 0 with pixels (call `generateMipmap`), `texSubImage2D` into a cube face, float or depth cube faces, sRGB textures, float textures from a picture, a float texture as a render target or a `texSubImage2D` target, pixels uploaded to
+multisampled renderbuffers, `readPixels`, lines, instanced points, a `vertexAttribDivisor` above 1, integer attributes
+(`vertexAttribIPointer`, `vertexAttribI4i`), mipmaps of 3D and array textures, cube map levels above 0 with pixels (call `generateMipmap`), `texSubImage2D` into a cube face, float or depth cube faces, sRGB textures, float textures from a picture, a float texture as a render target or a `texSubImage2D` target, pixels uploaded to
 texture levels other than 0 (call `generateMipmap`), uniform blocks and struct uniforms, array outputs, a framebuffer
 texture that is not RGBA or holds uploaded pixels, attachments of different sizes in one framebuffer, `drawImage` or `toDataURL` of a WebGL canvas. With `antialias: true` (the default) the canvas is
 4x multisampled, so the edges of what is drawn into it are smooth as in Chrome (a framebuffer of your own is not

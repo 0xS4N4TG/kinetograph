@@ -2133,3 +2133,82 @@ fn an_array_uniform_sized_by_a_macro_that_depends_on_a_condition_fails_when_the_
     };
     assert!(message.contains("macro defined as one"), "{message}");
 }
+
+// ---- constant attributes (vertexAttrib*) ----
+
+/// A draw of the quad whose vertex shader reads a second attribute, `a_color`, given as `extra` in the attributes.
+fn draw_with_color(extra: &str, first_and_count: (u32, u32)) -> String {
+    format!(
+        r#"{{"op": "draw", "program": "p", "mode": "triangles", "first": {}, "count": {},
+            "attributes": {{"a_pos": {{"buffer": "quad", "size": 2, "type": "f32"}}, "a_color": {extra}}},
+            "viewport": [0, 0, 16, 16]}}"#,
+        first_and_count.0, first_and_count.1
+    )
+}
+
+const COLOR_VERTEX: &str = "#version 300 es\nin vec2 a_pos; in vec3 a_color; out vec3 v_c; \
+    void main() { v_c = a_color; gl_Position = vec4(a_pos, 0.0, 1.0); }";
+const COLOR_FRAGMENT: &str =
+    "#version 300 es\nprecision highp float; in vec3 v_c; out vec4 o; void main() { o = vec4(v_c, 1.0); }";
+
+#[test]
+fn a_disabled_attribute_reads_its_current_value_for_every_vertex() {
+    let constant = r#"{"buffer": "constant:1,0.5,0,1", "size": 4, "type": "f32", "constant": [1, 0.5, 0, 1]}"#;
+    let frame = render(&layer_with_vertex(
+        COLOR_VERTEX,
+        &[("p", COLOR_FRAGMENT)],
+        "",
+        "",
+        &draw_with_color(constant, (0, 6)),
+    ));
+    near(px(&frame, 3, 3), [255, 128, 0, 255], 2);
+    near(px(&frame, 12, 12), [255, 128, 0, 255], 2);
+}
+
+#[test]
+fn a_constant_attribute_follows_the_draws_first_vertex_and_the_default_is_0_0_0_1() {
+    // Only vertices 3 to 5 are drawn (the second triangle): a constant has as many copies as the draw reaches.
+    let constant = r#"{"buffer": "constant:0,0,0,1", "size": 4, "type": "f32", "constant": [0, 0, 0, 1]}"#;
+    let frame = render(&layer_with_vertex(
+        COLOR_VERTEX,
+        &[("p", COLOR_FRAGMENT)],
+        "",
+        "",
+        &draw_with_color(constant, (3, 3)),
+    ));
+    assert_eq!(px(&frame, 12, 12), [0, 0, 0, 255]);
+}
+
+#[test]
+fn two_draws_with_one_constant_and_different_lengths_both_draw() {
+    let constant = r#"{"buffer": "constant:0,1,0,1", "size": 4, "type": "f32", "constant": [0, 1, 0, 1]}"#;
+    let all = ops(&[draw_with_color(constant, (0, 3)), draw_with_color(constant, (0, 6))]);
+    let frame = render(&layer_with_vertex(COLOR_VERTEX, &[("p", COLOR_FRAGMENT)], "", "", &all));
+    assert_eq!(px(&frame, 12, 12), [0, 255, 0, 255]);
+    assert_eq!(px(&frame, 3, 3), [0, 255, 0, 255]);
+}
+
+#[test]
+fn a_constant_attribute_that_is_not_four_floats_is_refused() {
+    let constant = r#"{"buffer": "constant:1,1,1,1", "size": 3, "type": "f32", "constant": [1, 1, 1, 1]}"#;
+    let e = render_error(&layer_with_vertex(
+        COLOR_VERTEX,
+        &[("p", COLOR_FRAGMENT)],
+        "",
+        "",
+        &draw_with_color(constant, (0, 6)),
+    ));
+    assert!(e.contains("constant attribute"), "{e}");
+}
+
+#[test]
+fn an_attribute_with_nothing_given_says_so() {
+    let e = render_error(&layer_with_vertex(
+        COLOR_VERTEX,
+        &[("p", COLOR_FRAGMENT)],
+        "",
+        "",
+        &draw("").replace(r#""attributes": {"a_pos""#, r#""attributes": {"unused""#),
+    ));
+    assert!(e.contains("no data"), "{e}");
+}

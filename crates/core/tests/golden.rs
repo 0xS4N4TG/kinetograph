@@ -241,6 +241,14 @@ fn glsl_array_texture_matches_golden() {
 }
 
 #[test]
+fn glsl_constant_attribute_matches_golden() {
+    // An indexed quad drawn four times with the vertex colour and offset set by vertexAttrib3fv and vertexAttrib2fv
+    // between draws (the arrays are disabled), the last with vertexAttrib4f.
+    let frame = render_still(scene("tests/scenes/glsl-constant-attribute.json"), 0).unwrap();
+    check("glsl-constant-attribute", &frame);
+}
+
+#[test]
 fn scene3d_animation_matches_golden() {
     // Frame 15 of 30, half a second into every clip: a cube turning, moving
     // and growing (with a second cube on a spline), a quad whose top corners

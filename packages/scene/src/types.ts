@@ -890,6 +890,11 @@ export interface GlslAttribute {
   offset?: number;
   /** `vertexAttribDivisor`: 1 advances for each instance (default 0, for each vertex). */
   divisor?: number;
+  /**
+   * The attribute's array is disabled: it reads the current value (`vertexAttrib4f` and the like, default 0, 0, 0, 1)
+   * for every vertex. `buffer` then only names the value (it is not in `buffers`), and `size` is 4 of `f32`.
+   */
+  constant?: [number, number, number, number];
 }
 
 export interface GlslUniform {

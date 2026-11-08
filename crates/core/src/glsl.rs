@@ -426,6 +426,9 @@ pub struct GlslAttribute {
     /// `vertexAttribDivisor`: 0 advances for each vertex, 1 for each instance.
     #[serde(default)]
     pub divisor: u32,
+    /// The attribute's array is disabled and it reads the current value (`vertexAttrib4f` and the like), the same for
+    /// every vertex. `buffer` then only names the value (no entry of `buffers`), and `size` is 4 of `f32`.
+    pub constant: Option<[f32; 4]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]

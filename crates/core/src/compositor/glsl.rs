@@ -1205,8 +1205,8 @@ impl Compositor {
         for (name, location, components) in &vertex.attributes {
             let a = draw.attributes.get(name).ok_or_else(|| {
                 render_error(format!(
-                    "unsupported: the attribute `{name}` has no data: it is read as a constant by \
-                     WebGL, and only attributes with a buffer are drawn"
+                    "the attribute `{name}` has no data (an enabled array with no buffer, which WebGL \
+                     refuses with INVALID_OPERATION)"
                 ))
             })?;
             if a.divisor > 1 {
@@ -1236,6 +1236,21 @@ impl Compositor {
                 return Err(render_error(format!(
                     "the attribute `{name}` is wider than its stride"
                 )));
+            }
+            if let Some(value) = a.constant {
+                // The same value for every vertex: held as one copy for each vertex the draw reads.
+                if a.size != 4 || a.ty != GlslType::F32 {
+                    return Err(render_error(format!(
+                        "the constant attribute `{name}` is not 4 values of f32"
+                    )));
+                }
+                let copies: Vec<u8> = value.iter().flat_map(|c| c.to_le_bytes()).collect();
+                let held = buffers
+                    .entry(a.buffer.as_str())
+                    .or_insert_with(|| (Vec::new(), None));
+                if (held.0.len() as u64) < last * element {
+                    *held = (copies.repeat(last as usize), None);
+                }
             }
             let bytes = glsl_buffer(content, &a.buffer, buffers)?.len() as u64;
             let reads = if per_instance {

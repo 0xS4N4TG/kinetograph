@@ -1307,6 +1307,86 @@ describe('the recording WebGL context', () => {
     });
   });
 
+  describe('constant attributes', () => {
+    const VERTEX_COLOR = 'attribute vec2 p; attribute vec3 color; varying vec3 c; void main() { c = color; gl_Position = vec4(p, 0.0, 1.0); }';
+    const FRAGMENT_COLOR = 'precision mediump float; varying vec3 c; void main() { gl_FragColor = vec4(c, 1.0); }';
+
+    function colorContext() {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }) });
+      const program = gl.createProgram();
+      for (const [type, source] of [[GL.VERTEX_SHADER, VERTEX_COLOR], [GL.FRAGMENT_SHADER, FRAGMENT_COLOR]] as const) {
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source);
+        gl.attachShader(program, shader);
+      }
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(GL.ARRAY_BUFFER, buffer);
+      gl.bufferData(GL.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1]), GL.STATIC_DRAW);
+      const at = gl.getAttribLocation(program, 'p');
+      gl.enableVertexAttribArray(at);
+      gl.vertexAttribPointer(at, 2, GL.FLOAT, false, 0, 0);
+      return { gl, color: gl.getAttribLocation(program, 'color') };
+    }
+
+    function color(gl: WebGLContext, index = 0) {
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const op = gl.content().ops[index]!;
+      if (op.op !== 'draw') throw new Error('not a draw');
+      return op.attributes.color;
+    }
+
+    it('records a disabled array as the current value, default 0, 0, 0, 1', () => {
+      const { gl } = colorContext();
+      expect(color(gl)).toEqual({ buffer: 'constant:0,0,0,1', size: 4, type: 'f32', constant: [0, 0, 0, 1] });
+    });
+
+    it('takes vertexAttrib1f to 4f and 1fv to 4fv, with the missing components 0, 0, 1', () => {
+      const { gl, color: at } = colorContext();
+      gl.vertexAttrib1f(at, 0.5);
+      expect(color(gl)?.constant).toEqual([0.5, 0, 0, 1]);
+      gl.vertexAttrib2fv(at, [0.25, 0.75]);
+      expect(color(gl, 1)?.constant).toEqual([0.25, 0.75, 0, 1]);
+      gl.vertexAttrib3fv(at, new Float32Array([1, 2, 3]));
+      expect(color(gl, 2)?.constant).toEqual([1, 2, 3, 1]);
+      gl.vertexAttrib4fv(at, [4, 5, 6, 7]);
+      expect(color(gl, 3)?.constant).toEqual([4, 5, 6, 7]);
+      gl.vertexAttrib3f(at, 0.1, 0.2, 0.3);
+      expect(color(gl, 4)?.constant?.map((v) => Math.round(v * 10))).toEqual([1, 2, 3, 10]);
+    });
+
+    it('is context state, kept across vertex array objects', () => {
+      const { gl, color: at } = colorContext();
+      const other = gl.createVertexArray();
+      gl.bindVertexArray(other);
+      gl.vertexAttrib3f(at, 1, 2, 3);
+      gl.bindVertexArray(null);
+      expect(color(gl)?.constant).toEqual([1, 2, 3, 1]);
+    });
+
+    it('stops reading the value once the array is enabled with a buffer', () => {
+      const { gl, color: at } = colorContext();
+      gl.vertexAttrib3fv(at, [1, 0, 0]);
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(GL.ARRAY_BUFFER, buffer);
+      gl.bufferData(GL.ARRAY_BUFFER, new Float32Array(9), GL.STATIC_DRAW);
+      gl.enableVertexAttribArray(at);
+      gl.vertexAttribPointer(at, 3, GL.FLOAT, false, 0, 0);
+      expect(color(gl)?.constant).toBeUndefined();
+    });
+
+    it('checks the index and the length as WebGL does, and refuses the integer forms', () => {
+      const { gl } = colorContext();
+      gl.vertexAttrib4f(16, 0, 0, 0, 0);
+      expect(gl.getError()).toBe(GL.INVALID_VALUE);
+      gl.vertexAttrib3fv(0, [1, 2]);
+      expect(gl.getError()).toBe(GL.INVALID_VALUE);
+      expect(() => gl.vertexAttribI4i()).toThrow(/^unsupported:.*integer attributes/);
+    });
+  });
+
   describe('a clear with the scissor test on', () => {
     function drawOf(gl: WebGLContext, index = 0) {
       const op = gl.content().ops[index]!;
