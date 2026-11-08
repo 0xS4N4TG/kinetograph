@@ -1,15 +1,13 @@
 ---
 title: First video
-description: Write a two-second title card, look at its frames, and render it to an MP4.
+description: Make a two-second title card with npx kinetograph init, look at its frames, and render it to an MP4.
 ---
 
-This page makes a two-second title card. Install Kinetograph first: see [Installation](/docs/getting-started/installation/).
+Run `npx kinetograph init` and `npm install` in an empty folder, then `npx kinetograph render`. You get `out/renders/Main.mp4`, a two-second title card. Install Kinetograph first: see [Installation](/docs/getting-started/installation/).
 
-You can write the video as a Remotion-style TSX project or as an HTML page in the [HyperFrames](https://github.com/heygen-com/hyperframes) style. The steps are the same. Pick a tab where the two differ.
+You can write the video as a Remotion-style TSX project or as an HTML page in the [HyperFrames](https://github.com/heygen-com/hyperframes) style. Pick a tab where the two differ.
 
-## Write the project
-
-Make an empty folder and run `init` in it, then install:
+## Make the project
 
 <Tabs items={['Remotion', 'HyperFrames']}>
   <Tab value="Remotion">
@@ -21,7 +19,7 @@ npm install
 
 `init` writes a starter title card. The scene is in `src/scenes/Title.tsx`:
 
-```tsx
+```tsx title="src/scenes/Title.tsx"
 import { AbsoluteFill, Rect, Text, interpolate, useCurrentFrame } from '@kinetographdev/core';
 import { loadFont } from '@remotion/google-fonts/Inter';
 
@@ -43,7 +41,7 @@ export const Title = () => {
 
 `src/index.tsx` registers it:
 
-```tsx
+```tsx title="src/index.tsx"
 import { Composition, registerRoot } from '@kinetographdev/core';
 import { Title } from './scenes/Title';
 
@@ -64,9 +62,9 @@ npx kinetograph init --html
 npm install
 ```
 
-`init --html` writes this page to `html/index.html`:
+`init --html` writes this page:
 
-```html
+```html title="html/index.html"
 <!doctype html>
 <html>
 <head>
@@ -98,83 +96,13 @@ The first render downloads GSAP from the CDN and pins it in `kinetograph.lock.js
   </Tab>
 </Tabs>
 
-Keep this layout as the project grows:
-
-```text
-src/       TSX code: index.tsx, scenes/, components/, lib/
-html/      HTML pages, for an HTML project
-public/    files for staticFile(): images/, fonts/, audio/, video/
-out/       everything Kinetograph writes: renders/, stills/, sheets/
-```
-
-## Look at the frames
+## Look at it, then render it
 
 <Tabs items={['Remotion', 'HyperFrames']}>
   <Tab value="Remotion">
 
 ```sh
-npx kinetograph compositions src/index.tsx
-npx kinetograph still src/index.tsx 15
-npx kinetograph strip src/index.tsx -n 12
-```
-
-  </Tab>
-  <Tab value="HyperFrames">
-
-```sh
-npx kinetograph still html/index.html 15
-npx kinetograph strip html/index.html -n 12
-```
-
-  </Tab>
-</Tabs>
-
-- `compositions` lists each composition's id, size, frame rate and length.
-- `still` writes one frame as a PNG to `out/stills/`.
-- `strip` writes 12 evenly spaced frames on one sheet to `out/sheets/`, labelled with the frame and the time.
-
-## Check the project
-
-```sh
-npx kinetograph inspect src/index.tsx --frame 30
-npx kinetograph lint src/index.tsx
-npx kinetograph check src/index.tsx
-```
-
-- `inspect` prints each layer at a frame, with its bounds.
-- `lint` reports overflowing text, layers off the canvas, overlapping text and missing fonts. It exits with 1 on errors.
-- `check` finds type errors, such as a misspelled prop. Rendering does not type-check.
-
-These commands take an HTML page as they take a TSX entry.
-
-## Open it in Studio
-
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
-
-```sh
-npx kinetograph studio src/index.tsx
-```
-
-  </Tab>
-  <Tab value="HyperFrames">
-
-```sh
-npx kinetograph studio html/index.html
-```
-
-  </Tab>
-</Tabs>
-
-[Studio](/docs/guides/studio/) plays the project in a browser, with a timeline, a props form and a chat with your coding agent. Press Space to play and Cmd+K (Ctrl+K elsewhere) for every action. Stop it with Ctrl-C.
-
-## Render the video
-
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
-
-```sh
-npx kinetograph render src/index.tsx --draft
+npx kinetograph strip src/index.tsx
 npx kinetograph render src/index.tsx
 ```
 
@@ -182,19 +110,19 @@ npx kinetograph render src/index.tsx
   <Tab value="HyperFrames">
 
 ```sh
-npx kinetograph render html/index.html --draft
+npx kinetograph strip html/index.html
 npx kinetograph render html/index.html
 ```
 
   </Tab>
 </Tabs>
 
-`--draft` renders at half size, for a quick look. Without it the video is 1280 by 720. The video goes to `out/renders/Main.mp4`; pass `-o` to choose another path. The output is H.264 by default, in a `.mp4` or `.mov` file. `render` prints the frame count, the encoder and the time it took. Add `--json` to get one JSON object instead.
+`strip` writes twelve labelled frames on one sheet to `out/sheets/Main-strip.png`. `render` writes `out/renders/Main.mp4`, 1280 by 720, H.264. Add `--draft` for a half-size look first. [Rendering](/docs/rendering/) covers `still`, `lint`, `doctor` and the export options.
+
+To edit with a preview, a timeline and a chat with your coding agent, run `npx kinetograph studio src/index.tsx` (or `html/index.html`). See [Studio](/docs/studio/).
 
 ## Next steps
 
-- [Authoring](/docs/guides/authoring/): the elements, effects and Remotion APIs a project can use.
-- [Scene format](/docs/reference/scene-format/): the JSON scenes the engine draws.
-- [Audio](/docs/guides/audio/): sound files, synthesised sound and loudness checks.
-- [CLI reference](/docs/reference/cli/): every command and option.
-- [Use with agents](/docs/guides/agents/): the agent skill and the MCP server.
+- [Project structure](/docs/getting-started/project-structure/): what `init` made.
+- [Compositions and props](/docs/making-videos/compositions/) and [Layers](/docs/making-videos/layers/): how a project is built.
+- [Use with agents](/docs/agents/): the skill and the MCP server.
