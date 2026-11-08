@@ -140,7 +140,7 @@ export interface ExportOptions {
   x264Preset?: string
   /** Bits per second. */
   videoBitrate?: number
-  /** `yuv420p`, `yuv422p`, `yuv444p`, `yuv420p10le`, `yuv422p10le` or `yuv444p10le`. */
+  /** `yuv420p`, `yuv422p`, `yuv444p`, `yuv420p10le`, `yuv422p10le`, `yuv444p10le`, or with alpha `yuva444p10le` (ProRes 4444) or `yuva420p` (VP9). */
   pixelFormat?: string
   /** `proxy`, `light`, `standard`, `hq`, `4444` or `4444-xq`. */
   proresProfile?: string

@@ -120,7 +120,7 @@ npx kinetograph render <entry> [-o <output.mp4>] [options]
 | `--encoder <name>` | An ffmpeg encoder to use in place of the default: libx264 for H.264 and libx265 for H.265 on every platform. See below. |
 | `--crf <n>` | Constant quality, lower is better. 0 to 51 for h264 and h265, 0 to 63 for vp9. Not with `--video-bitrate`. |
 | `--video-bitrate <rate>` | A bit rate, such as `8M` or `2500k`. Not with `--crf`. |
-| `--pixel-format <name>` | `yuv420p` (default), `yuv422p`, `yuv444p`, `yuv420p10le`, `yuv422p10le` or `yuv444p10le`. |
+| `--pixel-format <name>` | `yuv420p` (default), `yuv422p`, `yuv444p`, `yuv420p10le`, `yuv422p10le` or `yuv444p10le`; `yuva444p10le` (ProRes 4444 and 4444-xq) or `yuva420p` (VP9) keep the alpha channel. |
 | `--prores-profile <name>` | With `--codec prores`: `proxy`, `light`, `standard`, `hq` (default), `4444` or `4444-xq`. |
 | `--audio-codec <name>` | `aac` (default for `.mp4` and `.mov`), `opus` (`.webm`) or `pcm` (`.mov`). |
 | `--audio-bitrate <rate>` | Total audio bit rate, such as `320k`. The default is 96 kbit/s per channel. Not for `pcm`. |

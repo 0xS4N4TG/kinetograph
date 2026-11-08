@@ -15,7 +15,7 @@ export const EXPORT_FLAGS: OptionSpec[] = [
   { name: 'crf', type: 'number', description: 'Constant quality, lower is better (h264, h265 0..51, vp9 0..63); not with --video-bitrate' },
   { name: 'x264-preset', type: 'string', description: 'libx264 and libx265 speed preset: ultrafast, superfast, veryfast (default), faster, fast, medium (as in Remotion), slow, slower, veryslow or placebo' },
   { name: 'video-bitrate', type: 'string', description: 'Video bit rate, e.g. 8M or 2500k; not with --crf' },
-  { name: 'pixel-format', type: 'string', description: 'yuv420p (default), yuv422p, yuv444p, or the 10-bit yuv420p10le, yuv422p10le, yuv444p10le' },
+  { name: 'pixel-format', type: 'string', description: 'yuv420p (default), yuv422p, yuv444p, or the 10-bit yuv420p10le, yuv422p10le, yuv444p10le; yuva444p10le (prores 4444) and yuva420p (vp9) keep alpha' },
   { name: 'prores-profile', type: 'string', description: 'With --codec prores: proxy, light, standard, hq (default), 4444 or 4444-xq' },
   { name: 'audio-codec', type: 'string', description: 'aac (default for .mp4 and .mov), opus (.webm), or pcm (.mov, default for prores)' },
   { name: 'audio-bitrate', type: 'string', description: 'Audio bit rate, e.g. 320k (aac and opus)' },

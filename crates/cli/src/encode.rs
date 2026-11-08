@@ -4,9 +4,9 @@
 //! Frames are converted to the output pixel format (`yuv420p` unless asked
 //! otherwise) by swscale with BT.709 coefficients and the stream is tagged
 //! BT.709, limited ("TV") range. The alpha channel is
-//! dropped, not composited: a scene whose background is transparent shows
-//! its straight colours where it is clear (black, for the empty pixels the
-//! renderer writes). Give the scene an opaque `background` for video.
+//! dropped, not composited, unless an alpha pixel format is asked for (`yuva444p10le` for ProRes 4444, `yuva420p` for
+//! VP9): a scene whose background is transparent shows its straight colours where it is clear (black, for the empty
+//! pixels the renderer writes). Give the scene an opaque `background` for video, or ask for alpha.
 
 use std::ffi::c_int;
 use std::path::Path;
@@ -309,9 +309,10 @@ impl Codec {
     }
 }
 
-/// Pixel formats frames are converted to. The first six are what `--pixel-format` names; `P210` and `P416` are the
-/// semi-planar layouts of `yuv422p10le` and `yuv444p10le` that the VideoToolbox ProRes encoder takes, and `Rgb8` is
-/// the 3-3-2 palette-free format the GIF encoder takes.
+/// Pixel formats frames are converted to. The first six are what `--pixel-format` names, and so are the two with alpha
+/// (`Yuva420p` for VP9, `Yuva444p10` for ProRes 4444); `P210` and `P416` are the semi-planar layouts of `yuv422p10le`
+/// and `yuv444p10le` that the VideoToolbox ProRes encoder takes, and `Rgb8` is the 3-3-2 palette-free format the GIF
+/// encoder takes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pix {
     Yuv420p,
@@ -320,6 +321,10 @@ pub enum Pix {
     Yuv420p10,
     Yuv422p10,
     Yuv444p10,
+    /// 4:2:0 8-bit with a full-size straight-alpha plane after V: VP9 in WebM.
+    Yuva420p,
+    /// 4:4:4 10-bit with a full-size straight-alpha plane after V: ProRes 4444 and 4444 XQ.
+    Yuva444p10,
     P210,
     P416,
     Rgb8,
@@ -335,8 +340,11 @@ impl Pix {
             "yuv420p10le" => Ok(Pix::Yuv420p10),
             "yuv422p10le" => Ok(Pix::Yuv422p10),
             "yuv444p10le" => Ok(Pix::Yuv444p10),
+            "yuva420p" => Ok(Pix::Yuva420p),
+            "yuva444p10le" => Ok(Pix::Yuva444p10),
             _ => Err(format!(
-                "unknown pixel format {name:?}: use yuv420p, yuv422p, yuv444p, yuv420p10le, yuv422p10le or yuv444p10le"
+                "unknown pixel format {name:?}: use yuv420p, yuv422p, yuv444p, yuv420p10le, yuv422p10le, yuv444p10le, \
+                 or with an alpha channel yuva420p (vp9) or yuva444p10le (prores 4444)"
             )),
         }
     }
@@ -359,6 +367,8 @@ impl Pix {
             Pix::Yuv420p10 => "yuv420p10le",
             Pix::Yuv422p10 => "yuv422p10le",
             Pix::Yuv444p10 => "yuv444p10le",
+            Pix::Yuva420p => "yuva420p",
+            Pix::Yuva444p10 => "yuva444p10le",
             Pix::P210 => "p210le",
             Pix::P416 => "p416le",
             Pix::Rgb8 => "rgb8",
@@ -382,6 +392,8 @@ impl Pix {
             Pix::Yuv420p10 => Pixel::YUV420P10LE,
             Pix::Yuv422p10 => Pixel::YUV422P10LE,
             Pix::Yuv444p10 => Pixel::YUV444P10LE,
+            Pix::Yuva420p => Pixel::YUVA420P,
+            Pix::Yuva444p10 => Pixel::YUVA444P10LE,
             Pix::P210 => Pixel::P210LE,
             Pix::P416 => Pixel::P416LE,
             Pix::Rgb8 => Pixel::RGB8,
@@ -390,6 +402,12 @@ impl Pix {
 
     pub(crate) fn is_yuv(self) -> bool {
         self != Pix::Rgb8
+    }
+
+    /// Whether the format carries an alpha plane: the only formats the frames' alpha reaches the file in. Every other
+    /// format drops it (the colour planes are those of the straight RGB, whatever the alpha).
+    pub fn has_alpha(self) -> bool {
+        matches!(self, Pix::Yuva420p | Pix::Yuva444p10)
     }
 
     /// Whether a converter must be made anew for each picture: the dithering that reduces RGB to 3-3-2 carries its
@@ -408,6 +426,8 @@ impl Pix {
             Pix::Yuv420p10 => vec![(2 * w, h), (w, h / 2), (w, h / 2)],
             Pix::Yuv422p10 => vec![(2 * w, h), (w, h), (w, h)],
             Pix::Yuv444p10 => vec![(2 * w, h), (2 * w, h), (2 * w, h)],
+            Pix::Yuva420p => vec![(w, h), (w / 2, h / 2), (w / 2, h / 2), (w, h)],
+            Pix::Yuva444p10 => vec![(2 * w, h), (2 * w, h), (2 * w, h), (2 * w, h)],
             Pix::P210 => vec![(2 * w, h), (2 * w, h)],
             Pix::P416 => vec![(2 * w, h), (4 * w, h)],
             Pix::Rgb8 => vec![(w, h)],
@@ -702,17 +722,43 @@ pub fn resolve(
             match asked {
                 None => ok,
                 Some(p) if p == ok => p,
+                // The alpha channel is a 4444 thing: the other profiles have none to write.
+                Some(Pix::Yuva444p10) if four => Pix::Yuva444p10,
+                Some(p) if p.has_alpha() && !four => {
+                    return Err(format!(
+                        "ProRes profile {} has no alpha channel: --pixel-format {} needs --prores-profile 4444 or \
+                         4444-xq (or drop the alpha with --pixel-format {})",
+                        PRORES_PROFILES[profile as usize],
+                        p.name(),
+                        ok.name()
+                    ));
+                }
                 Some(p) => {
                     return Err(format!(
-                        "ProRes profile {} takes --pixel-format {}, not {}",
+                        "ProRes profile {} takes --pixel-format {}{}, not {}",
                         PRORES_PROFILES[profile as usize],
                         ok.name(),
+                        if four {
+                            " (yuva444p10le for alpha)"
+                        } else {
+                            ""
+                        },
                         p.name()
                     ));
                 }
             }
         }
-        _ => asked.unwrap_or(Pix::Yuv420p),
+        _ => match asked {
+            Some(p) if p.has_alpha() && !(codec == Codec::Vp9 && p == Pix::Yuva420p) => {
+                return Err(format!(
+                    "{} cannot write the alpha channel of --pixel-format {}: alpha is yuva420p for vp9 or \
+                     yuva444p10le for prores 4444",
+                    codec.name(),
+                    p.name()
+                ));
+            }
+            asked => asked.unwrap_or(Pix::Yuv420p),
+        },
     };
 
     // Encoder.
@@ -725,6 +771,17 @@ pub fn resolve(
                 return Err(format!(
                     "encoder {name:?} does not write {}: pick one that does, or change --codec",
                     codec.name()
+                ));
+            }
+            if wanted.has_alpha() && !matches!(name, "prores_ks" | "libvpx-vp9") {
+                return Err(format!(
+                    "{name} does not write an alpha channel here: --pixel-format {} needs {}",
+                    wanted.name(),
+                    if codec == Codec::ProRes {
+                        "prores_ks"
+                    } else {
+                        "libvpx-vp9"
+                    }
                 ));
             }
             if !hardware_takes(name, wanted) {
@@ -759,7 +816,7 @@ pub fn resolve(
                 Codec::H265 if has("libx265") => "libx265",
                 Codec::H265 => hardware("hevc_videotoolbox").unwrap_or("libx265"),
                 Codec::ProRes => {
-                    if macos && has("prores_videotoolbox") {
+                    if macos && has("prores_videotoolbox") && !wanted.has_alpha() {
                         "prores_videotoolbox"
                     } else {
                         "prores_ks"
@@ -895,6 +952,15 @@ pub fn set_bt709(
 }
 
 /// swscale's RGBA to `pix` conversion, BT.709 with full-range RGB in and limited-range YUV out.
+///
+/// The input is STRAIGHT (not premultiplied) alpha, and so is what the alpha formats hold: the compositor's readback
+/// (`fs_encode`) already un-premultiplies and sRGB-encodes, so partly transparent edges carry their own colour
+/// and fully empty pixels are (0, 0, 0, 0). swscale copies straight RGBA to straight YUVA, scaling the alpha to the
+/// format's depth and touching it in no other way; doing nothing here is what keeps edges free of black fringes.
+/// Straight is also what ProRes 4444 and WebM alpha hold and what Resolve, After Effects and Premiere read them as;
+/// premultiplied colour into those would darken every soft edge. A fringe that may remain (not measured) is the 4:2:0
+/// chroma of `yuva420p`: swscale has no alpha weighting, so the chroma of a pixel next to an empty (black) one is
+/// likely averaged towards black over one 2x2 block. The 4:4:4 ProRes format subsamples nothing.
 fn rgba_scaler(width: u32, height: u32, pix: Pix) -> Result<scaling::Context, String> {
     let mut scaler = scaling::Context::get(
         Pixel::RGBA,
@@ -1457,7 +1523,7 @@ pub fn mux_audio(
 
     let mut input =
         format::input(video).map_err(err(&format!("cannot read {}", video.display())))?;
-    let (video_in, in_time_base, avg_frame_rate, parameters) = {
+    let (video_in, in_time_base, avg_frame_rate, parameters, alpha_mode) = {
         let stream = input
             .streams()
             .best(ffmpeg::media::Type::Video)
@@ -1467,6 +1533,7 @@ pub fn mux_audio(
             stream.time_base(),
             stream.avg_frame_rate(),
             stream.parameters(),
+            stream.metadata().get("alpha_mode").map(str::to_string),
         )
     };
 
@@ -1479,6 +1546,13 @@ pub fn mux_audio(
             .map_err(err("cannot add the video stream"))?;
         stream.set_parameters(parameters);
         stream.set_avg_frame_rate(avg_frame_rate);
+        // The temporary file's decoder parameters say yuv420p (ffmpeg's VP9 decoder drops the alpha plane), so the
+        // WebM muxer writes AlphaMode only from this tag; without it players ignore the alpha packets.
+        if let Some(alpha_mode) = &alpha_mode {
+            let mut metadata = Dictionary::new();
+            metadata.set("alpha_mode", alpha_mode);
+            stream.set_metadata(metadata);
+        }
         // A tag from the temporary file's container may not fit this one. ProRes keeps its own (it says the profile,
         // and both files are MOV); HEVC is tagged for QuickTime.
         // SAFETY: the stream's parameters are live and owned by `octx`.
@@ -2647,6 +2721,515 @@ mod tests {
             .join()
             .unwrap();
             assert!(alone == after, "{pix:?}");
+        }
+    }
+
+    fn plan_alpha(
+        codec: Codec,
+        out: &str,
+        pixel_format: &str,
+        profile: Option<&str>,
+        macos: bool,
+        encoder: Option<&str>,
+    ) -> Result<Resolved, String> {
+        resolve(
+            &Settings {
+                codec: Some(codec),
+                encoder: encoder.map(str::to_string),
+                pixel_format: Some(pixel_format.into()),
+                prores_profile: profile.map(str::to_string),
+                ..Settings::default()
+            },
+            Path::new(out),
+            macos,
+            |name| {
+                matches!(
+                    name,
+                    "prores_ks"
+                        | "prores_videotoolbox"
+                        | "libvpx-vp9"
+                        | "libx264"
+                        | "libx265"
+                        | "gif"
+                        | "pcm_s16le"
+                        | "libopus"
+                        | "aac"
+                )
+            },
+        )
+    }
+
+    #[test]
+    fn alpha_pixel_formats_go_to_prores_4444_and_vp9_only() {
+        for profile in ["4444", "4444-xq"] {
+            let r = plan_alpha(
+                Codec::ProRes,
+                "a.mov",
+                "yuva444p10le",
+                Some(profile),
+                false,
+                None,
+            )
+            .unwrap();
+            assert_eq!((r.pix, r.encoder.as_str()), (Pix::Yuva444p10, "prores_ks"));
+            assert_eq!(r.pix.file_name(), "yuva444p10le");
+        }
+        let r = plan_alpha(Codec::Vp9, "a.webm", "yuva420p", None, false, None).unwrap();
+        assert_eq!((r.pix, r.encoder.as_str()), (Pix::Yuva420p, "libvpx-vp9"));
+
+        // The other ProRes profiles have no alpha channel, and the message says which have.
+        for profile in ["proxy", "light", "standard", "hq"] {
+            let msg = plan_alpha(
+                Codec::ProRes,
+                "a.mov",
+                "yuva444p10le",
+                Some(profile),
+                false,
+                None,
+            )
+            .unwrap_err();
+            assert!(
+                msg.contains("4444") && msg.contains("alpha") && msg.contains(profile),
+                "{msg}"
+            );
+        }
+        // Not 4:2:0 alpha for ProRes, not 4:4:4 10-bit alpha for VP9, and no alpha for the other codecs.
+        assert!(
+            plan_alpha(
+                Codec::ProRes,
+                "a.mov",
+                "yuva420p",
+                Some("4444"),
+                false,
+                None
+            )
+            .is_err()
+        );
+        assert!(plan_alpha(Codec::Vp9, "a.webm", "yuva444p10le", None, false, None).is_err());
+        for (codec, out, pix) in [
+            (Codec::H264, "a.mp4", "yuva420p"),
+            (Codec::H264, "a.mov", "yuva444p10le"),
+            (Codec::H265, "a.mp4", "yuva420p"),
+        ] {
+            let msg = plan_alpha(codec, out, pix, None, false, None).unwrap_err();
+            assert!(msg.contains("alpha") && msg.contains(codec.name()), "{msg}");
+        }
+        assert!(plan_alpha(Codec::Gif, "a.gif", "yuva420p", None, false, None).is_err());
+        // Opaque formats still resolve as before.
+        assert_eq!(
+            plan_alpha(
+                Codec::ProRes,
+                "a.mov",
+                "yuv444p10le",
+                Some("4444"),
+                false,
+                None
+            )
+            .unwrap()
+            .pix,
+            Pix::Yuv444p10
+        );
+        // The unknown-format message lists the alpha ones.
+        let msg = Pix::parse_user("rgb24").unwrap_err();
+        assert!(
+            msg.contains("yuva444p10le") && msg.contains("yuva420p"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn alpha_prores_never_uses_the_videotoolbox_encoder() {
+        // On macOS ProRes defaults to VideoToolbox, which is not asked to write an alpha channel here.
+        let r = plan_alpha(
+            Codec::ProRes,
+            "a.mov",
+            "yuva444p10le",
+            Some("4444"),
+            true,
+            None,
+        )
+        .unwrap();
+        assert_eq!(r.encoder, "prores_ks");
+        // Asked for by name (the linked ffmpeg only lists it on macOS): refused.
+        if encoder::find_by_name("prores_videotoolbox").is_some() {
+            let msg = plan_alpha(
+                Codec::ProRes,
+                "a.mov",
+                "yuva444p10le",
+                Some("4444"),
+                true,
+                Some("prores_videotoolbox"),
+            )
+            .unwrap_err();
+            assert!(
+                msg.contains("prores_videotoolbox")
+                    && msg.contains("alpha")
+                    && msg.contains("prores_ks"),
+                "{msg}"
+            );
+        }
+        // Without alpha it is unchanged.
+        let r = resolve(
+            &Settings {
+                codec: Some(Codec::ProRes),
+                prores_profile: Some("4444".into()),
+                ..Settings::default()
+            },
+            Path::new("a.mov"),
+            true,
+            |name| matches!(name, "prores_ks" | "prores_videotoolbox" | "pcm_s16le"),
+        )
+        .unwrap();
+        assert_eq!(
+            (r.encoder.as_str(), r.pix),
+            ("prores_videotoolbox", Pix::P416)
+        );
+    }
+
+    #[test]
+    fn the_alpha_plane_follows_the_colour_planes_in_the_packed_layout() {
+        assert_eq!(
+            Pix::Yuva420p.planes(8, 4),
+            vec![(8, 4), (4, 2), (4, 2), (8, 4)]
+        );
+        assert_eq!(
+            Pix::Yuva444p10.planes(8, 4),
+            vec![(16, 4), (16, 4), (16, 4), (16, 4)]
+        );
+        assert!(
+            Pix::Yuva420p.has_alpha() && Pix::Yuva444p10.has_alpha() && !Pix::Yuv444p10.has_alpha()
+        );
+    }
+
+    /// Enough frames for libvpx's alt-ref and lag (which cannot be used with alpha) to have a say.
+    const FRAMES: u32 = 40;
+    const ALPHAS: [u8; 5] = [0, 64, 128, 192, 255];
+
+    /// A 64x48 straight-alpha picture the way the renderer writes it: empty pixels are (0, 0, 0, 0). Five 12-pixel
+    /// bands of orange across the top 32 rows at alpha 0, 64, 128, 192 and 255, and a 32x16 block of half transparent
+    /// green under them.
+    fn alpha_bands() -> (u32, u32, Vec<u8>) {
+        let (w, h) = (64_u32, 48_u32);
+        let mut rgba = vec![0_u8; (w * h * 4) as usize];
+        for y in 0..h {
+            for x in 0..w {
+                let at = ((y * w + x) * 4) as usize;
+                let px = if y < 32 && x < 60 {
+                    match ALPHAS[(x / 12) as usize] {
+                        0 => [0, 0, 0, 0],
+                        a => [200, 60, 30, a],
+                    }
+                } else if y >= 32 && (16..48).contains(&x) {
+                    [20, 220, 40, 128]
+                } else {
+                    [0, 0, 0, 0]
+                };
+                rgba[at..at + 4].copy_from_slice(&px);
+            }
+        }
+        (w, h, rgba)
+    }
+
+    /// Decodes every frame of `path` to straight RGBA with the decoder `name` (the file's own when `None`).
+    fn decode_with_alpha(path: &Path, name: Option<&str>) -> (String, Vec<Vec<u8>>) {
+        let mut input = format::input(path).unwrap();
+        let index = input
+            .streams()
+            .best(ffmpeg::media::Type::Video)
+            .unwrap()
+            .index();
+        let parameters = input.stream(index).unwrap().parameters();
+        let context = codec::context::Context::from_parameters(parameters).unwrap();
+        let mut decoder = match name {
+            Some(name) => context
+                .decoder()
+                .open_as(ffmpeg::decoder::find_by_name(name).expect("decoder missing"))
+                .unwrap()
+                .video()
+                .unwrap(),
+            None => context.decoder().video().unwrap(),
+        };
+        let (w, h) = (decoder.width(), decoder.height());
+        let mut to_rgba: Option<scaling::Context> = None;
+        let mut format_seen = String::new();
+        let mut frames = Vec::new();
+        let mut take = |decoder: &mut ffmpeg::decoder::Video| {
+            let mut yuv = frame::Video::empty();
+            while decoder.receive_frame(&mut yuv).is_ok() {
+                format_seen = format!("{:?}", yuv.format());
+                let to_rgba = to_rgba.get_or_insert_with(|| {
+                    let mut ctx = scaling::Context::get(
+                        yuv.format(),
+                        w,
+                        h,
+                        Pixel::RGBA,
+                        w,
+                        h,
+                        ScaleFlags::BICUBIC | ScaleFlags::ACCURATE_RND,
+                    )
+                    .unwrap();
+                    set_bt709(&mut ctx, false, true).unwrap();
+                    ctx
+                });
+                let mut rgba = frame::Video::empty();
+                to_rgba.run(&yuv, &mut rgba).unwrap();
+                let (stride, row) = (rgba.stride(0), w as usize * 4);
+                let mut packed = Vec::new();
+                for y in 0..h as usize {
+                    packed.extend_from_slice(&rgba.data(0)[y * stride..y * stride + row]);
+                }
+                frames.push(packed);
+            }
+        };
+        for (stream, packet) in input.packets() {
+            if stream.index() == index {
+                decoder.send_packet(&packet).unwrap();
+                take(&mut decoder);
+            }
+        }
+        decoder.send_eof().unwrap();
+        take(&mut decoder);
+        (format_seen, frames)
+    }
+
+    /// Writes `alpha_bands()` `FRAMES` times with `settings` and decodes the file, once through `push` and once through
+    /// `rgba_to_planes` and `push_yuv` (what a render worker does). Returns the decoded format and pictures of each.
+    fn alpha_round_trip(
+        settings: &Resolved,
+        decoder: Option<&str>,
+        file: &str,
+    ) -> Vec<(String, Vec<Vec<u8>>)> {
+        let dir =
+            std::env::temp_dir().join(format!("kinetograph-alpha-{file}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (w, h, rgba) = alpha_bands();
+        let mut out = Vec::new();
+        for converted_elsewhere in [false, true] {
+            let path = dir.join(format!("{converted_elsewhere}-{file}"));
+            let mut encoder = VideoEncoder::create(&path, w, h, 30.0, settings).unwrap();
+            for _ in 0..FRAMES {
+                if converted_elsewhere {
+                    let planes = rgba_to_planes(&rgba, w, h, settings.pix).unwrap();
+                    encoder.push_yuv(&planes).unwrap();
+                } else {
+                    encoder.push(&rgba).unwrap();
+                }
+            }
+            assert_eq!(encoder.finish().unwrap(), FRAMES);
+            out.push(decode_with_alpha(&path, decoder));
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        out
+    }
+
+    /// Checks the decoded pictures against `alpha_bands()`: the alpha of each band, the colour of the bands that have
+    /// any, and the colour of the half transparent block, each within a tolerance of the 8-bit value. Samples are the
+    /// middle of each band, so 4:2:0 chroma from the neighbouring band does not reach them.
+    fn check_alpha_bands(frames: &[Vec<u8>], alpha_tolerance: i32, colour_tolerance: i32) {
+        assert_eq!(frames.len(), FRAMES as usize);
+        let (w, _, _) = alpha_bands();
+        let near = |got: u8, want: u8, tolerance: i32, what: &str| {
+            assert!(
+                (i32::from(got) - i32::from(want)).abs() <= tolerance,
+                "{what}: got {got}, want {want} +- {tolerance}"
+            );
+        };
+        for frame in frames {
+            let pixel = |x: u32, y: u32| -> [u8; 4] {
+                let at = ((y * w + x) * 4) as usize;
+                frame[at..at + 4].try_into().unwrap()
+            };
+            for (band, &alpha) in ALPHAS.iter().enumerate() {
+                let p = pixel(band as u32 * 12 + 6, 16);
+                near(
+                    p[3],
+                    alpha,
+                    alpha_tolerance,
+                    &format!("alpha of band {band}"),
+                );
+                if alpha > 0 {
+                    for (c, want) in [200, 60, 30].into_iter().enumerate() {
+                        near(
+                            p[c],
+                            want,
+                            colour_tolerance,
+                            &format!("colour {c} of band {band}"),
+                        );
+                    }
+                }
+            }
+            // The half transparent green keeps its own colour: a premultiplied picture read as straight would be
+            // half as bright.
+            let p = pixel(32, 40);
+            near(p[3], 128, alpha_tolerance, "alpha of the green block");
+            for (c, want) in [20, 220, 40].into_iter().enumerate() {
+                near(
+                    p[c],
+                    want,
+                    colour_tolerance,
+                    &format!("colour {c} of the green block"),
+                );
+            }
+            // Outside everything: fully transparent.
+            near(
+                pixel(62, 4)[3],
+                0,
+                alpha_tolerance,
+                "alpha of the empty corner",
+            );
+        }
+    }
+
+    #[test]
+    fn prores_4444_keeps_alpha_through_encode_and_decode() {
+        let settings = plan_alpha(
+            Codec::ProRes,
+            "alpha.mov",
+            "yuva444p10le",
+            Some("4444"),
+            false,
+            Some("prores_ks"),
+        )
+        .unwrap();
+        for (format, frames) in alpha_round_trip(&settings, None, "prores.mov") {
+            // The decoder hands ProRes 4444 over as 12-bit.
+            assert!(format.starts_with("YUVA444P1"), "{format}");
+            check_alpha_bands(&frames, 1, 3);
+        }
+    }
+
+    #[test]
+    fn vp9_yuva420p_keeps_alpha_through_encode_and_decode() {
+        let settings = plan_alpha(
+            Codec::Vp9,
+            "alpha.webm",
+            "yuva420p",
+            None,
+            false,
+            Some("libvpx-vp9"),
+        )
+        .unwrap();
+        // FFmpeg's native vp9 decoder drops the alpha stream of a WebM; libvpx's reads it.
+        for (format, frames) in alpha_round_trip(&settings, Some("libvpx-vp9"), "vp9.webm") {
+            assert_eq!(format, "YUVA420P");
+            check_alpha_bands(&frames, 2, 4);
+        }
+    }
+
+    /// Writes `alpha_bands()` with `settings`, adds a tone with `mux_audio` (what a render with sound does), and
+    /// returns the decoded pictures, the AlphaMode tag the muxed file's video stream reads back with, and whether it
+    /// has an audio stream.
+    fn muxed_alpha(
+        settings: &Resolved,
+        decoder: Option<&str>,
+        file: &str,
+    ) -> (Vec<Vec<u8>>, Option<String>, bool) {
+        let dir = std::env::temp_dir().join(format!(
+            "kinetograph-alpha-mux-{file}-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (video, out) = (
+            dir.join(format!("video-{file}")),
+            dir.join(format!("out-{file}")),
+        );
+        let (w, h, rgba) = alpha_bands();
+        let mut encoder = VideoEncoder::create(&video, w, h, 30.0, settings).unwrap();
+        for _ in 0..FRAMES {
+            encoder.push(&rgba).unwrap();
+        }
+        encoder.finish().unwrap();
+        let tone: Vec<f32> = (0..48000 * 4 / 3)
+            .map(|i| (i as f32 * 440.0 * std::f32::consts::TAU / 48000.0).sin() * 0.5)
+            .collect();
+        mux_audio(
+            &video,
+            &out,
+            &AudioPcm {
+                sample_rate: 48000,
+                channels: &[&tone],
+            },
+            settings,
+        )
+        .unwrap();
+        let input = format::input(&out).unwrap();
+        let alpha_mode = input
+            .streams()
+            .best(ffmpeg::media::Type::Video)
+            .unwrap()
+            .metadata()
+            .get("alpha_mode")
+            .map(str::to_string);
+        let audio = input.streams().best(ffmpeg::media::Type::Audio).is_some();
+        drop(input);
+        let decoded = decode_with_alpha(&out, decoder).1;
+        let _ = std::fs::remove_dir_all(&dir);
+        (decoded, alpha_mode, audio)
+    }
+
+    #[test]
+    fn prores_4444_keeps_alpha_when_audio_is_muxed() {
+        let settings = plan_alpha(
+            Codec::ProRes,
+            "alpha.mov",
+            "yuva444p10le",
+            Some("4444"),
+            false,
+            Some("prores_ks"),
+        )
+        .unwrap();
+        let (frames, _, audio) = muxed_alpha(&settings, None, "prores.mov");
+        assert!(audio);
+        check_alpha_bands(&frames, 1, 3);
+    }
+
+    #[test]
+    fn vp9_alpha_flag_survives_muxing_audio() {
+        let settings = plan_alpha(
+            Codec::Vp9,
+            "alpha.webm",
+            "yuva420p",
+            None,
+            false,
+            Some("libvpx-vp9"),
+        )
+        .unwrap();
+        let (frames, alpha_mode, audio) = muxed_alpha(&settings, Some("libvpx-vp9"), "vp9.webm");
+        assert!(audio);
+        // Without this tag the WebM has no AlphaMode element and players show the picture opaque.
+        assert_eq!(alpha_mode.as_deref(), Some("1"));
+        check_alpha_bands(&frames, 2, 4);
+    }
+
+    #[test]
+    fn converting_to_an_opaque_format_ignores_alpha() {
+        // No alpha format asked for: the colour planes are the same whatever the alpha was, as before.
+        let (w, h, rgba) = alpha_bands();
+        let mut opaque = rgba.clone();
+        for px in opaque.chunks_exact_mut(4) {
+            px[3] = 255;
+        }
+        for pix in [Pix::Yuv420p, Pix::Yuv444p10] {
+            assert!(
+                rgba_to_planes(&rgba, w, h, pix).unwrap()
+                    == rgba_to_planes(&opaque, w, h, pix).unwrap(),
+                "{pix:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_alpha_plane_carries_the_alpha_of_the_picture() {
+        let (w, h, rgba) = alpha_bands();
+        let planes = rgba_to_planes(&rgba, w, h, Pix::Yuva420p).unwrap();
+        let colour = (w * h) as usize * 3 / 2;
+        assert_eq!(planes.len(), colour + (w * h) as usize);
+        for (got, px) in planes[colour..].iter().zip(rgba.chunks_exact(4)) {
+            assert!(
+                (i32::from(*got) - i32::from(px[3])).abs() <= 1,
+                "{got} vs {}",
+                px[3]
+            );
         }
     }
 }
