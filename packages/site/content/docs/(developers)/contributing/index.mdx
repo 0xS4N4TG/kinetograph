@@ -37,7 +37,6 @@ The golden tests compare rendered frames with stored images. If your change is m
 - **A frame depends only on the project and the frame number.** Nothing reads the wall clock.
 - **No browser draws anything.** Chrome for Testing appears only in tests, as the reference a native drawing is compared against.
 - **Draw it natively, or say you can't.** Content the engine can't draw is skipped or approximated and reported. `--strict` turns it into an error.
-- **Write your own code.** Rebuild Remotion APIs from their documented behaviour. Reading another project's source to understand it is fine. Copying it is not.
 - **`random(seed)` matches Remotion bit for bit.**
 - **Speed claims need a measurement.** Include the command, the machine and the numbers.
 
