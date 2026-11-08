@@ -483,10 +483,14 @@ What is drawn:
   `lighting-color` usvg cannot read (`var(--x)`, `oklch()`, `oklab()`, `color-mix()`, `rgb(r g b / a)`, `rebeccapurple`)
   goes through Stylo's colour parser, as an HTML colour does, and is written as a plain `rgb` (`svg/color.rs`); one
   that cannot be resolved is an `Unsupported` item. Tests: `crates/dom/tests/svg_cascade.rs`.
-- **Filters** (`filterGraph`, `filter_graph`): all 17 primitives but `feImage`, which becomes a transparent flood and an
-  `Unsupported` item. CSS filter functions on an element inside an `<svg>` are drawn too (`svg/css_filter.rs` reads the
-  `filter` text into the same effects the box painter makes, lengths in user units; `opacity()` multiplies the group's).
-- `Unsupported` items: `feImage`; `transform-box` other than `view-box`; a
+- **Filters** (`filterGraph`, `filter_graph`): all 17 primitives. An `feImage` of a raster picture file under
+  `base_dir` or `public_dir` (read as an HTML `<img>` is: `file:` URL, percent-encoding) goes in by its path,
+  a raster `data:` URL as it is (`svg/filter.rs`); one of an element (`href="#id"`), a file that cannot be read, or one in a canvas's filter becomes
+  a transparent flood and an `Unsupported` item. A picture too large for the GPU's textures is not drawn and is
+  counted in the frame's `not_drawn` (`Stats::unsupported`). CSS filter
+  functions on an element inside an `<svg>` are drawn too (`svg/css_filter.rs` reads the `filter` text into the same
+  effects the box painter makes, lengths in user units; `opacity()` multiplies the group's).
+- `Unsupported` items: `feImage` of an element; `transform-box` other than `view-box`; a
   skewed or mirrored pattern, image, or filtered element (drawn unturned for the filter); a GIF or WebP `<image>`;
   text when the request registers no font.
 - Reads of files (`<image href>`) are limited to `base_dir` and `public_dir`: relative, no `..`, canonical path
@@ -788,9 +792,9 @@ than 16 off); a frame drawn alone, in sequence and by two workers has one hash.
 
 ### Not drawn (reported as `Unsupported`, `audit.rs`)
 
-`image-rendering`, `background-attachment: fixed`, `box-decoration-break: clone`, non-horizontal
+`image-rendering` on a video or canvas (on pictures, `pixelated` and `crisp-edges` take the nearest pixel), `background-attachment: fixed`, `box-decoration-break: clone`, non-horizontal
 `writing-mode`, multi-column, the old `clip`, `list-style-image`,
-form controls, iframes, `evenodd` clip paths, `shape()`,
+form controls, iframes, `shape()`,
 `mask-composite` other than add, `backdrop-filter` functions other than `blur()`, a `margin-box` clip reference, a
 `conic-gradient` in a colour space other than sRGB, `filter`, `mix-blend-mode`, `clip-path` and `mask` on an inline
 (non-atomic) element, remote URLs, fonts that are not project font files, inside list

@@ -19,7 +19,7 @@ use crate::resolve::{
     ResolvedLayer, ResolvedPaint, ResolvedScene, ShapeStyle, TextStroke,
 };
 use crate::scene::{
-    BlendMode, Extend, FillRule, Fit, MaskMode, MatteMode, Scene, StrokeCap, StrokeJoin, TextPaintOrder, Units,
+    BlendMode, Extend, FillRule, Fit, MaskMode, MatteMode, Sampling, Scene, StrokeCap, StrokeJoin, TextPaintOrder, Units,
 };
 use crate::text::TextEngine;
 
@@ -32,6 +32,17 @@ use skia_safe::{
 };
 
 mod canvas2d;
+#[cfg(test)]
+mod fe_image_tests;
+
+/// Skia's sampling for a picture's `Sampling`: bilinear, or the nearest pixel.
+fn sampling_options(sampling: Sampling) -> SamplingOptions {
+    let filter = match sampling {
+        Sampling::Linear => skia_safe::FilterMode::Linear,
+        Sampling::Nearest => skia_safe::FilterMode::Nearest,
+    };
+    SamplingOptions::new(filter, skia_safe::MipmapMode::None)
+}
 
 #[derive(Default, Clone)]
 pub struct Stats {
@@ -650,7 +661,7 @@ impl Translator {
 
     fn clip_path(&mut self, clip: &ResolvedClip, layer: &ResolvedLayer) -> Option<Path> {
         match clip {
-            ResolvedClip::Polygon { points } => {
+            ResolvedClip::Polygon { points, fill_rule } => {
                 let mut pb = PathBuilder::new();
                 for (i, &(x, y)) in points.iter().enumerate() {
                     if i == 0 {
@@ -660,6 +671,7 @@ impl Translator {
                     }
                 }
                 pb.close();
+                pb.set_fill_type(if *fill_rule == FillRule::EvenOdd { PathFillType::EvenOdd } else { PathFillType::Winding });
                 Some(pb.detach())
             }
             ResolvedClip::Inset { top, right, bottom, left, radius } => {
@@ -690,7 +702,7 @@ impl Translator {
                 );
                 Some(pb.detach())
             }
-            ResolvedClip::Path { d } => self.svg_path(d, false),
+            ResolvedClip::Path { d, fill_rule } => self.svg_path(d, *fill_rule == FillRule::EvenOdd),
         }
     }
 
@@ -769,8 +781,9 @@ impl Translator {
                     let g = grow / s;
                     let content = r;
                     r = Rect::new(r.left - g, r.top - g, r.right + g, r.bottom + g);
-                    // A tile repeats over the whole filter region, not just where the layer draws.
-                    if fg.nodes.iter().any(|n| matches!(n.op, FeOp::Tile)) {
+                    // A tile repeats over the whole filter region, not just where the layer draws; a picture fills its
+                    // subregion.
+                    if fg.nodes.iter().any(|n| matches!(n.op, FeOp::Tile | FeOp::Image { .. })) {
                         let content = kurbo::Rect::new(content.left as f64, content.top as f64, content.right as f64, content.bottom as f64);
                         let reg = fg.plan(Some(content))?.region;
                         r = Rect::new(r.left.min(reg.x0 as f32), r.top.min(reg.y0 as f32), r.right.max(reg.x1 as f32), r.bottom.max(reg.y1 as f32));
@@ -1176,9 +1189,28 @@ impl Translator {
                     };
                     image_filters::blend(mode, input(1, &results), input(0, &results), None)
                 }
+                FeOp::Image { src, aspect } => match self.image(src) {
+                    Some(img) => {
+                        let (w, h) = (img.width() as f32, img.height() as f32);
+                        // Placed in the subregion; with no layer box the subregion is not known, and the picture is drawn
+                        // at its own size from the layer's origin.
+                        let dst = match &plan {
+                            Some(p) => sk(&aspect.fit(p.nodes[idx].sub, f64::from(w), f64::from(h))),
+                            None => {
+                                self.stats.approx("feImage placed without a layer box (drawn at its own size)");
+                                Rect::new(0.0, 0.0, w, h)
+                            }
+                        };
+                        image_filters::image(img, None, &dst, SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None))
+                    }
+                    None => {
+                        self.stats.no("feImage (picture not readable)");
+                        Some(image_filters::empty())
+                    }
+                },
             };
             let out = match out {
-                Some(f) if lin != surface_lin && !matches!(op, FeOp::Flood { .. }) => {
+                Some(f) if lin != surface_lin && !matches!(op, FeOp::Flood { .. } | FeOp::Image { .. }) => {
                     let back = if lin { color_filters::linear_to_srgb_gamma() } else { color_filters::srgb_to_linear_gamma() };
                     image_filters::color_filter(back, f, None)
                 }
@@ -1273,19 +1305,19 @@ impl Translator {
                 self.draw_shape(canvas, layer, geometry, fill.as_ref(), stroke.as_ref(), style, comp)
             }
             ResolvedKind::Text { .. } => self.draw_text(canvas, layer, comp),
-            ResolvedKind::Image { src, width, height, fit } => {
-                self.draw_image(canvas, src, (*width, *height), *fit, comp)
+            ResolvedKind::Image { src, width, height, fit, sampling } => {
+                self.draw_image(canvas, src, (*width, *height), *fit, *sampling, comp)
             }
             ResolvedKind::Video { src, width, height, fit, time, mosh } => {
                 let moshed = mosh.as_ref().and_then(|m| self.mosh_image(&layer.id, src, m));
                 match moshed.or_else(|| self.video_image(src, time.ts)) {
-                    Some(img) => self.draw_picture(canvas, &img, (*width, *height), *fit, comp),
+                    Some(img) => self.draw_picture(canvas, &img, (*width, *height), *fit, Sampling::Linear, comp),
                     None => self.stats.no("video layer (decode failed)"),
                 }
             }
             ResolvedKind::Canvas { width, height, ops } => self.draw_canvas_layer(canvas, (*width, *height), ops),
             ResolvedKind::Gif { src, width, height, fit, time, looped } => match self.gif_image(src, *time, *looped) {
-                Some(img) => self.draw_picture(canvas, &img, (*width, *height), *fit, comp),
+                Some(img) => self.draw_picture(canvas, &img, (*width, *height), *fit, Sampling::Linear, comp),
                 None => self.stats.no("gif layer (not loaded)"),
             },
             ResolvedKind::Lottie { src, width, height, time, looped } => self.draw_lottie(canvas, src, (*width, *height), *time, *looped, comp),
@@ -1393,7 +1425,7 @@ impl Translator {
                     let mut fill = Paint::default();
                     fill.set_anti_alias(true);
                     fill.set_shader(gradient_shader_for(g, Some(cell), self.linear()));
-                    let shader = tile_shader(cell, (t.x, t.y), (t.space_x, t.space_y), (t.repeat_x, t.repeat_y), |c| {
+                    let shader = tile_shader(cell, (t.x, t.y), (t.space_x, t.space_y), (t.repeat_x, t.repeat_y), skia_safe::FilterMode::Linear, |c| {
                         c.draw_rect(cell, &fill);
                     });
                     set_tile_shader(p, shader);
@@ -1413,11 +1445,11 @@ impl Translator {
                     self.stats.no("image paint (file)");
                     return;
                 };
-                let sampling = SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None);
+                let sampling = sampling_options(if crate::svg_picture::is_svg(&i.src) { Sampling::Linear } else { i.sampling });
                 if (i.repeat_x && i.space_x > 0.0) || (i.repeat_y && i.space_y > 0.0) {
                     // Copies apart: the picture in one tile, repeated with the gaps.
                     let cell = Rect::from_wh(i.width as f32, i.height as f32);
-                    let shader = tile_shader(cell, (i.x, i.y), (i.space_x, i.space_y), (i.repeat_x, i.repeat_y), |c| {
+                    let shader = tile_shader(cell, (i.x, i.y), (i.space_x, i.space_y), (i.repeat_x, i.repeat_y), sampling.filter, |c| {
                         c.draw_image_rect_with_sampling_options(&img, None, cell, sampling, &Paint::default());
                     });
                     set_tile_shader(p, shader);
@@ -1443,7 +1475,7 @@ impl Translator {
                 let (w, h) = (w.ceil().max(1.0) as u32, h.ceil().max(1.0) as u32);
                 image::RgbaImage::from_raw(w, h, pic.paint(w, h)?).map(image::DynamicImage::ImageRgba8)
             })
-        } else if let Some(bytes) = data_uri_bytes(src) {
+        } else if let Some(bytes) = crate::scene::data_uri_bytes(src) {
             image::load_from_memory(&bytes).ok()
         } else {
             image::open(self.base_dir.join(src)).ok()
@@ -1500,7 +1532,7 @@ impl Translator {
         img
     }
 
-    fn draw_image(&mut self, canvas: &Canvas, src: &str, size: (f64, f64), fit: Fit, comp: Comp) {
+    fn draw_image(&mut self, canvas: &Canvas, src: &str, size: (f64, f64), fit: Fit, sampling: Sampling, comp: Comp) {
         if crate::svg_picture::is_svg(src) {
             let (sx, sy) = (size.0, size.1);
             let img = self.svg_image(canvas, src, |n| {
@@ -1512,7 +1544,8 @@ impl Translator {
                 }
             });
             if let Some(img) = img {
-                self.draw_picture(canvas, &img, size, fit, comp);
+                // A vector picture is painted for the size it is drawn at: there is nothing to resample.
+                self.draw_picture(canvas, &img, size, fit, Sampling::Linear, comp);
             }
             return;
         }
@@ -1520,7 +1553,7 @@ impl Translator {
             self.stats.no("image (file)");
             return;
         };
-        self.draw_picture(canvas, &img, size, fit, comp);
+        self.draw_picture(canvas, &img, size, fit, sampling, comp);
     }
 
     fn video_image(&mut self, src: &str, ts: i64) -> Option<Image> {
@@ -1693,7 +1726,7 @@ impl Translator {
         canvas.restore();
     }
 
-    fn draw_picture(&mut self, canvas: &Canvas, img: &Image, size: (f64, f64), fit: Fit, comp: Comp) {
+    fn draw_picture(&mut self, canvas: &Canvas, img: &Image, size: (f64, f64), fit: Fit, sampling: Sampling, comp: Comp) {
         let (iw, ih) = (img.width() as f64, img.height() as f64);
         let (sx, sy) = (size.0 / iw, size.1 / ih);
         let placed = match fit {
@@ -1709,7 +1742,7 @@ impl Translator {
         }
         canvas.concat(&mat(placed));
         let p = Self::base_paint(comp);
-        canvas.draw_image_with_sampling_options(img, (0.0, 0.0), SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None), Some(&p));
+        canvas.draw_image_with_sampling_options(img, (0.0, 0.0), sampling_options(sampling), Some(&p));
         self.stats.draws += 1;
         canvas.restore();
     }
@@ -1898,17 +1931,6 @@ fn transfer(f: &crate::filter::ResolvedTransfer, c: f32) -> f32 {
         3 => f.p[0] * c + f.p[1],
         4 => f.p[0] * c.max(0.0).powf(f.p[1]) + f.p[2],
         _ => c,
-    }
-}
-
-fn data_uri_bytes(src: &str) -> Option<Vec<u8>> {
-    let rest = src.strip_prefix("data:")?;
-    let (head, body) = rest.split_once(',')?;
-    if head.ends_with(";base64") {
-        use base64::Engine;
-        base64::engine::general_purpose::STANDARD.decode(body.trim()).ok()
-    } else {
-        None
     }
 }
 
@@ -2258,13 +2280,13 @@ impl Translator {
     }
 
     /// `path` (layer space) in opaque white: its alpha is the clip's coverage.
-    pub fn raster_clip(&mut self, canvas: &Canvas, path: &BezPath, matrix: Affine) {
+    pub fn raster_clip(&mut self, canvas: &Canvas, path: &BezPath, matrix: Affine, even_odd: bool) {
         canvas.save();
         canvas.concat(&mat(matrix));
         let mut p = Paint::default();
         p.set_anti_alias(true);
         p.set_color4f(Color4f::new(1.0, 1.0, 1.0, 1.0), None);
-        canvas.draw_path(&bez_to_path(path, false), &p);
+        canvas.draw_path(&bez_to_path(path, even_odd), &p);
         self.stats.draws += 1;
         canvas.restore();
     }
@@ -2282,10 +2304,10 @@ impl Translator {
     }
 
     /// Starts a group's clip: what follows, up to the matching `raster_pop`, is cut by `path`.
-    pub fn raster_push_clip(&mut self, canvas: &Canvas, path: &BezPath, matrix: Affine) {
+    pub fn raster_push_clip(&mut self, canvas: &Canvas, path: &BezPath, matrix: Affine, even_odd: bool) {
         canvas.save();
         canvas.concat(&mat(matrix));
-        canvas.clip_path(&bez_to_path(path, false), ClipOp::Intersect, true);
+        canvas.clip_path(&bez_to_path(path, even_odd), ClipOp::Intersect, true);
     }
 
     pub fn raster_pop(&mut self, canvas: &Canvas) {
@@ -2307,7 +2329,7 @@ fn set_tile_shader(p: &mut Paint, shader: Option<skia_safe::Shader>) {
 
 /// A shader of what `draw` paints in `cell` (a tile at the origin), moved to `at` and repeated every cell plus `space`
 /// along the axes that `repeat` (once along the others): a picture shader, which keeps a fractional period exact.
-fn tile_shader(cell: Rect, at: (f64, f64), space: (f64, f64), repeat: (bool, bool), draw: impl FnOnce(&Canvas)) -> Option<skia_safe::Shader> {
+fn tile_shader(cell: Rect, at: (f64, f64), space: (f64, f64), repeat: (bool, bool), filter: skia_safe::FilterMode, draw: impl FnOnce(&Canvas)) -> Option<skia_safe::Shader> {
     if cell.is_empty() {
         return None;
     }
@@ -2317,5 +2339,125 @@ fn tile_shader(cell: Rect, at: (f64, f64), space: (f64, f64), repeat: (bool, boo
     let period = Rect::from_wh(cell.width() + space.0 as f32, cell.height() + space.1 as f32);
     let mode = |r: bool| if r { TileMode::Repeat } else { TileMode::Decal };
     let local = Matrix::translate((at.0 as f32, at.1 as f32));
-    Some(picture.to_shader((mode(repeat.0), mode(repeat.1)), skia_safe::FilterMode::Linear, &local, &period))
+    Some(picture.to_shader((mode(repeat.0), mode(repeat.1)), filter, &local, &period))
+}
+
+#[cfg(test)]
+mod tests {
+    //! The fill rule of a clip, on a CPU raster surface (no GPU).
+    use super::*;
+    use skia_safe::{AlphaType, ColorType, ImageInfo, Surface};
+
+    const HOLE: &str = "M0 0H20V20H0Z M5 5H15V15H5Z";
+    const STAR: &str = "[[10, 1], [16, 19], [1, 7], [19, 7], [4, 19]]";
+
+    fn surface() -> Surface {
+        skia_safe::surfaces::raster(&ImageInfo::new((20, 20), ColorType::RGBA8888, AlphaType::Premul, None), None, None)
+            .unwrap()
+    }
+
+    /// The alpha of pixel (x, y).
+    fn alpha(s: &mut Surface, x: i32, y: i32) -> u8 {
+        let mut px = [0u8; 4];
+        let info = ImageInfo::new((1, 1), ColorType::RGBA8888, AlphaType::Premul, None);
+        assert!(s.read_pixels(&info, &mut px, 4, (x, y)));
+        px[3]
+    }
+
+    fn white() -> Paint {
+        let mut p = Paint::default();
+        p.set_color4f(Color4f::new(1.0, 1.0, 1.0, 1.0), None);
+        p
+    }
+
+    fn scene_with(clip: &str) -> Scene {
+        let json = format!(
+            r##"{{"width": 20, "height": 20, "fps": 30, "durationInFrames": 1, "layers": [{{"id": "a", "type": "shape",
+               "shape": {{"kind": "rect", "width": 20, "height": 20}}, "fill": "#fff", "clip": {clip}}}]}}"##
+        );
+        Scene::from_json(&json, PathBuf::new()).unwrap()
+    }
+
+    /// The whole canvas painted white through the layer's own clip (the direct route).
+    fn direct(clip: &str) -> Surface {
+        let scene = scene_with(clip);
+        let resolved = scene.resolve(0).unwrap();
+        let mut tr = Translator::new(&scene);
+        let mut s = surface();
+        tr.apply_clip(s.canvas(), &resolved.layers[0]);
+        s.canvas().draw_paint(&white());
+        s
+    }
+
+    /// The clip's path as the wgpu route uses it: a group's pushed clip, and a clip matte. The rule is taken through
+    /// `render::clip_even_odd`, as `Renderer` takes it.
+    fn by_ops(clip: &str) -> (Surface, Surface) {
+        let scene = scene_with(clip);
+        let resolved = scene.resolve(0).unwrap();
+        let rc = resolved.layers[0].clip.as_ref().unwrap();
+        let even_odd = crate::render::clip_even_odd(rc);
+        let path = match rc {
+            ResolvedClip::Path { d, .. } => BezPath::from_svg(d).unwrap(),
+            ResolvedClip::Polygon { points, .. } => {
+                let mut b = BezPath::new();
+                for (i, &(x, y)) in points.iter().enumerate() {
+                    if i == 0 {
+                        b.move_to((x, y));
+                    } else {
+                        b.line_to((x, y));
+                    }
+                }
+                b.close_path();
+                b
+            }
+            _ => unreachable!(),
+        };
+        let mut tr = Translator::new(&scene);
+        let mut pushed = surface();
+        tr.raster_push_clip(pushed.canvas(), &path, Affine::IDENTITY, even_odd);
+        pushed.canvas().draw_paint(&white());
+        tr.raster_pop(pushed.canvas());
+        let mut matte = surface();
+        tr.raster_clip(matte.canvas(), &path, Affine::IDENTITY, even_odd);
+        (pushed, matte)
+    }
+
+    fn path_clip(rule: &str) -> String {
+        format!(r#"{{"kind": "path", "d": "{HOLE}", "fillRule": "{rule}"}}"#)
+    }
+
+    fn star_clip(rule: &str) -> String {
+        format!(r#"{{"kind": "polygon", "points": {STAR}, "fillRule": "{rule}"}}"#)
+    }
+
+    /// (a pixel in the ring or an arm of the star, a pixel in the hole or the star's middle).
+    type Pixels = ((i32, i32), (i32, i32));
+    const PATH_PX: Pixels = ((2, 10), (10, 10));
+    const STAR_PX: Pixels = ((10, 4), (10, 10));
+
+    fn check(mut s: Surface, px: Pixels, hole_open: bool, what: &str) {
+        assert_eq!(alpha(&mut s, px.0.0, px.0.1), 255, "{what}: the ring is filled");
+        let inside = alpha(&mut s, px.1.0, px.1.1);
+        assert_eq!(inside, if hole_open { 0 } else { 255 }, "{what}: the hole");
+    }
+
+    #[test]
+    fn a_direct_clip_honours_the_fill_rule() {
+        check(direct(&path_clip("evenodd")), PATH_PX, true, "path evenodd");
+        check(direct(&path_clip("nonzero")), PATH_PX, false, "path nonzero");
+        check(direct(&format!(r#"{{"kind": "path", "d": "{HOLE}"}}"#)), PATH_PX, false, "path default");
+        check(direct(&star_clip("evenodd")), STAR_PX, true, "star evenodd");
+        check(direct(&star_clip("nonzero")), STAR_PX, false, "star nonzero");
+    }
+
+    #[test]
+    fn a_pushed_clip_and_a_clip_matte_honour_the_fill_rule() {
+        for (rule, hole_open) in [("evenodd", true), ("nonzero", false)] {
+            for (clip, px, name) in [(path_clip(rule), PATH_PX, "path"), (star_clip(rule), STAR_PX, "star")] {
+                let (pushed, matte) = by_ops(&clip);
+                check(pushed, px, hole_open, &format!("{name} pushed {rule}"));
+                check(matte, px, hole_open, &format!("{name} matte {rule}"));
+            }
+        }
+    }
 }

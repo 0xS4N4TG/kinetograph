@@ -113,6 +113,8 @@ export interface ImagePaint {
   /** The gap between copies along an axis that repeats (`background-repeat: space`). Default 0. */
   spaceX?: Num;
   spaceY?: Num;
+  /** `nearest` keeps hard pixel edges when the picture is scaled (CSS `image-rendering: pixelated`). Default `linear`. */
+  sampling?: 'linear' | 'nearest';
 }
 /** A colour string, a gradient or a picture: a shape's `fill` and a text layer's `color`. */
 export type Paint = ColorString | Gradient | ImagePaint;
@@ -164,10 +166,10 @@ export interface GlyphRun {
 }
 
 export type Clip =
-  | { kind: 'polygon'; points: [Num, Num][] }
+  | { kind: 'polygon'; points: [Num, Num][]; fillRule?: 'nonzero' | 'evenodd' }
   | { kind: 'inset'; top?: Num; right?: Num; bottom?: Num; left?: Num; radius?: Num }
   | { kind: 'ellipse'; cx: Num; cy: Num; rx: Num; ry: Num }
-  | { kind: 'path'; d: string };
+  | { kind: 'path'; d: string; fillRule?: 'nonzero' | 'evenodd' };
 
 export interface Mask {
   gradient: Gradient;
@@ -557,6 +559,8 @@ export interface ImageLayer extends LayerBase {
   height?: Num;
   /** Default `fill`. */
   fit?: 'fill' | 'contain' | 'cover';
+  /** `nearest` keeps hard pixel edges when the picture is scaled (CSS `image-rendering: pixelated`). Default `linear`. */
+  sampling?: 'linear' | 'nearest';
 }
 
 export interface GroupLayer extends LayerBase {

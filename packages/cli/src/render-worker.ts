@@ -5,6 +5,7 @@ import { parentPort, workerData } from 'node:worker_threads';
 import type { ArtifactRecord } from '@kinetographdev/core';
 import type { SceneJson, Unsupported, AudioClipJson } from '@kinetographdev/scene';
 import { setPreferredEffectBackend } from './effects.js';
+import { encodeFrame, type ImageFormat } from './image-sequence.js';
 import { native } from './native.js';
 import { ProfileLog, now, profiling, takeAddon, takeJs } from './profile.js';
 import { scaleScene } from './scenes.js';
@@ -15,6 +16,8 @@ export interface WorkerInit {
   scale: number;
   /** The pixel format to convert drawn frames to (`resolveExport`'s `convertFormat`). */
   convertFormat: string;
+  /** Draw each frame as the bytes of an image file of this format (`render --sequence`) instead of converting it. */
+  sequence?: ImageFormat;
   devReact: boolean;
   preferredEffectBackend?: string;
   /** Index `i` of a chunk is frame `origin + i * step` of the composition (`step` is above 1 for a GIF's `--every-nth-frame`). */
@@ -33,7 +36,7 @@ export type ToWorker =
 export type FromWorker =
   | { type: 'ready' }
   /** `repeated`: the frame was not drawn, being the same as the one before it in its chunk (packages/cli/skills/kinetograph/references/AUTHORING.md §9). */
-  | { type: 'frame'; frame: number; yuv: ArrayBuffer; audio: AudioClipJson[]; unsupported: Unsupported[]; repeated: boolean }
+  | { type: 'frame'; frame: number; data: ArrayBuffer; audio: AudioClipJson[]; unsupported: Unsupported[]; repeated: boolean }
   | { type: 'chunk'; first: number; last: number }
   /** The frames of the chunk it gave up, `first..=last` (empty when `first > last`). */
   | { type: 'split'; first: number; last: number }
@@ -43,7 +46,7 @@ export type FromWorker =
 const port = parentPort!;
 const post = (message: FromWorker, transfer: ArrayBuffer[] = []): void => port.postMessage(message, transfer);
 
-const { spec, scale, convertFormat, devReact, preferredEffectBackend, origin, step } = workerData as WorkerInit;
+const { spec, scale, convertFormat, sequence, devReact, preferredEffectBackend, origin, step } = workerData as WorkerInit;
 setPreferredEffectBackend(preferredEffectBackend);
 // React reads this when the bundle imports it, which `openSource` below does.
 process.env.NODE_ENV = devReact ? 'development' : 'production';
@@ -85,6 +88,12 @@ try {
     let started: { index: number; out: FrameOutput; row?: Record<string, number> } | undefined;
     // The converted pixels of the frame before in this chunk, for a frame that repeats it.
     let last: Buffer | undefined;
+    // A copy, because it is moved to the main thread: the addon's buffer cannot be transferred.
+    const copy = (bytes: Uint8Array): ArrayBuffer => {
+      const out = new ArrayBuffer(bytes.byteLength);
+      new Uint8Array(out).set(bytes);
+      return out;
+    };
     const collect = (): void => {
       const { index, out, row } = started!;
       const t0 = log ? now() : 0;
@@ -95,10 +104,8 @@ try {
       const pixels = drawn.repeated && last ? last : native().rgbaToYuv(drawn.data, drawn.width, drawn.height, convertFormat);
       last = pixels;
       const t2 = log ? now() : 0;
-      // A copy, because it is moved to the main thread: the addon's buffer cannot be transferred.
-      const yuv = new ArrayBuffer(pixels.byteLength);
-      new Uint8Array(yuv).set(pixels);
-      post({ type: 'frame', frame: index, yuv, audio: out.audio, unsupported: out.unsupported ?? [], repeated: drawn.repeated }, [yuv]);
+      const data = copy(pixels);
+      post({ type: 'frame', frame: index, data, audio: out.audio, unsupported: out.unsupported ?? [], repeated: drawn.repeated }, [data]);
       if (log && row) {
         const t3 = now();
         log.add({ ...row, finish: t1 - t0, yuv: t2 - t1, post: t3 - t2, t3, ...takeAddon() });
@@ -120,6 +127,12 @@ try {
       const out = await source.frame(frame);
       const t1 = log ? now() : 0;
       const sceneJson = scale !== 1 ? JSON.stringify(scaleScene(JSON.parse(out.sceneJson) as SceneJson, scale)) : out.sceneJson;
+      if (sequence) {
+        // An image file per frame is drawn and encoded whole here, with no frame in flight.
+        const data = copy(encodeFrame(renderer, sequence, sceneJson, frame, source.baseDir));
+        post({ type: 'frame', frame: index, data, audio: out.audio, unsupported: out.unsupported ?? [], repeated: false }, [data]);
+        continue;
+      }
       // The frame before is collected first: its start ran on the addon's own thread while this frame's JS did, and
       // the next start would take the GPU renderer from the collection.
       if (started && !syncStart) collect();

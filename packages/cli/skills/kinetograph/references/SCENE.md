@@ -238,6 +238,7 @@ PNG or JPEG, drawn in the box `width` x `height` from the layer origin. Colours 
 | `src` | required | The file, relative to the scene. |
 | `width`, `height` | the file's size | Animatable, not negative. Both left out: the file's size in pixels. One left out: the other side, with the file's aspect ratio. |
 | `fit` | `fill` | How the picture sits in the box. `fill` stretches it to the box. `contain` scales it to fit inside the box, keeping its aspect ratio, and centres it; the rest of the box is empty. `cover` scales it to cover the box, keeping its aspect ratio, centres it, and cuts it to the box. Like CSS's `object-fit`. |
+| `sampling` | `linear` | `nearest` takes the nearest pixel when the picture is scaled (hard edges, like CSS's `image-rendering: pixelated`). Also a field of an image paint. |
 
 - The size of a file is read from its header when the scene loads, and only for a layer that leaves a side out. A missing
   or unreadable file is a load error naming the layer.
@@ -1607,11 +1608,11 @@ Every primitive has `primitive` (its element name), `in`, `in2` (when it has two
 | `feTile` | | Repeats the input's subregion over its own. |
 | `feConvolveMatrix` | `order` (3, at most 8), `kernelMatrix`, `divisor` (sum of the kernel, or 1), `bias` (0), `targetX`, `targetY` (middle), `edgeMode` (`duplicate`, `wrap`, `none`), `preserveAlpha` | In canvas pixels (`kernelUnitLength` is not used). |
 | `feDiffuseLighting`, `feSpecularLighting` | `surfaceScale` (1), `diffuseConstant` or `specularConstant` (1), `specularExponent` (1, 1 to 128), `lightingColor` (white), `light` | `light` is `{ "type": "distant", "azimuth", "elevation" }`, `{ "type": "point", "x", "y", "z" }` or `{ "type": "spot", "x", "y", "z", "pointsAtX", "pointsAtY", "pointsAtZ", "specularExponent", "limitingConeAngle" }`. The input's alpha is the height; normals use the spec's Sobel kernels in canvas pixels, and a spot's cone fades over 0.016 of cosine like a browser's. |
-
-`feImage` is not supported yet.
+| `feImage` | `href` (a picture file, as an `image` layer's `src` names one, or a `data:` URL), `preserveAspectRatio` (`xMidYMid meet`) | A raster picture (PNG, JPEG, WebP), drawn in the primitive subregion (the filter region if it has none) fitted by `preserveAspectRatio`, and read by later primitives like any result (`in2` of `feDisplacementMap`, say). The colour is sRGB. Not in a canvas's filter. An SVG `href="#id"` to an element is not supported. |
 
 Loading a scene rejects a negative `stdDeviation`, `radius`, `baseFrequency` or subregion size, `numOctaves` outside 0
-to 10, a `values` or `kernelMatrix` of the wrong length, and a graph that needs a box on a layer that has none; the
+to 10, a `values` or `kernelMatrix` of the wrong length, an `feImage` with no `href` or one that starts with `#`, or a
+`preserveAspectRatio` that does not parse, and a graph that needs a box on a layer that has none; the
 error names the layer.
 
 The [margin](#canvas-margin) counts what moves pixels: the largest offset (and a drop shadow's), half a displacement's
@@ -1770,10 +1771,10 @@ group. Every number is animatable.
 
 | `kind` | Fields | Notes |
 |---|---|---|
-| `polygon` | `points`: array of `[x, y]` pairs, at least 3 | Each coordinate is an animatable number. Non-zero fill rule, so a self-crossing star is filled throughout. |
+| `polygon` | `points`: array of `[x, y]` pairs, at least 3; `fillRule` | Each coordinate is an animatable number. `fillRule` is `nonzero` (default, a self-crossing star is filled throughout) or `evenodd` (its centre is cut out). |
 | `inset` | `top`, `right`, `bottom`, `left`, `radius` (all default `0`) | The layer's own box shrunk by the four distances, like CSS `inset()`. A negative distance grows the box. `radius` rounds the corners, is at least 0 and is limited to half the shorter side. If the sides cross, nothing is kept. |
 | `ellipse` | `cx`, `cy`, `rx`, `ry` | Centre and radii, at least 0. A radius of 0 keeps nothing. |
-| `path` | `d`: SVG path data | Non-zero fill rule. The path is not animated (like a shape's `path`). |
+| `path` | `d`: SVG path data; `fillRule` | `fillRule` is `nonzero` (default) or `evenodd` (holes stay holes). The path is not animated (like a shape's `path`). |
 
 The layer's own box, which `inset` is measured from:
 

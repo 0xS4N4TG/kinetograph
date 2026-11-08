@@ -101,7 +101,7 @@ Everything else is on the docs site, [kinetograph.dev/docs](https://kinetograph.
 
 [PolyForm Small Business License 1.0.0](LICENSE.md). Kinetograph is source-available: free for individuals,
 non-profits, and companies with fewer than 100 people and under 1,000,000 USD (2019) revenue. Larger companies need a
-commercial licence; see [COMMERCIAL.md](COMMERCIAL.md). Vendored crates keep their own licences
+commercial licence: email [sanatasgsih@gmail.com](mailto:sanatasgsih@gmail.com), and see [COMMERCIAL.md](COMMERCIAL.md). Vendored crates keep their own licences
 ([vendor/README.md](vendor/README.md)).
 
 Required Notice: Copyright 2026 Sanat Gupta (https://github.com/0xS4N4TG)

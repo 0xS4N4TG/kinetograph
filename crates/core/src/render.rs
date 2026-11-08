@@ -28,7 +28,7 @@ use crate::resolve::{
 };
 use crate::reuse;
 use crate::scene::{
-    BlendMode, DotOrder, LayerKind, MaskMode, MatteMode, Paint, Scene, ShapeLayer, TextLayer, walk_layers,
+    BlendMode, DotOrder, FillRule, LayerKind, MaskMode, MatteMode, Paint, Scene, ShapeLayer, TextLayer, walk_layers,
 };
 use crate::scene3d::draw::{Assets3d, Texture};
 use crate::scene3d::environment::Environment;
@@ -250,6 +250,7 @@ impl Renderer {
         renderer.skia = Some(skia::init(&renderer.device, &renderer.queue, &renderer.scene)?);
         renderer.install_assets(fresh);
         renderer.add_shaders();
+        renderer.add_filter_images();
         Ok(renderer)
     }
 
@@ -305,6 +306,7 @@ impl Renderer {
         self.install_assets(fresh);
         self.scene = scene;
         self.add_shaders();
+        self.add_filter_images();
         Ok(())
     }
 
@@ -328,6 +330,8 @@ impl Renderer {
         }
         self.loaded.fonts = fresh.fonts;
         for (src, id, image) in fresh.images {
+            // The `feImage` copy, if any, is of the file this name stood for.
+            self.compositor.forget_filter_image(&src);
             self.images.insert(src.clone(), image);
             self.loaded.images.insert(src, id);
         }
@@ -367,6 +371,24 @@ impl Renderer {
     /// compositor does not have.
     fn add_shaders(&mut self) {
         self.compositor.add_shaders(&self.scene.shader_sources());
+    }
+
+    /// Puts the pictures of the scene's `feImage` primitives on the GPU, those
+    /// the compositor does not have yet.
+    fn add_filter_images(&mut self) {
+        for src in filter_image_sources(&self.scene) {
+            if self.compositor.has_filter_image(&src) {
+                continue;
+            }
+            if let Some(image) = self.images.get(&src) {
+                self.compositor.set_filter_image(
+                    &src,
+                    image.width,
+                    image.height,
+                    image.data.data(),
+                );
+            }
+        }
     }
 
     /// Empties the layer cache, giving its textures back to the pool.
@@ -744,7 +766,7 @@ impl Renderer {
                     if self.path_bounds(&path, matrix).is_empty() {
                         return Ok(());
                     }
-                    run.push(FlatOp::Clip(path, matrix));
+                    run.push(FlatOp::Clip(path, matrix, clip_even_odd(clip)));
                     true
                 }
                 None => false,
@@ -787,7 +809,7 @@ impl Renderer {
             .drain(..)
             .map(|op| match op {
                 FlatOp::Leaf(layer, matrix, _) => skia::RasterOp::Leaf(layer, matrix),
-                FlatOp::Clip(path, matrix) => skia::RasterOp::Clip(path, matrix),
+                FlatOp::Clip(path, matrix, even_odd) => skia::RasterOp::Clip(path, matrix, even_odd),
                 FlatOp::Pop => skia::RasterOp::Pop,
             })
             .collect();
@@ -1647,7 +1669,8 @@ impl Renderer {
                 self.compositor.release(src);
                 src = self.timed(Stage::Composite, |s| s.compositor.empty());
             } else if !src.bounds.is_empty() {
-                let clip = self.timed(Stage::Raster, |s| s.skia_clip(&path, matrix, keep))?;
+                let even_odd = clip_even_odd(clip);
+                let clip = self.timed(Stage::Raster, |s| s.skia_clip(&path, matrix, keep, even_odd))?;
                 src = self.timed(Stage::Composite, |s| {
                     s.compositor.matte(src, clip, 1.0, MatteMode::Alpha)
                 });
@@ -1794,7 +1817,7 @@ impl Renderer {
     /// The clip as a path in layer space. Empty when it keeps nothing.
     fn clip_path(&mut self, clip: &ResolvedClip, layer: &ResolvedLayer) -> Result<BezPath> {
         Ok(match clip {
-            ResolvedClip::Polygon { points } => {
+            ResolvedClip::Polygon { points, .. } => {
                 let mut path = BezPath::new();
                 for (i, &(x, y)) in points.iter().enumerate() {
                     if i == 0 {
@@ -1825,7 +1848,7 @@ impl Renderer {
                     Ellipse::new((*cx, *cy), (*rx, *ry), 0.0).to_path(SHAPE_TOLERANCE)
                 }
             }
-            ResolvedClip::Path { d } => BezPath::from_svg(d)
+            ResolvedClip::Path { d, .. } => BezPath::from_svg(d)
                 .map_err(|e| Error::Scene(format!("bad clip SVG path {d:?}: {e}")))?,
         })
     }
@@ -2182,8 +2205,18 @@ fn shifted(shift: (f64, f64), parent: Affine) -> Affine {
 enum FlatOp<'a> {
     /// A leaf, the matrix that takes its layer space to canvas pixels, and the pixels it can touch.
     Leaf(&'a ResolvedLayer, Affine, PixelRect),
-    Clip(BezPath, Affine),
+    /// The clip's path, its matrix and whether it fills even-odd.
+    Clip(BezPath, Affine, bool),
     Pop,
+}
+
+/// Whether `clip` keeps what the even-odd rule fills, rather than the non-zero rule.
+fn clip_even_odd(clip: &ResolvedClip) -> bool {
+    matches!(
+        clip,
+        ResolvedClip::Polygon { fill_rule: FillRule::EvenOdd, .. }
+            | ResolvedClip::Path { fill_rule: FillRule::EvenOdd, .. }
+    )
 }
 
 /// A layer drawn and waiting to be blended onto its canvas.
@@ -2574,7 +2607,7 @@ fn geometry_path(geometry: &ResolvedGeometry) -> Result<BezPath> {
 fn image_sources(scene: &Scene) -> Vec<String> {
     // `walk_layers` also visits motion-blur copies, which can hold images of
     // their own.
-    let mut sources = Vec::new();
+    let mut sources = filter_image_sources(scene);
     walk_layers(&scene.layers, &mut |layer| match &layer.kind {
         LayerKind::Image(i) => sources.push(i.src.clone()),
         // A picture as a fill or a text colour (`scene::Paint::Image`).
@@ -2589,6 +2622,19 @@ fn image_sources(scene: &Scene) -> Vec<String> {
         // The pictures a canvas's commands draw.
         LayerKind::Canvas(c) => canvas::sources(&c.commands.0, &mut sources),
         _ => {}
+    });
+    sources
+}
+
+/// The `href` of every `feImage` in the scene's filter graphs, in order of use.
+fn filter_image_sources(scene: &Scene) -> Vec<String> {
+    let mut sources = Vec::new();
+    walk_layers(&scene.layers, &mut |layer| {
+        for effect in &layer.effects {
+            if let crate::scene::Effect::FilterGraph(graph) = effect {
+                sources.extend(graph.image_sources().map(str::to_string));
+            }
+        }
     });
     sources
 }
@@ -3701,6 +3747,25 @@ mod tests {
         let fresh = read_assets(&scene, &loaded, true).unwrap();
         assert!(fresh.rebound && fresh.luts.len() == 1);
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn the_picture_of_an_fe_image_is_read_once_like_an_image() {
+        let media = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenes/media");
+        let graph = serde_json::json!({
+            "type": "filterGraph", "filterUnits": "userSpaceOnUse", "x": 0, "y": 0, "width": 8, "height": 8,
+            "primitives": [{"primitive": "feImage", "href": "flat.png"},
+                           {"primitive": "feImage", "href": "flat.png", "x": 1}],
+        });
+        let json = serde_json::json!({
+            "width": 8, "height": 8, "fps": 30, "durationInFrames": 1,
+            "layers": [{ "id": "a", "type": "group", "children": [], "effects": [graph] }],
+        });
+        let scene = Scene::from_json(&json.to_string(), media).unwrap();
+        assert_eq!(filter_image_sources(&scene), ["flat.png", "flat.png"]);
+        let fresh = read_assets(&scene, &Loaded::default(), false).unwrap();
+        assert_eq!(fresh.images.len(), 1);
+        assert_eq!(fresh.images[0].0, "flat.png");
     }
 
     #[test]

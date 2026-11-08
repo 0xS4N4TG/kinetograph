@@ -605,7 +605,7 @@ fn svg_image(ctx: &mut Ctx, props: Props) -> Result<(), Error> {
                 "ImageSVG",
                 Some("text"),
                 format!(
-                    "the font \"{family}\" is not registered: the SVG's text is drawn in the fallback font"
+                    "the font \"{family}\" is not registered: the SVG's text is drawn in the fallback font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
                 ),
             );
         }

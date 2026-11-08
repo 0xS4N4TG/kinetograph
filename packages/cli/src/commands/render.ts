@@ -1,11 +1,13 @@
-import { writeFileSync } from 'node:fs';
+import { existsSync, statSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { whole, type ParsedArgs } from '../args.js';
 import { describeLeftOut } from '../compat-report.js';
 import { parsePreferredEffectBackend } from '../effects.js';
-import { EXPORT_FLAGS, parseExportFlags } from '../export-options.js';
+import { CliError } from '../errors.js';
+import { EXPORT_FLAGS, SCALE_OPTION, SEQUENCE_FLAGS, parseExportFlags, parseSequenceFlags } from '../export-options.js';
 import { FrameDrawer } from '../frame-drawer.js';
 import { renderSource, type RenderResult } from '../render-job.js';
+import { scaledSize } from '../scenes.js';
 import { native } from '../native.js';
 import { stage } from '../profile.js';
 import { checkFrame, type Source } from '../source.js';
@@ -17,6 +19,7 @@ import {
   PREFERRED_EFFECT_BACKEND_OPTION,
   STRICT_OPTION,
   ensureParentDir,
+  fileStem,
   newRenderer,
   openFromArgs,
   outputPath,
@@ -29,8 +32,9 @@ export const still: Command = {
   summary: 'Render one frame to a PNG',
   project: true,
   positionals: [ENTRY, { name: 'frame', type: 'number', description: 'Frame number, from 0' }],
-  options: [OUTPUT_OPTION, STRICT_OPTION, PREFERRED_EFFECT_BACKEND_OPTION, DEV_REACT_OPTION],
+  options: [OUTPUT_OPTION, SCALE_OPTION, STRICT_OPTION, PREFERRED_EFFECT_BACKEND_OPTION, DEV_REACT_OPTION],
   async run(args, context) {
+    const { scale } = parseExportFlags(args.options);
     const restoreReact = setReactMode(args.options['dev-react'] === true);
     let source;
     try {
@@ -42,7 +46,7 @@ export const still: Command = {
         const renderer = newRenderer();
         context.progress(`renderer: ${renderer.backend()}`);
         return renderer;
-      }, progress: context.progress, strict: args.options.strict === true });
+      }, progress: context.progress, strict: args.options.strict === true, scale });
     try {
       const frame = checkFrame(args.positionals.frame as number, source.composition.durationInFrames);
       const output = outputPath(args, 'stills', source.composition.id, (stem) => `${stem}-f${frame}.png`);
@@ -51,7 +55,8 @@ export const still: Command = {
       ensureParentDir(output);
       writeFileSync(output, png);
       const ms = nowMs() - started;
-      const { width, height } = source.composition;
+      const width = scale !== 1 ? scaledSize(source.composition.width, scale) : source.composition.width;
+      const height = scale !== 1 ? scaledSize(source.composition.height, scale) : source.composition.height;
       drawer.reportLeftOut();
       return {
         data: { output, width, height, frame, ms, compat: drawer.report() },
@@ -71,6 +76,16 @@ export function defaultConcurrency(): number {
 /** The file extension a render takes by default for each `--codec`. */
 const CODEC_EXTENSION: Record<string, string> = { h264: 'mp4', h265: 'mp4', prores: 'mov', vp9: 'webm', gif: 'gif' };
 
+/** A sequence goes in a folder: refused now, before the project is bundled, if the path is a file or names a video or image. */
+function checkSequenceFolder(path: string): void {
+  if (/\.(mp4|mov|webm|gif|png|jpe?g)$/i.test(path)) {
+    throw new CliError('INVALID_ARG', `--sequence writes a folder of images: -o "${path}" looks like a file, name a folder`);
+  }
+  if (existsSync(path) && !statSync(path).isDirectory()) {
+    throw new CliError('INVALID_ARG', `--sequence writes a folder of images: -o "${path}" exists and is not a folder`);
+  }
+}
+
 const explicit = (args: ParsedArgs): string | undefined => (typeof args.options.output === 'string' && args.options.output !== '' ? args.options.output : undefined);
 
 export const render: Command = {
@@ -84,6 +99,7 @@ export const render: Command = {
     { name: 'encoder', type: 'string', description: 'ffmpeg encoder name for the codec (default: libx264, libx265, libvpx-vp9 on every platform, prores_videotoolbox on macOS else prores_ks; h264_videotoolbox and hevc_videotoolbox are opt-in, and the macOS fallback when libx264 or libx265 is missing). The encoders that have no keyframe interval of their own (VideoToolbox and the other hardware ones, libopenh264) get one every 2 seconds. libx264 and libx265 come from the ffmpeg program bundled in the platform package, or the one KINETOGRAPH_FFMPEG names, then the ffmpeg on the PATH when it has libx264' },
     { name: 'draft', type: 'boolean', description: 'Half size, for a fast look (the same as --scale 0.5)' },
     ...EXPORT_FLAGS,
+    ...SEQUENCE_FLAGS,
     { name: 'concurrency', type: 'number', description: 'Frames drawn at once, in worker threads (default: half the cores, at most 4; 1 draws every frame in the main thread; a .json scene is drawn whole)' },
     STRICT_OPTION,
     PREFERRED_EFFECT_BACKEND_OPTION,
@@ -91,12 +107,15 @@ export const render: Command = {
   ],
   async run(args, context) {
     const concurrency = whole('--concurrency', args.options.concurrency as number | undefined, 1, defaultConcurrency());
+    const format = parseSequenceFlags(args.options);
     const flags = parseExportFlags(args.options);
     const devReact = args.options['dev-react'] === true;
     // Refused now, before the project is bundled and run, if the options do not fit the output path or this ffmpeg.
     // Without `-o` the name comes from the composition, which is not known yet, so the check uses its extension.
+    // A sequence of images has no encoder to check against.
     const extension = CODEC_EXTENSION[flags.export.codec ?? 'h264'] ?? 'mp4';
-    native().resolveExport(explicit(args) ?? `video.${extension}`, flags.export);
+    if (!format) native().resolveExport(explicit(args) ?? `video.${extension}`, flags.export);
+    else if (explicit(args)) checkSequenceFolder(explicit(args)!);
     // React's production build unless asked otherwise: the development one is several times slower per frame. The
     // worker threads are told too (`devReact`).
     const restoreReact = setReactMode(devReact);
@@ -108,11 +127,14 @@ export const render: Command = {
       const started = nowMs();
       const renderer = newRenderer();
       stage('renderer made (GPU init)');
-      const output = outputPath(args, 'renders', source.composition.id, (stem) => `${stem}.${extension}`);
+      // A sequence goes in a folder, by default out/renders/<id>/.
+      const output = outputPath(args, 'renders', source.composition.id, (stem) => (format ? stem : `${stem}.${extension}`));
       context.progress(`renderer: ${renderer.backend()}`);
-      ensureParentDir(output);
+      if (format) checkSequenceFolder(output);
+      else ensureParentDir(output);
       const summary = await renderSource(source, renderer, {
         output,
+        sequence: format && { format, stem: fileStem(source.composition.id) },
         range: args.options.range as string | undefined,
         encoder: args.options.encoder as string | undefined,
         scale: flags.scale,
@@ -131,7 +153,7 @@ export const render: Command = {
       });
       stage('renderSource returned');
       for (const line of describeLeftOut(summary.compat)) context.progress(line);
-      return result(summary, nowMs() - started);
+      return result(summary, nowMs() - started, format !== undefined);
     } finally {
       source?.dispose();
       restoreReact();
@@ -139,9 +161,18 @@ export const render: Command = {
   },
 };
 
-function result(summary: RenderResult, wallMs: number) {
+function result(summary: RenderResult, wallMs: number, sequence: boolean) {
   const left = summary.compat.unsupportedFrames;
   const unsupported = left > 0 ? `, unsupported content left out of ${left} frame${left === 1 ? '' : 's'}` : '';
+  if (sequence) {
+    return {
+      data: { ...summary, wallMs },
+      text:
+        `wrote ${summary.frames} ${summary.codec} frames to ${summary.output} (${summary.width}x${summary.height}, ` +
+        `${summary.first}..=${summary.last} at ${summary.fps} fps, no audio${unsupported}, ${wallMs.toFixed(0)} ms in all)` +
+        (summary.artifacts.length > 0 ? `; also wrote ${summary.artifacts.join(', ')}` : ''),
+    };
+  }
   return {
     data: { ...summary, wallMs },
     text:

@@ -31,11 +31,11 @@ pub fn is_fallback(fonts: &BTreeMap<String, String>) -> bool {
 }
 
 /// The reason text set in the built-in fallback is reported with.
-pub const FALLBACK_REASON: &str = "font not loaded; drawn with the built-in fallback";
+pub const FALLBACK_REASON: &str = "font not loaded; drawn with the built-in fallback (system fonts are not used: register the font file with loadFont, or an @font-face with a url())";
 
 /// The reason text is reported with when none of its families is loaded but
 /// other fonts are: it is drawn in whichever registered font the engine picks.
-pub const UNLOADED_REASON: &str = "font not loaded; drawn with another loaded font";
+pub const UNLOADED_REASON: &str = "font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())";
 
 /// Why text asking for the font-family `stack` (as CSS writes it) is not set
 /// in a font of the project's, if it is not: none of its families is

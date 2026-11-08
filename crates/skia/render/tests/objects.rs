@@ -280,6 +280,7 @@ fn an_svg_text_in_an_unregistered_font_is_drawn_in_the_fallback_and_reported() {
     assert!(inked(&out) > 40);
     assert_eq!(out.unsupported.len(), 1);
     assert!(out.unsupported[0].reason.contains("Nope Sans"));
+    assert!(out.unsupported[0].reason.contains("loadFont"), "{}", out.unsupported[0].reason);
 }
 
 #[test]

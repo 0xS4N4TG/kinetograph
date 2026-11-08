@@ -560,7 +560,7 @@ function safeJson(text: string | null): unknown {
   }
 }
 
-/** The mounted file's root gives the host what the host lacks: its classes and style, its `data-*`. */
+/** The mounted file's root gives the host what the host lacks: its classes and style, its `data-*`, its id (as `data-hf-root-id`, for lookups by it). */
 function mergeRootAttributes(host: HfNode & { t: 'el' }, inner: PElement): void {
   const has = (name: string): boolean => host.attrs.some(([n]) => n === name);
   const set = (name: string, value: string): void => {
@@ -571,6 +571,7 @@ function mergeRootAttributes(host: HfNode & { t: 'el' }, inner: PElement): void 
   for (const a of inner.attrs) {
     if (a.name === 'class') set('class', [attrValue(host, 'class'), a.value].filter(Boolean).join(' '));
     else if (a.name === 'style') set('style', [a.value.replace(/;?\s*$/, ';'), attrValue(host, 'style') ?? ''].join(' ').trim());
+    else if (a.name === 'id') set('data-hf-root-id', a.value);
     else if (a.name.startsWith('data-') && a.name !== 'data-composition-src' && !has(a.name)) host.attrs.push([a.name, a.value]);
   }
 }

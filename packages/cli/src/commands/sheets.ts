@@ -2,9 +2,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { whole } from '../args.js';
+import { SCALE_OPTION, parseExportFlags } from '../export-options.js';
 import { CliError } from '../errors.js';
 import { FrameDrawer } from '../frame-drawer.js';
-import { buildOnionScene, buildStripScene, stripLayout, type SheetFrame } from '../scenes.js';
+import { buildOnionScene, buildStripScene, scaleScene, stripLayout, type SheetFrame } from '../scenes.js';
 import { evenFrames, frameRange, type Source } from '../source.js';
 import { nowMs } from '../time.js';
 import {
@@ -48,6 +49,7 @@ export const strip: Command = {
     OUTPUT_OPTION,
     { name: 'range', type: 'string', description: 'Frames to sample, as 10..40; default all' },
     { name: 'cols', type: 'number', description: 'Columns of the sheet (default 4 for landscape, 6 for portrait)' },
+    SCALE_OPTION,
     STRICT_OPTION,
     PREFERRED_EFFECT_BACKEND_OPTION,
   ],
@@ -55,8 +57,9 @@ export const strip: Command = {
     const count = whole('-n', args.options.count as number | undefined, 1, 12);
     if (count > MAX_FRAMES) throw new CliError('INVALID_ARG', `-n is at most ${MAX_FRAMES}`);
     const cols = args.options.cols === undefined ? undefined : whole('--cols', args.options.cols as number, 1);
+    const { scale } = parseExportFlags(args.options);
     const source = await openFromArgs(args);
-    const drawer = new FrameDrawer(source, { renderer: newRenderer, progress: context.progress, strict: args.options.strict === true });
+    const drawer = new FrameDrawer(source, { renderer: newRenderer, progress: context.progress, strict: args.options.strict === true, scale });
     const started = nowMs();
     let dir: string | undefined;
     try {
@@ -66,7 +69,8 @@ export const strip: Command = {
       const rendered = await renderFrames(frames, drawer);
       dir = rendered.dir;
       drawer.reportLeftOut();
-      const scene = buildStripScene(rendered.files, source.composition, cols);
+      const full = buildStripScene(rendered.files, source.composition, cols);
+      const scene = scale !== 1 ? scaleScene(full, scale) : full;
       ensureParentDir(output);
       writeFileSync(output, newRenderer().still(JSON.stringify(scene), 0, dir));
       const layout = stripLayout(frames.length, source.composition.width, source.composition.height, cols);
@@ -90,13 +94,15 @@ export const onion: Command = {
   options: [
     { name: 'count', short: 'n', type: 'number', description: `Number of frames (default 6, at most ${MAX_FRAMES})` },
     OUTPUT_OPTION,
+    SCALE_OPTION,
     PREFERRED_EFFECT_BACKEND_OPTION,
   ],
   async run(args) {
     const count = whole('-n', args.options.count as number | undefined, 1, 6);
     if (count > MAX_FRAMES) throw new CliError('INVALID_ARG', `-n is at most ${MAX_FRAMES}`);
+    const { scale } = parseExportFlags(args.options);
     const source = await openFromArgs(args);
-    const drawer = new FrameDrawer(source, { renderer: newRenderer });
+    const drawer = new FrameDrawer(source, { renderer: newRenderer, scale });
     const started = nowMs();
     let dir: string | undefined;
     try {
@@ -105,7 +111,8 @@ export const onion: Command = {
       const frames = evenFrames(first, last, count);
       const rendered = await renderFrames(frames, drawer);
       dir = rendered.dir;
-      const scene = buildOnionScene(rendered.files, source.composition);
+      const blend = buildOnionScene(rendered.files, source.composition);
+      const scene = scale !== 1 ? scaleScene(blend, scale) : blend;
       ensureParentDir(output);
       writeFileSync(output, newRenderer().still(JSON.stringify(scene), 0, dir));
       const ms = nowMs() - started;

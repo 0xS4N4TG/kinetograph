@@ -192,6 +192,12 @@ fn graph_of<'de, D: serde::Deserializer<'de>>(
     graph
         .validate("canvas", true)
         .map_err(serde::de::Error::custom)?;
+    // The renderer reads the pictures of the scene's layers' graphs; a canvas's commands are not looked through for them.
+    if graph.image_sources().next().is_some() {
+        return Err(serde::de::Error::custom(
+            "feImage is not supported in a canvas filter graph",
+        ));
+    }
     Ok(Box::new(graph.resolve(0.0)))
 }
 
@@ -1004,6 +1010,16 @@ mod tests {
                 ResolvedEffect::ColorMatrix(_),
             ]
         ));
+    }
+
+    #[test]
+    fn a_canvas_filter_graph_with_a_picture_is_refused() {
+        let e = serde_json::from_str::<Vec<CanvasOp>>(
+            r##"[{"op": "fill", "path": "M0 0H4V4Z", "paint": {"type": "color", "color": "#fff"},
+                  "filter": [{"type": "graph", "graph": {"primitives": [{"primitive": "feImage", "href": "a.png"}]}}]}]"##,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("feImage"), "{e}");
     }
 
     #[test]

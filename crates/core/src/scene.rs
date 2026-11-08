@@ -884,9 +884,11 @@ impl Effect {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Clip {
-    /// Non-zero fill rule.
+    /// `fillRule` says which parts of a self-crossing polygon are kept (default `nonzero`).
     Polygon {
         points: Vec<[Num; 2]>,
+        #[serde(default, rename = "fillRule")]
+        fill_rule: FillRule,
     },
     /// The layer's own box (a shape's or image's width x height, the text
     /// layout box, a path's bounding box), shrunk by the four distances, with
@@ -909,9 +911,11 @@ pub enum Clip {
         rx: Num,
         ry: Num,
     },
-    /// SVG path data, non-zero fill rule.
+    /// SVG path data. `fillRule` says which parts of a path with crossings or holes are kept (default `nonzero`).
     Path {
         d: String,
+        #[serde(default, rename = "fillRule")]
+        fill_rule: FillRule,
     },
 }
 
@@ -1114,6 +1118,9 @@ pub struct ImagePaint {
     pub space_x: Num,
     #[serde(default = "zero")]
     pub space_y: Num,
+    /// How the picture is resampled when it is drawn at another size.
+    #[serde(default)]
+    pub sampling: Sampling,
 }
 
 impl<'de> Deserialize<'de> for Paint {
@@ -1356,6 +1363,9 @@ pub struct ImageLayer {
     /// How the picture sits in the box `width` x `height`.
     #[serde(default)]
     pub fit: Fit,
+    /// How the picture is resampled when it is drawn at another size.
+    #[serde(default)]
+    pub sampling: Sampling,
 }
 
 /// A Lottie animation, rasterised by ThorVG at the size it is drawn at.
@@ -1509,6 +1519,18 @@ pub struct GifLayer {
 
 fn one_f64() -> f64 {
     1.0
+}
+
+/// How a picture is resampled when it is drawn at another size (CSS's `image-rendering`: `nearest` is `pixelated`
+/// and `crisp-edges`, hard pixel edges).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Sampling {
+    /// Smoothly (bilinear).
+    #[default]
+    Linear,
+    /// The nearest pixel.
+    Nearest,
 }
 
 /// How an image is fitted to its box (CSS's `object-fit`).
@@ -2575,7 +2597,7 @@ fn margin_for(reach: f64, width: u32, height: u32) -> u32 {
 fn validate_clip(id: &str, clip: &Clip, kind: &LayerKind) -> Result<()> {
     let bad = |msg: String| Err(Error::Scene(format!("layer {id:?}: clip {msg}")));
     match clip {
-        Clip::Polygon { points } => {
+        Clip::Polygon { points, .. } => {
             if points.len() < 3 {
                 return bad(format!(
                     "polygon needs at least 3 points, got {}",
@@ -2598,7 +2620,7 @@ fn validate_clip(id: &str, clip: &Clip, kind: &LayerKind) -> Result<()> {
                 return bad("ellipse rx and ry must not be negative".into());
             }
         }
-        Clip::Path { d } => {
+        Clip::Path { d, .. } => {
             BezPath::from_svg(d).map_err(|e| {
                 Error::Scene(format!("layer {id:?}: clip has a bad SVG path {d:?}: {e}"))
             })?;

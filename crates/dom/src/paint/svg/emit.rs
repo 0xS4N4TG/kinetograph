@@ -342,6 +342,7 @@ impl<'a> Emitter<'a> {
                         urls.push(url.as_str());
                         if let Some(e) = filter::effect(
                             self.doc,
+                            self.request,
                             url,
                             Some(bbox),
                             self.viewport,
@@ -764,6 +765,14 @@ impl<'a> Emitter<'a> {
         });
         if !t.as_object().is_some_and(Map::is_empty) {
             layer["transform"] = t;
+        }
+        if matches!(
+            img.rendering_mode(),
+            usvg::ImageRendering::Pixelated
+                | usvg::ImageRendering::CrispEdges
+                | usvg::ImageRendering::OptimizeSpeed
+        ) {
+            layer["sampling"] = json!("nearest");
         }
         vec![layer]
     }

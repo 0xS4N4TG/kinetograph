@@ -21,6 +21,13 @@ use super::background::{ImageLayerSpec, region_named};
 use super::geom::{BoxGeom, Radii, Rect, Region, path_d, rounded_rect_path};
 use super::util::{Layer, lp, num};
 
+/// Writes the clip's `fillRule` when it is even-odd (the scene's default is non-zero).
+fn set_even_odd(clip: &mut Value, rule: FillRule) {
+    if rule == FillRule::Evenodd {
+        clip["fillRule"] = json!("evenodd");
+    }
+}
+
 impl<'a> Painter<'a> {
     /// The scene clip for `clip-path`, in the group's coordinates (origin: the
     /// border box's corner).
@@ -151,15 +158,6 @@ impl<'a> Painter<'a> {
                 )
             }
             BasicShape::Polygon(p) => {
-                if p.fill == FillRule::Evenodd {
-                    self.report(
-                        node,
-                        "clip-path",
-                        "polygon(evenodd)",
-                        "the even-odd fill rule is not drawn",
-                    );
-                    return None;
-                }
                 let pts: Vec<Value> = p
                     .coordinates
                     .iter()
@@ -168,18 +166,11 @@ impl<'a> Painter<'a> {
                 if pts.len() < 3 {
                     return Some(json!({ "kind": "polygon", "points": [[0, 0], [0, 0], [0, 0]] }));
                 }
-                Some(json!({ "kind": "polygon", "points": pts }))
+                let mut clip = json!({ "kind": "polygon", "points": pts });
+                set_even_odd(&mut clip, p.fill);
+                Some(clip)
             }
             BasicShape::PathOrShape(PathOrShape::Path(path)) => {
-                if path.fill == FillRule::Evenodd {
-                    self.report(
-                        node,
-                        "clip-path",
-                        "path(evenodd)",
-                        "the even-odd fill rule is not drawn",
-                    );
-                    return None;
-                }
                 let d = path.path.to_css_string();
                 let d = d.trim().trim_matches('"').to_string();
                 let Some(bez) = BezPath::from_svg(&d)
@@ -191,7 +182,9 @@ impl<'a> Painter<'a> {
                 };
                 let mut moved = bez;
                 moved.apply_affine(kurbo::Affine::translate((r.x, r.y)));
-                Some(json!({ "kind": "path", "d": path_d(&moved) }))
+                let mut clip = json!({ "kind": "path", "d": path_d(&moved) });
+                set_even_odd(&mut clip, path.fill);
+                Some(clip)
             }
             BasicShape::PathOrShape(PathOrShape::Shape(_)) => {
                 self.report(
@@ -298,7 +291,10 @@ impl<'a> Painter<'a> {
                 _ => {}
             }
             let lid = format!("{id}.{i}");
-            if let Some(l) = self.image_layer(node, geom, current, &spec, &lid, true) {
+            if let Some(mut l) = self.image_layer(node, geom, current, &spec, &lid, true) {
+                if super::util::nearest_sampling(style) {
+                    super::util::mark_nearest(&mut l);
+                }
                 layers.push(l);
             }
         }

@@ -138,7 +138,7 @@ CONFIG=(
   --enable-encoder=libx264,libx265,libvpx_vp8,libvpx_vp9,aac,pcm_s16le
   --enable-parser=h264,hevc,vp8,vp9,aac
   --enable-bsf=aac_adtstoasc,extract_extradata,vp9_superframe,null
-  --enable-filter=scale,format,null,anull,aresample,aformat,fps,setpts,asetpts,trim,atrim
+  --enable-filter=scale,format,setparams,null,anull,aresample,aformat,fps,setpts,asetpts,trim,atrim
 )
 case "$OS" in
   macos) CONFIG+=(--enable-zlib) ;;

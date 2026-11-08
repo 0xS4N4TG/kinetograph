@@ -1,6 +1,7 @@
 import { CommandBar } from '@/components/code';
 import { commandBar } from '@/sections/hero';
 import { Heading } from '@/sections/heading';
+import { doc } from '@/sections/links';
 import { body, Label, link, section, shell } from '@/sections/shared';
 
 const STEPS = [
@@ -29,10 +30,24 @@ export function Start() {
           ))}
         </ol>
       </div>
-      <p className={`${body} mt-24 max-w-[62ch] text-[15px]`}>
-        Source-available under the PolyForm Small Business licence: free for individuals and small companies.{' '}
-        See <a className={link} href="/docs/compat/">what works</a>.
-      </p>
+      <div id="licence" className="mt-24 grid grid-cols-[minmax(0,1fr)] gap-6 border-t border-cobalt/30 pt-10 md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] md:gap-20">
+        <div>
+          <Label className="mb-3">Licence</Label>
+          <p className={`${body} max-w-[40ch]`}>
+            Free for individuals, non-profits and companies under 100 people and 1,000,000 USD revenue. Source-available
+            under the PolyForm Small Business licence.
+          </p>
+        </div>
+        <div>
+          <Label className="mb-3">Commercial licence</Label>
+          <p className={`${body} max-w-[46ch]`}>
+            Larger companies need a commercial licence. Email{' '}
+            <a className={link} href="mailto:sanatasgsih@gmail.com">sanatasgsih@gmail.com</a>, or read{' '}
+            <a className={link} href={doc('COMMERCIAL.md')}>the terms</a>. See <a className={link} href="/docs/compat/">what works</a>{' '}
+            before you buy.
+          </p>
+        </div>
+      </div>
     </section>
   );
 }

@@ -426,7 +426,7 @@ pub struct ExportOptions {
     pub x264_preset: Option<String>,
     /// Bits per second.
     pub video_bitrate: Option<f64>,
-    /// `yuv420p`, `yuv422p`, `yuv444p`, `yuv420p10le`, `yuv422p10le` or `yuv444p10le`.
+    /// `yuv420p`, `yuv422p`, `yuv444p`, `yuv420p10le`, `yuv422p10le`, `yuv444p10le`, or with alpha `yuva444p10le` (ProRes 4444) or `yuva420p` (VP9).
     pub pixel_format: Option<String>,
     /// `proxy`, `light`, `standard`, `hq`, `4444` or `4444-xq`.
     pub prores_profile: Option<String>,

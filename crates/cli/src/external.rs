@@ -628,9 +628,12 @@ fn encode_args(
     ] {
         arg(s);
     }
-    if let Some(plan) = plan {
-        arg("-vf");
-        arg(&plan.filter);
+    // The pipe carries untagged pictures, and an output `-colorspace` makes ffmpeg read them as BT.601 and convert to
+    // BT.709. `setparams` declares what the pictures are, so nothing is converted and the stream's tags are complete.
+    arg("-vf");
+    match plan {
+        Some(plan) => arg(&format!("{BT709_TAGS},{}", plan.filter)),
+        None => arg(BT709_TAGS),
     }
     for s in encoder_args(settings, width, height, fps) {
         arg(&s);
@@ -661,6 +664,9 @@ fn encode_args(
     args
 }
 
+/// The filter that tags the raw pictures as the linked encoder does: BT.709, limited range.
+const BT709_TAGS: &str = "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv";
+
 /// A running ffmpeg taking raw pictures of one pixel format on its standard input and writing a video-only file.
 pub struct ExternalEncoder {
     child: Child,
@@ -687,6 +693,13 @@ impl ExternalEncoder {
         if !width.is_multiple_of(2) || !height.is_multiple_of(2) {
             return Err(format!(
                 "{width}x{height} has an odd side: video needs an even width and height"
+            ));
+        }
+        if settings.pix.has_alpha() {
+            return Err(format!(
+                "the external ffmpeg writes no alpha channel ({} needs the linked ffmpeg to have {})",
+                settings.pix.name(),
+                settings.encoder
             ));
         }
         if !settings.pix.is_yuv() || settings.pix.name() != settings.pix.file_name() {
@@ -963,6 +976,35 @@ mod tests {
     const TAGS: &str =
         "-colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv -fps_mode cfr";
 
+    /// The tagging filter that starts every `-vf`, with the comma that joins it to the hardware plan's filter.
+    const SET: &str = "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv,";
+
+    #[test]
+    fn untagged_pictures_are_declared_bt709_before_the_encoder_so_ffmpeg_converts_nothing() {
+        // Software: the tagging filter alone, ahead of the encoder; it must not become a conversion (no -vf format).
+        assert_eq!(
+            line("libx264", Pix::Yuv420p, Quality::Crf(18.0), None),
+            format!(
+                "{INPUT_8} -vf {} -c:v libx264 -crf 18 -preset medium -pix_fmt yuv420p {TAGS}",
+                SET.trim_end_matches(',')
+            )
+        );
+        for pix in [Pix::Yuv420p, Pix::Yuv444p, Pix::Yuv420p10] {
+            for encoder in ["libx264", "libx265"] {
+                let text = line(encoder, pix, Quality::Default, None);
+                let at = text.find(" -vf ").unwrap();
+                assert!(text[at + 5..].starts_with(SET.trim_end_matches(',')), "{text}");
+                assert!(at < text.find(" -c:v ").unwrap(), "{text}");
+                assert_eq!(text.matches("-vf").count(), 1, "{text}");
+            }
+        }
+        // Hardware: the same tags first, then the plan's own filter.
+        for encoder in HARDWARE {
+            let text = line(encoder, Pix::Yuv420p, Quality::Default, Some(NODE));
+            assert!(text.contains(&format!(" -vf {SET}format=nv12,hwupload")), "{text}");
+        }
+    }
+
     #[test]
     fn vaapi_takes_a_device_and_uploads_nv12() {
         // Constant quality is -qp, a rate is -b:v, and nothing is asked for by default but the bit rate of the other
@@ -970,7 +1012,7 @@ mod tests {
         assert_eq!(
             line("h264_vaapi", Pix::Yuv420p, Quality::Crf(20.0), Some(NODE)),
             format!(
-                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v h264_vaapi -g 60 -qp 20 {TAGS}"
+                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf {SET}format=nv12,hwupload -c:v h264_vaapi -g 60 -qp 20 {TAGS}"
             )
         );
         assert_eq!(
@@ -981,13 +1023,13 @@ mod tests {
                 Some(NODE)
             ),
             format!(
-                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v h264_vaapi -g 60 -b:v 5000000 {TAGS}"
+                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf {SET}format=nv12,hwupload -c:v h264_vaapi -g 60 -b:v 5000000 {TAGS}"
             )
         );
         assert_eq!(
             line("h264_vaapi", Pix::Yuv420p, Quality::Default, Some(NODE)),
             format!(
-                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v h264_vaapi -g 60 -b:v 12441600 {TAGS}"
+                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf {SET}format=nv12,hwupload -c:v h264_vaapi -g 60 -b:v 12441600 {TAGS}"
             )
         );
         // A CRF with a fraction is rounded: -qp is an integer.
@@ -1021,14 +1063,14 @@ mod tests {
         assert_eq!(
             line("hevc_vaapi", Pix::Yuv420p, Quality::Crf(28.0), Some(NODE)),
             format!(
-                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf format=nv12,hwupload -c:v hevc_vaapi -g 60 -qp 28 -tag:v hvc1 {TAGS}"
+                "-init_hw_device vaapi=va:{NODE} -filter_hw_device va {INPUT_8} -vf {SET}format=nv12,hwupload -c:v hevc_vaapi -g 60 -qp 28 -tag:v hvc1 {TAGS}"
             )
         );
         assert_eq!(
             line("hevc_vaapi", Pix::Yuv420p10, Quality::Crf(28.0), Some(NODE)),
             format!(
                 "-init_hw_device vaapi=va:{NODE} -filter_hw_device va -f rawvideo -pix_fmt yuv420p10le -s 1920x1080 -framerate 30/1 -i pipe:0 -an \
-                 -vf format=p010le,hwupload -c:v hevc_vaapi -g 60 -qp 28 -profile:v main10 -tag:v hvc1 {TAGS}"
+                 -vf {SET}format=p010le,hwupload -c:v hevc_vaapi -g 60 -qp 28 -profile:v main10 -tag:v hvc1 {TAGS}"
             )
         );
     }
@@ -1039,7 +1081,7 @@ mod tests {
             line("h264_qsv", Pix::Yuv420p, Quality::Crf(20.0), None),
             format!(
                 "-init_hw_device qsv=hw -filter_hw_device hw {INPUT_8} \
-                 -vf format=nv12,hwupload=extra_hw_frames=64,format=qsv -c:v h264_qsv -g 60 -global_quality 20 {TAGS}"
+                 -vf {SET}format=nv12,hwupload=extra_hw_frames=64,format=qsv -c:v h264_qsv -g 60 -global_quality 20 {TAGS}"
             )
         );
         // A render node named by the user: the VAAPI device there, and Quick Sync derived from it.
@@ -1053,7 +1095,7 @@ mod tests {
             format!(
                 "-init_hw_device vaapi=va:/dev/dri/renderD129 -init_hw_device qsv=hw@va -filter_hw_device hw \
                  -f rawvideo -pix_fmt yuv420p10le -s 1920x1080 -framerate 30/1 -i pipe:0 -an \
-                 -vf format=p010le,hwupload=extra_hw_frames=64,format=qsv -c:v hevc_qsv -g 60 -b:v 12441600 \
+                 -vf {SET}format=p010le,hwupload=extra_hw_frames=64,format=qsv -c:v hevc_qsv -g 60 -b:v 12441600 \
                  -profile:v main10 -tag:v hvc1 {TAGS}"
             )
         );
@@ -1290,7 +1332,7 @@ mod tests {
             calls[0],
             format!(
                 "-hide_banner -loglevel error -nostdin -y -init_hw_device vaapi=va:{NODE} -filter_hw_device va -f rawvideo -pix_fmt yuv420p -s 256x144 \
-                 -framerate 30/1 -i pipe:0 -an -vf format=nv12,hwupload -c:v h264_vaapi -g 60 -b:v 221184 {TAGS} \
+                 -framerate 30/1 -i pipe:0 -an -vf {SET}format=nv12,hwupload -c:v h264_vaapi -g 60 -b:v 221184 {TAGS} \
                  -frames:v 4 -f null -"
             )
         );
