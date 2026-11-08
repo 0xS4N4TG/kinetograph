@@ -126,7 +126,7 @@ npx kinetograph render <entry> [-o <output.mp4>] [options]
 | `--audio-bitrate <rate>` | Total audio bit rate, such as `320k`. The default is 96 kbit/s per channel. Not for `pcm`. |
 | `--every-nth-frame <n>` | With `--codec gif`. Draws every nth frame and keeps the length. |
 | `--strict` | Fail on the first frame with content the engine cannot draw. No output file is left. |
-| `--sequence` | Write one image per frame into the `-o` folder instead of a video, named `<id>-<frame>.png` (`Main-042.png`). No audio, and the video flags are refused. See [Rendering](/docs/rendering/#image-sequences). |
+| `--sequence` | Write one image per frame into the `-o` folder instead of a video, named `<id>-<frame>.png` (`Main-042.png`). No audio, and the video flags are refused. See [Rendering](/docs/rendering/#export-options). |
 | `--image-format <name>` | With `--sequence`: `png` (default, alpha included) or `jpeg` (quality 80, no alpha: flattened over black). |
 | `--dev-react` | Use React's development build. |
 | `--preferred-effect-backend <name>` | See `still`. |

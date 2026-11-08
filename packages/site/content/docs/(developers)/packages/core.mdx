@@ -1,0 +1,23 @@
+---
+title: "@kinetographdev/core"
+description: "The authoring API a project imports: Composition, Sequence, interpolate, spring, Text, Image and more."
+---
+
+The Remotion-shaped authoring API: the frame clock, compositions, sequences, animation helpers, `random`, the native elements and the packages Remotion splits out. Your project imports from it. `npx kinetograph init` adds it for you.
+
+```sh
+npm install @kinetographdev/core react zod
+```
+
+Current version: 0.3.0.
+
+## Exports
+
+- `.`: `registerRoot`, `Composition`, `Still`, `useCurrentFrame`, `useVideoConfig`, `Sequence`, `Series`, `Loop`, `Freeze`, `interpolate`, `interpolateColors`, `spring`, `Easing`, `random`, `Video`, `Gif`, `staticFile` and the native elements.
+- Sub-paths: `/transitions`, `/motion-blur`, `/noise`, `/paths`, `/shapes`, `/layout-utils`, `/animation-utils`, `/captions`, `/fonts`, `/google-fonts`, `/lottie`, `/gif`, `/media-utils`, `/light-leaks`, `/starburst`, `/sfx`, `/zod-types`, `/canvas`, `/rive`, `/skia` and `/hyperframes`.
+
+## See also
+
+- [Compositions and props](/docs/making-videos/compositions/)
+- [Animation and timing](/docs/making-videos/animation/)
+- [Layers](/docs/making-videos/layers/)
