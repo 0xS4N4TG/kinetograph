@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { CliError } from '../errors.js';
 import { isItemName, pathProblem } from './item.js';
 import { download, MAX_FILE_BYTES, MAX_JSON_BYTES } from './source.js';
-import { Localizer, type LocalAsset, type LocalFileKind, type LocalFont } from './hyperframes-assets.js';
+import { Localizer, type LocalAsset, type LocalFileKind } from './hyperframes-assets.js';
 
 export const HYPERFRAMES_REPO = 'heygen-com/hyperframes';
 /**
@@ -405,8 +405,6 @@ export interface HyperframesAdded {
   unchanged: string[];
   /** Licence and notice files the item ships, among `written` and `unchanged`. */
   licences: string[];
-  /** The font families stored in the project for the item (from Google Fonts or a font CDN), with their licences and files. */
-  fonts: LocalFont[];
   dimensions?: { width: number; height: number };
   duration?: number;
 }
@@ -495,7 +493,6 @@ export async function addHyperframes(options: HyperframesAddOptions): Promise<Hy
 
   // What an item loads from the web while it runs (Google Fonts, font files, data files) is stored in the project, and the
   // item's pages and scripts name the copies. Before anything is written, like every other download.
-  const fonts = new Map<string, LocalFont[]>();
   const extras = new Map<string, LocalAsset[]>();
   if (options.localize !== false) {
     for (const { item, files } of plan) {
@@ -513,7 +510,6 @@ export async function addHyperframes(options: HyperframesAddOptions): Promise<Hy
         if (problem !== undefined) throw new CliError('UNSAFE_TARGET', `${item.name}: a file stored for it ("${asset.target}") ${problem}`);
       }
       extras.set(item.name, [...localizer.assets.values()]);
-      fonts.set(item.name, localizer.localFonts);
       for (const w of localizer.warnings) warnings.push(`${item.name}: ${w}`);
     }
   }
@@ -556,7 +552,6 @@ export async function addHyperframes(options: HyperframesAddOptions): Promise<Hy
       written: [],
       unchanged: [],
       licences: [],
-      fonts: fonts.get(item.name) ?? [],
       ...(item.dimensions !== undefined ? { dimensions: item.dimensions } : {}),
       ...(item.duration !== undefined ? { duration: item.duration } : {}),
     };
@@ -592,7 +587,6 @@ export function describeHyperframesAdd(result: HyperframesAddResult): string {
     lines.push(`${item.title} (hyperframes/${item.name}, ${item.type}): ${item.written.length} file${item.written.length === 1 ? '' : 's'} written${item.unchanged.length > 0 ? `, ${item.unchanged.length} already there` : ''}`);
     for (const file of item.written) lines.push(`  wrote      ${file}`);
     for (const file of item.unchanged) lines.push(`  unchanged  ${file}`);
-    for (const font of item.fonts) lines.push(`  font       ${font.family} (${font.licence}) stored in the project: ${font.files.length} file${font.files.length === 1 ? '' : 's'}`);
   }
   for (const warning of result.warnings) lines.push(`warning: ${warning}`);
   if (result.next.length > 0) lines.push('next:', ...result.next.map((step) => `  ${step}`));

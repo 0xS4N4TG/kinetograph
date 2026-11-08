@@ -9,7 +9,10 @@
 // has been checked. Nothing from the registry is stored in this repository: items are fetched when the sweep runs.
 //
 //   node scripts/hyperframes-registry/sweep.mjs [--ref <commit>] [--only a,b] [--limit N] [--out file] [--resume]
-//                                              [--timeout <seconds>] [--jobs N] [--cli <path to cli.js>]
+//                                              [--timeout <seconds>] [--jobs N] [--cli <path to cli.js>] [--keep-remote]
+//
+// An item's Google Fonts, font files and data files are downloaded into the temporary project by `add` (a component's
+// demo page gets the same treatment), as for a user. `--keep-remote` leaves them as the item names them.
 //
 // Needs the built CLI (`npm run build -w kinetograph`), the native addon, and the network. It never starts a browser.
 
@@ -17,13 +20,13 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { availableParallelism, cpus, platform, arch, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '../..');
 
 function parseArgs(argv) {
-  const out = { ref: undefined, only: undefined, limit: Infinity, out: join(here, 'status.json'), resume: false, timeout: 240, jobs: 1, cli: join(repo, 'packages/cli/dist/cli.js') };
+  const out = { ref: undefined, only: undefined, limit: Infinity, out: join(here, 'status.json'), resume: false, keepRemote: false, timeout: 240, jobs: 1, cli: join(repo, 'packages/cli/dist/cli.js') };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const value = () => {
@@ -35,6 +38,7 @@ function parseArgs(argv) {
     else if (arg === '--limit') out.limit = Number(value());
     else if (arg === '--out') out.out = resolve(value());
     else if (arg === '--resume') out.resume = true;
+    else if (arg === '--keep-remote') out.keepRemote = true;
     else if (arg === '--timeout') out.timeout = Number(value());
     else if (arg === '--jobs') out.jobs = Math.max(1, Number(value()));
     else if (arg === '--cli') out.cli = resolve(value());
@@ -112,7 +116,7 @@ async function checkItem(options, listing, ref) {
     writeFileSync(join(dir, 'package.json'), '{"private":true}\n');
     // A root page first, so the install finds the project here; it is replaced below.
     writeFileSync(join(dir, 'index.html'), '<!doctype html><html><body></body></html>\n');
-    const added = await cli(options, ['add', `hyperframes/${name}`, '--dir', dir, ...(ref ? ['--ref', ref] : [])], options.timeout);
+    const added = await cli(options, ['add', `hyperframes/${name}`, '--dir', dir, ...(ref ? ['--ref', ref] : []), ...(options.keepRemote ? ['--keep-remote'] : [])], options.timeout);
     if (added.code !== 0 || added.json?.added === undefined) {
       record.error = failure('install', added);
       return record;
@@ -142,6 +146,16 @@ async function checkItem(options, listing, ref) {
       } catch (error) {
         record.error = `demo: ${short(error.message)}`;
         return record;
+      }
+      if (!options.keepRemote) {
+        // The demo is a page of the item's own, so its web references are stored in the project like the item's files.
+        const { Localizer } = await import(pathToFileURL(join(dirname(options.cli), 'registry/hyperframes-assets.js')).href);
+        const localizer = new Localizer();
+        demo = await localizer.localize(demo, 'index.html', 'html');
+        for (const asset of localizer.assets.values()) {
+          mkdirSync(dirname(join(dir, asset.target)), { recursive: true });
+          writeFileSync(join(dir, asset.target), asset.data);
+        }
       }
       writeFileSync(join(dir, 'index.html'), demo);
     }

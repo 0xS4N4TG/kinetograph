@@ -5,15 +5,15 @@
   "kinetograph": "0.3.0",
   "jobs": 1,
   "counts": {
-    "works": 238,
-    "partial": 208,
+    "works": 254,
+    "partial": 192,
     "fails": 2,
     "skipped": 0
   },
   "stillMs": {
-    "median": 490,
-    "p90": 2133,
-    "max": 42354
+    "median": 403,
+    "p90": 1663,
+    "max": 18229
   },
   "topUnsupported": [
     {
@@ -44,6 +44,15 @@
       ]
     },
     {
+      "feature": "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+      "items": 17,
+      "examples": [
+        "code-3d-extrude",
+        "code-particle-assemble",
+        "code-shader-dissolve"
+      ]
+    },
+    {
       "feature": "div background: a gradient that interpolates in a colour space other than sRGB",
       "items": 16,
       "examples": [
@@ -53,30 +62,12 @@
       ]
     },
     {
-      "feature": "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
+      "feature": "div font-family: font not loaded; drawn with another loaded font",
       "items": 14,
       "examples": [
         "caption-emoji-pop",
         "chat-message",
         "chat-thread"
-      ]
-    },
-    {
-      "feature": "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
-      "items": 14,
-      "examples": [
-        "code-3d-extrude",
-        "code-particle-assemble",
-        "code-shader-dissolve"
-      ]
-    },
-    {
-      "feature": "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block: https requests are not available",
-      "items": 14,
-      "examples": [
-        "chromatic-radial-split",
-        "cinematic-zoom",
-        "cross-warp-morph"
       ]
     },
     {
@@ -89,7 +80,7 @@
       ]
     },
     {
-      "feature": "span font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
+      "feature": "span font-family: font not loaded; drawn with another loaded font",
       "items": 5,
       "examples": [
         "chatgpt-exchange",
@@ -98,12 +89,21 @@
       ]
     },
     {
-      "feature": "p font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
+      "feature": "p font-family: font not loaded; drawn with another loaded font",
       "items": 4,
       "examples": [
         "blur-in",
         "separator",
         "vfx-portal"
+      ]
+    },
+    {
+      "feature": "button font-family: font not loaded; drawn with another loaded font",
+      "items": 3,
+      "examples": [
+        "onboarding-stepper-flow",
+        "signup-flow",
+        "tabs-slide-indicator"
       ]
     }
   ],
@@ -132,11 +132,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 4005,
+      "doctorMs": 10572,
       "frames": 144,
       "stillMs": [
-        618,
-        1225
+        1278,
+        1987
       ],
       "stills": [
         43,
@@ -149,11 +149,11 @@
       "warnings": [],
       "files": 2,
       "licence": null,
-      "doctorMs": 1584,
+      "doctorMs": 12283,
       "frames": 270,
       "stillMs": [
-        326,
-        593
+        2097,
+        3055
       ],
       "stills": [
         81,
@@ -166,11 +166,11 @@
       "warnings": [],
       "files": 3,
       "licence": null,
-      "doctorMs": 5841,
+      "doctorMs": 42962,
       "frames": 580,
       "stillMs": [
-        1141,
-        2004
+        7208,
+        17401
       ],
       "stills": [
         174,
@@ -183,11 +183,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 3345,
+      "doctorMs": 6300,
       "frames": 150,
       "stillMs": [
-        715,
-        937
+        2058,
+        2341
       ],
       "stills": [
         45,
@@ -196,19 +196,15 @@
     },
     "app-showcase": {
       "type": "block",
-      "status": "partial",
-      "warnings": [
-        "div font-family: font not loaded; drawn with the built-in fallback (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
-        "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap: https requests are not available",
-        "span font-family: font not loaded; drawn with the built-in fallback (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
-      ],
-      "files": 1,
+      "status": "works",
+      "warnings": [],
+      "files": 5,
       "licence": null,
-      "doctorMs": 6825,
+      "doctorMs": 12411,
       "frames": 165,
       "stillMs": [
-        1449,
-        2442
+        2080,
+        3608
       ],
       "stills": [
         49,
@@ -221,11 +217,11 @@
       "warnings": [],
       "files": 2,
       "licence": null,
-      "doctorMs": 8481,
+      "doctorMs": 20105,
       "frames": 150,
       "stillMs": [
-        1135,
-        1848
+        2537,
+        4514
       ],
       "stills": [
         45,
@@ -238,11 +234,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 3665,
+      "doctorMs": 7669,
       "frames": 150,
       "stillMs": [
-        912,
-        1434
+        1434,
+        2442
       ],
       "stills": [
         45,
@@ -257,11 +253,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2872,
+      "doctorMs": 7567,
       "frames": 120,
       "stillMs": [
-        293,
-        302
+        589,
+        859
       ],
       "stills": [
         36,
@@ -276,11 +272,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2191,
+      "doctorMs": 7546,
       "frames": 120,
       "stillMs": [
-        388,
-        385
+        949,
+        1525
       ],
       "stills": [
         36,
@@ -293,11 +289,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 3335,
+      "doctorMs": 8093,
       "frames": 60,
       "stillMs": [
-        860,
-        763
+        2318,
+        2115
       ],
       "stills": [
         18,
@@ -312,11 +308,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2711,
+      "doctorMs": 7267,
       "frames": 120,
       "stillMs": [
-        335,
-        381
+        1415,
+        1501
       ],
       "stills": [
         36,
@@ -331,11 +327,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2558,
+      "doctorMs": 8314,
       "frames": 150,
       "stillMs": [
-        620,
-        497
+        909,
+        1751
       ],
       "stills": [
         45,
@@ -348,11 +344,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2848,
+      "doctorMs": 10878,
       "frames": 150,
       "stillMs": [
-        943,
-        1734
+        1028,
+        958
       ],
       "stills": [
         45,
@@ -365,11 +361,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 3393,
+      "doctorMs": 9094,
       "frames": 150,
       "stillMs": [
-        1128,
-        1722
+        686,
+        1408
       ],
       "stills": [
         45,
@@ -382,11 +378,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 19079,
+      "doctorMs": 14563,
       "frames": 360,
       "stillMs": [
-        3061,
-        5608
+        2794,
+        5321
       ],
       "stills": [
         108,
@@ -401,11 +397,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 7044,
+      "doctorMs": 5882,
       "frames": 120,
       "stillMs": [
-        959,
-        1132
+        728,
+        815
       ],
       "stills": [
         36,
@@ -416,13 +412,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 7,
       "licence": null,
-      "doctorMs": 13687,
+      "doctorMs": 10974,
       "frames": 180,
       "stillMs": [
-        3176,
-        3950
+        2633,
+        2408
       ],
       "stills": [
         54,
@@ -437,11 +433,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 6052,
+      "doctorMs": 6631,
       "frames": 120,
       "stillMs": [
-        1301,
-        1446
+        988,
+        951
       ],
       "stills": [
         36,
@@ -456,11 +452,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 6574,
+      "doctorMs": 7040,
       "frames": 165,
       "stillMs": [
-        1121,
-        1079
+        582,
+        1278
       ],
       "stills": [
         49,
@@ -475,11 +471,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 6119,
+      "doctorMs": 6784,
       "frames": 120,
       "stillMs": [
-        704,
-        1052
+        437,
+        704
       ],
       "stills": [
         36,
@@ -492,11 +488,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 6627,
+      "doctorMs": 8925,
       "frames": 60,
       "stillMs": [
-        1266,
-        1469
+        2183,
+        1854
       ],
       "stills": [
         18,
@@ -509,11 +505,11 @@
       "warnings": [],
       "files": 3,
       "licence": null,
-      "doctorMs": 22668,
+      "doctorMs": 34558,
       "frames": 360,
       "stillMs": [
-        4046,
-        7690
+        5954,
+        15159
       ],
       "stills": [
         108,
@@ -524,15 +520,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "p font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "p font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 6060,
+      "doctorMs": 9954,
       "frames": 120,
       "stillMs": [
-        603,
-        978
+        992,
+        1048
       ],
       "stills": [
         36,
@@ -545,11 +541,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 4782,
+      "doctorMs": 8457,
       "frames": 150,
       "stillMs": [
-        488,
-        833
+        803,
+        973
       ],
       "stills": [
         45,
@@ -562,11 +558,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 4002,
+      "doctorMs": 8299,
       "frames": 120,
       "stillMs": [
-        642,
-        1156
+        887,
+        1897
       ],
       "stills": [
         36,
@@ -581,11 +577,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 3404,
+      "doctorMs": 8427,
       "frames": 150,
       "stillMs": [
-        420,
-        484
+        665,
+        864
       ],
       "stills": [
         45,
@@ -596,16 +592,16 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "div font-family: font not loaded; drawn with the built-in fallback (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
-        "span font-family: font not loaded; drawn with the built-in fallback (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "div font-family: font not loaded; drawn with the built-in fallback",
+        "span font-family: font not loaded; drawn with the built-in fallback"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 3802,
+      "doctorMs": 8585,
       "frames": 120,
       "stillMs": [
-        578,
-        856
+        820,
+        748
       ],
       "stills": [
         36,
@@ -618,11 +614,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 3792,
+      "doctorMs": 6843,
       "frames": 120,
       "stillMs": [
-        619,
-        991
+        1166,
+        1100
       ],
       "stills": [
         36,
@@ -635,11 +631,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 4582,
+      "doctorMs": 7132,
       "frames": 150,
       "stillMs": [
-        1331,
-        955
+        1001,
+        934
       ],
       "stills": [
         45,
@@ -654,11 +650,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 3524,
+      "doctorMs": 7442,
       "frames": 120,
       "stillMs": [
-        401,
-        463
+        318,
+        844
       ],
       "stills": [
         36,
@@ -671,11 +667,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 4701,
+      "doctorMs": 7658,
       "frames": 180,
       "stillMs": [
-        1729,
-        1487
+        1695,
+        3275
       ],
       "stills": [
         54,
@@ -689,13 +685,13 @@
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)"
       ],
-      "files": 4,
+      "files": 7,
       "licence": null,
-      "doctorMs": 9185,
+      "doctorMs": 12719,
       "frames": 360,
       "stillMs": [
-        824,
-        513
+        1148,
+        1690
       ],
       "stills": [
         108,
@@ -708,11 +704,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 4464,
+      "doctorMs": 8219,
       "frames": 180,
       "stillMs": [
-        1118,
-        859
+        2257,
+        1540
       ],
       "stills": [
         54,
@@ -729,11 +725,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 3136,
+      "doctorMs": 7212,
       "frames": 30,
       "stillMs": [
-        201,
-        184
+        495,
+        1502
       ],
       "stills": [
         9,
@@ -744,13 +740,13 @@
       "type": "component",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 3,
       "licence": null,
-      "doctorMs": 2543,
+      "doctorMs": 11750,
       "frames": 240,
       "stillMs": [
-        332,
-        1239
+        1542,
+        1935
       ],
       "stills": [
         72,
@@ -761,13 +757,13 @@
       "type": "component",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 6,
       "licence": null,
-      "doctorMs": 4041,
+      "doctorMs": 14589,
       "frames": 240,
       "stillMs": [
-        504,
-        1501
+        1305,
+        1737
       ],
       "stills": [
         72,
@@ -778,15 +774,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "div font-family: font not loaded; drawn with another loaded font"
       ],
-      "files": 1,
+      "files": 3,
       "licence": null,
-      "doctorMs": 4640,
+      "doctorMs": 12706,
       "frames": 240,
       "stillMs": [
-        798,
-        1174
+        1125,
+        1166
       ],
       "stills": [
         72,
@@ -797,13 +793,13 @@
       "type": "component",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 3,
       "licence": null,
-      "doctorMs": 3578,
+      "doctorMs": 5545,
       "frames": 240,
       "stillMs": [
-        990,
-        951
+        899,
+        2289
       ],
       "stills": [
         72,
@@ -814,13 +810,13 @@
       "type": "component",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 3,
       "licence": null,
-      "doctorMs": 2978,
+      "doctorMs": 6053,
       "frames": 240,
       "stillMs": [
-        1216,
-        667
+        968,
+        3304
       ],
       "stills": [
         72,
@@ -831,13 +827,13 @@
       "type": "component",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 3,
       "licence": null,
-      "doctorMs": 4660,
+      "doctorMs": 8777,
       "frames": 240,
       "stillMs": [
-        494,
-        932
+        1591,
+        4146
       ],
       "stills": [
         72,
@@ -848,13 +844,13 @@
       "type": "component",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 3,
       "licence": null,
-      "doctorMs": 2747,
+      "doctorMs": 8030,
       "frames": 240,
       "stillMs": [
-        420,
-        736
+        1709,
+        1169
       ],
       "stills": [
         72,
@@ -865,13 +861,13 @@
       "type": "component",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 3,
       "licence": null,
-      "doctorMs": 2475,
+      "doctorMs": 8988,
       "frames": 240,
       "stillMs": [
-        572,
-        906
+        638,
+        1700
       ],
       "stills": [
         72,
@@ -882,13 +878,13 @@
       "type": "component",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 3,
       "licence": null,
-      "doctorMs": 4017,
+      "doctorMs": 8644,
       "frames": 240,
       "stillMs": [
-        940,
-        1221
+        816,
+        2335
       ],
       "stills": [
         72,
@@ -899,13 +895,13 @@
       "type": "component",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 3,
       "licence": null,
-      "doctorMs": 2613,
+      "doctorMs": 6233,
       "frames": 240,
       "stillMs": [
-        599,
-        1082
+        1376,
+        858
       ],
       "stills": [
         72,
@@ -916,13 +912,13 @@
       "type": "component",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 4,
       "licence": null,
-      "doctorMs": 3136,
+      "doctorMs": 6253,
       "frames": 240,
       "stillMs": [
-        580,
-        689
+        1037,
+        1257
       ],
       "stills": [
         72,
@@ -933,13 +929,13 @@
       "type": "component",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 3,
       "licence": null,
-      "doctorMs": 3005,
+      "doctorMs": 9179,
       "frames": 240,
       "stillMs": [
-        471,
-        2897
+        847,
+        1128
       ],
       "stills": [
         72,
@@ -950,13 +946,13 @@
       "type": "component",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 3,
       "licence": null,
-      "doctorMs": 2556,
+      "doctorMs": 7226,
       "frames": 240,
       "stillMs": [
-        476,
-        1788
+        703,
+        998
       ],
       "stills": [
         72,
@@ -970,13 +966,13 @@
         "div mask: the picture <page> is not a file the project has",
         "resource: cannot load a resource: <page>: no such file"
       ],
-      "files": 7,
+      "files": 9,
       "licence": null,
-      "doctorMs": 8611,
+      "doctorMs": 6065,
       "frames": 240,
       "stillMs": [
-        1342,
-        4575
+        1989,
+        2617
       ],
       "stills": [
         72,
@@ -987,13 +983,13 @@
       "type": "component",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 4,
       "licence": null,
-      "doctorMs": 4405,
+      "doctorMs": 5294,
       "frames": 240,
       "stillMs": [
-        1324,
-        1421
+        523,
+        1645
       ],
       "stills": [
         72,
@@ -1006,11 +1002,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2745,
+      "doctorMs": 3979,
       "frames": 150,
       "stillMs": [
-        412,
-        698
+        599,
+        699
       ],
       "stills": [
         45,
@@ -1025,11 +1021,11 @@
       ],
       "files": 3,
       "licence": "MIT AND OFL-1.1",
-      "doctorMs": 2467,
+      "doctorMs": 3979,
       "frames": 100,
       "stillMs": [
-        263,
-        364
+        337,
+        537
       ],
       "stills": [
         30,
@@ -1042,11 +1038,11 @@
       "warnings": [],
       "files": 13,
       "licence": null,
-      "doctorMs": 4515,
+      "doctorMs": 5556,
       "frames": 180,
       "stillMs": [
-        1010,
-        1923
+        1844,
+        2123
       ],
       "stills": [
         54,
@@ -1059,11 +1055,11 @@
       "warnings": [],
       "files": 13,
       "licence": null,
-      "doctorMs": 4224,
+      "doctorMs": 7013,
       "frames": 180,
       "stillMs": [
-        977,
-        2032
+        2472,
+        1492
       ],
       "stills": [
         54,
@@ -1076,11 +1072,11 @@
       "warnings": [],
       "files": 13,
       "licence": null,
-      "doctorMs": 4318,
+      "doctorMs": 7012,
       "frames": 180,
       "stillMs": [
-        1342,
-        2374
+        1717,
+        1535
       ],
       "stills": [
         54,
@@ -1093,11 +1089,11 @@
       "warnings": [],
       "files": 13,
       "licence": null,
-      "doctorMs": 6190,
+      "doctorMs": 5964,
       "frames": 180,
       "stillMs": [
-        1462,
-        2355
+        1126,
+        1224
       ],
       "stills": [
         54,
@@ -1110,11 +1106,11 @@
       "warnings": [],
       "files": 13,
       "licence": null,
-      "doctorMs": 5861,
+      "doctorMs": 5395,
       "frames": 180,
       "stillMs": [
-        1632,
-        3266
+        874,
+        1013
       ],
       "stills": [
         54,
@@ -1127,11 +1123,11 @@
       "warnings": [],
       "files": 25,
       "licence": null,
-      "doctorMs": 7031,
+      "doctorMs": 6155,
       "frames": 180,
       "stillMs": [
-        2707,
-        3623
+        1526,
+        2014
       ],
       "stills": [
         54,
@@ -1144,11 +1140,11 @@
       "warnings": [],
       "files": 25,
       "licence": null,
-      "doctorMs": 7758,
+      "doctorMs": 4904,
       "frames": 180,
       "stillMs": [
-        2714,
-        3877
+        1394,
+        2527
       ],
       "stills": [
         54,
@@ -1161,11 +1157,11 @@
       "warnings": [],
       "files": 25,
       "licence": null,
-      "doctorMs": 7286,
+      "doctorMs": 5207,
       "frames": 180,
       "stillMs": [
-        2905,
-        3552
+        1028,
+        1759
       ],
       "stills": [
         54,
@@ -1178,11 +1174,11 @@
       "warnings": [],
       "files": 25,
       "licence": null,
-      "doctorMs": 7832,
+      "doctorMs": 6489,
       "frames": 180,
       "stillMs": [
-        1780,
-        1678
+        2084,
+        2283
       ],
       "stills": [
         54,
@@ -1195,11 +1191,11 @@
       "warnings": [],
       "files": 25,
       "licence": null,
-      "doctorMs": 5001,
+      "doctorMs": 6973,
       "frames": 180,
       "stillMs": [
-        1108,
-        2876
+        1503,
+        2762
       ],
       "stills": [
         54,
@@ -1212,11 +1208,11 @@
       "warnings": [],
       "files": 25,
       "licence": null,
-      "doctorMs": 3929,
+      "doctorMs": 7146,
       "frames": 180,
       "stillMs": [
-        2029,
-        2983
+        1127,
+        1565
       ],
       "stills": [
         54,
@@ -1229,11 +1225,11 @@
       "warnings": [],
       "files": 13,
       "licence": null,
-      "doctorMs": 4411,
+      "doctorMs": 6814,
       "frames": 180,
       "stillMs": [
-        1154,
-        1820
+        2017,
+        1369
       ],
       "stills": [
         54,
@@ -1246,11 +1242,11 @@
       "warnings": [],
       "files": 13,
       "licence": null,
-      "doctorMs": 4884,
+      "doctorMs": 5162,
       "frames": 180,
       "stillMs": [
-        1275,
-        2235
+        2121,
+        1138
       ],
       "stills": [
         54,
@@ -1263,11 +1259,11 @@
       "warnings": [],
       "files": 25,
       "licence": null,
-      "doctorMs": 6676,
+      "doctorMs": 9385,
       "frames": 180,
       "stillMs": [
-        2188,
-        3538
+        1442,
+        1696
       ],
       "stills": [
         54,
@@ -1280,11 +1276,11 @@
       "warnings": [],
       "files": 25,
       "licence": null,
-      "doctorMs": 6839,
+      "doctorMs": 5194,
       "frames": 180,
       "stillMs": [
-        2479,
-        3621
+        1398,
+        1775
       ],
       "stills": [
         54,
@@ -1295,13 +1291,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 13,
+      "files": 15,
       "licence": null,
-      "doctorMs": 5751,
+      "doctorMs": 3972,
       "frames": 150,
       "stillMs": [
-        2026,
-        2296
+        847,
+        601
       ],
       "stills": [
         45,
@@ -1312,13 +1308,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 13,
+      "files": 15,
       "licence": null,
-      "doctorMs": 7054,
+      "doctorMs": 4147,
       "frames": 150,
       "stillMs": [
-        1792,
-        1127
+        858,
+        2653
       ],
       "stills": [
         45,
@@ -1329,13 +1325,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 13,
+      "files": 15,
       "licence": null,
-      "doctorMs": 6922,
+      "doctorMs": 5852,
       "frames": 150,
       "stillMs": [
-        908,
-        909
+        927,
+        806
       ],
       "stills": [
         45,
@@ -1346,13 +1342,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 13,
+      "files": 15,
       "licence": null,
-      "doctorMs": 4123,
+      "doctorMs": 4909,
       "frames": 150,
       "stillMs": [
-        695,
-        2318
+        1034,
+        968
       ],
       "stills": [
         45,
@@ -1363,13 +1359,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 13,
+      "files": 15,
       "licence": null,
-      "doctorMs": 2931,
+      "doctorMs": 4508,
       "frames": 150,
       "stillMs": [
-        2287,
-        2463
+        715,
+        1108
       ],
       "stills": [
         45,
@@ -1382,11 +1378,11 @@
       "warnings": [],
       "files": 13,
       "licence": null,
-      "doctorMs": 5636,
+      "doctorMs": 3771,
       "frames": 180,
       "stillMs": [
-        2143,
-        3211
+        568,
+        959
       ],
       "stills": [
         54,
@@ -1399,11 +1395,11 @@
       "warnings": [],
       "files": 13,
       "licence": null,
-      "doctorMs": 9164,
+      "doctorMs": 3477,
       "frames": 180,
       "stillMs": [
-        2529,
-        3490
+        1235,
+        973
       ],
       "stills": [
         54,
@@ -1416,11 +1412,11 @@
       "warnings": [],
       "files": 13,
       "licence": null,
-      "doctorMs": 9424,
+      "doctorMs": 4884,
       "frames": 180,
       "stillMs": [
-        2409,
-        2744
+        1103,
+        1035
       ],
       "stills": [
         54,
@@ -1433,11 +1429,11 @@
       "warnings": [],
       "files": 13,
       "licence": null,
-      "doctorMs": 8254,
+      "doctorMs": 3316,
       "frames": 180,
       "stillMs": [
-        2137,
-        5962
+        442,
+        1038
       ],
       "stills": [
         54,
@@ -1450,11 +1446,11 @@
       "warnings": [],
       "files": 13,
       "licence": null,
-      "doctorMs": 8421,
+      "doctorMs": 3368,
       "frames": 180,
       "stillMs": [
-        3713,
-        3362
+        902,
+        1083
       ],
       "stills": [
         54,
@@ -1469,11 +1465,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 7755,
+      "doctorMs": 3301,
       "frames": 105,
       "stillMs": [
-        765,
-        689
+        264,
+        381
       ],
       "stills": [
         31,
@@ -1488,11 +1484,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 4632,
+      "doctorMs": 2567,
       "frames": 150,
       "stillMs": [
-        715,
-        591
+        153,
+        264
       ],
       "stills": [
         45,
@@ -1503,15 +1499,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "div font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 4755,
+      "doctorMs": 3488,
       "frames": 360,
       "stillMs": [
-        787,
-        931
+        441,
+        1022
       ],
       "stills": [
         108,
@@ -1522,15 +1518,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "div font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 10703,
+      "doctorMs": 10430,
       "frames": 360,
       "stillMs": [
-        1613,
-        3379
+        1569,
+        2480
       ],
       "stills": [
         108,
@@ -1541,16 +1537,16 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "span font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
-        "text font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "span font-family: font not loaded; drawn with another loaded font",
+        "text font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 6,
       "licence": null,
-      "doctorMs": 7312,
+      "doctorMs": 17361,
       "frames": 447,
       "stillMs": [
-        933,
-        1889
+        2771,
+        8631
       ],
       "stills": [
         134,
@@ -1563,11 +1559,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2108,
+      "doctorMs": 3510,
       "frames": 150,
       "stillMs": [
-        424,
-        353
+        552,
+        283
       ],
       "stills": [
         45,
@@ -1576,17 +1572,15 @@
     },
     "chromatic-radial-split": {
       "type": "block",
-      "status": "partial",
-      "warnings": [
-        "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block: https requests are not available"
-      ],
-      "files": 1,
+      "status": "works",
+      "warnings": [],
+      "files": 12,
       "licence": null,
-      "doctorMs": 18988,
+      "doctorMs": 19115,
       "frames": 120,
       "stillMs": [
-        1971,
-        1514
+        1230,
+        1778
       ],
       "stills": [
         36,
@@ -1599,11 +1593,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 2571,
+      "doctorMs": 3695,
       "frames": 60,
       "stillMs": [
-        893,
-        482
+        412,
+        557
       ],
       "stills": [
         18,
@@ -1618,11 +1612,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 3113,
+      "doctorMs": 3747,
       "frames": 300,
       "stillMs": [
-        467,
-        1150
+        596,
+        978
       ],
       "stills": [
         90,
@@ -1631,17 +1625,15 @@
     },
     "cinematic-zoom": {
       "type": "block",
-      "status": "partial",
-      "warnings": [
-        "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block: https requests are not available"
-      ],
-      "files": 1,
+      "status": "works",
+      "warnings": [],
+      "files": 12,
       "licence": null,
-      "doctorMs": 20211,
+      "doctorMs": 20324,
       "frames": 120,
       "stillMs": [
-        1137,
-        782
+        1254,
+        1234
       ],
       "stills": [
         36,
@@ -1654,11 +1646,11 @@
       "warnings": [],
       "files": 9,
       "licence": null,
-      "doctorMs": 62846,
+      "doctorMs": 56143,
       "frames": 642,
       "stillMs": [
-        42354,
-        38355
+        10941,
+        18229
       ],
       "stills": [
         192,
@@ -1676,11 +1668,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2754,
+      "doctorMs": 2359,
       "frames": 240,
       "stillMs": [
-        349,
-        529
+        210,
+        263
       ],
       "stills": [
         72,
@@ -1693,11 +1685,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 3732,
+      "doctorMs": 3553,
       "frames": 180,
       "stillMs": [
-        716,
-        796
+        697,
+        621
       ],
       "stills": [
         54,
@@ -1710,11 +1702,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2059,
+      "doctorMs": 4705,
       "frames": 150,
       "stillMs": [
-        368,
-        314
+        756,
+        718
       ],
       "stills": [
         45,
@@ -1727,11 +1719,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 3015,
+      "doctorMs": 7052,
       "frames": 210,
       "stillMs": [
-        813,
-        1329
+        718,
+        2186
       ],
       "stills": [
         63,
@@ -1749,11 +1741,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1225,
+      "doctorMs": 3541,
       "frames": 240,
       "stillMs": [
-        208,
-        262
+        384,
+        350
       ],
       "stills": [
         72,
@@ -1766,11 +1758,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 3558,
+      "doctorMs": 9311,
       "frames": 180,
       "stillMs": [
-        633,
-        1345
+        994,
+        2814
       ],
       "stills": [
         54,
@@ -1788,11 +1780,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1680,
+      "doctorMs": 4834,
       "frames": 210,
       "stillMs": [
-        313,
-        786
+        338,
+        450
       ],
       "stills": [
         63,
@@ -1803,15 +1795,15 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "h1 font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "h1 font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 8,
       "licence": null,
-      "doctorMs": 70457,
+      "doctorMs": 39462,
       "frames": 240,
       "stillMs": [
-        9714,
-        24638
+        7251,
+        13276
       ],
       "stills": [
         72,
@@ -1824,11 +1816,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 4218,
+      "doctorMs": 4407,
       "frames": 360,
       "stillMs": [
-        740,
-        836
+        552,
+        1176
       ],
       "stills": [
         108,
@@ -1841,11 +1833,11 @@
       "warnings": [],
       "files": 2,
       "licence": null,
-      "doctorMs": 5229,
+      "doctorMs": 4465,
       "frames": 330,
       "stillMs": [
-        2151,
-        2236
+        540,
+        761
       ],
       "stills": [
         99,
@@ -1858,11 +1850,11 @@
       "warnings": [],
       "files": 2,
       "licence": null,
-      "doctorMs": 10666,
+      "doctorMs": 3769,
       "frames": 330,
       "stillMs": [
-        1315,
-        2133
+        638,
+        1058
       ],
       "stills": [
         99,
@@ -1877,11 +1869,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 3707,
+      "doctorMs": 2287,
       "frames": 150,
       "stillMs": [
-        560,
-        382
+        221,
+        426
       ],
       "stills": [
         45,
@@ -1894,11 +1886,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 7528,
+      "doctorMs": 5993,
       "frames": 150,
       "stillMs": [
-        2221,
-        3066
+        1018,
+        1428
       ],
       "stills": [
         45,
@@ -1911,11 +1903,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 3941,
+      "doctorMs": 4467,
       "frames": 60,
       "stillMs": [
-        1153,
-        1187
+        607,
+        417
       ],
       "stills": [
         18,
@@ -1928,11 +1920,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 15039,
+      "doctorMs": 7947,
       "frames": 108,
       "stillMs": [
-        2307,
-        4839
+        1540,
+        2726
       ],
       "stills": [
         32,
@@ -1947,11 +1939,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 6073,
+      "doctorMs": 3067,
       "frames": 120,
       "stillMs": [
-        866,
-        504
+        222,
+        422
       ],
       "stills": [
         36,
@@ -1966,11 +1958,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 5175,
+      "doctorMs": 4232,
       "frames": 150,
       "stillMs": [
-        908,
-        989
+        659,
+        694
       ],
       "stills": [
         45,
@@ -1985,11 +1977,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 3159,
+      "doctorMs": 3818,
       "frames": 120,
       "stillMs": [
-        574,
-        799
+        337,
+        335
       ],
       "stills": [
         36,
@@ -2005,11 +1997,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 3885,
+      "doctorMs": 3188,
       "frames": 135,
       "stillMs": [
-        594,
-        619
+        170,
+        378
       ],
       "stills": [
         40,
@@ -2022,11 +2014,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 7135,
+      "doctorMs": 5787,
       "frames": 300,
       "stillMs": [
-        1334,
-        1466
+        447,
+        257
       ],
       "stills": [
         90,
@@ -2042,11 +2034,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 3411,
+      "doctorMs": 4660,
       "frames": 90,
       "stillMs": [
-        788,
-        244
+        252,
+        341
       ],
       "stills": [
         27,
@@ -2055,17 +2047,15 @@
     },
     "cross-warp-morph": {
       "type": "block",
-      "status": "partial",
-      "warnings": [
-        "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block: https requests are not available"
-      ],
-      "files": 1,
+      "status": "works",
+      "warnings": [],
+      "files": 12,
       "licence": null,
-      "doctorMs": 22830,
+      "doctorMs": 17343,
       "frames": 120,
       "stillMs": [
-        1534,
-        909
+        1599,
+        1318
       ],
       "stills": [
         36,
@@ -2080,11 +2070,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2290,
+      "doctorMs": 1880,
       "frames": 105,
       "stillMs": [
-        438,
-        244
+        249,
+        267
       ],
       "stills": [
         31,
@@ -2099,11 +2089,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2473,
+      "doctorMs": 2257,
       "frames": 120,
       "stillMs": [
-        265,
-        250
+        290,
+        176
       ],
       "stills": [
         36,
@@ -2117,15 +2107,15 @@
         "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
-        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md…"
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
-      "files": 10,
+      "files": 13,
       "licence": null,
-      "doctorMs": 3040,
+      "doctorMs": 3056,
       "frames": 201,
       "stillMs": [
-        481,
-        599
+        412,
+        451
       ],
       "stills": [
         60,
@@ -2140,11 +2130,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2789,
+      "doctorMs": 4183,
       "frames": 99,
       "stillMs": [
-        784,
-        897
+        528,
+        407
       ],
       "stills": [
         29,
@@ -2159,11 +2149,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2208,
+      "doctorMs": 2640,
       "frames": 117,
       "stillMs": [
-        243,
-        223
+        348,
+        323
       ],
       "stills": [
         35,
@@ -2178,11 +2168,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2170,
+      "doctorMs": 3619,
       "frames": 108,
       "stillMs": [
-        240,
-        218
+        261,
+        303
       ],
       "stills": [
         32,
@@ -2197,11 +2187,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1346,
+      "doctorMs": 3782,
       "frames": 105,
       "stillMs": [
-        322,
-        232
+        257,
+        158
       ],
       "stills": [
         31,
@@ -2216,11 +2206,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1269,
+      "doctorMs": 1847,
       "frames": 102,
       "stillMs": [
-        210,
-        269
+        276,
+        306
       ],
       "stills": [
         30,
@@ -2235,11 +2225,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1660,
+      "doctorMs": 2370,
       "frames": 126,
       "stillMs": [
-        227,
-        408
+        307,
+        313
       ],
       "stills": [
         37,
@@ -2254,11 +2244,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 3074,
+      "doctorMs": 2834,
       "frames": 174,
       "stillMs": [
-        504,
-        440
+        339,
+        172
       ],
       "stills": [
         52,
@@ -2273,11 +2263,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2992,
+      "doctorMs": 1882,
       "frames": 72,
       "stillMs": [
-        355,
-        335
+        449,
+        185
       ],
       "stills": [
         21,
@@ -2292,11 +2282,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2745,
+      "doctorMs": 2824,
       "frames": 30,
       "stillMs": [
-        580,
-        248
+        633,
+        251
       ],
       "stills": [
         9,
@@ -2311,11 +2301,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2489,
+      "doctorMs": 5884,
       "frames": 108,
       "stillMs": [
-        640,
-        889
+        458,
+        504
       ],
       "stills": [
         32,
@@ -2326,13 +2316,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 8,
       "licence": null,
-      "doctorMs": 8728,
+      "doctorMs": 2628,
       "frames": 450,
       "stillMs": [
-        1939,
-        4455
+        437,
+        731
       ],
       "stills": [
         135,
@@ -2347,11 +2337,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1679,
+      "doctorMs": 926,
       "frames": 120,
       "stillMs": [
-        335,
-        292
+        88,
+        94
       ],
       "stills": [
         36,
@@ -2366,11 +2356,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 4331,
+      "doctorMs": 951,
       "frames": 150,
       "stillMs": [
-        313,
-        817
+        87,
+        98
       ],
       "stills": [
         45,
@@ -2383,11 +2373,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 4192,
+      "doctorMs": 229115,
       "frames": 150,
       "stillMs": [
-        648,
-        868
+        953,
+        559
       ],
       "stills": [
         45,
@@ -2396,17 +2386,15 @@
     },
     "domain-warp-dissolve": {
       "type": "block",
-      "status": "partial",
-      "warnings": [
-        "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block: https requests are not available"
-      ],
-      "files": 1,
+      "status": "works",
+      "warnings": [],
+      "files": 12,
       "licence": null,
-      "doctorMs": 14212,
+      "doctorMs": 234405,
       "frames": 120,
       "stillMs": [
-        1319,
-        1001
+        1927,
+        1292
       ],
       "stills": [
         36,
@@ -2421,11 +2409,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1470,
+      "doctorMs": 223462,
       "frames": 120,
       "stillMs": [
-        191,
-        223
+        442,
+        363
       ],
       "stills": [
         36,
@@ -2438,11 +2426,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1507,
+      "doctorMs": 16979,
       "frames": 180,
       "stillMs": [
-        359,
-        251
+        227,
+        526
       ],
       "stills": [
         54,
@@ -2458,11 +2446,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2181,
+      "doctorMs": 18496,
       "frames": 150,
       "stillMs": [
-        3616,
-        2403
+        1282,
+        1530
       ],
       "stills": [
         45,
@@ -2477,11 +2465,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 850,
+      "doctorMs": 18210,
       "frames": 105,
       "stillMs": [
-        230,
-        318
+        234,
+        297
       ],
       "stills": [
         31,
@@ -2494,11 +2482,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1397,
+      "doctorMs": 4304,
       "frames": 120,
       "stillMs": [
-        198,
-        199
+        141,
+        446
       ],
       "stills": [
         36,
@@ -2511,18 +2499,16 @@
       "warnings": [
         "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
-        "resource: cannot load a resource: https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-500-normal.woff2: https requests are not available",
-        "resource: cannot load a resource: https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-700-normal.woff2: https requests are not available",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
         "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
-      "files": 1,
+      "files": 4,
       "licence": null,
-      "doctorMs": 1955,
+      "doctorMs": 6238,
       "frames": 150,
       "stillMs": [
-        603,
-        745
+        231,
+        388
       ],
       "stills": [
         45,
@@ -2533,15 +2519,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "div font-family: font not loaded; drawn with the built-in fallback (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "div font-family: font not loaded; drawn with the built-in fallback"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 15168,
+      "doctorMs": 12147,
       "frames": 240,
       "stillMs": [
-        8856,
-        16944
+        4777,
+        3168
       ],
       "stills": [
         72,
@@ -2553,16 +2539,15 @@
       "status": "partial",
       "warnings": [
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
-        "resource: cannot load a resource: https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-500-normal.woff2: https requests are not available",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)"
       ],
-      "files": 3,
+      "files": 5,
       "licence": null,
-      "doctorMs": 2767,
+      "doctorMs": 10651,
       "frames": 150,
       "stillMs": [
-        325,
-        382
+        222,
+        369
       ],
       "stills": [
         45,
@@ -2577,11 +2562,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2844,
+      "doctorMs": 4336,
       "frames": 150,
       "stillMs": [
-        479,
-        555
+        135,
+        266
       ],
       "stills": [
         45,
@@ -2594,11 +2579,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 4357,
+      "doctorMs": 3698,
       "frames": 150,
       "stillMs": [
-        747,
-        1132
+        530,
+        282
       ],
       "stills": [
         45,
@@ -2611,11 +2596,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 4891,
+      "doctorMs": 4719,
       "frames": 60,
       "stillMs": [
-        945,
-        882
+        308,
+        430
       ],
       "stills": [
         18,
@@ -2628,11 +2613,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 8379,
+      "doctorMs": 5974,
       "frames": 240,
       "stillMs": [
-        832,
-        1648
+        379,
+        827
       ],
       "stills": [
         72,
@@ -2641,17 +2626,15 @@
     },
     "flash-through-white": {
       "type": "block",
-      "status": "partial",
-      "warnings": [
-        "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block: https requests are not available"
-      ],
-      "files": 1,
+      "status": "works",
+      "warnings": [],
+      "files": 12,
       "licence": null,
-      "doctorMs": 27317,
+      "doctorMs": 19857,
       "frames": 120,
       "stillMs": [
-        1909,
-        3100
+        1755,
+        1046
       ],
       "stills": [
         36,
@@ -2662,13 +2645,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 6,
       "licence": null,
-      "doctorMs": 5098,
+      "doctorMs": 5621,
       "frames": 360,
       "stillMs": [
-        714,
-        1974
+        726,
+        1215
       ],
       "stills": [
         108,
@@ -2679,13 +2662,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 6,
       "licence": null,
-      "doctorMs": 4603,
+      "doctorMs": 7283,
       "frames": 360,
       "stillMs": [
-        475,
-        1818
+        1202,
+        1006
       ],
       "stills": [
         108,
@@ -2698,11 +2681,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 3807,
+      "doctorMs": 6658,
       "frames": 60,
       "stillMs": [
-        890,
-        649
+        655,
+        390
       ],
       "stills": [
         18,
@@ -2715,11 +2698,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 3218,
+      "doctorMs": 8137,
       "frames": 150,
       "stillMs": [
-        433,
-        486
+        379,
+        243
       ],
       "stills": [
         45,
@@ -2734,11 +2717,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 4611,
+      "doctorMs": 7903,
       "frames": 105,
       "stillMs": [
-        410,
-        419
+        180,
+        177
       ],
       "stills": [
         31,
@@ -2754,11 +2737,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 4272,
+      "doctorMs": 7618,
       "frames": 45,
       "stillMs": [
-        440,
-        409
+        157,
+        168
       ],
       "stills": [
         13,
@@ -2771,11 +2754,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 3967,
+      "doctorMs": 5637,
       "frames": 60,
       "stillMs": [
-        1119,
-        1269
+        611,
+        362
       ],
       "stills": [
         18,
@@ -2788,11 +2771,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 3558,
+      "doctorMs": 3456,
       "frames": 120,
       "stillMs": [
-        686,
-        573
+        464,
+        354
       ],
       "stills": [
         36,
@@ -2805,11 +2788,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 5176,
+      "doctorMs": 5951,
       "frames": 60,
       "stillMs": [
-        2387,
-        552
+        1440,
+        1019
       ],
       "stills": [
         18,
@@ -2822,7 +2805,7 @@
       "warnings": [],
       "files": 19,
       "licence": null,
-      "doctorMs": 10884,
+      "doctorMs": 15630,
       "error": "doctor: "
     },
     "gabor-noise": {
@@ -2831,11 +2814,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 2418,
+      "doctorMs": 4737,
       "frames": 60,
       "stillMs": [
-        986,
-        458
+        632,
+        570
       ],
       "stills": [
         18,
@@ -2853,11 +2836,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 3248,
+      "doctorMs": 4723,
       "frames": 360,
       "stillMs": [
-        768,
-        300
+        442,
+        533
       ],
       "stills": [
         108,
@@ -2872,11 +2855,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1579,
+      "doctorMs": 4268,
       "frames": 90,
       "stillMs": [
-        237,
-        403
+        238,
+        225
       ],
       "stills": [
         27,
@@ -2888,16 +2871,15 @@
       "status": "partial",
       "warnings": [
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
-        "resource: cannot load a resource: https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-500-normal.woff2: https requests are not available",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)"
       ],
-      "files": 1,
+      "files": 3,
       "licence": null,
-      "doctorMs": 3401,
+      "doctorMs": 12966,
       "frames": 150,
       "stillMs": [
-        194,
-        368
+        184,
+        418
       ],
       "stills": [
         45,
@@ -2913,11 +2895,11 @@
       ],
       "files": 12,
       "licence": null,
-      "doctorMs": 3442,
+      "doctorMs": 12853,
       "frames": 365,
       "stillMs": [
-        200,
-        389
+        239,
+        369
       ],
       "stills": [
         109,
@@ -2926,17 +2908,15 @@
     },
     "glitch": {
       "type": "block",
-      "status": "partial",
-      "warnings": [
-        "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block: https requests are not available"
-      ],
-      "files": 1,
+      "status": "works",
+      "warnings": [],
+      "files": 12,
       "licence": null,
-      "doctorMs": 22633,
+      "doctorMs": 22509,
       "frames": 120,
       "stillMs": [
-        1149,
-        1263
+        1064,
+        830
       ],
       "stills": [
         36,
@@ -2951,11 +2931,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2002,
+      "doctorMs": 3273,
       "frames": 75,
       "stillMs": [
-        432,
-        272
+        254,
+        265
       ],
       "stills": [
         22,
@@ -2968,11 +2948,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 2592,
+      "doctorMs": 2929,
       "frames": 60,
       "stillMs": [
-        807,
-        624
+        575,
+        505
       ],
       "stills": [
         18,
@@ -2985,11 +2965,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 3965,
+      "doctorMs": 4546,
       "frames": 60,
       "stillMs": [
-        1276,
-        452
+        955,
+        339
       ],
       "stills": [
         18,
@@ -3005,11 +2985,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 4418,
+      "doctorMs": 3703,
       "frames": 141,
       "stillMs": [
-        355,
-        468
+        596,
+        338
       ],
       "stills": [
         42,
@@ -3026,11 +3006,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1458,
+      "doctorMs": 3045,
       "frames": 30,
       "stillMs": [
-        203,
-        297
+        268,
+        134
       ],
       "stills": [
         9,
@@ -3045,11 +3025,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1419,
+      "doctorMs": 2392,
       "frames": 120,
       "stillMs": [
-        296,
-        339
+        155,
+        635
       ],
       "stills": [
         36,
@@ -3062,11 +3042,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 3914,
+      "doctorMs": 5141,
       "frames": 150,
       "stillMs": [
-        448,
-        1005
+        743,
+        506
       ],
       "stills": [
         45,
@@ -3075,17 +3055,15 @@
     },
     "gravitational-lens": {
       "type": "block",
-      "status": "partial",
-      "warnings": [
-        "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block: https requests are not available"
-      ],
-      "files": 1,
+      "status": "works",
+      "warnings": [],
+      "files": 12,
       "licence": null,
-      "doctorMs": 25922,
+      "doctorMs": 16358,
       "frames": 120,
       "stillMs": [
-        7833,
-        4518
+        1392,
+        1149
       ],
       "stills": [
         36,
@@ -3100,11 +3078,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 3175,
+      "doctorMs": 1691,
       "frames": 135,
       "stillMs": [
-        537,
-        548
+        257,
+        332
       ],
       "stills": [
         40,
@@ -3117,11 +3095,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 5842,
+      "doctorMs": 6165,
       "frames": 240,
       "stillMs": [
-        1528,
-        5976
+        595,
+        1721
       ],
       "stills": [
         72,
@@ -3136,11 +3114,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2334,
+      "doctorMs": 1700,
       "frames": 105,
       "stillMs": [
-        338,
-        610
+        319,
+        191
       ],
       "stills": [
         31,
@@ -3153,11 +3131,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 15145,
+      "doctorMs": 4138,
       "frames": 300,
       "stillMs": [
-        2892,
-        2771
+        444,
+        421
       ],
       "stills": [
         90,
@@ -3172,11 +3150,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 13617,
+      "doctorMs": 2370,
       "frames": 105,
       "stillMs": [
-        1373,
-        963
+        222,
+        177
       ],
       "stills": [
         31,
@@ -3189,11 +3167,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 7296,
+      "doctorMs": 3866,
       "frames": 60,
       "stillMs": [
-        2725,
-        1599
+        575,
+        367
       ],
       "stills": [
         18,
@@ -3206,11 +3184,11 @@
       "warnings": [],
       "files": 16,
       "licence": null,
-      "doctorMs": 993,
+      "doctorMs": 3870,
       "frames": 300,
       "stillMs": [
-        345,
-        566
+        1227,
+        1912
       ],
       "stills": [
         90,
@@ -3223,11 +3201,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 8249,
+      "doctorMs": 3212,
       "frames": 60,
       "stillMs": [
-        1968,
-        1165
+        856,
+        658
       ],
       "stills": [
         18,
@@ -3240,11 +3218,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 9692,
+      "doctorMs": 3062,
       "frames": 60,
       "stillMs": [
-        2319,
-        1384
+        532,
+        359
       ],
       "stills": [
         18,
@@ -3260,11 +3238,11 @@
       ],
       "files": 2,
       "licence": null,
-      "doctorMs": 4592,
+      "doctorMs": 2047,
       "frames": 120,
       "stillMs": [
-        1107,
-        1053
+        416,
+        292
       ],
       "stills": [
         36,
@@ -3277,11 +3255,11 @@
       "warnings": [],
       "files": 2,
       "licence": null,
-      "doctorMs": 8511,
+      "doctorMs": 3961,
       "frames": 180,
       "stillMs": [
-        1552,
-        2738
+        509,
+        689
       ],
       "stills": [
         54,
@@ -3294,11 +3272,11 @@
       "warnings": [],
       "files": 2,
       "licence": null,
-      "doctorMs": 8355,
+      "doctorMs": 3311,
       "frames": 180,
       "stillMs": [
-        2126,
-        2075
+        492,
+        1071
       ],
       "stills": [
         54,
@@ -3311,11 +3289,11 @@
       "warnings": [],
       "files": 2,
       "licence": null,
-      "doctorMs": 7155,
+      "doctorMs": 3437,
       "frames": 180,
       "stillMs": [
-        1034,
-        3993
+        685,
+        1179
       ],
       "stills": [
         54,
@@ -3328,11 +3306,11 @@
       "warnings": [],
       "files": 2,
       "licence": null,
-      "doctorMs": 3478,
+      "doctorMs": 2629,
       "frames": 240,
       "stillMs": [
-        984,
-        1204
+        389,
+        413
       ],
       "stills": [
         72,
@@ -3345,11 +3323,11 @@
       "warnings": [],
       "files": 2,
       "licence": null,
-      "doctorMs": 10344,
+      "doctorMs": 4544,
       "frames": 180,
       "stillMs": [
-        1085,
-        2069
+        681,
+        1273
       ],
       "stills": [
         54,
@@ -3362,11 +3340,11 @@
       "warnings": [],
       "files": 2,
       "licence": null,
-      "doctorMs": 3860,
+      "doctorMs": 2672,
       "frames": 210,
       "stillMs": [
-        801,
-        1119
+        458,
+        659
       ],
       "stills": [
         63,
@@ -3379,11 +3357,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2584,
+      "doctorMs": 2557,
       "frames": 66,
       "stillMs": [
-        445,
-        680
+        194,
+        441
       ],
       "stills": [
         19,
@@ -3396,11 +3374,11 @@
       "warnings": [],
       "files": 2,
       "licence": null,
-      "doctorMs": 2923,
+      "doctorMs": 2829,
       "frames": 180,
       "stillMs": [
-        540,
-        694
+        544,
+        731
       ],
       "stills": [
         54,
@@ -3413,11 +3391,11 @@
       "warnings": [],
       "files": 2,
       "licence": null,
-      "doctorMs": 2943,
+      "doctorMs": 2745,
       "frames": 180,
       "stillMs": [
-        503,
-        586
+        300,
+        956
       ],
       "stills": [
         54,
@@ -3430,11 +3408,11 @@
       "warnings": [],
       "files": 2,
       "licence": null,
-      "doctorMs": 2652,
+      "doctorMs": 3434,
       "frames": 120,
       "stillMs": [
-        420,
-        771
+        406,
+        358
       ],
       "stills": [
         36,
@@ -3447,11 +3425,11 @@
       "warnings": [],
       "files": 3,
       "licence": null,
-      "doctorMs": 7998,
+      "doctorMs": 3835,
       "frames": 180,
       "stillMs": [
-        1551,
-        2464
+        519,
+        905
       ],
       "stills": [
         54,
@@ -3466,11 +3444,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 3367,
+      "doctorMs": 2119,
       "frames": 75,
       "stillMs": [
-        739,
-        690
+        224,
+        188
       ],
       "stills": [
         22,
@@ -3483,11 +3461,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 5000,
+      "doctorMs": 2636,
       "frames": 150,
       "stillMs": [
-        726,
-        1215
+        187,
+        241
       ],
       "stills": [
         45,
@@ -3503,10 +3481,10 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 4505,
+      "doctorMs": 1895,
       "frames": 120,
       "stillMs": [
-        250,
+        210,
         202
       ],
       "stills": [
@@ -3520,11 +3498,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2268,
+      "doctorMs": 2798,
       "frames": 120,
       "stillMs": [
-        304,
-        572
+        402,
+        258
       ],
       "stills": [
         36,
@@ -3535,15 +3513,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "div font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1851,
+      "doctorMs": 3166,
       "frames": 150,
       "stillMs": [
-        223,
-        488
+        271,
+        328
       ],
       "stills": [
         45,
@@ -3554,13 +3532,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 2,
+      "files": 5,
       "licence": null,
-      "doctorMs": 2209,
+      "doctorMs": 1840,
       "frames": 135,
       "stillMs": [
-        296,
-        1044
+        331,
+        345
       ],
       "stills": [
         40,
@@ -3579,11 +3557,11 @@
       ],
       "files": 29,
       "licence": null,
-      "doctorMs": 1979,
+      "doctorMs": 6907,
       "frames": 450,
       "stillMs": [
-        208,
-        467
+        480,
+        1170
       ],
       "stills": [
         135,
@@ -3598,11 +3576,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2380,
+      "doctorMs": 2570,
       "frames": 105,
       "stillMs": [
-        168,
-        161
+        193,
+        279
       ],
       "stills": [
         31,
@@ -3615,11 +3593,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 3366,
+      "doctorMs": 2530,
       "frames": 150,
       "stillMs": [
-        270,
-        347
+        329,
+        439
       ],
       "stills": [
         45,
@@ -3632,13 +3610,13 @@
       "warnings": [
         "HyperFrames: <page>: data-composition-src=\"./kinetic-center-build.html\" was not found beside <page> or in <page>"
       ],
-      "files": 1,
+      "files": 6,
       "licence": "MIT",
-      "doctorMs": 1118,
+      "doctorMs": 2886,
       "frames": 60,
       "stillMs": [
-        123,
-        122
+        184,
+        187
       ],
       "stills": [
         18,
@@ -3654,11 +3632,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 640,
+      "doctorMs": 1477,
       "frames": 120,
       "stillMs": [
-        102,
-        107
+        255,
+        293
       ],
       "stills": [
         36,
@@ -3671,10 +3649,10 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 771,
+      "doctorMs": 2710,
       "frames": 60,
       "stillMs": [
-        405,
+        464,
         356
       ],
       "stills": [
@@ -3688,11 +3666,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 1489,
+      "doctorMs": 3501,
       "frames": 60,
       "stillMs": [
-        740,
-        1727
+        336,
+        289
       ],
       "stills": [
         18,
@@ -3701,17 +3679,15 @@
     },
     "light-leak": {
       "type": "block",
-      "status": "partial",
-      "warnings": [
-        "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block: https requests are not available"
-      ],
-      "files": 1,
+      "status": "works",
+      "warnings": [],
+      "files": 12,
       "licence": null,
-      "doctorMs": 19754,
+      "doctorMs": 12327,
       "frames": 120,
       "stillMs": [
-        2359,
-        1554
+        650,
+        813
       ],
       "stills": [
         36,
@@ -3726,11 +3702,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 3466,
+      "doctorMs": 2688,
       "frames": 120,
       "stillMs": [
-        484,
-        456
+        203,
+        176
       ],
       "stills": [
         36,
@@ -3743,11 +3719,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 3536,
+      "doctorMs": 2524,
       "frames": 150,
       "stillMs": [
-        280,
-        334
+        163,
+        337
       ],
       "stills": [
         45,
@@ -3762,11 +3738,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1455,
+      "doctorMs": 1978,
       "frames": 105,
       "stillMs": [
-        525,
-        599
+        156,
+        118
       ],
       "stills": [
         31,
@@ -3780,15 +3756,15 @@
         "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
-        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"gls…"
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
       "files": 3,
       "licence": null,
-      "doctorMs": 5360,
+      "doctorMs": 2582,
       "frames": 240,
       "stillMs": [
-        782,
-        454
+        280,
+        380
       ],
       "stills": [
         72,
@@ -3806,11 +3782,11 @@
       ],
       "files": 3,
       "licence": null,
-      "doctorMs": 4098,
+      "doctorMs": 2634,
       "frames": 240,
       "stillMs": [
-        1160,
-        1255
+        628,
+        425
       ],
       "stills": [
         72,
@@ -3823,11 +3799,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 2904,
+      "doctorMs": 3232,
       "frames": 60,
       "stillMs": [
-        1359,
-        784
+        654,
+        174
       ],
       "stills": [
         18,
@@ -3842,11 +3818,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 3589,
+      "doctorMs": 2150,
       "frames": 120,
       "stillMs": [
-        406,
-        368
+        130,
+        265
       ],
       "stills": [
         36,
@@ -3861,11 +3837,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2281,
+      "doctorMs": 1627,
       "frames": 120,
       "stillMs": [
-        235,
-        211
+        171,
+        190
       ],
       "stills": [
         36,
@@ -3876,13 +3852,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 6,
       "licence": null,
-      "doctorMs": 2486,
+      "doctorMs": 2408,
       "frames": 180,
       "stillMs": [
-        490,
-        536
+        720,
+        388
       ],
       "stills": [
         54,
@@ -3897,11 +3873,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1735,
+      "doctorMs": 2587,
       "frames": 66,
       "stillMs": [
-        154,
-        136
+        203,
+        178
       ],
       "stills": [
         19,
@@ -3916,11 +3892,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1524,
+      "doctorMs": 1651,
       "frames": 150,
       "stillMs": [
-        295,
-        294
+        279,
+        190
       ],
       "stills": [
         45,
@@ -3934,13 +3910,13 @@
         "HyperFrames: <page>: script failed: XMLHttpRequest is not defined",
         "note: <page>: script failed: XMLHttpRequest is not defined"
       ],
-      "files": 2,
+      "files": 5,
       "licence": "Apache-2.0",
-      "doctorMs": 2365,
+      "doctorMs": 2795,
       "frames": 225,
       "stillMs": [
-        315,
-        386
+        317,
+        327
       ],
       "stills": [
         67,
@@ -3953,11 +3929,11 @@
       "warnings": [],
       "files": 3,
       "licence": null,
-      "doctorMs": 2372,
+      "doctorMs": 3386,
       "frames": 240,
       "stillMs": [
-        307,
-        433
+        219,
+        244
       ],
       "stills": [
         72,
@@ -3970,11 +3946,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2955,
+      "doctorMs": 2068,
       "frames": 144,
       "stillMs": [
-        388,
-        504
+        507,
+        263
       ],
       "stills": [
         43,
@@ -3987,11 +3963,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2761,
+      "doctorMs": 1835,
       "frames": 144,
       "stillMs": [
-        472,
-        906
+        241,
+        407
       ],
       "stills": [
         43,
@@ -4004,11 +3980,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2199,
+      "doctorMs": 2178,
       "frames": 144,
       "stillMs": [
-        391,
-        933
+        307,
+        263
       ],
       "stills": [
         43,
@@ -4021,11 +3997,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 5168,
+      "doctorMs": 1353,
       "frames": 144,
       "stillMs": [
-        986,
-        1511
+        186,
+        523
       ],
       "stills": [
         43,
@@ -4038,11 +4014,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 4866,
+      "doctorMs": 2712,
       "frames": 144,
       "stillMs": [
-        1164,
-        713
+        238,
+        353
       ],
       "stills": [
         43,
@@ -4055,11 +4031,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 6388,
+      "doctorMs": 3025,
       "frames": 144,
       "stillMs": [
-        1270,
-        1213
+        451,
+        269
       ],
       "stills": [
         43,
@@ -4072,11 +4048,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 4581,
+      "doctorMs": 2093,
       "frames": 144,
       "stillMs": [
-        1137,
-        791
+        301,
+        283
       ],
       "stills": [
         43,
@@ -4089,11 +4065,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 15325,
+      "doctorMs": 5903,
       "frames": 144,
       "stillMs": [
-        1968,
-        2171
+        601,
+        1008
       ],
       "stills": [
         43,
@@ -4106,11 +4082,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 6051,
+      "doctorMs": 3064,
       "frames": 144,
       "stillMs": [
-        774,
-        1147
+        213,
+        292
       ],
       "stills": [
         43,
@@ -4123,11 +4099,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 5126,
+      "doctorMs": 2293,
       "frames": 144,
       "stillMs": [
-        659,
-        452
+        225,
+        333
       ],
       "stills": [
         43,
@@ -4140,11 +4116,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 4168,
+      "doctorMs": 2110,
       "frames": 144,
       "stillMs": [
-        345,
-        309
+        154,
+        201
       ],
       "stills": [
         43,
@@ -4155,13 +4131,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 5,
       "licence": null,
-      "doctorMs": 2333,
+      "doctorMs": 2960,
       "frames": 150,
       "stillMs": [
-        920,
-        1066
+        452,
+        730
       ],
       "stills": [
         45,
@@ -4176,15 +4152,15 @@
         "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
-        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl…"
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
       "files": 19,
       "licence": null,
-      "doctorMs": 3203,
+      "doctorMs": 5499,
       "frames": 450,
       "stillMs": [
-        278,
-        662
+        516,
+        1204
       ],
       "stills": [
         135,
@@ -4199,11 +4175,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1952,
+      "doctorMs": 1764,
       "frames": 108,
       "stillMs": [
-        503,
-        521
+        448,
+        359
       ],
       "stills": [
         32,
@@ -4216,11 +4192,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 2862,
+      "doctorMs": 3393,
       "frames": 60,
       "stillMs": [
-        602,
-        697
+        565,
+        745
       ],
       "stills": [
         18,
@@ -4231,15 +4207,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "div font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 3,
       "licence": null,
-      "doctorMs": 7575,
+      "doctorMs": 4773,
       "frames": 135,
       "stillMs": [
-        1552,
-        3681
+        1153,
+        1701
       ],
       "stills": [
         40,
@@ -4254,11 +4230,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2738,
+      "doctorMs": 1834,
       "frames": 105,
       "stillMs": [
-        240,
-        285
+        183,
+        277
       ],
       "stills": [
         31,
@@ -4273,11 +4249,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2293,
+      "doctorMs": 1837,
       "frames": 120,
       "stillMs": [
-        490,
-        240
+        235,
+        245
       ],
       "stills": [
         36,
@@ -4288,15 +4264,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "span font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "span font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2240,
+      "doctorMs": 2008,
       "frames": 150,
       "stillMs": [
-        543,
-        565
+        300,
+        345
       ],
       "stills": [
         45,
@@ -4309,11 +4285,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2748,
+      "doctorMs": 2930,
       "frames": 150,
       "stillMs": [
-        462,
-        627
+        279,
+        267
       ],
       "stills": [
         45,
@@ -4326,11 +4302,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 2385,
+      "doctorMs": 2947,
       "frames": 60,
       "stillMs": [
-        757,
-        732
+        430,
+        185
       ],
       "stills": [
         18,
@@ -4343,11 +4319,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2795,
+      "doctorMs": 1976,
       "frames": 150,
       "stillMs": [
-        575,
-        639
+        179,
+        364
       ],
       "stills": [
         45,
@@ -4358,16 +4334,16 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
-        "span font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "div font-family: font not loaded; drawn with another loaded font",
+        "span font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 4,
       "licence": null,
-      "doctorMs": 21755,
+      "doctorMs": 31951,
       "frames": 774,
       "stillMs": [
-        3652,
-        5745
+        6769,
+        14949
       ],
       "stills": [
         232,
@@ -4380,11 +4356,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2917,
+      "doctorMs": 2522,
       "frames": 150,
       "stillMs": [
-        731,
-        504
+        286,
+        243
       ],
       "stills": [
         45,
@@ -4397,11 +4373,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 3538,
+      "doctorMs": 1988,
       "frames": 300,
       "stillMs": [
-        240,
-        366
+        406,
+        440
       ],
       "stills": [
         90,
@@ -4414,11 +4390,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 3094,
+      "doctorMs": 2549,
       "frames": 240,
       "stillMs": [
-        224,
-        370
+        178,
+        388
       ],
       "stills": [
         72,
@@ -4431,11 +4407,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1284,
+      "doctorMs": 1932,
       "frames": 72,
       "stillMs": [
-        170,
-        291
+        315,
+        478
       ],
       "stills": [
         21,
@@ -4448,11 +4424,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 896,
+      "doctorMs": 2652,
       "frames": 120,
       "stillMs": [
-        154,
-        396
+        152,
+        257
       ],
       "stills": [
         36,
@@ -4465,11 +4441,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1278,
+      "doctorMs": 2602,
       "frames": 210,
       "stillMs": [
-        350,
-        791
+        568,
+        776
       ],
       "stills": [
         63,
@@ -4482,11 +4458,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1530,
+      "doctorMs": 2888,
       "frames": 240,
       "stillMs": [
-        357,
-        480
+        326,
+        493
       ],
       "stills": [
         72,
@@ -4499,11 +4475,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1736,
+      "doctorMs": 2133,
       "frames": 210,
       "stillMs": [
-        277,
-        435
+        431,
+        376
       ],
       "stills": [
         63,
@@ -4516,11 +4492,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1720,
+      "doctorMs": 2722,
       "frames": 240,
       "stillMs": [
-        310,
-        360
+        363,
+        611
       ],
       "stills": [
         72,
@@ -4533,11 +4509,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1394,
+      "doctorMs": 2460,
       "frames": 120,
       "stillMs": [
-        268,
-        265
+        267,
+        418
       ],
       "stills": [
         36,
@@ -4552,11 +4528,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 981,
+      "doctorMs": 2695,
       "frames": 120,
       "stillMs": [
-        145,
-        268
+        215,
+        239
       ],
       "stills": [
         36,
@@ -4571,11 +4547,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1293,
+      "doctorMs": 1245,
       "frames": 105,
       "stillMs": [
-        251,
-        205
+        117,
+        260
       ],
       "stills": [
         31,
@@ -4586,13 +4562,13 @@
       "type": "component",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 3,
       "licence": null,
-      "doctorMs": 2254,
+      "doctorMs": 2947,
       "frames": 450,
       "stillMs": [
-        390,
-        511
+        321,
+        599
       ],
       "stills": [
         135,
@@ -4605,11 +4581,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1866,
+      "doctorMs": 3002,
       "frames": 120,
       "stillMs": [
-        397,
-        713
+        478,
+        600
       ],
       "stills": [
         36,
@@ -4624,11 +4600,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1315,
+      "doctorMs": 2639,
       "frames": 135,
       "stillMs": [
-        241,
-        367
+        313,
+        263
       ],
       "stills": [
         40,
@@ -4644,11 +4620,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1654,
+      "doctorMs": 3074,
       "frames": 180,
       "stillMs": [
-        163,
-        206
+        250,
+        140
       ],
       "stills": [
         54,
@@ -4663,11 +4639,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1346,
+      "doctorMs": 1740,
       "frames": 90,
       "stillMs": [
-        160,
-        175
+        193,
+        371
       ],
       "stills": [
         27,
@@ -4680,11 +4656,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 2045,
+      "doctorMs": 2646,
       "frames": 60,
       "stillMs": [
-        693,
-        529
+        712,
+        385
       ],
       "stills": [
         18,
@@ -4697,11 +4673,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2829,
+      "doctorMs": 3482,
       "frames": 210,
       "stillMs": [
-        621,
-        701
+        399,
+        596
       ],
       "stills": [
         63,
@@ -4714,11 +4690,11 @@
       "warnings": [],
       "files": 2,
       "licence": null,
-      "doctorMs": 2792,
+      "doctorMs": 3686,
       "frames": 210,
       "stillMs": [
-        405,
-        809
+        337,
+        853
       ],
       "stills": [
         63,
@@ -4729,16 +4705,16 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
-        "span font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "div font-family: font not loaded; drawn with another loaded font",
+        "span font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 6,
       "licence": null,
-      "doctorMs": 15986,
+      "doctorMs": 31225,
       "frames": 746,
       "stillMs": [
-        7244,
-        15049
+        5850,
+        12555
       ],
       "stills": [
         223,
@@ -4749,15 +4725,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "div font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 3202,
+      "doctorMs": 3149,
       "frames": 300,
       "stillMs": [
-        493,
-        1178
+        634,
+        842
       ],
       "stills": [
         90,
@@ -4770,11 +4746,11 @@
       "warnings": [],
       "files": 4,
       "licence": null,
-      "doctorMs": 3023,
+      "doctorMs": 3964,
       "frames": 420,
       "stillMs": [
-        708,
-        977
+        574,
+        1116
       ],
       "stills": [
         126,
@@ -4790,11 +4766,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1373,
+      "doctorMs": 1993,
       "frames": 240,
       "stillMs": [
-        172,
-        248
+        192,
+        407
       ],
       "stills": [
         72,
@@ -4809,11 +4785,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1272,
+      "doctorMs": 2206,
       "frames": 120,
       "stillMs": [
-        232,
-        368
+        114,
+        142
       ],
       "stills": [
         36,
@@ -4826,11 +4802,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1598,
+      "doctorMs": 1884,
       "frames": 150,
       "stillMs": [
-        305,
-        232
+        141,
+        182
       ],
       "stills": [
         45,
@@ -4843,11 +4819,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1692,
+      "doctorMs": 1419,
       "frames": 150,
       "stillMs": [
-        376,
-        340
+        160,
+        226
       ],
       "stills": [
         45,
@@ -4860,11 +4836,11 @@
       "warnings": [],
       "files": 3,
       "licence": null,
-      "doctorMs": 2640,
+      "doctorMs": 2409,
       "frames": 180,
       "stillMs": [
-        588,
-        417
+        468,
+        531
       ],
       "stills": [
         54,
@@ -4877,11 +4853,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 965,
+      "doctorMs": 1801,
       "frames": 60,
       "stillMs": [
-        495,
-        277
+        335,
+        172
       ],
       "stills": [
         18,
@@ -4897,11 +4873,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 727,
+      "doctorMs": 1067,
       "frames": 120,
       "stillMs": [
-        164,
-        165
+        210,
+        145
       ],
       "stills": [
         36,
@@ -4912,15 +4888,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "button font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "button font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1196,
+      "doctorMs": 1852,
       "frames": 150,
       "stillMs": [
-        232,
-        200
+        302,
+        190
       ],
       "stills": [
         45,
@@ -4936,11 +4912,11 @@
       ],
       "files": 12,
       "licence": null,
-      "doctorMs": 1105,
+      "doctorMs": 1364,
       "frames": 300,
       "stillMs": [
-        204,
-        249
+        120,
+        167
       ],
       "stills": [
         90,
@@ -4955,11 +4931,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 621,
+      "doctorMs": 1812,
       "frames": 105,
       "stillMs": [
-        134,
-        197
+        89,
+        169
       ],
       "stills": [
         31,
@@ -4972,11 +4948,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1039,
+      "doctorMs": 1475,
       "frames": 120,
       "stillMs": [
-        233,
-        238
+        225,
+        189
       ],
       "stills": [
         36,
@@ -4989,11 +4965,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 17933,
+      "doctorMs": 12752,
       "frames": 180,
       "stillMs": [
-        1735,
-        6223
+        2328,
+        2747
       ],
       "stills": [
         54,
@@ -5008,11 +4984,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1464,
+      "doctorMs": 1120,
       "frames": 120,
       "stillMs": [
-        220,
-        523
+        176,
+        178
       ],
       "stills": [
         36,
@@ -5027,11 +5003,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1605,
+      "doctorMs": 2039,
       "frames": 78,
       "stillMs": [
-        395,
-        510
+        349,
+        383
       ],
       "stills": [
         23,
@@ -5046,11 +5022,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1451,
+      "doctorMs": 1507,
       "frames": 135,
       "stillMs": [
-        191,
-        260
+        196,
+        283
       ],
       "stills": [
         40,
@@ -5063,11 +5039,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1502,
+      "doctorMs": 2690,
       "frames": 150,
       "stillMs": [
-        342,
-        279
+        354,
+        172
       ],
       "stills": [
         45,
@@ -5082,11 +5058,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1411,
+      "doctorMs": 1233,
       "frames": 120,
       "stillMs": [
-        195,
-        177
+        196,
+        137
       ],
       "stills": [
         36,
@@ -5099,11 +5075,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1911,
+      "doctorMs": 2252,
       "frames": 150,
       "stillMs": [
-        410,
-        254
+        345,
+        152
       ],
       "stills": [
         45,
@@ -5120,11 +5096,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1241,
+      "doctorMs": 2879,
       "frames": 78,
       "stillMs": [
-        775,
-        317
+        136,
+        127
       ],
       "stills": [
         23,
@@ -5139,11 +5115,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2118,
+      "doctorMs": 927,
       "frames": 135,
       "stillMs": [
-        417,
-        191
+        153,
+        298
       ],
       "stills": [
         40,
@@ -5156,11 +5132,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2245,
+      "doctorMs": 2351,
       "frames": 180,
       "stillMs": [
-        588,
-        841
+        200,
+        465
       ],
       "stills": [
         54,
@@ -5173,11 +5149,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2043,
+      "doctorMs": 2515,
       "frames": 180,
       "stillMs": [
-        383,
-        425
+        517,
+        560
       ],
       "stills": [
         54,
@@ -5192,11 +5168,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1637,
+      "doctorMs": 1734,
       "frames": 120,
       "stillMs": [
-        189,
-        320
+        149,
+        365
       ],
       "stills": [
         36,
@@ -5211,11 +5187,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1866,
+      "doctorMs": 2038,
       "frames": 120,
       "stillMs": [
-        206,
-        221
+        278,
+        146
       ],
       "stills": [
         36,
@@ -5228,11 +5204,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2051,
+      "doctorMs": 2980,
       "frames": 150,
       "stillMs": [
-        234,
-        346
+        260,
+        314
       ],
       "stills": [
         45,
@@ -5245,11 +5221,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1680,
+      "doctorMs": 1796,
       "frames": 150,
       "stillMs": [
-        306,
-        235
+        454,
+        389
       ],
       "stills": [
         45,
@@ -5265,11 +5241,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1013,
+      "doctorMs": 2485,
       "frames": 105,
       "stillMs": [
-        149,
-        211
+        125,
+        209
       ],
       "stills": [
         31,
@@ -5282,11 +5258,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1305,
+      "doctorMs": 2647,
       "frames": 150,
       "stillMs": [
-        234,
-        210
+        308,
+        315
       ],
       "stills": [
         45,
@@ -5301,11 +5277,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1075,
+      "doctorMs": 2033,
       "frames": 90,
       "stillMs": [
-        138,
-        133
+        139,
+        236
       ],
       "stills": [
         27,
@@ -5318,11 +5294,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 1269,
+      "doctorMs": 1942,
       "frames": 60,
       "stillMs": [
-        451,
-        326
+        491,
+        308
       ],
       "stills": [
         18,
@@ -5335,11 +5311,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 1586,
+      "doctorMs": 2474,
       "frames": 60,
       "stillMs": [
-        770,
-        360
+        707,
+        550
       ],
       "stills": [
         18,
@@ -5354,11 +5330,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 584,
+      "doctorMs": 1514,
       "frames": 72,
       "stillMs": [
-        118,
-        138
+        114,
+        264
       ],
       "stills": [
         21,
@@ -5371,11 +5347,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 1777,
+      "doctorMs": 2303,
       "frames": 60,
       "stillMs": [
-        425,
-        436
+        329,
+        268
       ],
       "stills": [
         18,
@@ -5387,17 +5363,16 @@
       "status": "partial",
       "warnings": [
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
-        "resource: cannot load a resource: https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-500-normal.woff2: https requests are not available",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
         "page script unhandled rejection: the page raised an error and went on; whatever it was drawing may be missing"
       ],
-      "files": 1,
+      "files": 3,
       "licence": null,
-      "doctorMs": 2182,
+      "doctorMs": 2106,
       "frames": 180,
       "stillMs": [
-        293,
-        527
+        174,
+        305
       ],
       "stills": [
         54,
@@ -5412,11 +5387,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1459,
+      "doctorMs": 1842,
       "frames": 135,
       "stillMs": [
-        226,
-        507
+        239,
+        274
       ],
       "stills": [
         40,
@@ -5431,11 +5406,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1766,
+      "doctorMs": 1729,
       "frames": 120,
       "stillMs": [
-        185,
-        216
+        213,
+        122
       ],
       "stills": [
         36,
@@ -5450,11 +5425,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1323,
+      "doctorMs": 2492,
       "frames": 120,
       "stillMs": [
-        366,
-        325
+        215,
+        102
       ],
       "stills": [
         36,
@@ -5467,11 +5442,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2505,
+      "doctorMs": 1360,
       "frames": 180,
       "stillMs": [
-        579,
-        275
+        368,
+        315
       ],
       "stills": [
         54,
@@ -5486,11 +5461,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1588,
+      "doctorMs": 1607,
       "frames": 150,
       "stillMs": [
-        217,
-        340
+        119,
+        119
       ],
       "stills": [
         45,
@@ -5501,13 +5476,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 4,
       "licence": null,
-      "doctorMs": 2957,
+      "doctorMs": 2826,
       "frames": 150,
       "stillMs": [
-        893,
-        1010
+        370,
+        514
       ],
       "stills": [
         45,
@@ -5520,11 +5495,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1946,
+      "doctorMs": 1234,
       "frames": 150,
       "stillMs": [
-        600,
-        597
+        119,
+        275
       ],
       "stills": [
         45,
@@ -5533,17 +5508,15 @@
     },
     "ridged-burn": {
       "type": "block",
-      "status": "partial",
-      "warnings": [
-        "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block: https requests are not available"
-      ],
-      "files": 1,
+      "status": "works",
+      "warnings": [],
+      "files": 12,
       "licence": null,
-      "doctorMs": 17972,
+      "doctorMs": 9592,
       "frames": 120,
       "stillMs": [
-        1290,
-        992
+        1273,
+        824
       ],
       "stills": [
         36,
@@ -5552,17 +5525,15 @@
     },
     "ripple-waves": {
       "type": "block",
-      "status": "partial",
-      "warnings": [
-        "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block: https requests are not available"
-      ],
-      "files": 1,
+      "status": "works",
+      "warnings": [],
+      "files": 12,
       "licence": null,
-      "doctorMs": 16971,
+      "doctorMs": 10056,
       "frames": 120,
       "stillMs": [
-        1297,
-        1343
+        915,
+        875
       ],
       "stills": [
         36,
@@ -5575,11 +5546,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 2010,
+      "doctorMs": 1405,
       "frames": 60,
       "stillMs": [
-        364,
-        471
+        262,
+        194
       ],
       "stills": [
         18,
@@ -5594,11 +5565,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1525,
+      "doctorMs": 2862,
       "frames": 75,
       "stillMs": [
-        192,
-        331
+        246,
+        154
       ],
       "stills": [
         22,
@@ -5613,11 +5584,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1407,
+      "doctorMs": 1785,
       "frames": 105,
       "stillMs": [
-        233,
-        261
+        163,
+        186
       ],
       "stills": [
         31,
@@ -5632,11 +5603,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1611,
+      "doctorMs": 3250,
       "frames": 90,
       "stillMs": [
-        212,
-        329
+        238,
+        173
       ],
       "stills": [
         27,
@@ -5651,11 +5622,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1297,
+      "doctorMs": 3320,
       "frames": 150,
       "stillMs": [
-        135,
-        170
+        253,
+        171
       ],
       "stills": [
         45,
@@ -5670,11 +5641,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1249,
+      "doctorMs": 4389,
       "frames": 165,
       "stillMs": [
-        175,
-        255
+        145,
+        170
       ],
       "stills": [
         49,
@@ -5689,11 +5660,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1175,
+      "doctorMs": 4280,
       "frames": 120,
       "stillMs": [
-        174,
-        166
+        158,
+        177
       ],
       "stills": [
         36,
@@ -5702,17 +5673,15 @@
     },
     "sdf-iris": {
       "type": "block",
-      "status": "partial",
-      "warnings": [
-        "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block: https requests are not available"
-      ],
-      "files": 1,
+      "status": "works",
+      "warnings": [],
+      "files": 12,
       "licence": null,
-      "doctorMs": 9378,
+      "doctorMs": 15226,
       "frames": 120,
       "stillMs": [
-        3275,
-        3222
+        747,
+        410
       ],
       "stills": [
         36,
@@ -5727,11 +5696,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 601,
+      "doctorMs": 2608,
       "frames": 135,
       "stillMs": [
-        102,
-        153
+        197,
+        182
       ],
       "stills": [
         40,
@@ -5742,15 +5711,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "p font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "p font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1025,
+      "doctorMs": 2851,
       "frames": 120,
       "stillMs": [
-        188,
-        216
+        230,
+        287
       ],
       "stills": [
         36,
@@ -5763,11 +5732,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1182,
+      "doctorMs": 1255,
       "frames": 150,
       "stillMs": [
-        499,
-        1401
+        337,
+        380
       ],
       "stills": [
         45,
@@ -5780,11 +5749,11 @@
       "warnings": [],
       "files": 7,
       "licence": null,
-      "doctorMs": 1545,
+      "doctorMs": 1724,
       "frames": 217,
       "stillMs": [
-        561,
-        606
+        437,
+        472
       ],
       "stills": [
         65,
@@ -5797,11 +5766,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 6298,
+      "doctorMs": 1535,
       "frames": 150,
       "stillMs": [
-        1098,
-        1001
+        335,
+        184
       ],
       "stills": [
         45,
@@ -5814,11 +5783,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 6379,
+      "doctorMs": 1746,
       "frames": 150,
       "stillMs": [
-        1725,
-        1775
+        448,
+        472
       ],
       "stills": [
         45,
@@ -5829,15 +5798,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "div font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 5471,
+      "doctorMs": 1678,
       "frames": 120,
       "stillMs": [
-        1557,
-        1128
+        384,
+        517
       ],
       "stills": [
         36,
@@ -5850,11 +5819,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 5349,
+      "doctorMs": 1730,
       "frames": 180,
       "stillMs": [
-        1135,
-        1734
+        365,
+        554
       ],
       "stills": [
         54,
@@ -5871,11 +5840,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 4942,
+      "doctorMs": 1936,
       "frames": 30,
       "stillMs": [
-        294,
-        622
+        165,
+        221
       ],
       "stills": [
         9,
@@ -5886,15 +5855,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "button font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "button font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 3778,
+      "doctorMs": 3068,
       "frames": 150,
       "stillMs": [
-        392,
-        506
+        408,
+        372
       ],
       "stills": [
         45,
@@ -5907,11 +5876,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 3941,
+      "doctorMs": 3246,
       "frames": 60,
       "stillMs": [
-        522,
-        774
+        436,
+        260
       ],
       "stills": [
         18,
@@ -5924,11 +5893,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2245,
+      "doctorMs": 2736,
       "frames": 150,
       "stillMs": [
-        433,
-        441
+        341,
+        294
       ],
       "stills": [
         45,
@@ -5943,11 +5912,11 @@
       ],
       "files": 8,
       "licence": null,
-      "doctorMs": 11100,
+      "doctorMs": 15624,
       "frames": 360,
       "stillMs": [
-        2118,
-        2971
+        4272,
+        8308
       ],
       "stills": [
         108,
@@ -5962,11 +5931,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1391,
+      "doctorMs": 2598,
       "frames": 120,
       "stillMs": [
-        179,
-        291
+        231,
+        120
       ],
       "stills": [
         36,
@@ -5977,15 +5946,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "i font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "i font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1842,
+      "doctorMs": 2545,
       "frames": 150,
       "stillMs": [
-        306,
-        361
+        331,
+        383
       ],
       "stills": [
         45,
@@ -5998,11 +5967,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 4200,
+      "doctorMs": 4056,
       "frames": 180,
       "stillMs": [
-        554,
-        1602
+        536,
+        870
       ],
       "stills": [
         54,
@@ -6013,15 +5982,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "div font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2891,
+      "doctorMs": 2140,
       "frames": 120,
       "stillMs": [
-        750,
-        829
+        693,
+        677
       ],
       "stills": [
         36,
@@ -6036,11 +6005,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1757,
+      "doctorMs": 2991,
       "frames": 120,
       "stillMs": [
-        231,
-        489
+        260,
+        300
       ],
       "stills": [
         36,
@@ -6053,11 +6022,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1850,
+      "doctorMs": 2146,
       "frames": 150,
       "stillMs": [
-        411,
-        322
+        230,
+        344
       ],
       "stills": [
         45,
@@ -6068,13 +6037,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 8,
       "licence": null,
-      "doctorMs": 8578,
+      "doctorMs": 8307,
       "frames": 360,
       "stillMs": [
-        1299,
-        2238
+        1293,
+        2790
       ],
       "stills": [
         108,
@@ -6087,11 +6056,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 1907,
+      "doctorMs": 2418,
       "frames": 60,
       "stillMs": [
-        374,
-        276
+        494,
+        332
       ],
       "stills": [
         18,
@@ -6109,11 +6078,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1784,
+      "doctorMs": 3315,
       "frames": 300,
       "stillMs": [
-        310,
-        328
+        324,
+        335
       ],
       "stills": [
         90,
@@ -6124,15 +6093,15 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "span font-family: font not loaded; drawn with the built-in fallback (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "span font-family: font not loaded; drawn with the built-in fallback"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2939,
+      "doctorMs": 3033,
       "frames": 105,
       "stillMs": [
-        442,
-        572
+        658,
+        949
       ],
       "stills": [
         31,
@@ -6147,11 +6116,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1170,
+      "doctorMs": 2028,
       "frames": 135,
       "stillMs": [
-        154,
-        137
+        228,
+        145
       ],
       "stills": [
         40,
@@ -6164,13 +6133,13 @@
       "warnings": [
         "div backdrop-filter: only blur() is drawn in a backdrop filter"
       ],
-      "files": 1,
+      "files": 5,
       "licence": null,
-      "doctorMs": 1153,
+      "doctorMs": 3235,
       "frames": 150,
       "stillMs": [
-        277,
-        336
+        665,
+        448
       ],
       "stills": [
         45,
@@ -6183,11 +6152,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 884,
+      "doctorMs": 2064,
       "frames": 150,
       "stillMs": [
-        292,
-        261
+        468,
+        338
       ],
       "stills": [
         45,
@@ -6203,11 +6172,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 885,
+      "doctorMs": 1958,
       "frames": 60,
       "stillMs": [
-        139,
-        139
+        221,
+        118
       ],
       "stills": [
         18,
@@ -6222,11 +6191,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 646,
+      "doctorMs": 2013,
       "frames": 120,
       "stillMs": [
-        204,
-        216
+        321,
+        176
       ],
       "stills": [
         36,
@@ -6241,11 +6210,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 597,
+      "doctorMs": 1297,
       "frames": 120,
       "stillMs": [
-        142,
-        233
+        310,
+        210
       ],
       "stills": [
         36,
@@ -6258,11 +6227,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1079,
+      "doctorMs": 2019,
       "frames": 150,
       "stillMs": [
-        300,
-        227
+        398,
+        252
       ],
       "stills": [
         45,
@@ -6275,11 +6244,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1042,
+      "doctorMs": 3651,
       "frames": 150,
       "stillMs": [
-        217,
-        244
+        343,
+        168
       ],
       "stills": [
         45,
@@ -6294,11 +6263,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 920,
+      "doctorMs": 2628,
       "frames": 120,
       "stillMs": [
-        142,
-        164
+        266,
+        248
       ],
       "stills": [
         36,
@@ -6311,11 +6280,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2897,
+      "doctorMs": 5535,
       "frames": 180,
       "stillMs": [
-        277,
-        872
+        794,
+        1044
       ],
       "stills": [
         54,
@@ -6330,11 +6299,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 832,
+      "doctorMs": 2794,
       "frames": 150,
       "stillMs": [
-        147,
-        151
+        223,
+        277
       ],
       "stills": [
         45,
@@ -6349,11 +6318,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 857,
+      "doctorMs": 2051,
       "frames": 180,
       "stillMs": [
-        156,
-        145
+        249,
+        407
       ],
       "stills": [
         54,
@@ -6368,11 +6337,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 649,
+      "doctorMs": 2312,
       "frames": 120,
       "stillMs": [
-        104,
-        150
+        329,
+        229
       ],
       "stills": [
         36,
@@ -6387,11 +6356,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 777,
+      "doctorMs": 2361,
       "frames": 120,
       "stillMs": [
-        135,
-        144
+        180,
+        114
       ],
       "stills": [
         36,
@@ -6407,11 +6376,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 809,
+      "doctorMs": 1869,
       "frames": 120,
       "stillMs": [
-        143,
-        147
+        233,
+        193
       ],
       "stills": [
         36,
@@ -6424,11 +6393,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 1132,
+      "doctorMs": 2611,
       "frames": 60,
       "stillMs": [
-        338,
-        278
+        445,
+        400
       ],
       "stills": [
         18,
@@ -6439,15 +6408,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "div font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1908,
+      "doctorMs": 4558,
       "frames": 165,
       "stillMs": [
-        309,
-        562
+        248,
+        870
       ],
       "stills": [
         49,
@@ -6460,11 +6429,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 913,
+      "doctorMs": 2640,
       "frames": 150,
       "stillMs": [
-        170,
-        192
+        290,
+        334
       ],
       "stills": [
         45,
@@ -6477,11 +6446,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 1494,
+      "doctorMs": 2509,
       "frames": 60,
       "stillMs": [
-        258,
-        219
+        380,
+        355
       ],
       "stills": [
         18,
@@ -6494,11 +6463,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1053,
+      "doctorMs": 3072,
       "frames": 150,
       "stillMs": [
-        176,
-        192
+        209,
+        291
       ],
       "stills": [
         45,
@@ -6511,11 +6480,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 1115,
+      "doctorMs": 2603,
       "frames": 60,
       "stillMs": [
-        225,
-        155
+        572,
+        274
       ],
       "stills": [
         18,
@@ -6528,11 +6497,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 605,
+      "doctorMs": 2623,
       "frames": 150,
       "stillMs": [
-        140,
-        191
+        426,
+        294
       ],
       "stills": [
         45,
@@ -6547,11 +6516,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 655,
+      "doctorMs": 3277,
       "frames": 120,
       "stillMs": [
-        129,
-        138
+        232,
+        312
       ],
       "stills": [
         36,
@@ -6567,11 +6536,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 619,
+      "doctorMs": 1867,
       "frames": 105,
       "stillMs": [
-        182,
-        173
+        211,
+        223
       ],
       "stills": [
         31,
@@ -6586,11 +6555,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 565,
+      "doctorMs": 2224,
       "frames": 120,
       "stillMs": [
-        105,
-        120
+        387,
+        235
       ],
       "stills": [
         36,
@@ -6603,11 +6572,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 922,
+      "doctorMs": 2876,
       "frames": 60,
       "stillMs": [
-        280,
-        253
+        221,
+        396
       ],
       "stills": [
         18,
@@ -6616,17 +6585,15 @@
     },
     "swirl-vortex": {
       "type": "block",
-      "status": "partial",
-      "warnings": [
-        "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block: https requests are not available"
-      ],
-      "files": 1,
+      "status": "works",
+      "warnings": [],
+      "files": 12,
       "licence": null,
-      "doctorMs": 8659,
+      "doctorMs": 13355,
       "frames": 120,
       "stillMs": [
-        1300,
-        696
+        1394,
+        849
       ],
       "stills": [
         36,
@@ -6637,15 +6604,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "button font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "button font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 954,
+      "doctorMs": 1965,
       "frames": 150,
       "stillMs": [
-        182,
-        180
+        283,
+        352
       ],
       "stills": [
         45,
@@ -6660,11 +6627,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 688,
+      "doctorMs": 3193,
       "frames": 135,
       "stillMs": [
-        116,
-        157
+        121,
+        245
       ],
       "stills": [
         40,
@@ -6677,11 +6644,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1011,
+      "doctorMs": 2223,
       "frames": 150,
       "stillMs": [
-        198,
-        312
+        408,
+        522
       ],
       "stills": [
         45,
@@ -6697,11 +6664,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1125,
+      "doctorMs": 2666,
       "frames": 120,
       "stillMs": [
-        189,
-        136
+        209,
+        166
       ],
       "stills": [
         36,
@@ -6716,11 +6683,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 792,
+      "doctorMs": 2064,
       "frames": 135,
       "stillMs": [
-        92,
-        117
+        243,
+        213
       ],
       "stills": [
         40,
@@ -6735,11 +6702,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 704,
+      "doctorMs": 2355,
       "frames": 90,
       "stillMs": [
-        102,
-        111
+        196,
+        260
       ],
       "stills": [
         27,
@@ -6754,11 +6721,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 804,
+      "doctorMs": 2183,
       "frames": 90,
       "stillMs": [
-        106,
-        119
+        356,
+        246
       ],
       "stills": [
         27,
@@ -6771,11 +6738,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 870,
+      "doctorMs": 2788,
       "frames": 150,
       "stillMs": [
-        149,
-        183
+        235,
+        321
       ],
       "stills": [
         45,
@@ -6788,11 +6755,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 767,
+      "doctorMs": 2288,
       "frames": 150,
       "stillMs": [
-        151,
-        149
+        189,
+        297
       ],
       "stills": [
         45,
@@ -6819,11 +6786,11 @@
       ],
       "files": 67,
       "licence": null,
-      "doctorMs": 2100,
+      "doctorMs": 4382,
       "frames": 150,
       "stillMs": [
-        196,
-        224
+        533,
+        314
       ],
       "stills": [
         45,
@@ -6832,17 +6799,15 @@
     },
     "thermal-distortion": {
       "type": "block",
-      "status": "partial",
-      "warnings": [
-        "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block: https requests are not available"
-      ],
-      "files": 1,
+      "status": "works",
+      "warnings": [],
+      "files": 12,
       "licence": null,
-      "doctorMs": 8461,
+      "doctorMs": 13495,
       "frames": 120,
       "stillMs": [
-        760,
-        665
+        1227,
+        957
       ],
       "stills": [
         36,
@@ -6855,11 +6820,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 795,
+      "doctorMs": 2354,
       "frames": 60,
       "stillMs": [
-        423,
-        257
+        794,
+        424
       ],
       "stills": [
         18,
@@ -6872,11 +6837,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1220,
+      "doctorMs": 2432,
       "frames": 240,
       "stillMs": [
-        213,
-        324
+        500,
+        592
       ],
       "stills": [
         72,
@@ -6894,11 +6859,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1080,
+      "doctorMs": 3272,
       "frames": 150,
       "stillMs": [
-        218,
-        277
+        248,
+        425
       ],
       "stills": [
         45,
@@ -6913,11 +6878,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 907,
+      "doctorMs": 3389,
       "frames": 135,
       "stillMs": [
-        143,
-        109
+        224,
+        400
       ],
       "stills": [
         40,
@@ -6928,13 +6893,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 2,
+      "files": 5,
       "licence": null,
-      "doctorMs": 733,
+      "doctorMs": 3652,
       "frames": 135,
       "stillMs": [
-        197,
-        244
+        316,
+        629
       ],
       "stills": [
         40,
@@ -6947,11 +6912,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 771,
+      "doctorMs": 2197,
       "frames": 150,
       "stillMs": [
-        215,
-        215
+        331,
+        175
       ],
       "stills": [
         45,
@@ -6966,11 +6931,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 829,
+      "doctorMs": 3369,
       "frames": 120,
       "stillMs": [
-        137,
-        106
+        189,
+        330
       ],
       "stills": [
         36,
@@ -6985,11 +6950,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 672,
+      "doctorMs": 3350,
       "frames": 120,
       "stillMs": [
-        111,
-        134
+        196,
+        246
       ],
       "stills": [
         36,
@@ -7004,11 +6969,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 727,
+      "doctorMs": 3316,
       "frames": 120,
       "stillMs": [
-        162,
-        143
+        204,
+        318
       ],
       "stills": [
         36,
@@ -7021,11 +6986,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 959,
+      "doctorMs": 3103,
       "frames": 150,
       "stillMs": [
-        164,
-        137
+        291,
+        440
       ],
       "stills": [
         45,
@@ -7042,11 +7007,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 623,
+      "doctorMs": 3110,
       "frames": 72,
       "stillMs": [
-        155,
-        200
+        285,
+        381
       ],
       "stills": [
         21,
@@ -7061,11 +7026,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 816,
+      "doctorMs": 3208,
       "frames": 45,
       "stillMs": [
-        656,
-        264
+        566,
+        484
       ],
       "stills": [
         13,
@@ -7080,11 +7045,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 851,
+      "doctorMs": 4299,
       "frames": 135,
       "stillMs": [
-        129,
-        125
+        185,
+        203
       ],
       "stills": [
         40,
@@ -7097,11 +7062,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 690,
+      "doctorMs": 4342,
       "frames": 120,
       "stillMs": [
-        164,
-        204
+        225,
+        389
       ],
       "stills": [
         36,
@@ -7114,11 +7079,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1268,
+      "doctorMs": 4672,
       "frames": 330,
       "stillMs": [
-        203,
-        324
+        247,
+        382
       ],
       "stills": [
         99,
@@ -7131,11 +7096,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2004,
+      "doctorMs": 4489,
       "frames": 600,
       "stillMs": [
-        317,
-        407
+        597,
+        743
       ],
       "stills": [
         180,
@@ -7148,11 +7113,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1904,
+      "doctorMs": 3458,
       "frames": 630,
       "stillMs": [
-        505,
-        652
+        623,
+        1124
       ],
       "stills": [
         189,
@@ -7165,11 +7130,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2120,
+      "doctorMs": 3606,
       "frames": 420,
       "stillMs": [
-        310,
-        512
+        549,
+        612
       ],
       "stills": [
         126,
@@ -7182,11 +7147,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2728,
+      "doctorMs": 4281,
       "frames": 720,
       "stillMs": [
-        356,
-        533
+        439,
+        990
       ],
       "stills": [
         216,
@@ -7197,15 +7162,15 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "div font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1872,
+      "doctorMs": 3758,
       "frames": 630,
       "stillMs": [
-        288,
-        578
+        390,
+        516
       ],
       "stills": [
         189,
@@ -7218,11 +7183,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1518,
+      "doctorMs": 3074,
       "frames": 330,
       "stillMs": [
-        299,
-        423
+        390,
+        773
       ],
       "stills": [
         99,
@@ -7235,11 +7200,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2242,
+      "doctorMs": 4657,
       "frames": 630,
       "stillMs": [
-        578,
-        606
+        541,
+        511
       ],
       "stills": [
         189,
@@ -7252,11 +7217,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1997,
+      "doctorMs": 3970,
       "frames": 450,
       "stillMs": [
-        418,
-        542
+        711,
+        667
       ],
       "stills": [
         135,
@@ -7269,11 +7234,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2666,
+      "doctorMs": 4975,
       "frames": 600,
       "stillMs": [
-        450,
-        673
+        463,
+        507
       ],
       "stills": [
         180,
@@ -7286,11 +7251,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2829,
+      "doctorMs": 3134,
       "frames": 720,
       "stillMs": [
-        541,
-        870
+        382,
+        983
       ],
       "stills": [
         216,
@@ -7303,11 +7268,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 2300,
+      "doctorMs": 3414,
       "frames": 600,
       "stillMs": [
-        401,
-        418
+        561,
+        685
       ],
       "stills": [
         180,
@@ -7320,11 +7285,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1774,
+      "doctorMs": 3652,
       "frames": 450,
       "stillMs": [
-        285,
-        487
+        461,
+        384
       ],
       "stills": [
         135,
@@ -7339,11 +7304,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 882,
+      "doctorMs": 1793,
       "frames": 105,
       "stillMs": [
-        138,
-        140
+        200,
+        236
       ],
       "stills": [
         31,
@@ -7358,11 +7323,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 910,
+      "doctorMs": 2520,
       "frames": 120,
       "stillMs": [
-        109,
-        98
+        259,
+        149
       ],
       "stills": [
         36,
@@ -7377,11 +7342,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 667,
+      "doctorMs": 3141,
       "frames": 120,
       "stillMs": [
-        135,
-        174
+        294,
+        140
       ],
       "stills": [
         36,
@@ -7392,15 +7357,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "span font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "span font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 718,
+      "doctorMs": 2415,
       "frames": 150,
       "stillMs": [
-        150,
-        233
+        247,
+        343
       ],
       "stills": [
         45,
@@ -7411,15 +7376,15 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "div font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1733,
+      "doctorMs": 3377,
       "frames": 135,
       "stillMs": [
-        218,
-        487
+        650,
+        409
       ],
       "stills": [
         40,
@@ -7428,17 +7393,15 @@
     },
     "ui-3d-reveal": {
       "type": "block",
-      "status": "partial",
-      "warnings": [
-        "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap: https requests are not available"
-      ],
-      "files": 1,
+      "status": "works",
+      "warnings": [],
+      "files": 9,
       "licence": null,
-      "doctorMs": 15510,
+      "doctorMs": 17715,
       "frames": 390,
       "stillMs": [
-        2948,
-        6128
+        2756,
+        5341
       ],
       "stills": [
         117,
@@ -7453,11 +7416,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 930,
+      "doctorMs": 1871,
       "frames": 135,
       "stillMs": [
-        156,
-        178
+        128,
+        243
       ],
       "stills": [
         40,
@@ -7468,13 +7431,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 8,
       "licence": null,
-      "doctorMs": 15257,
+      "doctorMs": 16875,
       "frames": 360,
       "stillMs": [
-        2491,
-        5194
+        2175,
+        5264
       ],
       "stills": [
         108,
@@ -7485,13 +7448,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 8,
       "licence": null,
-      "doctorMs": 13138,
+      "doctorMs": 14176,
       "frames": 360,
       "stillMs": [
-        1637,
-        3349
+        1416,
+        2691
       ],
       "stills": [
         108,
@@ -7502,13 +7465,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 8,
       "licence": null,
-      "doctorMs": 11387,
+      "doctorMs": 11560,
       "frames": 360,
       "stillMs": [
-        2067,
-        3274
+        2225,
+        3041
       ],
       "stills": [
         108,
@@ -7519,13 +7482,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 7,
       "licence": null,
-      "doctorMs": 7595,
+      "doctorMs": 7941,
       "frames": 300,
       "stillMs": [
-        2118,
-        3901
+        1662,
+        3879
       ],
       "stills": [
         90,
@@ -7538,13 +7501,13 @@
       "warnings": [
         "HyperFrames: <page>: data-composition-src=\"./variable-axis-type.html\" was not found beside <page> or in <page>"
       ],
-      "files": 1,
+      "files": 3,
       "licence": null,
-      "doctorMs": 1306,
+      "doctorMs": 1468,
       "frames": 48,
       "stillMs": [
-        154,
-        158
+        245,
+        257
       ],
       "stills": [
         14,
@@ -7559,11 +7522,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 901,
+      "doctorMs": 1505,
       "frames": 105,
       "stillMs": [
-        173,
-        181
+        207,
+        224
       ],
       "stills": [
         31,
@@ -7579,11 +7542,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1266,
+      "doctorMs": 1822,
       "frames": 135,
       "stillMs": [
-        199,
-        203
+        107,
+        375
       ],
       "stills": [
         40,
@@ -7598,11 +7561,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1118,
+      "doctorMs": 1617,
       "frames": 120,
       "stillMs": [
-        148,
-        164
+        133,
+        148
       ],
       "stills": [
         36,
@@ -7615,11 +7578,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 3330,
+      "doctorMs": 5523,
       "frames": 300,
       "stillMs": [
-        630,
-        848
+        941,
+        886
       ],
       "stills": [
         90,
@@ -7637,11 +7600,11 @@
       ],
       "files": 5,
       "licence": null,
-      "doctorMs": 1049,
+      "doctorMs": 4454,
       "frames": 450,
       "stillMs": [
-        195,
-        861
+        105,
+        355
       ],
       "stills": [
         135,
@@ -7652,9 +7615,9 @@
       "type": "block",
       "status": "fails",
       "warnings": [],
-      "files": 1,
+      "files": 7,
       "licence": null,
-      "doctorMs": 1109,
+      "doctorMs": 2951,
       "error": "doctor: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
     },
     "vfx-liquid-glass": {
@@ -7666,13 +7629,13 @@
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
         "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
-      "files": 1,
+      "files": 9,
       "licence": null,
-      "doctorMs": 1704,
+      "doctorMs": 3195,
       "frames": 600,
       "stillMs": [
-        221,
-        436
+        285,
+        439
       ],
       "stills": [
         180,
@@ -7683,15 +7646,15 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+        "div font-family: font not loaded; drawn with another loaded font"
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1605,
+      "doctorMs": 3896,
       "frames": 450,
       "stillMs": [
-        210,
-        405
+        405,
+        487
       ],
       "stills": [
         135,
@@ -7704,17 +7667,17 @@
       "warnings": [
         "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
-        "p font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
+        "p font-family: font not loaded; drawn with another loaded font",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
         "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
-      "files": 1,
+      "files": 7,
       "licence": null,
-      "doctorMs": 2794,
+      "doctorMs": 4227,
       "frames": 300,
       "stillMs": [
-        481,
-        538
+        493,
+        421
       ],
       "stills": [
         90,
@@ -7727,17 +7690,17 @@
       "warnings": [
         "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
-        "p font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
+        "p font-family: font not loaded; drawn with another loaded font",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
         "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
-      "files": 1,
+      "files": 9,
       "licence": null,
-      "doctorMs": 4801,
+      "doctorMs": 5724,
       "frames": 360,
       "stillMs": [
-        715,
-        1539
+        361,
+        587
       ],
       "stills": [
         108,
@@ -7748,16 +7711,15 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "div backdrop-filter: only blur() is drawn in a backdrop filter",
-        "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&display=block: https requests are not available"
+        "div backdrop-filter: only blur() is drawn in a backdrop filter"
       ],
-      "files": 1,
+      "files": 4,
       "licence": null,
-      "doctorMs": 56151,
+      "doctorMs": 34670,
       "frames": 240,
       "stillMs": [
-        2385,
-        7993
+        1528,
+        7014
       ],
       "stills": [
         72,
@@ -7770,11 +7732,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1958,
+      "doctorMs": 1563,
       "frames": 150,
       "stillMs": [
-        1014,
-        726
+        450,
+        277
       ],
       "stills": [
         45,
@@ -7787,11 +7749,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 2930,
+      "doctorMs": 1896,
       "frames": 60,
       "stillMs": [
-        465,
-        266
+        242,
+        193
       ],
       "stills": [
         18,
@@ -7806,11 +7768,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 2202,
+      "doctorMs": 1286,
       "frames": 120,
       "stillMs": [
-        277,
-        276
+        100,
+        110
       ],
       "stills": [
         36,
@@ -7823,11 +7785,11 @@
       "warnings": [],
       "files": 2,
       "licence": null,
-      "doctorMs": 7707,
+      "doctorMs": 3022,
       "frames": 210,
       "stillMs": [
-        948,
-        1705
+        852,
+        1437
       ],
       "stills": [
         63,
@@ -7840,11 +7802,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 2823,
+      "doctorMs": 1825,
       "frames": 60,
       "stillMs": [
-        1156,
-        588
+        518,
+        281
       ],
       "stills": [
         18,
@@ -7857,11 +7819,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 1604,
+      "doctorMs": 1465,
       "frames": 60,
       "stillMs": [
-        469,
-        252
+        277,
+        340
       ],
       "stills": [
         18,
@@ -7874,11 +7836,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 4263,
+      "doctorMs": 2124,
       "frames": 480,
       "stillMs": [
-        621,
-        1342
+        345,
+        762
       ],
       "stills": [
         144,
@@ -7891,11 +7853,11 @@
       "warnings": [],
       "files": 3,
       "licence": "OFL-1.1",
-      "doctorMs": 2716,
+      "doctorMs": 1283,
       "frames": 180,
       "stillMs": [
-        558,
-        689
+        255,
+        345
       ],
       "stills": [
         54,
@@ -7904,17 +7866,15 @@
     },
     "whip-pan": {
       "type": "block",
-      "status": "partial",
-      "warnings": [
-        "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block: https requests are not available"
-      ],
-      "files": 1,
+      "status": "works",
+      "warnings": [],
+      "files": 12,
       "licence": null,
-      "doctorMs": 13520,
+      "doctorMs": 9158,
       "frames": 120,
       "stillMs": [
-        905,
-        667
+        836,
+        403
       ],
       "stills": [
         36,
@@ -7929,11 +7889,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 3147,
+      "doctorMs": 989,
       "frames": 36,
       "stillMs": [
-        206,
-        156
+        119,
+        304
       ],
       "stills": [
         10,
@@ -7948,11 +7908,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 1118,
+      "doctorMs": 1593,
       "frames": 150,
       "stillMs": [
-        149,
-        158
+        315,
+        132
       ],
       "stills": [
         45,
@@ -7969,11 +7929,11 @@
       ],
       "files": 6,
       "licence": null,
-      "doctorMs": 1723,
+      "doctorMs": 1592,
       "frames": 240,
       "stillMs": [
-        339,
-        275
+        292,
+        252
       ],
       "stills": [
         72,
@@ -7988,11 +7948,11 @@
       ],
       "files": 1,
       "licence": null,
-      "doctorMs": 787,
+      "doctorMs": 1231,
       "frames": 195,
       "stillMs": [
-        184,
-        172
+        130,
+        254
       ],
       "stills": [
         58,
@@ -8003,13 +7963,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 8,
       "licence": null,
-      "doctorMs": 6465,
+      "doctorMs": 7263,
       "frames": 420,
       "stillMs": [
-        1310,
-        2419
+        1406,
+        1663
       ],
       "stills": [
         126,
@@ -8022,11 +7982,11 @@
       "warnings": [],
       "files": 3,
       "licence": "Apache-2.0 AND MIT",
-      "doctorMs": 854,
+      "doctorMs": 1223,
       "frames": 60,
       "stillMs": [
-        351,
-        247
+        270,
+        254
       ],
       "stills": [
         18,
@@ -8039,11 +7999,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1024,
+      "doctorMs": 2464,
       "frames": 150,
       "stillMs": [
-        244,
-        246
+        353,
+        189
       ],
       "stills": [
         45,
@@ -8054,13 +8014,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 1,
+      "files": 4,
       "licence": null,
-      "doctorMs": 1569,
+      "doctorMs": 1676,
       "frames": 150,
       "stillMs": [
-        380,
-        532
+        220,
+        812
       ],
       "stills": [
         45,
@@ -8073,11 +8033,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1120,
+      "doctorMs": 2086,
       "frames": 120,
       "stillMs": [
-        230,
-        232
+        196,
+        184
       ],
       "stills": [
         36,
@@ -8090,11 +8050,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1029,
+      "doctorMs": 2133,
       "frames": 150,
       "stillMs": [
-        263,
-        380
+        315,
+        220
       ],
       "stills": [
         45,
@@ -8107,11 +8067,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1620,
+      "doctorMs": 2814,
       "frames": 240,
       "stillMs": [
-        541,
-        604
+        278,
+        655
       ],
       "stills": [
         72,
@@ -8124,11 +8084,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1102,
+      "doctorMs": 1551,
       "frames": 150,
       "stillMs": [
-        208,
-        211
+        153,
+        186
       ],
       "stills": [
         45,
@@ -8141,11 +8101,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 946,
+      "doctorMs": 2103,
       "frames": 300,
       "stillMs": [
-        365,
-        662
+        505,
+        342
       ],
       "stills": [
         90,
@@ -8158,11 +8118,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1026,
+      "doctorMs": 2364,
       "frames": 180,
       "stillMs": [
-        262,
-        466
+        181,
+        210
       ],
       "stills": [
         54,
@@ -8173,13 +8133,13 @@
       "type": "block",
       "status": "works",
       "warnings": [],
-      "files": 2,
+      "files": 5,
       "licence": null,
-      "doctorMs": 1020,
+      "doctorMs": 1464,
       "frames": 135,
       "stillMs": [
-        251,
-        350
+        397,
+        236
       ],
       "stills": [
         40,
@@ -8192,11 +8152,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1192,
+      "doctorMs": 1230,
       "frames": 180,
       "stillMs": [
-        257,
-        550
+        173,
+        430
       ],
       "stills": [
         54,
@@ -8209,11 +8169,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1278,
+      "doctorMs": 2342,
       "frames": 120,
       "stillMs": [
-        225,
-        334
+        125,
+        232
       ],
       "stills": [
         36,
@@ -8226,11 +8186,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1549,
+      "doctorMs": 1336,
       "frames": 240,
       "stillMs": [
-        300,
-        490
+        274,
+        463
       ],
       "stills": [
         72,
@@ -8243,11 +8203,11 @@
       "warnings": [],
       "files": 1,
       "licence": null,
-      "doctorMs": 1228,
+      "doctorMs": 1403,
       "frames": 150,
       "stillMs": [
-        173,
-        315
+        132,
+        135
       ],
       "stills": [
         45,

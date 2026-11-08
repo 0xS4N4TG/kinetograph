@@ -5,7 +5,7 @@
 // an item is left as written, and the render's own warning for it stands.
 //
 //   Google Fonts   `<link href="https://fonts.googleapis.com/css2?…">` and `@import url(…)` become `@font-face` rules
-//                  whose files are in `public/fonts/<family>/`, each family with its licence text beside it
+//                  whose files are in `public/fonts/<family>/`
 //   font files     `url(https://cdn.jsdelivr.net/fontsource/fonts/…)` and `url(https://fonts.gstatic.com/s/…)` in CSS
 //   data files     `https://cdn.jsdelivr.net/npm/<package>@<version>/<file>.json` in a script (`fetch(url)`), as
 //                  `public/data/<package>-<version>/<file>.json`; `fetch` reads project files beside the entry or in `public/`
@@ -19,21 +19,20 @@ import { CliError } from '../errors.js';
 import { download } from './source.js';
 
 const GOOGLE_CSS_HOST = 'fonts.googleapis.com';
-const HOSTS = [GOOGLE_CSS_HOST, 'fonts.gstatic.com', 'cdn.jsdelivr.net', 'raw.githubusercontent.com'] as const;
+const HOSTS = [GOOGLE_CSS_HOST, 'fonts.gstatic.com', 'cdn.jsdelivr.net'] as const;
 /** The hosts the localisation reads, for the messages and the docs. */
 export const HYPERFRAMES_ASSET_HOSTS: readonly string[] = HOSTS;
 
 const MAX_CSS_BYTES = 1024 * 1024;
 const MAX_FONT_BYTES = 25 * 1024 * 1024;
 const MAX_DATA_BYTES = 20 * 1024 * 1024;
-const MAX_LICENCE_BYTES = 256 * 1024;
 const MAX_TOTAL_BYTES = 150 * 1024 * 1024;
 const MAX_FACES = 64;
 const MAX_READS = 200;
 const FONT_FILE = /\.(woff2?|ttf|otf)$/i;
 const DATA_FILE = /\.(json|geojson|topojson)$/i;
 
-type Kind = 'css' | 'font' | 'data' | 'licence';
+type Kind = 'css' | 'font' | 'data';
 
 /** Whether the download of a `kind` may read `url`: https, no credentials or port, and a host and path made for that kind. */
 function allowed(kind: Kind, url: URL): boolean {
@@ -46,8 +45,6 @@ function allowed(kind: Kind, url: URL): boolean {
       return FONT_FILE.test(path) && ((host === 'fonts.gstatic.com' && path.startsWith('/s/')) || (host === 'cdn.jsdelivr.net' && path.startsWith('/fontsource/fonts/')));
     case 'data':
       return host === 'cdn.jsdelivr.net' && path.startsWith('/npm/') && DATA_FILE.test(path);
-    case 'licence':
-      return host === 'raw.githubusercontent.com' && path.startsWith('/google/fonts/main/');
   }
 }
 
@@ -57,13 +54,6 @@ export interface LocalAsset {
   data: Uint8Array;
   /** A font file: one already in the project is kept as it is, not compared (Google can serve a newer build under the same name). */
   keep: boolean;
-}
-
-export interface LocalFont {
-  family: string;
-  /** An SPDX id, or `unknown` when the licence text could not be found. */
-  licence: string;
-  files: string[];
 }
 
 export interface LocalizerOptions {
@@ -76,16 +66,9 @@ export type LocalFileKind = 'html' | 'css' | 'js';
 const slug = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'font';
 const safe = (text: string): string => text.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^[^A-Za-z0-9]+/, '').replace(/\.+$/, '') || 'file';
 
-const LICENCES = [
-  { dir: 'ofl', file: 'OFL.txt', spdx: 'OFL-1.1', name: 'OFL.txt' },
-  { dir: 'apache', file: 'LICENSE.txt', spdx: 'Apache-2.0', name: 'LICENSE.txt' },
-  { dir: 'ufl', file: 'UFL.txt', spdx: 'UFL-1.0', name: 'LICENSE-UFL.txt' },
-] as const;
-
 /** One install's downloads: each URL is read once, in total no more than `MAX_TOTAL_BYTES`, and the files wait here to be written. */
 export class Localizer {
   readonly assets = new Map<string, LocalAsset>();
-  readonly fonts = new Map<string, LocalFont>();
   readonly warnings: string[] = [];
   private readonly fetchImpl: typeof fetch;
   private readonly progress: (message: string) => void;
@@ -120,38 +103,6 @@ export class Localizer {
   private add(target: string, data: Uint8Array, keep: boolean): string {
     if (!this.assets.has(target)) this.assets.set(target, { target, data, keep });
     return target;
-  }
-
-  /** The licence text of a Google Fonts family, stored beside its files; `unknown` (with a warning) when it cannot be found. */
-  private async licenceOf(family: string, dir: string): Promise<string> {
-    const folder = family.toLowerCase().replace(/[^a-z0-9]/g, '');
-    for (const licence of LICENCES) {
-      try {
-        const url = new URL(`https://raw.githubusercontent.com/google/fonts/main/${licence.dir}/${folder}/${licence.file}`);
-        const bytes = await this.read('licence', url, MAX_LICENCE_BYTES, `no ${licence.dir} licence for ${family}`);
-        this.add(`${dir}/${licence.name}`, bytes, true);
-        return licence.spdx;
-      } catch (error) {
-        if (error instanceof CliError && error.code === 'NOT_FOUND') continue;
-        this.warn(`the licence of the font ${family} could not be downloaded: ${error instanceof Error ? error.message : String(error)}`);
-        return 'unknown';
-      }
-    }
-    this.warn(`the font ${family} has no licence text in the Google Fonts repository; check its licence before sharing the project`);
-    return 'unknown';
-  }
-
-  private async noteFont(family: string, dir: string, file: string): Promise<void> {
-    let font = this.fonts.get(family);
-    if (font === undefined) {
-      // Recorded before the licence is fetched, so a second face of the family met meanwhile adds to this record.
-      font = { family, licence: 'unknown', files: [] };
-      this.fonts.set(family, font);
-      font.files.push(file);
-      font.licence = await this.licenceOf(family, dir);
-      return;
-    }
-    if (!font.files.includes(file)) font.files.push(file);
   }
 
   /**
@@ -199,7 +150,6 @@ export class Localizer {
         used.set(`${dir}/${name}`, fileUrl.href);
         const target = `${dir}/${name}${ext}`;
         this.add(target, await this.read('font', fileUrl, MAX_FONT_BYTES, `${fileUrl.href} was not found`), true);
-        await this.noteFont(family, dir, target);
         const display = /^(auto|block|swap|fallback|optional)$/.test((decl('font-display') ?? '').trim()) ? decl('font-display') : undefined;
         const format = /format\(\s*(['"]?)([^'")]+)\1\s*\)/.exec(src)?.[2];
         rules.push(
@@ -238,7 +188,6 @@ export class Localizer {
       const dir = `public/fonts/${slug(family)}`;
       const target = `${dir}/${file}`;
       this.add(target, await this.read('font', url, MAX_FONT_BYTES, `${url.href} was not found`), true);
-      await this.noteFont(family === '' ? 'font' : family, dir, target);
       return posix.relative(fromDir, target);
     } catch (error) {
       this.warn(`${url.href} was not stored in the project: ${error instanceof Error ? error.message : String(error)}`);
@@ -301,11 +250,6 @@ export class Localizer {
       out = kind === 'js' ? await data(out) : (await Promise.all(out.split(/(<style\b[\s\S]*?<\/style>)/gi).map((part, i) => (i % 2 === 1 ? part : data(part))))).join('');
     }
     return out;
-  }
-
-  /** The families stored, with their licences and files. */
-  get localFonts(): LocalFont[] {
-    return [...this.fonts.values()];
   }
 }
 

@@ -8,7 +8,6 @@ import { Localizer } from '../src/registry/hyperframes-assets.js';
 const BASE = `https://raw.githubusercontent.com/heygen-com/hyperframes/${HYPERFRAMES_PINNED_REF}/registry`;
 const CSS_URL = 'https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Instrument+Serif:ital@0;1&display=swap';
 const GSTATIC = 'https://fonts.gstatic.com/s';
-const OFL = 'SIL OPEN FONT LICENSE Version 1.1';
 
 const face = (family: string, style: string, weight: number, file: string): string =>
   `@font-face {\n  font-family: '${family}';\n  font-style: ${style};\n  font-weight: ${weight};\n  font-display: swap;\n  src: url(${GSTATIC}/${file}) format('truetype');\n}\n`;
@@ -23,10 +22,7 @@ function served(): Map<string, string | Uint8Array> {
   const files = new Map<string, string | Uint8Array>();
   files.set(CSS_URL, GOOGLE_CSS);
   for (const f of ['instrumentserif/v5/ital.ttf', 'instrumentserif/v5/norm.ttf', 'spacemono/v17/regular.ttf', 'spacemono/v17/bold.ttf']) files.set(`${GSTATIC}/${f}`, new Uint8Array([1, 2, 3, f.length]));
-  files.set('https://raw.githubusercontent.com/google/fonts/main/ofl/spacemono/OFL.txt', OFL);
-  files.set('https://raw.githubusercontent.com/google/fonts/main/ofl/instrumentserif/OFL.txt', OFL);
   files.set('https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-500-normal.woff2', new Uint8Array([9, 9]));
-  files.set('https://raw.githubusercontent.com/google/fonts/main/ofl/inter/OFL.txt', OFL);
   files.set('https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json', '{"type":"Topology"}');
   return files;
 }
@@ -48,7 +44,7 @@ function mockFetch(files: Map<string, string | Uint8Array>, handler?: Handler): 
 }
 
 describe('Localizer: Google Fonts', () => {
-  it('turns an @import whose URL holds semicolons into @font-face rules with local files and a licence', async () => {
+  it('turns an @import whose URL holds semicolons into @font-face rules with local files', async () => {
     const fetch = mockFetch(served());
     const localizer = new Localizer({ fetch });
     const html = `<style>\n@import url("${CSS_URL}");\nbody{font-family:'Space Mono'}\n</style>`;
@@ -59,19 +55,12 @@ describe('Localizer: Google Fonts', () => {
     expect(out).toContain('src: url("../public/fonts/instrument-serif/instrument-serif-400-italic.ttf")');
     expect(out).toContain("body{font-family:'Space Mono'}");
     expect([...localizer.assets.keys()].sort()).toEqual([
-      'public/fonts/instrument-serif/OFL.txt',
       'public/fonts/instrument-serif/instrument-serif-400-italic.ttf',
       'public/fonts/instrument-serif/instrument-serif-400-normal.ttf',
-      'public/fonts/space-mono/OFL.txt',
       'public/fonts/space-mono/space-mono-400-normal.ttf',
       'public/fonts/space-mono/space-mono-700-normal.ttf',
     ]);
-    expect(localizer.localFonts.map((f) => [f.family, f.licence, f.files.length])).toEqual([
-      ['Instrument Serif', 'OFL-1.1', 2],
-      ['Space Mono', 'OFL-1.1', 2],
-    ]);
     expect(localizer.warnings).toEqual([]);
-    expect(Buffer.from(localizer.assets.get('public/fonts/space-mono/OFL.txt')!.data).toString()).toBe(OFL);
   });
 
   it('replaces a <link> to Google Fonts with a <style> and writes paths relative to the page', async () => {
@@ -81,22 +70,6 @@ describe('Localizer: Google Fonts', () => {
     expect(out).toContain('<style>');
     expect(out).toContain('src: url("public/fonts/space-mono/space-mono-400-normal.ttf")');
     expect(out).not.toContain('fonts.googleapis.com');
-  });
-
-  it('records the Apache and UFL licences, and warns when a family has none', async () => {
-    const files = served();
-    files.delete('https://raw.githubusercontent.com/google/fonts/main/ofl/spacemono/OFL.txt');
-    files.set('https://raw.githubusercontent.com/google/fonts/main/apache/spacemono/LICENSE.txt', 'Apache License');
-    const localizer = new Localizer({ fetch: mockFetch(files) });
-    await localizer.localize(`@import url('${CSS_URL}');`, 'x.css', 'css');
-    expect(localizer.localFonts.find((f) => f.family === 'Space Mono')).toMatchObject({ licence: 'Apache-2.0' });
-    expect(localizer.assets.has('public/fonts/space-mono/LICENSE.txt')).toBe(true);
-
-    files.delete('https://raw.githubusercontent.com/google/fonts/main/apache/spacemono/LICENSE.txt');
-    const none = new Localizer({ fetch: mockFetch(files) });
-    await none.localize(`@import url('${CSS_URL}');`, 'x.css', 'css');
-    expect(none.localFonts.find((f) => f.family === 'Space Mono')).toMatchObject({ licence: 'unknown' });
-    expect(none.warnings.join('\n')).toContain('no licence text');
   });
 
   it('keeps the original reference and says so when a download fails', async () => {
@@ -172,8 +145,7 @@ describe('Localizer: font files and data files', () => {
     const localizer = new Localizer({ fetch: mockFetch(served()) });
     const out = await localizer.localize('<style>@font-face{font-family:Inter;src:url(https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-500-normal.woff2)}</style>', 'compositions/a.html', 'html');
     expect(out).toContain('src:url(../public/fonts/inter/latin-500-normal.woff2)');
-    expect(localizer.assets.has('public/fonts/inter/OFL.txt')).toBe(true);
-    expect(localizer.localFonts[0]).toMatchObject({ family: 'inter', licence: 'OFL-1.1' });
+    expect([...localizer.assets.keys()]).toEqual(['public/fonts/inter/latin-500-normal.woff2']);
   });
 
   it('stores a JSON file a script fetches, under public/data, and points fetch at it', async () => {
@@ -211,15 +183,12 @@ describe('addHyperframes with fonts and data', () => {
     return { fetch, source: openHyperframes({ fetch, cacheDir: mkdtempSync(join(tmpdir(), 'kinetograph-hf-cache-')) }) };
   };
 
-  it('stores fonts with their licences and data in the project, and points the item at them', async () => {
+  it('stores fonts and data in the project, and points the item at them', async () => {
     const { source } = open();
     const result = await addHyperframes({ names: ['card'], dir, source, overwrite: false });
     const card = result.added[0]!;
     expect(card.written).toContain('public/fonts/space-mono/space-mono-400-normal.ttf');
-    expect(card.written).toContain('public/fonts/space-mono/OFL.txt');
     expect(card.written).toContain('public/data/us-atlas-3/states-10m.json');
-    expect(card.licences).toContain('public/fonts/space-mono/OFL.txt');
-    expect(card.fonts.map((f) => f.family)).toEqual(['Instrument Serif', 'Space Mono']);
     const page = readFileSync(join(dir, 'compositions/card.html'), 'utf8');
     expect(page).toContain('url("../public/fonts/space-mono/space-mono-700-normal.ttf")');
     expect(page).toContain('fetch("public/data/us-atlas-3/states-10m.json")');
@@ -244,7 +213,7 @@ describe('addHyperframes with fonts and data', () => {
     expect(readFileSync(join(dir, 'public/fonts/space-mono/space-mono-400-normal.ttf'), 'utf8')).toBe('mine');
     expect(second.added.find((a) => a.name === 'card')!.written).toEqual([]);
     expect(second.added.find((a) => a.name === 'other')!.written).toEqual(['compositions/other.html']);
-    expect(second.added.find((a) => a.name === 'other')!.unchanged).toContain('public/fonts/space-mono/OFL.txt');
+    expect(second.added.find((a) => a.name === 'other')!.unchanged).toContain('public/fonts/space-mono/space-mono-400-normal.ttf');
   });
 
   it('refuses nothing outside the folders: stored files stay under public/fonts and public/data', async () => {

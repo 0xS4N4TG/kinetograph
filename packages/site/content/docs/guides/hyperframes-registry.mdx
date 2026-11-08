@@ -36,8 +36,6 @@ Many items name a Google Fonts stylesheet, a font file on a CDN or a JSON file t
 | a font file at `fonts.gstatic.com/s/…` or `cdn.jsdelivr.net/fontsource/fonts/…` in CSS | the file, in `public/fonts/<family>/` | the `url()` |
 | a `.json` file at `cdn.jsdelivr.net/npm/<package>@<version>/…` in a script | the file, in `public/data/<package>-<version>/` | the URL, which `fetch` then reads from the project |
 
-Each font family gets its licence text beside it (`OFL.txt`, `LICENSE.txt` or `LICENSE-UFL.txt`, from the Google Fonts repository). The command prints the licence of every family it stored, and warns when it finds none. Keep these files with the project.
-
 Only those hosts and paths are read: https, no credentials, every redirect checked, a size limit on each file and a timeout. A reference to anything else is left as written, and `doctor` reports it. A font that cannot be downloaded is a warning, and the item keeps its original link. `--keep-remote` skips all of this. A font file already in `public/fonts` is kept as it is, so a font you replaced stays yours.
 
 ## Licences
@@ -56,20 +54,21 @@ Measured on an Apple M4 against registry commit `75fe18c`, 448 items (210 blocks
 
 | | Items |
 |---|---|
-| works | 238 |
-| partial | 208 |
+| works | 254 |
+| partial | 192 |
 | fails | 2 |
 
-Both fails stop in `doctor`. Most partial items (156 of 208) are components, whose demos are small pages built around one effect.
+Both fails stop in `doctor`. Most partial items (156 of 192) are components, whose demos are small pages built around one effect.
 
 What `doctor` reports most often, by items affected:
 
-1. A font the page names but does not ship, so another one is drawn (30).
-2. A remote file the page fetches while it runs, such as a Google Fonts stylesheet or a font file (22).
-3. Three.js scenes, which are not drawn (22).
-4. A script that uses cube map textures (17).
-5. A gradient that interpolates in a colour space other than sRGB (16).
-6. A backdrop filter other than `blur()` (5).
+1. A font the page names but does not ship, such as `system-ui`, `monospace` or `Menlo`, so another one is drawn (29).
+2. Three.js scenes, which are not drawn (22).
+3. A script that uses cube map textures (17).
+4. A gradient that interpolates in a colour space other than sRGB (16).
+5. A backdrop filter other than `blur()` (5).
+
+Storing the fonts and data an item loads from the web (above) took 16 items from partial to works. Before it, 21 items had a Google Fonts or CDN font file the render could not load.
 
 The full list, with each item's warnings and render times, is [status.json](https://github.com/0xS4N4TG/kinetograph/blob/main/scripts/hyperframes-registry/status.json). Run it yourself with `node scripts/hyperframes-registry/sweep.mjs`.
 
