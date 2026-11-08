@@ -31,7 +31,7 @@ export function CardGroup({ cols = 2, children }: { cols?: 1 | 2 | 3; children?:
 
 /** A callout: `<Tip>` for advice, `<Note>` for something to know. */
 export function Tip({ children }: { children?: ReactNode }) {
-  return <Callout type="idea" title="Tip">{children}</Callout>;
+  return <Callout type="info" title="Tip">{children}</Callout>;
 }
 export function Note({ children }: { children?: ReactNode }) {
   return <Callout type="info" title="Note">{children}</Callout>;

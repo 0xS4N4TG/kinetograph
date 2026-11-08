@@ -19,11 +19,10 @@ poster from a frame that reads without motion. The captions on the pages are one
 Existing renders in `public/examples/`, `public/film/` and `public/docs-media/` are good sources: cut and re-encode them,
 then upload the result to the host.
 
-## The list (17 page clips)
+## The list (16 page clips)
 
 | Name | Page | Length | Sound | What it shows | Source |
 |---|---|---|---|---|---|
-| `what-is-kinetograph` | `index` | 20 s | silent | A montage of four short reels: a launch film, a paper-cut reel, a type spot and a 3D scene. | Cut from `examples/launch` (`public/film/launch.mp4`), `examples/rajz-cards` (`public/examples/rajz-cards.mp4`), `examples/showcase` and `examples/showcase-3d` renders |
 | `first-video` | `getting-started/first-video` | 2 s | silent | The finished starter title card: a word appears and a line grows under it. Loops. | Render of `npx kinetograph init` (`src/scenes/Title.tsx`) |
 | `what-to-make` | `making/index` | 8 s | silent | Four kinds in turn, two seconds each: moving text, photos, a paper-cut reel, a glitch. | Cuts of `prompt-intro`, `wait-ship`, `examples/rajz-cards`, `examples/datamosh` |
 | `title-cards-and-text` | `making/title-cards-and-text` | 6 s | silent | A headline writes on one letter at a time, then three words slide up, 3 frames apart. | New small project; the write-on is `<HandCaptions>` from `plugins/kinetic-typography` |
@@ -47,23 +46,36 @@ Pages that HyperFrames shows a clip on and Kinetograph does not (the agent pages
 shows still screenshots (`public/docs-media/studio/`). Add a screen recording of Studio to `studio/index` later if it is
 wanted: that would be a 13th clip.
 
-## Film tiles (What is Kinetograph)
+## Films (What is Kinetograph)
 
-The tiles on `index` come from `src/lib/films.ts`. Each film is `<base>films/<name>.mp4`, 1280x720 or the source size, H.264 with its sound
-kept. Posters are small WebPs already in `public/docs-media/films/` (about 56 KB in all). Until the base URL is set, a tile opens a
-"coming soon" dialog. All eight are Kinetograph renders of our own examples; none is a reference reel by someone else.
-Durations were measured with ffprobe.
+The hero of `index` is the full launch film with sound and controls, `films-launch.mp4`, already in the release (poster: `public/docs-media/films/launch.webp`).
+The tiles come from `src/lib/films.ts`. Every film is a flat release asset named `films-<name>.mp4`, H.264 with faststart and AAC where there is
+sound, under 15 MB. Web copies are already encoded in the scratchpad folder `docs-media2/`. Posters are small WebPs in the repo (88 KB in all). Until
+`NEXT_PUBLIC_DOCS_VIDEO_BASE` is set, a tile opens a "coming soon" dialog. All are Kinetograph renders. Durations were measured with ffprobe.
 
-| Name | Duration | Sound | Source |
-|---|---|---|---|
-| `launch` | 39.5 s | yes | `examples/launch/out/launch-v13.mp4` (project `examples/launch`) |
-| `showcase` | 37.1 s | no | `packages/site/public/examples/showcase.mp4` (project `examples/showcase`) |
-| `showcase-3d` | 6.0 s | no | `packages/site/public/examples/showcase-3d.mp4` (project `examples/showcase-3d`) |
-| `datamosh` | 5.0 s | yes | `examples/launch/out/datamosh/jets-datamosh.mp4` (project `examples/datamosh`) |
-| `papercut-card` | 2.0 s, 1080x1920 | no | `packages/site/public/examples/papercut-card.mp4` (`examples/papercut-card.json`) |
-| `canvas` | 2.0 s | no | `packages/site/public/examples/canvas.mp4` (project `examples/canvas`) |
-| `video-overlay` | 6.0 s | no | `packages/site/public/examples/video-overlay.mp4` (project `examples/video-overlay`) |
-| `bench-diorama` | 3.0 s, 1080x1920 | no | `packages/site/public/examples/bench-diorama.mp4` (`examples/bench-diorama.json`) |
+| Upload as | Title / category | Duration | Sound | Web copy | Source |
+|---|---|---|---|---|---|
+| `films-launch.mp4` | hero | 39.5 s | yes | 1280x720, 8.7 MB | `examples/launch/out/launch-v13.mp4` |
+| `films-launch2.mp4` | Every frame, straight / Launch film | 43.3 s | yes | 1280x720, 11.8 MB | `kinetograph-ui/templates/inside/out/launch2-v7.mp4` |
+| `films-dostoevsky.mp4` | Dostoevsky in 40 seconds / Explainer | 39.7 s | no | 720x1280, 8.6 MB | `kinetograph-ui/templates/dostoevsky/out/dostoevsky.mp4` |
+| `films-worlds.mp4` | Worlds / Showreel | 29.7 s | no | 1280x720, 8.8 MB | `kinetograph-ui/templates/inside/out/worlds-preview.mp4` |
+| `films-wish-reel.mp4` | A birthday wish reel / Social | 18.0 s | yes | 1280x960, 11.5 MB | `kinetograph-ui/templates/wish-reel/out/wish-reel.mp4` |
+| `films-page-turn.mp4` | Page turn / Looks | 5.7 s | no | 720x1280, 0.3 MB | `kinetograph-ui/templates/looks-demo/out/page-turn.mp4` |
+| `films-match-cut.mp4` | Match cut / Text | 5.0 s | yes | 720x1280, 1.8 MB | `kinetograph-ui/templates/match-cut/out/match-cut.mp4` |
+| `films-papercut-demo.mp4` | All paper / Paper-cut | 5.0 s | no | 720x1280, 0.5 MB | `kinetograph-ui/templates/papercut-demo/out/papercut-demo.mp4` |
+| `films-stack-credits.mp4` | Stacked credits / Titles | 4.7 s | no | 720x1280, 1.0 MB | `kinetograph-ui/templates/stack-credits/out/stack-credits.mp4` |
 
-Hosting is on GitHub release assets; set `NEXT_PUBLIC_DOCS_VIDEO_BASE` to the release download URL prefix, with a trailing slash,
-and upload `films/<name>.mp4` and the clips above under it.
+## Route previews (What do you want to make?)
+
+The picker on `making/index` shows a muted 16:9 loop for each route, `routes-<clip>.mp4` (6 to 8 s, under 1.5 MB). Until they are uploaded each shows its
+poster, a frame from the films above. The routes with no poster (pin text, data, bring a project, any other) show a plain tinted box.
+
+| Upload as | Route | Suggested source |
+|---|---|---|
+| `routes-launch.mp4` | Show a product or launch | `films-launch2` cut to 8 s |
+| `routes-explain.mp4` | Explain an idea | `films-dostoevsky` cropped to 16:9 |
+| `routes-title.mp4` | Title card or moving text | `films-match-cut`, 16:9 crop |
+| `routes-photos.mp4` | Photos and footage | `films-worlds` cut |
+| `routes-sound.mp4` | Voice, music and captions | `films-wish-reel` cut |
+| `routes-paper.mp4` | Paper-cut | `films-papercut-demo`, 16:9 crop |
+| `routes-glitch.mp4` | Glitch effects | `films-launch` GLSL shot |

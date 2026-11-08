@@ -2,6 +2,7 @@ import { DocsPre, PromptBox } from '@/components/docs/mdx';
 import { Media } from '@/components/docs/media';
 import { Card, CardGroup, Note, Step, Tip, Warning } from '@/components/docs/blocks';
 import { FilmGrid } from '@/components/docs/film-grid';
+import { RouteGrid } from '@/components/docs/route-grid';
 import { LinkCard } from '@/components/docs/link-card';
 import { Video } from '@/components/docs/video';
 import { PageActions } from '@/components/docs/page-actions';
@@ -53,6 +54,7 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
             Media,
             Video,
             FilmGrid,
+            RouteGrid,
             LinkCard,
             Card,
             CardGroup,

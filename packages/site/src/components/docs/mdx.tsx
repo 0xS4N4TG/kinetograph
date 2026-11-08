@@ -1,5 +1,5 @@
 import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
-import { FolderTreeIcon, SparklesIcon } from 'lucide-react';
+import { FolderTreeIcon, InfoIcon } from 'lucide-react';
 import type { ComponentProps, ReactNode } from 'react';
 
 import { CopyButton } from '@/components/docs/copy-button';
@@ -77,7 +77,7 @@ export function PromptBox({ skill, children }: { skill?: string; children?: Reac
     <figure className="not-prose my-6">
       <div className="kg-box flex items-start gap-3 px-4 py-5 sm:items-center sm:px-6">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-fd-accent text-fd-primary">
-          <SparklesIcon className="size-4" />
+          <InfoIcon className="size-4" />
         </span>
         <p className="min-w-0 flex-1 text-sm leading-relaxed text-fd-foreground">
           {name ? (

@@ -51,7 +51,7 @@ export function FilmTile({ film }: { film: Film }) {
             controls
             autoPlay
             playsInline
-            className="block aspect-video w-full rounded-lg bg-black"
+            className={`mx-auto block rounded-lg bg-black ${film.portrait ? 'max-h-[80vh] w-auto' : 'aspect-video w-full'}`}
           />
         ) : (
           <p className="px-4 py-10 text-center text-sm text-fd-muted-foreground">{film.title}: this film is coming soon.</p>
