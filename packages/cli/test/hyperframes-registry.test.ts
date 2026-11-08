@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,7 +17,7 @@ import {
 
 const scratch = (): string => mkdtempSync(join(tmpdir(), 'kinetograph-hf-test-'));
 const BASE = `https://raw.githubusercontent.com/heygen-com/hyperframes/${HYPERFRAMES_PINNED_REF}/registry`;
-const CDN = 'https://static.example.com/font.woff2';
+const CDN = 'https://static.heygen.ai/hyperframes/font.woff2';
 
 const item = (name: string, type: string, over: object = {}, files?: object[]) => ({
   name,
@@ -324,5 +324,102 @@ describe('the add command', () => {
     expect(r.json.error.code).toBe('INVALID_ARG');
     const ref = await cli('add', 'title-card', '--ref', 'main', '--json');
     expect(ref.json.error.code).toBe('INVALID_ARG');
+  });
+});
+
+describe('hostile items', () => {
+  const project = (): string => {
+    const dir = scratch();
+    writeFileSync(join(dir, 'index.html'), '<div></div>');
+    return dir;
+  };
+  const withFiles = (files: object[], over: object = {}) => {
+    const served_ = served();
+    served_.set(`${BASE}/components/glow/registry-item.json`, JSON.stringify(item('glow', 'component', over, files)));
+    return open(served_);
+  };
+
+  it.each([
+    ['package.json'],
+    ['.github/workflows/x.yml'],
+    ['.git/hooks/pre-commit'],
+    ['compositions/.hidden.html'],
+    ['compositions/node_modules/x.js'],
+    ['compositions/components/package.json'],
+    ['TEMPLATE.md'],
+    ['src/index.ts'],
+    ['index.html'],
+    ['hyperframes.json'],
+  ])('refuses the target %s, writing nothing', async (target) => {
+    const dir = project();
+    const { source } = withFiles([{ path: 'glow.html', target }]);
+    await expect(addHyperframes({ names: ['glow'], dir, source, overwrite: true })).rejects.toMatchObject({ code: 'UNSAFE_TARGET' });
+    expect(existsSync(join(dir, 'HYPERFRAMES-CREDITS.md'))).toBe(false);
+    expect(readFileSync(join(dir, 'index.html'), 'utf8')).toBe('<div></div>');
+  });
+
+  it('refuses a hyperframes.json that moves a folder onto a sensitive place', async () => {
+    for (const blocks of ['.git', 'node_modules/x', '.github/workflows', 'package.json']) {
+      const dir = project();
+      writeFileSync(join(dir, 'hyperframes.json'), JSON.stringify({ paths: { components: blocks } }));
+      const { source } = open();
+      await expect(addHyperframes({ names: ['glow'], dir, source, overwrite: true })).rejects.toMatchObject({ code: 'UNSAFE_TARGET' });
+      expect(existsSync(join(dir, 'HYPERFRAMES-CREDITS.md'))).toBe(false);
+    }
+  });
+
+  it('refuses an asset url on a host that is not the registry or its CDN, before any request to it', async () => {
+    for (const url of ['https://169.254.169.254/latest/meta-data', 'https://evil.example/a.png', 'https://localhost:8080/a.png', 'https://static.heygen.ai.evil.example/a.png', 'https://user@evil.example/a.png']) {
+      const { fetch, source } = withFiles([{ path: 'a.png', target: 'assets/a.png', url }]);
+      await expect(source.item('glow')).rejects.toMatchObject({ code: 'UNSAFE_URL' });
+      expect(fetch.calls.some((c) => c.startsWith(url))).toBe(false);
+    }
+    const { source } = withFiles([{ path: 'a.png', target: 'assets/a.png', url: 'https://raw.githubusercontent.com/heygen-com/hyperframes/main/registry/x.png' }]);
+    await expect(source.item('glow')).resolves.toBeTruthy();
+  });
+
+  it('checks the host again after every redirect, and sends nothing to the new one', async () => {
+    const files = served();
+    const calls: { url: string; headers: unknown }[] = [];
+    const redirecting = (async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = String(input instanceof Request ? input.url : input);
+      calls.push({ url, headers: init?.headers });
+      if (url === CDN) return new Response(null, { status: 302, headers: { location: 'https://evil.example/stolen' } });
+      if (url.startsWith('https://evil.example')) return new Response('secret', { status: 200 });
+      const body = files.get(url);
+      return body === undefined ? new Response('no', { status: 404 }) : new Response(typeof body === 'string' ? body : Buffer.from(body));
+    }) as typeof fetch;
+    const source = openHyperframes({ fetch: redirecting, cacheDir });
+    const card = await source.item('card');
+    await expect(source.file(card, card.files[1]!)).rejects.toMatchObject({ code: 'UNSAFE_URL' });
+    expect(calls.map((c) => c.url)).not.toContain('https://evil.example/stolen');
+    for (const call of calls) expect(JSON.stringify(call.headers ?? {})).not.toMatch(/authorization/i);
+  });
+
+  it('refuses to write the credits file through a symbolic link, writing nothing', async () => {
+    const dir = project();
+    const outside = join(scratch(), 'victim.txt');
+    writeFileSync(outside, 'precious');
+    symlinkSync(outside, join(dir, 'HYPERFRAMES-CREDITS.md'));
+    const { source } = open();
+    await expect(addHyperframes({ names: ['glow'], dir, source, overwrite: true })).rejects.toMatchObject({ code: 'UNSAFE_TARGET' });
+    expect(readFileSync(outside, 'utf8')).toBe('precious');
+    expect(existsSync(join(dir, 'compositions/components/glow.html'))).toBe(false);
+  });
+
+  it('strips terminal escapes from what an item says about itself, and refuses them in a name or type', async () => {
+    const files = served();
+    const esc = '\x1b]0;pwned\x07\x1b[2J\u009b31m';
+    files.set(`${BASE}/components/glow/registry-item.json`, JSON.stringify(item('glow', 'component', { title: `Glow${esc}`, description: `Nice${esc}\nline`, author: `Eve${esc}`, license: `MIT${esc}`, tags: [`fx${esc}`], deprecated: `old${esc}` })));
+    const { source } = open(files);
+    const glow = await source.item('glow');
+    for (const text of [glow.title, glow.description, glow.author, glow.license, glow.deprecated, ...(glow.tags ?? [])]) expect(text).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
+    expect(glow.title).toContain('Glow');
+    expect((await source.index()).find((i) => i.name === 'glow')!.description).not.toMatch(/[\x00-\x1f\x7f-\x9f]/);
+
+    files.set(`${BASE}/components/glow/registry-item.json`, JSON.stringify(item('glow', 'component', {}, undefined)).replace('"name":"glow"', '"name":"glow\\u001b[2J"'));
+    await expect(open(files).source.item('glow')).rejects.toMatchObject({ code: 'INVALID_ITEM' });
+    files.set(`${BASE}/components/glow/registry-item.json`, JSON.stringify(item('glow', 'component', {})).replace('hyperframes:component', 'hyperframes:component\\u001b[2J'));
+    await expect(open(files).source.item('glow')).rejects.toMatchObject({ code: 'INVALID_ITEM' });
   });
 });

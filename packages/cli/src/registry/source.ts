@@ -126,12 +126,19 @@ function fileUrl(itemUrl: URL | undefined, url: string): URL {
 }
 
 /** One GET over https, following at most 3 redirects (each to https), refusing more than `limit` bytes. */
-export async function download(url: URL, limit: number, fetchImpl: typeof fetch, notFound?: string): Promise<Uint8Array> {
+export async function download(url: URL, limit: number, fetchImpl: typeof fetch, notFound?: string, hosts?: readonly string[]): Promise<Uint8Array> {
+  const origin = url.origin;
   for (let hops = 0; ; hops++) {
     if (url.protocol !== 'https:') throw new CliError('INSECURE_URL', `${url.href} is not an https URL`);
+    // With `hosts`, every hop (the first URL and each redirect) must be on one of them, and no credentials are sent.
+    if (hosts !== undefined && (url.username !== '' || url.password !== '' || url.port !== '' || !hosts.includes(url.hostname))) {
+      throw new CliError('UNSAFE_URL', `${url.href} is not on an allowed host (${hosts.join(', ')})`);
+    }
     let response: Response;
     try {
-      response = await fetchImpl(url, { redirect: 'manual', headers: requestHeaders(), signal: AbortSignal.timeout(TIMEOUT_MS) });
+      // Credentials go only to the origin the download started at, never after a redirect elsewhere, and never to `hosts`.
+      const headers = hosts === undefined && url.origin === origin ? requestHeaders() : {};
+      response = await fetchImpl(url, { redirect: 'manual', headers, signal: AbortSignal.timeout(TIMEOUT_MS) });
     } catch (error) {
       throw new CliError('NETWORK', `could not reach ${url.href}: ${error instanceof Error ? error.message : String(error)}`);
     }

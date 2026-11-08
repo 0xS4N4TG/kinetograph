@@ -28,6 +28,15 @@ const DOWNLOADS_AT_ONCE = 8;
 export const HYPERFRAMES_TYPES = { block: 'blocks', component: 'components' } as const;
 export type HyperframesType = keyof typeof HYPERFRAMES_TYPES;
 
+/** The hosts a HyperFrames item's files may be fetched from: the registry's raw GitHub host and HeyGen's asset CDN. */
+export const HYPERFRAMES_HOSTS = ['raw.githubusercontent.com', 'static.heygen.ai'] as const;
+
+const CONTROL = /[\x00-\x1f\x7f-\x9f]/;
+/** Text that is printed or written to a credits file: control characters (terminal escapes, newlines) become spaces. */
+const text = z.string().transform((value) => value.replace(/[\x00-\x1f\x7f-\x9f]+/g, ' ').trim());
+/** An id that is printed as it is: control characters are refused, not changed. */
+const id = z.string().refine((value) => !CONTROL.test(value), 'has a control character');
+
 const fileSchema = z.object({
   path: z.string(),
   target: z.string(),
@@ -36,15 +45,15 @@ const fileSchema = z.object({
 });
 
 const itemSchema = z.object({
-  name: z.string(),
-  type: z.string(),
-  title: z.string().default(''),
-  description: z.string().default(''),
-  tags: z.array(z.string()).optional(),
-  author: z.string().optional(),
-  authorUrl: z.string().optional(),
-  license: z.string().optional(),
-  deprecated: z.string().optional(),
+  name: id,
+  type: id,
+  title: text.default(''),
+  description: text.default(''),
+  tags: z.array(text).optional(),
+  author: text.optional(),
+  authorUrl: text.optional(),
+  license: text.optional(),
+  deprecated: text.optional(),
   registryDependencies: z.array(z.string()).optional(),
   dimensions: z.object({ width: z.number(), height: z.number() }).optional(),
   duration: z.number().optional(),
@@ -53,7 +62,7 @@ const itemSchema = z.object({
 export type HyperframesItem = z.infer<typeof itemSchema> & { kind: HyperframesType };
 
 const manifestSchema = z.object({
-  items: z.array(z.object({ name: z.string(), type: z.string() })),
+  items: z.array(z.object({ name: id, type: id })),
 });
 
 export interface HyperframesListing {
@@ -96,6 +105,23 @@ export function hyperframesRef(ref?: string): string {
   if (!REF_PATTERN.test(value) || value.includes('..')) throw new CliError('INVALID_ARG', `"${value}" is not a commit, branch or tag name`);
   return value;
 }
+
+/** The URL of a file hosted off the registry: https, on an allowed host, no credentials in it and no port. */
+function checkFileUrl(name: string, path: string, value: string): URL {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new CliError('INVALID_ITEM', `${name}/${path}: "${short(value)}" is not a URL`);
+  }
+  if (url.protocol !== 'https:') throw new CliError('INSECURE_URL', `${name}/${path}: ${short(value)} is not an https URL`);
+  if (url.username !== '' || url.password !== '' || url.port !== '' || !(HYPERFRAMES_HOSTS as readonly string[]).includes(url.hostname)) {
+    throw new CliError('UNSAFE_URL', `${name}/${path}: ${short(value)} is not on an allowed host (${HYPERFRAMES_HOSTS.join(', ')})`);
+  }
+  return url;
+}
+
+const short = (value: string): string => value.replace(/[^\x20-\x7e]/g, '?').slice(0, 120);
 
 const segments = (path: string): string => path.split('/').map(encodeURIComponent).join('/');
 
@@ -143,7 +169,7 @@ export function openHyperframes(options: HyperframesOptions = {}): HyperframesSo
     }
   }
 
-  const get = (path: string, limit: number, notFound?: string): Promise<Uint8Array> => download(new URL(`${base}/${path}`), limit, fetchImpl, notFound);
+  const get = (path: string, limit: number, notFound?: string): Promise<Uint8Array> => download(new URL(`${base}/${path}`), limit, fetchImpl, notFound, HYPERFRAMES_HOSTS);
 
   const source: HyperframesSource = {
     ref,
@@ -171,20 +197,12 @@ export function openHyperframes(options: HyperframesOptions = {}): HyperframesSo
       for (const file of item.files) {
         const problem = pathProblem(file.path) ?? pathProblem(file.target);
         if (problem !== undefined) throw new CliError('UNSAFE_TARGET', `${name}: "${file.path}" -> "${file.target}" ${problem}`);
-        if (file.url !== undefined && !/^https:\/\//i.test(file.url)) throw new CliError('INSECURE_URL', `${name}/${file.path}: ${file.url} is not an https URL`);
+        if (file.url !== undefined) checkFileUrl(name, file.path, file.url);
       }
       return item;
     },
     async file(item, file) {
-      if (file.url !== undefined) {
-        let url: URL;
-        try {
-          url = new URL(file.url);
-        } catch {
-          throw new CliError('INVALID_ITEM', `${item.name}/${file.path}: "${file.url}" is not a URL`);
-        }
-        return download(url, MAX_FILE_BYTES, fetchImpl);
-      }
+      if (file.url !== undefined) return download(checkFileUrl(item.name, file.path, file.url), MAX_FILE_BYTES, fetchImpl, undefined, HYPERFRAMES_HOSTS);
       return get(`${HYPERFRAMES_TYPES[item.kind]}/${item.name}/${segments(file.path)}`, MAX_FILE_BYTES, `${item.name}/${file.path} is not in the registry`);
     },
     index: (progress) =>
@@ -296,6 +314,28 @@ export function remapTarget(target: string, kind: HyperframesType, paths: Return
   return target;
 }
 
+/** Names that are never written, wherever they sit in a path. */
+const FORBIDDEN_NAMES = new Set(['package.json', '.git', '.github', 'node_modules']);
+
+/**
+ * Why a file may not be written at `target` (already remapped), or undefined: it must be a safe relative path inside
+ * the blocks, components or assets folder (or `compositions/`, `assets/`), with no segment that starts with "." and none
+ * of `package.json`, `.git`, `.github` or `node_modules`.
+ */
+export function hyperframesTargetProblem(target: string, paths: { blocks: string; components: string; assets: string }): string | undefined {
+  const problem = pathProblem(target);
+  if (problem !== undefined) return problem;
+  const roots = new Set([paths.blocks, paths.components, paths.assets, 'compositions', 'assets']);
+  if (![...roots].some((root) => target.startsWith(`${root}/`) && target.length > root.length + 1)) {
+    return `is outside the ${[...roots].join(', ')} folders`;
+  }
+  for (const segment of target.split('/')) {
+    if (segment.startsWith('.')) return `has a hidden segment ("${segment}")`;
+    if (FORBIDDEN_NAMES.has(segment.toLowerCase())) return `has a protected name ("${segment}")`;
+  }
+  return undefined;
+}
+
 export interface HyperframesAddOptions {
   /** Item names, without the `hyperframes/` prefix. */
   names: string[];
@@ -388,6 +428,16 @@ export async function addHyperframes(options: HyperframesAddOptions): Promise<Hy
   const items = await resolveHyperframes(source, options.names);
   const paths = projectPaths(root);
   const warnings: string[] = [];
+  // Nothing is fetched or written for an item that wants to write outside its folders.
+  for (const item of items) {
+    for (const file of item.files) {
+      const target = remapTarget(file.target, item.kind, paths);
+      const problem = hyperframesTargetProblem(target, paths);
+      if (problem !== undefined) throw new CliError('UNSAFE_TARGET', `${item.name}: target "${file.target}"${target === file.target ? '' : ` (installs as "${target}")`} ${problem}`);
+    }
+  }
+  // The credits file is written too: it must not be a link, nor sit in a link.
+  const creditsBefore = existing(root, HYPERFRAMES_CREDITS_FILE);
 
   // Every download first, so a failure stops the install before anything is written.
   let total = 0;
@@ -413,8 +463,6 @@ export async function addHyperframes(options: HyperframesAddOptions): Promise<Hy
     item,
     files: files.map(({ target, data }) => {
       const bytes = data!;
-      const problem = pathProblem(target);
-      if (problem !== undefined) throw new CliError('UNSAFE_TARGET', `${item.name}: target "${target}" ${problem}`);
       const before = planned.get(target) ?? existing(root, target);
       planned.set(target, bytes);
       if (before !== undefined && same(before, bytes)) return { target, bytes, action: 'unchanged' as const };
@@ -459,7 +507,7 @@ export async function addHyperframes(options: HyperframesAddOptions): Promise<Hy
   }
 
   const creditsPath = join(root, HYPERFRAMES_CREDITS_FILE);
-  const credits = mergeCredits(existsSync(creditsPath) ? readFileSync(creditsPath, 'utf8') : undefined, added);
+  const credits = mergeCredits(creditsBefore === undefined ? undefined : Buffer.from(creditsBefore).toString('utf8'), added);
   writeFileSync(creditsPath, credits);
 
   const steps = added
