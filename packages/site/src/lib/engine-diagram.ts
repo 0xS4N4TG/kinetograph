@@ -56,24 +56,24 @@ interface Box {
 }
 
 const W = 1080;
-const H = 690;
+const H = 606;
 
 const BOXES: Box[] = [
-  { id: 'remotion', x: 30, y: 128, w: 200, h: 62, label: 'Remotion project', sub: 'TSX' },
-  { id: 'hyperframes', x: 30, y: 214, w: 200, h: 62, label: 'HyperFrames page', sub: 'HTML' },
-  { id: 'bundle', x: 290, y: 162, w: 130, h: 80, label: 'Bundle', sub: 'esbuild', step: 1 },
-  { id: 'run', x: 502, y: 162, w: 220, h: 80, label: 'Run frame N', sub: 'React, GSAP', step: 2 },
-  { id: 'layers', x: 778, y: 162, w: 250, h: 80, label: 'Layers + DOM islands', sub: 'Rect, Text, HTML, SVG', step: 3 },
-  { id: 'layout', x: 793, y: 442, w: 220, h: 80, label: 'Lay out + paint', sub: 'Stylo, Taffy, Parley', step: 4 },
-  { id: 'composite', x: 502, y: 442, w: 240, h: 80, label: 'Composite on the GPU', sub: 'wgpu, Skia', step: 5 },
-  { id: 'encode', x: 290, y: 442, w: 130, h: 80, label: 'Encode', sub: 'FFmpeg', step: 6 },
-  { id: 'mp4', x: 50, y: 442, w: 120, h: 80, label: 'MP4', icon: 'play' },
-  { id: 'audio', x: 245, y: 588, w: 220, h: 70, label: 'Web Audio', sub: 'rendered offline' },
+  { id: 'remotion', x: 30, y: 44, w: 200, h: 62, label: 'Remotion project', sub: 'TSX' },
+  { id: 'hyperframes', x: 30, y: 130, w: 200, h: 62, label: 'HyperFrames page', sub: 'HTML' },
+  { id: 'bundle', x: 290, y: 78, w: 130, h: 80, label: 'Bundle', sub: 'esbuild', step: 1 },
+  { id: 'run', x: 502, y: 78, w: 220, h: 80, label: 'Run frame N', sub: 'React, GSAP', step: 2 },
+  { id: 'layers', x: 778, y: 78, w: 250, h: 80, label: 'Layers + DOM islands', sub: 'Rect, Text, HTML, SVG', step: 3 },
+  { id: 'layout', x: 793, y: 358, w: 220, h: 80, label: 'Lay out + paint', sub: 'Stylo, Taffy, Parley', step: 4 },
+  { id: 'composite', x: 502, y: 358, w: 240, h: 80, label: 'Composite on the GPU', sub: 'wgpu, Skia', step: 5 },
+  { id: 'encode', x: 290, y: 358, w: 130, h: 80, label: 'Encode', sub: 'FFmpeg', step: 6 },
+  { id: 'mp4', x: 50, y: 358, w: 120, h: 80, label: 'MP4', icon: 'play' },
+  { id: 'audio', x: 245, y: 504, w: 220, h: 70, label: 'Web Audio', sub: 'rendered offline' },
 ];
 
 const GROUPS = [
-  { id: 'node', x: 480, y: 112, w: 570, h: 180, label: 'In Node' },
-  { id: 'rust', x: 480, y: 392, w: 570, h: 180, label: 'In the Rust addon' },
+  { id: 'node', x: 480, y: 28, w: 570, h: 180, label: 'In Node' },
+  { id: 'rust', x: 480, y: 308, w: 570, h: 180, label: 'In the Rust addon' },
 ];
 
 type Pt = [number, number];
@@ -86,21 +86,21 @@ interface Arrow {
 }
 
 const ARROWS: Arrow[] = [
-  { pts: [[236, 168], [284, 196]] },
-  { pts: [[236, 252], [284, 214]] },
-  { pts: [[426, 202], [496, 202]] },
-  { pts: [[728, 202], [772, 202]] },
-  { pts: [[903, 250], [903, 436]] },
-  { pts: [[787, 482], [748, 482]] },
-  { pts: [[496, 482], [426, 482]] },
-  { pts: [[284, 482], [176, 482]] },
-  { pts: [[355, 582], [355, 528]] },
-  { pts: [[355, 434], [355, 342], [612, 342], [612, 250]], dashed: true, r: 18 },
+  { pts: [[236, 84], [284, 112]] },
+  { pts: [[236, 168], [284, 130]] },
+  { pts: [[426, 118], [496, 118]] },
+  { pts: [[728, 118], [772, 118]] },
+  { pts: [[903, 166], [903, 352]] },
+  { pts: [[787, 398], [748, 398]] },
+  { pts: [[496, 398], [426, 398]] },
+  { pts: [[284, 398], [176, 398]] },
+  { pts: [[355, 498], [355, 444]] },
+  { pts: [[355, 350], [355, 258], [612, 258], [612, 166]], dashed: true, r: 18 },
 ];
 
 const ARROW_LABELS: { text: string; x: number; y: number; anchor: 'start' | 'middle' }[] = [
-  { text: 'JSON', x: 922, y: 352, anchor: 'start' },
-  { text: 'next frame', x: 483, y: 328, anchor: 'middle' },
+  { text: 'JSON', x: 922, y: 268, anchor: 'start' },
+  { text: 'next frame', x: 483, y: 244, anchor: 'middle' },
 ];
 
 const gen = rough.generator();
@@ -153,9 +153,6 @@ export function buildDiagram(): Diagram {
   let n = 0;
   const label = (l: Omit<DiagramLabel, 'rot'>) => labels.push({ ...l, rot: ((n++ * 7) % 5) * 0.45 - 0.9 });
 
-  // Title and subtitle.
-  label({ x: 30, y: 54, text: 'How Kinetograph makes a frame', size: 40, weight: 700, anchor: 'start', tone: 'ink' });
-  label({ x: 30, y: 88, text: 'One pass per frame. No browser.', size: 23, weight: 300, anchor: 'start', tone: 'muted' });
 
   for (const g of GROUPS) {
     ink.push(
