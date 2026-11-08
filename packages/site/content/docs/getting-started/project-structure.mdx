@@ -42,18 +42,7 @@ registerRoot(() => (
 ));
 ```
 
-`package.json` gets four scripts, so `npm run still`, `strip`, `render` and `check` work from the project folder:
-
-```json title="package.json"
-{
-  "scripts": {
-    "still": "kinetograph still src/index.tsx 15",
-    "strip": "kinetograph strip src/index.tsx",
-    "render": "kinetograph render src/index.tsx",
-    "check": "kinetograph check src/index.tsx"
-  }
-}
-```
+`package.json` gets four scripts (`still`, `strip`, `render` and `check`) that run the matching commands on the entry.
 
 ## An HTML project
 
@@ -75,7 +64,7 @@ my-video
 └─ .gitignore
 ```
 
-The entry is `html/index.html`. There is no `src/` and no `tsconfig.json`, and the fourth script is `lint` in place of `check`. An HTML page names its files by a path from the page, so `public/` is only there for the layout. See [HyperFrames projects](/docs/compat/#hyperframes-projects).
+The entry is `html/index.html`. There is no `src/` and no `tsconfig.json`. An HTML page names its files by a path from the page. See [HyperFrames projects](/docs/compat/#hyperframes-projects).
 
 ## What goes where
 
@@ -83,7 +72,7 @@ The entry is `html/index.html`. There is no `src/` and no `tsconfig.json`, and t
 - **`out/`** holds what a command writes when you leave out `-o`: `out/stills/` for `still`, `out/sheets/` for `strip` and `onion`, and `out/renders/` for `render`. It is in `.gitignore`.
 - **Beside the entry**, Kinetograph keeps `kinetograph.lock.json` (pins for remote files, in an HTML project) and `presets/` (props saved in [Studio](/docs/studio/#props-and-presets)). Commit both.
 
-`init` takes a folder name, or runs in the current folder without one. It never overwrites a file, lists the ones it skipped, and does not run `npm install`. A project that already exists keeps its own layout. Only the generated files go in `out/`.
+`init` never overwrites a file and does not run `npm install`.
 
 ## Next
 

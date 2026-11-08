@@ -50,9 +50,9 @@ registerRoot(() => (
 ));
 ```
 
-Import the API from `@kinetographdev/core`, not from `kinetograph`. The `kinetograph` package is the CLI, so importing `registerRoot` from it fails. You do not need Remotion. An `@remotion/*` import, such as the font loader above, maps onto Kinetograph's own code.
+Import the API from `@kinetographdev/core`, not from `kinetograph`, which is the CLI. You do not need Remotion.
 
-A [composition](/docs/terminology/composition/) is one video: `Composition` sets its id, length in frames, frame rate and size. `useCurrentFrame` gives the [frame](/docs/terminology/frame/) being drawn, and the picture depends only on that number. Here the bar grows from 0 to 640 over 30 frames, then holds. The first render downloads Inter into `~/.cache/kinetograph/fonts`.
+A [composition](/docs/terminology/composition/) is one video: `Composition` sets its id, length in frames, frame rate and size. `useCurrentFrame` gives the [frame](/docs/terminology/frame/) being drawn, and the picture depends only on that number. Here the bar grows from 0 to 640 over 30 frames, then holds.
 
   </Tab>
   <Tab value="HyperFrames">
@@ -89,9 +89,7 @@ npm install
 </html>
 ```
 
-The root element gives the size and the length in seconds, at 30 fps. The GSAP timeline in `window.__timelines` is paused and moved to each frame's time.
-
-The first render downloads GSAP from the CDN and pins it in `kinetograph.lock.json`. `npx kinetograph fetch-deps html/index.html` does only that download. [HyperFrames projects](/docs/compat/#hyperframes-projects) lists what a page can use.
+The root element gives the size and the length in seconds, at 30 fps. The first render downloads GSAP and pins it in `kinetograph.lock.json`. [HyperFrames projects](/docs/compat/#hyperframes-projects) lists what a page can use.
 
   </Tab>
 </Tabs>

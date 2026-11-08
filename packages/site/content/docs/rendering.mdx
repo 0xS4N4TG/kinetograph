@@ -35,11 +35,11 @@ npx kinetograph onion html/index.html 0..60 -n 6
   </Tab>
 </Tabs>
 
-- `still` writes one frame as a PNG to `out/stills/`.
-- `strip` writes evenly spaced frames on one sheet to `out/sheets/`, labelled with the frame and the time. Start here: it shows the whole animation.
+- `still` writes one frame as a PNG.
+- `strip` writes evenly spaced frames on one sheet, labelled with the frame and the time. Start here: it shows the whole animation.
 - `onion` blends the frames of a range over one another, to show a motion path.
 
-A frame is a whole number from 0. A range `10..40` is frames 10 to 39, and `10..=40` is 10 to 40.
+A frame is a whole number from 0. A range `10..40` is frames 10 to 39.
 
 ## Check the project
 
@@ -50,12 +50,9 @@ npx kinetograph check src/index.tsx
 npx kinetograph doctor src/index.tsx
 ```
 
-- `inspect` prints each layer at a frame, with its bounds.
-- `lint` reports overflowing text, layers off the canvas, overlapping text, and missing fonts and assets. It exits with 1 on errors.
-- `check` finds type errors, such as a misspelled prop. Rendering does not type-check.
-- `doctor` goes through every frame without the GPU and lists what the engine cannot draw, and on which frames. Run it before a long render. See [What works](/docs/compat/#when-the-engine-cant-draw-something).
-
-With no entry, `npx kinetograph doctor` checks your install.
+- `lint` reports overflowing text, layers off the canvas, and missing fonts and assets.
+- `check` finds type errors, such as a misspelled prop.
+- `doctor` lists what the engine cannot draw, and on which frames. Run it before a long render. See [What works](/docs/compat/#when-the-engine-cant-draw-something).
 
 ## Render
 
@@ -68,23 +65,12 @@ npx kinetograph render src/index.tsx --range 0..90 --strict
 - `--range a..b` renders only those frames, and the audio for them.
 - `--strict` stops at the first frame with something the engine cannot draw, and leaves no file. Use it for final renders and in CI.
 - `--comp <id>` and `--props '{"title":"Hello"}'` pick the composition and its props.
-- `--concurrency <n>` draws several frames at once. The file is the same.
-
-`render` prints the frame count, the encoder and the time it took. Add `--json` for one JSON object.
 
 ## Export options
 
-The options follow Remotion's names: `--codec h264|h265|prores|vp9|gif`, `--crf`, `--video-bitrate`, `--scale`, `--pixel-format`, `--prores-profile`, `--audio-codec` and `--audio-bitrate`. The extension sets the container: `.mp4`, `.mov`, `.webm` or `.gif`. A bad combination is refused before the project is bundled, and the message names the flag to change. The defaults and every flag are in the [CLI reference](/docs/reference/cli/#render).
+`--codec h264|h265|prores|vp9|gif` and the extension (`.mp4`, `.mov`, `.webm` or `.gif`) set the format. The other flags are in the [CLI reference](/docs/reference/cli/#render).
 
-## Image sequences
-
-`--sequence` writes one image per frame into the `-o` folder instead of a video:
-
-```sh
-npx kinetograph render src/index.tsx --sequence -o out/frames --image-format png
-```
-
-The files are named `<id>-<frame>.png`, with the frame number zero-padded to the width of the last frame, such as `Main-042.png`. `--image-format` is `png` (default, with alpha) or `jpeg` (no alpha, flattened over black). A sequence has no audio, and the video flags are refused with it.
+`--sequence` writes one image per frame into the `-o` folder instead of a video, as `png` (with alpha) or `jpeg`. A sequence has no audio.
 
 ## Suggested prompt
 
