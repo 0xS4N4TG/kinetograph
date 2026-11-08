@@ -2099,3 +2099,37 @@ fn a_vertex_shader_fetches_from_a_2d_array_texture() {
     ));
     assert_eq!(px(&frame, 8, 8), [255, 255, 255, 255]);
 }
+
+// ---- array uniforms whose length is a macro ----
+
+#[test]
+fn an_array_uniform_sized_by_a_macro_takes_its_values() {
+    let vertex = "#version 300 es\nin vec2 a_pos; out vec4 v_c;\n#define MORPHTARGETS_COUNT 3\n\
+        uniform float morphTargetInfluences[ MORPHTARGETS_COUNT ];\n\
+        void main() { v_c = vec4(morphTargetInfluences[0], morphTargetInfluences[1], morphTargetInfluences[2], 1.0); \
+        gl_Position = vec4(a_pos, 0.0, 1.0); }";
+    let fragment = "#version 300 es\nprecision highp float; in vec4 v_c; out vec4 o; void main() { o = v_c; }";
+    let frame = render(&layer_with_vertex(
+        vertex,
+        &[("p", fragment)],
+        "",
+        "",
+        &draw(&uniforms(&[("morphTargetInfluences", "f", &[1.0, 0.5, 0.0])])),
+    ));
+    near(px(&frame, 8, 8), [255, 128, 0, 255], 2);
+}
+
+#[test]
+fn an_array_uniform_sized_by_a_macro_that_depends_on_a_condition_fails_when_the_scene_loads() {
+    let vertex = "#version 300 es\nin vec2 a_pos;\n#ifdef FAST\n#define N 3\n#endif\n\
+        uniform float w[N]; void main() { gl_Position = vec4(a_pos, w[0], 1.0); }";
+    let fragment = "#version 300 es\nprecision highp float; out vec4 o; void main() { o = vec4(1.0); }";
+    let json = format!(
+        r##"{{"width": 16, "height": 16, "fps": 30, "durationInFrames": 1, "layers": [{}]}}"##,
+        layer_with_vertex(vertex, &[("p", fragment)], "", "", &draw(""))
+    );
+    let Error::Scene(message) = Scene::from_json(&json, Default::default()).unwrap_err() else {
+        panic!("not a scene error")
+    };
+    assert!(message.contains("macro defined as one"), "{message}");
+}

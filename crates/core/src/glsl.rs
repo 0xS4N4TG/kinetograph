@@ -937,6 +937,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
     let mut has_out = false;
     let mut uses_point_size = false;
     let mut declared_samplers: Vec<(String, SamplerDim)> = Vec::new();
+    let mut defines = Defines::default();
 
     // First pass over the whole text to learn the sampler names, so that a
     // use can precede nothing (declarations come first in GLSL) but a
@@ -971,9 +972,11 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
                     uses_point_size: &mut uses_point_size,
                     points,
                     slots,
+                    defines: &defines,
                 },
             )?;
             let name = directive.trim_start();
+            defines.directive(name);
             if name.starts_with("version") || name.starts_with("extension") {
                 // Removed, keeping the lines.
                 body.push_str(&"\n".repeat(extra));
@@ -1009,6 +1012,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
             uses_point_size: &mut uses_point_size,
             points,
             slots,
+            defines: &defines,
         },
     )?;
     // The text ended with the newline added to its last line.
@@ -1197,6 +1201,67 @@ struct Ctx<'a, 'b> {
     uses_point_size: &'b mut bool,
     points: bool,
     slots: &'b mut Vec<(String, SamplerDim)>,
+    /// The macros defined so far, for the length of an array.
+    defines: &'b Defines,
+}
+
+/// The object-like macros a shader defined so far (`#define MORPHTARGETS_COUNT 8`), to read the length of an array
+/// that is written as one. A macro defined inside a conditional, or defined twice differently, is not known: which
+/// value holds depends on a condition that is not evaluated here.
+#[derive(Default)]
+struct Defines {
+    values: BTreeMap<String, Option<String>>,
+    /// The `#if` blocks open.
+    open: u32,
+}
+
+impl Defines {
+    /// Notes a directive (the line after its `#`): a `#define` or `#undef`, or the opening or closing of a conditional.
+    fn directive(&mut self, line: &str) {
+        let word = |s: &str| s.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect::<String>();
+        let keyword = word(line);
+        let rest = line[keyword.len()..].trim_start();
+        match keyword.as_str() {
+            "if" | "ifdef" | "ifndef" => self.open += 1,
+            "endif" => self.open = self.open.saturating_sub(1),
+            "undef" => {
+                self.values.remove(&word(rest));
+            }
+            "define" => {
+                let name = word(rest);
+                let value = &rest[name.len()..];
+                // A function-like macro takes arguments, which an array length does not.
+                if name.is_empty() || value.starts_with('(') {
+                    return;
+                }
+                let value = value.trim().to_string();
+                let known = match self.values.get(&name) {
+                    None => self.open == 0,
+                    Some(old) => self.open == 0 && old.as_deref() == Some(value.as_str()),
+                };
+                self.values.insert(name, known.then_some(value));
+            }
+            _ => {}
+        }
+    }
+
+    /// The length of an array as written (`8`, `MORPHTARGETS_COUNT`, `(MORPHTARGETS_COUNT)`): the number when it is
+    /// one, or a macro defined as one, else the text unchanged.
+    fn length(&self, written: &str) -> String {
+        let mut text = written.trim();
+        // A macro defined as another macro: bounded, so a macro defined as itself ends.
+        for _ in 0..8 {
+            let bare = text.strip_prefix('(').and_then(|t| t.strip_suffix(')')).unwrap_or(text).trim();
+            if bare.parse::<u32>().is_ok() {
+                return bare.to_string();
+            }
+            match self.values.get(bare) {
+                Some(Some(value)) => text = value,
+                _ => break,
+            }
+        }
+        written.to_string()
+    }
 }
 
 /// The call that reads level 0 in place of the sampling function `word`, if it is one a vertex
@@ -1622,7 +1687,7 @@ fn declaration(
                 k += 1;
             }
             k += 1;
-            array = Some(n);
+            array = Some(ctx.defines.length(&n));
         }
         if k < stmt.len() && w(k) == "=" {
             return Err(format!(
@@ -1692,7 +1757,7 @@ fn declaration(
                         && n.parse::<u32>().is_err()
                     {
                         return Err(unsupported(format!(
-                            "`{name}`: the length of an array of mat2 must be a number, got `{n}`"
+                            "`{name}`: the length of an array of mat2 must be a number, or a macro defined as one outside any `#if`, got `{n}`"
                         )));
                     }
                     r.mat2s.push((name, array));
@@ -1704,7 +1769,7 @@ fn declaration(
                 }) {
                     let len = n.parse::<u32>().ok().filter(|l| *l > 0).ok_or_else(|| {
                         unsupported(format!(
-                            "`{name}`: the length of an array uniform must be a number, got `{n}`"
+                            "`{name}`: the length of an array uniform must be a number, or a macro defined as one outside any `#if`, got `{n}`"
                         ))
                     })?;
                     r.packed.push(PackedArray {
@@ -1760,7 +1825,7 @@ fn declaration(
                 let count = match &array {
                     Some(n) => n.parse::<u32>().map_err(|_| {
                         unsupported(format!(
-                            "`{name}`: the array length `{n}` of a varying must be a number"
+                            "`{name}`: the array length `{n}` of a varying must be a number, or a macro defined as one outside any `#if`"
                         ))
                     })?,
                     None => 1,
@@ -2775,6 +2840,46 @@ mod tests {
         assert_eq!(t.fragment.samplers.len(), 1);
         assert_eq!(t.fragment.samplers[0].dim, SamplerDim::Array);
         assert_eq!(t.vertex.samplers[0].dim, SamplerDim::Array);
+    }
+
+    /// The members of the uniform block a program's vertex shader makes: name to array length.
+    fn vertex_uniform_arrays(vertex: &str) -> std::result::Result<Vec<(String, Option<u32>)>, String> {
+        let t = translate(&program(
+            vertex,
+            "#version 300 es\nprecision highp float; out vec4 o; void main() { o = vec4(1.0); }",
+        ))?;
+        Ok(t.vertex.uniforms.iter().map(|u| (u.name.clone(), u.array.map(|a| a.0))).collect())
+    }
+
+    #[test]
+    fn an_array_length_may_be_a_macro_defined_as_a_number() {
+        let found = vertex_uniform_arrays(
+            "#version 300 es\nin vec2 p;\n#define MORPHTARGETS_COUNT 3\n#define LIGHTS (MORPHTARGETS_COUNT)\n\
+             uniform float morphTargetInfluences[ MORPHTARGETS_COUNT ]; uniform vec4 planes[LIGHTS];\n\
+             void main() { gl_Position = vec4(p, morphTargetInfluences[2] + planes[1].x, 1.0); }",
+        )
+        .unwrap();
+        let length = |n: &str| found.iter().find(|u| u.0 == n).unwrap().1;
+        assert_eq!(length("morphTargetInfluences"), Some(3));
+        assert_eq!(length("planes"), Some(3));
+    }
+
+    #[test]
+    fn an_array_length_macro_that_depends_on_a_condition_is_refused() {
+        for defines in [
+            "#ifdef FAST\n#define N 2\n#endif\n",
+            "#define N 2\n#undef N\n",
+            "#define N 2\n#define N 3\n",
+            "#define N(x) 2\n",
+            "",
+        ] {
+            let e = vertex_uniform_arrays(&format!(
+                "#version 300 es\nin vec2 p;\n{defines}uniform float w[N];\n\
+                 void main() {{ gl_Position = vec4(p, w[0], 1.0); }}"
+            ))
+            .unwrap_err();
+            assert!(e.contains("must be a number") && e.contains('N'), "{defines:?}: {e}");
+        }
     }
 
     #[test]

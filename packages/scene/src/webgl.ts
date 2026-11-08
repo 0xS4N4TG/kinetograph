@@ -334,6 +334,7 @@ export const GL2 = {
   MAX_3D_TEXTURE_SIZE: 0x8073,
   TEXTURE_2D_ARRAY: 0x8c1a,
   TEXTURE_BINDING_2D_ARRAY: 0x8c1d,
+  SAMPLER_2D_ARRAY: 0x8dc1,
   MAX_ARRAY_TEXTURE_LAYERS: 0x88ff,
   UNIFORM_BUFFER: 0x8a11,
   PIXEL_UNPACK_BUFFER: 0x88ec,
@@ -582,8 +583,44 @@ function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, '');
 }
 
+/**
+ * The object-like macros of a shader that are a number, or another such macro (`#define MORPHTARGETS_COUNT 8`), to read
+ * the length of an array written as one. A macro defined inside a conditional, or twice with different values, depends
+ * on a condition that is not evaluated here: it is left out.
+ */
+function numericMacros(source: string): Map<string, number> {
+  const values = new Map<string, string | null>();
+  let open = 0;
+  for (const line of stripComments(source).split('\n')) {
+    const m = /^[ \t]*#[ \t]*(\w+)[ \t]*(\w*)([^\n]*)$/.exec(line);
+    if (m === null) continue;
+    const [, keyword, name = '', rest = ''] = m;
+    if (keyword === 'if' || keyword === 'ifdef' || keyword === 'ifndef') open += 1;
+    else if (keyword === 'endif') open = Math.max(0, open - 1);
+    else if (keyword === 'undef') values.delete(name);
+    else if (keyword === 'define' && name !== '' && !rest.startsWith('(')) {
+      const value = line.replace(/^[ \t]*#[ \t]*define[ \t]+\w+/, '').trim();
+      values.set(name, open === 0 && (!values.has(name) || values.get(name) === value) ? value : null);
+    }
+  }
+  const out = new Map<string, number>();
+  for (const name of values.keys()) {
+    let text = values.get(name) ?? null;
+    for (let hops = 0; hops < 8 && text !== null; hops += 1) {
+      const bare = (/^\(([^()]*)\)$/.exec(text)?.[1] ?? text).trim();
+      if (/^\d+$/.test(bare)) {
+        out.set(name, Number(bare));
+        break;
+      }
+      text = values.get(bare) ?? null;
+    }
+  }
+  return out;
+}
+
 /** The top-level `uniform`, `attribute` and `in` declarations of a shader. */
 function declarations(source: string, keywords: string[]): Declaration[] {
+  const macros = numericMacros(source);
   const code = stripComments(source).replace(/^[ \t]*#.*$/gm, '');
   const statements: string[] = [];
   let depth = 0;
@@ -611,9 +648,12 @@ function declarations(source: string, keywords: string[]): Declaration[] {
     if (m === null || !keywords.includes(m[2]!)) continue;
     const location = /location\s*=\s*(\d+)/.exec(m[1] ?? '');
     for (const declarator of m[4]!.split(',')) {
-      const d = /^\s*(\w+)\s*(?:\[\s*(\d+)\s*\])?\s*$/.exec(declarator);
+      const d = /^\s*(\w+)\s*(?:\[\s*(\w+)\s*\])?\s*$/.exec(declarator);
       if (d === null) continue;
-      out.push({ name: d[1]!, type: m[3]!, length: d[2] === undefined ? 1 : Number(d[2]), location: location ? Number(location[1]) : null });
+      const length = d[2] === undefined ? 1 : /^\d+$/.test(d[2]) ? Number(d[2]) : macros.get(d[2]);
+      // A length that is not a number or a macro defined as one is left to the renderer, which refuses the program.
+      if (length === undefined) continue;
+      out.push({ name: d[1]!, type: m[3]!, length, location: location ? Number(location[1]) : null });
     }
   }
   return out;
@@ -639,6 +679,7 @@ const TYPE_CODES: Record<string, number> = {
   sampler2D: GL.SAMPLER_2D,
   sampler3D: GL2.SAMPLER_3D,
   samplerCube: GL.SAMPLER_CUBE,
+  sampler2DArray: GL2.SAMPLER_2D_ARRAY,
 };
 
 // ---- names of enums in the scene format ----

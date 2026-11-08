@@ -1267,6 +1267,46 @@ describe('the recording WebGL context', () => {
     });
   });
 
+  describe('array uniforms whose length is a macro', () => {
+    function linked(vertex: string) {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const program = gl.createProgram();
+      for (const [type, source] of [[GL.VERTEX_SHADER, vertex], [GL.FRAGMENT_SHADER, '#version 300 es\nprecision highp float; out vec4 o; void main() { o = vec4(1.0); }']] as const) {
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source);
+        gl.attachShader(program, shader);
+      }
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      return { gl, program };
+    }
+    const BODY = 'void main() { gl_Position = vec4(p, morphTargetInfluences[0], 1.0); }';
+
+    it('reads the length from a #define, as three.js writes morphTargetInfluences', () => {
+      const { gl, program } = linked(`#version 300 es\nin vec2 p;\n#define MORPHTARGETS_COUNT 4\n#ifdef USE_MORPHTARGETS\n#endif\nuniform float morphTargetInfluences[ MORPHTARGETS_COUNT ];\n${BODY}`);
+      const info = gl.getActiveUniform(program, 0)!;
+      expect(info.name).toBe('morphTargetInfluences[0]');
+      expect(info.size).toBe(4);
+      const at = gl.getUniformLocation(program, 'morphTargetInfluences[3]');
+      expect(at).not.toBeNull();
+      expect(gl.getUniformLocation(program, 'morphTargetInfluences[4]')).toBeNull();
+      gl.uniform1fv(gl.getUniformLocation(program, 'morphTargetInfluences')!, [1, 2, 3, 4]);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+    });
+
+    it('follows a macro defined as another macro or in parentheses', () => {
+      const { gl, program } = linked(`#version 300 es\nin vec2 p;\n#define A (2)\n#define B A\nuniform float morphTargetInfluences[B];\n${BODY}`);
+      expect(gl.getActiveUniform(program, 0)!.size).toBe(2);
+    });
+
+    it('leaves out a length that depends on a condition, for the renderer to refuse', () => {
+      for (const defines of ['#ifdef FAST\n#define N 2\n#endif\n', '#define N 2\n#define N 3\n', '#define N 2\n#undef N\n', '']) {
+        const { gl, program } = linked(`#version 300 es\nin vec2 p;\n${defines}uniform float morphTargetInfluences[N];\n${BODY}`);
+        expect(gl.getActiveUniform(program, 0)).toBeNull();
+      }
+    });
+  });
+
   describe('a clear with the scissor test on', () => {
     function drawOf(gl: WebGLContext, index = 0) {
       const op = gl.content().ops[index]!;
