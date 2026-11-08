@@ -34,8 +34,8 @@ impl Model {
         }
     }
 
-    /// Whether the model runs on a GPU back end when the build has one. MODNet does not: measured on an M4, CoreML and
-    /// WebGPU both give a wrong matte for it (`infer`), and on the CPU it runs at video speed anyway.
+    /// Whether the model runs on a GPU back end when the build has one. MODNet does not: CoreML gave it no
+    /// gain and a wrong matte in one format (`infer`), and on the CPU it runs at video speed.
     pub fn uses_gpu(self) -> bool {
         self == Model::Ben2Base
     }
@@ -149,7 +149,7 @@ mod tests {
 
     #[test]
     fn only_ben2_goes_to_the_gpu() {
-        // MODNet's matte is wrong on the GPU back ends tried (CoreML, WebGPU): see `infer`.
+        // MODNet gains nothing from the GPU back ends tried: see `infer`.
         assert!(!Model::Modnet.uses_gpu());
         assert!(Model::Ben2Base.uses_gpu());
     }

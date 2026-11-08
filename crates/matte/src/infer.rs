@@ -1,10 +1,11 @@
 //! One model loaded in ONNX Runtime. `modnet` runs on the CPU; `ben2-base` runs on the GPU where this build reaches one
 //! (DirectML on Windows, CUDA or WebGPU when built with them) and on the CPU otherwise.
 //!
-//! Measured on an M4 Mac (the only machine this was run on): CoreML cannot load BEN2's fp16 model ("Error in building
-//! plan"), and CoreML and WebGPU both run MODNet to a wrong matte (the person comes out transparent) where the CPU's is
-//! right, so MODNet never leaves the CPU and CoreML is not used. BEN2 on WebGPU is right and about 4 times faster than
-//! on the CPU.
+//! Measured on an M4 Mac, the only machine this was run on: CoreML cannot load BEN2's fp16 model ("Error in building
+//! plan"). For MODNet, whose input has open height and width, CoreML's ML Program format gave the CPU's matte exactly
+//! and was not faster on the one frame timed, and its NeuralNetwork format gave a wrong matte; the CPU runs it at video
+//! speed, so it stays there and CoreML is not used. BEN2 on WebGPU (a build with the `webgpu` feature) was right and about 4 times faster than the
+//! CPU, whose fp16 kernels are slow.
 
 use std::path::Path;
 use std::sync::OnceLock;

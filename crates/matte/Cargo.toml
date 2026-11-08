@@ -13,7 +13,7 @@ ffmpeg = { package = "ffmpeg-next", version = "9.0.0" }
 # ONNX Runtime's prebuilt libraries are fetched by the build script (download-binaries). rustls, not the default
 # native-tls, so a Linux build needs no OpenSSL headers; the other default features (ndarray, tracing, copy-dylibs) are
 # not used. api-17, not the default api-31: from api-22 on every session picks its execution provider by ONNX Runtime's
-# automatic policy (it chose CoreML on a Mac, which fails on BEN2 and gives MODNet a wrong matte), and this crate wants
+# automatic policy (it chose CoreML on a Mac, which fails on BEN2's fp16 model), and this crate wants
 # only the ones it names.
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "api-17", "download-binaries", "tls-rustls"] }
 

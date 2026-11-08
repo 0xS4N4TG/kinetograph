@@ -259,7 +259,7 @@ export interface MattingSupport {
   available: boolean
   /**
    * What `ben2-base` runs on: `directml` (Windows), `cuda` or `webgpu` (builds with them), else `cpu`. `modnet` always
-   * runs on the CPU: the GPU back ends tried (CoreML, WebGPU) gave wrong mattes for it.
+   * runs on the CPU, at video speed (CoreML did not help it).
    */
   backend: string
   /** Why `available` is false, or why the backend is `cpu`. */
