@@ -1,7 +1,7 @@
 //! The JSON scene graph. See packages/cli/skills/kinetograph/references/SCENE.md for the format.
 
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 

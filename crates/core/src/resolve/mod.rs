@@ -27,4 +27,4 @@ mod eval;
 mod types;
 
 pub use types::*;
-pub(crate) use eval::{Resolver, resolve_effects, resolve_gradient};
+pub(crate) use eval::{Resolver, resolve_effects};

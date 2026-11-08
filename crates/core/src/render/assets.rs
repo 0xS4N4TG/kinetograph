@@ -113,7 +113,7 @@ pub(crate) fn scene3d_sources(scene: &Scene) -> Sources3d {
 /// keeps what it read instead of reading again. (The modification time only
 /// decides whether to read again; it never reaches a pixel.)
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct FileId {
+pub(super) struct FileId {
     /// Absolute, so the same file reached from two scenes' directories is one.
     pub(super) path: PathBuf,
     pub(super) len: u64,

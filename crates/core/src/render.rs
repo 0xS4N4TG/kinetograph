@@ -52,6 +52,7 @@ pub(crate) use lottie::lottie_pixels;
 use assets::{Loaded, NewAssets, filter_image_sources, read_assets};
 #[cfg(test)]
 pub(crate) use assets::load_images;
+#[cfg(test)]
 pub(crate) use assets::scene3d_sources;
 pub(crate) use skia::create_texture;
 
@@ -2308,7 +2309,6 @@ fn canvas_layer(id: &str, size: (f64, f64), ops: &std::sync::Arc<Vec<canvas::Can
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scene::TextAlign;
     #[test]
     fn only_a_sweep_and_a_corner_pin_need_the_layer_box() {
         let dots = |order| {
