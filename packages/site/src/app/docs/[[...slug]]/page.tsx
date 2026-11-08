@@ -1,4 +1,5 @@
 import { DocsPre, PromptBox } from '@/components/docs/mdx';
+import { Media } from '@/components/docs/media';
 import { PageActions } from '@/components/docs/page-actions';
 import { EngineDiagram } from '@/components/engine-diagram';
 import { SITE_URL } from '@/lib/catalog-feed';
@@ -31,11 +32,14 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
             after two spaces is a comment. It copies as plain text. Add title="..." for a header.
           - ```txt title="Suggested prompt"  a prompt box when the text starts with /skill-name; or write
             <Prompt skill="kinetograph-markup">Add motion blur to my text</Prompt>.
+          - <Media src="studio/window-light.webp" dark="studio/window-dark.webp" width={1600} height={1160} alt="..." />
+            a picture from public/docs-media, or a looping clip for an .mp4 (components/docs/media.tsx).
         */}
         <MDX
           components={{
             ...defaultMdxComponents,
             pre: DocsPre,
+            Media,
             Prompt: PromptBox,
             Accordion,
             Accordions,
