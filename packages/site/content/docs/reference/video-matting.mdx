@@ -1,0 +1,112 @@
+---
+title: Video matting API
+description: The functions of @kinetographdev/video-matting, which implements the API of @remotion/video-matting for Node.
+---
+
+`@kinetographdev/video-matting` has the eight functions of Remotion's [`@remotion/video-matting`](https://www.remotion.dev/docs/video-matting), with the same names, options and results. A model runs natively in the addon; there is no browser and no WebGPU. In a Kinetograph project, an import from `@remotion/video-matting` resolves to this package. The [guide](/docs/guides/video-matting/) shows how to use it.
+
+```sh
+npm i @kinetographdev/video-matting
+```
+
+A model must be downloaded before it runs. Errors are `VideoMattingError`, with a `code`: `UNKNOWN_MODEL`, `INVALID_ARG`, `MODEL_NOT_DOWNLOADED`, `MODEL_DOWNLOAD`, `MODEL_CHECKSUM`, `MATTING_UNAVAILABLE` or `IO`. An aborted call rejects with the signal's reason.
+
+## Models
+
+| Name | Source | Segments | Licence | Size |
+|---|---|---|---|---|
+| `modnet` (default) | [`Xenova/modnet`](https://huggingface.co/Xenova/modnet), `onnx/model.onnx` | People | Apache-2.0 | 25,888,640 bytes |
+| `ben2-base` | [`onnx-community/BEN2-ONNX`](https://huggingface.co/onnx-community/BEN2-ONNX), `onnx/model_fp16.onnx` | Any foreground subject, experimental | MIT | 219,121,675 bytes |
+
+Each file is downloaded from Hugging Face, pinned to a commit and checked by SHA-256. The cache is `$KINETOGRAPH_MODEL_DIR`, or `kinetograph/models` in the OS cache directory (`~/Library/Caches` on macOS, `$XDG_CACHE_HOME` or `~/.cache` on Linux, `%LOCALAPPDATA%` on Windows). `videoMattingCacheDir()` returns it.
+
+## getAvailableModels()
+
+Returns `{ name, modelId, purpose, license, webGpuDownloadSize }[]`. `modelId` is the Hugging Face repository. `webGpuDownloadSize` is Remotion's field name; here it is the bytes of the ONNX file. `license` is an addition.
+
+## canUseVideoMatting()
+
+```ts
+canUseVideoMatting({ model?: 'modnet' | 'ben2-base' }): Promise<
+  | { supported: true; backend: 'coreml' | 'directml' | 'cuda' | 'webgpu' | 'cpu' }
+  | { supported: false; reason: 'native-unavailable' | 'backend-unavailable'; detailedReason: string }
+>
+```
+
+Checks that the addon has matting and an inference backend. It does not look at a video. Remotion's reasons are about WebGPU in a browser, so these differ: `native-unavailable` means this build of `@kinetographdev/native` has no matting, and `backend-unavailable` means no backend could run a model.
+
+## isVideoMattingModelCached()
+
+`isVideoMattingModelCached({ model }): Promise<boolean>`. True when the model's file is in the cache at its full size. Nothing is downloaded or loaded.
+
+## downloadVideoMattingModel()
+
+```ts
+downloadVideoMattingModel({
+  model,
+  signal?,     // aborting rejects with its reason and removes the incomplete file
+  onProgress?, // ({ file: string | null, progress: 0..1, loadedBytes, totalBytes })
+}): Promise<{ alreadyDownloaded: boolean }>
+```
+
+The file is written as `<name>.part`, checked against the pinned SHA-256 and size, then renamed, so the cache never holds a partial or wrong model. A mismatch rejects with `MODEL_CHECKSUM` and deletes the file. A download that failed carries on from where it stopped, with a range request. `loadedBytes` counts this call's bytes; `progress` counts the resumed ones too. Progress comes once per file (`file` is its name) and once for the whole model (`file` is `null`).
+
+## loadVideoMattingModel()
+
+```ts
+loadVideoMattingModel({ model, signal?, onProgress? }): Promise<{ alreadyLoaded: boolean; [Symbol.asyncDispose](): Promise<void> }>
+```
+
+`onProgress` gets `{ status: 'initializing' | 'ready', file: null, progress: null | 1, loadedBytes: null, totalBytes: null }`. It rejects with `MODEL_NOT_DOWNLOADED` when the model is not cached, and with `MATTING_UNAVAILABLE` when it cannot run here. The addon opens its model session when a job starts, so loading checks that everything is in place and keeps nothing in memory. `separateVideoLayers()` does not need it.
+
+## removeVideoMattingModel()
+
+`removeVideoMattingModel({ model }): Promise<void>`. Deletes the model's files, including an unfinished download. It waits for a running load, download or separation of that model first.
+
+## disposeVideoMattingModel()
+
+`disposeVideoMattingModel({ model? }): Promise<void>`. Releases the loaded model, or all of them. It waits for running separations and keeps the downloaded files.
+
+## separateVideoLayers()
+
+```ts
+separateVideoLayers({
+  src,                        // a path, a file: URL, an http(s): URL, or a Blob
+  model?,                     // 'modnet' (default) or 'ben2-base'
+  audio?,                     // 'base' (default) | 'foreground' | 'both' | 'none'
+  outputs?: { base?, foreground? },
+  videoBitrate?,              // bits per second, or 'very-low' | 'low' | 'medium' | 'high' | 'very-high' (default)
+  audioBitrate?,              // bits per second or a preset
+  keyframeIntervalInSeconds?, // default 1
+  signal?,
+  onModelLoadProgress?,
+  onProgress?,                // { stage: 'processing' | 'finalizing', progress: 0..1 | null, processedFrames, processedDurationInSeconds, durationInSeconds }
+}): Promise<{
+  base: VideoLayerOutput
+  foreground: VideoLayerOutput
+  model, width, height, durationInSeconds, processedFrames
+  backend                      // the inference backend that ran (an addition)
+  [Symbol.asyncDispose](): Promise<void>
+}>
+```
+
+Both layers are the same size and frame rate as the input. The base is opaque and holds the subject. The foreground repeats the subject with alpha, so it sits in front of whatever you put between them. The model must be downloaded first.
+
+A `VideoLayerOutput` has `getBlob()`, `dispose()` and `[Symbol.asyncDispose]()`, as in Remotion, and `path`. In Node a layer is a file. By default it is a temporary file that `getBlob()` reads into a Blob and `dispose()` deletes.
+
+| Output option | What it does |
+|---|---|
+| `outputTarget: 'arraybuffer'` | The default. `'web-fs'` is the browser's file system and is refused. |
+| `outputWritable` | A `WritableStream` that gets the finished layer in `{ type: 'write', data, position }` chunks, then closes. `getBlob()` then rejects. |
+| `path` | Kinetograph's own. Writes the layer to this file, `.webm` (VP9, alpha in the foreground) or `.mov` (ProRes 4444). It is written to a `.partial` file and renamed when finished, and `dispose()` keeps it. |
+
+`outputTarget`, `outputWritable` and `path` cannot be combined. `outputs: { base: false }`, also Kinetograph's own, skips the base layer; the result's `base` is then `null`.
+
+`videoBitrate` becomes one of the addon's five quality presets, with the same names. A number picks the nearest preset at or above it. The number, `audio`, `audioBitrate` and `keyframeIntervalInSeconds` are also handed to the addon, which ignores any it does not read.
+
+### What differs from Remotion
+
+- The output is a file, not an in-memory WebM, unless you ask for it with `getBlob()`. There is no `web-fs`.
+- `canUseVideoMatting()` gives native reasons, and `getAvailableModels()` adds `license`.
+- `loadVideoMattingModel()` checks and marks the model; the addon builds its session for each job.
+- An abort rejects at once, but the addon cannot stop a job part way. The job's files are removed when it ends.
