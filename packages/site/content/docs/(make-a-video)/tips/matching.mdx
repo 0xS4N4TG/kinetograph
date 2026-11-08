@@ -5,7 +5,7 @@ description: How to give an agent a reference video and get either a match in yo
 
 Give the agent the reference and say which mode you want. In match mode it builds your video with the reference's timing, layout and look. In taste mode it keeps only the style, so you can make new videos in it. Both use the `kinetograph-taste-clone` skill, and both check each shot against the reference before showing you.
 
-Install it from [kinetograph-ui](https://github.com/0xS4N4TG/kinetograph-ui) with `npx skills add 0xS4N4TG/kinetograph-ui`. It needs `ffmpeg`, `python3` and, for URLs, `yt-dlp`, and works with Kinetograph, Remotion or any frame-based renderer. It writes `SPEC.md`, a number for every timing and layout value, and builds each shot from it. Downloaded media stays in a git-ignored folder and is never committed.
+Install it from [kinetograph-ui](https://github.com/0xS4N4TG/kinetograph-ui) with `npx skills add 0xS4N4TG/kinetograph-ui`. See the [Taste skill](/docs/agents/taste-clone/) for what it does and the checks it runs, and [Tastes](/docs/tastes/) for the styles that ship. It needs `ffmpeg`, `python3` and, for URLs, `yt-dlp`, and works with Kinetograph, Remotion or any frame-based renderer. It writes `SPEC.md`, a number for every timing and layout value, and builds each shot from it. Downloaded media stays in a git-ignored folder and is never committed.
 
 ## Match it with your own words
 

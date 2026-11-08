@@ -23,7 +23,7 @@ The [`skills`](https://www.npmjs.com/package/skills) CLI asks which agents to in
 | `kinetograph-docs` | Looking things up in these docs. |
 | `kinetograph-upgrade` | Updating Kinetograph and the skills. |
 | `kinetograph-migrate` | Moving an existing Remotion project onto Kinetograph. See [Migrate from Remotion](/docs/migrating/remotion/). |
-| `kinetograph-taste-clone` | Turning a reference reel into a spec or a reusable style. It comes from [kinetograph-ui](https://github.com/0xS4N4TG/kinetograph-ui). See [Recreating something you saw](/docs/tips/matching/). |
+| `kinetograph-taste-clone` | Turning a reference reel into a spec or a reusable style. It comes from [kinetograph-ui](https://github.com/0xS4N4TG/kinetograph-ui). See the [Taste skill](/docs/agents/taste-clone/). |
 
 ## Using the skills
 
@@ -31,10 +31,14 @@ You don't need to call a skill by name. Ask for the video and the agent picks th
 
 - `kinetograph-markup`: [Motion and transitions](/docs/tips/motion/) and [Text, captions and code](/docs/tips/text-captions-code/).
 - `kinetograph-studio`: [Editing an existing video](/docs/tips/editing/).
-- `kinetograph-taste-clone`: [Recreating something you saw](/docs/tips/matching/).
+- `kinetograph-taste-clone`: [Recreating something you saw](/docs/tips/matching/) and the [Taste skill](/docs/agents/taste-clone/).
 - `kinetograph-render`: [Rendering](/docs/rendering/).
 
 More are in [Example prompts](/docs/tips/example-prompts/).
+
+## Docs for agents
+
+`kinetograph-docs` lets an agent look up these docs. Every page is also served as Markdown at `https://kinetograph.dev/llms.mdx/<path>.md`, so `/docs/reference/cli/` is `llms.mdx/reference/cli.md`. `https://kinetograph.dev/llms.txt` is a short summary for agents. The page's **Copy page** menu offers the same file.
 
 ## The loop the skill teaches
 
@@ -54,5 +58,7 @@ Every Kinetograph command checks once a day whether the CLI or an installed skil
 npm install kinetograph@latest
 npx skills add 0xS4N4TG/kinetograph
 ```
+
+See [Update Kinetograph](/docs/upgrading/) for plugins, versions and the check afterwards.
 
 The skills live in the GitHub repo, in [`packages/cli/skills/`](https://github.com/0xS4N4TG/kinetograph/tree/main/packages/cli/skills).
