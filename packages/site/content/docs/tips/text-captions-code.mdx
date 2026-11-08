@@ -18,16 +18,29 @@ Quote every word, name a font you can load, and say when each line arrives and l
 
 ## Text effects
 
-Name the effect and when it happens. Kinetograph's `Text` can reveal by character, so "write on over 20 frames, one letter at a time" and "each word slides up from a 20 px offset, 3 frames apart" are both direct asks. For text over busy footage, ask for a dark bar, a drop shadow or a glow behind it.
+Name the effect and when it happens. Kinetograph's `Text` can style each character, so "write on over 20 frames, one letter at a time" and "each word slides up from a 20 px offset, 3 frames apart" are both direct asks. For text over busy footage, ask for a dark bar, a drop shadow or a glow behind it.
 
-The [Kinetic typography plugin](/docs/plugins/kinetic-typography/) is for captions that move with the voice, in fifteen styles. It isn't published yet. Until then the agent builds the effect from `Text` and `interpolate`.
+For type that moves with the voice, use the [Kinetic typography plugin](/docs/plugins/kinetic-typography/) (`npm install @kinetographdev/kinetic-typography`):
+
+- **`<Captions>`** sets a voiceover in fifteen named looks, such as `clean-hook`, `highlighter`, `typewriter`, `bold-captions` and `soft-minimal`. Each word arrives as it is said. A word you mark as big is set huge, with the small words round it.
+- **`<HandCaptions>`** writes each word a letter at a time in mixed handwriting, and can hang off a tracked subject.
+- **`<BoilStack>`** is a three-word title animated on twelves, like hand-made type.
+
+```txt title="Suggested prompt"
+/kinetograph-markup Use the kinetic-typography plugin. Caption public/captions/vo-words.json with the "highlighter" look, 3 words a line, and set the word "premium" big. Show the first hook and the first caption line as stills.
+```
+
+Name the look, how many words a line, and which words are big. `npx kinetograph plugins` shows the plugin's `SKILL.md`, which the agent reads for the rest. The plugin takes words with their frames, so it needs word-level timings.
 
 ## Captions
 
-Kinetograph reads SRT and VTT files, and groups word timings into pages so one word can be lit as it is said. It doesn't make the timings. Give the agent the file, or the timestamps from your speech-to-text tool.
+Kinetograph reads SRT and VTT files, and groups word timings into pages so one word can be lit as it is said. It doesn't make the timings. Give the agent the file, or the word timestamps from your speech-to-text tool.
+
+- **Word-level timings:** use the kinetic-typography plugin above for styled captions.
+- **An SRT or VTT file:** the agent builds them with `parseSrt` and `createTikTokStyleCaptions`.
 
 ```txt title="Suggested prompt"
-/kinetograph-markup Caption the narration with public/captions/vo.srt. Show 3 to 5 words at a time in the lower third, Inter 800, white, and light the word being said in #ffd23f. Keep the captions inside the safe zone and run lint.
+/kinetograph-markup Caption the narration with public/captions/vo.srt. Show 3 to 5 words at a time in the lower third, Inter 800, white on a 60% black bar, and light the word being said in #ffd23f. Keep the captions inside the safe zone and run lint.
 ```
 
 Things to say:
@@ -37,7 +50,7 @@ Things to say:
 - **One style for the whole video.** Mixing styles looks careless.
 - **Calm content wants calm captions.** Say "no pop or shake" if the video is quiet.
 
-If the video is a talking head, say so. The agent shows the captions over the footage and keeps them clear of the face.
+If the video is a talking head, say so. The agent shows the captions over the footage and keeps them clear of the face. The plugin's `Captions` can read the footage for an accent colour and an open side.
 
 ## Code on screen
 
