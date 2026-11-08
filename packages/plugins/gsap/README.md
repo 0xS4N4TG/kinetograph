@@ -21,4 +21,4 @@ return <div ref={scope}>{/* elements with className="box" */}</div>;
 - `<GsapTimeline build={...} deps={...}>` is the same as a `<div>`.
 - A tween made in `build` that is not on `tl` (`gsap.to(...)` instead of `tl.to(...)`) plays on GSAP's root clock, which the engine moves with the frame, so it is right in a render too. The timeline is the pattern that does not depend on when the tween was made.
 
-Licensed under the PolyForm Small Business License 1.0.0, see `LICENSE.md`.
+Licensed under the Apache License 2.0, see `LICENSE.md`.

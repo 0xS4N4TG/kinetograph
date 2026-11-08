@@ -37,7 +37,7 @@ The same steps are in AGENTS.md in the repository: https://github.com/0xS4N4TG/k
   (`index.html`, or the directory that holds it).
 - The native elements and effects: `import { ... } from '@kinetographdev/core'`
 - Source and issues: https://github.com/0xS4N4TG/kinetograph
-- Licence: PolyForm Small Business 1.0.0 (free for individuals and companies under 100 people and $1M revenue a year)
+- Licence: Apache-2.0, open source and free for any use, including commercial
 
 ## HTML pages and HyperFrames projects
 

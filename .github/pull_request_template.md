@@ -7,8 +7,7 @@
   - update the docs for the behaviour you changed
   - write down any trade-offs
 
-  By sending a pull request, you agree that your changes can be used, changed and licensed as part of Kinetograph,
-  including under its commercial licences.
+  Contributions are accepted under the Apache License 2.0, as its section 5 says.
 -->
 
 ## What this changes

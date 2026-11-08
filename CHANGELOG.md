@@ -3,6 +3,10 @@
 All notable changes to Kinetograph. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Kinetograph is in beta, so APIs can still change between versions.
 
+## Unreleased
+
+Kinetograph is now open source under the Apache License 2.0. Earlier versions stay under PolyForm Small Business 1.0.0.
+
 ## 0.3.0 (2026-11-03)
 
 ### Added
