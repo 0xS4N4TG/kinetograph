@@ -45,7 +45,7 @@ export function FilmTile({ film }: { film: Film }) {
       >
         {open && VIDEO_BASE ? (
           <video
-            src={`${VIDEO_BASE}films/${film.name}.mp4`}
+            src={`${VIDEO_BASE}films-${film.name}.mp4`}
             poster={`/docs-media/films/${film.name}.webp`}
             aria-label={film.title}
             controls

@@ -1,6 +1,6 @@
 /**
  * The finished films the docs show in tiles, all rendered by Kinetograph from our own examples. The clip is
- * `VIDEO_BASE + 'films/' + name + '.mp4'`; the poster is a small WebP in `public/docs-media/films/`. Sources and
+ * `VIDEO_BASE + 'films-' + name + '.mp4' (release assets are flat)`; the poster is a small WebP in `public/docs-media/films/`. Sources and
  * durations are listed in content/docs/VIDEOS.md.
  */
 export interface Film {
