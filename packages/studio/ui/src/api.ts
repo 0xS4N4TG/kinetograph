@@ -16,6 +16,11 @@ import type {
   FrameHeader,
   FrameRequest,
   InspectResult,
+  MattingJob,
+  MattingModelInfo,
+  MattingQuality,
+  MattingRequest,
+  MattingStatus,
   PanelClientMessage,
   PluginSummary,
   PresetInfo,
@@ -43,6 +48,11 @@ export type {
   CompositionInfo,
   FrameHeader,
   InspectResult,
+  MattingJob,
+  MattingModelInfo,
+  MattingQuality,
+  MattingRequest,
+  MattingStatus,
   PanelClientMessage,
   PluginSummary,
   PresetInfo,
@@ -125,6 +135,13 @@ export interface StudioApi {
   renders(): Promise<RenderJob[]>;
   startRender(request: RenderRequest): Promise<RenderJob>;
   cancelRender(id: string): Promise<RenderJob>;
+  /** "Remove background": whether this build can, the models and whether each is cached, and the jobs so far. */
+  matting(): Promise<MattingStatus>;
+  /** Removes the background of a video file into a WebM in public/; the job's progress arrives as `matting` messages. */
+  startMatting(request: MattingRequest): Promise<MattingJob>;
+  cancelMatting(id: string): Promise<MattingJob>;
+  downloadMattingModel(model: string): Promise<MattingJob>;
+  removeMattingModel(model: string): Promise<void>;
   /** Opens `/ws` and keeps it open: it reconnects after a drop. */
   connect(handlers: SocketHandlers): StudioSocket;
   /**
@@ -207,6 +224,8 @@ export function createApi(options: ApiOptions = {}): StudioApi {
     return body as T;
   }
 
+  const authHeaders = (): Record<string, string> => (token ? { 'X-Studio-Token': token } : {});
+
   function webSocketUrl(): string {
     const suffix = token ? `?token=${encodeURIComponent(token)}` : '';
     if (baseUrl !== '') return `${baseUrl.replace(/^http/, 'ws')}/ws${suffix}`;
@@ -254,6 +273,14 @@ export function createApi(options: ApiOptions = {}): StudioApi {
         body: JSON.stringify(body),
       }),
     cancelRender: (id) => request<RenderJob>(`/api/renders/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    matting: () => request<MattingStatus>('/api/matting', { headers: authHeaders() }),
+    startMatting: (body) =>
+      request<MattingJob>('/api/matting/jobs', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+    cancelMatting: (id) => request<MattingJob>(`/api/matting/jobs/${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() }),
+    downloadMattingModel: (model) => request<MattingJob>(`/api/matting/models/${encodeURIComponent(model)}`, { method: 'POST', headers: authHeaders() }),
+    removeMattingModel: async (model) => {
+      await request(`/api/matting/models/${encodeURIComponent(model)}`, { method: 'DELETE', headers: authHeaders() });
+    },
     thumbnailUrl: (comp, frame, height, build, props) =>
       `${baseUrl}/api/thumbnail${query({ comp, frame, height, build, props: propsParam(props) })}`,
 

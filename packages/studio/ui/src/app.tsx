@@ -4,6 +4,7 @@ import type { StudioApi } from '@/api';
 import { AgentPanel } from '@/components/agent/agent-panel';
 import { CommandMenu } from '@/components/command/command-menu';
 import { ExportDialog } from '@/components/inspector/export-dialog';
+import { RemoveBackgroundDialog } from '@/components/inspector/remove-background-dialog';
 import { InspectorPanel, type InspectorTab, type PanelTab } from '@/components/inspector/inspector-panel';
 import { AgentColumn } from '@/components/panels/agent-column';
 import { PanelDock, PanelFrame, PanelSheet, titleOf, usePanelView } from '@/components/panels/panel-host';
@@ -16,7 +17,10 @@ import { Timeline } from '@/components/timeline/timeline';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Transport } from '@/components/viewer/transport';
 import { Viewer, type Tool, type View, type Zoom } from '@/components/viewer/viewer';
+import { buildChatContext } from '@/lib/chat-context';
 import { jobPercent } from '@/lib/format';
+import type { InspectLayer } from '@/lib/inspect';
+import { swapRequest, videoLayerOf } from '@/lib/matting';
 import { clampRange } from '@/lib/selection';
 import { usePersistedNumber } from '@/lib/persisted';
 import { usePlayerState } from '@/lib/player-hooks';
@@ -74,6 +78,8 @@ export function App({ api }: { api: StudioApi }) {
   const [inspectorWidth, setInspectorWidth] = usePersistedNumber('kg.size.inspector', SIDE_DEFAULT);
   const [timelineHeight, setTimelineHeight] = usePersistedNumber('kg.size.timeline', TIMELINE_DEFAULT);
   const [exportOpen, setExportOpen] = useState(false);
+  /** The video layer "Remove background" works on; the dialog is open while there is one. */
+  const [matteLayer, setMatteLayer] = useState<InspectLayer | null>(null);
   const delivered = useMemo(() => studio.renders.some((job) => job.status === 'done'), [studio.renders]);
   const panelView = usePanelView(studio.panels, delivered);
   // A panel placed beside the preview docks there (a review's default); the sheet covers the centre column with any other
@@ -228,6 +234,22 @@ export function App({ api }: { api: StudioApi }) {
     if (asked > 0) setChatOpen(true);
   }, [asked]);
 
+  const videoLayer = useMemo(() => videoLayerOf(studio.inspect, selectedLayers), [studio.inspect, selectedLayers]);
+  const closeMatte = useCallback(() => setMatteLayer(null), []);
+  // Studio does not edit project code: once the transparent file is in public/, the agent is asked to change the one line.
+  const swapSource = useCallback(
+    (layer: InspectLayer, staticName: string) => {
+      const info = studio.project;
+      if (!info || !comp) return { sent: false, text: '' };
+      const text = swapRequest(layer, staticName, info.entry, info.cwd);
+      const context = buildChatContext({ entry: info.entry, cwd: info.cwd, comp, frame: Math.floor(player.getState().frame), layers: [layer], timeline: studio.timeline.state === 'ready' ? studio.timeline.data : null });
+      const sent = agents.length > 0 && chat.send(text, context, ['Remove background']);
+      if (sent) setChatOpen(true);
+      return { sent, text };
+    },
+    [studio.project, studio.timeline, comp, player, agents.length, chat],
+  );
+
   const toggleChat = useCallback(() => setChatOpen((v) => !v), []);
   const toggleInspector = useCallback(() => setInspectorOpen((v) => !v), []);
   const toggleTimeline = useCallback(() => setTimelineOpen((v) => !v), []);
@@ -320,6 +342,8 @@ export function App({ api }: { api: StudioApi }) {
               onToggleDetails={toggleDetailsOnly}
               onInspectorTab={openTab}
               onExport={exportNow}
+              videoLayer={videoLayer}
+              onRemoveBackground={setMatteLayer}
               onReload={studio.reload}
               onShowShortcuts={showShortcuts}
               agents={agents}
@@ -471,6 +495,7 @@ export function App({ api }: { api: StudioApi }) {
                   selectedPlugins={selectedPlugins}
                   onSelectPlugin={selectPlugin}
                   onAskAgent={askAgent}
+                  onRemoveBackground={setMatteLayer}
                 />
               </PreviewContext.Provider>
             </Panel>
@@ -478,6 +503,7 @@ export function App({ api }: { api: StudioApi }) {
         </div>
 
         <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+        <RemoveBackgroundDialog layer={matteLayer} onClose={closeMatte} api={api} jobs={studio.mattingJobs} onSwapSource={swapSource} />
         <ExportDialog open={exportOpen} onOpenChange={setExportOpen} comp={comp} propsEdited={studio.propsOverride !== undefined} player={player} thumbnailUrl={studio.thumbnailUrl} onStart={startExport} />
       </div>
     </TooltipProvider>

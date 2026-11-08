@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from 'react';
-import { ChevronDownIcon, LayersIcon, SparklesIcon } from 'lucide-react';
+import { ChevronDownIcon, EraserIcon, LayersIcon, SparklesIcon } from 'lucide-react';
 
 import type { InspectResult } from '@/api';
 import { CopyForAgent } from '@/components/inspector/agent-copy';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -24,12 +25,14 @@ interface SceneTreeProps {
   onSelect(id: string, additive?: boolean): void;
   /** Picks several layers at once (a folded group); without it a fold picks its first layer. */
   onSelectMany?(ids: string[]): void;
+  /** Opens "Remove background" for the selected layer; offered for a video layer only. */
+  onRemoveBackground?(layer: InspectLayer): void;
   /** What the "Copy for agent" message needs besides the layer; null before the project is known. */
   agent: Omit<AgentMessageInput, 'frame' | 'layer'> | null;
 }
 
 /** The layers of the current frame (topmost first) and the selected layer's resolved fields. */
-export function SceneTree({ inspect, frame, selected, selectedLayers = selected === null ? [] : [selected], onSelect, onSelectMany, agent }: SceneTreeProps) {
+export function SceneTree({ inspect, frame, selected, selectedLayers = selected === null ? [] : [selected], onSelect, onSelectMany, onRemoveBackground, agent }: SceneTreeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   if (inspect === null) {
     // With a composition open the scene is on its way: rows shaped like the layer list. Without one there is nothing coming.
@@ -93,8 +96,16 @@ export function SceneTree({ inspect, frame, selected, selectedLayers = selected 
       {/* Properties header */}
       <div className="flex h-11 shrink-0 items-center px-4 text-[13px]">
         <span className="truncate font-medium">{layer ? `Properties: ${displayName(layer)}` : 'Select a layer'}</span>
-        {layer && agent && (
+        {layer && onRemoveBackground && layer.type === 'video' && layer.src !== undefined && (
           <span className="ml-auto pl-2">
+            <Button variant="ghost" size="sm" className="shrink-0 rounded-full px-3" onClick={() => onRemoveBackground(layer)}>
+              <EraserIcon />
+              Remove background
+            </Button>
+          </span>
+        )}
+        {layer && agent && (
+          <span className={cn('pl-2', !(onRemoveBackground && layer.type === 'video' && layer.src !== undefined) && 'ml-auto')}>
             <CopyForAgent message={buildAgentMessage({ ...agent, frame: inspect.frame, layer })} />
           </span>
         )}

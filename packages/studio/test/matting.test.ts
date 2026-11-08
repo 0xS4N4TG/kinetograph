@@ -180,8 +180,7 @@ describe('matting routes', () => {
     fake.emit({ stage: 'finalizing', progress: null });
     await client.waitForMessage('matting', (m) => m.job.stage === 'finalizing' && m.job.progress === null);
     fake.release();
-    const done = (await client.waitForMessage('matting', (m) => m.job.status === 'done')).message as { job: MattingJob };
-    expect(done.job.error).toBeNull();
+    await client.waitForMessage('matting', (m) => m.job.status === 'done' && m.job.error === null);
     expect([...readFileSync(join(dir, 'public/person-no-background.webm'))]).toEqual([0x1a, 0x45, 0xdf, 0xa3]);
     expect(fake.calls.find((c) => c.fn === 'separate')!.args).toMatchObject({ src: video, model: 'modnet', audio: 'none', videoBitrate: 'high' });
     expect(fake.disposed.sort()).toEqual(['base', 'foreground']);
@@ -220,8 +219,7 @@ describe('matting routes', () => {
     await post('/api/matting/jobs', { input: video, output: 'c.webm' });
     await called(fake, 'separate');
     fake.release();
-    const failed = (await client.waitForMessage('matting', (m) => m.job.status === 'failed')).message as { job: MattingJob };
-    expect(failed.job.error?.message).toBe('the decoder gave up');
+    await client.waitForMessage('matting', (m) => m.job.status === 'failed' && m.job.error?.message === 'the decoder gave up');
     expect(existsSync(join(dir, 'public/c.webm'))).toBe(false);
     client.close();
   });
