@@ -257,6 +257,13 @@ fn glsl_instanced_matrix_matches_golden() {
 }
 
 #[test]
+fn glsl_float_target_matches_golden() {
+    // A light six times brighter than white drawn into an RGBA16F target (texStorage2D), then tone mapped from it.
+    let frame = render_still(scene("tests/scenes/glsl-float-target.json"), 0).unwrap();
+    check("glsl-float-target", &frame);
+}
+
+#[test]
 fn scene3d_animation_matches_golden() {
     // Frame 15 of 30, half a second into every clip: a cube turning, moving
     // and growing (with a second cube on a spline), a quad whose top corners

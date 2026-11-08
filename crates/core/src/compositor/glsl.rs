@@ -767,7 +767,12 @@ impl Compositor {
                     draws: Vec::new(),
                 }));
             }
-            let shape: Vec<bool> = colors.iter().map(Option::is_some).collect();
+            let shape: Vec<Option<wgpu::TextureFormat>> = colors
+                .iter()
+                .map(|slot| {
+                    slot.map(|(id, _)| id.map_or(COLOR_FORMAT, |id| targets[id].format))
+                })
+                .collect();
             let samples = if self.glsl.msaa_on
                 && (colors.as_slice() == [Some((None, 0))] || ds == Some(CANVAS_DS))
             {
@@ -984,12 +989,12 @@ impl Compositor {
         canvas_ds: Option<TargetFormat>,
     ) -> Result<&'a Target> {
         if !targets.contains_key(id) {
-            let (width, height, ds, levels) = if id == CANVAS_DS {
+            let (width, height, ds, levels, color) = if id == CANVAS_DS {
                 let format = canvas_ds.ok_or_else(|| {
                     render_error("an op uses the drawing buffer's depth or stencil buffer, which the context was made without")
                 })?;
                 let size = self.glsl.target.as_ref().expect("made by glsl_draw").size;
-                (size.0, size.1, Some(format), 1)
+                (size.0, size.1, Some(format), 1, None)
             } else {
                 let texture = content
                     .textures
@@ -1005,6 +1010,7 @@ impl Compositor {
                     texture.height,
                     texture.format,
                     texture.levels,
+                    texture.color_format,
                 )
             };
             let limit = self
@@ -1023,20 +1029,22 @@ impl Compositor {
                     "a {width} x {height} render target of {levels} levels; it has 1 to {most}"
                 )));
             }
-            let bytes = |(w, h): (u32, u32), levels: usize| {
-                u64::from(w) * u64::from(h) * 4 * if levels > 1 { 2 } else { 1 }
+            let bytes = |(w, h): (u32, u32), levels: usize, texel: u64| {
+                u64::from(w) * u64::from(h) * texel * if levels > 1 { 2 } else { 1 }
             };
+            let texel_of = |t: &Target| u64::from(t.format.block_copy_size(None).unwrap_or(4));
             let held: u64 = targets
                 .values()
-                .map(|t| bytes(t.size, t.levels.len()))
+                .map(|t| bytes(t.size, t.levels.len(), texel_of(t)))
                 .sum();
-            if held + bytes((width, height), levels as usize) > MAX_TARGET_BYTES {
+            let format = ds.map_or_else(|| color.map_or(COLOR_FORMAT, gl::ColorFormat::device), ds_format);
+            let texel = u64::from(format.block_copy_size(None).unwrap_or(4));
+            if held + bytes((width, height), levels as usize, texel) > MAX_TARGET_BYTES {
                 return Err(render_error(format!(
                     "unsupported: the render targets hold more than {} MiB",
                     MAX_TARGET_BYTES >> 20
                 )));
             }
-            let format = ds.map_or(COLOR_FORMAT, ds_format);
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(if ds.is_some() {
                     "glsl depth target"
@@ -1131,7 +1139,7 @@ impl Compositor {
     }
 
     /// Everything one draw needs, or `None` if it draws nothing.
-    /// `shape` says which outputs have a colour attachment in the pass, and
+    /// `shape` says which outputs have a colour attachment in the pass, and its format, and
     /// `ds` what its depth and stencil buffer holds (none when the draw uses
     /// neither).
     #[allow(clippy::too_many_arguments)]
@@ -1143,7 +1151,7 @@ impl Compositor {
         (base_dir, inputs, depth_copies): (&Path, &Inputs, &HashMap<&str, wgpu::TextureView>),
         buffers: &mut HashMap<&'c str, (Vec<u8>, Option<wgpu::Buffer>)>,
         targets: &mut HashMap<&'c str, Target>,
-        (shape, ds, samples): (&[bool], Option<TargetFormat>, u32),
+        (shape, ds, samples): (&[Option<wgpu::TextureFormat>], Option<TargetFormat>, u32),
     ) -> Result<Option<Prepared>> {
         let program_spec = content.programs.get(&draw.program).ok_or_else(|| {
             render_error(format!(
@@ -1415,7 +1423,7 @@ impl Compositor {
                             mipmapped: levels > 1
                                 && (levels == full || state.max_level.is_some_and(|m| m < levels)),
                             depth: target.ds.is_some(),
-                            float32: false,
+                            float32: texture.color_format.is_some_and(gl::ColorFormat::is_32),
                         })
                     } else {
                         self.glsl_texture(&state.texture, texture, base_dir)?
@@ -1761,7 +1769,7 @@ impl Compositor {
         layouts: &[(u32, wgpu::VertexFormat, u64, u64, wgpu::VertexStepMode)],
         (topology, indexed): (wgpu::PrimitiveTopology, bool),
         draw: &GlslDraw,
-        (shape, ds, samples): (&[bool], Option<TargetFormat>, u32),
+        (shape, ds, samples): (&[Option<wgpu::TextureFormat>], Option<TargetFormat>, u32),
     ) -> Result<wgpu::RenderPipeline> {
         let attributes: Vec<[wgpu::VertexAttribute; 1]> = layouts
             .iter()
@@ -1858,8 +1866,8 @@ impl Compositor {
             .iter()
             .enumerate()
             .map(|(i, on)| {
-                on.then(|| wgpu::ColorTargetState {
-                    format: COLOR_FORMAT,
+                on.map(|format| wgpu::ColorTargetState {
+                    format,
                     blend,
                     write_mask: if outputs.contains(&(i as u32)) {
                         mask
@@ -2671,6 +2679,17 @@ impl Compositor {
         {
             return Err(render_error(
                 "a colour blit names a depth or stencil buffer",
+            ));
+        }
+        if blit
+            .src
+            .as_deref()
+            .into_iter()
+            .chain(blit.target.as_deref())
+            .any(|id| targets[id].format != COLOR_FORMAT)
+        {
+            return Err(render_error(
+                "unsupported: blitFramebuffer to or from a float render target; draw a quad that samples it",
             ));
         }
         let Some((params, scissor)) = blit_geometry(blit, dst_size, source_size) else {

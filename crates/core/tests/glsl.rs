@@ -2276,3 +2276,87 @@ fn an_instanced_mat4_attribute_is_read_a_column_at_a_time() {
     assert_eq!(px(&frame, 12, 3), [255, 0, 0, 255]);
     assert_eq!(px(&frame, 14, 14), [0, 0, 0, 255]);
 }
+
+// ---- float render targets ----
+
+/// A square colour target `rt` of `side` and the float format `format`.
+fn float_target(format: &str, side: u32) -> String {
+    format!(
+        r#", "textures": {{"rt": {{"target": true, "width": {side}, "height": {side}, "colorFormat": "{format}"}}}}"#
+    )
+}
+
+/// `u_tex * 0.25` of the drawing buffer's picture, so a target holding 2.0 reads as 0.5.
+const QUARTER: &str = "precision highp float; varying vec2 v_uv; uniform sampler2D u_tex; \
+    void main() { gl_FragColor = vec4(texture2D(u_tex, v_uv).rgb * 0.25, 1.0); }";
+
+fn through_a_float_target(format: &str, filter: &str) -> Frame {
+    let sampling = format!(
+        r#"{}, "units": {{"0": {{"texture": "rt", "min": "{filter}", "mag": "{filter}",
+            "wrapS": "CLAMP_TO_EDGE", "wrapT": "CLAMP_TO_EDGE"}}}}"#,
+        uniforms(&[("u_tex", "i", &[0.0])])
+    );
+    render(&layer_of(
+        &[("f", FILL), ("q", QUARTER)],
+        &float_target(format, 8),
+        &ops(&[
+            // Red of 2.0 (beyond what 8 bits hold) in the lower half of the target, 4.0 green over the rest.
+            draw_with("f", Some(("rt", 8)), &fill([2.0, 4.0, 0.0, 1.0])),
+            draw_with("q", None, &sampling),
+        ]),
+    ))
+}
+
+#[test]
+fn a_half_float_target_keeps_values_beyond_one() {
+    let frame = through_a_float_target("RGBA16F", "LINEAR");
+    // 2.0 and 4.0 times a quarter: 0.5 and 1.0.
+    near(px(&frame, 8, 8), [128, 255, 0, 255], 3);
+}
+
+#[test]
+fn a_single_channel_and_a_two_channel_float_target_are_drawn_into() {
+    for format in ["R16F", "RG16F", "R32F", "RG32F"] {
+        let frame = through_a_float_target(format, "NEAREST");
+        // A single channel reads (r, 0, 0, 1); two read (r, g, 0, 1).
+        let green = if format.starts_with("RG") { 255 } else { 0 };
+        near(px(&frame, 8, 8), [128, green, 0, 255], 3);
+    }
+}
+
+#[test]
+fn a_32_bit_float_target_reads_nearest_and_is_black_otherwise() {
+    near(px(&through_a_float_target("RGBA32F", "NEAREST"), 8, 8), [128, 255, 0, 255], 3);
+    // As in a browser without OES_texture_float_linear.
+    assert_eq!(px(&through_a_float_target("RGBA32F", "LINEAR"), 8, 8), [0, 0, 0, 255]);
+}
+
+#[test]
+fn a_clear_of_a_float_target_keeps_values_beyond_one() {
+    let sampling = format!(
+        r#"{}, "units": {{"0": {{"texture": "rt", "min": "NEAREST", "mag": "NEAREST"}}}}"#,
+        uniforms(&[("u_tex", "i", &[0.0])])
+    );
+    let frame = render(&layer_of(
+        &[("q", QUARTER)],
+        &float_target("RGBA16F", 8),
+        &ops(&[
+            r#"{"op": "clear", "target": "rt", "color": [0.5, 0.25, 0, 1]}"#.to_string(),
+            draw_with("q", None, &sampling),
+        ]),
+    ));
+    near(px(&frame, 8, 8), [32, 16, 0, 255], 3);
+}
+
+#[test]
+fn a_blit_to_a_float_target_is_refused() {
+    let e = render_error(&layer_of(
+        &[("f", FILL)],
+        &float_target("RGBA16F", 8),
+        &ops(&[
+            draw_in("f", [0, 0, 16, 16], &fill([1.0; 4])),
+            blit_op(None, Some("rt"), [0, 0, 8, 8], [0, 0, 8, 8], false),
+        ]),
+    ));
+    assert!(e.contains("float render target"), "{e}");
+}

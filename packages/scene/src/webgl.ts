@@ -915,6 +915,16 @@ const UNSUPPORTED_CAPS = new Map<number, string>([
 /** The largest point drawn (`ALIASED_POINT_SIZE_RANGE`): `gl_PointSize` is clamped to 1 to this (crates/core/src/glsl.rs, `MAX_POINT_SIZE`). */
 const POINT_SIZE_MAX = 511;
 
+/** The float formats colour can be drawn into (`EXT_color_buffer_float`), by the name the recording gives them. */
+const FLOAT_TARGETS: Record<number, NonNullable<GlslTexture['colorFormat']>> = {
+  [GL2.R16F]: 'R16F',
+  [GL2.RG16F]: 'RG16F',
+  [GL2.RGBA16F]: 'RGBA16F',
+  [GL2.R32F]: 'R32F',
+  [GL2.RG32F]: 'RG32F',
+  [GL2.RGBA32F]: 'RGBA32F',
+};
+
 /** Formats of a texture that colour cannot be drawn into. */
 const NOT_RENDERABLE = new Set<number>([GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA, GL.DEPTH_COMPONENT]);
 
@@ -1086,6 +1096,7 @@ export class WebGLContext {
   getExtension(name: string): object | null {
     // Derivatives are always available in the translated shaders, and depth textures (core in WebGL 2) in the replay.
     if (name === 'OES_standard_derivatives') return { FRAGMENT_SHADER_DERIVATIVE_HINT_OES: 0x8b8b };
+    if (name === 'EXT_color_buffer_float' && this.version === 2) return {};
     if (name === 'WEBGL_depth_texture' && this.version === 1) return { UNSIGNED_INT_24_8_WEBGL: GL2.UNSIGNED_INT_24_8 };
     return null;
   }
@@ -2254,7 +2265,10 @@ export class WebGLContext {
         for (let c = 0; c < 3; c += 1) floats[i * 4 + c]! *= floats[i * 4 + 3]!;
       }
     }
-    Object.assign(texture, { width, height, depth: 0, floats, float32: float.bits === 32, pixels: null, src: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: false, format: internalformat, blank: false, levels: 1, patches: [], drawnAt: -1 });
+    const empty = source === null || source === undefined;
+    // What a format has no alpha for reads as 1, in a texture with nothing in it as in one with pixels.
+    if (empty && float.channels < 4) for (let i = 0; i < width * height; i += 1) floats[i * 4 + 3] = 1;
+    Object.assign(texture, { width, height, depth: 0, floats, float32: float.bits === 32, pixels: null, src: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: false, format: internalformat, blank: empty, levels: 1, patches: [], drawnAt: -1 });
     texture.version += 1;
   }
 
@@ -2569,6 +2583,11 @@ export class WebGLContext {
       if (levels > 1) throw new WebGLUnsupportedError('a depth texture of more than one level');
       return this.specifyDepth(texture, internalformat, width, height, null);
     }
+    const float = FLOAT_FORMATS[internalformat];
+    if (float !== undefined) {
+      if (levels > 1) throw new WebGLUnsupportedError('texStorage2D of a float format with more than one level; allocate one level');
+      return this.specifyFloat(texture, internalformat, float, [width, height], [float.format, GL.FLOAT, null]);
+    }
     this.checkTextureType(GL.UNSIGNED_BYTE, internalformat);
     // Its upper levels are mipmaps of the empty level 0 until a framebuffer draws in them.
     Object.assign(texture, { width, height, floats: null, float32: false, pixels: new Uint8Array(width * height * 4), src: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: levels > 1, format: internalformat, blank: true, levels, patches: [] });
@@ -2790,8 +2809,8 @@ export class WebGLContext {
       if (!('texture' in a)) continue;
       const texture = a.texture;
       if (kindOf(texture.format) !== 'color') continue;
-      if (texture.format !== GL.RGBA && texture.format !== GL2.RGBA8) {
-        throw new WebGLUnsupportedError(`drawing into a texture of internal format 0x${texture.format.toString(16)}; allocate it as RGBA`);
+      if (texture.format !== GL.RGBA && texture.format !== GL2.RGBA8 && FLOAT_TARGETS[texture.format] === undefined) {
+        throw new WebGLUnsupportedError(`drawing into a texture of internal format 0x${texture.format.toString(16)}; allocate it as RGBA, or as R16F, RG16F, RGBA16F, R32F, RG32F or RGBA32F`);
       }
       if (!texture.blank) throw new WebGLUnsupportedError('drawing into a texture that holds uploaded pixels; allocate it with texImage2D(..., null)');
     }
@@ -2809,6 +2828,7 @@ export class WebGLContext {
       width: texture.width,
       height: texture.height,
       ...(kind === 'color' ? {} : { format: kind }),
+      ...(FLOAT_TARGETS[texture.format] !== undefined ? { colorFormat: FLOAT_TARGETS[texture.format]! } : {}),
       // WebGL 1 samples a depth texture as luminance (WEBGL_depth_texture), WebGL 2 as red.
       ...(kind !== 'color' && this.version === 1 ? { luminance: true } : {}),
       ...(texture.levels > 1 ? { levels: texture.levels } : {}),
@@ -3100,6 +3120,8 @@ export class WebGLContext {
     // State.
     if (this.caps.scissor) draw.scissor = this.scissorNow();
     if (this.caps.blend) {
+      const into32 = this.drawFramebuffer !== null && this.outputsOf(this.drawFramebuffer).some((a) => a !== null && 'texture' in a && FLOAT_FORMATS[a.texture.format]?.bits === 32);
+      if (into32) throw new WebGLUnsupportedError('blending into a 32-bit float render target (EXT_float_blend is not available); draw it without blending, or use a 16-bit one');
       const b = this.blend;
       draw.blend = {
         srcRgb: FACTORS[b.srcRgb]!,

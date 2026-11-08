@@ -1439,6 +1439,77 @@ describe('the recording WebGL context', () => {
     });
   });
 
+  describe('float render targets', () => {
+    function floatContext(internalformat: number, storage: boolean) {
+      const g = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const program = g.createProgram();
+      for (const [type, source] of [[GL.VERTEX_SHADER, '#version 300 es\nin vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }'], [GL.FRAGMENT_SHADER, '#version 300 es\nprecision highp float; out vec4 o; void main() { o = vec4(2.0); }']] as const) {
+        const shader = g.createShader(type)!;
+        g.shaderSource(shader, source);
+        g.attachShader(program, shader);
+      }
+      g.linkProgram(program);
+      g.useProgram(program);
+      const buffer = g.createBuffer();
+      g.bindBuffer(GL.ARRAY_BUFFER, buffer);
+      g.bufferData(GL.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1]), GL.STATIC_DRAW);
+      g.enableVertexAttribArray(g.getAttribLocation(program, 'p'));
+      g.vertexAttribPointer(g.getAttribLocation(program, 'p'), 2, GL.FLOAT, false, 0, 0);
+      const texture = g.createTexture();
+      g.bindTexture(GL.TEXTURE_2D, texture);
+      if (storage) g.texStorage2D(GL.TEXTURE_2D, 1, internalformat, 4, 4);
+      else g.texImage2D(GL.TEXTURE_2D, 0, internalformat, 4, 4, 0, GL.RGBA, GL.HALF_FLOAT, null);
+      const framebuffer = g.createFramebuffer();
+      g.bindFramebuffer(GL.FRAMEBUFFER, framebuffer);
+      g.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0);
+      return { gl: g, texture };
+    }
+
+    it('is drawn into, by texStorage2D or texImage2D, and recorded with its format', () => {
+      for (const storage of [true, false]) {
+        const { gl } = floatContext(GL2.RGBA16F, storage);
+        expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_COMPLETE);
+        gl.drawArrays(GL.TRIANGLES, 0, 3);
+        expect(gl.getError()).toBe(GL.NO_ERROR);
+        const content = gl.content();
+        const draw = content.ops[0]!;
+        if (draw.op !== 'draw') throw new Error('not a draw');
+        expect(content.textures[draw.target!]).toMatchObject({ target: true, width: 4, height: 4, colorFormat: 'RGBA16F' });
+      }
+    });
+
+    it('takes the one, two and four-channel formats of 16 and 32 bits', () => {
+      for (const [format, name] of [[GL2.R16F, 'R16F'], [GL2.RG16F, 'RG16F'], [GL2.R32F, 'R32F'], [GL2.RG32F, 'RG32F'], [GL2.RGBA32F, 'RGBA32F']] as const) {
+        const { gl } = floatContext(format, true);
+        gl.drawArrays(GL.TRIANGLES, 0, 3);
+        const content = gl.content();
+        const draw = content.ops[0]!;
+        if (draw.op !== 'draw') throw new Error('not a draw');
+        expect(content.textures[draw.target!]!.colorFormat).toBe(name);
+      }
+    });
+
+    it('offers EXT_color_buffer_float on WebGL 2 only', () => {
+      expect(floatContext(GL2.RGBA16F, true).gl.getExtension('EXT_color_buffer_float')).not.toBeNull();
+      expect(createWebGLContext({ size: () => ({ width: 8, height: 4 }) }).getExtension('EXT_color_buffer_float')).toBeNull();
+    });
+
+    it('refuses blending into a 32-bit target and RGB16F, and says what to use', () => {
+      const { gl } = floatContext(GL2.RGBA32F, true);
+      gl.enable(GL.BLEND);
+      expect(() => gl.drawArrays(GL.TRIANGLES, 0, 3)).toThrow(/^unsupported:.*32-bit float render target/);
+      const rgb = floatContext(GL2.RGB16F, true).gl;
+      expect(() => rgb.drawArrays(GL.TRIANGLES, 0, 3)).toThrow(/^unsupported:.*allocate it as RGBA, or as R16F/);
+    });
+
+    it('keeps blending into a 16-bit one', () => {
+      const { gl } = floatContext(GL2.RGBA16F, true);
+      gl.enable(GL.BLEND);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+    });
+  });
+
   describe('a clear with the scissor test on', () => {
     function drawOf(gl: WebGLContext, index = 0) {
       const op = gl.content().ops[index]!;

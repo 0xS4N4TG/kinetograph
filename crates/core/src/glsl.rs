@@ -136,6 +136,8 @@ pub struct GlslTexture {
     pub target: bool,
     /// What a target holds: colour (RGBA8) without one.
     pub format: Option<TargetFormat>,
+    /// A colour target of a float format, which draws write and samplers read as floats (`EXT_color_buffer_float`).
+    pub color_format: Option<ColorFormat>,
     /// The mip levels of a colour target; an op's `level` draws into one.
     #[serde(default = "one")]
     pub levels: u32,
@@ -178,6 +180,36 @@ pub struct GlslFace {
     pub flip_y: bool,
     #[serde(default)]
     pub premultiply: bool,
+}
+
+/// The float formats a colour target can have.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
+pub enum ColorFormat {
+    R16F,
+    RG16F,
+    RGBA16F,
+    R32F,
+    RG32F,
+    RGBA32F,
+}
+
+impl ColorFormat {
+    pub fn device(self) -> wgpu::TextureFormat {
+        use wgpu::TextureFormat as F;
+        match self {
+            ColorFormat::R16F => F::R16Float,
+            ColorFormat::RG16F => F::Rg16Float,
+            ColorFormat::RGBA16F => F::Rgba16Float,
+            ColorFormat::R32F => F::R32Float,
+            ColorFormat::RG32F => F::Rg32Float,
+            ColorFormat::RGBA32F => F::Rgba32Float,
+        }
+    }
+
+    /// 32-bit floats are read `NEAREST` only, as in a browser.
+    pub fn is_32(self) -> bool {
+        matches!(self, ColorFormat::R32F | ColorFormat::RG32F | ColorFormat::RGBA32F)
+    }
 }
 
 /// What a depth or stencil target holds.
@@ -3000,6 +3032,7 @@ mod tests {
             patches: Vec::new(),
             depth: 2,
             array: false,
+            color_format: None,
             floats,
             float32: false,
             cube: false,
