@@ -1,7 +1,7 @@
 {
   "version": 1,
   "generated": "2026-11-08",
-  "totalBytes": 8674553,
+  "totalBytes": 10563231,
   "conventions": {
     "page": "path under packages/site/content/docs, without .mdx",
     "heading": "the heading the file should sit under; \"(intro, ...)\" means right under the first code example of the page",
@@ -687,6 +687,104 @@
       "theme": "dark",
       "bytes": 227310,
       "source": "Studio, headless, on the docs reel project (.docs-media/studio-hero); the agent chat is a scripted ACP agent, so the exchange is staged"
+    },
+    {
+      "file": "tastes/archive.mp4",
+      "kind": "video",
+      "page": "tastes",
+      "heading": "The tastes that ship",
+      "alt": "A four second loop of the Archive taste's demo reel.",
+      "width": 720,
+      "height": 1280,
+      "bytes": 236912,
+      "audio": false,
+      "source": "the Archive taste's demo reel, a 4 s cut at 720 wide by packages/site/scripts/catalog.mjs (H.264, no audio), poster resized to 480 wide",
+      "section": "make-a-video",
+      "how": "node scripts/catalog.mjs --tastes --media"
+    },
+    {
+      "file": "tastes/blueprint.mp4",
+      "kind": "video",
+      "page": "tastes",
+      "heading": "The tastes that ship",
+      "alt": "A four second loop of the Blueprint taste's demo reel.",
+      "width": 720,
+      "height": 1280,
+      "bytes": 323190,
+      "audio": false,
+      "source": "the Blueprint taste's demo reel, a 4 s cut at 720 wide by packages/site/scripts/catalog.mjs (H.264, no audio), poster resized to 480 wide",
+      "section": "make-a-video",
+      "how": "node scripts/catalog.mjs --tastes --media"
+    },
+    {
+      "file": "tastes/collage.mp4",
+      "kind": "video",
+      "page": "tastes",
+      "heading": "The tastes that ship",
+      "alt": "A four second loop of the Collage taste's demo reel.",
+      "width": 720,
+      "height": 1280,
+      "bytes": 305616,
+      "audio": false,
+      "source": "the Collage taste's demo reel, a 4 s cut at 720 wide by packages/site/scripts/catalog.mjs (H.264, no audio), poster resized to 480 wide",
+      "section": "make-a-video",
+      "how": "node scripts/catalog.mjs --tastes --media"
+    },
+    {
+      "file": "tastes/explainer.mp4",
+      "kind": "video",
+      "page": "tastes",
+      "heading": "The tastes that ship",
+      "alt": "A four second loop of the Explainer taste's demo reel.",
+      "width": 720,
+      "height": 1280,
+      "bytes": 201550,
+      "audio": false,
+      "source": "the Explainer taste's demo reel, a 4 s cut at 720 wide by packages/site/scripts/catalog.mjs (H.264, no audio), poster resized to 480 wide",
+      "section": "make-a-video",
+      "how": "node scripts/catalog.mjs --tastes --media"
+    },
+    {
+      "file": "tastes/papercut.mp4",
+      "kind": "video",
+      "page": "tastes",
+      "heading": "The tastes that ship",
+      "alt": "A four second loop of the Papercut taste's demo reel.",
+      "width": 720,
+      "height": 1280,
+      "bytes": 306947,
+      "audio": false,
+      "source": "the Papercut taste's demo reel, a 4 s cut at 720 wide by packages/site/scripts/catalog.mjs (H.264, no audio), poster resized to 480 wide",
+      "section": "make-a-video",
+      "how": "node scripts/catalog.mjs --tastes --media"
+    },
+    {
+      "file": "tastes/print.mp4",
+      "kind": "video",
+      "page": "tastes",
+      "heading": "The tastes that ship",
+      "alt": "A four second loop of the Print taste's demo reel.",
+      "width": 720,
+      "height": 1280,
+      "bytes": 272848,
+      "audio": false,
+      "source": "the Print taste's demo reel, a 4 s cut at 720 wide by packages/site/scripts/catalog.mjs (H.264, no audio), poster resized to 480 wide",
+      "section": "make-a-video",
+      "how": "node scripts/catalog.mjs --tastes --media"
+    },
+    {
+      "file": "tastes/vox-style.mp4",
+      "kind": "video",
+      "page": "tastes",
+      "heading": "The tastes that ship",
+      "alt": "A four second loop of the Vox style taste's demo reel.",
+      "width": 720,
+      "height": 1280,
+      "bytes": 241615,
+      "audio": false,
+      "source": "the Vox style taste's demo reel, a 4 s cut at 720 wide by packages/site/scripts/catalog.mjs (H.264, no audio), poster resized to 480 wide",
+      "section": "make-a-video",
+      "how": "node scripts/catalog.mjs --tastes --media"
     }
   ]
 }
