@@ -1,0 +1,98 @@
+---
+title: Transforms
+description: Move, scale and turn a layer, pivot it about its centre, and give it depth with a camera or a 3D scene.
+---
+
+Every layer takes `x`, `y`, `scale` and `rotation`. Compute them from the frame to animate them.
+
+```tsx title="src/Spin.tsx"
+import { Rect, interpolate, useCurrentFrame } from '@kinetographdev/core';
+
+export const Spin = () => {
+  const frame = useCurrentFrame();
+  const turn = interpolate(frame, [0, 60], [0, 90], { extrapolateRight: 'clamp' });
+  return <Rect x={640} y={360} width={300} height={200} fill="#f6c177" origin="center" rotation={turn} scale={1 + frame / 120} />;
+};
+```
+
+## Position, scale and turn
+
+| Prop | Meaning |
+|---|---|
+| `x`, `y` | Where the layer's anchor point lands in its parent, in pixels. |
+| `scale` | Scale about the pivot. `scaleX` and `scaleY` stretch one axis and multiply with `scale`. |
+| `rotation` | Degrees, clockwise. |
+| `anchorX`, `anchorY` | The anchor point, in the layer's own pixels. The default is its top-left corner. |
+| `origin` | The pivot for scale and turn: `'center'`, or `[ox, oy]` as fractions of the layer's size. |
+
+A child moves inside its parent, so move a `Layer` to move everything in it. `origin` changes the pivot only. Without a turn or a scale, the layer sits where it would with no origin.
+
+`origin` needs a layer with a box: a shape, an image, a text layer, or a group with a `layout`. A group without a `layout` has no box and ignores it. Give such a group `anchorX` and `anchorY` instead.
+
+## CSS transforms
+
+In `<div>` elements, `transform` works as in CSS, and `@keyframes` follow the frame's time. Use `makeTransform` and `interpolateStyles` from `@remotion/animation-utils` to build transform strings from the frame.
+
+## Depth: a camera and 3D turns
+
+`rotateX` and `rotateY` (degrees) turn a layer in 3D, and `z` moves it toward the viewer in pixels. A `Camera` gives the scene a perspective. Without one the view is flat: turns foreshorten, and `z` moves nothing.
+
+```tsx title="src/Flip.tsx"
+import { Camera, Image, Layer, interpolate, staticFile, useCurrentFrame } from '@kinetographdev/core';
+
+export const Flip = () => {
+  const frame = useCurrentFrame();
+  const spin = interpolate(frame, [0, 60], [0, 180]);
+  return (
+    <Layer>
+      <Camera perspective={1400} />
+      <Image src={staticFile('images/card.png')} width={400} height={560} x={440} y={80} origin="center" rotateY={spin} />
+    </Layer>
+  );
+};
+```
+
+- A layer is drawn flat, with its effects, clip and mask, and then warped. A shadow is flat and turns with the layer.
+- Turn it past 90 degrees and you see its back, mirrored, as in CSS.
+- A `Layer` is flat: its children are drawn as one picture, which is then turned.
+- Put `preserve3d` on a `Layer` to let its children sit at different `z` and turn together in 3D. Children that cross each other intersect. A `preserve3d` layer cannot have `effects`, `clip`, `mask`, `matte` or `motionBlur`. Wrap it in an ordinary `Layer` and put them there.
+- Layers that are not in a `preserve3d` group are drawn in document order, with no depth sorting.
+- There is one `Camera` for the whole tree.
+
+## 3D scenes
+
+For real 3D, a `Scene3D` holds a camera, lights and objects, and draws as one layer. It takes the common props of a layer.
+
+```tsx title="src/Torus.tsx"
+import { AmbientLight, Camera3D, DirectionalLight, Mesh, Scene3D, useCurrentFrame } from '@kinetographdev/core';
+
+export const Torus = () => {
+  const frame = useCurrentFrame();
+  return (
+    <Scene3D width={960} height={540}>
+      <Camera3D fov={40} position={[0, 2, 8]} target={[0, 0.5, 0]} />
+      <AmbientLight intensity={0.3} />
+      <DirectionalLight direction={[-1, -1, -1]} intensity={1.6} />
+      <Mesh geometry={{ kind: 'torus' }} material={{ color: '#c77dff', roughness: 0.3 }} rotation={[60, frame * 3, 0]} />
+    </Scene3D>
+  );
+};
+```
+
+- Objects take `position`, `rotation` (degrees), `scale` and `visible`.
+- `Mesh` takes a `box`, `sphere`, `plane`, `cylinder` or `torus`. `Model` loads a glTF or GLB file. `Text3D` and `Extrude` make letters and SVG paths solid.
+- Shadows come from a `DirectionalLight` with `castShadow`. `environment` takes an equirectangular image to light the scene.
+- There is no Three.js API behind it. The full props are in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 6.6.
+
+## Suggested prompt
+
+```txt title="Suggested prompt"
+/kinetograph-markup Flip the card over with a 3D turn and a camera, then show me a strip of 12 frames.
+```
+
+## What works
+
+- Drawn natively: 2D transforms, 3D turns with a camera, `preserve3d` with depth sorting, and `Scene3D`.
+- Approximated: the crossing line of `preserve3d` planes is not anti-aliased, and a `backdrop-filter` on a turned element mirrors the backdrop at its bounding box. These are reported as approximated. A layer is cut at the canvas edge before it is turned, unless a margin gives it room.
+- Not supported: `@remotion/three`, which `Scene3D` replaces. A glTF extension or a second set of texture coordinates in a `Model` is not read, and `doctor` reports it by name.
+- See [What works](/docs/compat/#3d).

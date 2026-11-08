@@ -1,0 +1,101 @@
+---
+title: Fonts
+description: Register a font from Google Fonts, a file in public/, a stylesheet or CSS @font-face, and use it in text.
+---
+
+Text uses only the fonts you register. Kinetograph reads no system fonts, so a render looks the same on every machine.
+
+```tsx title="src/Title.tsx"
+import { Text } from '@kinetographdev/core';
+import { loadFont } from '@remotion/google-fonts/Inter';
+
+const { fontFamily } = loadFont('normal', { weights: ['400', '700'] });
+
+export const Title = () => (
+  <Text font={fontFamily} weight={700} size={96} color="#ffffff">
+    Hello
+  </Text>
+);
+```
+
+Call `loadFont` at the top of the file, outside any component. `Text` takes the family in `font`, and `weight` and `fontStyle` pick the file.
+
+## Google Fonts
+
+Import the family you want from `@remotion/google-fonts/<Family>`. The first render downloads each file and keeps it in `~/.cache/kinetograph/fonts`. After that the font loads from the cache with no network.
+
+```tsx title="src/fonts.ts"
+import { loadFont } from '@remotion/google-fonts/PlayfairDisplay';
+
+export const { fontFamily } = loadFont('italic', { weights: ['400'] });
+```
+
+- `loadFont(style, { weights })` registers the weights you ask for. `subsets` is accepted and changes nothing, because the files hold the whole font.
+- Each module also exports `fontFamily` and `getInfo()`. `getAvailableFonts()` is missing.
+- `npx kinetograph init` adds `src/google-fonts.d.ts` so the type checker accepts these imports.
+
+## A font file in your project
+
+Put the file in `public/fonts/` and register it under a family name:
+
+```tsx title="src/fonts.ts"
+import { loadFont } from '@remotion/fonts';
+import { staticFile } from '@kinetographdev/core';
+
+loadFont({ family: 'Brand', url: staticFile('fonts/Brand-Bold.ttf'), weight: '700' });
+loadFont({ family: 'Brand', url: staticFile('fonts/Brand-Italic.ttf'), style: 'italic' });
+```
+
+Then write `<Text font="Brand" weight={700}>`. The file can be TrueType, OpenType, WOFF or WOFF2. `registerFont({ family, path, weight, style })` from `@kinetographdev/core` does the same without the `@remotion/fonts` import. A variable font follows the weight you ask for.
+
+## A stylesheet of font files
+
+For fonts hosted elsewhere, `makeWebFont` takes the URL of a stylesheet of `@font-face` rules. It downloads each file once into the same cache:
+
+```tsx title="src/fonts.ts"
+import { makeWebFont } from '@kinetographdev/core/fonts';
+
+const font = makeWebFont('https://example.com/fonts.css');
+font.loadFont('normal', { weights: ['400', '700'] });
+
+export const fontFamily = font.fontFamily;
+```
+
+It returns the same shape as a Google Fonts module. Use it in place of a link to one font file, which can change with each release.
+
+## CSS @font-face
+
+In HTML, JSX with `className`, or an imported stylesheet, a font loads with `@font-face`. The `url()` is looked for beside the entry file, then in `public/`:
+
+```css title="src/index.css"
+@font-face {
+  font-family: 'Brand';
+  src: url('/fonts/Brand-Medium.ttf');
+  font-weight: 500;
+}
+
+.title {
+  font-family: 'Brand';
+}
+```
+
+Code can load one too, with `new FontFace(family, 'url(...)')`, `await face.load()` and `document.fonts.add(face)`. Kinetograph keeps one file for each family, weight and style. A face split by `unicode-range` keeps the part that covers basic Latin.
+
+## HTML pages and JSON scenes
+
+- An HTML page names a family in CSS. The 18 families HyperFrames embeds are built in, and names such as `Arial`, `Consolas` and `Georgia` map to them as in HyperFrames. A render never downloads a font. Any other font comes from `@font-face` with a file.
+- In a `.json` scene, the `fonts` object maps a family name to a file. See the [scene format](/docs/reference/scene-format/).
+
+## Rules
+
+- **Register before measuring.** Text is never measured before its fonts are registered. A download is tracked, and the frame loop waits for it before the first frame. `measureText` and `fitText` use the registered fonts, so register them first.
+- **No system fonts.** A font that is installed on your computer is not used. With no font loaded, text is drawn in the bundled DM Sans and reported, and `lint` reports a `Text` whose font is not registered as an error.
+- **Missing characters.** A character the font lacks comes from the bundled Noto Sans Symbols 2, Noto Sans Math or Noto Emoji. Emoji are monochrome. CJK, Arabic, Devanagari and similar scripts have no bundled font, so load one that has them.
+- **Text in an SVG file** that you use as a picture is not drawn. Put the text in `Text` or in HTML.
+
+## What works
+
+- Drawn natively: Google Fonts, font files, `@font-face`, `FontFace`, variable fonts and `-webkit-text-stroke`, `text-shadow` and `background-clip: text`.
+- Approximated: `monospace` and `ex` can differ from Chrome, and a variable font set per element with `font-variation-settings` can measure wider. Emoji are monochrome.
+- Not supported: system fonts, and `getAvailableFonts()` from `@remotion/google-fonts`.
+- `doctor` lists a character no font has, and a font that did not download (under `stylesheets`). Run `npx kinetograph doctor src/index.tsx` before a long render, and see [What works](/docs/compat/#text-and-fonts).
