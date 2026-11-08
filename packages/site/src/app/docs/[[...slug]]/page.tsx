@@ -1,5 +1,6 @@
 import { DocsPre, PromptBox } from '@/components/docs/mdx';
 import { Media } from '@/components/docs/media';
+import { Video } from '@/components/docs/video';
 import { PageActions } from '@/components/docs/page-actions';
 import { TasteGallery } from '@/components/docs/taste-gallery';
 import { EngineDiagram } from '@/components/engine-diagram';
@@ -35,6 +36,8 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
             <Prompt skill="kinetograph-markup">Add motion blur to my text</Prompt>.
           - <Media src="studio/window-light.webp" dark="studio/window-dark.webp" width={1600} height={1160} alt="..." />
             a picture from public/docs-media, or a looping clip for an .mp4 (components/docs/media.tsx).
+          - <Video name="first-video" label="..." caption="..." silent />  a hosted clip with a poster (components/docs/video.tsx;
+            base URL in sections/links.ts).
           - <TasteGallery />  every taste of the catalog as a looping clip with its name (components/docs/taste-gallery.tsx).
         */}
         <MDX
@@ -42,6 +45,7 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
             ...defaultMdxComponents,
             pre: DocsPre,
             Media,
+            Video,
             TasteGallery,
             Prompt: PromptBox,
             Accordion,

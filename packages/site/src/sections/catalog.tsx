@@ -31,13 +31,13 @@ export const oneLine = (text: string) => text.split(/(?<=[.!?])\s/)[0];
 export function Crumbs({ section: sec, current }: { section: 'plugins' | 'templates' | 'components' | 'tastes'; current?: string }) {
   const here =
     sec === 'plugins'
-      ? { href: '/plugins/', name: 'Plugins' }
+      ? { href: '/plugins/', name: 'Library' }
       : sec === 'tastes'
         ? { href: '/plugins/#kind-tastes', name: 'Tastes' }
         : sec === 'templates'
           ? { href: '/plugins/#templates', name: 'Templates' }
           : { href: '/plugins/#components', name: 'Components' };
-  const other = sec === 'plugins' ? { href: '/plugins/#components', name: 'Components' } : { href: '/plugins/', name: 'Plugins' };
+  const other = sec === 'plugins' ? { href: '/plugins/#components', name: 'Components' } : { href: '/plugins/', name: 'Library' };
   const cls = `${link} kc-press inline-block`;
   return (
     <nav aria-label="Catalog" className="mb-6 flex items-center justify-between font-jb text-[12px] tracking-[0.04em]">

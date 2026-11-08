@@ -6,8 +6,8 @@ import { Heading } from '@/sections/heading';
 import { Label, body, link } from '@/sections/shared';
 
 export const metadata: Metadata = {
-  title: 'Plugins, templates and components | Kinetograph',
-  description: 'Plugins, templates, components and tastes for Kinetograph: what each one makes and what you can change.',
+  title: 'Library | Kinetograph',
+  description: 'Ready-made templates, components, plugins and tastes for Kinetograph: what each one makes and how to add it.',
 };
 
 /** Plugins: two large tiles across from md up, one under. */
@@ -39,14 +39,15 @@ const tasteGrid = 'mt-6 grid grid-cols-1 gap-x-8 gap-y-12 md:grid-cols-3 md:item
 export default function PluginsPage() {
   return (
     <CatalogPage>
-      <Heading as="h1" lines={['Plugins, templates and components']} hot="templates" tag="CAT 01  1.00" className="text-[clamp(36px,4.2vw,56px)]" />
+      <Heading as="h1" lines={['The library']} hot="library" tag="CAT 01  1.00" className="text-[clamp(36px,4.2vw,56px)]" />
       <p className={`${body} mt-5 max-w-[62ch]`}>
-        Plugins add looks, captions, paper and tracking to a project. Templates are whole videos you start from and change. Components are single pieces,
-        such as a chart, a grid or a background.
+        Everything you can add to a video. Templates are whole videos you start from and change. Components are single pieces, such as a chart, a grid or
+        a background. Plugins add looks, captions, paper and tracking.
       </p>
       <p className="mt-1 max-w-[62ch] text-[14px] text-mute">
-        Every template, component and taste installs with <code className="font-jb text-[13px]">npx kinetograph add &lt;name&gt;</code>. Plugins install
-        from npm: <code className="font-jb text-[13px]">npm install @kinetographdev/&lt;name&gt;</code>.
+        Ask your agent for one by name, pick it in the Studio Library tab, or run <code className="font-jb text-[13px]">npx kinetograph add &lt;name&gt;</code>.
+        Plugins install from npm: <code className="font-jb text-[13px]">npm install @kinetographdev/&lt;name&gt;</code>. See{' '}
+        <a href="/docs/library/use-an-item/" className={link}>Use a library item</a>.
       </p>
 
       <section className="mt-12" aria-labelledby="plugins">
