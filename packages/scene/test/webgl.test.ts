@@ -1298,8 +1298,8 @@ describe('the recording WebGL context', () => {
       expect(gl.getActiveUniform(program, 0)!.size).toBe(2);
     });
 
-    it('leaves out a length with no single value, for the renderer to refuse', () => {
-      for (const defines of ['#define N 2\n#define N 3\n', '#define N 2\n#undef N\n', '']) {
+    it('leaves out a length that is not defined where it is read, for the renderer to refuse', () => {
+      for (const defines of ['#ifdef FAST\n#define N 2\n#endif\n', '#define N 2\n#undef N\n', '']) {
         const { gl, program } = linked(`#version 300 es\nin vec2 p;\n${defines}uniform float morphTargetInfluences[N];\n${BODY}`);
         expect(gl.getActiveUniform(program, 0)).toBeNull();
       }
@@ -1634,6 +1634,39 @@ describe('the recording WebGL context', () => {
       const cube = gl.createTexture();
       gl.bindTexture(GL.TEXTURE_CUBE_MAP, cube);
       expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL2.SRGB8_ALPHA8, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(/^unsupported:.*sRGB/);
+    });
+  });
+
+  describe('declarations the conditionals leave out', () => {
+    function link(vertex: string, version: 1 | 2 = 2) {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version });
+      const program = gl.createProgram();
+      for (const [type, source] of [[GL.VERTEX_SHADER, vertex], [GL.FRAGMENT_SHADER, version === 2 ? '#version 300 es\nvoid main() {}' : 'void main() {}']] as const) {
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source);
+        gl.attachShader(program, shader);
+      }
+      gl.linkProgram(program);
+      return { gl, program };
+    }
+
+    it('are not attributes or uniforms, as three.js sees the program', () => {
+      const { gl, program } = link(
+        '#version 300 es\n#define attribute in\nattribute vec3 position;\nattribute vec2 uv;\n#ifdef USE_TANGENT\nattribute vec4 tangent;\n#endif\n#if defined( USE_COLOR_ALPHA )\nattribute vec4 color;\n#endif\n#if 0 > 0\nuniform float never;\n#endif\nuniform float kept;\nvoid main() { gl_Position = vec4(position, kept); }',
+      );
+      expect(gl.getProgramParameter(program, GL.ACTIVE_ATTRIBUTES)).toBe(2);
+      expect(gl.getAttribLocation(program, 'tangent')).toBe(-1);
+      expect(gl.getAttribLocation(program, 'color')).toBe(-1);
+      expect(gl.getUniformLocation(program, 'never')).toBeNull();
+      expect(gl.getUniformLocation(program, 'kept')).not.toBeNull();
+    });
+
+    it('leave the live branch, and a macro defined inside one, as they are', () => {
+      const { gl, program } = link(
+        '#version 300 es\nin vec2 p;\n#define FAST 1\n#ifdef FAST\n#define N 3\nuniform float w[N];\n#else\nuniform float v;\n#endif\nvoid main() { gl_Position = vec4(p, w[0], 1.0); }',
+      );
+      expect(gl.getActiveUniform(program, 0)).toMatchObject({ name: 'w[0]', size: 3 });
+      expect(gl.getUniformLocation(program, 'v')).toBeNull();
     });
   });
 

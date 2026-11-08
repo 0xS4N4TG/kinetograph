@@ -13,6 +13,7 @@
 
 import type { CanvasSource, GlslContent, GlslDraw, GlslLayer, GlslOp, GlslOutput, GlslPatch, GlslSampler, GlslStencil, GlslStencilFace, GlslTexture, GlslUniform } from './types.js';
 import { CANVAS_SOURCE, pictureOf, type CanvasPicture } from './canvas.js';
+import { preprocess } from './glsl-cpp.js';
 
 /** The method a picture of another layer answers a texture upload with (`layerPicture`). */
 export const LAYER_SOURCE: unique symbol = Symbol.for('kinetograph.layerSource');
@@ -599,42 +600,6 @@ export class WebGLProgram extends WebGLObject {
 
 // ---- reading the source for names ----
 
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, '');
-}
-
-/**
- * The object-like macros of a shader that are a number, or another such macro (`#define MORPHTARGETS_COUNT 8`), to read
- * the length of an array written as one. Conditionals are not evaluated here (the renderer does): a macro defined with
- * two different values is left out, and the renderer refuses an array whose length it cannot read.
- */
-function numericMacros(source: string): Map<string, number> {
-  const values = new Map<string, string | null>();
-  for (const line of stripComments(source).split('\n')) {
-    const m = /^[ \t]*#[ \t]*(\w+)[ \t]*(\w*)([^\n]*)$/.exec(line);
-    if (m === null) continue;
-    const [, keyword, name = '', rest = ''] = m;
-    if (keyword === 'undef') values.delete(name);
-    else if (keyword === 'define' && name !== '' && !rest.startsWith('(')) {
-      const value = line.replace(/^[ \t]*#[ \t]*define[ \t]+\w+/, '').trim();
-      values.set(name, !values.has(name) || values.get(name) === value ? value : null);
-    }
-  }
-  const out = new Map<string, number>();
-  for (const name of values.keys()) {
-    let text = values.get(name) ?? null;
-    for (let hops = 0; hops < 8 && text !== null; hops += 1) {
-      const bare = (/^\(([^()]*)\)$/.exec(text)?.[1] ?? text).trim();
-      if (/^\d+$/.test(bare)) {
-        out.set(name, Number(bare));
-        break;
-      }
-      text = values.get(bare) ?? null;
-    }
-  }
-  return out;
-}
-
 interface StructField {
   name: string;
   type: string;
@@ -643,7 +608,7 @@ interface StructField {
 }
 
 /** The structs a shader defines, with their fields. */
-function structsOf(code: string, macros: Map<string, number>): Map<string, StructField[]> {
+function structsOf(code: string, lengthOf: (text: string) => number | null): Map<string, StructField[]> {
   const structs = new Map<string, StructField[]>();
   for (const m of code.matchAll(/\bstruct\s+(\w+)\s*\{([^}]*)\}\s*;/g)) {
     const fields: StructField[] = [];
@@ -653,7 +618,7 @@ function structsOf(code: string, macros: Map<string, number>): Map<string, Struc
       for (const declarator of f[2]!.split(',')) {
         const d = /^\s*(\w+)\s*(?:\[\s*(\w+)\s*\])?\s*$/.exec(declarator);
         if (d === null) continue;
-        const length = d[2] === undefined ? null : /^\d+$/.test(d[2]) ? Number(d[2]) : (macros.get(d[2]) ?? null);
+        const length = d[2] === undefined ? null : lengthOf(d[2]);
         fields.push({ name: d[1]!, type: f[1]!, length });
       }
     }
@@ -675,9 +640,9 @@ function uniformLeaves(name: string, type: string, length: number | null, struct
 
 /** The top-level `uniform`, `attribute` and `in` declarations of a shader. */
 function declarations(source: string, keywords: string[]): Declaration[] {
-  const macros = numericMacros(source);
-  const code = stripComments(source).replace(/^[ \t]*#.*$/gm, '');
-  const structs = structsOf(code, macros);
+  // What the conditionals leave out is not declared, as the renderer reads it.
+  const { code, length: lengthOf } = preprocess(source);
+  const structs = structsOf(code, lengthOf);
   const statements: string[] = [];
   let depth = 0;
   let current = '';
@@ -706,9 +671,9 @@ function declarations(source: string, keywords: string[]): Declaration[] {
     for (const declarator of m[4]!.split(',')) {
       const d = /^\s*(\w+)\s*(?:\[\s*(\w+)\s*\])?\s*$/.exec(declarator);
       if (d === null) continue;
-      const length = d[2] === undefined ? 1 : /^\d+$/.test(d[2]) ? Number(d[2]) : macros.get(d[2]);
-      // A length that is not a number or a macro defined as one is left to the renderer, which refuses the program.
-      if (length === undefined) continue;
+      const length = d[2] === undefined ? 1 : lengthOf(d[2]);
+      // A length that is not an integer expression of numbers and macros is left to the renderer, which refuses the program.
+      if (length === null) continue;
       if (structs.has(m[3]!)) {
         out.push(...uniformLeaves(d[1]!, m[3]!, d[2] === undefined ? null : length, structs));
         continue;
