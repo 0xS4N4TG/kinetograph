@@ -1918,3 +1918,66 @@ fn a_cube_map_in_a_unit_read_as_a_2d_texture_is_an_error() {
     let error = error.to_string();
     assert!(error.contains("cube map"), "{error}");
 }
+
+// ---- a clear with the scissor test on ----
+
+/// The fragment shader of a scissored clear of the depth or stencil alone: no colour output.
+const NO_OUTPUT_ES3: &str =
+    "#version 300 es\nprecision highp float;\nuniform vec4 u_color;\n\nvoid main() {  }\n";
+
+/// What the recording makes of a clear with the scissor test on: the quad over the box (the viewport), writing the
+/// clear values (the colour, the depth through an ALWAYS test, the stencil by REPLACE).
+fn scissored_clear(extra: &str) -> String {
+    draw_in(
+        "e",
+        [4, 2, 8, 6],
+        &format!(r#""scissor": [4, 2, 8, 6], "colorMask": [false, false, false, false], {extra}"#),
+    )
+}
+
+/// The same with the colour written.
+fn scissored_colour_clear(color: [f64; 4]) -> String {
+    draw_in("f", [4, 2, 8, 6], &format!(r#""scissor": [4, 2, 8, 6], {}"#, z_fill(0.0, color)))
+}
+
+#[test]
+fn a_scissored_clear_changes_the_box_alone() {
+    for antialias in ["", r#", "antialias": true"#] {
+        let all = ops(&[draw_in("f", [0, 0, 16, 16], &z_fill(0.0, RED)), scissored_colour_clear(BLUE)]);
+        let frame = render(&layer_es3(&[("f", FILL_ES3)], antialias, &all));
+        // GL's rows count from the bottom: the box is rows 8 to 13 from the top, columns 4 to 11.
+        assert_eq!(px(&frame, 8, 10), [0, 0, 255, 255], "inside {antialias}");
+        assert_eq!(px(&frame, 4, 8), [0, 0, 255, 255], "corner {antialias}");
+        assert_eq!(px(&frame, 3, 10), [255, 0, 0, 255], "left {antialias}");
+        assert_eq!(px(&frame, 12, 10), [255, 0, 0, 255], "right {antialias}");
+        assert_eq!(px(&frame, 8, 7), [255, 0, 0, 255], "above {antialias}");
+        assert_eq!(px(&frame, 8, 14), [255, 0, 0, 255], "below {antialias}");
+    }
+}
+
+#[test]
+fn a_scissored_depth_clear_changes_the_depth_inside_the_box_alone() {
+    let always = r#""depth": {"func": "ALWAYS", "mask": true, "near": 0, "far": 1}"#;
+    let all = ops(&[
+        r#"{"op": "clear", "color": [0, 0, 0, 1], "depth": 1}"#.to_string(),
+        scissored_clear(&format!("{}, {always}", uniforms(&[("u_z", "f", &[-0.5]), ("u_color", "f", &[0.0; 4])]))),
+        // Red at window depth 0.5, tested LESS: the box now holds 0.25, so it stops there.
+        draw_in("f", [0, 0, 16, 16], &format!("{}, {}", z_fill(0.0, RED), depth("LESS"))),
+    ]);
+    let frame = render(&layer_es3(&[("f", FILL_ES3), ("e", NO_OUTPUT_ES3)], "", &all));
+    assert_eq!(px(&frame, 8, 10), [0, 0, 0, 255]);
+    assert_eq!(px(&frame, 2, 10), [255, 0, 0, 255]);
+}
+
+#[test]
+fn a_scissored_stencil_clear_changes_the_stencil_inside_the_box_alone() {
+    let replace = stencil("ALWAYS", 5, "REPLACE");
+    let all = ops(&[
+        r#"{"op": "clear", "color": [0, 0, 0, 1], "stencil": 0}"#.to_string(),
+        scissored_clear(&format!("{}, {replace}", uniforms(&[("u_z", "f", &[0.0]), ("u_color", "f", &[0.0; 4])]))),
+        draw_in("f", [0, 0, 16, 16], &format!("{}, {}", z_fill(0.0, GREEN), stencil("EQUAL", 5, "KEEP"))),
+    ]);
+    let frame = render(&layer_es3(&[("f", FILL_ES3), ("e", NO_OUTPUT_ES3)], r#", "stencil": true"#, &all));
+    assert_eq!(px(&frame, 8, 10), [0, 255, 0, 255]);
+    assert_eq!(px(&frame, 2, 10), [0, 0, 0, 255]);
+}

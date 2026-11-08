@@ -226,6 +226,13 @@ fn glsl_cube_map_matches_golden() {
 }
 
 #[test]
+fn glsl_scissor_clear_matches_golden() {
+    // A gradient with three scissored clears over it: only the boxes change, and the last box is cut by the buffer's edge.
+    let frame = render_still(scene("tests/scenes/glsl-scissor-clear.json"), 0).unwrap();
+    check("glsl-scissor-clear", &frame);
+}
+
+#[test]
 fn scene3d_animation_matches_golden() {
     // Frame 15 of 30, half a second into every clip: a cube turning, moving
     // and growing (with a second cube on a spline), a quad whose top corners

@@ -1026,7 +1026,7 @@ export class WebGLContext {
       case GL.VIEWPORT:
         return new Int32Array(this.viewportNow());
       case GL.SCISSOR_BOX:
-        return new Int32Array(this.scissorBox ?? this.viewportNow());
+        return new Int32Array(this.scissorNow());
       case GL.COLOR_CLEAR_VALUE:
         return new Float32Array(this.clearColorValue);
       case GL.COLOR_WRITEMASK:
@@ -1192,7 +1192,7 @@ export class WebGLContext {
     const geometry = {
       from: [fx0!, fy0!, fx1!, fy1!] as [number, number, number, number],
       to: [tx0!, ty0!, tx1!, ty1!] as [number, number, number, number],
-      ...(this.caps.scissor ? { scissor: this.scissorBox ?? this.viewportNow() } : {}),
+      ...(this.caps.scissor ? { scissor: this.scissorNow() } : {}),
     };
 
     // Colour: the read buffer (nothing when it is NONE or empty) into each draw buffer.
@@ -1402,15 +1402,16 @@ export class WebGLContext {
     const stencilMask = this.stencilFront.writeMask & STENCIL_MAX;
     const stencil = (mask & GL.STENCIL_BUFFER_BIT) !== 0 && this.hasStencil() && stencilMask !== 0;
     if (!color && !depth && !stencil) return;
-    if (this.caps.scissor) throw new WebGLUnsupportedError('clear with the scissor test on; draw a quad over the box instead');
     if (color && this.colorMaskState.some((on) => !on)) throw new WebGLUnsupportedError('clear with a colour mask');
     if (stencil && stencilMask !== STENCIL_MAX) throw new WebGLUnsupportedError('clearing the stencil buffer through a stencilMask other than 0 or 0xff');
     if (this.framebufferIncomplete()) return;
-    this.pushClear({
+    const values = {
       ...(color ? { color: [...this.clearColorValue] as [number, number, number, number] } : {}),
       ...(depth ? { depth: this.clearDepthValue } : {}),
       ...(stencil ? { stencil: this.clearStencilValue & STENCIL_MAX } : {}),
-    }, color);
+    };
+    if (this.caps.scissor) this.pushScissoredClear(values);
+    else this.pushClear(values, color);
   }
 
   /**
@@ -1435,13 +1436,18 @@ export class WebGLContext {
     if (this.version !== 2) return this.fail(GL.INVALID_OPERATION);
     if (buffer === GL2.COLOR) {
       if (!(drawbuffer >= 0 && drawbuffer < MAX_DRAW_BUFFERS) || values.length < 4) return this.fail(GL.INVALID_VALUE);
-      if (this.caps.scissor) throw new WebGLUnsupportedError('clearBuffer with the scissor test on; draw a quad over the box instead');
       if (this.colorMaskState.some((on) => !on)) throw new WebGLUnsupportedError('clear with a colour mask');
       if (this.framebufferIncomplete()) return;
       const framebuffer = this.drawFramebuffer;
       const output = framebuffer === null ? (drawbuffer === 0 ? 'canvas' : null) : (this.outputsOf(framebuffer)[drawbuffer] ?? null);
       if (output === null) return;
       const color = values.slice(0, 4).map((v) => Math.min(1, Math.max(0, v))) as [number, number, number, number];
+      if (this.caps.scissor) {
+        // The attachment alone, at its output's place among the draw buffers.
+        const outputs = framebuffer === null ? undefined : Array.from({ length: drawbuffer + 1 }, (_, i) => (i === drawbuffer ? (output as WebGLAttachment) : null));
+        this.pushScissoredClear({ color }, outputs);
+        return;
+      }
       this.pushClear({ color }, true, output === 'canvas' ? undefined : [output]);
       return;
     }
@@ -1451,10 +1457,79 @@ export class WebGLContext {
     const stencilMask = this.stencilFront.writeMask & STENCIL_MAX;
     const stencil = buffer === GL2.STENCIL && this.hasStencil() && stencilMask !== 0;
     if (!depth && !stencil) return;
-    if (this.caps.scissor) throw new WebGLUnsupportedError('clearBuffer with the scissor test on; draw a quad over the box instead');
     if (stencil && stencilMask !== STENCIL_MAX) throw new WebGLUnsupportedError('clearing the stencil buffer through a stencilMask other than 0 or 0xff');
     if (this.framebufferIncomplete()) return;
-    this.pushClear(depth ? { depth: Math.min(1, Math.max(0, values[0]!)) } : { stencil: Math.trunc(values[0]!) & STENCIL_MAX }, false, []);
+    const value = depth ? { depth: Math.min(1, Math.max(0, values[0]!)) } : { stencil: Math.trunc(values[0]!) & STENCIL_MAX };
+    if (this.caps.scissor) this.pushScissoredClear(value);
+    else this.pushClear(value, false, []);
+  }
+
+  /** The scissor box: what `scissor` set, else the drawing buffer (not the viewport). */
+  private scissorNow(): [number, number, number, number] {
+    return this.scissorBox ?? [0, 0, this.drawingBufferWidth, this.drawingBufferHeight];
+  }
+
+  /** The size of what the bound draw framebuffer draws in (the drawing buffer for the canvas). */
+  private drawSize(): [number, number] {
+    const framebuffer = this.drawFramebuffer;
+    if (framebuffer === null) return [this.drawingBufferWidth, this.drawingBufferHeight];
+    const first = [...this.outputsOf(framebuffer), WebGLContext.depthStencilOf(framebuffer)].find((a): a is WebGLAttachment => a !== null);
+    const image = this.imageOf(first!);
+    return [image.width, image.height];
+  }
+
+  /**
+   * A clear with the scissor test on: the box alone is cleared, and the rest of the buffers keep what they hold. A
+   * render pass can only clear all of an attachment, so it is recorded as the draw of a quad over the box (clipped to
+   * the buffer) that writes the clear values: the colour as the fragment colour, the depth as the quad's depth under
+   * an ALWAYS test, the stencil by REPLACE under an ALWAYS test. Blending, culling and the other tests do not apply
+   * to a clear, and the draw has none.
+   */
+  private pushScissoredClear(values: { color?: [number, number, number, number]; depth?: number; stencil?: number }, outputs?: (WebGLAttachment | null)[]): void {
+    this.begin();
+    const [bufferWidth, bufferHeight] = this.drawSize();
+    const [sx, sy, sw, sh] = this.scissorNow();
+    const x0 = Math.max(0, sx);
+    const y0 = Math.max(0, sy);
+    const x1 = Math.min(bufferWidth, sx + sw);
+    const y1 = Math.min(bufferHeight, sy + sh);
+    if (x1 <= x0 || y1 <= y0) return;
+    const framebuffer = this.drawFramebuffer;
+    const color = values.color !== undefined;
+    // One fragment output for each colour attachment that is cleared.
+    const list = outputs ?? (framebuffer === null ? [null] : this.outputsOf(framebuffer));
+    const slots = color ? (framebuffer === null && outputs === undefined ? [0] : list.flatMap((a, i) => (a === null ? [] : [i]))) : [];
+    const where = this.dest(values.depth !== undefined || values.stencil !== undefined, color ? outputs : []);
+    if (where === null) return;
+    const vertex = '#version 300 es\nin vec2 a_position;\nuniform float u_depth;\nvoid main() { gl_Position = vec4(a_position, u_depth, 1.0); }\n';
+    const fragment = `#version 300 es\nprecision highp float;\nuniform vec4 u_color;\n${slots.map((i) => `layout(location = ${i}) out vec4 o${i};`).join('\n')}\nvoid main() { ${slots.map((i) => `o${i} = u_color;`).join(' ')} }\n`;
+    const attributes = { a_position: 0 };
+    const programId = `p${hashOf(JSON.stringify([vertex, fragment, attributes]))}`;
+    if (!this.programs.has(programId)) this.programs.set(programId, { vertex, fragment, attributes });
+    const quad = toBase64(new Uint8Array(new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]).buffer));
+    const buffer = `b${hashOf(quad)}`;
+    if (!this.buffers.has(buffer)) this.buffers.set(buffer, quad);
+    const box: [number, number, number, number] = [x0, y0, x1 - x0, y1 - y0];
+    const face: GlslStencilFace = { func: 'ALWAYS', fail: 'REPLACE', zfail: 'REPLACE', zpass: 'REPLACE' };
+    const draw: GlslDraw = {
+      program: programId,
+      mode: 'triangleStrip',
+      first: 0,
+      count: 4,
+      attributes: { a_position: { buffer, size: 2, type: 'f32' } },
+      uniforms: {
+        u_color: [{ kind: 'f', value: values.color ?? [0, 0, 0, 0] }],
+        u_depth: [{ kind: 'f', value: [(values.depth ?? 0.5) * 2 - 1] }],
+      },
+      units: {},
+      // The quad fills the viewport, which is the box.
+      viewport: box,
+      scissor: box,
+      colorMask: [color, color, color, color],
+      ...(values.depth !== undefined ? { depth: { func: 'ALWAYS', mask: true, near: 0, far: 1 } } : {}),
+      ...(values.stencil !== undefined ? { stencil: { ref: values.stencil, valueMask: STENCIL_MAX, writeMask: STENCIL_MAX, front: face, back: face } } : {}),
+    };
+    this.ops.push({ op: 'draw', ...draw, ...where });
   }
 
   /**
@@ -2835,7 +2910,7 @@ export class WebGLContext {
     }
 
     // State.
-    if (this.caps.scissor) draw.scissor = this.scissorBox ?? this.viewportNow();
+    if (this.caps.scissor) draw.scissor = this.scissorNow();
     if (this.caps.blend) {
       const b = this.blend;
       draw.blend = {

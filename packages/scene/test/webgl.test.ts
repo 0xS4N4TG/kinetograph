@@ -1135,4 +1135,109 @@ describe('the recording WebGL context', () => {
       expect(() => gl.texSubImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
     });
   });
+
+  describe('a clear with the scissor test on', () => {
+    function drawOf(gl: WebGLContext, index = 0) {
+      const op = gl.content().ops[index]!;
+      if (op.op !== 'draw') throw new Error('not a draw');
+      return op;
+    }
+
+    it('clears the box alone: a quad over it that writes the clear colour', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }) });
+      gl.enable(GL.SCISSOR_TEST);
+      gl.scissor(2, 1, 3, 2);
+      gl.clearColor(1, 0.5, 0, 1);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const content = gl.content();
+      expect(content.ops).toHaveLength(1);
+      const draw = drawOf(gl);
+      expect(draw.viewport).toEqual([2, 1, 3, 2]);
+      expect(draw.scissor).toEqual([2, 1, 3, 2]);
+      expect(draw.uniforms.u_color).toEqual([{ kind: 'f', value: [1, 0.5, 0, 1] }]);
+      expect(draw.colorMask).toEqual([true, true, true, true]);
+      expect(draw.depth).toBeUndefined();
+      expect(draw.stencil).toBeUndefined();
+      expect(content.programs[draw.program]!.fragment).toContain('o0 = u_color');
+    });
+
+    it('keeps what was drawn before it, where a plain clear would drop it', () => {
+      const { gl } = setup();
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      gl.enable(GL.SCISSOR_TEST);
+      gl.scissor(0, 0, 2, 2);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      expect(gl.content().ops.map((o) => o.op)).toEqual(['draw', 'draw']);
+      gl.disable(GL.SCISSOR_TEST);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      expect(gl.content().ops.map((o) => o.op)).toEqual(['clear']);
+    });
+
+    it('clips the box to the buffer, and an empty box clears nothing', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }) });
+      gl.enable(GL.SCISSOR_TEST);
+      gl.scissor(-2, 3, 20, 20);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      expect(drawOf(gl).viewport).toEqual([0, 3, 8, 1]);
+      gl.scissor(9, 0, 4, 4);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      expect(gl.content().ops).toHaveLength(1);
+    });
+
+    it('starts from the whole drawing buffer when scissor() was never called, whatever the viewport', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }) });
+      gl.viewport(0, 0, 2, 2);
+      gl.enable(GL.SCISSOR_TEST);
+      expect(Array.from(gl.getParameter(GL.SCISSOR_BOX) as Int32Array)).toEqual([0, 0, 8, 4]);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      expect(drawOf(gl).scissor).toEqual([0, 0, 8, 4]);
+    });
+
+    it('writes the depth through an ALWAYS test and the stencil by REPLACE', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), attributes: { stencil: true } });
+      gl.enable(GL.SCISSOR_TEST);
+      gl.scissor(1, 1, 2, 2);
+      gl.clearDepth(0.25);
+      gl.clearStencil(7);
+      gl.clear(GL.DEPTH_BUFFER_BIT | GL.STENCIL_BUFFER_BIT);
+      const draw = drawOf(gl);
+      expect(draw.colorMask).toEqual([false, false, false, false]);
+      expect(draw.depth).toEqual({ func: 'ALWAYS', mask: true, near: 0, far: 1 });
+      expect(draw.uniforms.u_depth).toEqual([{ kind: 'f', value: [-0.5] }]);
+      expect(draw.stencil).toMatchObject({ ref: 7, writeMask: 255, front: { func: 'ALWAYS', zpass: 'REPLACE' } });
+    });
+
+    it('clears a framebuffer texture of its own size, and a single draw buffer of a WebGL 2 context', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const framebuffer = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, framebuffer);
+      const textures = [gl.createTexture(), gl.createTexture()];
+      textures.forEach((t, i) => {
+        gl.bindTexture(GL.TEXTURE_2D, t);
+        gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 4, 4, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+        gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0 + i, GL.TEXTURE_2D, t, 0);
+      });
+      gl.drawBuffers([GL.COLOR_ATTACHMENT0, GL.COLOR_ATTACHMENT0 + 1]);
+      gl.enable(GL.SCISSOR_TEST);
+      gl.scissor(0, 0, 6, 2);
+      gl.clearBufferfv(GL2.COLOR, 1, [0, 1, 0, 1]);
+      const one = drawOf(gl);
+      expect(one.viewport).toEqual([0, 0, 4, 2]);
+      expect(one.outputs?.[0]).toBeNull();
+      expect(one.outputs?.[1]).not.toBeNull();
+      expect(gl.content().programs[one.program]!.fragment).toContain('layout(location = 1) out vec4 o1;');
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      const both = drawOf(gl, 1);
+      expect(both.outputs).toHaveLength(2);
+      expect(gl.content().programs[both.program]!.fragment).toContain('o0 = u_color; o1 = u_color;');
+    });
+
+    it('still refuses a clear through a colour mask', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }) });
+      gl.enable(GL.SCISSOR_TEST);
+      gl.colorMask(true, false, true, true);
+      expect(() => gl.clear(GL.COLOR_BUFFER_BIT)).toThrow(/^unsupported:.*colour mask/);
+    });
+  });
 });
