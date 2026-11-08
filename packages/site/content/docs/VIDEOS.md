@@ -79,3 +79,14 @@ poster, a frame from the films above. The routes with no poster (pin text, data,
 | `routes-sound.mp4` | Voice, music and captions | `films-wish-reel` cut |
 | `routes-paper.mp4` | Paper-cut | `films-papercut-demo`, 16:9 crop |
 | `routes-glitch.mp4` | Glitch effects | `films-launch` GLSL shot |
+
+## Lesson videos (Lessons)
+
+Each lesson's Watch step plays `lesson-<slug>.mp4`: about 2 minutes, 1280x720, with sound and captions. Until it is uploaded the lesson shows the
+placeholder. The takeaways and glossary under each video are in `src/lib/lessons.ts`; the video should say the same four things, in the same order.
+
+| Upload as | Lesson | Script (what it says and shows) |
+|---|---|---|
+| `lesson-animate-your-logo.mp4` | A quick win: animate your logo | 0:00 Show the finished 4 second sting. 0:15 The request: length, logo file in `public/images`, the word in quotes. 0:45 Say the move in plain words (ease out in, slight overshoot to 1.08, settle), then the same move with numbers. 1:15 The exit with an ease in; why a linear ease looks mechanical. 1:40 Fix one thing by giving a time ("leaves at 3.4 s") and change nothing else. 1:55 The four takeaways on screen. |
+| `lesson-words-on-your-footage.mp4` | Put words on your own footage | 0:00 A clip, then the same clip with captions. 0:20 Where the files go (`public/video`, `public/captions`) and naming the part of the clip. 0:45 Kinetograph reads timings and does not transcribe: bring a subtitle file or word timings. 1:10 Three to five words at a time, lower third, the current word lit. 1:35 One style, then `lint` catching text past the edge. 1:55 The four takeaways on screen. |
+| `lesson-paper-cut-or-glitch.mp4` | Give a clip a paper-cut or glitch look | 0:00 A paper cut-out and a datamosh, back to back. 0:20 Name the look as an effect: stock and edge, or a frame count. 0:45 A cut-out needs its background removed; unfold it from a crumpled packet. 1:10 A datamosh needs H.264 or MPEG-4 clips; show the smear. 1:35 A seed brings the same random look back: keep it, change one slot. 1:55 The four takeaways on screen. |
