@@ -419,8 +419,11 @@ fn text_whose_families_are_all_unloaded_is_drawn_and_reported_when_another_font_
         vec![("Poppins".to_string(), unloaded.clone())]
     );
 
-    // No font-family at all: the default serif is a bundled font, so nothing is missing.
-    assert!(family_notes(&one("")).is_empty());
+    // No font-family at all: set in the project's first font, as before, not in the bundled serif.
+    let none = one("");
+    assert!(family_notes(&none).is_empty(), "{:?}", none.unsupported);
+    let drawn = none.layers.iter().map(|l| l.to_string()).collect::<String>();
+    assert!(drawn.contains("DMSans") && !drawn.contains("builtin:"), "{drawn}");
     // A generic or system name first is not reported either, and is set in a bundled font.
     for family in ["system-ui", "Georgia, serif", "ui-monospace, SFMono-Regular, Menlo, monospace"] {
         let out = one(&format!("font-family: {family}"));

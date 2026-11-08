@@ -160,6 +160,16 @@ pub fn font_context(
     fonts: &BTreeMap<String, String>,
     base_dir: &std::path::Path,
 ) -> Result<FontContext, String> {
+    font_context_and_default(fonts, base_dir).map(|(ctx, _)| ctx)
+}
+
+/// [`font_context`], and the family text that names no `font-family` is set in: the project's first proportional font
+/// (the initial `font-family` is `serif`, which is the bundled serif when a page asks for it, not for text that says
+/// nothing). `None` when the project registered no font.
+pub fn font_context_and_default(
+    fonts: &BTreeMap<String, String>,
+    base_dir: &std::path::Path,
+) -> Result<(FontContext, Option<String>), String> {
     let mut ctx = FontContext {
         source_cache: SourceCache::new_shared(),
         collection: Collection::new(CollectionOptions {
@@ -236,7 +246,11 @@ pub fn font_context(
     // After the project's fonts and the generics built from them: a character
     // none of them has falls back to the bundled symbol fonts.
     kinetograph_core::fallback_fonts::register(&mut ctx.collection, &project_first);
-    Ok(ctx)
+    let default = project_first
+        .first()
+        .and_then(|id| ctx.collection.family_name(*id))
+        .map(str::to_string);
+    Ok((ctx, default))
 }
 
 /// Whether the font says all its glyphs are as wide as each other (the `post`
