@@ -26,7 +26,7 @@ Studio starts a server on `http://127.0.0.1:3000` and opens a browser. An entry 
 
 ## The window
 
-Four [panels](/docs/terminology/panels/) float over the window:
+Four panels float over the window:
 
 - **Top bar:** the project file and a composition switcher on the left, the command menu in the middle, and the theme, the inspector toggle and the Export button on the right. While renders run, a progress pill opens the render queue. A badge says `offline` when the window lost the server.
 - **Agent** on the left: the chat with your coding agent.
@@ -98,7 +98,7 @@ The Props tab draws a form from the composition's zod 4 `schema`:
 
 ### Plugin cards
 
-A field that a [plugin](/docs/plugins/) draws its own panel for shows as a card in place of the generated form. Clicking a card selects the layers its plugin made, and selecting such a layer opens its card. The card's menu copies the path of the plugin's `SKILL.md` and asks the agent about the plugin.
+A field that a [plugin](/docs/plugins/) draws its own [panel](/docs/studio/panels/#plugin-panels) for shows as a card in place of the generated form. Clicking a card selects the layers its plugin made, and selecting such a layer opens its card. The card's menu copies the path of the plugin's `SKILL.md` and asks the agent about the plugin.
 
 The **Plugins** list at the bottom of the tab has two parts. **In this project** is every plugin the project depends on. **Available** is the plugins on the Kinetograph site that the project does not have. A published one has **Ask the agent to add it**, and an unpublished one shows **Coming soon**. `--offline` stops Studio asking the site.
 
@@ -118,4 +118,4 @@ The export uses the props you edited. It joins the Renders queue, and the top ba
 
 ## The agent
 
-The chat on the left talks to your coding agent. Each message carries the selection: the composition, and the frame or span. See [Studio's agent chat](/docs/agents/studio-agent/).
+The chat on the left talks to your coding agent. Each message carries the selection: the composition, and the frame or span. See [Studio's agent chat](/docs/agents/studio-agent/). When the agent needs a decision from you, it opens a box in the window: see [Panels](/docs/studio/panels/).
