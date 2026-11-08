@@ -1,0 +1,34 @@
+[package]
+name = "kinetograph-matte"
+description = "Video matting: a person or any subject cut out of a video with MODNet or BEN2 through ONNX Runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+kinetograph-core = { path = "../core" }
+kinetograph-cli = { path = "../cli" }
+ffmpeg = { package = "ffmpeg-next", version = "9.0.0" }
+# ONNX Runtime's prebuilt libraries are fetched by the build script (download-binaries). rustls, not the default
+# native-tls, so a Linux build needs no OpenSSL headers; the other default features (ndarray, tracing, copy-dylibs) are
+# not used. api-17, not the default api-31: from api-22 on every session picks its execution provider by ONNX Runtime's
+# automatic policy (it chose CoreML on a Mac, which fails on BEN2 and gives MODNet a wrong matte), and this crate wants
+# only the ones it names.
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "api-17", "download-binaries", "tls-rustls"] }
+
+# The prebuilt ONNX Runtime for a Mac is built with CoreML (pyke ships no other), and it is that build `coreml` selects.
+# CoreML is not used at run time (`infer.rs` says why). Windows gets DirectML, built in to its prebuilt library.
+[target.'cfg(target_os = "macos")'.dependencies]
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["coreml"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["directml"] }
+
+[features]
+# Links the LGPL-only static ffmpeg, as `kinetograph-node` does (CI tests this crate against it).
+ffmpeg-static = ["ffmpeg/static"]
+# GPUs, one at a time (ONNX Runtime's prebuilt libraries come with one or the other): WebGPU (Vulkan, Metal, Direct3D 12)
+# for any GPU, or CUDA for NVIDIA's. Without either, a Mac uses CoreML, Windows DirectML and Linux the CPU.
+webgpu = ["ort/webgpu"]
+cuda = ["ort/cuda"]
