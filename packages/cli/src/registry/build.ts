@@ -18,7 +18,7 @@ import {
 import { sha256 } from './source.js';
 
 const SCHEMA_URL = 'https://kinetograph.dev/r/schema.json';
-const TEXT_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json', '.md', '.mdx', '.css', '.txt', '.svg', '.html', '.glsl', '.frag', '.vert']);
+const TEXT_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json', '.md', '.mdx', '.css', '.txt', '.svg', '.html', '.glsl', '.frag', '.vert', '.py', '.sh']);
 
 /** What an author writes in `<item>/item.json`: the item without `files`, which are the other files in the folder. */
 const authorSchema = registryItemSchema.omit({ files: true, $schema: true });
@@ -123,6 +123,8 @@ function checkShape(name: string, type: RegistryItem['type'], files: RegistryFil
     const entry = text('index.tsx');
     if (entry === undefined || !entry.includes('registerRoot')) fail(name, 'a template needs an index.tsx that calls registerRoot');
     if (!files.some((f) => f.path.startsWith('scenes/'))) fail(name, 'a template keeps its scenes in scenes/');
+  } else if (type === 'skill') {
+    if (text('SKILL.md') === undefined) fail(name, 'a skill needs a SKILL.md');
   } else if (text('TASTE.md') === undefined) {
     fail(name, 'a taste needs a TASTE.md');
   }
