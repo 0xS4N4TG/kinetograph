@@ -159,7 +159,7 @@ jobs:
 
       # The matting crate (crates/matte) links ONNX Runtime, whose prebuilt libraries the `ort` build script downloads (pyke's:
       # CoreML on macOS, DirectML on Windows, CPU on Linux), so this also checks that they link on each platform. Its tests
-      # cover the pre- and post-processing and run no model.
+      # cover the pre- and post-processing and run no model (the BEN2 step after them runs one).
       #
       # Blender's tracker (libmv, Ceres and Eigen, crates/libmv-sys) is C++ that the cc crate builds into the addon: GCC
       # on Linux, MSVC on Windows, clang on macOS. The tests track synthetic pictures, and real footage against the
@@ -177,6 +177,29 @@ jobs:
           FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
         run: cargo test --release --target ${{ matrix.target }} -p libmv-sys -p kinetograph-track -p kinetograph-matte --features kinetograph-track/ffmpeg-static,kinetograph-matte/ffmpeg-static -- --nocapture
+
+      # One real model run on each platform: BEN2 (the revision and SHA-256 are the ones in packages/video-matting/src/registry.ts)
+      # on the Fred Ott frame in the repository. It runs on the CPU here (ONNX Runtime's, or DirectML on Windows). Not a
+      # download users get from CI: the weights are fetched for this test only, and are not cached or kept.
+      - name: Test BEN2 on a real frame (macOS, Linux)
+        if: runner.os != 'Windows'
+        env:
+          PKG_CONFIG_PATH: ${{ runner.temp }}/ffmpeg/lib/pkgconfig
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/ben2.onnx" https://huggingface.co/onnx-community/BEN2-ONNX/resolve/c552aa82688edce09f0ac9d2e31ad53d9d629010/onnx/model_fp16.onnx
+          echo "dfdc25f421f32a0d1268e0f2ff2153d340e8f1d52d3dd16f5dc33c1ce85cedf1  $RUNNER_TEMP/ben2.onnx" | (sha256sum -c - || shasum -a 256 -c -)
+          KINETOGRAPH_BEN2="$RUNNER_TEMP/ben2.onnx" cargo test --release --target ${{ matrix.target }} -p kinetograph-matte --features kinetograph-matte/ffmpeg-static --test person ben2_holds_the_man -- --nocapture
+
+      - name: Test BEN2 on a real frame (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/ben2.onnx" https://huggingface.co/onnx-community/BEN2-ONNX/resolve/c552aa82688edce09f0ac9d2e31ad53d9d629010/onnx/model_fp16.onnx
+          echo "dfdc25f421f32a0d1268e0f2ff2153d340e8f1d52d3dd16f5dc33c1ce85cedf1  $RUNNER_TEMP/ben2.onnx" | sha256sum -c -
+          KINETOGRAPH_BEN2="$(cygpath -w "$RUNNER_TEMP/ben2.onnx")" cargo test --release --target ${{ matrix.target }} -p kinetograph-matte --features kinetograph-matte/ffmpeg-static --test person ben2_holds_the_man -- --nocapture
 
       - name: Libraries the addon links
         shell: bash
