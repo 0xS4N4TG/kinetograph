@@ -28,6 +28,7 @@ use serde::Deserialize;
 
 use crate::error::{Error, Result};
 use crate::glsl_cpp::Cpp;
+use crate::glsl_samplers::{finish as finish_samplers, lower_sampler_parameters};
 
 // ---- the recording ----
 
@@ -710,17 +711,17 @@ fn is_builtin_type(ty: &str) -> bool {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Kind {
+pub(crate) enum Kind {
     Ident,
     Number,
     Punct,
 }
 
 #[derive(Clone, Copy, Debug)]
-struct Tok {
-    kind: Kind,
-    start: usize,
-    end: usize,
+pub(crate) struct Tok {
+    pub(crate) kind: Kind,
+    pub(crate) start: usize,
+    pub(crate) end: usize,
 }
 
 /// `src` with its comments replaced by spaces (newlines kept, so lines hold).
@@ -752,7 +753,7 @@ fn strip_comments(src: &str) -> String {
     out
 }
 
-fn tokenize(src: &str) -> Vec<Tok> {
+pub(crate) fn tokenize(src: &str) -> Vec<Tok> {
     let b = src.as_bytes();
     let mut toks = Vec::new();
     let mut i = 0;
@@ -950,7 +951,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         points,
         slots,
     } = input;
-    let src = drop_const_before_in(&strip_comments(src));
+    let src = lower_sampler_parameters(&blank_qualifiers(&strip_comments(src)));
     let fragment = stage == ShaderStage::Fragment;
 
     // Directive lines are set apart: removed, or rewritten as code. Code
@@ -1075,6 +1076,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
     for (_, text) in &r.structs {
         prelude.push_str(text);
     }
+    prelude.push_str(&builtin_helpers(&body));
     let mut members = String::new();
     if fragment {
         members.push_str("float _k_fbh; ");
@@ -1254,6 +1256,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
     wrapper.push('}');
 
     r.source = format!("#version 450\n{prelude}\n{body}{wrapper}\n");
+    finish_samplers(&mut r.source);
     Ok(r)
 }
 
@@ -1270,10 +1273,22 @@ struct Ctx<'b> {
     defines: &'b Cpp,
 }
 
-/// `const in float x`, a parameter that is read-only, is `in float x` to naga, which does not take the two together.
-/// The word is blanked, so no line or column moves.
-fn drop_const_before_in(code: &str) -> String {
+/// What naga does not read and the engine has no use for, blanked so no line or column moves: the precision
+/// qualifiers (everything is computed at full precision; naga takes them only in some places), and the `const` of
+/// `const in float x`, a read-only parameter, which naga does not take with `in`.
+fn blank_qualifiers(code: &str) -> String {
     let word = |c: char| c.is_alphanumeric() || c == '_';
+    let mut precise = code.to_string();
+    for qualifier in ["highp", "mediump", "lowp"] {
+        for (at, _) in code.match_indices(qualifier) {
+            let alone = !code[..at].chars().next_back().is_some_and(word)
+                && !code[at + qualifier.len()..].chars().next().is_some_and(word);
+            if alone {
+                precise.replace_range(at..at + qualifier.len(), &" ".repeat(qualifier.len()));
+            }
+        }
+    }
+    let code = precise.as_str();
     let mut out = code.to_string();
     for (at, _) in code.match_indices("const") {
         let after = &code[at + 5..];
@@ -1282,6 +1297,25 @@ fn drop_const_before_in(code: &str) -> String {
         let is_word = !code[..at].chars().next_back().is_some_and(word);
         if is_word && spaced && rest.starts_with("in") && !rest[2..].chars().next().is_some_and(word) {
             out.replace_range(at..at + 5, "     ");
+        }
+    }
+    out
+}
+
+/// The built-in functions of GLSL ES 3.00 that naga's GLSL front end does not have, written in GLSL, for those `body`
+/// calls (renamed `_k_name`).
+fn builtin_helpers(body: &str) -> String {
+    let mut out = String::new();
+    if mentions(body, "_k_modf") {
+        for ty in ["float", "vec2", "vec3", "vec4"] {
+            out.push_str(&format!("{ty} _k_modf({ty} x, out {ty} i) {{ i = trunc(x); return x - i; }} "));
+        }
+    }
+    if mentions(body, "_k_matrixCompMult") {
+        for (columns, rows) in [(2, 2), (3, 3), (4, 4), (2, 3), (2, 4), (3, 2), (3, 4), (4, 2), (4, 3)] {
+            let ty = if columns == rows { format!("mat{columns}") } else { format!("mat{columns}x{rows}") };
+            let products: Vec<String> = (0..columns).map(|c| format!("a[{c}] * b[{c}]")).collect();
+            out.push_str(&format!("{ty} _k_matrixCompMult({ty} a, {ty} b) {{ return {ty}({}); }} ", products.join(", ")));
         }
     }
     out
@@ -1363,6 +1397,9 @@ fn rename(
         "texture2D" => "texture".into(),
         "texture2DProj" => "textureProj".into(),
         "textureCube" => "texture".into(),
+        // naga's GLSL front end lacks these; `builtin_helpers` defines them.
+        "modf" => "_k_modf".into(),
+        "matrixCompMult" => "_k_matrixCompMult".into(),
         "texture2DLod" | "texture2DLodEXT" | "textureCubeLod" | "textureCubeLodEXT" => {
             "textureLod".into()
         }
@@ -2062,10 +2099,20 @@ fn parse_stage(stage: ShaderStage, r: Rewritten) -> std::result::Result<Stage, S
         })?;
     naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),
-        naga::valid::Capabilities::empty(),
+        // packHalf2x16 and unpackHalf2x16 are WGSL's pack2x16float and unpack2x16float.
+        naga::valid::Capabilities::SHADER_FLOAT16_IN_FLOAT32,
     )
     .validate(&module)
-    .map_err(|e| format!("{label}: {}", e.as_inner()))?;
+    .map_err(|e| {
+        // The cause is in the chain of sources: the top message says only which function is invalid.
+        let mut message = format!("{label}: {}", e.as_inner());
+        let mut cause = std::error::Error::source(e.as_inner());
+        while let Some(c) = cause {
+            message.push_str(&format!(": {c}"));
+            cause = c.source();
+        }
+        message
+    })?;
 
     // The uniform block, by the binding the prelude gave it.
     let block_binding = u32::from(stage == ShaderStage::Fragment);
@@ -3127,6 +3174,66 @@ mod tests {
         ))
         .unwrap_err();
         assert!(e.contains("declared together with a variable"), "{e}");
+    }
+
+    const QUAD_ES1_3: &str = "#version 300 es\nin vec2 a_pos; out vec2 v_uv; void main() { v_uv = a_pos; gl_Position = vec4(a_pos, 0.0, 1.0); }";
+
+    /// A fragment shader of GLSL ES 3.00 with `body` after its declarations, translated.
+    fn es3_fragment(body: &str) -> std::result::Result<Translated, String> {
+        translate(&program(
+            QUAD_ES1_3,
+            &format!(
+                "#version 300 es\nprecision highp float; uniform sampler2D t; uniform sampler2D t2; uniform samplerCube tc; \
+                 in vec2 v_uv; out vec4 o;\n{body}"
+            ),
+        ))
+    }
+
+    #[test]
+    fn precision_qualifiers_may_stand_anywhere() {
+        for body in [
+            "float f(in highp vec3 a, lowp float b) { return a.x + b; } void main() { o = vec4(f(vec3(1.0), 2.0)); }",
+            "highp float f(const in mediump float a) { return a; } void main() { o = vec4(f(1.0)); }",
+            "void main() { highp float x = 1.0; mediump vec3 v = vec3(x); lowp int i = 1; o = vec4(v, float(i)); }",
+            "struct S { highp float a; lowp vec2 b; }; void main() { S s = S(1.0, vec2(1.0)); o = vec4(s.a, s.b, 1.0); }",
+            "void main() { for (highp int i = 0; i < 2; i++) { o = vec4(1.0); } }",
+            "precision mediump int; void main() { o = vec4(1.0); }",
+        ] {
+            es3_fragment(body).unwrap_or_else(|e| panic!("{body}: {e}"));
+        }
+        // An identifier that only contains the word is not it.
+        es3_fragment("void main() { float highp_scale = 1.0; o = vec4(highp_scale); }").unwrap();
+    }
+
+    #[test]
+    fn a_sampler_may_be_a_function_parameter() {
+        for body in [
+            "vec4 g(sampler2D s, vec2 uv) { return texture(s, uv); } void main() { o = g(t, v_uv); }",
+            "vec4 g(in highp sampler2D s, vec2 uv) { return texture(s, uv) + textureLod(s, uv, 0.0); } void main() { o = g(t2, v_uv); }",
+            // Passed on, and two of them, and a different type.
+            "vec4 g(sampler2D a, sampler2D b, vec2 uv) { return texture(a, uv) * texture(b, uv); } \
+             vec4 h(sampler2D s, vec2 uv) { return g(s, t2, uv); } void main() { o = h(t, v_uv); }",
+            "vec4 c(samplerCube s, vec3 d) { return texture(s, d); } void main() { o = c(tc, vec3(v_uv, 1.0)); }",
+            // A prototype first, and the sampler used with texelFetch and textureSize.
+            "vec4 g(sampler2D s, ivec2 p); void main() { o = g(t, ivec2(1)); } \
+             vec4 g(sampler2D s, ivec2 p) { return texelFetch(s, p, 0) * float(textureSize(s, 0).x); }",
+        ] {
+            let t = es3_fragment(body).unwrap_or_else(|e| panic!("{body}: {e}"));
+            assert!(!t.fragment.samplers.is_empty(), "{body}");
+        }
+    }
+
+    #[test]
+    fn modf_and_matrix_comp_mult_are_made_of_other_functions() {
+        for body in [
+            "void main() { float ip; float f = modf(1.5, ip); o = vec4(f, ip, 0.0, 1.0); }",
+            "void main() { vec3 ip; vec3 f = modf(vec3(1.5), ip); o = vec4(f + ip, 1.0); }",
+            "void main() { vec2 ip; o = vec4(modf(v_uv, ip), ip); }",
+            "void main() { mat3 m = matrixCompMult(mat3(2.0), mat3(3.0)); mat2 n = matrixCompMult(mat2(1.0), mat2(2.0)); o = vec4(m[0][0], n[1][1], 0.0, 1.0); }",
+            "void main() { mat4 m = matrixCompMult(mat4(2.0), mat4(3.0)); mat2x3 a = matrixCompMult(mat2x3(1.0), mat2x3(2.0)); o = vec4(m[0][0], a[0][0], 0.0, 1.0); }",
+        ] {
+            es3_fragment(body).unwrap_or_else(|e| panic!("{body}: {e}"));
+        }
     }
 
     #[test]

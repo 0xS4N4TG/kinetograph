@@ -2385,3 +2385,47 @@ fn the_fields_of_a_struct_uniform_array_are_set_one_by_one() {
     // Element 0's colour and element 1's direction: (0.5, 0.25, 1).
     near(px(&frame, 8, 8), [128, 64, 255, 255], 2);
 }
+
+#[test]
+fn half_floats_pack_and_unpack() {
+    let frag = "#version 300 es\nprecision highp float; in vec2 v_uv; out vec4 o; void main() { \
+        uint p = packHalf2x16(vec2(0.5, 0.25)); vec2 back = unpackHalf2x16(p); o = vec4(back, float(p & 0xffffu) / 15360.0, 1.0); }";
+    let frame = render(&layer_with_vertex(QUAD_VERTEX_ES1_AS_ES3, &[("p", frag)], "", "", &draw("")));
+    // 0.5 and 0.25 survive, and 0.5 is 0x3800 in the low half: 14336 / 15360.
+    near(px(&frame, 8, 8), [128, 64, 238, 255], 3);
+}
+
+// ---- sampler parameters, precision qualifiers, modf ----
+
+#[test]
+fn a_sampler_passed_to_a_function_is_sampled() {
+    // The same 2 x 1 texture through one function that takes it, and one that passes it on; the unit is 3.
+    let frag = "#version 300 es\nprecision highp float; in vec2 v_uv; uniform highp sampler2D u_tex; out vec4 o;\n\
+        vec4 pick(in highp sampler2D s, vec2 uv) { return texture(s, vec2(uv.x, 0.5)); }\n\
+        vec4 twice(sampler2D s, vec2 uv) { return pick(s, uv); }\n\
+        void main() { o = twice(u_tex, v_uv); }";
+    let frame = render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", frag)],
+        "",
+        &red_green(),
+        &draw(
+            r#""uniforms": {"u_tex": [{"kind": "i", "value": [3]}]},
+               "units": {"3": {"texture": "t", "min": "NEAREST", "mag": "NEAREST",
+                               "wrapS": "CLAMP_TO_EDGE", "wrapT": "CLAMP_TO_EDGE"}}"#,
+        ),
+    ));
+    assert_eq!(px(&frame, 3, 8), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 12, 8), [0, 255, 0, 255]);
+}
+
+#[test]
+fn modf_and_matrix_comp_mult_compute_what_glsl_says() {
+    let frag = "#version 300 es\nprecision highp float; in vec2 v_uv; out vec4 o; void main() {\n\
+        float whole; float part = modf(2.25, whole); vec2 w2; vec2 p2 = modf(vec2(-1.5, 3.75), w2);\n\
+        mat2 m = matrixCompMult(mat2(2.0, 1.0, 1.0, 2.0), mat2(0.25, 3.0, 5.0, 0.125));\n\
+        o = vec4(part + p2.y, whole / 4.0 + w2.x * -0.25, m[0][0] + m[1][1], m[0][1] + m[1][0]); }";
+    let frame = render(&layer_with_vertex(QUAD_VERTEX_ES1_AS_ES3, &[("p", frag)], "", "", &draw("")));
+    // part 0.25 + 0.75 = 1.0; 2 / 4 + (-1 * -0.25) = 0.75; 0.5 + 0.25 = 0.75; 3 + 5 = 8 (clamped to 1).
+    near(px(&frame, 8, 8), [255, 191, 191, 255], 3);
+}
