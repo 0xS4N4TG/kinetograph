@@ -459,3 +459,19 @@ figure.shiki button[data-checked] {
   --shiki-light: var(--color-fd-muted-foreground);
   --shiki-dark: var(--color-fd-muted-foreground);
 }
+  --shiki-light: var(--color-fd-muted-foreground);
+  --shiki-dark: var(--color-fd-muted-foreground);
+}
+
+/* Docs sidebar: more room at the edges and between groups. */
+#nd-sidebar {
+  padding-inline: 14px;
+  padding-top: 10px;
+  padding-bottom: 14px;
+}
+#nd-sidebar-mobile {
+  padding-inline: 10px;
+}
+#nd-sidebar [data-radix-scroll-area-viewport] > div {
+  padding-block: 6px 18px;
+}
