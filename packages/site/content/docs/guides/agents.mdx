@@ -116,7 +116,8 @@ The skills also come inside the npm package. To copy them to where Claude Code l
 
 ```bash
 mkdir -p ~/.claude/skills
-cp -R node_modules/kinetograph/skills/kinetograph* ~/.claude/skills/
+git clone --depth 1 https://github.com/0xS4N4TG/kinetograph
+cp -R kinetograph/packages/cli/skills/kinetograph* ~/.claude/skills/
 ```
 
 For one project only, copy them to `.claude/skills/` in that project instead. Other agents that read `SKILL.md` files can use the same folders.
