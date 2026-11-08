@@ -1299,8 +1299,8 @@ describe('the recording WebGL context', () => {
       expect(gl.getActiveUniform(program, 0)!.size).toBe(2);
     });
 
-    it('leaves out a length that depends on a condition, for the renderer to refuse', () => {
-      for (const defines of ['#ifdef FAST\n#define N 2\n#endif\n', '#define N 2\n#define N 3\n', '#define N 2\n#undef N\n', '']) {
+    it('leaves out a length with no single value, for the renderer to refuse', () => {
+      for (const defines of ['#define N 2\n#define N 3\n', '#define N 2\n#undef N\n', '']) {
         const { gl, program } = linked(`#version 300 es\nin vec2 p;\n${defines}uniform float morphTargetInfluences[N];\n${BODY}`);
         expect(gl.getActiveUniform(program, 0)).toBeNull();
       }

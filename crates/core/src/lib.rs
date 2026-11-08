@@ -16,6 +16,7 @@ pub mod fallback_fonts;
 pub mod filter;
 pub mod gif;
 pub mod glsl;
+mod glsl_cpp;
 pub mod grade;
 #[cfg(test)]
 mod hash;

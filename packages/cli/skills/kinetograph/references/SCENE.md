@@ -541,8 +541,9 @@ How it is drawn:
   and `in`/`out` get locations, loose uniforms become one block, a `sampler2D`, `sampler3D`, `sampler2DArray` or `samplerCube` becomes a texture and a sampler,
   `gl_FragColor` an output). `gl_FragCoord` counts up from the bottom row and clip depth is taken from GL's -w..w to
   wgpu's 0..w, so the shaders mean what they mean in a browser. Arrays of scalars and of `vec2`, `bool` and `mat2`
-  uniforms travel packed (naga and Metal lay them out differently). An array's length is a number, or a macro
-  `#define`d as one outside any `#if` (`morphTargetInfluences[MORPHTARGETS_COUNT]`); any other length is refused. A shader naga cannot read fails when the scene
+  uniforms travel packed (naga and Metal lay them out differently). The conditionals (`#if`, `#ifdef`, `#elif`, `#else`) are evaluated, and what they leave out is not read for
+  declarations. An array's length is an integer expression of numbers and macros (`morphTargetInfluences[MORPHTARGETS_COUNT]`);
+  any other length is refused. A shader naga cannot read fails when the scene
   loads, with the line of the page's source (`layer "sky": glsl program "p": fragment shader: 3:15: ...`). A vertex
   shader can read textures; its `texture` calls read level 0, as in GL, and a sampler both stages declare is one unit.
 - A draw with `depth` is tested against a 32-bit float depth buffer: the drawing buffer's, or the `depthStencil` target

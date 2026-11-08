@@ -589,22 +589,19 @@ function stripComments(source: string): string {
 
 /**
  * The object-like macros of a shader that are a number, or another such macro (`#define MORPHTARGETS_COUNT 8`), to read
- * the length of an array written as one. A macro defined inside a conditional, or twice with different values, depends
- * on a condition that is not evaluated here: it is left out.
+ * the length of an array written as one. Conditionals are not evaluated here (the renderer does): a macro defined with
+ * two different values is left out, and the renderer refuses an array whose length it cannot read.
  */
 function numericMacros(source: string): Map<string, number> {
   const values = new Map<string, string | null>();
-  let open = 0;
   for (const line of stripComments(source).split('\n')) {
     const m = /^[ \t]*#[ \t]*(\w+)[ \t]*(\w*)([^\n]*)$/.exec(line);
     if (m === null) continue;
     const [, keyword, name = '', rest = ''] = m;
-    if (keyword === 'if' || keyword === 'ifdef' || keyword === 'ifndef') open += 1;
-    else if (keyword === 'endif') open = Math.max(0, open - 1);
-    else if (keyword === 'undef') values.delete(name);
+    if (keyword === 'undef') values.delete(name);
     else if (keyword === 'define' && name !== '' && !rest.startsWith('(')) {
       const value = line.replace(/^[ \t]*#[ \t]*define[ \t]+\w+/, '').trim();
-      values.set(name, open === 0 && (!values.has(name) || values.get(name) === value) ? value : null);
+      values.set(name, !values.has(name) || values.get(name) === value ? value : null);
     }
   }
   const out = new Map<string, number>();

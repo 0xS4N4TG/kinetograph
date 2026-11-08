@@ -27,6 +27,7 @@ use naga::front::glsl::{Frontend, Options};
 use serde::Deserialize;
 
 use crate::error::{Error, Result};
+use crate::glsl_cpp::Cpp;
 
 // ---- the recording ----
 
@@ -844,8 +845,8 @@ struct Rewritten {
     packed: Vec<PackedArray>,
     /// Attribute name, location, float components.
     attributes: Vec<(String, u32, Option<u32>)>,
-    /// The `mat2`, `mat3` and `mat4` attributes: name and size. Each is read as that many `vecN` columns.
-    mat_attributes: Vec<(String, u32)>,
+    /// The `mat2`, `mat3` and `mat4` attributes: name, size and first location. Each is read as that many `vecN` columns.
+    mat_attributes: Vec<(String, u32, u32)>,
     /// The varyings this stage declared, with their locations.
     varyings: Vec<(String, u32, String)>,
     /// The locations of the fragment shader's outputs.
@@ -943,7 +944,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
     let mut has_out = false;
     let mut uses_point_size = false;
     let mut declared_samplers: Vec<(String, SamplerDim)> = Vec::new();
-    let mut defines = Defines::default();
+    let mut defines = Cpp::new();
 
     // First pass over the whole text to learn the sampler names, so that a
     // use can precede nothing (declarations come first in GLSL) but a
@@ -982,7 +983,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
                 },
             )?;
             let name = directive.trim_start();
-            defines.directive(name);
+            defines.directive(name)?;
             if name.starts_with("version") || name.starts_with("extension") {
                 // Removed, keeping the lines.
                 body.push_str(&"\n".repeat(extra));
@@ -998,7 +999,10 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
             index += extra + 1;
             continue;
         }
-        chunk.push_str(line);
+        // What a conditional leaves out is not read for declarations (naga drops it as well).
+        if defines.active() {
+            chunk.push_str(line);
+        }
         chunk.push('\n');
         index += 1;
     }
@@ -1087,6 +1091,15 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
     for (name, ty) in &r.bools {
         prelude.push_str(&format!("{ty} {name}; "));
     }
+    for (name, n, at) in &r.mat_attributes {
+        for column in 0..*n {
+            prelude.push_str(&format!(
+                "layout(location={}) in vec{n} _k_m_{name}_{column}; ",
+                at + column
+            ));
+        }
+        prelude.push_str(&format!("mat{n} {name}; "));
+    }
     for (name, array) in &r.mat2s {
         let suffix = array.as_ref().map(|n| format!("[{n}]")).unwrap_or_default();
         prelude.push_str(&format!("mat2 {name}{suffix}; "));
@@ -1165,7 +1178,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         ));
     }
     // A matrix attribute is made of its columns, which are the vertex inputs.
-    for (name, n) in &r.mat_attributes {
+    for (name, n, _) in &r.mat_attributes {
         let columns: Vec<String> = (0..*n).map(|c| format!("_k_m_{name}_{c}")).collect();
         wrapper.push_str(&format!("{name} = mat{n}({}); ", columns.join(", ")));
     }
@@ -1213,66 +1226,7 @@ struct Ctx<'a, 'b> {
     points: bool,
     slots: &'b mut Vec<(String, SamplerDim)>,
     /// The macros defined so far, for the length of an array.
-    defines: &'b Defines,
-}
-
-/// The object-like macros a shader defined so far (`#define MORPHTARGETS_COUNT 8`), to read the length of an array
-/// that is written as one. A macro defined inside a conditional, or defined twice differently, is not known: which
-/// value holds depends on a condition that is not evaluated here.
-#[derive(Default)]
-struct Defines {
-    values: BTreeMap<String, Option<String>>,
-    /// The `#if` blocks open.
-    open: u32,
-}
-
-impl Defines {
-    /// Notes a directive (the line after its `#`): a `#define` or `#undef`, or the opening or closing of a conditional.
-    fn directive(&mut self, line: &str) {
-        let word = |s: &str| s.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect::<String>();
-        let keyword = word(line);
-        let rest = line[keyword.len()..].trim_start();
-        match keyword.as_str() {
-            "if" | "ifdef" | "ifndef" => self.open += 1,
-            "endif" => self.open = self.open.saturating_sub(1),
-            "undef" => {
-                self.values.remove(&word(rest));
-            }
-            "define" => {
-                let name = word(rest);
-                let value = &rest[name.len()..];
-                // A function-like macro takes arguments, which an array length does not.
-                if name.is_empty() || value.starts_with('(') {
-                    return;
-                }
-                let value = value.trim().to_string();
-                let known = match self.values.get(&name) {
-                    None => self.open == 0,
-                    Some(old) => self.open == 0 && old.as_deref() == Some(value.as_str()),
-                };
-                self.values.insert(name, known.then_some(value));
-            }
-            _ => {}
-        }
-    }
-
-    /// The length of an array as written (`8`, `MORPHTARGETS_COUNT`, `(MORPHTARGETS_COUNT)`): the number when it is
-    /// one, or a macro defined as one, else the text unchanged.
-    fn length(&self, written: &str) -> String {
-        let mut text = written.trim();
-        // A macro defined as another macro: bounded, so a macro defined as itself ends.
-        for _ in 0..8 {
-            let bare = text.strip_prefix('(').and_then(|t| t.strip_suffix(')')).unwrap_or(text).trim();
-            if bare.parse::<u32>().is_ok() {
-                return bare.to_string();
-            }
-            match self.values.get(bare) {
-                Some(Some(value)) => text = value,
-                _ => break,
-            }
-        }
-        written.to_string()
-    }
+    defines: &'b Cpp,
 }
 
 /// The call that reads level 0 in place of the sampling function `word`, if it is one a vertex
@@ -1768,7 +1722,7 @@ fn declaration(
                         && n.parse::<u32>().is_err()
                     {
                         return Err(unsupported(format!(
-                            "`{name}`: the length of an array of mat2 must be a number, or a macro defined as one outside any `#if`, got `{n}`"
+                            "`{name}`: the length of an array of mat2 must be a number, or a macro defined as one, got `{n}`"
                         )));
                     }
                     r.mat2s.push((name, array));
@@ -1780,7 +1734,7 @@ fn declaration(
                 }) {
                     let len = n.parse::<u32>().ok().filter(|l| *l > 0).ok_or_else(|| {
                         unsupported(format!(
-                            "`{name}`: the length of an array uniform must be a number, or a macro defined as one outside any `#if`, got `{n}`"
+                            "`{name}`: the length of an array uniform must be a number, or a macro defined as one, got `{n}`"
                         ))
                     })?;
                     r.packed.push(PackedArray {
@@ -1827,13 +1781,8 @@ fn declaration(
                     // matrix is made of them at the start of `main`.
                     for column in 0..n {
                         r.attributes.push((format!("{name}[{column}]"), at + column, Some(n)));
-                        text_out.push_str(&format!(
-                            "layout(location={}) in vec{n} _k_m_{name}_{column}; ",
-                            at + column
-                        ));
                     }
-                    text_out.push_str(&format!("{ty} {name}; "));
-                    r.mat_attributes.push((name.clone(), n));
+                    r.mat_attributes.push((name.clone(), n, at));
                     continue;
                 }
                 r.attributes.push((name.clone(), at, float_components(&ty)));
@@ -1850,7 +1799,7 @@ fn declaration(
                 let count = match &array {
                     Some(n) => n.parse::<u32>().map_err(|_| {
                         unsupported(format!(
-                            "`{name}`: the array length `{n}` of a varying must be a number, or a macro defined as one outside any `#if`"
+                            "`{name}`: the array length `{n}` of a varying must be a number, or a macro defined as one"
                         ))
                     })?,
                     None => 1,
@@ -2890,11 +2839,10 @@ mod tests {
     }
 
     #[test]
-    fn an_array_length_macro_that_depends_on_a_condition_is_refused() {
+    fn an_array_length_macro_that_is_not_defined_where_it_is_read_is_refused() {
         for defines in [
             "#ifdef FAST\n#define N 2\n#endif\n",
             "#define N 2\n#undef N\n",
-            "#define N 2\n#define N 3\n",
             "#define N(x) 2\n",
             "",
         ] {
@@ -2905,6 +2853,48 @@ mod tests {
             .unwrap_err();
             assert!(e.contains("must be a number") && e.contains('N'), "{defines:?}: {e}");
         }
+    }
+
+    #[test]
+    fn an_array_length_macro_defined_in_a_live_conditional_is_read() {
+        let found = vertex_uniform_arrays(
+            "#version 300 es\nin vec2 p;\n#define FAST 1\n#if defined( FAST ) && ! defined( SLOW )\n#define N 2\n#else\n\
+             #define N 9\n#endif\nuniform float w[N * 2];\n\
+             void main() { gl_Position = vec4(p, w[0], 1.0); }",
+        )
+        .unwrap();
+        assert_eq!(found.iter().find(|u| u.0 == "w").unwrap().1, Some(4));
+    }
+
+    #[test]
+    fn a_declaration_in_a_branch_that_is_left_out_is_not_read() {
+        // three.js declares `morphTargetInfluences[ MORPHTARGETS_COUNT ]` under `USE_MORPHTARGETS`, with the macro
+        // defined only when that is.
+        let found = vertex_uniform_arrays(
+            "#version 300 es\nin vec2 p;\n#ifdef USE_MORPHTARGETS\nuniform float morphTargetInfluences[ MORPHTARGETS_COUNT ];\n\
+             #endif\n#if 0 > 0\nuniform float never;\n#endif\nuniform float kept;\n\
+             void main() { gl_Position = vec4(p, kept, 1.0); }",
+        )
+        .unwrap();
+        assert_eq!(found.iter().map(|u| u.0.as_str()).collect::<Vec<_>>(), ["kept"]);
+    }
+
+    #[test]
+    fn a_matrix_attribute_is_read_where_its_branch_is_kept_only() {
+        let t = translate(&program(
+            "#version 300 es\nin vec2 p;\n#ifdef USE_INSTANCING\nin mat4 instanceMatrix;\n#endif\n\
+             void main() { gl_Position = vec4(p, 0.0, 1.0); }",
+            "#version 300 es\nprecision highp float; out vec4 o; void main() { o = vec4(1.0); }",
+        ))
+        .unwrap();
+        assert!(t.vertex.attributes.iter().all(|a| !a.0.starts_with("instanceMatrix")));
+        let t = translate(&program(
+            "#version 300 es\nin vec2 p;\n#define USE_INSTANCING\n#ifdef USE_INSTANCING\nin mat4 instanceMatrix;\n#endif\n\
+             void main() { gl_Position = instanceMatrix * vec4(p, 0.0, 1.0); }",
+            "#version 300 es\nprecision highp float; out vec4 o; void main() { o = vec4(1.0); }",
+        ))
+        .unwrap();
+        assert!(t.vertex.attributes.iter().any(|a| a.0 == "instanceMatrix[3]"));
     }
 
     #[test]
