@@ -1,0 +1,78 @@
+---
+title: Colour, effects and 3D
+description: How to ask for a colour grade, film and print looks, glow and shaders, and 3D with Kinetograph's own scene layer.
+---
+
+Name the look as a result ("warm highlights, lifted blacks, visible grain"), say which layer it goes on, and ask for a before and after. Effects remove detail, so the picture needs detail to begin with.
+
+## Say what the look does
+
+A grade changes the picture the way a medium would. Ask for the result and the agent picks the effect:
+
+| Ask for | The agent reaches for |
+|---|---|
+| Warmer, more contrast, lifted blacks | `colorGrade`, or `colorCorrection`, `levels` and `curves` |
+| A film stock or a preset look | `lut` with a `.cube` file you supply |
+| Two-tone, thermal, duotone | `gradientMap` |
+| Film grain, print dots, a dot-matrix screen | `grain`, `halftone`, `dotMatrix`, `dither` |
+| Glow, soft bloom | `glow` |
+| Colour fringing, a lens look | `chromaticAberration` |
+| A drop or inner shadow | `dropShadow`, `insetShadow` |
+| A flat picture pinned onto a screen | `cornerPin` |
+| A warm flare over a cut | `LightLeak` or `Starburst` |
+
+`npx kinetograph effects` lists every effect with its fields. See [Effects](/docs/making-videos/effects/), [Color correction](/docs/making-videos/color-correction/) and [Light leaks](/docs/making-videos/light-leaks/).
+
+```txt title="Suggested prompt"
+/kinetograph-markup Grade the photo warmer with a little more contrast, then add grain at a low strength. Keep the headline text clean: grade only the photo layer. Show frame 0 before and after.
+```
+
+## Where it applies
+
+- **On a layer.** An effect works on the pixels of the layer it sits on. Put the grade on the picture, and the text over it stays clean. To grade a whole scene, say "grade the whole scene", and the agent groups it in one layer.
+- **In order.** Effects run in the order you list them: correct the colour first, then apply the look.
+- **Room past the edge.** A glow or shadow reaches past the layer. Ask for room on the composition so nothing is cut off.
+- **Not one subject.** An effect works on the whole layer. To grade a background and leave a person alone, supply the person as a cut-out image with alpha, and ask for two layers. Kinetograph can't pick a subject out of a flat picture.
+
+## Deliberate roughness
+
+Dither, halftone, grain and chromatic aberration say "printed", "old" or "broken". Pick one and say why: "a halftone dot on the photo, so it reads as a newspaper". Several at once usually reads as noise. For a repeatable, hand-made wobble, ask for seeded noise. See [Noise](/docs/making-videos/noise/).
+
+## Your own shader
+
+A `shader()` effect runs WGSL on its layer, and a `<canvas>` with a WebGL or WebGL 2 context runs GLSL on the GPU. A shader written for a browser usually runs as it is. Ask for the look, or paste the shader and say where it goes. A WGSL effect sees only its own layer. See [Shaders](/docs/making-videos/shaders/).
+
+## Generated and supplied art
+
+Kinetograph draws; it doesn't generate pictures. Make or buy the artwork, put it in `public/images/`, and name the files. Ask the agent to animate it: a slow push-in, parallax between a foreground and a background cut-out, a card flip. Use PNG with alpha for cut-outs. For simple shapes and icons, ask for SVG or native shapes: they stay sharp at any size.
+
+## 3D
+
+Ask for what you want to see, and Kinetograph builds it with its own 3D layer. It has no Three.js behind it, and a page that loads Three.js is reported on every frame.
+
+- **A flat card turning.** "Flip the card over with a 3D turn and a camera." Cheap, and good for a card, a phone, a poster.
+- **A real scene.** "A `Scene3D` with a camera, a key light and a soft fill, and a torus turning slowly." It has boxes, spheres, planes, cylinders and tori, glTF and GLB models, 3D text and extruded SVG, a directional light with shadows and an environment map.
+
+```txt title="Suggested prompt"
+/kinetograph-markup Add a 960 by 540 3D scene on a dark floor: public/models/phone.glb turning 360 degrees over 6 seconds, one key light from the upper left that casts a shadow, a slow camera push-in. Run doctor and tell me if the model uses anything the engine can't read.
+```
+
+Say it in these terms:
+
+- The camera: where it starts, where it ends, how long.
+- The lights: how many, where, whether they cast a shadow.
+- The model by path, and its turn in degrees per second.
+
+If a model uses a glTF feature the engine doesn't read, `doctor` names it. A Three.js project needs to be rebuilt as a `Scene3D`: use `/kinetograph-migrate`. See [Transforms](/docs/making-videos/transforms/#3d-scenes) and [What works](/docs/compat/#3d).
+
+## Keep it deterministic
+
+A render must be the same every time. Ask for seeded randomness, not live data, and don't ask for anything that reads the clock. The agent will use `random('name')` and `noise`.
+
+## Common mistakes
+
+- A grade on a layer that holds text too.
+- Several looks at once.
+- "Make it cinematic" with no picture detail to work with. Name the grade.
+- Asking for Three.js. Ask for the 3D result.
+- A shadow that gets cut off because the composition has no margin.

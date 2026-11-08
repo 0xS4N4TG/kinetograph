@@ -1,0 +1,81 @@
+---
+title: Motion and transitions
+description: How to ask for motion that feels right and for cuts between scenes that have a reason, with the words an agent turns into easing, springs and transitions.
+---
+
+Describe how the motion should feel, give a time and a size, and change one thing at a time. The agent turns "snappy" or "slow" into an easing curve, a spring or a duration, and a strip of frames shows you whether it worked.
+
+## Fix motion you don't like
+
+| What you see | Say |
+|---|---|
+| Too fast to read | "Hold the title for 2 seconds after it lands" |
+| Everything keeps moving | "Only the headline moves. Everything else holds still" |
+| Feels like slides | "Overlap the entrances: the second card starts while the first is still arriving" |
+| Too bouncy | "No overshoot. Ease out over 15 frames" |
+| Jumps at a cut | "Start the next scene's motion 8 frames before the cut" |
+| Dead time | "Cut the pause at 0:04. Something should move every second" |
+
+Give a time when you can: "the card lands at 0:02.0". Frames and seconds both work. Change one thing, then ask for `strip` or `still` at the frames you care about.
+
+## Ideas worth asking for
+
+- **Move only what is live.** Static elements stay still, so the eye goes to the one that moves.
+- **Travel between things.** Ask for a camera move or a slide from one subject to the next, not a cut to a new layout.
+- **Overlap instead of queue.** Start the next action before the last one ends.
+- **Overshoot on physical things only.** A spring suits a card or a button. It doesn't suit a title or a number.
+- **Depth.** "Near layers move faster than far ones" gives parallax. Kinetograph moves a layer toward the viewer with `z` under a `Camera`, and a `Scene3D` has a real camera.
+- **Match the pace to the format.** A vertical reel wants a beat every second or two. A product walkthrough can breathe.
+
+## Words for how motion feels
+
+The agent has to pick numbers. These are starting points, not rules.
+
+| Say | The agent will likely use |
+|---|---|
+| Smooth, calm | An in-out ease over 20 to 30 frames at 30 fps |
+| Snappy | An ease-out over 8 to 12 frames |
+| Bouncy, springy | `spring` with lower damping, so it overshoots |
+| Dramatic | A long ease, 45 frames or more, with a held pause |
+| Mechanical | `linear`, or steps with `Easing.step0` |
+
+To check one, ask: "show me a strip of frames 0 to 30 of the card entrance".
+
+## Handmade, still the same every render
+
+A render is a pure function of the frame number, so jitter and boil have to be seeded. Ask for "a line that wobbles by 2 px, redrawn every 3 frames, with a seeded random". The agent uses `random('seed')` or `noise`, and `Easing.step0` or `posterize` to hold each pose for a few frames. The result is the same every time.
+
+## Between scenes: transitions
+
+Give a transition a cause: a card that wipes across the screen and reveals the next scene, a camera push that crosses into the next shot. Pick three to five kinds for the whole video and reuse them.
+
+| Energy | Ask for |
+|---|---|
+| Calm | `fade` or a slow `dissolve`, 20 to 30 frames |
+| Medium | `slide` or `wipe`, 12 to 18 frames |
+| High | `zoomBlur`, `crossZoom`, `ripple` or `filmBurn`, 8 to 15 frames |
+
+The full list is on [Transitions](/docs/making-videos/transitions/). Two things to say in the prompt:
+
+- A transition overlaps the scenes around it, so the video gets shorter by its length. "Keep the total at 20 seconds" makes the agent lengthen the scenes.
+- Don't fade one scene out and then fade the next one in. That leaves a gap. Ask for a cross-fade.
+
+A light leak or a film burn across a cut is a `TransitionSeries.Overlay`. Ask for "a light leak over the cut at 0:08".
+
+## Motion blur
+
+For fast moves, ask for motion blur on the thing that moves. The engine blurs position, rotation, scale and 3D turns over the shutter. See [Motion blur](/docs/making-videos/motion-blur/).
+
+## Suggested prompts
+
+```txt title="Suggested prompt"
+/kinetograph-markup Make the three cards enter with a 10 frame ease-out, each starting 6 frames after the one before. Nothing else moves. Show a strip of frames 0 to 45.
+```
+
+```txt title="Suggested prompt"
+/kinetograph-markup Join scene 1 to scene 2 with a 14 frame slide from the right, and scene 2 to scene 3 with a dissolve. Keep the total at 12 seconds, and show a strip around each join.
+```
+
+## What works
+
+Everything above is drawn natively. A library that reads the wall clock isn't frame-pure, so its motion can differ between renders. See [Animation and timing](/docs/making-videos/animation/#determinism), [Libraries](/docs/plugins/library-adapters/) and [What works](/docs/compat/).
