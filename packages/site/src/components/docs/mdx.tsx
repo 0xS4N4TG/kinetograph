@@ -75,7 +75,7 @@ export function PromptBox({ skill, children }: { skill?: string; children?: Reac
   const full = name ? `/${name} ${text}` : text;
   return (
     <figure className="not-prose my-6">
-      <div className="flex items-start gap-3 rounded-xl border bg-fd-card p-3 shadow-sm sm:items-center sm:p-3.5">
+      <div className="kg-box flex items-start gap-3 px-4 py-5 sm:items-center sm:px-6">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-fd-accent text-fd-primary">
           <SparklesIcon className="size-4" />
         </span>

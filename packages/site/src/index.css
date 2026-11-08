@@ -369,6 +369,77 @@
   --shiki-dark: #8b949e !important;
 }
 
+/* Soft docs boxes: code blocks, file trees and the suggested-prompt box share a 16px radius, a hairline border and a
+   background a touch off the page (lighter in dark mode, darker in light mode). */
+:root {
+  --kg-box-bg: color-mix(in oklab, var(--paper) 95.5%, #1b2250);
+  --kg-box-border: color-mix(in oklab, var(--cobalt) 16%, var(--paper));
+}
+.dark {
+  --kg-box-bg: #18181c;
+  --kg-box-border: rgb(255 255 255 / 7%);
+}
+.kg-box {
+  border: 1px solid var(--kg-box-border);
+  border-radius: 1rem;
+  background: var(--kg-box-bg);
+}
+
+/* Code blocks: 24px inside, no hard header bar unless the block has a title (then a soft divider), a quiet copy icon
+   that brightens on hover, and long lines scroll inside the block under a fade that clears at the end of the line. */
+figure.shiki {
+  --padding-left: 1.5rem;
+  --padding-right: 1.5rem;
+  border-color: var(--kg-box-border);
+  border-radius: 1rem;
+  background: var(--kg-box-bg);
+  box-shadow: none;
+}
+figure.shiki > div:has(> figcaption) {
+  height: auto;
+  padding: 0.875rem 1.5rem 0.75rem;
+  border-color: var(--kg-box-border);
+}
+figure.shiki > div[role='region'] {
+  padding-block: 1.5rem;
+  --kg-fade: 2.5rem;
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--kg-fade)), transparent);
+  animation: kg-fade-out linear both;
+  animation-timeline: scroll(self inline);
+  animation-range: calc(100% - 3rem) 100%;
+}
+/* A block with a title has its header above; the region then needs less top padding. */
+figure.shiki > div:has(> figcaption) + div[role='region'] {
+  padding-top: 1.125rem;
+}
+/* The copy button: top right inside the padding, quiet until hovered or focused. */
+figure.shiki > div:not(:has(> figcaption)):not([role='region']) {
+  top: 0.75rem;
+  right: 0.75rem;
+  backdrop-filter: none;
+  background: var(--kg-box-bg);
+}
+figure.shiki button {
+  color: var(--color-fd-muted-foreground);
+  opacity: 0.55;
+  transition: opacity 160ms var(--ease-out, ease-out);
+}
+figure.shiki button:hover,
+figure.shiki button:focus-visible,
+figure.shiki button[data-checked] {
+  opacity: 1;
+}
+@property --kg-fade {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 2.5rem;
+}
+@keyframes kg-fade-out {
+  to {
+    --kg-fade: 0rem;
+  }
+}
+
 /* Docs file trees (components/docs/mdx.tsx): branches recede, folders read as the structure, trailing notes are muted.
    A line height near the font's own keeps the vertical bars joined from row to row. */
 .kg-tree code {
