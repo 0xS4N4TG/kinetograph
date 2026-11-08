@@ -95,5 +95,48 @@
       "alt": "A grid of commands against four stages: bundle, run, draw and encode. doctor stops after run and never uses the GPU. still, strip and onion go through draw for a chosen frame, frames or range. render with sequence stops after draw and writes an image per frame. render goes through all four to an MP4."
     }
   ],
-  "videos": []
+  "videos": [
+    {
+      "name": "pipeline",
+      "file": "pipeline.mp4",
+      "poster": "pipeline-poster.webp",
+      "width": 1280,
+      "height": 720,
+      "seconds": 6,
+      "loop": true,
+      "audio": false,
+      "page": "internals/engine",
+      "heading": "How one frame is made",
+      "pairsWith": "pipeline.svg",
+      "alt": "Looping animation of two frames travelling from your project through Node, scene JSON and the Rust GPU compositor to FFmpeg and a video file. A header and a dashed outline mark the whole path as having no browser."
+    },
+    {
+      "name": "pure-frame",
+      "file": "pure-frame.mp4",
+      "poster": "pure-frame-poster.webp",
+      "width": 1280,
+      "height": 720,
+      "seconds": 6,
+      "loop": true,
+      "audio": false,
+      "page": "internals/engine",
+      "heading": "Rules the engine keeps",
+      "pairsWith": "pure-frame.svg",
+      "alt": "Looping animation of a project and a frame number going into a pure render function. The number changes from 12 to 24 and the picture changes with it. When 12 comes back, the picture equals the earlier one for frame 12. No wall clock is used."
+    },
+    {
+      "name": "studio-loop",
+      "file": "studio-loop.mp4",
+      "poster": "studio-loop-poster.webp",
+      "width": 1280,
+      "height": 720,
+      "seconds": 6,
+      "loop": true,
+      "audio": false,
+      "page": "studio/index",
+      "heading": "Mark up the preview",
+      "pairsWith": "studio-loop.svg",
+      "alt": "Looping animation of Studio's four steps in turn: the preview, you mark up a frame with a box and a note, your coding agent edits a line of code, and the engine redraws the frame."
+    }
+  ]
 }
