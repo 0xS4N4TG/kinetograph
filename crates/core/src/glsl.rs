@@ -137,6 +137,9 @@ pub struct GlslTexture {
     pub target: bool,
     /// What a target holds: colour (RGBA8) without one.
     pub format: Option<TargetFormat>,
+    /// An `SRGB8_ALPHA8` texture: the bytes are sRGB and a shader reads them as linear.
+    #[serde(default)]
+    pub srgb: bool,
     /// A colour target of a float format, which draws write and samplers read as floats (`EXT_color_buffer_float`).
     pub color_format: Option<ColorFormat>,
     /// The mip levels of a colour target; an op's `level` draws into one.
@@ -3287,6 +3290,7 @@ mod tests {
             depth: 2,
             array: false,
             color_format: None,
+            srgb: false,
             floats,
             float32: false,
             cube: false,

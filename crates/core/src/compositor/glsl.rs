@@ -1953,8 +1953,8 @@ impl Compositor {
             stamp.push_str(&stamp_of(patch.src.as_deref()));
         }
         let key = format!(
-            "{id}|{}|{}|{}|{stamp}",
-            texture.flip_y, texture.premultiply, texture.mipmaps
+            "{id}|{}|{}|{}|{}|{stamp}",
+            texture.flip_y, texture.premultiply, texture.mipmaps, texture.srgb
         );
         if let Some(t) = self.glsl.textures.get(&key) {
             return Ok(t.clone());
@@ -2008,7 +2008,11 @@ impl Compositor {
             mip_level_count: levels,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: COLOR_FORMAT,
+            format: if texture.srgb {
+                wgpu::TextureFormat::Rgba8UnormSrgb
+            } else {
+                COLOR_FORMAT
+            },
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
@@ -2227,6 +2231,11 @@ impl Compositor {
         base_dir: &Path,
         inputs: &Inputs,
     ) -> Result<Arc<Uploaded>> {
+        if texture.srgb {
+            return Err(render_error(
+                "unsupported: an sRGB texture with a layer's picture in it; use RGBA8",
+            ));
+        }
         let input = |layer: &str, flip_y: bool, premultiply: bool| {
             inputs
                 .get(&input_key(layer, flip_y, premultiply))

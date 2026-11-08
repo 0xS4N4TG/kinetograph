@@ -1613,6 +1613,30 @@ describe('the recording WebGL context', () => {
     });
   });
 
+  describe('sRGB textures', () => {
+    it('records an SRGB8_ALPHA8 upload as sRGB bytes, and an RGBA8 one as it was', () => {
+      for (const [format, srgb] of [[GL2.SRGB8_ALPHA8, true], [GL2.RGBA8, false]] as const) {
+        const { gl, program } = setup();
+        const texture = gl.createTexture();
+        gl.bindTexture(GL.TEXTURE_2D, texture);
+        gl.texImage2D(GL.TEXTURE_2D, 0, format, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array([188, 188, 188, 255]));
+        gl.uniform1i(gl.getUniformLocation(program, 'tex'), 0);
+        gl.drawArrays(GL.TRIANGLES, 0, 3);
+        const content = gl.content();
+        const draw = content.ops[0]!;
+        if (draw.op !== 'draw') throw new Error('not a draw');
+        expect(content.textures[draw.units['0']!.texture]!.srgb).toBe(srgb ? true : undefined);
+      }
+    });
+
+    it('refuses what it cannot read as sRGB: cube faces, layer pictures and a render target', () => {
+      const { gl } = setup();
+      const cube = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_CUBE_MAP, cube);
+      expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL2.SRGB8_ALPHA8, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(/^unsupported:.*sRGB/);
+    });
+  });
+
   describe('a clear with the scissor test on', () => {
     function drawOf(gl: WebGLContext, index = 0) {
       const op = gl.content().ops[index]!;

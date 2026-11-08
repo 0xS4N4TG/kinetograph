@@ -2507,3 +2507,40 @@ fn lines_are_not_culled_or_offset() {
     let frame = line_layer(&[[-1.0, 0.03], [1.0, 0.03]], &line_draw("lines", 2, cull));
     assert_eq!(red_pixels(&frame), 16);
 }
+
+// ---- sRGB textures ----
+
+fn grey_texture(srgb: bool) -> String {
+    format!(
+        r#", "textures": {{"t": {{"pixels": "{}", "width": 1, "height": 1{}}}}}"#,
+        b64(&[188, 188, 188, 255]),
+        if srgb { r#", "srgb": true"# } else { "" }
+    )
+}
+
+fn sampled_grey(srgb: bool, mipmaps: bool) -> Frame {
+    let content = grey_texture(srgb).replace(
+        r#""height": 1"#,
+        &format!(r#""height": 1{}"#, if mipmaps { r#", "mipmaps": true"# } else { "" }),
+    );
+    render(&layer(
+        "precision mediump float; varying vec2 v_uv; uniform sampler2D u_tex; \
+         void main() { gl_FragColor = texture2D(u_tex, v_uv); }",
+        &content,
+        &draw(
+            r#""uniforms": {"u_tex": [{"kind": "i", "value": [0]}]},
+               "units": {"0": {"texture": "t", "min": "LINEAR", "mag": "LINEAR",
+                               "wrapS": "CLAMP_TO_EDGE", "wrapT": "CLAMP_TO_EDGE"}}"#,
+        ),
+    ))
+}
+
+#[test]
+fn an_srgb_texture_is_read_as_linear() {
+    // The byte 188 is 0.737 in sRGB, which is 0.5 in linear light.
+    near(px(&sampled_grey(true, false), 8, 8), [128, 128, 128, 255], 3);
+    // The same bytes, not sRGB, are read as they are.
+    near(px(&sampled_grey(false, false), 8, 8), [188, 188, 188, 255], 1);
+    // Mip levels of an sRGB texture are made too.
+    near(px(&sampled_grey(true, true), 8, 8), [128, 128, 128, 255], 3);
+}

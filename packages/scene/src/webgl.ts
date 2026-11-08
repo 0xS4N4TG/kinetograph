@@ -2284,7 +2284,8 @@ export class WebGLContext {
 
   private checkTextureType(type: number, internalformat: number): void {
     if (type !== GL.UNSIGNED_BYTE) throw new WebGLUnsupportedError(`texture data of type 0x${type.toString(16)}; use UNSIGNED_BYTE (float and half-float textures are not available)`);
-    const sized = [GL2.RGBA32F, GL2.RGB32F, GL2.R32F, GL2.RGBA16F, GL2.SRGB8_ALPHA8];
+    // The float formats come in through `specifyFloat`; SRGB8_ALPHA8 is RGBA8 that a shader reads as linear.
+    const sized = [GL2.RGBA32F, GL2.RGB32F, GL2.R32F, GL2.RGBA16F];
     if (sized.includes(internalformat as never)) throw new WebGLUnsupportedError(`the internal format 0x${internalformat.toString(16)}; use RGBA`);
   }
 
@@ -2335,7 +2336,7 @@ export class WebGLContext {
     const face = cube?.faces?.[faceIndex(target)];
     if (cube === null || face === undefined) return;
     if (level !== 0) throw new WebGLUnsupportedError('a cube map face above level 0; call generateMipmap');
-    if (kindOf(internalformat) !== 'color' || FLOAT_FORMATS[internalformat] !== undefined) throw new WebGLUnsupportedError('a cube map face of a depth or float format; use RGBA8');
+    if (kindOf(internalformat) !== 'color' || FLOAT_FORMATS[internalformat] !== undefined || internalformat === GL2.SRGB8_ALPHA8) throw new WebGLUnsupportedError('a cube map face of a depth, float or sRGB format; use RGBA8');
     if (rest.length >= 6) {
       const [width, height] = rest as [number, number];
       if (!(Number.isInteger(width) && width >= 0 && width <= MAX_CUBE_MAP_TEXTURE_SIZE && Number.isInteger(height) && height >= 0 && height <= MAX_CUBE_MAP_TEXTURE_SIZE)) return this.fail(GL.INVALID_VALUE);
@@ -2405,6 +2406,7 @@ export class WebGLContext {
     }
     texture.blank = false;
     this.uploadPicture(texture, source);
+    if (internalformat === GL2.SRGB8_ALPHA8 && texture.layer !== null) throw new WebGLUnsupportedError('an sRGB texture from a layer picture; use RGBA8, or an image, a canvas or ImageData');
   }
 
   /**
@@ -3278,6 +3280,7 @@ export class WebGLContext {
         ...(texture.flipY ? { flipY: true } : {}),
         ...(texture.premultiply ? { premultiply: true } : {}),
         ...(texture.mipmaps ? { mipmaps: true } : {}),
+        ...(texture.format === GL2.SRGB8_ALPHA8 ? { srgb: true } : {}),
         ...(texture.patches.length > 0 ? { patches: [...texture.patches] } : {}),
           };
       texture.snapshot = { version: texture.version, id: `t${hashOf(JSON.stringify(json))}`, json };
