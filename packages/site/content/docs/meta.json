@@ -1,1 +1,9 @@
-{"title": "Docs", "pages": ["(make-a-video)", "studio", "(developers)", "(changelog)"]}
+{
+  "title": "Docs",
+  "pages": [
+    "(make-a-video)",
+    "(studio)",
+    "(developers)",
+    "(changelog)"
+  ]
+}
