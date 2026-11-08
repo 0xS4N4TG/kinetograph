@@ -2227,3 +2227,52 @@ fn a_constant_attribute_read_for_a_huge_vertex_count_is_refused_not_allocated() 
     ));
     assert!(e.contains("constant attribute") && e.contains("at most"), "{e}");
 }
+
+// ---- matrix attributes (instanceMatrix) ----
+
+/// An instanced `mat4` attribute `inst`: its four columns are read at `columns` (the first column's location 1), from
+/// a buffer of 64-byte matrices, the first scaling by 0.5 and the second moving the quad right by 0.5.
+fn instanced_matrix_draw(instances: u32) -> (String, String) {
+    let matrices: [[f32; 16]; 2] = [
+        [0.5, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+        [0.25, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.5, 0.5, 0.0, 1.0],
+    ];
+    let bytes: Vec<u8> = matrices.iter().flatten().flat_map(|f| f.to_le_bytes()).collect();
+    let columns: Vec<String> = (0..4)
+        .map(|c| {
+            format!(
+                r#""inst[{c}]": {{"buffer": "m", "size": 4, "type": "f32", "stride": 64, "offset": {}, "divisor": 1}}"#,
+                c * 16
+            )
+        })
+        .collect();
+    let draw = format!(
+        r#"{{"op": "draw", "program": "p", "mode": "triangles", "first": 0, "count": 6, "instances": {instances},
+            "attributes": {{"a_pos": {{"buffer": "quad", "size": 2, "type": "f32"}}, {}}},
+            "viewport": [0, 0, 16, 16]}}"#,
+        columns.join(", ")
+    );
+    (draw, format!(r#", "m": "{}""#, b64(&bytes)))
+}
+
+const MATRIX_VERTEX: &str = "#version 300 es\nin vec2 a_pos; in mat4 inst;\n\
+    void main() { gl_Position = inst * vec4(a_pos, 0.0, 1.0); }";
+const RED_FRAGMENT: &str = "#version 300 es\nprecision highp float; out vec4 o; void main() { o = vec4(1.0, 0.0, 0.0, 1.0); }";
+
+#[test]
+fn an_instanced_mat4_attribute_is_read_a_column_at_a_time() {
+    let (draw, buffer) = instanced_matrix_draw(2);
+    let frame = render(&layer_with_vertex(
+        MATRIX_VERTEX,
+        &[("p", RED_FRAGMENT)],
+        &buffer,
+        "",
+        &draw,
+    ));
+    // The first instance is the middle half of the picture; the second a quarter-size quad over the upper right
+    // (GL's y counts up, so the picture's upper right is y > 0).
+    assert_eq!(px(&frame, 8, 8), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 2, 2), [0, 0, 0, 255]);
+    assert_eq!(px(&frame, 12, 3), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 14, 14), [0, 0, 0, 255]);
+}

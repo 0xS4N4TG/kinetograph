@@ -663,6 +663,11 @@ function declarations(source: string, keywords: string[]): Declaration[] {
   return out;
 }
 
+/** The columns (and locations) of a `mat2`, `mat3` or `mat4` attribute, which is read a column at a time; undefined for other types. */
+function matrixColumns(type: string): number | undefined {
+  return ({ mat2: 2, mat3: 3, mat4: 4 } as Record<string, number | undefined>)[type];
+}
+
 const TYPE_CODES: Record<string, number> = {
   float: GL.FLOAT,
   vec2: GL.FLOAT_VEC2,
@@ -1682,19 +1687,24 @@ export class WebGLContext {
     });
     // Explicit locations and `bindAttribLocation` first; the rest take the lowest free locations in order.
     const taken = new Set<number>();
+    const take = (at: number, width: number) => {
+      for (let i = 0; i < width; i += 1) taken.add(at + i);
+    };
     for (const d of program.attributeDeclarations) {
       const at = d.location ?? program.bound.get(d.name);
       if (at !== undefined) {
         program.attributes.set(d.name, at);
-        taken.add(at);
+        take(at, matrixColumns(d.type) ?? 1);
       }
     }
     let next = 0;
     for (const d of program.attributeDeclarations) {
       if (program.attributes.has(d.name)) continue;
-      while (taken.has(next)) next += 1;
+      const width = matrixColumns(d.type) ?? 1;
+      // A matrix takes consecutive locations, one for each column.
+      while (Array.from({ length: width }, (_, i) => next + i).some((l) => taken.has(l))) next += 1;
       program.attributes.set(d.name, next);
-      taken.add(next);
+      take(next, width);
     }
   }
   validateProgram(): void {}
@@ -3002,8 +3012,14 @@ export class WebGLContext {
       viewport: this.viewportNow(),
       colorMask: [...this.colorMaskState],
     };
-    for (const d of program.attributeDeclarations) {
-      const at = program.attributes.get(d.name)!;
+    // A matrix attribute is read as one attribute for each of its columns, at consecutive locations.
+    const reads = program.attributeDeclarations.flatMap((d): { key: string; at: number }[] => {
+      const base = program.attributes.get(d.name)!;
+      const columns = matrixColumns(d.type);
+      return columns === undefined ? [{ key: d.name, at: base }] : Array.from({ length: columns }, (_, i) => ({ key: `${d.name}[${i}]`, at: base + i }));
+    });
+    for (const { key, at } of reads) {
+      const d = { name: key };
       const a = this.vao.attributes[at];
       if (a === undefined || !a.enabled) {
         // A disabled array reads the current value; the renderer reads it only for the attributes the shader keeps.

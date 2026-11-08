@@ -844,6 +844,8 @@ struct Rewritten {
     packed: Vec<PackedArray>,
     /// Attribute name, location, float components.
     attributes: Vec<(String, u32, Option<u32>)>,
+    /// The `mat2`, `mat3` and `mat4` attributes: name and size. Each is read as that many `vecN` columns.
+    mat_attributes: Vec<(String, u32)>,
     /// The varyings this stage declared, with their locations.
     varyings: Vec<(String, u32, String)>,
     /// The locations of the fragment shader's outputs.
@@ -927,6 +929,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         mat2s: Vec::new(),
         packed: Vec::new(),
         attributes: Vec::new(),
+        mat_attributes: Vec::new(),
         varyings: Vec::new(),
         outputs: Vec::new(),
         uses_frag_coord: false,
@@ -1160,6 +1163,11 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         wrapper.push_str(&format!(
             "for (int _k_i = 0; _k_i < {len}; _k_i++) {{ {name}[_k_i] = {from}; }} "
         ));
+    }
+    // A matrix attribute is made of its columns, which are the vertex inputs.
+    for (name, n) in &r.mat_attributes {
+        let columns: Vec<String> = (0..*n).map(|c| format!("_k_m_{name}_{c}")).collect();
+        wrapper.push_str(&format!("{name} = mat{n}({}); ", columns.join(", ")));
     }
     if points && !fragment {
         wrapper.push_str("_k_PointSize = 1.0; ");
@@ -1814,6 +1822,20 @@ fn declaration(
                         l
                     });
                 *ctx.next_attribute = at + taken;
+                if let Some(n) = ty.strip_prefix("mat").and_then(|n| n.chars().next()?.to_digit(10)) {
+                    // A matrix cannot be a vertex input: its columns are, at consecutive locations, and the
+                    // matrix is made of them at the start of `main`.
+                    for column in 0..n {
+                        r.attributes.push((format!("{name}[{column}]"), at + column, Some(n)));
+                        text_out.push_str(&format!(
+                            "layout(location={}) in vec{n} _k_m_{name}_{column}; ",
+                            at + column
+                        ));
+                    }
+                    text_out.push_str(&format!("{ty} {name}; "));
+                    r.mat_attributes.push((name.clone(), n));
+                    continue;
+                }
                 r.attributes.push((name.clone(), at, float_components(&ty)));
                 text_out.push_str(&format!("layout(location={at}) in {ty} {name}; "));
             }

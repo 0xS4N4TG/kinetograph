@@ -525,7 +525,7 @@ A `draw` carries `program`, `mode` (`points`, `triangles`, `triangleStrip`, `tri
 `instances` (default 1), `indices`
 (`drawElements`: `buffer`, `type` `u8`, `u16` or `u32`, byte `offset`), `attributes` by the shader's names (`buffer`,
 `size`, `type` `f32`, or `u8`, `i8`, `u16`, `i16` with `normalized`, byte `stride` and `offset`, and `divisor` 1 for an
-attribute that advances for each instance; a disabled array is `constant`, its four values, for every vertex: `vertexAttrib*`, default 0, 0, 0, 1, with `buffer` only a name and `size` 4), `uniforms` by name
+attribute that advances for each instance; a disabled array is `constant`, its four values, for every vertex: `vertexAttrib*`, default 0, 0, 0, 1, with `buffer` only a name and `size` 4; a `mat2`, `mat3` or `mat4` attribute is one attribute for each column, named `name[0]`, `name[1]`, ..., at consecutive locations), `uniforms` by name
 (a list of calls: `kind` `f`, `i` or `m` for column-major matrices, `value`, and `index` for an element of an array),
 `units` (the texture units by number, each with its `texture` and the `min`, `mag`, `wrapS` and `wrapT` it was set
 to, as the GL names), `viewport`, `scissor` (both with y up from the bottom row, as GL's), `blend` (the factors,

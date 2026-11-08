@@ -1387,6 +1387,42 @@ describe('the recording WebGL context', () => {
     });
   });
 
+  describe('matrix attributes', () => {
+    const VERTEX_MATRIX = '#version 300 es\nin vec2 p; in mat4 instanceMatrix; in vec3 tail; out vec3 t; void main() { t = tail; gl_Position = instanceMatrix * vec4(p, 0.0, 1.0); }';
+    const FRAGMENT_PLAIN = '#version 300 es\nprecision highp float; in vec3 t; out vec4 o; void main() { o = vec4(t, 1.0); }';
+
+    it('takes four consecutive locations and records a column at a time, instanced', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const program = gl.createProgram();
+      for (const [type, source] of [[GL.VERTEX_SHADER, VERTEX_MATRIX], [GL.FRAGMENT_SHADER, FRAGMENT_PLAIN]] as const) {
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source);
+        gl.attachShader(program, shader);
+      }
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      const at = gl.getAttribLocation(program, 'instanceMatrix');
+      const locations = [gl.getAttribLocation(program, 'p'), at, gl.getAttribLocation(program, 'tail')];
+      expect(new Set([...locations, at + 1, at + 2, at + 3]).size).toBe(6);
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(GL.ARRAY_BUFFER, buffer);
+      gl.bufferData(GL.ARRAY_BUFFER, new Float32Array(32), GL.STATIC_DRAW);
+      for (let column = 0; column < 4; column += 1) {
+        gl.enableVertexAttribArray(at + column);
+        gl.vertexAttribPointer(at + column, 4, GL.FLOAT, false, 64, column * 16);
+        gl.vertexAttribDivisor(at + column, 1);
+      }
+      gl.vertexAttrib3f(gl.getAttribLocation(program, 'tail'), 1, 2, 3);
+      gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 2);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const draw = gl.content().ops[0]!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      expect(Object.keys(draw.attributes).sort()).toEqual(['instanceMatrix[0]', 'instanceMatrix[1]', 'instanceMatrix[2]', 'instanceMatrix[3]', 'p', 'tail']);
+      expect(draw.attributes['instanceMatrix[2]']).toMatchObject({ size: 4, stride: 64, offset: 32, divisor: 1 });
+      expect(draw.instances).toBe(2);
+    });
+  });
+
   describe('a clear with the scissor test on', () => {
     function drawOf(gl: WebGLContext, index = 0) {
       const op = gl.content().ops[index]!;

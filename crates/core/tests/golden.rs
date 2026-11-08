@@ -249,6 +249,14 @@ fn glsl_constant_attribute_matches_golden() {
 }
 
 #[test]
+fn glsl_instanced_matrix_matches_golden() {
+    // Six instances of a quad placed by an instanced `mat4` attribute (four column attributes with a divisor of 1),
+    // with the colour a disabled array read as a constant.
+    let frame = render_still(scene("tests/scenes/glsl-instanced-matrix.json"), 0).unwrap();
+    check("glsl-instanced-matrix", &frame);
+}
+
+#[test]
 fn scene3d_animation_matches_golden() {
     // Frame 15 of 30, half a second into every clip: a cube turning, moving
     // and growing (with a second cube on a spline), a quad whose top corners
