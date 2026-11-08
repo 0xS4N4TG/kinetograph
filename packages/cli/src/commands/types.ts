@@ -93,7 +93,7 @@ export function openFromArgs(args: ParsedArgs, extra: Pick<OpenOptions, 'unsuppo
 }
 
 /** The composition id as a file name part. */
-function fileStem(id: string): string {
+export function fileStem(id: string): string {
   return id.replace(/[^A-Za-z0-9._-]+/g, '_') || 'video';
 }
 

@@ -9,11 +9,14 @@ import { CHUNK_FRAMES, renderInParallel } from './parallel-render.js';
 import { ProfileLog, now, profiling, stage, takeAddon, takeJs, writeShared } from './profile.js';
 import { LeftOutCollector, strictError, type CompatReport } from './compat-report.js';
 import { CliError } from './errors.js';
+import { encodeFrame, sequenceFileName, type ImageFormat } from './image-sequence.js';
 import { native } from './native.js';
 import { scaleScene, scaledSize } from './scenes.js';
 import { frameRange, type Source } from './source.js';
+import { nowMs } from './time.js';
 
 export interface RenderJobOptions {
+  /** The video file; with `sequence`, the folder the image files go in. */
   output: string;
   /** `10..40` (10 to 39) or `10..=40`; default all frames. */
   range?: string;
@@ -22,6 +25,11 @@ export interface RenderJobOptions {
   scale?: number;
   /** Half size: `scale: 0.5`. */
   draft?: boolean;
+  /**
+   * Write one image file per frame into `output`, named `<stem>-<frame>.<format>`, instead of a video. No audio is
+   * written; the video options (`export`, `encoder`, `everyNthFrame`) must be left out.
+   */
+  sequence?: { format: ImageFormat; stem: string };
   /** Codec, quality, pixel format and audio (packages/cli/skills/kinetograph/references/AUTHORING.md §9). */
   export?: ExportOptions;
   /** GIF: draw every nth frame of the range (a project only). */
@@ -51,25 +59,26 @@ export interface RenderJobOptions {
 /** What a render did, beside the encoder's `RenderSummary`. */
 export type RenderResult = RenderSummary & {
   compat: CompatReport;
-  /** The `<Artifact>` files written beside the video, as the names they have in its folder. */
+  /** The `<Artifact>` files written beside the video (beside the sequence's folder), as the names they have in it. */
   artifacts: string[];
+  /** `--sequence` only: what the render did not do, e.g. that audio is not written (also on stderr, which `--json` silences). */
+  warnings?: string[];
 };
 
 /**
- * Writes the `<Artifact>` files that frames `first..=last` asked for into the folder of `output`: text and bytes as they
- * are, a thumbnail as the PNG of the frame it was rendered in.
+ * Writes the `<Artifact>` files that frames `first..=last` asked for into `folder`: text and bytes as they are, a
+ * thumbnail as the PNG of the frame it was rendered in.
  */
 async function writeArtifacts(
   source: Source,
   renderer: Renderer,
-  output: string,
+  folder: string,
   first: number,
   last: number,
   scale: number,
   records: ArtifactRecord[],
 ): Promise<string[]> {
   const written: string[] = [];
-  const folder = dirname(output);
   for (const artifact of records) {
     if (artifact.frame < first || artifact.frame > last) continue;
     const file = join(folder, artifact.filename);
@@ -89,6 +98,97 @@ async function writeArtifacts(
 }
 
 /**
+ * `render --sequence`: frames `range` of `source` as one image file each in the folder `options.output`, a project's
+ * and a `.json` scene's alike. The workers of `concurrency` draw projects, as for a video, and the files are written in
+ * frame order, so they are the same whichever count draws them. What the frames left out is decided per frame, as for a
+ * video. No audio is written; a warning says so when the frames have any.
+ */
+async function renderSequence(
+  source: Source,
+  renderer: Renderer,
+  options: RenderJobOptions & { sequence: NonNullable<RenderJobOptions['sequence']> },
+): Promise<RenderResult> {
+  const { format, stem } = options.sequence;
+  const folder = options.output;
+  const scale = options.scale ?? (options.draft ? 0.5 : 1);
+  const { durationInFrames, fps, width, height } = source.composition;
+  const [first, last] = frameRange(options.range, durationInFrames);
+  const total = last - first + 1;
+  const size = scale !== 1 ? { width: scaledSize(width, scale), height: scaledSize(height, scale) } : { width, height };
+  const started = nowMs();
+  mkdirSync(folder, { recursive: true });
+  source.clearArtifacts?.();
+  const clipFrames: { frame: number; audio: AudioClipJson[] }[] = [];
+  const leftOut = new LeftOutCollector();
+  let artifactRecords: ArtifactRecord[] = [];
+  const onFrame = (frame: number, audio: AudioClipJson[], unsupported: Unsupported[]): void => {
+    clipFrames.push({ frame, audio });
+    if (options.strict && unsupported.length > 0) throw strictError(frame, unsupported);
+    leftOut.add(frame, unsupported);
+  };
+  const write = (frame: number, bytes: Uint8Array): void => {
+    writeFileSync(join(folder, sequenceFileName(stem, frame, durationInFrames - 1, format)), bytes);
+  };
+  const pushed = (index: number): void => options.onFrame?.(index + 1, total);
+  const workers = Math.min(options.concurrency ?? 1, Math.ceil(total / CHUNK_FRAMES));
+  if (workers > 1 && source.worker) {
+    artifactRecords = await renderInParallel({
+      spec: source.worker,
+      scale,
+      convertFormat: '',
+      sequence: format,
+      devReact: options.devReact ?? false,
+      preferredEffectBackend: options.preferredEffectBackend,
+      origin: first,
+      step: 1,
+      workers,
+      count: total,
+      push: (index, data) => write(first + index, data),
+      onFrame: (index, audio, unsupported) => onFrame(first + index, audio, unsupported),
+      onPushed: pushed,
+      shouldCancel: options.shouldCancel,
+    });
+  } else {
+    for (let index = 0; index < total; index++) {
+      if (options.shouldCancel?.()) throw new CliError('CANCELLED', 'the render was cancelled');
+      const frame = first + index;
+      const out = await source.frame(frame);
+      onFrame(frame, out.audio, out.unsupported ?? []);
+      const sceneJson = scale !== 1 ? JSON.stringify(scaleScene(JSON.parse(out.sceneJson) as SceneJson, scale)) : out.sceneJson;
+      write(frame, encodeFrame(renderer, format, sceneJson, frame, source.baseDir));
+      pushed(index);
+    }
+    artifactRecords = source.artifacts?.() ?? [];
+  }
+  const warnings: string[] = [];
+  if (hasAudibleClip(joinClips(clipFrames)) || hasOnFrame(first, last)) {
+    warnings.push('audio is not written: --sequence writes images only (render without it for a video with sound)');
+  }
+  for (const warning of warnings) options.progress?.(warning);
+  // Beside the folder, as a video's are beside the video: a `*.png` of the folder holds frames only.
+  const artifacts = await writeArtifacts(source, renderer, dirname(folder), first, last, scale, artifactRecords);
+  const ms = nowMs() - started;
+  return {
+    output: folder,
+    encoder: format,
+    codec: format,
+    pixelFormat: format === 'png' ? 'rgba' : 'rgb',
+    ...size,
+    fps,
+    frames: total,
+    first,
+    last,
+    ms,
+    msPerFrame: ms / total,
+    audio: false,
+    repeated: 0,
+    compat: leftOut.report(),
+    artifacts,
+    warnings,
+  };
+}
+
+/**
  * Renders `source` to `options.output` with `renderer` (the `render` command, packages/cli/skills/kinetograph/references/AUTHORING.md §9): a `.json` scene
  * goes to the addon whole, a project is pushed frame by frame and its audio mixed at the end.
  *
@@ -100,6 +200,7 @@ export async function renderSource(
   renderer: Renderer,
   options: RenderJobOptions,
 ): Promise<RenderResult> {
+  if (options.sequence) return renderSequence(source, renderer, { ...options, sequence: options.sequence });
   const { range, encoder } = options;
   const scale = options.scale ?? (options.draft ? 0.5 : 1);
   const { durationInFrames, fps, width, height } = source.composition;
@@ -157,7 +258,7 @@ export async function renderSource(
         step,
         workers,
         count: total,
-        writer,
+        push: (index, data) => writer.pushYuv(data, index),
         onFrame: (index, audio, unsupported, repeated) => {
           if (repeated) parallelRepeats += 1;
           onFrame(frameAt(index), audio, unsupported);
@@ -200,7 +301,7 @@ export async function renderSource(
     }
     stage('writer.finish done');
     writeShared();
-    const artifacts = await writeArtifacts(source, renderer, options.output, first, last, scale, artifactRecords);
+    const artifacts = await writeArtifacts(source, renderer, dirname(options.output), first, last, scale, artifactRecords);
     return { ...summary, repeated: summary.repeated + parallelRepeats, compat: leftOut.report(), artifacts };
   } catch (error) {
     try {
