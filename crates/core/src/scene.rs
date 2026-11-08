@@ -1118,6 +1118,9 @@ pub struct ImagePaint {
     pub space_x: Num,
     #[serde(default = "zero")]
     pub space_y: Num,
+    /// How the picture is resampled when it is drawn at another size.
+    #[serde(default)]
+    pub sampling: Sampling,
 }
 
 impl<'de> Deserialize<'de> for Paint {
@@ -1360,6 +1363,9 @@ pub struct ImageLayer {
     /// How the picture sits in the box `width` x `height`.
     #[serde(default)]
     pub fit: Fit,
+    /// How the picture is resampled when it is drawn at another size.
+    #[serde(default)]
+    pub sampling: Sampling,
 }
 
 /// A Lottie animation, rasterised by ThorVG at the size it is drawn at.
@@ -1513,6 +1519,18 @@ pub struct GifLayer {
 
 fn one_f64() -> f64 {
     1.0
+}
+
+/// How a picture is resampled when it is drawn at another size (CSS's `image-rendering`: `nearest` is `pixelated`
+/// and `crisp-edges`, hard pixel edges).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Sampling {
+    /// Smoothly (bilinear).
+    #[default]
+    Linear,
+    /// The nearest pixel.
+    Nearest,
 }
 
 /// How an image is fitted to its box (CSS's `object-fit`).

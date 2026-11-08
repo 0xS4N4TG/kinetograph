@@ -238,6 +238,7 @@ PNG or JPEG, drawn in the box `width` x `height` from the layer origin. Colours 
 | `src` | required | The file, relative to the scene. |
 | `width`, `height` | the file's size | Animatable, not negative. Both left out: the file's size in pixels. One left out: the other side, with the file's aspect ratio. |
 | `fit` | `fill` | How the picture sits in the box. `fill` stretches it to the box. `contain` scales it to fit inside the box, keeping its aspect ratio, and centres it; the rest of the box is empty. `cover` scales it to cover the box, keeping its aspect ratio, centres it, and cuts it to the box. Like CSS's `object-fit`. |
+| `sampling` | `linear` | `nearest` takes the nearest pixel when the picture is scaled (hard edges, like CSS's `image-rendering: pixelated`). Also a field of an image paint. |
 
 - The size of a file is read from its header when the scene loads, and only for a layer that leaves a side out. A missing
   or unreadable file is a load error naming the layer.

@@ -60,6 +60,7 @@ impl<'a> Painter<'a> {
         id: &str,
     ) -> Option<Vec<Value>> {
         let b = style.get_border();
+        let nearest = super::util::nearest_sampling(style);
         let current = current_color(style);
         // The source and the size it is a picture of.
         let (src, iw, ih) = match &b.border_image_source {
@@ -292,11 +293,17 @@ impl<'a> Painter<'a> {
                         ty - s.y * sy - vis.y,
                     ];
                     let fill = match &src {
-                        Src::Picture(path) => json!({
-                            "type": "image", "src": path,
-                            "x": num4(to_shape[4]), "y": num4(to_shape[5]),
-                            "width": num4(iw * sx), "height": num4(ih * sy),
-                        }),
+                        Src::Picture(path) => {
+                            let mut paint = json!({
+                                "type": "image", "src": path,
+                                "x": num4(to_shape[4]), "y": num4(to_shape[5]),
+                                "width": num4(iw * sx), "height": num4(ih * sy),
+                            });
+                            if nearest {
+                                super::util::mark_nearest(&mut paint);
+                            }
+                            paint
+                        }
                         Src::Gradient(g) => {
                             match gradient_paint(g, Rect::new(0.0, 0.0, iw, ih), &current) {
                                 Ok(mut fill) => {

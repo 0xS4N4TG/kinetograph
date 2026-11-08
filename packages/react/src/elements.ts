@@ -154,6 +154,8 @@ export interface ImageProps extends CommonProps {
   width?: Num;
   height?: Num;
   fit?: 'fill' | 'contain' | 'cover';
+  /** `nearest` keeps hard pixel edges when the picture is scaled (CSS `image-rendering: pixelated`). Default `linear`. */
+  sampling?: 'linear' | 'nearest';
 }
 
 export interface NoiseProps extends CommonProps {

@@ -73,6 +73,7 @@ impl<'a> Painter<'a> {
         geom: &BoxGeom,
     ) -> Vec<Value> {
         let bg = style.get_background();
+        let nearest = super::util::nearest_sampling(style);
         let current = current_color(style);
         let color = rgba(&resolve_color(&bg.background_color, &current));
         let images = &bg.background_image.0;
@@ -166,6 +167,9 @@ impl<'a> Painter<'a> {
             else {
                 continue;
             };
+            if nearest {
+                super::util::mark_nearest(&mut layer);
+            }
             if is_text(i) {
                 add_mask(self, &mut layers);
                 layer["matte"] = json!({ "layer": mask_id, "mode": "alpha" });
