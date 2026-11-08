@@ -3,9 +3,10 @@ import { availableParallelism } from 'node:os';
 import { whole, type ParsedArgs } from '../args.js';
 import { describeLeftOut } from '../compat-report.js';
 import { parsePreferredEffectBackend } from '../effects.js';
-import { EXPORT_FLAGS, parseExportFlags } from '../export-options.js';
+import { EXPORT_FLAGS, SCALE_OPTION, parseExportFlags } from '../export-options.js';
 import { FrameDrawer } from '../frame-drawer.js';
 import { renderSource, type RenderResult } from '../render-job.js';
+import { scaledSize } from '../scenes.js';
 import { native } from '../native.js';
 import { stage } from '../profile.js';
 import { checkFrame, type Source } from '../source.js';
@@ -29,8 +30,9 @@ export const still: Command = {
   summary: 'Render one frame to a PNG',
   project: true,
   positionals: [ENTRY, { name: 'frame', type: 'number', description: 'Frame number, from 0' }],
-  options: [OUTPUT_OPTION, STRICT_OPTION, PREFERRED_EFFECT_BACKEND_OPTION, DEV_REACT_OPTION],
+  options: [OUTPUT_OPTION, SCALE_OPTION, STRICT_OPTION, PREFERRED_EFFECT_BACKEND_OPTION, DEV_REACT_OPTION],
   async run(args, context) {
+    const { scale } = parseExportFlags(args.options);
     const restoreReact = setReactMode(args.options['dev-react'] === true);
     let source;
     try {
@@ -42,7 +44,7 @@ export const still: Command = {
         const renderer = newRenderer();
         context.progress(`renderer: ${renderer.backend()}`);
         return renderer;
-      }, progress: context.progress, strict: args.options.strict === true });
+      }, progress: context.progress, strict: args.options.strict === true, scale });
     try {
       const frame = checkFrame(args.positionals.frame as number, source.composition.durationInFrames);
       const output = outputPath(args, 'stills', source.composition.id, (stem) => `${stem}-f${frame}.png`);
@@ -51,7 +53,8 @@ export const still: Command = {
       ensureParentDir(output);
       writeFileSync(output, png);
       const ms = nowMs() - started;
-      const { width, height } = source.composition;
+      const width = scale !== 1 ? scaledSize(source.composition.width, scale) : source.composition.width;
+      const height = scale !== 1 ? scaledSize(source.composition.height, scale) : source.composition.height;
       drawer.reportLeftOut();
       return {
         data: { output, width, height, frame, ms, compat: drawer.report() },

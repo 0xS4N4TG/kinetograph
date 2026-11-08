@@ -210,6 +210,27 @@ describe('still', () => {
     }
     expect(calls.still).toHaveLength(0);
   });
+
+  it('--scale draws the frame at the scaled size, refuses bad values like render, and is the same as before without it', async () => {
+    const file = sceneFile();
+    const plain = await cli('still', file, '3', '-o', join(scratch(), 'a.png'), '--json');
+    expect(calls.still[0]!.scene).toEqual(JSON.parse(readFileSync(file, 'utf8')));
+    for (const [scale, width, height] of [['0.5', 32, 18], ['2', 128, 72]] as const) {
+      calls.still.length = 0;
+      const r = await cli('still', file, '3', '--scale', scale, '-o', join(scratch(), 's.png'), '--json');
+      expect(r.code).toBe(0);
+      expect(r.json).toMatchObject({ width, height });
+      expect(calls.still[0]!.scene).toMatchObject({ width, height });
+    }
+    expect(plain.json).toMatchObject({ width: 64, height: 36 });
+    calls.still.length = 0;
+    for (const bad of ['0', '-1', '9']) {
+      const r = await cli('still', file, '3', `--scale=${bad}`, '-o', join(scratch(), 'x.png'), '--json');
+      expect(r.json.error.code, bad).toBe('INVALID_ARG');
+      expect(r.json.error.message).toContain('--scale must be above 0 and at most 8');
+    }
+    expect(calls.still).toHaveLength(0);
+  });
 });
 
 describe('a scene file with keys the format does not read', () => {
@@ -445,6 +466,59 @@ describe('strip and onion', () => {
     expect(r.json.frames).toEqual([10, 25, 39]);
     const scene = calls.still.at(-1)!.scene as SceneJson;
     expect(scene.layers.map((l) => l.opacity)).toEqual([1, 0.5, 1 / 3]);
+  });
+
+  it('--scale draws each frame and the sheet at the scaled size, and is the same as before without it', async () => {
+    seam.override = () => fakeProject();
+    await cli('strip', 'index.tsx', '-n', '2', '-o', join(scratch(), 's1.png'), '--json');
+    const plain = calls.still.map((c) => c.scene as SceneJson);
+    const [plainSheet] = plain.slice(-1);
+    expect(plain.slice(0, 2).map((s) => [s.width, s.height])).toEqual([[64, 36], [64, 36]]);
+    for (const scale of [0.5, 2]) {
+      calls.still.length = 0;
+      const r = await cli('strip', 'index.tsx', '-n', '2', '--scale', String(scale), '-o', join(scratch(), 's2.png'), '--json');
+      expect(r.code).toBe(0);
+      const scenes = calls.still.map((c) => c.scene as SceneJson);
+      expect(scenes.slice(0, 2).map((s) => [s.width, s.height])).toEqual([[64 * scale, 36 * scale], [64 * scale, 36 * scale]]);
+      const sheet = scenes[2]!;
+      expect([sheet.width, sheet.height]).toEqual([plainSheet!.width * scale, plainSheet!.height * scale]);
+      expect(r.json).toMatchObject({ width: sheet.width, height: sheet.height });
+      // The labels are scaled with the sheet, not left at their full-size pixels.
+      const group = sheet.layers[0] as { type: string; transform: { scale: number }; children: unknown[] };
+      expect(group.transform.scale).toBe(scale);
+      expect(group.children).toEqual(plainSheet!.layers);
+    }
+    calls.still.length = 0;
+    await cli('strip', 'index.tsx', '-n', '2', '--scale', '1', '-o', join(scratch(), 's3.png'), '--json');
+    expect(calls.still.at(-1)!.scene).toEqual(plainSheet);
+  });
+
+  it('--scale draws onion frames and the blend at the scaled size', async () => {
+    seam.override = () => fakeProject();
+    await cli('onion', 'index.tsx', '10..40', '-n', '2', '-o', join(scratch(), 'o1.png'), '--json');
+    const plain = calls.still.at(-1)!.scene as SceneJson;
+    expect([plain.width, plain.height]).toEqual([64, 36]);
+    for (const scale of [0.5, 2]) {
+      calls.still.length = 0;
+      const r = await cli('onion', 'index.tsx', '10..40', '-n', '2', '--scale', String(scale), '-o', join(scratch(), 'o2.png'), '--json');
+      expect(r.code).toBe(0);
+      const scenes = calls.still.map((c) => c.scene as SceneJson);
+      expect(scenes.slice(0, 2).map((s) => [s.width, s.height])).toEqual([[64 * scale, 36 * scale], [64 * scale, 36 * scale]]);
+      expect([scenes[2]!.width, scenes[2]!.height]).toEqual([64 * scale, 36 * scale]);
+      expect(r.json).toMatchObject({ width: 64 * scale, height: 36 * scale });
+    }
+  });
+
+  it('refuses a bad --scale before drawing anything, as render does', async () => {
+    seam.override = () => fakeProject();
+    for (const command of [['strip'], ['onion', '10..40']]) {
+      for (const bad of ['0', '-1', '9']) {
+        const r = await cli(command[0]!, 'index.tsx', ...command.slice(1), `--scale=${bad}`, '-o', join(scratch(), 'x.png'), '--json');
+        expect(r.json.error.code, `${command[0]} ${bad}`).toBe('INVALID_ARG');
+        expect(r.json.error.message).toContain('--scale must be above 0 and at most 8');
+      }
+    }
+    expect(calls.still).toHaveLength(0);
   });
 
   it('limits n', async () => {
