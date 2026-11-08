@@ -5,7 +5,10 @@ description: The files and folders that npx kinetograph init makes, what each is
 
 `npx kinetograph init` makes a small project with a starter title card. Keep its layout: the commands, the agent skills and [Studio](/docs/studio/) all look for it.
 
-## A TSX project
+## The layout
+
+<Tabs items={['TSX (Remotion API)', 'HTML (HyperFrames)']}>
+  <Tab value="TSX (Remotion API)">
 
 ```sh
 npx kinetograph init my-video
@@ -46,27 +49,36 @@ registerRoot(() => (
 
 `package.json` gets four scripts (`still`, `strip`, `render` and `check`) that run the matching commands on the entry.
 
-## An HTML project
+  </Tab>
+  <Tab value="HTML (HyperFrames)">
 
 ```sh
 npx kinetograph init my-video --html
 ```
 
-```txt
+```txt title="kinetograph init --html"
 my-video
 ├─ html
 │  └─ index.html           the page, with its root element and timeline
-├─ public
-│  ├─ images
-│  ├─ fonts
-│  ├─ audio
-│  └─ video
-├─ out
+├─ public                  images, fonts, audio, video
+├─ out                     everything the commands write
 ├─ package.json
 └─ .gitignore
 ```
 
-The entry is `html/index.html`. There is no `src/` and no `tsconfig.json`. An HTML page names its files by a path from the page. See [HyperFrames projects](/docs/compat/#hyperframes-projects).
+```txt title="A HyperFrames project"
+my-video
+├─ index.html              the main composition
+├─ compositions            mounted with data-composition-src
+├─ assets                  files the page names by path
+└─ out
+   └─ renders              videos
+```
+
+The entry is `html/index.html`, or a HyperFrames project's `index.html`. `hyperframes.json` and the planning files are not read. See [HyperFrames projects](/docs/compat/#hyperframes-projects).
+
+  </Tab>
+</Tabs>
 
 ## What goes where
 
