@@ -36,7 +36,7 @@ This writes the foreground as VP9 WebM with alpha. Add `--base public/base.webm`
 | `--base` | none | Also write the opaque base layer here. |
 | `--model` | `modnet` | `modnet` or `ben2-base`. |
 | `--audio` | `keep` | `keep` copies the video's audio into the files written. `drop` writes them silent. |
-| `--quality` | `very-high` | `low`, `medium`, `high` or `very-high`. Higher keeps fine alpha edges and makes larger files. |
+| `--quality` | `very-high` | `very-low`, `low`, `medium`, `high` or `very-high`. Higher keeps fine alpha edges and makes larger files. |
 | `--offline` | off | Never download: the model must already be cached. |
 
 With `--json` the result has the files, `model`, `backend`, `frames`, the size and duration, and the bytes written. The options are checked before anything is downloaded.

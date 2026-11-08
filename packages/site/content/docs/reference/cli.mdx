@@ -268,7 +268,7 @@ npx kinetograph matte public/original.mp4 -o public/foreground.webm --base publi
 | `--base <file>` | Also write the opaque base layer, `.webm` or `.mov`. |
 | `--model <name>` | `modnet` (default; people) or `ben2-base` (any foreground subject; experimental and heavier). |
 | `--audio <keep\|drop>` | `keep` (default) copies the audio into the files written. |
-| `--quality <preset>` | `low`, `medium`, `high` or `very-high` (default). |
+| `--quality <preset>` | `very-low`, `low`, `medium`, `high` or `very-high` (default). |
 | `--offline` | Never download the model. It must already be cached. |
 
 The `--json` result has `foreground`, `base` (when asked for), `model`, `backend`, `frames`, `width`, `height`, `durationInSeconds`, `audio`, `quality` and `bytes`.

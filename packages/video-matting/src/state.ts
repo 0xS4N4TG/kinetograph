@@ -15,7 +15,7 @@ export interface MatteVideoOptions {
   foreground: string;
   base?: string;
   keepAudio: boolean;
-  quality: 'low' | 'medium' | 'high' | 'very-high';
+  quality: 'very-low' | 'low' | 'medium' | 'high' | 'very-high';
   jobs?: number;
   /** Extras the options of `separateVideoLayers` carry; an addon that does not read one ignores it. */
   audio?: 'base' | 'foreground' | 'both' | 'none';

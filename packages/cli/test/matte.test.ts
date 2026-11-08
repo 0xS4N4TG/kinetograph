@@ -118,13 +118,15 @@ describe('kinetograph matte', () => {
     expect(calls[0]).toMatchObject({ model: 'ben2-base', keepAudio: false, audio: 'none', quality: 'medium' });
     expect(calls[0]!.foreground.endsWith('.mov') && calls[0]!.base!.endsWith('.webm')).toBe(true);
     expect(readFileSync(base, 'utf8')).toBe('BASE');
+    await run(['--quality', 'very-low']);
+    expect(calls.at(-1)).toMatchObject({ quality: 'very-low' });
   });
 
   it('refuses bad options before downloading or running anything', async () => {
     const cases: [string[], RegExp, string][] = [
       [['--model', 'rvm'], /--model must be one of modnet, ben2-base/, 'INVALID_ARG'],
       [['--audio', 'both'], /--audio must be one of keep, drop/, 'INVALID_ARG'],
-      [['--quality', 'ultra'], /--quality must be one of low, medium, high, very-high/, 'INVALID_ARG'],
+      [['--quality', 'ultra'], /--quality must be one of very-low, low, medium, high, very-high/, 'INVALID_ARG'],
       [['-o', join(dir, 'fg.mp4')], /--output must end in \.webm/, 'INVALID_ARG'],
       [['--base', join(dir, 'b.gif')], /--base must end in \.webm/, 'INVALID_ARG'],
       [['-o', video.replace('.mp4', '.mov'), '--base', video.replace('.mp4', '.mov')], /same file/, 'INVALID_ARG'],

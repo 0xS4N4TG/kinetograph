@@ -76,7 +76,7 @@ describe('separateVideoLayers() through the addon', () => {
     setAddonForTests(addon);
     setFetchForTests(serve(BYTES, { urls: [], ranges: [] }));
     await downloadVideoMattingModel({ model: 'ben2-base' });
-    for (const [videoBitrate, quality] of [['very-low', 'low'], ['low', 'low'], ['medium', 'medium'], ['high', 'high'], ['very-high', 'very-high'], [900_000, 'low'], [3_000_000, 'medium'], [8_000_000, 'high'], [20_000_000, 'very-high']] as const) {
+    for (const [videoBitrate, quality] of [['very-low', 'very-low'], ['low', 'low'], ['medium', 'medium'], ['high', 'high'], ['very-high', 'very-high'], [400_000, 'very-low'], [900_000, 'low'], [3_000_000, 'medium'], [8_000_000, 'high'], [20_000_000, 'very-high']] as const) {
       await using r = await separateVideoLayers({ src: video, model: 'ben2-base', audio: 'none', videoBitrate, audioBitrate: 'low', keyframeIntervalInSeconds: 2 });
       const call = addon.calls.at(-1)!;
       expect(call).toMatchObject({ model: 'ben2-base', keepAudio: false, audio: 'none', quality, audioBitrate: 'low', keyframeIntervalInSeconds: 2 });

@@ -90,12 +90,11 @@ function checkBitrate(what: string, value: VideoBitrate | undefined): void {
   throw invalid(`${what} must be a positive whole number of bits per second or one of ${PRESETS.join(', ')}, got ${JSON.stringify(value)}`);
 }
 
-/** The addon has four presets: `very-low` is its `low`, and a bit rate picks the nearest preset at or above it. */
+/** The addon has Remotion's five presets; a bit rate picks the nearest preset at or above it. */
 function qualityOf(bitrate: VideoBitrate | undefined): MatteVideoOptions['quality'] {
-  if (bitrate === undefined || bitrate === 'very-high') return 'very-high';
-  if (bitrate === 'very-low' || bitrate === 'low') return 'low';
-  if (bitrate === 'medium' || bitrate === 'high') return bitrate;
-  return bitrate <= 1_500_000 ? 'low' : bitrate <= 4_000_000 ? 'medium' : bitrate <= 10_000_000 ? 'high' : 'very-high';
+  if (bitrate === undefined) return 'very-high';
+  if (typeof bitrate === 'string') return bitrate;
+  return bitrate <= 500_000 ? 'very-low' : bitrate <= 1_500_000 ? 'low' : bitrate <= 4_000_000 ? 'medium' : bitrate <= 10_000_000 ? 'high' : 'very-high';
 }
 
 function checkOutput(layer: 'base' | 'foreground', options: VideoLayerOutputOptions | undefined): void {

@@ -17,7 +17,7 @@ import { native } from '../native.js';
 import { OUTPUT_OPTION, type Command } from './types.js';
 
 const AUDIO = ['keep', 'drop'] as const;
-const QUALITY = ['low', 'medium', 'high', 'very-high'] as const;
+const QUALITY = ['very-low', 'low', 'medium', 'high', 'very-high'] as const;
 
 const oneOf = <T extends string>(flag: string, value: unknown, allowed: readonly T[], fallback: T): T => {
   if (value === undefined) return fallback;
@@ -44,7 +44,7 @@ export const matte: Command = {
     { name: 'base', type: 'string', description: 'Also write the opaque base layer here (.webm or .mov); by default only the foreground is written' },
     { name: 'model', type: 'string', description: 'modnet (default; people, Apache-2.0, 25.9 MB) or ben2-base (any foreground subject, MIT, experimental and heavier, 219.1 MB)' },
     { name: 'audio', type: 'string', description: 'keep (default) copies the video\'s audio into the written files; drop writes them silent' },
-    { name: 'quality', type: 'string', description: 'Video quality of the outputs: low | medium | high | very-high (default very-high; higher keeps alpha edges better and makes larger files)' },
+    { name: 'quality', type: 'string', description: 'Video quality of the outputs: very-low | low | medium | high | very-high (default very-high; higher keeps alpha edges better and makes larger files)' },
     { name: 'offline', type: 'boolean', description: 'Never download the model: it must already be cached (a missing one is an error)' },
   ],
   async run(args, context) {

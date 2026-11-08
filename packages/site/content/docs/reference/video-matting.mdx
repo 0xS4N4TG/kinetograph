@@ -102,7 +102,7 @@ A `VideoLayerOutput` has `getBlob()`, `dispose()` and `[Symbol.asyncDispose]()`,
 
 `outputTarget`, `outputWritable` and `path` cannot be combined. `outputs: { base: false }`, also Kinetograph's own, skips the base layer; the result's `base` is then `null`.
 
-`videoBitrate` becomes one of the addon's four quality presets: `very-low` is `low`, and a number picks the nearest preset at or above it. The number, `audio`, `audioBitrate` and `keyframeIntervalInSeconds` are also handed to the addon, which ignores any it does not read.
+`videoBitrate` becomes one of the addon's five quality presets, with the same names. A number picks the nearest preset at or above it. The number, `audio`, `audioBitrate` and `keyframeIntervalInSeconds` are also handed to the addon, which ignores any it does not read.
 
 ### What differs from Remotion
 
