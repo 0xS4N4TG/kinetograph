@@ -1,9 +1,9 @@
 ---
-title: What works
+title: Compatibility
 description: What Kinetograph draws from a Remotion or HyperFrames project, and what it approximates or skips.
 ---
 
-Kinetograph renders Remotion and HyperFrames projects without a browser. Your `remotion` and `@remotion/*` imports run on Kinetograph's own versions of those packages. To move a project, see [Migrate from Remotion](/docs/guides/migrate/).
+Kinetograph renders Remotion and HyperFrames projects without a browser. Your `remotion` and `@remotion/*` imports run on Kinetograph's own versions of those packages. To move a project, see [Migrate from Remotion](/docs/migrating/remotion/).
 
 Each section lists what works, then the gaps. "Reported" means it shows in the render warnings and in [`doctor`](/docs/terminology/doctor/).
 
@@ -38,7 +38,7 @@ npx kinetograph render src/index.ts --strict
 - `<Audio>` and `<Video>` from `@remotion/media` work. `toneFrequency` (0.01 to 2) changes pitch, not length.
 - `@remotion/media-utils` works. `visualizeAudio` follows Remotion's documented behaviour, but its numbers are not identical.
 - `onVideoFrame` on `<Video>`, `<OffthreadVideo>` and `<Html5Video>` hands you the frame as a canvas image source: `ctx.drawImage(frame, ...)` and `getImageData`. The frame is not a WebCodecs `VideoFrame`: it has `width`, `height`, `timestamp` and `close()` only. A canvas you draw on starts each frame empty. A video with no named colour space converts differently from Chrome.
-- `<Video datamosh>` is Kinetograph's own prop: see [Datamosh](/docs/guides/datamosh/).
+- `<Video datamosh>` is Kinetograph's own prop: see [Datamosh](/docs/making-videos/datamosh/).
 - `@remotion/media-parser` and `@remotion/webcodecs` work in part: the `@remotion/webcodecs` encode and decode functions, and the box tree and sample callbacks of `@remotion/media-parser`, throw `UnsupportedApiError`. Normal `<Video>` and `<Audio>` are not affected.
 - On Linux the addon has no VAAPI or Quick Sync encoders. Use your system's with `KINETOGRAPH_FFMPEG=$(which ffmpeg)` and `--encoder h264_vaapi`, `hevc_vaapi`, `h264_qsv` or `hevc_qsv` (`yuv420p`; `yuv420p10le` for `hevc_*`). They are never the default (`libopenh264` is). `KINETOGRAPH_VAAPI_DEVICE` picks another `/dev/dri/renderD*`. `--crf N` maps to constant quality, which is a different picture quality. Untried on hardware.
 
@@ -108,7 +108,7 @@ How to write code for GSAP, Motion, anime.js, d3, Chart.js, Recharts and the res
 
 ## HyperFrames projects
 
-`render`, `still`, `doctor` and `studio` take a [HyperFrames](https://github.com/heygen-com/hyperframes) project as it is. Pass its `index.html` or its directory. Nothing is rewritten. For the steps, see [Migrate from HyperFrames](/docs/guides/migrate-hyperframes/).
+`render`, `still`, `doctor` and `studio` take a [HyperFrames](https://github.com/heygen-com/hyperframes) project as it is. Pass its `index.html` or its directory. Nothing is rewritten. For the steps, see [Migrate from HyperFrames](/docs/migrating/hyperframes/).
 
 - **Composition and timelines:** every frame, each `window.__timelines` entry is paused and seeked. The root `data-composition-id` element gives the size (`data-width`, `data-height`) and length (`data-duration`, else the longest timeline or clip), at 30 fps. `data-start` takes seconds or `clip-id + 2`; its references stay inside one composition. Without `data-duration`, a video or audio lasts its file and an `<img>` lasts 3 s. `data-hidden`, `data-composition-src`, `data-variable-values` and `getVariables()` work.
 - **Media:** `<video>` is decoded by the engine, frame-accurate, following `data-media-start` and `data-playback-rate` (kept to 0.1 to 10). `<audio>` and unmuted `<video>` are mixed with `data-volume`, `data-fade-in` and `data-fade-out`. `data-automation` takes `rate` lanes and `volume` lanes (capped at +12 dB).

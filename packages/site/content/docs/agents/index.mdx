@@ -10,7 +10,7 @@ An [agent](/docs/terminology/agent/) can't watch a video, so Kinetograph gives i
 
 ## The MCP server
 
-The server is `npx kinetograph mcp`, over stdio. It has one tool for each CLI command except `studio`, which keeps running until stopped. [Studio](/docs/guides/studio/#the-agent) has its own chat with your coding agent and gives it these tools.
+The server is `npx kinetograph mcp`, over stdio. It has one tool for each CLI command except `studio`, which keeps running until stopped. [Studio](/docs/studio/#the-agent) has its own chat with your coding agent and gives it these tools.
 
 A tool takes the same arguments as its command. Command names with a space use an underscore, so `audio analyze` is `audio_analyze`. An error comes back as `{ "error": { "code", "message" } }`.
 
@@ -95,7 +95,7 @@ Or run `codex mcp add kinetograph -- npx -y kinetograph mcp`. `codex mcp list` s
 There are two skills:
 
 - `kinetograph` teaches the write, look, check, render loop. It covers how a project is laid out, sound, Remotion compatibility, `doctor` and the CLI flags an agent needs.
-- `kinetograph-migrate` moves an existing Remotion project onto Kinetograph. See [Migrate from Remotion](/docs/guides/migrate/).
+- `kinetograph-migrate` moves an existing Remotion project onto Kinetograph. See [Migrate from Remotion](/docs/migrating/remotion/).
 
 Install both from the GitHub repo with the [`skills`](https://www.npmjs.com/package/skills) CLI. It asks which agents to install them for:
 
@@ -113,7 +113,7 @@ cp -R node_modules/kinetograph/skills/kinetograph node_modules/kinetograph/skill
 
 For one project only, copy them to `.claude/skills/` in that project instead. Other agents that read `SKILL.md` files can use the same folders.
 
-One more skill, `kinetograph-taste-clone`, lives in [kinetograph-ui](https://github.com/0xS4N4TG/kinetograph-ui). It turns a reference reel into a spec or a reusable style. See [Match a reel, keep its taste](/docs/guides/taste/).
+One more skill, `kinetograph-taste-clone`, lives in [kinetograph-ui](https://github.com/0xS4N4TG/kinetograph-ui). It turns a reference reel into a spec or a reusable style. See [Match a reel, keep its taste](/docs/agents/taste/).
 
 ## The loop the skill teaches
 

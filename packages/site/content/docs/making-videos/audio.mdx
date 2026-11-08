@@ -3,7 +3,7 @@ title: Audio
 description: Play sound files with the Audio element, synthesise sound with onFrame, and measure the loudness of the mix.
 ---
 
-A project has two sources of sound. `Audio` plays a file. `onFrame` schedules Web Audio synthesis at a frame. Both are mixed into one stereo track at 48 kHz.
+`Audio` plays a sound file, and `onFrame` synthesises sound at a frame. Both are mixed into one stereo track at 48 kHz.
 
 ## Play a file
 
@@ -83,3 +83,16 @@ The command mixes the audio and prints:
 `--range` limits the frames that are mixed. `--scenes` also measures each frame range on its own. Add `--json` for an object with the keys `integratedLufs`, `truePeakDb`, `clippedSamples`, `silences` and `scenes`.
 
 `@kinetographdev/audio` also exports `clearOnFrame`, `renderAudio` and `analyzeAudio`. The signatures are in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 8. For gaps, see [What works](/docs/compat/#video-and-audio).
+
+## Suggested prompt
+
+```txt title="Suggested prompt"
+/kinetograph-markup Lay the music under the whole video at 40% volume, fade it in over the first second, and run audio analyze.
+```
+
+## What works
+
+- Drawn natively: `Audio` and `Video` (also from `@remotion/media`), `toneFrequency`, `@remotion/media-utils`, Web Audio synthesis with `onFrame`, and the loudness check.
+- Approximated: `visualizeAudio` follows Remotion's documented behaviour, but its numbers are not identical.
+- Not supported: `@remotion/webcodecs` encode and decode, and the box tree and sample callbacks of `@remotion/media-parser`, throw `UnsupportedApiError`.
+- See [What works](/docs/compat/#video-and-audio).

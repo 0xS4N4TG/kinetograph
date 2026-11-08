@@ -13,7 +13,7 @@ Three things need work:
 - A few packages that have no equivalent.
 - Anything the engine can't draw yet.
 
-An agent can do this for you. See [Use with agents](/docs/guides/agents/) for the `kinetograph-migrate` skill.
+An agent can do this for you. See [Use with agents](/docs/agents/) for the `kinetograph-migrate` skill.
 
 ## How much of Remotion is covered
 
@@ -95,7 +95,7 @@ Follow these steps in order.
 5. **Render with `--strict`.** It stops on the first frame with something unsupported, so nothing is silently missing.
 6. **Write down what changed.** Note anything you left out or approximated. The video can differ from the Remotion one.
 
-The commands for steps 1, 2, 4 and 5 are below. They differ only in the entry. A Remotion project points at its entry file and picks a composition with `--comp`. A [HyperFrames](/docs/guides/migrate-hyperframes/) page points at its `index.html` or the directory that holds it. Your project keeps its own layout. Only the files the commands write go in `out/`.
+The commands for steps 1, 2, 4 and 5 are below. They differ only in the entry. A Remotion project points at its entry file and picks a composition with `--comp`. A [HyperFrames](/docs/migrating/hyperframes/) page points at its `index.html` or the directory that holds it. Your project keeps its own layout. Only the files the commands write go in `out/`.
 
 <Tabs items={['Remotion', 'HyperFrames']}>
   <Tab value="Remotion">
@@ -126,7 +126,7 @@ npx kinetograph render index.html --strict
 - **Tooling imports** (`player`, `renderer`, `bundler`, `lambda`): remove them and use the CLI.
   - `remotion render` becomes `kinetograph render <entry> --comp <id>`.
   - `remotion studio` becomes `kinetograph studio <entry>`.
-- **`@remotion/three`**: rebuild the scene with `Scene3D`, `Camera3D`, lights, `Mesh` and `Model`. Rotations are in degrees. See [Authoring](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 6.6.
+- **`@remotion/three`**: rebuild the scene with `Scene3D`, `Camera3D`, lights, `Mesh` and `Model`. Rotations are in degrees. See [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph/references/AUTHORING.md), section 6.6.
 - **`IFrame`**: rebuild the page as components, or use a screenshot.
 - **A CSS property or element in the report**: change it to one the engine draws, or remove it.
 
@@ -138,4 +138,4 @@ The `kinetograph-migrate` skill follows these steps for an agent.
 
 It has reference files for 3D, tooling and unsupported content. It loads them only when a finding needs one.
 
-See [Use with agents](/docs/guides/agents/#install-the-skills).
+See [Use with agents](/docs/agents/#install-the-skills).
