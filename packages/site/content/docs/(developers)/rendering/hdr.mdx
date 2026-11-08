@@ -14,3 +14,9 @@ Kinetograph renders standard dynamic range. Every video it writes is tagged BT.7
 A `Video` layer can play an HDR source file. The engine reads the file's colour matrix, including BT.2020, to convert it to RGB. It ignores the HDR transfer function (PQ or HLG), so the clip is treated as SDR: expect it to look flat or dim next to how an HDR player shows it. If the look matters, grade the clip to SDR in your editor first and use that file.
 
 An untagged clip is read as BT.709 from 720 lines up and BT.601 below. See [Assets](/docs/making-videos/assets/#videos) and [What works](/docs/compat/#video-and-audio).
+
+## Related topics
+
+- [Rendering](/docs/rendering/)
+- [Fix a slow render or preview](/docs/rendering/slow-renders/)
+- [CLI](/docs/reference/cli/)

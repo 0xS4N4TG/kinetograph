@@ -10,6 +10,19 @@ npx kinetograph <command> --help
 
 The entry is a `.tsx`, `.ts`, `.jsx` or `.js` project file, a `.json` scene, or an HTML page (its `index.html`, or the directory that holds it). HyperFrames projects are HTML pages and render as they are. See [HyperFrames projects](/docs/compat/#hyperframes-projects).
 
+## Pick a command
+
+Use this table to choose a command. The sections below have every argument and option.
+
+| You want to | Commands |
+| --- | --- |
+| Start a project, or add a library item | `init`, `add` |
+| Look at the video before you render | `compositions`, `still`, `strip`, `onion` |
+| Check it | `inspect`, `lint`, `check`, `doctor`, `snapshot` |
+| Work with sound and tracking | `audio analyze`, `track` |
+| Render and measure | `render`, `bench`, `effects`, `fetch-deps` |
+| Edit with a preview, or connect an agent | `studio`, `mcp` |
+
 ## Shared behaviour
 
 - `--json` prints one JSON object on stdout instead of text. Progress goes to stderr, which stays quiet with `--json` except for the update notice below. A failure prints `{ "error": { "code", "message" } }`.
@@ -372,3 +385,8 @@ The `render` codec and quality options follow Remotion's names. The defaults are
 - Audio: 96 kbit/s per channel.
 
 `--crf` does not apply to `prores` or `gif`. The encoder choice for each codec is in [AUTHORING.md](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph-markup/references/AUTHORING.md), section 9.
+
+## Related topics
+
+- [Scene format](/docs/reference/scene-format/)
+- [What works](/docs/compat/)

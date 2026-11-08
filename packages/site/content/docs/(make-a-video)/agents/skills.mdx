@@ -3,7 +3,11 @@ title: Agent skills
 description: The Kinetograph skills, what each is for, and how to install and update them.
 ---
 
-A skill is a folder with a `SKILL.md` that teaches a coding agent one job. Install them all with one command:
+A skill is a folder with a `SKILL.md` that teaches a coding agent one job. Install them once, and your agent knows how to make Kinetograph videos.
+
+## Install for a person
+
+Install them all with one command:
 
 ```sh
 npx skills add 0xS4N4TG/kinetograph
@@ -11,7 +15,15 @@ npx skills add 0xS4N4TG/kinetograph
 
 The [`skills`](https://www.npmjs.com/package/skills) CLI asks which agents to install them for. `npx skills add 0xS4N4TG/kinetograph --list` shows what it found and installs nothing.
 
-## The skills
+## Install or refresh from an agent
+
+Paste this into your agent. It installs the skills and asks before changing anything:
+
+```text title="Suggested prompt"
+Install the Kinetograph agent skills with npx skills add 0xS4N4TG/kinetograph. Install all of them. Then run npx kinetograph doctor and tell me if any skill is not current.
+```
+
+## What the skills cover
 
 | Skill | For |
 |---|---|
@@ -62,3 +74,13 @@ npx skills add 0xS4N4TG/kinetograph
 See [Update Kinetograph](/docs/upgrading/) for plugins, versions and the check afterwards.
 
 The skills live in the GitHub repo, in [`packages/cli/skills/`](https://github.com/0xS4N4TG/kinetograph/tree/main/packages/cli/skills).
+
+## If the agent cannot see a skill
+
+Start a new session in your agent, because skills load at the start. Then run `npx kinetograph doctor`. It lists each installed skill with its version and whether it is current.
+
+## Related topics
+
+- [Claude Code](/docs/agents/claude-code/), [Codex](/docs/agents/codex/) and [Cursor](/docs/agents/cursor/)
+- [Agent tools (MCP)](/docs/mcp/)
+- [Update Kinetograph](/docs/upgrading/)

@@ -148,3 +148,9 @@ kinetograph fetch-deps my-video                   # the download alone; --update
 ## Can differ by a pixel
 
 Rarely, when renderers share the GPU, two renders at the same concurrency differ by 1 in one colour channel on a few pixels of a frame. The cause is unknown. For a bit-exact render, use `--concurrency 1` or `KINETOGRAPH_SKIA_CPU=1` (slower, slightly different pixels).
+
+## Related topics
+
+- [CLI](/docs/reference/cli/)
+- [How Kinetograph works](/docs/internals/engine/)
+- [Terminology](/docs/terminology/)

@@ -3,9 +3,9 @@ title: Make a video from photos and footage
 description: Turn your own photos and clips into a slideshow or a short cut with moves between them.
 ---
 
-Put your photos and clips in a folder. Tell your agent how long each stays and how it moves. You get a slideshow or a short cut.
+<Video name="photos-and-footage" label="Four photos in turn, each with a slow push-in, then a clip" caption="A slideshow with a slow push-in on each photo, ending on a clip." />
 
-<Video name="photos-and-footage" label="Four photos in turn, each with a slow push-in, then a clip" caption="A slideshow with a slow push-in on each photo, ending on a clip." silent />
+Put your photos and clips in a folder. Tell your agent how long each stays and how it moves. You get a slideshow or a short cut.
 
 ## Make it
 
@@ -17,7 +17,23 @@ Make a 15 second video from the photos in public/images. Show each for 3 seconds
 
 Your agent lays out the photos, trims the clip and checks the frames. Then it saves the MP4.
 
-## Say these when they matter
+## How a good slideshow is built
+
+- **One idea per picture.** Each photo gets the same time on screen, unless you say otherwise.
+- **One move.** A slow push-in, a pan or a hold. Mixing moves makes it busy.
+- **A clear start and end.** A title over the first photo, and a clip or a closing card to finish.
+
+<Warning>
+  A render reads files on your computer only. A remote web address is an error, so download each file into the project first.
+</Warning>
+
+## Prompts that work
+
+```text title="Suggested prompt"
+Make a 20 second slideshow of the photos in public/images in the order of their file names. Show each for 4 seconds. Pan left to right on the wide ones and push in on the others. Dissolve between them. Put "Summer 2026" at the bottom left of the last one.
+```
+
+### Say these when they matter
 
 | Say | Why |
 | --- | --- |
@@ -27,9 +43,9 @@ Your agent lays out the photos, trims the clip and checks the frames. Then it sa
 | **How to fit the frame** | "Fill the frame, cropping the edges" or "show the whole picture". |
 | **Which part of a clip** | "From 2 seconds to 5" trims it. A clip can also be sped up, looped or muted. |
 
-## Common mistakes
+### Common mistakes
 
-**Using a web address.** A render reads files on your computer only. A remote URL is an error.
+**Using a web address.** A render reads files on your computer only.
 - **Avoid:** "use the photo at https://example.com/a.jpg"
 - **Instead:** "download it into public/images first, then use it"
 
@@ -37,12 +53,21 @@ Your agent lays out the photos, trims the clip and checks the frames. Then it sa
 - **Avoid:** "use all my photos"
 - **Instead:** "show them in the order of their file names"
 
+## Present it
+
+Save the MP4 with `npx kinetograph render src/index.tsx`. Add `--draft` first for a half-size look at the timing.
+
 ## Start from a template
 
 [Two lines on a focus pull](/templates/wait-ship/) floats seven photo cards round a blurred frame. The camera then pulls back to two lines of text. [Grid opener](/templates/grid-reel/) lays a grid over your shots. To add one, see [Use a library item](/docs/library/use-an-item/).
 
-## Next
+## Related topics
 
-- [Add voice, music and captions](/docs/making/voice-music-captions/)
-- [Motion and transitions](/docs/tips/motion/)
-- [Assets](/docs/making-videos/assets/)
+<CardGroup cols={2}>
+  <Card title="Add voice, music and captions" icon="route" href="/docs/making/voice-music-captions/">
+    Put sound and words on the video.
+  </Card>
+  <Card title="Assets" icon="learn" href="/docs/making-videos/assets/">
+    Every kind of file a video can use.
+  </Card>
+</CardGroup>

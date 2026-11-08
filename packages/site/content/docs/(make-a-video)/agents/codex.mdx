@@ -39,11 +39,21 @@ Make a 5 second title card for my product, check it with strip and lint, and ren
 
 Codex makes the project, looks at the frames, fixes what is off and saves the MP4. Say what to change in the same conversation.
 
-## Preview it yourself
+## Preview and render
+
+To reopen the preview with a timeline and a chat, run this in the project folder:
 
 ```sh
 npx kinetograph studio src/index.tsx
 ```
+
+The preview opens in Studio, where you can also edit the video by hand. To save the MP4 yourself:
+
+```sh
+npx kinetograph render src/index.tsx
+```
+
+You can also ask your agent to render it.
 
 ## If something goes wrong
 

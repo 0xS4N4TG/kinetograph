@@ -3,13 +3,17 @@ title: Examples
 description: Finished videos made with Kinetograph, each with a prompt you can paste to start your own.
 ---
 
-Every video here is a template you can add to your project and change. Open one to watch it, then paste its prompt into your agent.
+Watch finished films made with Kinetograph, then start your own from a template.
 
-<Video name="examples-reel" label="A reel of finished Kinetograph templates" caption="A few of the templates below, back to back." silent />
+## Watch finished films
 
-## Pick one
+Every tile below is a finished Kinetograph film. Open one to watch it with sound.
 
-Each prompt adds the template to your project and swaps in your own words. Replace the words in quotes.
+<FilmGrid />
+
+## Start from a template
+
+Each template is a whole video you can add to your project and change. Each prompt adds one and swaps in your own words. Replace the words in quotes.
 
 ### A type spot cut to the beat
 
@@ -75,12 +79,25 @@ Add the dostoevsky template and replace the script with a 40 second history of t
 Add the prompt-reply template. The prompt is "What is a kinetograph?" and the reply is two short lines I will paste next.
 ```
 
-## See them all
+## Single pieces
 
-The [library](/plugins/) has every template, with a clip for each. To add one yourself, see [Use a library item](/docs/library/use-an-item/).
+Components are single pieces you drop into a video. Add one by name, for example a chart, a background or a grid:
+
+```sh
+npx kinetograph add area-chart
+npx kinetograph add aurora
+npx kinetograph add grid-rect
+```
+
+The [library](/plugins/) shows every template and component with a clip. [Use a library item](/docs/library/use-an-item/) covers how to add one.
 
 ## Related topics
 
-- [Choose what to make](/docs/making/)
-- [Make your first video](/docs/getting-started/first-video/)
-- [Ask for a great video](/docs/tips/)
+<CardGroup cols={2}>
+  <Card title="Choose what to make" icon="route" href="/docs/making/">
+    Pick a kind of video and follow its guide.
+  </Card>
+  <Card title="Make your first video" icon="play" href="/docs/getting-started/first-video/">
+    Install Kinetograph and get a title card as an MP4.
+  </Card>
+</CardGroup>

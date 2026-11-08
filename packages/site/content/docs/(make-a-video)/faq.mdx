@@ -13,9 +13,17 @@ No. Ask your coding agent for the video and it writes the project for you. You c
 
 Yes. It is open source under the Apache License 2.0, free for any use, including commercial. It needs no account, login or API key. Your coding agent's own plan is billed by its maker.
 
+## Can I use Kinetograph commercially?
+
+Yes. The Apache License 2.0 allows commercial use. Third-party footage, fonts and music in library items keep their own terms. See [Use a library item](/docs/library/use-an-item/).
+
 ## Which agent should I use?
 
 Any coding agent that works in a folder on your computer. There are setup pages for [Claude Code](/docs/agents/claude-code/), [Codex](/docs/agents/codex/) and [Cursor](/docs/agents/cursor/). Studio's chat starts Claude Code, Codex or Gemini CLI, whichever is installed.
+
+## How do I install it?
+
+Ask your agent, or run `npm install kinetograph` in your project folder. See [Install Kinetograph](/docs/getting-started/installation/).
 
 ## Do I need a graphics card?
 
@@ -28,6 +36,10 @@ Yes: Windows (64-bit), Linux (64-bit Intel or AMD) and Mac with Apple Silicon. O
 ## How do I preview and save a video?
 
 `npx kinetograph studio src/index.tsx` opens a preview with a timeline. `npx kinetograph render src/index.tsx` saves an MP4 to `out/renders/`. See [Edit in Studio](/docs/studio/).
+
+## How long does a render take?
+
+It depends on the size, the length and the effects. Look at single frames and a half-size draft first. `npx kinetograph bench` shows where the time goes. See [Fix a slow render or preview](/docs/rendering/slow-renders/).
 
 ## Can it add voiceover, music and captions?
 

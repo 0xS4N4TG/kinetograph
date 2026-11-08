@@ -24,6 +24,16 @@ Every client runs the same command, `npx -y kinetograph mcp`, and needs Node 22 
 }
 ```
 
+## Ask for a first video
+
+Open your agent in an empty folder and paste:
+
+```text title="Suggested prompt"
+Make a 5 second title card for my product, check it with strip and lint, and render it to out/title.mp4.
+```
+
+The agent calls the tools: it makes the project, looks at the frames the tools return as images, fixes what is off and renders.
+
 ## The command tools
 
 A tool takes the same arguments as its command: the entry file first, then the options. Command names with a space use an underscore, so `audio analyze` is `audio_analyze`. An error comes back as `{ "error": { "code", "message" } }`.
@@ -70,3 +80,19 @@ The agent in Studio's own chat gets these tools without any setup.
 ## Plugin tools
 
 A [plugin](/docs/plugins/) can add tools of its own. They show as `<plugin>_<tool>`, and a name that is already taken is skipped.
+
+## Current limits
+
+- There is no tool for `studio`. Open it yourself with `npx kinetograph studio <entry>`, or let the agent in Studio's own chat use the Studio tools.
+- Everything runs on your computer. Kinetograph needs no account, login or API key.
+
+## Troubleshooting
+
+- **The agent lists no Kinetograph tools.** Start a new session. Check that `node -v` shows 22 or newer and that `npx -y kinetograph mcp` starts.
+- **A tool returns an error.** The error has a code and a message. Run `npx kinetograph doctor` and see [Troubleshooting](/docs/help/).
+
+## Related topics
+
+- [Use it with your agent](/docs/agents/claude-code/)
+- [Agent skills](/docs/agents/skills/)
+- [Troubleshooting](/docs/help/)

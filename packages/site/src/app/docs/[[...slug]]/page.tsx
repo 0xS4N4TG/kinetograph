@@ -1,6 +1,6 @@
 import { DocsPre, PromptBox } from '@/components/docs/mdx';
 import { Media } from '@/components/docs/media';
-import { Card, CardGroup, Note, Step, Tip } from '@/components/docs/blocks';
+import { Card, CardGroup, Note, Step, Tip, Warning } from '@/components/docs/blocks';
 import { FilmGrid } from '@/components/docs/film-grid';
 import { LinkCard } from '@/components/docs/link-card';
 import { Video } from '@/components/docs/video';
@@ -64,6 +64,8 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
             Prompt: PromptBox,
             Accordion,
             Accordions,
+            AccordionGroup: Accordions,
+            Warning,
             EngineDiagram,
             Tab,
             Tabs,

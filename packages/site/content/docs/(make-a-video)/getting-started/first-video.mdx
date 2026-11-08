@@ -1,58 +1,90 @@
 ---
 title: Make your first video
-description: Get a short title card as an MP4, by pasting one prompt into your coding agent or by running three commands.
+description: Make your first Kinetograph video with your coding agent, or with three commands in a terminal.
 ---
 
-You will end with a short title card saved as an MP4. Ask your coding agent, or run three commands yourself. Both make the same kind of project.
+<Video name="first-video" label="A first video: one request, a short wait, the finished title card" caption="The finished title card." silent />
 
-<Video name="first-video" label="The finished title card: a word appears and a line grows under it" caption="The finished title card." silent />
+Kinetograph turns one sentence into a video you can keep editing. Start with the coding agent you already use. If you prefer a terminal, three commands make the same kind of project.
+
+<LinkCard title="Install Kinetograph" icon="download" href="/docs/getting-started/installation/">
+  One command, about a minute. Your agent can run it for you.
+</LinkCard>
 
 ## With your coding agent
 
-Paste this into Claude Code, Codex or another coding agent:
+For Claude Code, Codex, Cursor or any agent that works in a folder on your computer.
+
+### The short way
+
+Paste this into the agent. It installs Kinetograph, makes a title card and saves the MP4. You only change the words.
 
 ```text title="Suggested prompt"
-Set up Kinetograph (https://github.com/0xS4N4TG/kinetograph) for me by following its AGENTS.md: https://github.com/0xS4N4TG/kinetograph/blob/main/AGENTS.md Ask me first whether I want the prebuilt package (recommended) or a build from source, and ask before installing anything system-wide or installing the Kinetograph agent skills.
+Set up Kinetograph (https://github.com/0xS4N4TG/kinetograph) for me by following its AGENTS.md: https://github.com/0xS4N4TG/kinetograph/blob/main/AGENTS.md Choose the prebuilt package and ask before installing anything system-wide. Then make a 5 second title card that says "Hello" and save it to out/title.mp4. Look at the frames before you save it.
 ```
 
-Choose the prebuilt package. When it finishes, ask for the video:
+### Step by step
 
-```text title="Suggested prompt"
-Make a 5 second title card that says "Hello" and save it to out/title.mp4. Look at the frames before you save it.
-```
+<Steps>
+  <Step title="Install the skills">
+    Step-by-step pages: [Claude Code](/docs/agents/claude-code/), [Codex](/docs/agents/codex/), [Cursor](/docs/agents/cursor/).
 
-Your agent writes the video and looks at it. It fixes what is off and saves the MP4.
+    In your project folder, run this and pick your agent. Then open or restart the agent there:
 
-## With three commands
+    ```sh
+    npx skills add 0xS4N4TG/kinetograph
+    ```
+  </Step>
+  <Step title="Ask for the video">
+    ```text title="Suggested prompt"
+    Make a 5 second title card that says "Hello" and save it to out/title.mp4. Look at the frames before you save it.
+    ```
 
-In an empty folder:
+    Your agent writes the video and looks at it. It fixes what is off and saves the MP4.
+  </Step>
+  <Step title="Change it">
+    Say what to change in the same conversation, or open the preview with a timeline:
 
-```sh
-npx kinetograph init
-npm install
-npx kinetograph render src/index.tsx
-```
+    ```sh
+    npx kinetograph studio src/index.tsx
+    ```
 
-The video is `out/renders/Main.mp4`. Open it.
+    Press Space to play and Ctrl-C to stop. [Edit in Studio](/docs/studio/) walks through it.
+  </Step>
+</Steps>
 
-## Change something
+## In the terminal
 
-Open `src/scenes/Title.tsx` and change the words "Hello, Kinetograph". Render again.
+No agent needed. In an empty folder:
 
-To see changes as you make them, open the preview and press Space to play:
+<Steps>
+  <Step title="Make the project">
+    ```sh
+    npx kinetograph init
+    npm install
+    ```
+  </Step>
+  <Step title="Save the video">
+    ```sh
+    npx kinetograph render src/index.tsx
+    ```
 
-```sh
-npx kinetograph studio src/index.tsx
-```
+    The video is `out/renders/Main.mp4`. Open it.
+  </Step>
+  <Step title="Change something">
+    Open `src/scenes/Title.tsx`, change the words "Hello, Kinetograph", and render again.
+  </Step>
+</Steps>
 
-Press Ctrl-C to stop it.
+<Note>You need Node.js 22 or newer for either route.</Note>
 
-## Good to know
+## Related topics
 
-- You need Node.js 22 or newer.
-
-## Next
-
-- [Choose what to make](/docs/making/)
-- [Add a voiceover and captions](/docs/making/voice-music-captions/)
-- [Use it with your agent](/docs/agents/claude-code/)
+<CardGroup cols={2}>
+  <Card title="Choose what to make" icon="route" href="/docs/making/">
+    Title cards, photos, captions, paper-cut looks, glitch effects and more.
+  </Card>
+  <Card title="Edit in Studio" icon="play" href="/docs/studio/">
+    Change the video with a live preview, a timeline and a chat.
+  </Card>
+</CardGroup>

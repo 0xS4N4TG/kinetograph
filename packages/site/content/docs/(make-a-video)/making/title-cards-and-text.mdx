@@ -3,9 +3,9 @@ title: Make a title card or moving text
 description: Get a title card, a headline or words that move on screen. Say the words, the look and when they arrive.
 ---
 
-Tell your agent the exact words, the font and when each line arrives. You get a title card or a headline that moves the way you described.
+<Video name="title-cards-and-text" label="A headline writes on, then three words slide up one after another" caption="A headline that writes on, then words that slide up." />
 
-<Video name="title-cards-and-text" label="A headline writes on, then three words slide up one after another" caption="A headline that writes on, then words that slide up." silent />
+Tell your agent the exact words, the font and when each line arrives. You get a title card or a headline that moves the way you described.
 
 ## Make it
 
@@ -13,9 +13,26 @@ Tell your agent the exact words, the font and when each line arrives. You get a 
 Make a 5 second title card with the words "Ship it on Friday" in Inter 700, white on a dark blue background. Fit it on two lines inside 900 px, 120 px from the top. It arrives at 1 second and leaves at 4. Look at the frames, run lint, then save it to out/title.mp4.
 ```
 
-Your agent writes the card, checks that the text fits, and saves the MP4. Change it by asking, for example, "make the headline bigger".
+Your agent writes the card, checks that the text fits and saves the MP4. Change it by asking, for example, "make the headline bigger".
 
-## Say these when they matter
+## Pick the kind of motion
+
+- **Write on**, one letter at a time over 20 frames.
+- **Slide up**, each word 3 frames after the last.
+- **Type** with a caret, the way code appears.
+- **Hold and fade** for a calm title.
+
+Over busy footage, ask for a dark bar or a shadow behind the text.
+
+## Prompts that work
+
+When you want to set the look yourself:
+
+```text title="Suggested prompt"
+Show the headline "Ship it on Friday" in Inter 700, white. Each word slides up from a 20 px offset, 3 frames apart. Put a 60% black bar behind it. Hold the finished headline for 2 seconds.
+```
+
+### Say these when they matter
 
 | Say | Why |
 | --- | --- |
@@ -25,16 +42,25 @@ Your agent writes the card, checks that the text fits, and saves the MP4. Change
 | **When it arrives and leaves** | "In at 0:01, out at 0:04". |
 | **A number for contrast** | "White on a 60% black bar" beats "make it readable". |
 
-## Ways to move text
+<Tip>
+  The words, the font and the timing are the three cheapest things to state. Leave the rest to your agent.
+</Tip>
 
-- **Write on**, one letter at a time over 20 frames.
-- **Slide up**, each word 3 frames after the last.
-- **Type** with a caret, the way code appears.
-- **Hold and fade** for a calm title.
+### Variants
 
-Over busy footage, ask for a dark bar or a shadow behind the text.
+<AccordionGroup>
+  <Accordion title="A lower third">
+    Say what it says, when it enters and leaves, and where: "a lower third 'Mara Okafor, Founder' at the bottom left, in at 0:03, out at 0:08". To lay it over other footage, ask for it as its own video with a transparent background.
+  </Accordion>
+  <Accordion title="Code on screen">
+    Paste the code and say it must be shown exactly. Choose the motion: typing with a caret, a highlight on lines 4 to 6, a diff in red and green, or a scroll. Name a monospace font and colours for keywords, strings and comments.
+  </Accordion>
+  <Accordion title="Words cut to a beat">
+    Give the beat times in seconds and ask for one word per hit. [Words cut to the beat](/templates/word-flash/) is a template that does this.
+  </Accordion>
+</AccordionGroup>
 
-## Common mistakes
+### Common mistakes
 
 **Leaving the copy unquoted.** Your agent may reword it.
 - **Avoid:** "a title about shipping on Friday"
@@ -44,12 +70,24 @@ Over busy footage, ask for a dark bar or a shadow behind the text.
 - **Avoid:** "render it"
 - **Instead:** "run lint, fix what it reports, then render"
 
+## Review the result
+
+- Every word is the one you quoted.
+- The text is readable on its background for the whole time it is on screen.
+- Nothing runs past the edge of the picture.
+- Each line arrives and leaves when you said.
+
 ## Start from a template
 
-[Prompt intro](/templates/prompt-intro/) types a prompt and deletes it into the next line. [Words cut to the beat](/templates/word-flash/) shows one word per hit of a track. To add one, see [Use a library item](/docs/library/use-an-item/).
+[Prompt intro](/templates/prompt-intro/) types a prompt and deletes it into the next line. To add one, see [Use a library item](/docs/library/use-an-item/).
 
-## Next
+## Related topics
 
-- [Add voice, music and captions](/docs/making/voice-music-captions/)
-- [Text, captions and code](/docs/tips/text-captions-code/)
-- [Animation and timing](/docs/making-videos/animation/)
+<CardGroup cols={2}>
+  <Card title="Add voice, music and captions" icon="route" href="/docs/making/voice-music-captions/">
+    Put sound and words on the video.
+  </Card>
+  <Card title="Text, captions and code" icon="learn" href="/docs/tips/text-captions-code/">
+    More prompts for text that stays readable.
+  </Card>
+</CardGroup>

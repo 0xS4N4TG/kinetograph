@@ -17,9 +17,26 @@ claude mcp add kinetograph -- npx -y kinetograph mcp
 
 ## Install
 
-The first command asks which agents to install the skills for. Pick Claude Code. The second connects the [tools Kinetograph gives your agent](/docs/mcp/). It saves the connection for the current project. Add `--scope user` to use it in every project.
+<Tabs items={['Skills', 'Tools (MCP)']}>
+  <Tab value="Skills">
+    Run this and pick Claude Code when it asks which agents to install the skills for:
 
-Start a new Claude Code session afterwards. [Agent skills](/docs/agents/skills/) lists what each skill does.
+    ```sh
+    npx skills add 0xS4N4TG/kinetograph
+    ```
+
+    Start a new Claude Code session afterwards. [Agent skills](/docs/agents/skills/) lists what each skill does.
+  </Tab>
+  <Tab value="Tools (MCP)">
+    Connect the [tools Kinetograph gives your agent](/docs/mcp/):
+
+    ```sh
+    claude mcp add kinetograph -- npx -y kinetograph mcp
+    ```
+
+    This saves the connection for the current project. Add `--scope user` to use it in every project.
+  </Tab>
+</Tabs>
 
 ## Ask for your first video
 
@@ -37,13 +54,21 @@ Open Claude Code in an empty folder and paste:
 
 Watch the first version and say what to change, in the same conversation.
 
-## Preview it yourself
+## Preview and render
 
-To open a live preview with a timeline and a chat, run this in the project folder:
+To reopen the preview with a timeline and a chat, run this in the project folder:
 
 ```sh
 npx kinetograph studio src/index.tsx
 ```
+
+The preview opens in Studio, where you can also edit the video by hand. To save the MP4 yourself:
+
+```sh
+npx kinetograph render src/index.tsx
+```
+
+You can also ask your agent to render it.
 
 ## If something goes wrong
 

@@ -3,9 +3,9 @@ title: Add voice, music and captions
 description: Put a voiceover, a music track, sound effects and captions on a video, and check the mix.
 ---
 
-Bring a voice file, a track and a subtitle file. Tell your agent where each one is. You get a video with sound and words on screen.
-
 <Video name="voice-music-captions" label="A clip with a voiceover, music under it and captions that light up word by word" caption="A clip with voice, music and captions that light up as each word is said." />
+
+Bring a voice file, a track and a subtitle file. Tell your agent where each one is. You get a video with sound and words on screen.
 
 ## Make it
 
@@ -15,7 +15,23 @@ Put the voice file in `public/audio/` and the track beside it. Put the subtitle 
 The narration is public/audio/vo.wav and its subtitles are public/captions/vo.srt. Start the narration at 1 second. Put public/audio/bed.mp3 under the whole video at 30% volume, lowered to 12% while the narration plays. Show 3 to 5 words at a time in the lower third, white on a 60% black bar, and light the word being said in yellow. Look at the frames, then save it to out/video.mp4.
 ```
 
-## Say these when they matter
+## Ask for one of three things
+
+- **A voiceover.** Give the voice file and what it says, so a reveal can land on a word.
+- **Music.** Give the track and how loud it sits under the voice.
+- **Captions.** Give a subtitle file, or word timings from your speech-to-text tool.
+
+<Note>
+  Kinetograph does not turn text into speech or speech into words. Bring the files.
+</Note>
+
+## Prompts that work
+
+```text title="Suggested prompt"
+The narration is public/audio/vo.wav and the script is in script.md. Start it at 1 second. Show the line "Ship it on Friday" on screen when it is spoken, and tell me the frame it starts on.
+```
+
+### Say these when they matter
 
 | Say | Why |
 | --- | --- |
@@ -25,17 +41,23 @@ The narration is public/audio/vo.wav and its subtitles are public/captions/vo.sr
 | **How many words show at a time** | Captions stay readable. |
 | **One caption style** | Keep it the same for the whole video. |
 
-## Sound effects
+### Variants
 
-Tie each effect to a moment, such as "a click when each card lands". Ask for the three or four that matter. Use your own files. Or ask for a click, a whoosh or a hit made in code.
+<AccordionGroup>
+  <Accordion title="Sound effects">
+    Tie each effect to a moment, such as "a click when each card lands". Ask for the three or four that matter. Use your own files. Or ask for a click, a whoosh or a hit made in code.
+  </Accordion>
+  <Accordion title="Captions that move with the voice">
+    Ask for Kinetic typography. It has fifteen named looks, such as highlighter and typewriter, and needs word-level timings.
+  </Accordion>
+  <Accordion title="Check the mix">
+    Say what you hear: "the music drowns the voice at 0:12". Then ask your agent to run `audio analyze`. It reports loudness, peaks, clipped samples and silences.
+  </Accordion>
+</AccordionGroup>
 
-## Check the mix
+### Common mistakes
 
-Say what you hear: "the music drowns the voice at 0:12". Then ask your agent to run `audio analyze`. It reports loudness, peaks, clipped samples and silences.
-
-## Common mistakes
-
-**Expecting speech or timings to be made for you.** Kinetograph does not turn text into speech or speech into words. Bring a voice file and a subtitle file, or word timings from your speech-to-text tool.
+**Expecting speech or timings to be made for you.**
 - **Avoid:** "add a voiceover that reads my script"
 - **Instead:** "the narration is public/audio/vo.wav"
 
@@ -43,10 +65,20 @@ Say what you hear: "the music drowns the voice at 0:12". Then ask your agent to 
 - **Avoid:** "a different caption look for each line"
 - **Instead:** "one look for the whole video"
 
-For captions that move with the voice, ask for Kinetic typography. It has fifteen named looks.
+## Review the result
 
-## Next
+- The voice is clear over the music, including at the loudest moment.
+- Each caption appears when its words are said.
+- Captions stay inside the picture and are readable on every shot.
+- No sound effect is clipped or lost under the music.
 
-- [Voice, music and sound](/docs/tips/voice-music-sound/)
-- [Text, captions and code](/docs/tips/text-captions-code/)
-- [Audio](/docs/making-videos/audio/) and [Captions](/docs/making-videos/captions/)
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="Voice, music and sound" icon="learn" href="/docs/tips/voice-music-sound/">
+    More prompts for each kind of sound.
+  </Card>
+  <Card title="Text, captions and code" icon="learn" href="/docs/tips/text-captions-code/">
+    More prompts for words on screen.
+  </Card>
+</CardGroup>

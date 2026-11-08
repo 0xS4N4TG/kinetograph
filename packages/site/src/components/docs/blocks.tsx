@@ -36,3 +36,6 @@ export function Tip({ children }: { children?: ReactNode }) {
 export function Note({ children }: { children?: ReactNode }) {
   return <Callout type="info" title="Note">{children}</Callout>;
 }
+export function Warning({ children }: { children?: ReactNode }) {
+  return <Callout type="warn" title="Warning">{children}</Callout>;
+}
