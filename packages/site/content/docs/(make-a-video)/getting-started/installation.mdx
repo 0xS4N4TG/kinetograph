@@ -13,7 +13,7 @@ Paste this into Claude Code, Codex or another coding agent:
 Set up Kinetograph (https://github.com/0xS4N4TG/kinetograph) for me by following its AGENTS.md: https://github.com/0xS4N4TG/kinetograph/blob/main/AGENTS.md Ask me first whether I want the prebuilt package (recommended) or a build from source, and ask before installing anything system-wide or installing the Kinetograph agent skills.
 ```
 
-The agent asks which install you want, installs it, checks it, and then asks whether to add the [agent skills](/docs/agents/skills/).
+The agent asks which install you want, installs it and checks it. It then offers to add [skills](/docs/agents/skills/), short guides that teach your agent Kinetograph.
 
 ## With one command
 
@@ -29,17 +29,18 @@ npm install kinetograph
 npx kinetograph doctor
 ```
 
-It prints the Node version, your system, and whether the drawing engine loaded. If it says `NOT loaded`, the line after it gives the reason. See [Troubleshooting](/docs/help/).
+It prints your system and whether the drawing engine loaded. If it says `NOT loaded`, the next line gives the reason. See [Troubleshooting](/docs/help/).
 
 ## Good to know
 
-- Needs: Node.js 22 or newer, on a Mac with Apple Silicon, Linux (64-bit Intel or AMD) or Windows (64-bit).
-- Nothing else to install. A window or screen is not needed, so it also runs on a server.
-- Any other system, or working on Kinetograph itself: [build from source](/docs/contributing/build-from-source/).
+- Needs: Node.js 22 or newer.
+- It runs on a Mac with Apple Silicon, on Linux (64-bit) and on Windows (64-bit).
+- Nothing else to install. It needs no screen, so it also runs on a server.
+- On any other system, [build from source](/docs/contributing/build-from-source/).
 
 ## From source
 
-[Build from source](/docs/contributing/build-from-source/) has the steps, the extra tools they need, and the FFmpeg licence.
+[Build from source](/docs/contributing/build-from-source/) has the steps and the extra tools.
 
 ## Next
 

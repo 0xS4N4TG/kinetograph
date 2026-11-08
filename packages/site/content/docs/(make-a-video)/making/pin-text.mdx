@@ -3,7 +3,7 @@ title: Pin text to a moving object
 description: Make a label, a picture or an effect follow something that moves in a clip.
 ---
 
-Point your agent at something in a clip and say what should follow it. You get a label, a picture or an effect that stays on the object as it moves.
+Point your agent at something in a clip and say what should follow it. You get a label, a picture or an effect that follows the object.
 
 <Video name="pin-text" label="A box and the label Look here follow a blacksmith as he works" caption="A label that follows the blacksmith's hammer." silent />
 
@@ -13,13 +13,13 @@ Point your agent at something in a clip and say what should follow it. You get a
 In public/video/clip.mp4, track the sign on the right wall. Then pin the label "Look here" to it and draw it over the clip. Look at the frames, then save it to out/pinned.mp4.
 ```
 
-Your agent looks at the first frame, picks the point, tracks it once and draws the label at that position on every frame. Rendering never tracks again, so every render comes out the same.
+Your agent looks at the first frame and picks the point. It tracks it once and draws the label there on every frame. Rendering never tracks again, so every render comes out the same.
 
 ## Pick what follows
 
 - **A label or picture on a point.** The point can also move, turn or change size.
 - **Boxes on whatever moves.** Ask your agent to find points automatically.
-- **A picture on a flat surface**, such as a screen, a sign or a wall, so it sits on it in perspective. Give four or more points on the surface.
+- **A picture on a flat surface**, such as a screen or a wall. It sits in perspective. Give four or more points on the surface.
 
 ## Say these when they matter
 
@@ -33,8 +33,8 @@ Your agent looks at the first frame, picks the point, tracks it once and draws t
 ## Common mistakes
 
 **Choosing a smooth, empty spot.** The tracker needs texture to hold on to.
-- **Avoid:** `track the blue sky`
-- **Instead:** `track the corner of the sign`
+- **Avoid:** "track the blue sky"
+- **Instead:** "track the corner of the sign"
 
 **Expecting a lost track to keep going.** A track stops when the object leaves the frame or is hidden. The label then holds at its last position. Ask for a point with more texture, or a bigger search area.
 
