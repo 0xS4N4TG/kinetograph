@@ -271,6 +271,14 @@ fn glsl_lines_match_golden() {
 }
 
 #[test]
+fn glsl_shadow_sampler_matches_golden() {
+    // A diamond drawn into a 64 x 64 depth texture (depth only, TEXTURE_COMPARE_MODE on), then a floor that looks up
+    // that map with a `sampler2DShadow` at a depth behind it: the diamond's shadow, with the soft edge of a LINEAR test.
+    let frame = render_still(scene("tests/scenes/glsl-shadow.json"), 0).unwrap();
+    check("glsl-shadow", &frame);
+}
+
+#[test]
 fn scene3d_animation_matches_golden() {
     // Frame 15 of 30, half a second into every clip: a cube turning, moving
     // and growing (with a second cube on a spline), a quad whose top corners

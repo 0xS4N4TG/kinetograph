@@ -335,6 +335,9 @@ export const GL2 = {
   MAX_3D_TEXTURE_SIZE: 0x8073,
   TEXTURE_2D_ARRAY: 0x8c1a,
   TEXTURE_BINDING_2D_ARRAY: 0x8c1d,
+  TEXTURE_COMPARE_MODE: 0x884c,
+  TEXTURE_COMPARE_FUNC: 0x884d,
+  COMPARE_REF_TO_TEXTURE: 0x884e,
   SAMPLER_2D_ARRAY: 0x8dc1,
   MAX_ARRAY_TEXTURE_LAYERS: 0x88ff,
   UNIFORM_BUFFER: 0x8a11,
@@ -424,7 +427,7 @@ const MAX_3D_TEXTURE_SIZE = 2048;
 const FORMATS_8BIT_3D: Record<number, number> = { [GL2.RGBA8]: GL.RGBA, [GL.RGBA]: GL.RGBA, [GL2.RGB8]: GL.RGB, [GL.RGB]: GL.RGB, [GL2.RG8]: GL2.RG, [GL2.R8]: GL2.RED };
 
 /** The texture target each sampler type reads. */
-const SAMPLER_TARGETS: Record<string, number> = { sampler2D: GL.TEXTURE_2D, sampler3D: GL2.TEXTURE_3D, samplerCube: GL.TEXTURE_CUBE_MAP, sampler2DArray: GL2.TEXTURE_2D_ARRAY };
+const SAMPLER_TARGETS: Record<string, number> = { sampler2D: GL.TEXTURE_2D, sampler3D: GL2.TEXTURE_3D, samplerCube: GL.TEXTURE_CUBE_MAP, sampler2DArray: GL2.TEXTURE_2D_ARRAY, sampler2DShadow: GL.TEXTURE_2D, samplerCubeShadow: GL.TEXTURE_CUBE_MAP, sampler2DArrayShadow: GL2.TEXTURE_2D_ARRAY };
 
 /** `MAX_ARRAY_TEXTURE_LAYERS`: the layers of a 2D array texture. */
 const MAX_ARRAY_TEXTURE_LAYERS = 256;
@@ -495,6 +498,9 @@ export class WebGLTexture extends WebGLObject {
   wrapS: number = GL.REPEAT;
   wrapT: number = GL.REPEAT;
   wrapR: number = GL.REPEAT;
+  /** `TEXTURE_COMPARE_MODE` and `TEXTURE_COMPARE_FUNC`: what a shadow sampler does with the depth texture. */
+  compareMode: number = GL.NONE;
+  compareFunc: number = GL.LEQUAL;
   /** `TEXTURE_MAX_LEVEL`: the last level sampling reads. */
   maxLevel = 1000;
   version = 0;
@@ -2165,6 +2171,14 @@ export class WebGLContext {
         if (this.version !== 2 || WRAPS[param] === undefined) return this.fail(GL.INVALID_ENUM);
         texture.wrapR = param;
         break;
+      case GL2.TEXTURE_COMPARE_MODE:
+        if (this.version !== 2 || (param !== GL.NONE && param !== GL2.COMPARE_REF_TO_TEXTURE)) return this.fail(GL.INVALID_ENUM);
+        texture.compareMode = param;
+        break;
+      case GL2.TEXTURE_COMPARE_FUNC:
+        if (this.version !== 2 || DEPTH_FUNCS[param] === undefined) return this.fail(GL.INVALID_ENUM);
+        texture.compareFunc = param;
+        break;
       case GL2.TEXTURE_MAX_LEVEL:
         if (this.version !== 2) return this.fail(GL.INVALID_ENUM);
         if (!(param >= 0)) return this.fail(GL.INVALID_VALUE);
@@ -3142,13 +3156,24 @@ export class WebGLContext {
     for (const d of program.uniformDeclarations) {
       const samplerTarget = SAMPLER_TARGETS[d.type];
       if (samplerTarget === undefined) continue;
-      const unit = program.uniforms.get(d.name)?.at(-1)?.value[0] ?? 0;
-      if (unitTypes.get(unit) !== undefined && unitTypes.get(unit) !== d.type) return this.fail(GL.INVALID_OPERATION);
-      unitTypes.set(unit, d.type);
-      const texture = this.unitMap(samplerTarget)?.get(unit);
-      // Reading what the draw writes is undefined; WebGL refuses it.
-      if (texture !== undefined && attached.includes(texture)) return this.fail(GL.INVALID_OPERATION);
-      if (texture !== undefined && draw.units[String(unit)] === undefined) draw.units[String(unit)] = this.samplerOf(texture);
+      // The units of its elements: one for a sampler, each of an array of them as the calls gave it.
+      const units: number[] = Array.from({ length: d.length }, () => 0);
+      const calls = program.uniforms.get(d.name) ?? [];
+      if (d.length === 1) units[0] = calls.at(-1)?.value[0] ?? 0;
+      else for (const call of calls) call.value.forEach((v, i) => { if (call.index + i < units.length) units[call.index + i] = v; });
+      const shadow = d.type.endsWith('Shadow');
+      for (const unit of units) {
+        if (unitTypes.get(unit) !== undefined && unitTypes.get(unit) !== d.type) return this.fail(GL.INVALID_OPERATION);
+        unitTypes.set(unit, d.type);
+        const texture = this.unitMap(samplerTarget)?.get(unit);
+        if (texture === undefined) continue;
+        // Reading what the draw writes is undefined; WebGL refuses it.
+        if (attached.includes(texture)) return this.fail(GL.INVALID_OPERATION);
+        // A shadow sampler reads a depth texture that compares; any other sampler does not read one that does.
+        const compares = texture.compareMode === GL2.COMPARE_REF_TO_TEXTURE;
+        if (shadow ? !compares || kindOf(texture.format) === 'color' : compares && kindOf(texture.format) !== 'color') return this.fail(GL.INVALID_OPERATION);
+        if (draw.units[String(unit)] === undefined) draw.units[String(unit)] = this.samplerOf(texture);
+      }
     }
 
     // State.
@@ -3210,6 +3235,7 @@ export class WebGLContext {
       wrapT: WRAPS[texture.wrapT]!,
       ...((texture.depth > 0 && texture.target === GL2.TEXTURE_3D) || cube ? { wrapR: WRAPS[texture.wrapR]! } : {}),
       ...(texture.maxLevel < 1000 ? { maxLevel: texture.maxLevel } : {}),
+      ...(texture.compareMode === GL2.COMPARE_REF_TO_TEXTURE ? { compare: DEPTH_FUNCS[texture.compareFunc]! } : {}),
     };
   }
 

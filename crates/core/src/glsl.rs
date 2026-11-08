@@ -28,7 +28,7 @@ use serde::Deserialize;
 
 use crate::error::{Error, Result};
 use crate::glsl_cpp::Cpp;
-use crate::glsl_samplers::{finish as finish_samplers, lower_sampler_parameters};
+use crate::glsl_samplers::{expand_sampler_arrays, finish as finish_samplers, lower_sampler_parameters};
 
 // ---- the recording ----
 
@@ -523,6 +523,9 @@ pub struct GlslSampler {
     pub wrap_r: String,
     /// `TEXTURE_MAX_LEVEL`, when it was set: the last level sampling reads.
     pub max_level: Option<u32>,
+    /// `TEXTURE_COMPARE_MODE` was `COMPARE_REF_TO_TEXTURE`: a shadow sampler compares the depth with its reference by
+    /// this function (`LEQUAL`, ...).
+    pub compare: Option<String>,
 }
 
 fn linear_min() -> String {
@@ -857,6 +860,27 @@ pub enum SamplerDim {
     D3,
     Cube,
     Array,
+    /// The shadow samplers (`sampler2DShadow` and the like): they read a depth texture and compare it with the
+    /// reference the lookup gives, and return how much passes (0 to 1).
+    D2Shadow,
+    CubeShadow,
+    ArrayShadow,
+}
+
+impl SamplerDim {
+    pub fn shadow(self) -> bool {
+        matches!(self, SamplerDim::D2Shadow | SamplerDim::CubeShadow | SamplerDim::ArrayShadow)
+    }
+
+    /// The texture a sampler reads, shadow or not.
+    pub fn base(self) -> SamplerDim {
+        match self {
+            SamplerDim::D2Shadow => SamplerDim::D2,
+            SamplerDim::CubeShadow => SamplerDim::Cube,
+            SamplerDim::ArrayShadow => SamplerDim::Array,
+            other => other,
+        }
+    }
 }
 
 /// A sampler uniform of one stage, with the slot it holds in the program: the stages of a program
@@ -958,7 +982,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         points,
         slots,
     } = input;
-    let src = lower_sampler_parameters(&blank_qualifiers(&strip_comments(src)));
+    let src = lower_sampler_parameters(&expand_sampler_arrays(&blank_qualifiers(&strip_comments(src))));
     let fragment = stage == ShaderStage::Fragment;
 
     // Directive lines are set apart: removed, or rewritten as code. Code
@@ -1127,15 +1151,16 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
     }
     for SamplerDecl { name, dim, slot } in &r.samplers {
         let b = 2 + 2 * slot;
-        let texture = match dim {
+        let texture = match dim.base() {
             SamplerDim::D2 => "texture2D",
             SamplerDim::D3 => "texture3D",
             SamplerDim::Cube => "textureCube",
-            SamplerDim::Array => "texture2DArray",
+            _ => "texture2DArray",
         };
+        let sampler = if dim.shadow() { "samplerShadow" } else { "sampler" };
         prelude.push_str(&format!(
             "layout(set=0, binding={b}) uniform {texture} _k_t_{name}; \
-             layout(set=0, binding={}) uniform sampler _k_s_{name}; ",
+             layout(set=0, binding={}) uniform {sampler} _k_s_{name}; ",
             b + 1
         ));
     }
@@ -1426,6 +1451,9 @@ fn rename(
             Some((_, SamplerDim::D3)) => format!("sampler3D(_k_t_{w}, _k_s_{w})"),
             Some((_, SamplerDim::Cube)) => format!("samplerCube(_k_t_{w}, _k_s_{w})"),
             Some((_, SamplerDim::Array)) => format!("sampler2DArray(_k_t_{w}, _k_s_{w})"),
+            Some((_, SamplerDim::D2Shadow)) => format!("sampler2DShadow(_k_t_{w}, _k_s_{w})"),
+            Some((_, SamplerDim::CubeShadow)) => format!("samplerCubeShadow(_k_t_{w}, _k_s_{w})"),
+            Some((_, SamplerDim::ArrayShadow)) => format!("sampler2DArrayShadow(_k_t_{w}, _k_s_{w})"),
             None => return None,
         },
     })
@@ -1800,11 +1828,16 @@ fn declaration(
     match storage {
         "uniform" => {
             for (name, array) in declared.names {
-                if ty == "sampler2D"
-                    || ty == "sampler3D"
-                    || ty == "samplerCube"
-                    || ty == "sampler2DArray"
-                {
+                if matches!(
+                    ty.as_str(),
+                    "sampler2D"
+                        | "sampler3D"
+                        | "samplerCube"
+                        | "sampler2DArray"
+                        | "sampler2DShadow"
+                        | "samplerCubeShadow"
+                        | "sampler2DArrayShadow"
+                ) {
                     if array.is_some() {
                         return Err(unsupported(format!("`{name}`: an array of samplers")));
                     }
@@ -1812,6 +1845,9 @@ fn declaration(
                         "sampler2D" => SamplerDim::D2,
                         "sampler3D" => SamplerDim::D3,
                         "sampler2DArray" => SamplerDim::Array,
+                        "sampler2DShadow" => SamplerDim::D2Shadow,
+                        "samplerCubeShadow" => SamplerDim::CubeShadow,
+                        "sampler2DArrayShadow" => SamplerDim::ArrayShadow,
                         _ => SamplerDim::Cube,
                     };
                     let slot = match ctx.slots.iter().position(|(n, _)| *n == name) {
@@ -1834,7 +1870,7 @@ fn declaration(
                     samplers.push((name, dim));
                 } else if ty.contains("sampler") {
                     return Err(unsupported(format!(
-                        "`{name}`: a `{ty}` uniform; only `sampler2D`, `sampler3D`, `samplerCube` and `sampler2DArray` textures are available"
+                        "`{name}`: a `{ty}` uniform; only `sampler2D`, `sampler3D`, `samplerCube`, `sampler2DArray` and the shadow samplers of the first, third and fourth are available"
                     )));
                 } else if ty.starts_with('b') && is_builtin_type(&ty) {
                     if array.is_some() {
@@ -2020,6 +2056,30 @@ pub enum ScalarKind {
     Float,
     Sint,
     Uint,
+}
+
+/// The texture unit a sampler reads: the last value a call gave its uniform, or for the element of an array of
+/// samplers (`_k_sa_name_3`, see `glsl_samplers.rs`) the value the calls gave that element of the array.
+pub fn sampler_unit(calls: &BTreeMap<String, Vec<GlslUniform>>, name: &str) -> i64 {
+    let element = name
+        .strip_prefix("_k_sa_")
+        .and_then(|rest| rest.rsplit_once('_'))
+        .and_then(|(array, k)| Some((array, k.parse::<usize>().ok()?)));
+    if let Some((array, k)) = element {
+        let mut unit = 0;
+        for call in calls.get(array).into_iter().flatten() {
+            let first = call.index as usize;
+            if k >= first && k - first < call.value.len() {
+                unit = call.value[k - first] as i64;
+            }
+        }
+        return unit;
+    }
+    calls
+        .get(name)
+        .and_then(|calls| calls.last())
+        .and_then(|call| call.value.first())
+        .map_or(0, |v| *v as i64)
 }
 
 /// A texture a stage samples and the bindings of its texture and its sampler,
@@ -2932,11 +2992,11 @@ mod tests {
     fn what_naga_or_the_engine_lacks_is_called_unsupported() {
         let e = translate(&program(
             QUAD_ES1,
-            "precision mediump float;\nuniform sampler2DShadow c;\nvoid main() { gl_FragColor = vec4(1.0); }",
+            "precision mediump float;\nuniform isampler2D c;\nvoid main() { gl_FragColor = vec4(1.0); }",
         ))
         .unwrap_err();
         assert!(
-            e.contains("unsupported") && e.contains("sampler2DShadow"),
+            e.contains("unsupported") && e.contains("isampler2D"),
             "{e}"
         );
         let e = translate(&program(
@@ -3228,6 +3288,48 @@ mod tests {
             let t = es3_fragment(body).unwrap_or_else(|e| panic!("{body}: {e}"));
             assert!(!t.fragment.samplers.is_empty(), "{body}");
         }
+    }
+
+    #[test]
+    fn shadow_samplers_compare_a_reference_with_the_depth() {
+        let t = es3_fragment(
+            "uniform sampler2DShadow sm; uniform samplerCubeShadow cm; uniform sampler2DArrayShadow am;\n\
+             void main() { o = vec4(texture(sm, vec3(v_uv, 0.5)), texture(cm, vec4(v_uv, 0.5, 0.5)), \
+                 texture(am, vec4(v_uv, 0.0, 0.5)), textureLod(sm, vec3(v_uv, 0.5), 0.0)); }",
+        )
+        .unwrap();
+        let dims: Vec<SamplerDim> = t.fragment.samplers.iter().map(|s| s.dim).collect();
+        for want in [SamplerDim::D2Shadow, SamplerDim::CubeShadow, SamplerDim::ArrayShadow] {
+            assert!(dims.contains(&want), "{want:?} in {dims:?}");
+        }
+    }
+
+    #[test]
+    fn an_array_of_samplers_read_by_numbers_is_separate_samplers() {
+        let t = es3_fragment(
+            "uniform sampler2DShadow maps[2]; uniform sampler2D none[0];\n\
+             float lookup(sampler2DShadow m, vec3 c) { return texture(m, c); }\n\
+             void main() { o = vec4(lookup(maps[1], vec3(v_uv, 0.5)), texture(maps[0], vec3(v_uv, 0.5)), 0.0, 1.0); }",
+        )
+        .unwrap();
+        let names: Vec<&str> = t.fragment.samplers.iter().map(|s| s.name.as_str()).collect();
+        assert!(!names.iter().any(|n| n.starts_with("none")), "{names:?}");
+        assert!(names.contains(&"_k_sa_maps_0") && names.contains(&"_k_sa_maps_1"), "{names:?}");
+    }
+
+    #[test]
+    fn the_unit_of_an_element_of_an_array_of_samplers_comes_from_the_calls_of_the_array() {
+        let calls = |index: u32, units: &[f64]| GlslUniform {
+            kind: GlslUniformKind::Int,
+            value: units.to_vec(),
+            index,
+        };
+        let uniforms = BTreeMap::from([("maps".to_string(), vec![calls(0, &[4.0, 5.0]), calls(1, &[7.0])])]);
+        assert_eq!(sampler_unit(&uniforms, "_k_sa_maps_0"), 4);
+        assert_eq!(sampler_unit(&uniforms, "_k_sa_maps_1"), 7);
+        assert_eq!(sampler_unit(&uniforms, "_k_sa_maps_2"), 0);
+        let plain = BTreeMap::from([("t".to_string(), vec![calls(0, &[3.0])])]);
+        assert_eq!(sampler_unit(&plain, "t"), 3);
     }
 
     #[test]

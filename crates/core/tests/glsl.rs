@@ -2544,3 +2544,83 @@ fn an_srgb_texture_is_read_as_linear() {
     // Mip levels of an sRGB texture are made too.
     near(px(&sampled_grey(true, true), 8, 8), [128, 128, 128, 255], 3);
 }
+
+// ---- shadow samplers ----
+
+const SHADOW_FRAGMENT: &str = "#version 300 es\nprecision highp float; precision highp sampler2DShadow; in vec2 v_uv; \
+    uniform sampler2DShadow maps[2]; out vec4 o; \
+    void main() { o = vec4(texture(maps[1], vec3(v_uv, 0.5)), texture(maps[0], vec3(v_uv, 0.5)), 0.0, 1.0); }";
+
+fn depth_target() -> &'static str {
+    r#", "textures": {"d": {"target": true, "width": 8, "height": 8, "format": "depth"},
+                    "e": {"target": true, "width": 8, "height": 8, "format": "depth"}}"#
+}
+
+fn shadow_unit(texture: &str, compare: &str) -> String {
+    format!(
+        r#"{{"texture": "{texture}", "min": "NEAREST", "mag": "NEAREST", "wrapS": "CLAMP_TO_EDGE", "wrapT": "CLAMP_TO_EDGE"{compare}}}"#
+    )
+}
+
+#[test]
+fn an_array_of_shadow_samplers_compares_each_map_with_the_reference() {
+    // Map "d" holds depth 0.25 (the unit of element 1), map "e" 0.75 (element 0). A reference of 0.5 passes LEQUAL
+    // against 0.75 and fails against 0.25.
+    let frame = render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", SHADOW_FRAGMENT)],
+        "",
+        depth_target(),
+        &ops(&[
+            r#"{"op": "clear", "depthStencil": "d", "depth": 0.25}"#.to_string(),
+            r#"{"op": "clear", "depthStencil": "e", "depth": 0.75}"#.to_string(),
+            draw(&format!(
+                r#""uniforms": {{"maps": [{{"kind": "i", "value": [4, 3]}}]}}, "units": {{"3": {}, "4": {}}}"#,
+                shadow_unit("d", r#", "compare": "LEQUAL""#),
+                shadow_unit("e", r#", "compare": "LEQUAL""#)
+            )),
+        ]),
+    ));
+    // maps[1] is unit 3 (depth 0.25): shadowed, 0; maps[0] is unit 4 (depth 0.75): lit, 1.
+    assert_eq!(px(&frame, 8, 8), [0, 255, 0, 255]);
+    // GREATER turns it round.
+    let frame = render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", SHADOW_FRAGMENT)],
+        "",
+        depth_target(),
+        &ops(&[
+            r#"{"op": "clear", "depthStencil": "d", "depth": 0.25}"#.to_string(),
+            r#"{"op": "clear", "depthStencil": "e", "depth": 0.75}"#.to_string(),
+            draw(&format!(
+                r#""uniforms": {{"maps": [{{"kind": "i", "value": [4, 3]}}]}}, "units": {{"3": {}, "4": {}}}"#,
+                shadow_unit("d", r#", "compare": "GREATER""#),
+                shadow_unit("e", r#", "compare": "GREATER""#)
+            )),
+        ]),
+    ));
+    assert_eq!(px(&frame, 8, 8), [255, 0, 0, 255]);
+}
+
+#[test]
+fn a_shadow_sampler_needs_a_depth_texture() {
+    let e = render_error(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", SHADOW_FRAGMENT)],
+        "",
+        &red_green(),
+        &draw(&format!(
+            r#""uniforms": {{"maps": [{{"kind": "i", "value": [3, 3]}}]}}, "units": {{"3": {}}}"#,
+            shadow_unit("t", r#", "compare": "LEQUAL""#)
+        )),
+    ));
+    assert!(e.contains("not a depth texture"), "{e}");
+    let e = render_error(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", SHADOW_FRAGMENT)],
+        "",
+        "",
+        &draw(""),
+    ));
+    assert!(e.contains("holds no depth texture"), "{e}");
+}

@@ -919,6 +919,8 @@ export interface GlslSampler {
   wrapR?: string;
   /** `TEXTURE_MAX_LEVEL`, when it was set: the last level read, so fewer levels can be complete. */
   maxLevel?: number;
+  /** `TEXTURE_COMPARE_MODE` is `COMPARE_REF_TO_TEXTURE`: a shadow sampler compares its reference with the depth by this function (`LEQUAL`, ...). */
+  compare?: string;
 }
 
 export interface GlslBlend {

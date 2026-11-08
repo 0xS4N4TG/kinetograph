@@ -1670,6 +1670,74 @@ describe('the recording WebGL context', () => {
     });
   });
 
+  describe('shadow samplers', () => {
+    const FRAGMENT_SHADOW = '#version 300 es\nprecision highp float; precision highp sampler2DShadow; in vec2 v; uniform sampler2DShadow maps[2]; out vec4 o; void main() { o = vec4(texture(maps[1], vec3(v, 0.5)) + texture(maps[0], vec3(v, 0.5))); }';
+    const VERTEX_ES3 = '#version 300 es\nin vec2 p; out vec2 v; void main() { v = p; gl_Position = vec4(p, 0.0, 1.0); }';
+
+    function shadowContext(compare: boolean, depthTexture = true) {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const program = gl.createProgram();
+      for (const [type, source] of [[GL.VERTEX_SHADER, VERTEX_ES3], [GL.FRAGMENT_SHADER, FRAGMENT_SHADOW]] as const) {
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source);
+        gl.attachShader(program, shader);
+      }
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(GL.ARRAY_BUFFER, buffer);
+      gl.bufferData(GL.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1]), GL.STATIC_DRAW);
+      gl.enableVertexAttribArray(gl.getAttribLocation(program, 'p'));
+      gl.vertexAttribPointer(gl.getAttribLocation(program, 'p'), 2, GL.FLOAT, false, 0, 0);
+      const textures = [gl.createTexture(), gl.createTexture()];
+      textures.forEach((texture, i) => {
+        gl.activeTexture(GL.TEXTURE0 + i);
+        gl.bindTexture(GL.TEXTURE_2D, texture);
+        if (depthTexture) gl.texImage2D(GL.TEXTURE_2D, 0, GL2.DEPTH_COMPONENT24, 4, 4, 0, GL.DEPTH_COMPONENT, GL.UNSIGNED_INT, null);
+        else gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4));
+        if (compare) {
+          gl.texParameteri(GL.TEXTURE_2D, GL2.TEXTURE_COMPARE_MODE, GL2.COMPARE_REF_TO_TEXTURE);
+          gl.texParameteri(GL.TEXTURE_2D, GL2.TEXTURE_COMPARE_FUNC, i === 0 ? GL.LEQUAL : GL.GREATER);
+        }
+      });
+      gl.uniform1iv(gl.getUniformLocation(program, 'maps[0]'), [0, 1]);
+      return { gl, program };
+    }
+
+    it('records the compare function of each depth texture, and the units of an array of samplers', () => {
+      const { gl, program } = shadowContext(true);
+      expect(gl.getActiveUniform(program, 0)).toMatchObject({ name: 'maps[0]', size: 2, type: GL2.SAMPLER_2D_SHADOW });
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const draw = gl.content().ops[0]!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      expect(draw.uniforms.maps).toEqual([{ kind: 'i', value: [0, 1] }]);
+      expect(draw.units['0']!.compare).toBe('LEQUAL');
+      expect(draw.units['1']!.compare).toBe('GREATER');
+    });
+
+    it('refuses a shadow sampler on a texture that does not compare, or a colour texture', () => {
+      const plain = shadowContext(false);
+      plain.gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(plain.gl.getError()).toBe(GL.INVALID_OPERATION);
+      const colour = shadowContext(true, false);
+      colour.gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(colour.gl.getError()).toBe(GL.INVALID_OPERATION);
+    });
+
+    it('takes TEXTURE_COMPARE_MODE and FUNC on WebGL 2 only, and checks them', () => {
+      const { gl } = shadowContext(true);
+      gl.texParameteri(GL.TEXTURE_2D, GL2.TEXTURE_COMPARE_MODE, 7);
+      expect(gl.getError()).toBe(GL.INVALID_ENUM);
+      gl.texParameteri(GL.TEXTURE_2D, GL2.TEXTURE_COMPARE_FUNC, GL.LINEAR);
+      expect(gl.getError()).toBe(GL.INVALID_ENUM);
+      const v1 = createWebGLContext({ size: () => ({ width: 8, height: 4 }) });
+      v1.bindTexture(GL.TEXTURE_2D, v1.createTexture());
+      v1.texParameteri(GL.TEXTURE_2D, GL2.TEXTURE_COMPARE_MODE, GL2.COMPARE_REF_TO_TEXTURE);
+      expect(v1.getError()).toBe(GL.INVALID_ENUM);
+    });
+  });
+
   describe('a clear with the scissor test on', () => {
     function drawOf(gl: WebGLContext, index = 0) {
       const op = gl.content().ops[index]!;

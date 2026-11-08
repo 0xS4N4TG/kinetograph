@@ -528,7 +528,7 @@ A `draw` carries `program`, `mode` (`points`, `triangles`, `triangleStrip`, `tri
 attribute that advances for each instance; a disabled array is `constant`, its four values, for every vertex: `vertexAttrib*`, default 0, 0, 0, 1, with `buffer` only a name and `size` 4; a `mat2`, `mat3` or `mat4` attribute is one attribute for each column, named `name[0]`, `name[1]`, ..., at consecutive locations), `uniforms` by name
 (a list of calls: `kind` `f`, `i` or `m` for column-major matrices, `value`, and `index` for an element of an array),
 `units` (the texture units by number, each with its `texture` and the `min`, `mag`, `wrapS` and `wrapT` it was set
-to, as the GL names), `viewport`, `scissor` (both with y up from the bottom row, as GL's), `blend` (the factors,
+to, as the GL names; `compare` the function when the texture's `TEXTURE_COMPARE_MODE` was on, which a shadow sampler needs of a depth target; an array of samplers is set by its calls, `uniforms.maps` with `index`), `viewport`, `scissor` (both with y up from the bottom row, as GL's), `blend` (the factors,
 equations and colour), `colorMask`, `cull`, `depth` (the depth test: `func`, the GL name of `depthFunc`; `mask`;
 `near` and `far` of `depthRange`; absent when the test was off or the buffer has no depth), `polygonOffset`
 (`factor`, `units`; only with `depth`) and `stencil` (the stencil test: `ref`, `valueMask`, `writeMask`, and for the
@@ -538,7 +538,7 @@ was off or the buffer has no stencil). Each unit's sampler also has `maxLevel` w
 How it is drawn:
 
 - The program is read by naga's GLSL frontend after a rewrite to the Vulkan flavour it reads (`attribute`, `varying`
-  and `in`/`out` get locations, loose uniforms become one block, a `sampler2D`, `sampler3D`, `sampler2DArray` or `samplerCube` becomes a texture and a sampler,
+  and `in`/`out` get locations, loose uniforms become one block, a `sampler2D`, `sampler3D`, `sampler2DArray`, `samplerCube` or shadow sampler (`sampler2DShadow`, `samplerCubeShadow`, `sampler2DArrayShadow`) becomes a texture and a sampler,
   `gl_FragColor` an output). `gl_FragCoord` counts up from the bottom row and clip depth is taken from GL's -w..w to
   wgpu's 0..w, so the shaders mean what they mean in a browser. Arrays of scalars and of `vec2`, `bool` and `mat2`
   uniforms travel packed (naga and Metal lay them out differently). The conditionals (`#if`, `#ifdef`, `#elif`, `#else`) are evaluated, and what they leave out is not read for

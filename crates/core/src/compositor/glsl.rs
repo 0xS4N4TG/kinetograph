@@ -1369,12 +1369,7 @@ impl Compositor {
         // The textures the fragment shader samples, and which of them are depth buffers.
         let mut sampled = Vec::new();
         for (binding, _) in &program.translated.samplers {
-            let unit = draw
-                .uniforms
-                .get(&binding.name)
-                .and_then(|calls| calls.last())
-                .and_then(|call| call.value.first())
-                .map_or(0, |v| *v as i64);
+            let unit = gl::sampler_unit(&draw.uniforms, &binding.name);
             let texture = match draw.units.get(&unit.to_string()) {
                 Some(state) => {
                     let texture = content.textures.get(&state.texture).ok_or_else(|| {
@@ -1384,13 +1379,22 @@ impl Compositor {
                         ))
                     })?;
                     let held = texture_dim(texture);
-                    if held != binding.dim {
+                    if held != binding.dim.base() {
                         return Err(render_error(format!(
                             "the sampler `{}` reads a {} texture, but unit {unit} holds a {} one (WebGL \
                              refuses such a draw with INVALID_OPERATION)",
                             binding.name,
                             dim_name(binding.dim),
                             dim_name(held),
+                        )));
+                    }
+                    if binding.dim.shadow()
+                        && !(texture.target && texture.format.is_some_and(TargetFormat::has_depth))
+                    {
+                        return Err(render_error(format!(
+                            "the shadow sampler `{}` reads {:?}, which is not a depth texture (WebGL refuses \
+                             such a draw with INVALID_OPERATION)",
+                            binding.name, state.texture
                         )));
                     }
                     let uploaded = if texture.cube {
@@ -1416,6 +1420,7 @@ impl Compositor {
                         }
                         let target = self.glsl_target(targets, content, &state.texture, None)?;
                         let view = match target.ds {
+                            Some(_) if binding.dim.shadow() => target.view.clone(),
                             Some(_) => depth_copies
                                 .get(state.texture.as_str())
                                 .ok_or_else(|| {
@@ -1505,6 +1510,13 @@ impl Compositor {
                 Some((state, uploaded)) => self.glsl_sampler(state, uploaded, binding.dim),
                 None => {
                     let black = self.glsl_black(binding.dim);
+                    if binding.dim.shadow() {
+                        return Err(render_error(format!(
+                            "the shadow sampler `{}` reads a unit that holds no depth texture (WebGL \
+                             refuses such a draw with INVALID_OPERATION)",
+                            binding.name
+                        )));
+                    }
                     let nearest = GlslSampler {
                         texture: String::new(),
                         min: "NEAREST".into(),
@@ -1513,6 +1525,7 @@ impl Compositor {
                         wrap_t: "CLAMP_TO_EDGE".into(),
                         wrap_r: "CLAMP_TO_EDGE".into(),
                         max_level: None,
+                        compare: None,
                     };
                     (black.view.clone(), self.glsl_sampler_for(&nearest, false))
                 }
@@ -1669,7 +1682,11 @@ impl Compositor {
                 binding: s.texture,
                 visibility,
                 ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    sample_type: if s.dim.shadow() {
+                        wgpu::TextureSampleType::Depth
+                    } else {
+                        wgpu::TextureSampleType::Float { filterable: true }
+                    },
                     view_dimension: view_dimension(s.dim),
                     multisampled: false,
                 },
@@ -1678,7 +1695,11 @@ impl Compositor {
             entries.push(wgpu::BindGroupLayoutEntry {
                 binding: s.sampler,
                 visibility,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                ty: wgpu::BindingType::Sampler(if s.dim.shadow() {
+                    wgpu::SamplerBindingType::Comparison
+                } else {
+                    wgpu::SamplerBindingType::Filtering
+                }),
                 count: None,
             });
         }
@@ -1735,7 +1756,11 @@ impl Compositor {
                 binding: s.texture,
                 visibility,
                 ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: !depth },
+                    sample_type: if s.dim.shadow() {
+                        wgpu::TextureSampleType::Depth
+                    } else {
+                        wgpu::TextureSampleType::Float { filterable: !depth }
+                    },
                     view_dimension: view_dimension(s.dim),
                     multisampled: false,
                 },
@@ -1744,7 +1769,9 @@ impl Compositor {
             entries.push(wgpu::BindGroupLayoutEntry {
                 binding: s.sampler,
                 visibility,
-                ty: wgpu::BindingType::Sampler(if *depth {
+                ty: wgpu::BindingType::Sampler(if s.dim.shadow() {
+                    wgpu::SamplerBindingType::Comparison
+                } else if *depth {
                     wgpu::SamplerBindingType::NonFiltering
                 } else {
                     wgpu::SamplerBindingType::Filtering
@@ -2362,11 +2389,12 @@ impl Compositor {
     }
 
     fn glsl_black(&mut self, dim: gl::SamplerDim) -> Arc<Uploaded> {
+        let dim = dim.base();
         let cached = match dim {
             gl::SamplerDim::D2 => &self.glsl.black,
             gl::SamplerDim::D3 => &self.glsl.black_3d,
             gl::SamplerDim::Cube => &self.glsl.black_cube,
-            gl::SamplerDim::Array => &self.glsl.black_array,
+            gl::SamplerDim::Array | gl::SamplerDim::D2Shadow | gl::SamplerDim::CubeShadow | gl::SamplerDim::ArrayShadow => &self.glsl.black_array,
         };
         if let Some(b) = cached {
             return b.clone();
@@ -2383,10 +2411,8 @@ impl Compositor {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: match dim {
-                    gl::SamplerDim::D2 | gl::SamplerDim::Cube | gl::SamplerDim::Array => {
-                        wgpu::TextureDimension::D2
-                    }
                     gl::SamplerDim::D3 => wgpu::TextureDimension::D3,
+                    _ => wgpu::TextureDimension::D2,
                 },
                 format: wgpu::TextureFormat::Rgba8Unorm,
                 usage: wgpu::TextureUsages::TEXTURE_BINDING,
@@ -2408,7 +2434,7 @@ impl Compositor {
             gl::SamplerDim::D2 => self.glsl.black = Some(black.clone()),
             gl::SamplerDim::D3 => self.glsl.black_3d = Some(black.clone()),
             gl::SamplerDim::Cube => self.glsl.black_cube = Some(black.clone()),
-            gl::SamplerDim::Array => self.glsl.black_array = Some(black.clone()),
+            gl::SamplerDim::Array | gl::SamplerDim::D2Shadow | gl::SamplerDim::CubeShadow | gl::SamplerDim::ArrayShadow => self.glsl.black_array = Some(black.clone()),
         }
         black
     }
@@ -2422,6 +2448,9 @@ impl Compositor {
         texture: Arc<Uploaded>,
         dim: gl::SamplerDim,
     ) -> (wgpu::TextureView, wgpu::Sampler) {
+        if dim.shadow() {
+            return (texture.view.clone(), self.glsl_compare_sampler(state));
+        }
         // A 32-bit float texture is complete only when it is read `NEAREST`; any other filter makes it
         // incomplete, which samples as opaque black.
         if texture.float32 && !(state.min == "NEAREST" && state.mag == "NEAREST") {
@@ -2451,6 +2480,52 @@ impl Compositor {
         }
         let sampler = self.glsl_sampler_for(state, texture.mipmapped);
         (texture.view.clone(), sampler)
+    }
+
+    /// The sampler of a shadow sampler: it compares the depth with the reference by the function the texture was
+    /// given, filtering the comparisons (a depth texture's `LINEAR` is the hardware's bilinear shadow test).
+    fn glsl_compare_sampler(&mut self, state: &GlslSampler) -> wgpu::Sampler {
+        let key = format!(
+            "compare|{}|{}|{}|{}|{:?}",
+            state.min, state.mag, state.wrap_s, state.wrap_t, state.compare
+        );
+        if let Some(s) = self.glsl.samplers.get(&key) {
+            return s.clone();
+        }
+        use wgpu::CompareFunction as F;
+        let compare = match state.compare.as_deref() {
+            Some("NEVER") => F::Never,
+            Some("LESS") => F::Less,
+            Some("EQUAL") => F::Equal,
+            Some("GREATER") => F::Greater,
+            Some("NOTEQUAL") => F::NotEqual,
+            Some("GEQUAL") => F::GreaterEqual,
+            Some("ALWAYS") => F::Always,
+            _ => F::LessEqual,
+        };
+        let wrap = |w: &str| match w {
+            "REPEAT" => wgpu::AddressMode::Repeat,
+            "MIRRORED_REPEAT" => wgpu::AddressMode::MirrorRepeat,
+            _ => wgpu::AddressMode::ClampToEdge,
+        };
+        let filter = |name: &str| {
+            if name.starts_with("NEAREST") {
+                wgpu::FilterMode::Nearest
+            } else {
+                wgpu::FilterMode::Linear
+            }
+        };
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("glsl shadow sampler"),
+            address_mode_u: wrap(&state.wrap_s),
+            address_mode_v: wrap(&state.wrap_t),
+            mag_filter: filter(&state.mag),
+            min_filter: filter(&state.min),
+            compare: Some(compare),
+            ..Default::default()
+        });
+        self.glsl.samplers.insert(key, sampler.clone());
+        sampler
     }
 
     fn glsl_sampler_for(&mut self, state: &GlslSampler, mipmapped: bool) -> wgpu::Sampler {
@@ -3365,11 +3440,11 @@ fn sampler_visibility(stages: gl::SamplerStages) -> wgpu::ShaderStages {
 }
 
 fn view_dimension(dim: gl::SamplerDim) -> wgpu::TextureViewDimension {
-    match dim {
+    match dim.base() {
         gl::SamplerDim::D2 => wgpu::TextureViewDimension::D2,
         gl::SamplerDim::D3 => wgpu::TextureViewDimension::D3,
         gl::SamplerDim::Cube => wgpu::TextureViewDimension::Cube,
-        gl::SamplerDim::Array => wgpu::TextureViewDimension::D2Array,
+        gl::SamplerDim::Array | gl::SamplerDim::D2Shadow | gl::SamplerDim::CubeShadow | gl::SamplerDim::ArrayShadow => wgpu::TextureViewDimension::D2Array,
     }
 }
 
@@ -3387,11 +3462,11 @@ fn texture_dim(texture: &GlslTexture) -> gl::SamplerDim {
 }
 
 fn dim_name(dim: gl::SamplerDim) -> &'static str {
-    match dim {
+    match dim.base() {
         gl::SamplerDim::D2 => "2D",
         gl::SamplerDim::D3 => "3D",
         gl::SamplerDim::Cube => "cube map",
-        gl::SamplerDim::Array => "2D array",
+        gl::SamplerDim::Array | gl::SamplerDim::D2Shadow | gl::SamplerDim::CubeShadow | gl::SamplerDim::ArrayShadow => "2D array",
     }
 }
 
