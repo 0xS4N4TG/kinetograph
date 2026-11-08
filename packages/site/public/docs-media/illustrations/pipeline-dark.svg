@@ -33,7 +33,7 @@
 <text x="660" y="353" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#a1a1aa" text-anchor="end">layers and DOM islands</text>
 <path d="M360 385 L360 415" fill="none" stroke="#ededf0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M360 415 L354.5 405.0 L365.5 405.0 Z" fill="#ededf0" stroke="#ededf0" stroke-width="1" stroke-linejoin="round"/>
-<text x="374" y="405" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#a1a1aa" text-anchor="start">frame pixels</text>
+<text x="374" y="511" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#a1a1aa" text-anchor="start">frame pixels</text>
 <rect x="44" y="418" width="632" height="70" rx="8" fill="#1f2438" stroke="#8396ff" stroke-width="2"/>
 <circle cx="72" cy="453" r="13" fill="#8396ff"/>
 <text x="72" y="458" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#0b0c14" text-anchor="middle">4</text>
