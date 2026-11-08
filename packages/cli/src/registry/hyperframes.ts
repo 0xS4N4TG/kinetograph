@@ -314,6 +314,39 @@ export function remapTarget(target: string, kind: HyperframesType, paths: Return
   return target;
 }
 
+type Paths = ReturnType<typeof projectPaths>;
+
+/**
+ * Where a file of `item` lands. `remapTarget`, then three kinds of file that items put at the project root, which
+ * `add` does not write there: `TEMPLATE.md` goes to `<compositions>/<item>/TEMPLATE.md`, `models/…` under the assets
+ * folder, and `lib/…` beside the compositions (as the items that ship `compositions/lib/` do). Anything else is left
+ * as it is, for `hyperframesTargetProblem` to refuse.
+ */
+export function placeTarget(target: string, item: { name: string; kind: HyperframesType }, paths: Paths): string {
+  const moved = remapTarget(target, item.kind, paths);
+  if (moved !== target) return moved;
+  const folder = item.kind === 'component' ? paths.components : paths.blocks;
+  if (target === 'TEMPLATE.md') return `${folder}/${item.name}/TEMPLATE.md`;
+  if (target.startsWith('models/')) return `${paths.assets}/${target}`;
+  if (target.startsWith('lib/')) return `${folder}/${target}`;
+  return target;
+}
+
+const TEXT_FILE = /\.(html?|css|m?js)$/i;
+
+/**
+ * `text` with each path in `moves` that appears as a quoted (or `url(`) path, with or without a leading `./`, replaced
+ * by where the file went. A longer path that merely ends in the old one (`other/models/a.glb`) is left alone.
+ */
+export function rewriteReferences(text: string, moves: [from: string, to: string][]): string {
+  let out = text;
+  for (const [from, to] of moves) {
+    const pattern = new RegExp(`(["'\`(])(\\./)?${from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'g');
+    out = out.replace(pattern, (_all, quote: string, dot: string | undefined) => `${quote}${dot ?? ''}${to}`);
+  }
+  return out;
+}
+
 /** Names that are never written, wherever they sit in a path. */
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const FORBIDDEN_NAMES = new Set(['package.json', '.git', '.github', 'node_modules']);
@@ -433,7 +466,7 @@ export async function addHyperframes(options: HyperframesAddOptions): Promise<Hy
   // Nothing is fetched or written for an item that wants to write outside its folders.
   for (const item of items) {
     for (const file of item.files) {
-      const target = remapTarget(file.target, item.kind, paths);
+      const target = placeTarget(file.target, item, paths);
       const problem = hyperframesTargetProblem(target, paths);
       if (problem !== undefined) throw new CliError('UNSAFE_TARGET', `${item.name}: target "${file.target}"${target === file.target ? '' : ` (installs as "${target}")`} ${problem}`);
     }
@@ -443,7 +476,7 @@ export async function addHyperframes(options: HyperframesAddOptions): Promise<Hy
 
   // Every download first, so a failure stops the install before anything is written.
   let total = 0;
-  const plan = items.map((item) => ({ item, files: item.files.map((file) => ({ file, target: remapTarget(file.target, item.kind, paths), data: undefined as Uint8Array | undefined })) }));
+  const plan = items.map((item) => ({ item, files: item.files.map((file) => ({ file, target: placeTarget(file.target, item, paths), data: undefined as Uint8Array | undefined })) }));
   const jobs = plan.flatMap(({ item, files }) => files.map((f) => ({ item, f })));
   let next = 0;
   const worker = async (): Promise<void> => {
@@ -457,6 +490,21 @@ export async function addHyperframes(options: HyperframesAddOptions): Promise<Hy
     }
   };
   await Promise.all(Array.from({ length: DOWNLOADS_AT_ONCE }, worker));
+
+  // A file that moved is named by its new path in the item's own pages and scripts. `lib/` needs no rewrite: scripts
+  // name it relative to the page, and the page and `lib/` moved together.
+  for (const { item, files } of plan) {
+    const moves = files
+      .filter(({ file, target }) => target !== file.target && !file.target.startsWith('lib/') && remapTarget(file.target, item.kind, paths) === file.target)
+      .map(({ file, target }): [string, string] => [file.target, target]);
+    if (moves.length === 0) continue;
+    for (const f of files) {
+      if (!TEXT_FILE.test(f.target)) continue;
+      const before = Buffer.from(f.data!).toString('utf8');
+      const after = rewriteReferences(before, moves);
+      if (after !== before) f.data = Buffer.from(after, 'utf8');
+    }
+  }
 
   // Decide every file before the first write. A file already there is an error unless it holds the same bytes.
   const planned = new Map<string, Uint8Array>();

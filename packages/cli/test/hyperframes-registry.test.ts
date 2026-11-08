@@ -346,7 +346,10 @@ describe('hostile items', () => {
     ['compositions/.hidden.html'],
     ['compositions/node_modules/x.js'],
     ['compositions/components/package.json'],
-    ['TEMPLATE.md'],
+    ['other/x.html'],
+    ['models/../package.json'],
+    ['lib/.hidden.js'],
+    ['SUB/TEMPLATE.md'],
     ['src/index.ts'],
     ['index.html'],
     ['hyperframes.json'],
@@ -367,6 +370,59 @@ describe('hostile items', () => {
     await expect(addHyperframes({ names: ['glow'], dir, source, overwrite: true })).rejects.toMatchObject({ code: 'UNSAFE_TARGET' });
     expect(existsSync(join(dir, 'HYPERFRAMES-CREDITS.md'))).toBe(false);
     expect(readFileSync(join(dir, 'index.html'), 'utf8')).toBe('<div></div>');
+  });
+
+  describe('files an item puts at the project root', () => {
+    const serve = (name: string, kind: 'block' | 'component', files: object[], html: string) => {
+      const files_ = served();
+      const dir = kind === 'block' ? 'blocks' : 'components';
+      files_.set(`${BASE}/${dir}/${name}/registry-item.json`, JSON.stringify(item(name, kind, {}, files)));
+      files_.set(`${BASE}/${dir}/${name}/${name}.html`, html);
+      files_.set(`${BASE}/${dir}/${name}/TEMPLATE.md`, 'notes');
+      files_.set(`${BASE}/${dir}/${name}/models/m.glb`, new Uint8Array([9, 9]));
+      files_.set(`${BASE}/${dir}/${name}/lib/l.js`, 'var l;');
+      const manifest = JSON.parse(files_.get(`${BASE}/registry.json`) as string);
+      manifest.items.push({ name, type: `hyperframes:${kind}` });
+      files_.set(`${BASE}/registry.json`, JSON.stringify(manifest));
+      return open(files_).source;
+    };
+    const rooted = (name: string, kind: 'block' | 'component') => [
+      { path: `${name}.html`, target: kind === 'block' ? `compositions/${name}.html` : `compositions/components/${name}.html` },
+      { path: 'TEMPLATE.md', target: 'TEMPLATE.md' },
+      { path: 'models/m.glb', target: 'models/m.glb' },
+      { path: 'lib/l.js', target: 'lib/l.js' },
+    ];
+    const html = '<script src="lib/l.js"></script><script>loader.load("models/m.glb"); x = \'./models/m.glb\'; y = "other/models/m.glb"; z = "xmodels/m.glb";</script>';
+
+    it('puts TEMPLATE.md in a folder named for the item, models under the assets folder, and lib beside the compositions', async () => {
+      const dir = project();
+      const source = serve('rooted-block', 'block', rooted('rooted-block', 'block'), html);
+      const result = await addHyperframes({ names: ['rooted-block'], dir, source, overwrite: false });
+      expect(result.added[0]!.written).toEqual(['compositions/rooted-block.html', 'compositions/rooted-block/TEMPLATE.md', 'assets/models/m.glb', 'compositions/lib/l.js']);
+      expect(readFileSync(join(dir, 'compositions/rooted-block/TEMPLATE.md'), 'utf8')).toBe('notes');
+      expect([...readFileSync(join(dir, 'assets/models/m.glb'))]).toEqual([9, 9]);
+    });
+
+    it('rewrites the references in the item\'s own files to the new paths, and only those', async () => {
+      const dir = project();
+      const source = serve('rooted-block', 'block', rooted('rooted-block', 'block'), html);
+      await addHyperframes({ names: ['rooted-block'], dir, source, overwrite: false });
+      const text = readFileSync(join(dir, 'compositions/rooted-block.html'), 'utf8');
+      expect(text).toContain('loader.load("assets/models/m.glb")');
+      expect(text).toContain("'./assets/models/m.glb'");
+      expect(text).toContain('src="lib/l.js"');
+      expect(text).toContain('"other/models/m.glb"');
+      expect(text).toContain('"xmodels/m.glb"');
+    });
+
+    it('follows hyperframes.json, and places a component under the components folder', async () => {
+      const dir = project();
+      writeFileSync(join(dir, 'hyperframes.json'), JSON.stringify({ paths: { components: 'parts', assets: 'media' } }));
+      const source = serve('rooted-part', 'component', rooted('rooted-part', 'component'), html);
+      const result = await addHyperframes({ names: ['rooted-part'], dir, source, overwrite: false });
+      expect(result.added[0]!.written).toEqual(['parts/rooted-part.html', 'parts/rooted-part/TEMPLATE.md', 'media/models/m.glb', 'parts/lib/l.js']);
+      expect(readFileSync(join(dir, 'parts/rooted-part.html'), 'utf8')).toContain('loader.load("media/models/m.glb")');
+    });
   });
 
   it('refuses a hyperframes.json that moves a folder onto a sensitive place', async () => {
