@@ -1,0 +1,28 @@
+---
+title: Update Kinetograph
+description: Update the CLI, its packages and plugins, and the agent skills together, and check the project afterwards.
+---
+
+Kinetograph prints a one-line notice when the CLI or an installed skill is out of date. It checks once a day, never installs anything, and stays quiet in CI or with `KINETOGRAPH_NO_UPDATE_CHECK=1`.
+
+## How the versions fit
+
+- `kinetograph` pins each of its `@kinetographdev/*` packages (`core`, `audio`, `compat`, `scene`, `native`, `studio`) to its own exact version. Updating `kinetograph` moves them all. Do not pin one of them alone.
+- A plugin such as `@kinetographdev/gsap`, `anime`, `motion` or `p5-brush` is its own package with a peer range on `@kinetographdev/core`, for example `^0.2.0 || ^0.3.0`. While the version is 0.x, `^0.3.0` means 0.3.x only, so a new minor of `kinetograph` waits for a plugin release that lists it.
+- Each agent skill carries a version. It is current when it is at least the CLI's version.
+
+## Steps
+
+1. **Look.** `npx kinetograph doctor` shows the CLI against the latest on npm, and each installed skill with its version and whether it is current.
+2. **Read the [changelog](/docs/changelog/)** for renamed flags or APIs.
+3. **Update the packages in one command**, so npm resolves them together:
+
+   ```sh
+   npm install kinetograph@latest @kinetographdev/gsap@latest
+   ```
+
+   Add every `@kinetographdev/*` plugin your project lists. Then `npm ls @kinetographdev/core` must show one version. A second copy means a plugin is behind: install its newer release, or hold `kinetograph` back.
+4. **Update the skills.** `npx skills add 0xS4N4TG/kinetograph` asks which agents to install for. Install all of them, because they point to each other. Run `doctor` again; every skill should say `current`.
+5. **Check the project.** Run `check`, `lint`, `doctor <entry>` and `strip`. If you keep approved frames, run `snapshot <entry>` to see what moved. See [Rendering](/docs/rendering/).
+
+Skills from other repos, such as the [taste skill](/docs/agents/taste-clone/), update with their own `npx skills add`. An agent can do all of this: ask it to update Kinetograph and it uses the `kinetograph-upgrade` skill, after asking you first.
