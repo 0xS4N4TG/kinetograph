@@ -29,6 +29,7 @@ const MAX_DATA_BYTES = 20 * 1024 * 1024;
 const MAX_LICENCE_BYTES = 256 * 1024;
 const MAX_TOTAL_BYTES = 150 * 1024 * 1024;
 const MAX_FACES = 64;
+const MAX_READS = 200;
 const FONT_FILE = /\.(woff2?|ttf|otf)$/i;
 const DATA_FILE = /\.(json|geojson|topojson)$/i;
 
@@ -104,6 +105,7 @@ export class Localizer {
     const key = `${kind} ${url.href}`;
     let pending = this.reads.get(key);
     if (pending === undefined) {
+      if (this.reads.size >= MAX_READS) throw new CliError('TOO_LARGE', `an item names more than ${MAX_READS} fonts and data files to download`);
       this.progress(`downloading ${url.href}`);
       pending = download(url, limit, this.fetchImpl, notFound, HOSTS, (u) => allowed(kind, u)).then((bytes) => {
         this.total += bytes.length;
@@ -185,8 +187,9 @@ export class Localizer {
         if (family === '' || remote === undefined) continue;
         const fileUrl = new URL(remote, url);
         if (!allowed('font', fileUrl)) throw new CliError('UNSAFE_URL', `${url.href}: a font file at ${fileUrl.href} is not on an allowed host`);
-        const style = (decl('font-style') ?? 'normal').trim().split(/\s+/)[0]!;
-        const weight = (decl('font-weight') ?? '400').trim();
+        // Values that are written back into CSS must be plain keywords and numbers.
+        const style = /^(normal|italic|oblique)\b/.exec((decl('font-style') ?? '').trim())?.[1] ?? 'normal';
+        const weight = /^(?:\d{1,4}(?:\s+\d{1,4})?|normal|bold)$/.test((decl('font-weight') ?? '').trim()) ? decl('font-weight')!.trim() : '400';
         const dir = `public/fonts/${slug(family)}`;
         const ext = posix.extname(fileUrl.pathname).toLowerCase();
         let name = `${slug(family)}-${safe(weight.replace(/\s+/g, '-'))}-${safe(style)}`;
@@ -197,7 +200,7 @@ export class Localizer {
         const target = `${dir}/${name}${ext}`;
         this.add(target, await this.read('font', fileUrl, MAX_FONT_BYTES, `${fileUrl.href} was not found`), true);
         await this.noteFont(family, dir, target);
-        const display = decl('font-display');
+        const display = /^(auto|block|swap|fallback|optional)$/.test((decl('font-display') ?? '').trim()) ? decl('font-display') : undefined;
         const format = /format\(\s*(['"]?)([^'")]+)\1\s*\)/.exec(src)?.[2];
         rules.push(
           [
