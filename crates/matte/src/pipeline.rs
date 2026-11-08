@@ -571,6 +571,25 @@ fn even_crop(
         .collect())
 }
 
+/// One frame (tightly packed RGBA8) matted on its own: the alpha at the frame's size, and the backend the model ran on.
+/// For checking a model file on a machine without running a whole clip.
+pub fn matte_frame(
+    model_path: &Path,
+    model: Model,
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<(Vec<u8>, &'static str), String> {
+    let size = model.input_size(width, height);
+    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let mut matter = Matter::load(model_path, model, size, threads)?;
+    let matte = matter.run(model.preprocess(rgba, width, height))?;
+    Ok((
+        alpha_from_matte(&matte, size.0, size.1, width, height),
+        matter.backend(),
+    ))
+}
+
 /// Whether ONNX Runtime is there, and the GPU back end `ben2-base` would use (`modnet` always runs on the CPU): the
 /// answer `mattingSupport()` gives.
 pub struct Support {

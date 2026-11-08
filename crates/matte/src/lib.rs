@@ -10,6 +10,6 @@ pub mod resize;
 
 pub use model::Model;
 pub use pipeline::{
-    AudioTarget, CANCELLED, Options, Output, Progress, Quality, Support, matte_video, split,
-    support,
+    AudioTarget, CANCELLED, Options, Output, Progress, Quality, Support, matte_frame, matte_video,
+    split, support,
 };
