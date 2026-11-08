@@ -460,8 +460,7 @@ figure.shiki button[data-checked] {
   --shiki-dark: var(--color-fd-muted-foreground);
 }
 
-/* Docs sidebar, spaced like HyperFrames' docs: the sidebar sits in the left gutter of the centred layout, wider, with
-   more room at the edges, between links and between groups. */
+/* Docs sidebar: full width at the window edge, with more room at the edges, between links and between groups.
 :root {
   --fd-sidebar-width: 288px;
 }
@@ -481,7 +480,7 @@ figure.shiki button[data-checked] {
 #nd-sidebar button[data-active] {
   padding-block: 7px;
 }
-#nd-sidebar p,
+#nd-sidebar [data-radix-scroll-area-viewport] p,
 #nd-sidebar [data-radix-collapsible-trigger] {
   margin-top: 18px;
 }
