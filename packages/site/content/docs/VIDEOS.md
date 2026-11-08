@@ -90,3 +90,31 @@ placeholder. The takeaways and glossary under each video are in `src/lib/lessons
 | `lesson-animate-your-logo.mp4` | A quick win: animate your logo | 0:00 Show the finished 4 second sting. 0:15 The request: length, logo file in `public/images`, the word in quotes. 0:45 Say the move in plain words (ease out in, slight overshoot to 1.08, settle), then the same move with numbers. 1:15 The exit with an ease in; why a linear ease looks mechanical. 1:40 Fix one thing by giving a time ("leaves at 3.4 s") and change nothing else. 1:55 The four takeaways on screen. |
 | `lesson-words-on-your-footage.mp4` | Put words on your own footage | 0:00 A clip, then the same clip with captions. 0:20 Where the files go (`public/video`, `public/captions`) and naming the part of the clip. 0:45 Kinetograph reads timings and does not transcribe: bring a subtitle file or word timings. 1:10 Three to five words at a time, lower third, the current word lit. 1:35 One style, then `lint` catching text past the edge. 1:55 The four takeaways on screen. |
 | `lesson-paper-cut-or-glitch.mp4` | Give a clip a paper-cut or glitch look | 0:00 A paper cut-out and a datamosh, back to back. 0:20 Name the look as an effect: stock and edge, or a frame count. 0:45 A cut-out needs its background removed; unfold it from a crumpled packet. 1:10 A datamosh needs H.264 or MPEG-4 clips; show the smear. 1:35 A seed brings the same random look back: keep it, change one slot. 1:55 The four takeaways on screen. |
+
+## Studio clips (Studio section)
+
+Headless screen captures of Studio, 1280x720 (the window at 1600 px wide, scaled), 4 to 8 seconds, no sound, loops. Capture with a project that
+has an HTML composition with sound, so the Edit, Mixer and Library tabs all show. Upload as `<name>.mp4` with a `<name>.jpg` poster.
+
+| Name | Page | What it shows |
+|---|---|---|
+| `studio-open` | Open Studio | Typing `npx kinetograph studio src/index.tsx`, the browser opening on the loaded project |
+| `studio-first-video` | Make your first video in Studio | One request typed in the Agent chat, the title card appearing in the preview, then Export |
+| `studio-continue` | Continue from Claude Code | A project an agent made opening in Studio, then the same folder back in the terminal |
+| `studio-edit-agent` | Edit with the agent | Pressing M, drawing a box on the title, writing a note, sending it, the preview changing |
+| `studio-tour` | Find your way around Studio | A slow pan over the three columns: chat, preview with timeline, inspector |
+| `studio-tour-chat` | Find your way around Studio, The agent chat | Sending a message with the picture switch on, then a second message waiting in Up next |
+| `studio-tour-preview` | Find your way around Studio, The preview | The V, H, Z and M tools in turn, then 0 and 1 |
+| `studio-tour-timeline` | Find your way around Studio, The timeline | Expanding the rows, dragging a clip, dragging an edge to trim, Ctrl-wheel zoom |
+| `studio-tour-inspector` | Find your way around Studio, The inspector tabs | Clicking through Props, Scene, Edit, Mixer, Renders and Library |
+| `studio-tour-edit` | Find your way around Studio, Edit | Colour strength, an effect moved up and removed, a font and weight change, Cmd+Z |
+| `studio-tour-mixer` | Find your way around Studio, Mixer | A fader moved, M and S pressed, Add lane, Duck under voice, the Master loudness |
+| `studio-tour-library` | Find your way around Studio, Library | Searching, switching Blocks and Components, Add to project |
+| `studio-connect-agent` | Connect your agent | Cmd+K, Switch agent, picking Claude Code, a message sent |
+| `studio-export` | Export a video | Export, Whole video, Start export, the Renders tab filling up and finishing |
+
+## Taste page clip
+
+| Name | Page | What it shows |
+|---|---|---|
+| `taste-match` | Make a video like one you like | A reference reel and the Kinetograph video made to match it, side by side. Use a reference you have the right to use, or one of our own films |

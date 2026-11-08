@@ -44,7 +44,7 @@ A template is a video whose content is props. A Remotion composition declares th
 /kinetograph-markup Make Card a template. The things that change are title, accent colour and the logo path. Put them in a zod schema with defaults, keep everything else fixed, and use staticFile(props.logo) for the logo.
 ```
 
-[Studio](/docs/studio/#props-and-presets) draws a form from the schema, and **Save preset** keeps the props as a file you can commit. `--props` renders other values from the command line:
+[Studio](/docs/studio/find-your-way/#props) draws a form from the schema, and **Save preset** keeps the props as a file you can commit. `--props` renders other values from the command line:
 
 ```sh
 npx kinetograph render src/index.tsx --comp Card --props '{"title":"Goodbye"}'

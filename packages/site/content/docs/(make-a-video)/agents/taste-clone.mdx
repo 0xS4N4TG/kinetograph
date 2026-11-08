@@ -7,19 +7,19 @@ description: Give your agent a video you like and get a new one with the same ti
 
 Give your agent a video you like, and it makes one with your words in the same timing, layout and look. You can also keep just the style and use it again. This is the `kinetograph-taste-clone` skill.
 
-```sh
-npx skills add 0xS4N4TG/kinetograph-ui
-```
-
 ## Before you start
 
-- Kinetograph and its [agent skills](/docs/agents/skills/) installed.
+- Kinetograph installed.
 - `ffmpeg`, `ffprobe` and `python3` on your computer, and `yt-dlp` to fetch a link.
 - A video you have the right to use as a reference.
 
 ## Install
 
-The command above installs the skill from [kinetograph-ui](/docs/library/use-an-item/) (MIT), not from the Kinetograph repo. Pick your agent when it asks, then start a new session.
+The taste skill comes with the other skills. Run this in your project folder, then start a new session in your agent:
+
+```sh
+npx kinetograph skills update
+```
 
 ## Ask for your first match
 

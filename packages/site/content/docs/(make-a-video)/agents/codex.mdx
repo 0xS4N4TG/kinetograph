@@ -6,7 +6,7 @@ description: Install the Kinetograph skills in Codex, ask for a video in plain w
 Install the skills, then ask Codex for a video. Codex writes the project in your folder, looks at the frames and saves the MP4 on your computer.
 
 ```sh
-npx skills add 0xS4N4TG/kinetograph
+npx kinetograph skills update
 codex mcp add kinetograph -- npx -y kinetograph mcp
 ```
 
@@ -25,7 +25,7 @@ Set up Kinetograph (https://github.com/0xS4N4TG/kinetograph) for me by following
 
 Or install by hand:
 
-The first command asks which agents to install the skills for. Pick Codex. The second connects the [tools Kinetograph gives your agent](/docs/mcp/). `codex mcp list` shows the result.
+The first command installs the skills. The second connects the [tools Kinetograph gives your agent](/docs/mcp/). `codex mcp list` shows the result.
 
 You can write the same connection by hand in `~/.codex/config.toml`:
 

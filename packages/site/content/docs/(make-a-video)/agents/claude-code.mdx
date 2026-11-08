@@ -6,7 +6,7 @@ description: Install the Kinetograph skills in Claude Code, ask for a video in p
 Install the skills, then ask Claude Code for a video. Claude Code writes the project in your folder, looks at the frames and saves the MP4 on your computer.
 
 ```sh
-npx skills add 0xS4N4TG/kinetograph
+npx kinetograph skills update
 claude mcp add kinetograph -- npx -y kinetograph mcp
 ```
 
@@ -27,10 +27,10 @@ Or install by hand:
 
 <Tabs items={['Skills', 'Tools (MCP)']}>
   <Tab value="Skills">
-    Run this and pick Claude Code when it asks which agents to install the skills for:
+    Run this. It installs the skills for Claude Code, Codex and Cursor without asking questions:
 
     ```sh
-    npx skills add 0xS4N4TG/kinetograph
+    npx kinetograph skills update
     ```
 
     Start a new Claude Code session afterwards. [Agent skills](/docs/agents/skills/) lists what each skill does.

@@ -6,7 +6,7 @@ description: Install the Kinetograph skills in Cursor, ask for a video in plain 
 Install the skills and connect the tools, then ask Cursor for a video. Cursor writes the project in your folder, looks at the frames and saves the MP4 on your computer.
 
 ```sh
-npx skills add 0xS4N4TG/kinetograph
+npx kinetograph skills update
 ```
 
 ## Before you start
@@ -24,7 +24,7 @@ Set up Kinetograph (https://github.com/0xS4N4TG/kinetograph) for me by following
 
 Or install by hand:
 
-The command asks which agents to install the skills for. Pick Cursor.
+The command installs the skills for Claude Code, Codex and Cursor without asking questions.
 
 Then connect the [tools Kinetograph gives your agent](/docs/mcp/). Put this in `.cursor/mcp.json` in the project, or in `~/.cursor/mcp.json` for every project:
 

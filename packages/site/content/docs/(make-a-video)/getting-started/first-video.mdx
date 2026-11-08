@@ -1,26 +1,36 @@
 ---
 title: Make your first video
-description: Make your first Kinetograph video with your coding agent, or with three commands in a terminal.
+description: Make your first Kinetograph video with your own coding agent, or with three commands in a terminal.
 ---
 
 <Video name="first-video" label="A first video: one request, a short wait, the finished title card" silent />
 
-Kinetograph turns one sentence into a video you can keep editing. Start with the coding agent you already use. If you prefer a terminal, three commands make the same kind of project.
+Kinetograph turns one sentence into a video you can keep editing. If you already work with a coding agent, install the skills and ask it. If you prefer a terminal, three commands make the same kind of project.
 
 <LinkCard title="Install Kinetograph" icon="download" href="/docs/getting-started/installation/">
   One command, about a minute. Your agent can run it for you.
 </LinkCard>
 
-## With your coding agent
+## With your agent
 
 For Claude Code, Codex, Cursor or any agent that works in a folder on your computer.
 
 ### The short way
 
-Paste this into the agent. It installs Kinetograph, checks it and adds the skills. Then it makes a title card and saves the MP4. You only change the words.
+Install the skills once from a terminal in your project folder, then open or restart your coding agent there:
+
+```sh
+npx kinetograph skills update
+```
+
+Paste this into the agent. It makes the video and opens the preview. You only change the URL.
 
 ```text title="Install prompt"
-Set up Kinetograph (https://github.com/0xS4N4TG/kinetograph) for me by following its AGENTS.md: https://github.com/0xS4N4TG/kinetograph/blob/main/AGENTS.md. Use the prebuilt package and install the Kinetograph agent skills system-wide. Then make a 5 second title card that says "Hello" and save it to out/title.mp4. Look at the frames before you save it.
+Set this folder up for Kinetograph and make me a video.
+
+1. If the Kinetograph skills are missing, stop and tell me: I install them with npx kinetograph skills update
+2. Then, using /kinetograph, make a 10-second product intro for https://example.com
+3. Open the local preview when it is done and tell me the project folder.
 ```
 
 ### Step by step
@@ -29,27 +39,33 @@ Set up Kinetograph (https://github.com/0xS4N4TG/kinetograph) for me by following
   <Step title="Install the skills">
     Step-by-step pages: [Claude Code](/docs/agents/claude-code/), [Codex](/docs/agents/codex/), [Cursor](/docs/agents/cursor/).
 
-    In your project folder, run this and pick your agent. Then open or restart the agent there:
+    Run this in your project folder, then open or restart your agent there:
 
     ```sh
-    npx skills add 0xS4N4TG/kinetograph
+    npx kinetograph skills update
     ```
   </Step>
   <Step title="Ask for the video">
     ```text title="Suggested prompt"
-    Make a 5 second title card that says "Hello" and save it to out/title.mp4. Look at the frames before you save it.
+    Using /kinetograph, make a 10-second product intro for https://example.com.
     ```
 
-    Your agent writes the video and looks at it. It fixes what is off and saves the MP4.
+    Replace `https://example.com` with the page you want the video to show.
   </Step>
-  <Step title="Change it">
-    Say what to change in the same conversation, or open the preview with a timeline:
+  <Step title="Continue from the first version">
+    The agent leaves you with a project folder and a preview. All three ways below work on the same project.
 
-    ```sh
-    npx kinetograph studio src/index.tsx
-    ```
-
-    Press Space to play and Ctrl-C to stop. [Edit in Studio](/docs/studio/) walks through it.
+    <CardGroup cols={3}>
+      <Card title="Ask the agent" icon="route" href="/docs/tips/editing/">
+        Say what to change, in the same conversation.
+      </Card>
+      <Card title="Open Studio" icon="play" href="/docs/studio/">
+        Run `npx kinetograph studio src/index.tsx` for a timeline and a chat.
+      </Card>
+      <Card title="Use the CLI" icon="download" href="/docs/reference/cli/#render">
+        Run `npx kinetograph render src/index.tsx -o video.mp4`.
+      </Card>
+    </CardGroup>
   </Step>
 </Steps>
 
@@ -84,7 +100,7 @@ No agent needed. In an empty folder:
   <Card title="Choose what to make" icon="route" href="/docs/making/">
     Title cards, photos, captions, paper-cut looks, glitch effects and more.
   </Card>
-  <Card title="Edit in Studio" icon="play" href="/docs/studio/">
+  <Card title="Open Studio" icon="play" href="/docs/studio/">
     Change the video with a live preview, a timeline and a chat.
   </Card>
 </CardGroup>

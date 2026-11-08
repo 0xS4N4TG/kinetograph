@@ -21,7 +21,7 @@ Use this table to choose a command. The sections below have every argument and o
 | Check it | `inspect`, `lint`, `check`, `doctor`, `snapshot` |
 | Work with sound and tracking | `audio analyze`, `track` |
 | Render and measure | `render`, `bench`, `effects`, `fetch-deps` |
-| Edit with a preview, or connect an agent | `studio`, `mcp` |
+| Edit with a preview, or connect an agent | `studio`, `mcp`, `skills update` |
 
 ## Shared behaviour
 
@@ -366,6 +366,14 @@ For a Remotion project, `fetch-deps` fetches the remote pictures and videos its 
 | `--url <url>` | Also download this URL (comma-separated for several). Use it for a file the script scan missed. `doctor` names the ones a render refused. |
 | `--update` | Download everything again and rewrite the lock file, to accept a file that changed upstream. |
 | `--max-media-mb <n>` | The most megabytes of one remote video or audio file. The default is 500. |
+
+## skills update
+
+Installs the Kinetograph agent skills for you, with no questions: the core skills (`kinetograph` and `kinetograph-migrate`) and the taste skill, for Claude Code, Codex, Cursor and `~/.agents`. It is safe with no terminal input. Run it again to refresh them. See [Agent skills](/docs/agents/skills/).
+
+```sh
+npx kinetograph skills update
+```
 
 ## mcp
 

@@ -1,0 +1,89 @@
+---
+title: Connect your agent
+description: "Pick the coding agent Studio works with: Claude Code, Codex or Gemini CLI. Install it, sign in, and Studio finds it."
+---
+
+<Video name="studio-connect-agent" label="Studio's agent chat with Claude Code connected" />
+
+Studio's chat works with a coding agent that runs on your computer. Studio does not install an agent for you: install one with its own installer, sign in, then open Studio and it finds the agent.
+
+| Agent | What you need | Sign in | Who bills you |
+| --- | --- | --- | --- |
+| Claude Code | `claude` on your computer | Your browser opens a sign-in: a Claude account or a Claude Console account | Anthropic |
+| Codex | `codex` on your computer | "Sign in with ChatGPT" the first time you run it | OpenAI |
+| Gemini CLI | `gemini` on your computer | Sign in with Google, or use a Gemini API key | Google |
+
+Studio offers an agent only when its program is already on your computer. Your agent bills to the plan of the account you signed in with.
+
+## Set one up
+
+<Steps>
+  <Step title="Install the agent">
+    Use the agent's official installer.
+
+    Claude Code, on macOS, Linux or WSL:
+
+    ```sh
+    curl -fsSL https://claude.ai/install.sh | bash
+    ```
+
+    Claude Code, in Windows PowerShell:
+
+    ```powershell
+    irm https://claude.ai/install.ps1 | iex
+    ```
+
+    Codex, on macOS and Linux:
+
+    ```sh
+    curl -fsSL https://chatgpt.com/codex/install.sh | sh
+    ```
+
+    Gemini CLI:
+
+    ```sh
+    npm install -g @google/gemini-cli
+    ```
+
+    Open a new terminal afterwards, and check with `claude --version`, `codex --version` or `gemini --version`.
+  </Step>
+  <Step title="Sign in">
+    Run the agent once in a project folder and follow its prompts: `claude`, `codex` or `gemini`. For Claude Code and Codex, finish in your browser.
+  </Step>
+  <Step title="Open Studio">
+    ```sh
+    npx kinetograph studio src/index.tsx
+    ```
+
+    The first time you use Claude Code or Codex, Studio fetches its adapter with `npx`, so the first message can take a moment longer.
+  </Step>
+  <Step title="Pick it">
+    Open the chat on the left. If more than one agent is installed, choose one with **Switch agent** in the command menu.
+  </Step>
+</Steps>
+
+<Note>
+  Gemini CLI's own page says its free individual access moved to Antigravity CLI on June 18, 2026, and that it now targets Gemini Code Assist licenses. Check your access before you install it. Only Claude Code has been tested with Studio so far.
+</Note>
+
+## Switch agents
+
+Press Cmd+K (Ctrl+K elsewhere) to open the command menu and choose **Switch agent**. The agent you pick is used from your next message. **Restart agent** in the same menu starts it again, and **Show or hide the agent** closes the chat.
+
+## Use another agent
+
+Any agent that speaks the Agent Client Protocol (ACP) over standard input and output works. Give Studio the command that starts it:
+
+```sh
+npx kinetograph studio src/index.tsx --agent "my-agent --acp"
+```
+
+It then shows up as **Custom agent**. Studio listens on `127.0.0.1` by default. If you set `--host` so other computers can reach it, the agent is off unless you also pass `--allow-remote-agent`.
+
+## Related topics
+
+- [Edit with the agent](/docs/agents/studio-agent/)
+- [Make your first video in Studio](/docs/studio/first-video/)
+- [Troubleshooting](/docs/help/)
+
+Use your agent outside Studio: [Claude Code](/docs/agents/claude-code/), [Codex](/docs/agents/codex/), [Cursor](/docs/agents/cursor/).

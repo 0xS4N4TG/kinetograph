@@ -24,10 +24,10 @@ Your agent uses the `kinetograph-upgrade` skill, and asks you first.
    ```
 
    Add every `@kinetographdev/*` plugin your project lists. Then `npm ls @kinetographdev/core` must show one version. A second copy means a plugin is behind: install its newer release, or hold `kinetograph` back.
-4. **Update the skills.** `npx skills add 0xS4N4TG/kinetograph` asks which agents to install for. Install all of them, because they point to each other. Run `doctor` again; every skill should say `current`.
+4. **Update the skills.** Run `npx kinetograph skills update`. It installs the skills for Claude Code, Codex and Cursor without asking questions. Run `doctor` again; every skill should say `current`.
 5. **Check the project.** Run `check`, `lint`, `doctor <entry>` and `strip`. If you keep approved frames, run `snapshot <entry>` to see what moved. See [Rendering](/docs/rendering/).
 
-Skills from other repos, such as the [taste skill](/docs/agents/taste-clone/), update with their own `npx skills add`. An agent can do all of this: ask it to update Kinetograph and it uses the `kinetograph-upgrade` skill, after asking you first.
+The same command updates the [taste skill](/docs/agents/taste-clone/). An agent can do all of this: ask it to update Kinetograph and it uses the `kinetograph-upgrade` skill, after asking you first.
 
 ## Good to know
 
