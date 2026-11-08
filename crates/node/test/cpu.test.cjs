@@ -473,3 +473,30 @@ test('the DOM island functions throw INVALID_ARG or RENDER errors', () => {
     /font\.ttf/,
   );
 });
+
+test('mattingSupport says whether ONNX Runtime runs and what ben2-base would run on', () => {
+  const support = native.mattingSupport();
+  assert.equal(typeof support.available, 'boolean');
+  assert.ok(['directml', 'cuda', 'webgpu', 'cpu'].includes(support.backend), support.backend);
+});
+
+test('matteVideo rejects, with no model run, a bad option or a missing file', async () => {
+  const options = (extra) => ({
+    input: path.join(repo, 'packages/core/test/fixtures/media/clip.mp4'),
+    modelPath: path.join(repo, 'package.json'),
+    model: 'modnet',
+    foreground: path.join(require('node:os').tmpdir(), 'never-written.webm'),
+    quality: 'high',
+    ...extra,
+  });
+  await assert.rejects(native.matteVideo(options({ model: 'rvm' })), /unknown model "rvm"/);
+  await assert.rejects(native.matteVideo(options({ quality: 'ultra' })), /unknown quality/);
+  await assert.rejects(native.matteVideo(options({ audio: 'some' })), /unknown audio setting/);
+  await assert.rejects(native.matteVideo(options({ input: '/nonexistent/clip.mp4' })), /cannot read the input/);
+  await assert.rejects(native.matteVideo(options({ modelPath: '/nonexistent/model.onnx' })), /cannot read the model file/);
+  await assert.rejects(native.matteVideo(options({ jobs: 0 })), /jobs must be at least 1/);
+  const token = new native.MatteToken();
+  assert.equal(token.cancelled, false);
+  token.cancel();
+  assert.equal(token.cancelled, true);
+});
