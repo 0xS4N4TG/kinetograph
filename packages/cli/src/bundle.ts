@@ -11,7 +11,7 @@ import { HYPERFRAMES_PREFIX, hyperframesPlugin, isHyperframesEntry, resolveEntry
 /** The package directory of the CLI: the bundle's `@kinetographdev/*` imports resolve from here, so one copy of each. */
 const CLI_DIR = fileURLToPath(new URL('..', import.meta.url));
 
-/** The `@remotion/<pkg>` packages that have a `@kinetographdev/core/<pkg>` subpath (packages/cli/skills/kinetograph/references/AUTHORING.md §7.5). */
+/** The `@remotion/<pkg>` packages that have a `@kinetographdev/core/<pkg>` subpath (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §7.5). */
 const REMOTION_PACKAGES = new Set([
   'transitions',
   'motion-blur',
@@ -76,7 +76,7 @@ export function resolveSpecifier(specifier: string): Resolution | null {
       message: `"${specifier}" is not supported by Kinetograph yet. Run \`kinetograph doctor\` for what is.`,
     };
   }
-  // React Native Skia's components are the core's (drawn by the optional @kinetographdev/skia addon, packages/cli/skills/kinetograph/references/AUTHORING.md §7.7).
+  // React Native Skia's components are the core's (drawn by the optional @kinetographdev/skia addon, packages/cli/skills/kinetograph-markup/references/AUTHORING.md §7.7).
   if (specifier === '@shopify/react-native-skia') return { kind: 'path', target: '@kinetographdev/core/skia' };
   // Reanimated's shared values drive RN-Skia's props; the core has them, worked out from the frame.
   if (specifier === 'react-native-reanimated') return { kind: 'path', target: '@kinetographdev/core/skia/reanimated' };
@@ -325,7 +325,7 @@ function imagePlugin(): Plugin {
   };
 }
 
-/** The synthetic entry (packages/cli/skills/kinetograph/references/AUTHORING.md §9): the shim's side-effect module is evaluated before the project. */
+/** The synthetic entry (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9): the shim's side-effect module is evaluated before the project. */
 export function syntheticEntry(entry: string, dev = false): string {
   return [
     // The studio's JSX shim makes its table of source locations before the project runs.
@@ -339,7 +339,7 @@ export function syntheticEntry(entry: string, dev = false): string {
     `export { setLayoutText } from '@kinetographdev/core/layout-utils';`,
     `export { setAudioDecoder, setMediaProbe } from '@kinetographdev/core/media-utils';`,
     `export { setMediaParserAddon } from '@kinetographdev/core/media-parser';`,
-    // DOM elements are styled, laid out and painted by the addon too (packages/cli/skills/kinetograph/references/ENGINE.md §2).
+    // DOM elements are styled, laid out and painted by the addon too (packages/cli/skills/kinetograph-markup/references/ENGINE.md §2).
     `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetographdev/compat/dom';`,
     '',
   ].join('\n');
@@ -366,7 +366,7 @@ export interface BundleResult {
   warnings: string[];
 }
 
-/** The esbuild options that bundle the project at `absolute` (packages/cli/skills/kinetograph/references/AUTHORING.md §9). */
+/** The esbuild options that bundle the project at `absolute` (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9). */
 function bundleOptions(absolute: string, unsupported?: UnsupportedImport[], dev = false): BuildOptions {
   return {
     stdin: {
@@ -388,7 +388,7 @@ function bundleOptions(absolute: string, unsupported?: UnsupportedImport[], dev 
     sourcemap: 'inline',
     logLevel: 'silent',
     external: EXTERNAL,
-    // An `import './index.css'` registers the stylesheet's text for the DOM engine (packages/cli/skills/kinetograph/references/ENGINE.md §1); Tailwind's
+    // An `import './index.css'` registers the stylesheet's text for the DOM engine (packages/cli/skills/kinetograph-markup/references/ENGINE.md §1); Tailwind's
     // entry is built by the project's Tailwind, and `*.module.css` files export their scoped class names.
     plugins: [...(dev ? [jsxDevPlugin()] : []), entryPlugin(absolute), imagePlugin(), hyperframesPlugin(), aliasPlugin(unsupported), gsapPlugin(), browserFieldPlugin(), cssPlugin()],
     // Bundled CommonJS packages (react-reconciler) call `require` for Node built-ins.

@@ -1,4 +1,4 @@
-// `@remotion/lottie` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.5): the native <Lottie> element, and `getLottieMetadata`.
+// `@remotion/lottie` (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §7.5): the native <Lottie> element, and `getLottieMetadata`.
 
 export { Lottie } from '@kinetographdev/react';
 export type { LottieProps } from '@kinetographdev/react';

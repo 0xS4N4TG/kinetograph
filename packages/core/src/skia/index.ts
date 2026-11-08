@@ -1,4 +1,4 @@
-// `@remotion/skia` and `@shopify/react-native-skia` (packages/cli/skills/kinetograph/references/AUTHORING.md §7.7): the components of RN-Skia's `<Canvas>`
+// `@remotion/skia` and `@shopify/react-native-skia` (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §7.7): the components of RN-Skia's `<Canvas>`
 // drawn by real Skia, in the optional `@kinetographdev/skia` addon, with its CPU rasteriser. `react-native-reanimated`
 // is `./reanimated.js` (its shared values are what RN-Skia animates with).
 

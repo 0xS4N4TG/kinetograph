@@ -15,7 +15,7 @@ import { studio } from './studio.js';
 import { track } from './track.js';
 import type { Command } from './types.js';
 
-/** Every command, in the order of packages/cli/skills/kinetograph/references/AUTHORING.md §9. */
+/** Every command, in the order of packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9. */
 export const commands: Command[] = [
   init,
   add,

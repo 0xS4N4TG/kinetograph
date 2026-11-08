@@ -1,4 +1,4 @@
-// Native `kg-*` elements inside a DOM island: the box each takes in the CSS layout (packages/cli/skills/kinetograph/references/ENGINE.md §2), and where its
+// Native `kg-*` elements inside a DOM island: the box each takes in the CSS layout (packages/cli/skills/kinetograph-markup/references/ENGINE.md §2), and where its
 // layers go once Rust has placed that box.
 
 import type { LayerJson } from '@kinetographdev/scene';
@@ -110,7 +110,7 @@ export function placeNative(layer: LayerJson, x: number, y: number): LayerJson {
   return { ...layer, transform: t } as LayerJson;
 }
 
-/** What `renderDomIsland` leaves where a native element goes (packages/cli/skills/kinetograph/references/ENGINE.md §2). */
+/** What `renderDomIsland` leaves where a native element goes (packages/cli/skills/kinetograph-markup/references/ENGINE.md §2). */
 export interface NativePlaceholder {
   type: 'native';
   path: string;

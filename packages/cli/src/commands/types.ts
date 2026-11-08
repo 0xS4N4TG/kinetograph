@@ -52,7 +52,7 @@ export const STRICT_OPTION: OptionSpec = {
 
 export { PREFERRED_EFFECT_BACKEND_OPTION };
 
-/** `--dev-react`, on the commands that run a project to render it (packages/cli/skills/kinetograph/references/AUTHORING.md §9). */
+/** `--dev-react`, on the commands that run a project to render it (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9). */
 export const DEV_REACT_OPTION: OptionSpec = {
   name: 'dev-react',
   type: 'boolean',

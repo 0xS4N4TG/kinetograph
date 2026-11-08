@@ -1,5 +1,5 @@
 //! `drawImage` of a video frame (`{ "kind": "video" }`, what `onVideoFrame` hands a project): the canvas draws the picture
-//! a video layer shows at that time (packages/cli/skills/kinetograph/references/SCENE.md, "canvas").
+//! a video layer shows at that time (packages/cli/skills/kinetograph-markup/references/SCENE.md, "canvas").
 //!
 //! Needs a GPU; the M4 runs it with the rest of `crates/core/tests/`.
 
