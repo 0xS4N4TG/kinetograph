@@ -37,8 +37,8 @@ export function staticFile(name: string): string {
     throw new TypeError(`staticFile() is for files in the public folder, not URLs: use "${name}" directly`);
   }
   const relative = name.replace(/^[/\\]+/, '');
-  if (isAbsolute(relative)) return relative;
-  return join(getPublicDir(), relative);
+  const target = isAbsolute(relative) ? relative : join(getPublicDir(), relative);
+  return target.replaceAll('\\', '/');
 }
 
 // ---- delayRender ----

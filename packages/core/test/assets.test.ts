@@ -13,6 +13,8 @@ import {
 
 afterEach(() => resetRenderState());
 
+const norm = (p: string) => resolve(p).replaceAll('\\', '/');
+
 describe('staticFile', () => {
   it('looks in KINETOGRAPH_PUBLIC_DIR until setPublicDir says otherwise', async () => {
     const before = process.env.KINETOGRAPH_PUBLIC_DIR;
@@ -20,9 +22,9 @@ describe('staticFile', () => {
       vi.resetModules();
       process.env.KINETOGRAPH_PUBLIC_DIR = '/from/env';
       const fresh = await import('../src/assets.js');
-      expect(fresh.staticFile('a.png')).toBe('/from/env/a.png');
+      expect(fresh.staticFile('a.png')).toBe(norm('/from/env/a.png'));
       fresh.setPublicDir('/explicit');
-      expect(fresh.staticFile('a.png')).toBe('/explicit/a.png');
+      expect(fresh.staticFile('a.png')).toBe(norm('/explicit/a.png'));
     } finally {
       if (before === undefined) delete process.env.KINETOGRAPH_PUBLIC_DIR;
       else process.env.KINETOGRAPH_PUBLIC_DIR = before;
@@ -31,15 +33,25 @@ describe('staticFile', () => {
 
   it('is an absolute path inside the public directory', () => {
     setPublicDir('/projects/demo/public');
-    expect(staticFile('logo.png')).toBe('/projects/demo/public/logo.png');
-    expect(staticFile('img/a b.png')).toBe('/projects/demo/public/img/a b.png');
-    expect(staticFile('/leading/slash.png')).toBe('/projects/demo/public/leading/slash.png');
+    expect(staticFile('logo.png')).toBe(norm('/projects/demo/public/logo.png'));
+    expect(staticFile('img/a b.png')).toBe(norm('/projects/demo/public/img/a b.png'));
+    expect(staticFile('/leading/slash.png')).toBe(norm('/projects/demo/public/leading/slash.png'));
   });
 
   it('resolves a relative public directory against the cwd', () => {
     setPublicDir('assets');
-    expect(staticFile('x.png')).toBe(join(resolve('assets'), 'x.png'));
+    expect(staticFile('x.png')).toBe(norm('assets/x.png'));
   });
+
+  (process.platform === 'win32' ? it : it.skip)(
+    'returns forward slashes on Windows for CSS url compatibility',
+    () => {
+      setPublicDir('C:\\projects\\demo\\public');
+      expect(staticFile('xp/Close Buttons.png')).toBe('C:/projects/demo/public/xp/Close Buttons.png');
+      expect(staticFile('xp\\Close Buttons.png')).toBe('C:/projects/demo/public/xp/Close Buttons.png');
+      expect(staticFile('Close Buttons.png')).not.toContain('\\');
+    }
+  );
 
   it('refuses URLs and empty names', () => {
     expect(() => staticFile('https://example.com/a.png')).toThrow(/not URLs/);
