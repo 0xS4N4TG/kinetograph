@@ -561,3 +561,27 @@ fn fs_lighting(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
     let diffuse = constant * max(dot(n, light_vec), 0.0);
     return vec4<f32>(clamp(colour * diffuse, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }
+
+// `feImage`: tex_a is the picture (premultiplied, sRGB-encoded), placed so that
+// its texel (0, 0) is its own texel: `place.a.zw` is its size. v[0]: where the
+// whole picture is in layer space, x0, y0, x1, y1 (`preserveAspectRatio` has
+// made it larger than the subregion for `slice`). Read with a bilinear filter
+// written out on `textureLoad`, the edge texels held out to the border.
+@fragment
+fn fs_image(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
+    let l = layer_here(p);
+    let d = params.v[0];
+    if in_sub(l) == 0.0 || l.x < d.x || l.x >= d.z || l.y < d.y || l.y >= d.w {
+        return vec4<f32>(0.0);
+    }
+    let size = vec2<f32>(place.a.zw);
+    let q = (l - d.xy) / (d.zw - d.xy) * size;
+    let f = clamp(q, vec2<f32>(0.5), size - vec2<f32>(0.5)) - vec2<f32>(0.5);
+    let base = floor(f);
+    let t = f - base;
+    let last = place.a.zw - vec2<i32>(1);
+    let xy = vec2<i32>(base);
+    let top = mix(load_a(min(xy, last)), load_a(min(xy + vec2<i32>(1, 0), last)), t.x);
+    let bottom = mix(load_a(min(xy + vec2<i32>(0, 1), last)), load_a(min(xy + vec2<i32>(1, 1), last)), t.x);
+    return mix(top, bottom, t.y);
+}

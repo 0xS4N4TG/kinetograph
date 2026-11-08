@@ -1608,11 +1608,11 @@ Every primitive has `primitive` (its element name), `in`, `in2` (when it has two
 | `feTile` | | Repeats the input's subregion over its own. |
 | `feConvolveMatrix` | `order` (3, at most 8), `kernelMatrix`, `divisor` (sum of the kernel, or 1), `bias` (0), `targetX`, `targetY` (middle), `edgeMode` (`duplicate`, `wrap`, `none`), `preserveAlpha` | In canvas pixels (`kernelUnitLength` is not used). |
 | `feDiffuseLighting`, `feSpecularLighting` | `surfaceScale` (1), `diffuseConstant` or `specularConstant` (1), `specularExponent` (1, 1 to 128), `lightingColor` (white), `light` | `light` is `{ "type": "distant", "azimuth", "elevation" }`, `{ "type": "point", "x", "y", "z" }` or `{ "type": "spot", "x", "y", "z", "pointsAtX", "pointsAtY", "pointsAtZ", "specularExponent", "limitingConeAngle" }`. The input's alpha is the height; normals use the spec's Sobel kernels in canvas pixels, and a spot's cone fades over 0.016 of cosine like a browser's. |
-
-`feImage` is not supported yet.
+| `feImage` | `href` (a picture file, as an `image` layer's `src` names one, or a `data:` URL), `preserveAspectRatio` (`xMidYMid meet`) | A raster picture (PNG, JPEG, WebP), drawn in the primitive subregion (the filter region if it has none) fitted by `preserveAspectRatio`, and read by later primitives like any result (`in2` of `feDisplacementMap`, say). The colour is sRGB. Not in a canvas's filter. An SVG `href="#id"` to an element is not supported. |
 
 Loading a scene rejects a negative `stdDeviation`, `radius`, `baseFrequency` or subregion size, `numOctaves` outside 0
-to 10, a `values` or `kernelMatrix` of the wrong length, and a graph that needs a box on a layer that has none; the
+to 10, a `values` or `kernelMatrix` of the wrong length, an `feImage` with no `href` or one that starts with `#`, or a
+`preserveAspectRatio` that does not parse, and a graph that needs a box on a layer that has none; the
 error names the layer.
 
 The [margin](#canvas-margin) counts what moves pixels: the largest offset (and a drop shadow's), half a displacement's

@@ -35,7 +35,10 @@ pub fn resolve_under(roots: &[&Path], href: &str) -> Option<PathBuf> {
         || rel.components().any(|c| {
             !matches!(
                 c,
-                Component::Normal(_) | Component::CurDir | Component::RootDir
+                Component::Normal(_)
+                    | Component::CurDir
+                    | Component::RootDir
+                    | Component::Prefix(_)
             )
         })
     {

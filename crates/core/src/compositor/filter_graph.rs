@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 use kurbo::{Affine, Rect};
 
-use super::{Compositor, Tex, mode_index, shader_module};
+use super::{Compositor, Input, Tex, mode_index, shader_module};
 use crate::bounds::{self, PixelRect};
 use crate::filter::{
     CompositeOp, EdgeMode, FeInput, FeOp, Plan, PlanNode, ResolvedFilterGraph, ResolvedLight,
@@ -26,7 +26,7 @@ use crate::filter::{
 };
 
 /// The entry points of `shaders/filter.wgsl`.
-const ENTRIES: [&str; 16] = [
+const ENTRIES: [&str; 17] = [
     "fs_convert",
     "fs_copy",
     "fs_source_alpha",
@@ -43,6 +43,7 @@ const ENTRIES: [&str; 16] = [
     "fs_tile",
     "fs_convolve",
     "fs_lighting",
+    "fs_image",
 ];
 
 /// Floats in a pass's uniform block: the header (five vec4) and `v` (64).
@@ -839,6 +840,43 @@ impl Compositor {
                 }
                 let t = self.fe_pass("fs_lighting", ta, ta, fe.params(sub, &v), sub_px, None);
                 (t, srgb)
+            }
+            FeOp::Image { src, aspect } => {
+                // The picture is sRGB, so the result is tagged so whatever the primitive's space: the graph converts it
+                // for the primitives that read it.
+                let Some((view, size)) = self
+                    .filter_images
+                    .get(src)
+                    .map(|img| (img.view.clone(), img.size))
+                else {
+                    let what = if self.filter_images_refused.contains(src) {
+                        "feImage (picture larger than the GPU's textures)"
+                    } else {
+                        "feImage (picture not loaded)"
+                    };
+                    *self.unsupported.entry(what.to_string()).or_default() += 1;
+                    return (self.empty(), true);
+                };
+                let a = spare(self, g);
+                let ta = g.tex(a);
+                let dest = aspect.fit(sub, f64::from(size[0]), f64::from(size[1]));
+                let region = sub_px.intersect(fe.px(dest, whole));
+                let v = [
+                    dest.x0 as f32,
+                    dest.y0 as f32,
+                    dest.x1 as f32,
+                    dest.y1 as f32,
+                ];
+                let pipeline = self.filter_pipeline("fs_image");
+                let target = self.target(region);
+                let params = fe.params(sub, &v);
+                let picture = Input {
+                    view: &view,
+                    origin: [0, 0],
+                    size,
+                };
+                self.run_pass_with(&pipeline, picture, ta.input(), &params, None, &target);
+                (target, true)
             }
         }
     }

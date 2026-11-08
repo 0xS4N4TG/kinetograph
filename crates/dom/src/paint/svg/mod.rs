@@ -52,6 +52,22 @@ pub struct FilterEffect {
     pub unsupported: Vec<Unsupported>,
 }
 
+/// Why a picture an SVG names is not drawn when its file cannot be read.
+const UNREADABLE_PICTURE: &str = "the picture is not a readable file under the project or its \
+                                  public directory, so it is not drawn";
+
+/// The directories an SVG may read pictures from, in the order they are tried.
+fn roots(request: &IslandRequest) -> Vec<std::path::PathBuf> {
+    [
+        Some(request.base_dir.as_str()),
+        request.public_dir.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(std::path::PathBuf::from)
+    .collect()
+}
+
 fn unsupported(path: &str, notes: Vec<Note>) -> Vec<Unsupported> {
     notes
         .into_iter()
@@ -165,9 +181,7 @@ fn paint_serialized(
             element: "image".into(),
             property: Some("href".into()),
             value: Some(href),
-            reason: "the picture is not a readable file under the project or its public \
-                     directory, so it is not drawn"
-                .into(),
+            reason: UNREADABLE_PICTURE.into(),
         });
     }
     let mut emitter = emit::Emitter {
@@ -295,6 +309,7 @@ pub fn filter_graph(
     let mut notes = Vec::new();
     let effect = filter::effect(
         doc,
+        request,
         name,
         Some(bbox),
         [request.viewport.width, request.viewport.height],
@@ -316,14 +331,7 @@ fn options(
     request: &IslandRequest,
     misses: Arc<std::sync::Mutex<Vec<String>>>,
 ) -> usvg::Options<'static> {
-    let roots: Vec<std::path::PathBuf> = [
-        Some(request.base_dir.as_str()),
-        request.public_dir.as_deref(),
-    ]
-    .into_iter()
-    .flatten()
-    .map(std::path::PathBuf::from)
-    .collect();
+    let roots = roots(request);
     let mut options = usvg::Options {
         // Nothing reads through this: the resolver below does not use it.
         resources_dir: None,
