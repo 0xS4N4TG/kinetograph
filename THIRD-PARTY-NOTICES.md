@@ -52,3 +52,19 @@ user's cache directory. They are never bundled in the packages or the repository
 - `ben2-base`: the ONNX export `onnx-community/BEN2-ONNX` (https://huggingface.co/onnx-community/BEN2-ONNX,
   `onnx/model_fp16.onnx`) of BEN2 Base by PramaLLC (https://huggingface.co/PramaLLC/BEN2), licensed under the MIT
   License.
+
+Weights provenance: both licences cover the model code and the published weights as released, but neither model's
+training data is cleared for commercial use. MODNet's backbone was pretrained on Supervisely, and BEN2 was trained on
+DIS5K, both of which carry non-commercial terms. Kinetograph does not redistribute either set of weights, so each user
+downloads them on first use and is responsible for checking those terms against their own use. Mattes are written
+into files the user owns; no model output is sent anywhere.
+
+## ONNX Runtime and the `ort` crate
+
+The matting crate (`crates/matte`) runs the models with ONNX Runtime through the `ort` crate.
+
+- ONNX Runtime (https://github.com/microsoft/onnxruntime), Copyright (c) Microsoft Corporation, licensed under the MIT
+  License. Its prebuilt libraries are downloaded while building and linked in; they carry their own third-party
+  notices, which come with the ONNX Runtime release.
+- `ort` (https://github.com/pykeio/ort), Copyright (c) pyke.io, licensed under the Apache License, Version 2.0 or the
+  MIT License, at your option.

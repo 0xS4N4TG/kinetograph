@@ -18,6 +18,10 @@ The first run downloads the model from Hugging Face, checks it against a pinned 
 
 The model runs on CoreML on macOS, DirectML on Windows, and CUDA or WebGPU on Linux when the addon is built with them. Otherwise it runs on the CPU, which is slower. [`canUseVideoMatting()`](/docs/reference/video-matting/#canusevideomatting) reports the backend.
 
+### Model licences
+
+MODNet is Apache-2.0 and BEN2 is MIT, and Kinetograph never bundles either; you download them on first use. Both have a training-data caveat: MODNet's backbone was pretrained on Supervisely and BEN2 was trained on DIS5K, and both datasets carry non-commercial terms. Check those against your use before you ship mattes of footage commercially. ONNX Runtime (MIT) and the `ort` crate (Apache-2.0 or MIT) run the models. Details are in `THIRD-PARTY-NOTICES.md`.
+
 ## In Studio
 
 Select a video and choose **Remove background**. A dialog sets the output file in `public/`, the model, the audio and the video quality, and has a Models section to download or remove models. When it finishes, the video's source is swapped for the transparent file. Duplicate the layer first to keep the original.
