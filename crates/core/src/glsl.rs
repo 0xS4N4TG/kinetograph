@@ -847,6 +847,8 @@ struct Rewritten {
     attributes: Vec<(String, u32, Option<u32>)>,
     /// The `mat2`, `mat3` and `mat4` attributes: name, size and first location. Each is read as that many `vecN` columns.
     mat_attributes: Vec<(String, u32, u32)>,
+    /// The varyings the fragment shader declares and the vertex shader does not write: an error if it reads one.
+    unwritten: Vec<String>,
     /// The varyings this stage declared, with their locations.
     varyings: Vec<(String, u32, String)>,
     /// The locations of the fragment shader's outputs.
@@ -858,7 +860,6 @@ struct Rewritten {
 struct RewriteInput<'a> {
     src: &'a str,
     stage: ShaderStage,
-    attribute_locations: &'a BTreeMap<String, u32>,
     /// What the vertex stage wrote, for the fragment stage to read.
     varyings: &'a mut Varyings,
     /// The program draws into a texture, whose first row is GL's bottom one.
@@ -910,7 +911,6 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
     let RewriteInput {
         src,
         stage,
-        attribute_locations,
         varyings,
         flip_y,
         points,
@@ -931,6 +931,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         packed: Vec::new(),
         attributes: Vec::new(),
         mat_attributes: Vec::new(),
+        unwritten: Vec::new(),
         varyings: Vec::new(),
         outputs: Vec::new(),
         uses_frag_coord: false,
@@ -971,7 +972,6 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
                 &mut declared_samplers,
                 &mut Ctx {
                     stage,
-                    attribute_locations,
                     varyings,
                     next_attribute: &mut next_attribute,
                     next_varying: &mut next_varying,
@@ -1014,7 +1014,6 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         &mut declared_samplers,
         &mut Ctx {
             stage,
-            attribute_locations,
             varyings,
             next_attribute: &mut next_attribute,
             next_varying: &mut next_varying,
@@ -1028,6 +1027,11 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
     // The text ended with the newline added to its last line.
     if body.ends_with('\n') {
         body.pop();
+    }
+    if let Some(name) = r.unwritten.iter().find(|n| mentions(&body, n)) {
+        return Err(format!(
+            "the fragment shader reads the varying `{name}`, which the vertex shader does not write"
+        ));
     }
 
     // The prelude is one line of its own, so a line of the page's source is two
@@ -1215,9 +1219,8 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
     Ok(r)
 }
 
-struct Ctx<'a, 'b> {
+struct Ctx<'b> {
     stage: ShaderStage,
-    attribute_locations: &'a BTreeMap<String, u32>,
     varyings: &'b mut Varyings,
     next_attribute: &'b mut u32,
     next_varying: &'b mut u32,
@@ -1227,6 +1230,15 @@ struct Ctx<'a, 'b> {
     slots: &'b mut Vec<(String, SamplerDim)>,
     /// The macros defined so far, for the length of an array.
     defines: &'b Cpp,
+}
+
+/// Whether `name` appears in `code` as a word.
+fn mentions(code: &str, name: &str) -> bool {
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    code.match_indices(name).any(|(at, _)| {
+        !code[..at].chars().next_back().is_some_and(word)
+            && !code[at + name.len()..].chars().next().is_some_and(word)
+    })
 }
 
 /// The call that reads level 0 in place of the sampling function `word`, if it is one a vertex
@@ -1326,7 +1338,7 @@ fn flush_chunk(
     depth: &mut i32,
     r: &mut Rewritten,
     samplers: &mut Vec<(String, SamplerDim)>,
-    ctx: &mut Ctx<'_, '_>,
+    ctx: &mut Ctx<'_>,
 ) -> std::result::Result<(), String> {
     if chunk.is_empty() {
         return Ok(());
@@ -1346,7 +1358,7 @@ fn rewrite_chunk(
     depth: &mut i32,
     r: &mut Rewritten,
     samplers: &mut Vec<(String, SamplerDim)>,
-    ctx: &mut Ctx<'_, '_>,
+    ctx: &mut Ctx<'_>,
 ) -> std::result::Result<String, String> {
     let fragment = ctx.stage == ShaderStage::Fragment;
     let toks = tokenize(text);
@@ -1386,7 +1398,7 @@ fn rewrite_chunk(
                 from: usize,
                 to: usize,
                 r: &mut Rewritten,
-                ctx: &mut Ctx<'_, '_>,
+                ctx: &mut Ctx<'_>,
                 samplers: &[(String, SamplerDim)]| {
         let mut k = from;
         while k < to {
@@ -1559,7 +1571,7 @@ fn declaration(
     has_body: bool,
     r: &mut Rewritten,
     samplers: &mut Vec<(String, SamplerDim)>,
-    ctx: &mut Ctx<'_, '_>,
+    ctx: &mut Ctx<'_>,
 ) -> std::result::Result<Option<String>, String> {
     let fragment = ctx.stage == ShaderStage::Fragment;
     let w = |k: usize| word(text, &stmt[k]);
@@ -1762,19 +1774,16 @@ fn declaration(
                 }
                 let taken = type_locations(&ty)
                     .ok_or_else(|| unsupported(format!("`{name}`: an attribute of type `{ty}`")))?;
-                let at = declared
-                    .location
-                    .or_else(|| ctx.attribute_locations.get(&name).copied())
-                    .unwrap_or_else(|| {
-                        // The first location nothing was bound to.
-                        let mut l = *ctx.next_attribute;
-                        while ctx.attribute_locations.values().any(|v| *v == l)
-                            || r.attributes.iter().any(|a| a.1 == l)
-                        {
-                            l += 1;
-                        }
-                        l
-                    });
+                // Draws name their attributes, so the location is only a slot: the live attributes take the lowest
+                // free ones (a page's own locations count all it declared, which a conditional may leave out, and
+                // the device holds 16).
+                let at = declared.location.unwrap_or_else(|| {
+                    let mut l = 0;
+                    while r.attributes.iter().any(|a| a.1 >= l && a.1 < l + taken) {
+                        l += 1;
+                    }
+                    l
+                });
                 *ctx.next_attribute = at + taken;
                 if let Some(n) = ty.strip_prefix("mat").and_then(|n| n.chars().next()?.to_digit(10)) {
                     // A matrix cannot be a vertex input: its columns are, at consecutive locations, and the
@@ -1818,9 +1827,9 @@ fn declaration(
                             ));
                         }
                         None => {
-                            return Err(format!(
-                                "the fragment shader reads the varying `{name}`, which the vertex shader does not write"
-                            ));
+                            // GL links a fragment shader that declares such a varying and never reads it.
+                            r.unwritten.push(name);
+                            continue;
                         }
                     }
                 };
@@ -2127,7 +2136,6 @@ pub fn translate(
     let vr = rewrite(RewriteInput {
         src: &program.vertex,
         stage: ShaderStage::Vertex,
-        attribute_locations: &program.attributes,
         varyings: &mut varyings,
         flip_y,
         points,
@@ -2136,7 +2144,6 @@ pub fn translate(
     let fr = rewrite(RewriteInput {
         src: &program.fragment,
         stage: ShaderStage::Fragment,
-        attribute_locations: &BTreeMap::new(),
         varyings: &mut varyings,
         flip_y,
         points,
@@ -2895,6 +2902,28 @@ mod tests {
         ))
         .unwrap();
         assert!(t.vertex.attributes.iter().any(|a| a.0 == "instanceMatrix[3]"));
+    }
+
+    #[test]
+    fn a_varying_the_fragment_shader_declares_and_never_reads_needs_no_vertex_output() {
+        translate(&program(
+            QUAD_ES1,
+            "precision mediump float;\nvarying vec3 vNormal;\nvoid main() { gl_FragColor = vec4(1.0); }",
+        ))
+        .unwrap();
+    }
+
+    #[test]
+    fn attributes_take_the_lowest_free_locations_whatever_the_page_bound() {
+        let mut p = program(
+            "#version 300 es\n#ifdef GONE\nin vec3 a;\nin vec3 b;\n#endif\nin vec2 c;\nin mat4 d;\n\
+             void main() { gl_Position = d * vec4(c, 0.0, 1.0); }",
+            "#version 300 es\nprecision highp float; out vec4 o; void main() { o = vec4(1.0); }",
+        );
+        p.attributes = BTreeMap::from([("c".to_string(), 24), ("d".to_string(), 28)]);
+        let t = translate(&p).unwrap();
+        let at = |n: &str| t.vertex.attributes.iter().find(|a| a.0 == n).unwrap().1;
+        assert_eq!((at("c"), at("d[0]"), at("d[3]")), (0, 1, 4));
     }
 
     #[test]
