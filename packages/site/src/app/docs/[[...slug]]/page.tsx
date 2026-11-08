@@ -1,6 +1,9 @@
+import { DocsPre, PromptBox } from '@/components/docs/mdx';
+import { PageActions } from '@/components/docs/page-actions';
 import { EngineDiagram } from '@/components/engine-diagram';
+import { SITE_URL } from '@/lib/catalog-feed';
 import { source } from '@/lib/source';
-import { DocsBody, DocsDescription, DocsPage, DocsTitle, MarkdownCopyButton } from 'fumadocs-ui/layouts/docs/page';
+import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/layouts/docs/page';
 import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import defaultMdxComponents from 'fumadocs-ui/mdx';
@@ -12,15 +15,35 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
   const page = source.getPage(slug);
   if (!page) notFound();
   const MDX = page.data.body;
+  const markdownUrl = `/llms.mdx/${page.slugs.join('/') || 'index'}.md`;
   return (
-    <DocsPage toc={page.data.toc} full={page.data.full}>
+    <DocsPage toc={page.data.toc} full={page.data.full} breadcrumb={{ includePage: true }}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <DocsTitle>{page.data.title}</DocsTitle>
-        <MarkdownCopyButton markdownUrl={`/llms.mdx/${page.slugs.join('/') || 'index'}.md`} />
+        <PageActions markdownUrl={markdownUrl} absoluteMarkdownUrl={`${SITE_URL}${markdownUrl}`} />
       </div>
       <DocsDescription>{page.data.description}</DocsDescription>
       <DocsBody>
-        <MDX components={{ ...defaultMdxComponents, Accordion, Accordions, EngineDiagram, Tab, Tabs }} />
+        {/*
+          MDX components, as written in a page:
+          - ```tsx title="src/MyComp.tsx"  a code block headed by its file name, with a copy button (DocsPre).
+          - ```txt with ├─ │ └─ branches  a file tree (DocsPre spots the branches): a trailing / marks a folder, text
+            after two spaces is a comment. It copies as plain text. Add title="..." for a header.
+          - ```txt title="Suggested prompt"  a prompt box when the text starts with /skill-name; or write
+            <Prompt skill="kinetograph-markup">Add motion blur to my text</Prompt>.
+        */}
+        <MDX
+          components={{
+            ...defaultMdxComponents,
+            pre: DocsPre,
+            Prompt: PromptBox,
+            Accordion,
+            Accordions,
+            EngineDiagram,
+            Tab,
+            Tabs,
+          }}
+        />
       </DocsBody>
     </DocsPage>
   );
