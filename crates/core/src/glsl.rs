@@ -916,7 +916,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         points,
         slots,
     } = input;
-    let src = strip_comments(src);
+    let src = drop_const_before_in(&strip_comments(src));
     let fragment = stage == ShaderStage::Fragment;
 
     // Directive lines are set apart: removed, or rewritten as code. Code
@@ -1230,6 +1230,23 @@ struct Ctx<'b> {
     slots: &'b mut Vec<(String, SamplerDim)>,
     /// The macros defined so far, for the length of an array.
     defines: &'b Cpp,
+}
+
+/// `const in float x`, a parameter that is read-only, is `in float x` to naga, which does not take the two together.
+/// The word is blanked, so no line or column moves.
+fn drop_const_before_in(code: &str) -> String {
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    let mut out = code.to_string();
+    for (at, _) in code.match_indices("const") {
+        let after = &code[at + 5..];
+        let rest = after.trim_start();
+        let spaced = after.len() > rest.len();
+        let is_word = !code[..at].chars().next_back().is_some_and(word);
+        if is_word && spaced && rest.starts_with("in") && !rest[2..].chars().next().is_some_and(word) {
+            out.replace_range(at..at + 5, "     ");
+        }
+    }
+    out
 }
 
 /// Whether `name` appears in `code` as a word.
@@ -2924,6 +2941,17 @@ mod tests {
         let t = translate(&p).unwrap();
         let at = |n: &str| t.vertex.attributes.iter().find(|a| a.0 == n).unwrap().1;
         assert_eq!((at("c"), at("d[0]"), at("d[3]")), (0, 1, 4));
+    }
+
+    #[test]
+    fn a_const_in_parameter_is_read_as_in() {
+        translate(&program(
+            "#version 300 es\nin vec2 p;\nfloat pow2( const in float x ) { return x * x; }\n\
+             vec3 twice(const\n in vec3 v, const in float k) { return v * k; }\n\
+             void main() { gl_Position = vec4(twice(vec3(p, 0.0), pow2(2.0)), 1.0); }",
+            "#version 300 es\nprecision highp float; out vec4 o; void main() { o = vec4(1.0); }",
+        ))
+        .unwrap();
     }
 
     #[test]
