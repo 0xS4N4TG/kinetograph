@@ -425,6 +425,10 @@ pub enum GlslMode {
     Triangles,
     TriangleStrip,
     TriangleFan,
+    /// One pixel wide, as lines are in WebGL.
+    Lines,
+    LineStrip,
+    LineLoop,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]

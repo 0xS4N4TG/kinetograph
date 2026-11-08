@@ -521,7 +521,7 @@ Nobody writes this by hand: `<GlslShader>` and `glslShader()` make it from a fra
 | `premultipliedAlpha`, `alpha` | `true` | The context's attributes of those names: what the buffer holds is read as premultiplied (or straight) colour; `alpha: false` makes it opaque. |
 | `depth`, `stencil` | `true`, `false` | The context's attributes of those names: whether the drawing buffer has a depth buffer and a stencil buffer. |
 
-A `draw` carries `program`, `mode` (`points`, `triangles`, `triangleStrip`, `triangleFan`), `first` and `count`,
+A `draw` carries `program`, `mode` (`points`, `triangles`, `triangleStrip`, `triangleFan`, `lines`, `lineStrip`, `lineLoop`; lines are one pixel wide), `first` and `count`,
 `instances` (default 1), `indices`
 (`drawElements`: `buffer`, `type` `u8`, `u16` or `u32`, byte `offset`), `attributes` by the shader's names (`buffer`,
 `size`, `type` `f32`, or `u8`, `i8`, `u16`, `i16` with `normalized`, byte `stride` and `offset`, and `divisor` 1 for an
@@ -586,7 +586,7 @@ volume is not drawn, and culling does not apply. `gl_VertexID` is the vertex's n
 point's number in a draw of points; `gl_InstanceID` the instance's. Instanced points are not drawn.
 
 Not drawn, and reported as `unsupported:` with what to do instead (never accepted and ignored):
-multisampled renderbuffers, `readPixels`, lines, instanced points, a `vertexAttribDivisor` above 1, integer attributes
+multisampled renderbuffers, `readPixels`, lines wider than one pixel, instanced points, a `vertexAttribDivisor` above 1, integer attributes
 (`vertexAttribIPointer`, `vertexAttribI4i`), mipmaps of 3D and array textures, cube map levels above 0 with pixels (call `generateMipmap`), `texSubImage2D` into a cube face, float or depth cube faces, sRGB textures, float textures from a picture, a float texture as a `texSubImage2D` target, pixels uploaded to
 texture levels other than 0 (call `generateMipmap`), uniform blocks, struct uniforms with a `bool`, `mat2` or sampler field, array outputs, a framebuffer
 texture that is not RGBA or holds uploaded pixels, attachments of different sizes in one framebuffer, `drawImage` or `toDataURL` of a WebGL canvas. With `antialias: true` (the default) the canvas is

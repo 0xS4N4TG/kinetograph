@@ -1535,7 +1535,10 @@ export class WebGLContext {
     this.fail(GL.INVALID_ENUM);
     return [];
   }
-  lineWidth(): void {}
+  /** Lines are one pixel wide, which is the whole of `ALIASED_LINE_WIDTH_RANGE`, as on most browsers' GPUs. */
+  lineWidth(width: number): void {
+    if (!(width > 0)) this.fail(GL.INVALID_VALUE);
+  }
   cullFace(mode: number): void {
     if (mode !== GL.FRONT && mode !== GL.BACK && mode !== GL.FRONT_AND_BACK) return this.fail(GL.INVALID_ENUM);
     this.cullMode = mode;
@@ -3076,12 +3079,12 @@ export class WebGLContext {
   }
 
   private draw(mode: number, first: number, count: number, indexed: { type: 'u8' | 'u16' | 'u32'; offset: number } | null, instances = 1): void {
-    const modes: Record<number, GlslDraw['mode']> = { [GL.POINTS]: 'points', [GL.TRIANGLES]: 'triangles', [GL.TRIANGLE_STRIP]: 'triangleStrip', [GL.TRIANGLE_FAN]: 'triangleFan' };
+    const modes: Record<number, GlslDraw['mode']> = { [GL.POINTS]: 'points', [GL.TRIANGLES]: 'triangles', [GL.TRIANGLE_STRIP]: 'triangleStrip', [GL.TRIANGLE_FAN]: 'triangleFan', [GL.LINES]: 'lines', [GL.LINE_STRIP]: 'lineStrip', [GL.LINE_LOOP]: 'lineLoop' };
     if (mode < GL.POINTS || mode > GL.TRIANGLE_FAN) return this.fail(GL.INVALID_ENUM);
     const program = this.program;
     if (program === null) return this.fail(GL.INVALID_OPERATION);
     const named = modes[mode];
-    if (named === undefined) throw new WebGLUnsupportedError('drawing lines; draw triangles (points are drawn)');
+    if (named === undefined) return this.fail(GL.INVALID_ENUM);
     if (this.framebufferIncomplete()) return;
     // WebGL refuses a stencil test whose faces differ in the reference or the masks.
     const stencilTest = this.caps.stencil && this.hasStencil();
@@ -3186,7 +3189,7 @@ export class WebGLContext {
       const [near, far] = this.depthRangeValue;
       draw.depth = { func: DEPTH_FUNCS[this.depthFuncValue]!, mask: this.depthMaskValue, near, far };
       const [factor, units] = this.polygonOffsetValue;
-      if (this.caps.polygonOffset && named !== 'points' && (factor !== 0 || units !== 0)) draw.polygonOffset = { factor, units };
+      if (this.caps.polygonOffset && named !== 'points' && !named.startsWith('line') && (factor !== 0 || units !== 0)) draw.polygonOffset = { factor, units };
     }
     if (stencilTest) {
       const face = (s: StencilState): GlslStencilFace => ({ func: DEPTH_FUNCS[s.func]!, fail: STENCIL_OPS[s.fail]!, zfail: STENCIL_OPS[s.zfail]!, zpass: STENCIL_OPS[s.zpass]! });

@@ -1339,11 +1339,23 @@ impl Compositor {
             }
             index_list = Some(fan);
         }
+        if draw.mode == GlslMode::LineLoop {
+            // A loop is a strip that comes back to its first vertex.
+            let mut list = index_list
+                .take()
+                .unwrap_or_else(|| (draw.first..draw.first + draw.count).collect());
+            if let Some(first) = list.first().copied().filter(|_| list.len() > 2) {
+                list.push(first);
+            }
+            index_list = Some(list);
+        }
         let topology = match draw.mode {
             GlslMode::Points | GlslMode::Triangles | GlslMode::TriangleFan => {
                 wgpu::PrimitiveTopology::TriangleList
             }
             GlslMode::TriangleStrip => wgpu::PrimitiveTopology::TriangleStrip,
+            GlslMode::Lines => wgpu::PrimitiveTopology::LineList,
+            GlslMode::LineStrip | GlslMode::LineLoop => wgpu::PrimitiveTopology::LineStrip,
         };
 
         // Uniform blocks.
@@ -1443,7 +1455,7 @@ impl Compositor {
         let key = format!(
             "{:p}|{layouts:?}|{topology:?}|{}|{:?}|{:?}|{:?}|{:?}|{:?}|{shape:?}|{ds:?}|{samples}|{:?}|{depths:?}",
             Arc::as_ptr(&program),
-            index_list.is_some() && topology == wgpu::PrimitiveTopology::TriangleStrip,
+            index_list.is_some() && topology.is_strip(),
             draw.blend.as_ref().map(blend_key),
             draw.color_mask,
             draw.cull,
@@ -1792,8 +1804,13 @@ impl Compositor {
                 })
             })
             .collect();
-        // Culling is for polygons: a point is not culled.
-        let cull_mode = match draw.cull.as_ref().filter(|_| draw.mode != GlslMode::Points) {
+        // Culling is for polygons: a point or a line is not culled.
+        let cull_mode = match draw.cull.as_ref().filter(|_| {
+            !matches!(
+                draw.mode,
+                GlslMode::Points | GlslMode::Lines | GlslMode::LineStrip | GlslMode::LineLoop
+            )
+        }) {
             None => None,
             Some(c) => match c.face.as_str() {
                 "FRONT" => Some(wgpu::Face::Front),
@@ -1897,8 +1914,7 @@ impl Compositor {
                 }),
                 primitive: wgpu::PrimitiveState {
                     topology,
-                    strip_index_format: (indexed
-                        && topology == wgpu::PrimitiveTopology::TriangleStrip)
+                    strip_index_format: (indexed && topology.is_strip())
                         .then_some(wgpu::IndexFormat::Uint32),
                     front_face,
                     cull_mode,

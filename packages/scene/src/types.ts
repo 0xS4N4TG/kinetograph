@@ -940,7 +940,7 @@ export interface GlslDepth {
 
 export interface GlslDraw {
   program: string;
-  mode: 'points' | 'triangles' | 'triangleStrip' | 'triangleFan';
+  mode: 'points' | 'triangles' | 'triangleStrip' | 'triangleFan' | 'lines' | 'lineStrip' | 'lineLoop';
   first: number;
   count: number;
   /** `drawArraysInstanced` and `drawElementsInstanced`: how many instances (default 1). */

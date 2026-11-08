@@ -264,6 +264,13 @@ fn glsl_float_target_matches_golden() {
 }
 
 #[test]
+fn glsl_lines_match_golden() {
+    // A grid of LINES, a LINE_LOOP star and a LINE_STRIP spiral, each one pixel wide.
+    let frame = render_still(scene("tests/scenes/glsl-lines.json"), 0).unwrap();
+    check("glsl-lines", &frame);
+}
+
+#[test]
 fn scene3d_animation_matches_golden() {
     // Frame 15 of 30, half a second into every clip: a cube turning, moving
     // and growing (with a second cube on a spline), a quad whose top corners

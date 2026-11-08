@@ -84,7 +84,6 @@ describe('the recording WebGL context', () => {
     expect(gl.getError()).toBe(GL.NO_ERROR);
     expect(gl.content().ops[0]).toMatchObject({ op: 'draw', mode: 'points', first: 1, count: 2 });
     expect([...(gl.getParameter(0x846d) as Float32Array)]).toEqual([1, 511]);
-    expect(() => gl.drawArrays(GL.LINES, 0, 2)).toThrow(/lines/);
   });
 
   it('records blitFramebuffer between the canvas and a texture drawn in, keeping the canvas ops a blit reads', () => {
@@ -250,7 +249,6 @@ describe('the recording WebGL context', () => {
       }
       throw new Error('did not throw');
     };
-    expect(refused(() => gl.drawArrays(GL.LINES, 0, 2))).toMatch(/^unsupported:.*lines/);
     const gl2 = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
     gl2.bindRenderbuffer(GL.RENDERBUFFER, gl2.createRenderbuffer());
     expect(refused(() => gl2.renderbufferStorageMultisample(GL.RENDERBUFFER, 4, GL2.RGBA8, 4, 4))).toMatch(/^unsupported:.*multisampled/);
@@ -1562,6 +1560,40 @@ describe('the recording WebGL context', () => {
       expect(draw.uniforms['directionalLights[1].color']).toEqual([{ kind: 'f', value: [0.1, 0.2, 0.3] }]);
       expect(draw.uniforms['shadow.size']).toEqual([{ kind: 'f', value: [4, 5], index: 1 }]);
       expect(draw.uniforms['shadow.bias']).toBeDefined();
+    });
+  });
+
+  describe('lines', () => {
+    it('records LINES, LINE_STRIP and LINE_LOOP, and refuses neither', () => {
+      for (const [mode, name] of [[GL.LINES, 'lines'], [GL.LINE_STRIP, 'lineStrip'], [GL.LINE_LOOP, 'lineLoop']] as const) {
+        const { gl } = setup();
+        gl.drawArrays(mode, 0, 3);
+        expect(gl.getError()).toBe(GL.NO_ERROR);
+        const draw = gl.content().ops[0]!;
+        if (draw.op !== 'draw') throw new Error('not a draw');
+        expect(draw.mode).toBe(name);
+      }
+    });
+
+    it('takes lineWidth, which is one pixel wide whatever it says, and checks it', () => {
+      const { gl } = setup();
+      expect(Array.from(gl.getParameter(GL.ALIASED_LINE_WIDTH_RANGE) as Float32Array)).toEqual([1, 1]);
+      gl.lineWidth(3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      gl.lineWidth(0);
+      expect(gl.getError()).toBe(GL.INVALID_VALUE);
+    });
+
+    it('does not offset a line by polygonOffset', () => {
+      const { gl } = setup();
+      gl.enable(GL.DEPTH_TEST);
+      gl.enable(GL.POLYGON_OFFSET_FILL);
+      gl.polygonOffset(1, 1);
+      gl.drawArrays(GL.LINES, 0, 2);
+      const draw = gl.content().ops[0]!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      expect(draw.depth).toBeDefined();
+      expect(draw.polygonOffset).toBeUndefined();
     });
   });
 

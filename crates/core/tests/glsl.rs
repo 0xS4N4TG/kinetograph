@@ -2429,3 +2429,81 @@ fn modf_and_matrix_comp_mult_compute_what_glsl_says() {
     // part 0.25 + 0.75 = 1.0; 2 / 4 + (-1 * -0.25) = 0.75; 0.5 + 0.25 = 0.75; 3 + 5 = 8 (clamped to 1).
     near(px(&frame, 8, 8), [255, 191, 191, 255], 3);
 }
+
+// ---- lines ----
+
+/// A draw of `mode` over the vertices `points` (clip space, in the buffer "v"), red.
+fn line_draw(mode: &str, count: usize, extra: &str) -> String {
+    format!(
+        r#"{{"op": "draw", "program": "p", "mode": "{mode}", "first": 0, "count": {count},
+            "attributes": {{"a_pos": {{"buffer": "v", "size": 2, "type": "f32"}}}},
+            "viewport": [0, 0, 16, 16] {extra}}}"#
+    )
+}
+
+fn line_layer(points: &[[f32; 2]], draw: &str) -> Frame {
+    let bytes: Vec<u8> = points.iter().flatten().flat_map(|f| f.to_le_bytes()).collect();
+    let frag = "#version 300 es\nprecision highp float; out vec4 o; void main() { o = vec4(1.0, 0.0, 0.0, 1.0); }";
+    render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", frag)],
+        &format!(r#", "v": "{}""#, b64(&bytes)),
+        "",
+        draw,
+    ))
+}
+
+fn red_pixels(frame: &Frame) -> usize {
+    (0..16)
+        .flat_map(|y| (0..16).map(move |x| (x, y)))
+        .filter(|&(x, y)| px(frame, x, y)[0] > 128)
+        .count()
+}
+
+#[test]
+fn lines_are_one_pixel_wide() {
+    // Across the picture a little above its middle: one row of red, 16 pixels, whatever the rows around.
+    let frame = line_layer(&[[-1.0, 0.03], [1.0, 0.03]], &line_draw("lines", 2, ""));
+    assert_eq!(red_pixels(&frame), 16);
+    assert_eq!(px(&frame, 8, 7), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 8, 6), [0, 0, 0, 255]);
+    assert_eq!(px(&frame, 8, 8), [0, 0, 0, 255]);
+}
+
+#[test]
+fn a_line_list_takes_pairs_and_a_strip_joins_them() {
+    let corners: [[f32; 2]; 4] = [[-0.9, -0.9], [0.9, -0.9], [0.9, 0.9], [-0.9, 0.9]];
+    let list = red_pixels(&line_layer(&corners, &line_draw("lines", 4, "")));
+    let strip = red_pixels(&line_layer(&corners, &line_draw("lineStrip", 4, "")));
+    let looped = red_pixels(&line_layer(&corners, &line_draw("lineLoop", 4, "")));
+    // Two sides; three sides; four.
+    assert!(list > 20 && list < strip, "{list} {strip}");
+    assert!(strip < looped, "{strip} {looped}");
+    // The loop is a closed square: its middle is empty.
+    assert_eq!(px(&line_layer(&corners, &line_draw("lineLoop", 4, "")), 8, 8), [0, 0, 0, 255]);
+}
+
+#[test]
+fn a_line_loop_of_indices_closes_on_its_first_index() {
+    let corners: [[f32; 2]; 4] = [[-0.9, -0.9], [0.9, -0.9], [0.9, 0.9], [-0.9, 0.9]];
+    let indices: Vec<u8> = [0u16, 1, 2, 3].iter().flat_map(|i| i.to_le_bytes()).collect();
+    let extra = r#", "indices": {"buffer": "i", "type": "u16", "offset": 0}"#;
+    let bytes: Vec<u8> = corners.iter().flatten().flat_map(|f| f.to_le_bytes()).collect();
+    let frag = "#version 300 es\nprecision highp float; out vec4 o; void main() { o = vec4(1.0, 0.0, 0.0, 1.0); }";
+    let frame = render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", frag)],
+        &format!(r#", "v": "{}", "i": "{}""#, b64(&bytes), b64(&indices)),
+        "",
+        &line_draw("lineLoop", 4, extra),
+    ));
+    let strip = red_pixels(&line_layer(&corners, &line_draw("lineStrip", 4, "")));
+    assert!(red_pixels(&frame) > strip);
+}
+
+#[test]
+fn lines_are_not_culled_or_offset() {
+    let cull = r#", "cull": {"face": "BACK", "front": "CCW"}"#;
+    let frame = line_layer(&[[-1.0, 0.03], [1.0, 0.03]], &line_draw("lines", 2, cull));
+    assert_eq!(red_pixels(&frame), 16);
+}
