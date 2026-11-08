@@ -20,6 +20,8 @@ export const Drift = () => {
 };
 ```
 
+<Media src="making-videos/noise-drift.mp4" poster="making-videos/noise-drift.webp" width={1280} height={720} alt={"The dots drift smoothly as the noise changes with the frame."} />
+
 ## The functions
 
 `noise2D`, `noise3D` and `noise4D` take a string or number seed. Use `frame / 60` or similar for the axis that stands for time. For plain random values, use `random(seed)`: see [Animation and timing](/docs/making-videos/animation/#randomness).
@@ -40,6 +42,8 @@ export const Clouds = () => (
   />
 );
 ```
+
+<Media src="making-videos/noise-clouds.webp" width={1280} height={720} alt={"A grey cloud pattern drawn by the Noise layer."} />
 
 `grain` and `dither` in [Effects](/docs/making-videos/effects/) add film grain to a layer.
 

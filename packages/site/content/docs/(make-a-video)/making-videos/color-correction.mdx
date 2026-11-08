@@ -18,6 +18,8 @@ export const Graded = () => (
 );
 ```
 
+<Media src="making-videos/color-correction-before.webp" width={1280} height={720} alt={"A woodblock print of a night market, ungraded."} />
+
 Install `@remotion/effects` at the same version as `remotion`. See [Remotion effects](/docs/making-videos/remotion-effects/).
 
 `colorCorrection()` is the all-in-one adjustment, `levels()` sets black point, white point and gamma, `curves()` bends the tone with points from `[0, 0]` to `[1, 1]`, and `lut()` grades through a `.cube` lookup table. Effects run in the order of the array, so correct the colour first, then apply the look:
@@ -45,6 +47,8 @@ export const Native = () => (
   />
 );
 ```
+
+<Media src="making-videos/color-correction-after.webp" width={1280} height={720} alt={"The same print after colorGrade and a teal-orange lut: warmer lights, cooler shadows, more contrast."} />
 
 - `lut({ src, amount })` reads a `.cube` file. `amount` (0 to 1) cross-fades from the original.
 - `colorGrade` takes `adjust` (`exposure`, `contrast`, `temperature`, `saturation` and more), colour `wheels`, `curves`, a `lut`, a `vignette` and `grain`.

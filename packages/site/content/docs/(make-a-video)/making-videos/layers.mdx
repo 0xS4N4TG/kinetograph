@@ -67,6 +67,8 @@ export const Cutouts = () => (
 );
 ```
 
+<Media src="making-videos/layers-example.mp4" poster="making-videos/layers-example.webp" width={1280} height={720} alt={"The clip opens, the mask grows and the matte word slides into place."} />
+
 - **`clip`** cuts to a shape: `polygon`, `inset`, `ellipse` or `path`. Its numbers can animate.
 - **`mask`** fades the layer by a gradient. `mode: 'alpha'` keeps it where the gradient is opaque, and `'luminance'` where it is light.
 - **`matte`** cuts the layer by another layer, the matte source, named by `id`. The source must be a sibling and is not drawn on its own.

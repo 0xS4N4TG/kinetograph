@@ -32,6 +32,8 @@ export const Glow = () => (
 - **Shape:** `cornerPin` pins a layer's four corners to four points.
 - **Your own:** `shader({ code, uniforms })` runs a WGSL shader on the layer.
 
+<Media src="making-videos/effects-example.mp4" poster="making-videos/effects-example.webp" width={1280} height={720} alt={"The effect amounts breathe in and out on all four panels."} />
+
 `motionBlur({ samples })` can sit in the same array. See [Motion blur](/docs/making-videos/motion-blur/).
 
 ## Gradients
@@ -41,6 +43,8 @@ export const Glow = () => (
 ## Order and room
 
 A layer's pixels go through its `effects`, then its `clip`, `mask` and `matte`, then `opacity` and `blendMode`. A shadow or glow draws past the layer's box, so set `margin` on the composition to the largest reach and nothing is cut off. See [Compositions](/docs/making-videos/compositions/).
+
+<Media src="illustrations/effects-chain.svg" dark="illustrations/effects-chain-dark.svg" width={720} height={360} alt={"A layer’s pixels go through its effects in array order, first colorCorrection and then lut. Then the layer is cut by clip, mask and matte, then opacity and blendMode apply, and it is composited with the layers below."} />
 
 ## Remotion's effects
 

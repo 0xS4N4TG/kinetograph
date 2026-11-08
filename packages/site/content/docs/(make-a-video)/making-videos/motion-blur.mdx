@@ -19,6 +19,8 @@ export const Whip = () => {
 };
 ```
 
+<Media src="making-videos/motion-blur-example.mp4" poster="making-videos/motion-blur-example.webp" width={1280} height={720} alt={"A card whips across the frame twice at once, without motion blur and with it."} />
+
 `samples` is how many moments to average (default 8), and `shutter` is how long the shutter is open, in frames (default 0.5, a 180 degree shutter). More samples are smoother and slower.
 
 The layer and everything under it blurs: position, rotation, scale, 3D turns, opacity and effect settings. Put `motionBlur` on the group that moves, so the whole group smears.

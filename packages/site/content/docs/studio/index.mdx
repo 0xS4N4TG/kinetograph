@@ -22,6 +22,8 @@ npx kinetograph studio index.html
   </Tab>
 </Tabs>
 
+<Media src="studio/window-light.webp" dark="studio/window-dark.webp" width={1600} height={1160} alt={"The whole Studio window with a project open: the agent chat on the left, the preview in the middle with the timeline under it, and the inspector on the right."} caption={"Agent chat on the left, the preview in the middle with the timeline under it, the inspector on the right."} />
+
 Studio opens a browser at `http://127.0.0.1:3000`, rebuilds the project when a file changes, and runs until you press Ctrl-C. The [CLI reference](/docs/reference/cli/#studio) lists the options.
 
 ## The window
@@ -30,6 +32,8 @@ Studio opens a browser at `http://127.0.0.1:3000`, rebuilds the project when a f
 - **Preview** in the middle, with the timeline under it.
 - **Inspector** on the right, with the Props, Scene and Renders tabs.
 - **Top bar:** the composition switcher, the command menu (Cmd+K, or Ctrl+K elsewhere, lists every action and shortcut) and the Export button.
+
+<Media src="studio/command-menu-dark.webp" width={1600} height={1160} alt={"The command menu open over the window, listing the actions of Studio."} />
 
 Space plays and pauses, and the arrow keys step a frame. Click a layer to select it, or drag a box around several.
 
@@ -41,25 +45,45 @@ Type a time into the timecode box (`2.4`, `mm:ss` or `mm:ss.ff`) to jump there. 
 
 To show the agent what to change, press `M`. Then drop a **pin**, drag a **box**, draw with the **pen**, or drag a **range** on the timeline ruler. Type a comment, press Enter to add the note, and send the notes when you are done. The agent sees each note with its frame and the layers under your mark, and a picture of the frame with your marks drawn on it.
 
+<Media src="illustrations/studio-loop.svg" dark="illustrations/studio-loop-dark.svg" width={720} height={450} alt={"A loop of four steps. One: the preview shows frames drawn by the engine. Two: you mark up a frame or a span of time. Three: your coding agent edits the code. Four: the engine redraws the frame, which goes back to the preview."} />
+
+<Media src="studio/markup-dark.webp" width={1600} height={1160} alt={"Markup mode with a pin on the lanterns, a box round the title and a pen stroke under the caption, each with a note."} />
+
+<Media src="studio/notes-dark.webp" width={1600} height={1160} alt={"The notes tray above the message box, listing three notes in time order with a button that sends them all."} />
+
+<Media src="studio/main-loop-dark.mp4" width={1280} height={764} alt={"Screen recording: a box is drawn over the title, a note is typed and sent, the agent edits the file, and the preview shows the bigger title."} />
+
 ## The timeline
 
 The arrow at the left of the timeline opens one row per layer. Click the ruler to move the playhead, or drag across it to pick a span of time. Click a clip to pick its span. The span goes to the agent with your next message, with a contact sheet of the frames in it.
+
+<Media src="studio/timeline-dark.webp" width={1600} height={1160} alt={"The timeline expanded, with a film strip of frames, one row for each Sequence and the narration clips under it, and the playhead on the print shot."} />
 
 ## Props and presets
 
 The Props tab draws a form from the composition's zod `schema`: a slider for a number, a switch for a boolean, a colour input for `zColor()`. With no schema, each field is inferred from its default. **Reset** returns every prop to the defaults, and your edits are kept in the browser.
 
+<Media src="studio/props-dark.webp" width={1600} height={1160} alt={"The Props tab with a form drawn from the composition schema: text fields, a colour input, a slider, a switch and a select."} />
+
 **Save preset** in the Presets menu saves the props you see as `presets/<composition id>/<name>.json`. You can commit it, and `--props` renders it from the command line. See [Plugins](/docs/plugins/#presets).
 
 A field that a [plugin](/docs/plugins/) draws its own [panel](/docs/studio/panels/#plugin-panels) for shows as a card in place of the form. The **Plugins** list at the bottom shows what the project uses and what else you can add.
+
+<Media src="studio/plugins-dark.webp" width={1600} height={1160} alt={"The Plugins list at the bottom of the Props tab, with the plugins the site offers and their status."} />
 
 ## The Scene and Renders tabs
 
 **Scene** is the tree of layers at the playhead. **Renders** is the queue of exports, with progress and the output file.
 
+<Media src="studio/scene-dark.webp" width={1600} height={1160} alt={"The Scene tab: the tree of layers at the playhead with each layer's resolved fields."} />
+
+<Media src="studio/renders-dark.webp" width={1600} height={1160} alt={"The Renders tab: the queue of exports with progress and the output file."} />
+
 ## Export
 
 **Export** opens a dialog for the composition. Pick the whole video or a range, an output path (`.mp4` or `.mov`), and **Draft** for a half-size render that checks timing. The export uses the props you edited.
+
+<Media src="studio/export-dark.webp" width={1600} height={1160} alt={"The Export dialog: whole video or a custom range, the output path and the draft switch."} />
 
 ## The agent
 

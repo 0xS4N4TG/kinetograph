@@ -9,6 +9,10 @@ Kinetograph has two halves. Node runs your project and turns each frame into a s
 
 ## How one frame is made
 
+<Media src="illustrations/pipeline.svg" dark="illustrations/pipeline-dark.svg" width={720} height={690} alt={"Five steps from top to bottom: your project (TSX or an HTML page), Node runs it for each frame with the React reconciler or the HyperFrames runtime, the result is scene JSON, a Rust GPU compositor in an N-API addon draws it, and FFmpeg encodes the video. A dashed outline marks the whole path as having no browser."} />
+
+<Media src="illustrations/pipeline.mp4" poster="illustrations/pipeline-poster.webp" width={1280} height={720} alt={"Looping animation of two frames travelling from your project through Node, scene JSON and the Rust GPU compositor to FFmpeg and a video file. A header and a dashed outline mark the whole path as having no browser."} />
+
 ### 1. Bundle
 
 The CLI bundles the project with esbuild. Imports of `remotion` and `@remotion/*` point at `@kinetographdev/core`, so a Remotion project runs unchanged.
@@ -40,6 +44,10 @@ Each finished frame goes to FFmpeg on another thread, while the GPU draws the ne
 - A frame depends only on the project and the frame number. The same frame gives the same pixels every time.
 - No browser is in the render path, including for Canvas 2D and WebGL.
 - Unsupported content is drawn without, or approximated, and reported. `--strict` makes it an error. See [Remotion compatibility](/docs/compat/).
+
+<Media src="illustrations/pure-frame.svg" dark="illustrations/pure-frame-dark.svg" width={720} height={462} alt={"The project and a frame number go into the renderer, and a picture comes out. Rendering the same project and frame again, on another worker or out of order, gives the identical picture. The wall clock is not an input."} />
+
+<Media src="illustrations/pure-frame.mp4" poster="illustrations/pure-frame-poster.webp" width={1280} height={720} alt={"Looping animation of a project and a frame number going into a pure render function. The number changes from 12 to 24 and the picture changes with it. When 12 comes back, the picture equals the earlier one for frame 12. No wall clock is used."} />
 
 ## Speed
 

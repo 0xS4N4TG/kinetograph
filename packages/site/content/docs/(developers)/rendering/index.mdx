@@ -17,6 +17,8 @@ The video goes to `out/renders/<composition id>.mp4`. Pass `-o` to choose anothe
 <Tabs items={['Remotion', 'HyperFrames']}>
   <Tab value="Remotion">
 
+<Media src="illustrations/render-options.svg" dark="illustrations/render-options-dark.svg" width={720} height={520} alt={"A grid of commands against four stages: bundle, run, draw and encode. doctor stops after run and never uses the GPU. still, strip and onion go through draw for a chosen frame, frames or range. render with sequence stops after draw and writes an image per frame. render goes through all four to an MP4."} />
+
 ```sh
 npx kinetograph still src/index.tsx 15
 npx kinetograph strip src/index.tsx -n 12

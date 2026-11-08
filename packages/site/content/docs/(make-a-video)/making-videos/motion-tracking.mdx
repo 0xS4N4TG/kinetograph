@@ -36,6 +36,8 @@ const Label = () => {
 };
 ```
 
+<Media src="making-videos/motion-tracking-example.mp4" poster="making-videos/motion-tracking-example.webp" width={1280} height={720} alt={"A box and label follow the blacksmith as he works."} />
+
 Draw `<Label />` over your `<OffthreadVideo>`. `useTrack` returns `x`, `y`, `rotation` (degrees), `scale` and `corners` (for a corner pin). Before the first tracked frame the first position is used, and after the last frame, or after a track is lost, the last position holds. If you draw the video smaller, larger or moved, apply the same scale and offset to the positions.
 
 ## Options
