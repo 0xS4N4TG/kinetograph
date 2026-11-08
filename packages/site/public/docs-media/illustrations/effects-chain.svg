@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" width="720" height="360" role="img">
+<title>The effects chain</title>
+<desc>A layer’s pixels go through its effects in array order, first colorCorrection and then lut. Then the layer is cut by clip, mask and matte, then opacity and blendMode apply, and it is composited with the layers below.</desc>
+<text x="262" y="36" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="400" fill="#5e5952" text-anchor="start">effects={[ ... ]}  runs in array order</text>
+<path d="M262 46 L696 46" fill="none" stroke="#2238c4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="24" y="60" width="196" height="80" rx="8" fill="#fbf8f0" stroke="#1d1b18" stroke-width="1.5"/>
+<text x="122" y="97" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="18" font-weight="700" fill="#1d1b18" text-anchor="middle">Layer pixels</text>
+<text x="122" y="119" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="middle">before any cut</text>
+<rect x="262" y="60" width="196" height="80" rx="8" fill="#e4e8f8" stroke="#2238c4" stroke-width="2"/>
+<text x="360" y="97" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="16" font-weight="700" fill="#2238c4" text-anchor="middle">colorCorrection()</text>
+<text x="360" y="119" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="middle">correct the colour</text>
+<rect x="500" y="60" width="196" height="80" rx="8" fill="#e4e8f8" stroke="#2238c4" stroke-width="2"/>
+<text x="598" y="97" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="16" font-weight="700" fill="#2238c4" text-anchor="middle">lut()</text>
+<text x="598" y="119" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="middle">apply the look</text>
+<circle cx="262" cy="60" r="13" fill="#2238c4"/>
+<text x="262" y="65" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#f7f4ec" text-anchor="middle">1</text>
+<circle cx="500" cy="60" r="13" fill="#2238c4"/>
+<text x="500" y="65" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#f7f4ec" text-anchor="middle">2</text>
+<path d="M224 100 L258 100" fill="none" stroke="#1d1b18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M258 100 L248.0 105.5 L248.0 94.5 Z" fill="#1d1b18" stroke="#1d1b18" stroke-width="1" stroke-linejoin="round"/>
+<path d="M462 100 L496 100" fill="none" stroke="#1d1b18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M496 100 L486.0 105.5 L486.0 94.5 Z" fill="#1d1b18" stroke="#1d1b18" stroke-width="1" stroke-linejoin="round"/>
+<path d="M598 144 L598 172 L122 172" fill="none" stroke="#1d1b18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M122 172 L122 196" fill="none" stroke="#1d1b18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M122 196 L116.5 186.0 L127.5 186.0 Z" fill="#1d1b18" stroke="#1d1b18" stroke-width="1" stroke-linejoin="round"/>
+<rect x="24" y="200" width="196" height="80" rx="8" fill="#fbf8f0" stroke="#1d1b18" stroke-width="1.5"/>
+<text x="122" y="237" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="17" font-weight="700" fill="#1d1b18" text-anchor="middle">clip, mask, matte</text>
+<text x="122" y="259" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="middle">cut the layer</text>
+<rect x="262" y="200" width="196" height="80" rx="8" fill="#fbf8f0" stroke="#1d1b18" stroke-width="1.5"/>
+<text x="360" y="237" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="17" font-weight="700" fill="#1d1b18" text-anchor="middle">opacity, blendMode</text>
+<text x="360" y="259" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="middle">blend it</text>
+<rect x="500" y="200" width="196" height="80" rx="8" fill="#fbf8f0" stroke="#1d1b18" stroke-width="1.5"/>
+<text x="598" y="237" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="18" font-weight="700" fill="#1d1b18" text-anchor="middle">Composite</text>
+<text x="598" y="259" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="middle">with the layers below</text>
+<path d="M224 240 L258 240" fill="none" stroke="#1d1b18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M258 240 L248.0 245.5 L248.0 234.5 Z" fill="#1d1b18" stroke="#1d1b18" stroke-width="1" stroke-linejoin="round"/>
+<path d="M462 240 L496 240" fill="none" stroke="#1d1b18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M496 240 L486.0 245.5 L486.0 234.5 Z" fill="#1d1b18" stroke="#1d1b18" stroke-width="1" stroke-linejoin="round"/>
+<text x="24" y="318" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="17" font-weight="700" fill="#1d1b18" text-anchor="start">Colour first, look second.</text>
+<text x="24" y="342" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="400" fill="#5e5952" text-anchor="start">Swap them and the look lands on uncorrected colour.</text>
+</svg>

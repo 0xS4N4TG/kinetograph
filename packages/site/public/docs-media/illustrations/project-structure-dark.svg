@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 640" width="720" height="640" role="img">
+<title>What kinetograph init writes</title>
+<desc>A project folder with src for your code (index.tsx, scenes/Title.tsx, components, lib), public for images, fonts, audio and video, and out for everything the commands write: stills, sheets and renders. package.json, tsconfig.json and .gitignore sit beside them.</desc>
+<text x="24" y="34" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="22" font-weight="700" fill="#ededf0" text-anchor="start">my-video/</text>
+<rect x="24" y="54" width="672" height="214" rx="8" fill="#17171a" stroke="#ededf0" stroke-width="1.5"/>
+<path d="M44 76 a4 4 0 0 1 4 -4 h10 l5 5 h14 a4 4 0 0 1 4 4 v18 a4 4 0 0 1 -4 4 h-29 a4 4 0 0 1 -4 -4 Z" fill="none" stroke="#ededf0" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="94" y="94" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="22" font-weight="700" fill="#ededf0" text-anchor="start">src/</text>
+<text x="676" y="94" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="400" fill="#a1a1aa" text-anchor="end">your code</text>
+<text x="64" y="134" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="16" font-weight="400" fill="#ededf0" text-anchor="start">index.tsx</text>
+<text x="290" y="134" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="400" fill="#a1a1aa" text-anchor="start">registerRoot and the compositions</text>
+<text x="64" y="162" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="16" font-weight="400" fill="#ededf0" text-anchor="start">scenes/Title.tsx</text>
+<text x="290" y="162" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="400" fill="#a1a1aa" text-anchor="start">the starter scene</text>
+<text x="64" y="190" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="16" font-weight="400" fill="#ededf0" text-anchor="start">components/</text>
+<text x="290" y="190" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="400" fill="#a1a1aa" text-anchor="start">pieces used by more than one scene</text>
+<text x="64" y="218" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="16" font-weight="400" fill="#ededf0" text-anchor="start">lib/</text>
+<text x="290" y="218" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="400" fill="#a1a1aa" text-anchor="start">helpers</text>
+<text x="64" y="246" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="16" font-weight="400" fill="#ededf0" text-anchor="start">google-fonts.d.ts</text>
+<text x="290" y="246" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="400" fill="#a1a1aa" text-anchor="start">types for font imports</text>
+<rect x="24" y="286" width="672" height="118" rx="8" fill="#17171a" stroke="#ededf0" stroke-width="1.5"/>
+<path d="M44 308 a4 4 0 0 1 4 -4 h10 l5 5 h14 a4 4 0 0 1 4 4 v18 a4 4 0 0 1 -4 4 h-29 a4 4 0 0 1 -4 -4 Z" fill="none" stroke="#ededf0" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="94" y="326" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="22" font-weight="700" fill="#ededf0" text-anchor="start">public/</text>
+<text x="676" y="326" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="400" fill="#a1a1aa" text-anchor="end">read with staticFile()</text>
+<rect x="64" y="346" width="134" height="38" rx="6" fill="none" stroke="#46464e" stroke-width="1.5"/>
+<text x="131" y="371" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="16" font-weight="400" fill="#ededf0" text-anchor="middle">images/</text>
+<rect x="218" y="346" width="134" height="38" rx="6" fill="none" stroke="#46464e" stroke-width="1.5"/>
+<text x="285" y="371" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="16" font-weight="400" fill="#ededf0" text-anchor="middle">fonts/</text>
+<rect x="372" y="346" width="134" height="38" rx="6" fill="none" stroke="#46464e" stroke-width="1.5"/>
+<text x="439" y="371" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="16" font-weight="400" fill="#ededf0" text-anchor="middle">audio/</text>
+<rect x="526" y="346" width="134" height="38" rx="6" fill="none" stroke="#46464e" stroke-width="1.5"/>
+<text x="593" y="371" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="16" font-weight="400" fill="#ededf0" text-anchor="middle">video/</text>
+<rect x="24" y="422" width="672" height="142" rx="8" fill="#1f2438" stroke="#8396ff" stroke-width="1.5" stroke-dasharray="6 5"/>
+<path d="M44 444 a4 4 0 0 1 4 -4 h10 l5 5 h14 a4 4 0 0 1 4 4 v18 a4 4 0 0 1 -4 4 h-29 a4 4 0 0 1 -4 -4 Z" fill="none" stroke="#8396ff" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="94" y="462" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="22" font-weight="700" fill="#8396ff" text-anchor="start">out/</text>
+<text x="676" y="462" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="400" fill="#a1a1aa" text-anchor="end">everything the commands write</text>
+<text x="64" y="502" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="16" font-weight="400" fill="#ededf0" text-anchor="start">stills/</text>
+<text x="290" y="502" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="400" fill="#a1a1aa" text-anchor="start">from still</text>
+<text x="64" y="528" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="16" font-weight="400" fill="#ededf0" text-anchor="start">sheets/</text>
+<text x="290" y="528" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="400" fill="#a1a1aa" text-anchor="start">from strip and onion</text>
+<text x="64" y="554" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="16" font-weight="400" fill="#ededf0" text-anchor="start">renders/</text>
+<text x="290" y="554" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="400" fill="#a1a1aa" text-anchor="start">from render</text>
+<text x="24" y="596" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="16" font-weight="400" fill="#a1a1aa" text-anchor="start">package.json</text>
+<text x="234" y="596" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="16" font-weight="400" fill="#a1a1aa" text-anchor="start">tsconfig.json</text>
+<text x="444" y="596" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="16" font-weight="400" fill="#a1a1aa" text-anchor="start">.gitignore</text>
+<text x="24" y="624" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#a1a1aa" text-anchor="start">With --html, html/index.html takes the place of src/.</text>
+</svg>
