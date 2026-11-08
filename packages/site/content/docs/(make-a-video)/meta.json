@@ -12,15 +12,19 @@
     "[Inspiration](/plugins/#templates)",
     "---Make a video---",
     "making/index",
+    "kinetograph-ui",
+    "tastes",
     "---Use it with your agent---",
     "agents/claude-code",
     "agents/codex",
     "agents/cursor",
     "mcp",
     "agents/skills",
+    "agents/taste-clone",
     "---Compare---",
     "compare",
     "migrating/remotion",
+    "migrating/three",
     "migrating/hyperframes",
     "keep-your-editor",
     "---Tips for better videos---",
@@ -44,6 +48,7 @@
     "---Help and updates---",
     "[Fix a slow render or preview](/docs/rendering/slow-renders/)",
     "[What doctor reports](/docs/terminology/doctor/)",
+    "upgrading",
     "[Changelog](/docs/changelog/)"
   ]
 }

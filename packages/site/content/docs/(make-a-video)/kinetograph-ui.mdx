@@ -1,0 +1,33 @@
+---
+title: Components and templates
+description: kinetograph-ui is the MIT library of components, templates, tastes and plugins you add to a project.
+---
+
+[kinetograph-ui](https://github.com/0xS4N4TG/kinetograph-ui) is a separate, public repo of ready-made parts for Kinetograph, under the MIT licence. Browse them with previews at [kinetograph.dev/plugins](/plugins/).
+
+## What is in it
+
+- **Components** are building blocks, each with a zod schema so its props show as editable fields in Studio. The ones you can `add` come in six kinds: grids, carousels, charts, backgrounds, audio visuals and effects. The repo also holds map components, which are not in the registry yet.
+- **Templates** are whole reels. Copy one, change the words and pictures, render it: app and UI promos with phone and laptop scenes, kinetic type cut to a track, documentary openers, launch films.
+- **[Tastes](/docs/tastes/)** are whole styles, each with a demo reel.
+- **Plugins** add looks and tools: [Hexed](/docs/plugins/hexed/), [Kinetic typography](/docs/plugins/kinetic-typography/), [Paper](/docs/plugins/paper/) and [VJ](/docs/plugins/vj/).
+- **A skill**, the [taste skill](/docs/agents/taste-clone/).
+
+Some charts follow the design of [Bklit UI](https://bklit.com) (MIT). A map component plays footage captured ahead of time under a live overlay, so a new route or city needs a recapture with the script in its folder.
+
+## Add one to your project
+
+```sh
+npx kinetograph add --list
+npx kinetograph add area-chart
+```
+
+`--type component|template|taste` narrows the list. A component goes to `src/components/<name>/`, a template to `src/templates/<name>/` and its media to `public/<kind>/<name>/`. Read the `next:` lines it prints for the import. See [add](/docs/reference/cli/#add) for the flags.
+
+## Change it
+
+The files are yours. Edit the code, or change the props in Studio's Props tab and save a preset. A template keeps its words and pictures in props, so most changes need no code. See [Brand and templates](/docs/tips/brand-templates/).
+
+## Licence
+
+The code is MIT. Third-party footage, textures, fonts and music keep their own terms, noted in a `CREDITS.md` or `SOURCES.md` beside the files. To add your own, see [Contributing to the registry](/docs/contributing/registry/).
