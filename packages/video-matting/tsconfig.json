@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "ESNext.Disposable"],
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"]
+}
