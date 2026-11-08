@@ -315,12 +315,13 @@ export function remapTarget(target: string, kind: HyperframesType, paths: Return
 }
 
 /** Names that are never written, wherever they sit in a path. */
+const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const FORBIDDEN_NAMES = new Set(['package.json', '.git', '.github', 'node_modules']);
 
 /**
  * Why a file may not be written at `target` (already remapped), or undefined: it must be a safe relative path inside
- * the blocks, components or assets folder (or `compositions/`, `assets/`), with no segment that starts with "." and none
- * of `package.json`, `.git`, `.github` or `node_modules`.
+ * the blocks, components or assets folder (or `compositions/`, `assets/`), with every segment made of letters, digits, ".", "_" and "-" (starting with a letter or digit, not ending in "."),
+ * and none of them `package.json`, `.git`, `.github` or `node_modules`.
  */
 export function hyperframesTargetProblem(target: string, paths: { blocks: string; components: string; assets: string }): string | undefined {
   const problem = pathProblem(target);
@@ -330,7 +331,8 @@ export function hyperframesTargetProblem(target: string, paths: { blocks: string
     return `is outside the ${[...roots].join(', ')} folders`;
   }
   for (const segment of target.split('/')) {
-    if (segment.startsWith('.')) return `has a hidden segment ("${segment}")`;
+    // An allowlist, so Windows tricks (a trailing dot or space, `name:stream`, 8.3 short names like NODE_M~1) never get through.
+    if (!SEGMENT.test(segment) || segment.endsWith('.')) return `has a segment ("${segment.replace(/[^\x20-\x7e]/g, '?')}") that is not letters, digits, "." "_" "-" and starts with a letter or digit`;
     if (FORBIDDEN_NAMES.has(segment.toLowerCase())) return `has a protected name ("${segment}")`;
   }
   return undefined;

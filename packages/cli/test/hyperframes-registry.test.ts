@@ -350,6 +350,17 @@ describe('hostile items', () => {
     ['src/index.ts'],
     ['index.html'],
     ['hyperframes.json'],
+    ['compositions/package.json.'],
+    ['compositions/package.json '],
+    ['compositions/PACKAGE.JSON'],
+    ['compositions/page.html:stream'],
+    ['compositions/NODE_M~1/x.js'],
+    ['compositions/PACKAGE~1.JSO'],
+    ['compositions/x.html.'],
+    ['compositions/a b.html'],
+    ['compositions/a\\b.html'],
+    ['assets/ünï.png'],
+    ['assets/_x.png'],
   ])('refuses the target %s, writing nothing', async (target) => {
     const dir = project();
     const { source } = withFiles([{ path: 'glow.html', target }]);
