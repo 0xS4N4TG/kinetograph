@@ -7,6 +7,7 @@ import type { ReactNode } from 'react';
 import cli from '../../../../cli/package.json';
 
 import { GithubStars } from '@/components/github-stars';
+import { SearchPreload } from '@/components/search-preload';
 import { repoCounts } from '@/lib/repo';
 import { THEME } from '@/lib/theme';
 import { source } from '@/lib/source';
@@ -18,7 +19,8 @@ export const viewport: Viewport = { themeColor: '#111113' };
 export default async function Layout({ children }: { children: ReactNode }) {
   const counts = await repoCounts();
   return (
-    <RootProvider theme={THEME} search={{ options: { type: 'static', api: '/api/search' } }}>
+    <RootProvider theme={THEME} search={{ options: { type: 'static', api: '/api/search', delayMs: 0 } }}>
+      <SearchPreload api="/api/search" />
       <DocsLayout
         tree={source.getPageTree()}
         nav={{
