@@ -21,7 +21,7 @@ export const Glow = () => (
 );
 ```
 
-An effect helper takes the effect's fields. Effects with one main number also take it bare, as `blur(24)`. `npx kinetograph effects` lists every effect with its fields and defaults.
+`npx kinetograph effects` lists every effect with its fields.
 
 ## The effects
 
@@ -38,13 +38,9 @@ An effect helper takes the effect's fields. Effects with one main number also ta
 
 `linearGradient`, `radialGradient` and `conicGradient` work as a shape's `fill` and as a text colour. A bare colour list spreads the stops evenly, and `[offset, colour]` pairs place them.
 
-## Order
+## Order and room
 
-A layer's pixels go through its `effects`, then its `clip`, `mask` and `matte`, then `opacity` and `blendMode`. So a blur is cut off by the clip, and the clip is not blurred.
-
-## Room past the edge
-
-An effect such as a shadow or a glow draws past the layer's box. When its reach changes between frames, the engine rebuilds some buffers. Set `margin` on the composition to the largest reach, and nothing is cut off. See [Compositions](/docs/making-videos/compositions/).
+A layer's pixels go through its `effects`, then its `clip`, `mask` and `matte`, then `opacity` and `blendMode`. A shadow or glow draws past the layer's box, so set `margin` on the composition to the largest reach and nothing is cut off. See [Compositions](/docs/making-videos/compositions/).
 
 ## Remotion's effects
 

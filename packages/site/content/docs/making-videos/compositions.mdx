@@ -25,7 +25,7 @@ registerRoot(() => (
 ));
 ```
 
-The entry must call `registerRoot`. A file that only exports a component is not an entry, and the command stops and says so. The root runs once to find the compositions and draws nothing, so it can compute its list. Two compositions with the same id are an error.
+The entry must call `registerRoot`.
 
 ## Composition props
 
@@ -35,11 +35,11 @@ The entry must call `registerRoot`. A file that only exports a component is not 
 | `component` | The component that draws a frame. |
 | `durationInFrames`, `fps`, `width`, `height` | The length, frame rate and size. |
 | `defaultProps` | The props the component gets when `--props` does not set them. |
-| `schema` | A zod 4 schema. [Studio](/docs/studio/#props-and-presets) draws a form from it. Props are not checked against it in a render. |
-| `background` | The background colour of every frame. The default is transparent. Use it in place of a full-size rectangle at the bottom, because it also fills the margin that effects read past the edge. |
-| `margin` | The least margin in pixels around the canvas, for effects that draw past its edge. |
+| `schema` | A zod 4 schema. [Studio](/docs/studio/#props-and-presets) draws a form from it. |
+| `background` | The background colour of every frame. The default is transparent. |
+| `margin` | Pixels of room around the canvas, for effects that draw past its edge. |
 
-`Still` declares a one-frame composition, so it takes no length or frame rate. `Folder` wraps compositions and changes nothing in a render.
+`Still` declares a one-frame composition.
 
 ## Props
 
@@ -49,19 +49,13 @@ Props are the values a composition receives, such as a title. Set them from the 
 npx kinetograph render src/index.tsx --comp Card --props '{"title":"Goodbye"}'
 ```
 
-The component gets `defaultProps` with the `--props` values merged over them. `getInputProps()` returns the `--props` object. Props saved as a preset in Studio are a JSON file in `presets/`, and `--props` renders it too.
+Props saved as a preset in Studio are a JSON file in `presets/`, and `--props` renders it too.
 
-## Look at your compositions
-
-```sh
-npx kinetograph compositions src/index.tsx
-```
-
-This lists each composition's id, size, frame rate and length. To draw a frame of one, see [Rendering](/docs/rendering/).
+`npx kinetograph compositions src/index.tsx` lists each composition's id, size, frame rate and length.
 
 ## HTML pages
 
-A page declares its composition on the root element: `data-composition-id`, `data-width`, `data-height` and `data-duration` in seconds, at 30 fps. Without them the page renders at 1920 by 1080 for 1 second, and the commands warn. Props reach a mounted composition through `data-variable-values`, and its script reads them with `window.__hyperframes.getVariables()`. See [HyperFrames projects](/docs/compat/#hyperframes-projects).
+A page declares its composition on the root element: `data-composition-id`, `data-width`, `data-height` and `data-duration` in seconds. See [HyperFrames projects](/docs/compat/#hyperframes-projects).
 
 ## Suggested prompt
 

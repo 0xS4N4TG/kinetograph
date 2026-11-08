@@ -17,8 +17,6 @@ export const Pop = () => {
 };
 ```
 
-`useVideoConfig()` gives `fps`, `width`, `height` and `durationInFrames` of the composition.
-
 ## interpolate
 
 `interpolate(frame, inputRange, outputRange, options)` maps a number from one range to another. Without `extrapolateLeft` and `extrapolateRight` set to `'clamp'`, values keep going past the ends.
@@ -31,17 +29,15 @@ const opacity = interpolate(frame, [0, 20, 40, 60], [0, 1, 1, 0], { easing: Easi
 const colour = interpolateColors(frame, [0, 60], ['#14171f', '#f6c177']);
 ```
 
-- `easing` is one function, or an array with one for each segment. `posterize` holds the input at multiples of a step, so the output moves in steps.
-- The output range can be numbers, colours, CSS strings such as `'45deg'` or `'0px 10%'`, and font weights.
-- A numeric prop of a native element can also take a list of keyframes.
+The output range can be numbers, colours or CSS strings such as `'45deg'`.
 
 ## spring
 
-`spring({ frame, fps, config })` gives a value that moves from 0 to 1 like a spring. `config` takes `damping`, `stiffness`, `mass` and `overshootClamping`. `delay`, `durationInFrames` and `reverse` also work, and `measureSpring()` returns how many frames a spring takes to settle.
+`spring({ frame, fps, config })` gives a value that moves from 0 to 1 like a spring. `config` takes `damping`, `stiffness` and `mass`.
 
 ## Easing
 
-`Easing` has `linear`, `ease`, `quad`, `cubic`, `poly`, `sin`, `circle`, `exp`, `elastic`, `back`, `bounce`, `spring` and `bezier`. Wrap a curve in `Easing.in`, `Easing.out` or `Easing.inOut` to set how it eases. `Easing.step0` and `Easing.step1` step instead of blending.
+`Easing` has `linear`, `ease`, `quad`, `cubic`, `sin`, `elastic`, `back`, `bounce` and `bezier`. Wrap a curve in `Easing.in`, `Easing.out` or `Easing.inOut`.
 
 ## Sequence, Series, Loop and Freeze
 
@@ -77,23 +73,11 @@ export const Timeline = () => (
 
 ## Randomness
 
-`random('seed')` returns the same number between 0 and 1 for the same seed, and it is bit for bit the same as Remotion's. Use a name or a number built from the frame or an index:
-
-```tsx title="src/Dots.tsx"
-import { Ellipse, random } from '@kinetographdev/core';
-
-export const Dots = () => (
-  <>
-    {Array.from({ length: 40 }, (_, i) => (
-      <Ellipse key={i} x={random(`x-${i}`) * 1280} y={random(`y-${i}`) * 720} width={12} height={12} fill="#ffffff" />
-    ))}
-  </>
-);
-```
+`random('seed')` returns the same number between 0 and 1 for the same seed, bit for bit the same as Remotion's. Use it for anything that must be the same every time.
 
 ## Determinism
 
-A frame depends only on the project and its number, so the same frame is the same picture in every render, in any order, on any worker. `Date.now()`, `new Date()`, `Math.random()`, timers and `requestAnimationFrame` follow the frame clock, not the real one. Do not read the system time, and do not draw on top of what an earlier frame drew. Use `random(seed)` for anything that must be the same every time.
+A frame depends only on the project and its number, so the same frame is the same picture in every render. `Date.now()`, `Math.random()`, timers and `requestAnimationFrame` follow the frame clock. Do not draw on top of what an earlier frame drew.
 
 ## Suggested prompt
 

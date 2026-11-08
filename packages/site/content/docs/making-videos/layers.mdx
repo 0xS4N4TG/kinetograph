@@ -18,29 +18,13 @@ export const Card = () => (
 );
 ```
 
-Later children are drawn over earlier ones. `x` and `y` move a layer inside its parent, so the children of the `Layer` above move with it. Raw text outside `Text` is an error.
+Later children are drawn over earlier ones. `x` and `y` move a layer inside its parent, so the children of the `Layer` above move with it.
 
 ## The elements
 
-| Element | Draws |
-|---|---|
-| `Layer` | A group of layers. Takes `layout` for flexbox and `preserve3d` for 3D. |
-| `Rect`, `Ellipse`, `Path`, `Shape` | Shapes, with `fill` and `stroke`. `Rect` also takes `radius`. |
-| `Text` | Text in a [registered font](/docs/making-videos/fonts/): `font`, `weight`, `fontStyle`, `size`, `color`, `lineHeight`, `maxWidth`, `align` and `chars`. |
-| `Image`, `Img` | A picture file. See [Assets](/docs/making-videos/assets/). |
-| `Video`, `OffthreadVideo`, `Gif`, `Audio` | Video, animated GIFs and sound. |
-| `Noise`, `MeshGradient` | Noise and mesh gradients. |
-| `Canvas`, `GlslShader` | Canvas 2D and GLSL drawing. See [Shaders](/docs/making-videos/shaders/). |
-| `Lottie` | A Lottie animation, from `src` or `animationData`. |
-| `Scene3D` and its children | A 3D scene. See [Transforms](/docs/making-videos/transforms/#3d-scenes). |
+`Layer` (a group), `Rect`, `Ellipse`, `Path`, `Shape`, `Text` (in a [registered font](/docs/making-videos/fonts/)), `Image` (see [Assets](/docs/making-videos/assets/)), `Video`, `Gif`, `Audio`, `Noise`, `MeshGradient`, `Canvas`, `GlslShader` (see [Shaders](/docs/making-videos/shaders/)), `Lottie` and `Scene3D` (see [Transforms](/docs/making-videos/transforms/#3d-scenes)). `<div>`, `className`, stylesheets and SVG work too, and the engine draws them; use the native elements for new work.
 
-`<div>`, `className`, stylesheets and SVG work too, and the engine's own CSS engine draws them. Use the native elements for new work. Remotion's `AbsoluteFill` fills the composition and stacks its children over the layers below it.
-
-## Common props
-
-Every element takes `id`, `x`, `y`, `scale`, `rotation`, `opacity`, `blendMode`, `effects`, `clip`, `mask`, `matte` and `motionBlur`, and the 3D props `z`, `rotateX` and `rotateY`. The position and turn props are on [Transforms](/docs/making-videos/transforms/). Numbers can be plain, or computed from the frame.
-
-Give an `id` to a layer that a matte uses, or one whose name should survive changes to the tree. Without one the layer is named after its place in the tree, and two layers with the same `id` are an error.
+Every element takes `id`, `x`, `y`, `scale`, `rotation`, `opacity`, `blendMode`, `effects`, `clip`, `mask`, `matte` and `motionBlur`. The position and turn props are on [Transforms](/docs/making-videos/transforms/). Give an `id` to a layer that a matte uses.
 
 ## Group and arrange
 
@@ -58,11 +42,11 @@ export const Row = () => (
 );
 ```
 
-`layout` takes `flexDirection`, `flexWrap`, `justifyContent`, `alignItems`, `alignContent`, `gap`, `padding`, `width` and `height`. `layoutItem` takes how one child joins in, such as `flexGrow`, `margin` and `position`. The full tables are in the [scene format](/docs/reference/scene-format/#layout).
+The options are in the [scene format](/docs/reference/scene-format/#layout).
 
 ## Clip, mask and matte
 
-Three props cut a layer. They run in this order, after its `effects`: `clip`, then `mask`, then `matte`. After that come `opacity` and `blendMode`.
+Three props cut a layer.
 
 ```tsx title="src/Cutouts.tsx"
 import { Image, Layer, Text, radialGradient, staticFile } from '@kinetographdev/core';
@@ -83,13 +67,13 @@ export const Cutouts = () => (
 );
 ```
 
-- **`clip`** cuts to a shape: `polygon`, `inset`, `ellipse` or `path`. Its numbers can animate. `inset` is measured from the layer's own box and needs a layer with a box, so it does not work on a group without a `layout`.
+- **`clip`** cuts to a shape: `polygon`, `inset`, `ellipse` or `path`. Its numbers can animate.
 - **`mask`** fades the layer by a gradient. `mode: 'alpha'` keeps it where the gradient is opaque, and `'luminance'` where it is light.
-- **`matte`** cuts the layer by another layer, the matte source, named by `id`. The source must be a sibling, is not drawn on its own, and can move, blur or fade. `mode` is `alpha`, `alphaInverted`, `luminance`, `luminanceInverted` or `srgbLuminance`.
+- **`matte`** cuts the layer by another layer, the matte source, named by `id`. The source must be a sibling and is not drawn on its own.
 
 ## Blend modes
 
-`blendMode` takes the 16 modes of CSS: `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `colorDodge`, `colorBurn`, `hardLight`, `softLight`, `difference`, `exclusion`, `hue`, `saturation`, `color` and `luminosity`. Layers blend in sRGB, like a browser. A [JSON scene](/docs/reference/scene-format/) can set `blendSpace: 'linear'` for linear-light blending.
+`blendMode` takes the 16 modes of CSS, such as `multiply`, `screen` and `overlay`.
 
 ## Suggested prompt
 

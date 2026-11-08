@@ -29,9 +29,7 @@ export const Subtitles = () => {
 
 ## The functions
 
-- `parseSrt({ input })` and `parseVtt({ input })` return `{ captions }`. Each caption has `text`, `startMs`, `endMs`, `timestampMs` and `confidence`.
-- `serializeSrt({ lines })` writes captions back to SRT.
-- `createTikTokStyleCaptions({ captions, combineTokensWithinMilliseconds })` groups word captions into pages. Each page has `text`, `startMs`, `durationMs` and `tokens`, and lasts until the next page begins. Use a page to highlight the word that is being said.
+`parseSrt` and `parseVtt` return `{ captions }`. `createTikTokStyleCaptions` groups word captions into pages, so you can highlight the word being said.
 
 Read the file at the top of the module, once. Kinetograph does not make the timings. Bring them from your own speech-to-text tool.
 

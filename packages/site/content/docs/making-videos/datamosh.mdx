@@ -28,7 +28,7 @@ The pig clip's motion drags the pixels of frame 90 of the clouds clip for 45 fra
 
 | Option | What it does |
 |---|---|
-| `from`, `to` | The window, in frames of the Sequence. It runs from `from` up to, but not including, `to`. At most 600 frames. |
+| `from`, `to` | The window, in frames of the Sequence. |
 | `hold` | The picture that gets pushed. `'previous'` (default) is the clip's own frame before `from`. `{ src, frame }` is a frame of another file. |
 | `mix` | 0 to 1, default 0. At 0 the old picture only melts. Higher values let the new shot's detail show through. |
 
@@ -36,4 +36,4 @@ The pig clip's motion drags the pixels of frame 90 of the clouds clip for 45 fra
 
 - The clip must be H.264 or MPEG-4, the codecs that store motion vectors. Any other codec is drawn without the effect and warns. With `--strict` the render stops.
 - A `<Video>` with a CSS `style` or a `className` can't take `datamosh`. Use `width`, `height` and `fit`.
-- Each frame is built from the start of the window, so a window is capped at 600 frames. Rendering in order costs about 15 ms per frame at 1080p.
+- A window is capped at 600 frames.

@@ -24,10 +24,7 @@ export const Headline = () => {
 
 ## The functions
 
-- `measureText({ text, fontFamily, fontSize, fontWeight, fontStyle, letterSpacing, textTransform })` returns `{ width, height }`.
-- `fitText({ text, withinWidth, fontFamily, ... })` returns the largest `fontSize` at which the text is no wider than `withinWidth`.
-- `fitTextOnNLines({ text, maxLines, maxBoxWidth, maxFontSize, fontFamily, ... })` returns the `fontSize` and the `lines`.
-- `fillTextBox({ maxBoxWidth, maxLines })` adds words one at a time and tells you when the box is full.
+`measureText` returns `{ width, height }`. `fitText` returns the largest `fontSize` that fits within a width, `fitTextOnNLines` returns the `fontSize` and the `lines`, and `fillTextBox` tells you when a box is full.
 
 ## Measuring a layer
 
@@ -36,11 +33,6 @@ export const Headline = () => {
 ```sh
 npx kinetograph inspect src/index.tsx --frame 30
 ```
-
-## Rules
-
-- **Register fonts first.** See [Fonts](/docs/making-videos/fonts/). `validateFontIsLoaded` is accepted, and the font must be registered either way.
-- **Variable fonts** that set `font-variation-settings` per element can measure wider than in Chrome, so a line fitted by `measureText` may wrap.
 
 ## What works
 

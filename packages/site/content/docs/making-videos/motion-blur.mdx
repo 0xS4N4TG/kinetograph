@@ -19,13 +19,9 @@ export const Whip = () => {
 };
 ```
 
-`samples` is how many moments to average, from 2 to 64, default 8. `shutter` is how long the shutter is open, in frames, from 0 to 2, default 0.5. A shutter of 0.5 is a 180 degree shutter, and 1 is a 360 degree one. More samples are smoother and slower, because the layer is drawn once for each.
+`samples` is how many moments to average (default 8), and `shutter` is how long the shutter is open, in frames (default 0.5, a 180 degree shutter). More samples are smoother and slower.
 
-## What blurs
-
-The layer and everything under it blurs: position, rotation, scale, 3D turns, opacity, effect settings and shape changes, and what the children do relative to each other. Put `motionBlur` on the group that moves, so the whole group smears.
-
-`motionBlur({ samples })` also works inside the `effects` array, next to other effects: `effects={[blur(2), motionBlur({ samples: 8 })]}`.
+The layer and everything under it blurs: position, rotation, scale, 3D turns, opacity and effect settings. Put `motionBlur` on the group that moves, so the whole group smears.
 
 ## Remotion's components
 
@@ -44,14 +40,10 @@ export const Comet = () => (
 
 Give the children of a `Trail` no `id`, because they are drawn once for each copy.
 
-## Rules
+## Limits
 
-- **Only the layer moves.** Its parents and the `Camera` are taken at the frame itself, so a camera move is not blurred. Move the layer that has the `motionBlur`.
-- **Nesting.** A `motionBlur` inside a blurred layer is ignored.
-- **3D.** A `preserve3d` layer and its children cannot have `motionBlur`. Wrap the stack in an ordinary `Layer` and blur that.
-- **Noise.** `grain` and a random `dither` use the output frame, so the samples share one pattern. A custom `shader` sees each sub-frame's time.
-- **Still layers.** A layer that does not move can differ from the same layer without `motionBlur` by about 1 part in 1000. Use `shutter: 0`, or leave it out.
-- **Libraries.** For GSAP in a sample, only `onUpdate` runs, not `onStart`, `onComplete`, `onRepeat` or `call()`.
+- Only the layer with `motionBlur` blurs. A camera move is not blurred.
+- A `preserve3d` layer cannot have `motionBlur`. Wrap it in an ordinary `Layer` and blur that.
 
 ## Suggested prompt
 

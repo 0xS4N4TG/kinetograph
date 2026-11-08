@@ -7,7 +7,7 @@ Kinetograph tracks points through a video with Blender's tracker (libmv). You ru
 
 ## Track a point
 
-Find the point in a still of the first frame. You can make one with `ffmpeg -i clip.mp4 -frames:v 1 first.png`. Then run:
+Find the point in a still of the first frame. Then run:
 
 ```sh
 npx kinetograph track public/video/clip.mp4 --point 980,800
@@ -36,34 +36,11 @@ const Label = () => {
 };
 ```
 
-Draw `<Label />` over your `<OffthreadVideo>`. `useTrack` returns:
-
-| Field | What it is |
-|---|---|
-| `x`, `y` | The tracked point, in video pixels. |
-| `rotation` | Degrees the pattern has turned clockwise since the first frame. |
-| `scale` | How much bigger the pattern is than in the first frame. |
-| `corners` | The pattern's four corners, for a corner pin. |
-| `frame`, `tracked` | The clip frame the value comes from, and whether it is the current frame or a held one. |
-
-The clip starts at frame 0 of the Sequence. If the composition and the clip have different frame rates, frames are matched by time. Before the first tracked frame, the first position is used. After the last frame, or after a track is lost, the last position holds.
-
-If you draw the video smaller, larger or moved, apply the same scale and offset to the positions.
+Draw `<Label />` over your `<OffthreadVideo>`. `useTrack` returns `x`, `y`, `rotation` (degrees), `scale` and `corners` (for a corner pin). Before the first tracked frame the first position is used, and after the last frame, or after a track is lost, the last position holds. If you draw the video smaller, larger or moved, apply the same scale and offset to the positions.
 
 ## Options
 
-All defaults are Blender's defaults for a new track.
-
-| Option | Default | What it does |
-|---|---|---|
-| `--model` | `loc` | What the pattern may do: `loc` (move), `locrot`, `locscale`, `locrotscale`, `affine` or `perspective`. Pick one with rotation or scale if you want `rotation` and `scale` to change. |
-| `--pattern`, `--search` | 21, 71 | The size in pixels of the pattern square, and of the area searched for it in the next frame. Fast motion needs a bigger search area. |
-| `--match` | `keyframe` | `keyframe` compares every frame with the first. `previous` compares with the frame before, which follows a changing look but can drift. |
-| `--min-correlation` | 0.75 | A worse match stops the track. Lower it for grainy footage. |
-| `--margin` | 0 | Pixels the pattern keeps from the frame edge. |
-| `--from`, `--to` | the whole clip | The frames to track. |
-| `--backwards` | off | Place the points at `--to` and track towards the start. |
-| `-o` | `<video>.track.json` | Where to write the file. |
+The defaults are Blender's. `--model` sets what the pattern may do (`loc`, `locrot`, `locscale`, `locrotscale`, `affine` or `perspective`): pick one with rotation or scale if you want `rotation` and `scale` to change. `--pattern` and `--search` set the pattern and search sizes in pixels, and fast motion needs a bigger search area. `--min-correlation` (0.75) stops a track on a worse match, so lower it for grainy footage. `--from` and `--to` pick the frames. The [CLI reference](/docs/reference/cli/) lists the rest.
 
 ## Find points automatically
 
@@ -73,14 +50,7 @@ All defaults are Blender's defaults for a new track.
 npx kinetograph track public/video/clip.mp4 --detect
 ```
 
-The points are named `p1`, `p2` and so on, after any `--point` you also give. The defaults find only the strongest few corners. To find more, lower the threshold or the distance.
-
-| Option | Default | What it does |
-|---|---|---|
-| `--detect-threshold` | 0.5 | How strong a corner must be. 0.05 finds many more. |
-| `--detect-distance` | 120 | The least number of pixels between points. |
-| `--detect-margin` | 16 | Pixels from the frame edge where nothing is detected. |
-| `--detect-inside`, `--detect-outside` | | Keep only points inside (or outside) a polygon, written `x,y,x,y,...` in video pixels. Repeat for more polygons. |
+The points are named `p1`, `p2` and so on. The defaults find only the strongest few corners; `--detect-threshold 0.05` finds many more.
 
 ## Pin a picture to a surface
 
@@ -91,9 +61,7 @@ npx kinetograph track public/video/clip.mp4 --point 820,540 --point 1250,430 --p
   --plane screen=p1,p2,p3,p4 --plane-corners screen=700,300,1300,320,1280,700,720,680
 ```
 
-`--plane-corners` sets the plane's corners on the first frame tracked. The order is top-left, top-right, bottom-right, bottom-left, as x,y pairs in video pixels. Without it, the plane starts as the box around the points' patterns. `--plane all` uses every tracked point.
-
-Pick points that are on the surface and spread out. Do not pick three on one line.
+`--plane-corners` sets the plane's corners on the first frame tracked, as x,y pairs from top-left clockwise. Pick points that are on the surface and spread out, not three on one line.
 
 In the composition, `usePlaneTrack()` gives the corners for the current frame, ready for the `cornerPin` effect:
 
@@ -106,20 +74,10 @@ const Screen = () => {
 };
 ```
 
-The picture's four corners go to the plane's four corners, whatever its size. Draw `<Screen />` in a full-frame layer over the video, with the video at its own size.
-
-## Steady a shot
-
-There is no stabiliser, but a track can make one. Apply the opposite of the tracked point's motion to the video: `translate(-x, -y)`, `rotate(-rotation)` and `scale(1 / scale)`, then move the result back to where the point started. Get that start with `trackAt(file, 0, 'anchor')`.
-
-Track with `--model locrotscale` to undo rotation and zoom too. Wrap the video in a `scale(1.1)` layer so the frame edges stay out of view. That hides a shake, but a large camera move still shows the edges.
+Draw `<Screen />` in a full-frame layer over the video.
 
 ## When a track is lost
 
 A track stops where Blender's would. That is when the best match is below the minimum correlation, falls outside the search area, or reaches the frame edge. The command prints the frame, the file lists it in `lost`, and the position holds from there.
 
 To track further, try a bigger pattern, a bigger search area, a lower `--min-correlation`, or a point with more texture.
-
-## Match with Blender
-
-Kinetograph drives libmv the way Blender's "Track Markers" does, with Blender's defaults. On the same clip with the same settings, the same frames are tracked and lost. `scripts/track-parity/` in the repository runs that comparison.

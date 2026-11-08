@@ -21,7 +21,7 @@ export const Leak = () => (
 );
 ```
 
-`seed` picks another leak, and `hueShift` turns its colour by 0 to 360 degrees. `durationInFrames` defaults to what is left of the enclosing `Sequence`. Of `style`, only `opacity` and `mixBlendMode` apply, and a light leak blends with `screen`.
+`seed` picks another leak, and `hueShift` turns its colour by 0 to 360 degrees.
 
 ## Starburst
 
@@ -32,8 +32,6 @@ import { Starburst } from '@kinetographdev/core/starburst';
 
 export const Burst = () => <Starburst rays={12} colors={['#f6c177', '#eb6f92']} smoothness={0.3} />;
 ```
-
-It takes `rays` (2 to 100), `colors` (at least two), `rotation`, `smoothness`, `vignette`, `originOffsetX` and `originOffsetY`.
 
 ## As an effect
 

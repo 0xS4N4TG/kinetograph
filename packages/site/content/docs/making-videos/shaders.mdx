@@ -25,7 +25,7 @@ export const Waves = () => {
 };
 ```
 
-The shader has no clock, so work its `uniforms` out from the frame. `gl_FragCoord` counts up from the bottom row, as in a browser. The shader is GLSL ES 100 or `300 es`.
+The shader has no clock, so work its `uniforms` out from the frame.
 
 ## Canvas 2D
 
@@ -54,19 +54,11 @@ export const Rings = () => {
 };
 ```
 
-A `<canvas>` element with `getContext('2d')`, as a Remotion project writes it, is drawn too: paths, gradients, text, shadows, filters, `drawImage` and `getImageData`. A canvas you draw to in a frame starts that frame empty, so redraw the whole frame every time.
+A `<canvas>` element with `getContext('2d')`, as a Remotion project writes it, is drawn too. A canvas starts every frame empty, so redraw the whole frame every time.
 
-## WebGL
+## WebGL and WebGPU
 
-A `<canvas>` with a `webgl` or `webgl2` context runs on the GPU, so existing shader code, Shadertoy ports and p5.brush work as they are. Every frame starts with an empty canvas, even with `preserveDrawingBuffer`, because a frame is a function of its own number. Call `viewport` after binding a framebuffer, as GL needs.
-
-## WebGPU
-
-`canvas.getContext('webgpu')` records its calls, and the passes it submits are drawn on the engine's own device. WGSL modules, render and compute pipelines, 2D textures, storage buffers and multi-pass shaders work. A simulation that keeps state from earlier frames is replayed, so it is right in a sequence. A frame drawn alone cannot have that state, so it is reported.
-
-## A WGSL effect
-
-`shader({ code, uniforms })` in `effects` runs WGSL over a layer's pixels. See [Effects](/docs/making-videos/effects/).
+A `<canvas>` with a `webgl`, `webgl2` or `webgpu` context runs on the GPU, so existing shader code, Shadertoy ports and p5.brush work as they are. Every frame starts with an empty canvas. `shader({ code, uniforms })` in `effects` runs WGSL over a layer's pixels: see [Effects](/docs/making-videos/effects/).
 
 ## Suggested prompt
 
@@ -77,6 +69,6 @@ A `<canvas>` with a `webgl` or `webgl2` context runs on the GPU, so existing sha
 ## What works
 
 - Drawn natively: Canvas 2D, GLSL, WebGL and WebGL 2 fragment shaders, framebuffers, instancing, depth and stencil, and WebGPU render and compute passes.
-- Approximated: the WebGL depth buffer holds 32-bit floats, a depth texture is sampled `NEAREST`, and points are squares of at most 511 px. An `rgba16float` or `display-p3` WebGPU canvas is clipped to SDR sRGB.
-- Not supported: WebGL multisampled renderbuffers, `readPixels`, lines, cube textures and float render targets. WebGPU query sets, render bundles, indirect draws, depth and stencil, multisampling, texture arrays, readback and `importExternalTexture` (use `copyExternalImageToTexture`).
+- Approximated: an `rgba16float` or `display-p3` WebGPU canvas is clipped to SDR sRGB.
+- Not supported: WebGL multisampled renderbuffers, `readPixels`, lines, cube textures and float render targets, and several WebGPU features (query sets, render bundles, indirect draws, multisampling, readback).
 - `doctor` lists each of these with its frames, and a project that needs state from earlier frames. See [What works](/docs/compat/#webgl).
