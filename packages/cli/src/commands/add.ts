@@ -36,6 +36,7 @@ export const add: Command = {
     { name: 'yes', short: 'y', type: 'boolean', description: 'Install missing npm packages without asking. Without it, a terminal asks first; with --json it only prints the command' },
     { name: 'search', type: 'string', description: 'With `add hyperframes`, list the HyperFrames items whose name, description or tags have these words' },
     { name: 'ref', type: 'string', description: 'With hyperframes items, the HyperFrames registry commit, branch or tag to read (default: a pinned commit; `main` is the latest)' },
+    { name: 'keep-remote', type: 'boolean', description: "With hyperframes items, leave the Google Fonts, font files and data files an item loads from the web as they are. By default they are downloaded into public/fonts and public/data, with each font's licence, so a render never needs the network" },
     { name: 'dir', type: 'string', description: 'The project folder (default: the current folder, or the nearest one above it with a package.json)' },
   ],
   async run(args, context) {
@@ -98,6 +99,7 @@ async function addFromHyperframes(args: Parameters<Command['run']>[0], context: 
     dir: String(args.options.dir ?? '.'),
     source,
     overwrite: args.options.overwrite === true,
+    localize: args.options['keep-remote'] !== true,
     progress: context.progress,
   });
   return { data: result, text: describeHyperframesAdd(result) };

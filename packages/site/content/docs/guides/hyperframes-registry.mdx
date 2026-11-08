@@ -18,12 +18,27 @@ npx kinetograph add hyperframes/aurora
 - writes its files where `hyperframes add` does: blocks in `compositions/`, components in `compositions/components/`, pictures and fonts in `assets/`, in the folder that holds your `index.html` (or `hyperframes.json`, whose `paths` it follows; in a project made by `init --html`, the `html/` folder);
 - moves the `TEMPLATE.md`, `models/` and `lib/` files that some items put at the project root into `compositions/<name>/`, `assets/models/` and `compositions/lib/`, and updates the paths in the item's own files;
 - downloads the pictures, fonts and models an item keeps on HeyGen's CDN;
+- stores the fonts and data an item loads from the web while it runs, as described in the next section;
 - stops, with nothing written, when a file already exists. A file with the same bytes is left as it is. `--overwrite` replaces the rest;
 - refuses to write outside those folders, to a hidden path, or to `package.json` and `node_modules`.
 
 A block is a composition: mount it from your `index.html` with `data-composition-src`. A component is a snippet to paste into one. The command prints the line to use.
 
 `add hyperframes --list` shows every block and component with its type and description, and `--type block|component` narrows it. The list is cached for a day. `--ref <commit|branch|tag>` reads another version of the registry. The default is a pinned commit, so an install gives the same files next month; `--ref main` is the latest.
+
+## Fonts and files loaded from the web
+
+Many items name a Google Fonts stylesheet, a font file on a CDN or a JSON file to fetch. A browser loads those when the page runs; Kinetograph's render never touches the network. So `add` downloads them with the item, and the item then names the copies:
+
+| The item has | `add` stores | And changes |
+|---|---|---|
+| `<link>` or `@import` of `fonts.googleapis.com/css2?…` | one font file per face, in `public/fonts/<family>/` | the link, into `@font-face` rules for those files |
+| a font file at `fonts.gstatic.com/s/…` or `cdn.jsdelivr.net/fontsource/fonts/…` in CSS | the file, in `public/fonts/<family>/` | the `url()` |
+| a `.json` file at `cdn.jsdelivr.net/npm/<package>@<version>/…` in a script | the file, in `public/data/<package>-<version>/` | the URL, which `fetch` then reads from the project |
+
+Each font family gets its licence text beside it (`OFL.txt`, `LICENSE.txt` or `LICENSE-UFL.txt`, from the Google Fonts repository). The command prints the licence of every family it stored, and warns when it finds none. Keep these files with the project.
+
+Only those hosts and paths are read: https, no credentials, every redirect checked, a size limit on each file and a timeout. A reference to anything else is left as written, and `doctor` reports it. A font that cannot be downloaded is a warning, and the item keeps its original link. `--keep-remote` skips all of this. A font file already in `public/fonts` is kept as it is, so a font you replaced stays yours.
 
 ## Licences
 

@@ -52,13 +52,13 @@ Installs a component, template or taste from the Kinetograph registry into the p
 ```sh
 npx kinetograph add <name...> [--overwrite] [--yes] [--dir <folder>]
 npx kinetograph add --list [--type component|template|taste]
-npx kinetograph add hyperframes/<name...> [--ref <commit>] [--overwrite] [--dir <folder>]
+npx kinetograph add hyperframes/<name...> [--ref <commit>] [--keep-remote] [--overwrite] [--dir <folder>]
 npx kinetograph add hyperframes (--list | --search <text>) [--type block|component]
 ```
 
 Components go to `src/components/<name>/`, templates to `src/templates/<name>/`, tastes to `src/tastes/<name>/`, and their pictures, fonts and audio to `public/<kind>/<name>/`. Items an item depends on are installed first. A file that already exists is skipped and reported; `--overwrite` replaces it. If the item needs npm packages the project lacks, the command shows them and asks before installing (`--yes` skips the question; with `--json` or no terminal it only prints the install command). Run it inside a project made by `init`. An item that is not published yet says so and installs nothing.
 
-`add hyperframes/<name>` (or `hf/<name>`) installs a block or component from HeyGen's [HyperFrames registry](/docs/guides/hyperframes-registry/); `add hyperframes --list` and `--search <text>` list its items, and a file that exists stops the install unless `--overwrite` is given.
+`add hyperframes/<name>` (or `hf/<name>`) installs a block or component from HeyGen's [HyperFrames registry](/docs/guides/hyperframes-registry/); `add hyperframes --list` and `--search <text>` list its items, and a file that exists stops the install unless `--overwrite` is given. The Google Fonts, font files and JSON files an item loads from the web are downloaded into `public/fonts` and `public/data` with the install (`--keep-remote` leaves them as written).
 
 ## compositions
 

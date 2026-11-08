@@ -125,8 +125,11 @@ function fileUrl(itemUrl: URL | undefined, url: string): URL {
   return resolved;
 }
 
-/** One GET over https, following at most 3 redirects (each to https), refusing more than `limit` bytes. */
-export async function download(url: URL, limit: number, fetchImpl: typeof fetch, notFound?: string, hosts?: readonly string[]): Promise<Uint8Array> {
+/**
+ * One GET over https, following at most 3 redirects (each to https), refusing more than `limit` bytes. `accept`, when
+ * given, is asked about the first URL and about each redirect's, and a URL it refuses stops the download.
+ */
+export async function download(url: URL, limit: number, fetchImpl: typeof fetch, notFound?: string, hosts?: readonly string[], accept?: (url: URL) => boolean): Promise<Uint8Array> {
   const origin = url.origin;
   for (let hops = 0; ; hops++) {
     if (url.protocol !== 'https:') throw new CliError('INSECURE_URL', `${url.href} is not an https URL`);
@@ -134,6 +137,7 @@ export async function download(url: URL, limit: number, fetchImpl: typeof fetch,
     if (hosts !== undefined && (url.username !== '' || url.password !== '' || url.port !== '' || !hosts.includes(url.hostname))) {
       throw new CliError('UNSAFE_URL', `${url.href} is not on an allowed host (${hosts.join(', ')})`);
     }
+    if (accept !== undefined && !accept(url)) throw new CliError('UNSAFE_URL', `${url.href} is not a file this download may read`);
     let response: Response;
     try {
       // Credentials go only to the origin the download started at, never after a redirect elsewhere, and never to `hosts`.

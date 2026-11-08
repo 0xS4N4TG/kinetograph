@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { CliError } from '../errors.js';
 import { isItemName, pathProblem } from './item.js';
 import { download, MAX_FILE_BYTES, MAX_JSON_BYTES } from './source.js';
+import { Localizer, type LocalAsset, type LocalFileKind, type LocalFont } from './hyperframes-assets.js';
 
 export const HYPERFRAMES_REPO = 'heygen-com/hyperframes';
 /**
@@ -76,6 +77,8 @@ export interface HyperframesSource {
   readonly ref: string;
   /** `https://raw.githubusercontent.com/<repo>/<ref>/registry`. */
   readonly base: string;
+  /** The `fetch` the source reads with (the font and data downloads of an install use it too). */
+  readonly fetch: typeof fetch;
   /** Block and component names with their type, from `registry.json` (cached for a day). */
   manifest(): Promise<{ name: string; type: HyperframesType }[]>;
   /** One item's `registry-item.json`, checked. */
@@ -173,6 +176,7 @@ export function openHyperframes(options: HyperframesOptions = {}): HyperframesSo
   const source: HyperframesSource = {
     ref,
     base,
+    fetch: fetchImpl,
     manifest: () =>
       cached('manifest', async () => {
         const parsed = manifestSchema.safeParse(parseJson(await get('registry.json', MAX_JSON_BYTES), 'registry.json'));
@@ -333,6 +337,11 @@ export function placeTarget(target: string, item: { name: string; kind: Hyperfra
 
 const TEXT_FILE = /\.(html?|css|m?js)$/i;
 
+/** What a page or script may name that `Localizer` stores in the project; a file without any of it is not read for them. */
+const WEB_REFERENCE = /fonts\.googleapis\.com|fonts\.gstatic\.com|cdn\.jsdelivr\.net\/(?:fontsource|npm)\//;
+
+const localKind = (target: string): LocalFileKind | undefined => (/\.html?$/i.test(target) ? 'html' : /\.css$/i.test(target) ? 'css' : /\.m?js$/i.test(target) ? 'js' : undefined);
+
 /**
  * `text` with each path in `moves` that appears as a quoted (or `url(`) path, with or without a leading `./`, replaced
  * by where the file went. A longer path that merely ends in the old one (`other/models/a.glb`) is left alone.
@@ -355,10 +364,10 @@ const FORBIDDEN_NAMES = new Set(['package.json', '.git', '.github', 'node_module
  * the blocks, components or assets folder (or `compositions/`, `assets/`), with every segment made of letters, digits, ".", "_" and "-" (starting with a letter or digit, not ending in "."),
  * and none of them `package.json`, `.git`, `.github` or `node_modules`.
  */
-export function hyperframesTargetProblem(target: string, paths: { blocks: string; components: string; assets: string }): string | undefined {
+export function hyperframesTargetProblem(target: string, paths: { blocks: string; components: string; assets: string }, extraRoots: readonly string[] = []): string | undefined {
   const problem = pathProblem(target);
   if (problem !== undefined) return problem;
-  const roots = new Set([paths.blocks, paths.components, paths.assets, 'compositions', 'assets']);
+  const roots = new Set([paths.blocks, paths.components, paths.assets, 'compositions', 'assets', ...extraRoots]);
   if (![...roots].some((root) => target.startsWith(`${root}/`) && target.length > root.length + 1)) {
     return `is outside the ${[...roots].join(', ')} folders`;
   }
@@ -376,6 +385,11 @@ export interface HyperframesAddOptions {
   dir: string;
   source: HyperframesSource;
   overwrite: boolean;
+  /**
+   * Download the Google Fonts, font files and data files an item loads from the web into the project and point the
+   * item at them (default true; `false` leaves the item as it is written).
+   */
+  localize?: boolean;
   progress?: (message: string) => void;
 }
 
@@ -391,6 +405,8 @@ export interface HyperframesAdded {
   unchanged: string[];
   /** Licence and notice files the item ships, among `written` and `unchanged`. */
   licences: string[];
+  /** The font families stored in the project for the item (from Google Fonts or a font CDN), with their licences and files. */
+  fonts: LocalFont[];
   dimensions?: { width: number; height: number };
   duration?: number;
 }
@@ -477,15 +493,44 @@ export async function addHyperframes(options: HyperframesAddOptions): Promise<Hy
     }
   }
 
+  // What an item loads from the web while it runs (Google Fonts, font files, data files) is stored in the project, and the
+  // item's pages and scripts name the copies. Before anything is written, like every other download.
+  const fonts = new Map<string, LocalFont[]>();
+  const extras = new Map<string, LocalAsset[]>();
+  if (options.localize !== false) {
+    for (const { item, files } of plan) {
+      const localizer = new Localizer({ fetch: source.fetch, progress });
+      for (const f of files) {
+        const kind = localKind(f.target);
+        if (kind === undefined) continue;
+        const before = Buffer.from(f.data!).toString('utf8');
+        if (!WEB_REFERENCE.test(before)) continue;
+        const after = await localizer.localize(before, f.target, kind);
+        if (after !== before) f.data = Buffer.from(after, 'utf8');
+      }
+      for (const asset of localizer.assets.values()) {
+        const problem = hyperframesTargetProblem(asset.target, paths, ['public/fonts', 'public/data']);
+        if (problem !== undefined) throw new CliError('UNSAFE_TARGET', `${item.name}: a file stored for it ("${asset.target}") ${problem}`);
+      }
+      extras.set(item.name, [...localizer.assets.values()]);
+      fonts.set(item.name, localizer.localFonts);
+      for (const w of localizer.warnings) warnings.push(`${item.name}: ${w}`);
+    }
+  }
+
   // Decide every file before the first write. A file already there is an error unless it holds the same bytes.
   const planned = new Map<string, Uint8Array>();
   const refused: string[] = [];
   const decided = plan.map(({ item, files }) => ({
     item,
-    files: files.map(({ target, data }) => {
+    files: [
+      ...files.map(({ target, data }) => ({ target, data, keep: false })),
+      ...(extras.get(item.name) ?? []).map(({ target, data, keep }) => ({ target, data, keep })),
+    ].map(({ target, data, keep }) => {
       const bytes = data!;
       const before = planned.get(target) ?? existing(root, target);
-      planned.set(target, bytes);
+      planned.set(target, before !== undefined && keep ? before : bytes);
+      if (before !== undefined && keep) return { target, bytes: before, action: 'unchanged' as const };
       if (before !== undefined && same(before, bytes)) return { target, bytes, action: 'unchanged' as const };
       if (before !== undefined && !overwrite) {
         refused.push(target);
@@ -511,6 +556,7 @@ export async function addHyperframes(options: HyperframesAddOptions): Promise<Hy
       written: [],
       unchanged: [],
       licences: [],
+      fonts: fonts.get(item.name) ?? [],
       ...(item.dimensions !== undefined ? { dimensions: item.dimensions } : {}),
       ...(item.duration !== undefined ? { duration: item.duration } : {}),
     };
@@ -546,6 +592,7 @@ export function describeHyperframesAdd(result: HyperframesAddResult): string {
     lines.push(`${item.title} (hyperframes/${item.name}, ${item.type}): ${item.written.length} file${item.written.length === 1 ? '' : 's'} written${item.unchanged.length > 0 ? `, ${item.unchanged.length} already there` : ''}`);
     for (const file of item.written) lines.push(`  wrote      ${file}`);
     for (const file of item.unchanged) lines.push(`  unchanged  ${file}`);
+    for (const font of item.fonts) lines.push(`  font       ${font.family} (${font.licence}) stored in the project: ${font.files.length} file${font.files.length === 1 ? '' : 's'}`);
   }
   for (const warning of result.warnings) lines.push(`warning: ${warning}`);
   if (result.next.length > 0) lines.push('next:', ...result.next.map((step) => `  ${step}`));
