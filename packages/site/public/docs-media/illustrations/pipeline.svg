@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 690" width="720" height="690" role="img">
+<title>How a project becomes a video</title>
+<desc>Five steps from top to bottom: your project (TSX or an HTML page), Node runs it for each frame with the React reconciler or the HyperFrames runtime, the result is scene JSON, a Rust GPU compositor in an N-API addon draws it, and FFmpeg encodes the video. A dashed outline marks the whole path as having no browser.</desc>
+<rect x="14" y="14" width="692" height="662" rx="18" fill="none" stroke="#2238c4" stroke-width="1.5" stroke-dasharray="7 6"/>
+<rect x="40" y="36" width="40" height="28" rx="4" fill="none" stroke="#5e5952" stroke-width="1.5"/>
+<path d="M40 43 H80" stroke="#5e5952" stroke-width="1.5"/>
+<circle cx="46" cy="39.5" r="1.3" fill="#5e5952"/>
+<circle cx="51" cy="39.5" r="1.3" fill="#5e5952"/>
+<circle cx="56" cy="39.5" r="1.3" fill="#5e5952"/>
+<circle cx="60" cy="50" r="24" fill="none" stroke="#c8271c" stroke-width="2.5"/>
+<path d="M43.2 66.8 L76.8 33.2" stroke="#c8271c" stroke-width="2.5" stroke-linecap="round"/>
+<text x="100" y="56" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="20" font-weight="700" fill="#1d1b18" text-anchor="start">No browser in the render path</text>
+<rect x="44" y="100" width="632" height="70" rx="8" fill="#fbf8f0" stroke="#1d1b18" stroke-width="1.5"/>
+<circle cx="72" cy="135" r="13" fill="#2238c4"/>
+<text x="72" y="140" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#f7f4ec" text-anchor="middle">1</text>
+<text x="98" y="142" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="21" font-weight="700" fill="#1d1b18" text-anchor="start">Your project</text>
+<text x="660" y="141" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="end">TSX with Remotion’s API, or an HTML page</text>
+<path d="M360 173 L360 203" fill="none" stroke="#1d1b18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M360 203 L354.5 193.0 L365.5 193.0 Z" fill="#1d1b18" stroke="#1d1b18" stroke-width="1" stroke-linejoin="round"/>
+<text x="374" y="193" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#5e5952" text-anchor="start">for every frame</text>
+<rect x="44" y="206" width="632" height="70" rx="8" fill="#fbf8f0" stroke="#1d1b18" stroke-width="1.5"/>
+<circle cx="72" cy="241" r="13" fill="#2238c4"/>
+<text x="72" y="246" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#f7f4ec" text-anchor="middle">2</text>
+<text x="98" y="248" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="21" font-weight="700" fill="#1d1b18" text-anchor="start">Node runs it</text>
+<text x="660" y="247" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="end">React reconciler or HyperFrames runtime</text>
+<path d="M360 279 L360 309" fill="none" stroke="#1d1b18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M360 309 L354.5 299.0 L365.5 299.0 Z" fill="#1d1b18" stroke="#1d1b18" stroke-width="1" stroke-linejoin="round"/>
+<text x="374" y="299" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#5e5952" text-anchor="start">JSON</text>
+<rect x="44" y="312" width="632" height="70" rx="8" fill="#fbf8f0" stroke="#1d1b18" stroke-width="1.5"/>
+<circle cx="72" cy="347" r="13" fill="#2238c4"/>
+<text x="72" y="352" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#f7f4ec" text-anchor="middle">3</text>
+<text x="98" y="354" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="21" font-weight="700" fill="#1d1b18" text-anchor="start">Scene JSON</text>
+<text x="660" y="353" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="end">layers and DOM islands</text>
+<path d="M360 385 L360 415" fill="none" stroke="#1d1b18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M360 415 L354.5 405.0 L365.5 405.0 Z" fill="#1d1b18" stroke="#1d1b18" stroke-width="1" stroke-linejoin="round"/>
+<text x="374" y="405" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#5e5952" text-anchor="start">frame pixels</text>
+<rect x="44" y="418" width="632" height="70" rx="8" fill="#e4e8f8" stroke="#2238c4" stroke-width="2"/>
+<circle cx="72" cy="453" r="13" fill="#2238c4"/>
+<text x="72" y="458" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#f7f4ec" text-anchor="middle">4</text>
+<text x="98" y="460" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="21" font-weight="700" fill="#2238c4" text-anchor="start">Rust GPU compositor</text>
+<text x="660" y="459" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="end">N-API addon, wgpu and Skia</text>
+<path d="M360 491 L360 521" fill="none" stroke="#1d1b18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M360 521 L354.5 511.0 L365.5 511.0 Z" fill="#1d1b18" stroke="#1d1b18" stroke-width="1" stroke-linejoin="round"/>
+<rect x="44" y="524" width="632" height="70" rx="8" fill="#fbf8f0" stroke="#1d1b18" stroke-width="1.5"/>
+<circle cx="72" cy="559" r="13" fill="#2238c4"/>
+<text x="72" y="564" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#f7f4ec" text-anchor="middle">5</text>
+<text x="98" y="566" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="21" font-weight="700" fill="#1d1b18" text-anchor="start">FFmpeg encode</text>
+<text x="660" y="565" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="end">H.264 by default, audio mixed in</text>
+<path d="M360 597 L360 627" fill="none" stroke="#1d1b18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M360 627 L354.5 617.0 L365.5 617.0 Z" fill="#1d1b18" stroke="#1d1b18" stroke-width="1" stroke-linejoin="round"/>
+<rect x="190" y="630" width="340" height="48" rx="24" fill="#fbf8f0" stroke="#1d1b18" stroke-width="1.5"/>
+<text x="360" y="660" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="400" fill="#1d1b18" text-anchor="middle">Video  ·  out/renders/Main.mp4</text>
+</svg>

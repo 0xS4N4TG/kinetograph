@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 462" width="720" height="462" role="img">
+<title>A frame is a pure function</title>
+<desc>The project and a frame number go into the renderer, and a picture comes out. Rendering the same project and frame again, on another worker or out of order, gives the identical picture. The wall clock is not an input.</desc>
+<rect x="24" y="36" width="190" height="66" rx="8" fill="#fbf8f0" stroke="#1d1b18" stroke-width="1.5"/>
+<text x="119" y="66" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="18" font-weight="700" fill="#1d1b18" text-anchor="middle">Project</text>
+<text x="119" y="88" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="middle">code, props, files</text>
+<rect x="24" y="128" width="190" height="66" rx="8" fill="#fbf8f0" stroke="#1d1b18" stroke-width="1.5"/>
+<text x="119" y="158" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="18" font-weight="700" fill="#1d1b18" text-anchor="middle">Frame number</text>
+<text x="119" y="180" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="400" fill="#5e5952" text-anchor="middle">42</text>
+<path d="M214 69 L256 69 L256 112" fill="none" stroke="#1d1b18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M214 161 L256 161 L256 112" fill="none" stroke="#1d1b18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M256 112 L298 112" fill="none" stroke="#1d1b18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M298 112 L288.0 117.5 L288.0 106.5 Z" fill="#1d1b18" stroke="#1d1b18" stroke-width="1" stroke-linejoin="round"/>
+<rect x="300" y="66" width="150" height="92" rx="8" fill="#e4e8f8" stroke="#2238c4" stroke-width="2"/>
+<text x="375" y="109" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="20" font-weight="700" fill="#2238c4" text-anchor="middle">Render</text>
+<text x="375" y="131" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="middle">pure function</text>
+<path d="M450 112 L512 112" fill="none" stroke="#1d1b18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M512 112 L502.0 117.5 L502.0 106.5 Z" fill="#1d1b18" stroke="#1d1b18" stroke-width="1" stroke-linejoin="round"/>
+<rect x="516" y="56" width="180" height="112" rx="6.75" fill="#14171f" stroke="#1d1b18" stroke-width="1.5"/>
+<rect x="540.75" y="87.36" width="103.5" height="22.400000000000002" rx="3.375" fill="#ffffff" stroke="none" stroke-width="0"/>
+<rect x="540.75" y="123.2" width="69.75" height="11.200000000000001" rx="3.375" fill="#f6c177" stroke="none" stroke-width="0"/>
+<text x="606" y="192" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="middle">pixels</text>
+<path d="M24 226 L696 226" fill="none" stroke="#b9b3a6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 6"/>
+<text x="360" y="262" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="20" font-weight="700" fill="#1d1b18" text-anchor="middle">Same inputs, same picture</text>
+<rect x="60" y="282" width="130" height="82" rx="4.875" fill="#14171f" stroke="#1d1b18" stroke-width="1.5"/>
+<rect x="77.875" y="304.96" width="74.75" height="16.400000000000002" rx="2.4375" fill="#ffffff" stroke="none" stroke-width="0"/>
+<rect x="77.875" y="331.2" width="50.375" height="8.200000000000001" rx="2.4375" fill="#f6c177" stroke="none" stroke-width="0"/>
+<text x="125" y="388" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="middle">first render</text>
+<text x="242.5" y="332" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="28" font-weight="700" fill="#2238c4" text-anchor="middle">=</text>
+<rect x="295" y="282" width="130" height="82" rx="4.875" fill="#14171f" stroke="#1d1b18" stroke-width="1.5"/>
+<rect x="312.875" y="304.96" width="74.75" height="16.400000000000002" rx="2.4375" fill="#ffffff" stroke="none" stroke-width="0"/>
+<rect x="312.875" y="331.2" width="50.375" height="8.200000000000001" rx="2.4375" fill="#f6c177" stroke="none" stroke-width="0"/>
+<text x="360" y="388" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="middle">another worker</text>
+<text x="477.5" y="332" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="28" font-weight="700" fill="#2238c4" text-anchor="middle">=</text>
+<rect x="530" y="282" width="130" height="82" rx="4.875" fill="#14171f" stroke="#1d1b18" stroke-width="1.5"/>
+<rect x="547.875" y="304.96" width="74.75" height="16.400000000000002" rx="2.4375" fill="#ffffff" stroke="none" stroke-width="0"/>
+<rect x="547.875" y="331.2" width="50.375" height="8.200000000000001" rx="2.4375" fill="#f6c177" stroke="none" stroke-width="0"/>
+<text x="595" y="388" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="middle">any order</text>
+<circle cx="46" cy="428" r="14" fill="none" stroke="#c8271c" stroke-width="2.5"/>
+<path d="M36.2 437.8 L55.8 418.2" stroke="#c8271c" stroke-width="2.5" stroke-linecap="round"/>
+<text x="72" y="433" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="start">No wall clock. Date.now(), Math.random() and timers follow the frame.</text>
+</svg>

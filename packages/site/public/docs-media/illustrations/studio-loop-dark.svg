@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 450" width="720" height="450" role="img">
+<title>Studio’s loop</title>
+<desc>A loop of four steps. One: the preview shows frames drawn by the engine. Two: you mark up a frame or a span of time. Three: your coding agent edits the code. Four: the engine redraws the frame, which goes back to the preview.</desc>
+<rect x="24" y="40" width="270" height="100" rx="8" fill="#17171a" stroke="#ededf0" stroke-width="1.5"/>
+<text x="159" y="87" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="20" font-weight="700" fill="#ededf0" text-anchor="middle">Preview</text>
+<text x="159" y="109" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#a1a1aa" text-anchor="middle">the engine draws every frame</text>
+<circle cx="48" cy="64" r="13" fill="#8396ff"/>
+<text x="48" y="69" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#0b0c14" text-anchor="middle">1</text>
+<rect x="426" y="40" width="270" height="100" rx="8" fill="#17171a" stroke="#ededf0" stroke-width="1.5"/>
+<text x="561" y="87" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="20" font-weight="700" fill="#ededf0" text-anchor="middle">You mark up</text>
+<text x="561" y="109" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#a1a1aa" text-anchor="middle">pin, box, pen or a time range</text>
+<circle cx="450" cy="64" r="13" fill="#8396ff"/>
+<text x="450" y="69" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#0b0c14" text-anchor="middle">2</text>
+<rect x="426" y="262" width="270" height="100" rx="8" fill="#17171a" stroke="#ededf0" stroke-width="1.5"/>
+<text x="561" y="309" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="20" font-weight="700" fill="#ededf0" text-anchor="middle">Agent edits code</text>
+<text x="561" y="331" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#a1a1aa" text-anchor="middle">your coding agent edits files</text>
+<circle cx="450" cy="286" r="13" fill="#8396ff"/>
+<text x="450" y="291" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#0b0c14" text-anchor="middle">3</text>
+<rect x="24" y="262" width="270" height="100" rx="8" fill="#17171a" stroke="#ededf0" stroke-width="1.5"/>
+<text x="159" y="309" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="20" font-weight="700" fill="#ededf0" text-anchor="middle">Engine redraws</text>
+<text x="159" y="331" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#a1a1aa" text-anchor="middle">the frame is drawn again</text>
+<circle cx="48" cy="286" r="13" fill="#8396ff"/>
+<text x="48" y="291" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#0b0c14" text-anchor="middle">4</text>
+<path d="M298 90 L422 90" fill="none" stroke="#ededf0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M422 90 L412.0 95.5 L412.0 84.5 Z" fill="#ededf0" stroke="#ededf0" stroke-width="1" stroke-linejoin="round"/>
+<path d="M561 144 L561 258" fill="none" stroke="#ededf0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M561 258 L555.5 248.0 L566.5 248.0 Z" fill="#ededf0" stroke="#ededf0" stroke-width="1" stroke-linejoin="round"/>
+<path d="M422 312 L298 312" fill="none" stroke="#ededf0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M298 312 L308.0 306.5 L308.0 317.5 Z" fill="#ededf0" stroke="#ededf0" stroke-width="1" stroke-linejoin="round"/>
+<path d="M159 258 L159 144" fill="none" stroke="#ededf0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M159 144 L164.5 154.0 L153.5 154.0 Z" fill="#ededf0" stroke="#ededf0" stroke-width="1" stroke-linejoin="round"/>
+<text x="360" y="214" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="22" font-weight="700" fill="#8396ff" text-anchor="middle">Studio</text>
+<text x="360" y="238" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#a1a1aa" text-anchor="middle">repeat until it looks right</text>
+<text x="360" y="410" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="400" fill="#a1a1aa" text-anchor="middle">Each mark carries its frame and the layers under it.</text>
+</svg>

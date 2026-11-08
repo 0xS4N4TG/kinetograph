@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 410" width="720" height="410" role="img">
+<title>Sequences on a timeline</title>
+<desc>A timeline of 120 frames. A Sequence from frame 30 for 60 frames sits on it, and a nested Sequence with from 20 and 30 frames sits inside the first. Frame 50 of the composition is frame 20 inside the first Sequence and frame 0 inside the nested one, because each Sequence counts from its own start.</desc>
+<text x="24" y="24" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#a1a1aa" text-anchor="start">frames of the composition</text>
+<path d="M40 44 L40 54" fill="none" stroke="#a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="40" y="40" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#a1a1aa" text-anchor="start">0</text>
+<path d="M200 44 L200 54" fill="none" stroke="#a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="200" y="40" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#a1a1aa" text-anchor="middle">30</text>
+<path d="M360 44 L360 54" fill="none" stroke="#a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="360" y="40" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#a1a1aa" text-anchor="middle">60</text>
+<path d="M520 44 L520 54" fill="none" stroke="#a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="520" y="40" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#a1a1aa" text-anchor="middle">90</text>
+<path d="M680 44 L680 54" fill="none" stroke="#a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="680" y="40" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#a1a1aa" text-anchor="end">120</text>
+<path d="M40 54 L680 54" fill="none" stroke="#a1a1aa" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="40" y="84" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="700" fill="#ededf0" text-anchor="start">Composition</text>
+<text x="170" y="84" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="400" fill="#a1a1aa" text-anchor="start">durationInFrames={120}</text>
+<rect x="40" y="96" width="640" height="34" rx="6" fill="#17171a" stroke="#ededf0" stroke-width="1.5"/>
+<text x="40" y="168" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="400" fill="#ededf0" text-anchor="start">&lt;Sequence from={30} durationInFrames={60}&gt;</text>
+<rect x="200" y="180" width="320" height="34" rx="6" fill="#17171a" stroke="#ededf0" stroke-width="1.5"/>
+<text x="40" y="252" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="400" fill="#ededf0" text-anchor="start">&lt;Sequence from={20} durationInFrames={30}&gt;</text>
+<rect x="306.66666666666663" y="264" width="160" height="34" rx="6" fill="#1f2438" stroke="#8396ff" stroke-width="2"/>
+<text x="406.66666666666663" y="287" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#a1a1aa" text-anchor="middle">nested</text>
+<path d="M306.66666666666663 56 L306.66666666666663 66" fill="none" stroke="#8396ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 5"/>
+<path d="M306.66666666666663 130 L306.66666666666663 152" fill="none" stroke="#8396ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 5"/>
+<path d="M306.66666666666663 214 L306.66666666666663 236" fill="none" stroke="#8396ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 5"/>
+<circle cx="306.66666666666663" cy="113" r="15" fill="#8396ff"/>
+<text x="306.66666666666663" y="118" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#0b0c14" text-anchor="middle">50</text>
+<circle cx="306.66666666666663" cy="197" r="15" fill="#8396ff"/>
+<text x="306.66666666666663" y="202" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#0b0c14" text-anchor="middle">20</text>
+<circle cx="306.66666666666663" cy="281" r="15" fill="#8396ff"/>
+<text x="306.66666666666663" y="286" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="700" fill="#0b0c14" text-anchor="middle">0</text>
+<text x="24" y="342" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="400" fill="#ededf0" text-anchor="start">Frame 50 of the composition is frame 20 in the first</text>
+<text x="24" y="366" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="400" fill="#ededf0" text-anchor="start">Sequence and frame 0 in the nested one. Each Sequence</text>
+<text x="24" y="390" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="400" fill="#ededf0" text-anchor="start">counts from its own start, and from is relative to its parent.</text>
+</svg>

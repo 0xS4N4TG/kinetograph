@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 520" width="720" height="520" role="img">
+<title>How far each command goes</title>
+<desc>A grid of commands against four stages: bundle, run, draw and encode. doctor stops after run and never uses the GPU. still, strip and onion go through draw for a chosen frame, frames or range. render with sequence stops after draw and writes an image per frame. render goes through all four to an MP4.</desc>
+<text x="305" y="34" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="17" font-weight="700" fill="#1d1b18" text-anchor="middle">Bundle</text>
+<text x="415" y="34" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="17" font-weight="700" fill="#1d1b18" text-anchor="middle">Run</text>
+<path d="M360 46 L360 478" fill="none" stroke="#b9b3a6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 6"/>
+<text x="525" y="34" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="17" font-weight="700" fill="#2238c4" text-anchor="middle">Draw</text>
+<path d="M470 46 L470 478" fill="none" stroke="#b9b3a6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 6"/>
+<text x="635" y="34" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="17" font-weight="700" fill="#1d1b18" text-anchor="middle">Encode</text>
+<path d="M580 46 L580 478" fill="none" stroke="#b9b3a6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 6"/>
+<path d="M24 48 L696 48" fill="none" stroke="#b9b3a6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="24" y="88" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="17" font-weight="700" fill="#1d1b18" text-anchor="start">doctor</text>
+<text x="24" y="110" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#5e5952" text-anchor="start">a report</text>
+<rect x="256" y="74" width="208" height="36" rx="6" fill="#e4e8f8" stroke="#2238c4" stroke-width="1.5"/>
+<text x="360" y="98" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#1d1b18" text-anchor="middle">every frame, no GPU</text>
+<text x="24" y="156" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="17" font-weight="700" fill="#1d1b18" text-anchor="start">still</text>
+<text x="24" y="178" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#5e5952" text-anchor="start">one PNG</text>
+<rect x="256" y="142" width="318" height="36" rx="6" fill="#e4e8f8" stroke="#2238c4" stroke-width="1.5"/>
+<text x="415" y="166" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#1d1b18" text-anchor="middle">one frame</text>
+<text x="24" y="224" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="17" font-weight="700" fill="#1d1b18" text-anchor="start">strip</text>
+<text x="24" y="246" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#5e5952" text-anchor="start">frames on one sheet</text>
+<rect x="256" y="210" width="318" height="36" rx="6" fill="#e4e8f8" stroke="#2238c4" stroke-width="1.5"/>
+<text x="415" y="234" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#1d1b18" text-anchor="middle">n frames</text>
+<text x="24" y="292" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="17" font-weight="700" fill="#1d1b18" text-anchor="start">onion</text>
+<text x="24" y="314" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#5e5952" text-anchor="start">a blended range</text>
+<rect x="256" y="278" width="318" height="36" rx="6" fill="#e4e8f8" stroke="#2238c4" stroke-width="1.5"/>
+<text x="415" y="302" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#1d1b18" text-anchor="middle">a range</text>
+<text x="24" y="360" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="17" font-weight="700" fill="#1d1b18" text-anchor="start">render --sequence</text>
+<text x="24" y="382" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#5e5952" text-anchor="start">an image per frame</text>
+<rect x="256" y="346" width="318" height="36" rx="6" fill="#e4e8f8" stroke="#2238c4" stroke-width="1.5"/>
+<text x="415" y="370" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#1d1b18" text-anchor="middle">every frame</text>
+<text x="24" y="428" font-family="'JetBrains Mono Variable','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="17" font-weight="700" fill="#1d1b18" text-anchor="start">render</text>
+<text x="24" y="450" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="14" font-weight="400" fill="#5e5952" text-anchor="start">MP4 with audio</text>
+<rect x="256" y="414" width="428" height="36" rx="6" fill="#e4e8f8" stroke="#2238c4" stroke-width="1.5"/>
+<text x="470" y="438" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#1d1b18" text-anchor="middle">every frame</text>
+<text x="24" y="504" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#5e5952" text-anchor="start">Draw is the Rust GPU compositor. Run doctor before a long render.</text>
+</svg>

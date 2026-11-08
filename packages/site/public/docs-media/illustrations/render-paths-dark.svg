@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 530" width="720" height="530" role="img">
+<title>Three render paths</title>
+<desc>Three rows. Remotion: you write TSX and React, a browser draws every frame, you get a video. HyperFrames: you write an HTML page with GSAP, a browser draws every frame, you get a video. Kinetograph: you write TSX or an HTML page, a Rust compositor draws every frame on the GPU, you get a video, with no browser.</desc>
+<text x="24" y="42" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="22" font-weight="700" fill="#ededf0" text-anchor="start">Remotion</text>
+<rect x="24" y="64" width="196" height="76" rx="8" fill="#17171a" stroke="#ededf0" stroke-width="1.5"/>
+<text x="122" y="99" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="18" font-weight="700" fill="#ededf0" text-anchor="middle">You write</text>
+<text x="122" y="121" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#a1a1aa" text-anchor="middle">TSX, React</text>
+<path d="M224 102 L258 102" fill="none" stroke="#ededf0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M258 102 L248.0 107.5 L248.0 96.5 Z" fill="#ededf0" stroke="#ededf0" stroke-width="1" stroke-linejoin="round"/>
+<rect x="262" y="64" width="196" height="76" rx="8" fill="#17171a" stroke="#a1a1aa" stroke-width="1.5" stroke-dasharray="6 5"/>
+<rect x="272" y="70" width="28" height="18" rx="4" fill="none" stroke="#a1a1aa" stroke-width="1.5"/>
+<path d="M272 77 H300" stroke="#a1a1aa" stroke-width="1.5"/>
+<circle cx="278" cy="73.5" r="1.3" fill="#a1a1aa"/>
+<circle cx="283" cy="73.5" r="1.3" fill="#a1a1aa"/>
+<circle cx="288" cy="73.5" r="1.3" fill="#a1a1aa"/>
+<text x="360" y="108" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="18" font-weight="700" fill="#ededf0" text-anchor="middle">A browser draws</text>
+<text x="360" y="128" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#a1a1aa" text-anchor="middle">every frame</text>
+<path d="M462 102 L496 102" fill="none" stroke="#ededf0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M496 102 L486.0 107.5 L486.0 96.5 Z" fill="#ededf0" stroke="#ededf0" stroke-width="1" stroke-linejoin="round"/>
+<rect x="500" y="64" width="196" height="76" rx="8" fill="#17171a" stroke="#ededf0" stroke-width="1.5"/>
+<text x="598" y="108" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="18" font-weight="700" fill="#ededf0" text-anchor="middle">Video</text>
+<path d="M24 170 L696 170" fill="none" stroke="#46464e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 6"/>
+<text x="24" y="212" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="22" font-weight="700" fill="#ededf0" text-anchor="start">HyperFrames</text>
+<rect x="24" y="234" width="196" height="76" rx="8" fill="#17171a" stroke="#ededf0" stroke-width="1.5"/>
+<text x="122" y="269" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="18" font-weight="700" fill="#ededf0" text-anchor="middle">You write</text>
+<text x="122" y="291" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#a1a1aa" text-anchor="middle">HTML page, GSAP</text>
+<path d="M224 272 L258 272" fill="none" stroke="#ededf0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M258 272 L248.0 277.5 L248.0 266.5 Z" fill="#ededf0" stroke="#ededf0" stroke-width="1" stroke-linejoin="round"/>
+<rect x="262" y="234" width="196" height="76" rx="8" fill="#17171a" stroke="#a1a1aa" stroke-width="1.5" stroke-dasharray="6 5"/>
+<rect x="272" y="240" width="28" height="18" rx="4" fill="none" stroke="#a1a1aa" stroke-width="1.5"/>
+<path d="M272 247 H300" stroke="#a1a1aa" stroke-width="1.5"/>
+<circle cx="278" cy="243.5" r="1.3" fill="#a1a1aa"/>
+<circle cx="283" cy="243.5" r="1.3" fill="#a1a1aa"/>
+<circle cx="288" cy="243.5" r="1.3" fill="#a1a1aa"/>
+<text x="360" y="278" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="18" font-weight="700" fill="#ededf0" text-anchor="middle">A browser draws</text>
+<text x="360" y="298" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#a1a1aa" text-anchor="middle">every frame</text>
+<path d="M462 272 L496 272" fill="none" stroke="#ededf0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M496 272 L486.0 277.5 L486.0 266.5 Z" fill="#ededf0" stroke="#ededf0" stroke-width="1" stroke-linejoin="round"/>
+<rect x="500" y="234" width="196" height="76" rx="8" fill="#17171a" stroke="#ededf0" stroke-width="1.5"/>
+<text x="598" y="278" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="18" font-weight="700" fill="#ededf0" text-anchor="middle">Video</text>
+<path d="M24 340 L696 340" fill="none" stroke="#46464e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 6"/>
+<text x="24" y="382" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="22" font-weight="700" fill="#8396ff" text-anchor="start">Kinetograph</text>
+<rect x="560" y="362" width="136" height="32" rx="16" fill="#1f2438" stroke="#8396ff" stroke-width="1.5"/>
+<text x="628" y="384" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="700" fill="#8396ff" text-anchor="middle">no browser</text>
+<rect x="24" y="404" width="196" height="76" rx="8" fill="#17171a" stroke="#ededf0" stroke-width="1.5"/>
+<text x="122" y="439" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="18" font-weight="700" fill="#ededf0" text-anchor="middle">You write</text>
+<text x="122" y="461" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#a1a1aa" text-anchor="middle">TSX or HTML page</text>
+<path d="M224 442 L258 442" fill="none" stroke="#ededf0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M258 442 L248.0 447.5 L248.0 436.5 Z" fill="#ededf0" stroke="#ededf0" stroke-width="1" stroke-linejoin="round"/>
+<rect x="262" y="404" width="196" height="76" rx="8" fill="#1f2438" stroke="#8396ff" stroke-width="2"/>
+<text x="360" y="439" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="18" font-weight="700" fill="#8396ff" text-anchor="middle">Rust compositor</text>
+<text x="360" y="461" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="15" font-weight="400" fill="#a1a1aa" text-anchor="middle">draws on the GPU</text>
+<path d="M462 442 L496 442" fill="none" stroke="#ededf0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M496 442 L486.0 447.5 L486.0 436.5 Z" fill="#ededf0" stroke="#ededf0" stroke-width="1" stroke-linejoin="round"/>
+<rect x="500" y="404" width="196" height="76" rx="8" fill="#17171a" stroke="#ededf0" stroke-width="1.5"/>
+<text x="598" y="448" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="18" font-weight="700" fill="#ededf0" text-anchor="middle">Video</text>
+<text x="24" y="508" font-family="'DM Sans Variable','DM Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif" font-size="16" font-weight="400" fill="#a1a1aa" text-anchor="start">Runs Remotion and HyperFrames projects as they are.</text>
+</svg>
