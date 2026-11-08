@@ -20,12 +20,14 @@ use crate::join::join;
 use crate::model::{Model, alpha_from_matte, with_alpha};
 use crate::{audio, infer};
 
-/// How much quality the files keep: the encoder's quality setting (`Quality::settings`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// How much quality the files keep: the encoder's quality setting (`Quality::settings`). `High` by default: very-high
+/// costs the encoders much more for little a viewer sees.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Quality {
     VeryLow,
     Low,
     Medium,
+    #[default]
     High,
     VeryHigh,
 }
@@ -641,6 +643,7 @@ mod tests {
 
     #[test]
     fn quality_maps_to_the_encoders_settings() {
+        assert_eq!(Quality::default(), Quality::High);
         let fg = |name: &str, q: Quality| q.settings(Path::new(name), true);
         let very_low = fg("a.webm", Quality::VeryLow).unwrap();
         let low = fg("a.webm", Quality::Low).unwrap();

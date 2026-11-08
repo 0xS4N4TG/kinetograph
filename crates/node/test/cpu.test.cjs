@@ -477,7 +477,7 @@ test('the DOM island functions throw INVALID_ARG or RENDER errors', () => {
 test('mattingSupport says whether ONNX Runtime runs and what ben2-base would run on', () => {
   const support = native.mattingSupport();
   assert.equal(typeof support.available, 'boolean');
-  assert.ok(['directml', 'cuda', 'webgpu', 'cpu'].includes(support.backend), support.backend);
+  assert.ok(['coreml', 'directml', 'cuda', 'webgpu', 'cpu'].includes(support.backend), support.backend);
 });
 
 test('matteVideo rejects, with no model run, a bad option or a missing file', async () => {

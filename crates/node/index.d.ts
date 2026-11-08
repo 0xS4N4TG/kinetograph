@@ -223,8 +223,8 @@ export interface MatteOptions {
    * `base` when neither is given.
    */
   audio?: string
-  /** `very-low`, `low`, `medium`, `high` or `very-high`. */
-  quality: string
+  /** `very-low`, `low`, `medium`, `high` (default) or `very-high`. */
+  quality?: string
   /** Bits per second for the video of both files, in place of `quality`'s encoder setting (not for ProRes). */
   videoBitrate?: number
   /** Bits per second for the audio that is encoded (Opus, AAC). */

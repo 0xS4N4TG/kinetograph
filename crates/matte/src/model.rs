@@ -34,8 +34,8 @@ impl Model {
         }
     }
 
-    /// Whether the model runs on a GPU back end when the build has one. MODNet does not: CoreML gave it no
-    /// gain and a wrong matte in one format (`infer`), and on the CPU it runs at video speed.
+    /// Whether the model runs on a GPU or neural-engine back end when the build has one. MODNet does not: CoreML gave
+    /// it no gain (`infer`), and on the CPU it runs at video speed. BEN2 does: its CPU time is 8 to 9 s a frame.
     pub fn uses_gpu(self) -> bool {
         self == Model::Ben2Base
     }
@@ -149,7 +149,7 @@ mod tests {
 
     #[test]
     fn only_ben2_goes_to_the_gpu() {
-        // MODNet gains nothing from the GPU back ends tried: see `infer`.
+        // MODNet gains nothing from CoreML: see `infer`.
         assert!(!Model::Modnet.uses_gpu());
         assert!(Model::Ben2Base.uses_gpu());
     }

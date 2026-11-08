@@ -17,8 +17,8 @@ use napi_derive::napi;
 pub struct MattingSupport {
     /// ONNX Runtime is linked and starts.
     pub available: bool,
-    /// What `ben2-base` runs on: `directml` (Windows), `cuda` or `webgpu` (builds with them), else `cpu`. `modnet` always
-    /// runs on the CPU, at video speed (CoreML did not help it).
+    /// What `ben2-base` runs on: `coreml` (a Mac), `directml` (Windows), `cuda` or `webgpu` (builds with them), else
+    /// `cpu`. `modnet` always runs on the CPU, at video speed (CoreML did not help it).
     pub backend: String,
     /// Why `available` is false, or why the backend is `cpu`.
     pub reason: Option<String>,
@@ -51,8 +51,8 @@ pub struct MatteOptions {
     /// Which files get the input's audio: `both`, `base`, `foreground` or `none`. Takes the place of `keepAudio`;
     /// `base` when neither is given.
     pub audio: Option<String>,
-    /// `very-low`, `low`, `medium`, `high` or `very-high`.
-    pub quality: String,
+    /// `very-low`, `low`, `medium`, `high` (default) or `very-high`.
+    pub quality: Option<String>,
     /// Bits per second for the video of both files, in place of `quality`'s encoder setting (not for ProRes).
     pub video_bitrate: Option<u32>,
     /// Bits per second for the audio that is encoded (Opus, AAC).
@@ -117,7 +117,12 @@ fn options_of(
     cancel: Option<Arc<AtomicBool>>,
 ) -> std::result::Result<Options, String> {
     let model = Model::parse(&request.model)?;
-    let quality = Quality::parse(&request.quality)?;
+    let quality = request
+        .quality
+        .as_deref()
+        .map(Quality::parse)
+        .transpose()?
+        .unwrap_or_default();
     for (what, path) in [
         ("input", &request.input),
         ("model file", &request.model_path),
