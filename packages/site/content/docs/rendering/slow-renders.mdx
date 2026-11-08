@@ -1,0 +1,36 @@
+---
+title: Fix a slow render or preview
+description: Check with stills and drafts, draw frames in parallel, and find out which stage of a frame is slow.
+---
+
+Don't render the whole video to check one thing. Look at the frames you care about, and render a draft before the final.
+
+## Look first, render later
+
+- `still` draws one frame and `strip` draws a contact sheet. Both take a fraction of a render.
+- `render --draft` draws at half size, which is the same as `--scale 0.5`. `still`, `strip` and `onion` take `--scale` too.
+- `render --range 40..90` draws only those frames.
+
+```sh
+npx kinetograph strip src/index.tsx -n 12 --scale 0.5
+npx kinetograph render src/index.tsx --draft --range 0..90
+```
+
+## Draw frames in parallel
+
+`render --concurrency <n>` draws several frames at once in worker threads. The default is half your cores, at most 4, and `--concurrency 1` draws every frame in the main thread. The file is the same either way. Rarely, two renders at the same concurrency differ by 1 in one colour channel on a few pixels, so use `--concurrency 1` for a bit-exact render. See [What works](/docs/compat/).
+
+## Find the slow part
+
+```sh
+npx kinetograph bench src/index.tsx --frame 30
+npx kinetograph bench src/index.tsx --range 40..90
+```
+
+`bench` prints the milliseconds each stage of a frame takes, from your code (`js`) to the GPU stages (`raster`, `composite`, `readback`). A large `js` means your component code is slow. A large `raster` or `composite` points at the drawing: big effects, blurs, many layers or big images. Run it as `NODE_ENV=production npx kinetograph bench ...`, because it uses React's development build otherwise.
+
+## Other things that help
+
+- A smaller composition or a lower `--scale` draws fewer pixels. See [4K rendering](/docs/rendering/4k/).
+- `doctor` doesn't time anything. It lists what the engine can't draw, which a render would warn about frame after frame.
+- Studio draws its preview with the same engine, so a heavy frame is slow there too. Pick a composition or a span to look at rather than playing the whole video.

@@ -1,0 +1,29 @@
+---
+title: Lint rules
+description: What kinetograph lint checks, what triggers each rule, and how to fix it.
+---
+
+`npx kinetograph lint <entry>` draws a few frames (8 spread over the composition, or `--frames 0,30,60`) and reports problems. Each finding names its rule, the layer and the frames. An error makes the exit code 1, and a warning doesn't.
+
+## Rules
+
+| Rule | Level | Triggers when | Fix |
+|---|---|---|---|
+| `text-overflow-box` | error | A text layer is wider than its `maxWidth` because one word is too long to wrap | Make the box wider, the text smaller, or break the word |
+| `text-overflow-canvas` | error | Drawn text runs past an edge of the canvas. It is a warning if the text is inside the canvas in other frames, because it is moving in or out | Move or shrink the text, or fit it to a width with [`fitText`](/docs/making-videos/measuring-text/) |
+| `text-overlap` | warning | Settled text, at full opacity and in the normal blend mode, covers a quarter or more of other text | Move one of them. Text that fades, blends, or repeats the same words is left alone |
+| `off-canvas` | warning | A layer is completely outside the canvas | Move it in, or remove it |
+| `missing-font` | error | A text layer names a font that isn't registered, or a registered font file isn't there | Register the font: see [Fonts](/docs/making-videos/fonts/) |
+| `missing-asset` | error | An image, video, GIF, Lottie, LUT or audio file the project names isn't there | Put the file at that path, usually under `public/` |
+| `compat` | warning | The frame holds something the engine can't draw, so it is drawn without it or approximated | See [What works](/docs/compat/) and the `doctor` output |
+| `project-note` | warning | The project reports a problem outside any frame, such as a stylesheet that couldn't be built or a font that didn't download | Read the message. The text that needed a missing font is already a `missing-font` error |
+
+`lint` also reports TypeScript errors as `type-error`, and `inspect-failed` when it couldn't read a frame, usually because of a missing font or file listed above.
+
+## Lint, check and doctor
+
+- **`lint`** looks at the drawn frames: layout, missing files and fonts. Run it after every change to a scene.
+- **`check`** runs the TypeScript compiler, so it catches a misspelled prop that renders without an error. Run it after editing code.
+- **`doctor`** goes through every frame without the GPU and lists what the engine can't draw, and in which frames. Run it before a long render, especially for a project that uses HTML or CSS.
+
+`lint` also repeats the type errors and a summary of `doctor`, but only for the frames it checks.
