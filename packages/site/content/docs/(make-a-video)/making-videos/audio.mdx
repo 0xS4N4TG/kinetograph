@@ -3,6 +3,14 @@ title: Audio
 description: Play sound files with the Audio element, synthesise sound with onFrame, and measure the loudness of the mix.
 ---
 
+Add a voice, a music track or sound effects to a video, and check how loud it is. Tell your agent where the files are and how loud each should sit.
+
+```text title="Suggested prompt"
+Put public/audio/bed.mp3 under the whole video at 30% volume, fading in over the first second. Then run audio analyze and tell me the loudness.
+```
+
+## In code
+
 `Audio` plays a sound file, and `onFrame` synthesises sound at a frame. Both are mixed into one stereo track at 48 kHz.
 
 ## Play a file

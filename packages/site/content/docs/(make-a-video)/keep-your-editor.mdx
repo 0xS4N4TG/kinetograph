@@ -1,65 +1,55 @@
 ---
 title: Keep your editor, render with Kinetograph
-description: Keep editing in Remotion Studio or HyperFrames, and render the same project with Kinetograph for a render with no browser.
+description: What to say to keep editing in Remotion Studio or HyperFrames and render the same project with Kinetograph.
 ---
 
-You don't have to switch tools. Keep editing in Remotion Studio or in HyperFrames, and render the same files with Kinetograph. Nothing is converted: both tools read the same project, and Kinetograph draws every frame on the GPU with no browser to start.
+Keep editing in the tool you know, then render the same files with Kinetograph.
 
-## What to run
+## What this makes
 
-For a Remotion project, run Kinetograph on the file that calls `registerRoot`, usually `src/index.ts` or `src/index.tsx`. A file that only exports a component, such as `Root.tsx`, isn't an entry.
+Not a new project, a **render**. Nothing is converted: both tools read the same files, so you edit as before and Kinetograph renders the result without a browser.
 
-```sh
-npx remotion studio                                        # edit as before
-npx kinetograph render src/index.ts --comp Main -o out.mp4
+## Base prompt
+
+```text title="Suggested prompt"
+Render this project with Kinetograph and keep my editor as it is. The entry is src/index.ts and the composition is Main. Run kinetograph doctor first and tell me what the engine cannot draw, then save it to out/video.mp4.
 ```
 
-For a HyperFrames project, run it on the page or its folder.
+For a Remotion project the entry is the file that calls `registerRoot`. For a HyperFrames project it is the page or its folder.
 
-```sh
-npx hyperframes preview                                    # edit as before
-npx kinetograph render index.html -o out.mp4
+## What won't render as it is, and why that's correct
+
+`doctor` lists what the engine cannot draw and the frames where it happens. Unsupported content is drawn without, or approximated, and a warning names it. Nothing falls back to a browser. The agent reports each finding and does not hide it.
+
+## Validation is not optional
+
+```text title="Suggested prompt"
+Render a strip of 12 frames and compare it with the preview in my editor. Then render with --strict so it stops on the first frame with something missing.
 ```
 
-Run `npx kinetograph doctor <entry>` first. It lists what the engine can't draw in your project, and on which frames. Add `--strict` to a render to stop at the first frame with something missing.
+Where the two renders can differ, and the commands for each project type, are on [Render from your editor](/docs/reference/render-from-your-editor/).
 
-## Speed
+## The knobs that matter
 
-These are Kinetograph's own renders, whole `kinetograph render` to H.264, on an Apple M4 laptop (median of 3 runs, measured 1 November 2026):
+| What to say | Why it matters |
+| --- | --- |
+| **The entry and the composition** | A project can register several. |
+| **"Keep my editor as it is"** | Nothing is rewritten or converted. |
+| **"Run doctor first"** | You see what is missing before a long render. |
+| **"Render with --strict"** | Stops at the first frame with something unsupported. |
 
-- An unchanged Remotion project: 150 frames at 1200 by 1000 in 1.81 s, 83 frames per second.
-- A reel drawn from shapes: 928 frames at 1080p in 11 s, 81 frames per second.
-- Captions over video: 180 frames at 1080p in 2.06 s, 87 frames per second.
+## Common failure modes
 
-There is no head-to-head benchmark against Remotion or HyperFrames, so no "times faster" claim is made. Measure your own project with `npx kinetograph bench`.
+**Giving it the wrong file.** A file that only exports a component, such as `Root.tsx`, is not an entry.
+- **Avoid:** "render src/Root.tsx"
+- **Instead:** "render src/index.ts"
 
-## From `remotion render`
-
-| `remotion render` | Kinetograph |
-|---|---|
-| Entry file | The same file, as the first argument |
-| Composition id | `--comp <id>` |
-| Output path | `-o <path>` |
-| `--props` | `--props` (a JSON object or a file) |
-| `--frames=a-b` | `--range a..b` (`a..=b` includes `b`) |
-| `--codec` | `--codec` (`h264`, `h265`, `prores`, `vp9` or `gif`) |
-| `--crf` | `--crf` |
-| `--scale` | `--scale` |
-| `--concurrency` | `--concurrency` |
-| `--every-nth-frame` | `--every-nth-frame` (GIF only) |
-| `--pixel-format` | `--pixel-format` |
-| `--audio-bitrate` | `--audio-bitrate` |
-| `--sequence`, `--image-format` | `--sequence`, `--image-format` |
-| `--width`, `--height`, `--muted`, `--overwrite` | No equivalent |
-
-A HyperFrames page takes its size and length from the attributes on its root element, at 30 fps, and its variables from `data-variable-values`, so `--props` doesn't apply. The [CLI reference](/docs/reference/cli/#render) lists every Kinetograph flag.
-
-## Where results can differ
-
-Kinetograph draws CSS, SVG, canvas, shaders and 3D itself, so a frame can differ from what a browser draws. Anything the engine can't draw is skipped or approximated and reported. See [What works](/docs/compat/) for the list, and [Migrate from Remotion](/docs/migrating/remotion/) or [Migrate from HyperFrames](/docs/migrating/hyperframes/) for what to check.
+**Expecting identical pixels everywhere.**
+- **Avoid:** "it must match the editor exactly"
+- **Instead:** "compare a strip of frames and list what differs"
 
 ## Related topics
 
+- [Render from your editor](/docs/reference/render-from-your-editor/)
 - [Bring a project](/docs/making/bring-a-project/)
 - [What works](/docs/compat/)
-- [Migrate from Remotion](/docs/migrating/remotion/)

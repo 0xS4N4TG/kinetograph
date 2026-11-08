@@ -1,133 +1,70 @@
 ---
-title: Migrate from Remotion
-description: Every Remotion package a video can import, what works in Kinetograph, what doesn't, and the steps to move a project.
+title: Move from Remotion to Kinetograph
+description: What to say to move an existing Remotion project onto Kinetograph, and what to expect your agent to flag.
 ---
 
-Most Remotion projects run on Kinetograph as they are.
+Bring an existing Remotion project onto Kinetograph, then use everything else here on it: Studio, the library, captions and export.
 
-Your `remotion` and `@remotion/*` imports are mapped onto Kinetograph's own versions of those packages. You don't edit them.
+## What this makes
 
-Three things need work:
+Not a new video, a **move**. The `kinetograph-migrate` skill reads your Remotion project, runs the check that lists what the engine cannot draw, fixes each finding, and renders the same video without a browser. Your `remotion` and `@remotion/*` imports stay as they are.
 
-- The tooling around the video.
-- A few packages that have no equivalent.
-- Anything the engine can't draw yet.
+This is a move, not a creation workflow. It starts when you ask to move, port or migrate a Remotion project. If you only want something like your Remotion video, ask for a new video instead.
 
-To keep editing in Remotion and only render with Kinetograph, see [Keep your editor, render with Kinetograph](/docs/keep-your-editor/). An agent can do this for you. See [Use it with your agent](/docs/agents/claude-code/) for the `kinetograph-migrate` skill.
+## Base prompt
 
-## How much of Remotion is covered
-
-Kinetograph exports 310 of the 318 names in `remotion` and the 24 `@remotion/*` packages it maps, counted in Remotion 4.0.540. A name that exists can still have gaps: [What works](/docs/compat/) lists them. Run `doctor` to see what your project uses.
-
-## Package by package
-
-### Packages that work
-
-`remotion`, `@remotion/transitions`, `@remotion/motion-blur`, `@remotion/noise`, `@remotion/paths`, `@remotion/shapes`, `@remotion/layout-utils`, `@remotion/animation-utils`, `@remotion/captions`, `@remotion/google-fonts`, `@remotion/fonts`, `@remotion/lottie`, `@remotion/gif`, `@remotion/media-utils`, `@remotion/media`, `@remotion/light-leaks`, `@remotion/starburst`, `@remotion/sfx`, `@remotion/zod-types`, `@remotion/timeline-utils`, `@remotion/canvas` and `@remotion/rive` work as usual. The few missing names, such as `HtmlInCanvasMotionBlur` and `getAvailableFonts`, are listed on [What works](/docs/compat/#remotion-packages). `@remotion/canvas` is Remotion Studio's editor canvas: it bundles, but every call throws `UnsupportedApiError`.
-
-### Packages that work in part
-
-| Package | Status | Exports present | Notes |
-|---|---|---|---|
-| `@remotion/media-parser` | Partly | 13 of 13 | Local files only. There is no box tree and there are no sample callbacks. See [What works](/docs/compat/#remotion-packages). |
-| `@remotion/webcodecs` | Partly | 24 of 24 | Encode and decode throw `UnsupportedApiError`. `convertMedia` writes sound to WAV. |
-| `@remotion/skia` | Partly | 1 of 1 | Needs the `@kinetographdev/skia` add-on. Some Skia features are not drawn. It also covers `@shopify/react-native-skia`. |
-
-### Packages that Kinetograph replaces
-
-| Package | Status | Exports present | Use instead |
-|---|---|---|---|
-| `@remotion/three` | Not planned | not counted | The own 3D layer, `Scene3D`. The steps are in the [skill](#the-agent-skill). |
-| `@remotion/player` | Not planned | 0 of 3 | The studio, with `kinetograph studio`. There is no embeddable player. |
-| `@remotion/renderer` | Not planned | 0 of 22 | `kinetograph render`, `still` and `compositions`. |
-| `@remotion/bundler` | Not planned | 0 of 4 | Nothing to do. `render` bundles for you. |
-| `@remotion/cli` | Not planned | 0 of 2 | The `kinetograph` CLI. |
-| `@remotion/lambda` | Not planned | 0 of 25 | There is no cloud renderer. Run `kinetograph render` on a machine with a GPU. |
-| `@remotion/cloudrun` | Not planned | 0 of 14 | Same as Lambda. |
-| `@remotion/studio` | Not planned | 0 of 18 | `kinetograph studio`. |
-| `@remotion/tailwind`, `@remotion/tailwind-v4` | Not planned | 0 of 1 each | They only configure webpack. Tailwind itself works. |
-| `IFrame` (from `remotion`) | Not planned | exported | It needs a browser. It is reported as unsupported and left out. |
-
-Any other `@remotion/*` import stops the build with `"..." is not supported by Kinetograph yet`.
-
-## Migrate by hand
-
-Follow these steps in order.
-
-1. **Find the entry.** It is the file that calls `registerRoot`, often `src/index.ts`. Check that it loads with `compositions`. If an import is not supported, the command stops and names it. Fix that first.
-2. **Run doctor.** It goes through every frame without the GPU. It lists each element and property the engine can't draw, and the frames they happen on.
-3. **Fix each finding.** The common cases are below.
-4. **Lint and look.** `lint` checks the project. `strip` draws twelve frames into one picture. Open it.
-5. **Render with `--strict`.** It stops on the first frame with something unsupported, so nothing is silently missing.
-6. **Write down what changed.** The video can differ from the Remotion one.
-
-The commands differ only in the entry. A Remotion project points at its entry file and picks a composition with `--comp`. A [HyperFrames](/docs/migrating/hyperframes/) page points at its `index.html`.
-
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
-
-```sh
-npx kinetograph compositions src/index.ts
-npx kinetograph doctor src/index.ts
-npx kinetograph lint src/index.ts
-npx kinetograph strip src/index.ts -n 12
-npx kinetograph render src/index.ts --comp <id> --strict
+```text title="Suggested prompt"
+Move the Remotion project in this folder onto Kinetograph with the kinetograph-migrate skill. The entry is src/index.ts and the composition is Main. Keep the same duration, fps and size. Write down anything that changes, and render with --strict.
 ```
 
-  </Tab>
-  <Tab value="HyperFrames">
+Name the entry file and the composition. A project can register several compositions, so say which one.
 
-```sh
-npx kinetograph compositions index.html
-npx kinetograph doctor index.html
-npx kinetograph strip index.html -n 12
-npx kinetograph render index.html --strict
+## What won't move as it is, and why that's correct
+
+The skill checks the project first and tells you, rather than guessing, when it finds something the engine does not draw:
+
+- **Tooling packages.** `@remotion/player`, `renderer`, `bundler`, `lambda`, `cloudrun` and `cli` have no equivalent in a render. They are replaced by the `kinetograph` commands. There is no cloud renderer.
+- **`@remotion/three`.** The scene is rebuilt with Kinetograph's own 3D layer. See [Remotion three.js mapping](/docs/reference/remotion-three/).
+- **`IFrame`.** A web page needs a browser, so it is not drawn. Expect a screenshot or a labelled box in its place, and a note saying so.
+- **Encoding and decoding with `@remotion/webcodecs`.** Play clips with the video and audio components instead.
+
+If the project hits one of these, expect the agent to stop and say what it plans, not to push through. Don't ask it to "just approximate". It lists every omission and approximation in its report.
+
+## Validation is not optional
+
+Ask for the check by name. It lists each element and property the engine cannot draw, and the frames where it happens:
+
+```text title="Suggested prompt"
+After moving it, run kinetograph doctor on the entry and fix every finding. Then render with --strict, draw a strip of 12 frames, and compare it with the Remotion render.
 ```
 
-  </Tab>
-</Tabs>
+A move that looks right in preview can still be missing a title in a font that was never loaded. `--strict` stops on the first frame with something unsupported, so nothing leaves silently incomplete.
 
-### Fixing findings
+## The knobs that matter
 
-- **Tooling imports** (`player`, `renderer`, `bundler`, `lambda`, `cli`): delete them and use the CLI. See the table below.
-- **`@remotion/three`**: rebuild the scene with the 3D layer. See [Move from @remotion/three](/docs/migrating/three/).
-- **`IFrame`**: a web page needs a browser, so it is not drawn. Rebuild a page you own as components. For a third-party page, a map or an embed, use a screenshot saved to `public/` and drawn with `<Img>`, or a labelled box. Say that it is now a still picture.
-- **`@remotion/webcodecs` and `@remotion/media-parser`**: `parseMedia` works on local files, and `convertMedia` writes a file's sound to WAV. Encoding, decoding and `extractFrames` throw `UnsupportedApiError`. Play clips with `<Video>` and `<Audio>`, and prepare frames ahead of time with ffmpeg.
-- **`@remotion/rive` and `@remotion/skia`**: Rive plays, with the state machine set through `stateMachineInputs`. Skia needs `npm install @kinetographdev/skia`, draws on the CPU, and animates from `useCurrentFrame()`, not clock animations such as `withTiming`.
-- **Fonts**: text in a font that is not registered can be drawn as nothing. A `fontFamily` that names only system fonts is the usual cause. Load one with `@remotion/google-fonts`, `registerFont` or `@font-face`. See [Fonts](/docs/making-videos/fonts/).
-- **A CSS property or element in the report**: change it to one the engine draws, or remove it.
-- **No network**: `fetch` reads project files only. Copy remote assets into `public/` and use `staticFile`.
+| What to say | Why it matters |
+| --- | --- |
+| **"The entry is `src/index.ts`, the composition is Main"** | A Remotion project can register several compositions. Name the one you mean. |
+| **"Keep the same duration, fps and size"** | It is the default. State it so nothing is rounded or resized. |
+| **"Write down anything that changes"** | Dropped features, approximations and replaced packages get recorded, not absorbed. |
+| **"Render with --strict"** | Makes the check part of the result. |
 
-If `lint` or `check` says there is no declaration file for `react`, add `@types/react` as a dev dependency at the project's React version. It does not stop `render`.
+## Common failure modes
 
-### Commands and tooling
+**Asking for a move when you have no Remotion source.**
+- **Avoid:** "move my Remotion intro" (with no project in the folder)
+- **Instead:** "make an intro like this: ..." and describe it
 
-| Remotion | Kinetograph |
-|---|---|
-| `remotion studio <entry>` | `kinetograph studio <entry>` |
-| `remotion render <entry> <id> out.mp4` | `kinetograph render <entry> --comp <id> -o out.mp4` |
-| `remotion still <entry> <id> out.png --frame=45` | `kinetograph still <entry> 45 --comp <id> -o out.png` |
-| `--props='{"a":1}'` | `--props '{"a":1}'`, or the path of a JSON file |
-| `--frames=10-40` | `--range 10..=40` (`10..40` stops at 39) |
-| `--gif-every-nth-frame` | `--every-nth-frame` |
-| `--codec`, `--crf`, `--scale`, `--concurrency` | the same flags |
-| `--browser-executable`, `--gl`, `--public-dir` | not needed: there is no browser, and `staticFile` reads `public/` next to the entry |
-| `remotion.config.ts` | put the options on the `render` command, in your `package.json` scripts |
-| `@remotion/renderer` `renderMedia` | run `kinetograph render --comp --props`, or `--json` and parse the result |
-| `@remotion/bundler`, `@remotion/tailwind` | nothing: `render` bundles the entry and builds Tailwind itself |
-| `@remotion/lambda`, `@remotion/cloudrun` | no cloud renderer: run `render` on a machine with a GPU |
-| `@remotion/player` | no embeddable player; [Studio](/docs/studio/) is the preview |
+**Asking it to push past a finding.**
+- **Avoid:** "just render it, ignore the warnings"
+- **Instead:** "show me the doctor report, then fix it or tell me why you can't"
 
-Keep `remotion` and the video's `@remotion/*` packages if your type checking needs their types. Add `kinetograph` as a dev dependency, and remove the tooling packages once nothing imports them. A page that embeds `<Player>` is not part of the video: leave it, and it keeps using Remotion's player.
-
-Nothing in this path starts a browser. If something can't be ported, leave it out or approximate it. See [What works](/docs/compat/) for how warnings work.
-
-## The agent skill
-
-The `kinetograph-migrate` skill follows these steps for an agent. See [Agent skills](/docs/agents/skills/).
+**Skipping the check on a real project.**
+- **Avoid:** accepting the first preview that looks right
+- **Instead:** "render with --strict and compare a strip with the Remotion render"
 
 ## Related topics
 
-- [Keep your editor, render with Kinetograph](/docs/keep-your-editor/)
-- [What works](/docs/compat/)
+- [Remotion package coverage](/docs/reference/remotion-coverage/)
 - [Kinetograph vs Remotion and HyperFrames](/docs/compare/)
+- [Agent skills](/docs/agents/skills/)

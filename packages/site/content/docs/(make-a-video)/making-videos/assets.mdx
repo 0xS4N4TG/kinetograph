@@ -3,6 +3,14 @@ title: Assets
 description: Put images, video, audio and fonts in public/, and load them with staticFile(), an import or CSS.
 ---
 
+Put your images, clips, sounds and fonts in the project's `public/` folder and tell your agent where each one is. It uses them in the video.
+
+```text title="Suggested prompt"
+Use public/images/logo.png at 400 px wide in the top left, and play public/video/clip.mp4 under it from 2 seconds to 5. Look at the frames, then save the video.
+```
+
+## In code
+
 Put the files in the `public/` folder and name them with `staticFile()`. A render reads local files only, so a remote URL is an error: download the file into the project first.
 
 ```txt

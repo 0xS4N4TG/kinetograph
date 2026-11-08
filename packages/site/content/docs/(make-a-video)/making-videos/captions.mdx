@@ -3,6 +3,14 @@ title: Captions
 description: Parse SRT and WebVTT files, group word timings into pages, and show each page with the frame.
 ---
 
+Show subtitles on a video from a subtitle file. Give your agent the file and say how the words should look and where they sit.
+
+```text title="Suggested prompt"
+Caption the video with public/captions/line.srt, white text in the lower third, one caption at a time. Run lint and fix anything it reports.
+```
+
+## In code
+
 `parseSrt` turns a subtitle file into captions with start and end times in milliseconds. Show the one that matches the current time.
 
 ```tsx title="src/Subtitles.tsx"
