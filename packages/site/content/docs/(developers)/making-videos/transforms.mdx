@@ -73,6 +73,7 @@ export const Torus = () => {
 ```
 
 - `Mesh` takes a `box`, `sphere`, `plane`, `cylinder` or `torus`. `Model` loads a glTF or GLB file. `Text3D` and `Extrude` make letters and SVG paths solid.
+- `Camera3D` is a perspective camera, or an orthographic one with `type="orthographic"` and a `height`. A `PointLight` falls off with distance squared; its `range` is a limit, and 0 means none.
 - Shadows come from a `DirectionalLight` with `castShadow`; `environment` takes an equirectangular image to light the scene. There is no Three.js API behind it.
 
 ## Suggested prompt

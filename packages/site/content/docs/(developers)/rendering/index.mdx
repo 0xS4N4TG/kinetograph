@@ -68,6 +68,21 @@ npx kinetograph render src/index.tsx --range 0..90 --strict
 - `--strict` stops at the first frame with something the engine cannot draw, and leaves no file. Use it for final renders and in CI.
 - `--comp <id>` and `--props '{"title":"Hello"}'` pick the composition and its props.
 
+## Check the render
+
+The command prints a summary: size, codec, encoder, pixel format, frames, how many were `repeated` (identical to the one before, so not drawn again), and a `renderer:` line. `Skia GPU` is fast. `Skia CPU` means the GPU was not used and the render will be slow; `doctor` says why. With `--json`, `output` is the file and `compat` lists what was left out.
+
+For a long film, `strip` a range or render with `--draft --range` first. Check the sound with `audio analyze`, and check transparency by opening a `--sequence` PNG.
+
+## Transparent video
+
+A video keeps transparency only with an alpha pixel format, and only where the frame has no opaque background. A composition with no `background` is transparent.
+
+- ProRes: `--codec prores --prores-profile 4444 --pixel-format yuva444p10le`, to a `.mov`. The 4444 profiles drop alpha unless the pixel format asks for it.
+- VP9: `--codec vp9 --pixel-format yuva420p`, to a `.webm`.
+
+Alpha is written straight, not premultiplied. Players handle alpha, 4:2:2, 4:4:4 and 10-bit unevenly, and 8-bit 4:2:0 plays everywhere.
+
 ## Export options
 
 `--codec h264|h265|prores|vp9|gif` and the extension (`.mp4`, `.mov`, `.webm` or `.gif`) set the format. The other flags are in the [CLI reference](/docs/reference/cli/#render).

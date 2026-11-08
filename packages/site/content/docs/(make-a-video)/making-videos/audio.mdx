@@ -19,6 +19,8 @@ Use `staticFile` for a file in `public/`. A clip starts where its `Sequence` sta
 
 `Audio` takes `volume` (a number, or a function of the frame), `trimBefore`, `trimAfter`, `playbackRate`, `loop`, `muted` and `toneFrequency`. To fade in over the first second, pass `volume={(frame) => interpolate(frame, [0, 30], [0, 1], { extrapolateRight: 'clamp' })}`. `Video` plays the sound of its file too, with the same props.
 
+The sounds in `@remotion/sfx` (`whip`, `ding` and others) play with `<Audio src={whip} />`. The first render downloads each one into `~/.cache/kinetograph/sfx`, and after that it works offline.
+
 ## Synthesise sound
 
 `onFrame` runs a function at a frame. The function gets a Web Audio context and the time to play at:

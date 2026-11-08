@@ -53,6 +53,9 @@ npx kinetograph render src/index.ts --strict
 - A rule that sets a property to its initial value loses to a presentation attribute: `.bar { fill: black }` over `fill="red"` stays red.
 - HTML is laid out as a browser would. A group of HTML elements is a box the size of the composition, as Remotion's root `div` is. A Kinetograph element inside HTML takes the size of its own box, so a layer with no box is 0 × 0. CSS `@keyframes` follow the frame's time.
 
+- Refs to DOM elements answer `getBoundingClientRect` and similar from the same CSS engine, and `useLayoutEffect` measure-then-render code settles within the frame. `fetch`, `new Image()` and `matchMedia` work for project files and the composition's size.
+- An `inline-block` with a transform is drawn twice, with slightly heavier edges. Use `display: block`.
+
 ## Canvas 2D, effects and shaders
 
 - A `url()` filter on Canvas 2D works when it names an SVG `<filter>` of the page. On a `<Canvas>` component it is reported.

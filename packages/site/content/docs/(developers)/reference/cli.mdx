@@ -122,6 +122,7 @@ npx kinetograph render <entry> [-o <output.mp4>] [options]
 | `--video-bitrate <rate>` | A bit rate, such as `8M` or `2500k`. Not with `--crf`. |
 | `--pixel-format <name>` | `yuv420p` (default), `yuv422p`, `yuv444p`, `yuv420p10le`, `yuv422p10le` or `yuv444p10le`; `yuva444p10le` (ProRes 4444 and 4444-xq) or `yuva420p` (VP9) keep the alpha channel. |
 | `--prores-profile <name>` | With `--codec prores`: `proxy`, `light`, `standard`, `hq` (default), `4444` or `4444-xq`. |
+| `--x264-preset <name>` | The speed of libx264 and libx265, from `ultrafast` to `placebo`. The default is `veryfast`. An error with any other encoder. |
 | `--audio-codec <name>` | `aac` (default for `.mp4` and `.mov`), `opus` (`.webm`) or `pcm` (`.mov`). |
 | `--audio-bitrate <rate>` | Total audio bit rate, such as `320k`. The default is 96 kbit/s per channel. Not for `pcm`. |
 | `--every-nth-frame <n>` | With `--codec gif`. Draws every nth frame and keeps the length. |
@@ -288,6 +289,8 @@ npx kinetograph doctor index.html --range 0..120
 | Option | Meaning |
 |---|---|
 | `--range <a..b>` | Frames to check. The default is all of them. |
+
+With an entry, the report says how many frames are clean (`cleanFrames`, `unsupportedFrames`, `cleanShare`). It then lists each issue, the one on the most frames first. An issue names the element and, if it is a CSS property, the property, with the `values` seen, the element `paths` and the inclusive frame `ranges`. A page script's own `console.error` or uncaught error is an issue too. Remove or replace what the top issues name and run it again: 100% clean means nothing is left out.
 
 With no entry, `doctor` checks your install:
 
