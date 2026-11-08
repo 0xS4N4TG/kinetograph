@@ -1,0 +1,23 @@
+---
+title: "@kinetographdev/native"
+description: "The Rust renderer as a Node-API addon, with one package for each platform."
+---
+
+The Node-API addon over the Rust core: it validates, inspects and measures scenes, and draws them on the GPU. `kinetograph` depends on it, so you install it directly only to call the renderer from your own code.
+
+```sh
+npm install @kinetographdev/native
+```
+
+Current version: 0.3.0.
+
+## Exports
+
+- CPU only: `version`, `validateScene`, `inspect`, `layoutText` and `parseRange`.
+- GPU: `new Renderer()`, whose `still`, `rgba`, `render` and `beginVideo` draw scenes.
+- Platform packages, installed for you by `@kinetographdev/native`: `native-darwin-arm64`, `native-linux-x64-gnu` and `native-win32-x64-msvc`.
+
+## See also
+
+- [Installation](/docs/getting-started/installation/)
+- [How the engine works](/docs/internals/engine/)

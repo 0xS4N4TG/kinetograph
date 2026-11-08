@@ -1,0 +1,18 @@
+---
+title: Studio's agent chat
+description: The chat in Studio that talks to your coding agent, with the selection, images and a queue of messages.
+---
+
+Studio's chat sends your selection, a frame or a span of time, to the coding agent already on your computer.
+
+Studio finds Claude Code, Codex or Gemini CLI on your computer. The command menu switches between them, and `--agent <command>` names another one. Only Claude Code is tested so far. The agent works in the folder you started Studio in, and Studio asks you before it edits a file.
+
+You can send a message while the agent is still working. It waits in the **Up next** tray above the message box and goes out when the turn ends.
+
+Drop images onto the chat, paste one, or use the attach button. The agent can use them in the video, for example with `staticFile('refs/name.png')`.
+
+Each message carries the selection: the composition, the frame or span, and the layers you picked. Keep the picture switch on to attach a picture of the selected area, or a contact sheet for a span.
+
+The agent also gets Kinetograph's MCP tools, so it can read and set the props you see, and ask you for a decision in a [panel](/docs/studio/panels/). See [Studio's agent](/docs/plugins/#studios-agent).
+
+Studio listens on `127.0.0.1` by default. If you set `--host` so other computers can reach Studio, the agent is off unless you pass `--allow-remote-agent`.

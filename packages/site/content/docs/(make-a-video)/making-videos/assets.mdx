@@ -1,0 +1,84 @@
+---
+title: Assets
+description: Put images, video, audio and fonts in public/, and load them with staticFile(), an import or CSS.
+---
+
+Put the files in the `public/` folder and name them with `staticFile()`. A render reads local files only, so a remote URL is an error: download the file into the project first.
+
+```txt
+my-video
+├─ public
+│  ├─ images
+│  │  └─ logo.png
+│  ├─ fonts
+│  ├─ audio
+│  └─ video
+└─ src
+   └─ index.tsx
+```
+
+```tsx title="src/Logo.tsx"
+import { AbsoluteFill, Img, staticFile } from '@kinetographdev/core';
+
+export const Logo = () => (
+  <AbsoluteFill>
+    <Img src={staticFile('images/logo.png')} style={{ width: 400 }} />
+  </AbsoluteFill>
+);
+```
+
+See [Project structure](/docs/getting-started/project-structure/).
+
+## Images
+
+`Img` takes PNG, JPEG, GIF, WebP and SVG files. The native `Image` takes `width`, `height` and `fit` directly:
+
+```tsx title="src/Photo.tsx"
+import { Image, staticFile } from '@kinetographdev/core';
+
+export const Photo = () => <Image src={staticFile('images/photo.jpg')} width={640} height={360} fit="cover" />;
+```
+
+## Gifs and sequences
+
+An animated GIF plays with `Gif`. For a numbered sequence, build the path from the frame number. To write a sequence of images instead of a video, use `render --sequence`: see [Rendering](/docs/rendering/#export-options).
+
+```tsx title="src/Loop.tsx"
+import { Gif, staticFile } from '@kinetographdev/core';
+
+export const Loop = () => <Gif src={staticFile('images/loop.gif')} width={320} height={320} />;
+```
+
+## Videos
+
+`Video` and `OffthreadVideo` are the same component.
+
+```tsx title="src/Clip.tsx"
+import { OffthreadVideo, Sequence, staticFile } from '@kinetographdev/core';
+
+export const Clip = () => (
+  <Sequence from={30} durationInFrames={90}>
+    <OffthreadVideo src={staticFile('video/clip.mp4')} width={1280} height={720} fit="cover" volume={0.8} />
+  </Sequence>
+);
+```
+
+It takes `trimBefore`, `trimAfter`, `playbackRate`, `loop`, `volume` and `muted`. See [Audio](/docs/making-videos/audio/), and [Datamosh](/docs/making-videos/datamosh/) for the effect on `Video`.
+
+## Audio and fonts
+
+[Audio](/docs/making-videos/audio/) covers sound, and [Fonts](/docs/making-videos/fonts/) covers registering a font.
+
+## CSS and imports
+
+A stylesheet you import, a `<style>` element, Tailwind and `*.module.css` files work, and a `url()` is looked for beside the entry file and then in `public/`. An `import` of a picture file (`.png`, `.jpg`, `.webp`, `.gif`, `.avif`, `.svg`) gives its path, which any `src` takes.
+
+A remote URL is an error, because a frame is a pure function of the project. A HyperFrames page is different: Kinetograph downloads what it loads from the web once and pins it in `kinetograph.lock.json`. See [HyperFrames projects](/docs/compat/#hyperframes-projects).
+
+## What works
+
+- Drawn natively: PNG, JPEG, GIF, WebP and SVG pictures, video, and sound files. Image imports and CSS `url()` of project files.
+- Approximated or left out: text inside an SVG picture is not drawn. A remote file is an error, and a video with no named colour space converts differently from Chrome.
+- `doctor` lists what a project holds that the engine cannot draw. `lint` reports files the project names that are missing.
+
+The full list is in [What works](/docs/compat/#video-and-audio).

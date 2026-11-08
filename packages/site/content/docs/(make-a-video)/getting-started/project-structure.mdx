@@ -1,0 +1,79 @@
+---
+title: Project structure
+description: The files and folders that npx kinetograph init makes, what each is for, and where generated files go.
+---
+
+`npx kinetograph init` makes a small project with a starter title card. Keep its layout: the commands, the agent skills and [Studio](/docs/studio/) all look for it.
+
+## A TSX project
+
+```sh
+npx kinetograph init my-video
+```
+
+```txt
+my-video
+├─ src
+│  ├─ index.tsx            registerRoot and the compositions
+│  ├─ scenes
+│  │  └─ Title.tsx         the starter scene
+│  ├─ components           pieces used by more than one scene
+│  ├─ lib                  helpers
+│  └─ google-fonts.d.ts    types for @remotion/google-fonts/<Family>
+├─ public                  files for staticFile()
+│  ├─ images
+│  ├─ fonts
+│  ├─ audio
+│  └─ video
+├─ out                     everything the commands write
+├─ package.json
+├─ tsconfig.json
+└─ .gitignore
+```
+
+The entry is `src/index.tsx`. It is the file you give to every command, and it must call `registerRoot`:
+
+```tsx title="src/index.tsx"
+import { Composition, registerRoot } from '@kinetographdev/core';
+import { Title } from './scenes/Title';
+
+registerRoot(() => (
+  <Composition id="Main" component={Title} durationInFrames={60} fps={30} width={1280} height={720} />
+));
+```
+
+`package.json` gets four scripts (`still`, `strip`, `render` and `check`) that run the matching commands on the entry.
+
+## An HTML project
+
+```sh
+npx kinetograph init my-video --html
+```
+
+```txt
+my-video
+├─ html
+│  └─ index.html           the page, with its root element and timeline
+├─ public
+│  ├─ images
+│  ├─ fonts
+│  ├─ audio
+│  └─ video
+├─ out
+├─ package.json
+└─ .gitignore
+```
+
+The entry is `html/index.html`. There is no `src/` and no `tsconfig.json`. An HTML page names its files by a path from the page. See [HyperFrames projects](/docs/compat/#hyperframes-projects).
+
+## What goes where
+
+- **`public/`** holds the files you load with `staticFile('images/logo.png')`. See [Assets](/docs/making-videos/assets/).
+- **`out/`** holds what a command writes when you leave out `-o`: `out/stills/` for `still`, `out/sheets/` for `strip` and `onion`, and `out/renders/` for `render`. It is in `.gitignore`.
+- **Beside the entry**, Kinetograph keeps `kinetograph.lock.json` (pins for remote files, in an HTML project) and `presets/` (props saved in [Studio](/docs/studio/#props-and-presets)). Commit both.
+
+`init` never overwrites a file and does not run `npm install`.
+
+## Next
+
+[Compositions and props](/docs/making-videos/compositions/) explains the file `src/index.tsx`, and [Assets](/docs/making-videos/assets/) the `public/` folder.

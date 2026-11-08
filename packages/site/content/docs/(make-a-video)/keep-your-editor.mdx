@@ -1,0 +1,59 @@
+---
+title: Keep your editor, render with Kinetograph
+description: Keep editing in Remotion Studio or HyperFrames, and render the same project with Kinetograph for a render with no browser.
+---
+
+You don't have to switch tools. Keep editing in Remotion Studio or in HyperFrames, and render the same files with Kinetograph. Nothing is converted: both tools read the same project, and Kinetograph draws every frame on the GPU with no browser to start.
+
+## What to run
+
+For a Remotion project, run Kinetograph on the file that calls `registerRoot`, usually `src/index.ts` or `src/index.tsx`. A file that only exports a component, such as `Root.tsx`, isn't an entry.
+
+```sh
+npx remotion studio                                        # edit as before
+npx kinetograph render src/index.ts --comp Main -o out.mp4
+```
+
+For a HyperFrames project, run it on the page or its folder.
+
+```sh
+npx hyperframes preview                                    # edit as before
+npx kinetograph render index.html -o out.mp4
+```
+
+Run `npx kinetograph doctor <entry>` first. It lists what the engine can't draw in your project, and on which frames. Add `--strict` to a render to stop at the first frame with something missing.
+
+## Speed
+
+These are Kinetograph's own renders, whole `kinetograph render` to H.264, on an Apple M4 laptop (median of 3 runs, measured 1 November 2026):
+
+- An unchanged Remotion project: 150 frames at 1200 by 1000 in 1.81 s, 83 frames per second.
+- A reel drawn from shapes: 928 frames at 1080p in 11 s, 81 frames per second.
+- Captions over video: 180 frames at 1080p in 2.06 s, 87 frames per second.
+
+There is no head-to-head benchmark against Remotion or HyperFrames, so no "times faster" claim is made. Measure your own project with `npx kinetograph bench`.
+
+## From `remotion render`
+
+| `remotion render` | Kinetograph |
+|---|---|
+| Entry file | The same file, as the first argument |
+| Composition id | `--comp <id>` |
+| Output path | `-o <path>` |
+| `--props` | `--props` (a JSON object or a file) |
+| `--frames=a-b` | `--range a..b` (`a..=b` includes `b`) |
+| `--codec` | `--codec` (`h264`, `h265`, `prores`, `vp9` or `gif`) |
+| `--crf` | `--crf` |
+| `--scale` | `--scale` |
+| `--concurrency` | `--concurrency` |
+| `--every-nth-frame` | `--every-nth-frame` (GIF only) |
+| `--pixel-format` | `--pixel-format` |
+| `--audio-bitrate` | `--audio-bitrate` |
+| `--sequence`, `--image-format` | `--sequence`, `--image-format` |
+| `--width`, `--height`, `--muted`, `--overwrite` | No equivalent |
+
+A HyperFrames page takes its size and length from the attributes on its root element, at 30 fps, and its variables from `data-variable-values`, so `--props` doesn't apply. The [CLI reference](/docs/reference/cli/#render) lists every Kinetograph flag.
+
+## Where results can differ
+
+Kinetograph draws CSS, SVG, canvas, shaders and 3D itself, so a frame can differ from what a browser draws. Anything the engine can't draw is skipped or approximated and reported. See [What works](/docs/compat/) for the list, and [Migrate from Remotion](/docs/migrating/remotion/) or [Migrate from HyperFrames](/docs/migrating/hyperframes/) for what to check.

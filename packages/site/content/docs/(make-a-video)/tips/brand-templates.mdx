@@ -1,0 +1,58 @@
+---
+title: Brand and templates
+description: How to point an agent at a real source of brand truth, keep a series consistent, and turn one video into a template that takes props or variables.
+---
+
+Give the agent a file to read, not the word "on-brand". Fix colours and fonts, let the layout be made for video, and put everything that changes between videos into props.
+
+## Point at a source of truth
+
+Name something the agent can open:
+
+- **A spec file.** `brand.md` or `brand.json` with hex colours, font families, the logo path and a few rules.
+- **A taste.** A brand file for motion: palette, type, how text enters, light and transitions. Install a published one with `npx kinetograph add <taste>`, or have `/kinetograph-taste-clone` write one from a video you like. See [Match a reference](/docs/agents/taste/).
+- **A page.** Paste the URL and ask the agent to read the palette and fonts from it, then check what it found.
+
+```txt title="Suggested prompt"
+/kinetograph-markup Read brand.md and src/tastes/<name>/TASTE.md. Use only the colours and fonts they name. Put the colours and font families in src/lib/brand.ts and import them everywhere, so none is typed twice.
+```
+
+Hold colours, font families and the logo fixed, and let the layout be designed for video: "keep my palette and fonts, but lay it out for a vertical video, with a headline at least 100 px". Put logos, fonts and photos in `public/` and name each by path. See [Assets](/docs/making-videos/assets/) and [Fonts](/docs/making-videos/fonts/).
+
+## Keep a series consistent
+
+Reuse the same brand file or taste in every project and change only the content. Ask for the same intro, lower-third style and end card, and for transitions from one short list.
+
+## Templates and props
+
+A template is a video whose content is props. A Remotion composition declares them with a zod schema:
+
+```tsx title="src/index.tsx"
+<Composition
+  id="Card"
+  component={Card}
+  durationInFrames={90}
+  fps={30}
+  width={1080}
+  height={1920}
+  schema={z.object({ title: z.string(), accent: zColor(), logo: z.string() })}
+  defaultProps={{ title: 'Hello', accent: '#e0553a', logo: 'images/logo.svg' }}
+/>
+```
+
+```txt title="Suggested prompt"
+/kinetograph-markup Make Card a template. The things that change are title, accent colour and the logo path. Put them in a zod schema with defaults, keep everything else fixed, and use staticFile(props.logo) for the logo.
+```
+
+[Studio](/docs/studio/#props-and-presets) draws a form from the schema, and **Save preset** keeps the props as a file you can commit. `--props` renders other values from the command line:
+
+```sh
+npx kinetograph render src/index.tsx --comp Card --props '{"title":"Goodbye"}'
+npx kinetograph render src/index.tsx --comp Card --props presets/Card/spring.json
+```
+
+There is no batch mode, so for many records ask the agent to write a small loop over `--props`. An HTML page takes its values from `data-composition-variables` and `data-variable-values` on its root element instead.
+
+To check a template, ask for the same frame rendered twice with different props. A prop that changes nothing isn't wired in.
+
+Size, frame rate and length belong to the `Composition`, not to props, so a 9:16 and a 16:9 version need two compositions that share a scene.

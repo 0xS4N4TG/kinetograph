@@ -1,0 +1,72 @@
+---
+title: Agent tools (MCP)
+description: The tools the Kinetograph MCP server gives a coding agent, and how to connect it.
+---
+
+`npx kinetograph mcp` runs an MCP server on stdio. It gives an agent one tool for each CLI command, so it can render a frame, check the layout or render the video, and see the result as an image. Kinetograph needs no account, login or API key: everything runs on your computer.
+
+## Connect it
+
+```sh
+claude mcp add kinetograph -- npx -y kinetograph mcp
+```
+
+Every client runs the same command, `npx -y kinetograph mcp`, and needs Node 22 or newer. [Claude Code](/docs/agents/claude-code/), [Codex](/docs/agents/codex/) and [Cursor](/docs/agents/cursor/) have their own steps. For Claude Desktop, open Settings, then Developer, then Edit Config, and add the server below. Restart Claude Desktop after saving.
+
+```json title="claude_desktop_config.json"
+{
+  "mcpServers": {
+    "kinetograph": {
+      "command": "npx",
+      "args": ["-y", "kinetograph", "mcp"]
+    }
+  }
+}
+```
+
+## The command tools
+
+A tool takes the same arguments as its command: the entry file first, then the options. Command names with a space use an underscore, so `audio analyze` is `audio_analyze`. An error comes back as `{ "error": { "code", "message" } }`.
+
+| Tool | What it does |
+|---|---|
+| `init` | Create the project folders and a starter |
+| `add` | Install a component, template or taste from the registry (`list` shows what exists) |
+| `compositions` | List the compositions of a project |
+| `still` | Render one frame to a PNG, and return the image |
+| `strip` | Contact sheet of evenly spaced frames, labelled with frame and time; returns the image |
+| `onion` | Frames of a range blended over one another, to show a motion path; returns the image |
+| `inspect` | The scene graph at a frame: layers, bounds and resolved styles |
+| `lint` | Text overflow, layers off the canvas, missing fonts and assets, type errors, and what the engine can't draw. See [Lint rules](/docs/reference/lint/) |
+| `check` | Type errors in the project |
+| `doctor` | What a project holds that the engine can't draw, and in which frames; with no entry, what this install can do |
+| `render` | Render frames to a video with audio |
+| `snapshot` | Compare frames with the approved PNGs in `__snapshots__/` |
+| `audio_analyze` | Loudness (LUFS), true peak, clipping and silences of the mixed audio |
+| `bench` | Milliseconds per frame for each stage |
+| `track` | Track points through a video with Blender's tracker |
+| `effects` | List the effects and their parameters |
+| `plugins` | List the plugins the project depends on, with the path of each `SKILL.md` |
+
+For `still`, `strip` and `onion`, `output` is optional: the server writes a temporary PNG and returns it. `studio` and `fetch-deps` are not tools: `studio` runs until stopped, and downloading is left to you.
+
+## Studio tools
+
+Add `--studio <address>` to talk to a running [Studio](/docs/studio/). The token Studio opens with goes in the environment variable `KINETOGRAPH_STUDIO_TOKEN`:
+
+```sh
+KINETOGRAPH_STUDIO_TOKEN=<token> npx kinetograph mcp --studio http://127.0.0.1:3000
+```
+
+The agent in Studio's own chat gets these tools without any setup.
+
+| Tool | What it does |
+|---|---|
+| `studio_get_props` | The composition the window previews and the props it shows now |
+| `studio_set_props` | Set the props the window previews (`comp`, `props`, `merge`); the preview redraws at once |
+| `studio_open_panel` | Open a brief, script, storyboard, styleframes, review or custom [panel](/docs/studio/panels/) to ask you for a decision (`panel`, `data`, `message`, `placement`) |
+| `studio_panel_result` | The state and answer of a panel (`id`), for an agent in a terminal |
+
+## Plugin tools
+
+A [plugin](/docs/plugins/) can add tools of its own. They show as `<plugin>_<tool>`, and a name that is already taken is skipped.

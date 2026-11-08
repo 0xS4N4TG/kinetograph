@@ -1,0 +1,86 @@
+---
+title: Rendering
+description: Look at single frames while you work, check the project, and render it to an MP4 or a sequence of images.
+---
+
+Look at frames with `still` and `strip`, check them with `lint` and `doctor`, then `render` the video. Every command takes the entry file, and an HTML page works the same way.
+
+```sh
+npx kinetograph strip src/index.tsx -n 12
+npx kinetograph render src/index.tsx
+```
+
+The video goes to `out/renders/<composition id>.mp4`. Pass `-o` to choose another path.
+
+## Look at frames
+
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
+
+```sh
+npx kinetograph still src/index.tsx 15
+npx kinetograph strip src/index.tsx -n 12
+npx kinetograph onion src/index.tsx 0..60 -n 6
+```
+
+  </Tab>
+  <Tab value="HyperFrames">
+
+```sh
+npx kinetograph still html/index.html 15
+npx kinetograph strip html/index.html -n 12
+npx kinetograph onion html/index.html 0..60 -n 6
+```
+
+  </Tab>
+</Tabs>
+
+- `still` writes one frame as a PNG.
+- `strip` writes evenly spaced frames on one sheet, labelled with the frame and the time. Start here: it shows the whole animation.
+- `onion` blends the frames of a range over one another, to show a motion path.
+
+A frame is a whole number from 0. A range `10..40` is frames 10 to 39.
+
+## Check the project
+
+```sh
+npx kinetograph inspect src/index.tsx --frame 30
+npx kinetograph lint src/index.tsx
+npx kinetograph check src/index.tsx
+npx kinetograph doctor src/index.tsx
+```
+
+- `lint` reports overflowing text, layers off the canvas, and missing fonts and assets.
+- `check` finds type errors, such as a misspelled prop.
+- `doctor` lists what the engine cannot draw, and on which frames. Run it before a long render. See [What works](/docs/compat/#when-the-engine-cant-draw-something).
+
+## Render
+
+```sh
+npx kinetograph render src/index.tsx --draft
+npx kinetograph render src/index.tsx --range 0..90 --strict
+```
+
+- `--draft` renders at half size, for a quick look.
+- `--range a..b` renders only those frames, and the audio for them.
+- `--strict` stops at the first frame with something the engine cannot draw, and leaves no file. Use it for final renders and in CI.
+- `--comp <id>` and `--props '{"title":"Hello"}'` pick the composition and its props.
+
+## Export options
+
+`--codec h264|h265|prores|vp9|gif` and the extension (`.mp4`, `.mov`, `.webm` or `.gif`) set the format. The other flags are in the [CLI reference](/docs/reference/cli/#render).
+
+`--sequence` writes one image per frame into the `-o` folder instead of a video, as `png` (with alpha) or `jpeg`. A sequence has no audio.
+
+## Suggested prompt
+
+```txt title="Suggested prompt"
+/kinetograph-markup Render a half-size draft with --strict, show me the strip, and fix anything doctor reports.
+```
+
+## What works
+
+- Drawn natively: everything listed under [Making videos](/docs/making-videos/compositions/), on the GPU with no browser.
+- Approximated or left out: a frame with content the engine cannot draw is drawn without it, or close, and the command prints one warning line for each kind of problem. `--strict` makes it an error.
+- Not supported: a render in a cloud function. There is no cloud renderer, so run `render` on a machine with a GPU.
+- See [What works](/docs/compat/) for the full list.

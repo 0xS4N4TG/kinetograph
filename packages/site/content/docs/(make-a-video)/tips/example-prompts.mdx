@@ -1,0 +1,52 @@
+---
+title: Example prompts
+description: Prompts for common videos, each with the engine features it relies on and what to check.
+---
+
+Copy a prompt, swap in your words and files, and keep the structure. None was rendered for this page, so expect to adjust. Every prompt ends with a check, because the agent can't see the result until it draws a frame.
+
+## A title card
+
+```txt title="Suggested prompt"
+/kinetograph-create A 5 second 1920 by 1080 title card at 30 fps. The words "Quarterly review" in Inter 700, white, centred, on #14171f. The words write on over 20 frames, hold, and fade out in the last 10. Show a strip.
+```
+
+## A vertical explainer
+
+```txt title="Suggested prompt"
+/kinetograph-markup A 15 second vertical video, 1080 by 1920 at 30 fps, three beats of 5 seconds each. Beat 1: "Step 1" and the line "Export your notes". Beat 2: "Step 2" and "Pick a folder". Beat 3: "Step 3" and "Done". Background #f6f0e4, text #1d1a16, accent #e0553a, Newsreader for the headings. Join the beats with 12 frame slides from the right. Keep the total at 15 seconds. Show a strip and run lint.
+```
+
+Transitions overlap the beats, so the prompt asks the agent to hold the length.
+
+## Captions over a voiceover
+
+```txt title="Suggested prompt"
+/kinetograph-markup The narration is public/audio/vo.wav and its timings are in public/captions/vo.srt. Caption it in 3 to 5 word pages in the lower third, Inter 800, white on a 60% black bar, and light the spoken word in #ffd23f. Put the audio in the render. Run lint and audio analyze.
+```
+
+## A photo montage
+
+```txt title="Suggested prompt"
+/kinetograph-markup A 20 second 1920 by 1080 montage of the five photos in public/images/trip/. Each shows for 4 seconds with a slow push-in from 100% to 108%. Cross-fade between them over 15 frames. Add fine film grain over everything and a warm light leak across the second cut. Music from public/audio/bed.mp3 at 35%, faded out over the last 2 seconds. Show a strip and run audio analyze.
+```
+
+## A loop for a social post
+
+```txt title="Suggested prompt"
+/kinetograph-markup A 2 second 800 by 800 loop at 30 fps: a ring of 12 dots that turns once, so frame 0 and frame 60 match. Dots #e0553a on #14171f. Then render it as out/loop.gif with every second frame.
+```
+
+A GIF has no sound. Check frames 0 and 59 side by side, since the loop repeats after 59.
+
+## A lower third with transparency
+
+```txt title="Suggested prompt"
+/kinetograph-render Make a 4 second 1920 by 1080 lower third on a transparent background: a bar slides in from the left over 12 frames, the text "Mara Okafor" and below it "Founder" fade in, hold, then everything leaves. Render it as a ProRes 4444 .mov that keeps the transparency, and tell me the codec and pixel format you used.
+```
+
+A composition's background is transparent unless you set one. ProRes 4444 and VP9 with alpha keep transparency. See [Rendering](/docs/rendering/). Open the file in your editor to confirm it, since a still can't show it.
+
+## Make your own
+
+Take the closest prompt and change three things: the length, the copy and the look. Keep the last sentence, the check.

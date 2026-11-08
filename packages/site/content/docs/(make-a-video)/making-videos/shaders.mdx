@@ -1,0 +1,74 @@
+---
+title: Canvas and shaders
+description: Draw with Canvas 2D, a GLSL fragment shader, WebGL or WebGPU, on the GPU and with no browser.
+---
+
+Use `Canvas` for Canvas 2D drawing and `GlslShader` for a fragment shader. Both are layers, so they take the same props as any other layer.
+
+```tsx title="src/Waves.tsx"
+import { GlslShader, useCurrentFrame, useVideoConfig } from '@kinetographdev/core';
+
+const fragment = `
+precision highp float;
+uniform float time;
+uniform vec2 resolution;
+void main() {
+  vec2 uv = gl_FragCoord.xy / resolution;
+  float v = 0.5 + 0.5 * sin(uv.x * 12.0 + time * 3.0);
+  gl_FragColor = vec4(vec3(v * uv.y, v * 0.6, 1.0 - uv.x), 1.0);
+}`;
+
+export const Waves = () => {
+  const frame = useCurrentFrame();
+  const { fps, width, height } = useVideoConfig();
+  return <GlslShader width={width} height={height} fragment={fragment} uniforms={{ time: frame / fps, resolution: [width, height] }} />;
+};
+```
+
+The shader has no clock, so work its `uniforms` out from the frame.
+
+## Canvas 2D
+
+`Canvas` calls `draw(ctx)` with a fresh Canvas 2D context on every frame. What it paints must come from the props and the frame, never from what was painted before.
+
+```tsx title="src/Rings.tsx"
+import { Canvas, useCurrentFrame } from '@kinetographdev/core';
+
+export const Rings = () => {
+  const frame = useCurrentFrame();
+  return (
+    <Canvas
+      width={600}
+      height={600}
+      draw={(ctx) => {
+        ctx.strokeStyle = '#f6c177';
+        ctx.lineWidth = 6;
+        for (let i = 1; i <= 5; i++) {
+          ctx.beginPath();
+          ctx.arc(300, 300, i * 40 + (frame % 40), 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }}
+    />
+  );
+};
+```
+
+A `<canvas>` element with `getContext('2d')`, as a Remotion project writes it, is drawn too. A canvas starts every frame empty, so redraw the whole frame every time.
+
+## WebGL and WebGPU
+
+A `<canvas>` with a `webgl`, `webgl2` or `webgpu` context runs on the GPU, so existing shader code, Shadertoy ports and p5.brush work as they are. Every frame starts with an empty canvas. `shader({ code, uniforms })` in `effects` runs WGSL over a layer's pixels: see [Effects](/docs/making-videos/effects/).
+
+## Suggested prompt
+
+```txt title="Suggested prompt"
+/kinetograph-markup Add a full-frame GLSL gradient that moves with time behind the title. Keep the uniforms driven by the frame.
+```
+
+## What works
+
+- Drawn natively: Canvas 2D, GLSL, WebGL and WebGL 2 fragment shaders, framebuffers, instancing, depth and stencil, and WebGPU render and compute passes.
+- Approximated: an `rgba16float` or `display-p3` WebGPU canvas is clipped to SDR sRGB.
+- Not supported: WebGL multisampled renderbuffers, `readPixels`, lines, cube textures and float render targets, and several WebGPU features (query sets, render bundles, indirect draws, multisampling, readback).
+- `doctor` lists each of these with its frames, and a project that needs state from earlier frames. See [What works](/docs/compat/#webgl).

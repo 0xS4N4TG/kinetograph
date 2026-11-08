@@ -1,0 +1,23 @@
+---
+title: Claude Code
+description: Install the Kinetograph skills in Claude Code and connect the MCP server.
+---
+
+Run two commands: one installs the skills, one connects the MCP server. Claude Code then writes, checks and renders videos with the `kinetograph` commands as tools.
+
+```sh
+npx skills add 0xS4N4TG/kinetograph
+claude mcp add kinetograph -- npx -y kinetograph mcp
+```
+
+The first command asks which agents to install the skills for. Pick Claude Code. You need Node 22 or newer for the second.
+
+## MCP server
+
+`claude mcp add` saves the server for the current project. Add `--scope user` to use it in every project. The tools are listed in [Agent tools (MCP)](/docs/mcp/). [Agent skills](/docs/agents/skills/) lists what each skill does.
+
+## Try it
+
+```txt title="Suggested prompt"
+/kinetograph-markup Make a 5 second title card for my product, check it with strip and lint, and render it to out/title.mp4.
+```

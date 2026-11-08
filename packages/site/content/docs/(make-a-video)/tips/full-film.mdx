@@ -1,0 +1,78 @@
+---
+title: A full film, prompt by prompt
+description: Ten prompts that take a 30 second launch film from an empty folder to a checked render, one stage at a time.
+---
+
+Build a film in stages, and look after each one: project, plan, look, hook, the rest, voice, polish, review, check, render. The product, words and files are made up, so swap in yours. This is a plan of what to say, not a record of a render.
+
+## 1. Start the project
+
+```txt title="Suggested prompt"
+/kinetograph-create A new project for a 30 second vertical launch film, 1080 by 1920 at 30 fps, for a notes app called Fieldnote. Register fonts Newsreader and Inter. Put my logo, public/images/logo.svg, in the project.
+```
+
+## 2. Plan before animating
+
+```txt title="Suggested prompt"
+/kinetograph-studio Open Studio on src/index.tsx. Ask me for a brief, then a storyboard, in the panels. Wait for my answers before you build anything.
+```
+
+See [Storyboards](/docs/tips/storyboards/).
+
+## 3. Fix the look
+
+```txt title="Suggested prompt"
+/kinetograph-studio Read plan/storyboard.json. Make three styleframes of the hook at frame 30, each in a different look: a cream paper one, a dark one, a bright one. Open them in the styleframes panel so I can pick, then save the palette and fonts of the one I pick in src/lib/brand.ts.
+```
+
+Or start from a [taste](/docs/tips/matching/).
+
+## 4. Build the hook and look at it
+
+```txt title="Suggested prompt"
+/kinetograph-markup Build scene 1, 0:00 to 0:04, from the storyboard. The words "Notes that find you" write on over 20 frames. Show a strip of the scene and run lint.
+```
+
+The first seconds decide whether anyone stays. Get them right before the rest.
+
+## 5. Build the rest
+
+```txt title="Suggested prompt"
+/kinetograph-markup Build scenes 2 to 5 from the storyboard in the same way, joined with the transitions it names. Keep the total at 30 seconds. Show a strip of the whole film and run lint and doctor.
+```
+
+## 6. Voice and captions
+
+```txt title="Suggested prompt"
+/kinetograph-markup The narration is public/audio/vo.wav, its timings are in public/captions/vo.srt. Start it at 0:01 and pace the three cards to the words "Search", "Pin" and "Share". Add captions in the lower third, 3 to 5 words at a time, the spoken word in the accent colour.
+```
+
+## 7. Music and levels
+
+```txt title="Suggested prompt"
+/kinetograph-markup Put public/audio/bed.mp3 under the film at 30%, lower to 12% under the voice, fade out over the last 2 seconds. Add a click on each card landing and a whoosh on each slide. Run audio analyze and fix any clipping.
+```
+
+## 8. Polish
+
+```txt title="Suggested prompt"
+/kinetograph-markup Add a very light grain over the whole film and a warm light leak across the cut at 0:16. Keep the text layers clean of the grain. Show frame 30 and frame 480 before and after.
+```
+
+Do this last. Effects hide problems that the earlier checks would have shown.
+
+## 9. Review in Studio
+
+Press `M`, mark what is wrong, and send the notes.
+
+```txt title="Suggested prompt"
+/kinetograph-studio Fix my markup notes in order, then list what you did and what you skipped.
+```
+
+## 10. Check and render
+
+```txt title="Suggested prompt"
+/kinetograph-render Run doctor on the whole film, then render a half-size draft with --strict and show me the strip. If it is clean, render the full video to out/renders/fieldnote.mp4, run audio analyze on it and report the loudness and the true peak.
+```
+
+See [Ask for a great video](/docs/tips/) for what to carry over.

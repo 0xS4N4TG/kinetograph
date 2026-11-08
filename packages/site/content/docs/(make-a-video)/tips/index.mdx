@@ -1,0 +1,64 @@
+---
+title: Ask for a great video
+description: What to put in a prompt so a coding agent makes the video you picture with Kinetograph, and how to steer it afterwards.
+---
+
+A good prompt gives the length, a plan in timed beats, the exact words on screen, the look, and what to avoid. One sentence is enough to start. Add detail only where the result must match your picture, then change one thing at a time.
+
+## Set up once
+
+Install the [Kinetograph skills](/docs/agents/skills/) and connect the MCP server for [Claude Code](/docs/agents/claude-code/), [Codex](/docs/agents/codex/) or [Cursor](/docs/agents/cursor/). Then start each request with the skill that fits:
+
+| Start with | For |
+|---|---|
+| `/kinetograph-create` | A new project |
+| `/kinetograph-markup` | Writing or changing the video: layers, text, motion, effects, sound |
+| `/kinetograph-render` | Checking and rendering |
+| `/kinetograph-studio` | Working with you in [Studio](/docs/studio/) |
+| `/kinetograph-taste-clone` | Working from a reference video. See [Match a reference](/docs/agents/taste/) |
+
+## Hand it material
+
+Give the agent a script, a product page you pasted in, logos and photos. Put files in `public/` and name them by path, because a link to a picture is not enough. In [Studio's chat](/docs/agents/studio-agent/) you can drop an image onto the agent. For a longer piece, ask it to open Studio's brief, script and storyboard panels first: see [Panels](/docs/studio/panels/) and [Storyboards](/docs/tips/storyboards/).
+
+## The shape of a strong prompt
+
+Five parts cover most of it. Leave out any that don't matter to you.
+
+- **Length and shape.** Seconds, orientation and frame rate: "20 seconds, vertical 1080 by 1920, 30 fps". Without these the agent picks a size.
+- **Beats with times.** One line per beat, each with a start time: "0:00 to 0:03, the title". Times give you something to check frame by frame.
+- **Exact copy in quotes.** Put every word that appears on screen in quotation marks. Unquoted copy gets paraphrased.
+- **The look.** Colours as hex values, fonts by name, one word for the mood ("calm", "loud"), and a [taste](/docs/tips/matching/) or [template](/docs/tips/brand-templates/) if you have one.
+- **Negatives.** What not to do: "no zoom on the title", "no stock music", "nothing bounces".
+
+```txt title="Suggested prompt"
+/kinetograph-markup A 20 second vertical video, 1080 by 1920 at 30 fps, for a note-taking app.
+
+0:00 to 0:03: the words "Notes that find you" write on over a cream background, centred, serif.
+0:03 to 0:10: three cards slide up one after another: "Search", "Pin", "Share". Each holds for 2 seconds.
+0:10 to 0:16: a phone mockup from public/images/phone.png rises from the bottom and stops at the centre.
+0:16 to 0:20: the logo from public/images/logo.svg and the line "Free on iOS and Android".
+
+Colours: background #f6f0e4, text #1d1a16, accent #e0553a. Font: Newsreader. Calm, with slow eases.
+No bouncing, no shadows on text. Show me a strip before you render.
+```
+
+Pin only what you would notice if it were different: copy, brand colours, fonts and timings. The more you pin, the less the agent can improve.
+
+## Check what you get
+
+The agent can't watch a video, so add "show me a strip" to a prompt. A strip is a contact sheet of 12 labelled frames that shows timing and layout at once. Ask for `lint` to find overflowing text and missing files, and `doctor` before a long render to list what the engine can't draw. See the [CLI reference](/docs/reference/cli/).
+
+## Iterate toward the look
+
+Change one thing per message. Two changes at once and you can't tell which one helped. Point at a time or a place:
+
+- Give a time, not a feeling: "the title should land at 0:01.0", not "make it faster".
+- Give a number when you want a size: "the headline at 140 px", not "bigger".
+- Say what stays: "keep the colours, change the order".
+
+In Studio, press `M` and drop a pin or a box on the preview, or drag across the timeline to mark a span of time, and write the note beside it. The agent gets the frame, the coordinates and the layers under your mark. See [Studio's markup](/docs/studio/#mark-up-the-preview).
+
+## More
+
+[Motion and transitions](/docs/tips/motion/), [Voice, music and sound](/docs/tips/voice-music-sound/), [Text, captions and code](/docs/tips/text-captions-code/), [Colour, effects and 3D](/docs/tips/colour-effects-3d/), [Brand and templates](/docs/tips/brand-templates/) and [Example prompts](/docs/tips/example-prompts/).

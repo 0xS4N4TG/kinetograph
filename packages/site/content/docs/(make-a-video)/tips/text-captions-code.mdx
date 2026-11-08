@@ -1,0 +1,45 @@
+---
+title: Text, captions and code
+description: How to ask for on-screen text, timed captions and code that types itself, and how to keep every word readable.
+---
+
+Quote every word, name a font you can load, and say when each line arrives and leaves. Then ask for `lint`, which catches text that overflows its box or the canvas.
+
+## Text that stays readable
+
+- **Quote the copy.** Unquoted copy gets reworded.
+- **Name the font, and load it.** Use a Google Fonts family or a file in `public/fonts/`. Without one the text falls back to the bundled DM Sans. See [Fonts](/docs/making-videos/fonts/).
+- **Give size and place.** "Headline 120 px, centred, 80 px from the top", or "fit on two lines inside 900 px".
+- **Give contrast a number.** "White text on a 60% black bar" is clearer than "make it readable".
+
+```txt title="Suggested prompt"
+/kinetograph-markup Add the headline "Ship it on Friday" in Inter 700, white, fit to two lines inside 900 px, 120 px from the top. It arrives at 0:01 and leaves at 0:04. Run lint and fix anything it reports.
+```
+
+Name the effect and when it happens: "write on over 20 frames, one letter at a time", or "each word slides up from a 20 px offset, 3 frames apart". Over busy footage, ask for a dark bar, a drop shadow or a glow behind the text.
+
+## Captions
+
+Kinetograph reads SRT and VTT files but doesn't make the timings. Give the agent the file, or the word timestamps from your speech-to-text tool. Say how many words show at a time, where they sit, and how the current word is marked. Keep one style for the whole video.
+
+```txt title="Suggested prompt"
+/kinetograph-markup Caption the narration with public/captions/vo.srt. Show 3 to 5 words at a time in the lower third, Inter 800, white on a 60% black bar, and light the word being said in #ffd23f. Keep the captions inside the safe zone and run lint.
+```
+
+For styled captions that follow the voice, use the [Kinetic typography plugin](/docs/plugins/kinetic-typography/). Its `<Captions>` has fifteen named looks, such as `highlighter` and `typewriter`, and needs word-level timings.
+
+```txt title="Suggested prompt"
+/kinetograph-markup Use the kinetic-typography plugin. Caption public/captions/vo-words.json with the "highlighter" look, 3 words a line, and set the word "premium" big. Show the first hook and the first caption line as stills.
+```
+
+## Code on screen
+
+Paste the code in a fenced block and say it must be shown exactly. Then choose the motion: typing with a caret, a highlight on lines 4 to 6, a diff in red and green, or a scroll. Name a monospace font and the colours for keywords, strings and comments.
+
+```txt title="Suggested prompt"
+/kinetograph-markup Show this code typed out at 30 characters a second on a dark panel (#12151c), in JetBrains Mono 36 px, keywords #7aa2f7, strings #9ece6a, comments #565f89. Hold the finished code for 2 seconds, then highlight the line that starts with "await".
+```
+
+## Lower thirds
+
+Say what it says, when it enters and leaves, and where: "a lower third "Mara Okafor, Founder" at the bottom left, in at 0:03, out at 0:08". To lay it over other footage, ask for it as its own video with a transparent background. See [Example prompts](/docs/tips/example-prompts/#a-lower-third-with-transparency).

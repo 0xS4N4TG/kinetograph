@@ -1,0 +1,23 @@
+---
+title: "@kinetographdev/audio"
+description: "Web Audio synthesis, mixing and loudness analysis."
+---
+
+Sound for a project: `onFrame` schedules Web Audio code at a frame, the mixer renders every clip into one track, and the analyser measures loudness. It runs on the CPU through node-web-audio-api. Install it to synthesise sound in a project.
+
+```sh
+npm install @kinetographdev/audio
+```
+
+Current version: 0.3.0.
+
+## Exports
+
+- `onFrame`, `clearOnFrame` and `hasOnFrame`: schedule synthesis at a frame.
+- `renderAudio`: mix clips and callbacks into PCM.
+- `analyzeAudio`, `integratedLoudness` and `truePeakDb`: loudness measurement.
+
+## See also
+
+- [Audio](/docs/making-videos/audio/)
+- [Voice, music and sound](/docs/tips/voice-music-sound/)

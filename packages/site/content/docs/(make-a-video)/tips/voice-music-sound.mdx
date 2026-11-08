@@ -1,0 +1,36 @@
+---
+title: Voice, music and sound
+description: How to ask for narration, music and sound effects, tie picture to the voice, and check the mix.
+---
+
+Kinetograph mixes the audio files you give it and the sounds your code synthesises. It doesn't make speech or timings for you, so bring a voice file, a track and, for captions, an SRT or VTT file, and tell the agent where each one is.
+
+## Voice
+
+Put the file in `public/audio/` and say what it is and what it says. Give the time each line starts, so the agent can place a reveal exactly: "the third card appears on the word 'Search', at 0:05.4".
+
+```txt title="Suggested prompt"
+/kinetograph-markup The narration is public/audio/vo.wav and the script is in script.md. Start it at 0:01. Show the line "Ship it on Friday" on screen when it is spoken, and tell me the frame it starts on.
+```
+
+## Music
+
+Give a track by path and say how loud it sits under the voice. For a track with a beat, give the beat times in seconds and ask for cuts on them.
+
+```txt title="Suggested prompt"
+/kinetograph-markup Put public/audio/bed.mp3 under the whole video at 30% volume. Fade it in over the first second and out over the last two. Lower it to 12% while the narration plays, then run audio analyze.
+```
+
+## Sound effects
+
+Tie each effect to a moment: "a click on each card landing, a whoosh on the slide at 0:08". Too many blur together, so ask for the three or four that matter. Use your own files, or ask for a click, a whoosh or a hit synthesised in code, which needs no files and is the same every render.
+
+## Check the mix
+
+Describe what you hear: "the music drowns the voice at 0:12". Then ask the agent to run `audio analyze`, which reports loudness, true peak, clipped samples and silences. See [Audio](/docs/making-videos/audio/).
+
+## What Kinetograph doesn't do
+
+- It doesn't generate speech or transcribe. Bring the files.
+- It doesn't clean noise or de-ess a recording. Fix the file first.
+- `@remotion/webcodecs` encode and decode and `@remotion/media-parser` sample callbacks aren't supported. See [What works](/docs/compat/#video-and-audio).
