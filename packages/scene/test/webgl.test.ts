@@ -1042,7 +1042,8 @@ describe('the recording WebGL context', () => {
       expect(gl.getError()).toBe(GL.INVALID_OPERATION);
       // What cannot be drawn says so.
       gl.texImage2D(GL.TEXTURE_2D, 0, GL2.R32F, 1, 1, 0, GL2.RED, GL.FLOAT, new Float32Array(1));
-      expect(() => gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL2.RED, GL.FLOAT, new Float32Array(1))).toThrow(WebGLUnsupportedError);
+      gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL2.RED, GL.FLOAT, new Float32Array(1));
+      expect(gl.getError()).toBe(GL.NO_ERROR);
       expect(() => gl.generateMipmap(GL.TEXTURE_2D)).toThrow(/float/);
       expect(() => gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, GL.RGBA, GL.FLOAT, new Float32Array(4))).toThrow(WebGLUnsupportedError);
     });
@@ -1490,6 +1491,21 @@ describe('the recording WebGL context', () => {
     it('offers EXT_color_buffer_float on WebGL 2 only', () => {
       expect(floatContext(GL2.RGBA16F, true).gl.getExtension('EXT_color_buffer_float')).not.toBeNull();
       expect(createWebGLContext({ size: () => ({ width: 8, height: 4 }) }).getExtension('EXT_color_buffer_float')).toBeNull();
+    });
+
+    it('takes texSubImage2D of floats into a float texture, as three.js fills a data texture', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const texture = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.texStorage2D(GL.TEXTURE_2D, 1, GL2.RGBA32F, 2, 2);
+      gl.texSubImage2D(GL.TEXTURE_2D, 0, 1, 1, 1, 1, GL.RGBA, GL.FLOAT, new Float32Array([5, 6, 7, 8]));
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      gl.texSubImage2D(GL.TEXTURE_2D, 0, 1, 1, 2, 1, GL.RGBA, GL.FLOAT, new Float32Array(8));
+      expect(gl.getError()).toBe(GL.INVALID_VALUE);
+      gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4));
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+      gl.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, 1);
+      expect(() => gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL.RGBA, GL.FLOAT, new Float32Array(4))).toThrow(/^unsupported:.*UNPACK_FLIP_Y/);
     });
 
     it('refuses blending into a 32-bit target and RGB16F, and says what to use', () => {

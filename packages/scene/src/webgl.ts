@@ -2554,6 +2554,24 @@ export class WebGLContext {
     this.texImage2D(target, level, internalformat, format, type, elementImage);
   }
 
+  /** `texSubImage2D` of floats (`width, height, format, type, pixels[, srcOffset]`) into a float texture: they replace that rectangle of the floats it holds. */
+  private subFloats(texture: WebGLTexture, xoffset: number, yoffset: number, rest: unknown[]): void {
+    const float = FLOAT_FORMATS[texture.format]!;
+    if (rest.length < 5) throw new WebGLUnsupportedError('texSubImage2D into a float texture from a picture; use an array of floats');
+    if (this.flipY || this.premultiply) throw new WebGLUnsupportedError('texSubImage2D into a float texture with UNPACK_FLIP_Y_WEBGL or UNPACK_PREMULTIPLY_ALPHA_WEBGL on');
+    if (texture.drawnAt === texture.version) throw new WebGLUnsupportedError('texSubImage2D into a float texture a framebuffer drew in; draw into it, or upload the whole texture again');
+    const [width, height, format, type, source, srcOffset = 0] = rest as [number, number, number, number, ArrayBufferView | null, number | undefined];
+    const numbers = [xoffset, yoffset, width, height];
+    if (!numbers.every((v) => Number.isInteger(v) && v >= 0) || xoffset + width > texture.width || yoffset + height > texture.height) return this.fail(GL.INVALID_VALUE);
+    if (source === null || source === undefined) return this.fail(GL.INVALID_VALUE);
+    const floats = this.floatTexels(float, format, type, width * height, source, Number(srcOffset));
+    if (floats === null) return;
+    const held = texture.floats!;
+    for (let y = 0; y < height; y += 1) held.set(floats.subarray(y * width * 4, (y + 1) * width * 4), ((yoffset + y) * texture.width + xoffset) * 4);
+    texture.blank = false;
+    texture.version += 1;
+  }
+
   /**
    * A picture over a rectangle of level 0. Into a texture a framebuffer draws in it is an op after the draws before
    * it; into an uploaded texture whose pixels are here it edits them; anything else (an image file, a layer, a
@@ -2565,7 +2583,7 @@ export class WebGLContext {
     if (texture === null) return;
     if (level !== 0) throw new WebGLUnsupportedError('texSubImage2D above level 0; call generateMipmap');
     if (kindOf(texture.format) !== 'color') throw new WebGLUnsupportedError('texSubImage2D into a depth texture; draw its depth');
-    if (texture.floats !== null) throw new WebGLUnsupportedError('texSubImage2D into a float texture; upload the whole texture again');
+    if (texture.floats !== null) return this.subFloats(texture, xoffset, yoffset, rest);
     let width: number;
     let height: number;
     let part: { pixels: Uint8Array } | { src: string } | { layer: string };
