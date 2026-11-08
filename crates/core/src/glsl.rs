@@ -881,6 +881,8 @@ struct Rewritten {
     mat_attributes: Vec<(String, u32, u32)>,
     /// The varyings the fragment shader declares and the vertex shader does not write: an error if it reads one.
     unwritten: Vec<String>,
+    /// The structs the shader defines, by name and text (on one line): they go ahead of the uniform block, which may use them.
+    structs: Vec<(String, String)>,
     /// The varyings this stage declared, with their locations.
     varyings: Vec<(String, u32, String)>,
     /// The locations of the fragment shader's outputs.
@@ -964,6 +966,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         attributes: Vec::new(),
         mat_attributes: Vec::new(),
         unwritten: Vec::new(),
+        structs: Vec::new(),
         varyings: Vec::new(),
         outputs: Vec::new(),
         uses_frag_coord: false,
@@ -1069,6 +1072,9 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
     // The prelude is one line of its own, so a line of the page's source is two
     // lines down in the rewritten text.
     let mut prelude = String::new();
+    for (_, text) in &r.structs {
+        prelude.push_str(text);
+    }
     let mut members = String::new();
     if fragment {
         members.push_str("float _k_fbh; ");
@@ -1630,6 +1636,19 @@ fn declaration(
     if w(0) == "precision" {
         return Ok(Some(String::new()));
     }
+    if w(0) == "struct" && has_body {
+        // Moved ahead of the uniform block, which may hold one; the lines it spanned stay.
+        let name = stmt.get(1).map(|_| w(1).to_string()).unwrap_or_default();
+        let close = stmt.iter().rposition(|t| word(text, t) == "}");
+        let Some(close) = close.filter(|c| c + 1 == stmt.len()) else {
+            return Err(unsupported(format!(
+                "`struct {name}` declared together with a variable; declare the struct, then the variable"
+            )));
+        };
+        let source = text[stmt[0].start..stmt[close].end].replace('\n', " ");
+        r.structs.push((name, format!("{source}; ")));
+        return Ok(Some(String::new()));
+    }
     // Qualifiers.
     let mut k = 0;
     let mut storage: Option<&str> = None;
@@ -1809,9 +1828,16 @@ fn declaration(
                         ty: ty.clone(),
                         array,
                     });
+                } else if let Some((_, definition)) = r.structs.iter().find(|(n, _)| *n == ty) {
+                    check_uniform_struct(&name, &ty, definition, &r.structs)?;
+                    r.uniforms.push(UniformDecl {
+                        name,
+                        ty: ty.clone(),
+                        array,
+                    });
                 } else {
                     return Err(unsupported(format!(
-                        "`{name}`: a uniform of type `{ty}` (structs are not available)"
+                        "`{name}`: a uniform of type `{ty}` (not a type or a struct this shader defines)"
                     )));
                 }
             }
@@ -2068,6 +2094,10 @@ fn parse_stage(stage: ShaderStage, r: Rewritten) -> std::result::Result<Stage, S
         uniform_size = *span;
         for m in members {
             let Some(name) = m.name.clone() else { continue };
+            if is_struct_uniform(&module, m.ty) {
+                struct_leaves(&module, &name, m.offset, m.ty, &mut uniforms)?;
+                continue;
+            }
             let member = member_of(&module, &name, m.offset, m.ty)?;
             if name == "_k_fbh" {
                 fbh_offset = Some(m.offset);
@@ -2124,6 +2154,78 @@ fn parse_stage(stage: ShaderStage, r: Rewritten) -> std::result::Result<Stage, S
         fbh_offset,
         vp_offset,
     })
+}
+
+/// A struct uniform's fields are numbers, vectors and matrices (or structs of them), which have a layout a
+/// uniform block can hold: no booleans, `mat2` (naga lays it out differently) or samplers.
+fn check_uniform_struct(
+    uniform: &str,
+    ty: &str,
+    definition: &str,
+    structs: &[(String, String)],
+) -> std::result::Result<(), String> {
+    let body = definition
+        .split_once('{')
+        .and_then(|(_, rest)| rest.rsplit_once('}'))
+        .map_or("", |(inside, _)| inside);
+    for field in body.split(';').map(str::trim).filter(|f| !f.is_empty()) {
+        let field_type = field
+            .split_whitespace()
+            .find(|w| !matches!(*w, "highp" | "mediump" | "lowp"))
+            .unwrap_or("");
+        let known_struct = structs.iter().any(|(n, _)| n == field_type);
+        if !known_struct
+            && (!is_builtin_type(field_type)
+                || field_type.starts_with('b')
+                || matches!(field_type, "mat2" | "mat2x2" | "mat2x3" | "mat2x4" | "mat3x2" | "mat4x2"))
+        {
+            return Err(unsupported(format!(
+                "`{uniform}`: the field `{field}` of the uniform struct `{ty}` has a type that is not a float, int, uint, vector, `mat3` or `mat4`"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The leaves of a struct uniform, or of an array of them, named as WebGL names them
+/// (`lights[1].color`).
+fn struct_leaves(
+    module: &naga::Module,
+    name: &str,
+    offset: u32,
+    ty: naga::Handle<naga::Type>,
+    out: &mut Vec<UniformMember>,
+) -> std::result::Result<(), String> {
+    use naga::TypeInner as T;
+    match &module.types[ty].inner {
+        T::Array {
+            base,
+            size: naga::ArraySize::Constant(n),
+            stride,
+        } if matches!(module.types[*base].inner, T::Struct { .. }) => {
+            for i in 0..n.get() {
+                struct_leaves(module, &format!("{name}[{i}]"), offset + i * stride, *base, out)?;
+            }
+        }
+        T::Struct { members, .. } => {
+            for m in members {
+                let field = m.name.clone().unwrap_or_default();
+                struct_leaves(module, &format!("{name}.{field}"), offset + m.offset, m.ty, out)?;
+            }
+        }
+        _ => out.push(member_of(module, name, offset, ty)?),
+    }
+    Ok(())
+}
+
+/// Whether a block member is a struct, or an array of them.
+fn is_struct_uniform(module: &naga::Module, ty: naga::Handle<naga::Type>) -> bool {
+    use naga::TypeInner as T;
+    match &module.types[ty].inner {
+        T::Struct { .. } => true,
+        T::Array { base, .. } => matches!(module.types[*base].inner, T::Struct { .. }),
+        _ => false,
+    }
 }
 
 fn member_of(
@@ -2984,6 +3086,47 @@ mod tests {
             "#version 300 es\nprecision highp float; out vec4 o; void main() { o = vec4(1.0); }",
         ))
         .unwrap();
+    }
+
+    #[test]
+    fn a_struct_uniform_array_has_a_member_for_each_field_of_each_element() {
+        let t = translate(&program(
+            QUAD_ES1,
+            "precision mediump float;\nstruct Light {\n  vec3 color;\n  float distance;\n  vec2 size;\n};\n\
+             uniform Light lights[2];\nuniform Light one;\n\
+             void main() { gl_FragColor = vec4(lights[1].color * one.distance, lights[0].size.x); }",
+        ))
+        .unwrap();
+        let names: Vec<&str> = t.fragment.uniforms.iter().map(|u| u.name.as_str()).collect();
+        for want in ["lights[0].color", "lights[1].distance", "lights[1].size", "one.color", "one.size"] {
+            assert!(names.contains(&want), "{want} in {names:?}");
+        }
+        let at = |n: &str| t.fragment.uniforms.iter().find(|u| u.name == n).unwrap().offset;
+        // Two elements of one struct are one struct size apart, which is a multiple of 16.
+        assert!(at("lights[1].color") > at("lights[0].color"));
+        assert_eq!((at("lights[1].color") - at("lights[0].color")) % 16, 0);
+        assert_eq!(at("lights[0].distance"), at("lights[0].color") + 12);
+    }
+
+    #[test]
+    fn a_struct_uniform_with_a_field_the_block_cannot_hold_is_refused() {
+        for field in ["bool on;", "mat2 m;", "sampler2D t;"] {
+            let e = translate(&program(
+                QUAD_ES1,
+                &format!(
+                    "precision mediump float;\nstruct S {{ vec3 c; {field} }};\nuniform S s;\n\
+                     void main() {{ gl_FragColor = vec4(s.c, 1.0); }}"
+                ),
+            ))
+            .unwrap_err();
+            assert!(e.contains("unsupported") && e.contains("uniform struct `S`"), "{field}: {e}");
+        }
+        let e = translate(&program(
+            QUAD_ES1,
+            "precision mediump float;\nstruct S { vec3 c; } s;\nvoid main() { gl_FragColor = vec4(s.c, 1.0); }",
+        ))
+        .unwrap_err();
+        assert!(e.contains("declared together with a variable"), "{e}");
     }
 
     #[test]

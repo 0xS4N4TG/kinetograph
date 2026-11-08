@@ -543,7 +543,8 @@ How it is drawn:
   wgpu's 0..w, so the shaders mean what they mean in a browser. Arrays of scalars and of `vec2`, `bool` and `mat2`
   uniforms travel packed (naga and Metal lay them out differently). The conditionals (`#if`, `#ifdef`, `#elif`, `#else`) are evaluated, and what they leave out is not read for
   declarations. An array's length is an integer expression of numbers and macros (`morphTargetInfluences[MORPHTARGETS_COUNT]`);
-  any other length is refused. A shader naga cannot read fails when the scene
+  any other length is refused. A struct uniform (or an array of them, as three.js declares its lights) is set field by
+  field, in `uniforms` under the name WebGL gives the field: `lights[1].color`. A shader naga cannot read fails when the scene
   loads, with the line of the page's source (`layer "sky": glsl program "p": fragment shader: 3:15: ...`). A vertex
   shader can read textures; its `texture` calls read level 0, as in GL, and a sampler both stages declare is one unit.
 - A draw with `depth` is tested against a 32-bit float depth buffer: the drawing buffer's, or the `depthStencil` target
@@ -587,7 +588,7 @@ point's number in a draw of points; `gl_InstanceID` the instance's. Instanced po
 Not drawn, and reported as `unsupported:` with what to do instead (never accepted and ignored):
 multisampled renderbuffers, `readPixels`, lines, instanced points, a `vertexAttribDivisor` above 1, integer attributes
 (`vertexAttribIPointer`, `vertexAttribI4i`), mipmaps of 3D and array textures, cube map levels above 0 with pixels (call `generateMipmap`), `texSubImage2D` into a cube face, float or depth cube faces, sRGB textures, float textures from a picture, a float texture as a `texSubImage2D` target, pixels uploaded to
-texture levels other than 0 (call `generateMipmap`), uniform blocks and struct uniforms, array outputs, a framebuffer
+texture levels other than 0 (call `generateMipmap`), uniform blocks, struct uniforms with a `bool`, `mat2` or sampler field, array outputs, a framebuffer
 texture that is not RGBA or holds uploaded pixels, attachments of different sizes in one framebuffer, `drawImage` or `toDataURL` of a WebGL canvas. With `antialias: true` (the default) the canvas is
 4x multisampled, so the edges of what is drawn into it are smooth as in Chrome (a framebuffer of your own is not
 multisampled). A context that blits into the canvas, or copies its depth or stencil, is drawn without multisampling.

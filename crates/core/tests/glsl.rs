@@ -2360,3 +2360,28 @@ fn a_blit_to_a_float_target_is_refused() {
     ));
     assert!(e.contains("float render target"), "{e}");
 }
+
+// ---- struct uniforms ----
+
+const LIGHT_FRAGMENT: &str = "#version 300 es\nprecision highp float;\n\
+    struct DirectionalLight {\n  vec3 direction;\n  vec3 color;\n};\n\
+    uniform DirectionalLight directionalLights[ 2 ];\nuniform float opacity;\nout vec4 o;\n\
+    void main() { o = vec4(directionalLights[0].color + directionalLights[1].direction, opacity); }";
+
+#[test]
+fn the_fields_of_a_struct_uniform_array_are_set_one_by_one() {
+    let calls = r#""uniforms": {
+        "directionalLights[0].color": [{"kind": "f", "value": [0.5, 0, 0]}],
+        "directionalLights[1].direction": [{"kind": "f", "value": [0, 0.25, 1]}],
+        "directionalLights[1].color": [{"kind": "f", "value": [1, 1, 1]}],
+        "opacity": [{"kind": "f", "value": [1]}]}"#;
+    let frame = render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", LIGHT_FRAGMENT)],
+        "",
+        "",
+        &draw(calls),
+    ));
+    // Element 0's colour and element 1's direction: (0.5, 0.25, 1).
+    near(px(&frame, 8, 8), [128, 64, 255, 255], 2);
+}

@@ -1510,6 +1510,61 @@ describe('the recording WebGL context', () => {
     });
   });
 
+  describe('struct uniforms', () => {
+    const FRAGMENT_LIGHTS = '#version 300 es\nprecision highp float;\nstruct DirectionalLight {\n vec3 direction;\n vec3 color;\n};\nstruct Shadow { float bias; vec2 size[2]; };\nuniform DirectionalLight directionalLights[ NUM_DIR_LIGHTS ];\nuniform Shadow shadow;\nuniform float opacity;\nout vec4 o;\nvoid main() { o = vec4(directionalLights[1].color, opacity + shadow.bias); }';
+
+    function lights() {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const program = gl.createProgram();
+      for (const [type, source] of [[GL.VERTEX_SHADER, '#version 300 es\nin vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }'], [GL.FRAGMENT_SHADER, `#define NUM_DIR_LIGHTS 2\n${FRAGMENT_LIGHTS}`]] as const) {
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source);
+        gl.attachShader(program, shader);
+      }
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(GL.ARRAY_BUFFER, buffer);
+      gl.bufferData(GL.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1]), GL.STATIC_DRAW);
+      gl.enableVertexAttribArray(gl.getAttribLocation(program, 'p'));
+      gl.vertexAttribPointer(gl.getAttribLocation(program, 'p'), 2, GL.FLOAT, false, 0, 0);
+      return { gl, program };
+    }
+
+    it('lists each field of each element, as three.js reads them', () => {
+      const { gl, program } = lights();
+      const count = gl.getProgramParameter(program, GL.ACTIVE_UNIFORMS) as number;
+      const active = Array.from({ length: count }, (_, i) => gl.getActiveUniform(program, i)!);
+      expect(active.map((u) => u.name)).toEqual([
+        'directionalLights[0].direction',
+        'directionalLights[0].color',
+        'directionalLights[1].direction',
+        'directionalLights[1].color',
+        'shadow.bias',
+        'shadow.size[0]',
+        'opacity',
+      ]);
+      expect(active.find((u) => u.name === 'directionalLights[1].color')).toMatchObject({ size: 1, type: GL.FLOAT_VEC3 });
+      expect(active.find((u) => u.name === 'shadow.size[0]')).toMatchObject({ size: 2, type: GL.FLOAT_VEC2 });
+    });
+
+    it('sets a field through its location and records it under that name', () => {
+      const { gl, program } = lights();
+      gl.uniform3fv(gl.getUniformLocation(program, 'directionalLights[1].color'), [0.1, 0.2, 0.3]);
+      gl.uniform2fv(gl.getUniformLocation(program, 'shadow.size[1]'), [4, 5]);
+      gl.uniform1f(gl.getUniformLocation(program, 'shadow.bias'), 0.5);
+      expect(gl.getUniformLocation(program, 'directionalLights[2].color')).toBeNull();
+      expect(gl.getUniformLocation(program, 'directionalLights[1].nope')).toBeNull();
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const draw = gl.content().ops[0]!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      expect(draw.uniforms['directionalLights[1].color']).toEqual([{ kind: 'f', value: [0.1, 0.2, 0.3] }]);
+      expect(draw.uniforms['shadow.size']).toEqual([{ kind: 'f', value: [4, 5], index: 1 }]);
+      expect(draw.uniforms['shadow.bias']).toBeDefined();
+    });
+  });
+
   describe('a clear with the scissor test on', () => {
     function drawOf(gl: WebGLContext, index = 0) {
       const op = gl.content().ops[index]!;

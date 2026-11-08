@@ -635,10 +635,49 @@ function numericMacros(source: string): Map<string, number> {
   return out;
 }
 
+interface StructField {
+  name: string;
+  type: string;
+  /** The array length, or null for a single value. */
+  length: number | null;
+}
+
+/** The structs a shader defines, with their fields. */
+function structsOf(code: string, macros: Map<string, number>): Map<string, StructField[]> {
+  const structs = new Map<string, StructField[]>();
+  for (const m of code.matchAll(/\bstruct\s+(\w+)\s*\{([^}]*)\}\s*;/g)) {
+    const fields: StructField[] = [];
+    for (const statement of m[2]!.split(';')) {
+      const f = /^\s*(?:(?:highp|mediump|lowp)\s+)?(\w+)\s+([\s\S]+)$/.exec(statement);
+      if (f === null) continue;
+      for (const declarator of f[2]!.split(',')) {
+        const d = /^\s*(\w+)\s*(?:\[\s*(\w+)\s*\])?\s*$/.exec(declarator);
+        if (d === null) continue;
+        const length = d[2] === undefined ? null : /^\d+$/.test(d[2]) ? Number(d[2]) : (macros.get(d[2]) ?? null);
+        fields.push({ name: d[1]!, type: f[1]!, length });
+      }
+    }
+    structs.set(m[1]!, fields);
+  }
+  return structs;
+}
+
+/**
+ * What a uniform of this type is made of, named as WebGL names it: the uniform itself, or for a struct (or an array of
+ * them) each field of each element (`lights[1].color`), which are the uniforms `getActiveUniform` lists.
+ */
+function uniformLeaves(name: string, type: string, length: number | null, structs: Map<string, StructField[]>, depth = 0): Declaration[] {
+  const fields = structs.get(type);
+  if (fields === undefined || depth > 4) return [{ name, type, length: length ?? 1, location: null }];
+  const elements = length === null ? [name] : Array.from({ length }, (_, i) => `${name}[${i}]`);
+  return elements.flatMap((element) => fields.flatMap((f) => uniformLeaves(`${element}.${f.name}`, f.type, f.length, structs, depth + 1)));
+}
+
 /** The top-level `uniform`, `attribute` and `in` declarations of a shader. */
 function declarations(source: string, keywords: string[]): Declaration[] {
   const macros = numericMacros(source);
   const code = stripComments(source).replace(/^[ \t]*#.*$/gm, '');
+  const structs = structsOf(code, macros);
   const statements: string[] = [];
   let depth = 0;
   let current = '';
@@ -670,6 +709,10 @@ function declarations(source: string, keywords: string[]): Declaration[] {
       const length = d[2] === undefined ? 1 : /^\d+$/.test(d[2]) ? Number(d[2]) : macros.get(d[2]);
       // A length that is not a number or a macro defined as one is left to the renderer, which refuses the program.
       if (length === undefined) continue;
+      if (structs.has(m[3]!)) {
+        out.push(...uniformLeaves(d[1]!, m[3]!, d[2] === undefined ? null : length, structs));
+        continue;
+      }
       out.push({ name: d[1]!, type: m[3]!, length, location: location ? Number(location[1]) : null });
     }
   }
@@ -1796,11 +1839,14 @@ export class WebGLContext {
     return d === undefined ? null : new WebGLActiveInfo(d.length > 1 ? `${d.name}[0]` : d.name, d.length, TYPE_CODES[d.type] ?? 0);
   }
   getUniformLocation(program: WebGLProgram, name: string): WebGLUniformLocation | null {
-    const m = /^(\w+)(?:\[(\d+)\])?$/.exec(name);
+    // A struct field is named in full (`lights[1].color`); an array element is the array and an index.
+    const whole = program.uniformDeclarations.find((u) => u.name === name);
+    if (whole !== undefined) return new WebGLUniformLocation(program, whole.name, 0, whole.type);
+    const m = /^([\w.[\]]+?)(?:\[(\d+)\])$/.exec(name);
     if (m === null) return null;
     const d = program.uniformDeclarations.find((u) => u.name === m[1]);
     if (d === undefined) return null;
-    const index = m[2] === undefined ? 0 : Number(m[2]);
+    const index = Number(m[2]);
     if (index >= d.length) return null;
     return new WebGLUniformLocation(program, d.name, index, d.type);
   }
