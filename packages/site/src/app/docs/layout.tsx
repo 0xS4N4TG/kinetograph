@@ -46,16 +46,6 @@ export default async function Layout({ children }: { children: ReactNode }) {
           ),
         }}
         themeSwitch={{ enabled: false }}
-        // Fumadocs centres the layout and stretches the sidebar over the left gutter, which leaves empty space beside
-        // it on a wide screen. The same grid with no left gutter keeps the sidebar at the edge and the spare width on
-        // the right.
-        containerProps={{
-          style: {
-            gridTemplate: `"sidebar sidebar header toc toc"
-"sidebar sidebar toc-popover toc toc"
-"sidebar sidebar main toc toc" 1fr / 0px var(--fd-sidebar-col) minmax(0, calc(var(--fd-layout-width,97rem) - var(--fd-sidebar-width) - var(--fd-toc-width))) var(--fd-toc-width) minmax(min-content, 1fr)`,
-          },
-        }}
       >
         {children}
       </DocsLayout>
