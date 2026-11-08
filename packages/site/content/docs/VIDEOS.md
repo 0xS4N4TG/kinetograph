@@ -19,7 +19,7 @@ poster from a frame that reads without motion. The captions on the pages are one
 Existing renders in `public/examples/`, `public/film/` and `public/docs-media/` are good sources: cut and re-encode them,
 then upload the result to the host.
 
-## The list (12 clips)
+## The list (12 page clips)
 
 | Name | Page | Length | Sound | What it shows | Source |
 |---|---|---|---|---|---|
@@ -41,3 +41,24 @@ then upload the result to the host.
 Pages that HyperFrames shows a clip on and Kinetograph does not (the agent pages, the Studio pages) have no clip. Studio
 shows still screenshots (`public/docs-media/studio/`). Add a screen recording of Studio to `studio/index` later if it is
 wanted: that would be a 13th clip.
+
+## Film tiles (What is Kinetograph)
+
+The tiles on `index` come from `src/lib/films.ts`. Each film is `<base>films/<name>.mp4`, 1280x720 or the source size, H.264 with its sound
+kept. Posters are small WebPs already in `public/docs-media/films/` (about 56 KB in all). Until the base URL is set, a tile opens a
+"coming soon" dialog. All eight are Kinetograph renders of our own examples; none is a reference reel by someone else.
+Durations were measured with ffprobe.
+
+| Name | Duration | Sound | Source |
+|---|---|---|---|
+| `launch` | 39.5 s | yes | `examples/launch/out/launch-v13.mp4` (project `examples/launch`) |
+| `showcase` | 37.1 s | no | `packages/site/public/examples/showcase.mp4` (project `examples/showcase`) |
+| `showcase-3d` | 6.0 s | no | `packages/site/public/examples/showcase-3d.mp4` (project `examples/showcase-3d`) |
+| `datamosh` | 5.0 s | yes | `examples/launch/out/datamosh/jets-datamosh.mp4` (project `examples/datamosh`) |
+| `papercut-card` | 2.0 s, 1080x1920 | no | `packages/site/public/examples/papercut-card.mp4` (`examples/papercut-card.json`) |
+| `canvas` | 2.0 s | no | `packages/site/public/examples/canvas.mp4` (project `examples/canvas`) |
+| `video-overlay` | 6.0 s | no | `packages/site/public/examples/video-overlay.mp4` (project `examples/video-overlay`) |
+| `bench-diorama` | 3.0 s, 1080x1920 | no | `packages/site/public/examples/bench-diorama.mp4` (`examples/bench-diorama.json`) |
+
+Hosting is on GitHub release assets; set `NEXT_PUBLIC_DOCS_VIDEO_BASE` to the release download URL prefix, with a trailing slash,
+and upload `films/<name>.mp4` and the clips above under it.
