@@ -26,7 +26,7 @@ struct Stop {
 /// How many pieces each span between two stops is cut into when the colours
 /// interpolate outside sRGB. The scene blends the pieces' ends in sRGB, so the
 /// error is the bend of the curve over one piece (see the ΔE test).
-const SPACE_STEPS: usize = 32;
+const SPACE_STEPS: usize = 64;
 
 /// The colour `w` of the way from `a` to `b` in the gradient's space, as sRGB
 /// plus the colour in that space. CSS Color 4 §12: premultiplied, a missing or
