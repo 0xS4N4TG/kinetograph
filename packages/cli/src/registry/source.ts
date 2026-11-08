@@ -126,7 +126,7 @@ function fileUrl(itemUrl: URL | undefined, url: string): URL {
 }
 
 /** One GET over https, following at most 3 redirects (each to https), refusing more than `limit` bytes. */
-async function download(url: URL, limit: number, fetchImpl: typeof fetch, notFound?: string): Promise<Uint8Array> {
+export async function download(url: URL, limit: number, fetchImpl: typeof fetch, notFound?: string): Promise<Uint8Array> {
   for (let hops = 0; ; hops++) {
     if (url.protocol !== 'https:') throw new CliError('INSECURE_URL', `${url.href} is not an https URL`);
     let response: Response;

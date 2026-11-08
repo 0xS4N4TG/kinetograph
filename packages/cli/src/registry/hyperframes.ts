@@ -1,0 +1,489 @@
+// `kinetograph add hyperframes/<name>`: install a block or component from the HyperFrames community registry
+// (github.com/heygen-com/hyperframes, `registry/`, Apache-2.0). Their registry is a folder of JSON and files read over
+// https; this reads the same layout and lays the files out the way `hyperframes add` does for an HTML project. Items
+// stay in their source: nothing is bundled here, everything is fetched when asked for and treated as data.
+
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join, resolve, sep } from 'node:path';
+import { z } from 'zod';
+import { CliError } from '../errors.js';
+import { isItemName, pathProblem } from './item.js';
+import { download, MAX_FILE_BYTES, MAX_JSON_BYTES } from './source.js';
+
+export const HYPERFRAMES_REPO = 'heygen-com/hyperframes';
+/**
+ * The registry commit installs read by default (the tip of `main` when this was written), so the same command gives the
+ * same files next month. `--ref <commit|branch|tag>` or `KINETOGRAPH_HYPERFRAMES_REF` reads another; `--ref main` is
+ * the latest.
+ */
+export const HYPERFRAMES_PINNED_REF = '75fe18c621be5297d7b09a788fabc75a3cd6c734';
+export const HYPERFRAMES_CREDITS_FILE = 'HYPERFRAMES-CREDITS.md';
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_ITEMS = 60;
+const MAX_TOTAL_BYTES = 512 * 1024 * 1024;
+const DOWNLOADS_AT_ONCE = 8;
+
+/** The folder of each installable type under `registry/` (their `ITEM_TYPE_DIRS`; examples are whole projects, not added). */
+export const HYPERFRAMES_TYPES = { block: 'blocks', component: 'components' } as const;
+export type HyperframesType = keyof typeof HYPERFRAMES_TYPES;
+
+const fileSchema = z.object({
+  path: z.string(),
+  target: z.string(),
+  type: z.string().optional(),
+  url: z.string().optional(),
+});
+
+const itemSchema = z.object({
+  name: z.string(),
+  type: z.string(),
+  title: z.string().default(''),
+  description: z.string().default(''),
+  tags: z.array(z.string()).optional(),
+  author: z.string().optional(),
+  authorUrl: z.string().optional(),
+  license: z.string().optional(),
+  deprecated: z.string().optional(),
+  registryDependencies: z.array(z.string()).optional(),
+  dimensions: z.object({ width: z.number(), height: z.number() }).optional(),
+  duration: z.number().optional(),
+  files: z.array(fileSchema).max(500),
+});
+export type HyperframesItem = z.infer<typeof itemSchema> & { kind: HyperframesType };
+
+const manifestSchema = z.object({
+  items: z.array(z.object({ name: z.string(), type: z.string() })),
+});
+
+export interface HyperframesListing {
+  name: string;
+  type: HyperframesType;
+  title: string;
+  description: string;
+  tags: string[];
+}
+
+export interface HyperframesSource {
+  readonly ref: string;
+  /** `https://raw.githubusercontent.com/<repo>/<ref>/registry`. */
+  readonly base: string;
+  /** Block and component names with their type, from `registry.json` (cached for a day). */
+  manifest(): Promise<{ name: string; type: HyperframesType }[]>;
+  /** One item's `registry-item.json`, checked. */
+  item(name: string): Promise<HyperframesItem>;
+  /** The bytes of one of an item's files: beside the item, or at its https `url`. */
+  file(item: HyperframesItem, file: HyperframesItem['files'][number]): Promise<Uint8Array>;
+  /** Every item with its title and description (fetches them all once, then a day's cache). */
+  index(progress?: (message: string) => void): Promise<HyperframesListing[]>;
+  /** Where the item lives, for credits. */
+  sourceUrl(item: HyperframesItem): string;
+}
+
+export interface HyperframesOptions {
+  ref?: string;
+  fetch?: typeof fetch;
+  cacheDir?: string;
+  /** For tests. */
+  now?: () => number;
+}
+
+const REF_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/;
+
+export function hyperframesRef(ref?: string): string {
+  const chosen = ref ?? process.env.KINETOGRAPH_HYPERFRAMES_REF ?? '';
+  const value = chosen === '' ? HYPERFRAMES_PINNED_REF : chosen;
+  if (!REF_PATTERN.test(value) || value.includes('..')) throw new CliError('INVALID_ARG', `"${value}" is not a commit, branch or tag name`);
+  return value;
+}
+
+const segments = (path: string): string => path.split('/').map(encodeURIComponent).join('/');
+
+function parseJson(bytes: Uint8Array, from: string): unknown {
+  try {
+    return JSON.parse(Buffer.from(bytes).toString('utf8'));
+  } catch {
+    throw new CliError('REGISTRY_ERROR', `${from} is not valid JSON`);
+  }
+}
+
+export function openHyperframes(options: HyperframesOptions = {}): HyperframesSource {
+  const ref = hyperframesRef(options.ref);
+  const fetchImpl = options.fetch ?? fetch;
+  const now = options.now ?? Date.now;
+  const cacheDir = options.cacheDir ?? process.env.KINETOGRAPH_HYPERFRAMES_CACHE ?? join(homedir(), '.cache', 'kinetograph', 'hyperframes-registry');
+  const base = `https://raw.githubusercontent.com/${HYPERFRAMES_REPO}/${segments(ref)}/registry`;
+  const cacheName = (key: string): string => join(cacheDir, `${ref.replace(/[^A-Za-z0-9._-]/g, '_')}-${key}.json`);
+
+  /** A JSON value cached for a day; a stale copy is used when the network fails. */
+  async function cached<T>(key: string, make: () => Promise<T>): Promise<T> {
+    const file = cacheName(key);
+    let stale: T | undefined;
+    try {
+      const entry = JSON.parse(readFileSync(file, 'utf8')) as { fetchedAt?: unknown; data?: T };
+      if (typeof entry.fetchedAt === 'number' && entry.data !== undefined) {
+        if (now() - entry.fetchedAt <= CACHE_TTL_MS) return entry.data;
+        stale = entry.data;
+      }
+    } catch {
+      // no cache, or an unreadable one: ask the network
+    }
+    try {
+      const data = await make();
+      try {
+        mkdirSync(cacheDir, { recursive: true });
+        writeFileSync(file, JSON.stringify({ fetchedAt: now(), data }));
+      } catch {
+        // a cache that cannot be written is only a missed saving
+      }
+      return data;
+    } catch (error) {
+      if (stale !== undefined) return stale;
+      throw error;
+    }
+  }
+
+  const get = (path: string, limit: number, notFound?: string): Promise<Uint8Array> => download(new URL(`${base}/${path}`), limit, fetchImpl, notFound);
+
+  const source: HyperframesSource = {
+    ref,
+    base,
+    manifest: () =>
+      cached('manifest', async () => {
+        const parsed = manifestSchema.safeParse(parseJson(await get('registry.json', MAX_JSON_BYTES), 'registry.json'));
+        if (!parsed.success) throw new CliError('REGISTRY_ERROR', 'registry.json is not a HyperFrames registry index');
+        const out: { name: string; type: HyperframesType }[] = [];
+        for (const entry of parsed.data.items) {
+          const type = entry.type.replace(/^hyperframes:/, '');
+          if ((type === 'block' || type === 'component') && isItemName(entry.name)) out.push({ name: entry.name, type });
+        }
+        return out;
+      }),
+    async item(name) {
+      if (!isItemName(name)) throw new CliError('INVALID_ARG', `"${name}" is not an item name (lowercase letters, digits and hyphens)`);
+      const entry = (await source.manifest()).find((e) => e.name === name);
+      if (entry === undefined) throw new CliError('NOT_FOUND', `no block or component named "${name}" in the HyperFrames registry (\`add hyperframes --search ${name}\` looks for it)`);
+      const path = `${HYPERFRAMES_TYPES[entry.type]}/${name}/registry-item.json`;
+      const parsed = itemSchema.safeParse(parseJson(await get(path, MAX_JSON_BYTES, `${path} is not in the registry`), path));
+      if (!parsed.success) throw new CliError('INVALID_ITEM', `${name} is not a valid HyperFrames item: ${parsed.error.issues[0]!.path.join('.') || 'the file'}: ${parsed.error.issues[0]!.message}`);
+      if (parsed.data.name !== name) throw new CliError('INVALID_ITEM', `${path} describes an item named "${parsed.data.name}"`);
+      const item: HyperframesItem = { ...parsed.data, kind: entry.type };
+      for (const file of item.files) {
+        const problem = pathProblem(file.path) ?? pathProblem(file.target);
+        if (problem !== undefined) throw new CliError('UNSAFE_TARGET', `${name}: "${file.path}" -> "${file.target}" ${problem}`);
+        if (file.url !== undefined && !/^https:\/\//i.test(file.url)) throw new CliError('INSECURE_URL', `${name}/${file.path}: ${file.url} is not an https URL`);
+      }
+      return item;
+    },
+    async file(item, file) {
+      if (file.url !== undefined) {
+        let url: URL;
+        try {
+          url = new URL(file.url);
+        } catch {
+          throw new CliError('INVALID_ITEM', `${item.name}/${file.path}: "${file.url}" is not a URL`);
+        }
+        return download(url, MAX_FILE_BYTES, fetchImpl);
+      }
+      return get(`${HYPERFRAMES_TYPES[item.kind]}/${item.name}/${segments(file.path)}`, MAX_FILE_BYTES, `${item.name}/${file.path} is not in the registry`);
+    },
+    index: (progress) =>
+      cached('index', async () => {
+        const entries = await source.manifest();
+        const out: HyperframesListing[] = [];
+        let next = 0;
+        const worker = async (): Promise<void> => {
+          for (;;) {
+            const entry = entries[next++];
+            if (entry === undefined) return;
+            const item = await source.item(entry.name);
+            out.push({ name: item.name, type: entry.type, title: item.title, description: item.description, tags: item.tags ?? [] });
+            if (out.length % 50 === 0) progress?.(`read ${out.length} of ${entries.length} items`);
+          }
+        };
+        await Promise.all(Array.from({ length: 12 }, worker));
+        return out.sort((a, b) => a.name.localeCompare(b.name));
+      }),
+    sourceUrl: (item) => `https://github.com/${HYPERFRAMES_REPO}/tree/${segments(ref)}/registry/${HYPERFRAMES_TYPES[item.kind]}/${item.name}`,
+  };
+  return source;
+}
+
+/** `hyperframes/<name>` or `hf/<name>` gives the name; anything else gives undefined. `hyperframes` and `hf` alone give ''. */
+export function hyperframesName(arg: string): string | undefined {
+  const m = /^(?:hyperframes|hf)(?:\/(.*))?$/.exec(arg);
+  return m === null ? undefined : (m[1] ?? '');
+}
+
+/** The listing, filtered by type and by every word of `search` (against name, title, description and tags). */
+export function filterListing(items: HyperframesListing[], type?: string, search?: string): HyperframesListing[] {
+  const words = (search ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+  return items.filter((item) => {
+    if (type !== undefined && item.type !== type) return false;
+    const text = `${item.name} ${item.title} ${item.description} ${item.tags.join(' ')}`.toLowerCase();
+    return words.every((word) => text.includes(word));
+  });
+}
+
+export function describeListing(items: HyperframesListing[]): string {
+  if (items.length === 0) return 'no items';
+  const width = Math.max(...items.map((i) => i.name.length));
+  return items.map((i) => `${i.name.padEnd(width)}  ${i.type.padEnd(9)}  ${i.description || i.title}`).join('\n');
+}
+
+/** The requested items and their `registryDependencies`, each once, dependencies first; a loop is refused. */
+export async function resolveHyperframes(source: Pick<HyperframesSource, 'item'>, names: string[]): Promise<HyperframesItem[]> {
+  const done = new Set<string>();
+  const order: HyperframesItem[] = [];
+  const stack: string[] = [];
+  const visit = async (name: string): Promise<void> => {
+    if (done.has(name)) return;
+    if (stack.includes(name)) throw new CliError('INVALID_ITEM', `registryDependencies loop: ${[...stack.slice(stack.indexOf(name)), name].join(' -> ')}`);
+    if (done.size >= MAX_ITEMS) throw new CliError('INVALID_ITEM', `more than ${MAX_ITEMS} items to install`);
+    stack.push(name);
+    const item = await source.item(name);
+    for (const dependency of item.registryDependencies ?? []) await visit(dependency);
+    stack.pop();
+    done.add(name);
+    order.push(item);
+  };
+  for (const name of names) await visit(name);
+  return order;
+}
+
+/**
+ * The folder of the HTML project to install into: the nearest folder at or above `dir` with a `hyperframes.json` or an
+ * `index.html`; else, in a package.json project, its `html/` folder (what `init --html` makes); else `dir`.
+ */
+export function findHyperframesProject(dir: string): string {
+  const start = resolve(dir);
+  for (let current = start; ; current = dirname(current)) {
+    if (existsSync(join(current, 'hyperframes.json')) || existsSync(join(current, 'index.html'))) return current;
+    if (existsSync(join(current, 'package.json'))) return existsSync(join(current, 'html')) ? join(current, 'html') : start;
+    if (dirname(current) === current) return start;
+  }
+}
+
+/** `paths` from the project's `hyperframes.json` (`blocks`, `components`, `assets`), where a prefix is moved. */
+function projectPaths(root: string): { blocks: string; components: string; assets: string } {
+  const paths = { blocks: 'compositions', components: 'compositions/components', assets: 'assets' };
+  const file = join(root, 'hyperframes.json');
+  if (!existsSync(file)) return paths;
+  let config: unknown;
+  try {
+    config = JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    throw new CliError('INVALID_ARG', `${file} is not valid JSON`);
+  }
+  const given = (config as { paths?: Record<string, unknown> } | null)?.paths;
+  for (const key of ['blocks', 'components', 'assets'] as const) {
+    const value = given?.[key];
+    if (typeof value !== 'string') continue;
+    const problem = pathProblem(value);
+    if (problem !== undefined) throw new CliError('UNSAFE_TARGET', `hyperframes.json paths.${key} "${value}" ${problem}`);
+    paths[key] = value;
+  }
+  return paths;
+}
+
+/** Where a file lands: its `target`, with the `compositions/`, `compositions/components/` or `assets/` prefix moved as the project's `hyperframes.json` says. */
+export function remapTarget(target: string, kind: HyperframesType, paths: ReturnType<typeof projectPaths>): string {
+  const moves: [string, string][] =
+    kind === 'component'
+      ? [['compositions/components/', paths.components], ['assets/', paths.assets]]
+      : [['compositions/', paths.blocks], ['assets/', paths.assets]];
+  for (const [from, to] of moves) if (target.startsWith(from)) return `${to}/${target.slice(from.length)}`;
+  return target;
+}
+
+export interface HyperframesAddOptions {
+  /** Item names, without the `hyperframes/` prefix. */
+  names: string[];
+  dir: string;
+  source: HyperframesSource;
+  overwrite: boolean;
+  progress?: (message: string) => void;
+}
+
+export interface HyperframesAdded {
+  name: string;
+  type: HyperframesType;
+  title: string;
+  author?: string;
+  license?: string;
+  source: string;
+  written: string[];
+  /** Files already in the project with the same bytes, left as they are. */
+  unchanged: string[];
+  /** Licence and notice files the item ships, among `written` and `unchanged`. */
+  licences: string[];
+  dimensions?: { width: number; height: number };
+  duration?: number;
+}
+
+export interface HyperframesAddResult {
+  project: string;
+  ref: string;
+  added: HyperframesAdded[];
+  credits: string;
+  warnings: string[];
+  next: string[];
+}
+
+const LICENCE_FILE = /(^|[/._-])(licen[cs]es?|notice|copying|ofl|third-party)([._-]|$)/i;
+
+/** Whether `target` is a file in the project (false when nothing is there). Refuses a link on its path, and a folder where a file goes. */
+function existing(root: string, target: string): Uint8Array | undefined {
+  const absolute = resolve(root, target);
+  if (!absolute.startsWith(root + sep)) throw new CliError('UNSAFE_TARGET', `${target} leaves the project`);
+  const parts = target.split('/');
+  let current = root;
+  for (const [i, part] of parts.entries()) {
+    current = join(current, part);
+    let stat;
+    try {
+      stat = lstatSync(current);
+    } catch {
+      return undefined;
+    }
+    const where = parts.slice(0, i + 1).join('/');
+    if (stat.isSymbolicLink()) throw new CliError('UNSAFE_TARGET', `${where} is a symbolic link; not writing through it`);
+    if (i < parts.length - 1 && !stat.isDirectory()) throw new CliError('UNSAFE_TARGET', `${where} is a file, but ${target} needs it to be a folder`);
+    if (i === parts.length - 1 && stat.isDirectory()) throw new CliError('UNSAFE_TARGET', `${target} is a folder, not a file`);
+  }
+  return readFileSync(absolute);
+}
+
+const same = (a: Uint8Array, b: Uint8Array): boolean => Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0;
+
+/** One item's section of the credits file. */
+function creditsSection(entry: HyperframesAdded): string {
+  const lines = [`## ${entry.name}`, '', `- Title: ${entry.title}`, `- Type: ${entry.type}`];
+  lines.push(`- Author: ${entry.author ?? 'not given'}`);
+  lines.push(`- Licence: ${entry.license ?? 'not given by the item (the HyperFrames repository is Apache-2.0)'}`);
+  lines.push(`- Source: ${entry.source}`);
+  if (entry.licences.length > 0) lines.push(`- Licence files: ${entry.licences.join(', ')}`);
+  return lines.join('\n');
+}
+
+const CREDITS_HEAD = `# HyperFrames credits
+
+These items come from the HyperFrames registry (https://github.com/${HYPERFRAMES_REPO}, Apache-2.0), made by HeyGen and its contributors. Each keeps the licence it ships with; the licence and notice files are installed beside it.`;
+
+/** `existing` credits text with `entries` added; an item already listed has its section replaced. */
+export function mergeCredits(existingText: string | undefined, entries: HyperframesAdded[]): string {
+  const sections = new Map<string, string>();
+  for (const part of (existingText ?? '').split(/^(?=## )/m)) {
+    const m = /^## (\S+)/.exec(part);
+    if (m !== null) sections.set(m[1]!, part.trimEnd());
+  }
+  for (const entry of entries) sections.set(entry.name, creditsSection(entry));
+  return `${CREDITS_HEAD}\n\n${[...sections.values()].join('\n\n')}\n`;
+}
+
+export async function addHyperframes(options: HyperframesAddOptions): Promise<HyperframesAddResult> {
+  const { source, overwrite } = options;
+  const progress = options.progress ?? (() => undefined);
+  const root = findHyperframesProject(options.dir);
+  const items = await resolveHyperframes(source, options.names);
+  const paths = projectPaths(root);
+  const warnings: string[] = [];
+
+  // Every download first, so a failure stops the install before anything is written.
+  let total = 0;
+  const plan = items.map((item) => ({ item, files: item.files.map((file) => ({ file, target: remapTarget(file.target, item.kind, paths), data: undefined as Uint8Array | undefined })) }));
+  const jobs = plan.flatMap(({ item, files }) => files.map((f) => ({ item, f })));
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const job = jobs[next++];
+      if (job === undefined) return;
+      progress(`downloading ${job.item.name}/${job.f.file.path}`);
+      job.f.data = await source.file(job.item, job.f.file);
+      total += job.f.data.length;
+      if (total > MAX_TOTAL_BYTES) throw new CliError('TOO_LARGE', `the items are larger than ${MAX_TOTAL_BYTES / 1024 / 1024} MB together`);
+    }
+  };
+  await Promise.all(Array.from({ length: DOWNLOADS_AT_ONCE }, worker));
+
+  // Decide every file before the first write. A file already there is an error unless it holds the same bytes.
+  const planned = new Map<string, Uint8Array>();
+  const refused: string[] = [];
+  const decided = plan.map(({ item, files }) => ({
+    item,
+    files: files.map(({ target, data }) => {
+      const bytes = data!;
+      const problem = pathProblem(target);
+      if (problem !== undefined) throw new CliError('UNSAFE_TARGET', `${item.name}: target "${target}" ${problem}`);
+      const before = planned.get(target) ?? existing(root, target);
+      planned.set(target, bytes);
+      if (before !== undefined && same(before, bytes)) return { target, bytes, action: 'unchanged' as const };
+      if (before !== undefined && !overwrite) {
+        refused.push(target);
+        return { target, bytes, action: 'refused' as const };
+      }
+      return { target, bytes, action: 'write' as const };
+    }),
+  }));
+  if (refused.length > 0) {
+    const list = [...new Set(refused)];
+    throw new CliError('EXISTS', `not overwriting ${list.length} existing file${list.length === 1 ? '' : 's'}: ${list.slice(0, 8).join(', ')}${list.length > 8 ? ', …' : ''}. Pass --overwrite to replace ${list.length === 1 ? 'it' : 'them'}.`);
+  }
+
+  const added: HyperframesAdded[] = [];
+  for (const { item, files } of decided) {
+    const entry: HyperframesAdded = {
+      name: item.name,
+      type: item.kind,
+      title: item.title || item.name,
+      ...(item.author !== undefined ? { author: item.authorUrl !== undefined ? `${item.author} (${item.authorUrl})` : item.author } : {}),
+      ...(item.license !== undefined ? { license: item.license } : {}),
+      source: source.sourceUrl(item),
+      written: [],
+      unchanged: [],
+      licences: [],
+      ...(item.dimensions !== undefined ? { dimensions: item.dimensions } : {}),
+      ...(item.duration !== undefined ? { duration: item.duration } : {}),
+    };
+    for (const file of files) {
+      if (file.action === 'write') {
+        const absolute = join(root, file.target);
+        mkdirSync(dirname(absolute), { recursive: true });
+        writeFileSync(absolute, file.bytes);
+        entry.written.push(file.target);
+      } else entry.unchanged.push(file.target);
+      if (LICENCE_FILE.test(file.target.split('/').at(-1)!)) entry.licences.push(file.target);
+    }
+    if (item.deprecated !== undefined) warnings.push(`${item.name} is deprecated: ${item.deprecated}`);
+    added.push(entry);
+  }
+
+  const creditsPath = join(root, HYPERFRAMES_CREDITS_FILE);
+  const credits = mergeCredits(existsSync(creditsPath) ? readFileSync(creditsPath, 'utf8') : undefined, added);
+  writeFileSync(creditsPath, credits);
+
+  const steps = added
+    .filter((a) => options.names.includes(a.name))
+    .map((a) => {
+      const file = a.written.concat(a.unchanged).find((t) => t.endsWith('.html'));
+      if (a.type === 'block') {
+        const size = a.dimensions !== undefined ? ` data-width="${a.dimensions.width}" data-height="${a.dimensions.height}"` : '';
+        return `${a.name}: mount it with <div data-composition-id="${a.name}" data-composition-src="${file ?? ''}" data-start="0" data-duration="${a.duration ?? 5}"${size}></div>`;
+      }
+      return `${a.name}: paste the snippet in ${file ?? 'its html file'} into your composition`;
+    });
+  return { project: root, ref: source.ref, added, credits: creditsPath, warnings, next: steps };
+}
+
+export function describeHyperframesAdd(result: HyperframesAddResult): string {
+  const lines: string[] = [];
+  for (const item of result.added) {
+    lines.push(`${item.title} (hyperframes/${item.name}, ${item.type}): ${item.written.length} file${item.written.length === 1 ? '' : 's'} written${item.unchanged.length > 0 ? `, ${item.unchanged.length} already there` : ''}`);
+    for (const file of item.written) lines.push(`  wrote      ${file}`);
+    for (const file of item.unchanged) lines.push(`  unchanged  ${file}`);
+  }
+  lines.push(`credits and licences: ${result.credits}`);
+  for (const warning of result.warnings) lines.push(`warning: ${warning}`);
+  if (result.next.length > 0) lines.push('next:', ...result.next.map((step) => `  ${step}`));
+  return lines.join('\n');
+}

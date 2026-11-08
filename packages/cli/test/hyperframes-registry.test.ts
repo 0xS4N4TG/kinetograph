@@ -1,0 +1,328 @@
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { run } from '../src/index.js';
+import {
+  addHyperframes,
+  filterListing,
+  HYPERFRAMES_PINNED_REF,
+  hyperframesName,
+  mergeCredits,
+  openHyperframes,
+  remapTarget,
+  resolveHyperframes,
+  type HyperframesAdded,
+} from '../src/registry/hyperframes.js';
+
+const scratch = (): string => mkdtempSync(join(tmpdir(), 'kinetograph-hf-test-'));
+const BASE = `https://raw.githubusercontent.com/heygen-com/hyperframes/${HYPERFRAMES_PINNED_REF}/registry`;
+const CDN = 'https://static.example.com/font.woff2';
+
+const item = (name: string, type: string, over: object = {}, files?: object[]) => ({
+  name,
+  type: `hyperframes:${type}`,
+  title: name.toUpperCase(),
+  description: `The ${name} item.`,
+  files: files ?? [{ path: `${name}.html`, target: type === 'block' ? `compositions/${name}.html` : `compositions/components/${name}.html`, type: 'hyperframes:composition' }],
+  ...over,
+});
+
+/** A served registry: URL -> body. */
+function served(): Map<string, string | Uint8Array> {
+  const files = new Map<string, string | Uint8Array>();
+  const put = (path: string, body: string | Uint8Array): void => void files.set(`${BASE}/${path}`, body);
+  put('registry.json', JSON.stringify({ name: 'hyperframes', items: [
+    { name: 'card', type: 'hyperframes:block' },
+    { name: 'glow', type: 'hyperframes:component' },
+    { name: 'loop-a', type: 'hyperframes:component' },
+    { name: 'loop-b', type: 'hyperframes:component' },
+    { name: 'starter', type: 'hyperframes:example' },
+  ] }));
+  put('blocks/card/registry-item.json', JSON.stringify(item('card', 'block', {
+    author: 'Jane Doe',
+    authorUrl: 'https://example.com/jane',
+    license: 'Apache-2.0 AND OFL-1.1',
+    dimensions: { width: 1920, height: 1080 },
+    duration: 4,
+    tags: ['title', 'text'],
+    registryDependencies: ['glow'],
+  }, [
+    { path: 'card.html', target: 'compositions/card.html', type: 'hyperframes:composition' },
+    { path: 'assets/font.woff2', url: CDN, target: 'assets/font.woff2', type: 'hyperframes:asset' },
+    { path: 'assets/Font-OFL.txt', target: 'assets/Font-OFL.txt', type: 'hyperframes:asset' },
+  ])));
+  put('blocks/card/card.html', '<div data-composition-id="card"></div>');
+  put('blocks/card/assets/Font-OFL.txt', 'SIL Open Font License');
+  files.set(CDN, new Uint8Array([1, 2, 3, 4]));
+  put('components/glow/registry-item.json', JSON.stringify(item('glow', 'component', { tags: ['effect'] })));
+  put('components/glow/glow.html', '<div class="glow"></div>');
+  put('components/loop-a/registry-item.json', JSON.stringify(item('loop-a', 'component', { registryDependencies: ['loop-b'] })));
+  put('components/loop-b/registry-item.json', JSON.stringify(item('loop-b', 'component', { registryDependencies: ['loop-a'] })));
+  return files;
+}
+
+function mockFetch(files: Map<string, string | Uint8Array>): typeof fetch & { calls: string[] } {
+  const calls: string[] = [];
+  const impl = async (input: string | URL | Request): Promise<Response> => {
+    const url = String(input instanceof Request ? input.url : input);
+    calls.push(url);
+    const body = files.get(url);
+    if (body === undefined) return new Response('not found', { status: 404 });
+    return new Response(typeof body === 'string' ? body : Buffer.from(body), { status: 200 });
+  };
+  return Object.assign(impl, { calls }) as typeof fetch & { calls: string[] };
+}
+
+let cacheDir: string;
+beforeEach(() => {
+  cacheDir = scratch();
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+const open = (files = served(), extra: object = {}) => {
+  const fetch = mockFetch(files);
+  return { fetch, source: openHyperframes({ fetch, cacheDir, ...extra }) };
+};
+
+describe('fetching HyperFrames items', () => {
+  it('reads the registry at the pinned commit, and an item with its files', async () => {
+    const { fetch, source } = open();
+    expect(source.ref).toBe(HYPERFRAMES_PINNED_REF);
+    expect(await source.manifest()).toEqual([
+      { name: 'card', type: 'block' },
+      { name: 'glow', type: 'component' },
+      { name: 'loop-a', type: 'component' },
+      { name: 'loop-b', type: 'component' },
+    ]);
+    const card = await source.item('card');
+    expect(card).toMatchObject({ kind: 'block', author: 'Jane Doe', license: 'Apache-2.0 AND OFL-1.1' });
+    expect(fetch.calls).toEqual([`${BASE}/registry.json`, `${BASE}/blocks/card/registry-item.json`]);
+    expect(Buffer.from(await source.file(card, card.files[0]!)).toString()).toContain('data-composition-id="card"');
+    // a file with a url comes from there, not from the registry
+    expect([...(await source.file(card, card.files[1]!))]).toEqual([1, 2, 3, 4]);
+    expect(fetch.calls.at(-1)).toBe(CDN);
+    expect(source.sourceUrl(card)).toBe(`https://github.com/heygen-com/hyperframes/tree/${HYPERFRAMES_PINNED_REF}/registry/blocks/card`);
+  });
+
+  it('reads another commit when asked', async () => {
+    const files = new Map<string, string | Uint8Array>([[`https://raw.githubusercontent.com/heygen-com/hyperframes/main/registry/registry.json`, JSON.stringify({ items: [] })]]);
+    const { source } = open(files, { ref: 'main' });
+    expect(await source.manifest()).toEqual([]);
+    expect(() => openHyperframes({ ref: '../x' })).toThrow(/not a commit/);
+  });
+
+  it('refuses a name it does not have, a bad name, an unsafe path and a non-https asset', async () => {
+    const files = served();
+    files.set(`${BASE}/components/glow/registry-item.json`, JSON.stringify(item('glow', 'component', {}, [{ path: 'glow.html', target: '../evil.html' }])));
+    files.set(`${BASE}/components/loop-a/registry-item.json`, JSON.stringify(item('loop-a', 'component', {}, [{ path: 'a.png', target: 'assets/a.png', url: 'http://cdn.example.com/a.png' }])));
+    const { source } = open(files);
+    await expect(source.item('nothing')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(source.item('Bad Name')).rejects.toMatchObject({ code: 'INVALID_ARG' });
+    await expect(source.item('starter')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(source.item('glow')).rejects.toMatchObject({ code: 'UNSAFE_TARGET' });
+    await expect(source.item('loop-a')).rejects.toMatchObject({ code: 'INSECURE_URL' });
+  });
+
+  it('caches the manifest for a day, and uses a stale copy when the network fails', async () => {
+    let time = 1_000_000;
+    const files = served();
+    const { fetch, source } = open(files, { now: () => time });
+    await source.manifest();
+    await source.manifest();
+    expect(fetch.calls.filter((u) => u.endsWith('registry.json'))).toHaveLength(1);
+    time += 23 * 3600_000;
+    await source.manifest();
+    expect(fetch.calls.filter((u) => u.endsWith('registry.json'))).toHaveLength(1);
+    time += 2 * 3600_000;
+    await source.manifest();
+    expect(fetch.calls.filter((u) => u.endsWith('registry.json'))).toHaveLength(2);
+    // offline after the cache is stale: the old copy answers
+    time += 48 * 3600_000;
+    files.clear();
+    expect(await source.manifest()).toHaveLength(4);
+  });
+
+  it('builds a listing with descriptions and filters it', async () => {
+    const { source } = open();
+    const index = await source.index();
+    expect(index.map((i) => i.name)).toEqual(['card', 'glow', 'loop-a', 'loop-b']);
+    expect(filterListing(index, 'block').map((i) => i.name)).toEqual(['card']);
+    expect(filterListing(index, undefined, 'effect glow').map((i) => i.name)).toEqual(['glow']);
+    expect(filterListing(index, undefined, 'title text').map((i) => i.name)).toEqual(['card']);
+  });
+
+  it('reads the hyperframes/ and hf/ prefixes', () => {
+    expect(hyperframesName('hyperframes/aurora')).toBe('aurora');
+    expect(hyperframesName('hf/aurora')).toBe('aurora');
+    expect(hyperframesName('hyperframes')).toBe('');
+    expect(hyperframesName('title-card')).toBeUndefined();
+    expect(hyperframesName('hyperframes-x/aurora')).toBeUndefined();
+  });
+});
+
+describe('dependencies', () => {
+  it('installs registryDependencies first, each once', async () => {
+    const { source } = open();
+    expect((await resolveHyperframes(source, ['card', 'glow'])).map((i) => i.name)).toEqual(['glow', 'card']);
+  });
+
+  it('refuses a loop', async () => {
+    const { source } = open();
+    await expect(resolveHyperframes(source, ['loop-a'])).rejects.toThrow(/loop: loop-a -> loop-b -> loop-a/);
+  });
+});
+
+describe('writing', () => {
+  const project = (): string => {
+    const dir = scratch();
+    writeFileSync(join(dir, 'index.html'), '<div data-composition-id="main"></div>');
+    return dir;
+  };
+
+  it('lays blocks and components out the way HyperFrames does, with assets and licence files', async () => {
+    const dir = project();
+    const { source } = open();
+    const result = await addHyperframes({ names: ['card'], dir, source, overwrite: false });
+    expect(result.project).toBe(dir);
+    expect(result.added.map((a) => [a.name, a.written])).toEqual([
+      ['glow', ['compositions/components/glow.html']],
+      ['card', ['compositions/card.html', 'assets/font.woff2', 'assets/Font-OFL.txt']],
+    ]);
+    expect(readFileSync(join(dir, 'compositions/card.html'), 'utf8')).toContain('data-composition-id="card"');
+    expect([...readFileSync(join(dir, 'assets/font.woff2'))]).toEqual([1, 2, 3, 4]);
+    expect(readFileSync(join(dir, 'assets/Font-OFL.txt'), 'utf8')).toBe('SIL Open Font License');
+    expect(result.added[1]!.licences).toEqual(['assets/Font-OFL.txt']);
+    expect(result.next[0]).toContain('data-composition-src="compositions/card.html"');
+  });
+
+  it('refuses to overwrite, writing nothing, unless told to', async () => {
+    const dir = project();
+    mkdirSync(join(dir, 'compositions'));
+    writeFileSync(join(dir, 'compositions/card.html'), 'mine');
+    const { source } = open();
+    await expect(addHyperframes({ names: ['card'], dir, source, overwrite: false })).rejects.toMatchObject({ code: 'EXISTS', message: expect.stringContaining('compositions/card.html') });
+    expect(existsSync(join(dir, 'compositions/components/glow.html'))).toBe(false);
+    expect(existsSync(join(dir, 'HYPERFRAMES-CREDITS.md'))).toBe(false);
+    expect(readFileSync(join(dir, 'compositions/card.html'), 'utf8')).toBe('mine');
+    await addHyperframes({ names: ['card'], dir, source, overwrite: true });
+    expect(readFileSync(join(dir, 'compositions/card.html'), 'utf8')).toContain('composition-id');
+  });
+
+  it('leaves a file that already holds the same bytes, so installing again is not an error', async () => {
+    const dir = project();
+    const { source } = open();
+    await addHyperframes({ names: ['glow'], dir, source, overwrite: false });
+    const again = await addHyperframes({ names: ['card'], dir, source, overwrite: false });
+    expect(again.added.find((a) => a.name === 'glow')).toMatchObject({ written: [], unchanged: ['compositions/components/glow.html'] });
+  });
+
+  it('follows the paths in hyperframes.json', async () => {
+    const dir = project();
+    writeFileSync(join(dir, 'hyperframes.json'), JSON.stringify({ paths: { blocks: 'scenes', components: 'parts', assets: 'media' } }));
+    const { source } = open();
+    const result = await addHyperframes({ names: ['card'], dir, source, overwrite: false });
+    expect(result.added.flatMap((a) => a.written)).toEqual(['parts/glow.html', 'scenes/card.html', 'media/font.woff2', 'media/Font-OFL.txt']);
+    expect(remapTarget('compositions/x.html', 'block', { blocks: 'b', components: 'c', assets: 'a' })).toBe('b/x.html');
+  });
+
+  it('stops before writing when a download fails', async () => {
+    const dir = project();
+    const files = served();
+    files.delete(CDN);
+    const { source } = open(files);
+    await expect(addHyperframes({ names: ['card'], dir, source, overwrite: false })).rejects.toMatchObject({ code: 'NETWORK' });
+    expect(existsSync(join(dir, 'compositions'))).toBe(false);
+  });
+});
+
+describe('credits', () => {
+  it('names each item with author, licence, licence files and source, and adds to an existing file', async () => {
+    const dir = scratch();
+    const { source } = open();
+    await addHyperframes({ names: ['card'], dir, source, overwrite: false });
+    const text = readFileSync(join(dir, 'HYPERFRAMES-CREDITS.md'), 'utf8');
+    expect(text).toContain('HeyGen');
+    expect(text).toContain('## card');
+    expect(text).toContain('- Author: Jane Doe (https://example.com/jane)');
+    expect(text).toContain('- Licence: Apache-2.0 AND OFL-1.1');
+    expect(text).toContain('- Licence files: assets/Font-OFL.txt');
+    expect(text).toContain(`- Source: https://github.com/heygen-com/hyperframes/tree/${HYPERFRAMES_PINNED_REF}/registry/blocks/card`);
+    expect(text).toContain('## glow');
+    expect(text).toContain('- Author: not given');
+    expect(text).toContain('not given by the item (the HyperFrames repository is Apache-2.0)');
+  });
+
+  it('keeps earlier entries and replaces a repeated one', () => {
+    const entry = (name: string, license: string): HyperframesAdded => ({ name, type: 'block', title: name, license, source: `https://x/${name}`, written: [], unchanged: [], licences: [] });
+    const first = mergeCredits(undefined, [entry('a', 'MIT'), entry('b', 'ISC')]);
+    const second = mergeCredits(first, [entry('b', 'Apache-2.0'), entry('c', 'MIT')]);
+    expect(second.match(/^## /gm)).toHaveLength(3);
+    expect(second).toContain('- Licence: MIT');
+    expect(second).toContain('- Licence: Apache-2.0');
+    expect(second).not.toContain('ISC');
+  });
+});
+
+describe('the add command', () => {
+  async function cli(...argv: string[]): Promise<{ code: number; json: any; err: string }> {
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await run(argv, { out: (s) => void out.push(s), err: (s) => void err.push(s) });
+    let json: any;
+    try {
+      json = JSON.parse(out.join(''));
+    } catch {
+      json = undefined;
+    }
+    return { code, json, err: err.join('') };
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', mockFetch(served()));
+    process.env.KINETOGRAPH_HYPERFRAMES_CACHE = cacheDir;
+  });
+  afterEach(() => {
+    delete process.env.KINETOGRAPH_HYPERFRAMES_CACHE;
+  });
+
+  it('installs hyperframes/<name> and hf/<name>', async () => {
+    const dir = scratch();
+    writeFileSync(join(dir, 'index.html'), '<div></div>');
+    const a = await cli('add', 'hyperframes/glow', '--dir', dir, '--json');
+    expect(a.json.added[0]).toMatchObject({ name: 'glow', written: ['compositions/components/glow.html'] });
+    const b = await cli('add', 'hf/glow', '--dir', dir, '--json');
+    expect(b.code).toBe(0);
+    expect(b.json.added[0].unchanged).toEqual(['compositions/components/glow.html']);
+    expect(existsSync(join(dir, 'HYPERFRAMES-CREDITS.md'))).toBe(true);
+  });
+
+  it('refuses to overwrite and says how', async () => {
+    const dir = scratch();
+    writeFileSync(join(dir, 'index.html'), '<div></div>');
+    mkdirSync(join(dir, 'compositions/components'), { recursive: true });
+    writeFileSync(join(dir, 'compositions/components/glow.html'), 'mine');
+    const refused = await cli('add', 'hyperframes/glow', '--dir', dir, '--json');
+    expect(refused.code).toBe(1);
+    expect(refused.json.error).toMatchObject({ code: 'EXISTS' });
+    expect((await cli('add', 'hyperframes/glow', '--dir', dir, '--overwrite', '--json')).code).toBe(0);
+  });
+
+  it('lists and searches', async () => {
+    const all = await cli('add', 'hyperframes', '--list', '--json');
+    expect(all.json.items.map((i: any) => i.name)).toEqual(['card', 'glow', 'loop-a', 'loop-b']);
+    const found = await cli('add', 'hyperframes', '--search', 'effect', '--json');
+    expect(found.json.items.map((i: any) => i.name)).toEqual(['glow']);
+    const blocks = await cli('add', 'hyperframes', '--list', '--type', 'block', '--json');
+    expect(blocks.json.items.map((i: any) => i.name)).toEqual(['card']);
+  });
+
+  it('does not mix with Kinetograph registry items', async () => {
+    const r = await cli('add', 'hyperframes/glow', 'title-card', '--json');
+    expect(r.json.error.code).toBe('INVALID_ARG');
+    const ref = await cli('add', 'title-card', '--ref', 'main', '--json');
+    expect(ref.json.error.code).toBe('INVALID_ARG');
+  });
+});
