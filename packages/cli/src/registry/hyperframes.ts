@@ -18,7 +18,6 @@ export const HYPERFRAMES_REPO = 'heygen-com/hyperframes';
  * the latest.
  */
 export const HYPERFRAMES_PINNED_REF = '75fe18c621be5297d7b09a788fabc75a3cd6c734';
-export const HYPERFRAMES_CREDITS_FILE = 'HYPERFRAMES-CREDITS.md';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_ITEMS = 60;
 const MAX_TOTAL_BYTES = 512 * 1024 * 1024;
@@ -32,7 +31,7 @@ export type HyperframesType = keyof typeof HYPERFRAMES_TYPES;
 export const HYPERFRAMES_HOSTS = ['raw.githubusercontent.com', 'static.heygen.ai'] as const;
 
 const CONTROL = /[\x00-\x1f\x7f-\x9f]/;
-/** Text that is printed or written to a credits file: control characters (terminal escapes, newlines) become spaces. */
+/** Text that is printed: control characters (terminal escapes, newlines) become spaces. */
 const text = z.string().transform((value) => value.replace(/[\x00-\x1f\x7f-\x9f]+/g, ' ').trim());
 /** An id that is printed as it is: control characters are refused, not changed. */
 const id = z.string().refine((value) => !CONTROL.test(value), 'has a control character');
@@ -85,7 +84,7 @@ export interface HyperframesSource {
   file(item: HyperframesItem, file: HyperframesItem['files'][number]): Promise<Uint8Array>;
   /** Every item with its title and description (fetches them all once, then a day's cache). */
   index(progress?: (message: string) => void): Promise<HyperframesListing[]>;
-  /** Where the item lives, for credits. */
+  /** Where the item lives. */
   sourceUrl(item: HyperframesItem): string;
 }
 
@@ -400,7 +399,6 @@ export interface HyperframesAddResult {
   project: string;
   ref: string;
   added: HyperframesAdded[];
-  credits: string;
   warnings: string[];
   next: string[];
 }
@@ -431,31 +429,6 @@ function existing(root: string, target: string): Uint8Array | undefined {
 
 const same = (a: Uint8Array, b: Uint8Array): boolean => Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0;
 
-/** One item's section of the credits file. */
-function creditsSection(entry: HyperframesAdded): string {
-  const lines = [`## ${entry.name}`, '', `- Title: ${entry.title}`, `- Type: ${entry.type}`];
-  lines.push(`- Author: ${entry.author ?? 'not given'}`);
-  lines.push(`- Licence: ${entry.license ?? 'not given by the item (the HyperFrames repository is Apache-2.0)'}`);
-  lines.push(`- Source: ${entry.source}`);
-  if (entry.licences.length > 0) lines.push(`- Licence files: ${entry.licences.join(', ')}`);
-  return lines.join('\n');
-}
-
-const CREDITS_HEAD = `# HyperFrames credits
-
-These items come from the HyperFrames registry (https://github.com/${HYPERFRAMES_REPO}, Apache-2.0), made by HeyGen and its contributors. Each keeps the licence it ships with; the licence and notice files are installed beside it.`;
-
-/** `existing` credits text with `entries` added; an item already listed has its section replaced. */
-export function mergeCredits(existingText: string | undefined, entries: HyperframesAdded[]): string {
-  const sections = new Map<string, string>();
-  for (const part of (existingText ?? '').split(/^(?=## )/m)) {
-    const m = /^## (\S+)/.exec(part);
-    if (m !== null) sections.set(m[1]!, part.trimEnd());
-  }
-  for (const entry of entries) sections.set(entry.name, creditsSection(entry));
-  return `${CREDITS_HEAD}\n\n${[...sections.values()].join('\n\n')}\n`;
-}
-
 export async function addHyperframes(options: HyperframesAddOptions): Promise<HyperframesAddResult> {
   const { source, overwrite } = options;
   const progress = options.progress ?? (() => undefined);
@@ -471,8 +444,6 @@ export async function addHyperframes(options: HyperframesAddOptions): Promise<Hy
       if (problem !== undefined) throw new CliError('UNSAFE_TARGET', `${item.name}: target "${file.target}"${target === file.target ? '' : ` (installs as "${target}")`} ${problem}`);
     }
   }
-  // The credits file is written too: it must not be a link, nor sit in a link.
-  const creditsBefore = existing(root, HYPERFRAMES_CREDITS_FILE);
 
   // Every download first, so a failure stops the install before anything is written.
   let total = 0;
@@ -556,10 +527,6 @@ export async function addHyperframes(options: HyperframesAddOptions): Promise<Hy
     added.push(entry);
   }
 
-  const creditsPath = join(root, HYPERFRAMES_CREDITS_FILE);
-  const credits = mergeCredits(creditsBefore === undefined ? undefined : Buffer.from(creditsBefore).toString('utf8'), added);
-  writeFileSync(creditsPath, credits);
-
   const steps = added
     .filter((a) => options.names.includes(a.name))
     .map((a) => {
@@ -570,7 +537,7 @@ export async function addHyperframes(options: HyperframesAddOptions): Promise<Hy
       }
       return `${a.name}: paste the snippet in ${file ?? 'its html file'} into your composition`;
     });
-  return { project: root, ref: source.ref, added, credits: creditsPath, warnings, next: steps };
+  return { project: root, ref: source.ref, added, warnings, next: steps };
 }
 
 export function describeHyperframesAdd(result: HyperframesAddResult): string {
@@ -580,7 +547,6 @@ export function describeHyperframesAdd(result: HyperframesAddResult): string {
     for (const file of item.written) lines.push(`  wrote      ${file}`);
     for (const file of item.unchanged) lines.push(`  unchanged  ${file}`);
   }
-  lines.push(`credits and licences: ${result.credits}`);
   for (const warning of result.warnings) lines.push(`warning: ${warning}`);
   if (result.next.length > 0) lines.push('next:', ...result.next.map((step) => `  ${step}`));
   return lines.join('\n');

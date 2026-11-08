@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,11 +8,9 @@ import {
   filterListing,
   HYPERFRAMES_PINNED_REF,
   hyperframesName,
-  mergeCredits,
   openHyperframes,
   remapTarget,
   resolveHyperframes,
-  type HyperframesAdded,
 } from '../src/registry/hyperframes.js';
 
 const scratch = (): string => mkdtempSync(join(tmpdir(), 'kinetograph-hf-test-'));
@@ -205,7 +203,6 @@ describe('writing', () => {
     const { source } = open();
     await expect(addHyperframes({ names: ['card'], dir, source, overwrite: false })).rejects.toMatchObject({ code: 'EXISTS', message: expect.stringContaining('compositions/card.html') });
     expect(existsSync(join(dir, 'compositions/components/glow.html'))).toBe(false);
-    expect(existsSync(join(dir, 'HYPERFRAMES-CREDITS.md'))).toBe(false);
     expect(readFileSync(join(dir, 'compositions/card.html'), 'utf8')).toBe('mine');
     await addHyperframes({ names: ['card'], dir, source, overwrite: true });
     expect(readFileSync(join(dir, 'compositions/card.html'), 'utf8')).toContain('composition-id');
@@ -235,34 +232,6 @@ describe('writing', () => {
     const { source } = open(files);
     await expect(addHyperframes({ names: ['card'], dir, source, overwrite: false })).rejects.toMatchObject({ code: 'NETWORK' });
     expect(existsSync(join(dir, 'compositions'))).toBe(false);
-  });
-});
-
-describe('credits', () => {
-  it('names each item with author, licence, licence files and source, and adds to an existing file', async () => {
-    const dir = scratch();
-    const { source } = open();
-    await addHyperframes({ names: ['card'], dir, source, overwrite: false });
-    const text = readFileSync(join(dir, 'HYPERFRAMES-CREDITS.md'), 'utf8');
-    expect(text).toContain('HeyGen');
-    expect(text).toContain('## card');
-    expect(text).toContain('- Author: Jane Doe (https://example.com/jane)');
-    expect(text).toContain('- Licence: Apache-2.0 AND OFL-1.1');
-    expect(text).toContain('- Licence files: assets/Font-OFL.txt');
-    expect(text).toContain(`- Source: https://github.com/heygen-com/hyperframes/tree/${HYPERFRAMES_PINNED_REF}/registry/blocks/card`);
-    expect(text).toContain('## glow');
-    expect(text).toContain('- Author: not given');
-    expect(text).toContain('not given by the item (the HyperFrames repository is Apache-2.0)');
-  });
-
-  it('keeps earlier entries and replaces a repeated one', () => {
-    const entry = (name: string, license: string): HyperframesAdded => ({ name, type: 'block', title: name, license, source: `https://x/${name}`, written: [], unchanged: [], licences: [] });
-    const first = mergeCredits(undefined, [entry('a', 'MIT'), entry('b', 'ISC')]);
-    const second = mergeCredits(first, [entry('b', 'Apache-2.0'), entry('c', 'MIT')]);
-    expect(second.match(/^## /gm)).toHaveLength(3);
-    expect(second).toContain('- Licence: MIT');
-    expect(second).toContain('- Licence: Apache-2.0');
-    expect(second).not.toContain('ISC');
   });
 });
 
@@ -296,7 +265,6 @@ describe('the add command', () => {
     const b = await cli('add', 'hf/glow', '--dir', dir, '--json');
     expect(b.code).toBe(0);
     expect(b.json.added[0].unchanged).toEqual(['compositions/components/glow.html']);
-    expect(existsSync(join(dir, 'HYPERFRAMES-CREDITS.md'))).toBe(true);
   });
 
   it('refuses to overwrite and says how', async () => {
@@ -368,7 +336,6 @@ describe('hostile items', () => {
     const dir = project();
     const { source } = withFiles([{ path: 'glow.html', target }]);
     await expect(addHyperframes({ names: ['glow'], dir, source, overwrite: true })).rejects.toMatchObject({ code: 'UNSAFE_TARGET' });
-    expect(existsSync(join(dir, 'HYPERFRAMES-CREDITS.md'))).toBe(false);
     expect(readFileSync(join(dir, 'index.html'), 'utf8')).toBe('<div></div>');
   });
 
@@ -431,8 +398,7 @@ describe('hostile items', () => {
       writeFileSync(join(dir, 'hyperframes.json'), JSON.stringify({ paths: { components: blocks } }));
       const { source } = open();
       await expect(addHyperframes({ names: ['glow'], dir, source, overwrite: true })).rejects.toMatchObject({ code: 'UNSAFE_TARGET' });
-      expect(existsSync(join(dir, 'HYPERFRAMES-CREDITS.md'))).toBe(false);
-    }
+      }
   });
 
   it('refuses an asset url on a host that is not the registry or its CDN, before any request to it', async () => {
@@ -461,17 +427,6 @@ describe('hostile items', () => {
     await expect(source.file(card, card.files[1]!)).rejects.toMatchObject({ code: 'UNSAFE_URL' });
     expect(calls.map((c) => c.url)).not.toContain('https://evil.example/stolen');
     for (const call of calls) expect(JSON.stringify(call.headers ?? {})).not.toMatch(/authorization/i);
-  });
-
-  it('refuses to write the credits file through a symbolic link, writing nothing', async () => {
-    const dir = project();
-    const outside = join(scratch(), 'victim.txt');
-    writeFileSync(outside, 'precious');
-    symlinkSync(outside, join(dir, 'HYPERFRAMES-CREDITS.md'));
-    const { source } = open();
-    await expect(addHyperframes({ names: ['glow'], dir, source, overwrite: true })).rejects.toMatchObject({ code: 'UNSAFE_TARGET' });
-    expect(readFileSync(outside, 'utf8')).toBe('precious');
-    expect(existsSync(join(dir, 'compositions/components/glow.html'))).toBe(false);
   });
 
   it('strips terminal escapes from what an item says about itself, and refuses them in a name or type', async () => {

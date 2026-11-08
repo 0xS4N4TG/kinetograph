@@ -58,7 +58,7 @@ npx kinetograph add hyperframes (--list | --search <text>) [--type block|compone
 
 Components go to `src/components/<name>/`, templates to `src/templates/<name>/`, tastes to `src/tastes/<name>/`, and their pictures, fonts and audio to `public/<kind>/<name>/`. Items an item depends on are installed first. A file that already exists is skipped and reported; `--overwrite` replaces it. If the item needs npm packages the project lacks, the command shows them and asks before installing (`--yes` skips the question; with `--json` or no terminal it only prints the install command). Run it inside a project made by `init`. An item that is not published yet says so and installs nothing.
 
-`add hyperframes/<name>` (or `hf/<name>`) installs a block or component from HeyGen's [HyperFrames registry](/docs/guides/hyperframes-registry/) and writes `HYPERFRAMES-CREDITS.md`; `add hyperframes --list` and `--search <text>` list its items, and a file that exists stops the install unless `--overwrite` is given.
+`add hyperframes/<name>` (or `hf/<name>`) installs a block or component from HeyGen's [HyperFrames registry](/docs/guides/hyperframes-registry/); `add hyperframes --list` and `--search <text>` list its items, and a file that exists stops the install unless `--overwrite` is given.
 
 ## compositions
 

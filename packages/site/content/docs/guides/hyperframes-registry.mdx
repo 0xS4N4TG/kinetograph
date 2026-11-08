@@ -1,6 +1,6 @@
 ---
 title: HyperFrames registry
-description: Install blocks and components from HeyGen's HyperFrames registry into a project, keep their credits and licences, and see which ones Kinetograph draws.
+description: Install blocks and components from HeyGen's HyperFrames registry into a project, keep their licences, and see which ones Kinetograph draws.
 ---
 
 [HyperFrames](https://hyperframes.heygen.com) is HeyGen's open video format, and its [catalog](https://hyperframes.heygen.com/contributing/catalog) holds about 450 blocks and components made by HeyGen and its contributors. Kinetograph reads them as they are. The registry is the [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) repository (Apache-2.0), under `registry/`. Nothing from it is copied into Kinetograph: an item is fetched when you add it.
@@ -16,6 +16,7 @@ npx kinetograph add hyperframes/aurora
 
 - fetches the item and the items it needs (`registryDependencies`), and refuses a loop;
 - writes its files where `hyperframes add` does: blocks in `compositions/`, components in `compositions/components/`, pictures and fonts in `assets/`, in the folder that holds your `index.html` (or `hyperframes.json`, whose `paths` it follows; in a project made by `init --html`, the `html/` folder);
+- moves the `TEMPLATE.md`, `models/` and `lib/` files that some items put at the project root into `compositions/<name>/`, `assets/models/` and `compositions/lib/`, and updates the paths in the item's own files;
 - downloads the pictures, fonts and models an item keeps on HeyGen's CDN;
 - stops, with nothing written, when a file already exists. A file with the same bytes is left as it is. `--overwrite` replaces the rest;
 - refuses to write outside those folders, to a hidden path, or to `package.json` and `node_modules`.
@@ -24,9 +25,9 @@ A block is a composition: mount it from your `index.html` with `data-composition
 
 `add hyperframes --list` shows every block and component with its type and description, and `--type block|component` narrows it. The list is cached for a day. `--ref <commit|branch|tag>` reads another version of the registry. The default is a pinned commit, so an install gives the same files next month; `--ref main` is the latest.
 
-## Credits and licences
+## Licences
 
-The command writes `HYPERFRAMES-CREDITS.md` in the project, or adds to it. Each item has its name, author, licence and source URL, and lists the licence files it shipped. Those files (font licences, shader notices) are installed beside the item. An item keeps the licence it ships with, which can differ from the repository's; keep the credits file and the licence files with the project when you share it.
+An item keeps the licence it ships with, which can differ from the repository's. The licence and notice files an item ships (font licences, shader notices) are installed beside it. Keep them with the project when you share it.
 
 ## What draws
 
@@ -40,19 +41,20 @@ Measured on an Apple M4 against registry commit `75fe18c`, 448 items (210 blocks
 
 | | Items |
 |---|---|
-| works | 232 |
-| partial | 201 |
-| fails | 15 |
+| works | 238 |
+| partial | 208 |
+| fails | 2 |
 
-Thirteen of the fails are installs `add` refuses: ten write a `TEMPLATE.md` at the project root, and three ship 3D models in `models/`, outside the folders `add` writes to. The other two stop in `doctor`. Most partial items (156 of 201) are components, whose demos are small pages built around one effect.
+Both fails stop in `doctor`. Most partial items (156 of 208) are components, whose demos are small pages built around one effect.
 
 What `doctor` reports most often, by items affected:
 
-1. A font the page names but does not ship, so another one is drawn (27).
+1. A font the page names but does not ship, so another one is drawn (30).
 2. A remote file the page fetches while it runs, such as a Google Fonts stylesheet or a font file (22).
-3. Three.js scenes, which are not drawn (19).
-4. A gradient that interpolates in a colour space other than sRGB (16).
-5. A root element without `data-composition-id`, `data-width`, `data-height` or `data-duration` (3).
+3. Three.js scenes, which are not drawn (22).
+4. A script that uses cube map textures (17).
+5. A gradient that interpolates in a colour space other than sRGB (16).
+6. A backdrop filter other than `blur()` (5).
 
 The full list, with each item's warnings and render times, is [status.json](https://github.com/0xS4N4TG/kinetograph/blob/main/scripts/hyperframes-registry/status.json). Run it yourself with `node scripts/hyperframes-registry/sweep.mjs`.
 
