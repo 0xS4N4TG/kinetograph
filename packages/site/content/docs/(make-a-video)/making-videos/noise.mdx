@@ -26,12 +26,19 @@ export const Drift = () => {
 
 ## A noise picture
 
-`Noise` is a native layer that draws noise itself, with `width`, `height`, `turbulence` and `channels`:
+`Noise` is a native layer that draws noise itself, with `width`, `height`, `turbulence` (`{ type, baseFrequency, numOctaves, seed }`) and `channels` (`'rgba'` or `'gray'`):
 
 ```tsx title="src/Clouds.tsx"
 import { Noise } from '@kinetographdev/core';
 
-export const Clouds = () => <Noise width={1280} height={720} turbulence={4} />;
+export const Clouds = () => (
+  <Noise
+    width={1280}
+    height={720}
+    channels="gray"
+    turbulence={{ type: 'fractalNoise', baseFrequency: [0.004, 0.008], numOctaves: 4, seed: 7 }}
+  />
+);
 ```
 
 `grain` and `dither` in [Effects](/docs/making-videos/effects/) add film grain to a layer.
