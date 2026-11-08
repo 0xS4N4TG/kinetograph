@@ -23,7 +23,28 @@ The [`skills`](https://www.npmjs.com/package/skills) CLI asks which agents to in
 | `kinetograph-docs` | Looking things up in these docs. |
 | `kinetograph-upgrade` | Updating Kinetograph and the skills. |
 | `kinetograph-migrate` | Moving an existing Remotion project onto Kinetograph. See [Migrate from Remotion](/docs/migrating/remotion/). |
-| `kinetograph-taste-clone` | Turning a reference reel into a spec or a reusable style. It comes from [kinetograph-ui](https://github.com/0xS4N4TG/kinetograph-ui). See [Match a reference](/docs/agents/taste/). |
+| `kinetograph-taste-clone` | Turning a reference reel into a spec or a reusable style. It comes from [kinetograph-ui](https://github.com/0xS4N4TG/kinetograph-ui). See [Recreating something you saw](/docs/tips/matching/). |
+
+## Using the skills
+
+You don't need to call a skill by name. Ask for the video and the agent picks the one that fits. Prompts for each are in the tips:
+
+- `kinetograph-markup`: [Motion and transitions](/docs/tips/motion/) and [Text, captions and code](/docs/tips/text-captions-code/).
+- `kinetograph-studio`: [Editing an existing video](/docs/tips/editing/).
+- `kinetograph-taste-clone`: [Recreating something you saw](/docs/tips/matching/).
+- `kinetograph-render`: [Rendering](/docs/rendering/).
+
+More are in [Example prompts](/docs/tips/example-prompts/).
+
+## The loop the skill teaches
+
+1. **Write** a project file that calls `registerRoot`.
+2. **Look.** `strip` shows twelve labelled frames at once, `still` shows one, and `onion` shows a motion path.
+3. **Check** without looking at pixels. `inspect` gives each layer's position and bounds, `lint` reports overflow and missing fonts and assets, and `check` catches type errors.
+4. **Fix** and go back to step 2.
+5. **Render** with `render`. Use `--draft` for a half-size look first, and run `doctor` before a long render to see what it will leave out.
+
+A prompt as short as "make a 5 second title card for X, check it with strip and lint, and render it to out/title.mp4" is enough to start this loop. Kinetograph needs no account, login or API key.
 
 ## Keep them current
 
