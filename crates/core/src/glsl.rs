@@ -149,6 +149,10 @@ pub struct GlslTexture {
     /// texels are `pixels` (RGBA8, `width * height * depth * 4` bytes, x fastest, then y, then z) or `floats`.
     #[serde(default)]
     pub depth: u32,
+    /// With `depth`: a 2D array texture (`TEXTURE_2D_ARRAY`, read by a `sampler2DArray`) of `depth` layers, not a
+    /// 3D texture.
+    #[serde(default)]
+    pub array: bool,
     /// A float texture, 2D or 3D (`R32F`, `RGBA16F`, ...): base64 little-endian `f32`s, four for each texel,
     /// kept as half floats, or in full with `float32`.
     pub floats: Option<String>,
@@ -801,12 +805,14 @@ impl PackedArray {
 #[derive(Clone, Debug, Default)]
 pub struct Varyings(pub BTreeMap<String, (u32, String)>);
 
-/// What a sampler reads: a 2D texture, a 3D one (`sampler3D`) or a cube map (`samplerCube`).
+/// What a sampler reads: a 2D texture, a 3D one (`sampler3D`), a cube map (`samplerCube`) or a 2D array
+/// texture (`sampler2DArray`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SamplerDim {
     D2,
     D3,
     Cube,
+    Array,
 }
 
 /// A sampler uniform of one stage, with the slot it holds in the program: the stages of a program
@@ -1060,6 +1066,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
             SamplerDim::D2 => "texture2D",
             SamplerDim::D3 => "texture3D",
             SamplerDim::Cube => "textureCube",
+            SamplerDim::Array => "texture2DArray",
         };
         prelude.push_str(&format!(
             "layout(set=0, binding={b}) uniform {texture} _k_t_{name}; \
@@ -1277,6 +1284,7 @@ fn rename(
             Some((_, SamplerDim::D2)) => format!("sampler2D(_k_t_{w}, _k_s_{w})"),
             Some((_, SamplerDim::D3)) => format!("sampler3D(_k_t_{w}, _k_s_{w})"),
             Some((_, SamplerDim::Cube)) => format!("samplerCube(_k_t_{w}, _k_s_{w})"),
+            Some((_, SamplerDim::Array)) => format!("sampler2DArray(_k_t_{w}, _k_s_{w})"),
             None => return None,
         },
     })
@@ -1638,13 +1646,18 @@ fn declaration(
     match storage {
         "uniform" => {
             for (name, array) in declared.names {
-                if ty == "sampler2D" || ty == "sampler3D" || ty == "samplerCube" {
+                if ty == "sampler2D"
+                    || ty == "sampler3D"
+                    || ty == "samplerCube"
+                    || ty == "sampler2DArray"
+                {
                     if array.is_some() {
                         return Err(unsupported(format!("`{name}`: an array of samplers")));
                     }
                     let dim = match ty.as_str() {
                         "sampler2D" => SamplerDim::D2,
                         "sampler3D" => SamplerDim::D3,
+                        "sampler2DArray" => SamplerDim::Array,
                         _ => SamplerDim::Cube,
                     };
                     let slot = match ctx.slots.iter().position(|(n, _)| *n == name) {
@@ -1667,7 +1680,7 @@ fn declaration(
                     samplers.push((name, dim));
                 } else if ty.contains("sampler") {
                     return Err(unsupported(format!(
-                        "`{name}`: a `{ty}` uniform; only `sampler2D`, `sampler3D` and `samplerCube` textures are available"
+                        "`{name}`: a `{ty}` uniform; only `sampler2D`, `sampler3D`, `samplerCube` and `sampler2DArray` textures are available"
                     )));
                 } else if ty.starts_with('b') && is_builtin_type(&ty) {
                     if array.is_some() {
@@ -2749,6 +2762,22 @@ mod tests {
     }
 
     #[test]
+    fn a_sampler_2d_array_reads_with_texel_fetch_and_texture() {
+        let t = translate(&program(
+            "#version 300 es\nin vec2 a_pos; uniform sampler2DArray u_layers; out vec4 v_c;\n\
+             void main() { v_c = texelFetch(u_layers, ivec3(0, 0, 1), 0); gl_Position = vec4(a_pos, 0.0, 1.0); }",
+            "#version 300 es\nprecision highp float; precision highp sampler2DArray;\n\
+             in vec4 v_c; uniform sampler2DArray u_layers; out vec4 o;\n\
+             void main() { o = v_c + texture(u_layers, vec3(0.5, 0.5, 2.0))\n\
+                 + vec4(float(textureSize(u_layers, 0).z)); }",
+        ))
+        .unwrap();
+        assert_eq!(t.fragment.samplers.len(), 1);
+        assert_eq!(t.fragment.samplers[0].dim, SamplerDim::Array);
+        assert_eq!(t.vertex.samplers[0].dim, SamplerDim::Array);
+    }
+
+    #[test]
     fn half_floats_round_to_nearest_even() {
         for (value, half) in [
             (0.0f32, 0x0000u16),
@@ -2793,6 +2822,7 @@ mod tests {
             luminance: false,
             patches: Vec::new(),
             depth: 2,
+            array: false,
             floats,
             float32: false,
             cube: false,

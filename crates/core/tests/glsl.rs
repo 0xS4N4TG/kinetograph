@@ -1981,3 +1981,121 @@ fn a_scissored_stencil_clear_changes_the_stencil_inside_the_box_alone() {
     assert_eq!(px(&frame, 8, 10), [0, 255, 0, 255]);
     assert_eq!(px(&frame, 2, 10), [0, 0, 0, 255]);
 }
+
+// ---- 2D array textures ----
+
+/// A 2 x 2 array of three layers: layer 0 is red, 1 is green, 2 is blue, and the first texel of layer 1 is white.
+fn layers() -> String {
+    let mut texels = Vec::new();
+    for layer in 0..3usize {
+        for texel in 0..4 {
+            let mut c = [0u8, 0, 0, 255];
+            c[layer] = 255;
+            if layer == 1 && texel == 0 {
+                c = [255; 4];
+            }
+            texels.extend(c);
+        }
+    }
+    format!(
+        r#", "textures": {{"a": {{"pixels": "{}", "width": 2, "height": 2, "depth": 3, "array": true}}}}"#,
+        b64(&texels)
+    )
+}
+
+fn layers_unit(filter: &str) -> String {
+    format!(
+        r#""uniforms": {{"u_layers": [{{"kind": "i", "value": [0]}}]}},
+            "units": {{"0": {{"texture": "a", "min": "{filter}", "mag": "{filter}",
+                "wrapS": "CLAMP_TO_EDGE", "wrapT": "CLAMP_TO_EDGE"}}}}"#
+    )
+}
+
+fn layers_fragment(read: &str) -> String {
+    format!(
+        "#version 300 es\nprecision highp float; precision highp sampler2DArray; in vec2 v_uv; \
+         uniform sampler2DArray u_layers; out vec4 o; void main() {{ o = {read}; }}"
+    )
+}
+
+#[test]
+fn a_2d_array_texture_is_fetched_and_sampled_by_layer() {
+    for (read, want) in [
+        ("texelFetch(u_layers, ivec3(0, 0, 0), 0)", [255, 0, 0, 255]),
+        ("texelFetch(u_layers, ivec3(1, 1, 2), 0)", [0, 0, 255, 255]),
+        ("texture(u_layers, vec3(0.25, 0.25, 1.0))", [255, 255, 255, 255]),
+        ("texture(u_layers, vec3(0.75, 0.75, 1.0))", [0, 255, 0, 255]),
+        ("texture(u_layers, vec3(0.75, 0.75, 2.0))", [0, 0, 255, 255]),
+    ] {
+        let fragment = layers_fragment(read);
+        let frame = render(&layer_with_vertex(
+            QUAD_VERTEX_ES1_AS_ES3,
+            &[("p", &fragment)],
+            "",
+            &layers(),
+            &draw(&layers_unit("NEAREST")),
+        ));
+        assert_eq!(px(&frame, 8, 8), want, "{read}");
+    }
+}
+
+#[test]
+fn a_2d_array_layer_index_is_rounded_and_clamped_and_never_blends_layers() {
+    // Layer 1.4 rounds to 1, and 7.0 clamps to the last layer, even with LINEAR filtering.
+    for (read, want) in [
+        ("texture(u_layers, vec3(0.75, 0.75, 1.4))", [0, 255, 0, 255]),
+        ("texture(u_layers, vec3(0.75, 0.75, 7.0))", [0, 0, 255, 255]),
+    ] {
+        let fragment = layers_fragment(read);
+        let frame = render(&layer_with_vertex(
+            QUAD_VERTEX_ES1_AS_ES3,
+            &[("p", &fragment)],
+            "",
+            &layers(),
+            &draw(&layers_unit("LINEAR")),
+        ));
+        assert_eq!(px(&frame, 8, 8), want, "{read}");
+    }
+}
+
+#[test]
+fn a_2d_array_sampler_with_no_texture_reads_black() {
+    let fragment = layers_fragment("texture(u_layers, vec3(0.5, 0.5, 0.0))");
+    let frame = render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", &fragment)],
+        "",
+        "",
+        &draw(r#""uniforms": {"u_layers": [{"kind": "i", "value": [0]}]}"#),
+    ));
+    assert_eq!(px(&frame, 8, 8), [0, 0, 0, 255]);
+}
+
+#[test]
+fn a_2d_array_sampler_on_a_unit_holding_a_3d_texture_is_refused() {
+    let fragment = layers_fragment("texture(u_layers, vec3(0.5))");
+    let e = render_error(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", &fragment)],
+        "",
+        &volume(),
+        &draw(&layers_unit("NEAREST").replace(r#""a""#, r#""v""#)),
+    ));
+    assert!(e.contains("2D array") && e.contains("3D"), "{e}");
+}
+
+#[test]
+fn a_vertex_shader_fetches_from_a_2d_array_texture() {
+    // The vertex shader reads the first texel of layer 1 and hands it to the fragment shader.
+    let vertex = "#version 300 es\nin vec2 a_pos; uniform highp sampler2DArray u_layers; out vec4 v_c; \
+        void main() { v_c = texelFetch(u_layers, ivec3(0, 0, 1), 0); gl_Position = vec4(a_pos, 0.0, 1.0); }";
+    let fragment = "#version 300 es\nprecision highp float; in vec4 v_c; out vec4 o; void main() { o = v_c; }";
+    let frame = render(&layer_with_vertex(
+        vertex,
+        &[("p", fragment)],
+        "",
+        &layers(),
+        &draw(&layers_unit("NEAREST")),
+    ));
+    assert_eq!(px(&frame, 8, 8), [255, 255, 255, 255]);
+}

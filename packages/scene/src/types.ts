@@ -817,6 +817,8 @@ export interface GlslTexture {
   patches?: GlslPatch[];
   /** A 3D texture (`texImage3D`) of `width` by `height` by this many layers, its texels `pixels` (RGBA8) or `floats`; left out for a 2D texture. */
   depth?: number;
+  /** With `depth`: a `TEXTURE_2D_ARRAY` (read by a `sampler2DArray`), not a 3D texture; `depth` is its layer count. */
+  array?: boolean;
   /**
    * A float texture (`R32F`, `RGBA16F` and the like), 2D or 3D: base64 little-endian `f32`s, four for each texel (x
    * fastest, then y, then z; what the format lacks is 0, and alpha 1). Kept as half floats, or as 32-bit ones with `float32`.

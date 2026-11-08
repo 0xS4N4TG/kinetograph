@@ -333,6 +333,8 @@ export const GL2 = {
   TEXTURE_BINDING_3D: 0x806a,
   MAX_3D_TEXTURE_SIZE: 0x8073,
   TEXTURE_2D_ARRAY: 0x8c1a,
+  TEXTURE_BINDING_2D_ARRAY: 0x8c1d,
+  MAX_ARRAY_TEXTURE_LAYERS: 0x88ff,
   UNIFORM_BUFFER: 0x8a11,
   PIXEL_UNPACK_BUFFER: 0x88ec,
   PIXEL_PACK_BUFFER: 0x88eb,
@@ -394,6 +396,15 @@ const FLOAT_FORMATS: Record<number, { channels: number; format: number; bits: 16
 /** `MAX_3D_TEXTURE_SIZE`: the longest side of a 3D texture. */
 const MAX_3D_TEXTURE_SIZE = 2048;
 
+/** The pixel format of each 8-bit internal format a 3D or array texture takes. */
+const FORMATS_8BIT_3D: Record<number, number> = { [GL2.RGBA8]: GL.RGBA, [GL.RGBA]: GL.RGBA, [GL2.RGB8]: GL.RGB, [GL.RGB]: GL.RGB, [GL2.RG8]: GL2.RG, [GL2.R8]: GL2.RED };
+
+/** The texture target each sampler type reads. */
+const SAMPLER_TARGETS: Record<string, number> = { sampler2D: GL.TEXTURE_2D, sampler3D: GL2.TEXTURE_3D, samplerCube: GL.TEXTURE_CUBE_MAP, sampler2DArray: GL2.TEXTURE_2D_ARRAY };
+
+/** `MAX_ARRAY_TEXTURE_LAYERS`: the layers of a 2D array texture. */
+const MAX_ARRAY_TEXTURE_LAYERS = 256;
+
 /** `MAX_CUBE_MAP_TEXTURE_SIZE`: the side of a face. */
 const MAX_CUBE_MAP_TEXTURE_SIZE = 8192;
 
@@ -429,7 +440,7 @@ export class WebGLBuffer extends WebGLObject {
 export class WebGLTexture extends WebGLObject {
   width = 0;
   height = 0;
-  /** The layers of a 3D texture (`texImage3D`); 0 for a 2D one. */
+  /** The layers of a 3D or 2D array texture (`texImage3D`, `texStorage3D`); 0 for a 2D one. */
   depth = 0;
   /** The target it was first bound to: a texture keeps its type. */
   target: number | null = null;
@@ -854,6 +865,7 @@ export class WebGLContext {
   private readonly units = new Map<number, WebGLTexture>();
   /** What each unit holds at `TEXTURE_3D`. */
   private readonly units3d = new Map<number, WebGLTexture>();
+  private readonly unitsArray = new Map<number, WebGLTexture>();
   /** What each unit holds at `TEXTURE_CUBE_MAP`. */
   private readonly unitsCube = new Map<number, WebGLTexture>();
   private caps: Capability = { blend: false, cull: false, scissor: false, depth: false, stencil: false, polygonOffset: false };
@@ -1051,6 +1063,14 @@ export class WebGLContext {
         return MAX_CUBE_MAP_TEXTURE_SIZE;
       case GL2.TEXTURE_BINDING_3D:
         if (this.version === 2) return this.units3d.get(this.activeUnit) ?? null;
+        this.fail(GL.INVALID_ENUM);
+        return null;
+      case GL2.TEXTURE_BINDING_2D_ARRAY:
+        if (this.version === 2) return this.unitsArray.get(this.activeUnit) ?? null;
+        this.fail(GL.INVALID_ENUM);
+        return null;
+      case GL2.MAX_ARRAY_TEXTURE_LAYERS:
+        if (this.version === 2) return MAX_ARRAY_TEXTURE_LAYERS;
         this.fail(GL.INVALID_ENUM);
         return null;
       case GL.FRAMEBUFFER_BINDING:
@@ -1924,14 +1944,20 @@ export class WebGLContext {
     if (!(n >= 0 && n < 16)) return this.fail(GL.INVALID_ENUM);
     this.activeUnit = n;
   }
+  /** The texture bound to each unit for a texture target; null for a target the context does not have. */
+  private unitMap(target: number): Map<number, WebGLTexture> | null {
+    if (target === GL.TEXTURE_2D) return this.units;
+    if (target === GL.TEXTURE_CUBE_MAP) return this.unitsCube;
+    if (this.version !== 2) return null;
+    return target === GL2.TEXTURE_3D ? this.units3d : target === GL2.TEXTURE_2D_ARRAY ? this.unitsArray : null;
+  }
   bindTexture(target: number, texture: WebGLTexture | null): void {
-    const is3d = target === GL2.TEXTURE_3D && this.version === 2;
     const isCube = target === GL.TEXTURE_CUBE_MAP;
-    if (target !== GL.TEXTURE_2D && !is3d && !isCube) {
+    const units = this.unitMap(target);
+    if (units === null) {
       if (texture === null) return;
-      throw new WebGLUnsupportedError('textures other than TEXTURE_2D, TEXTURE_CUBE_MAP and TEXTURE_3D');
+      throw new WebGLUnsupportedError(`textures other than TEXTURE_2D, TEXTURE_CUBE_MAP, TEXTURE_3D and TEXTURE_2D_ARRAY (target 0x${target.toString(16)})`);
     }
-    const units = is3d ? this.units3d : isCube ? this.unitsCube : this.units;
     if (texture === null) {
       units.delete(this.activeUnit);
       return;
@@ -1943,13 +1969,12 @@ export class WebGLContext {
     units.set(this.activeUnit, texture);
   }
   private bound(target: number): WebGLTexture | null {
-    const is3d = target === GL2.TEXTURE_3D && this.version === 2;
-    const isCube = target === GL.TEXTURE_CUBE_MAP;
-    if (target !== GL.TEXTURE_2D && !is3d && !isCube) {
+    const units = this.unitMap(target);
+    if (units === null) {
       this.fail(GL.INVALID_ENUM);
       return null;
     }
-    const texture = (is3d ? this.units3d : isCube ? this.unitsCube : this.units).get(this.activeUnit);
+    const texture = units.get(this.activeUnit);
     if (texture === undefined) {
       this.fail(GL.INVALID_OPERATION);
       return null;
@@ -2019,7 +2044,7 @@ export class WebGLContext {
       return;
     }
     if (!texture.uploaded || kindOf(texture.format) !== 'color') return this.fail(GL.INVALID_OPERATION);
-    if (target === GL2.TEXTURE_3D) throw new WebGLUnsupportedError('generateMipmap of a 3D texture; sample it with LINEAR or NEAREST');
+    if (target === GL2.TEXTURE_3D || target === GL2.TEXTURE_2D_ARRAY) throw new WebGLUnsupportedError('generateMipmap of a 3D or array texture; sample it with LINEAR or NEAREST');
     if (texture.floats !== null) throw new WebGLUnsupportedError('generateMipmap of a float texture; sample it with NEAREST');
     if (texture.drawnAt === texture.version) throw new WebGLUnsupportedError('generateMipmap of a texture a framebuffer drew in; sample it with LINEAR or NEAREST');
     texture.mipmaps = true;
@@ -2245,7 +2270,7 @@ export class WebGLContext {
       const floats = this.floatTexels(float, format, type, count, view, srcOffset);
       return floats === null ? null : { floats };
     }
-    const want = ({ [GL2.RGBA8]: GL.RGBA, [GL.RGBA]: GL.RGBA, [GL2.RGB8]: GL.RGB, [GL.RGB]: GL.RGB, [GL2.RG8]: GL2.RG, [GL2.R8]: GL2.RED } as Record<number, number>)[internalformat];
+    const want = FORMATS_8BIT_3D[internalformat];
     if (want === undefined) throw new WebGLUnsupportedError(`the internal format 0x${internalformat.toString(16)} of a 3D texture; use RGBA8 or a float format`);
     if (format !== want || type !== GL.UNSIGNED_BYTE) {
       this.fail(GL.INVALID_OPERATION);
@@ -2267,18 +2292,31 @@ export class WebGLContext {
     return { pixels: this.rgbaOf(width, height * depth, format, bytes) };
   }
 
-  /** WebGL 2's `texImage3D(target, level, internalformat, width, height, depth, border, format, type, pixels, srcOffset)` of a `TEXTURE_3D`. */
+  /** The bound texture of a `texImage3D`, `texSubImage3D` or `texStorage3D` target, and the most layers it can have; null after the error. */
+  private bound3d(target: number): { texture: WebGLTexture; limit: number } | null {
+    if (this.version !== 2) {
+      this.fail(GL.INVALID_OPERATION);
+      return null;
+    }
+    if (target !== GL2.TEXTURE_3D && target !== GL2.TEXTURE_2D_ARRAY) {
+      this.fail(GL.INVALID_ENUM);
+      return null;
+    }
+    const texture = this.bound(target);
+    return texture === null ? null : { texture, limit: target === GL2.TEXTURE_3D ? MAX_3D_TEXTURE_SIZE : MAX_ARRAY_TEXTURE_LAYERS };
+  }
+
+  /** WebGL 2's `texImage3D(target, level, internalformat, width, height, depth, border, format, type, pixels, srcOffset)` of a `TEXTURE_3D` or `TEXTURE_2D_ARRAY`. */
   texImage3D(target: number, level: number, internalformat: number, width: number, height: number, depth: number, border: number, format: number, type: number, source?: unknown, srcOffset = 0): void {
-    if (this.version !== 2) return this.fail(GL.INVALID_OPERATION);
-    if (target === GL2.TEXTURE_2D_ARRAY) throw new WebGLUnsupportedError('array textures');
-    const texture = target === GL2.TEXTURE_3D ? this.bound(target) : (this.fail(GL.INVALID_ENUM), null);
-    if (texture === null) return;
-    if (level !== 0) throw new WebGLUnsupportedError('texImage3D above level 0; a 3D texture has one level');
+    const bound = this.bound3d(target);
+    if (bound === null) return;
+    const { texture, limit } = bound;
+    if (level !== 0) throw new WebGLUnsupportedError('texImage3D above level 0; a 3D or array texture has one level');
     const sides = [width, height, depth];
-    if (border !== 0 || !sides.every((v) => Number.isInteger(v) && v >= 0 && v <= MAX_3D_TEXTURE_SIZE)) return this.fail(GL.INVALID_VALUE);
+    if (border !== 0 || !sides.every((v) => Number.isInteger(v) && v >= 0) || Math.max(width, height) > MAX_3D_TEXTURE_SIZE || depth > limit) return this.fail(GL.INVALID_VALUE);
     // WebGL refuses the flip and the premultiply for these textures.
     if (this.flipY || this.premultiply) return this.fail(GL.INVALID_OPERATION);
-    if (sides.some((v) => v === 0)) throw new WebGLUnsupportedError('a 3D texture without texels');
+    if (sides.some((v) => v === 0)) throw new WebGLUnsupportedError('a 3D or array texture without texels');
     const texels = this.texels3d(internalformat, format, type, [width, height, depth], source, srcOffset);
     if (texels === null) return;
     Object.assign(texture, { width, height, depth, pixels: 'pixels' in texels ? texels.pixels : null, floats: 'floats' in texels ? texels.floats : null, float32: FLOAT_FORMATS[internalformat]?.bits === 32, src: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: false, format: internalformat, blank: false, levels: 1, patches: [], drawnAt: -1 });
@@ -2287,11 +2325,10 @@ export class WebGLContext {
 
   /** WebGL 2's `texSubImage3D(target, level, xoffset, yoffset, zoffset, width, height, depth, format, type, pixels, srcOffset)`. */
   texSubImage3D(target: number, level: number, xoffset: number, yoffset: number, zoffset: number, width: number, height: number, depth: number, format: number, type: number, source?: unknown, srcOffset = 0): void {
-    if (this.version !== 2) return this.fail(GL.INVALID_OPERATION);
-    if (target === GL2.TEXTURE_2D_ARRAY) throw new WebGLUnsupportedError('array textures');
-    const texture = target === GL2.TEXTURE_3D ? this.bound(target) : (this.fail(GL.INVALID_ENUM), null);
-    if (texture === null) return;
-    if (level !== 0) throw new WebGLUnsupportedError('texSubImage3D above level 0; a 3D texture has one level');
+    const bound = this.bound3d(target);
+    if (bound === null) return;
+    const { texture } = bound;
+    if (level !== 0) throw new WebGLUnsupportedError('texSubImage3D above level 0; a 3D or array texture has one level');
     if (this.flipY || this.premultiply || texture.depth === 0) return this.fail(GL.INVALID_OPERATION);
     const numbers = [xoffset, yoffset, zoffset, width, height, depth];
     if (!numbers.every((v) => Number.isInteger(v) && v >= 0) || xoffset + width > texture.width || yoffset + height > texture.height || zoffset + depth > texture.depth) return this.fail(GL.INVALID_VALUE);
@@ -2305,6 +2342,24 @@ export class WebGLContext {
         held.set(part.subarray(from, from + width * 4), (((zoffset + z) * texture.height + yoffset + y) * texture.width + xoffset) * 4);
       }
     }
+    texture.version += 1;
+  }
+
+  /** WebGL 2's `texStorage3D`: a 3D or array texture of this size, zeros, of one level (more are refused: only level 0 is held). */
+  texStorage3D(target: number, levels: number, internalformat: number, width: number, height: number, depth: number): void {
+    const bound = this.bound3d(target);
+    if (bound === null) return;
+    const { texture, limit } = bound;
+    if (!(Number.isInteger(levels) && levels >= 1)) return this.fail(GL.INVALID_VALUE);
+    const sides = [width, height, depth];
+    if (!sides.every((v) => Number.isInteger(v) && v >= 1) || Math.max(width, height) > MAX_3D_TEXTURE_SIZE || depth > limit) return this.fail(GL.INVALID_VALUE);
+    if (levels > 1) throw new WebGLUnsupportedError('texStorage3D of more than one level; a 3D or array texture has one level');
+    const float = FLOAT_FORMATS[internalformat];
+    const format = float?.format ?? FORMATS_8BIT_3D[internalformat];
+    if (format === undefined) throw new WebGLUnsupportedError(`the internal format 0x${internalformat.toString(16)} of a 3D or array texture; use RGBA8 or a float format`);
+    const texels = this.texels3d(internalformat, format, float === undefined ? GL.UNSIGNED_BYTE : GL.FLOAT, [width, height, depth], null, 0);
+    if (texels === null) return;
+    Object.assign(texture, { width, height, depth, pixels: 'pixels' in texels ? texels.pixels : null, floats: 'floats' in texels ? texels.floats : null, float32: float?.bits === 32, src: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: false, format: internalformat, blank: false, levels: 1, patches: [], drawnAt: -1 });
     texture.version += 1;
   }
 
@@ -2899,11 +2954,12 @@ export class WebGLContext {
     // The type of sampler that reads each unit: WebGL refuses a draw in which one unit is read as two.
     const unitTypes = new Map<number, string>();
     for (const d of program.uniformDeclarations) {
-      if (d.type !== 'sampler2D' && d.type !== 'sampler3D' && d.type !== 'samplerCube') continue;
+      const samplerTarget = SAMPLER_TARGETS[d.type];
+      if (samplerTarget === undefined) continue;
       const unit = program.uniforms.get(d.name)?.at(-1)?.value[0] ?? 0;
       if (unitTypes.get(unit) !== undefined && unitTypes.get(unit) !== d.type) return this.fail(GL.INVALID_OPERATION);
       unitTypes.set(unit, d.type);
-      const texture = (d.type === 'sampler3D' ? this.units3d : d.type === 'samplerCube' ? this.unitsCube : this.units).get(unit);
+      const texture = this.unitMap(samplerTarget)?.get(unit);
       // Reading what the draw writes is undefined; WebGL refuses it.
       if (texture !== undefined && attached.includes(texture)) return this.fail(GL.INVALID_OPERATION);
       if (texture !== undefined && draw.units[String(unit)] === undefined) draw.units[String(unit)] = this.samplerOf(texture);
@@ -2964,7 +3020,7 @@ export class WebGLContext {
       mag: FILTERS[texture.mag]!,
       wrapS: WRAPS[texture.wrapS]!,
       wrapT: WRAPS[texture.wrapT]!,
-      ...(texture.depth > 0 || cube ? { wrapR: WRAPS[texture.wrapR]! } : {}),
+      ...((texture.depth > 0 && texture.target === GL2.TEXTURE_3D) || cube ? { wrapR: WRAPS[texture.wrapR]! } : {}),
       ...(texture.maxLevel < 1000 ? { maxLevel: texture.maxLevel } : {}),
     };
   }
@@ -2989,6 +3045,7 @@ export class WebGLContext {
             width: texture.width,
             height: texture.height,
             ...(texture.depth > 0 ? { depth: texture.depth } : {}),
+            ...(texture.target === GL2.TEXTURE_2D_ARRAY ? { array: true } : {}),
           }
         : {
         ...(texture.layer !== null

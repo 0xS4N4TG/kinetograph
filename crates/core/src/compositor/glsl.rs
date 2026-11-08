@@ -213,6 +213,7 @@ pub(super) struct GlslGpu {
     black: Option<Arc<Uploaded>>,
     black_3d: Option<Arc<Uploaded>>,
     black_cube: Option<Arc<Uploaded>>,
+    black_array: Option<Arc<Uploaded>>,
     /// The modules, layouts and pipelines of WebGPU layers.
     webgpu: webgpu::WebGpuCache,
 }
@@ -2099,7 +2100,7 @@ impl Compositor {
             return Ok(t.clone());
         }
         let texels = gl::decode_texels(texture).map_err(render_error)?;
-        let three_d = texture.depth > 0;
+        let three_d = texture.depth > 0 && !texture.array;
         let limits = self.device.limits();
         let limit = if three_d {
             limits.max_texture_dimension_3d
@@ -2107,9 +2108,14 @@ impl Compositor {
             limits.max_texture_dimension_2d
         };
         let (width, height, depth) = (texture.width, texture.height, texture.depth.max(1));
-        if width.max(height).max(depth) > limit {
+        let layers = if texture.array {
+            limits.max_texture_array_layers
+        } else {
+            limit
+        };
+        if width.max(height) > limit || depth > layers {
             return Err(render_error(format!(
-                "unsupported: a {width} x {height} x {depth} texture; the device holds {limit} across"
+                "unsupported: a {width} x {height} x {depth} texture; the device holds {limit} across and {layers} layers"
             )));
         }
         let (format, bytes, per_texel) = match &texels {
@@ -2150,7 +2156,10 @@ impl Compositor {
             self.glsl.textures.clear();
         }
         let uploaded = Arc::new(Uploaded {
-            view: gpu.create_view(&wgpu::TextureViewDescriptor::default()),
+            view: gpu.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(view_dimension(texture_dim(texture))),
+                ..Default::default()
+            }),
             mipmapped: false,
             depth: false,
             float32: matches!(texels, gl::Texels::Rgba32F(_)),
@@ -2299,6 +2308,7 @@ impl Compositor {
             gl::SamplerDim::D2 => &self.glsl.black,
             gl::SamplerDim::D3 => &self.glsl.black_3d,
             gl::SamplerDim::Cube => &self.glsl.black_cube,
+            gl::SamplerDim::Array => &self.glsl.black_array,
         };
         if let Some(b) = cached {
             return b.clone();
@@ -2315,7 +2325,9 @@ impl Compositor {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: match dim {
-                    gl::SamplerDim::D2 | gl::SamplerDim::Cube => wgpu::TextureDimension::D2,
+                    gl::SamplerDim::D2 | gl::SamplerDim::Cube | gl::SamplerDim::Array => {
+                        wgpu::TextureDimension::D2
+                    }
                     gl::SamplerDim::D3 => wgpu::TextureDimension::D3,
                 },
                 format: wgpu::TextureFormat::Rgba8Unorm,
@@ -2338,6 +2350,7 @@ impl Compositor {
             gl::SamplerDim::D2 => self.glsl.black = Some(black.clone()),
             gl::SamplerDim::D3 => self.glsl.black_3d = Some(black.clone()),
             gl::SamplerDim::Cube => self.glsl.black_cube = Some(black.clone()),
+            gl::SamplerDim::Array => self.glsl.black_array = Some(black.clone()),
         }
         black
     }
@@ -3287,6 +3300,7 @@ fn view_dimension(dim: gl::SamplerDim) -> wgpu::TextureViewDimension {
         gl::SamplerDim::D2 => wgpu::TextureViewDimension::D2,
         gl::SamplerDim::D3 => wgpu::TextureViewDimension::D3,
         gl::SamplerDim::Cube => wgpu::TextureViewDimension::Cube,
+        gl::SamplerDim::Array => wgpu::TextureViewDimension::D2Array,
     }
 }
 
@@ -3294,6 +3308,8 @@ fn view_dimension(dim: gl::SamplerDim) -> wgpu::TextureViewDimension {
 fn texture_dim(texture: &GlslTexture) -> gl::SamplerDim {
     if texture.cube {
         gl::SamplerDim::Cube
+    } else if texture.array {
+        gl::SamplerDim::Array
     } else if texture.depth > 0 {
         gl::SamplerDim::D3
     } else {
@@ -3306,6 +3322,7 @@ fn dim_name(dim: gl::SamplerDim) -> &'static str {
         gl::SamplerDim::D2 => "2D",
         gl::SamplerDim::D3 => "3D",
         gl::SamplerDim::Cube => "cube map",
+        gl::SamplerDim::Array => "2D array",
     }
 }
 

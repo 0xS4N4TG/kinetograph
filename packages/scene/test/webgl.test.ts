@@ -255,7 +255,7 @@ describe('the recording WebGL context', () => {
     gl2.bindRenderbuffer(GL.RENDERBUFFER, gl2.createRenderbuffer());
     expect(refused(() => gl2.renderbufferStorageMultisample(GL.RENDERBUFFER, 4, GL2.RGBA8, 4, 4))).toMatch(/^unsupported:.*multisampled/);
     expect(refused(() => gl.readPixels())).toMatch(/^unsupported:/);
-    expect(refused(() => gl.bindTexture(GL2.TEXTURE_2D_ARRAY, gl.createTexture()))).toMatch(/textures other than/);
+    expect(refused(() => gl.bindTexture(0x8d65, gl.createTexture()))).toMatch(/textures other than.*0x8d65/);
     expect(refused(() => gl.drawArraysInstanced(GL.POINTS, 0, 3, 4))).toMatch(/instanced points/);
   });
 
@@ -1133,6 +1133,137 @@ describe('the recording WebGL context', () => {
       expect(gl.getError()).toBe(GL.NO_ERROR);
       expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 1, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
       expect(() => gl.texSubImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
+    });
+  });
+
+  describe('2D array textures', () => {
+    const FRAGMENT_ARRAY = '#version 300 es\nprecision highp float; precision highp sampler2DArray; in vec2 v; uniform sampler2DArray layers; out vec4 o; void main() { o = texture(layers, vec3(v, 1.0)); }';
+    const VERTEX_ES3 = '#version 300 es\nin vec2 p; out vec2 v; void main() { v = p; gl_Position = vec4(p, 0.0, 1.0); }';
+
+    function arrayContext() {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const program = gl.createProgram();
+      for (const [type, source] of [[GL.VERTEX_SHADER, VERTEX_ES3], [GL.FRAGMENT_SHADER, FRAGMENT_ARRAY]] as const) {
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source);
+        gl.attachShader(program, shader);
+      }
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(GL.ARRAY_BUFFER, buffer);
+      gl.bufferData(GL.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1]), GL.STATIC_DRAW);
+      const at = gl.getAttribLocation(program, 'p');
+      gl.enableVertexAttribArray(at);
+      gl.vertexAttribPointer(at, 2, GL.FLOAT, false, 0, 0);
+      gl.uniform1i(gl.getUniformLocation(program, 'layers'), 0);
+      return { gl, program };
+    }
+
+    function drawn(gl: WebGLContext) {
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const content = gl.content();
+      const draw = content.ops.at(-1)!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      return { content, draw };
+    }
+
+    it('binds per target, so a unit holds a 3D texture and an array at once', () => {
+      const { gl } = arrayContext();
+      const array = gl.createTexture();
+      const volume = gl.createTexture();
+      gl.bindTexture(GL2.TEXTURE_2D_ARRAY, array);
+      gl.bindTexture(GL2.TEXTURE_3D, volume);
+      expect(gl.getParameter(GL2.TEXTURE_BINDING_2D_ARRAY)).toBe(array);
+      expect(gl.getParameter(GL2.TEXTURE_BINDING_3D)).toBe(volume);
+      expect(gl.getParameter(GL2.MAX_ARRAY_TEXTURE_LAYERS)).toBe(256);
+      gl.bindTexture(GL2.TEXTURE_3D, array);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+    });
+
+    it('is a WebGL 2 target only', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }) });
+      expect(() => gl.bindTexture(GL2.TEXTURE_2D_ARRAY, gl.createTexture())).toThrow(WebGLUnsupportedError);
+      gl.bindTexture(GL2.TEXTURE_2D_ARRAY, null);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+    });
+
+    it('records layers from texImage3D and texSubImage3D as an array texture', () => {
+      const { gl } = arrayContext();
+      const array = gl.createTexture();
+      gl.bindTexture(GL2.TEXTURE_2D_ARRAY, array);
+      gl.texImage3D(GL2.TEXTURE_2D_ARRAY, 0, GL2.RGBA8, 2, 1, 3, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(24).fill(1));
+      gl.texSubImage3D(GL2.TEXTURE_2D_ARRAY, 0, 1, 0, 2, 1, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array([9, 9, 9, 9]));
+      gl.texParameteri(GL2.TEXTURE_2D_ARRAY, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const { content, draw } = drawn(gl);
+      const texture = content.textures[draw.units['0']!.texture]!;
+      expect(texture).toMatchObject({ width: 2, height: 1, depth: 3, array: true });
+      expect(draw.units['0']!.wrapR).toBeUndefined();
+      const pixels = Buffer.from(texture.pixels!, 'base64');
+      expect(Array.from(pixels.subarray(20, 24))).toEqual([9, 9, 9, 9]);
+      expect(Array.from(pixels.subarray(16, 20))).toEqual([1, 1, 1, 1]);
+    });
+
+    it('is zeros after texStorage3D, in 8-bit and float formats, and refuses more than one level', () => {
+      const { gl } = arrayContext();
+      const array = gl.createTexture();
+      gl.bindTexture(GL2.TEXTURE_2D_ARRAY, array);
+      gl.texStorage3D(GL2.TEXTURE_2D_ARRAY, 1, GL2.RGBA32F, 2, 2, 4);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      gl.texSubImage3D(GL2.TEXTURE_2D_ARRAY, 0, 0, 0, 3, 2, 2, 1, GL.RGBA, GL.FLOAT, new Float32Array(16).fill(0.5));
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const { content, draw } = drawn(gl);
+      const texture = content.textures[draw.units['0']!.texture]!;
+      expect(texture).toMatchObject({ width: 2, height: 2, depth: 4, array: true, float32: true });
+      const bytes = Buffer.from(texture.floats!, 'base64');
+      const floats = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.length / 4);
+      expect(floats).toHaveLength(64);
+      expect(floats[47]).toBe(0);
+      expect(floats[48]).toBe(0.5);
+      const other = gl.createTexture();
+      gl.bindTexture(GL2.TEXTURE_2D_ARRAY, other);
+      expect(() => gl.texStorage3D(GL2.TEXTURE_2D_ARRAY, 3, GL2.RGBA8, 4, 4, 2)).toThrow(/^unsupported:.*more than one level/);
+    });
+
+    it('checks its sizes and targets as WebGL does', () => {
+      const { gl } = arrayContext();
+      gl.bindTexture(GL2.TEXTURE_2D_ARRAY, gl.createTexture());
+      gl.texImage3D(GL2.TEXTURE_2D_ARRAY, 0, GL2.RGBA8, 1, 1, 257, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+      expect(gl.getError()).toBe(GL.INVALID_VALUE);
+      gl.texStorage3D(GL2.TEXTURE_2D_ARRAY, 1, GL2.RGBA8, 1, 1, 0);
+      expect(gl.getError()).toBe(GL.INVALID_VALUE);
+      gl.texStorage3D(GL.TEXTURE_2D, 1, GL2.RGBA8, 1, 1, 1);
+      expect(gl.getError()).toBe(GL.INVALID_ENUM);
+      gl.texSubImage3D(GL2.TEXTURE_2D_ARRAY, 0, 0, 0, 0, 1, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4));
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+      gl.generateMipmap(GL2.TEXTURE_2D_ARRAY);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+    });
+
+    it('refuses mipmaps for an array texture it holds', () => {
+      const { gl } = arrayContext();
+      gl.bindTexture(GL2.TEXTURE_2D_ARRAY, gl.createTexture());
+      gl.texStorage3D(GL2.TEXTURE_2D_ARRAY, 1, GL2.RGBA8, 4, 4, 2);
+      expect(() => gl.generateMipmap(GL2.TEXTURE_2D_ARRAY)).toThrow(/^unsupported:.*array texture/);
+    });
+
+    it('refuses a draw that reads one unit as two sampler types', () => {
+      const { gl } = arrayContext();
+      const fragment = gl.createShader(GL.FRAGMENT_SHADER)!;
+      gl.shaderSource(fragment, '#version 300 es\nprecision highp float; precision highp sampler3D; precision highp sampler2DArray; in vec2 v; uniform sampler2DArray layers; uniform sampler3D volume; out vec4 o; void main() { o = texture(layers, vec3(v, 0.0)) + texture(volume, vec3(v, 0.0)); }');
+      const program = gl.createProgram();
+      const vertex = gl.createShader(GL.VERTEX_SHADER)!;
+      gl.shaderSource(vertex, VERTEX_ES3);
+      gl.attachShader(program, vertex);
+      gl.attachShader(program, fragment);
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      gl.uniform1i(gl.getUniformLocation(program, 'layers'), 0);
+      gl.uniform1i(gl.getUniformLocation(program, 'volume'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
     });
   });
 
