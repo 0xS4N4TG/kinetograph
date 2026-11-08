@@ -459,3 +459,29 @@ figure.shiki button[data-checked] {
   --shiki-light: var(--color-fd-muted-foreground);
   --shiki-dark: var(--color-fd-muted-foreground);
 }
+
+/* Docs sidebar, spaced like HyperFrames' docs: the sidebar sits in the left gutter of the centred layout, wider, with
+   more room at the edges, between links and between groups. */
+:root {
+  --fd-sidebar-width: 288px;
+}
+/* One left edge for everything: the wordmark, search, link text and footer boxes all start 24px in. Links carry 8px
+   of their own padding, so the list gets 16px. */
+#nd-sidebar > div:first-child,
+#nd-sidebar > div:last-child {
+  padding-inline: 24px;
+}
+#nd-sidebar [data-radix-scroll-area-viewport] {
+  padding-inline: 16px;
+}
+#nd-sidebar [data-radix-scroll-area-viewport] > div {
+  padding-block: 12px 24px;
+}
+#nd-sidebar a[data-active],
+#nd-sidebar button[data-active] {
+  padding-block: 7px;
+}
+#nd-sidebar p,
+#nd-sidebar [data-radix-collapsible-trigger] {
+  margin-top: 18px;
+}
