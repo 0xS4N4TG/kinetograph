@@ -19,23 +19,100 @@ export interface ScopeEnv {
 
 const bound = (target: AnyRecord, value: unknown): unknown => (typeof value === 'function' ? value.bind(target) : value);
 
+/** `value` as the inside of a double-quoted CSS string. */
+const cssString = (value: string): string => value.replace(/[\\"]/g, '\\$&').replace(/[\x00-\x1f\x7f]/g, (c) => `\\${c.charCodeAt(0).toString(16)} `);
+
+const IDENT_CHAR = /[\w-]|[^\x00-\x7f]/;
+const HEX = /[0-9a-fA-F]/;
+
+/**
+ * `selector` with each `#<rootId>` token as an attribute selector on the host. Quoted strings and `[...]` are copied
+ * as written (an attribute value is not a lookup by id), and an id written with CSS escapes (`#a\.b`, `#\31 a`) is
+ * compared unescaped. The DOM takes no escapes in an id selector, but takes them in an attribute value.
+ */
+export function rewriteRootId(selector: string, rootId: string): string {
+  let out = '';
+  let i = 0;
+  while (i < selector.length) {
+    const ch = selector[i]!;
+    if (ch === '\\') {
+      out += selector.slice(i, i + 2);
+      i += 2;
+    } else if (ch === '"' || ch === "'" || ch === '[') {
+      // A string runs to its closing quote, a bracket to its `]` (a quote inside it is a string of its own).
+      let quote = ch === '[' ? '' : ch;
+      let j = i + 1;
+      for (; j < selector.length; j++) {
+        const c = selector[j]!;
+        if (c === '\\') j++;
+        else if (quote !== '') {
+          if (c === quote) {
+            quote = '';
+            if (ch !== '[') break;
+          }
+        } else if (c === '"' || c === "'") quote = c;
+        else if (c === ']') break;
+      }
+      out += selector.slice(i, j + 1);
+      i = j + 1;
+    } else if (ch === '#') {
+      let j = i + 1;
+      let name = '';
+      while (j < selector.length) {
+        const c = selector[j]!;
+        if (c === '\\' && j + 1 < selector.length) {
+          let k = j + 1;
+          while (k < selector.length && k - j <= 6 && HEX.test(selector[k]!)) k++;
+          if (k > j + 1) {
+            const code = Number.parseInt(selector.slice(j + 1, k), 16);
+            name += code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff) ? '\ufffd' : String.fromCodePoint(code);
+            j = k + (/\s/.test(selector[k] ?? '') ? 1 : 0);
+          } else {
+            name += selector[j + 1]!;
+            j += 2;
+          }
+        } else if (IDENT_CHAR.test(c)) {
+          name += c;
+          j++;
+        } else break;
+      }
+      out += name === rootId ? `[data-hf-root-id="${cssString(rootId)}"]` : selector.slice(i, j);
+      i = j;
+    } else {
+      out += ch;
+      i++;
+    }
+  }
+  return out;
+}
+
 /** `document` limited to `root`. */
 export function scopedDocument(env: ScopeEnv): AnyRecord {
   const inside = (node: AnyRecord): boolean => {
     const root = env.root();
     return root === null || node === root || root.contains(node);
   };
+  // A mounted file's root element is the host; the planner keeps the id the file gave it as `data-hf-root-id`.
+  const rootIdOf = (): string | null => env.root()?.getAttribute?.('data-hf-root-id') ?? null;
   const all = (selector: string): AnyRecord[] => {
-    const found = Array.from(env.document.querySelectorAll(selector) as ArrayLike<AnyRecord>);
+    const rootId = rootIdOf();
+    const text = rootId === null || typeof selector !== 'string' ? selector : rewriteRootId(selector, rootId);
+    const found = Array.from(env.document.querySelectorAll(text) as ArrayLike<AnyRecord>);
     return env.root() === null ? found : found.filter(inside);
   };
   const byId = (id: string): AnyRecord | null => {
-    const found = env.document.getElementById(id);
+    // The DOM builds an id selector from `id`, which it rejects when `id` has a `.` or `:`; the attribute lookup below does not.
+    let found: AnyRecord | null | undefined;
+    try {
+      found = env.document.getElementById(id);
+    } catch {
+      found = null;
+    }
     if (found !== null && found !== undefined && inside(found)) return found;
     const root = env.root();
     if (root === null) return found ?? null;
-    if (root.id === id) return root;
-    return root.querySelector(`[id="${String(id).replace(/"/g, '\\"')}"]`) ?? null;
+    if (root.id === id || rootIdOf() === id) return root;
+    return root.querySelector(`[id="${cssString(String(id))}"]`) ?? null;
   };
   return new Proxy(env.document, {
     get(target, prop) {
@@ -97,7 +174,7 @@ export function scopedGsap(env: ScopeEnv): AnyRecord | undefined {
                 const origin = (typeof scope === 'string' ? document.querySelector(scope) : scope) ?? env.root();
                 return (selector: string) =>
                   typeof selector === 'string' && origin
-                    ? Array.from(env.document.querySelectorAll(selector) as ArrayLike<AnyRecord>).filter((n) => n === origin || origin.contains(n))
+                    ? Array.from(document.querySelectorAll(selector) as ArrayLike<AnyRecord>).filter((n) => n === origin || origin.contains(n))
                     : [];
               };
             }
