@@ -1,0 +1,52 @@
+---
+title: Add voice, music and captions
+description: Put a voiceover, a music track, sound effects and captions on a video, and check the mix.
+---
+
+Bring a voice file, a track and a subtitle file, and tell your agent where each one is. You get a video with sound and words on screen.
+
+<Video name="voice-music-captions" label="A clip with a voiceover, music under it and captions that light up word by word" caption="A clip with voice, music and captions that light up as each word is said." />
+
+## Make it
+
+Put a voice file in `public/audio/`, a track beside it and the subtitle file in `public/captions/`. Then paste:
+
+```text title="Suggested prompt"
+The narration is public/audio/vo.wav and its subtitles are public/captions/vo.srt. Start the narration at 1 second. Put public/audio/bed.mp3 under the whole video at 30% volume, lowered to 12% while the narration plays. Show 3 to 5 words at a time in the lower third, white on a 60% black bar, and light the word being said in yellow. Look at the frames, then save it to out/video.mp4.
+```
+
+## Say these when they matter
+
+| Say | Why |
+| --- | --- |
+| **What each file is and what it says** | Your agent can place a reveal on a word: "the third card appears on 'Search', at 0:05.4". |
+| **How loud the music sits** | "30% under the voice" keeps the voice clear. |
+| **The beat times, for a track with a beat** | Cuts can land on each hit. |
+| **How many words show at a time** | Captions stay readable. |
+| **One caption style** | Keep it the same for the whole video. |
+
+## Sound effects
+
+Tie each effect to a moment: "a click when each card lands, a whoosh on the slide at 0:08". Ask for the three or four that matter. Use your own files, or ask for a click, a whoosh or a hit made in code, which needs no files.
+
+## Check the mix
+
+Say what you hear: "the music drowns the voice at 0:12". Then ask your agent to run `audio analyze`. It reports loudness, peaks, clipped samples and silences.
+
+## Common mistakes
+
+**Expecting speech or timings to be made for you.** Kinetograph does not turn text into speech or speech into words. Bring a voice file and a subtitle file, or word timings from your speech-to-text tool.
+- **Avoid:** `add a voiceover that reads my script`
+- **Instead:** `the narration is public/audio/vo.wav`
+
+**Mixing caption styles.**
+- **Avoid:** `a different caption look for each line`
+- **Instead:** `one look for the whole video`
+
+For captions that move with the voice, ask for the Kinetic typography plugin, which has fifteen named looks.
+
+## Next
+
+- [Voice, music and sound](/docs/tips/voice-music-sound/)
+- [Text, captions and code](/docs/tips/text-captions-code/)
+- [Audio](/docs/making-videos/audio/) and [Captions](/docs/making-videos/captions/)

@@ -1,0 +1,50 @@
+---
+title: Use a library item
+description: Add a ready-made template, component or taste to your video by asking your agent or with one command.
+---
+
+The [library](/plugins/) holds ready-made videos and single pieces, such as a chart or a background. You add one to your project and change it.
+
+<Video name="library-item" label="A library template added to a project, then its words changed" caption="Add a template, then change its words." silent />
+
+## What is in it
+
+- **Templates** are whole videos. Copy one, change the words and pictures, and save it.
+- **Components** are single pieces: grids, carousels, charts, backgrounds, audio visuals and effects. Their settings show as editable fields in Studio.
+- **[Tastes](/docs/tastes/)** are whole styles, each with a demo reel.
+- **Plugins** add looks and tools: [Hexed](/docs/plugins/hexed/), [Kinetic typography](/docs/plugins/kinetic-typography/), [Paper](/docs/plugins/paper/) and [VJ](/docs/plugins/vj/).
+
+## Ask your agent
+
+Name the item. Your agent finds it, adds it and changes it.
+
+```text title="Suggested prompt"
+Add the aurora background from the Kinetograph library to my project and use it behind my title. Then render a draft.
+```
+
+## Or run one command
+
+See what there is, then add one:
+
+```sh
+npx kinetograph add --list
+npx kinetograph add area-chart
+```
+
+`--type component|template|taste` narrows the list. A component goes to `src/components/<name>/`, a template to `src/templates/<name>/` and its media to `public/<kind>/<name>/`. The command prints `next:` lines that show how to use it. See [add](/docs/reference/cli/#add) for the flags.
+
+## Change it
+
+The files are yours. Edit the code, or change the settings in Studio's Props tab and save a preset. A template keeps its words and pictures in settings, so most changes need no code. See [Brand and templates](/docs/tips/brand-templates/).
+
+## Good to know
+
+- The library is [kinetograph-ui](https://github.com/0xS4N4TG/kinetograph-ui), a separate public repo under the MIT licence. Third-party footage, textures, fonts and music keep their own terms, noted in a `CREDITS.md` or `SOURCES.md` beside the files.
+- Some charts follow the design of [Bklit UI](https://bklit.com) (MIT). A map component plays footage captured ahead of time under a live overlay, so a new route or city needs a new capture with the script in its folder. The repo holds map components that the command cannot add yet.
+- To add your own, see [Contributing to the registry](/docs/contributing/registry/).
+
+## Next
+
+- [Examples](/docs/examples/)
+- [Choose what to make](/docs/making/)
+- [Edit in Studio](/docs/studio/)

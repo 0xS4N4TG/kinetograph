@@ -1,0 +1,48 @@
+---
+title: Make a video from photos and footage
+description: Turn your own photos and clips into a slideshow or a short cut with moves between them.
+---
+
+Put your photos and clips in a folder and tell your agent how long each one stays and how it moves. You get a slideshow or a short cut.
+
+<Video name="photos-and-footage" label="Four photos in turn, each with a slow push-in, then a clip" caption="A slideshow with a slow push-in on each photo, ending on a clip." silent />
+
+## Make it
+
+Copy your files into `public/images/` for photos and `public/video/` for clips. Then paste:
+
+```text title="Suggested prompt"
+Make a 15 second video from the photos in public/images. Show each for 3 seconds with a slow push-in, and dissolve between them. End on public/video/clip.mp4, from 2 seconds to 5. Put the title "Summer" over the first photo. Look at the frames, then save it to out/summer.mp4.
+```
+
+Your agent lays out the photos, trims the clip, checks the frames and saves the MP4.
+
+## Say these when they matter
+
+| Say | Why |
+| --- | --- |
+| **Where the files are** | Name the folder or each file. |
+| **How long each stays** | "3 seconds each" sets the length of the video. |
+| **How it moves** | "Slow push-in", "pan left", "hold still". |
+| **How to fit the frame** | "Fill the frame, cropping the edges" or "show the whole picture". |
+| **Which part of a clip** | "From 2 seconds to 5" trims it. A clip can also be sped up, looped or muted. |
+
+## Common mistakes
+
+**Using a web address.** A render reads files on your computer only. A remote URL is an error.
+- **Avoid:** `use the photo at https://example.com/a.jpg`
+- **Instead:** `download it into public/images first, then use it`
+
+**Leaving the order to chance.**
+- **Avoid:** `use all my photos`
+- **Instead:** `show them in the order of their file names`
+
+## Start from a template
+
+[Two lines on a focus pull](/templates/wait-ship/) floats seven photo cards round a blurred frame and pulls the camera back to two lines of text. [Grid opener](/templates/grid-reel/) lays a grid over your shots. To add one, see [Use a library item](/docs/library/use-an-item/).
+
+## Next
+
+- [Add voice, music and captions](/docs/making/voice-music-captions/)
+- [Motion and transitions](/docs/tips/motion/)
+- [Assets](/docs/making-videos/assets/)

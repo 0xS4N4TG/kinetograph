@@ -1178,7 +1178,7 @@ program (`bin/ffmpeg`) that has them, and the addon runs it as a child process (
 file out; the sound is muxed in by the linked ffmpeg). `KINETOGRAPH_FFMPEG=/path/to/ffmpeg` names another program and
 is tried before the bundled one (an encoder is looked up in each program in turn); with neither, an `ffmpeg` on the
 `PATH` is used if it lists libx264. For the other codecs: `libx265`, `prores_ks` and `libvpx-vp9` (linked on macOS and Linux); `gif` has
-one. See `/docs/getting-started/installation/#ffmpeg-licence`.
+one. See `/docs/contributing/build-from-source/#ffmpeg-licence`.
 
 Intel and AMD GPU encoders on Linux: `h264_vaapi`, `hevc_vaapi` (VAAPI, any Intel or AMD GPU with a driver) and
 `h264_qsv`, `hevc_qsv` (Intel Quick Sync, oneVPL) run in a system ffmpeg that has them, never in the linked one (it

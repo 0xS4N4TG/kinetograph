@@ -1,22 +1,40 @@
 ---
 title: What is Kinetograph?
-description: What Kinetograph is, and where to start.
+description: Turn an idea into a finished video. Ask your coding agent, or write it yourself, and get an MP4.
 ---
 
-Kinetograph makes videos from code, without a browser. You write the video in TypeScript with Remotion's API, or as an HTML page, and a Rust program on the GPU draws every frame. It draws CSS, SVG, Canvas 2D, WebGL shaders and 3D itself, with no Chrome.
+Kinetograph turns an idea into a finished video. You ask your coding agent for the video you want, and Kinetograph draws it and saves an MP4.
 
-```sh
-npx kinetograph init
-npm install
-npx kinetograph render src/index.tsx
-```
+<Video name="what-is-kinetograph" label="A montage of short videos made with Kinetograph" caption="Short videos made with Kinetograph: a launch film, a paper-cut reel, a type spot and a 3D scene." />
 
-Where to go next:
+## What can it make?
 
-- **New here:** [Installation](/docs/getting-started/installation/), [First video](/docs/getting-started/first-video/), then [Project structure](/docs/getting-started/project-structure/).
-- **Building a video:** [What do you want to make?](/docs/making/) lists kinds of video with a template and a tips page for each. [Composition, design and animation](/docs/making-videos/compositions/) has one page for each feature.
-- **Editing with a preview:** [Studio](/docs/studio/) has a timeline, a props form and a chat with your coding agent.
-- **Using an agent:** [Use it with your agent](/docs/agents/claude-code/) covers the MCP server and the agent skills, and [Tips for better videos](/docs/tips/) shows how to prompt one.
-- **Keep your editor:** [Keep your editor, render with Kinetograph](/docs/keep-your-editor/) renders a Remotion or HyperFrames project as it is.
-- **Coming from Remotion or HyperFrames:** [Migrating](/docs/migrating/remotion/). A [HyperFrames](https://github.com/heygen-com/hyperframes) project renders as it is, GSAP timelines included.
-- **Looking something up:** [CLI](/docs/reference/cli/), [scene format](/docs/reference/scene-format/), [compatibility](/docs/compat/) and [terminology](/docs/terminology/).
+Title cards, moving text, captions, charts, photo slideshows, paper-cut looks and glitch effects. It also makes 3D scenes and shader effects. [See examples](/docs/examples/).
+
+## Three things to know
+
+**An agent can build it.** You describe the video. Your agent writes it, looks at the frames, fixes what is off and saves the MP4. You do not need to write code on this path.
+
+**You can edit it.** The video is a folder of plain files. Studio opens it with a live preview, a timeline and a chat with your agent.
+
+**It comes out the same every time.** A frame depends only on its number, so rendering twice gives the same video.
+
+## Make one
+
+<Cards>
+  <Card title="Make your first video" href="/docs/getting-started/first-video/">
+    Paste one prompt into your agent, or run three commands.
+  </Card>
+</Cards>
+
+## Good to know
+
+- You need Node.js 22 or newer.
+- Nothing in drawing needs a browser.
+- Already have a Remotion or HyperFrames project? It renders as it is. See [Bring a project](/docs/making/bring-a-project/).
+
+## Related topics
+
+- [Choose what to make](/docs/making/)
+- [Use it with your agent](/docs/agents/claude-code/)
+- [How it works](/docs/internals/engine/), for developers

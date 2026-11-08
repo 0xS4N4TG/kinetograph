@@ -1,0 +1,51 @@
+---
+title: Bring a Remotion or HyperFrames project
+description: Render a Remotion or HyperFrames project you already have, as it is, and keep editing it in your own tools.
+---
+
+Point Kinetograph at your project and it renders it as it is. Nothing is converted, so you can keep editing in Remotion Studio or HyperFrames and render with Kinetograph.
+
+<Video name="bring-a-project" label="A project rendered in Remotion Studio and again with Kinetograph, side by side" caption="The same project, edited in its own tool and rendered with Kinetograph." silent />
+
+## Make it
+
+Ask your agent. It checks the project first and tells you what will not draw.
+
+```text title="Suggested prompt"
+Render my project with Kinetograph. First run kinetograph doctor on it and tell me what the engine cannot draw, then render it to out/video.mp4.
+```
+
+## By hand
+
+For a Remotion project, give Kinetograph the file that calls `registerRoot`, usually `src/index.ts`:
+
+```sh
+npx kinetograph doctor src/index.ts
+npx kinetograph render src/index.ts --comp Main -o out.mp4
+```
+
+For a HyperFrames project, give it the page or its folder:
+
+```sh
+npx kinetograph doctor index.html
+npx kinetograph render index.html -o out.mp4
+```
+
+`doctor` lists what the engine cannot draw and on which frames. Add `--strict` to a render to stop at the first frame with something missing.
+
+## Pick your route
+
+- **Keep your editor.** Edit as before and render with Kinetograph. See [Keep your editor, render with Kinetograph](/docs/keep-your-editor/).
+- **Move to Kinetograph.** See [Migrate from Remotion](/docs/migrating/remotion/), [Migrate from HyperFrames](/docs/migrating/hyperframes/) and [Move from @remotion/three](/docs/migrating/three/).
+- **See the difference.** [Kinetograph vs Remotion and HyperFrames](/docs/compare/).
+
+## Common mistakes
+
+**Giving it the wrong file.** A file that only exports a component, such as `Root.tsx`, is not an entry.
+- **Avoid:** `render src/Root.tsx`
+- **Instead:** `render src/index.ts`
+
+## Next
+
+- [What works](/docs/compat/)
+- [Use it with your agent](/docs/agents/claude-code/)

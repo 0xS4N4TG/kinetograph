@@ -139,7 +139,7 @@ A bad combination of export flags is refused before bundling, and the message na
 
 The built-in ffmpeg handles decoding and its own encoders. An encoder it lacks runs in a separate ffmpeg program: the one in the platform package, or the one `KINETOGRAPH_FFMPEG` names, then an `ffmpeg` on your `PATH` that has libx264. Name `h264_videotoolbox` or `hevc_videotoolbox` for the Mac's hardware encoders.
 
-To use your system ffmpeg, set `KINETOGRAPH_FFMPEG=$(which ffmpeg)`. This gives you `libx264`, and on Intel and AMD GPUs under Linux `h264_vaapi`, `hevc_vaapi`, `h264_qsv` and `hevc_qsv` (see [What works](/docs/compat/#video-and-audio)). Licences are under [FFmpeg licence](/docs/getting-started/installation/#ffmpeg-licence).
+To use your system ffmpeg, set `KINETOGRAPH_FFMPEG=$(which ffmpeg)`. This gives you `libx264`, and on Intel and AMD GPUs under Linux `h264_vaapi`, `hevc_vaapi`, `h264_qsv` and `hevc_qsv` (see [What works](/docs/compat/#video-and-audio)). Licences are under [FFmpeg licence](/docs/contributing/build-from-source/#ffmpeg-licence).
 
 ## strip
 

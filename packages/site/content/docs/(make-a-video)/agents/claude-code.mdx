@@ -1,23 +1,58 @@
 ---
-title: Claude Code
-description: Install the Kinetograph skills in Claude Code and connect the MCP server.
+title: Make videos with Claude Code
+description: Install the Kinetograph skills in Claude Code, ask for a video in plain words, then preview it and save the MP4 on your computer.
 ---
 
-Run two commands: one installs the skills, one connects the MCP server. Claude Code then writes, checks and renders videos with the `kinetograph` commands as tools.
+Install the skills, then ask Claude Code for a video. Claude Code writes the project in your folder, looks at the frames and saves the MP4 on your computer.
 
 ```sh
 npx skills add 0xS4N4TG/kinetograph
 claude mcp add kinetograph -- npx -y kinetograph mcp
 ```
 
-The first command asks which agents to install the skills for. Pick Claude Code. You need Node 22 or newer for the second.
+## Before you start
 
-## MCP server
+- [Claude Code](https://code.claude.com/docs), signed in. Its usage bills to your Claude account.
+- Node.js 22 or newer.
 
-`claude mcp add` saves the server for the current project. Add `--scope user` to use it in every project. The tools are listed in [Agent tools (MCP)](/docs/mcp/). [Agent skills](/docs/agents/skills/) lists what each skill does.
+## Install
 
-## Try it
+The first command asks which agents to install the skills for. Pick Claude Code. The second connects the [tools Kinetograph gives your agent](/docs/mcp/). It saves the connection for the current project. Add `--scope user` to use it in every project.
 
-```txt title="Suggested prompt"
+Start a new Claude Code session afterwards. [Agent skills](/docs/agents/skills/) lists what each skill does.
+
+## Ask for your first video
+
+Open Claude Code in an empty folder and paste:
+
+```text title="Suggested prompt"
 /kinetograph-markup Make a 5 second title card for my product, check it with strip and lint, and render it to out/title.mp4.
 ```
+
+## What happens
+
+1. Claude Code reads the skills, makes a project in your folder and writes the video.
+2. It looks at the frames and checks the layout, then fixes what is off.
+3. It saves the MP4.
+
+Watch the first version and say what to change, in the same conversation.
+
+## Preview it yourself
+
+To open a live preview with a timeline and a chat, run this in the project folder:
+
+```sh
+npx kinetograph studio src/index.tsx
+```
+
+## If something goes wrong
+
+- **Claude Code does not see the skills.** Start a new session. `npx kinetograph doctor` lists each installed skill.
+- **A render fails.** Run `npx kinetograph doctor` and fix what it reports.
+- **Anything else.** See [Troubleshooting](/docs/help/).
+
+## Related topics
+
+- [Make your first video](/docs/getting-started/first-video/)
+- [Choose what to make](/docs/making/)
+- [Ask for a great video](/docs/tips/)

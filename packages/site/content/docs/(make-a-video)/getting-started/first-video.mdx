@@ -1,126 +1,60 @@
 ---
 title: Make your first video
-description: Make a two-second title card with npx kinetograph init, look at its frames, and render it to an MP4.
+description: Get a short title card as an MP4, by pasting one prompt into your coding agent or by running three commands.
 ---
 
-Run `npx kinetograph init` and `npm install` in an empty folder, then `npx kinetograph render`. You get `out/renders/Main.mp4`, a two-second title card. Install Kinetograph first: see [Installation](/docs/getting-started/installation/).
+You will end with a short title card saved as an MP4. Ask your coding agent, or run three commands yourself. Both make the same kind of project.
 
-You can write the video as a Remotion-style TSX project or as an HTML page in the [HyperFrames](https://github.com/heygen-com/hyperframes) style. Pick a tab where the two differ.
+<Video name="first-video" label="The finished title card: a word appears and a line grows under it" caption="The finished title card." silent />
 
-## Make the project
+## With your coding agent
 
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
+Paste this into Claude Code, Codex or another coding agent:
+
+```text title="Suggested prompt"
+Set up Kinetograph (https://github.com/0xS4N4TG/kinetograph) for me by following its AGENTS.md: https://github.com/0xS4N4TG/kinetograph/blob/main/AGENTS.md Ask me first whether I want the prebuilt package (recommended) or a build from source, and ask before installing anything system-wide or installing the Kinetograph agent skills.
+```
+
+Choose the prebuilt package. When it finishes, ask for the video:
+
+```text title="Suggested prompt"
+Make a 5 second title card that says "Hello" and save it to out/title.mp4. Look at the frames before you save it.
+```
+
+Your agent writes the video, looks at it, fixes what is off and saves the MP4.
+
+## With three commands
+
+In an empty folder:
 
 ```sh
 npx kinetograph init
 npm install
-```
-
-`init` writes a starter title card. The scene is in `src/scenes/Title.tsx`:
-
-```tsx title="src/scenes/Title.tsx"
-import { AbsoluteFill, Rect, Text, interpolate, useCurrentFrame } from '@kinetographdev/core';
-import { loadFont } from '@remotion/google-fonts/Inter';
-
-const { fontFamily } = loadFont('normal', { weights: ['400'] });
-
-export const Title = () => {
-  const frame = useCurrentFrame();
-  const width = interpolate(frame, [0, 30], [0, 640], { extrapolateRight: 'clamp' });
-  return (
-    <AbsoluteFill style={{ backgroundColor: '#14171f' }}>
-      <Text x={320} y={200} font={fontFamily} size={96} color="#ffffff">
-        Hello, Kinetograph
-      </Text>
-      <Rect x={320} y={340} width={width} height={12} radius={6} fill="#f6c177" />
-    </AbsoluteFill>
-  );
-};
-```
-
-`src/index.tsx` registers it:
-
-```tsx title="src/index.tsx"
-import { Composition, registerRoot } from '@kinetographdev/core';
-import { Title } from './scenes/Title';
-
-registerRoot(() => (
-  <Composition id="Main" component={Title} durationInFrames={60} fps={30} width={1280} height={720} />
-));
-```
-
-Import the API from `@kinetographdev/core`, not from `kinetograph`, which is the CLI. You do not need Remotion.
-
-A [composition](/docs/terminology/composition/) is one video: `Composition` sets its id, length in frames, frame rate and size. `useCurrentFrame` gives the [frame](/docs/terminology/frame/) being drawn, and the picture depends only on that number. Here the bar grows from 0 to 640 over 30 frames, then holds.
-
-  </Tab>
-  <Tab value="HyperFrames">
-
-```sh
-npx kinetograph init --html
-npm install
-```
-
-`init --html` writes this page:
-
-```html title="html/index.html"
-<!doctype html>
-<html>
-<head>
-<style>
-  body { margin: 0; background: #14171f; font-family: Inter; }
-  #title { position: absolute; left: 320px; top: 200px; color: #fff; font-size: 96px; }
-  #bar { position: absolute; left: 320px; top: 340px; height: 12px; width: 0; border-radius: 6px; background: #f6c177; }
-</style>
-<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
-</head>
-<body>
-<div id="root" data-composition-id="main" data-width="1280" data-height="720" data-duration="2">
-  <div id="title">Hello, Kinetograph</div>
-  <div id="bar"></div>
-</div>
-<script>
-  const tl = gsap.timeline({ paused: true });
-  tl.to('#bar', { width: 640, duration: 1, ease: 'none' });
-  window.__timelines = { main: tl };
-</script>
-</body>
-</html>
-```
-
-The root element gives the size and the length in seconds, at 30 fps. The first render downloads GSAP and pins it in `kinetograph.lock.json`. [HyperFrames projects](/docs/compat/#hyperframes-projects) lists what a page can use.
-
-  </Tab>
-</Tabs>
-
-## Look at it, then render it
-
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
-
-```sh
-npx kinetograph strip src/index.tsx
 npx kinetograph render src/index.tsx
 ```
 
-  </Tab>
-  <Tab value="HyperFrames">
+The video is `out/renders/Main.mp4`. Open it.
+
+## Change something
+
+Open `src/scenes/Title.tsx` and change the words "Hello, Kinetograph". Render again.
+
+To see changes as you make them, open the preview and press Space to play:
 
 ```sh
-npx kinetograph strip html/index.html
-npx kinetograph render html/index.html
+npx kinetograph studio src/index.tsx
 ```
 
-  </Tab>
-</Tabs>
+Press Ctrl-C to stop it.
 
-`strip` writes twelve labelled frames on one sheet to `out/sheets/Main-strip.png`. `render` writes `out/renders/Main.mp4`, 1280 by 720, H.264. Add `--draft` for a half-size look first. [Rendering](/docs/rendering/) covers `still`, `lint`, `doctor` and the export options.
+## Good to know
 
-To edit with a preview, a timeline and a chat with your coding agent, run `npx kinetograph studio src/index.tsx` (or `html/index.html`). See [Studio](/docs/studio/).
+- You need Node.js 22 or newer.
+- `--draft` after `render` makes a half-size video, for a fast look.
+- The same starter works as an HTML page: `npx kinetograph init --html`.
 
-## Next steps
+## Next
 
-- [Project structure](/docs/getting-started/project-structure/): what `init` made.
-- [Compositions and props](/docs/making-videos/compositions/) and [Layers](/docs/making-videos/layers/): how a project is built.
-- [Use it with your agent](/docs/agents/claude-code/): the skill and the MCP server.
+- [Choose what to make](/docs/making/)
+- [Add a voiceover and captions](/docs/making/voice-music-captions/)
+- [Use it with your agent](/docs/agents/claude-code/)

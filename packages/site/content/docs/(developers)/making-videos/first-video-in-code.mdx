@@ -1,0 +1,126 @@
+---
+title: Write your first video in code
+description: Write a two-second title card as a TSX project or an HTML page, look at its frames, and render it to an MP4.
+---
+
+Run `npx kinetograph init` and `npm install` in an empty folder, then `npx kinetograph render`. You get `out/renders/Main.mp4`, a two-second title card. Install Kinetograph first: see [Installation](/docs/getting-started/installation/). For the shortest route, with your agent, see [Make your first video](/docs/getting-started/first-video/).
+
+You can write the video as a Remotion-style TSX project or as an HTML page in the [HyperFrames](https://github.com/heygen-com/hyperframes) style. Pick a tab where the two differ.
+
+## Make the project
+
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
+
+```sh
+npx kinetograph init
+npm install
+```
+
+`init` writes a starter title card. The scene is in `src/scenes/Title.tsx`:
+
+```tsx title="src/scenes/Title.tsx"
+import { AbsoluteFill, Rect, Text, interpolate, useCurrentFrame } from '@kinetographdev/core';
+import { loadFont } from '@remotion/google-fonts/Inter';
+
+const { fontFamily } = loadFont('normal', { weights: ['400'] });
+
+export const Title = () => {
+  const frame = useCurrentFrame();
+  const width = interpolate(frame, [0, 30], [0, 640], { extrapolateRight: 'clamp' });
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#14171f' }}>
+      <Text x={320} y={200} font={fontFamily} size={96} color="#ffffff">
+        Hello, Kinetograph
+      </Text>
+      <Rect x={320} y={340} width={width} height={12} radius={6} fill="#f6c177" />
+    </AbsoluteFill>
+  );
+};
+```
+
+`src/index.tsx` registers it:
+
+```tsx title="src/index.tsx"
+import { Composition, registerRoot } from '@kinetographdev/core';
+import { Title } from './scenes/Title';
+
+registerRoot(() => (
+  <Composition id="Main" component={Title} durationInFrames={60} fps={30} width={1280} height={720} />
+));
+```
+
+Import the API from `@kinetographdev/core`, not from `kinetograph`, which is the CLI. You do not need Remotion.
+
+A [composition](/docs/terminology/composition/) is one video: `Composition` sets its id, length in frames, frame rate and size. `useCurrentFrame` gives the [frame](/docs/terminology/frame/) being drawn, and the picture depends only on that number. Here the bar grows from 0 to 640 over 30 frames, then holds.
+
+  </Tab>
+  <Tab value="HyperFrames">
+
+```sh
+npx kinetograph init --html
+npm install
+```
+
+`init --html` writes this page:
+
+```html title="html/index.html"
+<!doctype html>
+<html>
+<head>
+<style>
+  body { margin: 0; background: #14171f; font-family: Inter; }
+  #title { position: absolute; left: 320px; top: 200px; color: #fff; font-size: 96px; }
+  #bar { position: absolute; left: 320px; top: 340px; height: 12px; width: 0; border-radius: 6px; background: #f6c177; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+</head>
+<body>
+<div id="root" data-composition-id="main" data-width="1280" data-height="720" data-duration="2">
+  <div id="title">Hello, Kinetograph</div>
+  <div id="bar"></div>
+</div>
+<script>
+  const tl = gsap.timeline({ paused: true });
+  tl.to('#bar', { width: 640, duration: 1, ease: 'none' });
+  window.__timelines = { main: tl };
+</script>
+</body>
+</html>
+```
+
+The root element gives the size and the length in seconds, at 30 fps. The first render downloads GSAP and pins it in `kinetograph.lock.json`. [HyperFrames projects](/docs/compat/#hyperframes-projects) lists what a page can use.
+
+  </Tab>
+</Tabs>
+
+## Look at it, then render it
+
+<Tabs items={['Remotion', 'HyperFrames']}>
+  <Tab value="Remotion">
+
+```sh
+npx kinetograph strip src/index.tsx
+npx kinetograph render src/index.tsx
+```
+
+  </Tab>
+  <Tab value="HyperFrames">
+
+```sh
+npx kinetograph strip html/index.html
+npx kinetograph render html/index.html
+```
+
+  </Tab>
+</Tabs>
+
+`strip` writes twelve labelled frames on one sheet to `out/sheets/Main-strip.png`. `render` writes `out/renders/Main.mp4`, 1280 by 720, H.264. Add `--draft` for a half-size look first. [Rendering](/docs/rendering/) covers `still`, `lint`, `doctor` and the export options.
+
+To edit with a preview, a timeline and a chat with your coding agent, run `npx kinetograph studio src/index.tsx` (or `html/index.html`). See [Studio](/docs/studio/).
+
+## Next steps
+
+- [Project structure](/docs/getting-started/project-structure/): what `init` made.
+- [Compositions and props](/docs/making-videos/compositions/) and [Layers](/docs/making-videos/layers/): how a project is built.
+- [Use it with your agent](/docs/agents/claude-code/): the skill and the MCP server.

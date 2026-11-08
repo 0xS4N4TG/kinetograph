@@ -1,20 +1,25 @@
 ---
-title: Codex
-description: Install the Kinetograph skills for OpenAI Codex CLI and connect the MCP server.
+title: Make videos with Codex
+description: Install the Kinetograph skills in Codex, ask for a video in plain words, then preview it and save the MP4 on your computer.
 ---
 
-Install the skills with the `skills` CLI, and add the MCP server with one Codex command.
+Install the skills, then ask Codex for a video. Codex writes the project in your folder, looks at the frames and saves the MP4 on your computer.
 
 ```sh
 npx skills add 0xS4N4TG/kinetograph
 codex mcp add kinetograph -- npx -y kinetograph mcp
 ```
 
-The first command asks which agents to install the skills for. Pick Codex. `codex mcp list` shows the result.
+## Before you start
 
-## Config file
+- Codex, signed in.
+- Node.js 22 or newer.
 
-The same server written by hand, in `~/.codex/config.toml`:
+## Install
+
+The first command asks which agents to install the skills for. Pick Codex. The second connects the [tools Kinetograph gives your agent](/docs/mcp/). `codex mcp list` shows the result.
+
+You can write the same connection by hand in `~/.codex/config.toml`:
 
 ```toml title="~/.codex/config.toml"
 [mcp_servers.kinetograph]
@@ -22,4 +27,31 @@ command = "npx"
 args = ["-y", "kinetograph", "mcp"]
 ```
 
-[Agent skills](/docs/agents/skills/) lists what each skill does, and [Agent tools (MCP)](/docs/mcp/) lists the tools.
+Start a new Codex session afterwards. [Agent skills](/docs/agents/skills/) lists what each skill does.
+
+## Ask for your first video
+
+Open Codex in an empty folder and paste:
+
+```text title="Suggested prompt"
+Make a 5 second title card for my product, check it with strip and lint, and render it to out/title.mp4.
+```
+
+Codex makes the project, looks at the frames, fixes what is off and saves the MP4. Say what to change in the same conversation.
+
+## Preview it yourself
+
+```sh
+npx kinetograph studio src/index.tsx
+```
+
+## If something goes wrong
+
+- **Codex does not see the skills.** Start a new session. `npx kinetograph doctor` lists each installed skill.
+- **Anything else.** See [Troubleshooting](/docs/help/).
+
+## Related topics
+
+- [Make your first video](/docs/getting-started/first-video/)
+- [Choose what to make](/docs/making/)
+- [Ask for a great video](/docs/tips/)
