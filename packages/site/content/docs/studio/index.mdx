@@ -3,7 +3,7 @@ title: Studio
 description: The local editor for a project, with a preview, a timeline, props and presets, plugins, export and a chat with your coding agent.
 ---
 
-[Studio](/docs/terminology/studio/) is a local editor. You open a project in it, look at the preview, change props, pick a layer or a span of time and ask your coding agent to change it. The engine draws the preview frames, so what you see is what a render makes.
+[Studio](/docs/terminology/studio/) is a local editor. Open a project in it, look at the preview, change props, pick a layer or a span of time and ask your coding agent to change it. The engine draws the preview frames, so what you see is what a render makes.
 
 <Tabs items={['Remotion', 'HyperFrames']}>
   <Tab value="Remotion">
@@ -22,99 +22,44 @@ npx kinetograph studio index.html
   </Tab>
 </Tabs>
 
-Studio starts a server on `http://127.0.0.1:3000` and opens a browser. An entry can also be a `.json` scene. The server rebuilds the project when a file changes, and runs until you stop it with Ctrl-C. The [CLI reference](/docs/reference/cli/#studio) lists the options.
+Studio opens a browser at `http://127.0.0.1:3000`, rebuilds the project when a file changes, and runs until you press Ctrl-C. The [CLI reference](/docs/reference/cli/#studio) lists the options.
 
 ## The window
 
-Four panels float over the window:
-
-- **Top bar:** the project file and a composition switcher on the left, the command menu in the middle, and the theme, the inspector toggle and the Export button on the right. While renders run, a progress pill opens the render queue. A badge says `offline` when the window lost the server.
 - **Agent** on the left: the chat with your coding agent.
 - **Preview** in the middle, with the timeline under it.
 - **Inspector** on the right, with the Props, Scene and Renders tabs.
+- **Top bar:** the composition switcher, the command menu (Cmd+K, or Ctrl+K elsewhere, lists every action and shortcut) and the Export button.
 
-Drag the edge of a panel to resize it, and double-click to reset it.
-
-### Command menu and shortcuts
-
-Cmd+K (Ctrl+K elsewhere) opens a menu with every action in the window. Type to filter. `?` lists the shortcuts. The main ones are:
-
-The keys do nothing while a field or a menu has focus.
-
-- Space plays or pauses. Left and Right step one frame (with Shift, 10 frames). Home and End go to the first and last frame.
-- L loops, and Shift+M mutes. M turns on markup mode (Esc leaves it).
-- V, H and Z pick the Selection, Hand (drag to pan) and Zoom tools.
-- 0 fits the frame to the preview, and 1 shows it at 100%.
-- Ctrl or Cmd with the wheel zooms the timeline's time axis.
+Space plays and pauses, and the arrow keys step a frame. Click a layer to select it, or drag a box around several.
 
 ## The preview
 
-A transport at the bottom has play, previous and next frame, a timecode box, mute and loop. Type seconds (`2.4`), `mm:ss` or `mm:ss.ff` into the timecode box to jump there. A **View** menu at the top right has **Layer controls**, **Safe zones** and the zoom steps.
-
-Click a layer to select it. Shift-click adds to the selection, and dragging a box around layers selects them all.
+Type a time into the timecode box (`2.4`, `mm:ss` or `mm:ss.ff`) to jump there. If the composition has audio, the preview plays it.
 
 ### Mark up the preview
 
-To show an agent what to change, press `M` (or the pen button beside the tools). The playhead pauses and four tools appear:
-
-- **Pin**: click a spot.
-- **Box**: drag a rectangle.
-- **Pen**: draw freehand, in one of four colours. The **Eraser** removes a whole stroke with a click.
-- **Range**: drag on the timeline ruler to mark a span of time instead of a place.
-
-After each mark a comment bubble opens next to it. Enter adds the note to the notes tray, and Cmd+Enter (Ctrl+Enter elsewhere) sends that note to the agent now. Esc in the bubble drops a new mark, and Esc outside it leaves markup mode. Click a marker to edit or delete its note.
-
-Marks are stored in composition pixels on the frame you drew them on, so they line up at any zoom or pan. A marker shows only while the playhead is on its frame (or inside its range), and each note is a tick on the timeline ruler.
-
-The notes tray sits above the message box. It lists the notes in time order, with buttons to jump to a note, edit it, mark it resolved (left out of the message) or delete it, and **Send N notes**. The agent gets one message with the notes in time order, such as `1. frame 120 (00:04.00), box 640,320 420x180 over Title: make this bigger`, and the names of the layers under each mark. For each distinct frame (up to 6) it also gets a picture of that frame with the marks drawn on it. The pictures are stored in `public/refs/` as `markup-<stamp>-<n>.png`, and their paths are always in the message. After sending, the notes stay as sent markers until you clear them with **Clear sent**.
-
-### Sound
-
-If the composition has audio, the preview plays it. The server mixes the audio once, as a render does, and the window plays that mix with the Web Audio clock. The picture follows the sound and drops frames rather than drift. Pausing, seeking and looping move the sound with the playhead, and scrubbing plays 80 ms snippets. `Shift+M` mutes, and the choice is kept in the browser. A composition without audio has no mute button.
+To show the agent what to change, press `M`. Then drop a **pin**, drag a **box**, draw with the **pen**, or drag a **range** on the timeline ruler. Type a comment, press Enter to add the note, and send the notes when you are done. The agent sees each note with its frame and the layers under your mark, and a picture of the frame with your marks drawn on it.
 
 ## The timeline
 
-The timeline starts as a slim bar. The arrow at its left expands it into one row per layer. **Show details** opens every layer, where it would otherwise fold repeated components into one row.
-
-Clips are coloured by kind. Video clips show a film strip and audio clips show their waveform. Click the ruler or a row to move the playhead. Drag to pick a span of time instead.
-
-### Giving the agent a span of time
-
-Drag across the ruler or an empty part of a row to pick a span. Click a clip to pick its span. Shift-click or Shift-drag extends it. Escape clears the span and the selected layers. The span shows as a chip in the agent's message box.
-
-When you send a message with a span, the agent is told the span, the Sequences that overlap it and the layers visible in it. It gets one contact sheet of up to eight frames across the span, in place of a single frame.
+The arrow at the left of the timeline opens one row per layer. Click the ruler to move the playhead, or drag across it to pick a span of time. Click a clip to pick its span. The span goes to the agent with your next message, with a contact sheet of the frames in it.
 
 ## Props and presets
 
-The Props tab draws a form from the composition's zod 4 `schema`:
+The Props tab draws a form from the composition's zod `schema`: a slider for a number, a switch for a boolean, a colour input for `zColor()`. With no schema, each field is inferred from its default. **Reset** returns every prop to the defaults, and your edits are kept in the browser.
 
-- A select for an enum, a slider for a number with `min` and `max`, and a switch for a boolean.
-- A colour input for `zColor()` and a text area for `zTextarea()`.
-- A JSON box for anything else. With no schema, each field is inferred from its default value.
+**Save preset** in the Presets menu saves the props you see as `presets/<composition id>/<name>.json`. You can commit it, and `--props` renders it from the command line. See [Plugins](/docs/plugins/#presets).
 
-**Reset** returns every prop to the composition's defaults. Your edits are kept per project in the browser, so a reload keeps them. The Export dialog says whether it renders the edited props or the defaults.
-
-**Presets** is a menu at the top of the tab. **Save preset** asks for a name and saves the props you see. A preset is a file at `presets/<composition id>/<name>.json` beside the entry, so you can commit it, and `--props` renders it from the command line. See [Plugins](/docs/plugins/#presets).
-
-### Plugin cards
-
-A field that a [plugin](/docs/plugins/) draws its own [panel](/docs/studio/panels/#plugin-panels) for shows as a card in place of the generated form. Clicking a card selects the layers its plugin made, and selecting such a layer opens its card. The card's menu copies the path of the plugin's `SKILL.md` and asks the agent about the plugin.
-
-The **Plugins** list at the bottom of the tab has two parts. **In this project** is every plugin the project depends on. **Available** is the plugins on the Kinetograph site that the project does not have. A published one has **Ask the agent to add it**, and an unpublished one shows **Coming soon**. `--offline` stops Studio asking the site.
+A field that a [plugin](/docs/plugins/) draws its own [panel](/docs/studio/panels/#plugin-panels) for shows as a card in place of the form. The **Plugins** list at the bottom shows what the project uses and what else you can add.
 
 ## The Scene and Renders tabs
 
-**Scene** is the tree of layers at the playhead, with each layer's resolved fields and a button that copies a message about the layer for a coding agent. **Renders** is the queue of exports, with progress, the output file and a cancel button.
+**Scene** is the tree of layers at the playhead. **Renders** is the queue of exports, with progress and the output file.
 
 ## Export
 
-**Export** in the top bar (or Cmd+K) opens a dialog for the composition.
-
-- **Whole video** or **Custom.** A custom range has a start and an end. Type them as seconds, `mm:ss` or `mm:ss.ff`, take them from the playhead with **Set to playhead**, or drag the handles of the trim bar.
-- **Output:** a `.mp4` or `.mov` path, relative to the project's folder. The default is `out/renders/<composition id>.mp4`.
-- **Draft** renders at half size, for checking timing.
-
-The export uses the props you edited. It joins the Renders queue, and the top bar shows its progress.
+**Export** opens a dialog for the composition. Pick the whole video or a range, an output path (`.mp4` or `.mov`), and **Draft** for a half-size render that checks timing. The export uses the props you edited.
 
 ## The agent
 
