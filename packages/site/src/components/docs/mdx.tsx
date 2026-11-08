@@ -65,7 +65,7 @@ function Tree({ code, ...props }: { code: string } & Omit<ComponentProps<typeof 
  * Written as a ```txt block titled "Suggested prompt" whose text starts with `/skill-name`, or as
  * `<Prompt skill="kinetograph-markup">Add motion blur to my text</Prompt>`.
  */
-export function PromptBox({ skill, children }: { skill?: string; children?: ReactNode }) {
+export function PromptBox({ skill, label = 'Suggested prompt', children }: { skill?: string; label?: string; children?: ReactNode }) {
   let text = textOf(children).trim();
   let name = skill;
   if (!name) {
@@ -89,18 +89,18 @@ export function PromptBox({ skill, children }: { skill?: string; children?: Reac
         </p>
         <CopyButton text={full} label="Copy prompt" />
       </div>
-      <figcaption className="mt-2 text-center text-xs text-fd-muted-foreground">Suggested prompt</figcaption>
+      <figcaption className="mt-2 text-center text-xs text-fd-muted-foreground">{label}</figcaption>
     </figure>
   );
 }
 
 /**
  * The docs' `pre`. Fumadocs' own already renders `title="src/MyComp.tsx"` as a file-name header with a copy button.
- * On top of it: a text block drawn with ├─ branches is a file tree, and a block titled "Suggested prompt" is a prompt box.
+ * On top of it: a text block drawn with ├─ branches is a file tree, and a block titled "Suggested prompt" or "Install prompt" is a prompt box.
  */
 export function DocsPre(props: ComponentProps<'pre'> & { title?: string; icon?: ReactNode }) {
   const { title, children, icon, ...rest } = props;
-  if (title === 'Suggested prompt') return <PromptBox>{textOf(children)}</PromptBox>;
+  if (title === 'Suggested prompt' || title === 'Install prompt') return <PromptBox label={title}>{textOf(children)}</PromptBox>;
   const code = textOf(children);
   if (TREE_LINE.test(code)) return <Tree code={code} title={title} {...(rest as object)} />;
   return (
