@@ -96,20 +96,21 @@ export function SceneTree({ inspect, frame, selected, selectedLayers = selected 
       {/* Properties header */}
       <div className="flex h-11 shrink-0 items-center px-4 text-[13px]">
         <span className="truncate font-medium">{layer ? `Properties: ${displayName(layer)}` : 'Select a layer'}</span>
-        {layer && onRemoveBackground && layer.type === 'video' && layer.src !== undefined && (
-          <span className="ml-auto pl-2">
-            <Button variant="ghost" size="sm" className="shrink-0 rounded-full px-3" onClick={() => onRemoveBackground(layer)}>
-              <EraserIcon />
-              Remove background
-            </Button>
-          </span>
-        )}
         {layer && agent && (
-          <span className={cn('pl-2', !(onRemoveBackground && layer.type === 'video' && layer.src !== undefined) && 'ml-auto')}>
+          <span className="ml-auto pl-2">
             <CopyForAgent message={buildAgentMessage({ ...agent, frame: inspect.frame, layer })} />
           </span>
         )}
       </div>
+
+      {layer && onRemoveBackground && layer.type === 'video' && layer.src !== undefined && (
+        <div className="px-4 pb-2">
+          <Button variant="outline" size="sm" className="rounded-full" onClick={() => onRemoveBackground(layer)}>
+            <EraserIcon />
+            Remove background
+          </Button>
+        </div>
+      )}
 
       <ScrollArea className="min-h-0 flex-1">
         {layer ? (
