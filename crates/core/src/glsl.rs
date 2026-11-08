@@ -2771,11 +2771,11 @@ mod tests {
     fn what_naga_or_the_engine_lacks_is_called_unsupported() {
         let e = translate(&program(
             QUAD_ES1,
-            "precision mediump float;\nuniform samplerCube c;\nvoid main() { gl_FragColor = vec4(1.0); }",
+            "precision mediump float;\nuniform sampler2DShadow c;\nvoid main() { gl_FragColor = vec4(1.0); }",
         ))
         .unwrap_err();
         assert!(
-            e.contains("unsupported") && e.contains("samplerCube"),
+            e.contains("unsupported") && e.contains("sampler2DShadow"),
             "{e}"
         );
         let e = translate(&program(
