@@ -2212,3 +2212,18 @@ fn an_attribute_with_nothing_given_says_so() {
     ));
     assert!(e.contains("no data"), "{e}");
 }
+
+#[test]
+fn a_constant_attribute_read_for_a_huge_vertex_count_is_refused_not_allocated() {
+    let constant = r#"{"buffer": "constant:0,1,0,1", "size": 4, "type": "f32", "constant": [0, 1, 0, 1]}"#;
+    // A far first vertex: first + count reaches 4 billion, which would be 64 GB of copies.
+    let e = render_error(&layer_with_vertex(
+        "#version 300 es\nin vec3 a_color; in vec2 a_pos; out vec3 v_c; \
+            void main() { v_c = a_color; gl_Position = vec4(a_pos, 0.0, 1.0); }",
+        &[("p", COLOR_FRAGMENT)],
+        "",
+        "",
+        &draw_with_color(constant, (4_000_000_000, 6)),
+    ));
+    assert!(e.contains("constant attribute") && e.contains("at most"), "{e}");
+}

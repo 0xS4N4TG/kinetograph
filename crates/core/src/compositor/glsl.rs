@@ -1244,11 +1244,21 @@ impl Compositor {
                         "the constant attribute `{name}` is not 4 values of f32"
                     )));
                 }
+                // `last` can reach 2^32 (a far `first`, or a large index), so the copies are bounded first.
+                let wanted = last
+                    .checked_mul(element)
+                    .filter(|_| last <= u64::from(MAX_DRAW_VERTICES))
+                    .ok_or_else(|| {
+                        render_error(format!(
+                            "unsupported: the constant attribute `{name}` is read for {last} vertices; \
+                             at most {MAX_DRAW_VERTICES} (give it a buffer)"
+                        ))
+                    })?;
                 let copies: Vec<u8> = value.iter().flat_map(|c| c.to_le_bytes()).collect();
                 let held = buffers
                     .entry(a.buffer.as_str())
                     .or_insert_with(|| (Vec::new(), None));
-                if (held.0.len() as u64) < last * element {
+                if (held.0.len() as u64) < wanted {
                     *held = (copies.repeat(last as usize), None);
                 }
             }
