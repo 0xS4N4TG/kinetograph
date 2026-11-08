@@ -1,0 +1,55 @@
+---
+title: Contributing to Kinetograph
+description: Ways to contribute, how to set up a clone, run the tests and send a pull request.
+---
+
+The most useful pull requests start with a real problem, such as a Remotion project that draws wrong or a CSS property that is skipped. Issues and pull requests go to [github.com/0xS4N4TG/kinetograph](https://github.com/0xS4N4TG/kinetograph).
+
+## Ways to contribute
+
+- **Report a bug.** Include the version from `npx kinetograph --version`, the output of `npx kinetograph doctor`, the smallest project that shows the problem, and a still of the frame where it goes wrong (`npx kinetograph still <entry> <frame> -o frame.png`). For a Remotion project, a still of the same frame from Remotion is the clearest way to show it. Check [What works](/docs/compat/) first.
+- **Fix a bug.** Add a test that fails without your fix, and send a pull request. Small fixes can go straight to a pull request.
+- **Add a feature.** Open an issue first for a new feature, a new public API or a change that touches many packages, and say what you want to build and why. Not every pull request is merged.
+- **Improve the docs.** Docs live in `packages/site/content/docs`. Keep a guide page short: what the feature is for, how to use it, one example.
+- **Add a component, template or taste.** These live in a separate repo: see [Contributing to the registry](/docs/contributing/registry/).
+
+## Set up a clone
+
+Follow [Installation: From source](/docs/getting-started/installation/#from-source), then run the CLI from the clone with `node packages/cli/dist/cli.js <command>`. [How the engine works](/docs/internals/engine/) lists where each part of the code lives.
+
+## Run the tests
+
+Run the tests for the part you changed, not the whole repository:
+
+```sh
+# One TypeScript package
+npm test -w kinetograph
+
+# One Rust crate, or one test target
+cargo test -p kinetograph-core
+cargo test -p kinetograph-core --test golden
+```
+
+The golden tests compare rendered frames with stored images. If your change is meant to alter the picture, regenerate them with `UPDATE_GOLDEN=1 cargo test -p kinetograph-core --test golden`, and say in the pull request which images changed and why. The GPU tests, the goldens and the benchmarks run on Apple Silicon.
+
+## Rules for the code
+
+- **A frame depends only on the project and the frame number.** Nothing reads the wall clock.
+- **No browser draws anything.** Chrome for Testing appears only in tests, as the reference a native drawing is compared against.
+- **Draw it natively, or say you can't.** Content the engine can't draw is skipped or approximated and reported. `--strict` turns it into an error.
+- **Write your own code.** Rebuild Remotion APIs from their documented behaviour. Reading another project's source to understand it is fine. Copying it is not.
+- **`random(seed)` matches Remotion bit for bit.**
+- **Speed claims need a measurement.** Include the command, the machine and the numbers.
+
+## Send a pull request
+
+The [pull request template](https://github.com/0xS4N4TG/kinetograph/blob/main/.github/pull_request_template.md) lists what to include. In short:
+
+- One change per pull request, with a [Conventional Commits](https://www.conventionalcommits.org/) message such as `fix(dom): ...`.
+- A test that fails without your change, and passing tests.
+- Before-and-after stills or clips for a visual change, and a comparison with what Remotion or Chrome draws for a compatibility fix.
+- A line in `CHANGELOG.md` under Unreleased, and the docs page for the behaviour you changed.
+
+## Licence
+
+Kinetograph is open source under the Apache-2.0 licence. By sending a pull request, you agree that your contribution is licensed under Apache-2.0 too.
