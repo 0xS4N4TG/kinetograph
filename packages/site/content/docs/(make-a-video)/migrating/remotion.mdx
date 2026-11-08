@@ -17,45 +17,13 @@ To keep editing in Remotion and only render with Kinetograph, see [Keep your edi
 
 ## How much of Remotion is covered
 
-Kinetograph exports 310 of the 318 names in `remotion` and the 24 `@remotion/*` packages it maps. Another 90 names belong to nine tooling packages that are left out on purpose.
-
-Read the number with care:
-
-- It counts runtime names (functions, components, constants) in Remotion 4.0.540. Types are not counted.
-- A name that exists can still have gaps. [What works](/docs/compat/) lists them.
-- It is not "99% of your project works". Run `doctor` to see what yours uses.
-- Names that Kinetograph adds are not counted. `remotion` alone has 105, such as `Layer` and `Scene3D`.
+Kinetograph exports 310 of the 318 names in `remotion` and the 24 `@remotion/*` packages it maps, counted in Remotion 4.0.540. A name that exists can still have gaps: [What works](/docs/compat/) lists them. Run `doctor` to see what your project uses.
 
 ## Package by package
 
-Status: **Works** means every export exists and you use the package as usual. **Partly** means some calls throw or draw less. **Not planned** means Kinetograph has something else.
-
 ### Packages that work
 
-| Package | Status | Exports present | Notes |
-|---|---|---|---|
-| `remotion` | Works | 57 of 60 | `Internals` and `FolderContext` are internal to Remotion. `createEffectImplementation` is missing. |
-| `@remotion/transitions` | Works | 11 of 11 | All 19 presentations. |
-| `@remotion/motion-blur` | Works | 2 of 3 | `HtmlInCanvasMotionBlur` is missing. |
-| `@remotion/noise` | Works | 3 of 3 | |
-| `@remotion/paths` | Works | 21 of 22 | `PathInternals` is internal. |
-| `@remotion/shapes` | Works | 22 of 22 | |
-| `@remotion/layout-utils` | Works | 4 of 4 | |
-| `@remotion/animation-utils` | Works | 23 of 23 | |
-| `@remotion/captions` | Works | 4 of 5 | `CaptionsInternals` is internal. |
-| `@remotion/google-fonts` | Works | 0 of 1 | Each `@remotion/google-fonts/<Family>` import works. `getAvailableFonts` is missing. |
-| `@remotion/fonts` | Works | 1 of 1 | |
-| `@remotion/lottie` | Works | 2 of 2 | |
-| `@remotion/gif` | Works | 3 of 3 | |
-| `@remotion/media-utils` | Works | 12 of 12 | `visualizeAudio` follows the documented behaviour, but its numbers are not identical. |
-| `@remotion/media` | Works | 5 of 6 | Provides `<Audio>` and `<Video>`. `AudioForPreview` is internal. |
-| `@remotion/light-leaks` | Works | 4 of 4 | |
-| `@remotion/starburst` | Works | 4 of 4 | |
-| `@remotion/sfx` | Works | 32 of 32 | The first render downloads each sound. After that it is offline. |
-| `@remotion/zod-types` | Works | 4 of 4 | Props are not checked against the schema. |
-| `@remotion/timeline-utils` | Works | 33 of 33 | `extractFrames` throws `UnsupportedApiError`. |
-| `@remotion/canvas` | Works | 24 of 24 | This is Remotion Studio's editor canvas. It bundles, but every call throws `UnsupportedApiError`. The count is from 4.0.532, because 4.0.536 is not on npm. |
-| `@remotion/rive` | Yes | 1 of 1 | `getRenderer()` is `null`. CDN assets are not fetched. |
+`remotion`, `@remotion/transitions`, `@remotion/motion-blur`, `@remotion/noise`, `@remotion/paths`, `@remotion/shapes`, `@remotion/layout-utils`, `@remotion/animation-utils`, `@remotion/captions`, `@remotion/google-fonts`, `@remotion/fonts`, `@remotion/lottie`, `@remotion/gif`, `@remotion/media-utils`, `@remotion/media`, `@remotion/light-leaks`, `@remotion/starburst`, `@remotion/sfx`, `@remotion/zod-types`, `@remotion/timeline-utils`, `@remotion/canvas` and `@remotion/rive` work as usual. The few missing names, such as `HtmlInCanvasMotionBlur` and `getAvailableFonts`, are listed on [What works](/docs/compat/#remotion-packages). `@remotion/canvas` is Remotion Studio's editor canvas: it bundles, but every call throws `UnsupportedApiError`.
 
 ### Packages that work in part
 
@@ -82,8 +50,6 @@ Status: **Works** means every export exists and you use the package as usual. **
 
 Any other `@remotion/*` import stops the build with `"..." is not supported by Kinetograph yet`.
 
-Counts come from loading the built modules in Node and from each Remotion package's published export list.
-
 ## Migrate by hand
 
 Follow these steps in order.
@@ -93,9 +59,9 @@ Follow these steps in order.
 3. **Fix each finding.** The common cases are below.
 4. **Lint and look.** `lint` checks the project. `strip` draws twelve frames into one picture. Open it.
 5. **Render with `--strict`.** It stops on the first frame with something unsupported, so nothing is silently missing.
-6. **Write down what changed.** Note anything you left out or approximated. The video can differ from the Remotion one.
+6. **Write down what changed.** The video can differ from the Remotion one.
 
-The commands for steps 1, 2, 4 and 5 are below. They differ only in the entry. A Remotion project points at its entry file and picks a composition with `--comp`. A [HyperFrames](/docs/migrating/hyperframes/) page points at its `index.html` or the directory that holds it. Your project keeps its own layout. Only the files the commands write go in `out/`.
+The commands differ only in the entry. A Remotion project points at its entry file and picks a composition with `--comp`. A [HyperFrames](/docs/migrating/hyperframes/) page points at its `index.html`.
 
 <Tabs items={['Remotion', 'HyperFrames']}>
   <Tab value="Remotion">
@@ -134,8 +100,4 @@ Nothing in this path starts a browser. If something can't be ported, leave it ou
 
 ## The agent skill
 
-The `kinetograph-migrate` skill follows these steps for an agent.
-
-It has reference files for 3D, tooling and unsupported content. It loads them only when a finding needs one.
-
-See [Use with agents](/docs/agents/skills/).
+The `kinetograph-migrate` skill follows these steps for an agent. See [Use with agents](/docs/agents/skills/).
