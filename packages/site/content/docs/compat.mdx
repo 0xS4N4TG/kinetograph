@@ -118,7 +118,7 @@ How to write code for GSAP, Motion, anime.js, d3, Chart.js, Recharts and the res
 - **Fonts:** the 18 families HyperFrames embeds come in every weight Google serves, from the cache `fetch-deps` fills. A render never downloads a font. System names map as in HyperFrames: `Arial` to Inter, `Consolas` to JetBrains Mono, `Georgia` to EB Garamond. A page that calls `measureText` before its `@font-face` loads gets fallback widths in Chrome; Kinetograph measures with the registered font, so it can pick a larger size.
 - **Scripts:** `<script type="importmap">` is read (one with a `src` is ignored, as in Chrome), and each module is bundled and runs after the classic scripts. Top-level `await` works, but the runtime doesn't wait for it. CSS and JSON import attributes are not supported.
 - **WebGPU:** pages that use it, such as the `shaders.iife.js` blocks (`aurora`, `blob`, `ripples`, `swirl`), are drawn natively. See WebGPU above.
-- **Three.js** is not drawn. A page that loads it is reported on every frame, and `--strict` fails.
+- **Three.js** is drawn through the WebGL stand-in (see the WebGL section). Only what it does that the stand-in cannot draw is reported, and `--strict` fails on that.
 
 ### Downloads and the lock file
 
