@@ -3,22 +3,22 @@
   "ref": "75fe18c621be5297d7b09a788fabc75a3cd6c734",
   "machine": "darwin-arm64 Apple M4 (10 cores)",
   "kinetograph": "0.3.0",
-  "jobs": 3,
+  "jobs": 1,
   "counts": {
-    "works": 232,
-    "partial": 201,
-    "fails": 15,
+    "works": 238,
+    "partial": 208,
+    "fails": 2,
     "skipped": 0
   },
   "stillMs": {
-    "median": 486,
-    "p90": 2069,
-    "max": 24638
+    "median": 490,
+    "p90": 2133,
+    "max": 42354
   },
   "topUnsupported": [
     {
       "feature": "HyperFrames: Three.js is not supported: its scenes are not drawn",
-      "items": 19,
+      "items": 22,
       "examples": [
         "canopy-part-title",
         "code-3d-extrude",
@@ -27,11 +27,20 @@
     },
     {
       "feature": "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
-      "items": 19,
+      "items": 22,
       "examples": [
         "canopy-part-title",
         "code-3d-extrude",
         "code-particle-assemble"
+      ]
+    },
+    {
+      "feature": "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+      "items": 17,
+      "examples": [
+        "code-3d-extrude",
+        "code-particle-assemble",
+        "code-shader-dissolve"
       ]
     },
     {
@@ -44,6 +53,24 @@
       ]
     },
     {
+      "feature": "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
+      "items": 14,
+      "examples": [
+        "caption-emoji-pop",
+        "chat-message",
+        "chat-thread"
+      ]
+    },
+    {
+      "feature": "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+      "items": 14,
+      "examples": [
+        "code-3d-extrude",
+        "code-particle-assemble",
+        "code-shader-dissolve"
+      ]
+    },
+    {
       "feature": "resource: cannot load a resource: https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&family=Lato:wght@400;700&display=block: https requests are not available",
       "items": 14,
       "examples": [
@@ -53,12 +80,21 @@
       ]
     },
     {
-      "feature": "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
-      "items": 12,
+      "feature": "div backdrop-filter: only blur() is drawn in a backdrop filter",
+      "items": 5,
       "examples": [
-        "caption-emoji-pop",
-        "chat-message",
-        "chat-thread"
+        "ios26-liquid-glass",
+        "macos-tahoe-liquid-glass",
+        "slack-notification-ad"
+      ]
+    },
+    {
+      "feature": "span font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
+      "items": 5,
+      "examples": [
+        "chatgpt-exchange",
+        "matrix-decode",
+        "message-thread-reveal"
       ]
     },
     {
@@ -68,42 +104,6 @@
         "blur-in",
         "separator",
         "vfx-portal"
-      ]
-    },
-    {
-      "feature": "resource: cannot load a resource: https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-500-normal.woff2: https requests are not available",
-      "items": 4,
-      "examples": [
-        "exploded-stack",
-        "extruded-logo",
-        "glass-hero"
-      ]
-    },
-    {
-      "feature": "button font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
-      "items": 3,
-      "examples": [
-        "onboarding-stepper-flow",
-        "signup-flow",
-        "tabs-slide-indicator"
-      ]
-    },
-    {
-      "feature": "div font-family: font not loaded; drawn with the built-in fallback (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
-      "items": 3,
-      "examples": [
-        "app-showcase",
-        "camcorder-hud",
-        "extended-keyframe"
-      ]
-    },
-    {
-      "feature": "HyperFrames: the root element lacks data-composition-id, data-width, data-height, data-duration, so the page is drawn at 1920x1080 for as long as its timelines run (1 second with none): write it as <div id=\"root\" data-composition-id=\"main\" data-width=\"1920\" data-height=\"1080\" data-duration=\"10\"> (size in pixels, duration in seconds, 30 fps)",
-      "items": 3,
-      "examples": [
-        "caption-camera-follow",
-        "grade-split-reveal",
-        "shutter-slam"
       ]
     }
   ],
@@ -121,62 +121,6 @@
       "examples": [
         "vfx-liquid-background"
       ]
-    },
-    {
-      "feature": "install: ai-answer-rank: target \"TEMPLATE.md\" is outside the compositions, compositions/components, assets folders",
-      "items": 1,
-      "examples": [
-        "ai-answer-rank"
-      ]
-    },
-    {
-      "feature": "install: ai-chat-reveal: target \"TEMPLATE.md\" is outside the compositions, compositions/components, assets folders",
-      "items": 1,
-      "examples": [
-        "ai-chat-reveal"
-      ]
-    },
-    {
-      "feature": "install: chatgpt-exchange: target \"TEMPLATE.md\" is outside the compositions, compositions/components, assets folders",
-      "items": 1,
-      "examples": [
-        "chatgpt-exchange"
-      ]
-    },
-    {
-      "feature": "install: claude-exchange: target \"TEMPLATE.md\" is outside the compositions, compositions/components, assets folders",
-      "items": 1,
-      "examples": [
-        "claude-exchange"
-      ]
-    },
-    {
-      "feature": "install: heygen-avatar-promo-card: target \"TEMPLATE.md\" is outside the compositions, compositions/components, assets folders",
-      "items": 1,
-      "examples": [
-        "heygen-avatar-promo-card"
-      ]
-    },
-    {
-      "feature": "install: ios26-liquid-glass: target \"models/iphone.glb\" is outside the compositions, compositions/components, assets folders",
-      "items": 1,
-      "examples": [
-        "ios26-liquid-glass"
-      ]
-    },
-    {
-      "feature": "install: macos-tahoe-liquid-glass: target \"models/macbook.glb\" is outside the compositions, compositions/components, assets folders",
-      "items": 1,
-      "examples": [
-        "macos-tahoe-liquid-glass"
-      ]
-    },
-    {
-      "feature": "install: message-thread-reveal: target \"TEMPLATE.md\" is outside the compositions, compositions/components, assets folders",
-      "items": 1,
-      "examples": [
-        "message-thread-reveal"
-      ]
     }
   ],
   "items": {
@@ -184,7 +128,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-gYg0OT/index.html: data-composition-src=\"./agent-cursor.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-gYg0OT/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-gYg0OT"
+        "HyperFrames: <page>: data-composition-src=\"./agent-cursor.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -201,15 +145,37 @@
     },
     "ai-answer-rank": {
       "type": "block",
-      "status": "fails",
+      "status": "works",
       "warnings": [],
-      "error": "install: ai-answer-rank: target \"TEMPLATE.md\" is outside the compositions, compositions/components, assets folders"
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1584,
+      "frames": 270,
+      "stillMs": [
+        326,
+        593
+      ],
+      "stills": [
+        81,
+        216
+      ]
     },
     "ai-chat-reveal": {
       "type": "block",
-      "status": "fails",
+      "status": "works",
       "warnings": [],
-      "error": "install: ai-chat-reveal: target \"TEMPLATE.md\" is outside the compositions, compositions/components, assets folders"
+      "files": 3,
+      "licence": null,
+      "doctorMs": 5841,
+      "frames": 580,
+      "stillMs": [
+        1141,
+        2004
+      ],
+      "stills": [
+        174,
+        464
+      ]
     },
     "animated-bar-chart": {
       "type": "component",
@@ -287,7 +253,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-KR0rb9/index.html: data-composition-src=\"./ascii-render-pass.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-KR0rb9/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-KR0rb9"
+        "HyperFrames: <page>: data-composition-src=\"./ascii-render-pass.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -306,7 +272,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-jvhyPa/index.html: data-composition-src=\"./ascii-trail-reveal.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-jvhyPa/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-jvhyPa"
+        "HyperFrames: <page>: data-composition-src=\"./ascii-trail-reveal.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -342,7 +308,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-4sealH/index.html: data-composition-src=\"./aurora-drift.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-4sealH/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-4sealH"
+        "HyperFrames: <page>: data-composition-src=\"./aurora-drift.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -361,7 +327,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-7QAXZC/index.html: data-composition-src=\"./avatar-cloud.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-7QAXZC/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-7QAXZC"
+        "HyperFrames: <page>: data-composition-src=\"./avatar-cloud.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -431,7 +397,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-5CFKft/index.html: data-composition-src=\"./beat-accent.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-5CFKft/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-5CFKft"
+        "HyperFrames: <page>: data-composition-src=\"./beat-accent.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -467,7 +433,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-KDIQdo/index.html: data-composition-src=\"./beat-pulse-background.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-KDIQdo/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-KDIQdo"
+        "HyperFrames: <page>: data-composition-src=\"./beat-pulse-background.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -486,7 +452,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-1E1g4V/index.html: data-composition-src=\"./beat-timeline.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-1E1g4V/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-1E1g4V"
+        "HyperFrames: <page>: data-composition-src=\"./beat-timeline.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -505,7 +471,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ZGhgbJ/index.html: data-composition-src=\"./before-after-wipe.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ZGhgbJ/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ZGhgbJ"
+        "HyperFrames: <page>: data-composition-src=\"./before-after-wipe.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -611,7 +577,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-00K9lT/index.html: data-composition-src=\"./browser-device-stage.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-00K9lT/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-00K9lT"
+        "HyperFrames: <page>: data-composition-src=\"./browser-device-stage.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -684,7 +650,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-uTeeNM/index.html: data-composition-src=\"./camera-scan-gate.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-uTeeNM/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-uTeeNM"
+        "HyperFrames: <page>: data-composition-src=\"./camera-scan-gate.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -757,9 +723,9 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-WlbkTu/index.html: script failed: Cannot read properties of null (reading 'parentElement')",
+        "HyperFrames: <page>: script failed: Cannot read properties of null (reading 'parentElement')",
         "HyperFrames: the root element lacks data-composition-id, data-width, data-height, data-duration, so the page is drawn at 1920x1080 for as long as its timelines run (1 second with none): write it as <div id=\"root\" data-composition-id=\"main\" data-width=\"1920\" data-height=\"1080\" data-duration=\"10\"> (size in pixels, duration in seconds, 30 fps)",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-WlbkTu/index.html: script failed: Cannot read properties of null (reading 'parentElement')"
+        "note: <page>: script failed: Cannot read properties of null (reading 'parentElement')"
       ],
       "files": 1,
       "licence": null,
@@ -1001,8 +967,8 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "div mask: the picture file:///private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Ye9brJ/lava.png is not a file the project has",
-        "resource: cannot load a resource: file:///private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Ye9brJ/lava.png: no such file"
+        "div mask: the picture <page> is not a file the project has",
+        "resource: cannot load a resource: <page>: no such file"
       ],
       "files": 7,
       "licence": null,
@@ -1055,7 +1021,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Dj9NRi/index.html: data-composition-src=\"./caret-swap.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Dj9NRi/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Dj9NRi"
+        "HyperFrames: <page>: data-composition-src=\"./caret-swap.html\" was not found beside <page> or in <page>"
       ],
       "files": 3,
       "licence": "MIT AND OFL-1.1",
@@ -1499,7 +1465,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-fLCnrA/index.html: data-composition-src=\"./char-slam-explode.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-fLCnrA/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-fLCnrA"
+        "HyperFrames: <page>: data-composition-src=\"./char-slam-explode.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -1518,7 +1484,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-4w4Ea7/index.html: data-composition-src=\"./chart-story.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-4w4Ea7/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-4w4Ea7"
+        "HyperFrames: <page>: data-composition-src=\"./chart-story.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -1573,9 +1539,23 @@
     },
     "chatgpt-exchange": {
       "type": "block",
-      "status": "fails",
-      "warnings": [],
-      "error": "install: chatgpt-exchange: target \"TEMPLATE.md\" is outside the compositions, compositions/components, assets folders"
+      "status": "partial",
+      "warnings": [
+        "span font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
+        "text font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+      ],
+      "files": 6,
+      "licence": null,
+      "doctorMs": 7312,
+      "frames": 447,
+      "stillMs": [
+        933,
+        1889
+      ],
+      "stills": [
+        134,
+        357
+      ]
     },
     "chromatic-aberration-wipe": {
       "type": "component",
@@ -1670,18 +1650,29 @@
     },
     "claude-exchange": {
       "type": "block",
-      "status": "fails",
+      "status": "works",
       "warnings": [],
-      "error": "install: claude-exchange: target \"TEMPLATE.md\" is outside the compositions, compositions/components, assets folders"
+      "files": 9,
+      "licence": null,
+      "doctorMs": 62846,
+      "frames": 642,
+      "stillMs": [
+        42354,
+        38355
+      ],
+      "stills": [
+        192,
+        513
+      ]
     },
     "code-3d-extrude": {
       "type": "block",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-wFAJwG/compositions/code-3d-extrude.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-wFAJwG/compositions/code-3d-extrude.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
       "files": 1,
       "licence": null,
@@ -1751,10 +1742,10 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-9R6SB4/compositions/code-particle-assemble.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-9R6SB4/compositions/code-particle-assemble.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
       "files": 1,
       "licence": null,
@@ -1790,10 +1781,10 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-u6RmFA/compositions/code-shader-dissolve.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-u6RmFA/compositions/code-shader-dissolve.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
       "files": 1,
       "licence": null,
@@ -1882,7 +1873,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-FjqHD2/index.html: data-composition-src=\"./code-terminal-run.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-FjqHD2/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-FjqHD2"
+        "HyperFrames: <page>: data-composition-src=\"./code-terminal-run.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -1952,7 +1943,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-uKflEQ/index.html: data-composition-src=\"./comparison-split.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-uKflEQ/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-uKflEQ"
+        "HyperFrames: <page>: data-composition-src=\"./comparison-split.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -1990,7 +1981,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-qxUjWe/index.html: data-composition-src=\"./conic-progress-ring.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-qxUjWe/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-qxUjWe"
+        "HyperFrames: <page>: data-composition-src=\"./conic-progress-ring.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2010,7 +2001,7 @@
       "status": "partial",
       "warnings": [
         "div background: a gradient that interpolates in a colour space other than sRGB",
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-dDaUlt/index.html: data-composition-src=\"./constellation-hub.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-dDaUlt/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-dDaUlt"
+        "HyperFrames: <page>: data-composition-src=\"./constellation-hub.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2047,7 +2038,7 @@
       "status": "partial",
       "warnings": [
         "div background: a gradient that interpolates in a colour space other than sRGB",
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-VqgYmR/index.html: data-composition-src=\"./count-up.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-VqgYmR/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-VqgYmR"
+        "HyperFrames: <page>: data-composition-src=\"./count-up.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2085,7 +2076,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-TTbx3Y/index.html: data-composition-src=\"./cta-close.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-TTbx3Y/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-TTbx3Y"
+        "HyperFrames: <page>: data-composition-src=\"./cta-close.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2104,7 +2095,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-DjrQ3C/index.html: data-composition-src=\"./cta-lockup.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-DjrQ3C/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-DjrQ3C"
+        "HyperFrames: <page>: data-composition-src=\"./cta-lockup.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2123,10 +2114,10 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Rrt2R3/compositions/cuboid-carousel/cuboid-carousel.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Rrt2R3/compositions/cuboid-carousel/cuboid-carousel.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md…"
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md…"
       ],
       "files": 10,
       "licence": null,
@@ -2145,7 +2136,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-uKQKfg/index.html: data-composition-src=\"./cursor-annotate.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-uKQKfg/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-uKQKfg"
+        "HyperFrames: <page>: data-composition-src=\"./cursor-annotate.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2164,7 +2155,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-uSWQdP/index.html: data-composition-src=\"./cursor-context-menu.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-uSWQdP/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-uSWQdP"
+        "HyperFrames: <page>: data-composition-src=\"./cursor-context-menu.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2183,7 +2174,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-g2PKmU/index.html: data-composition-src=\"./cursor-drag-drop.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-g2PKmU/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-g2PKmU"
+        "HyperFrames: <page>: data-composition-src=\"./cursor-drag-drop.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2202,7 +2193,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-GIJNeq/index.html: data-composition-src=\"./cursor-glyph-trail.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-GIJNeq/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-GIJNeq"
+        "HyperFrames: <page>: data-composition-src=\"./cursor-glyph-trail.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2221,7 +2212,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Eq0BLW/index.html: data-composition-src=\"./cursor-marquee-select.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Eq0BLW/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Eq0BLW"
+        "HyperFrames: <page>: data-composition-src=\"./cursor-marquee-select.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2240,7 +2231,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-lOx6d8/index.html: data-composition-src=\"./cursor-text-select.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-lOx6d8/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-lOx6d8"
+        "HyperFrames: <page>: data-composition-src=\"./cursor-text-select.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2259,7 +2250,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-EAJW03/index.html: data-composition-src=\"./cursor-zoom-follow.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-EAJW03/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-EAJW03"
+        "HyperFrames: <page>: data-composition-src=\"./cursor-zoom-follow.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2278,7 +2269,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-FCCDPM/index.html: data-composition-src=\"./curtain-reveal.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-FCCDPM/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-FCCDPM"
+        "HyperFrames: <page>: data-composition-src=\"./curtain-reveal.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2297,7 +2288,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-i3EfZ6/index.html: data-composition-src=\"./cut-the-curve.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-i3EfZ6/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-i3EfZ6"
+        "HyperFrames: <page>: data-composition-src=\"./cut-the-curve.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2316,7 +2307,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-q2cBrW/index.html: data-composition-src=\"./dart-cursor.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-q2cBrW/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-q2cBrW"
+        "HyperFrames: <page>: data-composition-src=\"./dart-cursor.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2352,7 +2343,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-9jMmfl/index.html: data-composition-src=\"./decline-chart.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-9jMmfl/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-9jMmfl"
+        "HyperFrames: <page>: data-composition-src=\"./decline-chart.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2371,7 +2362,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-CsKtfO/index.html: data-composition-src=\"./device-frame-stage.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-CsKtfO/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-CsKtfO"
+        "HyperFrames: <page>: data-composition-src=\"./device-frame-stage.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2426,7 +2417,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-TAk1sI/index.html: data-composition-src=\"./drift-hold.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-TAk1sI/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-TAk1sI"
+        "HyperFrames: <page>: data-composition-src=\"./drift-hold.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2462,8 +2453,8 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-eFyUZK/index.html: script failed: el.style.getPropertyPriority is not a function",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-eFyUZK/index.html: script failed: el.style.getPropertyPriority is not a function"
+        "HyperFrames: <page>: script failed: el.style.getPropertyPriority is not a function",
+        "note: <page>: script failed: el.style.getPropertyPriority is not a function"
       ],
       "files": 1,
       "licence": null,
@@ -2482,7 +2473,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-bRQt7D/index.html: data-composition-src=\"./echo-trail.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-bRQt7D/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-bRQt7D"
+        "HyperFrames: <page>: data-composition-src=\"./echo-trail.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2518,12 +2509,12 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-yOiwf8/compositions/exploded-stack.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
         "resource: cannot load a resource: https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-500-normal.woff2: https requests are not available",
         "resource: cannot load a resource: https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-700-normal.woff2: https requests are not available",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-yOiwf8/compositions/exploded-stack.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
       "files": 1,
       "licence": null,
@@ -2582,7 +2573,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Jt5gMo/index.html: data-composition-src=\"./facet-morph.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Jt5gMo/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Jt5gMo"
+        "HyperFrames: <page>: data-composition-src=\"./facet-morph.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2739,7 +2730,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-NrYi2v/index.html: data-composition-src=\"./focus-rack.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-NrYi2v/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-NrYi2v"
+        "HyperFrames: <page>: data-composition-src=\"./focus-rack.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2759,7 +2750,7 @@
       "status": "partial",
       "warnings": [
         "div background: a gradient that interpolates in a colour space other than sRGB",
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-RDsWHe/index.html: data-composition-src=\"./focus-swap.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-RDsWHe/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-RDsWHe"
+        "HyperFrames: <page>: data-composition-src=\"./focus-swap.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2855,10 +2846,10 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-zDzVcu/compositions/gallery-tunnel.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-zDzVcu/compositions/gallery-tunnel.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
       "files": 1,
       "licence": null,
@@ -2877,7 +2868,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-uV6lkB/index.html: data-composition-src=\"./gesture-tap.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-uV6lkB/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-uV6lkB"
+        "HyperFrames: <page>: data-composition-src=\"./gesture-tap.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -2956,7 +2947,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Ra6A4B/index.html: data-composition-src=\"./gloss-sweep.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Ra6A4B/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Ra6A4B"
+        "HyperFrames: <page>: data-composition-src=\"./gloss-sweep.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -3009,8 +3000,8 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-vUOugz/compositions/gooey-split.html: script failed: el.style.getPropertyPriority is not a function",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-vUOugz/compositions/gooey-split.html: script failed: el.style.getPropertyPriority is not a function"
+        "HyperFrames: <page>: script failed: el.style.getPropertyPriority is not a function",
+        "note: <page>: script failed: el.style.getPropertyPriority is not a function"
       ],
       "files": 1,
       "licence": null,
@@ -3029,9 +3020,9 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-7VJdte/index.html: script failed: Cannot read properties of null (reading 'parentElement')",
+        "HyperFrames: <page>: script failed: Cannot read properties of null (reading 'parentElement')",
         "HyperFrames: the root element lacks data-composition-id, data-width, data-height, data-duration, so the page is drawn at 1920x1080 for as long as its timelines run (1 second with none): write it as <div id=\"root\" data-composition-id=\"main\" data-width=\"1920\" data-height=\"1080\" data-duration=\"10\"> (size in pixels, duration in seconds, 30 fps)",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-7VJdte/index.html: script failed: Cannot read properties of null (reading 'parentElement')"
+        "note: <page>: script failed: Cannot read properties of null (reading 'parentElement')"
       ],
       "files": 1,
       "licence": null,
@@ -3050,7 +3041,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-X8U1bl/index.html: data-composition-src=\"./grain-field.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-X8U1bl/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-X8U1bl"
+        "HyperFrames: <page>: data-composition-src=\"./grain-field.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -3105,7 +3096,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-xA8gpE/index.html: data-composition-src=\"./grid-card-assemble.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-xA8gpE/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-xA8gpE"
+        "HyperFrames: <page>: data-composition-src=\"./grid-card-assemble.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -3141,7 +3132,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-yMm6C8/index.html: data-composition-src=\"./halftone-dissolve.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-yMm6C8/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-yMm6C8"
+        "HyperFrames: <page>: data-composition-src=\"./halftone-dissolve.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -3177,7 +3168,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-u12xbp/index.html: data-composition-src=\"./headline-slam.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-u12xbp/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-u12xbp"
+        "HyperFrames: <page>: data-composition-src=\"./headline-slam.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -3211,9 +3202,20 @@
     },
     "heygen-avatar-promo-card": {
       "type": "block",
-      "status": "fails",
+      "status": "works",
       "warnings": [],
-      "error": "install: heygen-avatar-promo-card: target \"TEMPLATE.md\" is outside the compositions, compositions/components, assets folders"
+      "files": 16,
+      "licence": null,
+      "doctorMs": 993,
+      "frames": 300,
+      "stillMs": [
+        345,
+        566
+      ],
+      "stills": [
+        90,
+        240
+      ]
     },
     "hologram": {
       "type": "block",
@@ -3253,8 +3255,8 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-qMvvvP/index.html: script failed: Cannot read properties of undefined (reading 'baseVal')",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-qMvvvP/index.html: script failed: Cannot read properties of undefined (reading 'baseVal')"
+        "HyperFrames: <page>: script failed: Cannot read properties of undefined (reading 'baseVal')",
+        "note: <page>: script failed: Cannot read properties of undefined (reading 'baseVal')"
       ],
       "files": 2,
       "licence": null,
@@ -3460,7 +3462,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-t6Iczp/index.html: data-composition-src=\"./icon-morph-beat.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-t6Iczp/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-t6Iczp"
+        "HyperFrames: <page>: data-composition-src=\"./icon-morph-beat.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -3497,7 +3499,7 @@
       "status": "partial",
       "warnings": [
         "div background: a gradient that interpolates in a colour space other than sRGB",
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-QIgJdJ/index.html: data-composition-src=\"./ink-bleed-reveal.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-QIgJdJ/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-QIgJdJ"
+        "HyperFrames: <page>: data-composition-src=\"./ink-bleed-reveal.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -3567,15 +3569,32 @@
     },
     "ios26-liquid-glass": {
       "type": "block",
-      "status": "fails",
-      "warnings": [],
-      "error": "install: ios26-liquid-glass: target \"models/iphone.glb\" is outside the compositions, compositions/components, assets folders"
+      "status": "partial",
+      "warnings": [
+        "div backdrop-filter: only blur() is drawn in a backdrop filter",
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 29,
+      "licence": null,
+      "doctorMs": 1979,
+      "frames": 450,
+      "stillMs": [
+        208,
+        467
+      ],
+      "stills": [
+        135,
+        360
+      ]
     },
     "iris-reveal": {
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-LVrtP3/index.html: data-composition-src=\"./iris-reveal.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-LVrtP3/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-LVrtP3"
+        "HyperFrames: <page>: data-composition-src=\"./iris-reveal.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -3611,7 +3630,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-EBMWdk/index.html: data-composition-src=\"./kinetic-center-build.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-EBMWdk/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-EBMWdk"
+        "HyperFrames: <page>: data-composition-src=\"./kinetic-center-build.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": "MIT",
@@ -3631,7 +3650,7 @@
       "status": "partial",
       "warnings": [
         "div background: a gradient that interpolates in a colour space other than sRGB",
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ZF1RR7/index.html: data-composition-src=\"./kinetic-type-swap.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ZF1RR7/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ZF1RR7"
+        "HyperFrames: <page>: data-composition-src=\"./kinetic-type-swap.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -3703,7 +3722,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-FIXsMJ/index.html: data-composition-src=\"./light-sweep-pass.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-FIXsMJ/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-FIXsMJ"
+        "HyperFrames: <page>: data-composition-src=\"./light-sweep-pass.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -3739,7 +3758,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-3DFaN6/index.html: data-composition-src=\"./line-swap.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-3DFaN6/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-3DFaN6"
+        "HyperFrames: <page>: data-composition-src=\"./line-swap.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -3758,10 +3777,10 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-OfkTBR/compositions/liquid-glass-notification.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-OfkTBR/compositions/liquid-glass-notification.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"gls…"
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"gls…"
       ],
       "files": 3,
       "licence": null,
@@ -3780,10 +3799,10 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ymSy2s/compositions/liquid-glass-widgets.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ymSy2s/compositions/liquid-glass-widgets.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
       "files": 3,
       "licence": null,
@@ -3819,7 +3838,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-nKFwFR/index.html: data-composition-src=\"./locked-nucleus-orbit.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-nKFwFR/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-nKFwFR"
+        "HyperFrames: <page>: data-composition-src=\"./locked-nucleus-orbit.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -3838,7 +3857,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Nyyjol/index.html: data-composition-src=\"./logo-brand-close.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Nyyjol/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Nyyjol"
+        "HyperFrames: <page>: data-composition-src=\"./logo-brand-close.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -3874,7 +3893,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-9IlhfD/index.html: data-composition-src=\"./logo-sting.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-9IlhfD/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-9IlhfD"
+        "HyperFrames: <page>: data-composition-src=\"./logo-sting.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -3893,7 +3912,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Rq3jnL/index.html: data-composition-src=\"./logo-wall.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Rq3jnL/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Rq3jnL"
+        "HyperFrames: <page>: data-composition-src=\"./logo-wall.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -3912,8 +3931,8 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-AFGLl4/compositions/lottie-character-walk/lottie-character-walk.html: script failed: XMLHttpRequest is not defined",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-AFGLl4/compositions/lottie-character-walk/lottie-character-walk.html: script failed: XMLHttpRequest is not defined"
+        "HyperFrames: <page>: script failed: XMLHttpRequest is not defined",
+        "note: <page>: script failed: XMLHttpRequest is not defined"
       ],
       "files": 2,
       "licence": "Apache-2.0",
@@ -4151,15 +4170,32 @@
     },
     "macos-tahoe-liquid-glass": {
       "type": "block",
-      "status": "fails",
-      "warnings": [],
-      "error": "install: macos-tahoe-liquid-glass: target \"models/macbook.glb\" is outside the compositions, compositions/components, assets folders"
+      "status": "partial",
+      "warnings": [
+        "div backdrop-filter: only blur() is drawn in a backdrop filter",
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl…"
+      ],
+      "files": 19,
+      "licence": null,
+      "doctorMs": 3203,
+      "frames": 450,
+      "stillMs": [
+        278,
+        662
+      ],
+      "stills": [
+        135,
+        360
+      ]
     },
     "magnetic-cursor": {
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-sZECcF/index.html: data-composition-src=\"./magnetic-cursor.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-sZECcF/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-sZECcF"
+        "HyperFrames: <page>: data-composition-src=\"./magnetic-cursor.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -4214,7 +4250,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-F0mDrg/index.html: data-composition-src=\"./marker-highlight.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-F0mDrg/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-F0mDrg"
+        "HyperFrames: <page>: data-composition-src=\"./marker-highlight.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -4233,7 +4269,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-e7hu8D/index.html: data-composition-src=\"./match-cut.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-e7hu8D/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-e7hu8D"
+        "HyperFrames: <page>: data-composition-src=\"./match-cut.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -4320,9 +4356,23 @@
     },
     "message-thread-reveal": {
       "type": "block",
-      "status": "fails",
-      "warnings": [],
-      "error": "install: message-thread-reveal: target \"TEMPLATE.md\" is outside the compositions, compositions/components, assets folders"
+      "status": "partial",
+      "warnings": [
+        "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
+        "span font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+      ],
+      "files": 4,
+      "licence": null,
+      "doctorMs": 21755,
+      "frames": 774,
+      "stillMs": [
+        3652,
+        5745
+      ],
+      "stills": [
+        232,
+        619
+      ]
     },
     "micro-transitions": {
       "type": "component",
@@ -4498,7 +4548,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-VkH2tn/index.html: data-composition-src=\"./modal-morph.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-VkH2tn/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-VkH2tn"
+        "HyperFrames: <page>: data-composition-src=\"./modal-morph.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -4517,7 +4567,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Ch4mUm/index.html: data-composition-src=\"./morph-swap.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Ch4mUm/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Ch4mUm"
+        "HyperFrames: <page>: data-composition-src=\"./morph-swap.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -4570,7 +4620,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-x8tDYL/index.html: data-composition-src=\"./multi-device-splay.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-x8tDYL/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-x8tDYL"
+        "HyperFrames: <page>: data-composition-src=\"./multi-device-splay.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -4590,7 +4640,7 @@
       "status": "partial",
       "warnings": [
         "div background: a gradient that interpolates in a colour space other than sRGB",
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-peczxE/index.html: data-composition-src=\"./multiplayer-cursors.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-peczxE/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-peczxE"
+        "HyperFrames: <page>: data-composition-src=\"./multiplayer-cursors.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -4609,7 +4659,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-JdL7OD/index.html: data-composition-src=\"./native-notification-pop.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-JdL7OD/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-JdL7OD"
+        "HyperFrames: <page>: data-composition-src=\"./native-notification-pop.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -4677,9 +4727,23 @@
     },
     "notes-reveal": {
       "type": "block",
-      "status": "fails",
-      "warnings": [],
-      "error": "install: notes-reveal: target \"TEMPLATE.md\" is outside the compositions, compositions/components, assets folders"
+      "status": "partial",
+      "warnings": [
+        "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
+        "span font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+      ],
+      "files": 6,
+      "licence": null,
+      "doctorMs": 15986,
+      "frames": 746,
+      "stillMs": [
+        7244,
+        15049
+      ],
+      "stills": [
+        223,
+        596
+      ]
     },
     "notes-typing": {
       "type": "component",
@@ -4702,16 +4766,27 @@
     },
     "notification-cascade": {
       "type": "block",
-      "status": "fails",
+      "status": "works",
       "warnings": [],
-      "error": "install: notification-cascade: target \"TEMPLATE.md\" is outside the compositions, compositions/components, assets folders"
+      "files": 4,
+      "licence": null,
+      "doctorMs": 3023,
+      "frames": 420,
+      "stillMs": [
+        708,
+        977
+      ],
+      "stills": [
+        126,
+        336
+      ]
     },
     "notification-pileup": {
       "type": "component",
       "status": "partial",
       "warnings": [
         "div background: a gradient that interpolates in a colour space other than sRGB",
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-nx25aU/index.html: data-composition-src=\"./notification-pileup.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-nx25aU/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-nx25aU"
+        "HyperFrames: <page>: data-composition-src=\"./notification-pileup.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -4730,7 +4805,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-2b3Jqp/index.html: data-composition-src=\"./notification-stack.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-2b3Jqp/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-2b3Jqp"
+        "HyperFrames: <page>: data-composition-src=\"./notification-stack.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -4818,7 +4893,7 @@
       "status": "partial",
       "warnings": [
         "div background: a gradient that interpolates in a colour space other than sRGB",
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-mLpXhd/index.html: data-composition-src=\"./offset-path-traveler.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-mLpXhd/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-mLpXhd"
+        "HyperFrames: <page>: data-composition-src=\"./offset-path-traveler.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -4856,8 +4931,8 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-MSf2Dv/compositions/orbit-card/orbit-card.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-MSf2Dv/compositions/orbit-card/orbit-card.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
       "files": 12,
       "licence": null,
@@ -4876,7 +4951,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ohnzJx/index.html: data-composition-src=\"./ordered-dither-pass.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ohnzJx/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ohnzJx"
+        "HyperFrames: <page>: data-composition-src=\"./ordered-dither-pass.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -4929,7 +5004,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-4tteyy/index.html: data-composition-src=\"./outline-draw.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-4tteyy/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-4tteyy"
+        "HyperFrames: <page>: data-composition-src=\"./outline-draw.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -4948,7 +5023,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-gkJzKJ/index.html: data-composition-src=\"./oversized-cursor.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-gkJzKJ/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-gkJzKJ"
+        "HyperFrames: <page>: data-composition-src=\"./oversized-cursor.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -4967,7 +5042,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-iLGWmq/index.html: data-composition-src=\"./overwhelm-surround.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-iLGWmq/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-iLGWmq"
+        "HyperFrames: <page>: data-composition-src=\"./overwhelm-surround.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5003,7 +5078,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-qxGABt/index.html: data-composition-src=\"./pan-stations.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-qxGABt/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-qxGABt"
+        "HyperFrames: <page>: data-composition-src=\"./pan-stations.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5039,9 +5114,9 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-GASGlq/index.html: data-composition-src=\"./paper-collage-reveal.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-GASGlq/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-GASGlq",
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-GASGlq/index.html: script failed: document.querySelector(...).content.getElementById is not a function",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-GASGlq/index.html: script failed: document.querySelector(...).content.getElementById is not a function"
+        "HyperFrames: <page>: data-composition-src=\"./paper-collage-reveal.html\" was not found beside <page> or in <page>",
+        "HyperFrames: <page>: script failed: document.querySelector(...).content.getElementById is not a function",
+        "note: <page>: script failed: document.querySelector(...).content.getElementById is not a function"
       ],
       "files": 1,
       "licence": null,
@@ -5060,7 +5135,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-TNSpAp/index.html: data-composition-src=\"./parallax-device-dive.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-TNSpAp/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-TNSpAp"
+        "HyperFrames: <page>: data-composition-src=\"./parallax-device-dive.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5113,7 +5188,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-tHTptg/index.html: data-composition-src=\"./particle-image-reveal.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-tHTptg/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-tHTptg"
+        "HyperFrames: <page>: data-composition-src=\"./particle-image-reveal.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5132,7 +5207,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-obTBLD/index.html: data-composition-src=\"./particle-text-dissolve.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-obTBLD/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-obTBLD"
+        "HyperFrames: <page>: data-composition-src=\"./particle-text-dissolve.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5186,7 +5261,7 @@
       "status": "partial",
       "warnings": [
         "div background: a gradient that interpolates in a colour space other than sRGB",
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-oG7U1O/index.html: data-composition-src=\"./per-word-rise.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-oG7U1O/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-oG7U1O"
+        "HyperFrames: <page>: data-composition-src=\"./per-word-rise.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5222,7 +5297,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ahIEal/index.html: data-composition-src=\"./physical-exit.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ahIEal/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ahIEal"
+        "HyperFrames: <page>: data-composition-src=\"./physical-exit.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5275,7 +5350,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-l0QOvZ/index.html: data-composition-src=\"./press-ripple.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-l0QOvZ/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-l0QOvZ"
+        "HyperFrames: <page>: data-composition-src=\"./press-ripple.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5333,7 +5408,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-WMoyGw/index.html: data-composition-src=\"./pull-back-reveal.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-WMoyGw/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-WMoyGw"
+        "HyperFrames: <page>: data-composition-src=\"./pull-back-reveal.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5352,7 +5427,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-oYYMEO/index.html: data-composition-src=\"./pull-to-refresh.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-oYYMEO/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-oYYMEO"
+        "HyperFrames: <page>: data-composition-src=\"./pull-to-refresh.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5371,7 +5446,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-v9zQjC/index.html: data-composition-src=\"./push-in.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-v9zQjC/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-v9zQjC"
+        "HyperFrames: <page>: data-composition-src=\"./push-in.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5407,7 +5482,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-u91vcr/index.html: data-composition-src=\"./radial-surround.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-u91vcr/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-u91vcr"
+        "HyperFrames: <page>: data-composition-src=\"./radial-surround.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5515,7 +5590,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-P5onkh/index.html: data-composition-src=\"./rubber-band-bumper.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-P5onkh/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-P5onkh"
+        "HyperFrames: <page>: data-composition-src=\"./rubber-band-bumper.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5534,7 +5609,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-CHUEwA/index.html: data-composition-src=\"./scan-band.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-CHUEwA/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-CHUEwA"
+        "HyperFrames: <page>: data-composition-src=\"./scan-band.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5553,7 +5628,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-qebIul/index.html: data-composition-src=\"./scramble-reveal.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-qebIul/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-qebIul"
+        "HyperFrames: <page>: data-composition-src=\"./scramble-reveal.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5572,7 +5647,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-rEJIh6/index.html: data-composition-src=\"./screen-flow-carousel.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-rEJIh6/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-rEJIh6"
+        "HyperFrames: <page>: data-composition-src=\"./screen-flow-carousel.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5591,7 +5666,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-iW7xIv/index.html: data-composition-src=\"./scroll-camera-story.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-iW7xIv/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-iW7xIv"
+        "HyperFrames: <page>: data-composition-src=\"./scroll-camera-story.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5610,7 +5685,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-0tRXcB/index.html: data-composition-src=\"./scroll-feed.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-0tRXcB/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-0tRXcB"
+        "HyperFrames: <page>: data-composition-src=\"./scroll-feed.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5648,7 +5723,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-B0t6pz/index.html: data-composition-src=\"./segmentation-flood.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-B0t6pz/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-B0t6pz"
+        "HyperFrames: <page>: data-composition-src=\"./segmentation-flood.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5701,9 +5776,20 @@
     },
     "share-sheet-carousel": {
       "type": "block",
-      "status": "fails",
+      "status": "works",
       "warnings": [],
-      "error": "install: share-sheet-carousel: target \"TEMPLATE.md\" is outside the compositions, compositions/components, assets folders"
+      "files": 7,
+      "licence": null,
+      "doctorMs": 1545,
+      "frames": 217,
+      "stillMs": [
+        561,
+        606
+      ],
+      "stills": [
+        65,
+        173
+      ]
     },
     "shared-axis-y": {
       "type": "component",
@@ -5779,9 +5865,9 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-6XI91s/index.html: script failed: Cannot read properties of null (reading 'querySelector')",
+        "HyperFrames: <page>: script failed: Cannot read properties of null (reading 'querySelector')",
         "HyperFrames: the root element lacks data-composition-id, data-width, data-height, data-duration, so the page is drawn at 1920x1080 for as long as its timelines run (1 second with none): write it as <div id=\"root\" data-composition-id=\"main\" data-width=\"1920\" data-height=\"1080\" data-duration=\"10\"> (size in pixels, duration in seconds, 30 fps)",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-6XI91s/index.html: script failed: Cannot read properties of null (reading 'querySelector')"
+        "note: <page>: script failed: Cannot read properties of null (reading 'querySelector')"
       ],
       "files": 1,
       "licence": null,
@@ -5851,15 +5937,28 @@
     },
     "slack-notification-ad": {
       "type": "block",
-      "status": "fails",
-      "warnings": [],
-      "error": "install: slack-notification-ad: target \"TEMPLATE.md\" is outside the compositions, compositions/components, assets folders"
+      "status": "partial",
+      "warnings": [
+        "div backdrop-filter: only blur() is drawn in a backdrop filter"
+      ],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 11100,
+      "frames": 360,
+      "stillMs": [
+        2118,
+        2971
+      ],
+      "stills": [
+        108,
+        288
+      ]
     },
     "slit-scan-reveal": {
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-nakHWx/index.html: data-composition-src=\"./slit-scan-reveal.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-nakHWx/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-nakHWx"
+        "HyperFrames: <page>: data-composition-src=\"./slit-scan-reveal.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -5933,7 +6032,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-MxVwhb/index.html: data-composition-src=\"./soft-blob-touch.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-MxVwhb/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-MxVwhb"
+        "HyperFrames: <page>: data-composition-src=\"./soft-blob-touch.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6003,10 +6102,10 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-lzhxY1/compositions/spiral-galaxy.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-lzhxY1/compositions/spiral-galaxy.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
       "files": 1,
       "licence": null,
@@ -6044,7 +6143,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-VseQ2l/index.html: data-composition-src=\"./split-tilt-cards.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-VseQ2l/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-VseQ2l"
+        "HyperFrames: <page>: data-composition-src=\"./split-tilt-cards.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6100,7 +6199,7 @@
       "status": "partial",
       "warnings": [
         "div background: a gradient that interpolates in a colour space other than sRGB",
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-7KgwV0/index.html: data-composition-src=\"./spring-pop.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-7KgwV0/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-7KgwV0"
+        "HyperFrames: <page>: data-composition-src=\"./spring-pop.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6119,7 +6218,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-GWwTlp/index.html: data-composition-src=\"./spring-stack-shuffle.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-GWwTlp/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-GWwTlp"
+        "HyperFrames: <page>: data-composition-src=\"./spring-stack-shuffle.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6138,7 +6237,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ZJLPwD/index.html: data-composition-src=\"./stagger-cascade.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ZJLPwD/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ZJLPwD"
+        "HyperFrames: <page>: data-composition-src=\"./stagger-cascade.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6191,7 +6290,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-6UkDRH/index.html: data-composition-src=\"./star-rating-fill.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-6UkDRH/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-6UkDRH"
+        "HyperFrames: <page>: data-composition-src=\"./star-rating-fill.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6227,7 +6326,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-u3TNb8/index.html: data-composition-src=\"./state-chip-rail.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-u3TNb8/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-u3TNb8"
+        "HyperFrames: <page>: data-composition-src=\"./state-chip-rail.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6246,7 +6345,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-YRfYTm/index.html: data-composition-src=\"./sticky-mock-swap.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-YRfYTm/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-YRfYTm"
+        "HyperFrames: <page>: data-composition-src=\"./sticky-mock-swap.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6265,7 +6364,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-bTbP8x/index.html: data-composition-src=\"./stitched-text-draw.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-bTbP8x/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-bTbP8x"
+        "HyperFrames: <page>: data-composition-src=\"./stitched-text-draw.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6284,7 +6383,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-9V3coO/index.html: data-composition-src=\"./stop-motion-cadence.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-9V3coO/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-9V3coO"
+        "HyperFrames: <page>: data-composition-src=\"./stop-motion-cadence.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6304,7 +6403,7 @@
       "status": "partial",
       "warnings": [
         "div background: a gradient that interpolates in a colour space other than sRGB",
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-6ZXw1P/index.html: data-composition-src=\"./store-badge-lockup.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-6ZXw1P/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-6ZXw1P"
+        "HyperFrames: <page>: data-composition-src=\"./store-badge-lockup.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6444,7 +6543,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-PRabKs/index.html: data-composition-src=\"./svg-mask-reveal.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-PRabKs/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-PRabKs"
+        "HyperFrames: <page>: data-composition-src=\"./svg-mask-reveal.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6464,7 +6563,7 @@
       "status": "partial",
       "warnings": [
         "div background: a gradient that interpolates in a colour space other than sRGB",
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-B1ckrq/index.html: data-composition-src=\"./svg-stroke-trace.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-B1ckrq/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-B1ckrq"
+        "HyperFrames: <page>: data-composition-src=\"./svg-stroke-trace.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6483,7 +6582,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-nsp5zc/index.html: data-composition-src=\"./swipe-rail.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-nsp5zc/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-nsp5zc"
+        "HyperFrames: <page>: data-composition-src=\"./swipe-rail.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6557,7 +6656,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-p9NuFi/index.html: data-composition-src=\"./telemetry-hud.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-p9NuFi/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-p9NuFi"
+        "HyperFrames: <page>: data-composition-src=\"./telemetry-hud.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6594,7 +6693,7 @@
       "status": "partial",
       "warnings": [
         "div background: a gradient that interpolates in a colour space other than sRGB",
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-zQsJOg/index.html: data-composition-src=\"./testimonial-card.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-zQsJOg/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-zQsJOg"
+        "HyperFrames: <page>: data-composition-src=\"./testimonial-card.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6613,7 +6712,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-MAsGzP/index.html: data-composition-src=\"./testimonial-proof-card.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-MAsGzP/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-MAsGzP"
+        "HyperFrames: <page>: data-composition-src=\"./testimonial-proof-card.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6632,7 +6731,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-F5WBPr/index.html: data-composition-src=\"./text-match-cut.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-F5WBPr/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-F5WBPr"
+        "HyperFrames: <page>: data-composition-src=\"./text-match-cut.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6651,7 +6750,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-TzfD3b/index.html: data-composition-src=\"./text-shimmer.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-TzfD3b/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-TzfD3b"
+        "HyperFrames: <page>: data-composition-src=\"./text-shimmer.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6704,18 +6803,18 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "div mask: the picture file:///private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-w0BkVL/masks/asphalt-031.png is not a file the project has",
-        "div mask: the picture file:///private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-w0BkVL/masks/bark-014.png is not a file the project has",
-        "div mask: the picture file:///private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-w0BkVL/masks/brick.png is not a file the project has",
-        "div mask: the picture file:///private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-w0BkVL/masks/bricks-075-a.png is not a file the project has",
-        "div mask: the picture file:///private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-w0BkVL/masks/bricks-101.png is not a file the project has",
-        "div mask: the picture file:///private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-w0BkVL/masks/bricks-102.png is not a file the project has",
-        "div mask: the picture file:///private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-w0BkVL/masks/bricks-104.png is not a file the project has",
-        "div mask: the picture file:///private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-w0BkVL/masks/carpet.png is not a file the project has",
-        "div mask: the picture file:///private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-w0BkVL/masks/concrete-034.png is not a file the project has",
-        "div mask: the picture file:///private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-w0BkVL/masks/concrete-042-a.png is not a file the project has",
-        "div mask: the picture file:///private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-w0BkVL/masks/concrete-046.png is not a file the project has",
-        "div mask: the picture file:///private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-w0BkVL/masks/concrete-047-a.png is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
         "… and 120 more"
       ],
       "files": 67,
@@ -6788,10 +6887,10 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ua5Fod/index.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-ua5Fod/index.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
       "files": 1,
       "licence": null,
@@ -6810,7 +6909,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-SwSN4r/index.html: data-composition-src=\"./ticker-takeover.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-SwSN4r/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-SwSN4r"
+        "HyperFrames: <page>: data-composition-src=\"./ticker-takeover.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6863,7 +6962,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-sP7MUT/index.html: data-composition-src=\"./titlecard-calm.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-sP7MUT/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-sP7MUT"
+        "HyperFrames: <page>: data-composition-src=\"./titlecard-calm.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6882,7 +6981,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-zRokwg/index.html: data-composition-src=\"./titlecard-lockup.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-zRokwg/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-zRokwg"
+        "HyperFrames: <page>: data-composition-src=\"./titlecard-lockup.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6901,7 +7000,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-AnGikE/index.html: data-composition-src=\"./toggle-flip.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-AnGikE/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-AnGikE"
+        "HyperFrames: <page>: data-composition-src=\"./toggle-flip.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6937,9 +7036,9 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-iBNs3z/index.html: data-composition-src=\"./torn-paper-rip.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-iBNs3z/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-iBNs3z",
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-iBNs3z/index.html: script failed: document.querySelector(...).content.getElementById is not a function",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-iBNs3z/index.html: script failed: document.querySelector(...).content.getElementById is not a function"
+        "HyperFrames: <page>: data-composition-src=\"./torn-paper-rip.html\" was not found beside <page> or in <page>",
+        "HyperFrames: <page>: script failed: document.querySelector(...).content.getElementById is not a function",
+        "note: <page>: script failed: document.querySelector(...).content.getElementById is not a function"
       ],
       "files": 1,
       "licence": null,
@@ -6958,7 +7057,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Xc69yD/index.html: data-composition-src=\"./touch-indicator.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Xc69yD/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Xc69yD"
+        "HyperFrames: <page>: data-composition-src=\"./touch-indicator.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -6977,7 +7076,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-dt9VMF/index.html: data-composition-src=\"./tracing-beam.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-dt9VMF/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-dt9VMF"
+        "HyperFrames: <page>: data-composition-src=\"./tracing-beam.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -7236,7 +7335,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-81vod5/index.html: data-composition-src=\"./trust-strip.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-81vod5/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-81vod5"
+        "HyperFrames: <page>: data-composition-src=\"./trust-strip.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -7255,7 +7354,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-uifFYu/index.html: data-composition-src=\"./type-match-cut.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-uifFYu/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-uifFYu"
+        "HyperFrames: <page>: data-composition-src=\"./type-match-cut.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -7274,7 +7373,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-mS2kvQ/index.html: data-composition-src=\"./typed-prompt.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-mS2kvQ/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-mS2kvQ"
+        "HyperFrames: <page>: data-composition-src=\"./typed-prompt.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -7350,7 +7449,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-PCaHkK/index.html: data-composition-src=\"./ui-focus-zoom.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-PCaHkK/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-PCaHkK"
+        "HyperFrames: <page>: data-composition-src=\"./ui-focus-zoom.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -7437,7 +7536,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-kfCZxS/index.html: data-composition-src=\"./variable-axis-type.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-kfCZxS/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-kfCZxS"
+        "HyperFrames: <page>: data-composition-src=\"./variable-axis-type.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -7456,7 +7555,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-S3KMKH/index.html: data-composition-src=\"./variable-font-flex.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-S3KMKH/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-S3KMKH"
+        "HyperFrames: <page>: data-composition-src=\"./variable-font-flex.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -7476,7 +7575,7 @@
       "status": "partial",
       "warnings": [
         "div background: a gradient that interpolates in a colour space other than sRGB",
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-QcbLth/index.html: data-composition-src=\"./vector-editor-rig.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-QcbLth/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-QcbLth"
+        "HyperFrames: <page>: data-composition-src=\"./vector-editor-rig.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -7495,7 +7594,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-j6YDvl/index.html: data-composition-src=\"./velocity-throw-snap.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-j6YDvl/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-j6YDvl"
+        "HyperFrames: <page>: data-composition-src=\"./velocity-throw-snap.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -7529,9 +7628,25 @@
     },
     "vfx-iphone-device": {
       "type": "block",
-      "status": "fails",
-      "warnings": [],
-      "error": "install: vfx-iphone-device: target \"models/iphone.glb\" is outside the compositions, compositions/components, assets folders"
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 5,
+      "licence": null,
+      "doctorMs": 1049,
+      "frames": 450,
+      "stillMs": [
+        195,
+        861
+      ],
+      "stills": [
+        135,
+        360
+      ]
     },
     "vfx-liquid-background": {
       "type": "block",
@@ -7546,10 +7661,10 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Sd8ZxJ/compositions/vfx-liquid-glass.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-Sd8ZxJ/compositions/vfx-liquid-glass.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
       "files": 1,
       "licence": null,
@@ -7587,11 +7702,11 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-RN4AHX/compositions/vfx-portal.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
         "p font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-RN4AHX/compositions/vfx-portal.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
       "files": 1,
       "licence": null,
@@ -7610,11 +7725,11 @@
       "type": "block",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-UTnTH7/compositions/vfx-shatter.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
         "HyperFrames: Three.js is not supported: its scenes are not drawn",
         "p font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
         "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
-        "note: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-UTnTH7/compositions/vfx-shatter.html: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
       ],
       "files": 1,
       "licence": null,
@@ -7687,7 +7802,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-HEjx5X/index.html: data-composition-src=\"./vox-annotate.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-HEjx5X/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-HEjx5X"
+        "HyperFrames: <page>: data-composition-src=\"./vox-annotate.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -7810,7 +7925,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-D6CtrZ/index.html: data-composition-src=\"./whip-pan-cut.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-D6CtrZ/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-D6CtrZ"
+        "HyperFrames: <page>: data-composition-src=\"./whip-pan-cut.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -7829,7 +7944,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-dcF35U/index.html: data-composition-src=\"./whiteboard-ink.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-dcF35U/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-dcF35U"
+        "HyperFrames: <page>: data-composition-src=\"./whiteboard-ink.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,
@@ -7869,7 +7984,7 @@
       "type": "component",
       "status": "partial",
       "warnings": [
-        "HyperFrames: /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-b40jqF/index.html: data-composition-src=\"./wordmark-tiles.html\" was not found beside /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-b40jqF/index.html or in /private/tmp/claude-501/-Users-sanatgupta-Documents-Code-RustProjects-kinetograph/5148e0af-5c77-4567-bffa-ed032d28ec61/scratchpad/tmp/hf-sweep-b40jqF"
+        "HyperFrames: <page>: data-composition-src=\"./wordmark-tiles.html\" was not found beside <page> or in <page>"
       ],
       "files": 1,
       "licence": null,

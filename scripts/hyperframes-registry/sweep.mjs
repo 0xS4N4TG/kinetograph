@@ -69,8 +69,11 @@ function cli(options, args, timeoutSeconds) {
   });
 }
 
+/** A path inside the temporary project, which differs on every run, as `<page>`. */
+const scrub = (text) => String(text).replace(/\S*hf-sweep-[A-Za-z0-9]+(?:\/[^\s:]*)?/g, '<page>');
+
 const short = (text, n = 300) => {
-  const line = String(text).replace(/\s+/g, ' ').trim();
+  const line = scrub(text).replace(/\s+/g, ' ').trim();
   return line.length > n ? `${line.slice(0, n - 1)}…` : line;
 };
 
@@ -82,7 +85,7 @@ function failure(step, result) {
 }
 
 /** One doctor issue as the sentence the report prints. */
-const issueText = (issue) => `${issue.element}${issue.property == null ? '' : ` ${issue.property}`}: ${issue.reason}`;
+const issueText = (issue) => scrub(`${issue.element}${issue.property == null ? '' : ` ${issue.property}`}: ${issue.reason}`);
 
 const MAX_WARNINGS = 12;
 
@@ -105,6 +108,8 @@ async function checkItem(options, listing, ref) {
   const record = { type, status: 'fails', warnings: [] };
   const dir = mkdtempSync(join(tmpdir(), 'hf-sweep-'));
   try {
+    // A package.json, so the bundle cache goes inside the project (and is deleted with it) and not into a folder the runs share.
+    writeFileSync(join(dir, 'package.json'), '{"private":true}\n');
     // A root page first, so the install finds the project here; it is replaced below.
     writeFileSync(join(dir, 'index.html'), '<!doctype html><html><body></body></html>\n');
     const added = await cli(options, ['add', `hyperframes/${name}`, '--dir', dir, ...(ref ? ['--ref', ref] : [])], options.timeout);
@@ -152,7 +157,7 @@ async function checkItem(options, listing, ref) {
     record.frames = report.frames;
     for (const e of report.renderErrors ?? []) record.warnings.push(`error: ${short(e.message)}`);
     for (const issue of report.issues ?? []) record.warnings.push(issueText(issue));
-    for (const imp of report.unsupportedImports ?? []) record.warnings.push(`unsupported import: ${imp.specifier}`);
+    for (const imp of report.unsupportedImports ?? []) record.warnings.push(`unsupported import: ${scrub(imp.specifier)}`);
     for (const note of report.notes ?? []) record.warnings.push(`note: ${short(note)}`);
     if ((report.renderErrors ?? []).length > 0) {
       record.error = `doctor: the scene is refused: ${short(report.renderErrors[0].message)}`;
