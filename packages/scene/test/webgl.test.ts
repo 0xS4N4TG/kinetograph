@@ -1423,6 +1423,22 @@ describe('the recording WebGL context', () => {
     });
   });
 
+  describe('uniform type codes', () => {
+    it('names the integer and shadow samplers and the other types, so three.js finds a setter', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const program = gl.createProgram();
+      const vertex = gl.createShader(GL.VERTEX_SHADER)!;
+      gl.shaderSource(vertex, '#version 300 es\nuniform highp usampler2D ids; uniform isampler2DArray signed; uniform sampler2DShadow shadow; uniform uvec3 u3; uniform mat3x4 m; void main() { gl_Position = vec4(0.0); }');
+      const fragment = gl.createShader(GL.FRAGMENT_SHADER)!;
+      gl.shaderSource(fragment, '#version 300 es\nvoid main() {}');
+      gl.attachShader(program, vertex);
+      gl.attachShader(program, fragment);
+      gl.linkProgram(program);
+      const types = Object.fromEntries(Array.from({ length: 5 }, (_, i) => gl.getActiveUniform(program, i)!).map((u) => [u.name, u.type]));
+      expect(types).toEqual({ ids: GL2.UNSIGNED_INT_SAMPLER_2D, signed: GL2.INT_SAMPLER_2D_ARRAY, shadow: GL2.SAMPLER_2D_SHADOW, u3: GL2.UNSIGNED_INT_VEC3, m: GL2.FLOAT_MAT3x4 });
+    });
+  });
+
   describe('a clear with the scissor test on', () => {
     function drawOf(gl: WebGLContext, index = 0) {
       const op = gl.content().ops[index]!;
