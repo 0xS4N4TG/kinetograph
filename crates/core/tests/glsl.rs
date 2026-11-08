@@ -1770,3 +1770,151 @@ fn a_16_bit_float_texture_filters_and_keeps_values_beyond_one() {
     let frame = render_floats(&texture, "NEAREST", "texelFetch(u_tex, ivec2(0), 0).r * 0.25");
     assert_eq!(px(&frame, 8, 8), [255, 255, 255, 255]);
 }
+
+// ---- cube maps ----
+
+/// A cube map of six solid 2 x 2 faces, in GL's order: +X red, -X green, +Y blue, -Y yellow, +Z white, -Z
+/// magenta.
+fn solid_cube() -> String {
+    let colors: [[u8; 4]; 6] = [
+        [255, 0, 0, 255],
+        [0, 255, 0, 255],
+        [0, 0, 255, 255],
+        [255, 255, 0, 255],
+        [255, 255, 255, 255],
+        [255, 0, 255, 255],
+    ];
+    cube_of(&colors.map(|c| c.repeat(4)), 2, "")
+}
+
+fn cube_of(faces: &[Vec<u8>; 6], side: u32, extra: &str) -> String {
+    let faces: Vec<String> = faces
+        .iter()
+        .map(|f| format!(r#"{{"pixels": "{}"}}"#, b64(f)))
+        .collect();
+    format!(
+        r#"{{"cube": true, "width": {side}, "height": {side}{extra}, "faces": [{}]}}"#,
+        faces.join(", ")
+    )
+}
+
+const CUBE_FRAGMENT: &str = "precision mediump float; uniform samplerCube u_env; uniform vec3 u_dir; \
+    void main() { gl_FragColor = textureCube(u_env, u_dir); }";
+
+/// The pixel a fragment shader reading `cube` along `dir` draws.
+fn sample_cube(cube: &str, dir: [f64; 3]) -> [u8; 4] {
+    let frame = render(&layer(
+        CUBE_FRAGMENT,
+        &format!(r#", "textures": {{"c": {cube}}}"#),
+        &draw(&format!(
+            r#"{}, "units": {{"0": {{"texture": "c", "min": "NEAREST", "mag": "NEAREST"}}}}"#,
+            uniforms(&[("u_env", "i", &[0.0]), ("u_dir", "f", &dir)])
+        )),
+    ));
+    px(&frame, 8, 8)
+}
+
+#[test]
+fn a_cube_map_is_read_along_each_axis_by_its_face() {
+    let cube = solid_cube();
+    let want = [
+        ([1.0, 0.0, 0.0], [255, 0, 0, 255]),
+        ([-1.0, 0.0, 0.0], [0, 255, 0, 255]),
+        ([0.0, 1.0, 0.0], [0, 0, 255, 255]),
+        ([0.0, -1.0, 0.0], [255, 255, 0, 255]),
+        ([0.0, 0.0, 1.0], [255, 255, 255, 255]),
+        ([0.0, 0.0, -1.0], [255, 0, 255, 255]),
+    ];
+    for (dir, color) in want {
+        // A direction need not be unit length.
+        let got = sample_cube(&cube, dir.map(|c| c * 3.0));
+        near(got, color, 2);
+    }
+}
+
+#[test]
+fn a_cube_face_keeps_the_orientation_gl_gives_it() {
+    // +Z seen from the origin has +x to the right and +y up, its first row at the top: a texel's row 0 is
+    // where y is +1. The other faces are all white so a wrong layer shows.
+    let quarters: Vec<u8> = [
+        [255, 0, 0, 255],
+        [0, 255, 0, 255],
+        [0, 0, 255, 255],
+        [10, 20, 30, 255],
+    ]
+    .concat();
+    let white = [255u8; 16].to_vec();
+    let faces = [
+        white.clone(),
+        white.clone(),
+        white.clone(),
+        white.clone(),
+        quarters,
+        white,
+    ];
+    let cube = cube_of(&faces, 2, "");
+    near(sample_cube(&cube, [-0.5, 0.5, 1.0]), [255, 0, 0, 255], 2);
+    near(sample_cube(&cube, [0.5, 0.5, 1.0]), [0, 255, 0, 255], 2);
+    near(sample_cube(&cube, [-0.5, -0.5, 1.0]), [0, 0, 255, 255], 2);
+    near(sample_cube(&cube, [0.5, -0.5, 1.0]), [10, 20, 30, 255], 2);
+}
+
+#[test]
+fn an_incomplete_cube_map_is_opaque_black() {
+    let cube = r#"{"cube": true, "faces": []}"#;
+    assert_eq!(sample_cube(cube, [1.0, 0.0, 0.0]), [0, 0, 0, 255]);
+}
+
+#[test]
+fn a_cube_map_needs_mipmaps_for_a_mipmapped_filter() {
+    let cube = solid_cube();
+    let sample = |cube: &str| {
+        let frame = render(&layer(
+            CUBE_FRAGMENT,
+            &format!(r#", "textures": {{"c": {cube}}}"#),
+            &draw(&format!(
+                r#"{}, "units": {{"0": {{"texture": "c"}}}}"#,
+                uniforms(&[("u_env", "i", &[0.0]), ("u_dir", "f", &[1.0, 0.0, 0.0])])
+            )),
+        ));
+        px(&frame, 8, 8)
+    };
+    // The default minification filter reads mipmaps: without them the cube is incomplete.
+    assert_eq!(sample(&cube), [0, 0, 0, 255]);
+    let mipped = cube.replace(r#""height": 2,"#, r#""height": 2, "mipmaps": true,"#);
+    near(sample(&mipped), [255, 0, 0, 255], 2);
+}
+
+#[test]
+fn a_webgl_two_shader_reads_a_cube_map_with_texture() {
+    let frame = render(&layer_of(
+        &[(
+            "p",
+            "#version 300 es\nprecision highp float; uniform samplerCube u_env; out vec4 o;\n\
+             void main() { o = texture(u_env, vec3(0.0, 1.0, 0.0)); }",
+        )],
+        &format!(r#", "textures": {{"c": {}}}"#, solid_cube()),
+        &draw(&format!(
+            r#"{}, "units": {{"0": {{"texture": "c", "min": "NEAREST", "mag": "NEAREST"}}}}"#,
+            uniforms(&[("u_env", "i", &[0.0])])
+        )),
+    ));
+    near(px(&frame, 8, 8), [0, 0, 255, 255], 2);
+}
+
+#[test]
+fn a_cube_map_in_a_unit_read_as_a_2d_texture_is_an_error() {
+    let layer = layer(
+        "precision mediump float; uniform sampler2D u_tex; void main() { gl_FragColor = texture2D(u_tex, vec2(0.5)); }",
+        &format!(r#", "textures": {{"c": {}}}"#, solid_cube()),
+        &draw(&format!(
+            r#"{}, "units": {{"0": {{"texture": "c"}}}}"#,
+            uniforms(&[("u_tex", "i", &[0.0])])
+        )),
+    );
+    let Err(error) = render_still(scene_of(&layer), 0) else {
+        panic!("the draw should fail");
+    };
+    let error = error.to_string();
+    assert!(error.contains("cube map"), "{error}");
+}

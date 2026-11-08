@@ -824,6 +824,20 @@ export interface GlslTexture {
   floats?: string;
   /** The floats are `R32F`, `RG32F`, `RGB32F` or `RGBA32F`: kept in full, and sampled only `NEAREST` (a browser has no linear filter for them). */
   float32?: boolean;
+  /**
+   * A cube map (`TEXTURE_CUBE_MAP`): `width` by `width` faces in the order +X, -X, +Y, -Y, +Z, -Z (GL's, and the
+   * engine's). Left out or empty, the cube is incomplete and samples as opaque black, as in a browser.
+   */
+  cube?: boolean;
+  faces?: GlslFace[];
+}
+
+/** One face of a cube map: a picture file, a `data:` URL or base64 RGBA8 (straight alpha, `width * width * 4` bytes). */
+export interface GlslFace {
+  src?: string;
+  pixels?: string;
+  flipY?: boolean;
+  premultiply?: boolean;
 }
 
 /** A picture over a rectangle of a texture (`texSubImage2D`): rows counted as the texture's, the first GL's bottom one. */

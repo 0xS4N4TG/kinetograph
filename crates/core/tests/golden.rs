@@ -218,6 +218,14 @@ fn scene3d_environment_matches_golden() {
 }
 
 #[test]
+fn glsl_cube_map_matches_golden() {
+    // A raymarched sphere reflecting a procedural six-face cube map (mipmapped, sampled LINEAR_MIPMAP_LINEAR)
+    // over the same cube drawn as the sky.
+    let frame = render_still(scene("tests/scenes/glsl-cube-map.json"), 0).unwrap();
+    check("glsl-cube-map", &frame);
+}
+
+#[test]
 fn scene3d_animation_matches_golden() {
     // Frame 15 of 30, half a second into every clip: a cube turning, moving
     // and growing (with a second cube on a spline), a quad whose top corners

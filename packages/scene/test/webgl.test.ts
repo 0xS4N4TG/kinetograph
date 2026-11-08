@@ -255,7 +255,7 @@ describe('the recording WebGL context', () => {
     gl2.bindRenderbuffer(GL.RENDERBUFFER, gl2.createRenderbuffer());
     expect(refused(() => gl2.renderbufferStorageMultisample(GL.RENDERBUFFER, 4, GL2.RGBA8, 4, 4))).toMatch(/^unsupported:.*multisampled/);
     expect(refused(() => gl.readPixels())).toMatch(/^unsupported:/);
-    expect(refused(() => gl.bindTexture(GL.TEXTURE_CUBE_MAP, gl.createTexture()))).toMatch(/cube/);
+    expect(refused(() => gl.bindTexture(GL2.TEXTURE_2D_ARRAY, gl.createTexture()))).toMatch(/textures other than/);
     expect(refused(() => gl.drawArraysInstanced(GL.POINTS, 0, 3, 4))).toMatch(/instanced points/);
   });
 
@@ -1047,6 +1047,92 @@ describe('the recording WebGL context', () => {
       expect(() => gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL2.RED, GL.FLOAT, new Float32Array(1))).toThrow(WebGLUnsupportedError);
       expect(() => gl.generateMipmap(GL.TEXTURE_2D)).toThrow(/float/);
       expect(() => gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, GL.RGBA, GL.FLOAT, new Float32Array(4))).toThrow(WebGLUnsupportedError);
+    });
+  });
+
+  describe('cube maps', () => {
+    const FRAGMENT_CUBE = 'precision mediump float; varying vec2 v; uniform samplerCube env; void main() { gl_FragColor = textureCube(env, vec3(v, 1.0)); }';
+
+    function cubeContext() {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }) });
+      const program = gl.createProgram();
+      for (const [type, source] of [[GL.VERTEX_SHADER, VERTEX], [GL.FRAGMENT_SHADER, FRAGMENT_CUBE]] as const) {
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source);
+        gl.attachShader(program, shader);
+      }
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(GL.ARRAY_BUFFER, buffer);
+      gl.bufferData(GL.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1]), GL.STATIC_DRAW);
+      const at = gl.getAttribLocation(program, 'p');
+      gl.enableVertexAttribArray(at);
+      gl.vertexAttribPointer(at, 2, GL.FLOAT, false, 0, 0);
+      return { gl, program };
+    }
+
+    function upload(gl: WebGLContext, side: number, faces = 6): void {
+      for (let f = 0; f < faces; f += 1) {
+        const pixels = new Uint8Array(side * side * 4).fill(10 * (f + 1));
+        gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X + f, 0, GL.RGBA, side, side, 0, GL.RGBA, GL.UNSIGNED_BYTE, pixels);
+      }
+    }
+
+    it('records six faces of a complete cube map in GL order', () => {
+      const { gl, program } = cubeContext();
+      const cube = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_CUBE_MAP, cube);
+      expect(gl.getParameter(GL.TEXTURE_BINDING_CUBE_MAP)).toBe(cube);
+      upload(gl, 2);
+      gl.texParameteri(GL.TEXTURE_CUBE_MAP, GL.TEXTURE_MIN_FILTER, GL.LINEAR);
+      gl.uniform1i(gl.getUniformLocation(program, 'env'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const content = gl.content();
+      const draw = content.ops[0]!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      const texture = content.textures[draw.units['0']!.texture]!;
+      expect(texture.cube).toBe(true);
+      expect(texture.width).toBe(2);
+      expect(texture.faces).toHaveLength(6);
+      expect(Buffer.from(texture.faces![3]!.pixels!, 'base64')[0]).toBe(40);
+    });
+
+    it('is incomplete, and records no faces, until all six are uploaded', () => {
+      const { gl, program } = cubeContext();
+      const cube = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_CUBE_MAP, cube);
+      upload(gl, 2, 5);
+      gl.uniform1i(gl.getUniformLocation(program, 'env'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      const content = gl.content();
+      const draw = content.ops[0]!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      expect(content.textures[draw.units['0']!.texture]).toEqual({ cube: true, faces: [] });
+      gl.generateMipmap(GL.TEXTURE_CUBE_MAP);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+    });
+
+    it('marks mipmaps and keeps a texture to the target it was bound to first', () => {
+      const { gl } = cubeContext();
+      const cube = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_CUBE_MAP, cube);
+      upload(gl, 4);
+      gl.generateMipmap(GL.TEXTURE_CUBE_MAP);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      gl.bindTexture(GL.TEXTURE_2D, cube);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+    });
+
+    it('accepts the empty 1 x 1 cube map three.js binds at start-up, and refuses what it cannot draw', () => {
+      const { gl } = cubeContext();
+      const empty = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_CUBE_MAP, empty);
+      for (let f = 0; f < 6; f += 1) gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X + f, 0, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4));
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 1, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
+      expect(() => gl.texSubImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
     });
   });
 });

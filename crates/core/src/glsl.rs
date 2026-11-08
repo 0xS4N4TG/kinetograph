@@ -155,6 +155,24 @@ pub struct GlslTexture {
     /// The floats are of a 32-bit format: they are kept in full, and a browser filters them with `NEAREST` only.
     #[serde(default)]
     pub float32: bool,
+    /// A cube map (`TEXTURE_CUBE_MAP`): `width` x `width` faces, in GL's order (+X, -X, +Y, -Y, +Z, -Z), which
+    /// are also the device's layers. With no `faces` the cube is incomplete and samples as opaque black.
+    #[serde(default)]
+    pub cube: bool,
+    #[serde(default)]
+    pub faces: Vec<GlslFace>,
+}
+
+/// One face of a cube map.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GlslFace {
+    pub src: Option<String>,
+    pub pixels: Option<String>,
+    #[serde(default)]
+    pub flip_y: bool,
+    #[serde(default)]
+    pub premultiply: bool,
 }
 
 /// What a depth or stencil target holds.
@@ -783,11 +801,12 @@ impl PackedArray {
 #[derive(Clone, Debug, Default)]
 pub struct Varyings(pub BTreeMap<String, (u32, String)>);
 
-/// What a sampler reads: a 2D texture or a 3D one (`sampler3D`).
+/// What a sampler reads: a 2D texture, a 3D one (`sampler3D`) or a cube map (`samplerCube`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SamplerDim {
     D2,
     D3,
+    Cube,
 }
 
 /// A sampler uniform of one stage, with the slot it holds in the program: the stages of a program
@@ -1040,6 +1059,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         let texture = match dim {
             SamplerDim::D2 => "texture2D",
             SamplerDim::D3 => "texture3D",
+            SamplerDim::Cube => "textureCube",
         };
         prelude.push_str(&format!(
             "layout(set=0, binding={b}) uniform {texture} _k_t_{name}; \
@@ -1176,7 +1196,7 @@ struct Ctx<'a, 'b> {
 /// shader cannot use as it is.
 fn implicit_lod(word: &str) -> Option<&'static str> {
     match word {
-        "texture" | "texture2D" => Some("textureLod"),
+        "texture" | "texture2D" | "textureCube" => Some("textureLod"),
         "textureProj" | "texture2DProj" => Some("textureProjLod"),
         _ => None,
     }
@@ -1238,7 +1258,10 @@ fn rename(
     Some(match word {
         "texture2D" => "texture".into(),
         "texture2DProj" => "textureProj".into(),
-        "texture2DLod" | "texture2DLodEXT" => "textureLod".into(),
+        "textureCube" => "texture".into(),
+        "texture2DLod" | "texture2DLodEXT" | "textureCubeLod" | "textureCubeLodEXT" => {
+            "textureLod".into()
+        }
         "gl_FragColor" if fragment => "_k_FragColor".into(),
         "gl_FragCoord" if fragment => "_k_FragCoord()".into(),
         "gl_PointSize" => "_k_PointSize".into(),
@@ -1253,6 +1276,7 @@ fn rename(
         w => match samplers.iter().find(|(name, _)| name == w) {
             Some((_, SamplerDim::D2)) => format!("sampler2D(_k_t_{w}, _k_s_{w})"),
             Some((_, SamplerDim::D3)) => format!("sampler3D(_k_t_{w}, _k_s_{w})"),
+            Some((_, SamplerDim::Cube)) => format!("samplerCube(_k_t_{w}, _k_s_{w})"),
             None => return None,
         },
     })
@@ -1614,14 +1638,14 @@ fn declaration(
     match storage {
         "uniform" => {
             for (name, array) in declared.names {
-                if ty == "sampler2D" || ty == "sampler3D" {
+                if ty == "sampler2D" || ty == "sampler3D" || ty == "samplerCube" {
                     if array.is_some() {
                         return Err(unsupported(format!("`{name}`: an array of samplers")));
                     }
-                    let dim = if ty == "sampler2D" {
-                        SamplerDim::D2
-                    } else {
-                        SamplerDim::D3
+                    let dim = match ty.as_str() {
+                        "sampler2D" => SamplerDim::D2,
+                        "sampler3D" => SamplerDim::D3,
+                        _ => SamplerDim::Cube,
                     };
                     let slot = match ctx.slots.iter().position(|(n, _)| *n == name) {
                         Some(slot) if ctx.slots[slot].1 == dim => slot,
@@ -1643,7 +1667,7 @@ fn declaration(
                     samplers.push((name, dim));
                 } else if ty.contains("sampler") {
                     return Err(unsupported(format!(
-                        "`{name}`: a `{ty}` uniform; only `sampler2D` and `sampler3D` textures are available"
+                        "`{name}`: a `{ty}` uniform; only `sampler2D`, `sampler3D` and `samplerCube` textures are available"
                     )));
                 } else if ty.starts_with('b') && is_builtin_type(&ty) {
                     if array.is_some() {
@@ -2260,6 +2284,42 @@ pub fn decode_picture(
     }
 }
 
+/// The six faces of a cube map as RGBA8 (unpacked as each was uploaded), and the side they share. An
+/// incomplete cube (no faces) is `None`: it samples as opaque black.
+pub fn decode_cube(
+    texture: &GlslTexture,
+    base_dir: &std::path::Path,
+) -> std::result::Result<Option<(Vec<Vec<u8>>, u32)>, String> {
+    if texture.faces.is_empty() {
+        return Ok(None);
+    }
+    if texture.faces.len() != 6 {
+        return Err(format!(
+            "a cube map has six faces, got {}",
+            texture.faces.len()
+        ));
+    }
+    let side = texture.width;
+    let mut faces = Vec::with_capacity(6);
+    for (i, face) in texture.faces.iter().enumerate() {
+        let (mut rgba, w, h) = decode_picture(
+            face.src.as_deref(),
+            face.pixels.as_deref(),
+            (side, side),
+            base_dir,
+        )
+        .map_err(|e| format!("cube map face {i}: {e}"))?;
+        if w != side || h != side || side == 0 {
+            return Err(format!(
+                "cube map face {i} is {w} x {h}; the faces must be {side} x {side}"
+            ));
+        }
+        unpack(&mut rgba, w, face.flip_y, face.premultiply);
+        faces.push(rgba);
+    }
+    Ok(Some((faces, side)))
+}
+
 /// The texels of a float or 3D texture, as the device holds them.
 #[derive(Debug, PartialEq)]
 pub enum Texels {
@@ -2735,6 +2795,8 @@ mod tests {
             depth: 2,
             floats,
             float32: false,
+            cube: false,
+            faces: Vec::new(),
         };
         let rgba8 = decode_texels(&texture(Some(b64(&[7; 16])), None)).unwrap();
         assert_eq!(rgba8, Texels::Rgba8(vec![7; 16]));

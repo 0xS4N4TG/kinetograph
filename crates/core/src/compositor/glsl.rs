@@ -212,6 +212,7 @@ pub(super) struct GlslGpu {
     /// What a texture that is not complete samples as: opaque black (a 2D one and a 3D one).
     black: Option<Arc<Uploaded>>,
     black_3d: Option<Arc<Uploaded>>,
+    black_cube: Option<Arc<Uploaded>>,
     /// The modules, layouts and pipelines of WebGPU layers.
     webgpu: webgpu::WebGpuCache,
 }
@@ -1336,16 +1337,19 @@ impl Compositor {
                             state.texture
                         ))
                     })?;
-                    if (texture.depth > 0) != (binding.dim == gl::SamplerDim::D3) {
+                    let held = texture_dim(texture);
+                    if held != binding.dim {
                         return Err(render_error(format!(
                             "the sampler `{}` reads a {} texture, but unit {unit} holds a {} one (WebGL \
                              refuses such a draw with INVALID_OPERATION)",
                             binding.name,
-                            if binding.dim == gl::SamplerDim::D3 { "3D" } else { "2D" },
-                            if texture.depth > 0 { "3D" } else { "2D" },
+                            dim_name(binding.dim),
+                            dim_name(held),
                         )));
                     }
-                    let uploaded = if texture.depth > 0 || texture.floats.is_some() {
+                    let uploaded = if texture.cube {
+                        self.glsl_cube(&state.texture, texture, base_dir)?
+                    } else if texture.depth > 0 || texture.floats.is_some() {
                         self.glsl_texture_texels(&state.texture, texture)?
                     } else if texture.layer.is_some()
                         || texture.patches.iter().any(|p| p.layer.is_some())
@@ -1996,6 +2000,97 @@ impl Compositor {
         Ok(uploaded)
     }
 
+    /// A cube map: its six faces, in layers, uploaded the first time (with the mip chain of `generateMipmap`)
+    /// and kept by what it is made from. An incomplete one (no faces) is the opaque black a browser samples.
+    fn glsl_cube(
+        &mut self,
+        id: &str,
+        texture: &GlslTexture,
+        base_dir: &Path,
+    ) -> Result<Arc<Uploaded>> {
+        let stamp: String = texture
+            .faces
+            .iter()
+            .filter_map(|f| f.src.as_deref())
+            .filter(|s| !s.starts_with("data:"))
+            .map(|s| file_stamp(&base_dir.join(s)))
+            .collect::<Vec<_>>()
+            .join("|");
+        let key = format!("{id}|cube|{}|{stamp}", texture.mipmaps);
+        if let Some(t) = self.glsl.textures.get(&key) {
+            return Ok(t.clone());
+        }
+        let Some((faces, side)) = gl::decode_cube(texture, base_dir).map_err(render_error)? else {
+            return Ok(self.glsl_black(gl::SamplerDim::Cube));
+        };
+        let limit = self.device.limits().max_texture_dimension_2d;
+        if side > limit {
+            return Err(render_error(format!(
+                "unsupported: a cube map face of {side} x {side}; the device holds {limit} across"
+            )));
+        }
+        let levels = if texture.mipmaps { side.ilog2() + 1 } else { 1 };
+        let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("glsl cube map"),
+            size: wgpu::Extent3d {
+                width: side,
+                height: side,
+                depth_or_array_layers: 6,
+            },
+            mip_level_count: levels,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: COLOR_FORMAT,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        for (layer, face) in faces.into_iter().enumerate() {
+            let (mut level, mut w, mut h) = (face, side, side);
+            for mip in 0..levels {
+                self.queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &gpu,
+                        mip_level: mip,
+                        origin: wgpu::Origin3d {
+                            x: 0,
+                            y: 0,
+                            z: layer as u32,
+                        },
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &level,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(w * 4),
+                        rows_per_image: Some(h),
+                    },
+                    wgpu::Extent3d {
+                        width: w,
+                        height: h,
+                        depth_or_array_layers: 1,
+                    },
+                );
+                if mip + 1 < levels {
+                    (level, w, h) = gl::next_level(&level, w, h);
+                }
+            }
+        }
+        if self.glsl.textures.len() >= MAX_TEXTURES {
+            self.glsl.textures.clear();
+        }
+        let uploaded = Arc::new(Uploaded {
+            view: gpu.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::Cube),
+                ..Default::default()
+            }),
+            mipmapped: levels > 1,
+            depth: false,
+            float32: false,
+        });
+        self.glsl.textures.insert(key, uploaded.clone());
+        Ok(uploaded)
+    }
+
     /// A 3D texture (`texImage3D`) or a float one (`R32F`, `RGBA16F`, ...), uploaded the first time and kept by
     /// what it is made from.
     fn glsl_texture_texels(&mut self, id: &str, texture: &GlslTexture) -> Result<Arc<Uploaded>> {
@@ -2203,6 +2298,7 @@ impl Compositor {
         let cached = match dim {
             gl::SamplerDim::D2 => &self.glsl.black,
             gl::SamplerDim::D3 => &self.glsl.black_3d,
+            gl::SamplerDim::Cube => &self.glsl.black_cube,
         };
         if let Some(b) = cached {
             return b.clone();
@@ -2214,12 +2310,12 @@ impl Compositor {
                 size: wgpu::Extent3d {
                     width: 1,
                     height: 1,
-                    depth_or_array_layers: 1,
+                    depth_or_array_layers: if dim == gl::SamplerDim::Cube { 6 } else { 1 },
                 },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: match dim {
-                    gl::SamplerDim::D2 => wgpu::TextureDimension::D2,
+                    gl::SamplerDim::D2 | gl::SamplerDim::Cube => wgpu::TextureDimension::D2,
                     gl::SamplerDim::D3 => wgpu::TextureDimension::D3,
                 },
                 format: wgpu::TextureFormat::Rgba8Unorm,
@@ -2227,10 +2323,13 @@ impl Compositor {
                 view_formats: &[],
             },
             wgpu::util::TextureDataOrder::LayerMajor,
-            &[0, 0, 0, 255],
+            &[0, 0, 0, 255].repeat(if dim == gl::SamplerDim::Cube { 6 } else { 1 }),
         );
         let black = Arc::new(Uploaded {
-            view: texture.create_view(&wgpu::TextureViewDescriptor::default()),
+            view: texture.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(view_dimension(dim)),
+                ..Default::default()
+            }),
             mipmapped: false,
             depth: false,
             float32: false,
@@ -2238,6 +2337,7 @@ impl Compositor {
         match dim {
             gl::SamplerDim::D2 => self.glsl.black = Some(black.clone()),
             gl::SamplerDim::D3 => self.glsl.black_3d = Some(black.clone()),
+            gl::SamplerDim::Cube => self.glsl.black_cube = Some(black.clone()),
         }
         black
     }
@@ -3186,6 +3286,26 @@ fn view_dimension(dim: gl::SamplerDim) -> wgpu::TextureViewDimension {
     match dim {
         gl::SamplerDim::D2 => wgpu::TextureViewDimension::D2,
         gl::SamplerDim::D3 => wgpu::TextureViewDimension::D3,
+        gl::SamplerDim::Cube => wgpu::TextureViewDimension::Cube,
+    }
+}
+
+/// What a recorded texture is, to the sampler that reads it.
+fn texture_dim(texture: &GlslTexture) -> gl::SamplerDim {
+    if texture.cube {
+        gl::SamplerDim::Cube
+    } else if texture.depth > 0 {
+        gl::SamplerDim::D3
+    } else {
+        gl::SamplerDim::D2
+    }
+}
+
+fn dim_name(dim: gl::SamplerDim) -> &'static str {
+    match dim {
+        gl::SamplerDim::D2 => "2D",
+        gl::SamplerDim::D3 => "3D",
+        gl::SamplerDim::Cube => "cube map",
     }
 }
 

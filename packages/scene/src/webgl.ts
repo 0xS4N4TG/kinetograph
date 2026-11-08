@@ -217,6 +217,14 @@ export const GL = {
   TEXTURE_WRAP_R: 0x8072,
   TEXTURE: 0x1702,
   TEXTURE_CUBE_MAP: 0x8513,
+  TEXTURE_BINDING_CUBE_MAP: 0x8514,
+  TEXTURE_CUBE_MAP_POSITIVE_X: 0x8515,
+  TEXTURE_CUBE_MAP_NEGATIVE_X: 0x8516,
+  TEXTURE_CUBE_MAP_POSITIVE_Y: 0x8517,
+  TEXTURE_CUBE_MAP_NEGATIVE_Y: 0x8518,
+  TEXTURE_CUBE_MAP_POSITIVE_Z: 0x8519,
+  TEXTURE_CUBE_MAP_NEGATIVE_Z: 0x851a,
+  MAX_CUBE_MAP_TEXTURE_SIZE: 0x851c,
   TEXTURE_BINDING_2D: 0x8069,
   TEXTURE0: 0x84c0,
   TEXTURE1: 0x84c1,
@@ -386,6 +394,14 @@ const FLOAT_FORMATS: Record<number, { channels: number; format: number; bits: 16
 /** `MAX_3D_TEXTURE_SIZE`: the longest side of a 3D texture. */
 const MAX_3D_TEXTURE_SIZE = 2048;
 
+/** `MAX_CUBE_MAP_TEXTURE_SIZE`: the side of a face. */
+const MAX_CUBE_MAP_TEXTURE_SIZE = 8192;
+
+/** The cube map face a texture target names (0 for +X to 5 for -Z), or -1. */
+function faceIndex(target: number): number {
+  return target >= GL.TEXTURE_CUBE_MAP_POSITIVE_X && target <= GL.TEXTURE_CUBE_MAP_NEGATIVE_Z ? target - GL.TEXTURE_CUBE_MAP_POSITIVE_X : -1;
+}
+
 /** How many colour outputs a draw writes (`MAX_DRAW_BUFFERS`, `MAX_COLOR_ATTACHMENTS`): the colour attachments a render pass takes. */
 const MAX_DRAW_BUFFERS = 8;
 
@@ -448,6 +464,8 @@ export class WebGLTexture extends WebGLObject {
   maxLevel = 1000;
   version = 0;
   snapshot: { version: number; id: string; json: GlslTexture } | null = null;
+  /** The six faces of a cube map (+X, -X, +Y, -Y, +Z, -Z), each a 2D texture of its own; null for any other texture. */
+  faces: WebGLTexture[] | null = null;
 }
 /** What an attachment point of a framebuffer holds: a level of a texture, or a renderbuffer. */
 export type WebGLAttachment = { texture: WebGLTexture; level: number } | { renderbuffer: WebGLRenderbuffer };
@@ -836,6 +854,8 @@ export class WebGLContext {
   private readonly units = new Map<number, WebGLTexture>();
   /** What each unit holds at `TEXTURE_3D`. */
   private readonly units3d = new Map<number, WebGLTexture>();
+  /** What each unit holds at `TEXTURE_CUBE_MAP`. */
+  private readonly unitsCube = new Map<number, WebGLTexture>();
   private caps: Capability = { blend: false, cull: false, scissor: false, depth: false, stencil: false, polygonOffset: false };
   private depthFuncValue: number = GL.LESS;
   private depthMaskValue = true;
@@ -1025,6 +1045,10 @@ export class WebGLContext {
         return null;
       case GL.TEXTURE_BINDING_2D:
         return this.units.get(this.activeUnit) ?? null;
+      case GL.TEXTURE_BINDING_CUBE_MAP:
+        return this.unitsCube.get(this.activeUnit) ?? null;
+      case GL.MAX_CUBE_MAP_TEXTURE_SIZE:
+        return MAX_CUBE_MAP_TEXTURE_SIZE;
       case GL2.TEXTURE_BINDING_3D:
         if (this.version === 2) return this.units3d.get(this.activeUnit) ?? null;
         this.fail(GL.INVALID_ENUM);
@@ -1827,11 +1851,12 @@ export class WebGLContext {
   }
   bindTexture(target: number, texture: WebGLTexture | null): void {
     const is3d = target === GL2.TEXTURE_3D && this.version === 2;
-    if (target !== GL.TEXTURE_2D && !is3d) {
+    const isCube = target === GL.TEXTURE_CUBE_MAP;
+    if (target !== GL.TEXTURE_2D && !is3d && !isCube) {
       if (texture === null) return;
-      throw new WebGLUnsupportedError(target === GL.TEXTURE_CUBE_MAP ? 'cube map textures' : 'textures other than TEXTURE_2D and TEXTURE_3D');
+      throw new WebGLUnsupportedError('textures other than TEXTURE_2D, TEXTURE_CUBE_MAP and TEXTURE_3D');
     }
-    const units = is3d ? this.units3d : this.units;
+    const units = is3d ? this.units3d : isCube ? this.unitsCube : this.units;
     if (texture === null) {
       units.delete(this.activeUnit);
       return;
@@ -1839,20 +1864,34 @@ export class WebGLContext {
     // A texture is of the type it was first bound to.
     if (texture.target !== null && texture.target !== target) return this.fail(GL.INVALID_OPERATION);
     texture.target = target;
+    if (isCube && texture.faces === null) texture.faces = Array.from({ length: 6 }, () => new WebGLTexture());
     units.set(this.activeUnit, texture);
   }
   private bound(target: number): WebGLTexture | null {
     const is3d = target === GL2.TEXTURE_3D && this.version === 2;
-    if (target !== GL.TEXTURE_2D && !is3d) {
+    const isCube = target === GL.TEXTURE_CUBE_MAP;
+    if (target !== GL.TEXTURE_2D && !is3d && !isCube) {
       this.fail(GL.INVALID_ENUM);
       return null;
     }
-    const texture = (is3d ? this.units3d : this.units).get(this.activeUnit);
+    const texture = (is3d ? this.units3d : isCube ? this.unitsCube : this.units).get(this.activeUnit);
     if (texture === undefined) {
       this.fail(GL.INVALID_OPERATION);
       return null;
     }
     return texture;
+  }
+  /** The face a `texImage2D` or `texSubImage2D` of a cube face target writes: the bound cube map's, or null after the error. */
+  private faceTarget(target: number): WebGLTexture | null {
+    const cube = this.bound(GL.TEXTURE_CUBE_MAP);
+    return cube?.faces?.[faceIndex(target)] ?? null;
+  }
+  /** A cube map is complete when its six faces are uploaded as pictures of one square size. */
+  private cubeComplete(cube: WebGLTexture): boolean {
+    const faces = cube.faces;
+    if (faces === null) return false;
+    const side = faces[0]!.width;
+    return side > 0 && faces.every((f) => f.uploaded && f.width === side && f.height === side && f.floats === null && f.layer === null);
   }
   texParameteri(target: number, pname: number, param: number): void {
     const texture = this.bound(target);
@@ -1898,6 +1937,12 @@ export class WebGLContext {
   generateMipmap(target: number): void {
     const texture = this.bound(target);
     if (texture === null) return;
+    if (target === GL.TEXTURE_CUBE_MAP) {
+      if (!this.cubeComplete(texture)) return this.fail(GL.INVALID_OPERATION);
+      texture.mipmaps = true;
+      texture.version += 1;
+      return;
+    }
     if (!texture.uploaded || kindOf(texture.format) !== 'color') return this.fail(GL.INVALID_OPERATION);
     if (target === GL2.TEXTURE_3D) throw new WebGLUnsupportedError('generateMipmap of a 3D texture; sample it with LINEAR or NEAREST');
     if (texture.floats !== null) throw new WebGLUnsupportedError('generateMipmap of a float texture; sample it with NEAREST');
@@ -1992,8 +2037,32 @@ export class WebGLContext {
 
   /** `texImage2D(target, level, internalformat, width, height, border, format, type, pixels)` or `(…, internalformat, format, type, source)`. */
   texImage2D(target: number, level: number, internalformat: number, ...rest: unknown[]): void {
+    if (faceIndex(target) >= 0) return this.texImageFace(target, level, internalformat, rest);
     const texture = this.bound(target);
     if (texture === null) return;
+    this.specify2d(texture, level, internalformat, rest);
+  }
+
+  /** `texImage2D` of a face of the bound cube map: level 0, a square picture or pixels of a colour format. */
+  private texImageFace(target: number, level: number, internalformat: number, rest: unknown[]): void {
+    const cube = this.bound(GL.TEXTURE_CUBE_MAP);
+    const face = cube?.faces?.[faceIndex(target)];
+    if (cube === null || face === undefined) return;
+    if (level !== 0) throw new WebGLUnsupportedError('a cube map face above level 0; call generateMipmap');
+    if (kindOf(internalformat) !== 'color' || FLOAT_FORMATS[internalformat] !== undefined) throw new WebGLUnsupportedError('a cube map face of a depth or float format; use RGBA8');
+    if (rest.length >= 6) {
+      const [width, height] = rest as [number, number];
+      if (!(Number.isInteger(width) && width >= 0 && width <= MAX_CUBE_MAP_TEXTURE_SIZE && Number.isInteger(height) && height >= 0 && height <= MAX_CUBE_MAP_TEXTURE_SIZE)) return this.fail(GL.INVALID_VALUE);
+    }
+    this.specify2d(face, level, internalformat, rest);
+    if (face.layer !== null) throw new WebGLUnsupportedError('a cube map face from a layer picture; use an image, a canvas, ImageData or an array of pixels');
+    // Each face of the six stays 2D data; the cube's own snapshot is made from them at the draw.
+    cube.mipmaps = false;
+    cube.version += 1;
+  }
+
+  /** The body of `texImage2D`: `texture` is the 2D texture, or the face of a cube map, that the call specifies. */
+  private specify2d(texture: WebGLTexture, level: number, internalformat: number, rest: unknown[]): void {
     let width: number;
     let height: number;
     let format: number;
@@ -2175,6 +2244,7 @@ export class WebGLContext {
    * texture made from one) is a patch the renderer lays over the texture's picture.
    */
   texSubImage2D(target: number, level: number, xoffset: number, yoffset: number, ...rest: unknown[]): void {
+    if (faceIndex(target) >= 0) throw new WebGLUnsupportedError('texSubImage2D into a cube map face; upload the whole face again with texImage2D');
     const texture = this.bound(target);
     if (texture === null) return;
     if (level !== 0) throw new WebGLUnsupportedError('texSubImage2D above level 0; call generateMipmap');
@@ -2754,12 +2824,11 @@ export class WebGLContext {
     // The type of sampler that reads each unit: WebGL refuses a draw in which one unit is read as two.
     const unitTypes = new Map<number, string>();
     for (const d of program.uniformDeclarations) {
-      if (d.type === 'samplerCube') throw new WebGLUnsupportedError(`the sampler "${d.name}" is a samplerCube; only sampler2D and sampler3D are available`);
-      if (d.type !== 'sampler2D' && d.type !== 'sampler3D') continue;
+      if (d.type !== 'sampler2D' && d.type !== 'sampler3D' && d.type !== 'samplerCube') continue;
       const unit = program.uniforms.get(d.name)?.at(-1)?.value[0] ?? 0;
       if (unitTypes.get(unit) !== undefined && unitTypes.get(unit) !== d.type) return this.fail(GL.INVALID_OPERATION);
       unitTypes.set(unit, d.type);
-      const texture = (d.type === 'sampler3D' ? this.units3d : this.units).get(unit);
+      const texture = (d.type === 'sampler3D' ? this.units3d : d.type === 'samplerCube' ? this.unitsCube : this.units).get(unit);
       // Reading what the draw writes is undefined; WebGL refuses it.
       if (texture !== undefined && attached.includes(texture)) return this.fail(GL.INVALID_OPERATION);
       if (texture !== undefined && draw.units[String(unit)] === undefined) draw.units[String(unit)] = this.samplerOf(texture);
@@ -2811,7 +2880,8 @@ export class WebGLContext {
   /** The texture's state at this draw: its pixels (once, by id) and how this unit samples it. */
   private samplerOf(texture: WebGLTexture): GlslSampler {
     // A depth texture is a render target from the start: its depth is drawn, never uploaded.
-    const target = texture.drawnAt === texture.version || kindOf(texture.format) !== 'color';
+    const cube = texture.faces !== null;
+    const target = !cube && (texture.drawnAt === texture.version || kindOf(texture.format) !== 'color');
     const id = target ? this.registerTarget(texture) : this.uploadedId(texture);
     return {
       texture: id,
@@ -2819,15 +2889,26 @@ export class WebGLContext {
       mag: FILTERS[texture.mag]!,
       wrapS: WRAPS[texture.wrapS]!,
       wrapT: WRAPS[texture.wrapT]!,
-      ...(texture.depth > 0 ? { wrapR: WRAPS[texture.wrapR]! } : {}),
+      ...(texture.depth > 0 || cube ? { wrapR: WRAPS[texture.wrapR]! } : {}),
       ...(texture.maxLevel < 1000 ? { maxLevel: texture.maxLevel } : {}),
     };
+  }
+
+  /** A cube map in the recording: its six faces, or none while it is incomplete (it then samples as opaque black). */
+  private cubeJson(cube: WebGLTexture): GlslTexture {
+    if (!this.cubeComplete(cube)) return { cube: true, faces: [] };
+    const faces = cube.faces!.map((f) => ({
+      ...(f.src !== null ? { src: f.src } : { pixels: toBase64(f.pixels ?? new Uint8Array(0)) }),
+      ...(f.flipY ? { flipY: true } : {}),
+      ...(f.premultiply ? { premultiply: true } : {}),
+    }));
+    return { cube: true, width: cube.faces![0]!.width, height: cube.faces![0]!.width, faces, ...(cube.mipmaps ? { mipmaps: true } : {}) };
   }
 
   /** An uploaded texture in the recording: its pixels, once, by an id of what they are. */
   private uploadedId(texture: WebGLTexture): string {
     if (texture.snapshot?.version !== texture.version) {
-      const json: GlslTexture = texture.depth > 0 || texture.floats !== null
+      const json: GlslTexture = texture.faces !== null ? this.cubeJson(texture) : texture.depth > 0 || texture.floats !== null
         ? {
             ...(texture.floats !== null ? { floats: toBase64(new Uint8Array(texture.floats.buffer, texture.floats.byteOffset, texture.floats.byteLength)), ...(texture.float32 ? { float32: true } : {}) } : { pixels: toBase64(texture.pixels ?? new Uint8Array(0)) }),
             width: texture.width,
