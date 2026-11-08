@@ -703,8 +703,9 @@ Mapping onto the engine:
   other style key, a percentage size, an `objectFit` the image layer lacks, or a `className` it is an `img`.
 - `staticFile(name)` is the absolute path of `name` in the public directory, `setPublicDir(dir)` (default
   `<entry directory>/public`, set by the CLI).
-- `delayRender(label?)` returns a handle; `renderFrame` waits until every handle is continued, failing after 30 s
-  (real time, used only for the error) with the labels still open. `cancelRender(err)` fails the frame.
+- `delayRender(label?)` returns a handle; `renderFrame` waits until every handle is continued, failing after 30 s (`--timeout <ms>` on the CLI,
+  or `delayRender(label, { timeoutInMilliseconds })`; real time, used only for the error, code `DELAY_RENDER_TIMEOUT`) with
+  the labels still open. `cancelRender(err)` fails the frame.
   `useDelayRender()` returns the same three functions.
 - Every frame is a render, so the hooks that read the Studio's or the Player's state answer what a render sees:
   `useRemotionEnvironment()` is `getRemotionEnvironment()` (`isRendering` only), `useCurrentScale()` and
