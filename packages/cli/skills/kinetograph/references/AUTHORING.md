@@ -1136,6 +1136,7 @@ without it they write to `out/stills/<comp>-f<frame>.png`, `out/renders/<comp>.<
 | `snapshot <entry> [--frames 0,30,60] [--update]` | compares PNGs in `__snapshots__/` next to the entry, max channel difference 2 |
 | `effects` | `effectCatalog` |
 | `track <video> [--point x,y ...] [--detect [--detect-threshold T ...]] [--plane all\|p1,p2,p3,p4 [--plane-corners ...]] [--model M] [--pattern N --search N] [--match keyframe\|previous] [--from F --to F] [--backwards] [-o out.json]` | tracks points (placed, or found by Blender's Detect Features) and plane tracks with Blender's tracker and writes `<video>.track.json` for `useTrack()` and `usePlaneTrack()` (§11.12); takes a video, not an entry |
+| `matte <video> [-o fg.webm] [--base base.webm] [--model modnet\|ben2-base] [--audio keep\|drop] [--quality low\|medium\|high\|very-high] [--offline]` | cuts the subject out of a video: a foreground with alpha (`.webm` VP9 or `.mov` ProRes 4444) and with `--base` an opaque base; a model runs in the addon and downloads on first use (§11.13) |
 | `doctor [entry] [--range]` | without an entry, the install report (it lists the renderer; `render` and `still` print `renderer: Skia GPU (Metal)`, `Skia CPU (no GPU found)`, `Skia CPU (GPU unusable)` or `Skia CPU (KINETOGRAPH_SKIA_CPU=1)` as progress; when the GPU was unusable, doctor also gives `rendererReason`, with the device, driver and what is missing); with one, how many frames have nothing unsupported, and every unsupported element or property with its frame ranges (the Remotion compatibility docs, `/docs/compat/`) |
 | `studio <entry>` | the studio (§11.5) |
 | `mcp` | MCP server on stdio |
@@ -1748,3 +1749,16 @@ defaults, other thresholds, distances and margins, another frame, and inside and
 bit-equal to Blender's on every frame (0 px), over the same frames, for planes made at the first frame, mid-clip and
 tracking backwards, from 4, 5 and 24 tracks. Repeatability: the same inputs give the same bits on a platform
 (`crates/track/tests/golden.rs`, a golden per platform); platforms are not bit-equal with each other.
+
+### 11.13 Video matting (`kinetograph matte`, `@kinetographdev/video-matting`)
+
+Run ahead of time, like tracking: `kinetograph matte public/original.mp4 -o public/foreground.webm` writes the subject
+with alpha (`--base` also writes the opaque original), and a composition plays the files as `<Video>`s: text behind
+the subject is original, text, foreground (foreground `muted`); background blur is `effects={[blur(16)]}` on the
+original under the foreground; background replacement leaves the original out; effects on the foreground alone
+(`glow`, `dropShadow`) change only the subject. A render never runs a model. `modnet` (default, people) and `ben2-base`
+(any subject, heavier) download from Hugging Face on first use, checked by SHA-256, into `$KINETOGRAPH_MODEL_DIR` or
+the OS cache directory; `--offline` refuses to download. `@kinetographdev/video-matting` has the eight functions of
+`@remotion/video-matting` (`separateVideoLayers`, `downloadVideoMattingModel`, ...) and a project's import of that name
+resolves to it; outputs are files (`outputs.foreground.path`). Guide with the four recipes: `/docs/guides/video-matting/`;
+reference: `/docs/reference/video-matting/`. The `matte` MCP tool takes the CLI's options.

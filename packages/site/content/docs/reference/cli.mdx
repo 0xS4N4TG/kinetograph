@@ -254,6 +254,25 @@ npx kinetograph snapshot <entry> --update
 
 A frame matches when no colour channel is off by more than 2 levels. A mismatch or a missing approved file exits with 1.
 
+## matte
+
+Separates a video into a foreground with alpha, and optionally an opaque base, with a matting model that runs natively. The model downloads on first use. See [Video matting](/docs/guides/video-matting/).
+
+```sh
+npx kinetograph matte public/original.mp4 -o public/foreground.webm --base public/base.webm
+```
+
+| Option | Meaning |
+|---|---|
+| `-o <file>` | The foreground, `.webm` (VP9 with alpha) or `.mov` (ProRes 4444). The default is `<video>.foreground.webm`. |
+| `--base <file>` | Also write the opaque base layer, `.webm` or `.mov`. |
+| `--model <name>` | `modnet` (default; people) or `ben2-base` (any foreground subject; experimental and heavier). |
+| `--audio <keep\|drop>` | `keep` (default) copies the audio into the files written. |
+| `--quality <preset>` | `low`, `medium`, `high` or `very-high` (default). |
+| `--offline` | Never download the model. It must already be cached. |
+
+The `--json` result has `foreground`, `base` (when asked for), `model`, `backend`, `frames`, `width`, `height`, `durationInSeconds`, `audio`, `quality` and `bytes`.
+
 ## effects
 
 Lists every effect with its type, description and fields.

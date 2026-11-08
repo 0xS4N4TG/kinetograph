@@ -40,3 +40,15 @@ substantial portions; the software is provided "as is", without warranty of any 
 `packages/site/scripts/engine-diagram.mjs` uses opentype.js, a build-time tool only (nothing from it ships), to turn the
 diagram's text into outlines. Copyright (c) 2020 Frederik De Bleser and the opentype.js contributors,
 https://github.com/opentypejs/opentype.js, licensed under the MIT License, on the same terms as above.
+
+## MODNet and BEN2 (video matting models)
+
+`kinetograph matte` and `@kinetographdev/video-matting` download two models on request, from Hugging Face, into the
+user's cache directory. They are never bundled in the packages or the repository, and are downloaded unchanged.
+
+- `modnet`: the ONNX export `Xenova/modnet` (https://huggingface.co/Xenova/modnet, `onnx/model.onnx`) of MODNet
+  (https://github.com/ZHKKKe/MODNet), licensed under the Apache License, Version 2.0
+  (http://www.apache.org/licenses/LICENSE-2.0).
+- `ben2-base`: the ONNX export `onnx-community/BEN2-ONNX` (https://huggingface.co/onnx-community/BEN2-ONNX,
+  `onnx/model_fp16.onnx`) of BEN2 Base by PramaLLC (https://huggingface.co/PramaLLC/BEN2), licensed under the MIT
+  License.

@@ -251,6 +251,10 @@ One line each; the pointer has the detail. `kinetograph doctor` alone lists the 
   points itself (Blender's Detect Features); `--plane p1,p2,p3,p4` makes a plane track from 4+ points on a flat
   surface, and `cornerPin(usePlaneTrack(file).pin)` pins a picture to it. AUTHORING.md §11.12,
   `/docs/guides/motion-tracking/`.
+- **Video matting.** `kinetograph matte public/original.mp4 -o public/foreground.webm` cuts the subject out (alpha, a
+  model run natively, downloaded on first use); play it as a `<Video>` over or under the original for text behind a
+  subject, background blur or replacement, or effects on the subject alone. AUTHORING.md §11.13,
+  `/docs/guides/video-matting/`.
 
 ## Working with a person in Studio
 
