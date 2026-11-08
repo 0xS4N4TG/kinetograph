@@ -1,7 +1,7 @@
 //! Limits the scene format enforces.
 
 /// Largest canvas side; wgpu's default texture limit.
-pub const MAX_SIDE: u32 = 8192;
+pub const MAX_CANVAS_SIDE: u32 = 8192;
 
 /// Fewest and most sub-frames a layer's motion blur averages.
 pub const MIN_MOTION_SAMPLES: i64 = 2;

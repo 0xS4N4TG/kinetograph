@@ -1904,7 +1904,7 @@ impl Scene {
     /// feed them. It is the largest `reach` of the effects on any layer
     /// (see `max_reach`), at any keyframe, rounded up, or the scene's own
     /// `margin` if that is more, and limited so the padded canvas still fits
-    /// in `MAX_SIDE`. A scene with no such effect and no `margin` has margin 0.
+    /// in `MAX_CANVAS_SIDE`. A scene with no such effect and no `margin` has margin 0.
     pub fn margin(&self) -> u32 {
         let least = f64::from(self.margin.unwrap_or(0));
         margin_for(
@@ -2044,9 +2044,9 @@ fn max_reach_with(
 }
 
 /// `reach` rounded up to whole pixels, limited so a `width` x `height` canvas
-/// plus the margin on both sides stays within `MAX_SIDE`.
+/// plus the margin on both sides stays within `MAX_CANVAS_SIDE`.
 fn margin_for(reach: f64, width: u32, height: u32) -> u32 {
-    let room = (MAX_SIDE - width.max(height)) / 2;
+    let room = (MAX_CANVAS_SIDE - width.max(height)) / 2;
     (reach.ceil() as u32).min(room)
 }
 
@@ -3554,10 +3554,10 @@ mod tests {
         assert_eq!(with(r#", "margin": 44"#, &shadow(60)).margin(), 60);
         assert_eq!(with("", &shadow(43)).margin(), 43);
         assert_eq!(with(r#", "margin": 0"#, &shadow(43)).margin(), 43);
-        // Like the reach, it leaves the padded canvas within MAX_SIDE.
+        // Like the reach, it leaves the padded canvas within MAX_CANVAS_SIDE.
         assert_eq!(
             with(r#", "margin": 100000"#, "[]").margin(),
-            (MAX_SIDE - 200) / 2
+            (MAX_CANVAS_SIDE - 200) / 2
         );
         // A whole number, not negative.
         for bad in ["-1", "4.5", r#""4""#] {
@@ -3582,9 +3582,9 @@ mod tests {
         assert_eq!(margin_for(12.2, 100, 100), 13);
         assert_eq!(margin_for(12.0, 100, 100), 12);
         // The longer side decides how much room is left.
-        assert_eq!(margin_for(1e9, 100, 200), (MAX_SIDE - 200) / 2);
+        assert_eq!(margin_for(1e9, 100, 200), (MAX_CANVAS_SIDE - 200) / 2);
         assert_eq!(margin_for(1e9, 8000, 100), 96);
-        assert_eq!(margin_for(50.0, MAX_SIDE, 10), 0);
+        assert_eq!(margin_for(50.0, MAX_CANVAS_SIDE, 10), 0);
     }
 
     const TWO_STOPS: &str =

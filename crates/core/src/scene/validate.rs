@@ -7,9 +7,9 @@ use super::*;
 impl Scene {
     pub(super) fn validate(&self) -> Result<()> {
         let bad = |msg: String| Err(Error::Scene(msg));
-        if self.width == 0 || self.height == 0 || self.width > MAX_SIDE || self.height > MAX_SIDE {
+        if self.width == 0 || self.height == 0 || self.width > MAX_CANVAS_SIDE || self.height > MAX_CANVAS_SIDE {
             return bad(format!(
-                "width and height must be 1..={MAX_SIDE}, got {}x{}",
+                "width and height must be 1..={MAX_CANVAS_SIDE}, got {}x{}",
                 self.width, self.height
             ));
         }
