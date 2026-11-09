@@ -2555,6 +2555,21 @@ fn a_single_channel_and_a_two_channel_float_target_are_drawn_into() {
 }
 
 #[test]
+fn an_r8_and_an_rg8_target_hold_their_channels_clamped() {
+    // 2.0 and 4.0 are kept as 1.0; a quarter of that is 64. R8 reads (r, 0, 0, 1), RG8 (r, g, 0, 1).
+    near(
+        px(&through_a_float_target("R8", "LINEAR"), 8, 8),
+        [64, 0, 0, 255],
+        2,
+    );
+    near(
+        px(&through_a_float_target("RG8", "LINEAR"), 8, 8),
+        [64, 64, 0, 255],
+        2,
+    );
+}
+
+#[test]
 fn a_32_bit_float_target_reads_nearest_and_is_black_otherwise() {
     near(px(&through_a_float_target("RGBA32F", "NEAREST"), 8, 8), [128, 255, 0, 255], 3);
     // As in a browser without OES_texture_float_linear.

@@ -875,7 +875,7 @@ type ImageKind = 'color' | 'depth' | 'stencil' | 'depthStencil';
 const DEPTH_ONLY = new Set<number>([GL.DEPTH_COMPONENT, GL.DEPTH_COMPONENT16, GL2.DEPTH_COMPONENT24, GL2.DEPTH_COMPONENT32F]);
 const DEPTH_AND_STENCIL = new Set<number>([GL.DEPTH_STENCIL, GL2.DEPTH24_STENCIL8, GL2.DEPTH32F_STENCIL8]);
 /** The colour formats of a renderbuffer; each is drawn as RGBA8. */
-const COLOR_RENDERBUFFER = new Set<number>([GL.RGBA4, GL.RGB5_A1, GL.RGB565, GL2.RGBA8, GL2.SRGB8_ALPHA8, GL2.R16F, GL2.RG16F, GL2.RGBA16F, GL2.R32F, GL2.RG32F, GL2.RGBA32F]);
+const COLOR_RENDERBUFFER = new Set<number>([GL.RGBA4, GL.RGB5_A1, GL.RGB565, GL2.RGBA8, GL2.SRGB8_ALPHA8, GL2.R8, GL2.RG8, GL2.R16F, GL2.RG16F, GL2.RGBA16F, GL2.R32F, GL2.RG32F, GL2.RGBA32F]);
 
 /** The value of an IEEE half float's bits. */
 function halfToFloat(bits: number): number {
@@ -940,6 +940,8 @@ const COLOR_TARGETS: Record<number, NonNullable<GlslTexture['colorFormat']>> = {
   [GL2.RG32F]: 'RG32F',
   [GL2.RGBA32F]: 'RGBA32F',
   [GL2.SRGB8_ALPHA8]: 'SRGB8_ALPHA8',
+  [GL2.R8]: 'R8',
+  [GL2.RG8]: 'RG8',
 };
 
 /** Formats of a texture that colour cannot be drawn into. */
@@ -2654,6 +2656,8 @@ export class WebGLContext {
     const flags = { ...(this.flipY ? { flipY: true } : {}), ...(this.premultiply ? { premultiply: true } : {}) };
     const json = 'pixels' in part ? { pixels: toBase64(part.pixels) } : part;
     if (texture.drawnAt === texture.version) {
+      // The bytes of an upload are RGBA8, which an R8 or RG8 target does not hold.
+      if (texture.format === GL2.R8 || texture.format === GL2.RG8) throw new WebGLUnsupportedError('texSubImage2D into an R8 or RG8 texture a framebuffer drew in; draw into it, or upload the whole texture again');
       this.begin();
       this.ops.push({ op: 'upload', target: this.registerTarget(texture), x: xoffset, y: yoffset, width, height, ...json, ...flags });
       return;
@@ -2926,7 +2930,7 @@ export class WebGLContext {
       const texture = a.texture;
       if (kindOf(texture.format) !== 'color') continue;
       if (texture.format !== GL.RGBA && texture.format !== GL2.RGBA8 && COLOR_TARGETS[texture.format] === undefined) {
-        throw new WebGLUnsupportedError(`drawing into a texture of internal format 0x${texture.format.toString(16)}; allocate it as RGBA, SRGB8_ALPHA8, or as R16F, RG16F, RGBA16F, R32F, RG32F or RGBA32F`);
+        throw new WebGLUnsupportedError(`drawing into a texture of internal format 0x${texture.format.toString(16)}; allocate it as RGBA, SRGB8_ALPHA8, R8, RG8, or as R16F, RG16F, RGBA16F, R32F, RG32F or RGBA32F`);
       }
       if (!texture.blank) throw new WebGLUnsupportedError('drawing into a texture that holds uploaded pixels; allocate it with texImage2D(..., null)');
     }
@@ -3076,7 +3080,7 @@ export class WebGLContext {
     const renderbuffer = this.renderbuffer;
     if (renderbuffer === null) return this.fail(GL.INVALID_OPERATION);
     const v2 = this.version === 2;
-    const v2only = [GL2.RGBA8, GL2.SRGB8_ALPHA8, GL2.R16F, GL2.RG16F, GL2.RGBA16F, GL2.R32F, GL2.RG32F, GL2.RGBA32F, GL2.DEPTH_COMPONENT24, GL2.DEPTH_COMPONENT32F, GL2.DEPTH24_STENCIL8, GL2.DEPTH32F_STENCIL8] as number[];
+    const v2only = [GL2.RGBA8, GL2.SRGB8_ALPHA8, GL2.R8, GL2.RG8, GL2.R16F, GL2.RG16F, GL2.RGBA16F, GL2.R32F, GL2.RG32F, GL2.RGBA32F, GL2.DEPTH_COMPONENT24, GL2.DEPTH_COMPONENT32F, GL2.DEPTH24_STENCIL8, GL2.DEPTH32F_STENCIL8] as number[];
     const known = kindOf(internalformat) !== 'color' || COLOR_RENDERBUFFER.has(internalformat);
     if (internalformat === GL.DEPTH_COMPONENT) return this.fail(GL.INVALID_ENUM);
     if (!known || (!v2 && v2only.includes(internalformat))) {

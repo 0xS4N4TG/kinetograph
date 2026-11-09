@@ -14,6 +14,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - WebGL `SRGB8_ALPHA8` render targets (textures, cube faces and renderbuffers) and float colour renderbuffers.
 - WebGL cube maps of `SRGB8_ALPHA8` faces, and whole-face `texSubImage2D` into a `texStorage2D` cube map (three.js's `CubeTextureLoader`).
 - WebGL `vertexAttribDivisor` above 1.
+- WebGL `R8` and `RG8` render targets.
 
 ### Fixed
 

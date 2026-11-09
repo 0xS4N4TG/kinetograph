@@ -1677,7 +1677,7 @@ describe('the recording WebGL context', () => {
       expect(gl.getError()).toBe(GL.NO_ERROR);
       expect(gl.content().ops.at(-1)).toMatchObject({ op: 'draw', blend: { srcRgb: 'ONE' } });
       const rgb = floatContext(GL2.RGB16F, true).gl;
-      expect(() => rgb.drawArrays(GL.TRIANGLES, 0, 3)).toThrow(/^unsupported:.*allocate it as RGBA, SRGB8_ALPHA8, or as R16F/);
+      expect(() => rgb.drawArrays(GL.TRIANGLES, 0, 3)).toThrow(/^unsupported:.*allocate it as RGBA, SRGB8_ALPHA8, R8, RG8, or as R16F/);
     });
 
     it('keeps blending into a 16-bit one', () => {
@@ -1824,6 +1824,22 @@ describe('the recording WebGL context', () => {
         expect(colorFormatOf()).toBe(name);
       }
       expect(gl.getError()).toBe(GL.NO_ERROR);
+    });
+
+    it('draws into R8 and RG8 textures, and refuses an upload over a drawn one', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      gl.bindFramebuffer(GL.FRAMEBUFFER, gl.createFramebuffer());
+      for (const [format, base, name] of [[GL2.R8, GL2.RED, 'R8'], [GL2.RG8, GL2.RG, 'RG8']] as const) {
+        const t = gl.createTexture();
+        gl.bindTexture(GL.TEXTURE_2D, t);
+        gl.texImage2D(GL.TEXTURE_2D, 0, format, 2, 2, 0, base, GL.UNSIGNED_BYTE, null);
+        gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, t, 0);
+        gl.clear(GL.COLOR_BUFFER_BIT);
+        const clear = gl.content().ops.at(-1)!;
+        if (clear.op !== 'clear') throw new Error('not a clear');
+        expect(gl.content().textures[clear.target!]!.colorFormat).toBe(name);
+        expect(() => gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 1, 1, base, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
+      }
     });
 
     it('records a cube map of sRGB faces as sRGB, and refuses a float face with pixels', () => {
