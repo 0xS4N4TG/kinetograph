@@ -9,6 +9,8 @@ export type { ModelSpec } from './registry.js';
 /** `null` is an addon that cannot be loaded; `undefined` loads the real one again. */
 export function setAddonForTests(addon: MattingAddon | null | undefined): void {
   hooks.addon = addon;
+  // A stand-in addon opens no ONNX Runtime, so none is downloaded for it.
+  hooks.runtime = addon === undefined ? undefined : async () => undefined;
 }
 
 export function setFetchForTests(fetchImpl: typeof fetch): void {

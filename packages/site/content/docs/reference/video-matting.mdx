@@ -28,7 +28,7 @@ Returns `{ name, modelId, purpose, license, webGpuDownloadSize }[]`. `modelId` i
 
 ```ts
 canUseVideoMatting({ model?: 'modnet' | 'ben2-base' }): Promise<
-  | { supported: true; backend: 'coreml' | 'directml' | 'cuda' | 'webgpu' | 'cpu' }
+  | { supported: true; backend: 'coreml' | 'cuda' | 'webgpu' | 'cpu' }
   | { supported: false; reason: 'native-unavailable' | 'backend-unavailable'; detailedReason: string }
 >
 ```

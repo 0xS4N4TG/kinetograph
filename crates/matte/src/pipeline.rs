@@ -15,7 +15,7 @@ use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use kinetograph_cli::encode::{self, AudioPcm, Codec, FrameEncoder, Resolved, Settings};
 use kinetograph_core::video::{self, VideoDecoder, VideoInfo};
 
-use crate::infer::Matter;
+use crate::infer::{Matter, NO_GPU};
 use crate::join::join;
 use crate::model::{Model, alpha_from_matte, with_alpha};
 use crate::{audio, infer};
@@ -153,6 +153,8 @@ impl AudioTarget {
 pub struct Options {
     pub input: PathBuf,
     pub model_path: PathBuf,
+    /// ONNX Runtime's library; `ORT_DYLIB_PATH` names it when this is `None`.
+    pub runtime_path: Option<PathBuf>,
     pub model: Model,
     pub foreground: PathBuf,
     pub base: Option<PathBuf>,
@@ -468,7 +470,13 @@ fn run_piece(
     let model = options.model;
     let input_size = model.input_size(width, height);
     // The model is opened here, before the other threads start, so that a model that will not load fails at once.
-    let mut matter = Matter::load(&options.model_path, model, input_size, piece.threads)?;
+    let mut matter = Matter::load(
+        &options.model_path,
+        model,
+        input_size,
+        piece.threads,
+        options.runtime_path.as_deref(),
+    )?;
     let backend = matter.backend();
 
     let (to_model, from_decode): (SyncSender<Decoded>, Receiver<Decoded>) = sync_channel(3);
@@ -574,7 +582,8 @@ fn even_crop(
 }
 
 /// One frame (tightly packed RGBA8) matted on its own: the alpha at the frame's size, and the backend the model ran on.
-/// For checking a model file on a machine without running a whole clip.
+/// For checking a model file on a machine without running a whole clip. ONNX Runtime's library is the one
+/// `ORT_DYLIB_PATH` names.
 pub fn matte_frame(
     model_path: &Path,
     model: Model,
@@ -584,7 +593,7 @@ pub fn matte_frame(
 ) -> Result<(Vec<u8>, &'static str), String> {
     let size = model.input_size(width, height);
     let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
-    let mut matter = Matter::load(model_path, model, size, threads)?;
+    let mut matter = Matter::load(model_path, model, size, threads, None)?;
     let matte = matter.run(model.preprocess(rgba, width, height))?;
     Ok((
         alpha_from_matte(&matte, size.0, size.1, width, height),
@@ -592,8 +601,9 @@ pub fn matte_frame(
     ))
 }
 
-/// Whether ONNX Runtime is there, and the GPU back end `ben2-base` would use (`modnet` always runs on the CPU): the
-/// answer `mattingSupport()` gives.
+/// Whether matting can run, and the GPU back end `ben2-base` would use (`modnet` always runs on the CPU): the answer
+/// `mattingSupport()` gives. ONNX Runtime's library is downloaded on the first use of matting, so until one is named
+/// (`ORT_DYLIB_PATH`) this does not open it: it is available, and the backend is the one this build expects.
 pub struct Support {
     pub available: bool,
     pub backend: &'static str,
@@ -601,6 +611,17 @@ pub struct Support {
 }
 
 pub fn support() -> Support {
+    if !infer::runtime_named() {
+        return Support {
+            available: true,
+            backend: infer::GPU_BACKEND.unwrap_or("cpu"),
+            reason: if infer::GPU_BACKEND.is_some() {
+                None
+            } else {
+                Some(NO_GPU.into())
+            },
+        };
+    }
     if let Some(reason) = infer::runtime_unavailable() {
         return Support {
             available: false,

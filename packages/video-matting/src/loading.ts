@@ -6,7 +6,7 @@ import { addonLoadError, loadAddon, loadedModels, tracked, whenIdle, type Mattin
 export type VideoMattingUnsupportedReason = 'native-unavailable' | 'backend-unavailable';
 
 export type CanUseVideoMattingResult =
-  | { supported: true; /** The inference backend: `coreml`, `directml`, `cuda`, `webgpu` or `cpu`. */ backend: MattingSupport['backend'] }
+  | { supported: true; /** The inference backend: `coreml`, `cuda`, `webgpu` or `cpu`. */ backend: MattingSupport['backend'] }
   | { supported: false; reason: VideoMattingUnsupportedReason; detailedReason: string };
 
 /**

@@ -1,6 +1,6 @@
 # @kinetographdev/video-matting
 
-Separates a video into an opaque base and a foreground with alpha, with the API of `@remotion/video-matting`. The models run natively (ONNX Runtime in the addon); no browser, no WebGPU.
+Separates a video into an opaque base and a foreground with alpha, with the API of `@remotion/video-matting`. The models run natively through ONNX Runtime, which the addon opens at run time and downloads on first use (8 to 83 MB, by platform); no browser, no WebGPU.
 
 `import ... from '@remotion/video-matting'` in a Kinetograph project resolves to this package. Models are downloaded from Hugging Face on first use and cached outside the package; see `THIRD-PARTY-NOTICES.md`.
 

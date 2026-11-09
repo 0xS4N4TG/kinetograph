@@ -210,6 +210,11 @@ export interface MatteOptions {
   input: string
   /** The `.onnx` file of `model`. */
   modelPath: string
+  /**
+   * ONNX Runtime's library (`libonnxruntime.dylib`, `.so` or `onnxruntime.dll`); `ORT_DYLIB_PATH` names it when
+   * this is absent. The addon does not link ONNX Runtime: `@kinetographdev/video-matting` downloads it on first use.
+   */
+  runtimePath?: string
   /** `modnet` or `ben2-base`. */
   model: string
   /** Output: the subject with alpha. `.webm` is VP9 `yuva420p`, `.mov` is ProRes 4444. */
@@ -255,10 +260,13 @@ export declare function mattingSupport(): MattingSupport
 
 /** Whether `matteVideo` can run here, and on what. */
 export interface MattingSupport {
-  /** ONNX Runtime is linked and starts. */
+  /**
+   * Matting can run here. ONNX Runtime is not linked: it is downloaded on first use, so this does not open it unless
+   * `ORT_DYLIB_PATH` names a library.
+   */
   available: boolean
   /**
-   * What `ben2-base` runs on: `directml` (Windows), `cuda` or `webgpu` (builds with them), else `cpu`. `modnet` always
+   * What `ben2-base` runs on: `coreml` (a Mac), `cuda` or `webgpu` (builds with them), else `cpu`. `modnet` always
    * runs on the CPU, at video speed (CoreML did not help it).
    */
   backend: string

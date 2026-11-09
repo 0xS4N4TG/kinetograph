@@ -4,13 +4,15 @@ import { MODELS, type ModelSpec } from './registry.js';
 /** What the addon exports for matting (the shared spec of video matting, layer 1). */
 export interface MattingSupport {
   available: boolean;
-  backend: 'coreml' | 'directml' | 'cuda' | 'webgpu' | 'cpu';
+  backend: 'coreml' | 'cuda' | 'webgpu' | 'cpu';
   reason?: string;
 }
 
 export interface MatteVideoOptions {
   input: string;
   modelPath: string;
+  /** ONNX Runtime's library (`ensureOnnxRuntime`); without it the addon reads `ORT_DYLIB_PATH`. */
+  runtimePath?: string;
   model: string;
   foreground: string;
   base?: string;
@@ -38,10 +40,17 @@ export interface MattingAddon {
 }
 
 /** The addon, the fetch and the model list: tests replace them (`@kinetographdev/video-matting/testing`). */
-export const hooks: { addon: MattingAddon | null | undefined; fetch: typeof fetch; models: ModelSpec[] } = {
+export const hooks: {
+  addon: MattingAddon | null | undefined;
+  fetch: typeof fetch;
+  models: ModelSpec[];
+  /** Stands in for `ensureOnnxRuntime`. */
+  runtime: ((signal?: AbortSignal) => Promise<string | undefined>) | undefined;
+} = {
   addon: undefined,
   fetch: (input, init) => fetch(input, init),
   models: MODELS,
+  runtime: undefined,
 };
 
 let loadError = '';
@@ -107,6 +116,7 @@ export function resetState(): void {
   hooks.addon = undefined;
   hooks.fetch = (input, init) => fetch(input, init);
   hooks.models = MODELS;
+  hooks.runtime = undefined;
   loadError = '';
   active.clear();
   loaded.clear();

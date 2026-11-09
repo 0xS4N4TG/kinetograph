@@ -9,6 +9,7 @@ import { isCached } from './cache.js';
 import { VideoMattingError } from './errors.js';
 import { markLoaded, notDownloaded, requireMatting, type LoadProgress } from './loading.js';
 import { DEFAULT_MODEL, modelPath, resolveModel, type VideoMattingModel } from './models.js';
+import { ensureOnnxRuntime } from './runtime.js';
 import { hooks, tracked, type MatteVideoOptions } from './state.js';
 
 /** What `outputWritable` receives (Mediabunny's `StreamTargetChunk`, which Remotion's option takes). */
@@ -205,6 +206,8 @@ export async function separateVideoLayers(options: SeparateVideoLayersOptions): 
   if (!isCached(spec)) throw notDownloaded(spec.name);
 
   return tracked(spec.name, async () => {
+    // The addon links no ONNX Runtime: the first job on a machine downloads it (to the model cache) before any frame.
+    const runtimePath = await (hooks.runtime ?? ((signal) => ensureOnnxRuntime({ signal })))(options.signal);
     const input = await localInput(options.src, options.signal);
     const scratch = mkdtempSync(join(tmpdir(), 'kinetograph-matting-'));
     // What the addon writes: the caller's own path through a `.partial` sibling (renamed once finished), else a temporary file.
@@ -250,6 +253,7 @@ export async function separateVideoLayers(options: SeparateVideoLayersOptions): 
     const request: MatteVideoOptions = {
       input: input.file,
       modelPath: modelPath(spec),
+      ...(runtimePath !== undefined ? { runtimePath } : {}),
       model: spec.name,
       foreground: fg.written,
       ...(bg ? { base: bg.written } : {}),

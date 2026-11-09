@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import { open } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { basename, dirname } from 'node:path';
 import { VideoMattingError } from './errors.js';
 import { modelDir, modelPath, resolveModel, type ModelSpec, type VideoMattingModel } from './models.js';
 import { hooks, loadedModels, tracked, whenIdle } from './state.js';
@@ -41,9 +41,29 @@ export interface DownloadVideoMattingModelOptions extends ModelOptions {
   onProgress?: (progress: DownloadProgress) => void;
 }
 
-/** The URL of the pinned file: the Hugging Face original, never a mirror. */
-function sourceUrl(spec: ModelSpec): string {
-  return `https://huggingface.co/${spec.modelId}/resolve/${spec.revision}/${spec.file}`;
+/** A pinned file to download: where from, where to, and what it must be. */
+export interface DownloadTarget {
+  url: string;
+  /** The file's final path; its folder is made. */
+  path: string;
+  size: number;
+  sha256: string;
+  /** What the errors call it. */
+  name: string;
+  /** What the checksum error says about the pin. */
+  pin: string;
+}
+
+/** The pinned model file: the Hugging Face original, never a mirror. */
+function targetOf(spec: ModelSpec): DownloadTarget {
+  return {
+    url: `https://huggingface.co/${spec.modelId}/resolve/${spec.revision}/${spec.file}`,
+    path: modelPath(spec),
+    size: spec.size,
+    sha256: spec.sha256,
+    name: spec.modelId,
+    pin: `${spec.file} at ${spec.revision.slice(0, 12)}`,
+  };
 }
 
 async function sha256Of(file: string, hash: ReturnType<typeof createHash>): Promise<void> {
@@ -58,11 +78,11 @@ function rangeStart(header: string | null): number | null {
 
 const downloading = new Map<string, Promise<unknown>>();
 
-async function download(spec: ModelSpec, { signal, onProgress }: Omit<DownloadVideoMattingModelOptions, 'model'>): Promise<void> {
-  const dir = modelDir(spec);
-  const final = modelPath(spec);
+/** Downloads `target` through `hooks.fetch`, carrying on a stopped download and checking the SHA-256 before the file takes its name. */
+export async function download(target: DownloadTarget, { signal, onProgress }: Omit<DownloadVideoMattingModelOptions, 'model'> = {}): Promise<void> {
+  const final = target.path;
   const part = `${final}.part`;
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dirname(final), { recursive: true });
 
   // An earlier download that stopped is carried on from where it was (its bytes are hashed again with the new ones).
   let offset = 0;
@@ -71,7 +91,7 @@ async function download(spec: ModelSpec, { signal, onProgress }: Omit<DownloadVi
   } catch {
     offset = 0;
   }
-  if (offset >= spec.size) {
+  if (offset >= target.size) {
     rmSync(part, { force: true });
     offset = 0;
   }
@@ -80,16 +100,16 @@ async function download(spec: ModelSpec, { signal, onProgress }: Omit<DownloadVi
   let handle;
   try {
     const headers: Record<string, string> = offset > 0 ? { range: `bytes=${offset}-` } : {};
-    const response = await hooks.fetch(sourceUrl(spec), { headers, signal, redirect: 'follow' });
+    const response = await hooks.fetch(target.url, { headers, signal, redirect: 'follow' });
     if (offset > 0 && (response.status === 416 || (response.status === 206 && rangeStart(response.headers.get('content-range')) !== offset))) {
       // The partial file does not fit what the server holds: start over.
       await response.body?.cancel().catch(() => undefined);
       discard();
-      return await download(spec, { signal, onProgress });
+      return await download(target, { signal, onProgress });
     }
     if (!response.ok || response.body === null) {
       await response.body?.cancel().catch(() => undefined);
-      throw new VideoMattingError('MODEL_DOWNLOAD', `Downloading ${spec.modelId} failed: HTTP ${response.status} from ${sourceUrl(spec)}`);
+      throw new VideoMattingError('MODEL_DOWNLOAD', `Downloading ${target.name} failed: HTTP ${response.status} from ${target.url}`);
     }
     // A server that ignores the range sends the whole file with a 200.
     if (offset > 0 && response.status === 200) offset = 0;
@@ -101,11 +121,11 @@ async function download(spec: ModelSpec, { signal, onProgress }: Omit<DownloadVi
     let loaded = 0;
     let reported = -1;
     const report = (force: boolean) => {
-      const progress = Math.min(1, (offset + loaded) / spec.size);
+      const progress = Math.min(1, (offset + loaded) / target.size);
       if (!force && progress - reported < 0.01) return;
       reported = progress;
-      const base = { progress, loadedBytes: loaded, totalBytes: spec.size };
-      onProgress?.({ file: basename(spec.file), ...base });
+      const base = { progress, loadedBytes: loaded, totalBytes: target.size };
+      onProgress?.({ file: basename(final), ...base });
       onProgress?.({ file: null, ...base });
     };
     report(true);
@@ -122,11 +142,11 @@ async function download(spec: ModelSpec, { signal, onProgress }: Omit<DownloadVi
 
     const size = offset + loaded;
     const digest = hash.digest('hex');
-    if (size !== spec.size || digest !== spec.sha256) {
+    if (size !== target.size || digest !== target.sha256) {
       discard();
       throw new VideoMattingError(
         'MODEL_CHECKSUM',
-        `The download of ${spec.modelId} (${spec.file} at ${spec.revision.slice(0, 12)}) does not match the pinned file: expected ${spec.size} bytes with SHA-256 ${spec.sha256}, got ${size} bytes with ${digest}`,
+        `The download of ${target.name} (${target.pin}) does not match the pinned file: expected ${target.size} bytes with SHA-256 ${target.sha256}, got ${size} bytes with ${digest}`,
       );
     }
     report(true);
@@ -139,7 +159,7 @@ async function download(spec: ModelSpec, { signal, onProgress }: Omit<DownloadVi
     }
     // Any other failure leaves the partial file for the next call to carry on from.
     if (error instanceof VideoMattingError) throw error;
-    throw new VideoMattingError('MODEL_DOWNLOAD', `Downloading ${spec.modelId} failed: ${error instanceof Error ? error.message : String(error)}`);
+    throw new VideoMattingError('MODEL_DOWNLOAD', `Downloading ${target.name} failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -158,7 +178,7 @@ export async function downloadVideoMattingModel(options: DownloadVideoMattingMod
     await before?.catch(() => undefined);
     options.signal?.throwIfAborted();
     if (isCached(spec)) return { alreadyDownloaded: true };
-    await tracked(spec.name, () => download(spec, options));
+    await tracked(spec.name, () => download(targetOf(spec), options));
     return { alreadyDownloaded: false };
   })();
   downloading.set(spec.name, run);

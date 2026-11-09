@@ -23,6 +23,7 @@ fn main() {
         input: PathBuf::from(&a[0]),
         model: Model::parse(&a[1]).unwrap(),
         model_path: PathBuf::from(&a[2]),
+        runtime_path: None,
         foreground: PathBuf::from(&a[3]),
         base: a.get(4).filter(|b| *b != "-").map(PathBuf::from),
         audio: if a.get(7).is_none_or(|v| v == "keep") {

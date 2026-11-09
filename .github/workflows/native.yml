@@ -157,9 +157,9 @@ jobs:
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
         run: npm run build:release -w @kinetographdev/native -- --target ${{ matrix.target }} --features ffmpeg-static
 
-      # The matting crate (crates/matte) links ONNX Runtime, whose prebuilt libraries the `ort` build script downloads (pyke's:
-      # CoreML on macOS, DirectML on Windows, CPU on Linux), so this also checks that they link on each platform. Its tests
-      # cover the pre- and post-processing and run no model (the BEN2 step after them runs one).
+      # The matting crate (crates/matte) does not link ONNX Runtime: it opens the library at run time (`ort`'s load-dynamic),
+      # so a build here needs none, and the addon loads on this runner's glibc whatever ONNX Runtime needs. Its tests cover
+      # the pre- and post-processing and run no model (the BEN2 step after them runs one, with the library downloaded first).
       #
       # Blender's tracker (libmv, Ceres and Eigen, crates/libmv-sys) is C++ that the cc crate builds into the addon: GCC
       # on Linux, MSVC on Windows, clang on macOS. The tests track synthetic pictures, and real footage against the
@@ -178,8 +178,32 @@ jobs:
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
         run: cargo test --release --target ${{ matrix.target }} -p libmv-sys -p kinetograph-track -p kinetograph-matte --features kinetograph-track/ffmpeg-static,kinetograph-matte/ffmpeg-static -- --nocapture
 
+      # ONNX Runtime for the BEN2 step: Microsoft's CPU release, the version and SHA-256 that
+      # packages/video-matting/src/registry.ts pins (users get it from the same release on the first use of matting). Its
+      # CoreML is on macOS; Windows and Linux run on the CPU.
+      - name: Download ONNX Runtime
+        shell: bash
+        run: |
+          v=1.31.0
+          case "$RUNNER_OS" in
+            macOS) f=onnxruntime-osx-arm64-$v.tgz; sha=1031b36dd3bdaa8d976a6130d9cf2a05e9be320b93ae804f8427b91dc3432afc; lib=libonnxruntime.$v.dylib ;;
+            Linux) f=onnxruntime-linux-x64-$v.tgz; sha=cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57; lib=libonnxruntime.so.$v ;;
+            Windows) f=onnxruntime-win-x64-$v.zip; sha=3958d8a44984160692c1b4ffd0de3cb48f8c39f9d34bb31e433db06e30b82195; lib=onnxruntime.dll ;;
+          esac
+          mkdir -p "$RUNNER_TEMP/ort"
+          curl -fsSL -o "$RUNNER_TEMP/$f" "https://github.com/microsoft/onnxruntime/releases/download/v$v/$f"
+          echo "$sha  $RUNNER_TEMP/$f" | (sha256sum -c - || shasum -a 256 -c -)
+          if [ "$RUNNER_OS" = Windows ]; then
+            # Windows's own bsdtar reads zip; Git's GNU tar does not, nor a drive-letter path.
+            /c/Windows/System32/tar.exe -xf "$(cygpath -w "$RUNNER_TEMP/$f")" -C "$(cygpath -w "$RUNNER_TEMP/ort")" "onnxruntime-win-x64-$v/lib/onnxruntime.dll" "onnxruntime-win-x64-$v/lib/onnxruntime_providers_shared.dll"
+            echo "ORT_DYLIB_PATH=$(cygpath -w "$RUNNER_TEMP/ort/onnxruntime-win-x64-$v/lib/$lib")" >> "$GITHUB_ENV"
+          else
+            tar -xf "$RUNNER_TEMP/$f" -C "$RUNNER_TEMP/ort" "${f%.tgz}/lib/$lib"
+            echo "ORT_DYLIB_PATH=$RUNNER_TEMP/ort/${f%.tgz}/lib/$lib" >> "$GITHUB_ENV"
+          fi
+
       # One real model run on each platform: BEN2 (the revision and SHA-256 are the ones in packages/video-matting/src/registry.ts)
-      # on the Fred Ott frame in the repository. It runs on the CPU here (ONNX Runtime's, or DirectML on Windows). Not a
+      # on the Fred Ott frame in the repository. It runs on ONNX Runtime's CPU here (CoreML on macOS). Not a
       # download users get from CI: the weights are fetched for this test only, and are not cached or kept.
       - name: Test BEN2 on a real frame (macOS, Linux)
         if: runner.os != 'Windows'
@@ -211,6 +235,13 @@ jobs:
             Linux) ldd "$f" ;;
             Windows) dumpbin //dependents "$f" || true ;;
           esac
+          # ONNX Runtime is opened at run time, never linked: the addon must not depend on it.
+          case "$RUNNER_OS" in
+            macOS) deps=$(otool -L "$f") ;;
+            Linux) deps=$(ldd "$f") ;;
+            Windows) deps=$(dumpbin //dependents "$f" || true) ;;
+          esac
+          if echo "$deps" | grep -qi onnxruntime; then echo "the addon links ONNX Runtime"; exit 1; fi
 
       - uses: actions/upload-artifact@v7
         with:

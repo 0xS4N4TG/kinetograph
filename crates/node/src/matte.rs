@@ -15,10 +15,10 @@ use napi_derive::napi;
 /// Whether `matteVideo` can run here, and on what.
 #[napi(object)]
 pub struct MattingSupport {
-    /// ONNX Runtime is linked and starts.
+    /// Matting can run here. ONNX Runtime is not linked: it is downloaded on first use, so this does not open it unless
+    /// `ORT_DYLIB_PATH` names a library.
     pub available: bool,
-    /// What `ben2-base` runs on: `coreml` (a Mac), `directml` (Windows), `cuda` or `webgpu` (builds with them), else
-    /// `cpu`. `modnet` always runs on the CPU, at video speed (CoreML did not help it).
+    /// What `ben2-base` runs on: `coreml` (a Mac), `cuda` or `webgpu` (builds with them), else `cpu`. `modnet` always runs on the CPU, at video speed (CoreML did not help it).
     pub backend: String,
     /// Why `available` is false, or why the backend is `cpu`.
     pub reason: Option<String>,
@@ -40,6 +40,9 @@ pub struct MatteOptions {
     pub input: String,
     /// The `.onnx` file of `model`.
     pub model_path: String,
+    /// ONNX Runtime's library (`libonnxruntime.dylib`, `.so` or `onnxruntime.dll`); `ORT_DYLIB_PATH` names it when
+    /// this is absent. The addon does not link ONNX Runtime: `@kinetographdev/video-matting` downloads it on first use.
+    pub runtime_path: Option<String>,
     /// `modnet` or `ben2-base`.
     pub model: String,
     /// Output: the subject with alpha. `.webm` is VP9 `yuva420p`, `.mov` is ProRes 4444.
@@ -149,6 +152,7 @@ fn options_of(
     Ok(Options {
         input: PathBuf::from(&request.input),
         model_path: PathBuf::from(&request.model_path),
+        runtime_path: request.runtime_path.map(PathBuf::from),
         model,
         foreground: PathBuf::from(&request.foreground),
         base: request.base.map(PathBuf::from),

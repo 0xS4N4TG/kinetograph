@@ -41,3 +41,51 @@ export const MODELS: ModelSpec[] = [
 ];
 
 export const DEFAULT_MODEL: VideoMattingModel = 'modnet';
+
+/** The release of ONNX Runtime (Microsoft's, CPU build) the addon loads at run time; `ort` needs 1.17 or newer. */
+export const RUNTIME_VERSION = '1.31.0';
+
+/** Microsoft's archive for one platform, pinned by SHA-256, and the files of it the addon needs (all in `lib/`). */
+export interface RuntimeSpec {
+  /** Where `lib/` of the archive is: the archive's top folder. */
+  folder: string;
+  /** The archive's file name; its URL is under github.com/microsoft/onnxruntime/releases. */
+  archive: string;
+  size: number;
+  sha256: string;
+  /** The library `ort` opens. */
+  library: string;
+  /** Beside it, loaded by it when an execution provider is: the file names to keep. */
+  others: string[];
+}
+
+/**
+ * By `${process.platform}-${process.arch}`. The Linux build needs glibc 2.28 or newer; macOS's has CoreML,
+ * and Windows's and Linux's run on the CPU only.
+ */
+export const RUNTIMES: Record<string, RuntimeSpec> = {
+  'darwin-arm64': {
+    folder: `onnxruntime-osx-arm64-${RUNTIME_VERSION}`,
+    archive: `onnxruntime-osx-arm64-${RUNTIME_VERSION}.tgz`,
+    size: 36_549_009,
+    sha256: '1031b36dd3bdaa8d976a6130d9cf2a05e9be320b93ae804f8427b91dc3432afc',
+    library: `libonnxruntime.${RUNTIME_VERSION}.dylib`,
+    others: [],
+  },
+  'linux-x64': {
+    folder: `onnxruntime-linux-x64-${RUNTIME_VERSION}`,
+    archive: `onnxruntime-linux-x64-${RUNTIME_VERSION}.tgz`,
+    size: 11_408_003,
+    sha256: 'cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57',
+    library: `libonnxruntime.so.${RUNTIME_VERSION}`,
+    others: ['libonnxruntime_providers_shared.so'],
+  },
+  'win32-x64': {
+    folder: `onnxruntime-win-x64-${RUNTIME_VERSION}`,
+    archive: `onnxruntime-win-x64-${RUNTIME_VERSION}.zip`,
+    size: 82_887_349,
+    sha256: '3958d8a44984160692c1b4ffd0de3cb48f8c39f9d34bb31e433db06e30b82195',
+    library: 'onnxruntime.dll',
+    others: ['onnxruntime_providers_shared.dll'],
+  },
+};
