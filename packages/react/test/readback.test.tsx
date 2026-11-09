@@ -130,7 +130,7 @@ describe('refs to DOM elements', () => {
       const ref = useRef<any>(null);
       useLayoutEffect(() => {
         ref.current.getBoundingClientRect();
-        getComputedStyle(ref.current).opacity;
+        (globalThis as any).getComputedStyle(ref.current).opacity;
       }, []);
       return <div ref={ref} style={{ width: 5, height: 5 }} />;
     }
