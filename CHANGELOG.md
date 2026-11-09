@@ -15,6 +15,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - Video frames convert to yuv420p on the GPU before the readback (`KINETOGRAPH_CPU_YUV=1` converts on the CPU).
 - A worker that starts a HyperFrames chunk skips the root layout check on the frames it plays through; a running chunk is split only when that ends it sooner.
 - A blurred outer `box-shadow` is drawn through a blur mask filter inside its clip instead of two offscreen layers (papercut slice 16.5 → 15.0 ms a frame).
+- A turned or skewed blurred outer `box-shadow` is blurred in closed form in a runtime shader instead of a mask filter (papercut slice 15.0 → 11.3 ms a frame).
 
 ### Fixed
 
