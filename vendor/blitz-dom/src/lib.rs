@@ -40,6 +40,7 @@ mod document;
 pub mod node;
 
 mod config;
+pub mod counters;
 /// CSSOM stylesheet access (`document.styleSheets`, `CSSStyleSheet`, `CSSRule`)
 mod cssom;
 mod debug;

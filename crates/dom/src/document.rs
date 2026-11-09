@@ -420,12 +420,24 @@ impl Resolved {
     /// last paint's layers with those groups' transforms worked out again
     /// (`paint::repaint_transforms`); otherwise a whole paint.
     pub fn paint(&mut self, request: &IslandRequest) -> IslandOutput {
+        use crate::counters;
         let doc = &self.island.doc;
         let again = match (self.moved.take(), self.painted.take()) {
             (Some(moved), Some((painted, _))) => {
-                paint::repaint_transforms(doc, request, painted, &moved)
+                let again = paint::repaint_transforms(doc, request, painted, &moved);
+                match again {
+                    Some(_) => counters::repainted(),
+                    None => counters::missed(counters::Miss::Repaint),
+                }
+                again
             }
-            _ => None,
+            (_, painted) => {
+                match painted {
+                    Some(_) => counters::whole(),
+                    None => counters::fresh(),
+                }
+                None
+            }
         };
         let (output, painted) = again.unwrap_or_else(|| paint::paint_keeping(doc, request));
         self.painted = Some((painted, stamps(doc)));
@@ -463,14 +475,20 @@ fn transform_changes(
     edited: &[NodeId],
     stamps: &[Stamp],
 ) -> Option<Vec<NodeId>> {
+    use crate::counters::{Miss, missed};
     let doc = &island.doc;
     if stamps.len() != doc.tree().len() {
+        missed(Miss::Length);
         return None;
     }
     let mut moved = Vec::new();
     for stamp in stamps {
-        let node = doc.get_node(stamp.node)?;
+        let Some(node) = doc.get_node(stamp.node) else {
+            missed(Miss::NodeGone);
+            return None;
+        };
         if layout_of(node) != stamp.layout {
+            missed(Miss::Layout);
             return None;
         }
         let style = node.primary_styles();
@@ -484,13 +502,18 @@ fn transform_changes(
                 if !edited.contains(&stamp.node)
                     || !was.same_values_except(now, &TRANSFORM_PROPERTIES)
                 {
+                    missed(Miss::Value);
                     return None;
                 }
                 moved.push(stamp.node);
             }
-            _ => return None,
+            _ => {
+                missed(Miss::Value);
+                return None;
+            }
         }
     }
+    crate::counters::moved();
     Some(moved)
 }
 
@@ -629,7 +652,10 @@ impl IslandCache {
                 (Some(edited), Some((_, stamps))) if *plain => {
                     transform_changes(island, edited, stamps)
                 }
-                _ => None,
+                _ => {
+                    crate::counters::missed(crate::counters::Miss::NotStyleOnly);
+                    None
+                }
             };
             self.edited += 1;
             return Ok(kept.resolved);
