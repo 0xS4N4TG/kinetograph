@@ -425,8 +425,9 @@ export class DomElement extends DomNodeBase {
 
   get inSvg(): boolean {
     if (isSvgTag(this.host.type)) return true;
-    // `foreignObject` holds HTML: what is inside it is not in the SVG namespace.
-    for (let h: HostElement | null = this.host; h !== null; h = this.readback.parent(h)) {
+    // `foreignObject` holds HTML: what is inside it is not in the SVG namespace. The root is found once, not per step.
+    const readback = this.readback;
+    for (let h: HostElement | null = this.host; h !== null; h = readback.parent(h)) {
       if (h.type === 'svg') return true;
       if (h.type === 'foreignObject' && h !== this.host) return false;
     }
@@ -535,7 +536,8 @@ export class DomElement extends DomNodeBase {
     return null;
   }
   getAttribute(name: string): string | null {
-    return this.attrs()[name] ?? this.attrs()[name.toLowerCase()] ?? null;
+    const attrs = this.attrs();
+    return attrs[name] ?? attrs[name.toLowerCase()] ?? null;
   }
   hasAttribute(name: string): boolean {
     return this.getAttribute(name) !== null;
