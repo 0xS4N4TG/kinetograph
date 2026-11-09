@@ -740,7 +740,14 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
         let after_node_id = node.after();
 
         // Note: yes these are kinda backwards
-        let style_data = node.try_stylo_element_data().and_then(|s| s.get());
+        // A `display: none` element generates no pseudo-elements. Keeping one while
+        // hidden would keep the layout it had, which a style it was given while
+        // hidden (whose damage nothing acts on) does not rebuild once it shows.
+        let hidden = node.display_style().is_some_and(|d| d.is_none());
+        let style_data = node
+            .try_stylo_element_data()
+            .and_then(|s| s.get())
+            .filter(|_| !hidden);
         let before_style = style_data
             .as_ref()
             .and_then(|d| d.styles.pseudos.as_array()[1].clone());

@@ -762,6 +762,36 @@ fn an_edited_inline_block_keeps_the_baseline_of_its_cached_first_line() {
     );
 }
 
+/// A box whose font size changes while it is `display: none` draws its `::before` in the new size once it shows: the
+/// pseudo-element kept while it was hidden was given the new style there, and nothing rebuilt its text (fuzz seeds
+/// 6269 and 1056777).
+#[test]
+fn a_pseudo_element_restyled_while_hidden_is_drawn_in_its_new_style() {
+    let page = |style: &str| {
+        let mut r = request(el(
+            "div",
+            "$0",
+            "position: absolute; inset: 0; font: 16px 'DM Sans'",
+            vec![el_attrs("div", "$0.0", json!({ "class": "star" }), style, vec![])],
+        ));
+        r["stylesheets"] = json!([".star::before { content: '*'; color: crimson }"]);
+        r
+    };
+    let frames = [
+        page(""),
+        page("display: none; font-size: 13px"),
+        page("display: contents; font-size: 13px"),
+    ];
+    let mut cache = IslandCache::default();
+    for (i, f) in frames.iter().enumerate() {
+        assert_eq!(
+            drawn(&mut cache, f, Some(i as u64 + 1)),
+            drawn(&mut IslandCache::default(), f, None),
+            "frame {i}"
+        );
+    }
+}
+
 /// Every rect shape in `layers`, as its width and height.
 fn rects(layers: &Value, out: &mut Vec<(f64, f64)>) {
     match layers {
