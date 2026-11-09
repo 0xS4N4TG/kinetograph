@@ -14,6 +14,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A page with a `-webkit-line-clamp` box is edited from frame to frame instead of built again.
 - Video frames convert to yuv420p on the GPU before the readback (`KINETOGRAPH_CPU_YUV=1` converts on the CPU).
 - A worker that starts a HyperFrames chunk skips the root layout check on the frames it plays through; a running chunk is split only when that ends it sooner.
+- A blurred outer `box-shadow` is drawn through a blur mask filter inside its clip instead of two offscreen layers (papercut slice 16.5 → 15.0 ms a frame).
 
 ### Fixed
 

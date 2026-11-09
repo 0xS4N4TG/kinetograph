@@ -657,7 +657,7 @@ container stay inside its clip. The canvas takes the root's (or the body's) back
 | `background-size/position/repeat/clip/origin` | `Paint::Image` fill (tiles repeat in the image sampler); one shape per tile for `space` and gradient tiles up to 150; past that one shape whose paint repeats one tile (a gradient's `tile`, a picture's `spaceX`/`spaceY`: a Skia picture shader, as Chrome tiles a gradient) |
 | gradients (linear, radial incl. ellipse, conic, repeating, hints) | scene gradients; an ellipse is a circle with `transform` |
 | `background-clip: text` | the layers get a `matte` whose source is white glyph runs |
-| `box-shadow` outer / inset | a blurred shape of the shadow colour, cut with `clip` to outside the border box / inside the padding box |
+| `box-shadow` outer / inset | a blurred shape of the shadow colour, cut with `clip` to outside the border box / inside the padding box; Skia draws a blurred outer one as Chrome does, the clip and then the rounded rectangle through a blur mask filter, with no layer |
 | `border` per side, radii (elliptical), `double`, `groove`, `ridge`, `inset`, `outset`, `dashed`, `dotted` | filled ring paths, side shapes cut by mitre polygons, dashes made with kurbo |
 | `border-image` | nine slices as shapes with an image or gradient fill (stretch, repeat, round, space) |
 | `outline`, `outline-offset` | a ring outside the border box |
