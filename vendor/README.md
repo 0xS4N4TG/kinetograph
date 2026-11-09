@@ -43,7 +43,8 @@ Upstream: crates.io `blitz-dom` 0.3.0-beta.3 (`DioxusLabs/blitz`, commit `5890fa
 - `src/layout/inline.rs`: a line wider than a float-narrowed slot is reverted (`BreakLines::revert_to`) and laid out again below; block height is at least its last line's bottom.
 - `src/layout/table.rs`: `auto_columns` implements the automatic table layout algorithm; captions are laid out as blocks above or below the grid.
 - `src/layout/table.rs`, `src/layout/mod.rs`: a cell's `height` is its border box's and a minimum for its row. Not done: percentage widths on `<col>`.
-- `src/mutator.rs`: a `style` change no longer adds `restyle_subtree()` on the element and its parent.
+- `src/mutator.rs`: a `style` change no longer adds `restyle_subtree()` on the element and its parent, nor `ALL_DAMAGE` on the element (setting or removing the attribute): the restyle sets the damage the change does, so a transform or an opacity no longer rebuilds boxes.
+- `src/layout/damage.rs`: a table whose subtree has any damage is rebuilt and laid out again, since `build_table_context` reads its parts' styles when the box is built. (`ALL_DAMAGE` on every `style` edit hid this.)
 - `src/layout/inline.rs`: an inline box measured in `ComputeSize` mode that comes back without baselines is laid out in `PerformLayout` mode to get them, because taffy's size-only cache hit keeps no baselines.
 
 - `src/layout/construct.rs`, `src/stylo_to_parley.rs`: a non-atomic inline element with `unicode-bidi: isolate`, `isolate-override` or `plaintext` (`<bdi>`, `<bdo>`, `dir`) has its content wrapped in the UAX #9 isolate and pop characters (`bidi_controls`), as a browser does, so Parley's bidi resolution isolates it. Blitz set only the paragraph's base direction.

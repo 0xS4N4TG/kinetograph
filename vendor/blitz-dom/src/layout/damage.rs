@@ -104,6 +104,13 @@ impl BaseDocument {
         // Put children back
         self.nodes[node_id].children = children;
 
+        // A table's layout context is built with its box from the styles of its
+        // parts (`build_table_context`), so any change inside it rebuilds the
+        // table, which is then laid out again.
+        if !damage.is_empty() && self.nodes[node_id].flags.is_table_root() {
+            damage.insert(CONSTRUCT_BOX);
+        }
+
         if damage.contains(CONSTRUCT_BOX) {
             damage.insert(RestyleDamage::RELAYOUT);
         }
