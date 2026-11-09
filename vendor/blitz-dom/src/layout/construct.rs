@@ -829,11 +829,12 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
                 .try_stylo_element_data_mut()
                 .and_then(|s| s.get_mut());
             let node_styles = &mut node_styles.as_mut().unwrap();
-            node_styles.damage.insert(ALL_DAMAGE);
-            let primary_styles = &mut node_styles.styles.primary;
-
-            if !std::ptr::eq(&**primary_styles.as_ref().unwrap(), &*pe_style) {
-                *primary_styles = Some(pe_style);
+            // A style the traversal already synced (`sync_pseudo_element_styles`) left its
+            // own damage. Damage added here comes after it was propagated, so it would
+            // rebuild the pseudo-element's text while the layout caches above it stay.
+            if !std::ptr::eq(&**node_styles.styles.primary.as_ref().unwrap(), &*pe_style) {
+                node_styles.damage.insert(ALL_DAMAGE);
+                node_styles.styles.primary = Some(pe_style);
                 node_styles.set_restyled();
                 doc.pending_style_image_nodes.push(pe_node_id);
             }
@@ -1053,6 +1054,12 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                         } else {
                             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                            // Inline content has no formatting context of its own: drop the
+                            // one it had as a box before an edit made it inline.
+                            node.flags.reset_construction_flags();
+                            if let Some(element) = node.element_data_mut() {
+                                element.take_inline_layout();
+                            }
                             iter_children_and_pseudos!(nodes[node_id], |child_id| {
                                 find_inline_layout_embedded_boxes_recursive(
                                     nodes,
