@@ -14,6 +14,7 @@ import {
   isDomElement,
   islandEdits,
   lap,
+  noteIslandState,
   noteStylesheet,
   requestFor,
   stamp,
@@ -208,10 +209,13 @@ export function createReadback(container: Container, options: EmitOptions): Read
     const editable = hasAddonFunction('domIslandEdits') ? editableRequest(request) : null;
     if (editable === null) {
       kept.delete(root);
+      noteIslandState(path, null);
       return json;
     }
     const state = { ...editable, stamp: ++stamps, commits: container.commits, pass: currentSamplePass(), imported: importedStylesheets(), dirty: new Set<HostElement>() };
     kept.set(root, state);
+    // The frame's render of the same request names this state (it is changed in place by the edits that follow).
+    noteIslandState(path, state);
     return `{"stamp":${state.stamp},"request":${json}}`;
   };
 

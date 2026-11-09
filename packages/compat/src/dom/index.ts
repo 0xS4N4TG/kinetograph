@@ -158,13 +158,44 @@ export function requestFor(root: Extract<DomNode, { kind: 'element' }>, context:
   return built;
 }
 
+/**
+ * The state of an island a readback of the frame left in the addon (`Kept` of `@kinetographdev/react`'s readback): the
+ * number it holds it as, the pass, and the request it shows.
+ */
+export interface IslandState {
+  readonly stamp: number;
+  readonly pass: number | undefined;
+  readonly request: IslandRequestJson;
+}
+
+/** The state the readbacks last left of each island, by path: a render of the same request names it instead of sending it. */
+const readStates = new Map<string, IslandState>();
+
+/** Notes the state a readback left of the island at `path` (null: none the addon is known to hold). */
+export function noteIslandState(path: string, state: IslandState | null): void {
+  if (state === null) readStates.delete(path);
+  else readStates.set(path, state);
+}
+
 export function mapDomIsland(root: DomNode, context: IslandContext): IslandResult {
   let t = stamp();
   const prepared = prepare(root, context);
   t = lap('dom_prep', t);
   if (prepared === null) return { layers: [], unsupported: [], camera: null };
-  const { request, natives, json } = prepared;
-  const text = samplePass === null ? addonFunction('renderDomIsland')(json) : addonFunction('renderDomIsland')(json, samplePass, bases.get(request.path)?.pass);
+  const { request, natives } = prepared;
+  const render = (json: string): string =>
+    samplePass === null ? addonFunction('renderDomIsland')(json) : addonFunction('renderDomIsland')(json, samplePass, bases.get(request.path)?.pass);
+  // The frame draws the tree its scripts read last: when the request is the state a readback left, it is named, not sent.
+  const state = samplePass === null ? undefined : readStates.get(request.path);
+  let text: string | null = null;
+  if (state !== undefined && state.pass === samplePass && sameJson(request, state.request)) {
+    try {
+      text = render(JSON.stringify({ stamp: state.stamp, base: state.stamp, path: request.path, time: request.time, set: [] }));
+    } catch (error) {
+      if ((error as { code?: unknown }).code !== 'STALE_BASE') throw error;
+    }
+  }
+  text ??= render(JSON.stringify(request));
   t = lap('dom_native', t);
   const output = JSON.parse(text) as IslandOutputJson;
   const result = assemble(output, request.path, (path) => {
@@ -190,7 +221,18 @@ function prepare(root: DomNode, context: IslandContext) {
   // it would not read is not sent.
   if (history.length > 0 && islandMoves(request.stylesheets, [request.root, ...history.map((state) => state.root)])) request.history = history;
   if (isWarming()) return null;
-  return { request, natives, json: JSON.stringify(request) };
+  return { request, natives };
+}
+
+/** Whether two JSON values are the same (objects whatever the order of their keys). */
+function sameJson(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a)) return Array.isArray(b) && a.length === b.length && a.every((item, i) => sameJson(item, b[i]));
+  if (Array.isArray(b)) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) => sameJson((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]));
 }
 
 /** An island's result from the addon's output; `emitNative` gives the layers of the native element at a path. */
@@ -250,8 +292,8 @@ export function startDomIsland(root: DomNode, context: IslandContext): StartedIs
     const nothing: IslandResult = { layers: [], unsupported: [], camera: null };
     return { finish: () => nothing };
   }
-  const { request, natives, json } = prepared;
-  const ticket = addonFunction('startDomIsland')(json, samplePass ?? undefined, samplePass === null ? undefined : bases.get(request.path)?.pass);
+  const { request, natives } = prepared;
+  const ticket = addonFunction('startDomIsland')(JSON.stringify(request), samplePass ?? undefined, samplePass === null ? undefined : bases.get(request.path)?.pass);
   lap('dom_start', t);
   // In the queue before the islands its native elements start: finished in the order the addon draws them.
   const queued: Queued = { ticket, path: request.path, natives: new Map(), result: null };

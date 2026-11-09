@@ -543,6 +543,7 @@ test('readbacks take edits to a numbered state, and answer as the whole request 
   // Without a pass a render keeps nothing: the whole request's pictures first.
   const drawn = native.renderDomIsland(island(tree(150, 'blue', 'b')));
   const boxes = native.domLayoutBoxes(island(tree(150, 'red', 'b')));
+  const drawnWhole = native.renderDomIsland(island(tree(90, 'blue', 'b')));
   const pass = 7300;
   assert.equal(width(numbered(1, island(tree(100, 'red', 'a'))), pass), '100px');
   // Edits to state 1: a style and a text; answered as the whole request of the new tree is.
@@ -555,6 +556,11 @@ test('readbacks take edits to a numbered state, and answer as the whole request 
   // The frame draws the state the edits made, as a render of the whole request does; and keeps its number.
   assert.equal(native.renderDomIsland(island(tree(150, 'blue', 'b')), pass), drawn);
   assert.equal(width(edits(4, 3, [{ path: '$0', style: 'width: 90px; height: 10px' }]), pass + 1), '90px');
+  // A render can name the state a readback left (edits that change nothing) instead of sending the request.
+  assert.equal(native.renderDomIsland(edits(4, 4, []), pass + 1), drawnWhole);
+  assert.equal(width(edits(4, 3, []), pass + 1), '90px');
+  rejects(() => native.renderDomIsland(edits(4, 3, [{ path: '$0', style: '' }]), pass + 1), 'INVALID_ARG', /no edits/);
+  rejects(() => native.renderDomIsland(edits(3, 3, []), pass + 1), 'STALE_BASE');
   // Edits to a state the addon does not hold: STALE_BASE, and the whole request is sent instead.
   rejects(() => width(edits(5, 3, []), pass + 1), 'STALE_BASE', /send the whole request/);
   rejects(() => width(edits(6, 4, []), pass + 5), 'STALE_BASE');

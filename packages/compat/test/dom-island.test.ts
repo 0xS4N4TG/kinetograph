@@ -6,8 +6,10 @@ import type { LayerJson } from '@kinetographdev/scene';
 import {
   beginSamplePass,
   breakSamplePasses,
+  currentSamplePass,
   endSamplePass,
   mapDomIsland,
+  noteIslandState,
   registerStylesheet,
   resetStylesheets,
   setCssFontFaceHandler,
@@ -260,5 +262,41 @@ describe('fonts of the page\'s own CSS', () => {
     } finally {
       setCssFontFaceHandler(null);
     }
+  });
+});
+
+describe('a render of the state a readback left', () => {
+  afterEach(() => {
+    endSamplePass();
+    noteIslandState('$1', null);
+  });
+
+  it('names the state instead of sending the request, and sends it when the addon does not hold the state', () => {
+    const got: string[] = [];
+    let stale = false;
+    setDomAddon({
+      renderDomIsland(json: string) {
+        got.push(json);
+        if (stale && json.startsWith('{"stamp"')) throw Object.assign(new Error('not kept'), { code: 'STALE_BASE' });
+        return JSON.stringify({ layers: [], unsupported: [], camera: null });
+      },
+    });
+    const tree = node('div', { style: { width: 5 } });
+    // The request a readback sent: the one this render builds.
+    mapDomIsland(tree, context());
+    const request = JSON.parse(got[0]!);
+    beginSamplePass();
+    // A state of another pass is not named.
+    noteIslandState('$1', { stamp: 7, pass: -1, request });
+    mapDomIsland(tree, context());
+    noteIslandState('$1', { stamp: 7, pass: currentSamplePass(), request });
+    mapDomIsland(tree, context());
+    // Another tree is sent.
+    mapDomIsland(node('div', { style: { width: 6 } }), context());
+    // A state the addon does not hold: the request is sent after all.
+    stale = true;
+    mapDomIsland(tree, context());
+    expect(got.slice(1).map((json) => JSON.parse(json).stamp ?? 'request')).toEqual(['request', 7, 'request', 7, 'request']);
+    expect(JSON.parse(got[2]!)).toEqual({ stamp: 7, base: 7, path: '$1', time: 0, set: [] });
   });
 });

@@ -63,7 +63,8 @@ calls it lazily and caches by tree generation.
   the caller sends the whole request. compat's readback sends edits only for writes to an element's own style,
   attributes and texts; a commit, a change of which nodes the tree holds, a `<style>`, `<link>`, canvas or native
   element, new fonts or sheets send the whole request. `KINETOGRAPH_DOM_VERIFY=1` checks each request made by edits
-  against a whole build.
+  against a whole build. A render whose request is the state a readback of the frame left names it with edits that
+  change nothing (`stamp` = `base`, empty `set`), and sends the request when that fails with `STALE_BASE`.
 
 ## 3. Code areas
 

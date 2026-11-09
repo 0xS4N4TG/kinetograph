@@ -230,15 +230,18 @@ impl Islands {
         self.cache.peek(&path)
     }
 
-    /// The kept document resolved from exactly `json` in `pass`, its request and the caller's number for its state,
-    /// taken out: hand them back to `keep`.
+    /// The kept document of what `asked` names, as it is, in `pass`, its request and the caller's number for its
+    /// state, taken out: hand them back to `keep`.
     fn take(
         &mut self,
-        json: &str,
+        asked: &Asked,
         pass: Option<u64>,
     ) -> Option<(IslandRequest, Resolved, Option<u64>)> {
-        self.cache.enter(pass);
-        let path = self.path_of(json)?.to_string();
+        self.same(asked, pass)?;
+        let path = match asked {
+            Asked::Request { text, .. } => self.path_of(text)?.to_string(),
+            Asked::Edits(edits) => edits.path.clone(),
+        };
         let stamp = self.sources.remove(&path).and_then(|source| source.stamp);
         let (request, resolved) = self.cache.take(&path)?;
         Some((request, resolved, stamp))
@@ -407,17 +410,34 @@ fn start_dom_island(
     let caller = kinetograph_core::profile::caller();
     start_on_island_thread(RENDER_STAGES, move || {
         use kinetograph_core::profile::{add_for_since, add_shared_since};
+        // A request, or the state a readback of the frame left (edits that change nothing).
+        let asked = asked(&json, "renderDomIsland")?;
+        if let Asked::Edits(edits) = &asked
+            && !(edits.set.is_empty() && edits.stamp == edits.base)
+        {
+            return Err((
+                Code::InvalidArg,
+                "a render names the state a readback left, with no edits".to_string(),
+            ));
+        }
+        // The text of the request, kept when it came as one.
+        let whole = matches!(asked, Asked::Request { stamp: None, .. });
         // The tree the frame's scripts read last is drawn from the document they read.
         let (request, mut resolved, stamp) = match SAMPLES
-            .with(|islands| islands.borrow_mut().take(&json, pass))
+            .with(|islands| islands.borrow_mut().take(&asked, pass))
         {
             Some(kept) => {
                 kinetograph_core::profile::add_for(&caller, "n_reused", 1.0);
                 kept
             }
             None => {
+                let Asked::Request { text, .. } = asked else {
+                    let message =
+                        "the island is not kept as the state named: send the whole request";
+                    return Err((Code::StaleBase, message.to_string()));
+                };
                 let timer = kinetograph_core::profile::start();
-                let request = parse_island(&json, "renderDomIsland")?;
+                let request = parse_island(text, "renderDomIsland")?;
                 add_shared_since("dom_parse", timer);
                 add_for_since(&caller, "n_parse", timer);
                 let timer = kinetograph_core::profile::start();
@@ -465,7 +485,7 @@ fn start_dom_island(
         let path = request.path.clone();
         SAMPLES.with(|islands| {
             let source = Source {
-                text: Some(json),
+                text: whole.then_some(json),
                 stamp,
             };
             islands.borrow_mut().keep(request, source, resolved)
