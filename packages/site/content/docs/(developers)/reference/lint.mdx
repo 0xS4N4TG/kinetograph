@@ -3,6 +3,8 @@ title: Lint rules
 description: What kinetograph lint checks, what triggers each rule, and how to fix it.
 ---
 
+<Terminal command="npx kinetograph lint src/index.tsx" />
+
 `npx kinetograph lint <entry>` draws a few frames (8 spread over the composition, or `--frames 0,30,60`) and reports problems. Each finding names its rule, the layer and the frames. An error makes the exit code 1, and a warning doesn't.
 
 ## Rules

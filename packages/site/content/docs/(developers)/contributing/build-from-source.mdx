@@ -3,6 +3,8 @@ title: Build from source
 description: Build Kinetograph from a copy of the repository, for working on the engine or a platform with no prebuilt package, and the FFmpeg licence.
 ---
 
+<Terminal command="npm ci\nnpm run build\nnpx kinetograph doctor" />
+
 Most people install the prebuilt package from npm: see [Install Kinetograph](/docs/getting-started/installation/). Build from source only to work on the engine, or on a platform with no prebuilt package (Intel Mac, Linux on ARM). It takes 15 to 30 minutes.
 
 The prebuilt native addon covers macOS (arm64), Linux (x64, glibc) and Windows (x64). It carries FFmpeg, so a prebuilt install needs nothing else.

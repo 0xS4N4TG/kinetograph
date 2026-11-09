@@ -3,6 +3,8 @@ title: Scene format
 description: The JSON scene the engine draws, with its fields, keyframes, layers and layout.
 ---
 
+<Terminal command="npx kinetograph render scene.json -o out/scene.mp4" />
+
 A [scene](/docs/terminology/scene/) is one JSON file. The same scene and frame give the same pixels every time.
 
 A project file (TSX) makes a scene for each frame. You can also write a scene by hand. Every command takes a `.json` file as its entry. `render` draws a scene in one pass, not in worker threads.

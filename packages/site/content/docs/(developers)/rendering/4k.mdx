@@ -3,6 +3,8 @@ title: 4K rendering
 description: Render a 3840 by 2160 video, either by declaring a 4K composition or by scaling a 1080p one, and keep a high-quality master.
 ---
 
+<Terminal command="npx kinetograph render src/index.tsx --scale 2 -o out/title-4k.mp4" />
+
 There are two ways to get 4K. Declare the composition at 3840 by 2160, or keep it at 1080p and add `--scale 2`. Either way each frame is drawn at the final size, so text and edges stay sharp.
 
 ```sh

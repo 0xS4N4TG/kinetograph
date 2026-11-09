@@ -3,6 +3,8 @@ title: Fix a slow render or preview
 description: Check with stills and drafts, draw frames in parallel, and find out which stage of a frame is slow.
 ---
 
+<Terminal command="npx kinetograph bench src/index.tsx --frame 30" />
+
 Don't render the whole video to check one thing. Look at the frames you care about, and render a draft before the final.
 
 ## Look first, render later
