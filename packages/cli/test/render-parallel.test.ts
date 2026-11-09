@@ -174,6 +174,22 @@ describe.skipIf(!ready)('render --concurrency', () => {
     }
   });
 
+  it('decodes to the same frames when the workers are found held up by the GPU and the main thread draws the rest', () => {
+    // No `--concurrency`: the count is a default, so the workers are judged, and KINETOGRAPH_GPU_BOUND=0 finds them
+    // held up whatever they waited, to take the hand-over every time.
+    for (const range of [[], ['--range', '30..160']]) {
+      render('seq.mp4', ['--concurrency', '1', ...range]);
+      render('gpu.mp4', range, 'index.tsx', { KINETOGRAPH_GPU_BOUND: '0' });
+      const seq = decoded('seq.mp4');
+      const gpu = decoded('gpu.mp4');
+      expect(gpu.video).toEqual(seq.video);
+      expect(gpu.audio).toBe(seq.audio);
+    }
+    render('fade-seq.mp4', ['--concurrency', '1'], 'fades.tsx');
+    render('fade-gpu.mp4', [], 'fades.tsx', { KINETOGRAPH_GPU_BOUND: '0' });
+    expect(decoded('fade-gpu.mp4').video).toEqual(decoded('fade-seq.mp4').video);
+  });
+
   it('gives CSS transitions the same history in every chunk, whether a chunk starts before, inside or after a fade', () => {
     render('fade-seq.mp4', ['--concurrency', '1'], 'fades.tsx');
     const seq = decoded('fade-seq.mp4');

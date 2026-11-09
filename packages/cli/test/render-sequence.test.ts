@@ -318,8 +318,9 @@ describe('render (video) --concurrency', () => {
     expect(r.err).toBe('');
     expect(r.code).toBe(0);
     expect(port.spawned).toBe(3);
-    expect(calls.yuv.map((y) => y.index)).toEqual(Array.from({ length: 36 }, (_, i) => i));
-    // The frame the worker drew at each index: frame 10 + index.
+    // Pushed by frame number, as this thread pushes its own frames when it draws the rest.
+    expect(calls.yuv.map((y) => y.index)).toEqual(Array.from({ length: 36 }, (_, i) => 10 + i));
+    // The frame the worker drew at each: frame 10 + its place.
     expect(calls.yuv.map((y) => (y.data[0]! << 8) | y.data[1]!)).toEqual(Array.from({ length: 36 }, (_, i) => 10 + i));
     expect(calls.finished).toEqual([undefined]);
     expect(calls.pushed).toHaveLength(0);

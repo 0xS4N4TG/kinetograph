@@ -11,6 +11,7 @@ import { native } from './native.js';
 import { ProfileLog, now, profiling, takeAddon, takeJs } from './profile.js';
 import { scaleScene } from './scenes.js';
 import { openSource, type FrameOutput, type WorkerSpec } from './source.js';
+import { nowMs } from './time.js';
 
 export interface WorkerInit {
   spec: WorkerSpec;
@@ -36,8 +37,20 @@ export type ToWorker =
 /** Worker to main. */
 export type FromWorker =
   | { type: 'ready' }
-  /** `repeated`: the frame was not drawn, being the same as the one before it in its chunk (packages/cli/skills/kinetograph/references/AUTHORING.md §9). */
-  | { type: 'frame'; frame: number; data: ArrayBuffer; audio: AudioClipJson[]; unsupported: Unsupported[]; repeated: boolean }
+  /**
+   * `repeated`: the frame was not drawn, being the same as the one before it in its chunk (packages/cli/skills/kinetograph/references/AUTHORING.md §9).
+   * `busyMs`: the worker's time on it since the frame before (0 for a chunk's first); `gpuWaitMs`: of that, waiting for the GPU.
+   */
+  | {
+      type: 'frame';
+      frame: number;
+      data: ArrayBuffer;
+      audio: AudioClipJson[];
+      unsupported: Unsupported[];
+      repeated: boolean;
+      busyMs: number;
+      gpuWaitMs: number;
+    }
   | { type: 'chunk'; first: number; last: number }
   /** The frames of the chunk it gave up, `first..=last` (empty when `first > last`). */
   | { type: 'split'; first: number; last: number }
@@ -109,7 +122,14 @@ try {
       last = pixels;
       const t2 = log ? now() : 0;
       const data = copy(pixels);
-      post({ type: 'frame', frame: index, data, audio: out.audio, unsupported: out.unsupported ?? [], repeated: drawn.repeated }, [data]);
+      // A chunk's first frame says nothing of the GPU (it includes the frames its start plays through, and the first of
+      // all the warm-up), so it counts as no time.
+      const at = nowMs();
+      const busyMs = mark === undefined ? 0 : at - mark;
+      mark = at;
+      const waited = renderer.takeGpuWaitMs();
+      const gpuWaitMs = busyMs > 0 ? waited : 0;
+      post({ type: 'frame', frame: index, data, audio: out.audio, unsupported: out.unsupported ?? [], repeated: drawn.repeated, busyMs, gpuWaitMs }, [data]);
       if (log && row) {
         const t3 = now();
         log.add({ ...row, finish: t1 - t0, yuv: t2 - t1, post: t3 - t2, t3, ...takeAddon() });
@@ -119,6 +139,7 @@ try {
     const syncStart = process.env.KINETOGRAPH_SYNC_START !== undefined;
     const run = { next: message.first, end: message.last };
     active = run;
+    let mark: number | undefined;
     const chunkStart = log ? now() : 0;
     if (log) log.add({ kind: 'chunk', first: message.first, last: message.last, t0: chunkStart, waited: chunkStart - freeSince });
     // A chunk's first frame is drawn, whatever this worker drew before: a frame is only ever taken from the frame
@@ -134,7 +155,7 @@ try {
       if (sequence) {
         // An image file per frame is drawn and encoded whole here, with no frame in flight.
         const data = copy(encodeFrame(renderer, sequence, sceneJson, frame, source.baseDir));
-        post({ type: 'frame', frame: index, data, audio: out.audio, unsupported: out.unsupported ?? [], repeated: false }, [data]);
+        post({ type: 'frame', frame: index, data, audio: out.audio, unsupported: out.unsupported ?? [], repeated: false, busyMs: 0, gpuWaitMs: 0 }, [data]);
         continue;
       }
       // The frame before is collected first: its start ran on the addon's own thread while this frame's JS did, and

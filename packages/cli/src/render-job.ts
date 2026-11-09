@@ -49,6 +49,11 @@ export interface RenderJobOptions {
    * project (not a `.json` scene, which the addon draws whole) uses more.
    */
   concurrency?: number;
+  /**
+   * `concurrency` is a default, not the user's: if the workers turn out to be held up by the GPU (`gpuBound`), they
+   * finish the chunks they were given and this thread draws the rest.
+   */
+  adaptiveWorkers?: boolean;
   /** Called after each frame of a project is pushed to the encoder. */
   onFrame?(done: number, total: number): void;
   /** Progress for people, e.g. "mixing audio". */
@@ -235,7 +240,7 @@ export async function renderSource(
   const parallel = workers > 1 && source.worker !== undefined;
   // This thread draws the frames: the GPU converts them to yuv420p, as in a worker, for the writer to send as they are.
   // Off again once the video is finished or aborted, as the renderer is used after it.
-  const gpuYuv = !parallel && usesGpuYuv(plan.convertFormat, undefined);
+  const gpuYuv = (!parallel || options.adaptiveWorkers === true) && usesGpuYuv(plan.convertFormat, undefined);
   if (gpuYuv) renderer.setYuv420(true);
   stage('beginVideo');
   let writer: ReturnType<Renderer['beginVideo']>;
@@ -258,6 +263,8 @@ export async function renderSource(
       leftOut.add(frame, unsupported);
     };
     const pushed = (index: number): void => options.onFrame?.(index + 1, total);
+    // Frames the workers drew; this thread draws the rest (all of them without workers).
+    let drawn = 0;
     if (parallel && source.worker) {
       // The workers number the frames drawn 0..total-1; `frameAt` says which frame of the composition each is.
       artifactRecords = await renderInParallel({
@@ -269,18 +276,23 @@ export async function renderSource(
         origin: first,
         step,
         workers,
+        adaptive: options.adaptiveWorkers,
         count: total,
-        push: (index, data) => writer.pushYuv(data, index),
+        push: (index, data) => writer.pushYuv(data, frameAt(index)),
         onFrame: (index, audio, unsupported, repeated) => {
           if (repeated) parallelRepeats += 1;
           onFrame(frameAt(index), audio, unsupported);
         },
-        onPushed: pushed,
+        onPushed: (index) => {
+          drawn = index + 1;
+          pushed(index);
+        },
         shouldCancel: options.shouldCancel,
       });
-    } else {
+    }
+    if (drawn < total) {
       const log = profiling ? new ProfileLog(true) : undefined;
-      for (let index = 0; index < total; index++) {
+      for (let index = drawn; index < total; index++) {
         if (options.shouldCancel?.()) throw new CliError('CANCELLED', 'the render was cancelled');
         const frame = frameAt(index);
         const t0 = log ? now() : 0;
@@ -296,7 +308,10 @@ export async function renderSource(
         pushed(index);
       }
       log?.flush();
-      artifactRecords = source.artifacts?.() ?? [];
+      // The record a later frame made wins, as in one run: this thread's frames come after the workers'.
+      const latest = new Map(artifactRecords.map((record) => [record.filename, record]));
+      for (const record of source.artifacts?.() ?? []) latest.set(record.filename, record);
+      artifactRecords = [...latest.values()];
     }
     stage('frames pushed (loop end)');
     const clips = joinClips(clipFrames);

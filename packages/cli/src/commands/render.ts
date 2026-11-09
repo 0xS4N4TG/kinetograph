@@ -100,7 +100,7 @@ export const render: Command = {
     { name: 'draft', type: 'boolean', description: 'Half size, for a fast look (the same as --scale 0.5)' },
     ...EXPORT_FLAGS,
     ...SEQUENCE_FLAGS,
-    { name: 'concurrency', type: 'number', description: 'Frames drawn at once, in worker threads (default: half the cores, at most 4; 1 draws every frame in the main thread; a .json scene is drawn whole)' },
+    { name: 'concurrency', type: 'number', description: 'Frames drawn at once, in worker threads (default: half the cores, at most 4, and the main thread takes over if the GPU holds the workers up; 1 draws every frame in the main thread; a .json scene is drawn whole)' },
     STRICT_OPTION,
     PREFERRED_EFFECT_BACKEND_OPTION,
     DEV_REACT_OPTION,
@@ -144,6 +144,7 @@ export const render: Command = {
         preferredEffectBackend: parsePreferredEffectBackend(args.options['preferred-effect-backend']),
         strict: args.options.strict === true,
         concurrency,
+        adaptiveWorkers: args.options.concurrency === undefined,
         progress: context.progress,
         onFrame(done, total) {
           if (done === total || done % Math.max(1, Math.floor(total / 10)) === 0) {
