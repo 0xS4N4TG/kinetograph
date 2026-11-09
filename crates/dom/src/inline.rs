@@ -123,7 +123,7 @@ pub fn add_edge_spacers(doc: &mut BaseDocument) -> usize {
     }
     let mut jobs = Vec::new();
     for (id, node) in doc.tree().iter() {
-        if !node.is_non_atomic_inline() || node.has_attr_spacer() {
+        if !node.is_non_atomic_inline() || is_spacer(node) {
             continue;
         }
         let basis = containing_width(doc, node);
@@ -185,15 +185,9 @@ pub fn add_edge_spacers(doc: &mut BaseDocument) -> usize {
     count
 }
 
-trait SpacerExt {
-    fn has_attr_spacer(&self) -> bool;
-}
-
-impl SpacerExt for Node {
-    fn has_attr_spacer(&self) -> bool {
-        self.element_data()
-            .is_some_and(|e| &*e.name.local == SPACER_TAG)
-    }
+fn is_spacer(node: &Node) -> bool {
+    node.element_data()
+        .is_some_and(|e| &*e.name.local == SPACER_TAG)
 }
 
 /// One line's piece of an inline element, in document coordinates.
