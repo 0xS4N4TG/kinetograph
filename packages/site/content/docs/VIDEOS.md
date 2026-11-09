@@ -59,7 +59,6 @@ sound, under 15 MB. Web copies are already encoded in the scratchpad folder `doc
 | `films-launch2.mp4` | Every frame, straight / Launch film | 43.3 s | yes | 1280x720, 11.8 MB | `kinetograph-ui/templates/inside/out/launch2-v7.mp4` |
 | `films-dostoevsky.mp4` | Dostoevsky in 40 seconds / Explainer | 39.7 s | no | 720x1280, 8.6 MB | `kinetograph-ui/templates/dostoevsky/out/dostoevsky.mp4` |
 | `films-worlds.mp4` | Worlds / Showreel | 29.7 s | no | 1280x720, 8.8 MB | `kinetograph-ui/templates/inside/out/worlds-preview.mp4` |
-| `films-wish-reel.mp4` | A birthday wish reel / Social | 18.0 s | yes | 1280x960, 11.5 MB | `kinetograph-ui/templates/wish-reel/out/wish-reel.mp4` |
 | `films-page-turn.mp4` | Page turn / Looks | 5.7 s | no | 720x1280, 0.3 MB | `kinetograph-ui/templates/looks-demo/out/page-turn.mp4` |
 | `films-match-cut.mp4` | Match cut / Text | 5.0 s | yes | 720x1280, 1.8 MB | `kinetograph-ui/templates/match-cut/out/match-cut.mp4` |
 | `films-papercut-demo.mp4` | All paper / Paper-cut | 5.0 s | no | 720x1280, 0.5 MB | `kinetograph-ui/templates/papercut-demo/out/papercut-demo.mp4` |
@@ -76,7 +75,7 @@ poster, a frame from the films above. The routes with no poster (pin text, data,
 | `routes-explain.mp4` | Explain an idea | `films-dostoevsky` cropped to 16:9 |
 | `routes-title.mp4` | Title card or moving text | `films-match-cut`, 16:9 crop |
 | `routes-photos.mp4` | Photos and footage | `films-worlds` cut |
-| `routes-sound.mp4` | Voice, music and captions | `films-wish-reel` cut |
+| `routes-sound.mp4` | Voice, music and captions | `films-launch2` cut (poster: its frame at 28.9 s) |
 | `routes-paper.mp4` | Paper-cut | `films-papercut-demo`, 16:9 crop |
 | `routes-glitch.mp4` | Glitch effects | `films-launch` GLSL shot |
 

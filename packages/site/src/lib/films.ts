@@ -16,7 +16,6 @@ export const FILMS: Film[] = [
   { name: 'launch2', title: 'Every frame, straight', category: 'Launch film', seconds: 43 },
   { name: 'dostoevsky', title: 'Dostoevsky in 40 seconds', category: 'Explainer', seconds: 40, portrait: true },
   { name: 'worlds', title: 'Worlds', category: 'Showreel', seconds: 30 },
-  { name: 'wish-reel', title: 'A birthday wish reel', category: 'Social', seconds: 18 },
   { name: 'page-turn', title: 'Page turn', category: 'Looks', seconds: 6, portrait: true },
   { name: 'match-cut', title: 'Match cut', category: 'Text', seconds: 5, portrait: true },
   { name: 'papercut-demo', title: 'All paper', category: 'Paper-cut', seconds: 5, portrait: true },
