@@ -53,29 +53,41 @@ interface IslandOutputJson {
   camera?: CameraJson | null;
   margin?: number | null;
   blendSpace?: 'linear' | 'srgb';
-  /** In a pass: `layers` are written as changes from the island's first layers in the pass (`expand`). */
-  delta?: boolean;
+  /** In a pass: `layers` are written as changes from the island's kept layers of that pass (`bases`, `expand`). */
+  delta?: number;
 }
 
 /** The pass in progress, or null (packages/cli/skills/kinetograph/references/SCENE.md, "Motion blur"). */
 let samplePass: number | null = null;
 let passes = 0;
-/** The first layers each island drew in the pass, by path: the addon writes the later ones against them. */
-const bases = new Map<string, unknown[]>();
+/** The pass before the one in progress, or null. */
+let lastPass: number | null = null;
+
+/**
+ * The layers each island's renders are written against, by path (`Base` of crates/node/src/dom.rs): its first render
+ * of a pass, or its last one written in full. The addon keeps the same ones, and writes the island's later renders in
+ * the pass and in the next one as changes from them; a layer that did not change is the same object as here.
+ */
+const bases = new Map<string, { pass: number; layers: unknown[] }>();
 
 /**
  * Marks the islands rendered from now to `endSamplePass()` as the renders of one frame: the frame itself and the
  * samples of its motion blur. The addon keeps an island's document between them, and from one frame to the next
  * (`breakSamplePasses`), and edits it from one render to the next instead of building it again; each is drawn as if it
- * were built afresh. A later render of an island gives back
- * what changed from its first, and shares the layers that did not with that first's.
+ * were built afresh. A later render of an island, in the pass or the next, gives back what changed from its `bases`
+ * entry, and shares the layers that did not with it.
  */
 export function beginSamplePass(): void {
   dropQueue();
   if (typeof process !== 'undefined' && process.env?.KINETOGRAPH_NO_INCREMENTAL) breakSamplePasses();
   passes = (passes % 0x7fffffff) + 1;
   samplePass = passes;
-  bases.clear();
+  // As the addon does: the pass after the last keeps the bases the last made, any other none.
+  if (lastPass !== null && samplePass === lastPass + 1) {
+    for (const [path, base] of bases) if (base.pass !== lastPass) bases.delete(path);
+  } else {
+    bases.clear();
+  }
 }
 
 /**
@@ -88,8 +100,8 @@ export function breakSamplePasses(): void {
 
 export function endSamplePass(): void {
   dropQueue();
+  lastPass = samplePass;
   samplePass = null;
-  bases.clear();
 }
 
 /**
@@ -150,7 +162,7 @@ export function mapDomIsland(root: DomNode, context: IslandContext): IslandResul
   t = lap('dom_prep', t);
   if (prepared === null) return { layers: [], unsupported: [], camera: null };
   const { request, natives, json } = prepared;
-  const text = samplePass === null ? addonFunction('renderDomIsland')(json) : addonFunction('renderDomIsland')(json, samplePass);
+  const text = samplePass === null ? addonFunction('renderDomIsland')(json) : addonFunction('renderDomIsland')(json, samplePass, bases.get(request.path)?.pass);
   t = lap('dom_native', t);
   const output = JSON.parse(text) as IslandOutputJson;
   const result = assemble(output, request.path, (path) => {
@@ -182,12 +194,13 @@ function prepare(root: DomNode, context: IslandContext) {
 /** An island's result from the addon's output; `emitNative` gives the layers of the native element at a path. */
 function assemble(output: IslandOutputJson, path: string, emitNative: (path: string) => LayerJson | null): IslandResult {
   let drawn = output.layers;
-  if (output.delta) {
+  if (typeof output.delta === 'number') {
     const base = bases.get(path);
-    if (base === undefined) throw new Error(`renderDomIsland wrote island ${path} as changes from a render it did not make`);
-    drawn = expand(drawn as Written[], base);
+    if (base === undefined || base.pass !== output.delta) throw new Error(`renderDomIsland wrote island ${path} as changes from a render it did not make`);
+    drawn = expand(drawn as Written[], base.layers);
+    if (samplePass !== null && base.pass !== samplePass) bases.set(path, { pass: samplePass, layers: drawn });
   } else if (samplePass !== null) {
-    bases.set(path, drawn);
+    bases.set(path, { pass: samplePass, layers: drawn });
   }
   const placed = fillNatives(drawn, emitNative);
   // The island is laid out in the composition's box already: a flex layout around it must not place it again.
@@ -236,7 +249,7 @@ export function startDomIsland(root: DomNode, context: IslandContext): StartedIs
     return { finish: () => nothing };
   }
   const { request, natives, json } = prepared;
-  const ticket = addonFunction('startDomIsland')(json, samplePass ?? undefined);
+  const ticket = addonFunction('startDomIsland')(json, samplePass ?? undefined, samplePass === null ? undefined : bases.get(request.path)?.pass);
   lap('dom_start', t);
   // In the queue before the islands its native elements start: finished in the order the addon draws them.
   const queued: Queued = { ticket, path: request.path, natives: new Map(), result: null };

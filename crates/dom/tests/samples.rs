@@ -97,11 +97,11 @@ fn a_later_render_is_written_as_changes_from_the_first() {
         sample(7.5, "b", "left: 40px; width: 300px"),
     ] {
         let later = layers(&s, &mut cache);
-        let written = delta(later.clone(), &base);
+        let written = delta(&later, &base);
         assert_eq!(undelta(&written, &base), later);
     }
     // The same render is the first's, layer by layer.
-    let same = delta(base.clone(), &base);
+    let same = delta(&base, &base);
     assert!(
         same.iter()
             .enumerate()

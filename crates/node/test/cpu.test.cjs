@@ -489,6 +489,50 @@ test('in a pass, readbacks and the render share a document, and a read after a w
   assert.equal(width(at(150), pass + 6), '150px');
 });
 
+test('a render is written as changes from the layers the caller holds, in its pass and the next', () => {
+  const at = (x, color) =>
+    island(
+      el('div', '$0', '', [
+        el('div', '$0.0', `width: 20px; height: 20px; background: ${color}`),
+        el('div', '$0.1', `width: 20px; height: 20px; background: blue; transform: translateX(${x}px)`),
+      ]),
+    );
+  // `delta` of crates/dom/src/request.rs undone.
+  const expand = (layers, base) =>
+    layers.map((layer) => {
+      if (typeof layer.$same === 'number') return base[layer.$same];
+      if (typeof layer.$base !== 'number') return layer;
+      const { $base, children, ...own } = layer;
+      return { ...own, children: expand(children, base[$base].children) };
+    });
+  const fresh = (json) => JSON.parse(native.renderDomIsland(json)).layers;
+  const pass = 7200;
+  const first = JSON.parse(native.renderDomIsland(at(0, 'red'), pass));
+  assert.equal(first.delta, undefined);
+  // The next pass is written against the first; what did not change is `$same`.
+  const next = JSON.parse(native.renderDomIsland(at(5, 'red'), pass + 1, pass));
+  assert.equal(next.delta, pass);
+  assert.ok(JSON.stringify(next.layers).includes('$same'));
+  assert.deepEqual(expand(next.layers, first.layers), fresh(at(5, 'red')));
+  // A later render of that pass is written against the pass's own first.
+  const third = JSON.parse(native.renderDomIsland(at(9, 'green'), pass + 1, pass + 1));
+  assert.equal(third.delta, pass + 1);
+  const second = expand(next.layers, first.layers);
+  assert.deepEqual(expand(third.layers, second), fresh(at(9, 'green')));
+  // Layers the caller does not hold (another pass's) are not written against: the render comes in full.
+  const stale = JSON.parse(native.renderDomIsland(at(9, 'green'), pass + 1, pass));
+  assert.equal(stale.delta, undefined);
+  assert.deepEqual(stale.layers, fresh(at(9, 'green')));
+  // That full render is the base now.
+  const after = JSON.parse(native.renderDomIsland(at(9, 'red'), pass + 1, pass + 1));
+  assert.equal(after.delta, pass + 1);
+  assert.deepEqual(expand(after.layers, stale.layers), fresh(at(9, 'red')));
+  // A pass that does not follow keeps nothing.
+  const jump = JSON.parse(native.renderDomIsland(at(9, 'red'), pass + 5, pass + 1));
+  assert.equal(jump.delta, undefined);
+  assert.deepEqual(jump.layers, fresh(at(9, 'red')));
+});
+
 test('a document a line clamp cut is edited to the next tree as a fresh build draws it', () => {
   const sheet = '.c { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; font: 20px "DM Sans" }';
   // One box with no `style` of its own, one with one (the clamp sets its declarations, which are put back).

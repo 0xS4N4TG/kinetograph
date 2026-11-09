@@ -41,16 +41,18 @@ calls it lazily and caches by tree generation.
   A `{"type": "native", "path", "x", "y", "width", "height"}` layer marks where a native element's layers go.
 - Layer ids: derived from the node's explicit `id` attribute if it is a valid layer id, else its `path`, with the
   suffixes the painter needs (`.bg`, `.border`, `.text`, …), unique per island.
-- Addon functions: `renderDomIsland(requestJson: string, pass?: number): string` and
+- Addon functions: `renderDomIsland(requestJson: string, pass?: number, base?: number): string` and
   `domLayoutBoxes(requestJson: string, pass?: number, paths?: string[]): string` → `{ [path]: { x, y, width, height, rect: {x,y,width,height},
   client: {width,height}, scroll: {width,height} } }` (offset box in island coordinates; `rect` is the transformed
   bounding box, as `getBoundingClientRect` gives).
 - `pass` numbers the renders of one frame (its own and its motion-blur sub-frames'; compat's `beginSamplePass`). In a
-  pass an island's document is edited from its last render instead of built again, and a render after the island's
-  first in the pass answers `"delta": true` with `layers` written against that first one's: `{"$same": i}` is the
-  first's layer `i` at that place, and a group with `"$base": i` has its own fields and its children written against
-  the children of the first's layer `i` (`request::delta`). compat puts the layers back together, sharing the first's.
-  `startDomIsland(requestJson, pass): number` queues a render behind the ones before it and `finishDomIsland(ticket)`
+  pass, and in the pass after it, an island's document is edited from its last render instead of built again. Both
+  sides keep the island's base layers: its first render of a pass, or its last one written in full. `base` names the
+  pass of the ones the caller holds; when the addon holds the same, it answers `"delta": base` with `layers` written
+  against them: `{"$same": i}` is the base's layer `i` at that place, and a group with `"$base": i` has its own fields
+  and its children written against the children of the base's layer `i` (`request::delta`). compat puts the layers
+  back together, sharing the base's. A pass that does not follow the last drops the bases.
+  `startDomIsland(requestJson, pass, base): number` queues a render behind the ones before it and `finishDomIsland(ticket)`
   waits for its output, so a sub-frame's islands are drawn while the next sub-frame renders.
 
 ## 3. Code areas

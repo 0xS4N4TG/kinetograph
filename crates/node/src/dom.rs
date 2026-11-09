@@ -240,22 +240,39 @@ impl Islands {
 thread_local! {
     /// The islands of the pass in progress: the frame's renders, its motion-blur samples' and its scripts' readbacks.
     static SAMPLES: std::cell::RefCell<Islands> = std::cell::RefCell::new(Islands::default());
-    /// The first layers each island drew in the pass in progress, which the
-    /// later renders of the pass are written against (`request::delta`).
-    static BASES: std::cell::RefCell<(Option<u64>, Bases)> =
+    /// The layers each island's renders are written against (`request::delta`), by island path, and the pass in
+    /// progress.
+    static BASES: std::cell::RefCell<(Option<u64>, HashMap<String, Base>)> =
         std::cell::RefCell::new((None, HashMap::new()));
 }
 
-/// Layers by island path.
-type Bases = HashMap<String, Vec<Value>>;
+/// The layers of an island's first render in `pass`, or of its last render written in full. The caller holds the same
+/// layers (it names their pass), and the renders after them are written as changes from them, in that pass and the next.
+struct Base {
+    pass: u64,
+    layers: Vec<Value>,
+}
+
+/// Moves the bases to `pass`, as `IslandCache::enter` moves the documents: the pass after the last keeps the bases the
+/// last made, any other none.
+fn enter_bases(at: &mut Option<u64>, bases: &mut HashMap<String, Base>, pass: Option<u64>) {
+    if *at == pass {
+        return;
+    }
+    match (*at, pass) {
+        (Some(was), Some(now)) if now == was.wrapping_add(1) => bases.retain(|_, b| b.pass == was),
+        _ => bases.clear(),
+    }
+    *at = pass;
+}
 
 /// One DOM island at one frame: an `IslandRequest` as JSON in, an
 /// `IslandOutput` as JSON out. `pass` numbers the renders of one frame, its
 /// motion-blur sub-frames included: they update one document per island
-/// instead of building it again, and each render after an island's first
-/// gives its layers as changes from that first's (`delta`).
-pub fn render_dom_island(request_json: &str, pass: Option<u64>) -> Result<String> {
-    wait_for(start_dom_island(request_json, pass)?)
+/// instead of building it again. `base` is the pass of the layers of this island the caller holds (`Base`): when they
+/// are the ones kept here, the layers come back as changes from them (`delta`), with `"delta": base`.
+pub fn render_dom_island(request_json: &str, pass: Option<u64>, base: Option<u64>) -> Result<String> {
+    wait_for(start_dom_island(request_json, pass, base)?)
 }
 
 thread_local! {
@@ -267,8 +284,8 @@ thread_local! {
 /// `render_dom_island` without waiting: the render is queued on the island
 /// thread after the ones before it, and the ticket returned finishes it
 /// (`finish_dom_island`). The caller can build what comes next meanwhile.
-pub fn start_island(request_json: &str, pass: Option<u64>) -> Result<u32> {
-    let outcome = start_dom_island(request_json, pass)?;
+pub fn start_island(request_json: &str, pass: Option<u64>, base: Option<u64>) -> Result<u32> {
+    let outcome = start_dom_island(request_json, pass, base)?;
     Ok(STARTED.with(|started| {
         let (next, pending) = &mut *started.borrow_mut();
         *next = next.wrapping_add(1);
@@ -286,7 +303,7 @@ pub fn finish_island(ticket: u32) -> Result<String> {
     }
 }
 
-fn start_dom_island(request_json: &str, pass: Option<u64>) -> Result<Outcome<String>> {
+fn start_dom_island(request_json: &str, pass: Option<u64>, base: Option<u64>) -> Result<Outcome<String>> {
     let json = request_json.to_string();
     let caller = kinetograph_core::profile::caller();
     start_on_island_thread(RENDER_STAGES, move || {
@@ -341,34 +358,36 @@ fn start_dom_island(request_json: &str, pass: Option<u64>) -> Result<Outcome<Str
         }
         let path = request.path.clone();
         SAMPLES.with(|islands| islands.borrow_mut().keep(request, json, resolved));
-        // The first render of an island in the pass is kept, once written,
-        // for the later ones to be written against.
-        let (mut delta, mut first) = (false, None);
-        if pass.is_some() {
+        // Written as changes from the layers the caller holds, when they are the ones kept here; the island's first
+        // render of the pass, and one written in full, are kept for the later ones to be written against.
+        let (mut written_against, mut keep_base) = (None, None);
+        if let Some(now) = pass {
             BASES.with(|bases| {
                 let (at, bases) = &mut *bases.borrow_mut();
-                if *at != pass {
-                    bases.clear();
-                    *at = pass;
+                enter_bases(at, bases, pass);
+                let kept = bases.get(&path);
+                if let Some(kept) = kept.filter(|kept| Some(kept.pass) == base) {
+                    let changes = request::delta(&output.layers, &kept.layers);
+                    written_against = Some((kept.pass, std::mem::replace(&mut output.layers, changes)));
                 }
-                match bases.get(&path) {
-                    Some(base) => {
-                        output.layers = request::delta(std::mem::take(&mut output.layers), base);
-                        delta = true;
-                    }
-                    None => first = Some(path),
+                if written_against.is_none() || kept.is_some_and(|kept| kept.pass != now) {
+                    keep_base = Some(now);
                 }
             });
         }
         let mut json = serde_json::to_string(&output)
             .map_err(|e| (Code::Render, format!("cannot write the island: {e}")))?;
-        if delta {
-            // The output is an object: say that its layers are changes.
-            json.pop();
-            json.push_str(r#","delta":true}"#);
-        }
-        if let Some(path) = first {
-            BASES.with(|bases| bases.borrow_mut().1.insert(path, output.layers));
+        let layers = match written_against {
+            Some((at, layers)) => {
+                // The output is an object: say which layers its layers are changes from.
+                json.pop();
+                json.push_str(&format!(r#","delta":{at}}}"#));
+                layers
+            }
+            None => output.layers,
+        };
+        if let Some(pass) = keep_base {
+            BASES.with(|bases| bases.borrow_mut().1.insert(path, Base { pass, layers }));
         }
         kinetograph_core::profile::add_shared_since("dom_write", write_timer);
         kinetograph_core::profile::add_for_since(&caller, "n_write", write_timer);

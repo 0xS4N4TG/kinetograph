@@ -276,17 +276,21 @@ pub fn layout_dom(request_json: String) -> Result<String> {
 /// JSON in, an `IslandOutput` (`layers`, `unsupported`, `camera`) as JSON out.
 /// Styled and laid out by Stylo, taffy and Parley through Blitz's DOM, then
 /// painted as scene layers. CPU only.
+///
+/// `pass` numbers the renders of one frame (its motion-blur samples included); `base` is the pass of the layers of
+/// this island the caller kept from an earlier render. When the addon kept the same ones, the layers come back as
+/// changes from them and the output says `"delta": base`.
 #[napi]
-pub fn render_dom_island(request_json: String, pass: Option<u32>) -> Result<String> {
-    dom::render_dom_island(&request_json, pass.map(u64::from))
+pub fn render_dom_island(request_json: String, pass: Option<u32>, base: Option<u32>) -> Result<String> {
+    dom::render_dom_island(&request_json, pass.map(u64::from), base.map(u64::from))
 }
 
 /// `renderDomIsland` without waiting: queues the render on the calling
 /// thread's island thread, after the renders queued before it, and returns a
 /// ticket for `finishDomIsland`, which gives its output once it is done.
 #[napi]
-pub fn start_dom_island(request_json: String, pass: Option<u32>) -> Result<u32> {
-    dom::start_island(&request_json, pass.map(u64::from))
+pub fn start_dom_island(request_json: String, pass: Option<u32>, base: Option<u32>) -> Result<u32> {
+    dom::start_island(&request_json, pass.map(u64::from), base.map(u64::from))
 }
 
 /// The output of a render `startDomIsland` queued, waiting for it if it is not

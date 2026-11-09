@@ -6,10 +6,14 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
 export interface DomAddon {
-  /** `IslandRequest` JSON in, `IslandOutput` JSON out. `pass` numbers the samples of one motion-blurred frame (an older addon ignores it). */
-  renderDomIsland(requestJson: string, pass?: number): string;
+  /**
+   * `IslandRequest` JSON in, `IslandOutput` JSON out. `pass` numbers the renders of one frame, its motion-blur samples
+   * included; `base` is the pass of the island's layers the caller kept (`bases` of dom/index.ts): when the addon kept
+   * the same ones, the layers come back as changes from them, with `delta: base`.
+   */
+  renderDomIsland(requestJson: string, pass?: number, base?: number): string;
   /** `renderDomIsland` queued behind the renders before it: a ticket for `finishDomIsland`, which waits for the output. */
-  startDomIsland?(requestJson: string, pass?: number): number;
+  startDomIsland?(requestJson: string, pass?: number, base?: number): number;
   finishDomIsland?(ticket: number): string;
   /**
    * `IslandRequest` JSON in, `{ [path]: { x, y, width, height, rect, client, scroll } }` JSON out. `pass` is the pass

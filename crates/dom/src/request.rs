@@ -114,32 +114,33 @@ pub struct IslandOutput {
 /// of `base` is `{"$same": i}`, and a group with the id of the one there
 /// whose children differ is its own fields with `"$base": i` and its children
 /// written as changes from that one's. Anything else is the layer itself.
-pub fn delta(layers: Vec<Value>, base: &[Value]) -> Vec<Value> {
+pub fn delta(layers: &[Value], base: &[Value]) -> Vec<Value> {
     layers
-        .into_iter()
+        .iter()
         .enumerate()
         .map(|(i, layer)| {
             let Some(was) = base.get(i) else {
-                return layer;
+                return layer.clone();
             };
-            if layer == *was {
+            if layer == was {
                 return serde_json::json!({ "$same": i });
             }
-            let Some(Value::Array(theirs)) = was.get("children") else {
-                return layer;
+            let (Value::Object(fields), Some(Value::Array(theirs))) = (layer, was.get("children"))
+            else {
+                return layer.clone();
             };
-            match layer {
-                Value::Object(mut fields)
-                    if fields.get("id") == was.get("id")
-                        && matches!(fields.get("children"), Some(Value::Array(_))) =>
-                {
-                    if let Some(Value::Array(kids)) = fields.remove("children") {
-                        fields.insert("children".into(), Value::Array(delta(kids, theirs)));
-                    }
-                    fields.insert("$base".into(), Value::from(i));
-                    Value::Object(fields)
+            match fields.get("children") {
+                Some(Value::Array(kids)) if fields.get("id") == was.get("id") => {
+                    let mut own: serde_json::Map<String, Value> = fields
+                        .iter()
+                        .filter(|(name, _)| name.as_str() != "children")
+                        .map(|(name, value)| (name.clone(), value.clone()))
+                        .collect();
+                    own.insert("children".into(), Value::Array(delta(kids, theirs)));
+                    own.insert("$base".into(), Value::from(i));
+                    Value::Object(own)
                 }
-                other => other,
+                _ => layer.clone(),
             }
         })
         .collect()
