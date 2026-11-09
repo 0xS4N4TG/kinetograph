@@ -130,7 +130,7 @@ export function currentSamplePass(): number | undefined {
 
 type Written = Record<string, unknown> & { $same?: number; $base?: number; children?: Written[] };
 
-/** The layers the addon wrote as changes from `base` (`delta` of crates/dom/src/request.rs), sharing what is the same. */
+/** The layers the addon wrote as changes from `base` (`write_output` of crates/dom/src/request.rs), sharing what is the same. */
 function expand(layers: Written[], base: unknown[]): unknown[] {
   return layers.map((layer) => {
     if (typeof layer.$same === 'number') return base[layer.$same];

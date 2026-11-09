@@ -198,14 +198,6 @@ pub fn write_output(
     Ok(out)
 }
 
-/// `layers` as a JSON array written as changes from `base` (as [`write_output`] writes them).
-pub fn delta(layers: &[Value], base: &[Value]) -> serde_json::Result<String> {
-    let (layers, base) = (written(layers)?, written(base)?);
-    let mut out = String::new();
-    push_layers(&layers, Some(&base), &mut out);
-    Ok(out)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

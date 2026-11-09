@@ -9,7 +9,7 @@ use serde_json::Value;
 mod node_de;
 mod written;
 
-pub use written::{Written, delta, write_output, written};
+pub use written::{Written, write_output, written};
 
 /// One DOM island at one frame.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -142,8 +142,8 @@ pub struct IslandOutput {
     pub blend_space: &'static str,
 }
 
-/// `delta` undone: the layers it was given, from what it wrote and the same
-/// `base`.
+/// The layers [`write_output`] wrote as changes from `base`, put back
+/// together.
 pub fn undelta(layers: &[Value], base: &[Value]) -> Vec<Value> {
     layers
         .iter()

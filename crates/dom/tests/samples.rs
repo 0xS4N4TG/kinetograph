@@ -127,8 +127,18 @@ fn a_document_carries_over_to_the_next_frame_and_only_to_it() {
 
 #[test]
 fn a_later_render_is_written_as_changes_from_the_first() {
-    use kinetograph_dom::request::{delta, undelta};
+    use kinetograph_dom::request::{IslandOutput, undelta, write_output, written};
     let mut cache = IslandCache::default();
+    // The layers of an output written as changes from `base`.
+    let delta = |layers: &[Value], base: &[Value]| -> Value {
+        let output = IslandOutput {
+            layers: layers.to_vec(),
+            ..IslandOutput::default()
+        };
+        let (now, base) = (written(layers).unwrap(), written(base).unwrap());
+        let json = write_output(&output, &now, Some((&base, 3))).unwrap();
+        serde_json::from_str::<Value>(&json).unwrap()["layers"].take()
+    };
     let layers = |s: &Value, cache: &mut IslandCache| -> Vec<Value> {
         serde_json::from_str(&drawn(cache, s, Some(3))).unwrap()
     };
@@ -140,11 +150,11 @@ fn a_later_render_is_written_as_changes_from_the_first() {
         sample(7.5, "b", "left: 40px; width: 300px"),
     ] {
         let later = layers(&s, &mut cache);
-        let written: Value = serde_json::from_str(&delta(&later, &base).unwrap()).unwrap();
-        assert_eq!(undelta(written.as_array().unwrap(), &base), later);
+        let changes = delta(&later, &base);
+        assert_eq!(undelta(changes.as_array().unwrap(), &base), later);
     }
     // The same render is the first's, layer by layer.
-    let same: Value = serde_json::from_str(&delta(&base, &base).unwrap()).unwrap();
+    let same = delta(&base, &base);
     assert!(
         same.as_array()
             .unwrap()

@@ -50,7 +50,7 @@ calls it lazily and caches by tree generation.
   sides keep the island's base layers: its first render of a pass, or its last one written in full. `base` names the
   pass of the ones the caller holds; when the addon holds the same, it answers `"delta": base` with `layers` written
   against them: `{"$same": i}` is the base's layer `i` at that place, and a group with `"$base": i` has its own fields
-  and its children written against the children of the base's layer `i` (`request::delta`). compat puts the layers
+  and its children written against the children of the base's layer `i` (`request::write_output`). compat puts the layers
   back together, sharing the base's. A pass that does not follow the last drops the bases.
   `startDomIsland(requestJson, pass, base): number` queues a render behind the ones before it and `finishDomIsland(ticket)`
   waits for its output, so a sub-frame's islands are drawn while the next sub-frame renders.

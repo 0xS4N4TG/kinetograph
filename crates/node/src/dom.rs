@@ -335,7 +335,7 @@ fn asked<'a>(json: &'a str, what: &str) -> std::result::Result<Asked<'a>, Failur
 thread_local! {
     /// The islands of the pass in progress: the frame's renders, its motion-blur samples' and its scripts' readbacks.
     static SAMPLES: std::cell::RefCell<Islands> = std::cell::RefCell::new(Islands::default());
-    /// The layers each island's renders are written against (`request::delta`), by island path, and the pass in
+    /// The layers each island's renders are written against (`request::write_output`), by island path, and the pass in
     /// progress.
     static BASES: std::cell::RefCell<(Option<u64>, HashMap<String, Base>)> =
         std::cell::RefCell::new((None, HashMap::new()));
