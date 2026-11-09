@@ -476,10 +476,19 @@ impl<'a> Painter<'a> {
     /// parent's frame.
     fn paint_context(&mut self, node: &'a Node, at: Origin) -> Vec<Value> {
         let id = self.layer_id(node, "");
+        let inner = self.groups.len();
         let children = self.sc_content(node);
         match self.context_group(node, &id, at, children) {
             Some(group) => {
-                let layers = flatten_plain_group(group);
+                let (layers, (dx, dy)) = flatten_plain_group(group);
+                // The groups the flattened group held are in its parent's frame now.
+                if dx != 0.0 || dy != 0.0 {
+                    for (_, group_id, group_at) in &mut self.groups[inner..] {
+                        if layers.iter().any(|l| l.get("id").and_then(Value::as_str) == Some(group_id)) {
+                            *group_at = (group_at.0 + dx, group_at.1 + dy);
+                        }
+                    }
+                }
                 if let [layer] = layers.as_slice()
                     && layer.get("id").and_then(Value::as_str) == Some(&id)
                 {
@@ -736,10 +745,10 @@ fn reads_backdrop(layer: &Value) -> bool {
 /// A stacking context that only has a place (no transform but a move, no
 /// opacity, filter, blend, clip, mask or matte) and holds nothing that
 /// blends with the backdrop paints as its children would without it, so its
-/// children go to its parent, moved: one group fewer.
-fn flatten_plain_group(group: Value) -> Vec<Value> {
+/// children go to its parent, moved: one group fewer. Also gives the move.
+fn flatten_plain_group(group: Value) -> (Vec<Value>, (f64, f64)) {
     let Some(obj) = group.as_object() else {
-        return vec![group];
+        return (vec![group], (0.0, 0.0));
     };
     let plain = obj
         .keys()
@@ -750,7 +759,7 @@ fn flatten_plain_group(group: Value) -> Vec<Value> {
         });
     let children = obj.get("children").and_then(Value::as_array);
     if !plain || children.is_none_or(|c| c.iter().any(reads_backdrop)) {
-        return vec![group];
+        return (vec![group], (0.0, 0.0));
     }
     let (dx, dy) = (
         obj.get("transform")
@@ -764,7 +773,7 @@ fn flatten_plain_group(group: Value) -> Vec<Value> {
     for l in &mut out {
         util::shift(l, dx, dy);
     }
-    out
+    (out, (dx, dy))
 }
 
 /// An attribute of an element, by name.
