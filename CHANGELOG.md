@@ -8,10 +8,21 @@ Kinetograph is in beta, so APIs can still change between versions.
 ### Changed
 
 - DOM islands replay unchanged stacking contexts from the last paint (mg1 island paint 23.8 → 6 ms a frame).
+- A frame's layout reads and its render share one island document; a read sends only what scripts changed, and the render draws the state the reads left.
+- An island's layers are sent as changes from the last frame's.
+- A style edit restyles only what it changes; a style change inside an inline `<svg>` no longer parses the whole SVG again.
+- A page with a `-webkit-line-clamp` box is edited from frame to frame instead of built again.
+- Video frames convert to yuv420p on the GPU before the readback (`KINETOGRAPH_CPU_YUV=1` converts on the CPU).
+- A worker that starts a HyperFrames chunk skips the root layout check on the frames it plays through; a running chunk is split only when that ends it sooner.
 
 ### Fixed
 
+- HyperFrames: the root's timed children are taken out of flow, so a second sub-composition no longer draws black below the canvas.
+- HyperFrames: the root is clipped and sized from its `data-width` and `data-height`, so a root with no CSS size is not empty (#112).
+- A page edited from frame to frame draws and reads back as a fresh one does: an edited `::before` in an inline-block, boxes under `display: none`, an inline-block's `scrollWidth`.
+- An element hidden inside inline content no longer draws its old text.
 - Text beside a float that changes width re-wraps correctly.
+- A package loaded twice (Studio, dev) no longer mixes up the island state of its two copies.
 - `staticFile()` returns forward slashes on Windows so CSS `url()` paths are not corrupted by backslash escapes (#100).
 - Paint decodes percent-encoded Windows drive paths with spaces in CSS background and border images (#100).
 
