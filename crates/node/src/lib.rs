@@ -301,10 +301,15 @@ pub fn finish_dom_island(ticket: u32) -> Result<String> {
 /// it, `rect` the transformed bounding box `getBoundingClientRect` gives.
 ///
 /// `pass` is the frame's pass (`renderDomIsland`), when the scripts of the frame being drawn read it: the boxes are
-/// those of the document the frame's render then draws.
+/// those of the document the frame's render then draws. With `paths`, only the boxes of those elements are given (a
+/// path the island does not have is left out).
 #[napi]
-pub fn dom_layout_boxes(request_json: String, pass: Option<u32>) -> Result<String> {
-    dom::dom_layout_boxes(&request_json, pass.map(u64::from))
+pub fn dom_layout_boxes(
+    request_json: String,
+    pass: Option<u32>,
+    paths: Option<Vec<String>>,
+) -> Result<String> {
+    dom::dom_layout_boxes(&request_json, pass.map(u64::from), paths)
 }
 
 /// `getComputedStyle` of the element at `path` in a DOM island: the resolved

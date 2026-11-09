@@ -143,9 +143,10 @@ export declare function domComputedStyle(requestJson: string, path: string, prop
  * it, `rect` the transformed bounding box `getBoundingClientRect` gives.
  *
  * `pass` is the frame's pass (`renderDomIsland`), when the scripts of the frame being drawn read it: the boxes are
- * those of the document the frame's render then draws.
+ * those of the document the frame's render then draws. With `paths`, only the boxes of those elements are given (a
+ * path the island does not have is left out).
  */
-export declare function domLayoutBoxes(requestJson: string, pass?: number | undefined | null): string
+export declare function domLayoutBoxes(requestJson: string, pass?: number | undefined | null, paths?: Array<string> | undefined | null): string
 
 /** `render`'s export options (packages/cli/skills/kinetograph/references/AUTHORING.md §9); everything left out takes its default. */
 export interface ExportOptions {

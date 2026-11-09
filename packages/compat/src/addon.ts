@@ -14,8 +14,9 @@ export interface DomAddon {
   /**
    * `IslandRequest` JSON in, `{ [path]: { x, y, width, height, rect, client, scroll } }` JSON out. `pass` is the pass
    * of the frame whose scripts read it (`currentSamplePass`): the document read is the one the frame's render draws.
+   * With `paths`, only those elements' boxes (an older addon gives them all).
    */
-  domLayoutBoxes(requestJson: string, pass?: number): string;
+  domLayoutBoxes(requestJson: string, pass?: number, paths?: string[]): string;
   /** `IslandRequest` JSON, an element path and CSS property names in; the computed value of each, "" when unknown. `pass` as above. */
   domComputedStyle(requestJson: string, path: string, properties: string[], pass?: number): string[];
   /** A video's or GIF's header (`probeMedia` of the addon), for `<video>` load events and `duration`. */

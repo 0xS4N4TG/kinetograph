@@ -49,7 +49,10 @@ interface Island {
   root: HostElement;
   path: string;
   json: string;
-  boxes?: Boxes;
+  /** The boxes read so far, by path; null for a path the island does not have. */
+  boxes: Map<string, BoxInfo | null>;
+  /** Whether `boxes` has every box of the island. */
+  allBoxes: boolean;
   computed: Map<string, string | null>;
 }
 
@@ -173,7 +176,7 @@ export function createReadback(container: Container, options: EmitOptions): Read
         time: options.time?.() ?? 0,
         stylesheets,
       });
-      island = { root, path, json: JSON.stringify(request), computed: new Map() };
+      island = { root, path, json: JSON.stringify(request), boxes: new Map(), allBoxes: false, computed: new Map() };
       islands.set(root, island);
       lap('rb_request', t);
     }
@@ -193,19 +196,26 @@ export function createReadback(container: Container, options: EmitOptions): Read
       if (!hasAddonFunction('domLayoutBoxes')) return null;
       const island = islandOf(host);
       if (island === null) return null;
+      const path = pathOf(host);
       try {
-        if (island.boxes === undefined) {
+        if (!island.allBoxes && !island.boxes.has(path)) {
+          // A page usually reads one box of a tree before it changes it: the first read asks for that box alone, and a
+          // second for all of them, which costs about what one does.
+          const one = island.boxes.size === 0 ? [path] : undefined;
           let t = stamp();
-          const text = addonFunction('domLayoutBoxes')(island.json, currentSamplePass());
+          const text = addonFunction('domLayoutBoxes')(island.json, currentSamplePass(), one);
           t = lap('rb_box', t);
-          island.boxes = JSON.parse(text) as Boxes;
+          for (const [at, box] of Object.entries(JSON.parse(text) as Boxes)) island.boxes.set(at, box);
+          if (one === undefined) island.allBoxes = true;
+          else if (!island.boxes.has(path)) island.boxes.set(path, null);
           lap('rb_box_parse', t);
         }
       } catch (error) {
         failed(host, 'a box', error);
-        island.boxes = {};
+        island.boxes.clear();
+        island.allBoxes = true;
       }
-      return island.boxes[pathOf(host)] ?? null;
+      return island.boxes.get(path) ?? null;
     },
     computed(host, property) {
       measuring();

@@ -408,3 +408,18 @@ fn a_page_island_is_the_document_html_and_body_included() {
     let div = boxes["$0.0.0"];
     assert_eq!((div.x, div.width), (3.0, 50.0));
 }
+
+#[test]
+fn boxes_of_some_paths_are_those_of_all() {
+    let root = el(
+        "div",
+        "$0",
+        "position: relative",
+        vec![el("div", "$0.0", "width: 30px; height: 20px", vec![])],
+    );
+    let island = resolve(&request(root));
+    let all = readback::layout_boxes(&island);
+    let some = readback::layout_boxes_of(&island, &["$0.0".to_string(), "$9".to_string()]);
+    assert_eq!(some.keys().collect::<Vec<_>>(), ["$0.0"]);
+    assert_eq!(some["$0.0"], all["$0.0"]);
+}

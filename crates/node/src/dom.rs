@@ -426,13 +426,21 @@ fn with_readback_island<T>(
 }
 
 /// The boxes of every element of the island (`getBoundingClientRect`,
-/// `offsetWidth`, `clientWidth`, `scrollHeight`): `{ [path]: ElementBox }`.
-pub fn dom_layout_boxes(request_json: &str, pass: Option<u64>) -> Result<String> {
+/// `offsetWidth`, `clientWidth`, `scrollHeight`), or of those at `paths`: `{ [path]: ElementBox }`.
+pub fn dom_layout_boxes(
+    request_json: &str,
+    pass: Option<u64>,
+    paths: Option<Vec<String>>,
+) -> Result<String> {
     let json = request_json.to_string();
     let caller = kinetograph_core::profile::caller();
     on_island_thread(READBACK_STAGES, move || {
         with_readback_island(&caller, json, pass, "domLayoutBoxes", |island| {
-            serde_json::to_string(&readback::layout_boxes(island))
+            let boxes = match &paths {
+                Some(paths) => readback::layout_boxes_of(island, paths),
+                None => readback::layout_boxes(island),
+            };
+            serde_json::to_string(&boxes)
                 .map_err(|e| (Code::Render, format!("cannot write the boxes: {e}")))
         })
     })
