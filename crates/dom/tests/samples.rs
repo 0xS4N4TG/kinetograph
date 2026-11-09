@@ -593,6 +593,65 @@ fn an_inline_block_keeps_its_overflow_when_its_line_is_measured_again() {
     }
 }
 
+/// A box an edit makes `display: contents`, or non-atomic inline content, keeps no layout children: they are laid out
+/// by the box around it now, and point at it as their layout parent (Blitz's debug check; damage propagation follows
+/// it). Fuzz seeds 27 and 1048582.
+#[test]
+fn a_box_that_stops_being_one_gives_up_its_layout_children() {
+    let contents = |display: &str| {
+        request(el(
+            "div",
+            "$0",
+            "position: absolute; inset: 0; display: grid",
+            vec![el(
+                "p",
+                "$0.0",
+                &format!("display: {display}"),
+                vec![el(
+                    "div",
+                    "$0.0.0",
+                    "width: 10px; height: 10px; background: #f80",
+                    vec![],
+                )],
+            )],
+        ))
+    };
+    let inline = |display: &str| {
+        request(el(
+            "div",
+            "$0",
+            "position: absolute; inset: 0; font: 16px 'DM Sans'",
+            vec![
+                text("a"),
+                el(
+                    "span",
+                    "$0.1",
+                    "",
+                    vec![el(
+                        "div",
+                        "$0.1.0",
+                        &format!("display: {display}; width: 10px; height: 10px; background: #f80"),
+                        vec![],
+                    )],
+                ),
+                text("b"),
+            ],
+        ))
+    };
+    let pages = [
+        [contents("block"), contents("contents")],
+        [inline("block"), inline("inline-block")],
+    ];
+    for [first, edited] in &pages {
+        let mut cache = IslandCache::default();
+        drawn(&mut cache, first, Some(1));
+        assert_eq!(
+            drawn(&mut cache, edited, Some(2)),
+            drawn(&mut IslandCache::default(), edited, None)
+        );
+    }
+}
+
 /// Every rect shape in `layers`, as its width and height.
 fn rects(layers: &Value, out: &mut Vec<(f64, f64)>) {
     match layers {

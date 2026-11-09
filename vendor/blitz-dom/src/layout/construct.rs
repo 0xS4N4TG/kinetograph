@@ -547,6 +547,11 @@ fn collect_layout_children_with_wrap(
             // display:contents is transparent for box generation: hoist the
             // children THEMSELVES (not their layout children) into the
             // parent, recursing only through nested contents nodes.
+            let mut old_anonymous_blocks = Vec::new();
+            drop_box_children(&mut doc.nodes[container_node_id], &mut old_anonymous_blocks);
+            for anon_id in old_anonymous_blocks {
+                doc.deallocate_anonymous_block(anon_id);
+            }
             push_hoisted_children_and_pseudos(doc, container_node_id, out, wrap);
         }
         DisplayInside::Flex | DisplayInside::Grid => {
@@ -972,6 +977,14 @@ fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: NodeId) {
     }
 }
 
+/// A node that generates no box of its own (`display: contents`, or non-atomic
+/// inline content) gives up the layout children and anonymous blocks it had as
+/// a box before an edit: its children now have another box as `layout_parent`.
+fn drop_box_children(node: &mut Node, old_anonymous_blocks: &mut Vec<NodeId>) {
+    *node.layout_children.borrow_mut() = None;
+    old_anonymous_blocks.extend(std::mem::take(&mut node.anonymous_blocks));
+}
+
 /// Find and return the "layout_children" (inline boxes) for an inline layout
 /// without actually constructing the layout. This allows us to defer the expensive
 /// construction of the Parley layout (which invokes text shaping) to a paralell phase.
@@ -982,14 +995,19 @@ pub(crate) fn find_inline_layout_embedded_boxes(
 ) {
     flush_inline_pseudos_recursive(doc, inline_context_root_node_id);
 
+    let mut old_anonymous_blocks = Vec::new();
     iter_children_and_pseudos!(doc.nodes[inline_context_root_node_id], |child_id| {
         find_inline_layout_embedded_boxes_recursive(
             &mut doc.nodes,
             inline_context_root_node_id,
             child_id,
             layout_children,
+            &mut old_anonymous_blocks,
         );
     });
+    for anon_id in old_anonymous_blocks {
+        doc.deallocate_anonymous_block(anon_id);
+    }
 
     fn flush_inline_pseudos_recursive(doc: &mut BaseDocument, node_id: NodeId) {
         doc.iter_children_mut(node_id, |child_id, doc| {
@@ -1013,6 +1031,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
         parent_id: NodeId,
         node_id: NodeId,
         layout_children: &mut ThinVec<NodeId>,
+        old_anonymous_blocks: &mut Vec<NodeId>,
     ) {
         let node = &mut nodes[node_id];
 
@@ -1041,12 +1060,14 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                     }
                     (DisplayOutside::None, DisplayInside::Contents) => {
                         node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                        drop_box_children(node, old_anonymous_blocks);
                         iter_children!(nodes[node_id], |child_id| {
                             find_inline_layout_embedded_boxes_recursive(
                                 nodes,
                                 parent_id,
                                 child_id,
                                 layout_children,
+                                old_anonymous_blocks,
                             );
                         });
                     }
@@ -1065,12 +1086,14 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                             if let Some(element) = node.element_data_mut() {
                                 element.take_inline_layout();
                             }
+                            drop_box_children(node, old_anonymous_blocks);
                             iter_children_and_pseudos!(nodes[node_id], |child_id| {
                                 find_inline_layout_embedded_boxes_recursive(
                                     nodes,
                                     node_id,
                                     child_id,
                                     layout_children,
+                                    old_anonymous_blocks,
                                 );
                             });
                         }
