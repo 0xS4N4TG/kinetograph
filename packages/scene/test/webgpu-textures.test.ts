@@ -485,8 +485,8 @@ describe('render passes into textures and sampling them', () => {
     const content = context.content().webgpu!;
     const render = content.passes.find((p) => p.k === 'render' && p.target);
     expect(render).toMatchObject({ target: { texture: multi.id, mip: 0 }, resolve: { texture: resolved.id, mip: 0 } });
-    expect(content.textures[multi.id]).toMatchObject({ samples: 4 });
-    expect(content.textures[resolved.id]!.samples).toBeUndefined();
+    expect(content.textures![multi.id]).toMatchObject({ samples: 4 });
+    expect(content.textures![resolved.id]!.samples).toBeUndefined();
     const begin = (attachment: object) => () => device.createCommandEncoder().beginRenderPass({ colorAttachments: [{ loadOp: 'clear', storeOp: 'store', ...attachment } as never] });
     expect(begin({ view: resolved.createView(), resolveTarget: texture(device, { size: [8, 8] }).createView() })).toThrow(/multisampled colour attachment/);
     expect(begin({ view: multi.createView(), resolveTarget: multi.createView() })).toThrow(/one sample/);

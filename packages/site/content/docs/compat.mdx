@@ -64,9 +64,9 @@ npx kinetograph render src/index.ts --strict
 
 `<canvas>` with a `webgl` or `webgl2` context runs on the GPU. p5.brush's standalone build draws as in Chrome.
 
-- Works: fragment shaders, framebuffers, `gl_PointSize`, instancing, `blitFramebuffer`, depth and stencil tests, `drawBuffers`, depth textures.
+- Works: fragment shaders, framebuffers, `gl_PointSize`, instancing, `blitFramebuffer`, depth and stencil tests, `drawBuffers`, depth textures, cube maps (six `texImage2D` faces of RGBA8, `samplerCube`, `generateMipmap`; sampled seamlessly, with GL's face order and orientation).
 - Every frame starts with an empty canvas, also with `preserveDrawingBuffer`, because a frame is a function of its own number.
-- Not drawn: multisampled renderbuffers, `readPixels`, lines, instanced points and a `vertexAttribDivisor` above 1, cube textures, float render targets (float textures from `texImage2D` and 3D textures work), `sampler2DShadow`, non-RGBA render targets, mixed-size framebuffer attachments, `generateMipmap` on a drawn-into texture, and a `TEXTURE_BASE_LEVEL` other than 0.
+- Not drawn: multisampled renderbuffers, `readPixels`, lines wider than one pixel (lines are one pixel wide, as in WebGL), instanced points and a `vertexAttribDivisor` above 1, cube faces that are float, depth or a `texSubImage2D` target, blending into 32-bit float render targets and blitting to or from float ones (float render targets, float textures from `texImage2D`, 3D textures and 2D array textures work), `sampler2DShadow`, render targets that are neither RGBA8 nor R, RG or RGBA of 16 or 32-bit floats, mixed-size framebuffer attachments, `generateMipmap` on a drawn-into texture, and a `TEXTURE_BASE_LEVEL` other than 0.
 - Differs from a browser: the depth buffer holds 32-bit floats, `depth: false` makes the depth test always pass, a depth texture is sampled `NEAREST`, points are squares of at most 511 px, and `gl_VertexID` with `drawElements` is the position in the index list.
 
 ## WebGPU
@@ -118,7 +118,7 @@ How to write code for GSAP, Motion, anime.js, d3, Chart.js, Recharts and the res
 - **Fonts:** the 18 families HyperFrames embeds come in every weight Google serves, from the cache `fetch-deps` fills. A render never downloads a font. System names map as in HyperFrames: `Arial` to Inter, `Consolas` to JetBrains Mono, `Georgia` to EB Garamond. A page that calls `measureText` before its `@font-face` loads gets fallback widths in Chrome; Kinetograph measures with the registered font, so it can pick a larger size.
 - **Scripts:** `<script type="importmap">` is read (one with a `src` is ignored, as in Chrome), and each module is bundled and runs after the classic scripts. Top-level `await` works, but the runtime doesn't wait for it. CSS and JSON import attributes are not supported.
 - **WebGPU:** pages that use it, such as the `shaders.iife.js` blocks (`aurora`, `blob`, `ripples`, `swirl`), are drawn natively. See WebGPU above.
-- **Three.js** is not drawn. A page that loads it is reported on every frame, and `--strict` fails.
+- **Three.js** is drawn through the WebGL stand-in (see the WebGL section). Only what it does that the stand-in cannot draw is reported, and `--strict` fails on that.
 
 ### Downloads and the lock file
 
