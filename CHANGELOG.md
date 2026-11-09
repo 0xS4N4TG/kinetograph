@@ -22,6 +22,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - HyperFrames: the root is clipped and sized from its `data-width` and `data-height`, so a root with no CSS size is not empty (#112).
 - A page edited from frame to frame draws and reads back as a fresh one does: an edited `::before` in an inline-block, boxes under `display: none`, an inline-block's `scrollWidth`.
 - An element hidden inside inline content no longer draws its old text.
+- The `::before` and `::after` of an inline element nested inside another inline element are drawn.
 - Text beside a float that changes width re-wraps correctly.
 - A package loaded twice (Studio, dev) no longer mixes up the island state of its two copies.
 - `staticFile()` returns forward slashes on Windows so CSS `url()` paths are not corrupted by backslash escapes (#100).

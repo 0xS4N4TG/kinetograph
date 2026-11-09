@@ -792,6 +792,32 @@ fn a_pseudo_element_restyled_while_hidden_is_drawn_in_its_new_style() {
     }
 }
 
+/// A fresh document draws the `::before` of an inline element two levels inside an inline root: Blitz decided whether
+/// to look inside a child from the root's display, not the child's, so it never did (fuzz seeds 9645, 9919, 1054367,
+/// 1056915 and 1057946, where the edited document drew it and the fresh one did not).
+#[test]
+fn a_fresh_document_draws_the_pseudo_element_of_a_nested_inline() {
+    let page = |sheet: &str| {
+        let mut r = request(el(
+            "div",
+            "$0",
+            "position: absolute; inset: 0; font: 16px 'DM Sans'",
+            vec![el(
+                "span",
+                "$0.0",
+                "",
+                vec![el_attrs("span", "$0.0.0", json!({ "class": "star" }), "", vec![text("x")])],
+            )],
+        ));
+        r["stylesheets"] = json!([sheet]);
+        r
+    };
+    assert_ne!(
+        drawn(&mut IslandCache::default(), &page(".star::before { content: '*'; color: crimson }"), None),
+        drawn(&mut IslandCache::default(), &page(""), None),
+    );
+}
+
 /// Every rect shape in `layers`, as its width and height.
 fn rects(layers: &Value, out: &mut Vec<(f64, f64)>) {
     match layers {
