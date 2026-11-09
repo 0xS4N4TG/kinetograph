@@ -268,8 +268,62 @@ class Runtime {
   private afterScripts(): void {
     const { plan } = this;
     this.root = doc().querySelector(`[data-composition-id="${attrValue(plan.compositionId)}"]`);
+    this.layOutClips();
     this.timing.reset();
     this.clocks.clear();
+  }
+
+  /**
+   * Takes the root's timed children out of flow, as HyperFrames' runtime does once the page has loaded (Apache-2.0,
+   * heygen-com/hyperframes, runtime/init.ts: the clip layout of its init). Each child with `data-start` that is not
+   * `absolute` or `fixed` becomes `absolute`, so clips (a mounted sub-composition among them) start where the root
+   * does instead of one below the other; one that is then laid out with no width or height gets its `data-width` or
+   * `data-height`, else 100% (a picture keeps its own size). The broken centring `top: 0; left: 0; width: 100%;
+   * height: 100%; transform: translate(-50%, -50%)` gives way to the stylesheet's position when it has one.
+   */
+  private layOutClips(): void {
+    const root = this.root as AnyRecord | null;
+    if (root === null) return;
+    const px = (el: AnyRecord, name: string): string | null => {
+      const n = parseNumeric(el.getAttribute(name));
+      return n === null ? null : `${n}px`;
+    };
+    const clips = (Array.from(root.children ?? []) as AnyRecord[]).filter((el) => {
+      const tag = String(el.tagName).toLowerCase();
+      return !['script', 'style', 'link', 'meta'].includes(tag) && el.hasAttribute('data-start') && !el.hasAttribute('data-hf-autostamped');
+    });
+    // A clip hidden inline is shown while it is measured.
+    const hidden = clips
+      .filter((el) => el.style.getPropertyValue('display') === 'none')
+      .map((el) => ({ el, priority: el.style.getPropertyPriority('display') }));
+    for (const { el } of hidden) el.style.removeProperty('display');
+    for (const el of clips) {
+      const tag = String(el.tagName).toLowerCase();
+      const style = el.style;
+      const fills = (style.top === '0px' || style.top === '0') && (style.left === '0px' || style.left === '0') && style.width === '100%' && style.height === '100%';
+      if (fills && /translate\(\s*-50%\s*,\s*-50%\s*\)/.test(style.transform) && !el.hasAttribute('data-width') && !el.hasAttribute('data-height')) {
+        const kept = [style.top, style.left, style.width, style.height];
+        style.top = style.left = style.width = style.height = '';
+        const own = g.getComputedStyle(el) as AnyRecord;
+        if (own.top === 'auto' && own.bottom === 'auto' && own.left === 'auto' && own.right === 'auto' && own.width === '0px' && own.height === '0px') {
+          [style.top, style.left, style.width, style.height] = kept;
+        }
+      }
+      const position = (g.getComputedStyle(el) as AnyRecord).position;
+      if (position !== 'absolute' && position !== 'fixed') style.position = 'absolute';
+      if (tag === 'audio') continue;
+      // Read after the change, as a browser's live computed style is.
+      const computed = g.getComputedStyle(el) as AnyRecord;
+      const sized = (value: string): boolean => value !== '0px' && value !== 'auto';
+      const [width, height] = [px(el, 'data-width'), px(el, 'data-height')];
+      if (width !== null) {
+        if (!style.width && !sized(computed.width)) style.width = width;
+      } else if (tag !== 'img' && !style.width && computed.width === '0px') style.width = '100%';
+      if (height !== null) {
+        if (!style.height && !sized(computed.height)) style.height = height;
+      } else if (tag !== 'img' && !style.height && computed.height === '0px') style.height = '100%';
+    }
+    for (const { el, priority } of hidden) el.style.setProperty('display', 'none', priority);
   }
 
   /** The variables of the composition `el` is in (the root's, outside any). */

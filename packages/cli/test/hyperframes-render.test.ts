@@ -40,6 +40,15 @@ function framemd5(file: string): string[] {
   return out.split('\n').filter((l) => l !== '' && !l.startsWith('#')).map((l) => l.split(',').pop()!.trim());
 }
 
+/** The RGB of pixel (`x`, `y`) of each frame of a video `width` wide. */
+function pixels(file: string, width: number, height: number, x: number, y: number): number[][] {
+  const raw = spawnSync('ffmpeg', ['-v', 'error', '-i', join(dir, file), '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { maxBuffer: 1 << 26 }).stdout as Buffer;
+  const frame = width * height * 3;
+  const out: number[][] = [];
+  for (let at = 0; at + frame <= raw.length; at += frame) out.push([...raw.subarray(at + (y * width + x) * 3, at + (y * width + x) * 3 + 3)]);
+  return out;
+}
+
 describe.skipIf(!ready)('rendering a HyperFrames project', () => {
   it('lists the root composition at the size, rate and length the HTML declares', () => {
     const out = run(['compositions', project, '--json']);
@@ -73,6 +82,16 @@ describe.skipIf(!ready)('rendering a HyperFrames project', () => {
     expect(framemd5('cb-three.mp4')).toEqual(seq);
     expect(framemd5('cb-alone.mp4')[0]).toBe(seq[50]);
     expect(new Set(seq).size).toBeGreaterThan(30);
+  });
+
+  it('draws each of several sub-compositions mounted without a position, as HyperFrames does', () => {
+    const subs = join(here, 'fixtures', 'hf-two-subs');
+    expect(run(['render', subs, '-o', join(dir, 'subs.mp4'), '--concurrency', '1', '--encoder', 'libx264', '--crf', '0', '--pixel-format', 'yuv444p']).status).toBe(0);
+    const seen = pixels('subs.mp4', 64, 36, 32, 18);
+    const near = (rgb: number[], want: number[]) => rgb.every((c, i) => Math.abs(c - want[i]!) <= 8);
+    expect(near(seen[15]!, [255, 0, 0])).toBe(true);
+    // The second one used to be laid out below the first, off the canvas, and the frame was black.
+    expect(near(seen[45]!, [0, 0, 255])).toBe(true);
   });
 
   it('draws a WebGPU canvas from the time hf-seek gives it, the same alone, in sequence and across workers, with nothing unsupported', () => {
