@@ -238,6 +238,35 @@ mod tests {
         assert_eq!(hole.radii(skia_safe::rrect::Corner::UpperRight), skia_safe::Vector::new(0.0, 0.0));
     }
 
+    /// The blur shader compiles (a failure would fall back to the mask filter without a sign) and gives the blurred
+    /// shape's alpha: the full colour deep inside, half on a straight edge (averaged over the two pixels beside it), none 4σ out.
+    #[test]
+    fn the_blur_shader_compiles_and_blurs_the_shape() {
+        let fx = skia_safe::RuntimeEffect::make_for_shader(RRECT_BLUR, None).expect("RRECT_BLUR compiles");
+        let mut b = skia_safe::runtime_effect::RuntimeShaderBuilder::new(fx);
+        // A 200x100 rectangle centred at (100, 50) with radius-10 corners, blurred by σ 4, in opaque red.
+        b.set_uniform_float("shape", &[100.0, 50.0, 100.0, 50.0]).unwrap();
+        b.set_uniform_float("misc", &[10.0, 4.0, 0.0, 0.0]).unwrap();
+        b.set_uniform_float("color", &[1.0, 0.0, 0.0, 1.0]).unwrap();
+        let mut p = Paint::default();
+        p.set_shader(b.make_shader(&Matrix::default()).unwrap());
+        let mut s = skia_safe::surfaces::raster_n32_premul((240, 140)).unwrap();
+        s.canvas().draw_rect(Rect::new(0.0, 0.0, 240.0, 140.0), &p);
+        let mut alpha = |x: i32, y: i32| {
+            let mut px = [0u8; 4];
+            let info = skia_safe::ImageInfo::new_n32_premul((1, 1), None);
+            assert!(s.read_pixels(&info, &mut px, 4, (x, y)));
+            px[3]
+        };
+        assert_eq!(alpha(100, 50), 255);
+        // Pixels 99 and 100 have their centres half a pixel either side of the bottom edge (y 100).
+        let edge = (alpha(100, 99) as i32 + alpha(100, 100) as i32) / 2;
+        assert!((edge - 128).abs() <= 3, "edge {edge}");
+        assert_eq!(alpha(100, 117), 0);
+        // Beyond a rounded corner the blur is fainter than beyond the straight edge at the same distance.
+        assert!(alpha(198, 98) < alpha(100, 98));
+    }
+
     #[test]
     fn leaves_other_paths() {
         // An inset shadow's ring: two subpaths where one is wanted.
