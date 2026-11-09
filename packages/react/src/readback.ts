@@ -5,6 +5,7 @@
 import {
   addonFunction,
   collectStyleElements,
+  currentSamplePass,
   hasAddonFunction,
   importedStylesheets,
   isDomElement,
@@ -195,7 +196,7 @@ export function createReadback(container: Container, options: EmitOptions): Read
       try {
         if (island.boxes === undefined) {
           let t = stamp();
-          const text = addonFunction('domLayoutBoxes')(island.json);
+          const text = addonFunction('domLayoutBoxes')(island.json, currentSamplePass());
           t = lap('rb_box', t);
           island.boxes = JSON.parse(text) as Boxes;
           lap('rb_box_parse', t);
@@ -220,7 +221,7 @@ export function createReadback(container: Container, options: EmitOptions): Read
           // properties of one element (GSAP reads a dozen): ask for the usual ones together and answer the rest from the cache.
           const asked = [property, ...COMMON_PROPERTIES.filter((p) => p !== property && !island.computed.has(`${pathOf(host)}\0${p}`))];
           const t = stamp();
-          const answer = addonFunction('domComputedStyle')(island.json, pathOf(host), asked);
+          const answer = addonFunction('domComputedStyle')(island.json, pathOf(host), asked, currentSamplePass());
           lap('rb_style', t);
           asked.forEach((name, i) => island.computed.set(`${pathOf(host)}\0${name}`, answer[i] !== undefined && answer[i] !== '' ? answer[i]! : null));
           value = island.computed.get(key) ?? null;

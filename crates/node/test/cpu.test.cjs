@@ -463,6 +463,46 @@ test('a DOM tree thousands of levels deep lays out (the island thread has a larg
   assert.equal(JSON.parse(native.domLayoutBoxes(island(el('div', '$0', 'height: 7px'))))['$0'].height, 7);
 });
 
+test('in a pass, readbacks and the render share a document, and a read after a write sees the write', () => {
+  const at = (width) => island(el('div', '$0', `width: ${width}px; height: 10px; transform: translateX(${width}px)`));
+  const width = (json, pass) => native.domComputedStyle(json, '$0', ['width'], pass)[0];
+  const box = (json, pass) => JSON.parse(native.domLayoutBoxes(json, pass))['$0'].width;
+  const pass = 7000;
+  assert.equal(width(at(100), pass), '100px');
+  // A script writes a style, then reads: the read sees the write, the layout too.
+  assert.equal(width(at(150), pass), '150px');
+  assert.equal(box(at(150), pass), 150);
+  // The tree as it was is not answered from the document of the tree written since.
+  assert.equal(width(at(100), pass), '100px');
+  assert.equal(box(at(150), pass), 150);
+  // The frame draws the tree it reads, as a render of that tree alone does.
+  assert.equal(native.renderDomIsland(at(150), pass), native.renderDomIsland(at(150)));
+  // The next frame's scripts read and write again; its render draws what they left, not what the frame before drew.
+  assert.equal(width(at(200), pass + 1), '200px');
+  assert.equal(box(at(250), pass + 1), 250);
+  assert.equal(native.renderDomIsland(at(250), pass + 1), native.renderDomIsland(at(250)));
+  // A frame that does not follow (a jump) reads a tree of its own.
+  assert.equal(width(at(100), pass + 5), '100px');
+  assert.equal(native.renderDomIsland(at(100), pass + 5), native.renderDomIsland(at(100)));
+  // A readback outside a pass reads the tree it is given.
+  assert.equal(width(at(300)), '300px');
+  assert.equal(width(at(150), pass + 6), '150px');
+});
+
+test('a document that cannot be edited (a line clamp cut it) is read again for the same tree, and built for another', () => {
+  const sheet = '.c { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; width: 60px; font: 20px "DM Sans" }';
+  const at = (text) => island(el('div', '$0', '', [el('div', '$0.0', '', [txt(text)], { class: 'c' })]), { stylesheets: [sheet] });
+  const height = (json, pass) => JSON.parse(native.domLayoutBoxes(json, pass))['$0.0'].height;
+  const pass = 7100;
+  const one = height(at('one'), pass);
+  const many = height(at('one two three four five six'), pass);
+  assert.equal(many, one, 'clamped to one line');
+  assert.equal(height(at('one two three four five six'), pass), many);
+  assert.equal(native.renderDomIsland(at('one two three four five six'), pass), native.renderDomIsland(at('one two three four five six')));
+  assert.equal(height(at('one'), pass + 1), one);
+  assert.equal(native.renderDomIsland(at('one'), pass + 1), native.renderDomIsland(at('one')));
+});
+
 test('the DOM island functions throw INVALID_ARG or RENDER errors', () => {
   rejects(() => native.renderDomIsland('{ nope'), 'INVALID_ARG', /renderDomIsland request/);
   rejects(() => native.domLayoutBoxes('{}'), 'INVALID_ARG', /domLayoutBoxes request/);

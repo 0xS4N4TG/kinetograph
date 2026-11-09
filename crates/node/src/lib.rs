@@ -299,20 +299,24 @@ pub fn finish_dom_island(ticket: u32) -> Result<String> {
 /// `IslandRequest` as JSON in, `{ [path]: { x, y, width, height, rect, client,
 /// scroll } }` as JSON out. `x`..`height` are the border box where layout put
 /// it, `rect` the transformed bounding box `getBoundingClientRect` gives.
+///
+/// `pass` is the frame's pass (`renderDomIsland`), when the scripts of the frame being drawn read it: the boxes are
+/// those of the document the frame's render then draws.
 #[napi]
-pub fn dom_layout_boxes(request_json: String) -> Result<String> {
-    dom::dom_layout_boxes(&request_json)
+pub fn dom_layout_boxes(request_json: String, pass: Option<u32>) -> Result<String> {
+    dom::dom_layout_boxes(&request_json, pass.map(u64::from))
 }
 
 /// `getComputedStyle` of the element at `path` in a DOM island: the resolved
-/// value of each property (CSS or camelCase names), `""` for an unknown one.
+/// value of each property (CSS or camelCase names), `""` for an unknown one. `pass` as for `domLayoutBoxes`.
 #[napi]
 pub fn dom_computed_style(
     request_json: String,
     path: String,
     properties: Vec<String>,
+    pass: Option<u32>,
 ) -> Result<Vec<String>> {
-    dom::dom_computed_style(&request_json, &path, &properties)
+    dom::dom_computed_style(&request_json, &path, &properties, pass.map(u64::from))
 }
 
 /// A Rive file (`.riv`) played to a time, as the commands of a canvas layer

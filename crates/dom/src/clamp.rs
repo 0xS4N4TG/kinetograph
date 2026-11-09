@@ -151,13 +151,17 @@ pub fn requested(request: &IslandRequest) -> bool {
 
 /// Clamps the document and lays it out again as often as that needs (two
 /// rounds at most; the third `apply` only confirms there is nothing left).
-pub fn settle(doc: &mut BaseDocument, time: f64) {
+/// Returns whether it changed the document.
+pub fn settle(doc: &mut BaseDocument, time: f64) -> bool {
+    let mut changed = false;
     for _ in 0..3 {
         if apply(doc) == 0 {
             break;
         }
+        changed = true;
         doc.resolve(time);
     }
+    changed
 }
 
 /// What [`apply`] changes on a box.

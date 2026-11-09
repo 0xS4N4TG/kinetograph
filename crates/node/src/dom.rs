@@ -13,7 +13,7 @@ use kinetograph_core::dom_layout::{
     DomLayoutBox, DomLayoutError, DomLayoutRequest, TextSize, has_text, layout_dom as lay_out,
     measure_text,
 };
-use kinetograph_dom::document::{self, IslandCache, IslandDocument};
+use kinetograph_dom::document::{self, BuildError, IslandCache, IslandDocument, Resolved};
 use kinetograph_dom::readback;
 use kinetograph_dom::request::{self, IslandRequest, Unsupported};
 use serde_json::Value;
@@ -182,9 +182,56 @@ fn parse_island(request_json: &str, what: &str) -> std::result::Result<IslandReq
         .map_err(|e| (Code::InvalidArg, format!("invalid {what} request: {e}")))
 }
 
+/// Documents kept from one render or readback to the next (`IslandCache`), with the text of the request each was
+/// resolved from: a request with the same text is answered from its document as it is, with no parse of it, no edit
+/// and no restyle. A frame's scripts read the layout of the tree they leave, and the frame then draws that same tree:
+/// the readback and the render share one document.
+#[derive(Default)]
+struct Islands {
+    cache: IslandCache,
+    /// Island path → the text of the request its kept document shows.
+    sources: HashMap<String, String>,
+}
+
+impl Islands {
+    /// The kept document resolved from exactly `json`.
+    fn same(&self, json: &str) -> Option<&Resolved> {
+        let (path, _) = self.sources.iter().find(|(_, text)| text.as_str() == json)?;
+        self.cache.peek(path)
+    }
+
+    /// The document of `request` (whose text is `json`) in `pass`: the kept one when it shows the same request, else
+    /// the kept one edited to it or a new one (`IslandCache::resolve`). Hand it back to `keep`.
+    fn resolve(
+        &mut self,
+        request: &IslandRequest,
+        json: &str,
+        pass: Option<u64>,
+    ) -> std::result::Result<Resolved, BuildError> {
+        self.cache.enter(pass);
+        if self.sources.get(&request.path).is_some_and(|text| text == json)
+            && let Some(resolved) = self.cache.take(&request.path)
+        {
+            return Ok(resolved);
+        }
+        self.sources.remove(&request.path);
+        self.cache.resolve(request, pass)
+    }
+
+    fn keep(&mut self, request: IslandRequest, json: String, resolved: Resolved) {
+        let path = request.path.clone();
+        self.cache.keep(request, resolved);
+        if self.cache.peek(&path).is_some() {
+            self.sources.insert(path, json);
+        } else {
+            self.sources.remove(&path);
+        }
+    }
+}
+
 thread_local! {
-    /// The islands of the motion-blur sample pass in progress (`IslandCache`).
-    static SAMPLES: std::cell::RefCell<IslandCache> = std::cell::RefCell::new(IslandCache::default());
+    /// The islands of the pass in progress: the frame's renders, its motion-blur samples' and its scripts' readbacks.
+    static SAMPLES: std::cell::RefCell<Islands> = std::cell::RefCell::new(Islands::default());
     /// The first layers each island drew in the pass in progress, which the
     /// later renders of the pass are written against (`request::delta`).
     static BASES: std::cell::RefCell<(Option<u64>, Bases)> =
@@ -241,13 +288,13 @@ fn start_dom_island(request_json: &str, pass: Option<u64>) -> Result<Outcome<Str
         add_shared_since("dom_parse", timer);
         add_for_since(&caller, "n_parse", timer);
         let timer = kinetograph_core::profile::start();
-        let (was_edited, was_built) = SAMPLES.with(|cache| cache.borrow().counts());
+        let (was_edited, was_built) = SAMPLES.with(|islands| islands.borrow().cache.counts());
         let mut resolved = SAMPLES
-            .with(|cache| cache.borrow_mut().resolve(&request, pass))
+            .with(|islands| islands.borrow_mut().resolve(&request, &json, pass))
             .map_err(|e| (Code::Render, e.to_string()))?;
         add_shared_since("dom_resolve", timer);
         add_for_since(&caller, "n_resolve", timer);
-        let (edited, built) = SAMPLES.with(|cache| cache.borrow().counts());
+        let (edited, built) = SAMPLES.with(|islands| islands.borrow().cache.counts());
         kinetograph_core::profile::add_for(&caller, "n_edited", (edited - was_edited) as f64);
         kinetograph_core::profile::add_for(&caller, "n_built", (built - was_built) as f64);
         let timer = kinetograph_core::profile::start();
@@ -268,7 +315,7 @@ fn start_dom_island(request_json: &str, pass: Option<u64>) -> Result<Outcome<Str
             });
         }
         let path = request.path.clone();
-        SAMPLES.with(|cache| cache.borrow_mut().keep(request, resolved));
+        SAMPLES.with(|islands| islands.borrow_mut().keep(request, json, resolved));
         // The first render of an island in the pass is kept, once written,
         // for the later ones to be written against.
         let (mut delta, mut first) = (false, None);
@@ -304,80 +351,70 @@ fn start_dom_island(request_json: &str, pass: Option<u64>) -> Result<Outcome<Str
     })
 }
 
-/// The island the readback calls (`domLayoutBoxes`, `domComputedStyle`) last read. A page that reads thousands of
-/// styles asks about one tree again and again, and the tree changes between some of the reads (a script writes a
-/// style); building and styling the whole island for every call cost about 17 ms each. The same request is answered
-/// from the document as it is, with no parse and no restyle; a changed one edits that document to the new tree, as a
-/// motion-blur sample does (`IslandCache`), so only what changed is restyled.
-struct Readback {
-    cache: IslandCache,
-    /// The request the kept document shows (its text) and the island's path.
-    last: Option<(String, String)>,
-    pass: u64,
-}
-
 thread_local! {
-    static READBACK: std::cell::RefCell<Readback> = std::cell::RefCell::new(Readback {
-        cache: IslandCache::default(),
-        last: None,
-        pass: 0,
-    });
+    /// The islands of the readbacks made outside a pass (a frame skipped or replayed, a measurement), and the number
+    /// of the last: each is a pass of its own, which edits the document the one before left.
+    static READBACK: std::cell::RefCell<(Islands, u64)> = std::cell::RefCell::new((Islands::default(), 0));
 }
 
-/// Runs `read` on the island of `json`, kept from the last readback when the tree is the same or close to it.
+/// Runs `read` on the island of `json`. A page reads thousands of styles of one tree, and the tree changes between
+/// some of the reads (a script writes a style): the same request is answered from the document as it is, and a changed
+/// one edits that document to the new tree, so only what changed is restyled. In a pass (`pass`, the frame's), the
+/// document is the one the frame's render draws, kept from the frame before; outside one, the readbacks' own.
 fn with_readback_island<T>(
     caller: &str,
-    json: &str,
+    json: String,
+    pass: Option<u64>,
     what: &str,
     read: impl FnOnce(&IslandDocument) -> std::result::Result<T, Failure>,
 ) -> std::result::Result<T, Failure> {
-    use kinetograph_core::profile::{add_for, add_for_since, start};
-    READBACK.with(|state| {
-        let state = &mut *state.borrow_mut();
-        let timer = start();
-        if let Some((text, path)) = &state.last
-            && text == json
-            && let Some(kept) = state.cache.peek(path)
-        {
+    let answer = |islands: &mut Islands, json: String, pass: Option<u64>| {
+        use kinetograph_core::profile::{add_for, add_for_since, start};
+        islands.cache.enter(pass);
+        if let Some(kept) = islands.same(&json) {
             add_for(caller, "rb_same", 1.0);
             let timer = start();
             let answer = read(&kept.island);
             add_for_since(caller, "rb_read", timer);
             return answer;
         }
-        add_for_since(caller, "rb_compare", timer);
         add_for(caller, "rb_bytes", json.len() as f64);
         let timer = start();
-        let request = parse_island(json, what)?;
+        let request = parse_island(&json, what)?;
         add_for_since(caller, "rb_parse", timer);
-        state.pass += 1;
         let timer = start();
-        let (was_edited, _) = state.cache.counts();
-        let resolved = state
-            .cache
-            .resolve(&request, Some(state.pass))
+        let (was_edited, _) = islands.cache.counts();
+        let resolved = islands
+            .resolve(&request, &json, pass)
             .map_err(|e| (Code::Render, e.to_string()))?;
         add_for_since(caller, "rb_resolve", timer);
-        add_for(caller, "rb_edited", (state.cache.counts().0 - was_edited) as f64);
+        add_for(caller, "rb_edited", (islands.cache.counts().0 - was_edited) as f64);
         let timer = start();
         let answer = read(&resolved.island);
         add_for_since(caller, "rb_read", timer);
-        let timer = start();
-        let path = request.path.clone();
-        state.cache.keep(request, resolved);
-        state.last = Some((json.to_string(), path));
-        add_for_since(caller, "rb_keep", timer);
+        islands.keep(request, json, resolved);
         answer
-    })
+    };
+    match pass {
+        Some(_) => SAMPLES.with(|islands| answer(&mut islands.borrow_mut(), json, pass)),
+        None => READBACK.with(|state| {
+            let (islands, last) = &mut *state.borrow_mut();
+            // A request seen last is read where it is; any other is the next pass.
+            if islands.same(&json).is_none() {
+                *last += 1;
+            }
+            answer(islands, json, Some(*last))
+        }),
+    }
 }
 
 /// The boxes of every element of the island (`getBoundingClientRect`,
 /// `offsetWidth`, `clientWidth`, `scrollHeight`): `{ [path]: ElementBox }`.
-pub fn dom_layout_boxes(request_json: &str) -> Result<String> {
+pub fn dom_layout_boxes(request_json: &str, pass: Option<u64>) -> Result<String> {
     let json = request_json.to_string();
     let caller = kinetograph_core::profile::caller();
     on_island_thread(READBACK_STAGES, move || {
-        with_readback_island(&caller, &json, "domLayoutBoxes", |island| {
+        with_readback_island(&caller, json, pass, "domLayoutBoxes", |island| {
             serde_json::to_string(&readback::layout_boxes(island))
                 .map_err(|e| (Code::Render, format!("cannot write the boxes: {e}")))
         })
@@ -390,6 +427,7 @@ pub fn dom_computed_style(
     request_json: &str,
     path: &str,
     properties: &[String],
+    pass: Option<u64>,
 ) -> Result<Vec<String>> {
     let (json, path, properties) = (
         request_json.to_string(),
@@ -398,7 +436,7 @@ pub fn dom_computed_style(
     );
     let caller = kinetograph_core::profile::caller();
     on_island_thread(READBACK_STAGES, move || {
-        with_readback_island(&caller, &json, "domComputedStyle", |island| {
+        with_readback_island(&caller, json, pass, "domComputedStyle", |island| {
             readback::computed_style(island, &path, &properties).ok_or_else(|| {
                 (
                     Code::InvalidArg,

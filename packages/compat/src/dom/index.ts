@@ -92,6 +92,14 @@ export function endSamplePass(): void {
   bases.clear();
 }
 
+/**
+ * The pass in progress, for a readback of the frame's tree to pass on (`domLayoutBoxes`): the addon answers it from the
+ * document the frame's render draws. Undefined outside a pass.
+ */
+export function currentSamplePass(): number | undefined {
+  return samplePass ?? undefined;
+}
+
 type Written = Record<string, unknown> & { $same?: number; $base?: number; children?: Written[] };
 
 /** The layers the addon wrote as changes from `base` (`delta` of crates/dom/src/request.rs), sharing what is the same. */
