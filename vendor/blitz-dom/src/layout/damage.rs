@@ -123,11 +123,14 @@ impl BaseDocument {
             damage_for_parent.insert(CONSTRUCT_DESCENDENT);
         }
 
-        // An inline `<svg>` is rendered from a snapshot of its subtree (with
-        // `currentColor` resolved) taken during box construction, so it must be
-        // rebuilt whenever the style of the `<svg>` or any descendant changes.
+        // An inline `<svg>` keeps a snapshot of its subtree (`usvg`), taken
+        // during box construction. Kinetograph paints the SVG from the DOM
+        // (`paint/svg`) and reads the snapshot only for the box's intrinsic
+        // size, which comes from the `<svg>` element itself: so only a change
+        // to the `<svg>`'s own style rebuilds it, not one to a descendant
+        // (Blitz's own renderer would draw the stale snapshot).
         #[cfg(feature = "svg")]
-        if !damage.is_empty()
+        if !own_damage.is_empty()
             && self.nodes[node_id]
                 .data
                 .is_element_with_tag_name(&local_name!("svg"))
