@@ -28,15 +28,14 @@ use blitz_dom::{
     Attribute, BaseDocument, DocumentConfig, DocumentMutator, LocalName, NodeId, QualName, ns,
 };
 use blitz_traits::shell::{ColorScheme, Viewport};
-use style::properties::{ComputedValues, LonghandId};
-use style::servo_arc::Arc as ServoArc;
 
+use crate::changes::{self, Stamp};
 use crate::clamp;
 use crate::collapse;
 use crate::fonts;
 use crate::inline;
 use crate::net::{self, LocalFiles};
-use crate::paint::{self, Painted};
+use crate::paint::{self, Fragments};
 use crate::request::{DomNode, IslandOutput, IslandRequest};
 use crate::ua;
 
@@ -377,144 +376,71 @@ pub struct Resolved {
     files: Arc<LocalFiles>,
     /// Whether [`IslandCache`] may edit it to another request.
     plain: bool,
-    /// The last paint of the document, and the style and box of each node then.
-    painted: Option<(Painted, Vec<Stamp>)>,
-    /// The elements whose `style` the edits since that paint set, when they set nothing else.
-    edited: Option<Vec<NodeId>>,
-    /// The elements whose transforms alone changed since that paint, when
-    /// nothing else did (`Resolved::paint`).
-    moved: Option<Vec<NodeId>>,
-}
-
-/// A node's computed style and box as a paint saw them. The style is held,
-/// so another one cannot take its place in memory.
-struct Stamp {
-    node: NodeId,
-    style: Option<ServoArc<ComputedValues>>,
-    layout: Option<taffy::Layout>,
-}
-
-/// A node's box; text and comments have none.
-fn layout_of(node: &blitz_dom::Node) -> Option<taffy::Layout> {
-    use blitz_dom::node::NodeData;
-    matches!(
-        node.data,
-        NodeData::Element(_) | NodeData::AnonymousBlock(_) | NodeData::Document(_)
-    )
-    .then(|| *node.final_layout())
-}
-
-fn stamps(doc: &BaseDocument) -> Vec<Stamp> {
-    doc.tree()
-        .iter()
-        .map(|(_, node)| Stamp {
-            node: node.id,
-            style: node.primary_styles().map(|s| (*s).clone()),
-            layout: layout_of(node),
-        })
-        .collect()
+    /// Whether it is kept for the renders after it (a pass's), so its paint keeps what the next paint replays.
+    retains: bool,
+    /// The style and box of each node at the last paint, and the stacking contexts' contents it painted.
+    painted: Option<(Vec<Stamp>, Fragments)>,
+    /// The nodes whose attributes (other than `style`) or text the edits since that paint set; None when the next
+    /// paint has to be whole (a file was read, a line clamp cut another line, a stylesheet or an `id` changed).
+    touched: Option<Vec<NodeId>>,
+    /// How many stacking contexts' contents the last paint replayed and how many it painted.
+    replayed: (u64, u64),
 }
 
 impl Resolved {
-    /// Paints the island. After an edit that only changed transforms, the
-    /// last paint's layers with those groups' transforms worked out again
-    /// (`paint::repaint_transforms`); otherwise a whole paint.
+    /// Paints the island. After edits, the stacking contexts nothing inside
+    /// changed are replayed from the last paint (`paint::paint_retaining`).
     pub fn paint(&mut self, request: &IslandRequest) -> IslandOutput {
-        use crate::counters;
         let doc = &self.island.doc;
-        let again = match (self.moved.take(), self.painted.take()) {
-            (Some(moved), Some((painted, _))) => {
-                let again = paint::repaint_transforms(doc, request, painted, &moved);
-                match again {
-                    Some(_) => counters::repainted(),
-                    None => counters::missed(counters::Miss::Repaint),
-                }
-                again
+        if !self.retains {
+            return paint::paint(doc, request);
+        }
+        let (kept, changes) = match (self.painted.take(), self.touched.take()) {
+            (Some((stamps, fragments)), Some(touched)) => {
+                let changes = changes::changes(doc, &stamps, &touched);
+                (fragments, changes)
             }
-            (_, painted) => {
-                match painted {
-                    Some(_) => counters::whole(),
-                    None => counters::fresh(),
-                }
-                None
-            }
+            _ => (Fragments::default(), None),
         };
-        let (output, painted) = again.unwrap_or_else(|| paint::paint_keeping(doc, request));
-        self.painted = Some((painted, stamps(doc)));
-        self.edited = Some(Vec::new());
+        let (output, fragments, replayed) =
+            paint::paint_retaining(doc, request, kept, changes.as_ref());
+        self.painted = Some((changes::stamps(doc), fragments));
+        self.touched = Some(Vec::new());
+        self.replayed = replayed;
         output
     }
-}
 
-/// The properties that only make an element's matrix.
-const TRANSFORM_PROPERTIES: [LonghandId; 4] = [
-    LonghandId::Transform,
-    LonghandId::Translate,
-    LonghandId::Rotate,
-    LonghandId::Scale,
-];
-
-/// The nodes whose `style` `edits` set: None when an edit is anything else
-/// (a text, another attribute).
-fn style_edits(edits: &[Edit]) -> Option<Vec<NodeId>> {
-    edits
-        .iter()
-        .map(|edit| match edit {
-            Edit::Attr(id, name, Some(_)) if name.local == *"style" => Some(*id),
-            _ => None,
-        })
-        .collect()
-}
-
-/// The nodes whose transforms alone changed between `stamps` (the last
-/// paint) and now, if that is all that changed: every box is where it was,
-/// every node has the values it had, and of the nodes in `edited` only the
-/// transform properties differ.
-fn transform_changes(
-    island: &IslandDocument,
-    edited: &[NodeId],
-    stamps: &[Stamp],
-) -> Option<Vec<NodeId>> {
-    use crate::counters::{Miss, missed};
-    let doc = &island.doc;
-    if stamps.len() != doc.tree().len() {
-        missed(Miss::Length);
-        return None;
+    /// How many stacking contexts' contents the last paint replayed and how many it painted.
+    pub fn replayed(&self) -> (u64, u64) {
+        self.replayed
     }
-    let mut moved = Vec::new();
-    for stamp in stamps {
-        let Some(node) = doc.get_node(stamp.node) else {
-            missed(Miss::NodeGone);
-            return None;
-        };
-        if layout_of(node) != stamp.layout {
-            missed(Miss::Layout);
-            return None;
-        }
-        let style = node.primary_styles();
-        match (&stamp.style, &style) {
-            (None, None) => {}
-            (Some(was), Some(now)) => {
-                let now: &ServoArc<ComputedValues> = now;
-                if ServoArc::ptr_eq(was, now) || was.same_values_except(now, &[]) {
-                    continue;
-                }
-                if !edited.contains(&stamp.node)
-                    || !was.same_values_except(now, &TRANSFORM_PROPERTIES)
-                {
-                    missed(Miss::Value);
-                    return None;
-                }
-                moved.push(stamp.node);
-            }
-            _ => {
-                missed(Miss::Value);
+}
+
+/// The nodes `edits` set an attribute (other than `style`) or the text of; None when one sets a stylesheet's text, an
+/// `id` (another element can refer to it) or a path (layer ids are made of them).
+fn touched_by(doc: &BaseDocument, edits: &[Edit]) -> Option<Vec<NodeId>> {
+    let mut touched = Vec::new();
+    for edit in edits {
+        match edit {
+            Edit::Attr(_, name, _) if name.local == *"style" => {}
+            Edit::Attr(_, name, _) if name.local == *"id" || name.local == *PATH_ATTR => {
                 return None;
             }
+            Edit::Attr(id, _, _) => touched.push(*id),
+            Edit::Text(id, _) => {
+                let parent = doc
+                    .get_node(*id)
+                    .and_then(|n| n.parent)
+                    .and_then(|p| doc.get_node(p));
+                let style = LocalName::from("style");
+                if parent.is_some_and(|p| p.data.is_element_with_tag_name(&style)) {
+                    return None;
+                }
+                touched.push(*id);
+            }
         }
     }
-    crate::counters::moved();
-    Some(moved)
+    Some(touched)
 }
 
 /// The islands of one motion-blurred frame's samples (packages/cli/skills/kinetograph/references/SCENE.md, "Motion
@@ -522,13 +448,11 @@ fn transform_changes(
 /// islands differ in a few styles (a transform, an opacity) while their
 /// structure, text and sheets stay. The document of an earlier sample is
 /// edited to the next one instead of building, styling and shaping all of it
-/// again; the edits restyle and lay out only what they touch. When they
-/// changed nothing but transforms (every box where it was, every other value
-/// the same), the island is painted from its last paint with those groups'
-/// transforms worked out again (`Resolved::paint`). The result is the same as
-/// building and painting the sample afresh. It is not used when a transition
-/// or animation could start from an edit, nor for a tree whose structure
-/// changed.
+/// again; the edits restyle and lay out only what they touch, and the paint
+/// replays the stacking contexts they left as they were (`Resolved::paint`).
+/// The result is the same as building and painting the sample afresh. It is
+/// not used when a transition or animation could start from an edit, nor for
+/// a tree whose structure changed.
 ///
 /// A pass is the renders of one frame, its samples included. The pass that
 /// follows it (its number one more) edits the documents the pass left, from
@@ -622,12 +546,10 @@ impl IslandCache {
                 island,
                 files,
                 plain,
-                painted,
-                edited,
-                moved,
+                touched,
+                ..
             } = &mut kept.resolved;
-            // A change to transforms alone can be painted from the last paint, after however many edits.
-            *edited = match (edited.take(), style_edits(&edits)) {
+            *touched = match (touched.take(), touched_by(&island.doc, &edits)) {
                 (Some(mut before), Some(now)) => {
                     before.extend(now);
                     Some(before)
@@ -636,27 +558,22 @@ impl IslandCache {
             };
             // The document as built, then edited and clamped again.
             let clamped = std::mem::take(&mut island.clamped);
+            let marks = clamp::marks(&island.doc, &clamped);
             clamp::undo(&mut island.doc, &clamped);
             if !edits.is_empty() || !clamped.is_empty() {
                 apply(island, &edits);
-                load(island, files, request.time);
+                if load(island, files, request.time) {
+                    // What a file changes is not in the styles and boxes.
+                    *touched = None;
+                }
             }
             advance(&mut island.doc, request.time);
             *plain = settle(island, request);
-            // A clamp moves an ellipsis without a style changing: painted afresh.
-            if !clamped.is_empty() || !island.clamped.is_empty() {
-                *edited = None;
+            // A clamp that cuts another line moves an ellipsis without a style changing: painted afresh.
+            if clamp::marks(&island.doc, &island.clamped) != marks {
+                *touched = None;
             }
             island.missing = files.missing();
-            *moved = match (edited.as_ref(), painted.as_ref()) {
-                (Some(edited), Some((_, stamps))) if *plain => {
-                    transform_changes(island, edited, stamps)
-                }
-                _ => {
-                    crate::counters::missed(crate::counters::Miss::NotStyleOnly);
-                    None
-                }
-            };
             self.edited += 1;
             return Ok(kept.resolved);
         }
@@ -667,9 +584,10 @@ impl IslandCache {
             island,
             files: files.expect("a resolved island has its files"),
             plain,
+            retains: pass.is_some(),
             painted: None,
-            edited: None,
-            moved: None,
+            touched: None,
+            replayed: (0, 0),
         })
     }
 
@@ -741,22 +659,25 @@ fn start(island: &mut IslandDocument, files: &LocalFiles, time: f64) {
     advance(&mut island.doc, time);
 }
 
-/// Resolves the document at `at` until its sub-resources have arrived.
+/// Resolves the document at `at` until its sub-resources have arrived; true
+/// if any file was asked for.
 ///
 /// Images and `@font-face` files are answered while the tree is built
 /// (`<img>`) and while styles are computed (`background-image`, `@import`),
 /// and enter the document before the next resolve. Resolve until nothing new
 /// arrives; the passes after the first only redo what the new resource touched.
-fn load(island: &mut IslandDocument, files: &LocalFiles, at: f64) {
-    deliver(&mut island.doc, files);
+fn load(island: &mut IslandDocument, files: &LocalFiles, at: f64) -> bool {
+    let mut asked = deliver(&mut island.doc, files) > 0;
     for _ in 0..4 {
-        files.take_served();
+        asked |= files.take_served() > 0;
         island.doc.resolve(at);
         if files.take_served() == 0 {
             break;
         }
+        asked = true;
         deliver(&mut island.doc, files);
     }
+    asked
 }
 
 /// Moves the document's animation clock on to `time`.
@@ -951,9 +872,11 @@ fn apply(island: &mut IslandDocument, edits: &[Edit]) {
     }
 }
 
-/// Hands the images the net provider has decoded to the document.
-fn deliver(doc: &mut BaseDocument, files: &LocalFiles) {
-    for (url, resource) in files.take_deliveries() {
+/// Hands the images the net provider has decoded to the document; how many.
+fn deliver(doc: &mut BaseDocument, files: &LocalFiles) -> usize {
+    let deliveries = files.take_deliveries();
+    let count = deliveries.len();
+    for (url, resource) in deliveries {
         doc.load_resource(ResourceLoadResponse {
             request_id: 0,
             node_id: None,
@@ -961,6 +884,7 @@ fn deliver(doc: &mut BaseDocument, files: &LocalFiles) {
             result: Ok(resource),
         });
     }
+    count
 }
 
 /// A bound on the style passes spent catching an animation up to a late time

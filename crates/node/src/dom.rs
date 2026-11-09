@@ -323,6 +323,9 @@ fn start_dom_island(request_json: &str, pass: Option<u64>) -> Result<Outcome<Str
         if crate::dom_verify::enabled() {
             crate::dom_verify::check_render(&json, &request, &resolved.island, &output)?;
         }
+        let (replayed, painted) = resolved.replayed();
+        kinetograph_core::profile::add_for(&caller, "n_sc_replayed", replayed as f64);
+        kinetograph_core::profile::add_for(&caller, "n_sc_painted", painted as f64);
         let write_timer = kinetograph_core::profile::start();
         let island = &resolved.island;
         // A file the island named that could not be read is not drawn as the
