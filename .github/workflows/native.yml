@@ -214,16 +214,18 @@ jobs:
           echo "dfdc25f421f32a0d1268e0f2ff2153d340e8f1d52d3dd16f5dc33c1ce85cedf1  $RUNNER_TEMP/ben2.onnx" | (sha256sum -c - || shasum -a 256 -c -)
           KINETOGRAPH_BEN2="$RUNNER_TEMP/ben2.onnx" cargo test --release --target ${{ matrix.target }} -p kinetograph-matte --features kinetograph-matte/ffmpeg-static --test person ben2_holds_the_man -- --nocapture
 
+      # PowerShell, like the other Windows cargo steps: in Git Bash, /usr/bin/link shadows MSVC's link.exe.
       - name: Test BEN2 on a real frame (Windows)
         if: runner.os == 'Windows'
-        shell: bash
         env:
           FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
         run: |
-          curl -fsSL -o "$RUNNER_TEMP/ben2.onnx" https://huggingface.co/onnx-community/BEN2-ONNX/resolve/c552aa82688edce09f0ac9d2e31ad53d9d629010/onnx/model_fp16.onnx
-          echo "dfdc25f421f32a0d1268e0f2ff2153d340e8f1d52d3dd16f5dc33c1ce85cedf1  $RUNNER_TEMP/ben2.onnx" | sha256sum -c -
-          KINETOGRAPH_BEN2="$(cygpath -w "$RUNNER_TEMP/ben2.onnx")" cargo test --release --target ${{ matrix.target }} -p kinetograph-matte --features kinetograph-matte/ffmpeg-static --test person ben2_holds_the_man -- --nocapture
+          $model = Join-Path $env:RUNNER_TEMP 'ben2.onnx'
+          curl.exe -fsSL -o $model https://huggingface.co/onnx-community/BEN2-ONNX/resolve/c552aa82688edce09f0ac9d2e31ad53d9d629010/onnx/model_fp16.onnx
+          if ((Get-FileHash $model -Algorithm SHA256).Hash.ToLower() -ne 'dfdc25f421f32a0d1268e0f2ff2153d340e8f1d52d3dd16f5dc33c1ce85cedf1') { throw 'BEN2 SHA-256 mismatch' }
+          $env:KINETOGRAPH_BEN2 = $model
+          cargo test --release --target ${{ matrix.target }} -p kinetograph-matte --features kinetograph-matte/ffmpeg-static --test person ben2_holds_the_man -- --nocapture
 
       - name: Libraries the addon links
         shell: bash
