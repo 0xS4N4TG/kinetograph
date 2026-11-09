@@ -274,8 +274,11 @@ class Runtime {
   }
 
   /**
-   * Takes the root's timed children out of flow, as HyperFrames' runtime does once the page has loaded (Apache-2.0,
-   * heygen-com/hyperframes, runtime/init.ts: the clip layout of its init). Each child with `data-start` that is not
+   * Lays out the root and takes its timed children out of flow, as HyperFrames' runtime does once the page has loaded
+   * (Apache-2.0, heygen-com/hyperframes, runtime/init.ts: `applyClipLayout` of its init). The root is first made
+   * `position: relative` unless it sets a position inline, `overflow: hidden`, and the `data-width` and `data-height` it
+   * has (a positive number, read as `parseFloat` does), over whatever its stylesheet says, so a root with no CSS size is
+   * not empty and what lies outside it is clipped. Each child with `data-start` that is not
    * `absolute` or `fixed` becomes `absolute`, so clips (a mounted sub-composition among them) start where the root
    * does instead of one below the other; one that is then laid out with no width or height gets its `data-width` or
    * `data-height`, else 100% (a picture keeps its own size). The broken centring `top: 0; left: 0; width: 100%;
@@ -285,9 +288,14 @@ class Runtime {
     const root = this.root as AnyRecord | null;
     if (root === null) return;
     const px = (el: AnyRecord, name: string): string | null => {
-      const n = parseNumeric(el.getAttribute(name));
-      return n === null ? null : `${n}px`;
+      const n = Number.parseFloat(el.getAttribute(name) ?? '');
+      return Number.isFinite(n) && n > 0 ? `${n}px` : null;
     };
+    if (!root.style.position) root.style.position = 'relative';
+    root.style.overflow = 'hidden';
+    const [rootWidth, rootHeight] = [px(root, 'data-width'), px(root, 'data-height')];
+    if (rootWidth !== null) root.style.width = rootWidth;
+    if (rootHeight !== null) root.style.height = rootHeight;
     const clips = (Array.from(root.children ?? []) as AnyRecord[]).filter((el) => {
       const tag = String(el.tagName).toLowerCase();
       return !['script', 'style', 'link', 'meta'].includes(tag) && el.hasAttribute('data-start') && !el.hasAttribute('data-hf-autostamped');
