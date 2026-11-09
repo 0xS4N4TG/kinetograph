@@ -14,6 +14,7 @@ import {
   isDomElement,
   islandEdits,
   lap,
+  nextIslandStamp,
   noteIslandState,
   noteStylesheet,
   requestFor,
@@ -76,9 +77,6 @@ interface Kept extends EditableRequest {
   /** The elements whose own style, attributes or texts scripts changed since; null when anything else changed. */
   dirty: Set<HostElement> | null;
 }
-
-/** The numbers of the states of islands sent with edits: one count for the whole thread, so none is used twice. */
-let stamps = 0;
 
 /** `KINETOGRAPH_DOM_VERIFY`: each request made by edits is checked against the request built afresh. */
 const verifyEdits = typeof process !== 'undefined' && Boolean(process.env?.KINETOGRAPH_DOM_VERIFY);
@@ -212,7 +210,7 @@ export function createReadback(container: Container, options: EmitOptions): Read
       noteIslandState(path, null);
       return json;
     }
-    const state = { ...editable, stamp: ++stamps, commits: container.commits, pass: currentSamplePass(), imported: importedStylesheets(), dirty: new Set<HostElement>() };
+    const state = { ...editable, stamp: nextIslandStamp(), commits: container.commits, pass: currentSamplePass(), imported: importedStylesheets(), dirty: new Set<HostElement>() };
     kept.set(root, state);
     // The frame's render of the same request names this state (it is changed in place by the edits that follow).
     noteIslandState(path, state);
@@ -246,7 +244,7 @@ export function createReadback(container: Container, options: EmitOptions): Read
       if (JSON.stringify(request) !== whole) throw new Error(`island ${path}: the request made by edits is not the one built afresh`);
     }
     const base = state.stamp;
-    state.stamp = ++stamps;
+    state.stamp = nextIslandStamp();
     state.pass = pass;
     state.dirty = new Set();
     return JSON.stringify({ stamp: state.stamp, base, path, time: request.time, set });

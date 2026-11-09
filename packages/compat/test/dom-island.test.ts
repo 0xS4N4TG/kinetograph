@@ -1,7 +1,7 @@
 // mapDomIsland on the addon's renderDomIsland (packages/cli/skills/kinetograph/references/ENGINE.md §2), with a stand-in addon: what is sent, and how the
 // answer is turned into layers (native placeholders filled and placed, top-level layers made absolute).
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LayerJson } from '@kinetographdev/scene';
 import {
   beginSamplePass,
@@ -300,5 +300,23 @@ describe('a render of the state a readback left', () => {
     mapDomIsland(tree, context());
     expect(got.slice(1).map((json) => JSON.parse(json).stamp ?? 'request')).toEqual(['request', 7, 'request', 7, 'request']);
     expect(JSON.parse(got[2]!)).toEqual({ stamp: 7, base: 7, path: '$1', time: 0, set: [] });
+  });
+});
+
+describe('two copies of the module in one thread', () => {
+  it('hand out different pass and state numbers, as the addon keeps one set of islands per thread', async () => {
+    vi.resetModules();
+    const a = await import('../src/dom/index.js');
+    vi.resetModules();
+    const b = await import('../src/dom/index.js');
+    expect(a).not.toBe(b);
+    const stamps = [a.nextIslandStamp(), b.nextIslandStamp(), a.nextIslandStamp()];
+    expect(new Set(stamps).size).toBe(3);
+    a.beginSamplePass();
+    const first = a.currentSamplePass();
+    a.endSamplePass();
+    b.beginSamplePass();
+    expect(b.currentSamplePass()).not.toBe(first);
+    b.endSamplePass();
   });
 });

@@ -61,7 +61,16 @@ interface IslandOutputJson {
 
 /** The pass in progress, or null (packages/cli/skills/kinetograph/references/SCENE.md, "Motion blur"). */
 let samplePass: number | null = null;
-let passes = 0;
+
+/**
+ * The numbers of the thread's passes and of the island states its readbacks send (`nextIslandStamp`). The addon keeps
+ * islands per thread, so every copy of this module loaded in the thread (a package loaded twice, in Studio or dev)
+ * counts on these, and no two copies hand out one number.
+ */
+const counts = ((globalThis as Record<symbol, unknown>)[Symbol.for('kinetograph.islandCounts')] ??= { passes: 0, stamps: 0 }) as {
+  passes: number;
+  stamps: number;
+};
 /** The pass before the one in progress, or null. */
 let lastPass: number | null = null;
 
@@ -82,8 +91,8 @@ const bases = new Map<string, { pass: number; layers: unknown[] }>();
 export function beginSamplePass(): void {
   dropQueue();
   if (typeof process !== 'undefined' && process.env?.KINETOGRAPH_NO_INCREMENTAL) breakSamplePasses();
-  passes = (passes % 0x7fffffff) + 1;
-  samplePass = passes;
+  counts.passes = (counts.passes % 0x7fffffff) + 1;
+  samplePass = counts.passes;
   // As the addon does: the pass after the last keeps the bases the last made, any other none.
   if (lastPass !== null && samplePass === lastPass + 1) {
     for (const [path, base] of bases) if (base.pass !== lastPass) bases.delete(path);
@@ -97,7 +106,12 @@ export function beginSamplePass(): void {
  * keeps an island's document from one pass to the next pass only when the numbers are in sequence, so this skips one.
  */
 export function breakSamplePasses(): void {
-  passes = (passes % 0x7fffffff) + 1;
+  counts.passes = (counts.passes % 0x7fffffff) + 1;
+}
+
+/** A number for a state of an island that no other in the thread has (`IslandEdits::stamp` of crates/dom/src/request.rs). */
+export function nextIslandStamp(): number {
+  return ++counts.stamps;
 }
 
 export function endSamplePass(): void {
