@@ -181,6 +181,8 @@ describe('a pass of island renders', () => {
     const b = mapDomIsland(node('div'), context()).layers as any[];
     expect(b[0]).toMatchObject({ id: '$1', type: 'group', transform: { x: 2 }, children: [leaf('a', 0), leaf('b', 5), leaf('c', 0)] });
     expect(b[0]).not.toHaveProperty('$base');
+    // The keys keep the order they came in, as a group written whole has them.
+    expect(Object.keys(b[0]).slice(0, 4)).toEqual(['id', 'type', 'transform', 'children']);
     expect(b[0].children[0]).toBe(a[0].children[0]);
     expect(b[0].children[2]).toBe(a[0].children[2]);
     expect(b[1]).toEqual(a[1]);

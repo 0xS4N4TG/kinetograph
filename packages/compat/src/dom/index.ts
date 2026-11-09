@@ -121,9 +121,14 @@ function expand(layers: Written[], base: unknown[]): unknown[] {
   return layers.map((layer) => {
     if (typeof layer.$same === 'number') return base[layer.$same];
     if (typeof layer.$base !== 'number') return layer;
-    const { $base: at, children, ...own } = layer;
-    const theirs = (base[at] as { children: unknown[] }).children;
-    return { ...own, children: expand(children ?? [], theirs) };
+    const theirs = (base[layer.$base] as { children: unknown[] }).children;
+    // The keys in the order they came, as a layer written whole has them.
+    const out: Record<string, unknown> = {};
+    for (const key in layer) {
+      if (key === 'children') out.children = expand(layer.children ?? [], theirs);
+      else if (key !== '$base') out[key] = layer[key];
+    }
+    return out;
   });
 }
 
