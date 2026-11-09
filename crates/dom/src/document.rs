@@ -62,6 +62,8 @@ pub struct IslandDocument {
     /// Sub-resources that could not be read (a missing image, a network URL),
     /// each with the reason.
     pub missing: Vec<String>,
+    /// The boxes a line clamp changed (`clamp::settle`), put back before the document is edited.
+    clamped: Vec<clamp::Clamped>,
 }
 
 impl IslandDocument {
@@ -220,6 +222,7 @@ fn build_root(
                 root: Some(html),
                 starting,
                 missing: Vec::new(),
+                clamped: Vec::new(),
             },
             files,
         ));
@@ -267,6 +270,7 @@ fn build_root(
             root,
             starting,
             missing: Vec::new(),
+            clamped: Vec::new(),
         },
         files,
     ))
@@ -341,7 +345,8 @@ fn resolve_keeping(
 
 /// The passes after styling that mend what Blitz leaves out. True when none
 /// of them changed the document's tree or styles, so the document is still
-/// what building the request's tree gives and [`changes`] can edit it.
+/// what building the request's tree gives and [`changes`] can edit it; a line
+/// clamp's changes are recorded and put back first (`IslandDocument::clamped`).
 #[inline(never)]
 fn settle(island: &mut IslandDocument, request: &IslandRequest) -> bool {
     let mut plain = true;
@@ -360,8 +365,8 @@ fn settle(island: &mut IslandDocument, request: &IslandRequest) -> bool {
     }
     // `-webkit-line-clamp` boxes cut their height at the Nth line, which is
     // only known once the text is laid out.
-    if clamp::requested(request) && clamp::settle(&mut island.doc, request.time) {
-        plain = false;
+    if clamp::requested(request) {
+        island.clamped = clamp::settle(&mut island.doc, request.time);
     }
     plain
 }
@@ -606,12 +611,19 @@ impl IslandCache {
                 }
                 _ => None,
             };
-            if !edits.is_empty() {
+            // The document as built, then edited and clamped again.
+            let clamped = std::mem::take(&mut island.clamped);
+            clamp::undo(&mut island.doc, &clamped);
+            if !edits.is_empty() || !clamped.is_empty() {
                 apply(island, &edits);
                 load(island, files, request.time);
             }
             advance(&mut island.doc, request.time);
             *plain = settle(island, request);
+            // A clamp moves an ellipsis without a style changing: painted afresh.
+            if !clamped.is_empty() || !island.clamped.is_empty() {
+                *edited = None;
+            }
             island.missing = files.missing();
             *moved = match (edited.as_ref(), painted.as_ref()) {
                 (Some(edited), Some((_, stamps))) if *plain => {

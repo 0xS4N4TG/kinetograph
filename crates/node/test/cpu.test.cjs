@@ -489,18 +489,36 @@ test('in a pass, readbacks and the render share a document, and a read after a w
   assert.equal(width(at(150), pass + 6), '150px');
 });
 
-test('a document that cannot be edited (a line clamp cut it) is read again for the same tree, and built for another', () => {
-  const sheet = '.c { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; width: 60px; font: 20px "DM Sans" }';
-  const at = (text) => island(el('div', '$0', '', [el('div', '$0.0', '', [txt(text)], { class: 'c' })]), { stylesheets: [sheet] });
+test('a document a line clamp cut is edited to the next tree as a fresh build draws it', () => {
+  const sheet = '.c { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; font: 20px "DM Sans" }';
+  // One box with no `style` of its own, one with one (the clamp sets its declarations, which are put back).
+  const at = (text, width) =>
+    island(
+      el('div', '$0', '', [
+        el('div', '$0.0', `width: ${width}px`, [txt(text)], { class: 'c' }),
+        el('div', '$0.1', '', [txt(text)], { class: 'c' }),
+      ]),
+      { stylesheets: [sheet] },
+    );
   const height = (json, pass) => JSON.parse(native.domLayoutBoxes(json, pass))['$0.0'].height;
   const pass = 7100;
-  const one = height(at('one'), pass);
-  const many = height(at('one two three four five six'), pass);
+  const one = height(at('one', 60), pass);
+  const many = height(at('one two three four five six', 60), pass);
   assert.equal(many, one, 'clamped to one line');
-  assert.equal(height(at('one two three four five six'), pass), many);
-  assert.equal(native.renderDomIsland(at('one two three four five six'), pass), native.renderDomIsland(at('one two three four five six')));
-  assert.equal(height(at('one'), pass + 1), one);
-  assert.equal(native.renderDomIsland(at('one'), pass + 1), native.renderDomIsland(at('one')));
+  assert.equal(height(at('one two three four five six', 60), pass), many);
+  // Frame after frame, each drawn as a fresh build of its tree draws it: the clamp is put back, then cut again.
+  const frames = [
+    ['one two three four five six', 60],
+    ['one', 60],
+    ['one two three four five six', 300],
+    ['one two three four five six seven eight nine ten', 120],
+    ['one two three four five six seven eight nine ten', 120],
+    ['two', 40],
+  ];
+  frames.forEach(([text, width], i) => {
+    const json = at(text, width);
+    assert.equal(native.renderDomIsland(json, pass + 1 + i), native.renderDomIsland(json), `frame ${i}`);
+  });
 });
 
 test('the DOM island functions throw INVALID_ARG or RENDER errors', () => {
