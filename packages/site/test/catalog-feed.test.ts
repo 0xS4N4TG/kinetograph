@@ -14,13 +14,13 @@ describe('catalogFeed', () => {
     expect(feed.plugins.map((p) => p.name)).toEqual(catalog.plugins.map((p) => p.name));
     for (const p of feed.plugins) {
       const source = catalog.plugins.find((c) => c.name === p.name)!;
-      expect(p).toEqual({ name: source.name, slug: source.slug, title: source.title, description: source.description, published: false, url: `${SITE_URL}/plugins/${source.slug}/` });
+      expect(p).toEqual({ name: source.name, slug: source.slug, title: source.title, description: source.description, published: false, url: `${SITE_URL}/catalog/plugin-${source.slug}/` });
     }
   });
 
   it('adds icon and version when the catalog has them, and publishes only on an explicit true', () => {
     const [p] = catalogFeed([{ slug: 'a', name: '@x/a', title: 'A', description: 'd', icon: 'https://x.test/a.svg', version: '1.2.3', published: true }]).plugins;
-    expect(p).toEqual({ name: '@x/a', slug: 'a', title: 'A', description: 'd', icon: 'https://x.test/a.svg', version: '1.2.3', published: true, url: `${SITE_URL}/plugins/a/` });
+    expect(p).toEqual({ name: '@x/a', slug: 'a', title: 'A', description: 'd', icon: 'https://x.test/a.svg', version: '1.2.3', published: true, url: `${SITE_URL}/catalog/plugin-a/` });
     const [q] = catalogFeed([{ slug: 'b', name: 'b', title: 'B', description: '', icon: '', published: undefined }]).plugins;
     expect('icon' in q!).toBe(false);
     expect('version' in q!).toBe(false);
@@ -29,7 +29,7 @@ describe('catalogFeed', () => {
 
   it('uses the given site address without doubling slashes, and is deterministic', () => {
     const a = catalogFeed(catalog.plugins, 'https://example.test/');
-    expect(a.plugins[0]!.url).toBe(`https://example.test/plugins/${catalog.plugins[0]!.slug}/`);
+    expect(a.plugins[0]!.url).toBe(`https://example.test/catalog/plugin-${catalog.plugins[0]!.slug}/`);
     expect(JSON.stringify(catalogFeed(catalog.plugins))).toBe(JSON.stringify(catalogFeed(catalog.plugins)));
   });
 
