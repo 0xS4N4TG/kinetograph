@@ -894,7 +894,7 @@ export interface GlslAttribute {
   normalized?: boolean;
   stride?: number;
   offset?: number;
-  /** `vertexAttribDivisor`: 1 advances for each instance (default 0, for each vertex). */
+  /** `vertexAttribDivisor`: 1 advances for each instance, `n` for each `n` of them (default 0, for each vertex). */
   divisor?: number;
   /**
    * The attribute's array is disabled: it reads the current value (`vertexAttrib4f` and the like, default 0, 0, 0, 1)

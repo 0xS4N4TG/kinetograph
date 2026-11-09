@@ -3200,11 +3200,10 @@ export class WebGLContext {
         continue;
       }
       if (a.buffer === null) continue;
-      if (a.divisor > 1) throw new WebGLUnsupportedError(`vertexAttribDivisor(${a.divisor}, ...) of the attribute "${d.name}"; use 0 or 1`);
-      if (a.divisor === 1 && named === 'points') throw new WebGLUnsupportedError('instanced attributes of points');
+      if (a.divisor >= 1 && named === 'points') throw new WebGLUnsupportedError('instanced attributes of points');
       const type = ({ [GL.FLOAT]: 'f32', [GL.UNSIGNED_BYTE]: 'u8', [GL.BYTE]: 'i8', [GL.UNSIGNED_SHORT]: 'u16', [GL.SHORT]: 'i16' } as Record<number, GlslDraw['attributes'][string]['type']>)[a.type];
       if (type === undefined) throw new WebGLUnsupportedError(`the attribute "${d.name}" has type 0x${a.type.toString(16)}; use FLOAT, or a normalised byte or short`);
-      draw.attributes[d.name] = { buffer: this.bufferId(a.buffer), size: a.size, type, normalized: a.normalized, stride: a.stride, offset: a.offset, ...(a.divisor === 1 ? { divisor: 1 } : {}) };
+      draw.attributes[d.name] = { buffer: this.bufferId(a.buffer), size: a.size, type, normalized: a.normalized, stride: a.stride, offset: a.offset, ...(a.divisor >= 1 ? { divisor: a.divisor } : {}) };
     }
     if (indexed !== null) {
       const element = this.vao.element;

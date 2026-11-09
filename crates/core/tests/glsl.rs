@@ -921,6 +921,37 @@ fn instanced_draws_advance_attributes_with_a_divisor_per_instance_and_count_gl_i
     assert_eq!(px(&frame, 12, 12)[..3], [0, 0, 0]);
 }
 
+#[test]
+fn an_attribute_with_a_divisor_of_two_advances_every_second_instance() {
+    // Four instances read two offsets: 0 and 1 the first (lower left), 2 and 3 the second; the later of each pair
+    // is on top.
+    let vertex = "#version 300 es\nin vec2 a_pos; in vec2 a_off; out float v_i; \
+        void main() { v_i = float(gl_InstanceID); \
+        gl_Position = vec4(a_pos * 0.25 + a_off, 0.0, 1.0); }";
+    let fragment = "#version 300 es\nprecision mediump float; in float v_i; out vec4 o; \
+        void main() { o = vec4(v_i / 3.0, 0.0, 0.0, 1.0); }";
+    let offsets = points_buffer(&[[-0.5, -0.5], [0.5, 0.5]]);
+    let draw = format!(
+        r#"{{"op": "draw", "program": "p", "mode": "triangles", "first": 0, "count": 6, "instances": 4,
+            "attributes": {}, "viewport": [0, 0, 16, 16]}}"#,
+        quad_attributes().replacen(
+            "}}",
+            r#"}, "a_off": {"buffer": "off", "size": 2, "type": "f32", "divisor": 2}}"#,
+            1
+        )
+    );
+    let frame = render(&layer_with_vertex(
+        vertex,
+        &[("p", fragment)],
+        &format!(r#", "off": "{offsets}""#),
+        "",
+        &draw,
+    ));
+    near(px(&frame, 4, 12), [85, 0, 0, 255], 2);
+    near(px(&frame, 12, 4), [255, 0, 0, 255], 2);
+    assert_eq!(px(&frame, 4, 4)[..3], [0, 0, 0]);
+}
+
 // ---- the depth test ----
 
 const Z_VERTEX: &str = "attribute vec2 a_pos; uniform float u_z; varying vec2 v_uv; \

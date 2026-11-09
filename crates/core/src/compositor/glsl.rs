@@ -1325,6 +1325,8 @@ impl Compositor {
         let mut sources: Vec<(&str, u64, u64)> = Vec::new();
         // Buffer, stride, offset and element size of each, for gathering.
         let mut shapes: Vec<(&str, u64, u64, u64)> = Vec::new();
+        // The attributes with a divisor above 1, by their place in `sources`, and the divisor.
+        let mut divided: Vec<(usize, u32)> = Vec::new();
         let last = match &draw.indices {
             Some(indices) => {
                 let max = self.glsl_max_index(content, indices, draw, buffers)?;
@@ -1339,16 +1341,9 @@ impl Compositor {
                      refuses with INVALID_OPERATION)"
                 ))
             })?;
-            if a.divisor > 1 {
-                return Err(render_error(format!(
-                    "unsupported: vertexAttribDivisor({}) of the attribute `{name}`; 0 and 1 are \
-                     drawn",
-                    a.divisor
-                )));
-            }
-            // An attribute with a divisor advances for each instance; a
+            // An attribute with a divisor advances for each instance (or each `divisor` of them); a
             // point's attributes all do, as it is an instance itself.
-            let per_instance = a.divisor == 1 && !points;
+            let per_instance = a.divisor >= 1 && !points;
             let (format, element) = vertex_format(a, name, *components)?;
             let stride = if a.stride == 0 {
                 element
@@ -1394,7 +1389,7 @@ impl Compositor {
             }
             let bytes = glsl_buffer(content, &a.buffer, buffers)?.len() as u64;
             let reads = if per_instance {
-                u64::from(draw.instances)
+                u64::from(draw.instances.div_ceil(a.divisor))
             } else {
                 last
             };
@@ -1420,6 +1415,16 @@ impl Compositor {
             } else {
                 step
             };
+            if per_instance && a.divisor > 1 {
+                if draw.instances > MAX_DRAW_VERTICES {
+                    return Err(render_error(format!(
+                        "unsupported: {} instances of the attribute `{name}` with vertexAttribDivisor({}); \
+                         at most {MAX_DRAW_VERTICES}",
+                        draw.instances, a.divisor
+                    )));
+                }
+                divided.push((sources.len(), a.divisor));
+            }
             layouts.push((*location, format, stride, in_vertex, step));
             sources.push((&a.buffer, bound_at, stride));
             shapes.push((&a.buffer, stride, offset, element));
@@ -1436,6 +1441,21 @@ impl Compositor {
         // of the list, one element for each point.
         let mut instances = (draw.first, draw.first + draw.count);
         let mut gathered: Vec<Option<Vec<u8>>> = vec![None; sources.len()];
+        // wgpu's instance step is a divisor of 1: an attribute with a larger one is gathered, an element for each
+        // instance, instance `i` reading element `i / divisor`.
+        for (k, divisor) in divided {
+            let (buffer, stride, offset, element) = shapes[k];
+            let bytes = glsl_buffer(content, buffer, buffers)?;
+            let mut out = Vec::with_capacity(draw.instances as usize * element as usize);
+            for i in 0..u64::from(draw.instances) {
+                let at = (offset + i / u64::from(divisor) * stride) as usize;
+                out.extend_from_slice(&bytes[at..at + element as usize]);
+            }
+            gathered[k] = Some(out);
+            layouts[k].2 = element;
+            layouts[k].3 = 0;
+            sources[k].1 = 0;
+        }
         if points && let Some(list) = index_list.take() {
             for (k, (buffer, stride, offset, element)) in shapes.iter().enumerate() {
                 let bytes = glsl_buffer(content, buffer, buffers)?;

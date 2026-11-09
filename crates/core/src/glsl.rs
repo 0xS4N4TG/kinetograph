@@ -472,7 +472,7 @@ pub struct GlslAttribute {
     pub stride: u32,
     #[serde(default)]
     pub offset: u32,
-    /// `vertexAttribDivisor`: 0 advances for each vertex, 1 for each instance.
+    /// `vertexAttribDivisor`: 0 advances for each vertex, 1 for each instance, `n` for each `n` instances.
     #[serde(default)]
     pub divisor: u32,
     /// The attribute's array is disabled and it reads the current value (`vertexAttrib4f` and the like), the same for

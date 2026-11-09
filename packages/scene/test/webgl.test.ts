@@ -135,13 +135,13 @@ describe('the recording WebGL context', () => {
     gl.vertexAttribDivisor(at, 1);
     gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 5);
     gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 0);
-    gl.vertexAttribDivisor(at, 2);
-    expect(() => gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 2)).toThrow(/vertexAttribDivisor\(2/);
-    const ops = gl.content().ops;
-    expect(ops).toHaveLength(1);
-    const draw = ops[0] as { instances?: number; attributes: Record<string, { divisor?: number }> };
-    expect(draw.instances).toBe(5);
-    expect(Object.values(draw.attributes)[0]!.divisor).toBe(1);
+    gl.vertexAttribDivisor(at, 3);
+    gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 2);
+    const ops = gl.content().ops as { instances?: number; attributes: Record<string, { divisor?: number }> }[];
+    expect(ops).toHaveLength(2);
+    expect(ops[0]!.instances).toBe(5);
+    expect(Object.values(ops[0]!.attributes)[0]!.divisor).toBe(1);
+    expect(Object.values(ops[1]!.attributes)[0]!.divisor).toBe(3);
   });
 
   it('starts every frame fresh with preserveDrawingBuffer too (a frame does not depend on the one before)', () => {

@@ -525,7 +525,7 @@ A `draw` carries `program`, `mode` (`points`, `triangles`, `triangleStrip`, `tri
 `instances` (default 1), `indices`
 (`drawElements`: `buffer`, `type` `u8`, `u16` or `u32`, byte `offset`), `attributes` by the shader's names (`buffer`,
 `size`, `type` `f32`, or `u8`, `i8`, `u16`, `i16` with `normalized`, byte `stride` and `offset`, and `divisor` 1 for an
-attribute that advances for each instance; a disabled array is `constant`, its four values, for every vertex: `vertexAttrib*`, default 0, 0, 0, 1, with `buffer` only a name and `size` 4; a `mat2`, `mat3` or `mat4` attribute is one attribute for each column, named `name[0]`, `name[1]`, ..., at consecutive locations), `uniforms` by name
+attribute that advances for each instance (`n` for each `n` instances); a disabled array is `constant`, its four values, for every vertex: `vertexAttrib*`, default 0, 0, 0, 1, with `buffer` only a name and `size` 4; a `mat2`, `mat3` or `mat4` attribute is one attribute for each column, named `name[0]`, `name[1]`, ..., at consecutive locations), `uniforms` by name
 (a list of calls: `kind` `f`, `i` or `m` for column-major matrices, `value`, and `index` for an element of an array),
 `units` (the texture units by number, each with its `texture` and the `min`, `mag`, `wrapS` and `wrapT` it was set
 to, as the GL names; `compare` the function when the texture's `TEXTURE_COMPARE_MODE` was on, which a shadow sampler needs of a depth target; an array of samplers is set by its calls, `uniforms.maps` with `index`), `viewport`, `scissor` (both with y up from the bottom row, as GL's), `blend` (the factors,
@@ -586,7 +586,7 @@ volume is not drawn, and culling does not apply. `gl_VertexID` is the vertex's n
 point's number in a draw of points; `gl_InstanceID` the instance's. Instanced points are not drawn.
 
 Not drawn, and reported as `unsupported:` with what to do instead (never accepted and ignored):
-multisampled renderbuffers, `readPixels`, lines wider than one pixel, instanced points, a `vertexAttribDivisor` above 1, integer attributes
+multisampled renderbuffers, `readPixels`, lines wider than one pixel, instanced points, integer attributes
 (`vertexAttribIPointer`, `vertexAttribI4i`), mipmaps of 3D and array textures, cube map levels above 0 with pixels (call `generateMipmap`), `texSubImage2D` of part of a cube face, cube faces of float pixels or depth, a cube with both uploaded and drawn faces, float textures from a picture, a float texture as a `texSubImage2D` target from a picture or with the unpack flip or premultiply on, pixels uploaded to
 texture levels other than 0 (call `generateMipmap`), uniform blocks, struct uniforms with a `bool`, `mat2` or sampler field, array outputs, a framebuffer
 texture that is not RGBA or holds uploaded pixels, attachments of different sizes in one framebuffer, `drawImage` or `toDataURL` of a WebGL canvas. With `antialias: true` (the default) the canvas is
