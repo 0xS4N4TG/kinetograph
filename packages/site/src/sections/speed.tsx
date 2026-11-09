@@ -46,7 +46,7 @@ export function Speed() {
         ))}
       </div>
       <p className="mt-4 max-w-[70ch] font-jb text-[11px] leading-relaxed text-ink/60">
-        Apple M4 laptop, whole render to H.264 MP4, median of 3 runs, measured 1 Nov 2026 while other jobs ran.
+        Apple M4 laptop, whole render to H.264 MP4, median of 3 runs, the Remotion tile measured 9 Nov 2026 on an idle machine, the others 1 Nov 2026 while other jobs ran.
       </p>
     </div>
   );
