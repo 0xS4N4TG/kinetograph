@@ -2519,6 +2519,31 @@ fn a_32_bit_float_target_reads_nearest_and_is_black_otherwise() {
 }
 
 #[test]
+fn a_32_bit_float_target_is_blended_into_beyond_one() {
+    // `EXT_float_blend`: 2.0 red added over 1.0 is 3.0, which a quarter reads as 0.75.
+    let add = r#""blend": {"srcRgb": "ONE", "dstRgb": "ONE", "srcAlpha": "ONE", "dstAlpha": "ZERO",
+        "eqRgb": "FUNC_ADD", "eqAlpha": "FUNC_ADD"}"#;
+    let sampling = format!(
+        r#"{}, "units": {{"0": {{"texture": "rt", "min": "NEAREST", "mag": "NEAREST"}}}}"#,
+        uniforms(&[("u_tex", "i", &[0.0])])
+    );
+    let frame = render(&layer_of(
+        &[("f", FILL), ("q", QUARTER)],
+        &float_target("RGBA32F", 8),
+        &ops(&[
+            r#"{"op": "clear", "target": "rt", "color": [1, 0, 0, 1]}"#.to_string(),
+            draw_with(
+                "f",
+                Some(("rt", 8)),
+                &format!("{}, {add}", fill([2.0, 0.0, 0.0, 1.0])),
+            ),
+            draw_with("q", None, &sampling),
+        ]),
+    ));
+    near(px(&frame, 8, 8), [191, 0, 0, 255], 3);
+}
+
+#[test]
 fn a_clear_of_a_float_target_keeps_values_beyond_one() {
     let sampling = format!(
         r#"{}, "units": {{"0": {{"texture": "rt", "min": "NEAREST", "mag": "NEAREST"}}}}"#,

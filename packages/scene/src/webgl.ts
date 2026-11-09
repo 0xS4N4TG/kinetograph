@@ -993,6 +993,8 @@ export class WebGLContext {
   private clearStencilValue = 0;
   /** `drawBuffers` of the canvas: BACK, or NONE. */
   private canvasDrawBuffer: number = GL.BACK;
+  /** `getExtension('EXT_float_blend')` was called: draws may blend into 32-bit float targets, as in a browser. */
+  private floatBlend = false;
   private renderbuffer: WebGLRenderbuffer | null = null;
   private viewportBox: [number, number, number, number] | null = null;
   private scissorBox: [number, number, number, number] | null = null;
@@ -1107,12 +1109,18 @@ export class WebGLContext {
     return e;
   }
   getSupportedExtensions(): string[] {
-    return this.version === 1 ? ['OES_standard_derivatives', 'WEBGL_depth_texture'] : ['OES_standard_derivatives'];
+    return this.version === 1 ? ['OES_standard_derivatives', 'WEBGL_depth_texture'] : ['OES_standard_derivatives', 'EXT_color_buffer_float', 'EXT_color_buffer_half_float', 'EXT_float_blend'];
   }
   getExtension(name: string): object | null {
     // Derivatives are always available in the translated shaders, and depth textures (core in WebGL 2) in the replay.
     if (name === 'OES_standard_derivatives') return { FRAGMENT_SHADER_DERIVATIVE_HINT_OES: 0x8b8b };
     if (name === 'EXT_color_buffer_float' && this.version === 2) return {};
+    // WebGL 2 draws into 16-bit floats with either extension; blending into 32-bit ones needs EXT_float_blend enabled.
+    if (name === 'EXT_color_buffer_half_float' && this.version === 2) return { RGBA16F_EXT: 0x881a, RGB16F_EXT: 0x881b, FRAMEBUFFER_ATTACHMENT_COMPONENT_TYPE_EXT: 0x8211, UNSIGNED_NORMALIZED_EXT: 0x8c17 };
+    if (name === 'EXT_float_blend' && this.version === 2) {
+      this.floatBlend = true;
+      return {};
+    }
     if (name === 'WEBGL_depth_texture' && this.version === 1) return { UNSIGNED_INT_24_8_WEBGL: GL2.UNSIGNED_INT_24_8 };
     return null;
   }
@@ -3224,7 +3232,8 @@ export class WebGLContext {
     if (this.caps.scissor) draw.scissor = this.scissorNow();
     if (this.caps.blend) {
       const into32 = this.drawFramebuffer !== null && this.outputsOf(this.drawFramebuffer).some((a) => a !== null && 'texture' in a && FLOAT_FORMATS[a.texture.format]?.bits === 32);
-      if (into32) throw new WebGLUnsupportedError('blending into a 32-bit float render target (EXT_float_blend is not available); draw it without blending, or use a 16-bit one');
+      // As in a browser, without EXT_float_blend enabled such a draw is refused.
+      if (into32 && !this.floatBlend) return this.fail(GL.INVALID_OPERATION);
       const b = this.blend;
       draw.blend = {
         srcRgb: FACTORS[b.srcRgb]!,

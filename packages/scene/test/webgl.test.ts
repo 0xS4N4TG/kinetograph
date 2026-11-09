@@ -1647,10 +1647,16 @@ describe('the recording WebGL context', () => {
       expect(() => gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL.RGBA, GL.FLOAT, new Float32Array(4))).toThrow(/^unsupported:.*UNPACK_FLIP_Y/);
     });
 
-    it('refuses blending into a 32-bit target and RGB16F, and says what to use', () => {
+    it('blends into a 32-bit target once EXT_float_blend is enabled, as a browser does, and refuses RGB16F', () => {
       const { gl } = floatContext(GL2.RGBA32F, true);
+      expect(gl.getSupportedExtensions()).toEqual(expect.arrayContaining(['EXT_color_buffer_float', 'EXT_color_buffer_half_float', 'EXT_float_blend']));
       gl.enable(GL.BLEND);
-      expect(() => gl.drawArrays(GL.TRIANGLES, 0, 3)).toThrow(/^unsupported:.*32-bit float render target/);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+      expect(gl.getExtension('EXT_float_blend')).not.toBeNull();
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      expect(gl.content().ops.at(-1)).toMatchObject({ op: 'draw', blend: { srcRgb: 'ONE' } });
       const rgb = floatContext(GL2.RGB16F, true).gl;
       expect(() => rgb.drawArrays(GL.TRIANGLES, 0, 3)).toThrow(/^unsupported:.*allocate it as RGBA, or as R16F/);
     });

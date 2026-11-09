@@ -2007,6 +2007,19 @@ impl Compositor {
             }
         }
         let blend = draw.blend.as_ref().map(blend_state).transpose()?;
+        // `EXT_float_blend`: blending into 32-bit floats needs the device's feature (every Apple GPU has it).
+        if blend.is_some()
+            && shape.iter().flatten().any(|f| is_float32(*f))
+            && !self
+                .device
+                .features()
+                .contains(wgpu::Features::FLOAT32_BLENDABLE)
+        {
+            return Err(render_error(
+                "unsupported: blending into a 32-bit float render target on a GPU without float32-blendable; \
+                 draw it without blending, or use a 16-bit one",
+            ));
+        }
         let depth_stencil = ds
             .map(|format| -> Result<wgpu::DepthStencilState> {
                 // Without the test the buffer is neither tested nor written.
