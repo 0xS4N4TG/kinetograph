@@ -219,6 +219,8 @@ export function createReadback(container: Container, options: EmitOptions): Read
 
   /** The edits scripts made to the island at `root` since its last request, or null when they cannot say what changed. */
   const sendEdits = (root: HostElement, path: string): string | null => {
+    // `KINETOGRAPH_NO_INCREMENTAL` turns off every incremental path, edits too.
+    if (typeof process !== 'undefined' && process.env?.KINETOGRAPH_NO_INCREMENTAL) return null;
     const state = kept.get(root);
     if (state === undefined || state.commits !== container.commits || state.request.path !== path) return null;
     // The addon keeps a state from a pass to the next one only.

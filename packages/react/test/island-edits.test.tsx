@@ -161,6 +161,17 @@ describe('island edits', () => {
     expect(edited.kinds.slice(0, 4)).toEqual(['numbered', 'edits', 'stale', 'numbered']);
   });
 
+  it('are not sent with KINETOGRAPH_NO_INCREMENTAL', () => {
+    process.env.KINETOGRAPH_NO_INCREMENTAL = '1';
+    try {
+      const edited = addon(true);
+      run();
+      expect(edited.kinds.every((k) => k === 'numbered')).toBe(true);
+    } finally {
+      delete process.env.KINETOGRAPH_NO_INCREMENTAL;
+    }
+  });
+
   it('send the whole request after a commit, and in a pass that does not follow the last', () => {
     function Probe() {
       const ref = useRef<any>(null);
