@@ -5,7 +5,10 @@
 //! (transforms, opacity, offsets, sizes, display, font size, colour, custom properties descendants read, classes,
 //! text).
 //!
-//! Seeded, so a failure repeats: `KG_FUZZ_SEEDS` sets how many seeds run (default 48), `KG_FUZZ_SEED` runs one.
+//! A second test makes the trees mostly inline content (spans in spans, with blocks among them).
+//!
+//! Seeded, so a failure repeats: `KG_FUZZ_SEEDS` sets how many seeds each test runs (default 48), `KG_FUZZ_SEED`
+//! runs one.
 
 mod common;
 
@@ -16,12 +19,15 @@ use kinetograph_dom::document::IslandCache;
 use kinetograph_dom::readback;
 use serde_json::{Value, json};
 
-/// xorshift64*: enough randomness for a test, and no dependency.
-struct Rng(u64);
+/// xorshift64*: enough randomness for a test, and no dependency. `inline` makes the trees mostly inline content
+/// (spans in spans, blocks among them): seeds from `INLINE_SEEDS` up.
+struct Rng(u64, bool);
+
+const INLINE_SEEDS: u64 = 1 << 20;
 
 impl Rng {
     fn new(seed: u64) -> Self {
-        Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1)
+        Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1, seed >= INLINE_SEEDS)
     }
     fn next(&mut self) -> u64 {
         self.0 ^= self.0 >> 12;
@@ -143,6 +149,8 @@ fn tree(rng: &mut Rng, path: String, depth: usize) -> Node {
     let leaf = depth >= 3;
     let tag = if leaf {
         *rng.pick(&["span", "b", "div", "span"])
+    } else if rng.1 {
+        *rng.pick(&["span", "span", "b", "em", "span", "div", "p", "svg"])
     } else {
         *rng.pick(&["div", "div", "span", "p", "section", "svg", "table", "div"])
     };
@@ -396,11 +404,24 @@ fn run(seed: u64, steps: usize) -> Result<(), String> {
 
 #[test]
 fn an_edited_document_matches_a_fresh_one_under_random_edits() {
+    check(0);
+}
+
+#[test]
+fn an_edited_inline_heavy_document_matches_a_fresh_one_under_random_edits() {
+    check(INLINE_SEEDS);
+}
+
+/// Runs `KG_FUZZ_SEEDS` seeds from `first` (or `KG_FUZZ_SEED` alone, if it is in this test's range).
+fn check(first: u64) {
     let seeds: Vec<u64> = match std::env::var("KG_FUZZ_SEED") {
-        Ok(one) => vec![one.parse().expect("a seed")],
+        Ok(one) => {
+            let one: u64 = one.parse().expect("a seed");
+            if (one >= INLINE_SEEDS) == (first >= INLINE_SEEDS) { vec![one] } else { vec![] }
+        }
         Err(_) => {
             let n = std::env::var("KG_FUZZ_SEEDS").ok().and_then(|n| n.parse().ok()).unwrap_or(48);
-            (0..n).collect()
+            (first..first + n).collect()
         }
     };
     let failures: Vec<String> = seeds
