@@ -172,6 +172,10 @@ pub struct GlslTexture {
     pub cube: bool,
     #[serde(default)]
     pub faces: Vec<GlslFace>,
+    /// With `cube`, in place of `faces`: the six colour targets framebuffers drew the faces in, in GL's order
+    /// (`framebufferTexture2D` of `TEXTURE_CUBE_MAP_POSITIVE_X` and the others). Square, of one format and level count.
+    #[serde(default)]
+    pub targets: Vec<String>,
 }
 
 /// One face of a cube map.
@@ -3397,6 +3401,7 @@ mod tests {
             float32: false,
             cube: false,
             faces: Vec::new(),
+            targets: Vec::new(),
         };
         let rgba8 = decode_texels(&texture(Some(b64(&[7; 16])), None)).unwrap();
         assert_eq!(rgba8, Texels::Rgba8(vec![7; 16]));

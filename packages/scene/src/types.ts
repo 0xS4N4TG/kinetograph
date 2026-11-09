@@ -836,6 +836,8 @@ export interface GlslTexture {
    */
   cube?: boolean;
   faces?: GlslFace[];
+  /** With `cube`, in place of `faces`: the six colour targets framebuffers drew the faces in, in the same order. */
+  targets?: string[];
 }
 
 /** One face of a cube map: a picture file, a `data:` URL or base64 RGBA8 (straight alpha, `width * width * 4` bytes). */

@@ -508,8 +508,8 @@ export class WebGLTexture extends WebGLObject {
   /** The six faces of a cube map (+X, -X, +Y, -Y, +Z, -Z), each a 2D texture of its own; null for any other texture. */
   faces: WebGLTexture[] | null = null;
 }
-/** What an attachment point of a framebuffer holds: a level of a texture, or a renderbuffer. */
-export type WebGLAttachment = { texture: WebGLTexture; level: number } | { renderbuffer: WebGLRenderbuffer };
+/** What an attachment point of a framebuffer holds: a level of a texture (of a face of `cube`), or a renderbuffer. */
+export type WebGLAttachment = { texture: WebGLTexture; level: number; cube?: WebGLTexture } | { renderbuffer: WebGLRenderbuffer };
 
 export class WebGLFramebuffer extends WebGLObject {
   /** What COLOR_ATTACHMENT0 and up hold. */
@@ -2200,6 +2200,7 @@ export class WebGLContext {
     const texture = this.bound(target);
     if (texture === null) return;
     if (target === GL.TEXTURE_CUBE_MAP) {
+      if (WebGLContext.drawnCube(texture)) throw new WebGLUnsupportedError('generateMipmap of a cube map a framebuffer drew in; sample it with LINEAR or NEAREST');
       if (!this.cubeComplete(texture)) return this.fail(GL.INVALID_OPERATION);
       texture.mipmaps = true;
       texture.version += 1;
@@ -2315,7 +2316,9 @@ export class WebGLContext {
     const face = cube?.faces?.[faceIndex(target)];
     if (cube === null || face === undefined) return;
     if (level !== 0) throw new WebGLUnsupportedError('a cube map face above level 0; call generateMipmap');
-    if (kindOf(internalformat) !== 'color' || FLOAT_FORMATS[internalformat] !== undefined || internalformat === GL2.SRGB8_ALPHA8) throw new WebGLUnsupportedError('a cube map face of a depth, float or sRGB format; use RGBA8');
+    // A float face is a render target: empty until a framebuffer draws in it.
+    const emptyFloat = FLOAT_FORMATS[internalformat] !== undefined && rest.length >= 6 && (rest[5] === null || rest[5] === undefined);
+    if (kindOf(internalformat) !== 'color' || (FLOAT_FORMATS[internalformat] !== undefined && !emptyFloat) || internalformat === GL2.SRGB8_ALPHA8) throw new WebGLUnsupportedError('a cube map face of a depth or sRGB format, or float pixels; use RGBA8, or an empty float face to draw in');
     if (rest.length >= 6) {
       const [width, height] = rest as [number, number];
       if (!(Number.isInteger(width) && width >= 0 && width <= MAX_CUBE_MAP_TEXTURE_SIZE && Number.isInteger(height) && height >= 0 && height <= MAX_CUBE_MAP_TEXTURE_SIZE)) return this.fail(GL.INVALID_VALUE);
@@ -2627,6 +2630,20 @@ export class WebGLContext {
     const texture = this.bound(target);
     if (texture === null) return;
     if (!(levels >= 1 && levels <= 16)) return this.fail(GL.INVALID_VALUE);
+    if (target === GL.TEXTURE_CUBE_MAP) {
+      // Each of the six faces is given the storage, as a 2D texture is.
+      if (width !== height) return this.fail(GL.INVALID_VALUE);
+      if (kindOf(internalformat) !== 'color' || internalformat === GL2.SRGB8_ALPHA8) throw new WebGLUnsupportedError('a cube map of a depth or sRGB format; use RGBA8 or a float format');
+      for (const face of texture.faces!) this.storage2d(face, levels, internalformat, width, height);
+      texture.mipmaps = false;
+      texture.version += 1;
+      return;
+    }
+    this.storage2d(texture, levels, internalformat, width, height);
+  }
+
+  /** The body of `texStorage2D` for a 2D texture, or a face of a cube map. */
+  private storage2d(texture: WebGLTexture, levels: number, internalformat: number, width: number, height: number): void {
     if (kindOf(internalformat) !== 'color') {
       if (levels > 1) throw new WebGLUnsupportedError('a depth texture of more than one level');
       return this.specifyDepth(texture, internalformat, width, height, null);
@@ -2754,11 +2771,13 @@ export class WebGLContext {
   framebufferTexture2D(target: number, attachment: number, textarget: number, texture: WebGLTexture | null, level: number): void {
     const framebuffer = this.attachingTo(target);
     if (framebuffer === null) return;
+    const face = faceIndex(textarget);
     if (texture !== null) {
-      if (textarget !== GL.TEXTURE_2D) return this.fail(GL.INVALID_OPERATION);
+      // A face of a cube map is attached as the 2D texture it is.
+      if (face >= 0 ? texture.faces === null : textarget !== GL.TEXTURE_2D || texture.faces !== null) return this.fail(GL.INVALID_OPERATION);
       if (!(level >= 0) || (this.version === 1 && level !== 0)) return this.fail(GL.INVALID_VALUE);
     }
-    this.attach(framebuffer, attachment, texture === null ? null : { texture, level: Math.trunc(level) });
+    this.attach(framebuffer, attachment, texture === null ? null : face >= 0 ? { texture: texture.faces![face]!, level: Math.trunc(level), cube: texture } : { texture, level: Math.trunc(level) });
   }
 
   checkFramebufferStatus(target: number): number {
@@ -2969,7 +2988,7 @@ export class WebGLContext {
       case GL.FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE:
         return a === null ? GL.NONE : 'texture' in a ? GL.TEXTURE : GL.RENDERBUFFER;
       case GL.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME:
-        return a === null ? null : 'texture' in a ? a.texture : a.renderbuffer;
+        return a === null ? null : 'texture' in a ? (a.cube ?? a.texture) : a.renderbuffer;
       case GL.FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL:
         if (a !== null && 'texture' in a) return a.level;
         this.fail(GL.INVALID_ENUM);
@@ -3168,7 +3187,7 @@ export class WebGLContext {
         const texture = this.unitMap(samplerTarget)?.get(unit);
         if (texture === undefined) continue;
         // Reading what the draw writes is undefined; WebGL refuses it.
-        if (attached.includes(texture)) return this.fail(GL.INVALID_OPERATION);
+        if (attached.includes(texture) || texture.faces?.some((f) => attached.includes(f))) return this.fail(GL.INVALID_OPERATION);
         // A shadow sampler reads a depth texture that compares; any other sampler does not read one that does.
         const compares = texture.compareMode === GL2.COMPARE_REF_TO_TEXTURE;
         if (shadow ? !compares || kindOf(texture.format) === 'color' : compares && kindOf(texture.format) !== 'color') return this.fail(GL.INVALID_OPERATION);
@@ -3226,7 +3245,7 @@ export class WebGLContext {
     // A depth texture is a render target from the start: its depth is drawn, never uploaded.
     const cube = texture.faces !== null;
     const target = !cube && (texture.drawnAt === texture.version || kindOf(texture.format) !== 'color');
-    const id = target ? this.registerTarget(texture) : this.uploadedId(texture);
+    const id = target ? this.registerTarget(texture) : cube && WebGLContext.drawnCube(texture) ? this.drawnCubeId(texture) : this.uploadedId(texture);
     return {
       texture: id,
       min: FILTERS[texture.min]!,
@@ -3237,6 +3256,25 @@ export class WebGLContext {
       ...(texture.maxLevel < 1000 ? { maxLevel: texture.maxLevel } : {}),
       ...(texture.compareMode === GL2.COMPARE_REF_TO_TEXTURE ? { compare: DEPTH_FUNCS[texture.compareFunc]! } : {}),
     };
+  }
+
+  /** Whether a framebuffer drew in a face of the cube map: its faces are render targets from then on. */
+  private static drawnCube(cube: WebGLTexture): boolean {
+    return cube.faces!.some((f) => f.drawnAt === f.version);
+  }
+
+  /**
+   * A cube map a framebuffer drew in, in the recording: the six targets of its faces. It is complete when they are
+   * square, of one size, format and level count; a face that holds uploaded pixels cannot be one of them.
+   */
+  private drawnCubeId(cube: WebGLTexture): string {
+    const faces = cube.faces!;
+    if (faces.some((f) => f.uploaded && !f.blank && f.drawnAt !== f.version)) throw new WebGLUnsupportedError('a cube map with both uploaded and drawn faces; draw in every face, or upload every face');
+    const first = faces[0]!;
+    const complete = faces.every((f) => f.uploaded && f.width === first.width && f.height === first.width && f.format === first.format && f.levels === first.levels);
+    const id = `c${cube.id}.${faces.map((f) => f.version).join('.')}`;
+    this.textures.set(id, complete ? { cube: true, targets: faces.map((f) => this.registerTarget(f)) } : { cube: true, faces: [] });
+    return id;
   }
 
   /** A cube map in the recording: its six faces, or none while it is incomplete (it then samples as opaque black). */

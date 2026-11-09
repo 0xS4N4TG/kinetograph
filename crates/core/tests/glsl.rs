@@ -1919,6 +1919,121 @@ fn a_cube_map_in_a_unit_read_as_a_2d_texture_is_an_error() {
     assert!(error.contains("cube map"), "{error}");
 }
 
+/// A cube map whose six faces are 2 x 2 colour targets `f0` to `f5`, with the ops `ops` that draw in them before
+/// `u_env` reads it along `dir`.
+fn sample_drawn_cube(ops: &[String], dir: [f64; 3]) -> [u8; 4] {
+    let faces: Vec<String> = (0..6)
+        .map(|f| format!(r#""f{f}": {{"target": true, "width": 2, "height": 2}}"#))
+        .collect();
+    let mut all = ops.to_vec();
+    all.push(draw(&format!(
+        r#"{}, "units": {{"0": {{"texture": "c", "min": "NEAREST", "mag": "NEAREST"}}}}"#,
+        uniforms(&[("u_env", "i", &[0.0]), ("u_dir", "f", &dir)])
+    )));
+    let frame = render(&layer_of(
+        &[("p", CUBE_FRAGMENT), ("rows", ROWS_FRAGMENT)],
+        &format!(
+            r#", "textures": {{{}, "c": {{"cube": true, "targets": ["f0", "f1", "f2", "f3", "f4", "f5"]}}}}"#,
+            faces.join(", ")
+        ),
+        &all.join(", "),
+    ));
+    px(&frame, 8, 8)
+}
+
+/// GL's bottom row red, the other blue.
+const ROWS_FRAGMENT: &str = "precision mediump float; void main() { gl_FragColor = gl_FragCoord.y < 1.0 ? vec4(1, 0, 0, 1) : vec4(0, 0, 1, 1); }";
+
+#[test]
+fn a_cube_map_samples_what_framebuffers_drew_in_its_faces() {
+    let colors = [
+        [1, 0, 0, 1],
+        [0, 1, 0, 1],
+        [0, 0, 1, 1],
+        [1, 1, 0, 1],
+        [1, 1, 1, 1],
+        [1, 0, 1, 1],
+    ];
+    let clears: Vec<String> = colors
+        .iter()
+        .enumerate()
+        .map(|(f, c)| format!(r#"{{"op": "clear", "color": {c:?}, "target": "f{f}"}}"#))
+        .collect();
+    let axes = [
+        [1.0, 0.0, 0.0],
+        [-1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, -1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, -1.0],
+    ];
+    for (dir, c) in axes.iter().zip(colors) {
+        near(
+            sample_drawn_cube(&clears, *dir),
+            c.map(|v| v as u8 * 255),
+            2,
+        );
+    }
+    // A drawn face keeps GL's rows, as an uploaded one does: its first row is the bottom one (t = 0), which +Z
+    // shows towards +Y.
+    let rows = vec![draw_with("rows", Some(("f4", 2)), "")];
+    let uploaded = cube_of(
+        &[0, 1, 2, 3, 4, 5].map(|f| {
+            if f == 4 {
+                [
+                    [255, 0, 0, 255],
+                    [255, 0, 0, 255],
+                    [0, 0, 255, 255],
+                    [0, 0, 255, 255],
+                ]
+                .concat()
+            } else {
+                vec![0; 16]
+            }
+        }),
+        2,
+        "",
+    );
+    for dir in [[0.0, 0.5, 1.0], [0.0, -0.5, 1.0]] {
+        near(
+            sample_drawn_cube(&rows, dir),
+            sample_cube(&uploaded, dir),
+            2,
+        );
+    }
+    near(
+        sample_drawn_cube(&rows, [0.0, 0.5, 1.0]),
+        [255, 0, 0, 255],
+        2,
+    );
+}
+
+#[test]
+fn a_draw_into_a_face_of_the_cube_map_it_samples_is_an_error() {
+    let faces: Vec<String> = (0..6)
+        .map(|f| format!(r#""f{f}": {{"target": true, "width": 2, "height": 2}}"#))
+        .collect();
+    let layer = layer(
+        CUBE_FRAGMENT,
+        &format!(
+            r#", "textures": {{{}, "c": {{"cube": true, "targets": ["f0", "f1", "f2", "f3", "f4", "f5"]}}}}"#,
+            faces.join(", ")
+        ),
+        &draw_with(
+            "p",
+            Some(("f2", 2)),
+            &format!(
+                r#"{}, "units": {{"0": {{"texture": "c"}}}}"#,
+                uniforms(&[("u_env", "i", &[0.0])])
+            ),
+        ),
+    );
+    let Err(error) = render_still(scene_of(&layer), 0) else {
+        panic!("the draw should fail");
+    };
+    assert!(error.to_string().contains("one of its faces"), "{error}");
+}
+
 // ---- a clear with the scissor test on ----
 
 /// The fragment shader of a scissored clear of the depth or stencil alone: no colour output.

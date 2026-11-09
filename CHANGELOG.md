@@ -8,6 +8,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 ### Added
 
 - WebGL `blitFramebuffer` to and from float render targets.
+- WebGL cube map faces as framebuffer colour attachments (`texStorage2D` of a cube map, RGBA8 or float faces).
 
 ### Fixed
 
