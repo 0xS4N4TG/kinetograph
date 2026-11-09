@@ -1033,6 +1033,11 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                 match (display.outside(), display.inside()) {
                     (DisplayOutside::None, DisplayInside::None) => {
                         node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                        // No box: drop the formatting context it had as one.
+                        node.flags.reset_construction_flags();
+                        if let Some(element) = node.element_data_mut() {
+                            element.take_inline_layout();
+                        }
                     }
                     (DisplayOutside::None, DisplayInside::Contents) => {
                         node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
