@@ -528,6 +528,14 @@ fn collect_layout_children_with_wrap(
     {
         let node = &doc.nodes[container_node_id];
         if node.children.is_empty() && node.before().is_none() && node.after().is_none() {
+            // It keeps none of the layout children it had: a pseudo-element
+            // flushed above is freed, and a `display: contents` node reached
+            // from its parent is never given a new list.
+            let mut old_anonymous_blocks = Vec::new();
+            drop_box_children(&mut doc.nodes[container_node_id], &mut old_anonymous_blocks);
+            for anon_id in old_anonymous_blocks {
+                doc.deallocate_anonymous_block(anon_id);
+            }
             return;
         }
     }

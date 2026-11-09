@@ -652,6 +652,37 @@ fn a_box_that_stops_being_one_gives_up_its_layout_children() {
     }
 }
 
+/// An empty box whose only layout child was its `::before`, made `display: contents` as the pseudo-element goes,
+/// keeps no layout children: the freed pseudo-element is not one (fuzz seed 581).
+#[test]
+fn an_emptied_box_made_display_contents_keeps_no_freed_pseudo_element() {
+    let page = |class: &str| {
+        let mut r = request(el(
+            "div",
+            "$0",
+            "position: absolute; inset: 0; font: 16px 'DM Sans'",
+            vec![el_attrs(
+                "div",
+                "$0.0",
+                json!({ "class": class }),
+                "padding: 9px; border: 2px solid #789",
+                vec![],
+            )],
+        ));
+        r["stylesheets"] = json!([
+            ".star::before { content: '*'; color: crimson } .contents { display: contents }"
+        ]);
+        r
+    };
+    let (first, edited) = (page("star"), page("contents"));
+    let mut cache = IslandCache::default();
+    drawn(&mut cache, &first, Some(1));
+    assert_eq!(
+        drawn(&mut cache, &edited, Some(2)),
+        drawn(&mut IslandCache::default(), &edited, None)
+    );
+}
+
 /// Every rect shape in `layers`, as its width and height.
 fn rects(layers: &Value, out: &mut Vec<(f64, f64)>) {
     match layers {
