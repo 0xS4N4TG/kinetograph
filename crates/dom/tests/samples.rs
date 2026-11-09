@@ -456,6 +456,43 @@ fn an_edited_svg_beside_text_leaves_the_line_as_fresh() {
     }
 }
 
+/// Text beside a float wraps round it: an edit that narrows the float lays the
+/// lines beside it out again, as a fresh build does.
+#[test]
+fn text_beside_an_edited_float_wraps_as_fresh() {
+    let page = |float: f64| {
+        request(el(
+            "div",
+            "$0",
+            "position: absolute; inset: 0; width: 120px",
+            vec![
+                el(
+                    "div",
+                    "$0.0",
+                    &format!("float: left; width: {float}px; height: 30px; background: #f80"),
+                    vec![],
+                ),
+                el(
+                    "div",
+                    "$0.1",
+                    "height: 80px; font: 16px 'DM Sans'",
+                    vec![text("one two three four five six seven")],
+                ),
+            ],
+        ))
+    };
+    let mut cache = IslandCache::default();
+    let mut fresh = IslandCache::default();
+    for (pass, float) in [60.0, 20.0, 50.0].into_iter().enumerate() {
+        let s = page(float);
+        assert_eq!(
+            drawn(&mut cache, &s, Some(pass as u64 + 1)),
+            drawn(&mut fresh, &s, None),
+            "float {float}px"
+        );
+    }
+}
+
 /// Every rect shape in `layers`, as its width and height.
 fn rects(layers: &Value, out: &mut Vec<(f64, f64)>) {
     match layers {

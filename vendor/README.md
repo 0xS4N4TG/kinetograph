@@ -48,6 +48,7 @@ Upstream: crates.io `blitz-dom` 0.3.0-beta.3 (`DioxusLabs/blitz`, commit `5890fa
 - `src/layout/damage.rs`: an inline `<svg>`'s snapshot (`usvg`, serialised and parsed again) is rebuilt only when the `<svg>` element's own style changes, not a descendant's: Kinetograph paints SVG from the DOM (`crates/dom/src/paint/svg`) and Blitz reads the snapshot only for the box's intrinsic size, which comes from the `<svg>` element. Blitz's own renderer, which draws the snapshot, is not used.
 - `src/layout/damage.rs`: a table whose subtree has any damage is rebuilt and laid out again, since `build_table_context` reads its parts' styles when the box is built. (`ALL_DAMAGE` on every `style` edit hid this.)
 - `src/layout/inline.rs`: an inline box measured in `ComputeSize` mode that comes back without baselines is laid out in `PerformLayout` mode to get them, because taffy's size-only cache hit keeps no baselines.
+- `src/layout/mod.rs`: a block child laid out beside floats skips taffy's cache (`compute_block_child_layout`), whose key has no floats in it: an edit that resized a float left the lines beside it wrapped round the old float.
 
 - `src/layout/construct.rs`, `src/stylo_to_parley.rs`: a non-atomic inline element with `unicode-bidi: isolate`, `isolate-override` or `plaintext` (`<bdi>`, `<bdo>`, `dir`) has its content wrapped in the UAX #9 isolate and pop characters (`bidi_controls`), as a browser does, so Parley's bidi resolution isolates it. Blitz set only the paragraph's base direction.
 
@@ -56,7 +57,7 @@ Upstream: crates.io `blitz-dom` 0.3.0-beta.3 (`DioxusLabs/blitz`, commit `5890fa
 - `src/layout/paint_tree.rs`: a `display: none` box gives up the out-of-flow boxes an earlier layout hoisted to it, which an edited document drew.
 - `src/counters.rs`, `src/resolve.rs`: per-thread counters of the resolve passes (passes, time in each phase, nodes reconstructed, anonymous blocks freed, inline layouts rebuilt), which Kinetograph's profiler shows (`crates/dom/src/counters.rs`). `resolve_layout` returns the time it spent rounding.
 
-Drop when Blitz answers container queries and restyles a `style` change on its own element, and when taffy's measure cache keeps baselines, and when Blitz isolates `unicode-bidi` inline elements.
+Drop when Blitz answers container queries and restyles a `style` change on its own element, and when taffy's measure cache keeps baselines and keys a block child by the floats beside it, and when Blitz isolates `unicode-bidi` inline elements.
 
 ## parley 0.12.0
 

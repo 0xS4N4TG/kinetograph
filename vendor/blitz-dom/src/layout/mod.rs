@@ -826,6 +826,10 @@ impl taffy::LayoutBlockContainer for LayoutPassState<'_> {
         inputs: taffy::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::LayoutOutput {
+        // A child laid out beside floats wraps round them, and the cache's key has no floats in it.
+        if block_ctx.as_ref().is_some_and(|ctx| ctx.has_floats()) {
+            return self.compute_child_layout_internal(node_id, inputs, block_ctx);
+        }
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
             tree.compute_child_layout_internal(node_id, inputs, block_ctx)
         })
