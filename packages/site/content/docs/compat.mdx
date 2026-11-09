@@ -30,7 +30,7 @@ npx kinetograph render src/index.ts --strict
 - Kinetograph reads no system fonts, so a render looks the same everywhere. With no font loaded, text uses the bundled DM Sans. Variable fonts follow the requested weight.
 - A missing character comes from Noto Sans Symbols 2, Noto Sans Math or Noto Emoji. Emoji are monochrome.
 - CJK, Arabic, Devanagari and similar scripts have no bundled font. They are drawn as boxes and reported. Load a font that has them.
-- `monospace` falls back to a proportional face, so code blocks (Shiki, Code Hike) look wider than in Chrome. Load a monospace font.
+- Generic and system family names are bundled fonts: `sans-serif`, `system-ui`, `Arial`, `Segoe UI` and the like are Inter; `serif`, `Georgia` and `Times New Roman` are EB Garamond; `monospace`, `Menlo` and `Consolas` are JetBrains Mono. A web font such as `Poppins` is not a system name: load it.
 - `ex` uses the first font's x-height. With only a generic family such as `serif`, a MathJax formula comes out about 10% larger. `ex` in SVG shape attributes is half an em.
 
 ## Video and audio

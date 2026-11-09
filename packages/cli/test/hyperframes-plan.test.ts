@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import type { HfNode } from '@kinetographdev/core/hyperframes';
 import { buildPlan } from '../src/hyperframes/plan.js';
 import { parseGoogleFontsUrl, scopeToComposition } from '../src/hyperframes/css.js';
-import { FONT_ALIASES, parseFamilyList } from '../src/hyperframes/fonts.js';
+import { FONT_ALIASES, familyOfFontShorthand, parseFamilyList } from '../src/hyperframes/fonts.js';
 import { resolveEntry } from '../src/hyperframes/entry.js';
 
 const fixture = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'hf-nyt');
@@ -194,6 +194,30 @@ describe('fonts HyperFrames embeds', () => {
     expect(FONT_ALIASES.arial).toBe('inter');
     expect(FONT_ALIASES.consolas).toBe('jetbrains-mono');
     expect(FONT_ALIASES['jetbrains mono']).toBe('jetbrains-mono');
+  });
+
+  it('reads the family of a font shorthand', () => {
+    for (const [value, family] of [
+      ['700 20px Montserrat', 'Montserrat'],
+      ['italic small-caps 600 1.2rem/1.4 "Playfair Display", Georgia, serif', '"Playfair Display", Georgia, serif'],
+      ['12px sans-serif', 'sans-serif'],
+      ['bold 14px/20px var(--ui)', 'var(--ui)'],
+      ['large Roboto', 'Roboto'],
+    ] as const) {
+      expect(familyOfFontShorthand(value)).toBe(family);
+    }
+    expect(familyOfFontShorthand('inherit')).toBeNull();
+    expect(familyOfFontShorthand('caption')).toBeNull();
+  });
+
+  it('loads the bundled family a font shorthand names, through a variable too', async () => {
+    const dir = project({
+      'index.html': page(`<style>:root { --ui: "Space Mono", monospace } .a { font: 700 20px/1.2 Montserrat, sans-serif } .b { font: 14px var(--ui) }</style>`),
+    });
+    const { plan } = await buildPlan(join(dir, 'index.html'));
+    const families = plan.googleFonts.map((f) => f.family);
+    expect(families).toContain('Montserrat');
+    expect(families).toContain('Space Mono');
   });
 
   it('loads the bundled family a stylesheet, an inline style or a variable names, from the cache only, and maps the aliases', async () => {

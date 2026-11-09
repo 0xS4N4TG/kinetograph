@@ -181,13 +181,14 @@ fn build_root(
     let files = Arc::new(LocalFiles::new(&base_dir, public_dir));
 
     enable_css_features();
-    let font_ctx = fonts::font_context(&request.fonts, &base_dir).map_err(BuildError)?;
+    let (font_ctx, default_family) =
+        fonts::font_context_and_default(&request.fonts, &base_dir).map_err(BuildError)?;
     let width = request.viewport.width.max(0.0).round() as u32;
     let height = request.viewport.height.max(0.0).round() as u32;
     let mut doc = BaseDocument::new(DocumentConfig {
         viewport: Some(Viewport::new(width, height, 1.0, ColorScheme::Light)),
         base_url: Some(net::base_url(&base_dir)),
-        ua_stylesheets: Some(ua::sheets()),
+        ua_stylesheets: Some(ua::sheets(default_family.as_deref())),
         net_provider: Some(files.clone()),
         font_ctx: Some(font_ctx),
         ..DocumentConfig::default()
