@@ -1007,9 +1007,9 @@ Goal: stop redoing what did not change between frames. What was found, measured 
   a content took are checked as ledgers before a replay, so a replayed paint is the whole paint, layer for layer.
   Everything is painted again after a file is read, a clamp cuts another line, an `id`, a path or a stylesheet's text
   changes, or a change to an SVG element an id can name or to what the painter walks up to (text decoration, any custom
-  property that is not inherited, float, position, display). A document nothing changed in twice running draws its last
-  output. Paint per frame: mg1 23.8 -> 6 ms, film 5.3 -> 3.0 ms, dm4 13 -> 10 ms (its boxes sit straight in the root's
-  context, which is never retained). Replaces `repaint_transforms`. Tests: `crates/dom/tests/retain.rs`.
+  property that is not inherited, float, position, display). The root's context is retained too. Paint per frame: mg1
+  23.8 -> 6 ms, film 5.3 -> 3.0 ms, dm4 13 -> 10 ms (measured before the root's context was retained; its boxes sit
+  straight in it). Replaces `repaint_transforms`. Tests: `crates/dom/tests/retain.rs`.
 
 **A third edit-path bug: baselines lost to taffy's cache** (fixed). Launch film frames 180 and 181 drew the caption word
 `screenshotting` differently when frame 179 had been drawn just before (a document edited) than when the render started

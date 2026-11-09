@@ -109,11 +109,6 @@ impl Dirty {
         self.nodes.get(&node) == Some(&Change::Content)
     }
 
-    /// Whether nothing changed.
-    pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty() && self.above.is_empty()
-    }
-
     /// Whether a node strictly inside `node` changed.
     pub fn inside(&self, node: NodeId) -> bool {
         self.above.contains(&node)

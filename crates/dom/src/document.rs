@@ -384,40 +384,27 @@ pub struct Resolved {
     /// The nodes whose attributes (other than `style`) or text the edits since that paint set; None when the next
     /// paint has to be whole (a file was read, a line clamp cut another line, a stylesheet or an `id` changed).
     touched: Option<Vec<NodeId>>,
-    /// The output of the last paint, when that paint found the document as the one before it had it: a document
-    /// painted again with nothing changed draws it again.
-    still: Option<IslandOutput>,
     /// How many stacking contexts' contents the last paint replayed and how many it painted.
     replayed: (u64, u64),
 }
 
 impl Resolved {
     /// Paints the island. After edits, the stacking contexts nothing inside
-    /// changed are replayed from the last paint (`paint::paint_retaining`);
-    /// a document nothing changed in since two paints ago draws the last
-    /// paint's output.
+    /// changed are replayed from the last paint (`paint::paint_retaining`).
     pub fn paint(&mut self, request: &IslandRequest) -> IslandOutput {
         let doc = &self.island.doc;
         if !self.retains {
             return paint::paint(doc, request);
         }
-        let (stamps, kept, changed) = match (self.painted.take(), self.touched.take()) {
+        let (kept, changed) = match (self.painted.take(), self.touched.take()) {
             (Some((stamps, fragments)), Some(touched)) => {
-                let changed = dirty::since(doc, &stamps, &touched);
-                (Some(stamps), fragments, changed)
+                (fragments, dirty::since(doc, &stamps, &touched))
             }
-            _ => (None, Fragments::default(), None),
+            _ => (Fragments::default(), None),
         };
-        self.touched = Some(Vec::new());
-        let unchanged = changed.as_ref().is_some_and(dirty::Dirty::is_empty);
-        if unchanged && let (Some(output), Some(stamps)) = (&self.still, stamps) {
-            self.painted = Some((stamps, kept));
-            self.replayed = (0, 0);
-            return output.clone();
-        }
         let retained = paint::paint_retaining(doc, request, kept, changed.as_ref());
         self.painted = Some((dirty::stamps(doc), retained.fragments));
-        self.still = unchanged.then(|| retained.output.clone());
+        self.touched = Some(Vec::new());
         self.replayed = (retained.replayed, retained.painted);
         retained.output
     }
@@ -598,7 +585,6 @@ impl IslandCache {
             retains: pass.is_some(),
             painted: None,
             touched: None,
-            still: None,
             replayed: (0, 0),
         })
     }

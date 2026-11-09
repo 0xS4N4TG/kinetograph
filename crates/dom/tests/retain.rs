@@ -22,7 +22,7 @@ struct Page {
     width: f64,
     /// Where the z-indexed box hoisted out of card 3 is (a change hoisted into card 3's context).
     hoisted: f64,
-    /// The root's background (a change to the root, never kept).
+    /// The root's background (a change to the root's own content).
     root: &'static str,
     /// Whether the box before the wall, with `id="dup"` as card 0 has, is a group of its own: its
     /// group takes the id before card 0 can (a change outside the wall that changes the wall's layer ids).
@@ -180,8 +180,7 @@ fn a_replayed_paint_is_the_whole_paint_and_a_fresh_build_s() {
     let steps: Vec<(&str, Page, bool)> = vec![
         ("first", BASE.clone(), false),
         ("same", BASE.clone(), true),
-        // Unchanged twice: the last output, with nothing replayed.
-        ("same again", BASE.clone(), false),
+        ("same again", BASE.clone(), true),
         ("group only", Page { x: 12.0, ..BASE }, true),
         (
             "dirty child",
@@ -278,10 +277,11 @@ fn only_what_holds_a_change_is_painted_again() {
         cache.keep(request, resolved);
         counts
     };
-    // Contexts: the wall, its four cards, the hoisted box, the panel and its child, the clamped box.
-    assert_eq!(count(&mut cache, &BASE, 1), (0, 9));
-    assert_eq!(count(&mut cache, &BASE, 2), (3, 0));
-    // Card 2's text: card 2 and the wall are painted, the other cards (and the hoisted box in card 3) replayed.
+    // Contexts: the root, the wall, its four cards, the hoisted box, the panel and its child, the clamped box.
+    assert_eq!(count(&mut cache, &BASE, 1), (0, 10));
+    // Nothing changed: the root's content is replayed whole.
+    assert_eq!(count(&mut cache, &BASE, 2), (1, 0));
+    // Card 2's text: card 2, the wall and the root are painted, the other cards (and the hoisted box in card 3) replayed.
     let (replayed, painted) = count(
         &mut cache,
         &Page {
@@ -290,7 +290,7 @@ fn only_what_holds_a_change_is_painted_again() {
         },
         3,
     );
-    assert_eq!(painted, 2);
+    assert_eq!(painted, 3);
     assert_eq!(replayed, 5);
 }
 

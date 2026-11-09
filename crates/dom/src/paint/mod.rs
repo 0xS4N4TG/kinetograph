@@ -308,7 +308,7 @@ impl<'a> Painter<'a> {
         if let Some((source, _from_body)) = self.canvas_background(root, body) {
             out.extend(self.canvas_layers(source, viewport));
         }
-        out.extend(self.sc_content(root));
+        out.extend(self.retained_content(root));
         out
     }
 
