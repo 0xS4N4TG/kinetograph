@@ -6,6 +6,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+mod node_de;
+
 /// One DOM island at one frame.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,21 +53,20 @@ pub struct Size {
     pub height: f64,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+/// A node by its `kind` (`element`, `text`, `native`), read by hand (`node_de`); a field said to default to nothing
+/// can be left out.
+#[derive(Clone, Debug)]
 pub enum DomNode {
     Element {
         /// Lower-case HTML or SVG tag.
         tag: String,
         /// The element's host-tree path; layer ids and readback use it.
         path: String,
-        /// Attributes as the DOM would have them: `class`, `id`, `src`, SVG attributes, … (strings).
-        #[serde(default)]
+        /// Attributes as the DOM would have them: `class`, `id`, `src`, SVG attributes, … (strings). Default: none.
         attrs: BTreeMap<String, String>,
-        /// The `style` prop as CSS declarations (React's rules: unitless numbers get `px`).
-        #[serde(default)]
+        /// The `style` prop as CSS declarations (React's rules: unitless numbers get `px`). Default: none.
         style: String,
-        #[serde(default)]
+        /// Default: none.
         children: Vec<DomNode>,
     },
     Text {
@@ -75,14 +76,11 @@ pub enum DomNode {
     /// the `native` placeholder layer comes back.
     Native {
         path: String,
-        #[serde(default)]
         width: Option<f64>,
-        #[serde(default)]
         height: Option<f64>,
         /// The box does not take part in the flow: it is placed at the top left of its containing block, over its
         /// siblings, as `position: absolute; left: 0; top: 0` does (a layer, a shape, a canvas: things that are
-        /// drawn rather than laid out; an image or a text box stays in the flow).
-        #[serde(default)]
+        /// drawn rather than laid out; an image or a text box stays in the flow). Default: false.
         overlay: bool,
     },
 }
