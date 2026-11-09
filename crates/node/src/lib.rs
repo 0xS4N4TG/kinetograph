@@ -727,6 +727,8 @@ pub struct Renderer {
     /// The thread that starts frames (parses their scene, builds and submits their GPU work) while the caller
     /// goes on to the JS of the next one; started with the first frame.
     starter: Option<std::sync::mpsc::Sender<StartJob>>,
+    /// Milliseconds `finishFrame` has waited for the GPU to finish frames, since `takeGpuWaitMs`.
+    gpu_wait_ms: f64,
 }
 
 /// Whether `startFrame` waits for the frame to be started (`KINETOGRAPH_SYNC_START=1`).
@@ -804,6 +806,7 @@ impl Renderer {
             layer_cache,
             started: std::collections::VecDeque::new(),
             starter: None,
+            gpu_wait_ms: 0.0,
         })
     }
 
@@ -931,13 +934,23 @@ impl Renderer {
             .map_err(|_| error(Code::Render, "the frame starter thread has stopped"))??;
         let mut gpu = self.shared.idle()?;
         let repeated = pending.is_repeat();
+        let waited = std::time::Instant::now();
         let rendered = gpu.finish_frame(pending).map_err(from_core)?;
+        self.gpu_wait_ms += waited.elapsed().as_secs_f64() * 1000.0;
         Ok(RgbaFrame {
             width: rendered.width,
             height: rendered.height,
             data: Buffer::from(rendered.rgba),
             repeated,
         })
+    }
+
+    /// The milliseconds `finishFrame` has waited for the GPU to finish frames and read them back since the last call,
+    /// emptied: a render worker reports it, to say whether the workers are held up by the GPU they share. It only
+    /// times the wait; it changes nothing drawn.
+    #[napi]
+    pub fn take_gpu_wait_ms(&mut self) -> f64 {
+        std::mem::take(&mut self.gpu_wait_ms)
     }
 
     /// Makes the next frame `startFrame` begins be drawn, whatever the frame

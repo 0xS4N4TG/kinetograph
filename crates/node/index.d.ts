@@ -50,6 +50,12 @@ export declare class Renderer {
   /** The oldest frame `startFrame` began, as straight-alpha sRGB RGBA8. */
   finishFrame(): RgbaFrame
   /**
+   * The milliseconds `finishFrame` has waited for the GPU to finish frames and read them back since the last call,
+   * emptied: a render worker reports it, to say whether the workers are held up by the GPU they share. It only
+   * times the wait; it changes nothing drawn.
+   */
+  takeGpuWaitMs(): number
+  /**
    * Makes the next frame `startFrame` begins be drawn, whatever the frame
    * before it was: a frame is only taken from a frame started after this.
    * A render worker calls it at the start of each run of frames.
