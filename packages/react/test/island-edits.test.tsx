@@ -119,7 +119,7 @@ function Script() {
     read();
     read();
     // A new child changes the structure: the whole request again, then edits from it.
-    el.appendChild(document.createElement('i'));
+    el.appendChild((globalThis as any).document.createElement('i'));
     read();
     el.style.opacity = '0.5';
     read();
