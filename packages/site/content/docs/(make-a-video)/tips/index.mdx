@@ -7,6 +7,37 @@ description: What to put in a prompt so a coding agent makes the video you pictu
 
 A good prompt gives the length, a plan in timed beats, the exact words on screen, the look, and what to avoid. One sentence is enough to start. Add detail only where the result must match your picture, then change one thing at a time.
 
+## Base prompt
+
+```text title="Suggested prompt"
+/kinetograph-markup Make a 20 second 1920 by 1080 launch video for Orbit. Beats: 0 to 4 s a hook, 4 to 14 s three features with one line each, 14 to 20 s an end card that says "Try it free". Dark blue background, white Inter 700 text. No stock music. Show a strip of 12 frames before you render.
+```
+
+## The knobs that matter
+
+| What to say | Why it matters |
+| --- | --- |
+| **The length and the size** | They set the pace and the shape of everything else. |
+| **The beats, with seconds** | Naming the beats keeps the hook and the end card from being dropped. |
+| **The exact words, in quotes** | Unquoted copy gets reworded. |
+| **The look, and what to avoid** | A colour, a font and a ban list leave little to guess. |
+
+## Common failure modes
+
+**Asking for a feeling.**
+- **Avoid:** "make it cool"
+- **Instead:** "dark blue, white Inter 700, a slow push-in, nothing bounces"
+
+**Changing many things at once.**
+- **Avoid:** "make it better"
+- **Instead:** "make the headline 140 px. Leave everything else as it is"
+
+**Skipping the check.**
+- **Avoid:** "render it"
+- **Instead:** "show a strip of 12 frames, fix what is off, then render"
+
+## In more detail
+
 ## Set up once
 
 Install the [Kinetograph skills](/docs/agents/skills/) and connect the MCP server for [Claude Code](/docs/agents/claude-code/), [Codex](/docs/agents/codex/) or [Cursor](/docs/agents/cursor/). Then start each request with the skill that fits:

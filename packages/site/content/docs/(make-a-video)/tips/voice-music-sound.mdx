@@ -7,6 +7,37 @@ description: How to ask for narration, music and sound effects, tie picture to t
 
 Kinetograph mixes the audio files you give it and the sounds your code synthesises. It doesn't make speech or timings for you, so bring a voice file, a track and, for captions, an SRT or VTT file, and tell the agent where each one is.
 
+## Base prompt
+
+```text title="Suggested prompt"
+/kinetograph-markup The narration is public/audio/vo.wav, starting at 0:01. Put public/audio/bed.mp3 under the whole video at 30% volume, lowered to 12% while the narration plays. Run audio analyze and tell me the loudness.
+```
+
+## The knobs that matter
+
+| What to say | Why it matters |
+| --- | --- |
+| **What each file is and where** | Your agent cannot guess a path. |
+| **How loud each sits** | "30% under the voice" keeps the voice clear. |
+| **Beat times, for a track with a beat** | Cuts can land on each hit. |
+| **The moment for each effect** | "A click as each card lands" ties it to the picture. |
+
+## Common failure modes
+
+**Expecting speech to be made.**
+- **Avoid:** "add a voiceover that reads my script"
+- **Instead:** "the narration is public/audio/vo.wav"
+
+**No path and no level.**
+- **Avoid:** "add some music"
+- **Instead:** "public/audio/bed.mp3 at 30% volume, faded in over one second"
+
+**Too many effects.**
+- **Avoid:** "add sound effects everywhere"
+- **Instead:** "a click on each card and one whoosh on the slide at 0:08"
+
+## In more detail
+
 ## Voice
 
 Put the file in `public/audio/` and say what it is and what it says. Give the time each line starts, so the agent can place a reveal exactly: "the third card appears on the word 'Search', at 0:05.4".

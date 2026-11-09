@@ -5,6 +5,37 @@ description: How to point an agent at a real source of brand truth, keep a serie
 
 Give the agent a file to read, not the word "on-brand". Fix colours and fonts, let the layout be made for video, and put everything that changes between videos into props.
 
+## Base prompt
+
+```text title="Suggested prompt"
+/kinetograph-markup Read brand.md and src/tastes/<name>/TASTE.md. Use only the colours and fonts they name. Put the colours and font families in src/lib/brand.ts and import them everywhere, so none is typed twice.
+```
+
+## The knobs that matter
+
+| What to say | Why it matters |
+| --- | --- |
+| **A source of truth** | A brand file, a taste or a page the agent reads, not your memory of it. |
+| **One module for colours and fonts** | Every scene imports it, so one change updates all. |
+| **What changes in a template** | Title, accent colour and logo path, for example. |
+| **Defaults for each** | The template renders as it is before you change a thing. |
+
+## Common failure modes
+
+**Typing hex values in every scene.**
+- **Avoid:** "use our brand colours"
+- **Instead:** "read brand.md and put the colours in src/lib/brand.ts"
+
+**Making everything configurable.**
+- **Avoid:** "make every value a setting"
+- **Instead:** "only title, accent colour and logo path are settings"
+
+**No file to read.**
+- **Avoid:** "match our brand"
+- **Instead:** "brand.md has the colours, fonts and the logo path"
+
+## In more detail
+
 ## Point at a source of truth
 
 Name something the agent can open:

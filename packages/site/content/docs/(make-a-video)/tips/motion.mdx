@@ -7,6 +7,37 @@ description: How to ask for motion that feels right and for cuts between scenes 
 
 Describe how the motion should feel, give a time and a size, and change one thing at a time. The agent turns "snappy" or "slow" into an easing curve, a spring or a duration, and a strip of frames shows you whether it worked.
 
+## Base prompt
+
+```text title="Suggested prompt"
+/kinetograph-markup Make the three cards enter with a 10 frame ease-out, each starting 6 frames after the one before. Nothing else moves. Show a strip of frames 0 to 45.
+```
+
+## The knobs that matter
+
+| What to say | Why it matters |
+| --- | --- |
+| **A time and an easing** | "10 frame ease-out" means the same thing every time. "Snappy" does not. |
+| **What stays still** | Without it, everything may move. |
+| **The order and the gap** | "Each 6 frames after the one before" makes a stagger. |
+| **Which layer** | Name the one you mean. |
+
+## Common failure modes
+
+**Moving everything.**
+- **Avoid:** "animate the whole scene"
+- **Instead:** "only the three cards move; the background holds still"
+
+**A mood word alone.**
+- **Avoid:** "make it feel premium"
+- **Instead:** "ease-out over 12 frames, 20 px of travel, no bounce"
+
+**Several changes in one go.**
+- **Avoid:** "faster, bigger and bouncier"
+- **Instead:** "make the enter 8 frames. Change nothing else"
+
+## In more detail
+
 ## Fix motion you don't like
 
 | What you see | Say |

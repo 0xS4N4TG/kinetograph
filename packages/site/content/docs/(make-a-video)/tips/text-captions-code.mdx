@@ -7,6 +7,37 @@ description: How to ask for on-screen text, timed captions and code that types i
 
 Quote every word, name a font you can load, and say when each line arrives and leaves. Then ask for `lint`, which catches text that overflows its box or the canvas.
 
+## Base prompt
+
+```text title="Suggested prompt"
+/kinetograph-markup Add the headline "Ship it on Friday" in Inter 700, white, fit to two lines inside 900 px, 120 px from the top. It arrives at 0:01 and leaves at 0:04. Run lint and fix anything it reports.
+```
+
+## The knobs that matter
+
+| What to say | Why it matters |
+| --- | --- |
+| **The words, in quotes** | Unquoted copy gets reworded. |
+| **A font you can load** | A Google Fonts name or a file in `public/fonts/`. |
+| **Size, place and timing** | "120 px from the top, in at 0:01, out at 0:04". |
+| **A number for contrast** | "White on a 60% black bar" beats "readable". |
+
+## Common failure modes
+
+**Leaving the copy unquoted.**
+- **Avoid:** "a title about shipping on Friday"
+- **Instead:** "the title 'Ship it on Friday'"
+
+**Asking for "readable".**
+- **Avoid:** "make the text readable"
+- **Instead:** "white text on a 60% black bar"
+
+**Skipping lint.**
+- **Avoid:** "render it"
+- **Instead:** "run lint, fix what it reports, then render"
+
+## In more detail
+
 ## Text that stays readable
 
 - **Quote the copy.** Unquoted copy gets reworded.
