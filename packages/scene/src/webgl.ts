@@ -294,6 +294,8 @@ export const GL = {
   STENCIL_BACK_WRITEMASK: 0x8ca5,
   STENCIL_INDEX8: 0x8d48,
   FRAMEBUFFER_INCOMPLETE_DIMENSIONS: 0x8cd9,
+  SAMPLE_BUFFERS: 0x80a8,
+  SAMPLES: 0x80a9,
   FRAMEBUFFER_UNSUPPORTED: 0x8cdd,
   RENDERBUFFER_BINDING: 0x8ca7,
   RENDERBUFFER_WIDTH: 0x8d42,
@@ -348,6 +350,9 @@ export const GL2 = {
   UNPACK_SKIP_PIXELS: 0xcf4,
   MAX_DRAW_BUFFERS: 0x8824,
   MAX_COLOR_ATTACHMENTS: 0x8cdf,
+  MAX_SAMPLES: 0x8d57,
+  RENDERBUFFER_SAMPLES: 0x8cab,
+  FRAMEBUFFER_INCOMPLETE_MULTISAMPLE: 0x8d56,
   UNSIGNED_INT_VEC2: 0x8dc6,
   UNSIGNED_INT_VEC3: 0x8dc7,
   UNSIGNED_INT_VEC4: 0x8dc8,
@@ -538,6 +543,8 @@ export class WebGLRenderbuffer extends WebGLObject {
   height = 0;
   /** Changes with each `renderbufferStorage`, which makes it a new, empty image. */
   version = 0;
+  /** `renderbufferStorageMultisample`: 0, or `MAX_SAMPLES`. */
+  samples = 0;
 }
 export class WebGLVertexArrayObject extends WebGLObject {
   readonly attributes: VertexAttribute[] = [];
@@ -928,6 +935,9 @@ const UNSUPPORTED_CAPS = new Map<number, string>([
   [GL.SAMPLE_COVERAGE, 'sample coverage'],
 ]);
 
+/** `MAX_SAMPLES`: what a multisampled renderbuffer has, as the canvas with `antialias` does (Chrome on Apple GPUs). */
+const MAX_SAMPLES = 4;
+
 /** The largest point drawn (`ALIASED_POINT_SIZE_RANGE`): `gl_PointSize` is clamped to 1 to this (crates/core/src/glsl.rs, `MAX_POINT_SIZE`). */
 const POINT_SIZE_MAX = 511;
 
@@ -1280,6 +1290,14 @@ export class WebGLContext {
         if (this.version === 2) return this.readFramebuffer === null ? GL.BACK : this.readFramebuffer.readBuffer;
         this.fail(GL.INVALID_ENUM);
         return null;
+      case GL2.MAX_SAMPLES:
+        if (this.version === 2) return MAX_SAMPLES;
+        this.fail(GL.INVALID_ENUM);
+        return null;
+      case GL.SAMPLES:
+        return this.samplesOf(this.drawFramebuffer);
+      case GL.SAMPLE_BUFFERS:
+        return this.samplesOf(this.drawFramebuffer) > 0 ? 1 : 0;
       default:
         if (this.version === 2 && pname >= GL2.DRAW_BUFFER0 && pname < GL2.DRAW_BUFFER0 + MAX_DRAW_BUFFERS) {
           const i = pname - GL2.DRAW_BUFFER0;
@@ -1329,12 +1347,10 @@ export class WebGLContext {
     const rects = [sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1].map(Number);
     if (rects.some((v) => !Number.isFinite(v))) return this.fail(GL.INVALID_VALUE);
     const [fx0, fy0, fx1, fy1, tx0, ty0, tx1, ty1] = rects.map(Math.trunc);
-    // With `antialias` the canvas is multisampled, as in a browser: nothing is blitted into it, and it is read only
-    // into a rectangle of its own bounds.
-    if (this.attributes.antialias) {
-      if (draw === null) return this.fail(GL.INVALID_OPERATION);
-      if (read === null && (fx0 !== tx0 || fy0 !== ty0 || fx1 !== tx1 || fy1 !== ty1)) return this.fail(GL.INVALID_OPERATION);
-    }
+    // Nothing is blitted into a multisampled buffer (the canvas with `antialias`, or a multisampled renderbuffer), and
+    // one is read only into a rectangle of its own bounds, as in a browser.
+    if (this.samplesOf(draw) > 0) return this.fail(GL.INVALID_OPERATION);
+    if (this.samplesOf(read) > 0 && (fx0 !== tx0 || fy0 !== ty0 || fx1 !== tx1 || fy1 !== ty1)) return this.fail(GL.INVALID_OPERATION);
     const geometry = {
       from: [fx0!, fy0!, fx1!, fy1!] as [number, number, number, number],
       to: [tx0!, ty0!, tx1!, ty1!] as [number, number, number, number],
@@ -2881,6 +2897,9 @@ export class WebGLContext {
     if (depth !== null && depth !== 'depth' && depth !== 'depthStencil') return GL.FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
     const stencil = framebuffer.stencil === null ? null : kindOf(this.imageOf(framebuffer.stencil).format);
     if (stencil !== null && stencil !== 'stencil' && stencil !== 'depthStencil') return GL.FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+    // Every attachment has one number of samples (a texture has none).
+    const samples = new Set(all.map((a) => ('renderbuffer' in a ? a.renderbuffer.samples : 0)));
+    if (samples.size > 1) return GL2.FRAMEBUFFER_INCOMPLETE_MULTISAMPLE;
     // A depth buffer and a stencil buffer are one image, as WebGL 2 has it (WebGL 1 says unsupported for two).
     if (framebuffer.depth !== null && framebuffer.stencil !== null && !WebGLContext.same(framebuffer.depth, framebuffer.stencil)) return GL.FRAMEBUFFER_UNSUPPORTED;
     if (this.version === 1) {
@@ -2966,7 +2985,7 @@ export class WebGLContext {
     const id = `r${r.id}.${r.version}`;
     const kind = kindOf(r.format ?? 0);
     const colorFormat = COLOR_TARGETS[r.format ?? 0];
-    this.textures.set(id, { target: true, width: r.width, height: r.height, ...(kind === 'color' ? {} : { format: kind }), ...(colorFormat !== undefined ? { colorFormat } : {}) });
+    this.textures.set(id, { target: true, width: r.width, height: r.height, ...(kind === 'color' ? {} : { format: kind }), ...(colorFormat !== undefined ? { colorFormat } : {}), ...(r.samples > 0 ? { samples: r.samples } : {}) });
     return id;
   }
 
@@ -3075,6 +3094,9 @@ export class WebGLContext {
     this.renderbuffer = renderbuffer;
   }
   renderbufferStorage(target: number, internalformat: number, width: number, height: number): void {
+    this.storeRenderbuffer(target, internalformat, width, height, 0);
+  }
+  private storeRenderbuffer(target: number, internalformat: number, width: number, height: number, samples: number): void {
     if (target !== GL.RENDERBUFFER) return this.fail(GL.INVALID_ENUM);
     if (!(width >= 0 && height >= 0)) return this.fail(GL.INVALID_VALUE);
     const renderbuffer = this.renderbuffer;
@@ -3089,13 +3111,25 @@ export class WebGLContext {
     renderbuffer.format = internalformat;
     renderbuffer.width = Math.trunc(width);
     renderbuffer.height = Math.trunc(height);
+    renderbuffer.samples = samples;
     renderbuffer.version += 1;
   }
-  /** WebGL 2's multisampled storage; with 0 samples it is `renderbufferStorage`. */
+  /**
+   * WebGL 2's multisampled storage; with 0 samples it is `renderbufferStorage`. Any other count is `MAX_SAMPLES`, the
+   * one count the GPU has (GL may give more samples than asked for).
+   */
   renderbufferStorageMultisample(target: number, samples: number, internalformat: number, width: number, height: number): void {
     if (this.version !== 2) return this.fail(GL.INVALID_OPERATION);
-    if (samples > 0) throw new WebGLUnsupportedError('a multisampled renderbuffer; use renderbufferStorage (edges are not multisampled)');
-    this.renderbufferStorage(target, internalformat, width, height);
+    if (!(samples >= 0 && samples <= MAX_SAMPLES)) return this.fail(GL.INVALID_OPERATION);
+    if (samples > 0 && FLOAT_FORMATS[internalformat]?.bits === 32) throw new WebGLUnsupportedError('a multisampled renderbuffer of 32-bit floats; use a 16-bit format');
+    this.storeRenderbuffer(target, internalformat, width, height, samples > 0 ? MAX_SAMPLES : 0);
+  }
+
+  /** The samples of what the framebuffer draws in (the canvas for null): 0 when it is not multisampled. */
+  private samplesOf(framebuffer: WebGLFramebuffer | null): number {
+    if (framebuffer === null) return this.attributes.antialias ? MAX_SAMPLES : 0;
+    const a = [...framebuffer.colors, framebuffer.depth, framebuffer.stencil].find((a) => a !== null && a !== undefined);
+    return a !== undefined && a !== null && 'renderbuffer' in a ? a.renderbuffer.samples : 0;
   }
   getRenderbufferParameter(target: number, pname: number): number | null {
     if (target !== GL.RENDERBUFFER) {
@@ -3110,6 +3144,7 @@ export class WebGLContext {
     if (pname === GL.RENDERBUFFER_WIDTH) return r.width;
     if (pname === GL.RENDERBUFFER_HEIGHT) return r.height;
     if (pname === GL.RENDERBUFFER_INTERNAL_FORMAT) return r.format ?? GL.RGBA4;
+    if (pname === GL2.RENDERBUFFER_SAMPLES && this.version === 2) return r.samples;
     this.fail(GL.INVALID_ENUM);
     return null;
   }

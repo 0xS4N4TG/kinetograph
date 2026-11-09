@@ -145,6 +145,10 @@ pub struct GlslTexture {
     /// The mip levels of a colour target; an op's `level` draws into one.
     #[serde(default = "one")]
     pub levels: u32,
+    /// The samples of a target (`renderbufferStorageMultisample`): 1, or 4 for a multisampled one, which a
+    /// colour `blit` resolves and a depth and stencil one reads the first sample of.
+    #[serde(default = "one")]
+    pub samples: u32,
     /// A depth texture of a WebGL 1 context, which samples it as (d, d, d,
     /// 1); WebGL 2 samples (d, 0, 0, 1).
     #[serde(default)]
@@ -3399,6 +3403,7 @@ mod tests {
             target: false,
             format: None,
             levels: 1,
+            samples: 1,
             luminance: false,
             patches: Vec::new(),
             depth: 2,

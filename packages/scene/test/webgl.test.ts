@@ -251,7 +251,7 @@ describe('the recording WebGL context', () => {
     };
     const gl2 = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
     gl2.bindRenderbuffer(GL.RENDERBUFFER, gl2.createRenderbuffer());
-    expect(refused(() => gl2.renderbufferStorageMultisample(GL.RENDERBUFFER, 4, GL2.RGBA8, 4, 4))).toMatch(/^unsupported:.*multisampled/);
+    expect(refused(() => gl2.renderbufferStorageMultisample(GL.RENDERBUFFER, 4, GL2.RGBA32F, 4, 4))).toMatch(/^unsupported:.*multisampled/);
     expect(refused(() => gl.readPixels())).toMatch(/^unsupported:/);
     expect(refused(() => gl.bindTexture(0x8d65, gl.createTexture()))).toMatch(/textures other than.*0x8d65/);
     expect(refused(() => gl.drawArraysInstanced(GL.POINTS, 0, 3, 4))).toMatch(/instanced points/);
@@ -1133,6 +1133,69 @@ describe('the recording WebGL context', () => {
       expect(gl.getError()).toBe(GL.NO_ERROR);
       expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 1, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
       expect(() => gl.texSubImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 1, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
+    });
+  });
+
+  describe('multisampled renderbuffers', () => {
+    function msaa() {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const color = gl.createRenderbuffer();
+      gl.bindRenderbuffer(GL.RENDERBUFFER, color);
+      gl.renderbufferStorageMultisample(GL.RENDERBUFFER, 2, GL2.RGBA8, 4, 4);
+      const depth = gl.createRenderbuffer();
+      gl.bindRenderbuffer(GL.RENDERBUFFER, depth);
+      gl.renderbufferStorageMultisample(GL.RENDERBUFFER, 4, GL2.DEPTH24_STENCIL8, 4, 4);
+      const ms = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, ms);
+      gl.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.RENDERBUFFER, color);
+      gl.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_STENCIL_ATTACHMENT, GL.RENDERBUFFER, depth);
+      const texture = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 4, 4, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+      const resolve = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, resolve);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0);
+      return { gl, color, ms, resolve };
+    }
+
+    it('has MAX_SAMPLES samples, and records them on the target', () => {
+      const { gl, color, ms } = msaa();
+      expect(gl.getParameter(GL2.MAX_SAMPLES)).toBe(4);
+      gl.bindRenderbuffer(GL.RENDERBUFFER, color);
+      expect(gl.getRenderbufferParameter(GL.RENDERBUFFER, GL2.RENDERBUFFER_SAMPLES)).toBe(4);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, ms);
+      expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_COMPLETE);
+      expect(gl.getParameter(GL.SAMPLES)).toBe(4);
+      gl.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT);
+      const clear = gl.content().ops[0]!;
+      if (clear.op !== 'clear') throw new Error('not a clear');
+      expect(gl.content().textures[clear.target!]).toEqual({ target: true, width: 4, height: 4, samples: 4 });
+      expect(gl.content().textures[clear.depthStencil!]).toMatchObject({ format: 'depthStencil', samples: 4 });
+    });
+
+    it('resolves with a blit of the same rectangle, and refuses another rectangle or a multisampled destination', () => {
+      const { gl, ms, resolve } = msaa();
+      gl.bindFramebuffer(GL2.READ_FRAMEBUFFER, ms);
+      gl.bindFramebuffer(GL2.DRAW_FRAMEBUFFER, resolve);
+      gl.blitFramebuffer(0, 0, 4, 4, 0, 0, 2, 2, GL.COLOR_BUFFER_BIT, GL.NEAREST);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+      gl.blitFramebuffer(0, 0, 4, 4, 0, 0, 4, 4, GL.COLOR_BUFFER_BIT, GL.NEAREST);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      expect(gl.content().ops).toHaveLength(1);
+      gl.bindFramebuffer(GL2.READ_FRAMEBUFFER, resolve);
+      gl.bindFramebuffer(GL2.DRAW_FRAMEBUFFER, ms);
+      gl.blitFramebuffer(0, 0, 4, 4, 0, 0, 4, 4, GL.COLOR_BUFFER_BIT, GL.NEAREST);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+    });
+
+    it('is incomplete with attachments of different samples', () => {
+      const { gl, ms } = msaa();
+      const single = gl.createRenderbuffer();
+      gl.bindRenderbuffer(GL.RENDERBUFFER, single);
+      gl.renderbufferStorage(GL.RENDERBUFFER, GL2.DEPTH24_STENCIL8, 4, 4);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, ms);
+      gl.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_STENCIL_ATTACHMENT, GL.RENDERBUFFER, single);
+      expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL2.FRAMEBUFFER_INCOMPLETE_MULTISAMPLE);
     });
   });
 

@@ -736,7 +736,10 @@ own, one pass (`shaders/glsl_copy.wgsl`) that stretches the source rectangle ove
 (NEAREST) or the bilinear sampler (LINEAR), keeping the rows of the drawing buffer (top first) and of a target
 (GL's bottom first) apart, with a pipeline for each destination format (a 32-bit float source is read through a
 NEAREST sampler, LINEAR or not, as it cannot be filtered); the replay keeps a canvas draw that a blit reads even when a later clear would have
-dropped it. `texSubImage2D` into a target is an `upload` op: a pass of its own that submits what is recorded and
+dropped it. A multisampled renderbuffer (`renderbufferStorageMultisample`, any count of samples being `MAX_SAMPLES`, 4) is
+a target of 4 samples, and a pass into it is multisampled; a colour blit from it reads a texture of one sample it was
+resolved into before the pass (`Step::Resolve`, the GPU's own resolve), and a depth and stencil blit reads its first
+sample (`glsl_ds_copy.wgsl` with multisampled textures). `texSubImage2D` into a target is an `upload` op: a pass of its own that submits what is recorded and
 then `write_texture`s, so it lands between the draws around it. A frame is a function of its own calls: the context
 empties its drawing buffer before each frame, `preserveDrawingBuffer` or not. `renderCanvas` (the addon) keeps one renderer, so a call no longer
 opens the GPU: about 31 ms a small canvas before, 1.1 ms after.

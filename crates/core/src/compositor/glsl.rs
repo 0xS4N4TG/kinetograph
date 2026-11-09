@@ -93,6 +93,8 @@ struct Target {
     levels: Vec<wgpu::TextureView>,
     /// What a depth or stencil target holds; `None` for colour.
     ds: Option<TargetFormat>,
+    /// 1, or `MSAA_SAMPLES` for a multisampled renderbuffer (and the drawing buffer's depth when it is one).
+    samples: u32,
     _texture: wgpu::Texture,
 }
 
@@ -106,6 +108,7 @@ impl Target {
             levels: vec![view.clone()],
             view,
             ds: None,
+            samples: 1,
             _texture: texture,
         }
     }
@@ -164,6 +167,8 @@ enum Step<'c> {
     /// A depth target's depth as it is now, copied into the red channel of an
     /// R32Float texture for draws to sample (`glsl_depth_colour.wgsl`).
     DepthCopy(&'c str, wgpu::Texture),
+    /// A multisampled colour target resolved into a texture of one sample, for a blit to read.
+    Resolve(&'c str, wgpu::Texture),
     /// The six face targets of a cube map, every level, copied into the layers of a cube texture for draws to sample.
     CubeCopy(&'c [String], wgpu::Texture),
 }
@@ -202,8 +207,8 @@ pub(super) struct GlslGpu {
     blit: Option<Blit>,
     /// The passes behind `blitFramebuffer`, by the destination's format and whether the source can be filtered.
     copies: HashMap<(wgpu::TextureFormat, bool), Blit>,
-    /// The passes behind a depth and stencil `blitFramebuffer`, by format.
-    ds_copies: HashMap<wgpu::TextureFormat, Arc<DsCopy>>,
+    /// The passes behind a depth and stencil `blitFramebuffer`, by format and whether the source is multisampled.
+    ds_copies: HashMap<(wgpu::TextureFormat, bool), Arc<DsCopy>>,
     /// The passes that copy a depth texture for draws to sample: as red, and
     /// as luminance.
     depth_colour: Option<([wgpu::RenderPipeline; 2], wgpu::BindGroupLayout)>,
@@ -606,8 +611,9 @@ impl Compositor {
         let mut steps: Vec<Step> = Vec::new();
         // The copies of depth targets draws sample, while what they hold is the target's.
         let mut depth_copies: HashMap<&str, wgpu::TextureView> = HashMap::new();
-        // The same for cube maps whose faces are targets.
+        // The same for cube maps whose faces are targets, and for multisampled colour targets a blit reads.
         let mut cube_copies: HashMap<&str, wgpu::TextureView> = HashMap::new();
+        let mut resolved: HashMap<&str, wgpu::TextureView> = HashMap::new();
         let mut started: HashSet<(Option<&str>, u32)> = HashSet::new();
         for (i, op) in content.ops.iter().enumerate() {
             if dead[i] {
@@ -776,10 +782,43 @@ impl Compositor {
                     steps.insert(at, Step::CubeCopy(&texture.targets, copy));
                 }
             }
+            // A multisampled colour target a blit reads is resolved into a texture of one sample before the pass.
+            if let GlslOp::Blit(blit) = op
+                && blit.aspect.is_none()
+                && let Some(id) = blit.src.as_deref()
+                && !resolved.contains_key(id)
+            {
+                let t = self.glsl_target(&mut targets, content, id, canvas_ds)?;
+                if t.samples > 1 {
+                    let (size, format) = (t.size, t.format);
+                    let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("glsl resolved target"),
+                        size: wgpu::Extent3d {
+                            width: size.0,
+                            height: size.1,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format,
+                        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                            | wgpu::TextureUsages::TEXTURE_BINDING,
+                        view_formats: &[],
+                    });
+                    resolved.insert(
+                        id,
+                        texture.create_view(&wgpu::TextureViewDescriptor::default()),
+                    );
+                    let at = if joins { steps.len() - 1 } else { steps.len() };
+                    steps.insert(at, Step::Resolve(id, texture));
+                }
+            }
             // What an op draws in no longer holds what a copy of it does.
             if let Some(key) = ds {
                 depth_copies.remove(key);
             }
+            resolved.retain(|id, _| !colors.iter().flatten().any(|(c, _)| *c == Some(*id)));
             cube_copies.retain(|id, _| {
                 !content.textures[*id].targets.iter().any(|face| {
                     colors
@@ -813,8 +852,16 @@ impl Compositor {
                     slot.map(|(id, _)| id.map_or(COLOR_FORMAT, |id| targets[id].format))
                 })
                 .collect();
-            let samples = if self.glsl.msaa_on
-                && (colors.as_slice() == [Some((None, 0))] || ds == Some(CANVAS_DS))
+            // A pass is multisampled when it draws into the multisampled drawing buffer or a multisampled
+            // renderbuffer (every attachment of a framebuffer has one number of samples).
+            let multisampled_target = colors
+                .iter()
+                .flatten()
+                .any(|(id, _)| id.is_some_and(|id| targets[id].samples > 1))
+                || ds.is_some_and(|key| targets[key].samples > 1);
+            let samples = if multisampled_target
+                || (self.glsl.msaa_on
+                    && (colors.as_slice() == [Some((None, 0))] || ds == Some(CANVAS_DS)))
             {
                 MSAA_SAMPLES
             } else {
@@ -834,7 +881,7 @@ impl Compositor {
                     .into_iter()
                     .collect(),
                 GlslOp::Blit(blit) if blit.aspect.is_none() => self
-                    .glsl_copy(content, blit, size, &mut targets, canvas_ds)?
+                    .glsl_copy(content, blit, size, &mut targets, (canvas_ds, &resolved))?
                     .into_iter()
                     .collect(),
                 GlslOp::Blit(blit) => self.glsl_ds_copy(content, blit, &mut targets, canvas_ds)?,
@@ -928,6 +975,25 @@ impl Compositor {
                 }
                 Step::DepthCopy(id, copy) => {
                     self.glsl_depth_colour(&targets[id], copy);
+                    continue;
+                }
+                Step::Resolve(id, texture) => {
+                    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                    let mut encoder = self.encoder();
+                    let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("glsl resolve"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &targets[id].levels[0],
+                            depth_slice: None,
+                            resolve_target: Some(&view),
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        ..Default::default()
+                    });
+                    drop(pass);
                     continue;
                 }
                 Step::CubeCopy(faces, cube) => {
@@ -1062,12 +1128,14 @@ impl Compositor {
         canvas_ds: Option<TargetFormat>,
     ) -> Result<&'a Target> {
         if !targets.contains_key(id) {
-            let (width, height, ds, levels, color) = if id == CANVAS_DS {
+            let (width, height, ds, levels, color, samples) = if id == CANVAS_DS {
                 let format = canvas_ds.ok_or_else(|| {
                     render_error("an op uses the drawing buffer's depth or stencil buffer, which the context was made without")
                 })?;
                 let size = self.glsl.target.as_ref().expect("made by glsl_draw").size;
-                (size.0, size.1, Some(format), 1, None)
+                // The drawing buffer's depth and stencil are multisampled with it.
+                let samples = if self.glsl.msaa_on { MSAA_SAMPLES } else { 1 };
+                (size.0, size.1, Some(format), 1, None, samples)
             } else {
                 let texture = content
                     .textures
@@ -1078,12 +1146,20 @@ impl Compositor {
                             "an op targets {id:?}, which is not a target texture of the recording"
                         ))
                     })?;
+                if texture.samples != 1 && (texture.samples != MSAA_SAMPLES || texture.levels != 1)
+                {
+                    return Err(render_error(format!(
+                        "a render target of {} samples and {} levels; a multisampled one has {MSAA_SAMPLES} and 1",
+                        texture.samples, texture.levels
+                    )));
+                }
                 (
                     texture.width,
                     texture.height,
                     texture.format,
                     texture.levels,
                     texture.color_format,
+                    texture.samples,
                 )
             };
             let limit = self
@@ -1105,13 +1181,20 @@ impl Compositor {
             let bytes = |(w, h): (u32, u32), levels: usize, texel: u64| {
                 u64::from(w) * u64::from(h) * texel * if levels > 1 { 2 } else { 1 }
             };
-            let texel_of = |t: &Target| u64::from(t.format.block_copy_size(None).unwrap_or(4));
+            let texel_of = |t: &Target| {
+                u64::from(t.format.block_copy_size(None).unwrap_or(4)) * u64::from(t.samples)
+            };
             let held: u64 = targets
                 .values()
                 .map(|t| bytes(t.size, t.levels.len(), texel_of(t)))
                 .sum();
             let format = ds.map_or_else(|| color.map_or(COLOR_FORMAT, gl::ColorFormat::device), ds_format);
-            let texel = u64::from(format.block_copy_size(None).unwrap_or(4));
+            if samples > 1 && is_float32(format) {
+                return Err(render_error(
+                    "unsupported: a multisampled render target of 32-bit floats; use a 16-bit one",
+                ));
+            }
+            let texel = u64::from(format.block_copy_size(None).unwrap_or(4)) * u64::from(samples);
             if held + bytes((width, height), levels as usize, texel) > MAX_TARGET_BYTES {
                 return Err(render_error(format!(
                     "unsupported: the render targets hold more than {} MiB",
@@ -1130,17 +1213,12 @@ impl Compositor {
                     depth_or_array_layers: 1,
                 },
                 mip_level_count: levels,
-                // The drawing buffer's depth and stencil are multisampled with it.
-                sample_count: if id == CANVAS_DS && self.glsl.msaa_on {
-                    MSAA_SAMPLES
-                } else {
-                    1
-                },
+                sample_count: samples,
                 dimension: wgpu::TextureDimension::D2,
                 format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                     | wgpu::TextureUsages::TEXTURE_BINDING
-                    | if ds.is_some() {
+                    | if ds.is_some() || samples > 1 {
                         wgpu::TextureUsages::empty()
                     } else {
                         // A cube map's faces are copied from their targets.
@@ -1173,6 +1251,7 @@ impl Compositor {
                     view,
                     levels: level_views,
                     ds,
+                    samples,
                     _texture: texture,
                 },
             );
@@ -2935,7 +3014,7 @@ impl Compositor {
         blit: &'c GlslBlit,
         size: (u32, u32),
         targets: &mut HashMap<&'c str, Target>,
-        canvas_ds: Option<TargetFormat>,
+        (canvas_ds, resolved): (Option<TargetFormat>, &HashMap<&str, wgpu::TextureView>),
     ) -> Result<Option<Prepared>> {
         if blit.src == blit.target && blit.src_level == blit.level {
             return Err(render_error(
@@ -2943,8 +3022,12 @@ impl Compositor {
                  INVALID_OPERATION)",
             ));
         }
-        let (source, source_size) =
+        let (mut source, source_size) =
             self.glsl_blit_source(content, targets, blit.src.as_deref(), blit.src_level, size)?;
+        // A multisampled source is read resolved (made before the pass).
+        if let Some(view) = blit.src.as_deref().and_then(|id| resolved.get(id)) {
+            source = view.clone();
+        }
         let dst_size = match blit.target.as_deref() {
             Some(id) => self
                 .glsl_target(targets, content, id, canvas_ds)?
@@ -2956,6 +3039,15 @@ impl Compositor {
         {
             return Err(render_error(
                 "a colour blit names a depth or stencil buffer",
+            ));
+        }
+        if blit
+            .target
+            .as_deref()
+            .is_some_and(|id| targets[id].samples > 1)
+        {
+            return Err(render_error(
+                "blitFramebuffer into a multisampled framebuffer (WebGL refuses it with INVALID_OPERATION)",
             ));
         }
         let canvas_format = self.glsl.target.as_ref().expect("made by glsl_draw").format;
@@ -3045,10 +3137,15 @@ impl Compositor {
             ));
         }
         let dst_size = dst.size;
+        if dst.samples > 1 {
+            return Err(render_error(
+                "blitFramebuffer into a multisampled framebuffer (WebGL refuses it with INVALID_OPERATION)",
+            ));
+        }
         let Some((params, scissor)) = blit_geometry(blit, dst_size, src_size) else {
             return Ok(Vec::new());
         };
-        let copier = self.glsl_ds_copier(format);
+        let copier = self.glsl_ds_copier(format, targets[src_key].samples > 1);
         let src_texture = targets[src_key]._texture.clone();
         let params_with = |bit: u32| -> wgpu::Buffer {
             let mut p = params;
@@ -3230,16 +3327,24 @@ impl Compositor {
     }
 
     /// The pipelines of a depth and stencil blit into a buffer of `format`.
-    fn glsl_ds_copier(&mut self, format: TargetFormat) -> Arc<DsCopy> {
+    fn glsl_ds_copier(&mut self, format: TargetFormat, multisampled: bool) -> Arc<DsCopy> {
         let wgpu_format = ds_format(format);
-        if let Some(c) = self.glsl.ds_copies.get(&wgpu_format) {
+        if let Some(c) = self.glsl.ds_copies.get(&(wgpu_format, multisampled)) {
             return c.clone();
         }
-        let shader = shader_module(
-            &self.device,
-            "glsl ds copy",
-            include_str!("../shaders/glsl_ds_copy.wgsl"),
-        );
+        // From a multisampled source the copy reads the first sample (`textureLoad`'s last argument is the sample
+        // there, the level otherwise), as Metal's depth and stencil resolve does by default.
+        let source = include_str!("../shaders/glsl_ds_copy.wgsl");
+        let source = if multisampled {
+            Cow::Owned(
+                source
+                    .replace("texture_depth_2d", "texture_depth_multisampled_2d")
+                    .replace("texture_2d<u32>", "texture_multisampled_2d<u32>"),
+            )
+        } else {
+            Cow::Borrowed(source)
+        };
+        let shader = shader_module(&self.device, "glsl ds copy", &source);
         let layout_of = |binding: u32, sample_type: wgpu::TextureSampleType| {
             self.device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -3252,7 +3357,7 @@ impl Compositor {
                             ty: wgpu::BindingType::Texture {
                                 sample_type,
                                 view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
+                                multisampled,
                             },
                             count: None,
                         },
@@ -3338,7 +3443,9 @@ impl Compositor {
             depth_layout,
             stencil_layout,
         });
-        self.glsl.ds_copies.insert(wgpu_format, copier.clone());
+        self.glsl
+            .ds_copies
+            .insert((wgpu_format, multisampled), copier.clone());
         copier
     }
 

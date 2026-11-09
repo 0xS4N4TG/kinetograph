@@ -1453,11 +1453,15 @@ fn linear_blits_from_each_level_to_the_next_make_mipmaps_of_what_was_drawn() {
 fn a_blit_copies_depth_and_stencil_into_the_drawing_buffer() {
     // A framebuffer's depth-and-stencil buffer gets depth 0.75 and stencil 5 in its left half, and is blitted to
     // the canvas whole. On the canvas a red quad at depth 0.9 is behind the copied depth on the left and in front
-    // of the cleared 1 on the right; a green one at depth 0.5 that tests EQUAL 5 shows only on the left.
-    let textures = r#", "textures": {"c": {"target": true, "width": 16, "height": 16},
-        "ds": {"target": true, "width": 16, "height": 16, "format": "depthStencil"}}"#;
-    let fb = r#""target": "c", "depthStencil": "ds""#;
-    let all = ops(&[
+    // of the cleared 1 on the right; a green one at depth 0.5 that tests EQUAL 5 shows only on the left. The same
+    // from a multisampled framebuffer, whose first sample is copied.
+    for samples in [1, 4] {
+        let textures = format!(
+            r#", "textures": {{"c": {{"target": true, "width": 16, "height": 16, "samples": {samples}}},
+        "ds": {{"target": true, "width": 16, "height": 16, "format": "depthStencil", "samples": {samples}}}}}"#
+        );
+        let fb = r#""target": "c", "depthStencil": "ds""#;
+        let all = ops(&[
         draw_in(
             "f",
             [0, 0, 8, 16],
@@ -1483,13 +1487,43 @@ fn a_blit_copies_depth_and_stencil_into_the_drawing_buffer() {
             ),
         ),
     ]);
+        let frame = render(&layer_es3(
+            &[("f", FILL_ES3)],
+            &format!(r#", "stencil": true{textures}"#),
+            &all,
+        ));
+        assert_eq!(px(&frame, 3, 8), [0, 255, 0, 255]);
+        assert_eq!(px(&frame, 12, 8), [255, 0, 0, 255]);
+    }
+}
+
+#[test]
+fn a_blit_from_a_multisampled_target_resolves_its_samples() {
+    // The quad's first triangle (x + y < 0 in clip space) into a 4-sample target, blitted to the drawing buffer:
+    // a pixel the diagonal halves has two of its four samples covered, and is half red.
+    let textures =
+        r#", "textures": {"ms": {"target": true, "width": 16, "height": 16, "samples": 4}}"#;
+    let triangle = format!(
+        r#"{{"op": "draw", "program": "f", "mode": "triangles", "first": 0, "count": 3,
+            "attributes": {}, "viewport": [0, 0, 16, 16], "target": "ms", {}}}"#,
+        quad_attributes(),
+        z_fill(0.0, [1.0, 0.0, 0.0, 1.0])
+    );
     let frame = render(&layer_es3(
         &[("f", FILL_ES3)],
-        &format!(r#", "stencil": true{textures}"#),
-        &all,
+        textures,
+        &ops(&[
+            triangle,
+            blit_op(Some("ms"), None, [0, 0, 16, 16], [0, 0, 16, 16], false),
+        ]),
     ));
-    assert_eq!(px(&frame, 3, 8), [0, 255, 0, 255]);
-    assert_eq!(px(&frame, 12, 8), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 2, 13), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 13, 2), [0, 0, 0, 255]);
+    let edge = px(&frame, 8, 8);
+    assert!(
+        (64..=192).contains(&edge[0]),
+        "{edge:?} is not partly covered"
+    );
 }
 
 /// A PNG of `w` x `h` pixels of one colour, as a `data:` URL.
