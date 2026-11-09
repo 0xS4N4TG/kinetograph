@@ -814,7 +814,7 @@ export interface GlslTexture {
   /** An `SRGB8_ALPHA8` texture: its bytes are sRGB, which a shader reads as linear (`pixels` or `src`, not a layer). */
   srgb?: boolean;
   /** A colour target of a float format (default: RGBA8); a 32-bit one is sampled only `NEAREST`, and not blended into. */
-  colorFormat?: 'R16F' | 'RG16F' | 'RGBA16F' | 'R32F' | 'RG32F' | 'RGBA32F';
+  colorFormat?: 'R16F' | 'RG16F' | 'RGBA16F' | 'R32F' | 'RG32F' | 'RGBA32F' | 'SRGB8_ALPHA8';
   /** A depth texture of a WebGL 1 context: sampled as (d, d, d, 1), where WebGL 2 samples (d, 0, 0, 1). */
   luminance?: boolean;
   /** `texSubImage2D` of pictures over parts of the texture, in order, after `src`, `pixels` or `layer`. */

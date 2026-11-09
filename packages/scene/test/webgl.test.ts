@@ -1658,7 +1658,7 @@ describe('the recording WebGL context', () => {
       expect(gl.getError()).toBe(GL.NO_ERROR);
       expect(gl.content().ops.at(-1)).toMatchObject({ op: 'draw', blend: { srcRgb: 'ONE' } });
       const rgb = floatContext(GL2.RGB16F, true).gl;
-      expect(() => rgb.drawArrays(GL.TRIANGLES, 0, 3)).toThrow(/^unsupported:.*allocate it as RGBA, or as R16F/);
+      expect(() => rgb.drawArrays(GL.TRIANGLES, 0, 3)).toThrow(/^unsupported:.*allocate it as RGBA, SRGB8_ALPHA8, or as R16F/);
     });
 
     it('keeps blending into a 16-bit one', () => {
@@ -1772,6 +1772,39 @@ describe('the recording WebGL context', () => {
         if (draw.op !== 'draw') throw new Error('not a draw');
         expect(content.textures[draw.units['0']!.texture]!.srgb).toBe(srgb ? true : undefined);
       }
+    });
+
+    it('draws into SRGB8_ALPHA8 textures, cube faces and renderbuffers, and float renderbuffers', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, fb);
+      const colorFormatOf = () => {
+        const clear = gl.content().ops.at(-1)!;
+        if (clear.op !== 'clear') throw new Error('not a clear');
+        return gl.content().textures[clear.target!]!.colorFormat;
+      };
+      const t = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, t);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL2.SRGB8_ALPHA8, 2, 2, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, t, 0);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      expect(colorFormatOf()).toBe('SRGB8_ALPHA8');
+      const cube = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_CUBE_MAP, cube);
+      gl.texStorage2D(GL.TEXTURE_CUBE_MAP, 1, GL2.SRGB8_ALPHA8, 2, 2);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_CUBE_MAP_NEGATIVE_Y, cube, 0);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      expect(colorFormatOf()).toBe('SRGB8_ALPHA8');
+      for (const [format, name] of [[GL2.SRGB8_ALPHA8, 'SRGB8_ALPHA8'], [GL2.RGBA16F, 'RGBA16F']] as const) {
+        const rb = gl.createRenderbuffer();
+        gl.bindRenderbuffer(GL.RENDERBUFFER, rb);
+        gl.renderbufferStorage(GL.RENDERBUFFER, format, 2, 2);
+        gl.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.RENDERBUFFER, rb);
+        expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_COMPLETE);
+        gl.clear(GL.COLOR_BUFFER_BIT);
+        expect(colorFormatOf()).toBe(name);
+      }
+      expect(gl.getError()).toBe(GL.NO_ERROR);
     });
 
     it('refuses what it cannot read as sRGB: cube faces, layer pictures and a render target', () => {

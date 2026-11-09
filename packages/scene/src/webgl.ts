@@ -875,7 +875,7 @@ type ImageKind = 'color' | 'depth' | 'stencil' | 'depthStencil';
 const DEPTH_ONLY = new Set<number>([GL.DEPTH_COMPONENT, GL.DEPTH_COMPONENT16, GL2.DEPTH_COMPONENT24, GL2.DEPTH_COMPONENT32F]);
 const DEPTH_AND_STENCIL = new Set<number>([GL.DEPTH_STENCIL, GL2.DEPTH24_STENCIL8, GL2.DEPTH32F_STENCIL8]);
 /** The colour formats of a renderbuffer; each is drawn as RGBA8. */
-const COLOR_RENDERBUFFER = new Set<number>([GL.RGBA4, GL.RGB5_A1, GL.RGB565, GL2.RGBA8]);
+const COLOR_RENDERBUFFER = new Set<number>([GL.RGBA4, GL.RGB5_A1, GL.RGB565, GL2.RGBA8, GL2.SRGB8_ALPHA8, GL2.R16F, GL2.RG16F, GL2.RGBA16F, GL2.R32F, GL2.RG32F, GL2.RGBA32F]);
 
 /** The value of an IEEE half float's bits. */
 function halfToFloat(bits: number): number {
@@ -931,14 +931,15 @@ const UNSUPPORTED_CAPS = new Map<number, string>([
 /** The largest point drawn (`ALIASED_POINT_SIZE_RANGE`): `gl_PointSize` is clamped to 1 to this (crates/core/src/glsl.rs, `MAX_POINT_SIZE`). */
 const POINT_SIZE_MAX = 511;
 
-/** The float formats colour can be drawn into (`EXT_color_buffer_float`), by the name the recording gives them. */
-const FLOAT_TARGETS: Record<number, NonNullable<GlslTexture['colorFormat']>> = {
+/** The formats other than RGBA8 colour can be drawn into (floats with `EXT_color_buffer_float`, and sRGB), by the name the recording gives them. */
+const COLOR_TARGETS: Record<number, NonNullable<GlslTexture['colorFormat']>> = {
   [GL2.R16F]: 'R16F',
   [GL2.RG16F]: 'RG16F',
   [GL2.RGBA16F]: 'RGBA16F',
   [GL2.R32F]: 'R32F',
   [GL2.RG32F]: 'RG32F',
   [GL2.RGBA32F]: 'RGBA32F',
+  [GL2.SRGB8_ALPHA8]: 'SRGB8_ALPHA8',
 };
 
 /** Formats of a texture that colour cannot be drawn into. */
@@ -2347,9 +2348,9 @@ export class WebGLContext {
     const face = cube?.faces?.[faceIndex(target)];
     if (cube === null || face === undefined) return;
     if (level !== 0) throw new WebGLUnsupportedError('a cube map face above level 0; call generateMipmap');
-    // A float face is a render target: empty until a framebuffer draws in it.
-    const emptyFloat = FLOAT_FORMATS[internalformat] !== undefined && rest.length >= 6 && (rest[5] === null || rest[5] === undefined);
-    if (kindOf(internalformat) !== 'color' || (FLOAT_FORMATS[internalformat] !== undefined && !emptyFloat) || internalformat === GL2.SRGB8_ALPHA8) throw new WebGLUnsupportedError('a cube map face of a depth or sRGB format, or float pixels; use RGBA8, or an empty float face to draw in');
+    // A float or sRGB face is a render target: empty until a framebuffer draws in it.
+    const empty = rest.length >= 6 && (rest[5] === null || rest[5] === undefined);
+    if (kindOf(internalformat) !== 'color' || ((FLOAT_FORMATS[internalformat] !== undefined || internalformat === GL2.SRGB8_ALPHA8) && !empty)) throw new WebGLUnsupportedError('a cube map face of a depth format, or of float or sRGB pixels; use RGBA8, or an empty float or sRGB face to draw in');
     if (rest.length >= 6) {
       const [width, height] = rest as [number, number];
       if (!(Number.isInteger(width) && width >= 0 && width <= MAX_CUBE_MAP_TEXTURE_SIZE && Number.isInteger(height) && height >= 0 && height <= MAX_CUBE_MAP_TEXTURE_SIZE)) return this.fail(GL.INVALID_VALUE);
@@ -2664,7 +2665,7 @@ export class WebGLContext {
     if (target === GL.TEXTURE_CUBE_MAP) {
       // Each of the six faces is given the storage, as a 2D texture is.
       if (width !== height) return this.fail(GL.INVALID_VALUE);
-      if (kindOf(internalformat) !== 'color' || internalformat === GL2.SRGB8_ALPHA8) throw new WebGLUnsupportedError('a cube map of a depth or sRGB format; use RGBA8 or a float format');
+      if (kindOf(internalformat) !== 'color') throw new WebGLUnsupportedError('a cube map of a depth format; use RGBA8, SRGB8_ALPHA8 or a float format');
       for (const face of texture.faces!) this.storage2d(face, levels, internalformat, width, height);
       texture.mipmaps = false;
       texture.version += 1;
@@ -2909,8 +2910,8 @@ export class WebGLContext {
       if (!('texture' in a)) continue;
       const texture = a.texture;
       if (kindOf(texture.format) !== 'color') continue;
-      if (texture.format !== GL.RGBA && texture.format !== GL2.RGBA8 && FLOAT_TARGETS[texture.format] === undefined) {
-        throw new WebGLUnsupportedError(`drawing into a texture of internal format 0x${texture.format.toString(16)}; allocate it as RGBA, or as R16F, RG16F, RGBA16F, R32F, RG32F or RGBA32F`);
+      if (texture.format !== GL.RGBA && texture.format !== GL2.RGBA8 && COLOR_TARGETS[texture.format] === undefined) {
+        throw new WebGLUnsupportedError(`drawing into a texture of internal format 0x${texture.format.toString(16)}; allocate it as RGBA, SRGB8_ALPHA8, or as R16F, RG16F, RGBA16F, R32F, RG32F or RGBA32F`);
       }
       if (!texture.blank) throw new WebGLUnsupportedError('drawing into a texture that holds uploaded pixels; allocate it with texImage2D(..., null)');
     }
@@ -2928,7 +2929,7 @@ export class WebGLContext {
       width: texture.width,
       height: texture.height,
       ...(kind === 'color' ? {} : { format: kind }),
-      ...(FLOAT_TARGETS[texture.format] !== undefined ? { colorFormat: FLOAT_TARGETS[texture.format]! } : {}),
+      ...(COLOR_TARGETS[texture.format] !== undefined ? { colorFormat: COLOR_TARGETS[texture.format]! } : {}),
       // WebGL 1 samples a depth texture as luminance (WEBGL_depth_texture), WebGL 2 as red.
       ...(kind !== 'color' && this.version === 1 ? { luminance: true } : {}),
       ...(texture.levels > 1 ? { levels: texture.levels } : {}),
@@ -2945,7 +2946,8 @@ export class WebGLContext {
     const r = a.renderbuffer;
     const id = `r${r.id}.${r.version}`;
     const kind = kindOf(r.format ?? 0);
-    this.textures.set(id, { target: true, width: r.width, height: r.height, ...(kind === 'color' ? {} : { format: kind }) });
+    const colorFormat = COLOR_TARGETS[r.format ?? 0];
+    this.textures.set(id, { target: true, width: r.width, height: r.height, ...(kind === 'color' ? {} : { format: kind }), ...(colorFormat !== undefined ? { colorFormat } : {}) });
     return id;
   }
 
@@ -3059,11 +3061,10 @@ export class WebGLContext {
     const renderbuffer = this.renderbuffer;
     if (renderbuffer === null) return this.fail(GL.INVALID_OPERATION);
     const v2 = this.version === 2;
-    const v2only = [GL2.RGBA8, GL2.DEPTH_COMPONENT24, GL2.DEPTH_COMPONENT32F, GL2.DEPTH24_STENCIL8, GL2.DEPTH32F_STENCIL8] as number[];
+    const v2only = [GL2.RGBA8, GL2.SRGB8_ALPHA8, GL2.R16F, GL2.RG16F, GL2.RGBA16F, GL2.R32F, GL2.RG32F, GL2.RGBA32F, GL2.DEPTH_COMPONENT24, GL2.DEPTH_COMPONENT32F, GL2.DEPTH24_STENCIL8, GL2.DEPTH32F_STENCIL8] as number[];
     const known = kindOf(internalformat) !== 'color' || COLOR_RENDERBUFFER.has(internalformat);
     if (internalformat === GL.DEPTH_COMPONENT) return this.fail(GL.INVALID_ENUM);
     if (!known || (!v2 && v2only.includes(internalformat))) {
-      if (v2 && internalformat === GL2.SRGB8_ALPHA8) throw new WebGLUnsupportedError('an SRGB8_ALPHA8 renderbuffer; use RGBA8');
       return this.fail(GL.INVALID_ENUM);
     }
     renderbuffer.format = internalformat;
@@ -3231,7 +3232,7 @@ export class WebGLContext {
     // State.
     if (this.caps.scissor) draw.scissor = this.scissorNow();
     if (this.caps.blend) {
-      const into32 = this.drawFramebuffer !== null && this.outputsOf(this.drawFramebuffer).some((a) => a !== null && 'texture' in a && FLOAT_FORMATS[a.texture.format]?.bits === 32);
+      const into32 = this.drawFramebuffer !== null && this.outputsOf(this.drawFramebuffer).some((a) => a !== null && FLOAT_FORMATS[('texture' in a ? a.texture.format : a.renderbuffer.format) ?? 0]?.bits === 32);
       // As in a browser, without EXT_float_blend enabled such a draw is refused.
       if (into32 && !this.floatBlend) return this.fail(GL.INVALID_OPERATION);
       const b = this.blend;

@@ -687,7 +687,8 @@ not keep the uniform array strides), and `compositor/glsl.rs` replays the draws 
 uniform block, and Metal packs arrays of floats and `vec2`s tighter than the block's 16 bytes an element, so those
 travel as `vec4`s; bools are not allowed in a block, so they travel as ints; wgpu bounds each vertex by a whole stride
 from the start of its binding, so an interleaved attribute's offset goes in the vertex, not in the binding.
-What a framebuffer draws into is a second kind of target: colour (Rgba8 or a float format, with mip levels when the
+What a framebuffer draws into is a second kind of target: colour (Rgba8, `Rgba8UnormSrgb` for `SRGB8_ALPHA8`, which draws write and blend in linear light and keep encoded as GL
+does, or a float format, with mip levels when the
 texture has storage for them; a colour renderbuffer is one too; blending into a 32-bit float one, `EXT_float_blend`,
 needs wgpu's `FLOAT32_BLENDABLE`, which the device is asked for and every Apple GPU has) or a depth, stencil or depth-and-stencil buffer (`Depth32Float`,
 `Stencil8`, `Depth24PlusStencil8`, which is 32-bit float depth with 8 bits of stencil on Apple GPUs). An op names its

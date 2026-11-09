@@ -2544,6 +2544,27 @@ fn a_32_bit_float_target_is_blended_into_beyond_one() {
 }
 
 #[test]
+fn an_srgb_target_keeps_what_is_drawn_encoded_and_reads_it_as_linear() {
+    // 0.01 is 3 of 255 as linear bytes (0.0118), and 25 of 255 encoded, which reads back as 0.0100: times 25,
+    // 0.25 (64) and not 0.29 (75).
+    let times_25 = "precision highp float; varying vec2 v_uv; uniform sampler2D u_tex; \
+        void main() { gl_FragColor = vec4(texture2D(u_tex, v_uv).rgb * 25.0, 1.0); }";
+    let sampling = format!(
+        r#"{}, "units": {{"0": {{"texture": "rt", "min": "NEAREST", "mag": "NEAREST"}}}}"#,
+        uniforms(&[("u_tex", "i", &[0.0])])
+    );
+    let frame = render(&layer_of(
+        &[("f", FILL), ("q", times_25)],
+        &float_target("SRGB8_ALPHA8", 8),
+        &ops(&[
+            draw_with("f", Some(("rt", 8)), &fill([0.01, 0.0, 0.0, 1.0])),
+            draw_with("q", None, &sampling),
+        ]),
+    ));
+    near(px(&frame, 8, 8), [64, 0, 0, 255], 3);
+}
+
+#[test]
 fn a_clear_of_a_float_target_keeps_values_beyond_one() {
     let sampling = format!(
         r#"{}, "units": {{"0": {{"texture": "rt", "min": "NEAREST", "mag": "NEAREST"}}}}"#,

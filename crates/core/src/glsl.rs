@@ -190,7 +190,8 @@ pub struct GlslFace {
     pub premultiply: bool,
 }
 
-/// The float formats a colour target can have.
+/// The formats other than RGBA8 a colour target can have: floats, and sRGB (written and blended as linear, kept
+/// encoded).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
 pub enum ColorFormat {
     R16F,
@@ -199,6 +200,8 @@ pub enum ColorFormat {
     R32F,
     RG32F,
     RGBA32F,
+    #[serde(rename = "SRGB8_ALPHA8")]
+    Srgb8Alpha8,
 }
 
 impl ColorFormat {
@@ -211,6 +214,7 @@ impl ColorFormat {
             ColorFormat::R32F => F::R32Float,
             ColorFormat::RG32F => F::Rg32Float,
             ColorFormat::RGBA32F => F::Rgba32Float,
+            ColorFormat::Srgb8Alpha8 => F::Rgba8UnormSrgb,
         }
     }
 
