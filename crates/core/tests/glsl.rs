@@ -2349,16 +2349,25 @@ fn a_clear_of_a_float_target_keeps_values_beyond_one() {
 }
 
 #[test]
-fn a_blit_to_a_float_target_is_refused() {
-    let e = render_error(&layer_of(
+fn a_blit_copies_between_float_targets_and_the_drawing_buffer() {
+    // The drawing buffer into a half float target, that into a 32-bit one, and it stretched back over the buffer.
+    let textures = r#", "textures": {
+        "rt": {"target": true, "width": 8, "height": 8, "colorFormat": "RGBA16F"},
+        "rt32": {"target": true, "width": 8, "height": 8, "colorFormat": "RGBA32F"}}"#;
+    let frame = render(&layer_of(
         &[("f", FILL)],
-        &float_target("RGBA16F", 8),
+        textures,
         &ops(&[
-            draw_in("f", [0, 0, 16, 16], &fill([1.0; 4])),
-            blit_op(None, Some("rt"), [0, 0, 8, 8], [0, 0, 8, 8], false),
+            draw_in("f", [0, 0, 16, 16], &fill([0.5, 0.25, 0.0, 1.0])),
+            blit_op(None, Some("rt"), [0, 0, 16, 16], [0, 0, 8, 8], true),
+            r#"{"op": "clear", "color": [0, 0, 0, 1]}"#.to_string(),
+            blit_op(Some("rt"), Some("rt32"), [0, 0, 8, 8], [0, 0, 8, 8], false),
+            // LINEAR from a 32-bit float target reads texel for texel.
+            blit_op(Some("rt32"), None, [0, 0, 8, 4], [0, 0, 16, 8], true),
         ]),
     ));
-    assert!(e.contains("float render target"), "{e}");
+    near(px(&frame, 8, 12), [128, 64, 0, 255], 2);
+    assert_eq!(px(&frame, 8, 3), [0, 0, 0, 255]);
 }
 
 // ---- struct uniforms ----

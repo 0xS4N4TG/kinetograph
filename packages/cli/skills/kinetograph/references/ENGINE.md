@@ -723,7 +723,8 @@ counts from the draw's `first`), or the instance index in a draw of points; `gl_
 attribute with `vertexAttribDivisor(1)` is a vertex buffer of step mode `Instance`. `blitFramebuffer` is an op of its
 own, one pass (`shaders/glsl_copy.wgsl`) that stretches the source rectangle over the destination with `textureLoad`
 (NEAREST) or the bilinear sampler (LINEAR), keeping the rows of the drawing buffer (top first) and of a target
-(GL's bottom first) apart; the replay keeps a canvas draw that a blit reads even when a later clear would have
+(GL's bottom first) apart, with a pipeline for each destination format (a 32-bit float source is read through a
+NEAREST sampler, LINEAR or not, as it cannot be filtered); the replay keeps a canvas draw that a blit reads even when a later clear would have
 dropped it. `texSubImage2D` into a target is an `upload` op: a pass of its own that submits what is recorded and
 then `write_texture`s, so it lands between the draws around it. A frame is a function of its own calls: the context
 empties its drawing buffer before each frame, `preserveDrawingBuffer` or not. `renderCanvas` (the addon) keeps one renderer, so a call no longer

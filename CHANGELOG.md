@@ -5,6 +5,10 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ## Unreleased
 
+### Added
+
+- WebGL `blitFramebuffer` to and from float render targets.
+
 ### Fixed
 
 - `staticFile()` returns forward slashes on Windows so CSS `url()` paths are not corrupted by backslash escapes (#100).

@@ -198,8 +198,8 @@ pub(super) struct GlslGpu {
     /// Whether the replay in hand draws into `msaa` (see `glsl_multisampled`).
     msaa_on: bool,
     blit: Option<Blit>,
-    /// The pass behind `blitFramebuffer`.
-    copy: Option<Blit>,
+    /// The passes behind `blitFramebuffer`, by the destination's format and whether the source can be filtered.
+    copies: HashMap<(wgpu::TextureFormat, bool), Blit>,
     /// The passes behind a depth and stencil `blitFramebuffer`, by format.
     ds_copies: HashMap<wgpu::TextureFormat, Arc<DsCopy>>,
     /// The passes that copy a depth texture for draws to sample: as red, and
@@ -364,6 +364,7 @@ impl Compositor {
                 include_str!("../shaders/glsl_input.wgsl"),
                 ("vs_input", "fs_input"),
                 wgpu::TextureFormat::Rgba8Unorm,
+                true,
             ));
         }
         while self.glsl.inputs.len() <= n {
@@ -2580,6 +2581,7 @@ impl Compositor {
                 include_str!("../shaders/glsl_blit.wgsl"),
                 ("vs_glsl", "fs_glsl"),
                 LINEAR_FORMAT,
+                true,
             ));
         }
         let corners = [
@@ -2781,30 +2783,26 @@ impl Compositor {
                 "a colour blit names a depth or stencil buffer",
             ));
         }
-        if blit
-            .src
-            .as_deref()
-            .into_iter()
-            .chain(blit.target.as_deref())
-            .any(|id| targets[id].format != COLOR_FORMAT)
-        {
-            return Err(render_error(
-                "unsupported: blitFramebuffer to or from a float render target; draw a quad that samples it",
-            ));
-        }
+        let canvas_format = self.glsl.target.as_ref().expect("made by glsl_draw").format;
+        let format_of = |id: Option<&str>| id.map_or(canvas_format, |id| targets[id].format);
+        let dst_format = format_of(blit.target.as_deref());
+        // A 32-bit float source cannot be filtered: it is read texel for texel, LINEAR or not.
+        let filterable = !is_float32(format_of(blit.src.as_deref()));
         let Some((params, scissor)) = blit_geometry(blit, dst_size, source_size) else {
             return Ok(None);
         };
         let bytes: Vec<u8> = params.iter().flat_map(|v| v.to_le_bytes()).collect();
-        if self.glsl.copy.is_none() {
-            self.glsl.copy = Some(self.glsl_blit(
+        if !self.glsl.copies.contains_key(&(dst_format, filterable)) {
+            let copy = self.glsl_blit(
                 "glsl copy",
                 include_str!("../shaders/glsl_copy.wgsl"),
                 ("vs_copy", "fs_copy"),
-                COLOR_FORMAT,
-            ));
+                dst_format,
+                filterable,
+            );
+            self.glsl.copies.insert((dst_format, filterable), copy);
         }
-        let copy = self.glsl.copy.as_ref().expect("made above");
+        let copy = &self.glsl.copies[&(dst_format, filterable)];
         let params_buffer = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -3177,6 +3175,7 @@ impl Compositor {
         source: &str,
         (vertex, fragment): (&'static str, &'static str),
         format: wgpu::TextureFormat,
+        filterable: bool,
     ) -> Blit {
         let layout = self
             .device
@@ -3197,7 +3196,7 @@ impl Compositor {
                         binding: 1,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            sample_type: wgpu::TextureSampleType::Float { filterable },
                             view_dimension: wgpu::TextureViewDimension::D2,
                             multisampled: false,
                         },
@@ -3206,7 +3205,11 @@ impl Compositor {
                     wgpu::BindGroupLayoutEntry {
                         binding: 2,
                         visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        ty: wgpu::BindingType::Sampler(if filterable {
+                            wgpu::SamplerBindingType::Filtering
+                        } else {
+                            wgpu::SamplerBindingType::NonFiltering
+                        }),
                         count: None,
                     },
                 ],
@@ -3246,12 +3249,17 @@ impl Compositor {
                 multiview_mask: None,
                 cache: None,
             });
+        let filter = if filterable {
+            wgpu::FilterMode::Linear
+        } else {
+            wgpu::FilterMode::Nearest
+        };
         let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some(label),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
+            mag_filter: filter,
+            min_filter: filter,
             ..Default::default()
         });
         Blit {
@@ -3260,6 +3268,12 @@ impl Compositor {
             sampler,
         }
     }
+}
+
+/// A 32-bit float format, which a sampler reads texel for texel.
+fn is_float32(format: wgpu::TextureFormat) -> bool {
+    use wgpu::TextureFormat as F;
+    matches!(format, F::R32Float | F::Rg32Float | F::Rgba32Float)
 }
 
 /// The most vertices (or indices) one draw may read: a triangle fan is
