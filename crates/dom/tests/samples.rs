@@ -719,6 +719,49 @@ fn a_box_hidden_inside_inline_content_keeps_no_old_children() {
     }
 }
 
+/// An inline-block whose first line is measured from the cache sits on that line's baseline: a measurement taken from
+/// taffy's cache keeps no baselines, so an edit inside the box (a transform) gave it the baseline of the block after
+/// the line, and the line round it lost height (fuzz seed 1052669).
+#[test]
+fn an_edited_inline_block_keeps_the_baseline_of_its_cached_first_line() {
+    let page = |transform: &str| {
+        request(el(
+            "div",
+            "$0",
+            "position: absolute; inset: 0; font: 16px 'DM Sans'",
+            vec![el(
+                "div",
+                "$0.0",
+                "position: absolute; background: #345",
+                vec![
+                    el(
+                        "em",
+                        "$0.0.0",
+                        "display: inline-block; font-size: 8px",
+                        vec![
+                            text("alpha"),
+                            el(
+                                "p",
+                                "$0.0.0.1",
+                                &format!("padding: 8px; width: 116px; transform: {transform}"),
+                                vec![text("beta")],
+                            ),
+                        ],
+                    ),
+                    text("gamma"),
+                ],
+            )],
+        ))
+    };
+    let (first, edited) = (page("scale(1.3)"), page("none"));
+    let mut cache = IslandCache::default();
+    drawn(&mut cache, &first, Some(1));
+    assert_eq!(
+        drawn(&mut cache, &edited, Some(2)),
+        drawn(&mut IslandCache::default(), &edited, None)
+    );
+}
+
 /// Every rect shape in `layers`, as its width and height.
 fn rects(layers: &Value, out: &mut Vec<(f64, f64)>) {
     match layers {

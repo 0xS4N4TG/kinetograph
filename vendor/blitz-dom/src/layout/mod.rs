@@ -776,10 +776,22 @@ impl taffy::CacheTree for LayoutPassState<'_> {
         node_id: NodeId,
         inputs: &taffy::LayoutInput,
     ) -> Option<taffy::LayoutOutput> {
-        self.node_from_id_mut(node_id)
-            .try_layout_data_mut()?
-            .cache
-            .get(inputs)
+        let cache = &mut self.node_from_id_mut(node_id).try_layout_data_mut()?.cache;
+        let mut output = cache.get(inputs)?;
+        // A measurement keeps only the box's size, not its baselines, so a block whose
+        // first child is measured from the cache (an edited document's boxes are cached)
+        // takes its baseline from a later child. The final layout of the same inputs
+        // keeps them.
+        if inputs.run_mode == RunMode::ComputeSize {
+            let full = cache.get(&taffy::LayoutInput {
+                run_mode: RunMode::PerformLayout,
+                ..*inputs
+            });
+            if let Some(full) = full.filter(|full| full.size == output.size) {
+                output.baselines = full.baselines;
+            }
+        }
+        Some(output)
     }
 
     #[inline]
