@@ -1,6 +1,6 @@
 //! What changed in an edited document since its last paint: the nodes whose
-//! style values, box, attributes or text differ, and the ones that came or
-//! went. The painter replays a stacking context's content from that paint
+//! style values, box, lines, attributes or text differ, and the ones that came
+//! or went. The painter replays a stacking context's content from that paint
 //! when nothing in it changed (`paint::retain`).
 
 use std::collections::{HashMap, HashSet};
@@ -9,14 +9,15 @@ use blitz_dom::{BaseDocument, Node, NodeId, ns};
 use style::properties::{ComputedValues, LonghandId};
 use style::servo_arc::Arc as ServoArc;
 
-/// A node's computed style, box and place in the tree as a paint saw them.
-/// The style is held, so another one cannot take its place in memory.
+/// A node's computed style, box, lines and place in the tree as a paint saw
+/// them. The style is held, so another one cannot take its place in memory.
 pub struct Stamp {
     node: NodeId,
     parent: Option<NodeId>,
     layout_parent: Option<NodeId>,
     style: Option<ServoArc<ComputedValues>>,
     layout: Option<taffy::Layout>,
+    lines: Option<u64>,
 }
 
 /// A node's box; text and comments have none.
@@ -27,6 +28,30 @@ fn layout_of(node: &Node) -> Option<taffy::Layout> {
         NodeData::Element(_) | NodeData::AnonymousBlock(_) | NodeData::Document(_)
     )
     .then(|| *node.final_layout())
+}
+
+/// A hash of an inline root's lines: where each starts and ends in the text,
+/// and its place and size. Lines can move with the box the same (a float
+/// beside it changed), so the box does not tell.
+fn lines_of(node: &Node) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+    let text = node.element_data()?.inline_layout_data.as_ref()?;
+    let mut h = std::hash::DefaultHasher::new();
+    text.block_offset.to_bits().hash(&mut h);
+    for line in text.layout.lines() {
+        let m = line.metrics();
+        line.text_range().hash(&mut h);
+        for v in [
+            m.offset,
+            m.advance,
+            m.baseline,
+            m.block_min_coord,
+            m.block_max_coord,
+        ] {
+            v.to_bits().hash(&mut h);
+        }
+    }
+    Some(h.finish())
 }
 
 /// The stamps of every node of `doc`, in id order.
@@ -40,6 +65,7 @@ pub fn stamps(doc: &BaseDocument) -> Vec<Stamp> {
             layout_parent: node.layout_parent.get(),
             style: node.primary_styles().map(|s| (*s).clone()),
             layout: layout_of(node),
+            lines: lines_of(node),
         })
         .collect();
     stamps.sort_by_key(|s| s.node.as_u64());
@@ -185,10 +211,11 @@ pub fn changes(doc: &BaseDocument, stamps: &[Stamp], touched: &[NodeId]) -> Opti
             (Some(was), Some(now)) => Some(moved_only(was, now)),
             _ => Some(false),
         };
-        if group_style.is_some() || group_box.is_some() {
+        let lines_moved = stamp.lines != lines_of(node);
+        if group_style.is_some() || group_box.is_some() || lines_moved {
             dirty.insert(
                 node.id,
-                group_style.unwrap_or(true) && group_box.unwrap_or(true),
+                !lines_moved && group_style.unwrap_or(true) && group_box.unwrap_or(true),
             );
         }
     }

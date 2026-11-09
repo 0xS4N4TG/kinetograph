@@ -293,3 +293,43 @@ fn only_what_holds_a_change_is_painted_again() {
     assert_eq!(painted, 2);
     assert_eq!(replayed, 5);
 }
+
+/// Each step's retained paint is the whole paint of the same document.
+fn assert_replays_whole(steps: &[(&str, Value)]) {
+    let mut cache = IslandCache::default();
+    for (pass, (name, request)) in steps.iter().enumerate() {
+        let (retained, whole, _) = painted(&mut cache, request, Some(pass as u64));
+        assert_eq!(
+            retained, whole,
+            "{name}: the replayed paint differs from a whole one"
+        );
+    }
+}
+
+/// A context's lines wrap round a float outside it: a float that narrows
+/// moves them, though the context's own box stays.
+#[test]
+fn text_beside_a_float_that_changes_is_painted_again() {
+    let page = |float: f64| {
+        request(el(
+            "div",
+            "$0",
+            "position: absolute; inset: 0; width: 120px",
+            vec![
+                el(
+                    "div",
+                    "$0.0",
+                    &format!("float: left; width: {float}px; height: 30px; background: #f80"),
+                    vec![],
+                ),
+                el(
+                    "div",
+                    "$0.1",
+                    "opacity: 0.9; height: 80px; font: 16px 'DM Sans'",
+                    vec![text("one two three four five six seven")],
+                ),
+            ],
+        ))
+    };
+    assert_replays_whole(&[("first", page(60.0)), ("narrower float", page(50.0))]);
+}
