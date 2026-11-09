@@ -8,7 +8,7 @@ const tile = 'flex flex-col justify-between border border-cobalt/30 p-[clamp(20p
 /** The four small tiles: our own measured renders, whole `kinetograph render` to H.264 MP4. */
 const SMALL = [
   { big: '87', unit: 'fps', label: 'Captions over video', detail: '180 frames, 1080p, 2.06 s' },
-  { big: '83', unit: 'fps', label: 'A Remotion project, unchanged', detail: '150 frames, 1200×1000, 1.81 s' },
+  { big: '138', unit: 'fps', label: 'A Remotion project, unchanged', detail: '150 frames, 1200×1000, 1.09 s' },
   { big: '62', unit: 'fps', label: 'A 3D character scene', detail: '180 frames, 1080p, 2.90 s' },
   { big: '29', unit: 's', label: 'The launch film, 1,184 frames', detail: '39.5 s of 1080p video, 40 fps' },
 ] as const;
