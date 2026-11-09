@@ -32,6 +32,7 @@ use skia_safe::{
 };
 
 mod canvas2d;
+mod outer_shadow;
 #[cfg(test)]
 mod fe_image_tests;
 
@@ -463,7 +464,9 @@ impl Translator {
             _ => false,
         };
 
-        if no_extras && simple_leaf && single_paint {
+        if self.outer_shadow(canvas, layer, comp, scale) {
+            // A blurred outer box shadow, drawn without a layer (`draw/outer_shadow.rs`).
+        } else if no_extras && simple_leaf && single_paint {
             // Opacity and blend go straight into the draw.
             self.apply_clip(canvas, layer);
             self.draw_content(canvas, layer, comp, scale);
