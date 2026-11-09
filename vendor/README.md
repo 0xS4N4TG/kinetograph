@@ -49,9 +49,7 @@ Upstream: crates.io `blitz-dom` 0.3.0-beta.3 (`DioxusLabs/blitz`, commit `5890fa
 - `src/layout/damage.rs`: a table whose subtree has any damage is rebuilt and laid out again, since `build_table_context` reads its parts' styles when the box is built. (`ALL_DAMAGE` on every `style` edit hid this.)
 - `src/layout/inline.rs`: an inline box measured in `ComputeSize` mode that comes back without baselines is laid out in `PerformLayout` mode to get them, because taffy's size-only cache hit keeps no baselines.
 - `src/layout/mod.rs`: a block child laid out beside floats skips taffy's cache (`compute_block_child_layout`), whose key has no floats in it: an edit that resized a float left the lines beside it wrapped round the old float.
-
 - `src/layout/construct.rs`, `src/stylo_to_parley.rs`: a non-atomic inline element with `unicode-bidi: isolate`, `isolate-override` or `plaintext` (`<bdi>`, `<bdo>`, `dir`) has its content wrapped in the UAX #9 isolate and pop characters (`bidi_controls`), as a browser does, so Parley's bidi resolution isolates it. Blitz set only the paragraph's base direction.
-
 - `src/layout/construct.rs`: a non-atomic inline or `display: none` element reached while an inline root's content is collected drops the inline-root flag and text layout it had as a box, so an edit that makes a box inline leaves no stale layout for readback, and one that hides it no stale text that is drawn.
 - `src/layout/construct.rs`: `flush_pseudo_elements` damages a pseudo-element that stays only when its style is not the one the style traversal already synced. It damaged it always, after damage had been propagated, so its text was rebuilt while the layout caches above it stayed, and the text was never broken into lines (an edited `::before` inside an inline-block vanished).
 - `src/layout/paint_tree.rs`: a `display: none` box gives up the out-of-flow boxes an earlier layout hoisted to it, which an edited document drew.
