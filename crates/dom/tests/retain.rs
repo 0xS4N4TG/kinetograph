@@ -333,3 +333,43 @@ fn text_beside_a_float_that_changes_is_painted_again() {
     };
     assert_replays_whole(&[("first", page(60.0)), ("narrower float", page(50.0))]);
 }
+
+/// A cell's column background is drawn in the context the table is in (Blitz
+/// gives rows and columns no box, so a row is never a context of its own),
+/// and a column is inside the table: a change to it paints that context again.
+#[test]
+fn a_column_that_changes_paints_the_table_s_context_again() {
+    let page = |col: &str| {
+        let table = el(
+            "table",
+            "$0.0",
+            "border-spacing: 0; opacity: 0.9",
+            vec![
+                el(
+                    "colgroup",
+                    "$0.0.0",
+                    "",
+                    vec![el("col", "$0.0.0.0", &format!("background: {col}"), vec![])],
+                ),
+                el(
+                    "tbody",
+                    "$0.0.1",
+                    "",
+                    vec![el(
+                        "tr",
+                        "$0.0.1.0",
+                        "opacity: 0.9",
+                        vec![el(
+                            "td",
+                            "$0.0.1.0.0",
+                            "width: 40px; height: 20px; opacity: 0.8",
+                            vec![text("a")],
+                        )],
+                    )],
+                ),
+            ],
+        );
+        request(el("div", "$0", "position: absolute; inset: 0", vec![table]))
+    };
+    assert_replays_whole(&[("first", page("#f80")), ("column", page("#08f"))]);
+}
