@@ -249,7 +249,6 @@ impl<'a> Painter<'a> {
         );
         let unsupported = self.unsupported.len();
         let reach = std::mem::replace(&mut self.margin_reach, 0.0);
-        let had_camera = self.camera.is_some();
         let inner = self.retain.as_ref().expect("retaining").order.len();
         self.set_recording(1);
         let layers = self.sc_content(node);
@@ -280,10 +279,7 @@ impl<'a> Painter<'a> {
         };
         let retain = self.retain.as_mut().expect("retaining");
         retain.painted += 1;
-        // A content that set the camera is painted every time.
-        if had_camera || self.camera.is_none() {
-            retain.keep(node.id, fragment);
-        }
+        retain.keep(node.id, fragment);
         layers
     }
 
