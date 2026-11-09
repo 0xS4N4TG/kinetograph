@@ -8,8 +8,10 @@ import {
   hasAddonFunction,
   importedStylesheets,
   isDomElement,
+  lap,
   noteStylesheet,
   requestFor,
+  stamp,
 } from '@kinetographdev/compat/dom';
 import type { BoxInfo, Readback } from '@kinetographdev/compat/shim';
 import { effectiveParentOf, headHost, propsWithOverlay, rawParentOf, setRawParent } from '@kinetographdev/compat/shim';
@@ -157,6 +159,7 @@ export function createReadback(container: Container, options: EmitOptions): Read
     const root = islandRootOf(host);
     let island = islands.get(root);
     if (island === undefined) {
+      const t = stamp();
       const path = pathOf(root);
       const stylesheets = [...importedStylesheets(), ...collectStyleElements([headHost, ...container.children])];
       for (const css of stylesheets) noteStylesheet(css);
@@ -171,6 +174,7 @@ export function createReadback(container: Container, options: EmitOptions): Read
       });
       island = { root, path, json: JSON.stringify(request), computed: new Map() };
       islands.set(root, island);
+      lap('rb_request', t);
     }
     return island;
   };
@@ -189,7 +193,13 @@ export function createReadback(container: Container, options: EmitOptions): Read
       const island = islandOf(host);
       if (island === null) return null;
       try {
-        island.boxes ??= JSON.parse(addonFunction('domLayoutBoxes')(island.json)) as Boxes;
+        if (island.boxes === undefined) {
+          let t = stamp();
+          const text = addonFunction('domLayoutBoxes')(island.json);
+          t = lap('rb_box', t);
+          island.boxes = JSON.parse(text) as Boxes;
+          lap('rb_box_parse', t);
+        }
       } catch (error) {
         failed(host, 'a box', error);
         island.boxes = {};
@@ -209,7 +219,9 @@ export function createReadback(container: Container, options: EmitOptions): Read
           // The engine styles the whole island for every call whatever the number of properties, and scripts read several
           // properties of one element (GSAP reads a dozen): ask for the usual ones together and answer the rest from the cache.
           const asked = [property, ...COMMON_PROPERTIES.filter((p) => p !== property && !island.computed.has(`${pathOf(host)}\0${p}`))];
+          const t = stamp();
           const answer = addonFunction('domComputedStyle')(island.json, pathOf(host), asked);
+          lap('rb_style', t);
           asked.forEach((name, i) => island.computed.set(`${pathOf(host)}\0${name}`, answer[i] !== undefined && answer[i] !== '' ? answer[i]! : null));
           value = island.computed.get(key) ?? null;
         } catch (error) {

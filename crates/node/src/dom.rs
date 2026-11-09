@@ -101,10 +101,36 @@ fn island_thread() -> Sender<Job> {
 /// call of a calling thread, so Blitz's per-thread caches stay warm. A panic inside Stylo or
 /// Blitz becomes a `RENDER` error instead of taking the process down.
 fn on_island_thread<T: Send + 'static>(
+    stages: Stages,
     job: impl FnOnce() -> std::result::Result<T, Failure> + Send + 'static,
 ) -> Result<T> {
-    wait_for(start_on_island_thread(job)?)
+    let timer = kinetograph_core::profile::start();
+    let outcome = start_on_island_thread(stages, job)?;
+    let answer = wait_for(outcome);
+    kinetograph_core::profile::add_since(stages.wait, timer);
+    answer
 }
+
+/// The profile stages of a kind of job on the island thread: the time from queueing it to its start (`hop`), the job
+/// itself (`job`), and the calling thread's whole wait for it (`wait`, for a job it waits for at once). The wait less
+/// the job is the cost of handing the job over and back.
+#[derive(Clone, Copy)]
+struct Stages {
+    hop: &'static str,
+    job: &'static str,
+    wait: &'static str,
+}
+
+const RENDER_STAGES: Stages = Stages {
+    hop: "n_hop",
+    job: "n_job",
+    wait: "n_wait",
+};
+const READBACK_STAGES: Stages = Stages {
+    hop: "rb_hop",
+    job: "rb_job",
+    wait: "rb_wait_dom",
+};
 
 /// What a job started on the island thread will send.
 type Outcome<T> = Receiver<std::result::Result<T, Failure>>;
@@ -112,10 +138,17 @@ type Outcome<T> = Receiver<std::result::Result<T, Failure>>;
 /// Queues `job` on the island thread, after the jobs queued before it, and
 /// returns where its result will come.
 fn start_on_island_thread<T: Send + 'static>(
+    stages: Stages,
     job: impl FnOnce() -> std::result::Result<T, Failure> + Send + 'static,
 ) -> Result<Outcome<T>> {
     let (done, result) = channel();
+    let queued = kinetograph_core::profile::start();
+    let caller = queued.map(|_| kinetograph_core::profile::caller());
     let wrapped: Job = Box::new(move || {
+        let timer = kinetograph_core::profile::start();
+        if let Some(caller) = &caller {
+            kinetograph_core::profile::add_for_since(caller, stages.hop, queued);
+        }
         let outcome =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(job)).unwrap_or_else(|panic| {
                 let message = panic
@@ -125,6 +158,9 @@ fn start_on_island_thread<T: Send + 'static>(
                     .unwrap_or_else(|| "unknown panic".to_string());
                 Err((Code::Render, format!("DOM layout failed: {message}")))
             });
+        if let Some(caller) = &caller {
+            kinetograph_core::profile::add_for_since(caller, stages.job, timer);
+        }
         let _ = done.send(outcome);
     });
     if island_thread().send(wrapped).is_err() {
@@ -198,7 +234,7 @@ pub fn finish_island(ticket: u32) -> Result<String> {
 fn start_dom_island(request_json: &str, pass: Option<u64>) -> Result<Outcome<String>> {
     let json = request_json.to_string();
     let caller = kinetograph_core::profile::caller();
-    start_on_island_thread(move || {
+    start_on_island_thread(RENDER_STAGES, move || {
         use kinetograph_core::profile::{add_for_since, add_shared_since};
         let timer = kinetograph_core::profile::start();
         let request = parse_island(&json, "renderDomIsland")?;
@@ -290,28 +326,47 @@ thread_local! {
 
 /// Runs `read` on the island of `json`, kept from the last readback when the tree is the same or close to it.
 fn with_readback_island<T>(
+    caller: &str,
     json: &str,
     what: &str,
     read: impl FnOnce(&IslandDocument) -> std::result::Result<T, Failure>,
 ) -> std::result::Result<T, Failure> {
+    use kinetograph_core::profile::{add_for, add_for_since, start};
     READBACK.with(|state| {
         let state = &mut *state.borrow_mut();
+        let timer = start();
         if let Some((text, path)) = &state.last
             && text == json
             && let Some(kept) = state.cache.peek(path)
         {
-            return read(&kept.island);
+            add_for(caller, "rb_same", 1.0);
+            let timer = start();
+            let answer = read(&kept.island);
+            add_for_since(caller, "rb_read", timer);
+            return answer;
         }
+        add_for_since(caller, "rb_compare", timer);
+        add_for(caller, "rb_bytes", json.len() as f64);
+        let timer = start();
         let request = parse_island(json, what)?;
+        add_for_since(caller, "rb_parse", timer);
         state.pass += 1;
+        let timer = start();
+        let (was_edited, _) = state.cache.counts();
         let resolved = state
             .cache
             .resolve(&request, Some(state.pass))
             .map_err(|e| (Code::Render, e.to_string()))?;
+        add_for_since(caller, "rb_resolve", timer);
+        add_for(caller, "rb_edited", (state.cache.counts().0 - was_edited) as f64);
+        let timer = start();
         let answer = read(&resolved.island);
+        add_for_since(caller, "rb_read", timer);
+        let timer = start();
         let path = request.path.clone();
         state.cache.keep(request, resolved);
         state.last = Some((json.to_string(), path));
+        add_for_since(caller, "rb_keep", timer);
         answer
     })
 }
@@ -320,8 +375,9 @@ fn with_readback_island<T>(
 /// `offsetWidth`, `clientWidth`, `scrollHeight`): `{ [path]: ElementBox }`.
 pub fn dom_layout_boxes(request_json: &str) -> Result<String> {
     let json = request_json.to_string();
-    on_island_thread(move || {
-        with_readback_island(&json, "domLayoutBoxes", |island| {
+    let caller = kinetograph_core::profile::caller();
+    on_island_thread(READBACK_STAGES, move || {
+        with_readback_island(&caller, &json, "domLayoutBoxes", |island| {
             serde_json::to_string(&readback::layout_boxes(island))
                 .map_err(|e| (Code::Render, format!("cannot write the boxes: {e}")))
         })
@@ -340,8 +396,9 @@ pub fn dom_computed_style(
         path.to_string(),
         properties.to_vec(),
     );
-    on_island_thread(move || {
-        with_readback_island(&json, "domComputedStyle", |island| {
+    let caller = kinetograph_core::profile::caller();
+    on_island_thread(READBACK_STAGES, move || {
+        with_readback_island(&caller, &json, "domComputedStyle", |island| {
             readback::computed_style(island, &path, &properties).ok_or_else(|| {
                 (
                     Code::InvalidArg,

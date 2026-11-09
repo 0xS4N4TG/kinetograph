@@ -11,6 +11,7 @@ import type { DomNode, IslandContext, IslandResult } from '../types.js';
 import { fillNatives, nativeSize, overlaysSiblings } from './native.js';
 import { historyFor, isWarming, noteTransitions, recordIsland } from './history.js';
 import { islandMoves } from './moving.js';
+import { lap, stamp } from '../profile.js';
 
 export { isDomElement };
 export { setDomAddon, hasAddonFunction, addonFunction } from '../addon.js';
@@ -37,6 +38,7 @@ export type { IslandRequestJson, RequestNode, BuildOptions, BuiltRequest } from 
 export { styleToCss } from '../request/style.js';
 export { attributesOf } from '../request/attrs.js';
 export { nativeSize, overlaysSiblings } from './native.js';
+export { lap, stamp } from '../profile.js';
 export {
   clearHistory,
   resetTransitionWindow,
@@ -132,24 +134,6 @@ export function requestFor(root: Extract<DomNode, { kind: 'element' }>, context:
   // A font the page's CSS registered just now is not in the list the caller read before: never lay text out without it.
   if (fontFacesRegistered() !== faces && context.refreshFonts) built.request.fonts = context.refreshFonts();
   return built;
-}
-
-/**
- * Stage timers for profiling a render, off unless `KINETOGRAPH_PROFILE` is set: the milliseconds spent in an island's
- * JS-side request building (`dom_prep`), in the addon call that styles, lays out and paints it (`dom_native`, the wait
- * for it) and in reading its output back (`dom_asm`) go to `globalThis.__kprof`, which the render loop reads and empties
- * after each frame.
- */
-const PROFILING = typeof process !== 'undefined' && process.env?.KINETOGRAPH_PROFILE !== undefined;
-const clock = (): number => Number(process.hrtime.bigint()) / 1e6; // `performance.now` is held still while frames render
-const stamp = (): number => (PROFILING ? clock() : 0);
-function lap(stage: string, since: number): number {
-  if (!PROFILING) return 0;
-  const now = clock();
-  const table = ((globalThis as { __kprof?: Record<string, number> }).__kprof ??= {});
-  table[stage] = (table[stage] ?? 0) + (now - since);
-  table[`${stage}_n`] = (table[`${stage}_n`] ?? 0) + 1;
-  return now;
 }
 
 export function mapDomIsland(root: DomNode, context: IslandContext): IslandResult {
