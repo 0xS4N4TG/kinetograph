@@ -9,7 +9,6 @@ import { Label, shell, Wordmark } from '@/sections/shared';
 
 const LINKS = [
   { href: '/plugins/', label: 'Library' },
-  { href: '/lessons/', label: 'Lessons' },
   { href: '/docs/', label: 'Docs' },
 ];
 
