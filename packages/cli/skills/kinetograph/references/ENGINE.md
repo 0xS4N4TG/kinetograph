@@ -59,11 +59,12 @@ calls it lazily and caches by tree generation.
   `{"stamp":M,"base":N,"path","time","set":[{"path","attrs"?,"style"?,"texts"?:[[index,text]]}]}` (an element's new
   attributes and style, and the new text of some of its text children). The addon makes them to the request it kept
   and edits the document with the same edits a diff of the whole request gives (`IslandCache::resolve_edits`). A base
-  it does not hold (another request or a render replaced it, a pass that does not follow) fails with `STALE_BASE` and
-  the caller sends the whole request. compat's readback sends edits only for writes to an element's own style,
+  it does not hold (another request or a render replaced it, a pass that does not follow), or edits that do not fit it
+  (an element named twice or missing), fail with `STALE_BASE` and the caller sends the whole request. compat's readback sends edits only for writes to an element's own style,
   attributes and texts; a commit, a change of which nodes the tree holds, a `<style>`, `<link>`, canvas or native
-  element, new fonts or sheets send the whole request. `KINETOGRAPH_DOM_VERIFY=1` checks each request made by edits
-  against a whole build. A render whose request is the state a readback of the frame left names it with edits that
+  element, new fonts or sheets send the whole request. `KINETOGRAPH_DOM_VERIFY=1` makes readback compare the request
+  its edits made with one built afresh from the tree, and throw when they differ (it does not check the addon's
+  document). A render whose request is the state a readback of the frame left names it with edits that
   change nothing (`stamp` = `base`, empty `set`), and sends the request when that fails with `STALE_BASE`.
 
 ## 3. Code areas
