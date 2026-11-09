@@ -15,6 +15,7 @@ use crate::turbulence::MAX_OCTAVES;
 use crate::video::VideoInfo;
 
 mod assets;
+mod layer_de;
 mod limits;
 mod validate;
 
@@ -91,17 +92,15 @@ pub struct Camera {
     pub y: Option<Num>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// Read by hand (`layer_de`), in one pass over its keys.
+#[derive(Clone, Debug)]
 pub struct Layer {
     pub id: String,
-    #[serde(default)]
+    /// Default: none.
     pub transform: Transform,
-    #[serde(default = "one")]
+    /// Default: 1.
     pub opacity: Num,
-    #[serde(default)]
     pub blend_mode: BlendMode,
-    #[serde(default)]
     pub effects: Vec<Effect>,
     /// Cuts the layer to a shape, after its effects.
     pub clip: Option<Clip>,
@@ -115,7 +114,7 @@ pub struct Layer {
     /// How the layer takes part in the flex layout of the group it is in
     /// (`Layout`). Ignored when that group has no `layout`.
     pub layout_item: Option<LayoutItem>,
-    #[serde(flatten)]
+    /// What the layer is, by its `type`; its other keys are the kind's.
     pub kind: LayerKind,
 }
 
@@ -217,8 +216,7 @@ fn black() -> Color {
     Color::BLACK
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[derive(Clone, Debug)]
 pub enum LayerKind {
     Shape(ShapeLayer),
     Text(TextLayer),
