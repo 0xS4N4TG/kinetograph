@@ -309,7 +309,7 @@ export default async function PluginPage(props: { params: Promise<Params> }) {
 
   return (
     <CatalogPage>
-      <Crumbs section="plugins" current={p.title} />
+      <Crumbs current={p.title} />
       <PageHero title={p.title} tag="PLUGIN  1.00" line={oneLine(p.description)} clip={p.hero} alt={`${p.title}, a clip from its demo`}>
         <div className="mt-4 space-y-2">
           <Draws names={p.components} />

@@ -1,14 +1,12 @@
 import type { CSSProperties, ReactNode } from 'react';
 
 import { ClipPlayer } from '@/components/clip-player';
-import { CommandBar } from '@/components/code';
 import { InView } from '@/components/in-view';
 import { Badge } from '@/components/ui/badge';
 import type { Clip, Image } from '@/lib/catalog';
 import { cn } from '@/lib/utils';
 import { Nav } from '@/sections/nav';
 import { Heading } from '@/sections/heading';
-import { commandBar } from '@/sections/hero';
 import { body, Label, link, section, shell } from '@/sections/shared';
 
 /** The page frame the catalog pages share: the nav, then the shell. */
@@ -24,26 +22,14 @@ export function CatalogPage({ children }: { children: ReactNode }) {
 /** The first sentence of a description: the one line under a tile. */
 export const oneLine = (text: string) => text.split(/(?<=[.!?])\s/)[0];
 
-/**
- * Small links above a page's heading so the catalog can be browsed without the back button: the section this page
- * belongs to and its own name on the left, the other section on the right.
- */
-export function Crumbs({ section: sec, current }: { section: 'plugins' | 'templates' | 'components' | 'tastes'; current?: string }) {
-  const here =
-    sec === 'plugins'
-      ? { href: '/plugins/', name: 'Library' }
-      : sec === 'tastes'
-        ? { href: '/plugins/#kind-tastes', name: 'Tastes' }
-        : sec === 'templates'
-          ? { href: '/plugins/#templates', name: 'Templates' }
-          : { href: '/plugins/#components', name: 'Components' };
-  const other = sec === 'plugins' ? { href: '/plugins/#components', name: 'Components' } : { href: '/plugins/', name: 'Library' };
+/** Small links above a plugin page's heading: the plugins list and this plugin's name on the left, the catalog on the right. */
+export function Crumbs({ current }: { current?: string }) {
   const cls = `${link} kc-press inline-block`;
   return (
-    <nav aria-label="Catalog" className="mb-6 flex items-center justify-between font-jb text-[12px] tracking-[0.04em]">
+    <nav aria-label="Plugins" className="mb-6 flex items-center justify-between font-jb text-[12px] tracking-[0.04em]">
       <p className="flex items-center gap-2 text-mute">
-        <a href={here.href} className={cls}>
-          {here.name}
+        <a href="/plugins/" className={cls}>
+          Plugins
         </a>
         {current && (
           <>
@@ -54,8 +40,8 @@ export function Crumbs({ section: sec, current }: { section: 'plugins' | 'templa
           </>
         )}
       </p>
-      <a href={other.href} className={cls}>
-        {other.name}
+      <a href="/catalog/" className={cls}>
+        Catalog
       </a>
     </nav>
   );
@@ -97,16 +83,6 @@ export function SourceLink({ path }: { path: string }) {
     <a href={`${UI_REPO}/tree/main/${path}`} className={`${link} kc-press inline-block font-jb text-[12px] tracking-[0.04em]`}>
       Source
     </a>
-  );
-}
-
-/** The install command of a registry item with its copy button, and the link to its source. */
-export function Install({ name, source }: { name: string; source: string }) {
-  return (
-    <div className="mt-6 max-w-lg space-y-3">
-      <CommandBar command={`npx kinetograph add ${name}`} className={commandBar} />
-      <SourceLink path={source} />
-    </div>
   );
 }
 
