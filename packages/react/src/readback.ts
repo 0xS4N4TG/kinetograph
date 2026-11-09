@@ -74,8 +74,8 @@ interface Kept extends EditableRequest {
   pass: number | undefined;
   /** The document-wide CSS of the project's imports it was built with. */
   imported: string[];
-  /** The elements whose own style, attributes or texts scripts changed since; null when anything else changed. */
-  dirty: Set<HostElement> | null;
+  /** The elements whose own style, attributes or texts scripts changed since (any other change drops the state). */
+  dirty: Set<HostElement>;
 }
 
 /** `KINETOGRAPH_DOM_VERIFY`: each request made by edits is checked against the request built afresh. */
@@ -220,7 +220,7 @@ export function createReadback(container: Container, options: EmitOptions): Read
   /** The edits scripts made to the island at `root` since its last request, or null when they cannot say what changed. */
   const sendEdits = (root: HostElement, path: string): string | null => {
     const state = kept.get(root);
-    if (state === undefined || state.dirty === null || state.commits !== container.commits || state.request.path !== path) return null;
+    if (state === undefined || state.commits !== container.commits || state.request.path !== path) return null;
     // The addon keeps a state from a pass to the next one only.
     const pass = currentSamplePass();
     if (pass !== state.pass && (pass === undefined || state.pass === undefined || pass !== state.pass + 1)) return null;
@@ -398,9 +398,9 @@ export function createReadback(container: Container, options: EmitOptions): Read
     viewport: () => options.viewport ?? { width: 1920, height: 1080 },
     touch(host) {
       container.generation++;
-      for (const state of kept.values()) {
-        if (state.dirty === null) continue;
-        if (host === undefined) state.dirty = null;
+      for (const [root, state] of kept) {
+        // A change edits cannot say, or a commit since the state was sent (one that unmounted its island too), ends it.
+        if (host === undefined || state.commits !== container.commits) kept.delete(root);
         else state.dirty.add(host);
       }
     },
