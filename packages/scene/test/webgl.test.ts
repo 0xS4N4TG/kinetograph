@@ -1132,7 +1132,7 @@ describe('the recording WebGL context', () => {
       for (let f = 0; f < 6; f += 1) gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X + f, 0, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4));
       expect(gl.getError()).toBe(GL.NO_ERROR);
       expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 1, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
-      expect(() => gl.texSubImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
+      expect(() => gl.texSubImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 1, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
     });
   });
 
@@ -1259,6 +1259,25 @@ describe('the recording WebGL context', () => {
       gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, f, 0);
       gl.clear(GL.COLOR_BUFFER_BIT);
       expect(() => gl.generateMipmap(GL.TEXTURE_2D)).toThrow(WebGLUnsupportedError);
+    });
+
+    it('takes whole faces from texSubImage2D into texStorage2D, as three.js uploads a cube map', () => {
+      const { gl, program } = setup();
+      const cube = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_CUBE_MAP, cube);
+      gl.texStorage2D(GL.TEXTURE_CUBE_MAP, 2, GL2.SRGB8_ALPHA8, 2, 2);
+      for (let f = 0; f < 6; f += 1) gl.texSubImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X + f, 0, 0, 0, 2, 2, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(16).fill(f + 1));
+      gl.generateMipmap(GL.TEXTURE_CUBE_MAP);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      gl.uniform1i(gl.getUniformLocation(program, 'env'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const draw = gl.content().ops.at(-1)!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      const texture = gl.content().textures[draw.units['0']!.texture]!;
+      expect(texture).toMatchObject({ cube: true, width: 2, srgb: true, mipmaps: true });
+      expect(Buffer.from(texture.faces![5]!.pixels!, 'base64')[0]).toBe(6);
+      expect(() => gl.texSubImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0, 1, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
     });
 
     it('refuses a cube map of uploaded and drawn faces', () => {
@@ -1807,11 +1826,13 @@ describe('the recording WebGL context', () => {
       expect(gl.getError()).toBe(GL.NO_ERROR);
     });
 
-    it('refuses what it cannot read as sRGB: cube faces, layer pictures and a render target', () => {
+    it('records a cube map of sRGB faces as sRGB, and refuses a float face with pixels', () => {
       const { gl } = setup();
       const cube = gl.createTexture();
       gl.bindTexture(GL.TEXTURE_CUBE_MAP, cube);
-      expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL2.SRGB8_ALPHA8, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(/^unsupported:.*sRGB/);
+      expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL2.RGBA16F, 1, 1, 0, GL.RGBA, GL.FLOAT, new Float32Array(4))).toThrow(/^unsupported:.*float pixels/);
+      for (let f = 0; f < 6; f += 1) gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X + f, 0, GL2.SRGB8_ALPHA8, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4));
+      expect(gl.getError()).toBe(GL.NO_ERROR);
     });
   });
 

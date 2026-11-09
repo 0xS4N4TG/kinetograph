@@ -1898,6 +1898,18 @@ fn a_cube_face_keeps_the_orientation_gl_gives_it() {
 }
 
 #[test]
+fn an_srgb_cube_map_is_read_as_linear() {
+    // 128 encoded is 0.216 linear: 55 on the canvas.
+    let grey = [128, 128, 128, 255].repeat(4);
+    let cube = cube_of(
+        &std::array::from_fn(|_| grey.clone()),
+        2,
+        r#", "srgb": true"#,
+    );
+    near(sample_cube(&cube, [1.0, 0.0, 0.0]), [55, 55, 55, 255], 2);
+}
+
+#[test]
 fn an_incomplete_cube_map_is_opaque_black() {
     let cube = r#"{"cube": true, "faces": []}"#;
     assert_eq!(sample_cube(cube, [1.0, 0.0, 0.0]), [0, 0, 0, 255]);

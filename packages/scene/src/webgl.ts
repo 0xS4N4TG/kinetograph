@@ -2156,7 +2156,8 @@ export class WebGLContext {
     const faces = cube.faces;
     if (faces === null) return false;
     const side = faces[0]!.width;
-    return side > 0 && faces.every((f) => f.uploaded && f.width === side && f.height === side && f.floats === null && f.layer === null);
+    const srgb = faces[0]!.format === GL2.SRGB8_ALPHA8;
+    return side > 0 && faces.every((f) => f.uploaded && f.width === side && f.height === side && f.floats === null && f.layer === null && (f.format === GL2.SRGB8_ALPHA8) === srgb);
   }
   texParameteri(target: number, pname: number, param: number): void {
     const texture = this.bound(target);
@@ -2348,9 +2349,9 @@ export class WebGLContext {
     const face = cube?.faces?.[faceIndex(target)];
     if (cube === null || face === undefined) return;
     if (level !== 0) throw new WebGLUnsupportedError('a cube map face above level 0; call generateMipmap');
-    // A float or sRGB face is a render target: empty until a framebuffer draws in it.
+    // A float face is a render target: empty until a framebuffer draws in it.
     const empty = rest.length >= 6 && (rest[5] === null || rest[5] === undefined);
-    if (kindOf(internalformat) !== 'color' || ((FLOAT_FORMATS[internalformat] !== undefined || internalformat === GL2.SRGB8_ALPHA8) && !empty)) throw new WebGLUnsupportedError('a cube map face of a depth format, or of float or sRGB pixels; use RGBA8, or an empty float or sRGB face to draw in');
+    if (kindOf(internalformat) !== 'color' || (FLOAT_FORMATS[internalformat] !== undefined && !empty)) throw new WebGLUnsupportedError('a cube map face of a depth format, or of float pixels; use RGBA8 or SRGB8_ALPHA8, or an empty float face to draw in');
     if (rest.length >= 6) {
       const [width, height] = rest as [number, number];
       if (!(Number.isInteger(width) && width >= 0 && width <= MAX_CUBE_MAP_TEXTURE_SIZE && Number.isInteger(height) && height >= 0 && height <= MAX_CUBE_MAP_TEXTURE_SIZE)) return this.fail(GL.INVALID_VALUE);
@@ -2360,6 +2361,20 @@ export class WebGLContext {
     // Each face of the six stays 2D data; the cube's own snapshot is made from them at the draw.
     cube.mipmaps = false;
     cube.version += 1;
+  }
+
+  /**
+   * `texSubImage2D` of a face of the bound cube map, as three.js uploads one into `texStorage2D`: the whole of level 0,
+   * which is the face specified again in its format.
+   */
+  private texSubImageFace(target: number, level: number, xoffset: number, yoffset: number, rest: unknown[]): void {
+    const face = this.faceTarget(target);
+    if (face === null) return;
+    const [width, height] = rest.length >= 5 ? (rest as [number, number]) : [pictureOf(rest[2])?.width, pictureOf(rest[2])?.height];
+    if (level !== 0 || xoffset !== 0 || yoffset !== 0 || width !== face.width || height !== face.height) {
+      throw new WebGLUnsupportedError('texSubImage2D of part of a cube map face, or above level 0; upload the whole face at level 0, and call generateMipmap');
+    }
+    this.texImageFace(target, 0, face.format, rest.length >= 5 ? [rest[0], rest[1], 0, ...rest.slice(2)] : rest);
   }
 
   /** The body of `texImage2D`: `texture` is the 2D texture, or the face of a cube map, that the call specifies. */
@@ -2594,7 +2609,7 @@ export class WebGLContext {
    * texture made from one) is a patch the renderer lays over the texture's picture.
    */
   texSubImage2D(target: number, level: number, xoffset: number, yoffset: number, ...rest: unknown[]): void {
-    if (faceIndex(target) >= 0) throw new WebGLUnsupportedError('texSubImage2D into a cube map face; upload the whole face again with texImage2D');
+    if (faceIndex(target) >= 0) return this.texSubImageFace(target, level, xoffset, yoffset, rest);
     const texture = this.bound(target);
     if (texture === null) return;
     if (level !== 0) throw new WebGLUnsupportedError('texSubImage2D above level 0; call generateMipmap');
@@ -3320,7 +3335,7 @@ export class WebGLContext {
       ...(f.flipY ? { flipY: true } : {}),
       ...(f.premultiply ? { premultiply: true } : {}),
     }));
-    return { cube: true, width: cube.faces![0]!.width, height: cube.faces![0]!.width, faces, ...(cube.mipmaps ? { mipmaps: true } : {}) };
+    return { cube: true, width: cube.faces![0]!.width, height: cube.faces![0]!.width, faces, ...(cube.mipmaps ? { mipmaps: true } : {}), ...(cube.faces![0]!.format === GL2.SRGB8_ALPHA8 ? { srgb: true } : {}) };
   }
 
   /** An uploaded texture in the recording: its pixels, once, by an id of what they are. */

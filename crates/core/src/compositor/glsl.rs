@@ -2249,7 +2249,7 @@ impl Compositor {
             .map(|s| file_stamp(&base_dir.join(s)))
             .collect::<Vec<_>>()
             .join("|");
-        let key = format!("{id}|cube|{}|{stamp}", texture.mipmaps);
+        let key = format!("{id}|cube|{}|{}|{stamp}", texture.mipmaps, texture.srgb);
         if let Some(t) = self.glsl.textures.get(&key) {
             return Ok(t.clone());
         }
@@ -2273,7 +2273,11 @@ impl Compositor {
             mip_level_count: levels,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: COLOR_FORMAT,
+            format: if texture.srgb {
+                wgpu::TextureFormat::Rgba8UnormSrgb
+            } else {
+                COLOR_FORMAT
+            },
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
