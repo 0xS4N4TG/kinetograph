@@ -139,7 +139,8 @@ impl BaseDocument {
         if !own_damage.is_empty() && !damage.intersects(CONSTRUCT_BOX | CONSTRUCT_FC) {
             let anonymous_damage = self.refresh_anonymous_block_styles(node_id);
             damage |= anonymous_damage;
-            damage_for_parent |= self.damage_for_parent(node_id, RestyleDamage::empty(), anonymous_damage);
+            damage_for_parent |=
+                self.damage_for_parent(node_id, RestyleDamage::empty(), anonymous_damage);
         }
 
         let node = &mut self.nodes[node_id];
@@ -202,13 +203,14 @@ impl BaseDocument {
         }
         let node = &self.nodes[node_id];
         let collected_by_parent = node.is_non_atomic_inline()
-            || node.primary_styles().is_some_and(|s| {
-                s.clone_display().inside() == DisplayInside::Contents
-            });
+            || node
+                .primary_styles()
+                .is_some_and(|s| s.clone_display().inside() == DisplayInside::Contents);
         if collected_by_parent {
             return damage;
         }
-        let mut for_parent = damage.difference(construct) | RestyleDamage::RELAYOUT | CONSTRUCT_DESCENDENT;
+        let mut for_parent =
+            damage.difference(construct) | RestyleDamage::RELAYOUT | CONSTRUCT_DESCENDENT;
         if own.intersects(CONSTRUCT_BOX | CONSTRUCT_FC) {
             for_parent.insert(CONSTRUCT_BOX);
         }

@@ -91,9 +91,15 @@ pub fn take() -> Vec<(&'static str, f64)> {
         ("tf_repainted", p.repainted as f64),
         ("tf_whole", p.whole as f64),
         ("tf_fresh", p.fresh as f64),
-        ("tf_miss_not_style", p.missed[Miss::NotStyleOnly as usize] as f64),
+        (
+            "tf_miss_not_style",
+            p.missed[Miss::NotStyleOnly as usize] as f64,
+        ),
         ("tf_miss_length", p.missed[Miss::Length as usize] as f64),
-        ("tf_miss_node_gone", p.missed[Miss::NodeGone as usize] as f64),
+        (
+            "tf_miss_node_gone",
+            p.missed[Miss::NodeGone as usize] as f64,
+        ),
         ("tf_miss_layout", p.missed[Miss::Layout as usize] as f64),
         ("tf_miss_value", p.missed[Miss::Value as usize] as f64),
         ("tf_miss_repaint", p.missed[Miss::Repaint as usize] as f64),

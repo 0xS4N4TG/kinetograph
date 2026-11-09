@@ -43,13 +43,29 @@ pub fn check_render(
 }
 
 /// Checks a readback's document: its boxes.
-pub fn check_readback(json: &str, request: &IslandRequest, island: &IslandDocument) -> Result<(), Failure> {
+pub fn check_readback(
+    json: &str,
+    request: &IslandRequest,
+    island: &IslandDocument,
+) -> Result<(), Failure> {
     let (_, want_boxes, _) = fresh(request)?;
     let got = json!({ "boxes": readback::layout_boxes(island) });
-    compare(json, request, "readback", got, json!({ "boxes": want_boxes }))
+    compare(
+        json,
+        request,
+        "readback",
+        got,
+        json!({ "boxes": want_boxes }),
+    )
 }
 
-fn compare(json: &str, request: &IslandRequest, what: &str, got: Value, want: Value) -> Result<(), Failure> {
+fn compare(
+    json: &str,
+    request: &IslandRequest,
+    what: &str,
+    got: Value,
+    want: Value,
+) -> Result<(), Failure> {
     if got == want {
         return Ok(());
     }

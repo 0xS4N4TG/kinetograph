@@ -27,7 +27,10 @@ const INLINE_SEEDS: u64 = 1 << 20;
 
 impl Rng {
     fn new(seed: u64) -> Self {
-        Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1, seed >= INLINE_SEEDS)
+        Rng(
+            seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1,
+            seed >= INLINE_SEEDS,
+        )
     }
     fn next(&mut self) -> u64 {
         self.0 ^= self.0 >> 12;
@@ -72,11 +75,13 @@ const SHEET: &str = "\
 td, th { border: 1px solid #456; padding: 2px 4px }";
 
 const CLASSES: [&str; 19] = [
-    "flex", "col", "grid", "p-2", "m-1", "rounded", "bg-a", "bg-b", "border", "text-lg", "bold", "ib", "inline",
-    "hidden", "contents", "rel", "star", "uses-var", "shift",
+    "flex", "col", "grid", "p-2", "m-1", "rounded", "bg-a", "bg-b", "border", "text-lg", "bold",
+    "ib", "inline", "hidden", "contents", "rel", "star", "uses-var", "shift",
 ];
 
-const WORDS: [&str; 10] = ["alpha", "beta", "gamma", "delta", "kinet", "frame", "Ω", "très", "go", "1234"];
+const WORDS: [&str; 10] = [
+    "alpha", "beta", "gamma", "delta", "kinet", "frame", "Ω", "très", "go", "1234",
+];
 
 #[derive(Clone, Debug)]
 enum Node {
@@ -92,7 +97,10 @@ enum Node {
 }
 
 fn words(rng: &mut Rng) -> String {
-    (0..1 + rng.below(4)).map(|_| *rng.pick(&WORDS)).collect::<Vec<_>>().join(" ")
+    (0..1 + rng.below(4))
+        .map(|_| *rng.pick(&WORDS))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn el(tag: &str, path: String, children: Vec<Node>) -> Node {
@@ -133,12 +141,22 @@ fn table(rng: &mut Rng, path: String) -> Node {
     let rows = (0..1 + rng.below(3))
         .map(|r| {
             let cells = (0..1 + rng.below(3))
-                .map(|c| el("td", format!("{path}.0.{r}.{c}"), vec![Node::Text(words(rng))]))
+                .map(|c| {
+                    el(
+                        "td",
+                        format!("{path}.0.{r}.{c}"),
+                        vec![Node::Text(words(rng))],
+                    )
+                })
                 .collect();
             el("tr", format!("{path}.0.{r}"), cells)
         })
         .collect();
-    let mut t = el("table", path.clone(), vec![el("tbody", format!("{path}.0"), rows)]);
+    let mut t = el(
+        "table",
+        path.clone(),
+        vec![el("tbody", format!("{path}.0"), rows)],
+    );
     if rng.chance(50) {
         set_style(&mut t, "border-collapse", "separate".into());
     }
@@ -182,7 +200,10 @@ fn tree(rng: &mut Rng, path: String, depth: usize) -> Node {
             style.insert("top".into(), format!("{}px", rng.num(0, 200)));
         }
         if rng.chance(25) {
-            style.insert("transform".into(), format!("translate({}px, {}px)", rng.num(-20, 20), rng.num(-9, 9)));
+            style.insert(
+                "transform".into(),
+                format!("translate({}px, {}px)", rng.num(-20, 20), rng.num(-9, 9)),
+            );
         }
         if rng.chance(15) {
             style.insert("--c".into(), (*rng.pick(&["#a00", "#0a0", "#00a"])).into());
@@ -196,7 +217,13 @@ fn tree(rng: &mut Rng, path: String, depth: usize) -> Node {
 
 /// The element paths of the tree that edits may touch (not inside an `<svg>`).
 fn targets(node: &Node, out: &mut Vec<String>) {
-    if let Node::El { tag, path, children, .. } = node {
+    if let Node::El {
+        tag,
+        path,
+        children,
+        ..
+    } = node
+    {
         out.push(path.clone());
         if tag != "svg" {
             for c in children {
@@ -220,7 +247,16 @@ fn edit(rng: &mut Rng, root: &mut Node) -> String {
     targets(root, &mut paths);
     let path = rng.pick(&paths).clone();
     let node = find(root, &path).expect("a target");
-    let Node::El { tag, style, class, children, .. } = node else { unreachable!() };
+    let Node::El {
+        tag,
+        style,
+        class,
+        children,
+        ..
+    } = node
+    else {
+        unreachable!()
+    };
     let mut kind = rng.below(14);
     // A table part given another display or position is laid out in ways a browser does not (Blitz's tables): those
     // stay.
@@ -254,7 +290,10 @@ fn edit(rng: &mut Rng, root: &mut Node) -> String {
             style.insert("left".into(), format!("{l}px"));
             style.insert("top".into(), format!("{t}px"));
             if rng.chance(30) && !table_part {
-                style.insert("position".into(), (*rng.pick(&["absolute", "relative", "static"])).into());
+                style.insert(
+                    "position".into(),
+                    (*rng.pick(&["absolute", "relative", "static"])).into(),
+                );
             }
             format!("left/top {l} {t}")
         }
@@ -264,7 +303,15 @@ fn edit(rng: &mut Rng, root: &mut Node) -> String {
             format!("width {v}")
         }
         6 => {
-            let v = *rng.pick(&["none", "block", "inline", "flex", "inline-block", "contents", "grid"]);
+            let v = *rng.pick(&[
+                "none",
+                "block",
+                "inline",
+                "flex",
+                "inline-block",
+                "contents",
+                "grid",
+            ]);
             style.insert("display".into(), v.into());
             format!("display {v}")
         }
@@ -274,13 +321,22 @@ fn edit(rng: &mut Rng, root: &mut Node) -> String {
             format!("font-size {v}")
         }
         8 => {
-            let v = *rng.pick(&["#c00", "#0c0", "#00c", "rgb(10 20 30 / 50%)", "currentColor"]);
+            let v = *rng.pick(&[
+                "#c00",
+                "#0c0",
+                "#00c",
+                "rgb(10 20 30 / 50%)",
+                "currentColor",
+            ]);
             style.insert("color".into(), v.into());
             format!("color {v}")
         }
         9 => {
             let (k, v) = match rng.below(3) {
-                0 => ("--c", (*rng.pick(&["#a00", "#0a0", "#00a", "orange"])).to_string()),
+                0 => (
+                    "--c",
+                    (*rng.pick(&["#a00", "#0a0", "#00a", "orange"])).to_string(),
+                ),
                 1 => ("--w", format!("{}px", rng.num(10, 300))),
                 _ => ("--x", format!("{}px", rng.num(-50, 50))),
             };
@@ -327,13 +383,29 @@ fn edit(rng: &mut Rng, root: &mut Node) -> String {
 fn to_json(node: &Node) -> Value {
     match node {
         Node::Text(t) => text(t),
-        Node::El { tag, path, attrs, class, style, children } => {
+        Node::El {
+            tag,
+            path,
+            attrs,
+            class,
+            style,
+            children,
+        } => {
             let mut attrs = attrs.clone();
             if !class.is_empty() {
-                attrs.insert("class".into(), class.iter().cloned().collect::<Vec<_>>().join(" "));
+                attrs.insert(
+                    "class".into(),
+                    class.iter().cloned().collect::<Vec<_>>().join(" "),
+                );
             }
             let style: String = style.iter().map(|(k, v)| format!("{k}: {v}; ")).collect();
-            el_attrs(tag, path, json!(attrs), style.trim_end(), children.iter().map(to_json).collect())
+            el_attrs(
+                tag,
+                path,
+                json!(attrs),
+                style.trim_end(),
+                children.iter().map(to_json).collect(),
+            )
         }
     }
 }
@@ -383,10 +455,26 @@ fn run(seed: u64, steps: usize) -> Result<(), String> {
         if got != want {
             let dir = std::env::temp_dir().join(format!("kg-incremental-fuzz-{seed}"));
             std::fs::create_dir_all(&dir).ok();
-            std::fs::write(dir.join("request.json"), serde_json::to_string_pretty(&request).unwrap()).ok();
-            std::fs::write(dir.join("before.json"), serde_json::to_string_pretty(&previous).unwrap()).ok();
-            std::fs::write(dir.join("edited.json"), serde_json::to_string_pretty(&got).unwrap()).ok();
-            std::fs::write(dir.join("fresh.json"), serde_json::to_string_pretty(&want).unwrap()).ok();
+            std::fs::write(
+                dir.join("request.json"),
+                serde_json::to_string_pretty(&request).unwrap(),
+            )
+            .ok();
+            std::fs::write(
+                dir.join("before.json"),
+                serde_json::to_string_pretty(&previous).unwrap(),
+            )
+            .ok();
+            std::fs::write(
+                dir.join("edited.json"),
+                serde_json::to_string_pretty(&got).unwrap(),
+            )
+            .ok();
+            std::fs::write(
+                dir.join("fresh.json"),
+                serde_json::to_string_pretty(&want).unwrap(),
+            )
+            .ok();
             return Err(format!(
                 "seed {seed}, step {step}: the edited document differs from a fresh one (written to {}); edits: {}",
                 dir.display(),
@@ -417,10 +505,17 @@ fn check(first: u64) {
     let seeds: Vec<u64> = match std::env::var("KG_FUZZ_SEED") {
         Ok(one) => {
             let one: u64 = one.parse().expect("a seed");
-            if (one >= INLINE_SEEDS) == (first >= INLINE_SEEDS) { vec![one] } else { vec![] }
+            if (one >= INLINE_SEEDS) == (first >= INLINE_SEEDS) {
+                vec![one]
+            } else {
+                vec![]
+            }
         }
         Err(_) => {
-            let n = std::env::var("KG_FUZZ_SEEDS").ok().and_then(|n| n.parse().ok()).unwrap_or(48);
+            let n = std::env::var("KG_FUZZ_SEEDS")
+                .ok()
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(48);
             (first..first + n).collect()
         }
     };
@@ -432,5 +527,11 @@ fn check(first: u64) {
                 .err()
         })
         .collect();
-    assert!(failures.is_empty(), "{} of {} seeds failed:\n{}", failures.len(), seeds.len(), failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "{} of {} seeds failed:\n{}",
+        failures.len(),
+        seeds.len(),
+        failures.join("\n")
+    );
 }

@@ -66,24 +66,37 @@ pub fn layout_boxes_of(island: &IslandDocument, paths: &[String]) -> BTreeMap<St
         .collect()
 }
 
+/// The DOM ancestors of `node`, nearest first.
+fn ancestors<'d>(doc: &'d BaseDocument, node: &Node) -> impl Iterator<Item = &'d Node> {
+    std::iter::successors(node.parent.and_then(|p| doc.get_node(p)), |n| {
+        n.parent.and_then(|p| doc.get_node(p))
+    })
+}
+
 /// Whether an ancestor of `node` is `display: none`: then the node has no box, whatever an earlier layout of an
 /// edited document left on it.
 fn hidden_by_ancestor(doc: &BaseDocument, node: &Node) -> bool {
     use style::values::specified::box_::DisplayInside;
-    std::iter::successors(node.parent.and_then(|p| doc.get_node(p)), |n| n.parent.and_then(|p| doc.get_node(p)))
-        .any(|n| n.primary_styles().is_some_and(|s| s.clone_display().inside() == DisplayInside::None))
+    ancestors(doc, node).any(|n| {
+        n.primary_styles()
+            .is_some_and(|s| s.clone_display().inside() == DisplayInside::None)
+    })
 }
 
 /// Whether `node` is SVG content (inside an `<svg>`, not in a `foreignObject`): it has no CSS box, only what an
 /// earlier layout of an edited document left on it.
 fn in_svg(doc: &BaseDocument, node: &Node) -> bool {
     use blitz_dom::local_name;
-    std::iter::successors(node.parent.and_then(|p| doc.get_node(p)), |n| n.parent.and_then(|p| doc.get_node(p)))
+    ancestors(doc, node)
         .find_map(|n| {
-            if n.data.is_element_with_tag_name(&local_name!("foreignObject")) {
+            if n.data
+                .is_element_with_tag_name(&local_name!("foreignObject"))
+            {
                 Some(false)
             } else {
-                n.data.is_element_with_tag_name(&local_name!("svg")).then_some(true)
+                n.data
+                    .is_element_with_tag_name(&local_name!("svg"))
+                    .then_some(true)
             }
         })
         .unwrap_or(false)

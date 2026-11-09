@@ -484,7 +484,10 @@ impl<'a> Painter<'a> {
                 // The groups the flattened group held are in its parent's frame now.
                 if dx != 0.0 || dy != 0.0 {
                     for (_, group_id, group_at) in &mut self.groups[inner..] {
-                        if layers.iter().any(|l| l.get("id").and_then(Value::as_str) == Some(group_id)) {
+                        if layers
+                            .iter()
+                            .any(|l| l.get("id").and_then(Value::as_str) == Some(group_id))
+                        {
                             *group_at = (group_at.0 + dx, group_at.1 + dy);
                         }
                     }
