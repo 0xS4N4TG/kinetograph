@@ -126,6 +126,7 @@ mod environment;
 mod filter_graph;
 mod glsl;
 mod scene3d;
+mod yuv;
 
 pub const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const READBACK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -327,6 +328,8 @@ pub struct Compositor {
     noise: wgpu::RenderPipeline,
     /// The passes of `filterGraph`, made the first time one is drawn.
     filter: Option<filter_graph::FilterPipelines>,
+    /// The conversion to yuv420p (`compositor/yuv.rs`), made the first time a frame is read back as planes.
+    yuv: Option<yuv::Yuv420>,
     /// Vertex-colour triangles, for mesh gradients (`mesh_size` at group 0).
     mesh: wgpu::RenderPipeline,
     /// WebGL layers: programs, pipelines and textures (`compositor/glsl.rs`).
@@ -646,6 +649,7 @@ impl Compositor {
             grade_blank: new_texture(device, 1, 1),
             noise,
             filter: None,
+            yuv: None,
             glsl: glsl::GlslGpu::default(),
             mesh,
             mesh_size,
@@ -2523,33 +2527,7 @@ impl Compositor {
     /// the GPU can work on them while other passes are recorded.
     pub fn start_readback(&mut self, image: &Tex) -> Readback {
         let (canvas_width, canvas_height) = self.canvas;
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("readback"),
-            size: wgpu::Extent3d {
-                width: self.width,
-                height: self.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: READBACK_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        let target = Tex {
-            view: texture.create_view(&wgpu::TextureViewDescriptor::default()),
-            texture,
-            origin: [0, 0],
-            size: [self.width, self.height],
-            bounds: self.whole(),
-        };
-        assert!(
-            image.origin == [0, 0] && image.size == [self.width, self.height],
-            "the image to read back is the size of the canvas"
-        );
-        self.pass(&self.encode, image.input(), image.input(), 0.0, 0, &target);
-
+        let target = self.encoded(image);
         let row_bytes = canvas_width * 4;
         let padded_row = row_bytes.next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -2583,8 +2561,46 @@ impl Compositor {
             },
         );
         drop(encoder);
-        let submission = self.submit();
+        self.submit_readback(buffer, row_bytes, padded_row, canvas_height)
+    }
 
+    /// `image` encoded to sRGB with straight alpha, in a texture of the readback format the size of `image`.
+    fn encoded(&mut self, image: &Tex) -> Tex {
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("readback"),
+            size: wgpu::Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: READBACK_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let target = Tex {
+            view: texture.create_view(&wgpu::TextureViewDescriptor::default()),
+            texture,
+            origin: [0, 0],
+            size: [self.width, self.height],
+            bounds: self.whole(),
+        };
+        assert!(
+            image.origin == [0, 0] && image.size == [self.width, self.height],
+            "the image to read back is the size of the canvas"
+        );
+        self.pass(&self.encode, image.input(), image.input(), 0.0, 0, &target);
+        target
+    }
+
+    /// Submits what is recorded (the copy into `buffer` last) and maps `buffer`: `height` rows of `row_bytes`, each
+    /// `padded_row` apart.
+    fn submit_readback(&self, buffer: wgpu::Buffer, row_bytes: u32, padded_row: u32, height: u32) -> Readback {
+        let submission = self.submit();
         let (tx, rx) = std::sync::mpsc::channel();
         buffer.slice(..).map_async(wgpu::MapMode::Read, move |r| {
             let _ = tx.send(r);
@@ -2595,7 +2611,7 @@ impl Compositor {
             submission,
             row_bytes,
             padded_row,
-            height: canvas_height,
+            height,
         }
     }
 

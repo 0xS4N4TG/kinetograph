@@ -835,4 +835,60 @@ mod tests {
             assert!(msg.contains(want) && msg.contains(range), "{range}: {msg}");
         }
     }
+
+    /// The yuv420p planes the GPU converts (`Renderer::set_yuv420`) are byte for byte the encoder's conversion of the
+    /// RGBA it draws: on every test scene of even size (first, middle and last frame) and on a picture of noise.
+    #[test]
+    fn gpu_yuv420_is_the_encoders_conversion() {
+        let scenes = Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/tests/scenes");
+        let mut paths: Vec<PathBuf> = std::fs::read_dir(&scenes)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.extension().is_some_and(|e| e == "json"))
+            .collect();
+        paths.sort();
+        let mut cases: Vec<(String, Scene)> = Vec::new();
+        for path in paths {
+            let scene = Scene::load(&path).unwrap();
+            if scene.width % 2 == 0 && scene.height % 2 == 0 {
+                cases.push((path.file_name().unwrap().to_string_lossy().into_owned(), scene));
+            }
+        }
+        // Noise, which reaches every level and the filter's clipping.
+        let dir = scratch("yuv-noise");
+        let (w, h) = (322u32, 182u32);
+        let mut state = 0x2545_f491_u32;
+        let noise: Vec<u8> = (0..w * h * 4)
+            .map(|i| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                if i % 4 == 3 { 255 } else { (state >> 24) as u8 }
+            })
+            .collect();
+        let png = Frame { width: w, height: h, rgba: noise }.encode_png().unwrap();
+        std::fs::write(dir.join("noise.png"), png).unwrap();
+        let json = format!(
+            r##"{{"width": {w}, "height": {h}, "fps": 30, "durationInFrames": 1, "background": "#000000",
+                "layers": [{{"id": "noise", "type": "image", "src": "noise.png"}}]}}"##
+        );
+        cases.push(("noise".into(), Scene::from_json(&json, dir).unwrap()));
+        assert!(cases.len() > 20, "found {} scenes", cases.len());
+        for (name, scene) in cases {
+            let last = scene.duration_in_frames.saturating_sub(1);
+            let mut renderer = Renderer::new(scene).unwrap();
+            for frame in [0, last / 2, last] {
+                renderer.set_yuv420(false);
+                let rgba = renderer.render_frame(frame).unwrap();
+                let want = encode::rgba_to_yuv420(&rgba.rgba, rgba.width, rgba.height).unwrap();
+                renderer.set_yuv420(true);
+                let got = renderer.render_frame(frame).unwrap().rgba;
+                assert_eq!(got.len(), want.len(), "{name} frame {frame}: size");
+                if let Some(at) = got.iter().zip(&want).position(|(a, b)| a != b) {
+                    let differ = got.iter().zip(&want).filter(|(a, b)| a != b).count();
+                    panic!("{name} frame {frame}: {differ} of {} bytes differ, first at {at}: GPU {}, CPU {}", want.len(), got[at], want[at]);
+                }
+            }
+        }
+    }
 }

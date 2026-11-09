@@ -63,7 +63,7 @@ const SHAPE_TOLERANCE: f64 = 0.1;
 /// frame to the next (`cache.rs`).
 const CACHE_BYTES: u64 = 1 << 30;
 
-/// Tightly packed RGBA8, straight alpha, sRGB-encoded.
+/// Tightly packed RGBA8, straight alpha, sRGB-encoded (or yuv420p planes, from a renderer set to them: `set_yuv420`).
 pub struct Frame {
     pub width: u32,
     pub height: u32,
@@ -181,6 +181,8 @@ pub struct Renderer {
     cache_paused: u32,
     /// Identical-frame reuse (`reuse.rs`), off in a new renderer.
     reuse: bool,
+    /// Frames come back as yuv420p planes instead of RGBA (`set_yuv420`).
+    yuv420: bool,
     /// The frames started so far, which numbers them.
     starts: u64,
     /// The last frame drawn by `start_frame` and its number, while frames
@@ -253,6 +255,7 @@ impl Renderer {
             cache_path: Vec::new(),
             cache_paused: 0,
             reuse: false,
+            yuv420: false,
             starts: 0,
             drawn: None,
             repeat_of: None,
@@ -469,6 +472,15 @@ impl Renderer {
         self.forget_frame();
     }
 
+    /// With `on`, the frames `start_frame` begins come back from `finish_frame` as yuv420p planes (Y, U, V, rows packed;
+    /// even sides), converted on the GPU byte for byte as the encoder converts RGBA (`compositor/yuv.rs`), in
+    /// `Frame::rgba`. Off (RGBA) in a new renderer.
+    pub fn set_yuv420(&mut self, on: bool) {
+        self.yuv420 = on;
+        // A repeat must not be given pixels of the other kind.
+        self.forget_frame();
+    }
+
     /// Whether identical-frame reuse is on.
     pub fn frame_reuse(&self) -> bool {
         self.reuse
@@ -670,7 +682,14 @@ impl Renderer {
         for tex in self.cache.end_frame() {
             self.compositor.release(tex);
         }
-        let readback = self.timed(Stage::Readback, |s| s.compositor.start_readback(&canvas));
+        let yuv420 = self.yuv420;
+        let readback = self.timed(Stage::Readback, |s| {
+            if yuv420 {
+                s.compositor.start_readback_yuv420(&canvas)
+            } else {
+                s.compositor.start_readback(&canvas)
+            }
+        });
         self.compositor.release(canvas);
         self.skia_submitted(&readback);
         Ok((readback, scene.width, scene.height))

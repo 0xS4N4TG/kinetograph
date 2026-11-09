@@ -929,6 +929,15 @@ impl Renderer {
         }
     }
 
+    /// With `on`, `finishFrame` returns the frames `startFrame` begins after this as yuv420p planes (Y, U, V, rows
+    /// packed), converted on the GPU byte for byte as `rgbaToYuv(rgba, w, h, 'yuv420p')` converts their RGBA. The
+    /// frames' sides must be even, as the encoder's are. Set it before starting frames, not between.
+    #[napi]
+    pub fn set_yuv420(&mut self, on: bool) -> Result<()> {
+        self.shared.idle()?.set_yuv420(on);
+        Ok(())
+    }
+
     /// Times one frame or successive frames, as the Rust `bench`.
     #[napi]
     pub fn bench(

@@ -55,6 +55,10 @@ try {
   const source = await openSource(spec.entry, { comp: spec.comp, props: spec.props, bundleFile: spec.bundleFile, prefetch: false });
   source.clearArtifacts?.();
   const renderer = new (native().Renderer)();
+  // yuv420p (the default) is converted on the GPU before the readback, byte for byte as `rgbaToYuv` converts it;
+  // `KINETOGRAPH_CPU_YUV=1` reads back RGBA and converts here, for comparing.
+  const gpuYuv = !sequence && convertFormat === 'yuv420p' && process.env.KINETOGRAPH_CPU_YUV === undefined;
+  if (gpuYuv) renderer.setYuv420(true);
   const log = profiling ? new ProfileLog(false) : undefined;
   /** When the worker last finished a chunk (or became ready), to say how long it waited for the next. */
   let freeSince = log ? now() : 0;
@@ -99,9 +103,9 @@ try {
       const t0 = log ? now() : 0;
       const drawn = renderer.finishFrame();
       const t1 = log ? now() : 0;
-      // The colour conversion the encoder does is done here, in parallel, so the encoder thread only has to send.
-      // A frame the same as the one before (`repeated`) has that frame's pixels, so it has its conversion too.
-      const pixels = drawn.repeated && last ? last : native().rgbaToYuv(drawn.data, drawn.width, drawn.height, convertFormat);
+      // The colour conversion the encoder does is done here (or on the GPU), in parallel, so the encoder thread only has
+      // to send. A frame the same as the one before (`repeated`) has that frame's pixels, so it has its conversion too.
+      const pixels = gpuYuv ? drawn.data : drawn.repeated && last ? last : native().rgbaToYuv(drawn.data, drawn.width, drawn.height, convertFormat);
       last = pixels;
       const t2 = log ? now() : 0;
       const data = copy(pixels);

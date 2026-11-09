@@ -55,6 +55,12 @@ export declare class Renderer {
    * A render worker calls it at the start of each run of frames.
    */
   forgetFrame(): void
+  /**
+   * With `on`, `finishFrame` returns the frames `startFrame` begins after this as yuv420p planes (Y, U, V, rows
+   * packed), converted on the GPU byte for byte as `rgbaToYuv(rgba, w, h, 'yuv420p')` converts their RGBA. The
+   * frames' sides must be even, as the encoder's are. Set it before starting frames, not between.
+   */
+  setYuv420(on: boolean): void
   /** Times one frame or successive frames, as the Rust `bench`. */
   bench(sceneJson: string, options: BenchOptions, baseDir?: string | undefined | null): BenchResult
   /** A whole JSON scene to a video, as the Rust `render`. */
