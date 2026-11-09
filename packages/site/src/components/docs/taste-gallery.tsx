@@ -19,7 +19,7 @@ export function TasteGallery() {
           <div className="[&>figure]:my-0">
             <Media src={`tastes/${t.id}.mp4`} poster={`tastes/${t.id}.webp`} width={360} height={640} alt={`A four second loop of the ${t.title} taste's demo reel: ${t.description}`} />
           </div>
-          <Link href={`/tastes/${t.id}/`} className="mt-2 block text-sm font-medium text-fd-foreground hover:underline">
+          <Link href={`/catalog/${t.id}/`} className="mt-2 block text-sm font-medium text-fd-foreground hover:underline">
             {t.title}
           </Link>
         </div>
