@@ -64,7 +64,7 @@ impl<'a> Painter<'a> {
         if let Some(rest) = s.strip_prefix("data:") {
             return data_source(rest);
         }
-        if crate::net::drive_path(s).is_none()
+        if crate::net::drive_path(&percent_decode(s)).is_none()
             && url::Url::parse(s).is_ok_and(|u| matches!(u.scheme(), "http" | "https"))
         {
             return Source::Unsupported(format!(
@@ -194,15 +194,16 @@ fn find_relative(base_dir: &str, public_dir: Option<&str>, s: &str) -> Option<Pa
 /// `data:` URL). The file may be anywhere the path says: a reader that must stay
 /// inside the project checks that itself (`svg::assets::resolve_under`).
 pub(super) fn file_named(base_dir: &str, public_dir: Option<&str>, s: &str) -> Option<PathBuf> {
-    if crate::net::drive_path(s).is_some() {
-        find_relative(base_dir, public_dir, s)
+    let decoded = percent_decode(s);
+    if crate::net::drive_path(&decoded).is_some() {
+        find_relative(base_dir, public_dir, &decoded)
     } else if let Ok(u) = url::Url::parse(s) {
         match u.scheme() {
             "file" => u.to_file_path().ok(),
             _ => None,
         }
     } else {
-        find_relative(base_dir, public_dir, &percent_decode(s))
+        find_relative(base_dir, public_dir, &decoded)
     }
 }
 
@@ -210,4 +211,22 @@ fn percent_decode(s: &str) -> String {
     percent_encoding::percent_decode_str(s)
         .decode_utf8_lossy()
         .into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn percent_decode_decodes_spaces_in_drive_paths() {
+        let raw = "c:/projects/demo/public/xp/Close%20Buttons.png";
+        let decoded = percent_decode(raw);
+        assert_eq!(decoded, "c:/projects/demo/public/xp/Close Buttons.png");
+        assert_eq!(
+            crate::net::drive_path(&decoded),
+            Some(std::path::PathBuf::from(
+                "c:/projects/demo/public/xp/Close Buttons.png"
+            ))
+        );
+    }
 }

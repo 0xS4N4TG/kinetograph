@@ -181,7 +181,7 @@ impl Blur {
     ///
     /// The blur runs on a canvas of its own: `frost` with the blur's reach on
     /// every side, all of it the box mirrored. When that canvas would be
-    /// larger than a texture can be (`MAX_SIDE`), it is drawn shrunk by a
+    /// larger than a texture can be (`MAX_BLUR_TEXTURE_SIDE`), it is drawn shrunk by a
     /// power of two (each texel the mean of a square of the mirrored
     /// source), blurred by the radius shrunk the same, and enlarged into
     /// `dst` bilinearly: the blur is then at least `MIN_SIGMA` texels wide
@@ -538,7 +538,7 @@ const NO_SOURCE: [i32; 4] = [0; 4];
 
 /// The largest side of a texture a blur makes: the device's limit
 /// (`wgpu::Limits::default`), which is also the largest canvas.
-const MAX_SIDE: u32 = crate::scene::MAX_SIDE;
+const MAX_BLUR_TEXTURE_SIDE: u32 = crate::scene::MAX_CANVAS_SIDE;
 
 /// What `fs_pad` reads: the box `rect` (`x, y, width, height`, in the blur's
 /// canvas pixels) of the source, whose corner is the source's texel `texel`;
@@ -575,7 +575,7 @@ impl MirrorPlan {
         );
         // Room for the windows' border of texels (`Plan::windows`).
         let mut shrink = 1u32;
-        while full.0.div_ceil(shrink).max(full.1.div_ceil(shrink)) + 8 > MAX_SIDE {
+        while full.0.div_ceil(shrink).max(full.1.div_ceil(shrink)) + 8 > MAX_BLUR_TEXTURE_SIDE {
             shrink *= 2;
         }
         let size = (full.0.div_ceil(shrink), full.1.div_ceil(shrink));
@@ -708,10 +708,10 @@ impl Plan {
             *d = d.union(*up);
         }
         // No wider than a texture can be: a window that would be (the
-        // whole of a canvas of `MAX_SIDE`) loses some of its border, and the
+        // whole of a canvas of `MAX_CANVAS_SIDE`) loses some of its border, and the
         // reads past its edge clamp to drawn texels there.
         let fit = |lo: i32, hi: i32, d0: i32, d1: i32| {
-            let max = MAX_SIDE as i32;
+            let max = MAX_BLUR_TEXTURE_SIDE as i32;
             if hi - lo <= max {
                 return (lo, hi);
             }
@@ -851,7 +851,7 @@ fn double(r: PixelRect) -> PixelRect {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::{MAX_SIDE, MIN_SIGMA, MirrorPlan, Plan, double, halve, plan};
+    use super::{MAX_BLUR_TEXTURE_SIDE, MIN_SIGMA, MirrorPlan, Plan, double, halve, plan};
     use crate::bounds::PixelRect;
 
     #[test]
@@ -1137,13 +1137,13 @@ pub(crate) mod tests {
             plan.windows
                 .iter()
                 .chain([&plan.spare])
-                .all(|w| w.width() <= MAX_SIDE && w.height() <= MAX_SIDE)
+                .all(|w| w.width() <= MAX_BLUR_TEXTURE_SIDE && w.height() <= MAX_BLUR_TEXTURE_SIDE)
         };
         for (side, radius) in [(1920, 1100.0), (8192, 16384.0), (8192, 1.0), (100, 16384.0)] {
             let frost = PixelRect::new(5, 7, 5 + side, 7 + side / 2);
             let m = MirrorPlan::new(frost, radius);
             assert!(
-                m.size.0 + 8 <= MAX_SIDE && m.size.1 + 8 <= MAX_SIDE,
+                m.size.0 + 8 <= MAX_BLUR_TEXTURE_SIDE && m.size.1 + 8 <= MAX_BLUR_TEXTURE_SIDE,
                 "{m:?}"
             );
             let plan = Plan::new(m.size, radius / m.shrink as f32);
@@ -1163,7 +1163,7 @@ pub(crate) mod tests {
         let small = MirrorPlan::new(PixelRect::new(0, 0, 400, 100), 10.0);
         assert_eq!(small.shrink, 1);
         for radius in [1.0, 128.0, 1000.0, 16384.0] {
-            assert!(fits(&Plan::new((MAX_SIDE, MAX_SIDE), radius)), "{radius}");
+            assert!(fits(&Plan::new((MAX_BLUR_TEXTURE_SIDE, MAX_BLUR_TEXTURE_SIDE), radius)), "{radius}");
         }
     }
 

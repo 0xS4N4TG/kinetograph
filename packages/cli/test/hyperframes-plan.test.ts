@@ -115,7 +115,7 @@ describe('mounting compositions', () => {
     expect(plan.notes.join('\n')).toContain('none.html');
   });
 
-  it('notes Three.js, and reads an import map', async () => {
+  it('detects Three.js without a note of its own, and reads an import map', async () => {
     const dir = project({
       'index.html': `<html><body><div data-composition-id="m" data-duration="1"></div>
         <script type="importmap">{"imports":{}}</script>
@@ -124,7 +124,7 @@ describe('mounting compositions', () => {
     const { plan } = await buildPlan(join(dir, 'index.html'), { resolveScriptUrl: (url) => ({ ...fakeScript(url) }) });
     expect(plan.usesThree).toBe(true);
     expect(plan.notes.join('\n')).not.toContain('import maps');
-    expect(plan.notes.join('\n')).toContain('Three.js');
+    expect(plan.notes.join('\n')).not.toContain('Three.js');
   });
 });
 

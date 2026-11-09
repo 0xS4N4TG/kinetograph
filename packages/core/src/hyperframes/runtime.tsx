@@ -612,7 +612,6 @@ class Runtime {
 
   /** What the page needs that the engine cannot do, once per frame. */
   reportUnsupported(): void {
-    if (this.plan.usesThree) reportUnsupported('three.js', null, null, 'Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)');
     for (const note of this.plan.notes) reportUnsupported('HyperFrames', null, null, note);
     for (const failure of this.failures) reportUnsupported('HyperFrames', 'script', failure, 'a script that draws by itself failed, so its canvas is not drawn');
     for (const note of this.gradingNotes) reportUnsupported('data-color-grading', null, null, note);
