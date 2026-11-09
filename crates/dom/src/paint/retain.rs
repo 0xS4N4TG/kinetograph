@@ -4,7 +4,7 @@
 //! A stacking context's layers are in its own frame (`sc_content`), and
 //! `paint_context` puts them at their place and under the element's
 //! transform, opacity, filter and blend. So when nothing inside the element
-//! changed (`crate::changes`), its content is the last paint's, wherever the
+//! changed (`crate::dirty`), its content is the last paint's, wherever the
 //! element now is and whatever its group: only the group is worked out again.
 //!
 //! The content also depends on what the paint did before it: the layer ids
@@ -23,7 +23,7 @@ use blitz_traits::node_id::NodeId;
 use serde_json::Value;
 
 use super::Painter;
-use crate::changes::Changes;
+use crate::dirty::Dirty;
 use crate::request::Unsupported;
 
 /// A set the painter asks whether it holds a key, logging the questions
@@ -148,7 +148,7 @@ pub struct Fragments(HashMap<NodeId, Fragment>);
 
 /// The fragments a paint can replay and the ones it makes.
 pub(super) struct Retain<'c> {
-    changes: Option<&'c Changes>,
+    dirty: Option<&'c Dirty>,
     kept: Fragments,
     made: Fragments,
     /// The elements of `made`, in the order they were kept.
@@ -161,10 +161,10 @@ pub(super) struct Retain<'c> {
 }
 
 impl<'c> Retain<'c> {
-    /// `kept` is replayed where `changes` allow; with no changes, nothing is.
-    pub fn new(kept: Fragments, changes: Option<&'c Changes>) -> Self {
+    /// `kept` is replayed where `dirty` allows; with no `dirty`, nothing is.
+    pub fn new(kept: Fragments, dirty: Option<&'c Dirty>) -> Self {
         Retain {
-            changes,
+            dirty,
             kept,
             made: Fragments::default(),
             order: Vec::new(),
@@ -211,13 +211,13 @@ impl<'a> Painter<'a> {
     /// of changed.
     fn replayable(&mut self, node: &'a Node) -> Option<Fragment> {
         let retain = self.retain.as_mut()?;
-        let changes = retain.changes?;
+        let dirty = retain.dirty?;
         let fragment = retain.kept.0.remove(&node.id)?;
         // Its own change is to its group at most, nothing inside it changed,
         // and its parent's change (if any) is to the parent's group alone.
-        let unchanged = changes.of(node.id) != Some(false)
-            && !changes.inside(node.id)
-            && node.parent.is_none_or(|p| changes.of(p) != Some(false));
+        let unchanged = !dirty.in_content(node.id)
+            && !dirty.inside(node.id)
+            && node.parent.is_none_or(|p| !dirty.in_content(p));
         let same_context = fragment.blitz_context == node.stacking_context.is_some()
             && fragment.canvas_node == self.canvas_node;
         let same_answers = self.ids.holds(&fragment.ids)

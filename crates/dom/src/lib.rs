@@ -5,10 +5,10 @@
 //! `request`, `document`, `fonts`, `net`, `ua` and `readback` build and read the document; `paint` paints its boxes;
 //! `paint::svg` paints inline SVG and SVG filters.
 
-pub mod changes;
 pub mod clamp;
 pub mod collapse;
 pub mod counters;
+pub mod dirty;
 pub mod document;
 pub mod fonts;
 pub mod inline;

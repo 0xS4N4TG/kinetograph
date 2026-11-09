@@ -25,13 +25,14 @@ use std::sync::Arc;
 
 use blitz_dom::net::ResourceLoadResponse;
 use blitz_dom::{
-    Attribute, BaseDocument, DocumentConfig, DocumentMutator, LocalName, NodeId, QualName, ns,
+    Attribute, BaseDocument, DocumentConfig, DocumentMutator, LocalName, NodeId, QualName,
+    local_name, ns,
 };
 use blitz_traits::shell::{ColorScheme, Viewport};
 
-use crate::changes::{self, Stamp};
 use crate::clamp;
 use crate::collapse;
+use crate::dirty::{self, Stamp};
 use crate::fonts;
 use crate::inline;
 use crate::net::{self, LocalFiles};
@@ -400,26 +401,25 @@ impl Resolved {
         if !self.retains {
             return paint::paint(doc, request);
         }
-        let (stamps, kept, changes) = match (self.painted.take(), self.touched.take()) {
+        let (stamps, kept, changed) = match (self.painted.take(), self.touched.take()) {
             (Some((stamps, fragments)), Some(touched)) => {
-                let changes = changes::changes(doc, &stamps, &touched);
-                (Some(stamps), fragments, changes)
+                let changed = dirty::since(doc, &stamps, &touched);
+                (Some(stamps), fragments, changed)
             }
             _ => (None, Fragments::default(), None),
         };
         self.touched = Some(Vec::new());
-        let unchanged = changes.as_ref().is_some_and(changes::Changes::is_empty);
+        let unchanged = changed.as_ref().is_some_and(dirty::Dirty::is_empty);
         if unchanged && let (Some(output), Some(stamps)) = (&self.still, stamps) {
             self.painted = Some((stamps, kept));
             self.replayed = (0, 0);
             return output.clone();
         }
-        let (output, fragments, replayed) =
-            paint::paint_retaining(doc, request, kept, changes.as_ref());
-        self.painted = Some((changes::stamps(doc), fragments));
-        self.still = unchanged.then(|| output.clone());
-        self.replayed = replayed;
-        output
+        let retained = paint::paint_retaining(doc, request, kept, changed.as_ref());
+        self.painted = Some((dirty::stamps(doc), retained.fragments));
+        self.still = unchanged.then(|| retained.output.clone());
+        self.replayed = (retained.replayed, retained.painted);
+        retained.output
     }
 
     /// How many stacking contexts' contents the last paint replayed and how many it painted.
@@ -444,8 +444,7 @@ fn touched_by(doc: &BaseDocument, edits: &[Edit]) -> Option<Vec<NodeId>> {
                     .get_node(*id)
                     .and_then(|n| n.parent)
                     .and_then(|p| doc.get_node(p));
-                let style = LocalName::from("style");
-                if parent.is_some_and(|p| p.data.is_element_with_tag_name(&style)) {
+                if parent.is_some_and(|p| p.data.is_element_with_tag_name(&local_name!("style"))) {
                     return None;
                 }
                 touched.push(*id);

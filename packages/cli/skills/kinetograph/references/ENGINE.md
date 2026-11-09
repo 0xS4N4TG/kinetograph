@@ -1001,7 +1001,7 @@ Goal: stop redoing what did not change between frames. What was found, measured 
   are rendered for the samples (JS 40 ms, `start_frame` 20 ms). Samples of an island often differ only in a transform;
   `request::delta` (comparing every layer with the first sample's) is about as costly as the island's resolve there.
 - **Retained paint.** A kept document's paint replays each stacking context's content from its last paint when nothing
-  inside it changed (`crates/dom/src/changes.rs` finds the changed nodes from the last paint's stamps; `paint/retain.rs`
+  inside it changed (`crates/dom/src/dirty.rs` finds the changed nodes from the last paint's stamps; `paint/retain.rs`
   replays). A context may itself have changed in its group (transform, opacity, filter, blend, place) and its parent
   in its group: only `context_group` runs again. The layer ids, reports and audits a content took are checked as
   ledgers before a replay, so a replayed paint is the whole paint, layer for layer. Everything is painted again after

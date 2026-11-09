@@ -63,22 +63,35 @@ pub fn paint(doc: &BaseDocument, request: &IslandRequest) -> IslandOutput {
     painter.output(layers)
 }
 
+/// A paint that replayed what it could of the last one.
+pub struct Retained {
+    pub output: IslandOutput,
+    /// The fragments of this paint, for the next.
+    pub fragments: Fragments,
+    /// How many stacking contexts' contents it replayed and how many it painted.
+    pub replayed: u64,
+    pub painted: u64,
+}
+
 /// [`paint`], replaying the stacking contexts of `kept` (the fragments of the
-/// last paint of the same document) that `changes` (what changed in it since,
-/// None if that is not known) leave as they were; and the fragments of this
-/// paint, with how many contents it replayed and painted.
+/// last paint of the same document) that `dirty` (what changed in it since,
+/// None if that is not known) leaves as they were.
 pub fn paint_retaining(
     doc: &BaseDocument,
     request: &IslandRequest,
     kept: Fragments,
-    changes: Option<&crate::changes::Changes>,
-) -> (IslandOutput, Fragments, (u64, u64)) {
+    dirty: Option<&crate::dirty::Dirty>,
+) -> Retained {
     let mut painter = Painter::new(doc, request);
-    painter.retain = Some(retain::Retain::new(kept, changes));
+    painter.retain = Some(retain::Retain::new(kept, dirty));
     let layers = painter.paint_root();
     let retain = painter.retain.take().expect("retaining");
-    let counts = (retain.replayed, retain.painted);
-    (painter.output(layers), retain.into_made(), counts)
+    Retained {
+        replayed: retain.replayed,
+        painted: retain.painted,
+        output: painter.output(layers),
+        fragments: retain.into_made(),
+    }
 }
 
 /// The lists a stacking context (or an element painted as one) collects before

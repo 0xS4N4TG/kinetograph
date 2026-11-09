@@ -85,25 +85,33 @@ const GROUP_PROPERTIES: [LonghandId; 8] = [
     LonghandId::MixBlendMode,
 ];
 
+/// What changed in a node.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Change {
+    /// Its group alone: its style differs in [`GROUP_PROPERTIES`], its box in
+    /// its place, and no edit set its attributes or text.
+    Group,
+    /// What it paints inside its group.
+    Content,
+}
+
 /// The changed nodes of a document, for the painter.
-pub struct Changes {
-    /// Each changed node, and whether the change is to its group alone (its
-    /// style differs in [`GROUP_PROPERTIES`], its box in its place, and no
-    /// edit set its attributes or text).
-    dirty: HashMap<NodeId, bool>,
+pub struct Dirty {
+    /// Each changed node and what changed in it.
+    nodes: HashMap<NodeId, Change>,
     /// The nodes a changed node is strictly inside (or that lost a child).
     above: HashSet<NodeId>,
 }
 
-impl Changes {
-    /// Whether `node` changed, and if so whether only in its group.
-    pub fn of(&self, node: NodeId) -> Option<bool> {
-        self.dirty.get(&node).copied()
+impl Dirty {
+    /// Whether what `node` paints inside its group changed.
+    pub fn in_content(&self, node: NodeId) -> bool {
+        self.nodes.get(&node) == Some(&Change::Content)
     }
 
     /// Whether nothing changed.
     pub fn is_empty(&self) -> bool {
-        self.dirty.is_empty() && self.above.is_empty()
+        self.nodes.is_empty() && self.above.is_empty()
     }
 
     /// Whether a node strictly inside `node` changed.
@@ -165,12 +173,12 @@ fn moved_only(was: &taffy::Layout, now: &taffy::Layout) -> bool {
     } == *now
 }
 
-/// The changes between `stamps` (the last paint) and `doc`, given the nodes
-/// an edit set an attribute (other than `style`) or the text of since then.
+/// What changed in `doc` since `stamps` (the last paint), given the nodes an
+/// edit set an attribute (other than `style`) or the text of since then.
 /// None when a change can reach anything: one to what an SVG reference can
 /// name ([`referable`]), or one that [`reaches_out`].
-pub fn changes(doc: &BaseDocument, stamps: &[Stamp], touched: &[NodeId]) -> Option<Changes> {
-    let mut dirty: HashMap<NodeId, bool> = HashMap::new();
+pub fn since(doc: &BaseDocument, stamps: &[Stamp], touched: &[NodeId]) -> Option<Dirty> {
+    let mut nodes: HashMap<NodeId, Change> = HashMap::new();
     let stamp_at = |id: u64| {
         stamps
             .binary_search_by_key(&id, |s| s.node.as_u64())
@@ -186,7 +194,7 @@ pub fn changes(doc: &BaseDocument, stamps: &[Stamp], touched: &[NodeId]) -> Opti
             if referable(doc, node) {
                 return None;
             }
-            dirty.insert(node.id, false);
+            nodes.insert(node.id, Change::Content);
             continue;
         };
         let group_style = match (&stamp.style, node.primary_styles()) {
@@ -213,10 +221,14 @@ pub fn changes(doc: &BaseDocument, stamps: &[Stamp], touched: &[NodeId]) -> Opti
         };
         let lines_moved = stamp.lines != lines_of(node);
         if group_style.is_some() || group_box.is_some() || lines_moved {
-            dirty.insert(
-                node.id,
-                !lines_moved && group_style.unwrap_or(true) && group_box.unwrap_or(true),
-            );
+            let group_only =
+                !lines_moved && group_style.unwrap_or(true) && group_box.unwrap_or(true);
+            let change = if group_only {
+                Change::Group
+            } else {
+                Change::Content
+            };
+            nodes.insert(node.id, change);
         }
     }
     for &id in touched {
@@ -226,7 +238,7 @@ pub fn changes(doc: &BaseDocument, stamps: &[Stamp], touched: &[NodeId]) -> Opti
         if referable(doc, node) {
             return None;
         }
-        dirty.insert(id, false);
+        nodes.insert(id, Change::Content);
     }
     // Everything a changed node is inside, and everything a node that went was inside.
     let mut above: HashSet<NodeId> = HashSet::new();
@@ -238,7 +250,7 @@ pub fn changes(doc: &BaseDocument, stamps: &[Stamp], touched: &[NodeId]) -> Opti
             cur = doc.get_node(id).and_then(up);
         }
     };
-    for &id in dirty.keys() {
+    for &id in nodes.keys() {
         mark_from(&mut above, doc.get_node(id).and_then(up));
     }
     for stamp in stamps {
@@ -258,7 +270,7 @@ pub fn changes(doc: &BaseDocument, stamps: &[Stamp], touched: &[NodeId]) -> Opti
             mark_from(&mut above, parent);
         }
     }
-    Some(Changes { dirty, above })
+    Some(Dirty { nodes, above })
 }
 
 /// Whether two styles of an element both have a transform or both have none,
