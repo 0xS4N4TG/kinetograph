@@ -1,13 +1,13 @@
 'use client';
 
 import { ChevronDownIcon, PauseIcon, PlayIcon, SearchIcon } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { ItemCard } from '@/components/library/card';
-import { CategoryTabs, Sidebar } from '@/components/library/sidebar';
-import { CATEGORIES, groupIds, items, search } from '@/lib/library';
+import { CategoryTabs } from '@/components/library/sidebar';
+import { CATEGORIES, groupIds, search, type Item } from '@/lib/library-core';
 import { cn } from '@/lib/utils';
-import { shell } from '@/sections/shared';
 
 /** How many cards of a category show before "Show all": two rows of three. */
 const FIRST = 6;
@@ -20,36 +20,27 @@ const pill = 'inline-flex items-center gap-2 rounded-full border border-[var(--k
  * list of matches. The choice lives in the address (`?c=<category>`), which is how the old /templates, /components and
  * /tastes pages land here.
  */
-export function Browser() {
-  const [active, setActive] = useState('');
+export function Browser({ items, groups }: { items: Item[]; groups: Record<string, string> }) {
+  const active = useSearchParams().get('c') ?? '';
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<string[]>([]);
   const [paused, setPaused] = useState(false);
 
   useEffect(() => {
-    setActive(new URLSearchParams(location.search).get('c') ?? '');
     setPaused(window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   }, []);
-
-  const select = (id: string) => {
-    setActive(id);
-    history.replaceState(null, '', id ? `?c=${id}` : location.pathname);
-    window.scrollTo({ top: 0 });
-  };
 
   const scope = active ? items.filter((i) => groupIds(active).includes(i.group)) : items;
   const found = search(scope, query);
   const sections = CATEGORIES.map((c) => ({ ...c, list: found.filter((i) => i.group === c.id) })).filter((s) => s.list.length > 0);
   const toggle = (id: string) => setOpen((o) => (o.includes(id) ? o.filter((x) => x !== id) : [...o, id]));
-  const grid = 'grid grid-cols-1 gap-x-5 gap-y-8 sm:grid-cols-2 xl:grid-cols-3';
+  const grid = 'grid grid-cols-1 gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-3';
 
   return (
-    <div className={`${shell} flex gap-10 pb-[clamp(64px,9vw,128px)]`}>
-      <Sidebar active={active} onSelect={select} />
-      <div className="min-w-0 flex-1">
-        <CategoryTabs active={active} onSelect={select} />
-        <header className="pt-8 lg:pt-12">
-          <h1 className="font-dm text-[clamp(40px,6vw,72px)] leading-[1.05] font-bold tracking-[-0.045em] text-ink">
+    <>
+        <CategoryTabs groups={groups} />
+        <header className="pt-4 md:pt-0">
+          <h1 className="font-dm text-[clamp(36px,5vw,56px)] leading-[1.05] font-bold tracking-[-0.045em] text-ink">
             <span className="bg-gradient-to-r from-cobalt to-flag bg-clip-text text-transparent">Motion</span> ready to add.
           </h1>
           <p className="mt-5 max-w-[56ch] font-dm text-[17px] leading-[1.6] text-ink/75">
@@ -119,7 +110,6 @@ export function Browser() {
             })
           )}
         </div>
-      </div>
-    </div>
+    </>
   );
 }

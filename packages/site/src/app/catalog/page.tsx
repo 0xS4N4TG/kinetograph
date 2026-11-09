@@ -1,18 +1,21 @@
+import { DocsPage } from 'fumadocs-ui/layouts/docs/page';
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 
 import { Browser } from '@/components/library/browser';
-import { Frame } from '@/components/library/frame';
-import { items } from '@/lib/library';
+import { groups, items } from '@/lib/library';
 
 export const metadata: Metadata = {
   title: 'Catalog | Kinetograph',
-  description: `${items.length} templates, components and tastes for Kinetograph videos. Watch each one play, then add it with one command.`,
+  description: `${items.length} templates, components, plugins and tastes for Kinetograph videos. Watch each one play, then add it with one command.`,
 };
 
 export default function CatalogIndex() {
   return (
-    <Frame>
-      <Browser />
-    </Frame>
+    <DocsPage toc={[]} footer={{ enabled: false }}>
+      <Suspense fallback={null}>
+        <Browser items={items} groups={groups} />
+      </Suspense>
+    </DocsPage>
   );
 }

@@ -1,5 +1,7 @@
+import Link from 'next/link';
+
 import { Preview } from '@/components/library/preview';
-import { categoryOf, type Item } from '@/lib/library';
+import { categoryOf, type Item } from '@/lib/library-core';
 
 /** The type pill under a card's title and on an item page. */
 export function TypeBadge({ type }: { type: Item['type'] }) {
@@ -10,7 +12,7 @@ export function TypeBadge({ type }: { type: Item['type'] }) {
 export function ItemCard({ item, paused = false }: { item: Item; paused?: boolean }) {
   return (
     <li>
-      <a href={`/catalog/${item.name}/`} className="kc-press group block rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cobalt">
+      <Link href={`/catalog/${item.name}/`} className="kc-press group block rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-cobalt">
         <div className="aspect-[16/10] overflow-hidden rounded-2xl border border-[var(--kg-box-border)] bg-night transition-colors group-hover:border-fd-primary">
           <Preview name={item.name} poster={item.poster} ratio={item.ratio} paused={paused} />
         </div>
@@ -19,7 +21,7 @@ export function ItemCard({ item, paused = false }: { item: Item; paused?: boolea
           <TypeBadge type={item.type} />
         </div>
         <p className="mt-0.5 px-1 font-jb text-[12px] text-mute">{categoryOf(item).title.toLowerCase()}</p>
-      </a>
+      </Link>
     </li>
   );
 }
