@@ -15,8 +15,18 @@ The prebuilt native addon covers macOS (arm64), Linux (x64, glibc) and Windows (
 
 Install the libraries:
 
-- macOS: `brew install ffmpeg pkgconf`
-- Debian or Ubuntu: `sudo apt-get install libavcodec-dev libavformat-dev libswscale-dev libavutil-dev libclang-dev pkg-config`
+<OsTabs>
+  <Os name="macos">
+    ```sh
+    brew install ffmpeg pkgconf
+    ```
+  </Os>
+  <Os name="ubuntu">
+    ```sh
+    sudo apt-get install libavcodec-dev libavformat-dev libswscale-dev libavutil-dev libclang-dev pkg-config
+    ```
+  </Os>
+</OsTabs>
 
 ## Build
 

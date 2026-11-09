@@ -21,25 +21,42 @@ Studio offers an agent only when its program is already on your computer. Your a
   <Step title="Install the agent">
     Use the agent's official installer.
 
-    Claude Code, on macOS, Linux or WSL:
+    **Claude Code**
 
-    ```sh
-    curl -fsSL https://claude.ai/install.sh | bash
-    ```
+    <OsTabs>
+      <Os name="macos">
+        ```sh
+        curl -fsSL https://claude.ai/install.sh | bash
+        ```
+      </Os>
+      <Os name="linux">
+        ```sh
+        curl -fsSL https://claude.ai/install.sh | bash
+        ```
+      </Os>
+      <Os name="windows">
+        ```powershell
+        irm https://claude.ai/install.ps1 | iex
+        ```
+      </Os>
+    </OsTabs>
 
-    Claude Code, in Windows PowerShell:
+    **Codex** (macOS and Linux)
 
-    ```powershell
-    irm https://claude.ai/install.ps1 | iex
-    ```
+    <OsTabs>
+      <Os name="macos">
+        ```sh
+        curl -fsSL https://chatgpt.com/codex/install.sh | sh
+        ```
+      </Os>
+      <Os name="linux">
+        ```sh
+        curl -fsSL https://chatgpt.com/codex/install.sh | sh
+        ```
+      </Os>
+    </OsTabs>
 
-    Codex, on macOS and Linux:
-
-    ```sh
-    curl -fsSL https://chatgpt.com/codex/install.sh | sh
-    ```
-
-    Gemini CLI:
+    **Gemini CLI**
 
     ```sh
     npm install -g @google/gemini-cli
