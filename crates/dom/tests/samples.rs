@@ -683,6 +683,42 @@ fn an_emptied_box_made_display_contents_keeps_no_freed_pseudo_element() {
     );
 }
 
+/// A flex box an edit hides inside an inline root keeps none of the layout or paint children it had: when the inline
+/// content beside it goes too and its parent lays it out as a block child, the old anonymous block holding its text
+/// was drawn (fuzz seed 1048688).
+#[test]
+fn a_box_hidden_inside_inline_content_keeps_no_old_children() {
+    let page = |span: &str, em: &str| {
+        request(el(
+            "div",
+            "$0",
+            "position: absolute; inset: 0; font: 16px 'DM Sans'",
+            vec![el(
+                "p",
+                "$0.0",
+                "",
+                vec![
+                    el("span", "$0.0.0", &format!("display: {span}"), vec![text("1234")]),
+                    el("em", "$0.0.1", &format!("display: {em}"), vec![text("delta")]),
+                ],
+            )],
+        ))
+    };
+    let frames = [
+        page("flex", "inline"),
+        page("none", "inline"),
+        page("none", "none"),
+    ];
+    let mut cache = IslandCache::default();
+    for (i, f) in frames.iter().enumerate() {
+        assert_eq!(
+            drawn(&mut cache, f, Some(i as u64 + 1)),
+            drawn(&mut IslandCache::default(), f, None),
+            "frame {i}"
+        );
+    }
+}
+
 /// Every rect shape in `layers`, as its width and height.
 fn rects(layers: &Value, out: &mut Vec<(f64, f64)>) {
     match layers {
@@ -740,3 +776,4 @@ fn an_element_that_starts_with_no_size_or_no_paint_is_drawn_once_it_grows() {
     assert!(has(&seen[2], 50.0, 8.0) && has(&seen[2], 40.0, 8.0), "{:?}", seen[2]);
     assert!(has(&seen[2], 60.0, 8.0) && has(&seen[2], 70.0, 8.0), "{:?}", seen[2]);
 }
+

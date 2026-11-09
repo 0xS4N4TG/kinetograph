@@ -985,11 +985,14 @@ fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: NodeId) {
     }
 }
 
-/// A node that generates no box of its own (`display: contents`, or non-atomic
-/// inline content) gives up the layout children and anonymous blocks it had as
-/// a box before an edit: its children now have another box as `layout_parent`.
+/// A node that generates no box of its own (`display: contents` or `none`, or
+/// non-atomic inline content) gives up the layout children, paint children and
+/// anonymous blocks it had as a box before an edit: its children now have
+/// another box as `layout_parent`, or none. The paint tree rebuilds only a
+/// node's paint children that has layout children, so they go too.
 fn drop_box_children(node: &mut Node, old_anonymous_blocks: &mut Vec<NodeId>) {
     *node.layout_children.borrow_mut() = None;
+    *node.paint_children.borrow_mut() = None;
     old_anonymous_blocks.extend(std::mem::take(&mut node.anonymous_blocks));
 }
 
@@ -1065,6 +1068,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                         if let Some(element) = node.element_data_mut() {
                             element.take_inline_layout();
                         }
+                        drop_box_children(node, old_anonymous_blocks);
                     }
                     (DisplayOutside::None, DisplayInside::Contents) => {
                         node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
