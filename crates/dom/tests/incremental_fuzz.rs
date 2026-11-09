@@ -365,6 +365,7 @@ fn run(seed: u64, steps: usize) -> Result<(), String> {
     let mut root = tree(&mut rng, "$0.0".into(), 0);
     let mut cache = IslandCache::default();
     let mut log = vec!["built".to_string()];
+    let mut previous = Vec::new();
     for step in 0..steps {
         // Most steps are the next frame; some another sample of the same one.
         let pass = 1 + step as u64 - (step > 0 && rng.chance(20)) as u64;
@@ -375,6 +376,7 @@ fn run(seed: u64, steps: usize) -> Result<(), String> {
             let dir = std::env::temp_dir().join(format!("kg-incremental-fuzz-{seed}"));
             std::fs::create_dir_all(&dir).ok();
             std::fs::write(dir.join("request.json"), serde_json::to_string_pretty(&request).unwrap()).ok();
+            std::fs::write(dir.join("before.json"), serde_json::to_string_pretty(&previous).unwrap()).ok();
             std::fs::write(dir.join("edited.json"), serde_json::to_string_pretty(&got).unwrap()).ok();
             std::fs::write(dir.join("fresh.json"), serde_json::to_string_pretty(&want).unwrap()).ok();
             return Err(format!(
@@ -383,6 +385,8 @@ fn run(seed: u64, steps: usize) -> Result<(), String> {
                 log.join(" | ")
             ));
         }
+        previous.push(json!({ "pass": pass, "request": request }));
+        log.push(format!("step {}:", step + 1));
         for _ in 0..1 + rng.below(3) {
             log.push(edit(&mut rng, &mut root));
         }
@@ -399,6 +403,13 @@ fn an_edited_document_matches_a_fresh_one_under_random_edits() {
             (0..n).collect()
         }
     };
-    let failures: Vec<String> = seeds.iter().filter_map(|&seed| run(seed, 14).err()).collect();
+    let failures: Vec<String> = seeds
+        .iter()
+        .filter_map(|&seed| {
+            std::panic::catch_unwind(|| run(seed, 14))
+                .unwrap_or_else(|_| Err(format!("seed {seed}: panicked")))
+                .err()
+        })
+        .collect();
     assert!(failures.is_empty(), "{} of {} seeds failed:\n{}", failures.len(), seeds.len(), failures.join("\n"));
 }
