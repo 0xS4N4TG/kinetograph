@@ -644,6 +644,24 @@ describe('the recording WebGL context', () => {
       expect((gl.content().ops.at(-1) as { units: Record<string, object> }).units['0']).toMatchObject({ baseLevel: 2 });
     });
 
+    it('clamps the base and max level of a texStorage2D texture to its levels, so a short chain is complete', () => {
+      const { gl, program } = setup2();
+      const texture = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.texStorage2D(GL.TEXTURE_2D, 3, GL2.RGBA8, 32, 32);
+      gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST_MIPMAP_NEAREST);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, gl.createFramebuffer());
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0);
+      gl.bindTexture(GL.TEXTURE_2D, null);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.texParameteri(GL.TEXTURE_2D, GL2.TEXTURE_BASE_LEVEL, 5);
+      gl.uniform1i(gl.getUniformLocation(program, 'tex'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect((gl.content().ops.at(-1) as { units: Record<string, object> }).units['0']).toMatchObject({ baseLevel: 2, maxLevel: 2 });
+    });
+
     it('records the stencil test with each draw where the buffer drawn into has a stencil buffer', () => {
       const { gl } = setup2({ stencil: true });
       expect(gl.content().stencil).toBe(true);

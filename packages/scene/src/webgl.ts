@@ -3383,6 +3383,11 @@ export class WebGLContext {
     const cube = texture.faces !== null;
     const target = !cube && (texture.drawnAt === texture.version || kindOf(texture.format) !== 'color');
     const id = target ? this.registerTarget(texture) : cube && WebGLContext.drawnCube(texture) ? this.drawnCubeId(texture) : this.uploadedId(texture);
+    // A texStorage2D texture's levels clamp its base and max level (ES 3.0 §3.8.10), so it is complete without
+    // TEXTURE_MAX_LEVEL; a cube map keeps its storage on its faces.
+    const storage = cube ? texture.faces![0]! : texture;
+    const baseLevel = storage.immutable ? Math.min(texture.baseLevel, storage.levels - 1) : texture.baseLevel;
+    const maxLevel = storage.immutable ? Math.min(Math.max(texture.maxLevel, baseLevel), storage.levels - 1) : texture.maxLevel;
     return {
       texture: id,
       min: FILTERS[texture.min]!,
@@ -3390,8 +3395,8 @@ export class WebGLContext {
       wrapS: WRAPS[texture.wrapS]!,
       wrapT: WRAPS[texture.wrapT]!,
       ...((texture.depth > 0 && texture.target === GL2.TEXTURE_3D) || cube ? { wrapR: WRAPS[texture.wrapR]! } : {}),
-      ...(texture.maxLevel < 1000 ? { maxLevel: texture.maxLevel } : {}),
-      ...(texture.baseLevel > 0 ? { baseLevel: texture.baseLevel } : {}),
+      ...(maxLevel < 1000 ? { maxLevel } : {}),
+      ...(baseLevel > 0 ? { baseLevel } : {}),
       ...(texture.compareMode === GL2.COMPARE_REF_TO_TEXTURE ? { compare: DEPTH_FUNCS[texture.compareFunc]! } : {}),
     };
   }
