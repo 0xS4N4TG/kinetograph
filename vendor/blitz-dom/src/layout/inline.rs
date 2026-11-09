@@ -1099,7 +1099,9 @@ impl LayoutPassState<'_> {
                         layout.padding = padding; //.map(|p| p / scale);
                         layout.border = border; //.map(|p| p / scale);
                         layout.margin = margin;
-                    } else {
+                    } else if inputs.run_mode == RunMode::PerformLayout {
+                        // A measurement (`ComputeSize`) leaves the box's layout to the final pass:
+                        // its output can come from taffy's size-only cache, with no overflow.
                         // Re-measure the box to get its border-box size (this hits the layout
                         // cache). The size cannot be recovered from `ibox` dimensions as the
                         // space reserved in the line is clamped to be non-negative.

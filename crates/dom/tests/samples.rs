@@ -5,6 +5,7 @@ mod common;
 
 use common::*;
 use kinetograph_dom::document::{EditsError, IslandCache};
+use kinetograph_dom::readback;
 use serde_json::{Value, json};
 
 fn sample(x: f64, label: &str, extra: &str) -> Value {
@@ -545,6 +546,50 @@ fn text_beside_an_edited_float_wraps_as_fresh() {
             drawn(&mut fresh, &s, None),
             "float {float}px"
         );
+    }
+}
+
+/// An inline-block's overflow (`scrollWidth`, `scrollHeight`) is its final layout's: a measure of its line after an
+/// edit, answered from taffy's size-only cache, leaves it alone.
+#[test]
+fn an_inline_block_keeps_its_overflow_when_its_line_is_measured_again() {
+    let page = |display: &str| {
+        request(el(
+            "div",
+            "$0",
+            "position: absolute; inset: 0; font: 16px 'DM Sans'",
+            vec![el(
+                "div",
+                "$0.0",
+                &format!("display: {display}; flex-direction: column; width: 233px"),
+                vec![el(
+                    "section",
+                    "$0.0.0",
+                    "width: 284px",
+                    vec![
+                        el(
+                            "span",
+                            "$0.0.0.0",
+                            "display: inline-block; width: 30px; height: 12px",
+                            vec![text("1234 1234 1234 1234")],
+                        ),
+                        text("frame"),
+                        // A block after the line: the line is an anonymous block's.
+                        el("table", "$0.0.0.2", "", vec![]),
+                    ],
+                )],
+            )],
+        ))
+    };
+    let mut cache = IslandCache::default();
+    for (pass, display) in ["block", "flex"].into_iter().enumerate() {
+        let s = parse(&page(display));
+        let resolved = cache.resolve(&s, Some(pass as u64 + 1)).unwrap();
+        let edited = readback::layout_boxes(&resolved.island)["$0.0.0.0"].scroll;
+        cache.keep(s.clone(), resolved);
+        let fresh = IslandCache::default().resolve(&s, None).unwrap();
+        let want = readback::layout_boxes(&fresh.island)["$0.0.0.0"].scroll;
+        assert_eq!(edited, want, "display: {display}");
     }
 }
 
