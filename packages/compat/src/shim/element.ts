@@ -3,7 +3,7 @@
 // (`Readback`, cached by tree generation). Script changes to `style` and attributes are laid over the props; nothing
 // is ever drawn from this object, only read.
 
-import { attributesOf } from '../request/attrs.js';
+import { attributeOf, attributesOf } from '../request/attrs.js';
 import { cssPropertyName, styleToCss } from '../request/style.js';
 import { resolveDocumentUrl } from '../environment.js';
 import { srcsetCandidate } from '../request/srcset.js';
@@ -536,8 +536,17 @@ export class DomElement extends DomNodeBase {
     return null;
   }
   getAttribute(name: string): string | null {
-    const attrs = this.attrs();
-    return attrs[name] ?? attrs[name.toLowerCase()] ?? null;
+    // `attrs()[name] ?? attrs()[name.toLowerCase()]`, reading only the attribute asked for.
+    const props = propsWithOverlay(this.host);
+    const one = (wanted: string): string | null => {
+      if (wanted === 'style') {
+        const style = styleToCss(props.style);
+        if (style !== '') return style;
+      }
+      return attributeOf(props, wanted, () => this.inSvg);
+    };
+    const lower = name.toLowerCase();
+    return one(name) ?? (lower !== name ? one(lower) : null);
   }
   hasAttribute(name: string): boolean {
     return this.getAttribute(name) !== null;

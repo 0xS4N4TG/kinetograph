@@ -436,15 +436,21 @@ function documentQuery(selector: string, first: boolean): DomElement[] {
     out.push(body);
     if (first) return out;
   }
+  // The roots' trees are under `body` too: each element is listed once (a set, as a page's tree has thousands).
+  const seen = new Set(out);
+  const add = (found: DomElement): void => {
+    if (seen.has(found)) return;
+    seen.add(found);
+    out.push(found);
+  };
   for (const found of first ? [body.querySelector(selector)].filter((e) => e !== null) : body.querySelectorAll(selector)) {
-    if (!out.includes(found as DomElement)) out.push(found as DomElement);
+    add(found as DomElement);
     if (first) return out;
   }
   for (const readback of readbackRoots()) {
     const cx = selectorContextOf(readback);
     for (const host of queryAll(readback.descendants(), selector, cx, first)) {
-      const found = domElementFor(host, readback);
-      if (!out.includes(found)) out.push(found);
+      add(domElementFor(host, readback));
       if (first) return out;
     }
   }
