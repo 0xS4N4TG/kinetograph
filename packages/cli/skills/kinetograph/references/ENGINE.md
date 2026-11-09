@@ -999,7 +999,7 @@ Goal: stop redoing what did not change between frames. What was found, measured 
   empties the cache; `compat/dom`'s `breakSamplePasses` skips a number when a frame does not follow the one before).
   97% of island renders edit a kept document (`n_built` 1.63 -> 0.12 a frame); the island thread's work falls from
   5.8 to 2.9 ms a frame. `KINETOGRAPH_NO_INCREMENTAL=1` turns it off. This exposed two bugs in the edit path that
-  a fresh build never hits: `repaint_transforms` updated one group of an element painted as two (see below), and
+  a fresh build never hits: the transform-only repaint (since replaced by retained paint, below) updated one group of an element painted as two, and
   layer ids made from Blitz's node id (`n4294967481`) change when a restyle makes a node again; nodes with no
   `data-kg-path` are now named by their place under the nearest ancestor that has one (`$0.0!a0.text`).
 - **Video decode** moved off the render thread: after a frame takes a picture, a thread decodes and converts the next
@@ -1030,7 +1030,7 @@ Goal: stop redoing what did not change between frames. What was found, measured 
   changes, or a change to an SVG element an id can name or to what the painter walks up to (text decoration, any custom
   property that is not inherited, float, position, display). The root's context is retained too. Paint per frame: mg1
   23.8 -> 6 ms, film 5.3 -> 3.0 ms, dm4 13 -> 10 ms (measured before the root's context was retained; its boxes sit
-  straight in it). Replaces `repaint_transforms`. Tests: `crates/dom/tests/retain.rs`.
+  straight in it). Replaces the transform-only repaint. Tests: `crates/dom/tests/retain.rs`.
 
 **A third edit-path bug: baselines lost to taffy's cache** (fixed). Launch film frames 180 and 181 drew the caption word
 `screenshotting` differently when frame 179 had been drawn just before (a document edited) than when the render started

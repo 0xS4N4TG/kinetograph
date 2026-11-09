@@ -56,7 +56,7 @@ Upstream: crates.io `blitz-dom` 0.3.0-beta.3 (`DioxusLabs/blitz`, commit `5890fa
 - `src/layout/paint_tree.rs`: a `display: none` box gives up the out-of-flow boxes an earlier layout hoisted to it, which an edited document drew.
 - `src/counters.rs`, `src/resolve.rs`: per-thread counters of the resolve passes (passes, time in each phase, nodes reconstructed, anonymous blocks freed, inline layouts rebuilt), which Kinetograph's profiler shows (`crates/dom/src/counters.rs`). `resolve_layout` returns the time it spent rounding.
 
-Drop when Blitz answers container queries and restyles a `style` change on its own element, and when taffy's measure cache keeps baselines and keys a block child by the floats beside it, and when Blitz isolates `unicode-bidi` inline elements.
+Drop when Blitz answers container queries and restyles a `style` change on its own element, and when taffy's measure cache keeps baselines and keys a block child by the floats beside it, when Blitz isolates `unicode-bidi` inline elements, and when upstream takes the edit-path fixes above (damage propagation, the svg snapshot, construction and pseudo-element rebuilds, inline overflow).
 
 ## parley 0.12.0
 
