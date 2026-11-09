@@ -1,15 +1,15 @@
 ---
-title: Make your first video
-description: Make your first Kinetograph video with your own coding agent, or with three commands in a terminal.
+title: Install and make your first video
+description: "Install Kinetograph (setup takes one command) and make your first video with your own coding agent."
 ---
 
 <Video name="first-video" label="A first video: one request, a short wait, the finished title card" silent />
 
-Kinetograph turns one sentence into a video you can keep editing. If you already work with a coding agent, install the skills and ask it. If you prefer a terminal, three commands make the same kind of project.
+Kinetograph turns one sentence into a video you can keep editing. If you already work with a coding agent, install the skills and ask it.
 
-<LinkCard title="Install Kinetograph" icon="download" href="/docs/getting-started/installation/">
-  One command, about a minute. Your agent can run it for you.
-</LinkCard>
+<InstallCard title="Install Kinetograph" command="npx kinetograph skills update" href="/docs/check-your-setup/" link="Check your setup">
+  One command installs Kinetograph's skills for your coding agent.
+</InstallCard>
 
 ## With your agent
 
@@ -69,28 +69,7 @@ Set this folder up for Kinetograph and make me a video.
   </Step>
 </Steps>
 
-## In the terminal
-
-No agent needed. In an empty folder:
-
-<Steps>
-  <Step title="Make the project">
-    ```sh
-    npx kinetograph init
-    npm install
-    ```
-  </Step>
-  <Step title="Save the video">
-    ```sh
-    npx kinetograph render src/index.tsx
-    ```
-
-    The video is `out/renders/Main.mp4`. Open it.
-  </Step>
-  <Step title="Change something">
-    Open `src/scenes/Title.tsx`, change the words "Hello, Kinetograph", and render again.
-  </Step>
-</Steps>
+No agent? [Write your first video in code](/docs/making-videos/first-video-in-code/) with `npx kinetograph init`.
 
 <Note>You need Node.js 22 or newer for either route.</Note>
 
