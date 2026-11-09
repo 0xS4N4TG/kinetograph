@@ -2,6 +2,7 @@
 // crates/dom/src/request.rs (packages/cli/skills/kinetograph/references/ENGINE.md §2): the addon edits the state it
 // holds instead of reading the whole tree again. Pure: no addon, no clock.
 
+import { sameJson } from '@kinetographdev/scene';
 import type { DomNode } from '../types.js';
 import { elementFields, fileResolver, type IslandRequestJson, type RequestNode } from './build.js';
 import { isDomElement } from './tags.js';
@@ -68,7 +69,7 @@ export function islandEdits(kept: EditableRequest, changed: readonly ChangedElem
     const was = entry.node;
     const { attrs, style } = elementFields(node, entry.svg, kept.request.viewport, local);
     const edit: NodeEditJson = { path };
-    if (!sameRecord(attrs, was.attrs)) edit.attrs = attrs;
+    if (!sameJson(attrs, was.attrs)) edit.attrs = attrs;
     if (style !== was.style) edit.style = style;
     if (children.length !== was.children.length) return null;
     const texts: [number, string][] = [];
@@ -91,11 +92,4 @@ export function islandEdits(kept: EditableRequest, changed: readonly ChangedElem
   }
   kept.request.time = time;
   return set;
-}
-
-function sameRecord(a: Record<string, string>, b: Record<string, string>): boolean {
-  const keys = Object.keys(a);
-  if (keys.length !== Object.keys(b).length) return false;
-  for (const key of keys) if (a[key] !== b[key]) return false;
-  return true;
 }

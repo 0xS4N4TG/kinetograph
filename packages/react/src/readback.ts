@@ -25,7 +25,7 @@ import {
 } from '@kinetographdev/compat/dom';
 import type { BoxInfo, Readback } from '@kinetographdev/compat/shim';
 import { effectiveParentOf, headHost, propsWithOverlay, rawParentOf, setRawParent } from '@kinetographdev/compat/shim';
-import type { Unsupported } from '@kinetographdev/scene';
+import { sameJson, type Unsupported } from '@kinetographdev/scene';
 import { domFillOf, flattenDomElement, type EmitOptions, type HostElement, type HostNode } from './emit.js';
 
 /** The root of the host tree, as `root.ts` keeps it. */
@@ -229,7 +229,7 @@ export function createReadback(container: Container, options: EmitOptions): Read
     const { request } = state;
     const viewport = options.viewport ?? { width: 1920, height: 1080 };
     if (viewport.width !== request.viewport.width || viewport.height !== request.viewport.height) return null;
-    if (!sameRecord(options.fonts?.() ?? {}, request.fonts)) return null;
+    if (!sameJson(options.fonts?.() ?? {}, request.fonts)) return null;
     const imported = importedStylesheets();
     if (imported.length !== state.imported.length || imported.some((css, i) => css !== state.imported[i])) return null;
     const changed: ChangedElement[] = [];
@@ -422,11 +422,6 @@ export function createReadback(container: Container, options: EmitOptions): Read
     },
   };
   return readback;
-}
-
-function sameRecord(a: Record<string, string>, b: Record<string, string>): boolean {
-  const keys = Object.keys(a);
-  return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
 }
 
 /** A property's value from the element's inline style or attributes, when the engine cannot say. */

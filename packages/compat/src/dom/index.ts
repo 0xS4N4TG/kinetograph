@@ -2,7 +2,7 @@
 // taffy and Parley style and lay it out, our compositor paints it, and the layers come back as scene JSON. Native
 // (`kg-*`) elements inside the island are drawn here and put where Rust placed their boxes.
 
-import type { CameraJson, LayerJson, Unsupported } from '@kinetographdev/scene';
+import { sameJson, type CameraJson, type LayerJson, type Unsupported } from '@kinetographdev/scene';
 import { addonFunction, hasAddonFunction } from '../addon.js';
 import { fontFacesRegistered, getDomEnvironment, importedStylesheets, noteStylesheet, readLocalStylesheet } from '../environment.js';
 import { buildIslandRequest, type IslandRequestJson } from '../request/build.js';
@@ -241,17 +241,6 @@ function prepare(root: DomNode, context: IslandContext) {
   if (history.length > 0 && islandMoves(request.stylesheets, [request.root, ...history.map((state) => state.root)])) request.history = history;
   if (isWarming()) return null;
   return { request, natives };
-}
-
-/** Whether two JSON values are the same (objects whatever the order of their keys). */
-function sameJson(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
-  if (Array.isArray(a)) return Array.isArray(b) && a.length === b.length && a.every((item, i) => sameJson(item, b[i]));
-  if (Array.isArray(b)) return false;
-  const keys = Object.keys(a);
-  if (keys.length !== Object.keys(b).length) return false;
-  return keys.every((key) => sameJson((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]));
 }
 
 /** An island's result from the addon's output; `emitNative` gives the layers of the native element at a path. */
