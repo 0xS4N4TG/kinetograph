@@ -726,7 +726,9 @@ of the list first), and the vertex shader's wrapper places the quad after `main`
 the viewport, clamped to 1..511, with `gl_PointCoord` as a varying at location 15; a point whose centre is outside
 the clip volume is dropped, as GL does, and culling does not apply. `gl_VertexID` is wgpu's `vertex_index` (which
 counts from the draw's `first`), or the instance index in a draw of points; `gl_InstanceID` is the instance index. An
-attribute with `vertexAttribDivisor(1)` is a vertex buffer of step mode `Instance`. `blitFramebuffer` is an op of its
+attribute with `vertexAttribDivisor(1)` is a vertex buffer of step mode `Instance`. Lines are wgpu's `LineList` and
+`LineStrip` (a loop is a strip with its first vertex again), which on Metal are Metal's one-pixel lines, the primitive
+ANGLE draws Chrome's with; `ALIASED_LINE_WIDTH_RANGE` is 1 to 1, so `lineWidth` above 1 changes nothing, as in Chrome. `blitFramebuffer` is an op of its
 own, one pass (`shaders/glsl_copy.wgsl`) that stretches the source rectangle over the destination with `textureLoad`
 (NEAREST) or the bilinear sampler (LINEAR), keeping the rows of the drawing buffer (top first) and of a target
 (GL's bottom first) apart, with a pipeline for each destination format (a 32-bit float source is read through a
