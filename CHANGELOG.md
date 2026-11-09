@@ -11,6 +11,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Fixed
 
+- Text beside a float that changes width re-wraps correctly.
 - `staticFile()` returns forward slashes on Windows so CSS `url()` paths are not corrupted by backslash escapes (#100).
 - Paint decodes percent-encoded Windows drive paths with spaces in CSS background and border images (#100).
 
