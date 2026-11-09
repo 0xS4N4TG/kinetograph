@@ -23,10 +23,17 @@ kg-spacer { display: inline-block; height: 0; margin: 0; padding: 0; border: 0; 
 template, script, noscript { display: none; }
 "#;
 
-/// The UA sheets in cascade order.
-pub fn sheets() -> Vec<String> {
-    vec![
+/// The UA sheets in cascade order. `default_family` is the font of text that names no `font-family`.
+pub fn sheets(default_family: Option<&str>) -> Vec<String> {
+    let mut sheets = vec![
         blitz_dom::DEFAULT_CSS.to_string(),
         KINETOGRAPH_UA.to_string(),
-    ]
+    ];
+    if let Some(family) = default_family {
+        sheets.push(format!(
+            "html {{ font-family: \"{}\"; }}",
+            family.replace(['"', '\\'], "")
+        ));
+    }
+    sheets
 }

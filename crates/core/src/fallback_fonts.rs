@@ -98,9 +98,12 @@ pub fn monospace_face() -> &'static Face {
     })
 }
 
-/// Every bundled font: the fallbacks, then the monospace one.
+/// Every bundled font: the fallbacks, the monospace one, then the sans and serif ones of the generic families.
 fn all() -> impl Iterator<Item = &'static Face> {
-    faces().iter().chain(std::iter::once(monospace_face()))
+    faces()
+        .iter()
+        .chain(std::iter::once(monospace_face()))
+        .chain(crate::generic_fonts::faces())
 }
 
 /// The face a `builtin:` glyph-run `src` names.

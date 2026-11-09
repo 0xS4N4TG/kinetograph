@@ -1,0 +1,8160 @@
+{
+  "registry": "https://github.com/heygen-com/hyperframes/tree/75fe18c621be5297d7b09a788fabc75a3cd6c734/registry",
+  "ref": "75fe18c621be5297d7b09a788fabc75a3cd6c734",
+  "machine": "darwin-arm64 Apple M4 (10 cores)",
+  "kinetograph": "0.3.0",
+  "jobs": 4,
+  "counts": {
+    "works": 279,
+    "partial": 167,
+    "fails": 2,
+    "skipped": 0
+  },
+  "stillMs": {
+    "median": 225,
+    "p90": 605,
+    "max": 14052
+  },
+  "topUnsupported": [
+    {
+      "feature": "HyperFrames: Three.js is not supported: its scenes are not drawn",
+      "items": 22,
+      "examples": [
+        "canopy-part-title",
+        "code-3d-extrude",
+        "code-particle-assemble"
+      ]
+    },
+    {
+      "feature": "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+      "items": 22,
+      "examples": [
+        "canopy-part-title",
+        "code-3d-extrude",
+        "code-particle-assemble"
+      ]
+    },
+    {
+      "feature": "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+      "items": 17,
+      "examples": [
+        "code-3d-extrude",
+        "code-particle-assemble",
+        "code-shader-dissolve"
+      ]
+    },
+    {
+      "feature": "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+      "items": 17,
+      "examples": [
+        "code-3d-extrude",
+        "code-particle-assemble",
+        "code-shader-dissolve"
+      ]
+    },
+    {
+      "feature": "div background: a gradient that interpolates in a colour space other than sRGB",
+      "items": 16,
+      "examples": [
+        "cinemagraph",
+        "confetti",
+        "constellation-hub"
+      ]
+    },
+    {
+      "feature": "div backdrop-filter: only blur() is drawn in a backdrop filter",
+      "items": 5,
+      "examples": [
+        "ios26-liquid-glass",
+        "macos-tahoe-liquid-glass",
+        "slack-notification-ad"
+      ]
+    },
+    {
+      "feature": "HyperFrames: the root element lacks data-composition-id, data-width, data-height, data-duration, so the page is drawn at 1920x1080 for as long as its timelines run (1 second with none): write it as <div id=\"root\" data-composition-id=\"main\" data-width=\"1920\" data-height=\"1080\" data-duration=\"10\"> (size in pixels, duration in seconds, 30 fps)",
+      "items": 3,
+      "examples": [
+        "caption-camera-follow",
+        "grade-split-reveal",
+        "shutter-slam"
+      ]
+    },
+    {
+      "feature": "div mask: the picture <page> is not a file the project has",
+      "items": 2,
+      "examples": [
+        "caption-texture",
+        "texture-mask-text"
+      ]
+    },
+    {
+      "feature": "HyperFrames: <page>: script failed: Cannot read properties of null (reading 'parentElement')",
+      "items": 2,
+      "examples": [
+        "caption-camera-follow",
+        "grade-split-reveal"
+      ]
+    },
+    {
+      "feature": "HyperFrames: <page>: script failed: document.querySelector(...).content.getElementById is not a function",
+      "items": 2,
+      "examples": [
+        "paper-collage-reveal",
+        "torn-paper-rip"
+      ]
+    }
+  ],
+  "topFailures": [
+    {
+      "feature": "doctor: ",
+      "items": 1,
+      "examples": [
+        "frost-sequence-camera-orbit"
+      ]
+    },
+    {
+      "feature": "doctor: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+      "items": 1,
+      "examples": [
+        "vfx-liquid-background"
+      ]
+    }
+  ],
+  "items": {
+    "agent-cursor": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./agent-cursor.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1019,
+      "frames": 144,
+      "stillMs": [
+        208,
+        269
+      ],
+      "stills": [
+        43,
+        115
+      ]
+    },
+    "ai-answer-rank": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1448,
+      "frames": 270,
+      "stillMs": [
+        367,
+        554
+      ],
+      "stills": [
+        81,
+        216
+      ]
+    },
+    "ai-chat-reveal": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": null,
+      "doctorMs": 5330,
+      "frames": 580,
+      "stillMs": [
+        727,
+        2334
+      ],
+      "stills": [
+        174,
+        464
+      ]
+    },
+    "animated-bar-chart": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1131,
+      "frames": 150,
+      "stillMs": [
+        264,
+        225
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "app-showcase": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 4,
+      "licence": null,
+      "doctorMs": 1853,
+      "frames": 165,
+      "stillMs": [
+        516,
+        582
+      ],
+      "stills": [
+        49,
+        132
+      ]
+    },
+    "apple-money-count": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 2657,
+      "frames": 150,
+      "stillMs": [
+        278,
+        470
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "arc-motion-path": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1139,
+      "frames": 150,
+      "stillMs": [
+        398,
+        329
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "ascii-render-pass": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./ascii-render-pass.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 623,
+      "frames": 120,
+      "stillMs": [
+        101,
+        140
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "ascii-trail-reveal": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./ascii-trail-reveal.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 854,
+      "frames": 120,
+      "stillMs": [
+        220,
+        140
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "aurora": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 971,
+      "frames": 60,
+      "stillMs": [
+        204,
+        204
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "aurora-drift": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./aurora-drift.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1005,
+      "frames": 120,
+      "stillMs": [
+        119,
+        105
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "avatar-cloud": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./avatar-cloud.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 590,
+      "frames": 150,
+      "stillMs": [
+        134,
+        142
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "avatar-group-hover": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 940,
+      "frames": 150,
+      "stillMs": [
+        149,
+        173
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "badge-pop": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1122,
+      "frames": 150,
+      "stillMs": [
+        180,
+        179
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "bar-chart-race": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 2361,
+      "frames": 360,
+      "stillMs": [
+        303,
+        676
+      ],
+      "stills": [
+        108,
+        288
+      ]
+    },
+    "beat-accent": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./beat-accent.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 654,
+      "frames": 120,
+      "stillMs": [
+        111,
+        156
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "beat-freeze-cut": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 6,
+      "licence": null,
+      "doctorMs": 1360,
+      "frames": 180,
+      "stillMs": [
+        540,
+        668
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "beat-pulse-background": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./beat-pulse-background.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 760,
+      "frames": 120,
+      "stillMs": [
+        99,
+        120
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "beat-timeline": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./beat-timeline.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 742,
+      "frames": 165,
+      "stillMs": [
+        152,
+        125
+      ],
+      "stills": [
+        49,
+        132
+      ]
+    },
+    "before-after-wipe": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./before-after-wipe.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 806,
+      "frames": 120,
+      "stillMs": [
+        98,
+        122
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "blob": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 882,
+      "frames": 60,
+      "stillMs": [
+        148,
+        286
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "blue-sweater-intro-video": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": null,
+      "doctorMs": 4799,
+      "frames": 360,
+      "stillMs": [
+        1099,
+        1642
+      ],
+      "stills": [
+        108,
+        288
+      ]
+    },
+    "blur-in": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1124,
+      "frames": 120,
+      "stillMs": [
+        175,
+        218
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "blur-out-up": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 866,
+      "frames": 150,
+      "stillMs": [
+        149,
+        187
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "bottom-up-letters": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1039,
+      "frames": 120,
+      "stillMs": [
+        149,
+        170
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "browser-device-stage": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./browser-device-stage.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 789,
+      "frames": 150,
+      "stillMs": [
+        145,
+        149
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "camcorder-hud": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 868,
+      "frames": 120,
+      "stillMs": [
+        155,
+        207
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "camera-dolly-zoom": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1179,
+      "frames": 120,
+      "stillMs": [
+        141,
+        170
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "camera-rig-depth-stack": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 748,
+      "frames": 150,
+      "stillMs": [
+        231,
+        272
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "camera-scan-gate": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./camera-scan-gate.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 655,
+      "frames": 120,
+      "stillMs": [
+        132,
+        135
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "camera-shake": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1394,
+      "frames": 180,
+      "stillMs": [
+        194,
+        279
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "canopy-part-title": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)"
+      ],
+      "files": 6,
+      "licence": null,
+      "doctorMs": 2192,
+      "frames": 360,
+      "stillMs": [
+        115,
+        187
+      ],
+      "stills": [
+        108,
+        288
+      ]
+    },
+    "caption-blend-difference": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1031,
+      "frames": 180,
+      "stillMs": [
+        171,
+        276
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "caption-camera-follow": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: Cannot read properties of null (reading 'parentElement')",
+        "HyperFrames: the root element lacks data-composition-id, data-width, data-height, data-duration, so the page is drawn at 1920x1080 for as long as its timelines run (1 second with none): write it as <div id=\"root\" data-composition-id=\"main\" data-width=\"1920\" data-height=\"1080\" data-duration=\"10\"> (size in pixels, duration in seconds, 30 fps)",
+        "note: <page>: script failed: Cannot read properties of null (reading 'parentElement')"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 836,
+      "frames": 30,
+      "stillMs": [
+        86,
+        106
+      ],
+      "stills": [
+        9,
+        24
+      ]
+    },
+    "caption-clip-wipe": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1184,
+      "frames": 240,
+      "stillMs": [
+        162,
+        281
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "caption-editorial-emphasis": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 4,
+      "licence": null,
+      "doctorMs": 1549,
+      "frames": 240,
+      "stillMs": [
+        282,
+        537
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "caption-emoji-pop": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "div font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+      ],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1830,
+      "frames": 240,
+      "stillMs": [
+        354,
+        356
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "caption-glitch-rgb": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1163,
+      "frames": 240,
+      "stillMs": [
+        228,
+        522
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "caption-gradient-fill": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1510,
+      "frames": 240,
+      "stillMs": [
+        186,
+        277
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "caption-highlight": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1369,
+      "frames": 240,
+      "stillMs": [
+        287,
+        586
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "caption-kinetic-slam": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1098,
+      "frames": 240,
+      "stillMs": [
+        300,
+        423
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "caption-matrix-decode": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1518,
+      "frames": 240,
+      "stillMs": [
+        334,
+        396
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "caption-neon-accent": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 2415,
+      "frames": 240,
+      "stillMs": [
+        224,
+        328
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "caption-neon-glow": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1025,
+      "frames": 240,
+      "stillMs": [
+        269,
+        431
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "caption-parallax-layers": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": null,
+      "doctorMs": 1311,
+      "frames": 240,
+      "stillMs": [
+        295,
+        384
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "caption-particle-burst": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1847,
+      "frames": 240,
+      "stillMs": [
+        246,
+        467
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "caption-pill-karaoke": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1177,
+      "frames": 240,
+      "stillMs": [
+        224,
+        341
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "caption-texture": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "div mask: the picture <page> is not a file the project has",
+        "resource: cannot load a resource: <page>: no such file"
+      ],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 1812,
+      "frames": 240,
+      "stillMs": [
+        509,
+        1028
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "caption-weight-shift": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": null,
+      "doctorMs": 1176,
+      "frames": 240,
+      "stillMs": [
+        294,
+        400
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "card-resize": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 931,
+      "frames": 150,
+      "stillMs": [
+        197,
+        196
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "caret-swap": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./caret-swap.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 3,
+      "licence": "MIT AND OFL-1.1",
+      "doctorMs": 859,
+      "frames": 100,
+      "stillMs": [
+        95,
+        90
+      ],
+      "stills": [
+        30,
+        80
+      ]
+    },
+    "carousel-circle-1": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 13,
+      "licence": null,
+      "doctorMs": 1212,
+      "frames": 180,
+      "stillMs": [
+        430,
+        656
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-circle-2": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 13,
+      "licence": null,
+      "doctorMs": 1440,
+      "frames": 180,
+      "stillMs": [
+        353,
+        472
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-circle-3": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 13,
+      "licence": null,
+      "doctorMs": 1381,
+      "frames": 180,
+      "stillMs": [
+        353,
+        481
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-circle-4": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 13,
+      "licence": null,
+      "doctorMs": 1547,
+      "frames": 180,
+      "stillMs": [
+        475,
+        358
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-circle-5": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 13,
+      "licence": null,
+      "doctorMs": 1269,
+      "frames": 180,
+      "stillMs": [
+        326,
+        583
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-orbit-1": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 25,
+      "licence": null,
+      "doctorMs": 1727,
+      "frames": 180,
+      "stillMs": [
+        579,
+        685
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-orbit-2": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 25,
+      "licence": null,
+      "doctorMs": 1722,
+      "frames": 180,
+      "stillMs": [
+        601,
+        697
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-orbit-3": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 25,
+      "licence": null,
+      "doctorMs": 1950,
+      "frames": 180,
+      "stillMs": [
+        641,
+        644
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-orbit-4": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 25,
+      "licence": null,
+      "doctorMs": 1255,
+      "frames": 180,
+      "stillMs": [
+        579,
+        1017
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-orbit-5": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 25,
+      "licence": null,
+      "doctorMs": 1801,
+      "frames": 180,
+      "stillMs": [
+        629,
+        747
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-path-1": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 25,
+      "licence": null,
+      "doctorMs": 1854,
+      "frames": 180,
+      "stillMs": [
+        643,
+        728
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-path-2": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 13,
+      "licence": null,
+      "doctorMs": 1560,
+      "frames": 180,
+      "stillMs": [
+        368,
+        457
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-path-3": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 13,
+      "licence": null,
+      "doctorMs": 960,
+      "frames": 180,
+      "stillMs": [
+        353,
+        474
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-path-4": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 25,
+      "licence": null,
+      "doctorMs": 1738,
+      "frames": 180,
+      "stillMs": [
+        480,
+        863
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-path-5": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 25,
+      "licence": null,
+      "doctorMs": 1773,
+      "frames": 180,
+      "stillMs": [
+        485,
+        859
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-text-circle-1": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 14,
+      "licence": null,
+      "doctorMs": 1391,
+      "frames": 150,
+      "stillMs": [
+        343,
+        533
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "carousel-text-circle-2": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 14,
+      "licence": null,
+      "doctorMs": 1383,
+      "frames": 150,
+      "stillMs": [
+        273,
+        306
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "carousel-text-circle-3": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 14,
+      "licence": null,
+      "doctorMs": 1424,
+      "frames": 150,
+      "stillMs": [
+        426,
+        427
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "carousel-text-circle-4": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 14,
+      "licence": null,
+      "doctorMs": 1316,
+      "frames": 150,
+      "stillMs": [
+        406,
+        465
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "carousel-text-circle-5": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 14,
+      "licence": null,
+      "doctorMs": 1072,
+      "frames": 150,
+      "stillMs": [
+        370,
+        507
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "carousel-vision-1": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 13,
+      "licence": null,
+      "doctorMs": 1595,
+      "frames": 180,
+      "stillMs": [
+        376,
+        437
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-vision-2": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 13,
+      "licence": null,
+      "doctorMs": 975,
+      "frames": 180,
+      "stillMs": [
+        346,
+        582
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-vision-3": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 13,
+      "licence": null,
+      "doctorMs": 1235,
+      "frames": 180,
+      "stillMs": [
+        388,
+        550
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-vision-4": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 13,
+      "licence": null,
+      "doctorMs": 1432,
+      "frames": 180,
+      "stillMs": [
+        474,
+        489
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "carousel-vision-5": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 13,
+      "licence": null,
+      "doctorMs": 1496,
+      "frames": 180,
+      "stillMs": [
+        391,
+        386
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "char-slam-explode": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./char-slam-explode.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 565,
+      "frames": 105,
+      "stillMs": [
+        104,
+        196
+      ],
+      "stills": [
+        31,
+        84
+      ]
+    },
+    "chart-story": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./chart-story.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 591,
+      "frames": 150,
+      "stillMs": [
+        117,
+        121
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "chat-message": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1512,
+      "frames": 360,
+      "stillMs": [
+        237,
+        368
+      ],
+      "stills": [
+        108,
+        288
+      ]
+    },
+    "chat-thread": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 3928,
+      "frames": 360,
+      "stillMs": [
+        700,
+        1382
+      ],
+      "stills": [
+        108,
+        288
+      ]
+    },
+    "chatgpt-exchange": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "span font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())",
+        "text font-family: font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())"
+      ],
+      "files": 6,
+      "licence": null,
+      "doctorMs": 8239,
+      "frames": 447,
+      "stillMs": [
+        1363,
+        2775
+      ],
+      "stills": [
+        134,
+        357
+      ]
+    },
+    "chromatic-aberration-wipe": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 771,
+      "frames": 150,
+      "stillMs": [
+        148,
+        197
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "chromatic-radial-split": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 8358,
+      "frames": 120,
+      "stillMs": [
+        492,
+        508
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "chrome-orb": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1097,
+      "frames": 60,
+      "stillMs": [
+        251,
+        213
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "cinemagraph": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "div background: a gradient that interpolates in a colour space other than sRGB"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1256,
+      "frames": 300,
+      "stillMs": [
+        200,
+        259
+      ],
+      "stills": [
+        90,
+        240
+      ]
+    },
+    "cinematic-zoom": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 7863,
+      "frames": 120,
+      "stillMs": [
+        450,
+        516
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "claude-exchange": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 9,
+      "licence": null,
+      "doctorMs": 19285,
+      "frames": 642,
+      "stillMs": [
+        3537,
+        7088
+      ],
+      "stills": [
+        192,
+        513
+      ]
+    },
+    "code-3d-extrude": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 900,
+      "frames": 240,
+      "stillMs": [
+        129,
+        154
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "code-diff": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1245,
+      "frames": 180,
+      "stillMs": [
+        235,
+        299
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "code-highlight": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1071,
+      "frames": 150,
+      "stillMs": [
+        196,
+        298
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "code-morph": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1842,
+      "frames": 210,
+      "stillMs": [
+        452,
+        547
+      ],
+      "stills": [
+        63,
+        168
+      ]
+    },
+    "code-particle-assemble": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 828,
+      "frames": 240,
+      "stillMs": [
+        117,
+        187
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "code-scroll": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1711,
+      "frames": 180,
+      "stillMs": [
+        365,
+        654
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "code-shader-dissolve": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 806,
+      "frames": 210,
+      "stillMs": [
+        121,
+        155
+      ],
+      "stills": [
+        63,
+        168
+      ]
+    },
+    "code-slice-hero": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 16328,
+      "frames": 240,
+      "stillMs": [
+        2248,
+        5191
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "code-snippet-apple-terminal-pro": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1004,
+      "frames": 360,
+      "stillMs": [
+        244,
+        340
+      ],
+      "stills": [
+        108,
+        288
+      ]
+    },
+    "code-snippet-dark-2026": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1715,
+      "frames": 330,
+      "stillMs": [
+        297,
+        353
+      ],
+      "stills": [
+        99,
+        264
+      ]
+    },
+    "code-snippet-dark-modern": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1347,
+      "frames": 330,
+      "stillMs": [
+        287,
+        422
+      ],
+      "stills": [
+        99,
+        264
+      ]
+    },
+    "code-terminal-run": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./code-terminal-run.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 805,
+      "frames": 150,
+      "stillMs": [
+        105,
+        109
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "code-typing": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1695,
+      "frames": 150,
+      "stillMs": [
+        430,
+        641
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "color-wheel": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 888,
+      "frames": 60,
+      "stillMs": [
+        171,
+        196
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "colorama-wipe": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 2400,
+      "frames": 108,
+      "stillMs": [
+        407,
+        894
+      ],
+      "stills": [
+        32,
+        86
+      ]
+    },
+    "comparison-split": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./comparison-split.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 798,
+      "frames": 120,
+      "stillMs": [
+        120,
+        119
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "confetti": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "div background: a gradient that interpolates in a colour space other than sRGB"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 990,
+      "frames": 150,
+      "stillMs": [
+        214,
+        316
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "conic-progress-ring": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./conic-progress-ring.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 663,
+      "frames": 120,
+      "stillMs": [
+        86,
+        90
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "constellation-hub": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "div background: a gradient that interpolates in a colour space other than sRGB",
+        "HyperFrames: <page>: data-composition-src=\"./constellation-hub.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 648,
+      "frames": 135,
+      "stillMs": [
+        94,
+        142
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "cosmic-orb": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1045,
+      "frames": 300,
+      "stillMs": [
+        161,
+        265
+      ],
+      "stills": [
+        90,
+        240
+      ]
+    },
+    "count-up": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "div background: a gradient that interpolates in a colour space other than sRGB",
+        "HyperFrames: <page>: data-composition-src=\"./count-up.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 696,
+      "frames": 90,
+      "stillMs": [
+        93,
+        109
+      ],
+      "stills": [
+        27,
+        72
+      ]
+    },
+    "cross-warp-morph": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 7712,
+      "frames": 120,
+      "stillMs": [
+        524,
+        502
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "cta-close": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./cta-close.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 665,
+      "frames": 105,
+      "stillMs": [
+        83,
+        88
+      ],
+      "stills": [
+        31,
+        84
+      ]
+    },
+    "cta-lockup": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./cta-lockup.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 614,
+      "frames": 120,
+      "stillMs": [
+        107,
+        163
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "cuboid-carousel": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 12,
+      "licence": null,
+      "doctorMs": 899,
+      "frames": 201,
+      "stillMs": [
+        181,
+        189
+      ],
+      "stills": [
+        60,
+        160
+      ]
+    },
+    "cursor-annotate": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./cursor-annotate.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 848,
+      "frames": 99,
+      "stillMs": [
+        181,
+        198
+      ],
+      "stills": [
+        29,
+        79
+      ]
+    },
+    "cursor-context-menu": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./cursor-context-menu.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 671,
+      "frames": 117,
+      "stillMs": [
+        82,
+        102
+      ],
+      "stills": [
+        35,
+        93
+      ]
+    },
+    "cursor-drag-drop": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./cursor-drag-drop.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 669,
+      "frames": 108,
+      "stillMs": [
+        94,
+        126
+      ],
+      "stills": [
+        32,
+        86
+      ]
+    },
+    "cursor-glyph-trail": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./cursor-glyph-trail.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 721,
+      "frames": 105,
+      "stillMs": [
+        85,
+        94
+      ],
+      "stills": [
+        31,
+        84
+      ]
+    },
+    "cursor-marquee-select": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./cursor-marquee-select.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 614,
+      "frames": 102,
+      "stillMs": [
+        76,
+        102
+      ],
+      "stills": [
+        30,
+        81
+      ]
+    },
+    "cursor-text-select": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./cursor-text-select.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 742,
+      "frames": 126,
+      "stillMs": [
+        96,
+        101
+      ],
+      "stills": [
+        37,
+        100
+      ]
+    },
+    "cursor-zoom-follow": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./cursor-zoom-follow.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 718,
+      "frames": 174,
+      "stillMs": [
+        104,
+        116
+      ],
+      "stills": [
+        52,
+        139
+      ]
+    },
+    "curtain-reveal": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./curtain-reveal.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 686,
+      "frames": 72,
+      "stillMs": [
+        88,
+        89
+      ],
+      "stills": [
+        21,
+        57
+      ]
+    },
+    "cut-the-curve": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./cut-the-curve.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 673,
+      "frames": 30,
+      "stillMs": [
+        80,
+        87
+      ],
+      "stills": [
+        9,
+        24
+      ]
+    },
+    "dart-cursor": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./dart-cursor.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 894,
+      "frames": 108,
+      "stillMs": [
+        225,
+        339
+      ],
+      "stills": [
+        32,
+        86
+      ]
+    },
+    "data-chart": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 6,
+      "licence": null,
+      "doctorMs": 3304,
+      "frames": 450,
+      "stillMs": [
+        539,
+        1116
+      ],
+      "stills": [
+        135,
+        360
+      ]
+    },
+    "decline-chart": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./decline-chart.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 686,
+      "frames": 120,
+      "stillMs": [
+        109,
+        125
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "device-frame-stage": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./device-frame-stage.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 831,
+      "frames": 150,
+      "stillMs": [
+        99,
+        118
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "directional-wipe": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 746,
+      "frames": 150,
+      "stillMs": [
+        153,
+        173
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "domain-warp-dissolve": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 7594,
+      "frames": 120,
+      "stillMs": [
+        527,
+        472
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "drift-hold": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./drift-hold.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 709,
+      "frames": 120,
+      "stillMs": [
+        96,
+        97
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "dynamic-grid": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 713,
+      "frames": 180,
+      "stillMs": [
+        187,
+        217
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "echo-smear": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: el.style.getPropertyPriority is not a function",
+        "note: <page>: script failed: el.style.getPropertyPriority is not a function"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 2018,
+      "frames": 150,
+      "stillMs": [
+        1171,
+        1307
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "echo-trail": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./echo-trail.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 785,
+      "frames": 105,
+      "stillMs": [
+        94,
+        117
+      ],
+      "stills": [
+        31,
+        84
+      ]
+    },
+    "editorial-flash-overlay": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 741,
+      "frames": 120,
+      "stillMs": [
+        132,
+        130
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "exploded-stack": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 3,
+      "licence": null,
+      "doctorMs": 1012,
+      "frames": 150,
+      "stillMs": [
+        151,
+        160
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "extended-keyframe": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 4153,
+      "frames": 240,
+      "stillMs": [
+        1749,
+        2855
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "extruded-logo": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)"
+      ],
+      "files": 4,
+      "licence": null,
+      "doctorMs": 1100,
+      "frames": 150,
+      "stillMs": [
+        105,
+        98
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "facet-morph": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./facet-morph.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 719,
+      "frames": 150,
+      "stillMs": [
+        106,
+        125
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "fade-through": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 970,
+      "frames": 150,
+      "stillMs": [
+        199,
+        199
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "falling-lines": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 769,
+      "frames": 60,
+      "stillMs": [
+        194,
+        172
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "filmed-screen": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1315,
+      "frames": 240,
+      "stillMs": [
+        194,
+        295
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "flash-through-white": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 8120,
+      "frames": 120,
+      "stillMs": [
+        517,
+        498
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "flowchart": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 5,
+      "licence": null,
+      "doctorMs": 1175,
+      "frames": 360,
+      "stillMs": [
+        298,
+        337
+      ],
+      "stills": [
+        108,
+        288
+      ]
+    },
+    "flowchart-vertical": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 5,
+      "licence": null,
+      "doctorMs": 1328,
+      "frames": 360,
+      "stillMs": [
+        338,
+        405
+      ],
+      "stills": [
+        108,
+        288
+      ]
+    },
+    "flowing-gradient": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 953,
+      "frames": 60,
+      "stillMs": [
+        274,
+        182
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "focus-blur-resolve": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 760,
+      "frames": 150,
+      "stillMs": [
+        120,
+        150
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "focus-rack": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./focus-rack.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 788,
+      "frames": 105,
+      "stillMs": [
+        124,
+        121
+      ],
+      "stills": [
+        31,
+        84
+      ]
+    },
+    "focus-swap": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "div background: a gradient that interpolates in a colour space other than sRGB",
+        "HyperFrames: <page>: data-composition-src=\"./focus-swap.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 733,
+      "frames": 45,
+      "stillMs": [
+        104,
+        129
+      ],
+      "stills": [
+        13,
+        36
+      ]
+    },
+    "fractal-noise": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1082,
+      "frames": 60,
+      "stillMs": [
+        237,
+        203
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "freeze-frame-dressing": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 980,
+      "frames": 120,
+      "stillMs": [
+        154,
+        158
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "frost": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1262,
+      "frames": 60,
+      "stillMs": [
+        185,
+        194
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "frost-sequence-camera-orbit": {
+      "type": "block",
+      "status": "fails",
+      "warnings": [],
+      "files": 19,
+      "licence": null,
+      "doctorMs": 4366,
+      "error": "doctor: "
+    },
+    "gabor-noise": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1031,
+      "frames": 60,
+      "stillMs": [
+        234,
+        238
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "gallery-tunnel": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1133,
+      "frames": 360,
+      "stillMs": [
+        198,
+        270
+      ],
+      "stills": [
+        108,
+        288
+      ]
+    },
+    "gesture-tap": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./gesture-tap.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1037,
+      "frames": 90,
+      "stillMs": [
+        119,
+        124
+      ],
+      "stills": [
+        27,
+        72
+      ]
+    },
+    "glass-hero": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)"
+      ],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1412,
+      "frames": 150,
+      "stillMs": [
+        128,
+        134
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "glass-shard-title": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)"
+      ],
+      "files": 12,
+      "licence": null,
+      "doctorMs": 1504,
+      "frames": 365,
+      "stillMs": [
+        105,
+        152
+      ],
+      "stills": [
+        109,
+        292
+      ]
+    },
+    "glitch": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 8838,
+      "frames": 120,
+      "stillMs": [
+        440,
+        408
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "gloss-sweep": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./gloss-sweep.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 989,
+      "frames": 75,
+      "stillMs": [
+        158,
+        106
+      ],
+      "stills": [
+        22,
+        60
+      ]
+    },
+    "godrays": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 906,
+      "frames": 60,
+      "stillMs": [
+        204,
+        245
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "goo": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1101,
+      "frames": 60,
+      "stillMs": [
+        231,
+        230
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "gooey-split": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: el.style.getPropertyPriority is not a function",
+        "note: <page>: script failed: el.style.getPropertyPriority is not a function"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 935,
+      "frames": 141,
+      "stillMs": [
+        199,
+        227
+      ],
+      "stills": [
+        42,
+        112
+      ]
+    },
+    "grade-split-reveal": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: Cannot read properties of null (reading 'parentElement')",
+        "HyperFrames: the root element lacks data-composition-id, data-width, data-height, data-duration, so the page is drawn at 1920x1080 for as long as its timelines run (1 second with none): write it as <div id=\"root\" data-composition-id=\"main\" data-width=\"1920\" data-height=\"1080\" data-duration=\"10\"> (size in pixels, duration in seconds, 30 fps)",
+        "note: <page>: script failed: Cannot read properties of null (reading 'parentElement')"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 590,
+      "frames": 30,
+      "stillMs": [
+        81,
+        82
+      ],
+      "stills": [
+        9,
+        24
+      ]
+    },
+    "grain-field": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./grain-field.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 753,
+      "frames": 120,
+      "stillMs": [
+        279,
+        158
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "grain-overlay": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1005,
+      "frames": 150,
+      "stillMs": [
+        220,
+        261
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "gravitational-lens": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 7239,
+      "frames": 120,
+      "stillMs": [
+        511,
+        563
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "grid-card-assemble": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./grid-card-assemble.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 581,
+      "frames": 135,
+      "stillMs": [
+        106,
+        123
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "grid-pixelate-wipe": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1827,
+      "frames": 240,
+      "stillMs": [
+        265,
+        542
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "halftone-dissolve": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./halftone-dissolve.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 872,
+      "frames": 105,
+      "stillMs": [
+        101,
+        112
+      ],
+      "stills": [
+        31,
+        84
+      ]
+    },
+    "halftone-field": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 958,
+      "frames": 300,
+      "stillMs": [
+        127,
+        228
+      ],
+      "stills": [
+        90,
+        240
+      ]
+    },
+    "headline-slam": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./headline-slam.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 703,
+      "frames": 105,
+      "stillMs": [
+        120,
+        113
+      ],
+      "stills": [
+        31,
+        84
+      ]
+    },
+    "heatmap": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1146,
+      "frames": 60,
+      "stillMs": [
+        171,
+        215
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "heygen-avatar-promo-card": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 16,
+      "licence": null,
+      "doctorMs": 1567,
+      "frames": 300,
+      "stillMs": [
+        540,
+        883
+      ],
+      "stills": [
+        90,
+        240
+      ]
+    },
+    "hologram": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1056,
+      "frames": 60,
+      "stillMs": [
+        251,
+        241
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "holographic": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1023,
+      "frames": 60,
+      "stillMs": [
+        221,
+        226
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "hw-arrow": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: Cannot read properties of undefined (reading 'baseVal')",
+        "note: <page>: script failed: Cannot read properties of undefined (reading 'baseVal')"
+      ],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1003,
+      "frames": 120,
+      "stillMs": [
+        278,
+        302
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "hw-boil": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 2856,
+      "frames": 180,
+      "stillMs": [
+        573,
+        638
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "hw-box-label": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 2879,
+      "frames": 180,
+      "stillMs": [
+        626,
+        696
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "hw-callout-circle": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 2453,
+      "frames": 180,
+      "stillMs": [
+        501,
+        523
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "hw-frame": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1520,
+      "frames": 240,
+      "stillMs": [
+        277,
+        306
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "hw-path-text": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 2022,
+      "frames": 180,
+      "stillMs": [
+        407,
+        550
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "hw-pipeline": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1224,
+      "frames": 210,
+      "stillMs": [
+        351,
+        417
+      ],
+      "stills": [
+        63,
+        168
+      ]
+    },
+    "hw-scribble-transition": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 807,
+      "frames": 66,
+      "stillMs": [
+        204,
+        172
+      ],
+      "stills": [
+        19,
+        52
+      ]
+    },
+    "hw-text-cloud": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1191,
+      "frames": 180,
+      "stillMs": [
+        225,
+        269
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "hw-title": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 683,
+      "frames": 180,
+      "stillMs": [
+        174,
+        257
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "hw-underline": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 800,
+      "frames": 120,
+      "stillMs": [
+        181,
+        271
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "hw-write-title": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": null,
+      "doctorMs": 1283,
+      "frames": 180,
+      "stillMs": [
+        253,
+        431
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "icon-morph-beat": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./icon-morph-beat.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 805,
+      "frames": 75,
+      "stillMs": [
+        108,
+        126
+      ],
+      "stills": [
+        22,
+        60
+      ]
+    },
+    "icon-swap": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 765,
+      "frames": 150,
+      "stillMs": [
+        104,
+        119
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "ink-bleed-reveal": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "div background: a gradient that interpolates in a colour space other than sRGB",
+        "HyperFrames: <page>: data-composition-src=\"./ink-bleed-reveal.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 702,
+      "frames": 120,
+      "stillMs": [
+        100,
+        154
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "inline-highlight": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 725,
+      "frames": 120,
+      "stillMs": [
+        158,
+        199
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "input-feedback": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 914,
+      "frames": 150,
+      "stillMs": [
+        215,
+        204
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "instagram-follow": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 4,
+      "licence": null,
+      "doctorMs": 1016,
+      "frames": 135,
+      "stillMs": [
+        160,
+        165
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "ios26-liquid-glass": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "div backdrop-filter: only blur() is drawn in a backdrop filter",
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 29,
+      "licence": null,
+      "doctorMs": 2722,
+      "frames": 450,
+      "stillMs": [
+        197,
+        472
+      ],
+      "stills": [
+        135,
+        360
+      ]
+    },
+    "iris-reveal": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./iris-reveal.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 558,
+      "frames": 105,
+      "stillMs": [
+        104,
+        110
+      ],
+      "stills": [
+        31,
+        84
+      ]
+    },
+    "keyframe-scrub-stack": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 978,
+      "frames": 150,
+      "stillMs": [
+        184,
+        190
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "kinetic-center-build": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./kinetic-center-build.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 5,
+      "licence": "MIT",
+      "doctorMs": 714,
+      "frames": 60,
+      "stillMs": [
+        93,
+        90
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "kinetic-type-swap": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "div background: a gradient that interpolates in a colour space other than sRGB",
+        "HyperFrames: <page>: data-composition-src=\"./kinetic-type-swap.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 612,
+      "frames": 120,
+      "stillMs": [
+        104,
+        125
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "lens-flare": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 927,
+      "frames": 60,
+      "stillMs": [
+        225,
+        165
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "light-edge": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 987,
+      "frames": 60,
+      "stillMs": [
+        296,
+        286
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "light-leak": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 7480,
+      "frames": 120,
+      "stillMs": [
+        651,
+        635
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "light-sweep-pass": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./light-sweep-pass.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 571,
+      "frames": 120,
+      "stillMs": [
+        90,
+        118
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "line-by-line-slide": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 860,
+      "frames": 150,
+      "stillMs": [
+        131,
+        158
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "line-swap": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./line-swap.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 751,
+      "frames": 105,
+      "stillMs": [
+        91,
+        115
+      ],
+      "stills": [
+        31,
+        84
+      ]
+    },
+    "liquid-glass-notification": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 3,
+      "licence": null,
+      "doctorMs": 825,
+      "frames": 240,
+      "stillMs": [
+        202,
+        315
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "liquid-glass-widgets": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 3,
+      "licence": null,
+      "doctorMs": 1952,
+      "frames": 240,
+      "stillMs": [
+        262,
+        303
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "liquid-metal": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1470,
+      "frames": 60,
+      "stillMs": [
+        239,
+        212
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "locked-nucleus-orbit": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./locked-nucleus-orbit.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 690,
+      "frames": 120,
+      "stillMs": [
+        87,
+        96
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "logo-brand-close": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./logo-brand-close.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 659,
+      "frames": 120,
+      "stillMs": [
+        102,
+        130
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "logo-outro": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 5,
+      "licence": null,
+      "doctorMs": 863,
+      "frames": 180,
+      "stillMs": [
+        190,
+        284
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "logo-sting": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./logo-sting.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 713,
+      "frames": 66,
+      "stillMs": [
+        89,
+        108
+      ],
+      "stills": [
+        19,
+        52
+      ]
+    },
+    "logo-wall": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./logo-wall.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 836,
+      "frames": 150,
+      "stillMs": [
+        94,
+        97
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "lottie-character-walk": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: XMLHttpRequest is not defined",
+        "note: <page>: script failed: XMLHttpRequest is not defined"
+      ],
+      "files": 4,
+      "licence": "Apache-2.0",
+      "doctorMs": 754,
+      "frames": 225,
+      "stillMs": [
+        190,
+        174
+      ],
+      "stills": [
+        67,
+        180
+      ]
+    },
+    "lower-third-bild": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": null,
+      "doctorMs": 723,
+      "frames": 240,
+      "stillMs": [
+        202,
+        236
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "lt-accent-underline": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 780,
+      "frames": 144,
+      "stillMs": [
+        211,
+        226
+      ],
+      "stills": [
+        43,
+        115
+      ]
+    },
+    "lt-bold-block": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1008,
+      "frames": 144,
+      "stillMs": [
+        146,
+        129
+      ],
+      "stills": [
+        43,
+        115
+      ]
+    },
+    "lt-clean-bar": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 587,
+      "frames": 144,
+      "stillMs": [
+        159,
+        207
+      ],
+      "stills": [
+        43,
+        115
+      ]
+    },
+    "lt-color-block": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 775,
+      "frames": 144,
+      "stillMs": [
+        186,
+        210
+      ],
+      "stills": [
+        43,
+        115
+      ]
+    },
+    "lt-dark-card": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 787,
+      "frames": 144,
+      "stillMs": [
+        203,
+        211
+      ],
+      "stills": [
+        43,
+        115
+      ]
+    },
+    "lt-kicker-name": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 974,
+      "frames": 144,
+      "stillMs": [
+        177,
+        134
+      ],
+      "stills": [
+        43,
+        115
+      ]
+    },
+    "lt-mask-reveal": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 554,
+      "frames": 144,
+      "stillMs": [
+        159,
+        247
+      ],
+      "stills": [
+        43,
+        115
+      ]
+    },
+    "lt-neon-border": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 3284,
+      "frames": 144,
+      "stillMs": [
+        371,
+        606
+      ],
+      "stills": [
+        43,
+        115
+      ]
+    },
+    "lt-side-rule": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 804,
+      "frames": 144,
+      "stillMs": [
+        204,
+        200
+      ],
+      "stills": [
+        43,
+        115
+      ]
+    },
+    "lt-soft-pill": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1021,
+      "frames": 144,
+      "stillMs": [
+        187,
+        192
+      ],
+      "stills": [
+        43,
+        115
+      ]
+    },
+    "lt-stack-bars": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 855,
+      "frames": 144,
+      "stillMs": [
+        152,
+        164
+      ],
+      "stills": [
+        43,
+        115
+      ]
+    },
+    "macos-notification": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 4,
+      "licence": null,
+      "doctorMs": 1259,
+      "frames": 150,
+      "stillMs": [
+        213,
+        261
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "macos-tahoe-liquid-glass": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "div backdrop-filter: only blur() is drawn in a backdrop filter",
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 19,
+      "licence": null,
+      "doctorMs": 2353,
+      "frames": 450,
+      "stillMs": [
+        341,
+        567
+      ],
+      "stills": [
+        135,
+        360
+      ]
+    },
+    "magnetic-cursor": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./magnetic-cursor.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 832,
+      "frames": 108,
+      "stillMs": [
+        155,
+        191
+      ],
+      "stills": [
+        32,
+        86
+      ]
+    },
+    "marble": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 782,
+      "frames": 60,
+      "stillMs": [
+        185,
+        245
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "marker-checklist-card": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": null,
+      "doctorMs": 2214,
+      "frames": 135,
+      "stillMs": [
+        536,
+        1096
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "marker-highlight": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./marker-highlight.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 696,
+      "frames": 105,
+      "stillMs": [
+        96,
+        108
+      ],
+      "stills": [
+        31,
+        84
+      ]
+    },
+    "match-cut": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./match-cut.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 830,
+      "frames": 120,
+      "stillMs": [
+        111,
+        133
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "matrix-decode": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 776,
+      "frames": 150,
+      "stillMs": [
+        149,
+        263
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "menu-morph": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 994,
+      "frames": 150,
+      "stillMs": [
+        164,
+        211
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "mesh-gradient": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1049,
+      "frames": 60,
+      "stillMs": [
+        251,
+        232
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "mesh-gradient-bg": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 914,
+      "frames": 150,
+      "stillMs": [
+        165,
+        249
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "message-thread-reveal": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 4,
+      "licence": null,
+      "doctorMs": 21206,
+      "frames": 774,
+      "stillMs": [
+        5622,
+        8473
+      ],
+      "stills": [
+        232,
+        619
+      ]
+    },
+    "micro-transitions": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1017,
+      "frames": 150,
+      "stillMs": [
+        280,
+        197
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "mk-background": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 813,
+      "frames": 300,
+      "stillMs": [
+        206,
+        468
+      ],
+      "stills": [
+        90,
+        240
+      ]
+    },
+    "mk-callout-highlight": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 882,
+      "frames": 240,
+      "stillMs": [
+        202,
+        311
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "mk-clone-wall-transition": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 791,
+      "frames": 72,
+      "stillMs": [
+        242,
+        248
+      ],
+      "stills": [
+        21,
+        57
+      ]
+    },
+    "mk-emphasis-type": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 922,
+      "frames": 120,
+      "stillMs": [
+        176,
+        183
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "mk-line-graph": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1694,
+      "frames": 210,
+      "stillMs": [
+        343,
+        403
+      ],
+      "stills": [
+        63,
+        168
+      ]
+    },
+    "mk-placeholder-grid": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1078,
+      "frames": 240,
+      "stillMs": [
+        260,
+        417
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "mk-progress-stat": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1063,
+      "frames": 210,
+      "stillMs": [
+        328,
+        363
+      ],
+      "stills": [
+        63,
+        168
+      ]
+    },
+    "mk-specs-list": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1838,
+      "frames": 240,
+      "stillMs": [
+        330,
+        326
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "mk-usage-arc": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1062,
+      "frames": 120,
+      "stillMs": [
+        208,
+        286
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "modal-morph": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./modal-morph.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 769,
+      "frames": 120,
+      "stillMs": [
+        107,
+        140
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "morph-swap": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./morph-swap.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 837,
+      "frames": 105,
+      "stillMs": [
+        104,
+        182
+      ],
+      "stills": [
+        31,
+        84
+      ]
+    },
+    "morph-text": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1625,
+      "frames": 450,
+      "stillMs": [
+        376,
+        599
+      ],
+      "stills": [
+        135,
+        360
+      ]
+    },
+    "motion-blur": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1635,
+      "frames": 120,
+      "stillMs": [
+        377,
+        513
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "multi-device-splay": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./multi-device-splay.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1388,
+      "frames": 135,
+      "stillMs": [
+        158,
+        124
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "multiplayer-cursors": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "div background: a gradient that interpolates in a colour space other than sRGB",
+        "HyperFrames: <page>: data-composition-src=\"./multiplayer-cursors.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 832,
+      "frames": 180,
+      "stillMs": [
+        138,
+        155
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "native-notification-pop": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./native-notification-pop.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 773,
+      "frames": 90,
+      "stillMs": [
+        126,
+        140
+      ],
+      "stills": [
+        27,
+        72
+      ]
+    },
+    "nebula": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1160,
+      "frames": 60,
+      "stillMs": [
+        331,
+        223
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "news-ticker": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1395,
+      "frames": 210,
+      "stillMs": [
+        258,
+        362
+      ],
+      "stills": [
+        63,
+        168
+      ]
+    },
+    "north-korea-locked-down": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 1153,
+      "frames": 210,
+      "stillMs": [
+        288,
+        402
+      ],
+      "stills": [
+        63,
+        168
+      ]
+    },
+    "notes-reveal": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 6,
+      "licence": null,
+      "doctorMs": 28968,
+      "frames": 746,
+      "stillMs": [
+        6968,
+        14052
+      ],
+      "stills": [
+        223,
+        596
+      ]
+    },
+    "notes-typing": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 2439,
+      "frames": 300,
+      "stillMs": [
+        475,
+        625
+      ],
+      "stills": [
+        90,
+        240
+      ]
+    },
+    "notification-cascade": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 4,
+      "licence": null,
+      "doctorMs": 2392,
+      "frames": 420,
+      "stillMs": [
+        608,
+        797
+      ],
+      "stills": [
+        126,
+        336
+      ]
+    },
+    "notification-pileup": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "div background: a gradient that interpolates in a colour space other than sRGB",
+        "HyperFrames: <page>: data-composition-src=\"./notification-pileup.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1145,
+      "frames": 240,
+      "stillMs": [
+        159,
+        285
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "notification-stack": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./notification-stack.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 855,
+      "frames": 120,
+      "stillMs": [
+        165,
+        252
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "number-pop-in": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1336,
+      "frames": 150,
+      "stillMs": [
+        300,
+        317
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "number-wheel": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1554,
+      "frames": 150,
+      "stillMs": [
+        323,
+        382
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "nyc-paris-flight": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": null,
+      "doctorMs": 2349,
+      "frames": 180,
+      "stillMs": [
+        483,
+        746
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "obsidian": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1532,
+      "frames": 60,
+      "stillMs": [
+        314,
+        254
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "offset-path-traveler": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "div background: a gradient that interpolates in a colour space other than sRGB",
+        "HyperFrames: <page>: data-composition-src=\"./offset-path-traveler.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1066,
+      "frames": 120,
+      "stillMs": [
+        129,
+        207
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "onboarding-stepper-flow": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1667,
+      "frames": 150,
+      "stillMs": [
+        393,
+        473
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "orbit-card": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 12,
+      "licence": null,
+      "doctorMs": 2287,
+      "frames": 300,
+      "stillMs": [
+        411,
+        275
+      ],
+      "stills": [
+        90,
+        240
+      ]
+    },
+    "ordered-dither-pass": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./ordered-dither-pass.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1654,
+      "frames": 105,
+      "stillMs": [
+        212,
+        239
+      ],
+      "stills": [
+        31,
+        84
+      ]
+    },
+    "organic-light-leak-overlay": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 701,
+      "frames": 120,
+      "stillMs": [
+        194,
+        218
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "oscilloscope-trace": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 13754,
+      "frames": 180,
+      "stillMs": [
+        953,
+        3084
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "outline-draw": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./outline-draw.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 948,
+      "frames": 120,
+      "stillMs": [
+        153,
+        156
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "oversized-cursor": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./oversized-cursor.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1048,
+      "frames": 78,
+      "stillMs": [
+        470,
+        501
+      ],
+      "stills": [
+        23,
+        62
+      ]
+    },
+    "overwhelm-surround": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./overwhelm-surround.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1839,
+      "frames": 135,
+      "stillMs": [
+        227,
+        177
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "page-slide": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 765,
+      "frames": 150,
+      "stillMs": [
+        167,
+        183
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "pan-stations": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./pan-stations.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 839,
+      "frames": 120,
+      "stillMs": [
+        133,
+        137
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "panel-reveal": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 736,
+      "frames": 150,
+      "stillMs": [
+        219,
+        209
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "paper-collage-reveal": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./paper-collage-reveal.html\" was not found beside <page> or in <page>",
+        "HyperFrames: <page>: script failed: document.querySelector(...).content.getElementById is not a function",
+        "note: <page>: script failed: document.querySelector(...).content.getElementById is not a function"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 934,
+      "frames": 78,
+      "stillMs": [
+        205,
+        168
+      ],
+      "stills": [
+        23,
+        62
+      ]
+    },
+    "parallax-device-dive": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./parallax-device-dive.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 630,
+      "frames": 135,
+      "stillMs": [
+        254,
+        230
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "parallax-unzoom": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1630,
+      "frames": 180,
+      "stillMs": [
+        227,
+        363
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "parallax-zoom": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1860,
+      "frames": 180,
+      "stillMs": [
+        346,
+        244
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "particle-image-reveal": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./particle-image-reveal.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1012,
+      "frames": 120,
+      "stillMs": [
+        142,
+        144
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "particle-text-dissolve": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./particle-text-dissolve.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 584,
+      "frames": 120,
+      "stillMs": [
+        92,
+        188
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "pendulum-swing": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 964,
+      "frames": 150,
+      "stillMs": [
+        205,
+        214
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "per-word-crossfade": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1090,
+      "frames": 150,
+      "stillMs": [
+        248,
+        244
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "per-word-rise": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "div background: a gradient that interpolates in a colour space other than sRGB",
+        "HyperFrames: <page>: data-composition-src=\"./per-word-rise.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1077,
+      "frames": 105,
+      "stillMs": [
+        129,
+        158
+      ],
+      "stills": [
+        31,
+        84
+      ]
+    },
+    "perspective-marquee": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 985,
+      "frames": 150,
+      "stillMs": [
+        379,
+        390
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "physical-exit": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./physical-exit.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1861,
+      "frames": 90,
+      "stillMs": [
+        200,
+        305
+      ],
+      "stills": [
+        27,
+        72
+      ]
+    },
+    "plasma": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 2152,
+      "frames": 60,
+      "stillMs": [
+        431,
+        507
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "plastic": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 2355,
+      "frames": 60,
+      "stillMs": [
+        484,
+        460
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "press-ripple": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./press-ripple.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1464,
+      "frames": 72,
+      "stillMs": [
+        171,
+        199
+      ],
+      "stills": [
+        21,
+        57
+      ]
+    },
+    "prism": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1949,
+      "frames": 60,
+      "stillMs": [
+        478,
+        519
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "product-turntable": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "page script unhandled rejection: the page raised an error and went on; whatever it was drawing may be missing"
+      ],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 2262,
+      "frames": 180,
+      "stillMs": [
+        283,
+        368
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "pull-back-reveal": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./pull-back-reveal.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1622,
+      "frames": 135,
+      "stillMs": [
+        171,
+        378
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "pull-to-refresh": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./pull-to-refresh.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1638,
+      "frames": 120,
+      "stillMs": [
+        205,
+        223
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "push-in": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./push-in.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1410,
+      "frames": 120,
+      "stillMs": [
+        134,
+        154
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "rack-focus": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1929,
+      "frames": 180,
+      "stillMs": [
+        166,
+        200
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "radial-surround": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./radial-surround.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1075,
+      "frames": 150,
+      "stillMs": [
+        137,
+        155
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "reddit-post": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": null,
+      "doctorMs": 1928,
+      "frames": 150,
+      "stillMs": [
+        577,
+        785
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "rgb-glitch-text": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1559,
+      "frames": 150,
+      "stillMs": [
+        342,
+        384
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "ridged-burn": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 13207,
+      "frames": 120,
+      "stillMs": [
+        757,
+        578
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "ripple-waves": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 13102,
+      "frames": 120,
+      "stillMs": [
+        881,
+        593
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "ripples": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1807,
+      "frames": 60,
+      "stillMs": [
+        432,
+        307
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "rubber-band-bumper": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./rubber-band-bumper.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1432,
+      "frames": 75,
+      "stillMs": [
+        213,
+        186
+      ],
+      "stills": [
+        22,
+        60
+      ]
+    },
+    "scan-band": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./scan-band.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 786,
+      "frames": 105,
+      "stillMs": [
+        188,
+        159
+      ],
+      "stills": [
+        31,
+        84
+      ]
+    },
+    "scramble-reveal": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./scramble-reveal.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1056,
+      "frames": 90,
+      "stillMs": [
+        136,
+        134
+      ],
+      "stills": [
+        27,
+        72
+      ]
+    },
+    "screen-flow-carousel": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./screen-flow-carousel.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 559,
+      "frames": 150,
+      "stillMs": [
+        93,
+        255
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "scroll-camera-story": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./scroll-camera-story.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 874,
+      "frames": 165,
+      "stillMs": [
+        168,
+        146
+      ],
+      "stills": [
+        49,
+        132
+      ]
+    },
+    "scroll-feed": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./scroll-feed.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1249,
+      "frames": 120,
+      "stillMs": [
+        135,
+        142
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "sdf-iris": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 10363,
+      "frames": 120,
+      "stillMs": [
+        586,
+        497
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "segmentation-flood": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./segmentation-flood.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1120,
+      "frames": 135,
+      "stillMs": [
+        252,
+        146
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "separator": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1677,
+      "frames": 120,
+      "stillMs": [
+        198,
+        196
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "settings-toggle-flow": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1443,
+      "frames": 150,
+      "stillMs": [
+        200,
+        217
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "share-sheet-carousel": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 7,
+      "licence": null,
+      "doctorMs": 864,
+      "frames": 217,
+      "stillMs": [
+        172,
+        222
+      ],
+      "stills": [
+        65,
+        173
+      ]
+    },
+    "shared-axis-y": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 862,
+      "frames": 150,
+      "stillMs": [
+        182,
+        213
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "shared-axis-z": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 997,
+      "frames": 150,
+      "stillMs": [
+        248,
+        296
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "sheet-spring-up": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 934,
+      "frames": 120,
+      "stillMs": [
+        193,
+        205
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "shimmer-sweep": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 803,
+      "frames": 180,
+      "stillMs": [
+        164,
+        209
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "shutter-slam": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: Cannot read properties of null (reading 'querySelector')",
+        "HyperFrames: the root element lacks data-composition-id, data-width, data-height, data-duration, so the page is drawn at 1920x1080 for as long as its timelines run (1 second with none): write it as <div id=\"root\" data-composition-id=\"main\" data-width=\"1920\" data-height=\"1080\" data-duration=\"10\"> (size in pixels, duration in seconds, 30 fps)",
+        "note: <page>: script failed: Cannot read properties of null (reading 'querySelector')"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 757,
+      "frames": 30,
+      "stillMs": [
+        92,
+        89
+      ],
+      "stills": [
+        9,
+        24
+      ]
+    },
+    "signup-flow": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 888,
+      "frames": 150,
+      "stillMs": [
+        202,
+        248
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "sine-wave": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 989,
+      "frames": 60,
+      "stillMs": [
+        266,
+        167
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "skeleton-reveal": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 782,
+      "frames": 150,
+      "stillMs": [
+        143,
+        186
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "slack-notification-ad": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "div backdrop-filter: only blur() is drawn in a backdrop filter"
+      ],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 9113,
+      "frames": 360,
+      "stillMs": [
+        2368,
+        5171
+      ],
+      "stills": [
+        108,
+        288
+      ]
+    },
+    "slit-scan-reveal": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./slit-scan-reveal.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 867,
+      "frames": 120,
+      "stillMs": [
+        100,
+        119
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "slot-machine-roll": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 919,
+      "frames": 150,
+      "stillMs": [
+        206,
+        206
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "snow": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 2054,
+      "frames": 180,
+      "stillMs": [
+        229,
+        574
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "social-proof-card": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1069,
+      "frames": 120,
+      "stillMs": [
+        392,
+        411
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "soft-blob-touch": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./soft-blob-touch.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 926,
+      "frames": 120,
+      "stillMs": [
+        125,
+        138
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "soft-blur-in": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1022,
+      "frames": 150,
+      "stillMs": [
+        170,
+        296
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "spain-map": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 7,
+      "licence": null,
+      "doctorMs": 4872,
+      "frames": 360,
+      "stillMs": [
+        633,
+        1338
+      ],
+      "stills": [
+        108,
+        288
+      ]
+    },
+    "spiral": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 917,
+      "frames": 60,
+      "stillMs": [
+        206,
+        228
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "spiral-galaxy": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1175,
+      "frames": 300,
+      "stillMs": [
+        189,
+        257
+      ],
+      "stills": [
+        90,
+        240
+      ]
+    },
+    "split-flap-board": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1405,
+      "frames": 105,
+      "stillMs": [
+        283,
+        498
+      ],
+      "stills": [
+        31,
+        84
+      ]
+    },
+    "split-tilt-cards": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./split-tilt-cards.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 892,
+      "frames": 135,
+      "stillMs": [
+        128,
+        135
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "spotify-card": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "div backdrop-filter: only blur() is drawn in a backdrop filter"
+      ],
+      "files": 4,
+      "licence": null,
+      "doctorMs": 1002,
+      "frames": 150,
+      "stillMs": [
+        331,
+        387
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "spotlight-card": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 992,
+      "frames": 150,
+      "stillMs": [
+        191,
+        296
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "spring-pop": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "div background: a gradient that interpolates in a colour space other than sRGB",
+        "HyperFrames: <page>: data-composition-src=\"./spring-pop.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 808,
+      "frames": 60,
+      "stillMs": [
+        126,
+        117
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "spring-stack-shuffle": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./spring-stack-shuffle.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 878,
+      "frames": 120,
+      "stillMs": [
+        114,
+        114
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "stagger-cascade": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./stagger-cascade.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 795,
+      "frames": 120,
+      "stillMs": [
+        124,
+        133
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "stagger-lattice": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 980,
+      "frames": 150,
+      "stillMs": [
+        214,
+        246
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "staggered-fade-up": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1008,
+      "frames": 150,
+      "stillMs": [
+        199,
+        236
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "star-rating-fill": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./star-rating-fill.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 950,
+      "frames": 120,
+      "stillMs": [
+        135,
+        125
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "starfield": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 2305,
+      "frames": 180,
+      "stillMs": [
+        243,
+        719
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "state-chip-rail": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./state-chip-rail.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 673,
+      "frames": 150,
+      "stillMs": [
+        122,
+        178
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "sticky-mock-swap": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./sticky-mock-swap.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 950,
+      "frames": 180,
+      "stillMs": [
+        113,
+        130
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "stitched-text-draw": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./stitched-text-draw.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 812,
+      "frames": 120,
+      "stillMs": [
+        152,
+        155
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "stop-motion-cadence": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./stop-motion-cadence.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 697,
+      "frames": 120,
+      "stillMs": [
+        106,
+        113
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "store-badge-lockup": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "div background: a gradient that interpolates in a colour space other than sRGB",
+        "HyperFrames: <page>: data-composition-src=\"./store-badge-lockup.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 733,
+      "frames": 120,
+      "stillMs": [
+        106,
+        136
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "strands": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1002,
+      "frames": 60,
+      "stillMs": [
+        204,
+        299
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "streaming-text": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1583,
+      "frames": 165,
+      "stillMs": [
+        344,
+        490
+      ],
+      "stills": [
+        49,
+        132
+      ]
+    },
+    "strikethrough-replace": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 986,
+      "frames": 150,
+      "stillMs": [
+        184,
+        212
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "stripes": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1211,
+      "frames": 60,
+      "stillMs": [
+        178,
+        224
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "success-check": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 918,
+      "frames": 150,
+      "stillMs": [
+        294,
+        291
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "sun-burst": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1034,
+      "frames": 60,
+      "stillMs": [
+        213,
+        215
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "svg-line-draw-loader": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1078,
+      "frames": 150,
+      "stillMs": [
+        393,
+        207
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "svg-mask-reveal": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./svg-mask-reveal.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1057,
+      "frames": 120,
+      "stillMs": [
+        121,
+        104
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "svg-stroke-trace": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "div background: a gradient that interpolates in a colour space other than sRGB",
+        "HyperFrames: <page>: data-composition-src=\"./svg-stroke-trace.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 664,
+      "frames": 105,
+      "stillMs": [
+        132,
+        154
+      ],
+      "stills": [
+        31,
+        84
+      ]
+    },
+    "swipe-rail": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./swipe-rail.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 766,
+      "frames": 120,
+      "stillMs": [
+        166,
+        152
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "swirl": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1281,
+      "frames": 60,
+      "stillMs": [
+        210,
+        169
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "swirl-vortex": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 9505,
+      "frames": 120,
+      "stillMs": [
+        685,
+        561
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "tabs-slide-indicator": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 850,
+      "frames": 150,
+      "stillMs": [
+        174,
+        343
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "telemetry-hud": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./telemetry-hud.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 814,
+      "frames": 135,
+      "stillMs": [
+        165,
+        188
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "terminal-simulator": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1168,
+      "frames": 150,
+      "stillMs": [
+        206,
+        193
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "testimonial-card": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "div background: a gradient that interpolates in a colour space other than sRGB",
+        "HyperFrames: <page>: data-composition-src=\"./testimonial-card.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 768,
+      "frames": 120,
+      "stillMs": [
+        122,
+        150
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "testimonial-proof-card": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./testimonial-proof-card.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 724,
+      "frames": 135,
+      "stillMs": [
+        136,
+        200
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "text-match-cut": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./text-match-cut.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 959,
+      "frames": 90,
+      "stillMs": [
+        116,
+        125
+      ],
+      "stills": [
+        27,
+        72
+      ]
+    },
+    "text-shimmer": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./text-shimmer.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 817,
+      "frames": 90,
+      "stillMs": [
+        111,
+        130
+      ],
+      "stills": [
+        27,
+        72
+      ]
+    },
+    "text-stagger": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 812,
+      "frames": 150,
+      "stillMs": [
+        180,
+        191
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "text-state-swap": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 956,
+      "frames": 150,
+      "stillMs": [
+        174,
+        189
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "texture-mask-text": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "div mask: the picture <page> is not a file the project has",
+        "… and 120 more"
+      ],
+      "files": 67,
+      "licence": null,
+      "doctorMs": 1961,
+      "frames": 150,
+      "stillMs": [
+        236,
+        232
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "thermal-distortion": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 9274,
+      "frames": 120,
+      "stillMs": [
+        726,
+        501
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "thin-film": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1155,
+      "frames": 60,
+      "stillMs": [
+        350,
+        404
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "thread-message-stack": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1686,
+      "frames": 240,
+      "stillMs": [
+        271,
+        237
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "three-orbiting-cards": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1006,
+      "frames": 150,
+      "stillMs": [
+        279,
+        372
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "ticker-takeover": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./ticker-takeover.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 862,
+      "frames": 135,
+      "stillMs": [
+        144,
+        176
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "tiktok-follow": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 4,
+      "licence": null,
+      "doctorMs": 1066,
+      "frames": 135,
+      "stillMs": [
+        367,
+        356
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "tilt-card": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 744,
+      "frames": 150,
+      "stillMs": [
+        197,
+        259
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "titlecard-calm": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./titlecard-calm.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 622,
+      "frames": 120,
+      "stillMs": [
+        127,
+        153
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "titlecard-lockup": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./titlecard-lockup.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 618,
+      "frames": 120,
+      "stillMs": [
+        119,
+        147
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "toggle-flip": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./toggle-flip.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 941,
+      "frames": 120,
+      "stillMs": [
+        154,
+        116
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "top-down-letters": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1037,
+      "frames": 150,
+      "stillMs": [
+        200,
+        269
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "torn-paper-rip": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./torn-paper-rip.html\" was not found beside <page> or in <page>",
+        "HyperFrames: <page>: script failed: document.querySelector(...).content.getElementById is not a function",
+        "note: <page>: script failed: document.querySelector(...).content.getElementById is not a function"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 982,
+      "frames": 72,
+      "stillMs": [
+        203,
+        227
+      ],
+      "stills": [
+        21,
+        57
+      ]
+    },
+    "touch-indicator": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./touch-indicator.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1048,
+      "frames": 45,
+      "stillMs": [
+        281,
+        399
+      ],
+      "stills": [
+        13,
+        36
+      ]
+    },
+    "tracing-beam": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./tracing-beam.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1214,
+      "frames": 135,
+      "stillMs": [
+        158,
+        134
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "tracking-in": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1136,
+      "frames": 120,
+      "stillMs": [
+        258,
+        302
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "transitions-3d": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 830,
+      "frames": 330,
+      "stillMs": [
+        287,
+        403
+      ],
+      "stills": [
+        99,
+        264
+      ]
+    },
+    "transitions-blur": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 2209,
+      "frames": 600,
+      "stillMs": [
+        333,
+        546
+      ],
+      "stills": [
+        180,
+        480
+      ]
+    },
+    "transitions-cover": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 2640,
+      "frames": 630,
+      "stillMs": [
+        405,
+        476
+      ],
+      "stills": [
+        189,
+        504
+      ]
+    },
+    "transitions-destruction": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1534,
+      "frames": 420,
+      "stillMs": [
+        258,
+        470
+      ],
+      "stills": [
+        126,
+        336
+      ]
+    },
+    "transitions-dissolve": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 2298,
+      "frames": 720,
+      "stillMs": [
+        332,
+        764
+      ],
+      "stills": [
+        216,
+        576
+      ]
+    },
+    "transitions-distortion": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 2273,
+      "frames": 630,
+      "stillMs": [
+        454,
+        634
+      ],
+      "stills": [
+        189,
+        504
+      ]
+    },
+    "transitions-grid": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1525,
+      "frames": 330,
+      "stillMs": [
+        298,
+        393
+      ],
+      "stills": [
+        99,
+        264
+      ]
+    },
+    "transitions-light": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 2250,
+      "frames": 630,
+      "stillMs": [
+        260,
+        583
+      ],
+      "stills": [
+        189,
+        504
+      ]
+    },
+    "transitions-mechanical": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1855,
+      "frames": 450,
+      "stillMs": [
+        272,
+        504
+      ],
+      "stills": [
+        135,
+        360
+      ]
+    },
+    "transitions-other": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 2163,
+      "frames": 600,
+      "stillMs": [
+        427,
+        572
+      ],
+      "stills": [
+        180,
+        480
+      ]
+    },
+    "transitions-push": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 2368,
+      "frames": 720,
+      "stillMs": [
+        412,
+        523
+      ],
+      "stills": [
+        216,
+        576
+      ]
+    },
+    "transitions-radial": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1847,
+      "frames": 600,
+      "stillMs": [
+        215,
+        314
+      ],
+      "stills": [
+        180,
+        480
+      ]
+    },
+    "transitions-scale": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1356,
+      "frames": 450,
+      "stillMs": [
+        279,
+        382
+      ],
+      "stills": [
+        135,
+        360
+      ]
+    },
+    "trust-strip": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./trust-strip.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 800,
+      "frames": 105,
+      "stillMs": [
+        121,
+        137
+      ],
+      "stills": [
+        31,
+        84
+      ]
+    },
+    "type-match-cut": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./type-match-cut.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 907,
+      "frames": 120,
+      "stillMs": [
+        197,
+        177
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "typed-prompt": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./typed-prompt.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 932,
+      "frames": 120,
+      "stillMs": [
+        121,
+        165
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "typewriter": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 782,
+      "frames": 150,
+      "stillMs": [
+        150,
+        195
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "typing-indicator": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1500,
+      "frames": 135,
+      "stillMs": [
+        271,
+        443
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "ui-3d-reveal": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 12669,
+      "frames": 390,
+      "stillMs": [
+        2233,
+        4692
+      ],
+      "stills": [
+        117,
+        312
+      ]
+    },
+    "ui-focus-zoom": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./ui-focus-zoom.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 918,
+      "frames": 135,
+      "stillMs": [
+        133,
+        159
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "us-map": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 7,
+      "licence": null,
+      "doctorMs": 11681,
+      "frames": 360,
+      "stillMs": [
+        1926,
+        4355
+      ],
+      "stills": [
+        108,
+        288
+      ]
+    },
+    "us-map-bubble": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 7,
+      "licence": null,
+      "doctorMs": 10324,
+      "frames": 360,
+      "stillMs": [
+        1274,
+        2934
+      ],
+      "stills": [
+        108,
+        288
+      ]
+    },
+    "us-map-flow": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 7,
+      "licence": null,
+      "doctorMs": 9514,
+      "frames": 360,
+      "stillMs": [
+        1691,
+        3162
+      ],
+      "stills": [
+        108,
+        288
+      ]
+    },
+    "us-map-hex": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 6,
+      "licence": null,
+      "doctorMs": 6517,
+      "frames": 300,
+      "stillMs": [
+        1959,
+        3019
+      ],
+      "stills": [
+        90,
+        240
+      ]
+    },
+    "variable-axis-type": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./variable-axis-type.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 946,
+      "frames": 48,
+      "stillMs": [
+        153,
+        160
+      ],
+      "stills": [
+        14,
+        38
+      ]
+    },
+    "variable-font-flex": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./variable-font-flex.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 940,
+      "frames": 105,
+      "stillMs": [
+        148,
+        165
+      ],
+      "stills": [
+        31,
+        84
+      ]
+    },
+    "vector-editor-rig": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "div background: a gradient that interpolates in a colour space other than sRGB",
+        "HyperFrames: <page>: data-composition-src=\"./vector-editor-rig.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 980,
+      "frames": 135,
+      "stillMs": [
+        167,
+        176
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "velocity-throw-snap": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./velocity-throw-snap.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1071,
+      "frames": 120,
+      "stillMs": [
+        158,
+        233
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "vfx-anamorphic-flare": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 3375,
+      "frames": 300,
+      "stillMs": [
+        712,
+        840
+      ],
+      "stills": [
+        90,
+        240
+      ]
+    },
+    "vfx-iphone-device": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 5,
+      "licence": null,
+      "doctorMs": 1975,
+      "frames": 450,
+      "stillMs": [
+        157,
+        229
+      ],
+      "stills": [
+        135,
+        360
+      ]
+    },
+    "vfx-liquid-background": {
+      "type": "block",
+      "status": "fails",
+      "warnings": [],
+      "files": 6,
+      "licence": null,
+      "doctorMs": 965,
+      "error": "doctor: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+    },
+    "vfx-liquid-glass": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 941,
+      "frames": 600,
+      "stillMs": [
+        252,
+        396
+      ],
+      "stills": [
+        180,
+        480
+      ]
+    },
+    "vfx-magnetic": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1579,
+      "frames": 450,
+      "stillMs": [
+        246,
+        360
+      ],
+      "stills": [
+        135,
+        360
+      ]
+    },
+    "vfx-portal": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 6,
+      "licence": null,
+      "doctorMs": 2920,
+      "frames": 300,
+      "stillMs": [
+        295,
+        514
+      ],
+      "stills": [
+        90,
+        240
+      ]
+    },
+    "vfx-shatter": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")",
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "note: <page>: script failed: unsupported: cube map textures (packages/cli/skills/kinetograph/references/SCENE.md, \"glsl\")"
+      ],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 3723,
+      "frames": 360,
+      "stillMs": [
+        431,
+        704
+      ],
+      "stills": [
+        108,
+        288
+      ]
+    },
+    "vfx-text-cursor": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "div backdrop-filter: only blur() is drawn in a backdrop filter"
+      ],
+      "files": 3,
+      "licence": null,
+      "doctorMs": 35812,
+      "frames": 240,
+      "stillMs": [
+        2157,
+        7907
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "vignette": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1208,
+      "frames": 150,
+      "stillMs": [
+        541,
+        720
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "voronoi": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1203,
+      "frames": 60,
+      "stillMs": [
+        278,
+        262
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "vox-annotate": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./vox-annotate.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1164,
+      "frames": 120,
+      "stillMs": [
+        124,
+        123
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "vpn-youtube-spot": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 2,
+      "licence": null,
+      "doctorMs": 3698,
+      "frames": 210,
+      "stillMs": [
+        788,
+        1144
+      ],
+      "stills": [
+        63,
+        168
+      ]
+    },
+    "water": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1330,
+      "frames": 60,
+      "stillMs": [
+        294,
+        274
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "waveform": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1266,
+      "frames": 60,
+      "stillMs": [
+        331,
+        257
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "week-in-merges": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 2376,
+      "frames": 480,
+      "stillMs": [
+        489,
+        909
+      ],
+      "stills": [
+        144,
+        384
+      ]
+    },
+    "weight-wave": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "OFL-1.1",
+      "doctorMs": 1513,
+      "frames": 180,
+      "stillMs": [
+        325,
+        451
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "whip-pan": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 8,
+      "licence": null,
+      "doctorMs": 9799,
+      "frames": 120,
+      "stillMs": [
+        909,
+        738
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "whip-pan-cut": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./whip-pan-cut.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 957,
+      "frames": 36,
+      "stillMs": [
+        145,
+        148
+      ],
+      "stills": [
+        10,
+        28
+      ]
+    },
+    "whiteboard-ink": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./whiteboard-ink.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1101,
+      "frames": 150,
+      "stillMs": [
+        174,
+        187
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "wireframe-portal-title": {
+      "type": "block",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: Three.js is not supported: its scenes are not drawn",
+        "three.js: Three.js scenes are not drawn (WebGL is not supported in a HyperFrames project)",
+        "page script unhandled rejection: the page raised an error and went on; whatever it was drawing may be missing"
+      ],
+      "files": 6,
+      "licence": null,
+      "doctorMs": 1776,
+      "frames": 240,
+      "stillMs": [
+        402,
+        284
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "wordmark-tiles": {
+      "type": "component",
+      "status": "partial",
+      "warnings": [
+        "HyperFrames: <page>: data-composition-src=\"./wordmark-tiles.html\" was not found beside <page> or in <page>"
+      ],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1121,
+      "frames": 195,
+      "stillMs": [
+        184,
+        196
+      ],
+      "stills": [
+        58,
+        156
+      ]
+    },
+    "world-map": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 7,
+      "licence": null,
+      "doctorMs": 6853,
+      "frames": 420,
+      "stillMs": [
+        1483,
+        2038
+      ],
+      "stills": [
+        126,
+        336
+      ]
+    },
+    "worley-noise": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": "Apache-2.0 AND MIT",
+      "doctorMs": 1063,
+      "frames": 60,
+      "stillMs": [
+        373,
+        343
+      ],
+      "stills": [
+        18,
+        48
+      ]
+    },
+    "x-follow-card": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1216,
+      "frames": 150,
+      "stillMs": [
+        262,
+        248
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "x-post": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 3,
+      "licence": null,
+      "doctorMs": 1733,
+      "frames": 150,
+      "stillMs": [
+        396,
+        545
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "yt-camera-move": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1035,
+      "frames": 120,
+      "stillMs": [
+        209,
+        229
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "yt-circle-pointer": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 984,
+      "frames": 150,
+      "stillMs": [
+        274,
+        286
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "yt-comment-card": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1716,
+      "frames": 240,
+      "stillMs": [
+        605,
+        626
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "yt-feather-highlight": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1173,
+      "frames": 150,
+      "stillMs": [
+        183,
+        219
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    },
+    "yt-lcd-background": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1244,
+      "frames": 300,
+      "stillMs": [
+        241,
+        431
+      ],
+      "stills": [
+        90,
+        240
+      ]
+    },
+    "yt-logo-intro": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1030,
+      "frames": 180,
+      "stillMs": [
+        270,
+        305
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "yt-lower-third": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 4,
+      "licence": null,
+      "doctorMs": 1143,
+      "frames": 135,
+      "stillMs": [
+        206,
+        201
+      ],
+      "stills": [
+        40,
+        108
+      ]
+    },
+    "yt-prism-title": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 1096,
+      "frames": 180,
+      "stillMs": [
+        177,
+        179
+      ],
+      "stills": [
+        54,
+        144
+      ]
+    },
+    "yt-screen-warp": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 607,
+      "frames": 120,
+      "stillMs": [
+        122,
+        198
+      ],
+      "stills": [
+        36,
+        96
+      ]
+    },
+    "yt-vertical-fill": {
+      "type": "block",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 780,
+      "frames": 240,
+      "stillMs": [
+        166,
+        196
+      ],
+      "stills": [
+        72,
+        192
+      ]
+    },
+    "zoom-through-transition": {
+      "type": "component",
+      "status": "works",
+      "warnings": [],
+      "files": 1,
+      "licence": null,
+      "doctorMs": 825,
+      "frames": 150,
+      "stillMs": [
+        126,
+        127
+      ],
+      "stills": [
+        45,
+        120
+      ]
+    }
+  }
+}

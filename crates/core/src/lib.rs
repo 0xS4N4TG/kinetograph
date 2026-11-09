@@ -14,6 +14,7 @@ pub mod dom_layout;
 pub mod error;
 pub mod fallback_fonts;
 pub mod filter;
+pub mod generic_fonts;
 pub mod gif;
 pub mod glsl;
 mod glsl_cpp;
