@@ -573,10 +573,13 @@ test('readbacks take edits to a numbered state, and answer as the whole request 
   // Edits that name what the request does not have are stale too: the whole request is sent instead.
   assert.equal(width(numbered(9, island(tree(70, 'red', 'a'))), pass + 6), '70px');
   rejects(() => width(edits(10, 9, [{ path: '$0.4', style: '' }]), pass + 6), 'STALE_BASE', /no element/);
+  assert.equal(width(numbered(11, island(tree(70, 'red', 'a'))), pass + 6), '70px');
+  const twice = [{ path: '$0', style: 'width: 71px' }, { path: '$0', style: 'width: 72px' }];
+  rejects(() => width(edits(12, 11, twice), pass + 6), 'STALE_BASE', /twice/);
   rejects(() => width('{"stamp":1,"nope":2}', pass), 'INVALID_ARG', /edits/);
   // Outside a pass too.
-  assert.equal(width(numbered(11, island(tree(60, 'red', 'a')))), '60px');
-  assert.equal(width(edits(12, 11, [{ path: '$0', style: 'width: 61px' }])), '61px');
+  assert.equal(width(numbered(13, island(tree(60, 'red', 'a')))), '60px');
+  assert.equal(width(edits(14, 13, [{ path: '$0', style: 'width: 61px' }])), '61px');
   assert.equal(native.domIslandEdits(), 1);
 });
 

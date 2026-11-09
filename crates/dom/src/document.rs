@@ -19,7 +19,7 @@
 //! A document is built per call and resolved at the request's time, so a frame
 //! is a pure function of its request.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -944,7 +944,13 @@ fn patch(request: &mut IslandRequest, edits: &IslandEdits) -> Result<Vec<DomNode
     let missing = |path: &str| format!("island edits name no element at {path:?}");
     request.time = edits.time;
     let mut was = Vec::with_capacity(edits.set.len());
+    let mut seen = HashSet::with_capacity(edits.set.len());
     for edit in &edits.set {
+        // A second edit of one element would read the first's result as the state before.
+        if !seen.insert(edit.path.as_str()) {
+            let path = &edit.path;
+            return Err(format!("island edits name the element at {path:?} twice"));
+        }
         let (places, _) = route(&request.root, &edit.path).ok_or_else(|| missing(&edit.path))?;
         let DomNode::Element {
             tag,
