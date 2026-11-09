@@ -1763,6 +1763,7 @@ impl Compositor {
                         wrap_t: "CLAMP_TO_EDGE".into(),
                         wrap_r: "CLAMP_TO_EDGE".into(),
                         max_level: None,
+                        base_level: 0,
                         compare: None,
                     };
                     (black.view.clone(), self.glsl_sampler_for(&nearest, false))
@@ -2706,6 +2707,35 @@ impl Compositor {
         if dim.shadow() {
             return (texture.view.clone(), self.glsl_compare_sampler(state));
         }
+        // `TEXTURE_BASE_LEVEL`: a view of the levels from it, the last level counted from it too. A base beyond the
+        // texture's levels makes it incomplete, which samples as opaque black.
+        let based;
+        let (texture, state) = match state.base_level {
+            0 => (texture, state),
+            base => {
+                let t = texture.view.texture();
+                if base >= t.mip_level_count() || texture.depth {
+                    let black = self.glsl_black(dim);
+                    return (black.view.clone(), self.glsl_sampler_for(state, false));
+                }
+                let view = t.create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(view_dimension(dim)),
+                    base_mip_level: base,
+                    ..Default::default()
+                });
+                based = GlslSampler {
+                    max_level: state.max_level.map(|m| m.saturating_sub(base)),
+                    ..state.clone()
+                };
+                let uploaded = Uploaded {
+                    view,
+                    mipmapped: texture.mipmapped,
+                    depth: false,
+                    float32: texture.float32,
+                };
+                (Arc::new(uploaded), &based)
+            }
+        };
         // A 32-bit float texture is complete only when it is read `NEAREST`; any other filter makes it
         // incomplete, which samples as opaque black.
         if texture.float32 && !(state.min == "NEAREST" && state.mag == "NEAREST") {

@@ -712,7 +712,8 @@ replay copies the six targets, every level, into the layers of a cube texture be
 (`Step::CubeCopy`), and again after a pass draws in a face. A `texSubImage2D` of a whole face at level 0 (how three.js
 fills a `texStorage2D` cube map) specifies the face again in its format. `generateMipmap` of a texture a framebuffer drew in (a 2D
 one, or a cube's faces) is recorded as `LINEAR` blits from each level to the next, so it lands in order with the draws;
-a texture without `texStorage2D` levels is given the full chain, as GL does. A depth and stencil blit (`shaders/glsl_ds_copy.wgsl`) writes `frag_depth` from the source, and
+a texture without `texStorage2D` levels is given the full chain, as GL does. A sampler's `TEXTURE_BASE_LEVEL` is a view
+of the levels from it (`glsl_sampler`), with `TEXTURE_MAX_LEVEL` counted from it; past the last level it is black. A depth and stencil blit (`shaders/glsl_ds_copy.wgsl`) writes `frag_depth` from the source, and
 the stencil, which a fragment shader cannot write, by one draw that zeroes it and eight that each set one bit with a
 write mask of that bit, discarding where the source lacks it. `texSubImage2D` of a picture file is decoded and written
 like pixels; of a layer, a `copy_texture_to_texture` from the child's picture; over an uploaded texture, the texture

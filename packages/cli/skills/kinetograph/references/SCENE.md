@@ -533,7 +533,7 @@ equations and colour), `colorMask`, `cull`, `depth` (the depth test: `func`, the
 `near` and `far` of `depthRange`; absent when the test was off or the buffer has no depth), `polygonOffset`
 (`factor`, `units`; only with `depth`) and `stencil` (the stencil test: `ref`, `valueMask`, `writeMask`, and for the
 `front` and `back` faces `func` and the `fail`, `zfail` and `zpass` operations by their GL names; absent when the test
-was off or the buffer has no stencil). Each unit's sampler also has `maxLevel` when `TEXTURE_MAX_LEVEL` was set.
+was off or the buffer has no stencil). Each unit's sampler also has `maxLevel` when `TEXTURE_MAX_LEVEL` was set, and `baseLevel` when `TEXTURE_BASE_LEVEL` is not 0 (sampling, `textureSize` and `texelFetch` start at that level; past the texture's levels it reads opaque black).
 
 How it is drawn:
 

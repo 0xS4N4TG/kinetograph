@@ -1450,6 +1450,44 @@ fn linear_blits_from_each_level_to_the_next_make_mipmaps_of_what_was_drawn() {
 }
 
 #[test]
+fn texture_base_level_starts_sampling_at_that_level() {
+    // Level 0 red, level 1 green: from a base of 1, level 0 of the sampler (and of NEAREST) is green; a base past
+    // the levels is incomplete, and black.
+    let textures =
+        r#", "textures": {"t": {"target": true, "width": 16, "height": 16, "levels": 5}}"#;
+    let based = |base: u32, viewport: [i32; 4]| {
+        show_level("t", viewport, 0.0).replace(
+            r#""min": "NEAREST""#,
+            &format!(r#""baseLevel": {base}, "min": "NEAREST""#),
+        )
+    };
+    let all = ops(&[
+        draw_in(
+            "f",
+            [0, 0, 16, 16],
+            &format!(r#"{}, "target": "t""#, z_fill(0.0, [1.0, 0.0, 0.0, 1.0])),
+        ),
+        draw_in(
+            "f",
+            [0, 0, 8, 8],
+            &format!(
+                r#"{}, "target": "t", "level": 1"#,
+                z_fill(0.0, [0.0, 1.0, 0.0, 1.0])
+            ),
+        ),
+        based(1, [0, 0, 8, 16]),
+        based(7, [8, 0, 8, 16]),
+    ]);
+    let frame = render(&layer_es3(
+        &[("f", FILL_ES3), ("s3", SHOW_ES3)],
+        textures,
+        &all,
+    ));
+    assert_eq!(px(&frame, 3, 8), [0, 255, 0, 255]);
+    assert_eq!(px(&frame, 12, 8), [0, 0, 0, 255]);
+}
+
+#[test]
 fn a_blit_copies_depth_and_stencil_into_the_drawing_buffer() {
     // A framebuffer's depth-and-stencil buffer gets depth 0.75 and stencil 5 in its left half, and is blitted to
     // the canvas whole. On the canvas a red quad at depth 0.9 is behind the copied depth on the left and in front

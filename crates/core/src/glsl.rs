@@ -539,6 +539,9 @@ pub struct GlslSampler {
     pub wrap_r: String,
     /// `TEXTURE_MAX_LEVEL`, when it was set: the last level sampling reads.
     pub max_level: Option<u32>,
+    /// `TEXTURE_BASE_LEVEL`: the first level sampling reads (`textureSize` and `texelFetch` count from it).
+    #[serde(default)]
+    pub base_level: u32,
     /// `TEXTURE_COMPARE_MODE` was `COMPARE_REF_TO_TEXTURE`: a shadow sampler compares the depth with its reference by
     /// this function (`LEQUAL`, ...).
     pub compare: Option<String>,

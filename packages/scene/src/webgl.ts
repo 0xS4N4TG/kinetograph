@@ -510,6 +510,8 @@ export class WebGLTexture extends WebGLObject {
   compareFunc: number = GL.LEQUAL;
   /** `TEXTURE_MAX_LEVEL`: the last level sampling reads. */
   maxLevel = 1000;
+  /** `TEXTURE_BASE_LEVEL`: the first level sampling reads, and the one `generateMipmap` makes the others from. */
+  baseLevel = 0;
   version = 0;
   snapshot: { version: number; id: string; json: GlslTexture } | null = null;
   /** The six faces of a cube map (+X, -X, +Y, -Y, +Z, -Z), each a 2D texture of its own; null for any other texture. */
@@ -2262,7 +2264,8 @@ export class WebGLContext {
         break;
       case GL2.TEXTURE_BASE_LEVEL:
         if (this.version !== 2) return this.fail(GL.INVALID_ENUM);
-        if (param !== 0) throw new WebGLUnsupportedError('a TEXTURE_BASE_LEVEL other than 0');
+        if (!(param >= 0)) return this.fail(GL.INVALID_VALUE);
+        texture.baseLevel = Math.trunc(param);
         break;
       default:
         // Anisotropy, level of detail and the like: not drawn.
@@ -2276,7 +2279,7 @@ export class WebGLContext {
     const texture = this.bound(target);
     if (texture === null) return;
     if (target === GL.TEXTURE_CUBE_MAP) {
-      if (WebGLContext.drawnCube(texture)) return this.mipmapDrawn(texture.faces!);
+      if (WebGLContext.drawnCube(texture)) return this.mipmapDrawn(texture.faces!, texture.baseLevel);
       if (!this.cubeComplete(texture)) return this.fail(GL.INVALID_OPERATION);
       texture.mipmaps = true;
       texture.version += 1;
@@ -2284,18 +2287,18 @@ export class WebGLContext {
     }
     if (!texture.uploaded || kindOf(texture.format) !== 'color') return this.fail(GL.INVALID_OPERATION);
     if (target === GL2.TEXTURE_3D || target === GL2.TEXTURE_2D_ARRAY) throw new WebGLUnsupportedError('generateMipmap of a 3D or array texture; sample it with LINEAR or NEAREST');
-    if (texture.drawnAt === texture.version) return this.mipmapDrawn([texture]);
+    if (texture.drawnAt === texture.version) return this.mipmapDrawn([texture], texture.baseLevel);
     if (texture.floats !== null) throw new WebGLUnsupportedError('generateMipmap of a float texture; sample it with NEAREST');
     texture.mipmaps = true;
     texture.version += 1;
   }
 
   /**
-   * `generateMipmap` of textures framebuffers drew in (a 2D one, or a cube map's faces): each level above 0 becomes
-   * the one below it halved, by a LINEAR blit, in order with the draws. A texture without storage for its levels is
-   * given all of them, as GL does.
+   * `generateMipmap` of textures framebuffers drew in (a 2D one, or a cube map's faces): each level above `base`
+   * (`TEXTURE_BASE_LEVEL`) becomes the one below it halved, by a LINEAR blit, in order with the draws. A texture
+   * without storage for its levels is given all of them, as GL does.
    */
-  private mipmapDrawn(textures: WebGLTexture[]): void {
+  private mipmapDrawn(textures: WebGLTexture[], base: number): void {
     for (const t of textures) {
       if (FLOAT_FORMATS[t.format]?.bits === 32) throw new WebGLUnsupportedError('generateMipmap of a 32-bit float render target; use a 16-bit one');
     }
@@ -2304,7 +2307,7 @@ export class WebGLContext {
       if (!t.immutable) t.levels = Math.floor(Math.log2(Math.max(t.width, t.height))) + 1;
       t.drawnAt = t.version;
       const id = this.registerTarget(t);
-      for (let level = 0; level + 1 < t.levels; level += 1) {
+      for (let level = base; level + 1 < t.levels; level += 1) {
         const side = (l: number): [number, number, number, number] => [0, 0, Math.max(1, t.width >> l), Math.max(1, t.height >> l)];
         this.ops.push({ op: 'blit', src: id, ...(level > 0 ? { srcLevel: level } : {}), target: id, level: level + 1, from: side(level), to: side(level + 1), linear: true });
       }
@@ -3388,6 +3391,7 @@ export class WebGLContext {
       wrapT: WRAPS[texture.wrapT]!,
       ...((texture.depth > 0 && texture.target === GL2.TEXTURE_3D) || cube ? { wrapR: WRAPS[texture.wrapR]! } : {}),
       ...(texture.maxLevel < 1000 ? { maxLevel: texture.maxLevel } : {}),
+      ...(texture.baseLevel > 0 ? { baseLevel: texture.baseLevel } : {}),
       ...(texture.compareMode === GL2.COMPARE_REF_TO_TEXTURE ? { compare: DEPTH_FUNCS[texture.compareFunc]! } : {}),
     };
   }

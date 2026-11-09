@@ -627,6 +627,23 @@ describe('the recording WebGL context', () => {
       return r;
     }
 
+    it('records TEXTURE_BASE_LEVEL with the sampler that reads the texture', () => {
+      const { gl, program } = setup2();
+      const texture = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 4, 4, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, gl.createFramebuffer());
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0);
+      gl.bindTexture(GL.TEXTURE_2D, null);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.texParameteri(GL.TEXTURE_2D, GL2.TEXTURE_BASE_LEVEL, 2);
+      gl.uniform1i(gl.getUniformLocation(program, 'tex'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect((gl.content().ops.at(-1) as { units: Record<string, object> }).units['0']).toMatchObject({ baseLevel: 2 });
+    });
+
     it('records the stencil test with each draw where the buffer drawn into has a stencil buffer', () => {
       const { gl } = setup2({ stencil: true });
       expect(gl.content().stencil).toBe(true);
@@ -1342,6 +1359,20 @@ describe('the recording WebGL context', () => {
         { op: 'blit', src: faces[4], srcLevel: 1, target: faces[4], level: 2, from: [0, 0, 2, 2], to: [0, 0, 1, 1], linear: true },
       ]);
       for (const f of faces) expect(content.textures[f]).toEqual({ target: true, width: 4, height: 4, levels: 3 });
+    });
+
+    it('records TEXTURE_BASE_LEVEL on the sampler, and makes mipmaps from it', () => {
+      const { gl, program } = setup();
+      const t = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, t);
+      gl.texStorage2D(GL.TEXTURE_2D, 3, GL2.RGBA8, 4, 4);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, t, 1);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      gl.texParameteri(GL.TEXTURE_2D, GL2.TEXTURE_BASE_LEVEL, 1);
+      gl.generateMipmap(GL.TEXTURE_2D);
+      const blits = gl.content().ops.filter((o) => o.op === 'blit');
+      expect(blits).toEqual([expect.objectContaining({ srcLevel: 1, level: 2 })]);
+      void program;
     });
 
     it('gives a drawn 2D texture all its levels at generateMipmap, and refuses a 32-bit float one', () => {
