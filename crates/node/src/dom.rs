@@ -320,6 +320,9 @@ fn start_dom_island(request_json: &str, pass: Option<u64>) -> Result<Outcome<Str
         add_shared_since("dom_paint", timer);
         add_for_since(&caller, "n_paint", timer);
         take_counters(&caller);
+        if crate::dom_verify::enabled() {
+            crate::dom_verify::check_render(&json, &request, &resolved.island, &output)?;
+        }
         let write_timer = kinetograph_core::profile::start();
         let island = &resolved.island;
         // A file the island named that could not be read is not drawn as the
@@ -408,6 +411,9 @@ fn with_readback_island<T>(
         add_for_since(caller, "rb_resolve", timer);
         add_for(caller, "rb_edited", (islands.cache.counts().0 - was_edited) as f64);
         take_counters(caller);
+        if crate::dom_verify::enabled() {
+            crate::dom_verify::check_readback(&json, &request, &resolved.island)?;
+        }
         let timer = start();
         let answer = read(&resolved.island);
         add_for_since(caller, "rb_read", timer);

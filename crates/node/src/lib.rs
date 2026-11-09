@@ -13,6 +13,7 @@
 mod bench;
 mod canvas;
 mod dom;
+mod dom_verify;
 mod error;
 mod layout;
 mod matte;
