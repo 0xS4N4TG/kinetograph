@@ -16,7 +16,6 @@ use kinetograph_core::dom_layout::{
 use kinetograph_dom::document::{self, BuildError, IslandCache, IslandDocument, Resolved};
 use kinetograph_dom::readback;
 use kinetograph_dom::request::{self, IslandRequest, Unsupported};
-use serde_json::Value;
 
 use crate::error::{Code, Result, error, invalid};
 use crate::layout::with_engine;
@@ -246,11 +245,12 @@ thread_local! {
         std::cell::RefCell::new((None, HashMap::new()));
 }
 
-/// The layers of an island's first render in `pass`, or of its last render written in full. The caller holds the same
-/// layers (it names their pass), and the renders after them are written as changes from them, in that pass and the next.
+/// The layers of an island's first render in `pass`, or of its last render written in full, as written. The caller
+/// holds the same layers (it names their pass), and the renders after them are written as changes from them, in that
+/// pass and the next.
 struct Base {
     pass: u64,
-    layers: Vec<Value>,
+    layers: Vec<request::Written>,
 }
 
 /// Moves the bases to `pass`, as `IslandCache::enter` moves the documents: the pass after the last keeps the bases the
@@ -360,32 +360,25 @@ fn start_dom_island(request_json: &str, pass: Option<u64>, base: Option<u64>) ->
         SAMPLES.with(|islands| islands.borrow_mut().keep(request, json, resolved));
         // Written as changes from the layers the caller holds, when they are the ones kept here; the island's first
         // render of the pass, and one written in full, are kept for the later ones to be written against.
-        let (mut written_against, mut keep_base) = (None, None);
+        let write = |e: serde_json::Error| (Code::Render, format!("cannot write the island: {e}"));
+        let layers = request::written(&output.layers).map_err(write)?;
+        let (mut json, mut keep_base) = (None, None);
         if let Some(now) = pass {
             BASES.with(|bases| {
                 let (at, bases) = &mut *bases.borrow_mut();
                 enter_bases(at, bases, pass);
-                let kept = bases.get(&path);
-                if let Some(kept) = kept.filter(|kept| Some(kept.pass) == base) {
-                    let changes = request::delta(&output.layers, &kept.layers);
-                    written_against = Some((kept.pass, std::mem::replace(&mut output.layers, changes)));
-                }
-                if written_against.is_none() || kept.is_some_and(|kept| kept.pass != now) {
+                let kept = bases.get(&path).filter(|kept| Some(kept.pass) == base);
+                json = kept.map(|kept| {
+                    request::write_output(&output, &layers, Some((&kept.layers, kept.pass)))
+                });
+                if kept.is_none_or(|kept| kept.pass != now) {
                     keep_base = Some(now);
                 }
             });
         }
-        let mut json = serde_json::to_string(&output)
-            .map_err(|e| (Code::Render, format!("cannot write the island: {e}")))?;
-        let layers = match written_against {
-            Some((at, layers)) => {
-                // The output is an object: say which layers its layers are changes from.
-                json.pop();
-                json.push_str(&format!(r#","delta":{at}}}"#));
-                layers
-            }
-            None => output.layers,
-        };
+        let json = json
+            .unwrap_or_else(|| request::write_output(&output, &layers, None))
+            .map_err(write)?;
         if let Some(pass) = keep_base {
             BASES.with(|bases| bases.borrow_mut().1.insert(path, Base { pass, layers }));
         }

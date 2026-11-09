@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 mod node_de;
+mod written;
+
+pub use written::{Written, delta, write_output, written};
 
 /// One DOM island at one frame.
 #[derive(Clone, Debug, Deserialize)]
@@ -107,43 +110,6 @@ pub struct IslandOutput {
     /// that holds the island's layers must set it.
     #[serde(rename = "blendSpace")]
     pub blend_space: &'static str,
-}
-
-/// `layers` written as changes from `base`, an earlier output of the same
-/// island, matched by place: a layer that is the same as the one at index `i`
-/// of `base` is `{"$same": i}`, and a group with the id of the one there
-/// whose children differ is its own fields with `"$base": i` and its children
-/// written as changes from that one's. Anything else is the layer itself.
-pub fn delta(layers: &[Value], base: &[Value]) -> Vec<Value> {
-    layers
-        .iter()
-        .enumerate()
-        .map(|(i, layer)| {
-            let Some(was) = base.get(i) else {
-                return layer.clone();
-            };
-            if layer == was {
-                return serde_json::json!({ "$same": i });
-            }
-            let (Value::Object(fields), Some(Value::Array(theirs))) = (layer, was.get("children"))
-            else {
-                return layer.clone();
-            };
-            match fields.get("children") {
-                Some(Value::Array(kids)) if fields.get("id") == was.get("id") => {
-                    let mut own: serde_json::Map<String, Value> = fields
-                        .iter()
-                        .filter(|(name, _)| name.as_str() != "children")
-                        .map(|(name, value)| (name.clone(), value.clone()))
-                        .collect();
-                    own.insert("children".into(), Value::Array(delta(kids, theirs)));
-                    own.insert("$base".into(), Value::from(i));
-                    Value::Object(own)
-                }
-                _ => layer.clone(),
-            }
-        })
-        .collect()
 }
 
 /// `delta` undone: the layers it was given, from what it wrote and the same
