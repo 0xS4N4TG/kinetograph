@@ -707,7 +707,9 @@ texture (`shaders/glsl_depth_colour.wgsl`) so it reads `(d, 0, 0, 1)` as WebGL 2
 depth target again. A cube map's faces are 2D textures of their own on the JS side, so `framebufferTexture2D` of a
 face attaches it as a colour target, and a cube that framebuffers drew in is `targets` (the six) in the recording; the
 replay copies the six targets, every level, into the layers of a cube texture before the pass that samples it
-(`Step::CubeCopy`), and again after a pass draws in a face. A depth and stencil blit (`shaders/glsl_ds_copy.wgsl`) writes `frag_depth` from the source, and
+(`Step::CubeCopy`), and again after a pass draws in a face. `generateMipmap` of a texture a framebuffer drew in (a 2D
+one, or a cube's faces) is recorded as `LINEAR` blits from each level to the next, so it lands in order with the draws;
+a texture without `texStorage2D` levels is given the full chain, as GL does. A depth and stencil blit (`shaders/glsl_ds_copy.wgsl`) writes `frag_depth` from the source, and
 the stencil, which a fragment shader cannot write, by one draw that zeroes it and eight that each set one bit with a
 write mask of that bit, discarding where the source lacks it. `texSubImage2D` of a picture file is decoded and written
 like pixels; of a layer, a `copy_texture_to_texture` from the child's picture; over an uploaded texture, the texture

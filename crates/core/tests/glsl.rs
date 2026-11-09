@@ -1381,6 +1381,44 @@ fn a_level_of_a_texture_is_a_target_and_sampled_at_that_level() {
 }
 
 #[test]
+fn linear_blits_from_each_level_to_the_next_make_mipmaps_of_what_was_drawn() {
+    // `generateMipmap` of a drawn-into texture is recorded as these blits: level 4 (1 x 1) of a texture red on the
+    // left and blue on the right is their average.
+    let textures =
+        r#", "textures": {"t": {"target": true, "width": 16, "height": 16, "levels": 5}}"#;
+    let mut all = vec![
+        draw_in(
+            "f",
+            [0, 0, 8, 16],
+            &format!(r#"{}, "target": "t""#, z_fill(0.0, [1.0, 0.0, 0.0, 1.0])),
+        ),
+        draw_in(
+            "f",
+            [8, 0, 8, 16],
+            &format!(r#"{}, "target": "t""#, z_fill(0.0, [0.0, 0.0, 1.0, 1.0])),
+        ),
+    ];
+    for level in 0..4 {
+        let (side, half) = (16 >> level, 8 >> level);
+        all.push(format!(
+            r#"{{"op": "blit", "src": "t", "srcLevel": {level}, "target": "t", "level": {}, "from": [0, 0, {side}, {side}], "to": [0, 0, {half}, {half}], "linear": true}}"#,
+            level + 1
+        ));
+    }
+    all.push(
+        show_level("t", [0, 0, 16, 16], 4.0)
+            .replace(r#""min": "NEAREST""#, r#""min": "NEAREST_MIPMAP_NEAREST""#),
+    );
+    let frame = render(&layer_es3(
+        &[("f", FILL_ES3), ("s3", SHOW_ES3)],
+        textures,
+        &ops(&all),
+    ));
+    near(px(&frame, 3, 8), [128, 0, 128, 255], 2);
+    near(px(&frame, 12, 8), [128, 0, 128, 255], 2);
+}
+
+#[test]
 fn a_blit_copies_depth_and_stencil_into_the_drawing_buffer() {
     // A framebuffer's depth-and-stencil buffer gets depth 0.75 and stencil 5 in its left half, and is blitted to
     // the canvas whole. On the canvas a red quad at depth 0.9 is behind the copied depth on the left and in front
@@ -2006,6 +2044,40 @@ fn a_cube_map_samples_what_framebuffers_drew_in_its_faces() {
         [255, 0, 0, 255],
         2,
     );
+}
+
+#[test]
+fn every_level_of_a_drawn_face_reaches_the_cube_map() {
+    let faces: Vec<String> = (0..6)
+        .map(|f| format!(r#""f{f}": {{"target": true, "width": 2, "height": 2, "levels": 2}}"#))
+        .collect();
+    let mut all: Vec<String> = (0..6)
+        .flat_map(|f| {
+            [
+                format!(r#"{{"op": "clear", "color": [1, 0, 0, 1], "target": "f{f}"}}"#),
+                format!(
+                    r#"{{"op": "clear", "color": [0, 1, 0, 1], "target": "f{f}", "level": 1}}"#
+                ),
+            ]
+        })
+        .collect();
+    all.push(draw(&format!(
+        r#"{}, "units": {{"0": {{"texture": "c", "min": "NEAREST_MIPMAP_NEAREST", "mag": "NEAREST"}}}}"#,
+        uniforms(&[("u_env", "i", &[0.0])])
+    )));
+    let frame = render(&layer_of(
+        &[(
+            "p",
+            "#version 300 es\nprecision highp float; uniform samplerCube u_env; out vec4 o;\n\
+             void main() { o = textureLod(u_env, vec3(0.0, 0.0, 1.0), 1.0); }",
+        )],
+        &format!(
+            r#", "textures": {{{}, "c": {{"cube": true, "targets": ["f0", "f1", "f2", "f3", "f4", "f5"]}}}}"#,
+            faces.join(", ")
+        ),
+        &all.join(", "),
+    ));
+    near(px(&frame, 8, 8), [0, 255, 0, 255], 2);
 }
 
 #[test]

@@ -587,7 +587,7 @@ point's number in a draw of points; `gl_InstanceID` the instance's. Instanced po
 
 Not drawn, and reported as `unsupported:` with what to do instead (never accepted and ignored):
 multisampled renderbuffers, `readPixels`, lines wider than one pixel, instanced points, a `vertexAttribDivisor` above 1, integer attributes
-(`vertexAttribIPointer`, `vertexAttribI4i`), mipmaps of 3D and array textures, cube map levels above 0 with pixels (call `generateMipmap`), `texSubImage2D` into a cube face, float or depth cube faces, sRGB cube faces and render targets, float textures from a picture, a float texture as a `texSubImage2D` target from a picture or with the unpack flip or premultiply on, pixels uploaded to
+(`vertexAttribIPointer`, `vertexAttribI4i`), mipmaps of 3D and array textures, cube map levels above 0 with pixels (call `generateMipmap`), `texSubImage2D` into a cube face, cube faces of float pixels or depth, a cube with both uploaded and drawn faces, sRGB cube faces and render targets, float textures from a picture, a float texture as a `texSubImage2D` target from a picture or with the unpack flip or premultiply on, pixels uploaded to
 texture levels other than 0 (call `generateMipmap`), uniform blocks, struct uniforms with a `bool`, `mat2` or sampler field, array outputs, a framebuffer
 texture that is not RGBA or holds uploaded pixels, attachments of different sizes in one framebuffer, `drawImage` or `toDataURL` of a WebGL canvas. With `antialias: true` (the default) the canvas is
 4x multisampled, so the edges of what is drawn into it are smooth as in Chrome (a framebuffer of your own is not

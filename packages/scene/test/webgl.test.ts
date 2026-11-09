@@ -570,11 +570,12 @@ describe('the recording WebGL context', () => {
       expect(refused(() => gl.clear(GL.COLOR_BUFFER_BIT))).toMatch(/RGBA/);
       expect(framebuffer.color).toBe(texture);
 
-      // Once drawn in, a texture is not mipmapped from the page.
+      // Once drawn in, a texture's mipmaps are made from what was drawn (a 1 x 1 one has none to make).
       specify(GL.RGBA, null);
       gl.drawArrays(GL.TRIANGLES, 0, 3);
       gl.bindTexture(GL.TEXTURE_2D, texture);
-      expect(refused(() => gl.generateMipmap(GL.TEXTURE_2D))).toMatch(/generateMipmap/);
+      gl.generateMipmap(GL.TEXTURE_2D);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
     });
 
     it('records texSubImage2D into a texture drawn in as an upload after the draws, at the offset', () => {
@@ -1213,6 +1214,51 @@ describe('the recording WebGL context', () => {
       expect(gl.getError()).toBe(GL.INVALID_OPERATION);
       gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, cube, 0);
       expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+    });
+
+    it('makes the mipmaps of drawn faces with a LINEAR blit from each level to the next', () => {
+      const { gl, program } = setup();
+      const cube = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_CUBE_MAP, cube);
+      gl.texStorage2D(GL.TEXTURE_CUBE_MAP, 3, GL2.RGBA8, 4, 4);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_CUBE_MAP_POSITIVE_Z, cube, 0);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      gl.generateMipmap(GL.TEXTURE_CUBE_MAP);
+      gl.uniform1i(gl.getUniformLocation(program, 'env'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const content = gl.content();
+      const blits = content.ops.filter((o) => o.op === 'blit');
+      expect(blits).toHaveLength(12);
+      const draw = content.ops.at(-1)!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      const faces = content.textures[draw.units['0']!.texture]!.targets!;
+      expect(blits.slice(8, 10)).toEqual([
+        { op: 'blit', src: faces[4], target: faces[4], level: 1, from: [0, 0, 4, 4], to: [0, 0, 2, 2], linear: true },
+        { op: 'blit', src: faces[4], srcLevel: 1, target: faces[4], level: 2, from: [0, 0, 2, 2], to: [0, 0, 1, 1], linear: true },
+      ]);
+      for (const f of faces) expect(content.textures[f]).toEqual({ target: true, width: 4, height: 4, levels: 3 });
+    });
+
+    it('gives a drawn 2D texture all its levels at generateMipmap, and refuses a 32-bit float one', () => {
+      const { gl } = setup();
+      const t = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, t);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 8, 2, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, t, 0);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      gl.generateMipmap(GL.TEXTURE_2D);
+      const content = gl.content();
+      const blits = content.ops.filter((o) => o.op === 'blit');
+      expect(blits.map((b) => (b as { to: number[] }).to)).toEqual([[0, 0, 4, 1], [0, 0, 2, 1], [0, 0, 1, 1]]);
+      expect(content.textures[(blits[0] as { target: string }).target]).toMatchObject({ levels: 4 });
+      const f = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, f);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL2.RGBA32F, 2, 2, 0, GL.RGBA, GL.FLOAT, null);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, f, 0);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      expect(() => gl.generateMipmap(GL.TEXTURE_2D)).toThrow(WebGLUnsupportedError);
     });
 
     it('refuses a cube map of uploaded and drawn faces', () => {

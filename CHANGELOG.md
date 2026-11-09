@@ -9,6 +9,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 - WebGL `blitFramebuffer` to and from float render targets.
 - WebGL cube map faces as framebuffer colour attachments (`texStorage2D` of a cube map, RGBA8 or float faces).
+- WebGL `generateMipmap` of a texture or cube map a framebuffer drew in.
 
 ### Fixed
 

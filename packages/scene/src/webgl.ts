@@ -491,6 +491,8 @@ export class WebGLTexture extends WebGLObject {
   drawnAt = -1;
   /** The mip levels it has storage for (`texStorage2D`, or `texImage2D` of an empty level): what a framebuffer can draw in. */
   levels = 1;
+  /** Given its levels by `texStorage2D`: `generateMipmap` fills them, and makes no more. */
+  immutable = false;
   /** `texSubImage2D` calls since it was specified that its pixels here cannot take: pictures over parts of it, in order. */
   patches: GlslPatch[] = [];
   min: number = GL.NEAREST_MIPMAP_LINEAR;
@@ -2200,7 +2202,7 @@ export class WebGLContext {
     const texture = this.bound(target);
     if (texture === null) return;
     if (target === GL.TEXTURE_CUBE_MAP) {
-      if (WebGLContext.drawnCube(texture)) throw new WebGLUnsupportedError('generateMipmap of a cube map a framebuffer drew in; sample it with LINEAR or NEAREST');
+      if (WebGLContext.drawnCube(texture)) return this.mipmapDrawn(texture.faces!);
       if (!this.cubeComplete(texture)) return this.fail(GL.INVALID_OPERATION);
       texture.mipmaps = true;
       texture.version += 1;
@@ -2208,10 +2210,31 @@ export class WebGLContext {
     }
     if (!texture.uploaded || kindOf(texture.format) !== 'color') return this.fail(GL.INVALID_OPERATION);
     if (target === GL2.TEXTURE_3D || target === GL2.TEXTURE_2D_ARRAY) throw new WebGLUnsupportedError('generateMipmap of a 3D or array texture; sample it with LINEAR or NEAREST');
+    if (texture.drawnAt === texture.version) return this.mipmapDrawn([texture]);
     if (texture.floats !== null) throw new WebGLUnsupportedError('generateMipmap of a float texture; sample it with NEAREST');
-    if (texture.drawnAt === texture.version) throw new WebGLUnsupportedError('generateMipmap of a texture a framebuffer drew in; sample it with LINEAR or NEAREST');
     texture.mipmaps = true;
     texture.version += 1;
+  }
+
+  /**
+   * `generateMipmap` of textures framebuffers drew in (a 2D one, or a cube map's faces): each level above 0 becomes
+   * the one below it halved, by a LINEAR blit, in order with the draws. A texture without storage for its levels is
+   * given all of them, as GL does.
+   */
+  private mipmapDrawn(textures: WebGLTexture[]): void {
+    for (const t of textures) {
+      if (FLOAT_FORMATS[t.format]?.bits === 32) throw new WebGLUnsupportedError('generateMipmap of a 32-bit float render target; use a 16-bit one');
+    }
+    this.begin();
+    for (const t of textures) {
+      if (!t.immutable) t.levels = Math.floor(Math.log2(Math.max(t.width, t.height))) + 1;
+      t.drawnAt = t.version;
+      const id = this.registerTarget(t);
+      for (let level = 0; level + 1 < t.levels; level += 1) {
+        const side = (l: number): [number, number, number, number] => [0, 0, Math.max(1, t.width >> l), Math.max(1, t.height >> l)];
+        this.ops.push({ op: 'blit', src: id, ...(level > 0 ? { srcLevel: level } : {}), target: id, level: level + 1, from: side(level), to: side(level + 1), linear: true });
+      }
+    }
   }
 
   /** RGBA8 pixels from the bytes of `format` rows, honouring the unpack alignment. */
@@ -2650,12 +2673,14 @@ export class WebGLContext {
     }
     const float = FLOAT_FORMATS[internalformat];
     if (float !== undefined) {
-      if (levels > 1) throw new WebGLUnsupportedError('texStorage2D of a float format with more than one level; allocate one level');
-      return this.specifyFloat(texture, internalformat, float, [width, height], [float.format, GL.FLOAT, null]);
+      this.specifyFloat(texture, internalformat, float, [width, height], [float.format, GL.FLOAT, null]);
+      // The levels above 0 are storage a framebuffer, or generateMipmap, draws in.
+      Object.assign(texture, { levels, immutable: true });
+      return;
     }
     this.checkTextureType(GL.UNSIGNED_BYTE, internalformat);
     // Its upper levels are mipmaps of the empty level 0 until a framebuffer draws in them.
-    Object.assign(texture, { width, height, floats: null, float32: false, pixels: new Uint8Array(width * height * 4), src: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: levels > 1, format: internalformat, blank: true, levels, patches: [] });
+    Object.assign(texture, { width, height, floats: null, float32: false, pixels: new Uint8Array(width * height * 4), src: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: levels > 1, format: internalformat, blank: true, levels, immutable: true, patches: [] });
     texture.version += 1;
   }
 
