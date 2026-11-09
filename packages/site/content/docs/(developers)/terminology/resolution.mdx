@@ -5,22 +5,22 @@ description: The size a video is drawn at, and how --scale changes it.
 
 A composition sets its own size in pixels. The width and height must be even numbers.
 
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```tsx
 <Composition id="Main" component={Title} durationInFrames={60} fps={30} width={1920} height={1080} />
 ```
 
   </Tab>
-  <Tab value="HyperFrames">
+  <Tab label="HyperFrames" icon="hyperframes">
 
 ```html
 <div id="root" data-composition-id="main" data-width="1920" data-height="1080" data-duration="2">
 ```
 
   </Tab>
-</Tabs>
+</IconTabs>
 
 Common sizes:
 

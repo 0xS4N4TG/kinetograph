@@ -13,8 +13,8 @@ npm install @kinetographdev/gsap gsap
 
 `useGsapTimeline(build)` builds a paused timeline and seeks it to `frame / fps` every frame. The returned ref scopes string selectors. `<GsapTimeline build={...}>` is the component form.
 
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```tsx
 import { useGsapTimeline } from '@kinetographdev/gsap';
@@ -26,7 +26,7 @@ return <div ref={scope}>{/* elements with className="box" */}</div>;
 ```
 
   </Tab>
-  <Tab value="HyperFrames">
+  <Tab label="HyperFrames" icon="hyperframes">
 
 A HyperFrames page needs no adapter. Build a paused timeline and put it on `window.__timelines`.
 
@@ -37,7 +37,7 @@ window.__timelines = { hello: tl };
 ```
 
   </Tab>
-</Tabs>
+</IconTabs>
 
 Put every tween on `tl`. A `gsap.to(...)` that is not on the timeline plays on GSAP's root clock and gets a warning (see [GSAP](/docs/compat/#gsap)).
 

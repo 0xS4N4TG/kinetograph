@@ -14,8 +14,8 @@ The video goes to `out/renders/<composition id>.mp4`. Pass `-o` to choose anothe
 
 ## Look at frames
 
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 <Media src="illustrations/render-options.svg" dark="illustrations/render-options-dark.svg" width={600} height={524} alt={"A grid of commands against four stages: bundle, run, draw and encode. doctor stops after run and never uses the GPU. still, strip and onion go through draw for a chosen frame, frames or range. render with sequence stops after draw and writes an image per frame. render goes through all four to an MP4."} />
 
@@ -26,7 +26,7 @@ npx kinetograph onion src/index.tsx 0..60 -n 6
 ```
 
   </Tab>
-  <Tab value="HyperFrames">
+  <Tab label="HyperFrames" icon="hyperframes">
 
 ```sh
 npx kinetograph still html/index.html 15
@@ -35,7 +35,7 @@ npx kinetograph onion html/index.html 0..60 -n 6
 ```
 
   </Tab>
-</Tabs>
+</IconTabs>
 
 - `still` writes one frame as a PNG.
 - `strip` writes evenly spaced frames on one sheet, labelled with the frame and the time. Start here: it shows the whole animation.

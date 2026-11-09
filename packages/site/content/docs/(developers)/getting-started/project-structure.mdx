@@ -7,8 +7,8 @@ description: The files and folders that npx kinetograph init makes, what each is
 
 ## The layout
 
-<Tabs items={['TSX (Remotion API)', 'HTML (HyperFrames)']}>
-  <Tab value="TSX (Remotion API)">
+<IconTabs>
+  <Tab label="TSX (Remotion API)" icon="remotion">
 
 ```sh
 npx kinetograph init my-video
@@ -50,7 +50,7 @@ registerRoot(() => (
 `package.json` gets four scripts (`still`, `strip`, `render` and `check`) that run the matching commands on the entry.
 
   </Tab>
-  <Tab value="HTML (HyperFrames)">
+  <Tab label="HTML (HyperFrames)" icon="hyperframes">
 
 ```sh
 npx kinetograph init my-video --html
@@ -78,7 +78,7 @@ my-video
 The entry is `html/index.html`, or a HyperFrames project's `index.html`. `hyperframes.json` and the planning files are not read. See [HyperFrames projects](/docs/compat/#hyperframes-projects).
 
   </Tab>
-</Tabs>
+</IconTabs>
 
 ## What goes where
 

@@ -2,7 +2,7 @@ import { DocsPre, PromptBox } from '@/components/docs/mdx';
 import { Media } from '@/components/docs/media';
 import { Card, CardGroup, Note, Step, Tip, Warning } from '@/components/docs/blocks';
 import { FilmGrid } from '@/components/docs/film-grid';
-import { Os, OsTabs } from '@/components/docs/os-tabs';
+import { IconTabs, Tab } from '@/components/docs/icon-tabs';
 import { Terminal, TwoUp } from '@/components/docs/figures';
 import { RouteGrid } from '@/components/docs/route-grid';
 import { LinkCard } from '@/components/docs/link-card';
@@ -15,7 +15,6 @@ import { source } from '@/lib/source';
 import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/layouts/docs/page';
 import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
 import { Steps } from 'fumadocs-ui/components/steps';
-import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import defaultMdxComponents from 'fumadocs-ui/mdx';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
@@ -56,8 +55,7 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
             Media,
             Video,
             FilmGrid,
-            OsTabs,
-            Os,
+            IconTabs,
             Terminal,
             TwoUp,
             RouteGrid,
@@ -76,7 +74,6 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
             Warning,
             EngineDiagram,
             Tab,
-            Tabs,
           }}
         />
       </DocsBody>

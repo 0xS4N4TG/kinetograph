@@ -9,8 +9,8 @@ You can write the video as a Remotion-style TSX project or as an HTML page in th
 
 ## Make the project
 
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```sh
 npx kinetograph init
@@ -55,7 +55,7 @@ Import the API from `@kinetographdev/core`, not from `kinetograph`, which is the
 A [composition](/docs/terminology/composition/) is one video: `Composition` sets its id, length in frames, frame rate and size. `useCurrentFrame` gives the [frame](/docs/terminology/frame/) being drawn, and the picture depends only on that number. Here the bar grows from 0 to 640 over 30 frames, then holds.
 
   </Tab>
-  <Tab value="HyperFrames">
+  <Tab label="HyperFrames" icon="hyperframes">
 
 ```sh
 npx kinetograph init --html
@@ -92,12 +92,12 @@ npm install
 The root element gives the size and the length in seconds, at 30 fps. The first render downloads GSAP and pins it in `kinetograph.lock.json`. [HyperFrames projects](/docs/compat/#hyperframes-projects) lists what a page can use.
 
   </Tab>
-</Tabs>
+</IconTabs>
 
 ## Look at it, then render it
 
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```sh
 npx kinetograph strip src/index.tsx
@@ -105,7 +105,7 @@ npx kinetograph render src/index.tsx
 ```
 
   </Tab>
-  <Tab value="HyperFrames">
+  <Tab label="HyperFrames" icon="hyperframes">
 
 ```sh
 npx kinetograph strip html/index.html
@@ -113,7 +113,7 @@ npx kinetograph render html/index.html
 ```
 
   </Tab>
-</Tabs>
+</IconTabs>
 
 `strip` writes twelve labelled frames on one sheet to `out/sheets/Main-strip.png`. `render` writes `out/renders/Main.mp4`, 1280 by 720, H.264. Add `--draft` for a half-size look first. [Rendering](/docs/rendering/) covers `still`, `lint`, `doctor` and the export options.
 

@@ -9,22 +9,22 @@ The entry point is the file a command opens. It can be one of three things.
 - A `.json` scene file.
 - An HTML page, or the folder that holds its `index.html`.
 
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```sh
 npx kinetograph render src/index.tsx
 ```
 
   </Tab>
-  <Tab value="HyperFrames">
+  <Tab label="HyperFrames" icon="hyperframes">
 
 ```sh
 npx kinetograph render html/index.html
 ```
 
   </Tab>
-</Tabs>
+</IconTabs>
 
 A file that only exports a component is not an entry point. The project needs a `registerRoot` call, or the command stops and says so.
 

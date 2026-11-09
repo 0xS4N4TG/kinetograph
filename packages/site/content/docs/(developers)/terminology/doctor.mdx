@@ -5,22 +5,22 @@ description: A command that lists what a project holds that the engine cannot dr
 
 `doctor` goes through every frame of a project without the GPU. It reports each element and property the engine cannot draw, and the frames where it happens.
 
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```sh
 npx kinetograph doctor src/index.tsx --range 0..120
 ```
 
   </Tab>
-  <Tab value="HyperFrames">
+  <Tab label="HyperFrames" icon="hyperframes">
 
 ```sh
 npx kinetograph doctor my-video
 ```
 
   </Tab>
-</Tabs>
+</IconTabs>
 
 Unsupported content is drawn without, or approximated, and a warning names it. Nothing falls back to a browser. This is decided frame by frame.
 

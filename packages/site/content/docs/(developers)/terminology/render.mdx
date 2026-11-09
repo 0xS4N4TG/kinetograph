@@ -5,8 +5,8 @@ description: Drawing every frame of a composition and encoding them, with the so
 
 To render is to draw each frame and write the result to a video file.
 
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```sh
 # was: remotion render
@@ -14,7 +14,7 @@ npx kinetograph render src/index.tsx --comp Card
 ```
 
   </Tab>
-  <Tab value="HyperFrames">
+  <Tab label="HyperFrames" icon="hyperframes">
 
 ```sh
 # was: hyperframes render
@@ -22,7 +22,7 @@ npx kinetograph render my-video
 ```
 
   </Tab>
-</Tabs>
+</IconTabs>
 
 Without `-o` the video goes to `out/renders/<comp>.mp4`, with the extension that `--codec` gives. With `-o`, the extension sets the container: `.mp4`, `.mov`, `.webm` or `.gif`. The codec is H.264 unless you ask for another with `--codec`: `h265`, `prores`, `vp9` or `gif`.
 

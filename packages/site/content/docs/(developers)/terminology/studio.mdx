@@ -5,8 +5,8 @@ description: The local editor that previews a project, with a timeline, a props 
 
 Studio is a local editor in your browser. The engine draws its preview frames, so what you see is what a render makes.
 
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```sh
 # was: remotion studio
@@ -14,7 +14,7 @@ npx kinetograph studio src/index.tsx
 ```
 
   </Tab>
-  <Tab value="HyperFrames">
+  <Tab label="HyperFrames" icon="hyperframes">
 
 ```sh
 # was: hyperframes preview
@@ -22,7 +22,7 @@ npx kinetograph studio my-video
 ```
 
   </Tab>
-</Tabs>
+</IconTabs>
 
 It has a preview that plays sound, an Export button, and an inspector with the Props, Scene and Renders tabs. Cmd+K opens a menu of every action.
 

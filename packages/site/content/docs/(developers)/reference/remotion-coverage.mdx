@@ -63,8 +63,8 @@ Follow these steps in order.
 
 The commands differ only in the entry. A Remotion project points at its entry file and picks a composition with `--comp`. A [HyperFrames](/docs/migrating/hyperframes/) page points at its `index.html`.
 
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```sh
 npx kinetograph compositions src/index.ts
@@ -75,7 +75,7 @@ npx kinetograph render src/index.ts --comp <id> --strict
 ```
 
   </Tab>
-  <Tab value="HyperFrames">
+  <Tab label="HyperFrames" icon="hyperframes">
 
 ```sh
 npx kinetograph compositions index.html
@@ -85,7 +85,7 @@ npx kinetograph render index.html --strict
 ```
 
   </Tab>
-</Tabs>
+</IconTabs>
 
 ### Fixing findings
 

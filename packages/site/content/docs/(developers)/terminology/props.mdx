@@ -5,8 +5,8 @@ description: Input values you give a composition, from defaults, a zod schema or
 
 Props are the values a composition receives, such as a title or a colour. You can change them without editing the code.
 
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```sh
 npx kinetograph render src/index.tsx --comp Card --props '{"title":"Hello"}'
@@ -15,7 +15,7 @@ npx kinetograph render src/index.tsx --comp Card --props '{"title":"Hello"}'
 The component gets `defaultProps` with the `--props` values merged over them. `getInputProps()` returns the `--props` object.
 
   </Tab>
-  <Tab value="HyperFrames">
+  <Tab label="HyperFrames" icon="hyperframes">
 
 ```html
 <div data-composition-id="card" data-composition-src="compositions/card.html"
@@ -25,7 +25,7 @@ The component gets `defaultProps` with the `--props` values merged over them. `g
 Inside `card.html`, the script reads them with `window.__hyperframes.getVariables()`.
 
   </Tab>
-</Tabs>
+</IconTabs>
 
 `--props` takes a JSON object or the path of a JSON file. Add a zod 4 `schema` to a composition and Studio draws a form from it. Props saved as a preset are a JSON file in `presets/`.
 

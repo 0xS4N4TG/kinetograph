@@ -7,22 +7,22 @@ Still has two meanings, and both are about one frame.
 
 The `still` command renders one frame to a PNG. It is the fastest way to look at your work. Without `-o` the file is `out/stills/<comp>-f<frame>.png`.
 
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```sh
 npx kinetograph still src/index.tsx 15
 ```
 
   </Tab>
-  <Tab value="HyperFrames">
+  <Tab label="HyperFrames" icon="hyperframes">
 
 ```sh
 npx kinetograph still html/index.html 15
 ```
 
   </Tab>
-</Tabs>
+</IconTabs>
 
 The `<Still>` component declares a composition that has exactly one frame. It takes the same props as `<Composition>`, without `durationInFrames`. Its `fps` defaults to 30. A HyperFrames page has no equivalent.
 

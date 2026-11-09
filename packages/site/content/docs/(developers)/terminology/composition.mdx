@@ -5,22 +5,22 @@ description: A video you can render, with an id, a size, a frame rate and a leng
 
 A composition is one video in a project. It has an `id`, a size, an `fps` and a length. It also has the code that draws each frame.
 
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```tsx
 <Composition id="Intro" component={Intro} durationInFrames={90} fps={30} width={1920} height={1080} />
 ```
 
   </Tab>
-  <Tab value="HyperFrames">
+  <Tab label="HyperFrames" icon="hyperframes">
 
 ```html
 <div id="root" data-composition-id="intro" data-width="1920" data-height="1080" data-duration="3">...</div>
 ```
 
   </Tab>
-</Tabs>
+</IconTabs>
 
 The HyperFrames length is in seconds, at 30 fps. Three seconds is the same 90 frames.
 

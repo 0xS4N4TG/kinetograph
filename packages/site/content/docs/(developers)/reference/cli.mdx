@@ -97,22 +97,22 @@ npx kinetograph still <entry> <frame> [-o <output.png>] [options]
 
 Renders frames to a video with audio.
 
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```sh
 npx kinetograph render src/index.tsx
 ```
 
   </Tab>
-  <Tab value="HyperFrames">
+  <Tab label="HyperFrames" icon="hyperframes">
 
 ```sh
 npx kinetograph render html/index.html
 ```
 
   </Tab>
-</Tabs>
+</IconTabs>
 
 For a HyperFrames page, `render` first downloads what the page loads from the web. Add `--offline` to skip that step. A directory that holds the `index.html` works too.
 
@@ -282,22 +282,22 @@ npx kinetograph effects
 
 Runs every frame in the range without the GPU and reports what the engine cannot draw, and where. Use it before a long render. See [What works](/docs/compat/#when-the-engine-cant-draw-something).
 
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```sh
 npx kinetograph doctor src/index.ts --range 0..120
 ```
 
   </Tab>
-  <Tab value="HyperFrames">
+  <Tab label="HyperFrames" icon="hyperframes">
 
 ```sh
 npx kinetograph doctor index.html --range 0..120
 ```
 
   </Tab>
-</Tabs>
+</IconTabs>
 
 | Option | Meaning |
 |---|---|
@@ -341,22 +341,22 @@ Downloads what a project loads from the web (CDN scripts, ES modules, remote pic
 
 `render`, `still`, `doctor` and `studio` do this first on their own. Run `fetch-deps` to do it ahead of time, such as in CI. With `--offline` on those commands, a file that is not cached is an error.
 
-<Tabs items={['Remotion', 'HyperFrames']}>
-  <Tab value="Remotion">
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```sh
 npx kinetograph fetch-deps src/index.ts --update
 ```
 
   </Tab>
-  <Tab value="HyperFrames">
+  <Tab label="HyperFrames" icon="hyperframes">
 
 ```sh
 npx kinetograph fetch-deps index.html --allow-host www.example.com --update
 ```
 
   </Tab>
-</Tabs>
+</IconTabs>
 
 For a Remotion project, `fetch-deps` fetches the remote pictures and videos its bundle names. Only `--update` applies. `--allow-host`, `--url` and `--max-media-mb` are for HyperFrames pages.
 
