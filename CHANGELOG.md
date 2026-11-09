@@ -5,6 +5,10 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ## Unreleased
 
+### Changed
+
+- DOM islands replay unchanged stacking contexts from the last paint (mg1 island paint 23.8 → 6 ms a frame).
+
 ### Fixed
 
 - `staticFile()` returns forward slashes on Windows so CSS `url()` paths are not corrupted by backslash escapes (#100).

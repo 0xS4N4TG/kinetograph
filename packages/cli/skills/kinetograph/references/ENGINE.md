@@ -1001,15 +1001,15 @@ Goal: stop redoing what did not change between frames. What was found, measured 
   are rendered for the samples (JS 40 ms, `start_frame` 20 ms). Samples of an island often differ only in a transform;
   `request::delta` (comparing every layer with the first sample's) is about as costly as the island's resolve there.
 - **Retained paint.** A kept document's paint replays each stacking context's content from its last paint when nothing
-  inside it changed (`crates/dom/src/dirty.rs` finds the changed nodes from the last paint's stamps; `paint/retain.rs`
-  replays). A context may itself have changed in its group (transform, opacity, filter, blend, place) and its parent
-  in its group: only `context_group` runs again. The layer ids, reports and audits a content took are checked as
-  ledgers before a replay, so a replayed paint is the whole paint, layer for layer. Everything is painted again after
-  a file is read, a clamp cuts another line, an `id`, a path or a stylesheet's text changes, or a change to an SVG
-  element an id can name or to what the painter walks up to (text decoration, `--kg-*`, float, position, display). A
-  document nothing changed in twice running draws its last output. Paint per frame: mg1 23.8 -> 6 ms, film 5.3 ->
-  3.0 ms, dm4 13 -> 10 ms (its boxes sit straight in the root's context, which is never retained). Replaces
-  `repaint_transforms`. Tests: `crates/dom/tests/retain.rs`.
+  inside it changed (`crates/dom/src/dirty.rs` finds the changed nodes from the last paint's stamps of each node's
+  style, box and lines; `paint/retain.rs` replays). A context may itself have changed in its group (transform, opacity,
+  filter, blend, place) and its parent in its group: only `context_group` runs again. The layer ids, reports and audits
+  a content took are checked as ledgers before a replay, so a replayed paint is the whole paint, layer for layer.
+  Everything is painted again after a file is read, a clamp cuts another line, an `id`, a path or a stylesheet's text
+  changes, or a change to an SVG element an id can name or to what the painter walks up to (text decoration, any custom
+  property that is not inherited, float, position, display). A document nothing changed in twice running draws its last
+  output. Paint per frame: mg1 23.8 -> 6 ms, film 5.3 -> 3.0 ms, dm4 13 -> 10 ms (its boxes sit straight in the root's
+  context, which is never retained). Replaces `repaint_transforms`. Tests: `crates/dom/tests/retain.rs`.
 
 **A third edit-path bug: baselines lost to taffy's cache** (fixed). Launch film frames 180 and 181 drew the caption word
 `screenshotting` differently when frame 179 had been drawn just before (a document edited) than when the render started
