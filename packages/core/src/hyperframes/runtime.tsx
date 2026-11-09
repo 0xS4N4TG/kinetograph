@@ -20,7 +20,7 @@ import { Composition, registerRoot } from '../compositions.js';
 import { Sequence, useCurrentFrame, useVideoConfig } from '../timeline.js';
 import { finishFontLoadsSync, getFonts } from '../font-registry.js';
 import { makeGoogleFont } from '../google-fonts.js';
-import { reportUnsupported } from '../unsupported.js';
+import { reportIsRead, reportUnsupported } from '../unsupported.js';
 import type { HfAudioFxJson } from '@kinetographdev/scene';
 import type { HfNode, HfPlan } from './plan.js';
 import { runGlobalScript, runScopedScript, type ScopeEnv } from './scope.js';
@@ -715,7 +715,8 @@ export function defineHyperframes(plan: HfPlan): void {
     runtime.mount();
     // `frame / fps` is exact for a whole frame; a motion-blur sub-frame is fractional.
     runtime.seek(frame / fps, durationInFrames / fps, fps);
-    runtime.reportUnsupported();
+    // The report costs a layout readback; the renders on the way to a frame are not read.
+    if (reportIsRead()) runtime.reportUnsupported();
     return <>{runtime.sounds(fps, durationInFrames)}</>;
   }
 

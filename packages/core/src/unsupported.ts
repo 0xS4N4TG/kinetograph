@@ -12,6 +12,7 @@
 import type { Unsupported } from '@kinetographdev/scene';
 
 const reported = new Map<string, Unsupported>();
+let read = true;
 
 /** Records that `component` leaves out `property` (null: the whole component) for `reason`. */
 export function reportUnsupported(component: string, property: string | null, value: string | null, reason: string): void {
@@ -22,6 +23,19 @@ export function reportUnsupported(component: string, property: string | null, va
 /** Forgets what was reported (the frame loop does, before each render). */
 export function clearReportedUnsupported(): void {
   reported.clear();
+}
+
+/**
+ * Whether the render under way is the frame's own, whose report is read. The renders a frame makes on the way to it (the
+ * frames a jump plays through, the motion-blur sub-frames) are not, so a check that costs a layout readback can skip them.
+ */
+export function reportIsRead(): boolean {
+  return read;
+}
+
+/** Says whether the render about to start is the frame's own (the frame loop does, before each render). */
+export function setReportIsRead(own: boolean): void {
+  read = own;
 }
 
 /** What has been reported since the last `clearReportedUnsupported`. */

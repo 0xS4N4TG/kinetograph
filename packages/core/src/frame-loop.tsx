@@ -37,7 +37,7 @@ import { realTimers, resetVirtualClock, runAnimationFrames, setVirtualFrame, ste
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 import { endGsapSamples, gsapIsLoaded, sampleGsapAt, setGsapTime } from './gsap-clock.js';
 import { takePageErrors } from './page-errors.js';
-import { clearReportedUnsupported, reportedUnsupported } from './unsupported.js';
+import { clearReportedUnsupported, reportedUnsupported, setReportIsRead } from './unsupported.js';
 
 export interface FrameResult {
   scene: SceneJson;
@@ -262,6 +262,7 @@ class Renderer implements FrameRenderer {
     if (this.rendering === this.target) this.openPass();
     resetCanvasStates();
     clearReportedUnsupported();
+    setReportIsRead(this.rendering === this.target);
     scene.update(element);
   }
 
