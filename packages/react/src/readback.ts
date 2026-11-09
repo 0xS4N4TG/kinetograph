@@ -1,18 +1,25 @@
 // Readback (packages/cli/skills/kinetograph/references/ENGINE.md §1): what a ref to a DOM host element, `getComputedStyle` and the observers learn about the
 // current host tree. The island that holds the element is sent to the addon as an `IslandRequest` (the same JSON the
 // frame is drawn from) and its boxes or computed styles come back; both are cached until the tree changes (`generation`).
+// When all that changed since the last request is what scripts wrote to elements' styles, attributes and texts, the
+// addon is sent those changes instead (`islandEdits`), and edits the state it holds.
 
 import {
   addonFunction,
   collectStyleElements,
   currentSamplePass,
+  editableRequest,
   hasAddonFunction,
   importedStylesheets,
   isDomElement,
+  islandEdits,
   lap,
   noteStylesheet,
   requestFor,
   stamp,
+  type ChangedElement,
+  type EditableRequest,
+  type IslandRequest,
 } from '@kinetographdev/compat/dom';
 import type { BoxInfo, Readback } from '@kinetographdev/compat/shim';
 import { effectiveParentOf, headHost, propsWithOverlay, rawParentOf, setRawParent } from '@kinetographdev/compat/shim';
@@ -56,6 +63,25 @@ interface Island {
   computed: Map<string, string | null>;
 }
 
+/** An island's last request the addon was sent, kept to send what scripts change in it next as edits. */
+interface Kept extends EditableRequest {
+  /** The number of the state the addon holds (`IslandEdits::stamp`). */
+  stamp: number;
+  /** The commits and the pass it was sent in: a commit since, or a pass that does not follow, sends the request again. */
+  commits: number;
+  pass: number | undefined;
+  /** The document-wide CSS of the project's imports it was built with. */
+  imported: string[];
+  /** The elements whose own style, attributes or texts scripts changed since; null when anything else changed. */
+  dirty: Set<HostElement> | null;
+}
+
+/** The numbers of the states of islands sent with edits: one count for the whole thread, so none is used twice. */
+let stamps = 0;
+
+/** `KINETOGRAPH_DOM_VERIFY`: each request made by edits is checked against the request built afresh. */
+const verifyEdits = typeof process !== 'undefined' && Boolean(process.env?.KINETOGRAPH_DOM_VERIFY);
+
 /** The nearest ancestor that is not a `<Sequence>` (which is transparent); the links are the shim's, which scripts change too. */
 const effectiveParent = effectiveParentOf;
 
@@ -95,6 +121,8 @@ export function createReadback(container: Container, options: EmitOptions): Read
   let cachedGeneration = -1;
   let paths = new Map<HostElement, string>();
   const islands = new Map<HostElement, Island>();
+  /** The last request of each island root, while edits can follow it. */
+  const kept = new Map<HostElement, Kept>();
 
   const fresh = (): void => {
     if (cachedGeneration === container.generation) return;
@@ -158,6 +186,68 @@ export function createReadback(container: Container, options: EmitOptions): Read
     return top;
   };
 
+  /** The request of the island at `root` as the tree is now, built afresh. */
+  const requestOf = (root: HostElement, path: string): IslandRequest => {
+    const stylesheets = [...importedStylesheets(), ...collectStyleElements([headHost, ...container.children])];
+    for (const css of stylesheets) noteStylesheet(css);
+    return requestFor(flattenDomElement(domFillOf(root) ?? root, path, null), {
+      path,
+      viewport: options.viewport ?? { width: 1920, height: 1080 },
+      fonts: options.fonts?.() ?? {},
+      refreshFonts: () => options.fonts?.() ?? {},
+      emitNative: () => null,
+      time: options.time?.() ?? 0,
+      stylesheets,
+    }).request;
+  };
+
+  /** What the addon is sent for the island at `root`: the whole request, numbered when edits can follow it. */
+  const sendWhole = (root: HostElement, path: string): string => {
+    const request = requestOf(root, path);
+    const json = JSON.stringify(request);
+    const editable = hasAddonFunction('domIslandEdits') ? editableRequest(request) : null;
+    if (editable === null) {
+      kept.delete(root);
+      return json;
+    }
+    const state = { ...editable, stamp: ++stamps, commits: container.commits, pass: currentSamplePass(), imported: importedStylesheets(), dirty: new Set<HostElement>() };
+    kept.set(root, state);
+    return `{"stamp":${state.stamp},"request":${json}}`;
+  };
+
+  /** The edits scripts made to the island at `root` since its last request, or null when they cannot say what changed. */
+  const sendEdits = (root: HostElement, path: string): string | null => {
+    const state = kept.get(root);
+    if (state === undefined || state.dirty === null || state.commits !== container.commits || state.request.path !== path) return null;
+    // The addon keeps a state from a pass to the next one only.
+    const pass = currentSamplePass();
+    if (pass !== state.pass && (pass === undefined || state.pass === undefined || pass !== state.pass + 1)) return null;
+    const { request } = state;
+    const viewport = options.viewport ?? { width: 1920, height: 1080 };
+    if (viewport.width !== request.viewport.width || viewport.height !== request.viewport.height) return null;
+    if (!sameRecord(options.fonts?.() ?? {}, request.fonts)) return null;
+    const imported = importedStylesheets();
+    if (imported.length !== state.imported.length || imported.some((css, i) => css !== state.imported[i])) return null;
+    const changed: ChangedElement[] = [];
+    for (const host of state.dirty) {
+      // A sheet's text is the document's CSS, wherever the `<style>` is.
+      if (host.type === 'style' || host.type === 'link') return null;
+      if (islandRootOf(host) !== root) continue;
+      changed.push({ path: pathOf(host), node: { ...host, props: propsWithOverlay(host) }, children: flatten(host.children).map((n) => (n.kind === 'text' ? n.text : null)) });
+    }
+    const set = islandEdits(state, changed, options.time?.() ?? 0);
+    if (set === null) return null;
+    if (verifyEdits) {
+      const whole = JSON.stringify(requestOf(root, path));
+      if (JSON.stringify(request) !== whole) throw new Error(`island ${path}: the request made by edits is not the one built afresh`);
+    }
+    const base = state.stamp;
+    state.stamp = ++stamps;
+    state.pass = pass;
+    state.dirty = new Set();
+    return JSON.stringify({ stamp: state.stamp, base, path, time: request.time, set });
+  };
+
   const islandOf = (host: HostElement): Island | null => {
     fresh();
     const root = islandRootOf(host);
@@ -165,22 +255,24 @@ export function createReadback(container: Container, options: EmitOptions): Read
     if (island === undefined) {
       const t = stamp();
       const path = pathOf(root);
-      const stylesheets = [...importedStylesheets(), ...collectStyleElements([headHost, ...container.children])];
-      for (const css of stylesheets) noteStylesheet(css);
-      const { request } = requestFor(flattenDomElement(domFillOf(root) ?? root, path, null), {
-        path,
-        viewport: options.viewport ?? { width: 1920, height: 1080 },
-        fonts: options.fonts?.() ?? {},
-        refreshFonts: () => options.fonts?.() ?? {},
-        emitNative: () => null,
-        time: options.time?.() ?? 0,
-        stylesheets,
-      });
-      island = { root, path, json: JSON.stringify(request), boxes: new Map(), allBoxes: false, computed: new Map() };
+      island = { root, path, json: sendEdits(root, path) ?? sendWhole(root, path), boxes: new Map(), allBoxes: false, computed: new Map() };
       islands.set(root, island);
       lap('rb_request', t);
     }
     return island;
+  };
+
+  /** `read` of the island's JSON; edits the addon cannot make (it no longer holds their state) are sent as the whole request. */
+  const ask = <T>(island: Island, read: (json: string) => T): T => {
+    try {
+      return read(island.json);
+    } catch (error) {
+      if ((error as { code?: unknown }).code !== 'STALE_BASE') throw error;
+      const t = stamp();
+      island.json = sendWhole(island.root, island.path);
+      lap('rb_request', t);
+      return read(island.json);
+    }
   };
 
   /** Notes that the layout of this commit's tree is being read; a ninth commit measured in one frame is a loop. */
@@ -203,7 +295,7 @@ export function createReadback(container: Container, options: EmitOptions): Read
           // second for all of them, which costs about what one does.
           const one = island.boxes.size === 0 ? [path] : undefined;
           let t = stamp();
-          const text = addonFunction('domLayoutBoxes')(island.json, currentSamplePass(), one);
+          const text = ask(island, (json) => addonFunction('domLayoutBoxes')(json, currentSamplePass(), one));
           t = lap('rb_box', t);
           for (const [at, box] of Object.entries(JSON.parse(text) as Boxes)) island.boxes.set(at, box);
           if (one === undefined) island.allBoxes = true;
@@ -231,7 +323,7 @@ export function createReadback(container: Container, options: EmitOptions): Read
           // properties of one element (GSAP reads a dozen): ask for the usual ones together and answer the rest from the cache.
           const asked = [property, ...COMMON_PROPERTIES.filter((p) => p !== property && !island.computed.has(`${pathOf(host)}\0${p}`))];
           const t = stamp();
-          const answer = addonFunction('domComputedStyle')(island.json, pathOf(host), asked, currentSamplePass());
+          const answer = ask(island, (json) => addonFunction('domComputedStyle')(json, pathOf(host), asked, currentSamplePass()));
           lap('rb_style', t);
           asked.forEach((name, i) => island.computed.set(`${pathOf(host)}\0${name}`, answer[i] !== undefined && answer[i] !== '' ? answer[i]! : null));
           value = island.computed.get(key) ?? null;
@@ -302,8 +394,13 @@ export function createReadback(container: Container, options: EmitOptions): Read
       return container.children.includes(top);
     },
     viewport: () => options.viewport ?? { width: 1920, height: 1080 },
-    touch() {
+    touch(host) {
       container.generation++;
+      for (const state of kept.values()) {
+        if (state.dirty === null) continue;
+        if (host === undefined) state.dirty = null;
+        else state.dirty.add(host);
+      }
     },
     roots: () => flatten(container.children),
     rootChildren: () => container.children,
@@ -321,6 +418,11 @@ export function createReadback(container: Container, options: EmitOptions): Read
     },
   };
   return readback;
+}
+
+function sameRecord(a: Record<string, string>, b: Record<string, string>): boolean {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
 }
 
 /** A property's value from the element's inline style or attributes, when the engine cannot say. */

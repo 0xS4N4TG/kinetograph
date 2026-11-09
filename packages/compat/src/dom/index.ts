@@ -33,6 +33,8 @@ export {
 } from '../environment.js';
 export type { DomEnvironment, CssFontFace } from '../environment.js';
 export { buildIslandRequest, collectStyleElements, styleText } from '../request/build.js';
+export { editableRequest, islandEdits } from '../request/edits.js';
+export type { ChangedElement, EditableRequest, NodeEditJson } from '../request/edits.js';
 export { parseSrcset, sourceSize, srcsetCandidate } from '../request/srcset.js';
 export type { IslandRequestJson, RequestNode, BuildOptions, BuiltRequest } from '../request/build.js';
 export { styleToCss } from '../request/style.js';

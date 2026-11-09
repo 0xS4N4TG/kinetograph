@@ -101,7 +101,7 @@ export const detachedReadback: Readback = {
   childNodes: (host) => flatten(host.children).filter((n) => n.kind === 'text' || isDomElement(n.type)),
   isConnected: inDocumentShell,
   viewport: () => currentBodyRoot()?.viewport() ?? pageViewport(),
-  touch: () => currentBodyRoot()?.touch(),
+  touch: (host) => currentBodyRoot()?.touch(host),
   roots: () => [],
   descendants: () => [],
   rootChildren: () => [],
@@ -265,7 +265,8 @@ export function setText(node: HostText, text: string): void {
   const old = node.text;
   node.text = text;
   const parent = effectiveParentOf(node);
-  (parent === null ? currentBodyRoot() : readbackOfHost(parent))?.touch();
+  if (parent === null) currentBodyRoot()?.touch();
+  else readbackOfHost(parent).touch(parent);
   recordMutation({ type: 'characterData', target: node, old });
 }
 

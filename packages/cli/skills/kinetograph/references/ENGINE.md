@@ -54,6 +54,16 @@ calls it lazily and caches by tree generation.
   back together, sharing the base's. A pass that does not follow the last drops the bases.
   `startDomIsland(requestJson, pass, base): number` queues a render behind the ones before it and `finishDomIsland(ticket)`
   waits for its output, so a sub-frame's islands are drawn while the next sub-frame renders.
+- Island edits (`domIslandEdits(): 1`): `domLayoutBoxes` and `domComputedStyle` also take a request the caller numbers,
+  `{"stamp":N,"request":REQUEST}`, and then, in place of the next request, what scripts changed since:
+  `{"stamp":M,"base":N,"path","time","set":[{"path","attrs"?,"style"?,"texts"?:[[index,text]]}]}` (an element's new
+  attributes and style, and the new text of some of its text children). The addon makes them to the request it kept
+  and edits the document with the same edits a diff of the whole request gives (`IslandCache::resolve_edits`). A base
+  it does not hold (another request or a render replaced it, a pass that does not follow) fails with `STALE_BASE` and
+  the caller sends the whole request. compat's readback sends edits only for writes to an element's own style,
+  attributes and texts; a commit, a change of which nodes the tree holds, a `<style>`, `<link>`, canvas or native
+  element, new fonts or sheets send the whole request. `KINETOGRAPH_DOM_VERIFY=1` checks each request made by edits
+  against a whole build.
 
 ## 3. Code areas
 

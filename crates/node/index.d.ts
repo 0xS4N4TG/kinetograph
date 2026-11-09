@@ -137,6 +137,15 @@ export declare function decodeAudio(path: string, sampleRate: number, baseDir?: 
 export declare function domComputedStyle(requestJson: string, path: string, properties: Array<string>, pass?: number | undefined | null): Array<string>
 
 /**
+ * The version of the island edits `domLayoutBoxes` and `domComputedStyle` take in place of a request (1): a request
+ * numbered by the caller as `{"stamp":N,"request":REQUEST}`, then the changes since a numbered state as
+ * `{"stamp":M,"base":N,"path","time","set":[{"path","attrs"?,"style"?,"texts"?:[[index,text]]}]}`
+ * (packages/cli/skills/kinetograph/references/ENGINE.md §2). Edits to a state the addon no longer holds fail with
+ * `STALE_BASE`, and the caller sends the whole request.
+ */
+export declare function domIslandEdits(): number
+
+/**
  * The boxes of every element of a DOM island (packages/cli/skills/kinetograph/references/ENGINE.md §2): an
  * `IslandRequest` as JSON in, `{ [path]: { x, y, width, height, rect, client,
  * scroll } }` as JSON out. `x`..`height` are the border box where layout put

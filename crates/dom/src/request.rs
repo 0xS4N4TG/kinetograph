@@ -12,7 +12,7 @@ mod written;
 pub use written::{Written, delta, write_output, written};
 
 /// One DOM island at one frame.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct IslandRequest {
     pub root: DomNode,
@@ -42,15 +42,45 @@ pub struct IslandRequest {
     pub history: Vec<Snapshot>,
 }
 
-/// An earlier state of the island: its tree as it was at `time` (seconds).
+/// What a script changed in an island since the state of it the addon holds (`IslandCache::resolve_edits`), instead
+/// of the whole request again. The caller numbers the states it sends (`stamp`); `base` is the one these edits are
+/// made to.
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IslandEdits {
+    pub stamp: u64,
+    pub base: u64,
+    /// The island root's host-tree path.
+    pub path: String,
+    /// The request's `time` in the new state.
+    pub time: f64,
+    /// The elements that changed, in any order.
+    pub set: Vec<NodeEdit>,
+}
+
+/// An element's new attributes and `style` (each left out when it did not change), and the new text of some of its
+/// text children, by index in its `children`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NodeEdit {
+    pub path: String,
+    #[serde(default)]
+    pub attrs: Option<BTreeMap<String, String>>,
+    #[serde(default)]
+    pub style: Option<String>,
+    #[serde(default)]
+    pub texts: Vec<(usize, String)>,
+}
+
+/// An earlier state of the island: its tree as it was at `time` (seconds).
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     pub time: f64,
     pub root: DomNode,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Size {
     pub width: f64,
     pub height: f64,
@@ -58,7 +88,7 @@ pub struct Size {
 
 /// A node by its `kind` (`element`, `text`, `native`), read by hand (`node_de`); a field said to default to nothing
 /// can be left out.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DomNode {
     Element {
         /// Lower-case HTML or SVG tag.

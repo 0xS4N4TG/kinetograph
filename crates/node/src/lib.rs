@@ -281,7 +281,11 @@ pub fn layout_dom(request_json: String) -> Result<String> {
 /// this island the caller kept from an earlier render. When the addon kept the same ones, the layers come back as
 /// changes from them and the output says `"delta": base`.
 #[napi]
-pub fn render_dom_island(request_json: String, pass: Option<u32>, base: Option<u32>) -> Result<String> {
+pub fn render_dom_island(
+    request_json: String,
+    pass: Option<u32>,
+    base: Option<u32>,
+) -> Result<String> {
     dom::render_dom_island(&request_json, pass.map(u64::from), base.map(u64::from))
 }
 
@@ -315,6 +319,16 @@ pub fn dom_layout_boxes(
     paths: Option<Vec<String>>,
 ) -> Result<String> {
     dom::dom_layout_boxes(&request_json, pass.map(u64::from), paths)
+}
+
+/// The version of the island edits `domLayoutBoxes` and `domComputedStyle` take in place of a request (1): a request
+/// numbered by the caller as `{"stamp":N,"request":REQUEST}`, then the changes since a numbered state as
+/// `{"stamp":M,"base":N,"path","time","set":[{"path","attrs"?,"style"?,"texts"?:[[index,text]]}]}`
+/// (packages/cli/skills/kinetograph/references/ENGINE.md §2). Edits to a state the addon no longer holds fail with
+/// `STALE_BASE`, and the caller sends the whole request.
+#[napi]
+pub fn dom_island_edits() -> u32 {
+    1
 }
 
 /// `getComputedStyle` of the element at `path` in a DOM island: the resolved

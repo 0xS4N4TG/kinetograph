@@ -59,6 +59,46 @@ fn an_edited_document_draws_what_a_fresh_one_does() {
 }
 
 #[test]
+fn island_edits_draw_what_the_whole_request_does() {
+    use kinetograph_dom::request::IslandEdits;
+    let mut cache = IslandCache::default();
+    let mut fresh = IslandCache::default();
+    drawn(&mut cache, &sample(0.0, "a", ""), Some(20));
+    // The wall moves (a transform alone), then a pill's text and size change (layout), in the pass and the next.
+    let moved = "position: absolute; transform: translate(3px, 3px) scale(1.5)";
+    let mut first = sample(0.0, "a", "");
+    first["root"]["children"][0]["style"] = json!(moved);
+    let mut second = first.clone();
+    second["root"]["children"][0]["children"][2]["children"][0]["text"] = json!("pill two");
+    second["root"]["children"][0]["children"][2]["style"] = json!("width: 90px; height: 30px");
+    let steps = [
+        (20, first, json!([{ "path": "$0.0", "style": moved }])),
+        (
+            21,
+            second,
+            json!([{ "path": "$0.0.2", "style": "width: 90px; height: 30px", "texts": [[0, "pill two"]] }]),
+        ),
+    ];
+    for (pass, whole, set) in steps {
+        let edits: IslandEdits = serde_json::from_value(
+            json!({ "stamp": 0, "base": 0, "path": "$0", "time": 0.0, "set": set }),
+        )
+        .unwrap();
+        let (request, mut resolved) = cache.resolve_edits(&edits, Some(pass)).unwrap().unwrap();
+        let out = serde_json::to_string(&resolved.paint(&request).layers).unwrap();
+        cache.keep(request, resolved);
+        assert_eq!(out, drawn(&mut fresh, &whole, None));
+    }
+    // Edited both times; nothing is kept for a pass that does not follow.
+    assert_eq!(cache.counts(), (2, 1));
+    let edits: IslandEdits = serde_json::from_value(
+        json!({ "stamp": 0, "base": 0, "path": "$0", "time": 0.0, "set": [] }),
+    )
+    .unwrap();
+    assert!(cache.resolve_edits(&edits, Some(30)).is_none());
+}
+
+#[test]
 fn a_document_carries_over_to_the_next_frame_and_only_to_it() {
     let mut cache = IslandCache::default();
     let mut fresh = IslandCache::default();

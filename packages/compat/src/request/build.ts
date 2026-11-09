@@ -107,24 +107,54 @@ export function collectStyleElements(nodes: readonly DomNode[]): string[] {
   return out;
 }
 
-/** The island whose root is `root`, which sits at `options.path`. */
-export function buildIslandRequest(root: ElementNode, options: BuildOptions): BuiltRequest {
-  const natives = new Map<string, ElementNode>();
-  const extra: string[] = [];
-  // Each remote URL is looked up once per request.
+/** A file URL as the engine reads it: a remote one as the local file it was downloaded to, each looked up once. */
+export function fileResolver(): (url: string) => string | null {
   const remote = new Map<string, string | null>();
-  const local = (url: string): string | null => {
+  return (url) => {
     // A URL of the document's own origin (a script copied a resolved `el.src`) is the project file it names.
     const own = sameOriginPath(url);
     if (own !== null) return own;
     if (!remote.has(url)) remote.set(url, resolveRemoteAsset(url));
     return remote.get(url) ?? null;
   };
+}
+
+/**
+ * The attributes and `style` an element of an island is sent with, from its props (`svg`: inside an `<svg>`, or one).
+ * `local` resolves the files it names (`fileResolver`).
+ */
+export function elementFields(
+  node: ElementNode,
+  svg: boolean,
+  viewport: { width: number; height: number },
+  local: (url: string) => string | null,
+): { attrs: Record<string, string>; style: string } {
+  const attrs = attributesOf(node.props, svg);
+  // An `<img srcset>` is drawn as a browser at device pixel ratio 1 chooses: the candidate stands in for `src`.
+  if (node.type === 'img' && attrs.srcset !== undefined) {
+    const chosen = srcsetCandidate(attrs.srcset, attrs.src, attrs.sizes, viewport);
+    if (chosen !== null) attrs.src = chosen;
+  }
+  if (FILE_ELEMENTS.has(node.type)) {
+    for (const name of FILE_ATTRIBUTES) {
+      const value = attrs[name];
+      const found = value === undefined ? null : local(value);
+      if (found !== null) attrs[name] = found;
+    }
+  }
+  return { attrs, style: localizeCssUrls(styleOf(node.props), local) };
+}
+
+/** The island whose root is `root`, which sits at `options.path`. */
+export function buildIslandRequest(root: ElementNode, options: BuildOptions): BuiltRequest {
+  const natives = new Map<string, ElementNode>();
+  const extra: string[] = [];
+  // Each remote URL is looked up once per request.
+  const local = fileResolver();
 
   const element = (node: ElementNode, path: string, insideSvg: boolean): RequestNode => {
     const svg = insideSvg || node.type === 'svg';
     const props = node.props;
-    const attrs = attributesOf(props, svg);
     if (node.type === 'link') {
       const rel = String(props.rel ?? '').toLowerCase();
       const href = props.href;
@@ -133,19 +163,7 @@ export function buildIslandRequest(root: ElementNode, options: BuildOptions): Bu
         if (css !== null) extra.push(css);
       }
     }
-    // An `<img srcset>` is drawn as a browser at device pixel ratio 1 chooses: the candidate stands in for `src`.
-    if (node.type === 'img' && attrs.srcset !== undefined) {
-      const chosen = srcsetCandidate(attrs.srcset, attrs.src, attrs.sizes, options.viewport);
-      if (chosen !== null) attrs.src = chosen;
-    }
-    if (FILE_ELEMENTS.has(node.type)) {
-      for (const name of FILE_ATTRIBUTES) {
-        const value = attrs[name];
-        const found = value === undefined ? null : local(value);
-        if (found !== null) attrs[name] = found;
-      }
-    }
-    const out: RequestNode = { kind: 'element', tag: node.type, path, attrs, style: localizeCssUrls(styleOf(props), local), children: [] };
+    const out: RequestNode = { kind: 'element', tag: node.type, path, ...elementFields(node, svg, options.viewport, local), children: [] };
     if (node.type === 'style' || node.type === 'script') return out;
     const html = props.dangerouslySetInnerHTML?.__html;
     const source: DomNode[] = typeof html === 'string' ? parseHtmlFragment(html, svg) : node.children;

@@ -533,6 +533,45 @@ test('a render is written as changes from the layers the caller holds, in its pa
   assert.deepEqual(jump.layers, fresh(at(9, 'red')));
 });
 
+test('readbacks take edits to a numbered state, and answer as the whole request does', () => {
+  const tree = (width, color, text) =>
+    el('div', '$0', `width: ${width}px; height: 10px`, [txt(text), el('span', '$0.0', `color: ${color}`, [txt('x')])], { class: 'a' });
+  const width = (json, pass) => native.domComputedStyle(json, '$0', ['width'], pass)[0];
+  const color = (json, pass) => native.domComputedStyle(json, '$0.0', ['color'], pass)[0];
+  const numbered = (stamp, json) => `{"stamp":${stamp},"request":${json}}`;
+  const edits = (stamp, base, set, time = 0) => JSON.stringify({ stamp, base, path: '$0', time, set });
+  // Without a pass a render keeps nothing: the whole request's pictures first.
+  const drawn = native.renderDomIsland(island(tree(150, 'blue', 'b')));
+  const boxes = native.domLayoutBoxes(island(tree(150, 'red', 'b')));
+  const pass = 7300;
+  assert.equal(width(numbered(1, island(tree(100, 'red', 'a'))), pass), '100px');
+  // Edits to state 1: a style and a text; answered as the whole request of the new tree is.
+  const two = edits(2, 1, [{ path: '$0', style: 'width: 150px; height: 10px', texts: [[0, 'b']] }]);
+  assert.equal(width(two, pass), '150px');
+  assert.equal(width(two, pass), '150px');
+  assert.equal(native.domLayoutBoxes(two, pass), boxes);
+  const three = edits(3, 2, [{ path: '$0.0', style: 'color: blue' }]);
+  assert.equal(color(three, pass), 'rgb(0, 0, 255)');
+  // The frame draws the state the edits made, as a render of the whole request does; and keeps its number.
+  assert.equal(native.renderDomIsland(island(tree(150, 'blue', 'b')), pass), drawn);
+  assert.equal(width(edits(4, 3, [{ path: '$0', style: 'width: 90px; height: 10px' }]), pass + 1), '90px');
+  // Edits to a state the addon does not hold: STALE_BASE, and the whole request is sent instead.
+  rejects(() => width(edits(5, 3, []), pass + 1), 'STALE_BASE', /send the whole request/);
+  rejects(() => width(edits(6, 4, []), pass + 5), 'STALE_BASE');
+  // A render of another tree is another state.
+  assert.equal(width(numbered(7, island(tree(70, 'red', 'a'))), pass + 6), '70px');
+  native.renderDomIsland(island(tree(80, 'red', 'a')), pass + 6);
+  rejects(() => width(edits(8, 7, []), pass + 6), 'STALE_BASE');
+  // Edits that name what the request does not have are refused.
+  assert.equal(width(numbered(9, island(tree(70, 'red', 'a'))), pass + 6), '70px');
+  rejects(() => width(edits(10, 9, [{ path: '$0.4', style: '' }]), pass + 6), 'INVALID_ARG', /no element/);
+  rejects(() => width('{"stamp":1,"nope":2}', pass), 'INVALID_ARG', /edits/);
+  // Outside a pass too.
+  assert.equal(width(numbered(11, island(tree(60, 'red', 'a')))), '60px');
+  assert.equal(width(edits(12, 11, [{ path: '$0', style: 'width: 61px' }])), '61px');
+  assert.equal(native.domIslandEdits(), 1);
+});
+
 test('a document a line clamp cut is edited to the next tree as a fresh build draws it', () => {
   const sheet = '.c { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; font: 20px "DM Sans" }';
   // One box with no `style` of its own, one with one (the clamp sets its declarations, which are put back).
