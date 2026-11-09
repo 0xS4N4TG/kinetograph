@@ -1136,6 +1136,46 @@ describe('the recording WebGL context', () => {
     });
   });
 
+  describe('copyTexImage2D and copyTexSubImage2D', () => {
+    it('record a NEAREST blit of the read buffer into the texture, which becomes a render target', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const t = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, t);
+      gl.copyTexImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 1, 2, 4, 2, 0);
+      gl.copyTexSubImage2D(GL.TEXTURE_2D, 0, 2, 1, 0, 0, 2, 1);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const [first, second] = gl.content().ops;
+      expect(first).toMatchObject({ op: 'blit', from: [1, 2, 5, 4], to: [0, 0, 4, 2] });
+      expect(second).toMatchObject({ op: 'blit', from: [0, 0, 2, 1], to: [2, 1, 4, 2] });
+      expect(first).not.toHaveProperty('src');
+      const id = (first as { target: string }).target;
+      expect(gl.content().textures[id]).toEqual({ target: true, width: 4, height: 2 });
+      gl.copyTexSubImage2D(GL.TEXTURE_2D, 0, 3, 0, 0, 0, 2, 1);
+      expect(gl.getError()).toBe(GL.INVALID_VALUE);
+    });
+
+    it('refuse a texture that holds uploaded pixels, and read a framebuffer\'s read buffer', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const uploaded = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, uploaded);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array([1, 2, 3, 4]));
+      expect(() => gl.copyTexSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 0, 0, 1, 1)).toThrow(WebGLUnsupportedError);
+      const drawn = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, drawn);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 2, 2, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, drawn, 0);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      const into = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, into);
+      gl.copyTexImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 0, 0, 2, 2, 0);
+      const [clear, blit] = gl.content().ops;
+      if (clear?.op !== 'clear') throw new Error('not a clear');
+      expect(blit).toMatchObject({ op: 'blit', src: clear.target });
+    });
+  });
+
   describe('multisampled renderbuffers', () => {
     function msaa() {
       const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });

@@ -1330,6 +1330,52 @@ export class WebGLContext {
     throw new WebGLUnsupportedError('readPixels; the picture is drawn by the renderer, and the context cannot be read back');
   }
 
+  /** `copyTexImage2D`: the texture level specified empty, of the size copied, then `copyTexSubImage2D` into it. */
+  copyTexImage2D(target: number, level: number, internalformat: number, x: number, y: number, width: number, height: number, border: number): void {
+    if (border !== 0) return this.fail(GL.INVALID_VALUE);
+    if (internalformat !== GL.RGBA && internalformat !== GL2.RGBA8 && internalformat !== GL2.SRGB8_ALPHA8) throw new WebGLUnsupportedError(`copyTexImage2D of the internal format 0x${internalformat.toString(16)}; use RGBA`);
+    const before = this.error;
+    this.texImage2D(target, level, internalformat, width, height, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+    if (this.error !== before) return;
+    this.copyTexSubImage2D(target, level, 0, 0, x, y, width, height);
+  }
+
+  /**
+   * `copyTexSubImage2D`: a rectangle of the read framebuffer's read buffer (the canvas's picture without one) copied
+   * into a level of the bound texture at `xoffset`, `yoffset`. It is a NEAREST blit into the texture, which is a
+   * render target from then on, so it lands in order with the draws.
+   */
+  copyTexSubImage2D(target: number, level: number, xoffset: number, yoffset: number, x: number, y: number, width: number, height: number): void {
+    const face = faceIndex(target) >= 0;
+    if (!face && target !== GL.TEXTURE_2D) return this.fail(GL.INVALID_ENUM);
+    const texture = face ? this.faceTarget(target) : this.bound(target);
+    if (texture === null) return;
+    const [w, h] = [Math.max(1, texture.width >> level), Math.max(1, texture.height >> level)];
+    if (!texture.uploaded || !(level >= 0 && level < texture.levels)) return this.fail(GL.INVALID_OPERATION);
+    if (!(width >= 0 && height >= 0 && xoffset >= 0 && yoffset >= 0 && xoffset + width <= w && yoffset + height <= h)) return this.fail(GL.INVALID_VALUE);
+    const read = this.readFramebuffer;
+    if (read !== null && this.statusOf(read) !== GL.FRAMEBUFFER_COMPLETE) return this.fail(GL.INVALID_FRAMEBUFFER_OPERATION);
+    // A multisampled framebuffer is not read by a copy (the canvas is resolved first).
+    if (read !== null && this.samplesOf(read) > 0) return this.fail(GL.INVALID_OPERATION);
+    const source = read === null ? 'canvas' : read.readBuffer === GL.NONE ? null : (read.colors[read.readBuffer - GL.COLOR_ATTACHMENT0] ?? null);
+    if (source === null) return this.fail(GL.INVALID_OPERATION);
+    if (source !== 'canvas' && 'texture' in source) {
+      // Reading the level it writes is a feedback loop.
+      if (source.texture === texture && source.level === level) return this.fail(GL.INVALID_OPERATION);
+      if (!source.texture.blank && source.texture.drawnAt !== source.texture.version) throw new WebGLUnsupportedError('copyTexSubImage2D from a texture that holds uploaded pixels; draw into it, or sample it');
+    }
+    if (kindOf(texture.format) !== 'color' || (texture.format !== GL.RGBA && texture.format !== GL2.RGBA8 && COLOR_TARGETS[texture.format] === undefined)) {
+      throw new WebGLUnsupportedError(`copyTexSubImage2D into a texture of internal format 0x${texture.format.toString(16)}; allocate it as RGBA`);
+    }
+    if (!texture.blank && texture.drawnAt !== texture.version) throw new WebGLUnsupportedError('copyTexSubImage2D into a texture that holds uploaded pixels; allocate it with texImage2D(..., null)');
+    if (width === 0 || height === 0) return;
+    this.begin();
+    const src = source === 'canvas' ? {} : { src: this.attachmentId(source), ...('texture' in source && source.level > 0 ? { srcLevel: source.level } : {}) };
+    texture.drawnAt = texture.version;
+    const into = this.registerTarget(texture);
+    this.ops.push({ op: 'blit', ...src, target: into, ...(level > 0 ? { level } : {}), from: [x, y, x + width, y + height], to: [xoffset, yoffset, xoffset + width, yoffset + height] });
+  }
+
   /**
    * Copies a rectangle of the read framebuffer over one of the draw framebuffer (the canvas, or what a framebuffer
    * draws in): the colour of the read buffer into each draw buffer, and the depth and the stencil buffer.
