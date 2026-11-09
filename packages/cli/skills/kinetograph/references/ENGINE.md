@@ -60,12 +60,15 @@ calls it lazily and caches by tree generation.
   attributes and style, and the new text of some of its text children). The addon makes them to the request it kept
   and edits the document with the same edits a diff of the whole request gives (`IslandCache::resolve_edits`). A base
   it does not hold (another request or a render replaced it, a pass that does not follow), or edits that do not fit it
-  (an element named twice or missing), fail with `STALE_BASE` and the caller sends the whole request. compat's readback sends edits only for writes to an element's own style,
-  attributes and texts; a commit, a change of which nodes the tree holds, a `<style>`, `<link>`, canvas or native
-  element, new fonts or sheets send the whole request. `KINETOGRAPH_DOM_VERIFY=1` makes readback compare the request
-  its edits made with one built afresh from the tree, and throw when they differ (it does not check the addon's
-  document). A render whose request is the state a readback of the frame left names it with edits that
-  change nothing (`stamp` = `base`, empty `set`), and sends the request when that fails with `STALE_BASE`.
+  (an element named twice or missing), fail with `STALE_BASE` and the caller sends the whole request. compat's
+  readback sends edits only for writes to an element's own style, attributes and texts; a commit, a change of which
+  nodes the tree holds, a `<style>`, `<link>`, canvas or native element, new fonts or sheets send the whole request. A
+  render whose request is the state a readback of the frame left names it with edits that change nothing (`stamp` =
+  `base`, empty `set`), and sends the request when that fails with `STALE_BASE`.
+- `KINETOGRAPH_DOM_VERIFY=1` (slow, for testing): readback compares the request its edits made with one built afresh
+  from the tree, and the addon builds each edited island afresh and compares its layers and boxes
+  (`crates/node/src/dom_verify.rs`). Either throws on a difference; the addon writes both sides to
+  `KINETOGRAPH_DOM_VERIFY_DIR` (else the system temp directory).
 
 ## 3. Code areas
 
@@ -1013,7 +1016,11 @@ Goal: stop redoing what did not change between frames. What was found, measured 
   translation rounds differently in f32 (section 11, "Translating a page's draw"). In the blur shot (frames 800-1000)
   the `wall` group (321 children) zooms with 10 motion-blur samples: every sample is a new draw, and 22 islands a frame
   are rendered for the samples (JS 40 ms, `start_frame` 20 ms). Samples of an island often differ only in a transform;
-  `request::delta` (comparing every layer with the first sample's) is about as costly as the island's resolve there.
+  comparing every layer with the first sample's (as the layer deltas of §2 do) is about as costly as the island's
+  resolve there.
+- **Edits restyle what they change.** A `style` edit takes the damage its restyle computes, and construction damage
+  goes one box up, not to every ancestor (vendored Blitz, `vendor/README.md`). `crates/dom/tests/incremental_fuzz.rs`
+  draws random trees under random edit chains against fresh builds (`KG_FUZZ_SEED` repeats one seed).
 - **Retained paint.** A kept document's paint replays each stacking context's content from its last paint when nothing
   inside it changed (`crates/dom/src/dirty.rs` finds the changed nodes from the last paint's stamps of each node's
   style, box and lines; `paint/retain.rs` replays). A context may itself have changed in its group (transform, opacity,
