@@ -18,6 +18,7 @@ Kinetograph is in beta, so APIs can still change between versions. The same list
 - A worker that starts a HyperFrames chunk skips the root layout check on the frames it plays through; a running chunk is split only when that ends it sooner.
 - A blurred outer `box-shadow` is drawn through a blur mask filter inside its clip instead of two offscreen layers (papercut slice 16.5 → 15.0 ms a frame).
 - A turned or skewed blurred outer `box-shadow` is blurred in closed form in a runtime shader instead of a mask filter (papercut slice 15.0 → 11.3 ms a frame).
+- Without `--concurrency`, a render whose workers mostly wait for the GPU hands the rest of its frames to the main thread after the first few (papercut 18.92 → 17.56 s; film, dm4, mg1, mg2 and compat within noise).
 
 ### Fixed
 
