@@ -669,10 +669,11 @@ impl IslandCache {
         self.kept.get(path).map(|k| &k.resolved)
     }
 
-    /// The kept document of the island at `path`, taken out of the cache: for a request the caller knows to be the
-    /// one it was resolved for, which needs no resolving again. (Call [`enter`](Self::enter) for the pass first.)
-    pub fn take(&mut self, path: &str) -> Option<Resolved> {
-        self.kept.remove(path).map(|k| k.resolved)
+    /// The kept document of the island at `path` and the request it shows, taken out of the cache: for a caller that
+    /// knows the request is the one it has, which needs no resolving again. (Call [`enter`](Self::enter) for the pass
+    /// first.)
+    pub fn take(&mut self, path: &str) -> Option<(IslandRequest, Resolved)> {
+        self.kept.remove(path).map(|k| (k.request, k.resolved))
     }
 
     /// How many renders edited a kept document, and how many built one.

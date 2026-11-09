@@ -194,26 +194,34 @@ struct Islands {
 }
 
 impl Islands {
-    /// The kept document resolved from exactly `json`.
-    fn same(&self, json: &str) -> Option<&Resolved> {
+    /// The path of the kept document resolved from exactly `json`.
+    fn path_of(&self, json: &str) -> Option<&str> {
         let (path, _) = self.sources.iter().find(|(_, text)| text.as_str() == json)?;
+        Some(path)
+    }
+
+    /// The kept document resolved from exactly `json` in `pass`.
+    fn same(&mut self, json: &str, pass: Option<u64>) -> Option<&Resolved> {
+        self.cache.enter(pass);
+        let path = self.path_of(json)?;
         self.cache.peek(path)
     }
 
-    /// The document of `request` (whose text is `json`) in `pass`: the kept one when it shows the same request, else
-    /// the kept one edited to it or a new one (`IslandCache::resolve`). Hand it back to `keep`.
+    /// The kept document resolved from exactly `json` in `pass`, and its request, taken out: hand them back to `keep`.
+    fn take(&mut self, json: &str, pass: Option<u64>) -> Option<(IslandRequest, Resolved)> {
+        self.cache.enter(pass);
+        let path = self.path_of(json)?.to_string();
+        self.sources.remove(&path);
+        self.cache.take(&path)
+    }
+
+    /// The kept document of the island edited to `request` in `pass`, or a new one (`IslandCache::resolve`). Hand it
+    /// back to `keep`.
     fn resolve(
         &mut self,
         request: &IslandRequest,
-        json: &str,
         pass: Option<u64>,
     ) -> std::result::Result<Resolved, BuildError> {
-        self.cache.enter(pass);
-        if self.sources.get(&request.path).is_some_and(|text| text == json)
-            && let Some(resolved) = self.cache.take(&request.path)
-        {
-            return Ok(resolved);
-        }
         self.sources.remove(&request.path);
         self.cache.resolve(request, pass)
     }
@@ -283,20 +291,30 @@ fn start_dom_island(request_json: &str, pass: Option<u64>) -> Result<Outcome<Str
     let caller = kinetograph_core::profile::caller();
     start_on_island_thread(RENDER_STAGES, move || {
         use kinetograph_core::profile::{add_for_since, add_shared_since};
-        let timer = kinetograph_core::profile::start();
-        let request = parse_island(&json, "renderDomIsland")?;
-        add_shared_since("dom_parse", timer);
-        add_for_since(&caller, "n_parse", timer);
-        let timer = kinetograph_core::profile::start();
-        let (was_edited, was_built) = SAMPLES.with(|islands| islands.borrow().cache.counts());
-        let mut resolved = SAMPLES
-            .with(|islands| islands.borrow_mut().resolve(&request, &json, pass))
-            .map_err(|e| (Code::Render, e.to_string()))?;
-        add_shared_since("dom_resolve", timer);
-        add_for_since(&caller, "n_resolve", timer);
-        let (edited, built) = SAMPLES.with(|islands| islands.borrow().cache.counts());
-        kinetograph_core::profile::add_for(&caller, "n_edited", (edited - was_edited) as f64);
-        kinetograph_core::profile::add_for(&caller, "n_built", (built - was_built) as f64);
+        // The tree the frame's scripts read last is drawn from the document they read.
+        let (request, mut resolved) = match SAMPLES.with(|islands| islands.borrow_mut().take(&json, pass)) {
+            Some(kept) => {
+                kinetograph_core::profile::add_for(&caller, "n_reused", 1.0);
+                kept
+            }
+            None => {
+                let timer = kinetograph_core::profile::start();
+                let request = parse_island(&json, "renderDomIsland")?;
+                add_shared_since("dom_parse", timer);
+                add_for_since(&caller, "n_parse", timer);
+                let timer = kinetograph_core::profile::start();
+                let (was_edited, was_built) = SAMPLES.with(|islands| islands.borrow().cache.counts());
+                let resolved = SAMPLES
+                    .with(|islands| islands.borrow_mut().resolve(&request, pass))
+                    .map_err(|e| (Code::Render, e.to_string()))?;
+                add_shared_since("dom_resolve", timer);
+                add_for_since(&caller, "n_resolve", timer);
+                let (edited, built) = SAMPLES.with(|islands| islands.borrow().cache.counts());
+                kinetograph_core::profile::add_for(&caller, "n_edited", (edited - was_edited) as f64);
+                kinetograph_core::profile::add_for(&caller, "n_built", (built - was_built) as f64);
+                (request, resolved)
+            }
+        };
         let timer = kinetograph_core::profile::start();
         let mut output = resolved.paint(&request);
         add_shared_since("dom_paint", timer);
@@ -370,8 +388,7 @@ fn with_readback_island<T>(
 ) -> std::result::Result<T, Failure> {
     let answer = |islands: &mut Islands, json: String, pass: Option<u64>| {
         use kinetograph_core::profile::{add_for, add_for_since, start};
-        islands.cache.enter(pass);
-        if let Some(kept) = islands.same(&json) {
+        if let Some(kept) = islands.same(&json, pass) {
             add_for(caller, "rb_same", 1.0);
             let timer = start();
             let answer = read(&kept.island);
@@ -385,7 +402,7 @@ fn with_readback_island<T>(
         let timer = start();
         let (was_edited, _) = islands.cache.counts();
         let resolved = islands
-            .resolve(&request, &json, pass)
+            .resolve(&request, pass)
             .map_err(|e| (Code::Render, e.to_string()))?;
         add_for_since(caller, "rb_resolve", timer);
         add_for(caller, "rb_edited", (islands.cache.counts().0 - was_edited) as f64);
@@ -400,7 +417,7 @@ fn with_readback_island<T>(
         None => READBACK.with(|state| {
             let (islands, last) = &mut *state.borrow_mut();
             // A request seen last is read where it is; any other is the next pass.
-            if islands.same(&json).is_none() {
+            if islands.same(&json, Some(*last)).is_none() {
                 *last += 1;
             }
             answer(islands, json, Some(*last))
