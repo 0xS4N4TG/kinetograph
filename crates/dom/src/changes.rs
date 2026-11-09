@@ -75,6 +75,11 @@ impl Changes {
         self.dirty.get(&node).copied()
     }
 
+    /// Whether nothing changed.
+    pub fn is_empty(&self) -> bool {
+        self.dirty.is_empty() && self.above.is_empty()
+    }
+
     /// Whether a node strictly inside `node` changed.
     pub fn inside(&self, node: NodeId) -> bool {
         self.above.contains(&node)

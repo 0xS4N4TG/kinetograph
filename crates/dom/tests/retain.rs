@@ -180,6 +180,8 @@ fn a_replayed_paint_is_the_whole_paint_and_a_fresh_build_s() {
     let steps: Vec<(&str, Page, bool)> = vec![
         ("first", BASE.clone(), false),
         ("same", BASE.clone(), true),
+        // Unchanged twice: the last output, with nothing replayed.
+        ("same again", BASE.clone(), false),
         ("group only", Page { x: 12.0, ..BASE }, true),
         (
             "dirty child",
