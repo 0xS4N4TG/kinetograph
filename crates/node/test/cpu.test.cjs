@@ -563,6 +563,8 @@ test('readbacks take edits to a numbered state, and answer as the whole request 
   rejects(() => native.renderDomIsland(edits(3, 3, []), pass + 1), 'STALE_BASE');
   // Edits to a state the addon does not hold: STALE_BASE, and the whole request is sent instead.
   rejects(() => width(edits(5, 3, []), pass + 1), 'STALE_BASE', /send the whole request/);
+  // The state held is still held: a stale base does not drop it.
+  assert.equal(width(edits(5, 4, []), pass + 1), '90px');
   rejects(() => width(edits(6, 4, []), pass + 5), 'STALE_BASE');
   // A render of another tree is another state.
   assert.equal(width(numbered(7, island(tree(70, 'red', 'a'))), pass + 6), '70px');

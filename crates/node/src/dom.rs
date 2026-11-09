@@ -275,7 +275,7 @@ impl Islands {
         self.cache.enter(pass);
         let held = self
             .sources
-            .remove(&edits.path)
+            .get(&edits.path)
             .and_then(|source| source.stamp);
         let resolved = (held == Some(edits.base))
             .then(|| self.cache.resolve_edits(edits, pass))
@@ -287,6 +287,7 @@ impl Islands {
                 );
                 (Code::StaleBase, message)
             })?;
+        self.sources.remove(&edits.path);
         resolved.map_err(|e| (Code::InvalidArg, e.to_string()))
     }
 
