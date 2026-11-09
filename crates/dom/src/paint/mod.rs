@@ -262,6 +262,10 @@ impl<'a> Painter<'a> {
             let parent = self.doc.get_node(cur.parent.or(cur.layout_parent.get())?)?;
             let at = if let Some(i) = parent.children.iter().position(|c| *c == cur.id) {
                 format!("c{i}")
+            } else if parent.before() == Some(cur.id) {
+                "before".to_string()
+            } else if parent.after() == Some(cur.id) {
+                "after".to_string()
             } else if let Some(i) = parent.anonymous_blocks.iter().position(|c| *c == cur.id) {
                 format!("a{i}")
             } else {
