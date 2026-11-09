@@ -3445,7 +3445,6 @@ impl Compositor {
     }
 }
 
-/// A 32-bit float format, which a sampler reads texel for texel.
 /// Whether a colour target's levels are complete for a mipmapped filter: they reach 1 x 1, or reach
 /// `TEXTURE_MAX_LEVEL`.
 fn target_mipmapped(target: &Target, max_level: Option<u32>) -> bool {
@@ -3454,6 +3453,7 @@ fn target_mipmapped(target: &Target, max_level: Option<u32>) -> bool {
     levels > 1 && (levels == full || max_level.is_some_and(|m| m < levels))
 }
 
+/// A 32-bit float format, which a sampler reads texel for texel.
 fn is_float32(format: wgpu::TextureFormat) -> bool {
     use wgpu::TextureFormat as F;
     matches!(format, F::R32Float | F::Rg32Float | F::Rgba32Float)
