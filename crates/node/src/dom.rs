@@ -13,7 +13,9 @@ use kinetograph_core::dom_layout::{
     DomLayoutBox, DomLayoutError, DomLayoutRequest, TextSize, has_text, layout_dom as lay_out,
     measure_text,
 };
-use kinetograph_dom::document::{self, BuildError, IslandCache, IslandDocument, Resolved};
+use kinetograph_dom::document::{
+    self, BuildError, EditsError, IslandCache, IslandDocument, Resolved,
+};
 use kinetograph_dom::readback;
 use kinetograph_dom::request::{self, IslandEdits, IslandRequest, Unsupported};
 
@@ -266,29 +268,28 @@ impl Islands {
 
     /// The kept document of the state `edits.base` with `edits` made to it in `pass`, and its request
     /// (`IslandCache::resolve_edits`). Hand them back to `keep`. A `STALE_BASE` error when that state is not the one
-    /// kept: the caller sends the whole request instead.
+    /// kept, or the edits do not fit it: the caller sends the whole request instead.
     fn resolve_edits(
         &mut self,
         edits: &IslandEdits,
         pass: Option<u64>,
     ) -> std::result::Result<(IslandRequest, Resolved), Failure> {
         self.cache.enter(pass);
+        let stale = |why: String| (Code::StaleBase, format!("{why}: send the whole request"));
         let held = self
             .sources
             .get(&edits.path)
             .and_then(|source| source.stamp);
-        let resolved = (held == Some(edits.base))
-            .then(|| self.cache.resolve_edits(edits, pass))
-            .flatten()
-            .ok_or_else(|| {
-                let message = format!(
-                    "island {} is not kept as state {}: send the whole request",
-                    edits.path, edits.base
-                );
-                (Code::StaleBase, message)
-            })?;
+        if held != Some(edits.base) {
+            let why = format!("island {} is not kept as state {}", edits.path, edits.base);
+            return Err(stale(why));
+        }
+        let resolved = self.cache.resolve_edits(edits, pass).map_err(|e| match e {
+            EditsError::Stale(why) => stale(why),
+            EditsError::Build(e) => (Code::Render, e.to_string()),
+        })?;
         self.sources.remove(&edits.path);
-        resolved.map_err(|e| (Code::InvalidArg, e.to_string()))
+        Ok(resolved)
     }
 
     fn keep(&mut self, request: IslandRequest, source: Source, resolved: Resolved) {

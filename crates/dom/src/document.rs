@@ -85,6 +85,16 @@ impl std::fmt::Display for BuildError {
 
 impl std::error::Error for BuildError {}
 
+/// Why [`IslandCache::resolve_edits`] made no document.
+#[derive(Debug)]
+pub enum EditsError {
+    /// No island of the path is kept for the pass, or the edits do not fit its request: the caller sends the whole
+    /// request instead.
+    Stale(String),
+    /// The request the edits make cannot be built.
+    Build(BuildError),
+}
+
 /// Parses an `IslandRequest`. A tree of elements can be deeper than serde_json's
 /// default limit of 128 levels, so the limit is off; the caller needs a stack
 /// for the depth (the addon runs islands on a thread with a large one).
@@ -548,31 +558,32 @@ impl IslandCache {
 
     /// The kept island at `edits.path` changed as `edits` say, with the request it shows: the document is edited as
     /// [`resolve`](Self::resolve) edits it to the request the edits make, with the same [`Edit`]s, or built from
-    /// that request. Hand both back to [`keep`](Self::keep). None when no island of the path is kept for `pass`;
-    /// an error when the edits name what the kept request does not have.
+    /// that request. Hand both back to [`keep`](Self::keep). [`EditsError::Stale`] when no island of the path is
+    /// kept for `pass`, or the edits name what the kept request does not have.
     pub fn resolve_edits(
         &mut self,
         edits: &IslandEdits,
         pass: Option<u64>,
-    ) -> Option<Result<(IslandRequest, Resolved), BuildError>> {
+    ) -> Result<(IslandRequest, Resolved), EditsError> {
         self.enter(pass);
         let Kept {
             mut request,
             mut resolved,
             ..
-        } = self.kept.remove(&edits.path)?;
-        let was = match patch(&mut request, edits) {
-            Ok(was) => was,
-            Err(e) => return Some(Err(e)),
-        };
+        } = self.kept.remove(&edits.path).ok_or_else(|| {
+            EditsError::Stale(format!("no island {:?} is kept for the pass", edits.path))
+        })?;
+        let was = patch(&mut request, edits).map_err(EditsError::Stale)?;
         // `moves` of the request and the one before, which differs from it only in the elements edited.
         let before: Vec<&DomNode> = was.iter().collect();
         let editable = pass.is_some() && resolved.plain && !moves(&request, &before);
         if editable && let Some(changed) = edits_of(&resolved.island, &request, edits) {
             self.edit(&mut resolved, &request, &changed);
-            return Some(Ok((request, resolved)));
+            return Ok((request, resolved));
         }
-        Some(self.build(&request).map(|resolved| (request, resolved)))
+        self.build(&request)
+            .map(|resolved| (request, resolved))
+            .map_err(EditsError::Build)
     }
 
     /// Makes `edits` to the kept `resolved` and brings it to `request`'s time, as building `request` would leave it.
@@ -929,8 +940,8 @@ fn at_mut<'a>(root: &'a mut DomNode, places: &[usize]) -> &'a mut DomNode {
 
 /// Makes `edits` to `request`: the request the island's next state is. Gives each edited element as it was, without
 /// its children (what [`moves`] reads of the state before).
-fn patch(request: &mut IslandRequest, edits: &IslandEdits) -> Result<Vec<DomNode>, BuildError> {
-    let missing = |path: &str| BuildError(format!("island edits name no element at {path:?}"));
+fn patch(request: &mut IslandRequest, edits: &IslandEdits) -> Result<Vec<DomNode>, String> {
+    let missing = |path: &str| format!("island edits name no element at {path:?}");
     request.time = edits.time;
     let mut was = Vec::with_capacity(edits.set.len());
     for edit in &edits.set {
@@ -961,11 +972,7 @@ fn patch(request: &mut IslandRequest, edits: &IslandEdits) -> Result<Vec<DomNode
         for (i, new) in &edit.texts {
             match children.get_mut(*i) {
                 Some(DomNode::Text { text }) => text.clone_from(new),
-                _ => {
-                    return Err(BuildError(format!(
-                        "island edits name no text at {i} in {path:?}"
-                    )));
-                }
+                _ => return Err(format!("island edits name no text at {i} in {path:?}")),
             }
         }
     }

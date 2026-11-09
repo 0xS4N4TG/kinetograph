@@ -4,7 +4,7 @@
 mod common;
 
 use common::*;
-use kinetograph_dom::document::IslandCache;
+use kinetograph_dom::document::{EditsError, IslandCache};
 use serde_json::{Value, json};
 
 fn sample(x: f64, label: &str, extra: &str) -> Value {
@@ -84,7 +84,7 @@ fn island_edits_draw_what_the_whole_request_does() {
             json!({ "stamp": 0, "base": 0, "path": "$0", "time": 0.0, "set": set }),
         )
         .unwrap();
-        let (request, mut resolved) = cache.resolve_edits(&edits, Some(pass)).unwrap().unwrap();
+        let (request, mut resolved) = cache.resolve_edits(&edits, Some(pass)).unwrap();
         let out = serde_json::to_string(&resolved.paint(&request).layers).unwrap();
         cache.keep(request, resolved);
         assert_eq!(out, drawn(&mut fresh, &whole, None));
@@ -95,7 +95,10 @@ fn island_edits_draw_what_the_whole_request_does() {
         json!({ "stamp": 0, "base": 0, "path": "$0", "time": 0.0, "set": [] }),
     )
     .unwrap();
-    assert!(cache.resolve_edits(&edits, Some(30)).is_none());
+    assert!(matches!(
+        cache.resolve_edits(&edits, Some(30)),
+        Err(EditsError::Stale(_))
+    ));
 }
 
 #[test]
