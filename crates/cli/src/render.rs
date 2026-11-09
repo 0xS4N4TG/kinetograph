@@ -577,7 +577,12 @@ impl VideoWriter {
             .map_err(|e| RenderError::Frame(frame, e))?;
         kinetograph_core::profile::add_since("finish", timer);
         let timer = kinetograph_core::profile::start();
-        let sent = self.sink.push(rendered);
+        // Planes from a renderer set to `set_yuv420` go to the encoder as they are; RGBA is converted by its thread.
+        let sent = if renderer.yuv420() {
+            self.sink.push_queued(Queued::Yuv(rendered.rgba))
+        } else {
+            self.sink.push(rendered)
+        };
         kinetograph_core::profile::add_since("send", timer);
         sent
     }

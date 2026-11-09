@@ -5,6 +5,7 @@ import { parentPort, workerData } from 'node:worker_threads';
 import type { ArtifactRecord } from '@kinetographdev/core';
 import type { SceneJson, Unsupported, AudioClipJson } from '@kinetographdev/scene';
 import { setPreferredEffectBackend } from './effects.js';
+import { usesGpuYuv } from './gpu-yuv.js';
 import { encodeFrame, type ImageFormat } from './image-sequence.js';
 import { native } from './native.js';
 import { ProfileLog, now, profiling, takeAddon, takeJs } from './profile.js';
@@ -55,9 +56,8 @@ try {
   const source = await openSource(spec.entry, { comp: spec.comp, props: spec.props, bundleFile: spec.bundleFile, prefetch: false });
   source.clearArtifacts?.();
   const renderer = new (native().Renderer)();
-  // yuv420p (the default) is converted on the GPU before the readback, byte for byte as `rgbaToYuv` converts it;
-  // `KINETOGRAPH_CPU_YUV=1` reads back RGBA and converts here, for comparing.
-  const gpuYuv = !sequence && convertFormat === 'yuv420p' && process.env.KINETOGRAPH_CPU_YUV === undefined;
+  // yuv420p (the default) is converted on the GPU before the readback, byte for byte as `rgbaToYuv` converts it.
+  const gpuYuv = usesGpuYuv(convertFormat, sequence);
   if (gpuYuv) renderer.setYuv420(true);
   const log = profiling ? new ProfileLog(false) : undefined;
   /** When the worker last finished a chunk (or became ready), to say how long it waited for the next. */

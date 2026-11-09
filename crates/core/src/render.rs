@@ -481,6 +481,11 @@ impl Renderer {
         self.forget_frame();
     }
 
+    /// Whether frames come back as yuv420p planes (`set_yuv420`).
+    pub fn yuv420(&self) -> bool {
+        self.yuv420
+    }
+
     /// Whether identical-frame reuse is on.
     pub fn frame_reuse(&self) -> bool {
         self.reuse

@@ -9,6 +9,7 @@ import { CHUNK_FRAMES, renderInParallel } from './parallel-render.js';
 import { ProfileLog, now, profiling, stage, takeAddon, takeJs, writeShared } from './profile.js';
 import { LeftOutCollector, strictError, type CompatReport } from './compat-report.js';
 import { CliError } from './errors.js';
+import { usesGpuYuv } from './gpu-yuv.js';
 import { encodeFrame, sequenceFileName, type ImageFormat } from './image-sequence.js';
 import { native } from './native.js';
 import { scaleScene, scaledSize } from './scenes.js';
@@ -228,25 +229,36 @@ export async function renderSource(
   source.clearArtifacts?.();
   const [first, last] = frameRange(range, durationInFrames);
   const size = scale !== 1 ? { width: scaledSize(width, scale), height: scaledSize(height, scale) } : { width, height };
+  // The frames drawn: first, first + step, ... (step is 1 unless a GIF asks for fewer).
+  const total = Math.floor((last - first) / step) + 1;
+  const workers = Math.min(options.concurrency ?? 1, Math.ceil(total / CHUNK_FRAMES));
+  const parallel = workers > 1 && source.worker !== undefined;
+  // This thread draws the frames: the GPU converts them to yuv420p, as in a worker, for the writer to send as they are.
+  // Off again once the video is finished or aborted, as the renderer is used after it.
+  const gpuYuv = !parallel && usesGpuYuv(plan.convertFormat, undefined);
+  if (gpuYuv) renderer.setYuv420(true);
   stage('beginVideo');
-  const writer = renderer.beginVideo(options.output, { width: size.width, height: size.height, fps, encoder, export: exported });
+  let writer: ReturnType<Renderer['beginVideo']>;
+  try {
+    writer = renderer.beginVideo(options.output, { width: size.width, height: size.height, fps, encoder, export: exported });
+  } catch (error) {
+    if (gpuYuv) renderer.setYuv420(false);
+    throw error;
+  }
   const clipFrames: { frame: number; audio: AudioClipJson[] }[] = [];
   const leftOut = new LeftOutCollector();
   let artifactRecords: ArtifactRecord[] = [];
   // Frames the workers did not draw because each was the same as the one before (the writer counts its own).
   let parallelRepeats = 0;
   try {
-    // The frames drawn: first, first + step, ... (step is 1 unless a GIF asks for fewer).
-    const total = Math.floor((last - first) / step) + 1;
     const frameAt = (index: number): number => first + index * step;
-    const workers = Math.min(options.concurrency ?? 1, Math.ceil(total / CHUNK_FRAMES));
     const onFrame = (frame: number, audio: AudioClipJson[], unsupported: Unsupported[]): void => {
       clipFrames.push({ frame, audio });
       if (options.strict && unsupported.length > 0) throw strictError(frame, unsupported);
       leftOut.add(frame, unsupported);
     };
     const pushed = (index: number): void => options.onFrame?.(index + 1, total);
-    if (workers > 1 && source.worker) {
+    if (parallel && source.worker) {
       // The workers number the frames drawn 0..total-1; `frameAt` says which frame of the composition each is.
       artifactRecords = await renderInParallel({
         spec: source.worker,
@@ -299,6 +311,7 @@ export async function renderSource(
     } else {
       summary = writer.finish();
     }
+    if (gpuYuv) renderer.setYuv420(false);
     stage('writer.finish done');
     writeShared();
     const artifacts = await writeArtifacts(source, renderer, dirname(options.output), first, last, scale, artifactRecords);
@@ -309,6 +322,7 @@ export async function renderSource(
     } catch {
       // The writer may already be closed; the first error is the one to report.
     }
+    if (gpuYuv) renderer.setYuv420(false);
     throw error;
   }
 }
