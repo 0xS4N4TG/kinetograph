@@ -157,22 +157,75 @@ jobs:
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
         run: npm run build:release -w @kinetographdev/native -- --target ${{ matrix.target }} --features ffmpeg-static
 
+      # The matting crate (crates/matte) does not link ONNX Runtime: it opens the library at run time (`ort`'s load-dynamic),
+      # so a build here needs none, and the addon loads on this runner's glibc whatever ONNX Runtime needs. Its tests cover
+      # the pre- and post-processing and run no model (the BEN2 step after them runs one, with the library downloaded first).
+      #
       # Blender's tracker (libmv, Ceres and Eigen, crates/libmv-sys) is C++ that the cc crate builds into the addon: GCC
       # on Linux, MSVC on Windows, clang on macOS. The tests track synthetic pictures, and real footage against the
       # platform's golden (crates/track/tests/goldens; a platform without one prints what it got). Same target and
       # features as the addon build, so the Rust dependencies are reused.
-      - name: Test the tracker (macOS, Linux)
+      - name: Test the tracker and matting (macOS, Linux)
         if: runner.os != 'Windows'
         env:
           PKG_CONFIG_PATH: ${{ runner.temp }}/ffmpeg/lib/pkgconfig
-        run: cargo test --release --target ${{ matrix.target }} -p libmv-sys -p kinetograph-track --features kinetograph-track/ffmpeg-static -- --nocapture
+        run: cargo test --release --target ${{ matrix.target }} -p libmv-sys -p kinetograph-track -p kinetograph-matte --features kinetograph-track/ffmpeg-static,kinetograph-matte/ffmpeg-static -- --nocapture
 
-      - name: Test the tracker (Windows)
+      - name: Test the tracker and matting (Windows)
         if: runner.os == 'Windows'
         env:
           FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
-        run: cargo test --release --target ${{ matrix.target }} -p libmv-sys -p kinetograph-track --features kinetograph-track/ffmpeg-static -- --nocapture
+        run: cargo test --release --target ${{ matrix.target }} -p libmv-sys -p kinetograph-track -p kinetograph-matte --features kinetograph-track/ffmpeg-static,kinetograph-matte/ffmpeg-static -- --nocapture
+
+      # ONNX Runtime for the BEN2 step: Microsoft's CPU release, the version and SHA-256 that
+      # packages/video-matting/src/registry.ts pins (users get it from the same release on the first use of matting). Its
+      # CoreML is on macOS; Windows and Linux run on the CPU.
+      - name: Download ONNX Runtime
+        shell: bash
+        run: |
+          v=1.31.0
+          case "$RUNNER_OS" in
+            macOS) f=onnxruntime-osx-arm64-$v.tgz; sha=1031b36dd3bdaa8d976a6130d9cf2a05e9be320b93ae804f8427b91dc3432afc; lib=libonnxruntime.$v.dylib ;;
+            Linux) f=onnxruntime-linux-x64-$v.tgz; sha=cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57; lib=libonnxruntime.so.$v ;;
+            Windows) f=onnxruntime-win-x64-$v.zip; sha=3958d8a44984160692c1b4ffd0de3cb48f8c39f9d34bb31e433db06e30b82195; lib=onnxruntime.dll ;;
+          esac
+          mkdir -p "$RUNNER_TEMP/ort"
+          curl -fsSL -o "$RUNNER_TEMP/$f" "https://github.com/microsoft/onnxruntime/releases/download/v$v/$f"
+          echo "$sha  $RUNNER_TEMP/$f" | (sha256sum -c - || shasum -a 256 -c -)
+          if [ "$RUNNER_OS" = Windows ]; then
+            # Windows's own bsdtar reads zip; Git's GNU tar does not, nor a drive-letter path.
+            /c/Windows/System32/tar.exe -xf "$(cygpath -w "$RUNNER_TEMP/$f")" -C "$(cygpath -w "$RUNNER_TEMP/ort")" "onnxruntime-win-x64-$v/lib/onnxruntime.dll" "onnxruntime-win-x64-$v/lib/onnxruntime_providers_shared.dll"
+            echo "ORT_DYLIB_PATH=$(cygpath -w "$RUNNER_TEMP/ort/onnxruntime-win-x64-$v/lib/$lib")" >> "$GITHUB_ENV"
+          else
+            tar -xf "$RUNNER_TEMP/$f" -C "$RUNNER_TEMP/ort" "${f%.tgz}/lib/$lib"
+            echo "ORT_DYLIB_PATH=$RUNNER_TEMP/ort/${f%.tgz}/lib/$lib" >> "$GITHUB_ENV"
+          fi
+
+      # One real model run on each platform: BEN2 (the revision and SHA-256 are the ones in packages/video-matting/src/registry.ts)
+      # on the Fred Ott frame in the repository. It runs on ONNX Runtime's CPU here (CoreML on macOS). Not a
+      # download users get from CI: the weights are fetched for this test only, and are not cached or kept.
+      - name: Test BEN2 on a real frame (macOS, Linux)
+        if: runner.os != 'Windows'
+        env:
+          PKG_CONFIG_PATH: ${{ runner.temp }}/ffmpeg/lib/pkgconfig
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/ben2.onnx" https://huggingface.co/onnx-community/BEN2-ONNX/resolve/c552aa82688edce09f0ac9d2e31ad53d9d629010/onnx/model_fp16.onnx
+          echo "dfdc25f421f32a0d1268e0f2ff2153d340e8f1d52d3dd16f5dc33c1ce85cedf1  $RUNNER_TEMP/ben2.onnx" | (sha256sum -c - || shasum -a 256 -c -)
+          KINETOGRAPH_BEN2="$RUNNER_TEMP/ben2.onnx" cargo test --release --target ${{ matrix.target }} -p kinetograph-matte --features kinetograph-matte/ffmpeg-static --test person ben2_holds_the_man -- --nocapture
+
+      # PowerShell, like the other Windows cargo steps: in Git Bash, /usr/bin/link shadows MSVC's link.exe.
+      - name: Test BEN2 on a real frame (Windows)
+        if: runner.os == 'Windows'
+        env:
+          FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+        run: |
+          $model = Join-Path $env:RUNNER_TEMP 'ben2.onnx'
+          curl.exe -fsSL -o $model https://huggingface.co/onnx-community/BEN2-ONNX/resolve/c552aa82688edce09f0ac9d2e31ad53d9d629010/onnx/model_fp16.onnx
+          if ((Get-FileHash $model -Algorithm SHA256).Hash.ToLower() -ne 'dfdc25f421f32a0d1268e0f2ff2153d340e8f1d52d3dd16f5dc33c1ce85cedf1') { throw 'BEN2 SHA-256 mismatch' }
+          $env:KINETOGRAPH_BEN2 = $model
+          cargo test --release --target ${{ matrix.target }} -p kinetograph-matte --features kinetograph-matte/ffmpeg-static --test person ben2_holds_the_man -- --nocapture
 
       - name: Libraries the addon links
         shell: bash
@@ -184,6 +237,13 @@ jobs:
             Linux) ldd "$f" ;;
             Windows) dumpbin //dependents "$f" || true ;;
           esac
+          # ONNX Runtime is opened at run time, never linked: the addon must not depend on it.
+          case "$RUNNER_OS" in
+            macOS) deps=$(otool -L "$f") ;;
+            Linux) deps=$(ldd "$f") ;;
+            Windows) deps=$(dumpbin //dependents "$f" || true) ;;
+          esac
+          if echo "$deps" | grep -qi onnxruntime; then echo "the addon links ONNX Runtime"; exit 1; fi
 
       - uses: actions/upload-artifact@v7
         with:
@@ -243,7 +303,7 @@ jobs:
       - name: Build the TypeScript packages
         shell: bash
         run: |
-          for p in scene compat react core audio cli; do npm run build -w "packages/$p"; done
+          for p in scene compat react core audio video-matting cli; do npm run build -w "packages/$p"; done
           npm run build -w @kinetographdev/studio-ui
           npm run build -w @kinetographdev/studio
 
@@ -269,9 +329,9 @@ jobs:
       # In dependency order. Never `npm run build --workspaces`: it would also build the site and the addon.
       - name: Typecheck (tsc builds)
         run: |
-          for p in scene compat react core audio cli studio plugins/gsap plugins/p5-brush plugins/anime plugins/motion; do npm run build -w "packages/$p"; done
+          for p in scene compat react core audio video-matting cli studio plugins/gsap plugins/p5-brush plugins/anime plugins/motion; do npm run build -w "packages/$p"; done
       # The tests open no GPU unless KINETOGRAPH_GPU_TESTS is set. Not blocking until a run has shown they pass here.
       - name: Test
         continue-on-error: true
         run: |
-          for p in scene compat react core audio cli studio plugins/gsap plugins/p5-brush plugins/anime plugins/motion; do npm test -w "packages/$p"; done
+          for p in scene compat react core audio video-matting cli studio plugins/gsap plugins/p5-brush plugins/anime plugins/motion; do npm test -w "packages/$p"; done

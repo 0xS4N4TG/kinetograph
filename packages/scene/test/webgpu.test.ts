@@ -133,4 +133,33 @@ describe('the recording WebGPU context', () => {
     expect(extended.notes).toEqual([expect.stringMatching(/toneMapping extended .*clipped/)]);
     expect(() => drawn({ format: 'rgba8unorm', colorSpace: 'rec2020' })).toThrow(/colorSpace rec2020/);
   });
+
+  describe('a buffer mapped at creation', () => {
+    async function device() {
+      const adapter = await createGpu().requestAdapter();
+      return adapter.requestDevice();
+    }
+
+    it('takes its bytes from the mapped range, which unmap detaches', async () => {
+      const d = await device();
+      const buffer = d.createBuffer({ size: 16, usage: GPU_BUFFER_USAGE.VERTEX, mappedAtCreation: true });
+      expect(buffer.mapState).toBe('mapped');
+      const range = buffer.getMappedRange();
+      new Float32Array(range).set([1, 2, 3, 4]);
+      buffer.unmap();
+      expect(buffer.mapState).toBe('unmapped');
+      expect(range.byteLength).toBe(0);
+      expect(Array.from(new Float32Array(buffer.data.buffer, buffer.data.byteOffset, 4))).toEqual([1, 2, 3, 4]);
+    });
+
+    it('is checked as WebGPU checks it, and refuses what it cannot alias', async () => {
+      const d = await device();
+      expect(() => d.createBuffer({ size: 6, usage: GPU_BUFFER_USAGE.VERTEX, mappedAtCreation: true })).toThrow(/multiple of 4/);
+      const plain = d.createBuffer({ size: 16, usage: GPU_BUFFER_USAGE.VERTEX });
+      expect(() => plain.getMappedRange()).toThrow(/not mapped/);
+      const mapped = d.createBuffer({ size: 16, usage: GPU_BUFFER_USAGE.VERTEX, mappedAtCreation: true });
+      expect(() => mapped.getMappedRange(4, 8)).toThrow(WebGpuUnsupportedError);
+      expect(() => mapped.mapAsync()).toThrow(WebGpuUnsupportedError);
+    });
+  });
 });

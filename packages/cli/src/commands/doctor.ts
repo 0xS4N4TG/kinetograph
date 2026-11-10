@@ -27,7 +27,18 @@ async function scan(
   const errors: { frame: number; message: string }[] = [];
   const total = last - first + 1;
   for (let frame = first; frame <= last; frame++) {
-    const out = await source.frame(frame);
+    let out;
+    try {
+      out = await source.frame(frame);
+    } catch (error) {
+      // A delayRender() that nothing clears is this composition's finding, not the run's: it is reported with what the
+      // frame held when it gave up (an <iframe> whose onLoad never fires). The failure holds for every frame after it
+      // (the project is stuck), so the scan ends here.
+      if ((error as { code?: unknown } | null)?.code !== 'DELAY_RENDER_TIMEOUT') throw error;
+      frames.push({ frame, unsupported: (error as { unsupported?: Unsupported[] }).unsupported ?? [] });
+      errors.push({ frame, message: (error as Error).message });
+      break;
+    }
     frames.push({ frame, unsupported: out.unsupported ?? [] });
     try {
       native().validateScene(out.sceneJson, source.baseDir);

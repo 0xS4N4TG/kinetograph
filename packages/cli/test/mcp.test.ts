@@ -27,7 +27,7 @@ describe('the tool list', () => {
     const client = await connect(async () => ({ stdout: '{}', stderr: '', code: 0 }));
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
-      ['add', 'audio_analyze', 'bench', 'check', 'compositions', 'doctor', 'effects', 'init', 'inspect', 'lint', 'onion', 'plugins', 'render', 'snapshot', 'still', 'strip', 'track'],
+      ['add', 'audio_analyze', 'bench', 'check', 'compositions', 'doctor', 'effects', 'init', 'inspect', 'lint', 'matte', 'onion', 'plugins', 'render', 'snapshot', 'still', 'strip', 'track'],
     );
     expect(toolCommands().map(toolName).sort()).toEqual(tools.map((t) => t.name).sort());
   });
@@ -38,7 +38,7 @@ describe('the tool list', () => {
     const by = Object.fromEntries(tools.map((t) => [t.name, t]));
 
     const still = by.still!.inputSchema as { properties: Record<string, { type: string }>; required: string[] };
-    expect(Object.keys(still.properties).sort()).toEqual(['comp', 'dev-react', 'entry', 'frame', 'offline', 'output', 'preferred-effect-backend', 'props', 'scale', 'strict']);
+    expect(Object.keys(still.properties).sort()).toEqual(['comp', 'dev-react', 'entry', 'frame', 'offline', 'output', 'preferred-effect-backend', 'props', 'scale', 'strict', 'timeout']);
     expect(still.properties.frame!.type).toBe('number');
     // The output is optional: an image tool uses a temp file, a render writes to out/renders.
     expect(still.required.sort()).toEqual(['entry', 'frame']);
@@ -57,6 +57,13 @@ describe('the tool list', () => {
     expect(track.properties.detect!.type).toBe('boolean');
     expect(track.properties['detect-threshold']!.type).toBe('number');
     for (const name of ['point', 'plane', 'plane-corners', 'detect-inside', 'detect-outside']) expect(track.properties[name]!.type).toBe('array');
+
+    // matte: the video is required; the options are the CLI's.
+    const matte = by.matte!.inputSchema as { properties: Record<string, { type: string }>; required: string[] };
+    expect(matte.required).toEqual(['video']);
+    expect(Object.keys(matte.properties).sort()).toEqual(['audio', 'base', 'model', 'offline', 'output', 'quality', 'video']);
+    expect(matte.properties.offline!.type).toBe('boolean');
+    expect(by.matte!.description).toContain('matting model');
   });
 
   it('gives doctor the compat report\'s arguments, the entry optional', async () => {
@@ -66,7 +73,7 @@ describe('the tool list', () => {
       properties: Record<string, { type: string }>;
       required?: string[];
     };
-    expect(Object.keys(doctor.properties).sort()).toEqual(['comp', 'entry', 'offline', 'props', 'range']);
+    expect(Object.keys(doctor.properties).sort()).toEqual(['comp', 'entry', 'offline', 'props', 'range', 'timeout']);
     expect(doctor.properties.range!.type).toBe('string');
     expect(doctor.required ?? []).toEqual([]);
   });
@@ -85,6 +92,9 @@ describe('toArgv', () => {
       'doctor', 'a.tsx', '--range', '0..30', '--json',
     ]);
     expect(toArgv(command('audio analyze'), { entry: 'a.tsx' })).toEqual(['audio', 'analyze', 'a.tsx', '--json']);
+    expect(toArgv(command('matte'), { video: 'v.mp4', output: 'fg.webm', base: 'b.webm', model: 'ben2-base', audio: 'drop', quality: 'high', offline: true })).toEqual([
+      'matte', 'v.mp4', '--output', 'fg.webm', '--base', 'b.webm', '--model', 'ben2-base', '--audio', 'drop', '--quality', 'high', '--offline', '--json',
+    ]);
     expect(toArgv(command('onion'), { entry: 'a.tsx', range: '0..30', count: 4 })).toEqual([
       'onion', 'a.tsx', '0..30', '--count', '4', '--json',
     ]);

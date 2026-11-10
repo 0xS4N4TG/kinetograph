@@ -11,7 +11,7 @@ use std::path::Path;
 use resvg::{tiny_skia, usvg};
 
 /// Largest side, in pixels, an SVG picture is painted at.
-pub const MAX_SIDE: f64 = 4096.0;
+pub const MAX_SVG_SIDE: f64 = 4096.0;
 
 /// The most bytes an `.svgz` may inflate to.
 const MAX_SVGZ_BYTES: u64 = 64 << 20;
@@ -84,10 +84,10 @@ impl Picture {
     }
 
     /// Paints the picture over a `width` x `height` pixel canvas (stretched to fill it), as straight-alpha RGBA.
-    /// Cut down to `MAX_SIDE` a side (keeping the shape) whatever the caller asks, since a file's natural size can be
+    /// Cut down to `MAX_SVG_SIDE` a side (keeping the shape) whatever the caller asks, since a file's natural size can be
     /// anything.
     pub fn paint(&self, width: u32, height: u32) -> Option<Vec<u8>> {
-        let down = (MAX_SIDE / f64::from(width.max(height))).min(1.0);
+        let down = (MAX_SVG_SIDE / f64::from(width.max(height))).min(1.0);
         let (width, height) = if down < 1.0 {
             (
                 ((f64::from(width) * down).round() as u32).max(1),
@@ -182,13 +182,13 @@ pub fn natural_size(base_dir: &Path, src: &str) -> Result<(f64, f64), String> {
 
 /// The pixel size to paint a picture of `natural` size at, when it is drawn `scale` layer units per natural pixel
 /// (on each axis) under a transform that stretches at most `stretch`: every drawn pixel is a painted one. Cut down
-/// to `MAX_SIDE` a side; `None` when nothing would be drawn.
+/// to `MAX_SVG_SIDE` a side; `None` when nothing would be drawn.
 pub fn pixels(natural: (f64, f64), scale: (f64, f64), stretch: f64) -> Option<(u32, u32)> {
     let (w, h) = (natural.0 * scale.0 * stretch, natural.1 * scale.1 * stretch);
     if !(w > 0.0 && h > 0.0 && w.is_finite() && h.is_finite()) {
         return None;
     }
-    let down = (MAX_SIDE / w.max(h)).min(1.0);
+    let down = (MAX_SVG_SIDE / w.max(h)).min(1.0);
     Some((
         (w * down).ceil().max(1.0) as u32,
         (h * down).ceil().max(1.0) as u32,

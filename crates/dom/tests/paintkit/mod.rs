@@ -185,7 +185,17 @@ fn chrome_binary() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("KINETOGRAPH_CHROME") {
         return Some(PathBuf::from(p));
     }
-    let root = PathBuf::from(std::env::var("HOME").ok()?).join(".cache/kinetograph/chrome/chrome");
+    let home = PathBuf::from(std::env::var("HOME").ok()?);
+    // chrome-headless-shell first: it exits by itself after a screenshot.
+    if let Ok(dirs) = std::fs::read_dir(home.join(".cache/puppeteer/chrome-headless-shell")) {
+        for d in dirs.flatten() {
+            let bin = d.path().join("chrome-headless-shell-mac-arm64/chrome-headless-shell");
+            if bin.exists() {
+                return Some(bin);
+            }
+        }
+    }
+    let root = home.join(".cache/kinetograph/chrome/chrome");
     for entry in std::fs::read_dir(root).ok()? {
         let dir = entry.ok()?.path();
         let app = dir
@@ -224,12 +234,17 @@ pub fn chrome(name: &str, body: &str, w: u32, h: u32) -> Option<RgbaImage> {
     );
     std::fs::write(&html_path, html).ok()?;
     let _ = std::fs::remove_file(&png_path);
+    let headless_shell = bin.to_string_lossy().contains("headless-shell");
     let mut command = std::process::Command::new(bin);
+    // chrome-headless-shell is always headless and rejects the mode flag.
+    if !headless_shell {
+        command.arg("--headless=new");
+    }
     command
-        .arg("--headless=new")
         // Never ask for the macOS keychain ("Chromium Safe Storage").
         .arg("--use-mock-keychain")
         .arg("--password-store=basic")
+        .arg(format!("--user-data-dir={}", dir.join(format!("{name}-profile")).display()))
         .arg(format!("--screenshot={}", png_path.display()))
         .arg(format!("--window-size={w},{h}"))
         .arg("--hide-scrollbars")
@@ -243,13 +258,25 @@ pub fn chrome(name: &str, body: &str, w: u32, h: u32) -> Option<RgbaImage> {
     } else {
         command.arg("--disable-gpu");
     }
-    let _ = command
+    let mut child = command
         .arg(format!(
             "file://{}",
             html_path.canonicalize().ok()?.display()
         ))
-        .output()
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
         .ok()?;
+    // A Chrome that never exits must fail the test, not hang the run.
+    let start = std::time::Instant::now();
+    while child.try_wait().ok()?.is_none() {
+        if start.elapsed() > std::time::Duration::from_secs(60) {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("Chrome did not finish {name} in 60 s");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
     let img = image::open(&png_path).ok()?.to_rgba8();
     // The screenshot may be taller than asked on some builds; crop.
     let img =

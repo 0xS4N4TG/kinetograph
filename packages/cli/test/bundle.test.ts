@@ -35,6 +35,7 @@ describe('resolveSpecifier', () => {
   });
 
   it('leaves @remotion/effects to the project: its own install runs, on the core\'s createEffect', () => {
+    expect(resolveSpecifier('@remotion/video-matting')).toEqual({ kind: 'path', target: '@kinetographdev/video-matting' });
     expect(resolveSpecifier('@remotion/effects')).toBeNull();
     expect(resolveSpecifier('@remotion/effects/blur')).toBeNull();
   });
@@ -57,6 +58,7 @@ describe('resolveSpecifier', () => {
   it('re-resolves the @kinetographdev packages from the CLI and leaves everything else alone', () => {
     expect(resolveSpecifier('@kinetographdev/react')).toEqual({ kind: 'path', target: '@kinetographdev/react' });
     expect(resolveSpecifier('@kinetographdev/audio')).toEqual({ kind: 'path', target: '@kinetographdev/audio' });
+    expect(resolveSpecifier('@kinetographdev/video-matting')).toEqual({ kind: 'path', target: '@kinetographdev/video-matting' });
     expect(resolveSpecifier('@kinetographdev/native')).toBeNull();
     expect(resolveSpecifier('./local')).toBeNull();
     expect(resolveSpecifier('react-dom')).toBeNull();
@@ -167,6 +169,21 @@ describe('bundleProject', () => {
     expect(code).toMatch(/export \{[^}]*setMediaProbe[^}]*\}/);
     // And the module's state, the probe, is declared once.
     expect(code.match(/^(?:var|let) probeOverride\b/gm)).toHaveLength(1);
+  });
+
+  it('resolves @remotion/video-matting to the video-matting package, not the core', async () => {
+    const dir = project({
+      'index.ts': [
+        `import { registerRoot } from 'remotion';`,
+        `import { getAvailableModels, separateVideoLayers } from '@remotion/video-matting';`,
+        `registerRoot(() => null);`,
+        `console.log(getAvailableModels, separateVideoLayers);`,
+      ].join('\n'),
+    });
+    const { file } = await bundleProject(join(dir, 'index.ts'));
+    const code = readFileSync(file, 'utf8');
+    expect(code).toContain('packages/video-matting/dist/');
+    expect(code).not.toContain('@remotion/video-matting');
   });
 
   it('maps @remotion/media, registers stylesheets (Tailwind that cannot be built is warned about), and keeps an entry a package.json says has no side effects', async () => {
