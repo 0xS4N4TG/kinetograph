@@ -163,6 +163,21 @@ fn a_box_with_a_negative_margin_moved_in_3d_is_not_cut_at_the_origin() {
     assert_eq!(px(&frame, 850, 430), [255, 255, 255, 255], "the box is larger than it should be");
 }
 
+/// Filter Effects 2, `backdrop-filter`: the filters see the backdrop cut to the element's border box, whichever filter
+/// comes first. A black strip left of the element does not bleed into it, with `saturate()` before `blur()` too.
+#[test]
+fn backdrop_filter_reads_only_inside_the_box_with_a_colour_function_before_the_blur() {
+    let frame = shoot(
+        "backdrop-crop",
+        r##"<div style="position:absolute;left:40px;top:0;width:60px;height:100px;background:#000"></div>
+<div style="position:absolute;left:100px;top:20px;width:80px;height:60px;backdrop-filter:saturate(0) blur(8px)"></div>"##,
+        200,
+        100,
+    );
+    let near_the_strip = px(&frame, 103, 50);
+    assert!(near_the_strip[0] > 245, "the strip bleeds into the box: {near_the_strip:?}");
+}
+
 /// CSS 2.1 Appendix E, steps 8 and 9, in the layouts a stacking context at z-index 0 sits in: in block flow, as a float,
 /// and with a positioned box after it (tree order wins either way); and a descendant at `z-index: -1` of a box that makes
 /// a stacking context by its blend mode stays inside it, above the box's own background.

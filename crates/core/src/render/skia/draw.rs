@@ -893,6 +893,13 @@ impl Translator {
         let s = scale.max(1e-6) as f32;
         let mut filter: Option<ImageFilter> = None;
         let mut backdrop: Option<ImageFilter> = None;
+        // A mirrored backdrop blur reads only the backdrop inside the layer's box, mirrored past its edges: that crop is the
+        // input of the first stage of the backdrop filter, whichever stage (a colour function may come before the blur).
+        let mut backdrop_crop = if layer.effects.iter().any(|e| matches!(e, ResolvedEffect::BackdropBlur { mirror: true, .. })) {
+            self.layer_box(layer).and_then(|b| image_filters::crop(b, TileMode::Mirror, None))
+        } else {
+            None
+        };
         // Colour filters in a run combine into one.
         for e in &layer.effects {
             let class = match e {
@@ -919,9 +926,7 @@ impl Translator {
                 }
                 ResolvedEffect::BackdropBlur { radius, mirror } => {
                     let sg = radius / s;
-                    // Mirrored: only the backdrop inside the layer's box, mirrored past its edges.
-                    let crop = if *mirror { self.layer_box(layer).and_then(|b| image_filters::crop(b, TileMode::Mirror, None)) } else { None };
-                    let input = backdrop.take().or(crop);
+                    let input = backdrop.take().or_else(|| backdrop_crop.take());
                     let tile = if *mirror { TileMode::Decal } else { TileMode::Clamp };
                     backdrop = image_filters::blur((sg, sg), tile, input, None);
                 }
@@ -933,7 +938,8 @@ impl Translator {
                         m[2][0] as f32, m[2][1] as f32, m[2][2] as f32, m[2][3] as f32, m[2][4] as f32,
                         m[3][0] as f32, m[3][1] as f32, m[3][2] as f32, m[3][3] as f32, m[3][4] as f32,
                     ], None);
-                    backdrop = image_filters::color_filter(self.in_srgb(f), backdrop.take(), None);
+                    let input = backdrop.take().or_else(|| backdrop_crop.take());
+                    backdrop = image_filters::color_filter(self.in_srgb(f), input, None);
                 }
                 ResolvedEffect::DropShadow(sh) => {
                     let sg = sh.blur / s;
