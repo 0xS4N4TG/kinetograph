@@ -17,6 +17,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A blurred outer `box-shadow` is drawn through a blur mask filter inside its clip instead of two offscreen layers (papercut slice 16.5 → 15.0 ms a frame).
 - A turned or skewed blurred outer `box-shadow` is blurred in closed form in a runtime shader instead of a mask filter (papercut slice 15.0 → 11.3 ms a frame).
 - Without `--concurrency`, a render whose workers mostly wait for the GPU hands the rest of its frames to the main thread after the first few (papercut 18.92 → 17.56 s; film, dm4, mg1, mg2 and compat within noise).
+- A DOM island's stacking context whose content changes every frame is no longer copied for a replay that never comes (island paint: mg1 8.5 → 4.9 ms a frame, papercut 4.3 → 3.2, film 0.90 → 0.62).
 
 ### Fixed
 

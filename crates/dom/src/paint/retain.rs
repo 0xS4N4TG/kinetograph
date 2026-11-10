@@ -191,6 +191,12 @@ impl<'a> Painter<'a> {
         if self.retain.is_none() {
             return self.sc_content(node);
         }
+        if self.changes(node) {
+            // What changed now likely changes again in the next paint (an animation): its content is not kept, so
+            // it is neither copied nor dropped unused. A content that stops changing is kept by the next paint.
+            self.retain.as_mut().expect("retaining").painted += 1;
+            return self.sc_content(node);
+        }
         if let Some(fragment) = self.replayable(node) {
             let layers = self.replay(&fragment);
             let retain = self.retain.as_mut().expect("retaining");
@@ -207,23 +213,31 @@ impl<'a> Painter<'a> {
         self.record(node)
     }
 
+    /// Whether something `node`'s content is made of changed since the last
+    /// paint: its own change is to more than its group, something inside it
+    /// changed, or its parent's change is to more than the parent's group.
+    /// False when that is not known.
+    fn changes(&self, node: &'a Node) -> bool {
+        let Some(dirty) = self.retain.as_ref().and_then(|r| r.dirty) else {
+            return false;
+        };
+        dirty.in_content(node.id)
+            || dirty.inside(node.id)
+            || node.parent.is_some_and(|p| dirty.in_content(p))
+    }
+
     /// The last paint's fragment of `node`, taken out, if nothing it was made
-    /// of changed.
+    /// of changed (`changes` said so already).
     fn replayable(&mut self, node: &'a Node) -> Option<Fragment> {
         let retain = self.retain.as_mut()?;
-        let dirty = retain.dirty?;
+        retain.dirty?;
         let fragment = retain.kept.0.remove(&node.id)?;
-        // Its own change is to its group at most, nothing inside it changed,
-        // and its parent's change (if any) is to the parent's group alone.
-        let unchanged = !dirty.in_content(node.id)
-            && !dirty.inside(node.id)
-            && node.parent.is_none_or(|p| !dirty.in_content(p));
         let same_context = fragment.blitz_context == node.stacking_context.is_some()
             && fragment.canvas_node == self.canvas_node;
         let same_answers = self.ids.holds(&fragment.ids)
             && self.unsupported_seen.holds(&fragment.seen)
             && self.audited.holds(&fragment.audited);
-        (unchanged && same_context && same_answers).then_some(fragment)
+        (same_context && same_answers).then_some(fragment)
     }
 
     /// Puts what `fragment` took from the painter's state back, and hands out its layers.
