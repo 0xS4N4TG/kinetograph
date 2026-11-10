@@ -140,6 +140,7 @@ const cacheKey = (src: string, sampleRate: number) => `${sampleRate}:${src}`;
 export function setAudioDecoder(fn: DecodeAudio | null): void {
   decodeOverride = fn;
   audioCache.clear();
+  windows.clear();
 }
 
 function loadNativeDecoder(): DecodeAudio {
@@ -190,9 +191,13 @@ export function useAudioData(src: string): MediaUtilsAudioData | null {
   return readAudioData(src);
 }
 
+const windows = new Map<string, MediaUtilsAudioData>();
+
 /**
- * Remotion's windowed hook, for long files. The whole file is decoded once here anyway, so the window is the whole
- * file and the offset is 0; `visualizeAudio` and `getWaveformPortion` read it the same way.
+ * Remotion's windowed hook, for long files: the audio is cut into windows of `windowInSeconds`, and the data is the
+ * window of the current frame with the one before and the one after (up to three windows, as its documentation says), with
+ * `dataOffsetInSeconds` where that slice starts in the file. `visualizeAudio` scales by the loudest sample of the data it
+ * is given, so the slice matters: it is the slice's, not the whole file's. The file is decoded whole here anyway.
  */
 export function useWindowedAudioData(options: {
   src: string;
@@ -200,7 +205,28 @@ export function useWindowedAudioData(options: {
   fps: number;
   windowInSeconds: number;
 }): { audioData: MediaUtilsAudioData | null; dataOffsetInSeconds: number } {
-  return { audioData: readAudioData(options.src), dataOffsetInSeconds: 0 };
+  const whole = readAudioData(options.src);
+  const rate = whole.sampleRate;
+  const window = options.windowInSeconds;
+  const current = Math.floor(options.frame / options.fps / window);
+  const length = whole.channelWaveforms[0]!.length;
+  const start = Math.min(length, Math.max(0, Math.floor((current - 1) * window * rate)));
+  const end = Math.min(length, Math.ceil((current + 2) * window * rate));
+  if (start === 0 && end === length) return { audioData: whole, dataOffsetInSeconds: 0 };
+  const key = `${whole.resultId}:${start}:${end}`;
+  let slice = windows.get(key);
+  if (slice === undefined) {
+    // The slices are views, but keep the map small over a long session.
+    if (windows.size >= 16) windows.clear();
+    slice = {
+      ...whole,
+      channelWaveforms: whole.channelWaveforms.map((channel) => channel.subarray(start, end)),
+      durationInSeconds: (end - start) / rate,
+      resultId: `${whole.resultId}@${start}-${end}`,
+    };
+    windows.set(key, slice);
+  }
+  return { audioData: slice, dataOffsetInSeconds: start / rate };
 }
 
 /** How long the audio at `src` plays, from its decoded samples. */

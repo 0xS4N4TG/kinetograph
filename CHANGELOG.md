@@ -43,6 +43,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A remote `@import` of a stylesheet (Google Fonts' `css2?family=...`) in a Remotion project's CSS is downloaded and locked by `fetch-deps` (and before a render), with the font files it names, and loaded as a browser would; https only, from the locked cache only (never during a render), each stylesheet read once, at most 16 and 1 MiB, only its `@font-face` rules are used (nothing of it reaches the page), relative URLs resolved against the stylesheet.
 - A remote file is read at render time (`fetch()`, audio data, video length) only from what `fetch-deps` downloaded and locked, and only for a GET or HEAD without a body.
 - Listing compositions (`kinetograph compositions`, Studio) runs `calculateMetadata` for a composition whose fps or length comes from it, instead of showing placeholders.
+- `useWindowedAudioData()` returns the window of the frame with the one before and after, and `visualizeAudio()` scales by the loudest sample of that slice, as Remotion's does.
 
 ## 0.3.0 (2026-11-03)
 

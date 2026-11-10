@@ -123,6 +123,29 @@ describe('a remote file the host has cached', () => {
   });
 });
 
+describe('useWindowedAudioData (remotion.dev/docs/use-windowed-audio-data)', () => {
+  it('gives the window of the frame with the one before and after, and where that slice starts in the file', () => {
+    // 100 s of a quiet tone with one loud second at 50 s.
+    const samples = Float32Array.from({ length: 100 * RATE }, (_, i) => (i >= 50 * RATE && i < 51 * RATE ? 0.9 : 0.1) * Math.sin(i / 10));
+    serve({ 'long.wav': [samples] });
+    const at = (seconds: number) => useWindowedAudioData({ src: 'long.wav', frame: seconds * 30, fps: 30, windowInSeconds: 10 });
+    // Frame at 25 s is in window 2 (20 to 30 s): the data is 10 to 40 s.
+    const near = at(25);
+    expect(near.dataOffsetInSeconds).toBe(10);
+    expect(near.audioData!.durationInSeconds).toBe(30);
+    expect(near.audioData!.channelWaveforms[0]!.length).toBe(30 * RATE);
+    // The first window has nothing before it: 0 to 20 s.
+    expect(at(3).dataOffsetInSeconds).toBe(0);
+    expect(at(3).audioData!.durationInSeconds).toBe(20);
+    // The same slice for every frame of the window, and visualizeAudio scales by the loudest sample of the slice: the loud
+    // second (50 s) is not in the slice of 25 s, so a quiet frame there is not made smaller by it.
+    expect(at(25.5).audioData).toBe(near.audioData);
+    const quiet = visualizeAudio({ audioData: near.audioData!, frame: 25 * 30, fps: 30, numberOfSamples: 32, dataOffsetInSeconds: near.dataOffsetInSeconds });
+    const whole = visualizeAudio({ audioData: useAudioData('long.wav')!, frame: 25 * 30, fps: 30, numberOfSamples: 32 });
+    expect(Math.max(...quiet)).toBeGreaterThan(Math.max(...whole) * 5);
+  });
+});
+
 describe('visualizeAudio', () => {
   it('puts a tone in its bins and is the same on every call', () => {
     serve({ 'tone.wav': sine(3000, 1) });
