@@ -3,7 +3,7 @@
 //! grid boxes, inline text beside blocks (anonymous blocks), absolutely positioned boxes, `::before` from a sheet,
 //! inline SVG, tables, `display: contents` and Tailwind-like classes; the edits are the ones animation makes
 //! (transforms, opacity, offsets, sizes, display, font size, colour, custom properties descendants read, classes,
-//! text).
+//! text) and the ones mounting makes (a child added or taken away, which renumbers the paths after it).
 //!
 //! A second test makes the trees mostly inline content (spans in spans, with blocks among them).
 //!
@@ -257,11 +257,11 @@ fn edit(rng: &mut Rng, root: &mut Node) -> String {
     else {
         unreachable!()
     };
-    let mut kind = rng.below(14);
+    let mut kind = rng.below(16);
     // A table part given another display or position is laid out in ways a browser does not (Blitz's tables): those
-    // stay.
+    // stay. So do its children, and an `<svg>`'s.
     let table_part = matches!(tag.as_str(), "table" | "tbody" | "tr" | "td");
-    if table_part && matches!(kind, 6 | 10 | 11) {
+    if (table_part || tag == "svg") && matches!(kind, 6 | 10 | 11 | 14 | 15) {
         kind = 13;
     }
     let what = match kind {
@@ -351,7 +351,24 @@ fn edit(rng: &mut Rng, root: &mut Node) -> String {
             }
             format!("class {c} {}", if on { "on" } else { "off" })
         }
-        12 => {
+        14 => {
+            let at = rng.below(children.len() + 1);
+            let child = if rng.chance(30) {
+                Node::Text(words(rng))
+            } else {
+                tree(rng, String::new(), 2)
+            };
+            children.insert(at, child);
+            renumber(root, "$0.0");
+            format!("insert at {at}")
+        }
+        15 if !children.is_empty() => {
+            let at = rng.below(children.len());
+            children.remove(at);
+            renumber(root, "$0.0");
+            format!("remove at {at}")
+        }
+        12 | 15 => {
             // A text of the element, or a property taken away.
             match children.iter_mut().find(|c| matches!(c, Node::Text(_))) {
                 Some(Node::Text(t)) => {
@@ -378,6 +395,20 @@ fn edit(rng: &mut Rng, root: &mut Node) -> String {
         }
     };
     format!("{path}: {what}")
+}
+
+/// Gives each element the path of its place: its parent's and its index among the children that are not text.
+fn renumber(node: &mut Node, at: &str) {
+    if let Node::El { path, children, .. } = node {
+        *path = at.to_string();
+        let mut i = 0;
+        for c in children {
+            if matches!(c, Node::El { .. }) {
+                renumber(c, &format!("{at}.{i}"));
+                i += 1;
+            }
+        }
+    }
 }
 
 fn to_json(node: &Node) -> Value {
