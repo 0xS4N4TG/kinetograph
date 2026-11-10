@@ -42,7 +42,7 @@ function rewriteRules(css: string, selector: (selector: string) => string): stri
 /**
  * The rules of a mounted composition scoped to it. A selector that already names the composition's root stays; `html`,
  * `body` and `:root` alone are the composition's own box; any other gets the composition's selector in front. Rules
- * written for the root's id (`#root { … }`) apply to the host, which takes the root's place.
+ * written for the root's id (`#root { … }`) apply to the file's root, which is a child of the host (`data-hf-authored-id`).
  */
 export function scopeToComposition(css: string, compositionId: string, rootId?: string | null): string {
   const scope = compositionSelector(compositionId);
@@ -55,7 +55,7 @@ export function scopeToComposition(css: string, compositionId: string, rootId?: 
     if (text === '' || text === '*') return selector;
     if (/^(html|body|:root)$/i.test(text)) return scope;
     let rewritten = text;
-    if (rootIdToken !== null) rewritten = rewritten.replace(rootIdToken, scope);
+    if (rootIdToken !== null) rewritten = rewritten.replace(rootIdToken, `[data-hf-authored-id="${escapeAttr(rootId!)}"]`);
     own.lastIndex = 0;
     if (own.test(rewritten)) return rewritten.replace(timing, '');
     return `${scope} ${rewritten}`;

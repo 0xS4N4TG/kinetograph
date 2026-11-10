@@ -84,11 +84,16 @@ describe('mounting compositions', () => {
     const { plan } = await buildPlan(join(dir, 'index.html'), { probeDuration: () => 4 });
     const a = find(plan.body, (n) => attr(n, 'id') === 'a')!;
     expect(find(a.children, (n) => n.tag === 'h1')).not.toBeNull();
-    // The root element of the file is not a node of its own: the host takes its place.
+    // The root element of the file is a child of the host, as in HyperFrames: it has no id (kept as `data-hf-authored-id`)
+    // and none of the timing attributes, and it is as large as its `data-width` and `data-height`.
     expect(find(a.children, (n) => attr(n, 'id') === 'inner')).toBeNull();
+    const root = find(a.children, (n) => attr(n, 'data-hf-authored-id') === 'inner')!;
+    expect(attr(root, 'data-hf-inner-root')).toBe('true');
+    expect(attr(root, 'data-composition-id')).toBeUndefined();
+    expect(attr(root, 'style')).toBe('width: 640px; height: 360px');
     const card1 = plan.stylesheets.find((s) => s.file.endsWith('card.html'))!;
     expect(card1.css).toContain('[data-composition-id="card"] .title');
-    expect(card1.css).toMatch(/\[data-composition-id="card"\]\s*\{\s*margin:1px/);
+    expect(card1.css).toMatch(/\[data-composition-id="card"\] \[data-hf-authored-id="inner"\]\s*\{\s*margin:1px/);
     expect(plan.scripts.find((s) => s.scope === 'card')!.sourceFile).toMatch(/card\.html$/);
     expect(plan.variables.card).toEqual({ title: 'Pro' });
     expect(plan.variables.card2).toEqual({ title: 'Fallback' });
@@ -97,16 +102,15 @@ describe('mounting compositions', () => {
     expect(plan.mediaDurations[join(dir, 'assets', 'clip.mp4')]).toBe(4);
   });
 
-  it("keeps the file root's id on the host as data-hf-root-id, beside the host's own id (#109)", async () => {
-    const dir = project({ 'index.html': index.replace(' id="a"', ''), 'compositions/card.html': card, 'assets/clip.mp4': 'x' });
+  it("keeps the file root's id as data-hf-authored-id on the root, which is a child of the host (#109)", async () => {
+    const dir = project({ 'index.html': index, 'compositions/card.html': card, 'assets/clip.mp4': 'x' });
     const { plan } = await buildPlan(join(dir, 'index.html'), { probeDuration: () => 4 });
-    const withoutId = find(plan.body, (n) => attr(n, 'data-composition-id') === 'card')!;
-    expect(attr(withoutId, 'id')).toBeUndefined();
-    expect(attr(withoutId, 'data-hf-root-id')).toBe('inner');
-    const withId = project({ 'index.html': index, 'compositions/card.html': card, 'assets/clip.mp4': 'x' });
-    const planned = (await buildPlan(join(withId, 'index.html'), { probeDuration: () => 4 })).plan;
-    const a = find(planned.body, (n) => attr(n, 'id') === 'a')!;
-    expect(attr(a, 'data-hf-root-id')).toBe('inner');
+    const a = find(plan.body, (n) => attr(n, 'id') === 'a')!;
+    const root = find(a.children, (n) => attr(n, 'data-hf-inner-root') === 'true')!;
+    expect(attr(root, 'data-hf-authored-id')).toBe('inner');
+    expect(attr(a, 'data-hf-authored-id')).toBeUndefined();
+    // A root with a size gives it to the host too.
+    expect([attr(a, 'data-width'), attr(a, 'data-height'), attr(a, 'style')]).toEqual(['640', '360', 'width: 640px; height: 360px']);
   });
 
   it('a missing composition file is a note, not a failure', async () => {

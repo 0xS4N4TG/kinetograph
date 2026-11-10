@@ -88,7 +88,7 @@ interface Context {
   dir: string;
   /** The composition the content belongs to (its scripts and styles are scoped to it), or null for the page. */
   scope: string | null;
-  /** The root element's id in a mounted file, whose rules apply to the host. */
+  /** The root element's id in a mounted file, whose rules apply to the file's root. */
   rootId: string | null;
   stack: string[];
 }
@@ -532,8 +532,12 @@ class Builder {
     for (const node of content) {
       if (inner !== null && node === inner) {
         if (hostId !== null) {
-          children.push(...(await this.nodes(childrenOf(inner), sub, false)));
-          mergeRootAttributes(host, inner);
+          const root = await this.element(inner, sub, false);
+          if (root !== null && root.t === 'el') {
+            standInRoot(root);
+            children.push(root);
+          }
+          sizeHostFromRoot(host, inner);
         } else {
           const converted = await this.element(inner, sub, false);
           if (converted) children.push(converted);
@@ -560,20 +564,60 @@ function safeJson(text: string | null): unknown {
   }
 }
 
-/** The mounted file's root gives the host what the host lacks: its classes and style, its `data-*`, its id (as `data-hf-root-id`, for lookups by it). */
-function mergeRootAttributes(host: HfNode & { t: 'el' }, inner: PElement): void {
-  const has = (name: string): boolean => host.attrs.some(([n]) => n === name);
+/** The attributes that make an element a timed composition: a mounted file's root gives them up to the host. */
+const ROOT_ATTRIBUTES_OF_THE_HOST = new Set([
+  'data-composition-id',
+  'data-composition-file',
+  'data-start',
+  'data-duration',
+  'data-end',
+  'data-track-index',
+  'data-track',
+  'data-composition-src',
+  'data-hf-authored-duration',
+  'data-hf-authored-end',
+]);
+
+/**
+ * The mounted file's root stays in the host as a child of its own, the way HyperFrames' runtime mounts it (Apache-2.0,
+ * heygen-com/hyperframes, runtime compositionLoader): the timed-composition attributes are the host's alone; its id
+ * becomes `data-hf-authored-id` (rules and lookups written for it still find it); and it fills the host, or is as large
+ * as its `data-width` and `data-height`.
+ */
+function standInRoot(root: HfNode & { t: 'el' }): void {
+  const rest = root.attrs.filter(([name]) => !ROOT_ATTRIBUTES_OF_THE_HOST.has(name));
+  const id = rest.find(([name]) => name === 'id')?.[1];
+  root.attrs = rest.filter(([name]) => name !== 'id');
+  if (id !== undefined && id.trim() !== '') root.attrs.push(['data-hf-authored-id', id.trim()]);
+  root.attrs.push(['data-hf-inner-root', 'true']);
+  const size = (name: string): string => {
+    const n = Number.parseFloat(attrValue(root, name) ?? '');
+    return Number.isFinite(n) && n > 0 ? `${n}px` : '100%';
+  };
+  const style = `width: ${size('data-width')}; height: ${size('data-height')}`;
+  const at = root.attrs.findIndex(([name]) => name === 'style');
+  if (at >= 0) root.attrs[at] = ['style', `${root.attrs[at]![1].replace(/;?\s*$/, ';')} ${style}`];
+  else root.attrs.push(['style', style]);
+}
+
+/** A file root with a size gives it to the host (`data-width`, `data-height`, and as the host's size), as HyperFrames' runtime does. */
+function sizeHostFromRoot(host: HfNode & { t: 'el' }, inner: PElement): void {
   const set = (name: string, value: string): void => {
     const at = host.attrs.findIndex(([n]) => n === name);
     if (at >= 0) host.attrs[at] = [name, value];
     else host.attrs.push([name, value]);
   };
-  for (const a of inner.attrs) {
-    if (a.name === 'class') set('class', [attrValue(host, 'class'), a.value].filter(Boolean).join(' '));
-    else if (a.name === 'style') set('style', [a.value.replace(/;?\s*$/, ';'), attrValue(host, 'style') ?? ''].join(' ').trim());
-    else if (a.name === 'id') set('data-hf-root-id', a.value);
-    else if (a.name.startsWith('data-') && a.name !== 'data-composition-src' && !has(a.name)) host.attrs.push([a.name, a.value]);
+  const style: string[] = [];
+  for (const name of ['width', 'height'] as const) {
+    const value = attrOf(inner, `data-${name}`);
+    if (value === null) continue;
+    set(`data-${name}`, value);
+    const n = Number.parseFloat(value);
+    if (Number.isFinite(n) && n > 0) style.push(`${name}: ${n}px`);
   }
+  if (attrOf(inner, 'data-timeline-locked') !== null) set('data-timeline-locked', '');
+  const own = (attrValue(host, 'style') ?? '').trim().replace(/;$/, '');
+  if (style.length > 0) set('style', [own, ...style].filter(Boolean).join('; '));
 }
 
 function findElement(node: PNode | PParent, test: (el: PElement) => boolean): PElement | null {

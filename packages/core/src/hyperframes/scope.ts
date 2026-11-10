@@ -26,7 +26,7 @@ const IDENT_CHAR = /[\w-]|[^\x00-\x7f]/;
 const HEX = /[0-9a-fA-F]/;
 
 /**
- * `selector` with each `#<rootId>` token as an attribute selector on the host. Quoted strings and `[...]` are copied
+ * `selector` with each `#<rootId>` token as an attribute selector on the file's root (the child of the host that has the id). Quoted strings and `[...]` are copied
  * as written (an attribute value is not a lookup by id), and an id written with CSS escapes (`#a\.b`, `#\31 a`) is
  * compared unescaped. The DOM takes no escapes in an id selector, but takes them in an attribute value.
  */
@@ -76,7 +76,7 @@ export function rewriteRootId(selector: string, rootId: string): string {
           j++;
         } else break;
       }
-      out += name === rootId ? `[data-hf-root-id="${cssString(rootId)}"]` : selector.slice(i, j);
+      out += name === rootId ? `[data-hf-authored-id="${cssString(rootId)}"]` : selector.slice(i, j);
       i = j;
     } else {
       out += ch;
@@ -92,8 +92,13 @@ export function scopedDocument(env: ScopeEnv): AnyRecord {
     const root = env.root();
     return root === null || node === root || root.contains(node);
   };
-  // A mounted file's root element is the host; the planner keeps the id the file gave it as `data-hf-root-id`.
-  const rootIdOf = (): string | null => env.root()?.getAttribute?.('data-hf-root-id') ?? null;
+  // A mounted file's root element is a child of the host; the planner keeps the id the file gave it as `data-hf-authored-id`.
+  const rootIdOf = (): string | null => {
+    for (const child of Array.from((env.root()?.children ?? []) as ArrayLike<AnyRecord>)) {
+      if (child.getAttribute('data-hf-inner-root') === 'true') return child.getAttribute('data-hf-authored-id');
+    }
+    return null;
+  };
   const all = (selector: string): AnyRecord[] => {
     const rootId = rootIdOf();
     const text = rootId === null || typeof selector !== 'string' ? selector : rewriteRootId(selector, rootId);
@@ -111,8 +116,8 @@ export function scopedDocument(env: ScopeEnv): AnyRecord {
     if (found !== null && found !== undefined && inside(found)) return found;
     const root = env.root();
     if (root === null) return found ?? null;
-    if (root.id === id || rootIdOf() === id) return root;
-    return root.querySelector(`[id="${cssString(String(id))}"]`) ?? null;
+    if (root.id === id) return root;
+    return root.querySelector(`[id="${cssString(String(id))}"]`) ?? (rootIdOf() === id ? root.querySelector(`[data-hf-authored-id="${cssString(String(id))}"]`) : null);
   };
   return new Proxy(env.document, {
     get(target, prop) {
