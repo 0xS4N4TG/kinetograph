@@ -25,6 +25,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Fixed
 
+- Boxes at one depth in a `preserve-3d` element are painted in painting order, not by how far their middles are from the viewer, so a `::after` or a border on a tilted box is no longer hidden under its parent's background.
 - A `::before` or `::after` box paints its own background, border and shadow, as the box CSS 2.1 §12.1 says it is, in a line of text too.
 - HyperFrames: the root's timed children are taken out of flow, so a second sub-composition no longer draws black below the canvas.
 - HyperFrames: the root is clipped and sized from its `data-width` and `data-height`, so a root with no CSS size is not empty (#112).
