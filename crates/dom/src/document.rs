@@ -396,6 +396,9 @@ pub struct Resolved {
     touched: Option<Vec<NodeId>>,
     /// How many stacking contexts' contents the last paint replayed and how many it painted.
     replayed: (u64, u64),
+    /// Whether the last paint of the island (of this document, or of the one it was built in place of) was whole:
+    /// nothing known of what changed, so nothing replayed.
+    whole: bool,
 }
 
 impl Resolved {
@@ -412,6 +415,15 @@ impl Resolved {
             }
             _ => (Fragments::default(), None),
         };
+        // A whole paint after a whole paint is likely followed by one (a page built or restyled every frame): its
+        // contents are not kept, so they are neither copied nor dropped unused.
+        let whole = std::mem::replace(&mut self.whole, changed.is_none());
+        if whole && changed.is_none() {
+            self.painted = Some((dirty::stamps(doc), Fragments::default()));
+            self.touched = Some(Vec::new());
+            self.replayed = (0, 0);
+            return paint::paint(doc, request);
+        }
         let retained = paint::paint_retaining(doc, request, kept, changed.as_ref());
         self.painted = Some((dirty::stamps(doc), retained.fragments));
         self.touched = Some(Vec::new());
@@ -536,6 +548,7 @@ impl IslandCache {
         pass: Option<u64>,
     ) -> Result<Resolved, BuildError> {
         self.enter(pass);
+        let whole = self.kept.get(&request.path).is_some_and(|kept| kept.resolved.whole);
         let editable = pass.is_some()
             && self
                 .kept
@@ -553,7 +566,7 @@ impl IslandCache {
             self.edit(&mut kept.resolved, request, &edits);
             return Ok(kept.resolved);
         }
-        self.build(request)
+        self.build(request, whole)
     }
 
     /// The kept island at `edits.path` changed as `edits` say, with the request it shows: the document is edited as
@@ -581,7 +594,7 @@ impl IslandCache {
             self.edit(&mut resolved, &request, &changed);
             return Ok((request, resolved));
         }
-        self.build(&request)
+        self.build(&request, resolved.whole)
             .map(|resolved| (request, resolved))
             .map_err(EditsError::Build)
     }
@@ -623,8 +636,8 @@ impl IslandCache {
         self.edited += 1;
     }
 
-    /// A new document of `request`.
-    fn build(&mut self, request: &IslandRequest) -> Result<Resolved, BuildError> {
+    /// A new document of `request`, in place of one whose last paint was `whole`.
+    fn build(&mut self, request: &IslandRequest, whole: bool) -> Result<Resolved, BuildError> {
         let (mut files, mut plain) = (None, false);
         let island = resolve_keeping(request, &mut files, &mut plain)?;
         self.built += 1;
@@ -636,6 +649,7 @@ impl IslandCache {
             painted: None,
             touched: None,
             replayed: (0, 0),
+            whole,
         })
     }
 
