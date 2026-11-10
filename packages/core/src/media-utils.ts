@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { imageSizeOfBytes, projectFileOf, remoteMessage } from '@kinetographdev/compat/shim';
 import type { MediaInfo } from '@kinetographdev/native';
+import { mediaParserAddon } from './media-parser/addon.js';
 
 export type ProbeMedia = (path: string, baseDir?: string) => MediaInfo;
 
@@ -72,11 +73,24 @@ export function probeMedia(src: string, options: { cache?: boolean } = {}): Medi
   return probeNative(src);
 }
 
+/**
+ * How long a browser says a video is: the container's length, which is the longest of its streams, so a sound that runs
+ * past the last picture counts (`probeMedia` gives the picture's). The picture's when the container says nothing longer.
+ */
+function containerDuration(src: string, videoSeconds: number): number {
+  try {
+    const container = mediaParserAddon().probeStreams(remoteOrLocal(src)).durationInSeconds;
+    return container != null && container > videoSeconds ? container : videoSeconds;
+  } catch {
+    return videoSeconds;
+  }
+}
+
 /** The duration, size and frame rate of a local video, read from its header. */
 export async function getVideoMetadata(src: string): Promise<VideoMetadata> {
   const info = probeMedia(src);
   return {
-    durationInSeconds: info.durationInSeconds,
+    durationInSeconds: info.kind === 'video' ? containerDuration(src, info.durationInSeconds) : info.durationInSeconds,
     width: info.width,
     height: info.height,
     aspectRatio: info.width / info.height,
