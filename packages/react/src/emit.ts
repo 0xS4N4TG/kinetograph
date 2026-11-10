@@ -88,6 +88,12 @@ export interface EmitOptions {
    * native element in it, a native element other than a `<Layer>`. Null for a whole tree.
    */
   subFrameLayers?: () => ReadonlySet<string> | null;
+  /**
+   * Called with the first error a render or an effect throws, when it happens. `render`, `update` and `snapshot` throw it
+   * too, but a render that state set later (an effect that awaits a promise) is only thrown at the next `snapshot`, which
+   * a caller that waits for something first (the frame loop, on a `delayRender`) never reaches.
+   */
+  onError?: (error: unknown) => void;
 }
 
 /** The name of an element as a user writes it, for error messages. */

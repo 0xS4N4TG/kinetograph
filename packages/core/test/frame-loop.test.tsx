@@ -1,3 +1,6 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { useEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Audio, Layer, Rect, Text } from '@kinetographdev/react';
@@ -16,6 +19,8 @@ import {
 import { installDeterminism, resetVirtualClock, uninstallDeterminism } from '../src/determinism.js';
 import { clearFonts, getFonts, registerFont, trackFontLoad } from '../src/font-registry.js';
 import { createFrameRenderer } from '../src/frame-loop.js';
+import { makeGoogleFont } from '../src/google-fonts.js';
+import { measureText, setLayoutText } from '../src/layout-utils.js';
 import { AbsoluteFill } from '../src/fill.js';
 import { interpolate } from '../src/interpolate.js';
 import { Sequence, useCurrentFrame, useVideoConfig } from '../src/timeline.js';
@@ -370,6 +375,57 @@ describe('the frame loop', () => {
     expect(() => getCompositions()).toThrow(/"fps" of composition "NoFps"/);
     registerRoot(() => <Composition id="NoDur" component={Hello} width={10} height={10} fps={30} />);
     expect(() => getCompositions()).toThrow(/"durationInFrames" of composition "NoDur"/);
+  });
+
+  it('holds the frame for loadFont().waitUntilDone() in a delayRender, then measures a weight that was not loaded', async () => {
+    const faces = (weights: number[]) =>
+      weights
+        .map((w) => `@font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: ${w}; src: url(https://fonts.gstatic.com/plex-${w}.ttf) format('truetype'); }`)
+        .join('\n');
+    const fetch = async (url: string) => ({
+      ok: true,
+      status: 200,
+      text: async () => faces([500, 600]),
+      arrayBuffer: async () => new Uint8Array([1, 2, 3, url.length]).buffer,
+    });
+    const font = makeGoogleFont('IBMPlexSans', { fetch, cacheDir: mkdtempSync(join(tmpdir(), 'kg-plex-')) });
+    setLayoutText((request) => ({ width: request.text.length * request.size, height: request.size, lines: [], glyphs: [] }));
+    function WaitForFonts({ children }: { children: React.ReactNode }) {
+      const [ready, setReady] = useState(false);
+      const [handle] = useState(() => delayRender('fonts'));
+      useEffect(() => {
+        font.loadFont('normal', { weights: ['500', '600'] }).waitUntilDone().then(() => setReady(true), cancelRender);
+      }, []);
+      useEffect(() => {
+        if (ready) continueRender(handle);
+      }, [ready, handle]);
+      return ready ? <>{children}</> : null;
+    }
+    const Measured = () => <Rect id="m" width={measureText({ text: 'abcd', fontFamily: 'IBM Plex Sans', fontWeight: 400, fontSize: 10 }).width} height={1} fill="#fff" />;
+    registerRoot(() => (
+      <Composition id="Gate" width={100} height={20} fps={30} durationInFrames={2} component={() => <WaitForFonts><Measured /></WaitForFonts>} />
+    ));
+    try {
+      const { scene } = await createFrameRenderer('Gate').renderFrame(0);
+      expect(scene.layers).toHaveLength(1);
+      expect(JSON.stringify(scene.layers[0])).toContain('"width":40');
+    } finally {
+      setLayoutText(null);
+    }
+  });
+
+  it('fails the frame at once when a component throws after the delayRender it holds, instead of waiting for its timeout', async () => {
+    function Late() {
+      const [ready, setReady] = useState(false);
+      const [handle] = useState(() => delayRender('late'));
+      useEffect(() => {
+        void Promise.resolve().then(() => setReady(true));
+      }, []);
+      if (ready) throw new Error('boom after the effect');
+      return <Rect id="r" width={1} height={1} fill="#fff" />;
+    }
+    registerRoot(() => <Composition id="Late" width={10} height={10} fps={30} durationInFrames={2} component={Late} />);
+    await expect(createFrameRenderer('Late').renderFrame(0)).rejects.toThrow(/boom after the effect/);
   });
 
   it('shows Sequence timing in the scene', async () => {

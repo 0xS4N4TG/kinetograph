@@ -31,7 +31,7 @@ import {
   setHistoryMode,
   transitionWindowSeconds,
 } from '@kinetographdev/compat/dom';
-import { renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
+import { rejectRenderWaits, renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
 import { resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
 import { realTimers, resetVirtualClock, runAnimationFrames, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
@@ -275,6 +275,8 @@ class Renderer implements FrameRenderer {
       fonts: getFonts,
       time: () => virtualNow() / 1000,
       subFrameLayers: () => this.subFrameLayers,
+      // A render that fails while a delayRender is open would otherwise wait for that handle's timeout.
+      onError: (error) => rejectRenderWaits(error instanceof Error ? error : new Error(String(error))),
     });
     this.lastFrame = -1;
     resetVirtualClock({ keepAnimationFrames: true });
