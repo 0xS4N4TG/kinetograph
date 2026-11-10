@@ -25,6 +25,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Fixed
 
+- A `::before` or `::after` box paints its own background, border and shadow, as the box CSS 2.1 §12.1 says it is, in a line of text too.
 - HyperFrames: the root's timed children are taken out of flow, so a second sub-composition no longer draws black below the canvas.
 - HyperFrames: the root is clipped and sized from its `data-width` and `data-height`, so a root with no CSS size is not empty (#112).
 - A page edited from frame to frame draws and reads back as a fresh one does: an edited `::before` in an inline-block, boxes under `display: none`, an inline-block's `scrollWidth`.

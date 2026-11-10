@@ -209,3 +209,47 @@ fn stacking_contexts_at_z_index_zero_paint_in_tree_order_with_positioned_boxes()
     );
     assert_eq!(px(&f, 40, 40), red, "the z-index -1 child escaped its blend-mode parent");
 }
+
+/// CSS 2.1 §12.1: `::before` and `::after` generate boxes, with their own background, in flow or positioned. A
+/// `::after` that only carries a background is drawn, in a flat parent and in a `preserve-3d` one alike.
+#[test]
+fn a_pseudo_element_box_paints_its_background() {
+    let frame = shoot(
+        "pseudo-box",
+        r##"<style>.t{position:absolute;width:120px;height:160px;background:#1d2b4d;top:20px}
+.t::after{content:"";position:absolute;inset:18px 14px;background:repeating-linear-gradient(0deg,#ffd48a 0 10px,transparent 10px 34px)}
+.f{position:absolute;left:340px;top:20px;width:100px}.f::before{content:"";display:block;height:30px;background:#0f0}
+.p{position:absolute;left:170px;top:0;width:150px;height:220px;transform-style:preserve-3d}</style>
+<div class="t" style="left:20px"></div>
+<div class="p"><div class="t" style="left:0;transform:translateZ(-240px)"></div></div>
+<div class="f"></div>"##,
+        460,
+        220,
+    );
+    let striped = |x: u32| (0..160).any(|dy| px(&frame, x, 20 + dy)[0] > 200 && px(&frame, x, 20 + dy)[2] < 160);
+    assert!(striped(80), "the flat tower has no stripes");
+    assert!(striped(230), "the tower in the preserve-3d parent has no stripes");
+    assert_eq!(px(&frame, 390, 30), [0, 255, 0, 255], "an in-flow ::before block has no background");
+}
+
+/// CSS 2.1 §12.1 and §9.2.2: a `::before` in a line of text is an inline box (or an inline-block) with its own background, drawn once
+/// among the line's text. A half-transparent green over white is (127, 255, 127) once and (64, 255, 64) twice.
+#[test]
+fn an_inline_pseudo_element_in_a_line_of_text_paints_its_background_once() {
+    let frame = shoot(
+        "pseudo-inline",
+        r##"<style>p{margin:0;font-size:16px;line-height:20px;height:40px}
+.a::before{content:"";display:inline-block;width:30px;height:20px;background:rgba(0,255,0,.5)}
+.b::before{content:"ab";background:rgba(0,255,0,.5)}</style>
+<p class="a">text</p><p class="b">text</p>"##,
+        200,
+        80,
+    );
+    for (name, at) in [("inline-block", (15, 10)), ("inline", (4, 45))] {
+        let p = px(&frame, at.0, at.1);
+        assert!(
+            (p[0] as i32 - 127).abs() < 3 && p[1] == 255 && (p[2] as i32 - 127).abs() < 3,
+            "the {name} ::before is not drawn once at {at:?}: {p:?}"
+        );
+    }
+}
