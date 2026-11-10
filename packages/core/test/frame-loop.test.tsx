@@ -346,6 +346,32 @@ describe('the frame loop', () => {
     expect(scene).toMatchObject({ width: 64, height: 10, fps: 60 });
   });
 
+  it('lets calculateMetadata supply fps and durationInFrames', async () => {
+    registerRoot(() => (
+      <>
+        <Composition
+          id="Late"
+          component={Hello}
+          width={10}
+          height={10}
+          calculateMetadata={async () => ({ fps: 25, durationInFrames: 50 })}
+        />
+        <Composition id="Half" component={Hello} width={10} height={10} fps={24} calculateMetadata={() => ({ durationInFrames: 8 })} />
+        <Composition id="None" component={Hello} width={10} height={10} calculateMetadata={() => ({ fps: 30 })} />
+      </>
+    ));
+    expect(await createFrameRenderer('Late').ready()).toMatchObject({ fps: 25, durationInFrames: 50 });
+    expect(await createFrameRenderer('Half').ready()).toMatchObject({ fps: 24, durationInFrames: 8 });
+    expect(() => createFrameRenderer('None')).toThrow(/"durationInFrames" of composition "None".*calculateMetadata/);
+  });
+
+  it('still rejects a missing fps or durationInFrames when nothing calculates them', () => {
+    registerRoot(() => <Composition id="NoFps" component={Hello} width={10} height={10} durationInFrames={5} />);
+    expect(() => getCompositions()).toThrow(/"fps" of composition "NoFps"/);
+    registerRoot(() => <Composition id="NoDur" component={Hello} width={10} height={10} fps={30} />);
+    expect(() => getCompositions()).toThrow(/"durationInFrames" of composition "NoDur"/);
+  });
+
   it('shows Sequence timing in the scene', async () => {
     registerRoot(() => (
       <Composition
