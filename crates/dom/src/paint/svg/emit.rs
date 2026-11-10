@@ -828,7 +828,9 @@ fn dashed(path: &BezPath, offset: f64, pattern: &[f64]) -> BezPath {
             .map(|seg| kurbo::ParamCurveArclen::arclen(&seg, 1e-3))
             .sum();
         let closed = matches!(sub.last(), Some(PathEl::ClosePath));
-        if closed && first_dash_left >= length {
+        // A dash as long as the outline is the usual case (the page measured it with `getTotalLength`), and its
+        // length can come out a hair under ours.
+        if closed && first_dash_left >= length - 1e-3 * length.max(1.0) {
             out.extend(sub.iter().copied());
         } else {
             out.extend(kurbo::dash(sub.iter().copied(), offset, pattern));
