@@ -370,6 +370,18 @@ describe('the frame loop', () => {
     expect(() => createFrameRenderer('None')).toThrow(/"durationInFrames" of composition "None".*calculateMetadata/);
   });
 
+  it('marks a composition whose fps or length is left to calculateMetadata as pending', () => {
+    registerRoot(() => (
+      <>
+        <Composition id="Late" component={Hello} width={10} height={10} calculateMetadata={() => ({ fps: 25, durationInFrames: 50 })} />
+        <Composition id="Plain" component={Hello} width={10} height={10} fps={30} durationInFrames={5} />
+      </>
+    ));
+    const [late, plain] = getCompositions();
+    expect(late!.metadataPending).toBe(true);
+    expect(plain).not.toHaveProperty('metadataPending');
+  });
+
   it('still rejects a missing fps or durationInFrames when nothing calculates them', () => {
     registerRoot(() => <Composition id="NoFps" component={Hello} width={10} height={10} durationInFrames={5} />);
     expect(() => getCompositions()).toThrow(/"fps" of composition "NoFps"/);

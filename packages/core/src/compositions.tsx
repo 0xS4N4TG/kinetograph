@@ -16,6 +16,11 @@ export interface CompositionInfo {
   fps: number;
   durationInFrames: number;
   defaultProps: Record<string, unknown>;
+  /**
+   * True when `fps` or `durationInFrames` is left to `calculateMetadata`: they are placeholders (30 fps, 1 frame) until a
+   * caller that lists compositions has run it (the CLI's `compositions` and Studio do).
+   */
+  metadataPending?: boolean;
   /** JSON Schema of the composition's zod (v4) `schema`; absent when there is none or it can't be converted. */
   propsSchema?: Record<string, unknown>;
 }
@@ -274,8 +279,8 @@ export function propsSchemaOf(schema: unknown): Record<string, unknown> | undefi
 /** The compositions of the registered Root, with their declared (not yet `calculateMetadata`-adjusted) settings. */
 export function getCompositions(): CompositionInfo[] {
   return discover().map(({ id, width, height, fps, durationInFrames, defaultProps, schema }) => {
-    // A composition whose `calculateMetadata` supplies fps or the length shows 30 fps and 1 frame until it is resolved.
     const info: CompositionInfo = { id, width, height, fps: fps ?? 30, durationInFrames: durationInFrames ?? 1, defaultProps };
+    if (fps === undefined || durationInFrames === undefined) info.metadataPending = true;
     const propsSchema = propsSchemaOf(schema);
     if (propsSchema !== undefined) info.propsSchema = propsSchema;
     return info;

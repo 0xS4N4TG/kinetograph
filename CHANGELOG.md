@@ -42,6 +42,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - `getVideoMetadata()` reports the container's length, as a browser does, so a sound that runs past the last picture counts (the tiktok template renders 358 frames, as in Remotion, not 357).
 - A remote `@import` of a stylesheet (Google Fonts' `css2?family=...`) in a Remotion project's CSS is downloaded and locked by `fetch-deps` (and before a render), with the font files it names, and loaded as a browser would; https only, from the locked cache only (never during a render), each stylesheet read once, at most 16 and 1 MiB, only its `@font-face` rules are used (nothing of it reaches the page), relative URLs resolved against the stylesheet.
 - A remote file is read at render time (`fetch()`, audio data, video length) only from what `fetch-deps` downloaded and locked, and only for a GET or HEAD without a body.
+- Listing compositions (`kinetograph compositions`, Studio) runs `calculateMetadata` for a composition whose fps or length comes from it, instead of showing placeholders.
 
 ## 0.3.0 (2026-11-03)
 
