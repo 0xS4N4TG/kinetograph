@@ -50,6 +50,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A `var()` in the `style` attribute of an SVG shape (`stroke-dashoffset: var(--d)`) no longer drops the declarations after it.
 - A `backdrop-filter` with a colour function before `blur()` still reads only the backdrop inside the element's box.
 - `ProgressEvent` exists in page scripts, so three.js file loaders (the 3D devices of the liquid-glass pages, extruded-logo) no longer stop at "ProgressEvent is not defined".
+- A `url(#id)` in `mask-image` or another property names an element of the page, so it is no longer reported as a missing file.
 
 ## 0.3.0 (2026-11-03)
 
