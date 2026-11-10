@@ -251,6 +251,9 @@ export function scopeModule(css: string, file: string): { css: string; exports: 
 
 // ---- the esbuild plugin ----
 
+/** A `pluginData` key that says a bundle with this file cannot be reused (`bundle-cache.ts`). */
+export const UNCACHEABLE = 'kinetographUncacheable';
+
 /** Turns each imported `.css` into a module that registers its text. */
 export function cssPlugin(): Plugin {
   return {
@@ -262,14 +265,15 @@ export function cssPlugin(): Plugin {
         for (const text of read.warnings) warnings.push({ text });
         let css = read.css;
         const files = [...read.files];
-        if (usesTailwind(readFileSync(args.path, 'utf8'))) {
+        const tailwind = usesTailwind(readFileSync(args.path, 'utf8'));
+        if (tailwind) {
           const built = await buildTailwind(args.path);
           if ('css' in built) {
             css = absolutizeUrls(built.css, dirname(args.path));
           } else {
             warnings.push({ text: built.error });
             const note = `noteStylesheetProblem(${JSON.stringify(built.error)});`;
-            return finish(args.path, css, {}, files, warnings, note);
+            return finish(args.path, css, {}, files, warnings, note, tailwind);
           }
         }
         let exports: Record<string, string> = {};
@@ -278,7 +282,7 @@ export function cssPlugin(): Plugin {
           css = scoped.css;
           exports = scoped.exports;
         }
-        return finish(args.path, css, exports, files, warnings, '');
+        return finish(args.path, css, exports, files, warnings, '', tailwind);
       });
     },
   };
@@ -291,6 +295,7 @@ function finish(
   files: string[],
   warnings: { text: string }[],
   extra: string,
+  tailwind: boolean,
 ) {
   const text = JSON.stringify(css);
   const lines: string[] = [];
@@ -308,5 +313,8 @@ function finish(
     resolveDir: dirname(file),
     watchFiles: files,
     warnings,
+    // Tailwind makes its CSS from the class names in every source file under the project, which a bundle's inputs do
+    // not list: a bundle that has it is made again (`bundle-cache.ts`).
+    ...(tailwind ? { pluginData: { [UNCACHEABLE]: true } } : {}),
   };
 }
