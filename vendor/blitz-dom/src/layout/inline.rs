@@ -339,6 +339,14 @@ impl LayoutPassState<'_> {
                 .downcast_element_mut()
                 .unwrap()
                 .inline_layout_data = Some(inline_layout);
+            // No out-of-flow pass runs for this output (it has no positioning area), so
+            // the boxes an earlier layout hoisted here (since hidden) are given up.
+            if inputs.run_mode == RunMode::PerformLayout {
+                taffy::LayoutContainingBlock::clear_hoisted_children(
+                    self,
+                    crate::taffy_node_id(node_id),
+                );
+            }
             return LayoutOutput::from_outer_size(
                 Size::ZERO.maybe_max(container_pb.sum_axes().map(Some)),
             );

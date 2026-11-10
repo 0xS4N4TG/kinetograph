@@ -929,6 +929,45 @@ fn a_cached_table_cell_keeps_its_text_in_the_middle() {
     );
 }
 
+/// An absolutely positioned box an edit hides inside inline content with nothing else in it is not drawn: the line's
+/// layout returned early with no out-of-flow pass, so its containing block kept the box among those it hoisted
+/// (fuzz seed 1138).
+#[test]
+fn a_hidden_out_of_flow_box_in_empty_inline_content_is_not_drawn() {
+    let page = |display: &str| {
+        request(el(
+            "div",
+            "$0",
+            "position: absolute; inset: 0; font: 16px 'DM Sans'",
+            vec![
+                text("alpha"),
+                el(
+                    "p",
+                    "$0.0",
+                    "transform: rotate(4deg)",
+                    vec![el(
+                        "span",
+                        "$0.0.0",
+                        "",
+                        vec![el(
+                            "div",
+                            "$0.0.0.0",
+                            &format!("position: absolute; display: {display}; width: 30px; height: 12px; background: #9a3"),
+                            vec![],
+                        )],
+                    )],
+                ),
+            ],
+        ))
+    };
+    let mut cache = IslandCache::default();
+    drawn(&mut cache, &page("inline-block"), Some(1));
+    assert_eq!(
+        drawn(&mut cache, &page("none"), Some(2)),
+        drawn(&mut IslandCache::default(), &page("none"), None)
+    );
+}
+
 /// Every rect shape in `layers`, as its width and height.
 fn rects(layers: &Value, out: &mut Vec<(f64, f64)>) {
     match layers {
