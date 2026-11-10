@@ -43,6 +43,11 @@ describe('colours', () => {
     expect(hex('hsl(120, 100%, 50%)')).toBe('#00ff00');
     expect(hex('hsla(240deg 100% 25% / 0.5)')).toBe('#00008080');
     expect(hex('transparent')).toBe('#00000000');
+    // What `getComputedStyle` gives for a `color-mix()`: the sRGB `color()` form.
+    expect(hex('color(srgb 0.15749 0.310118 0.60902)')).toBe('#284f9b');
+    expect(hex('color(srgb 1 0 0 / 0.5)')).toBe('#ff000080');
+    expect(hex('color(srgb 100% 0% 0%)')).toBe('#ff0000');
+    expect(hex('color(display-p3 1 0 0)')).toBeNull();
     expect(hex('not a colour')).toBeNull();
     expect(hex('#12')).toBeNull();
     expect(hex('rgb(1, 2)')).toBeNull();

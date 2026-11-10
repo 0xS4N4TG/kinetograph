@@ -769,6 +769,7 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
     const existing = googleFonts.find((f) => f.family === bundled.family);
     if (existing) existing.as = [...new Set([...(existing.as ?? []), ...bundled.as])];
     else googleFonts.push({ family: bundled.family, variants: bundled.weights, as: bundled.as, cacheOnly: true });
+    for (const name of bundled.nearest) builder.note(`font ${name} is a system font and is not read: it is drawn in ${bundled.family}, the nearest bundled family (register the font file with an @font-face to use it)`);
   }
 
   // The root's own variables: what `<html>` and the root element declare, under the values the root element gives.

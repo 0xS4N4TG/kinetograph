@@ -268,6 +268,18 @@ describe('fonts HyperFrames embeds', () => {
     expect(byFamily['EB Garamond']).toMatchObject({ as: ['Georgia'] });
   });
 
+  it('sets Impact, which HyperFrames reads from the machine, in the heavy bundled Archivo Black, and says so once', async () => {
+    const dir = project({
+      'index.html': page(`<style>.a { font-family: Impact, "Arial Black", Arial, sans-serif } .b { font-family: Impact, sans-serif }</style>`),
+    });
+    const { plan } = await buildPlan(join(dir, 'index.html'));
+    const byFamily = Object.fromEntries(plan.googleFonts.map((f) => [f.family, f]));
+    expect(byFamily['Archivo Black']).toMatchObject({ variants: ['400'], as: ['Impact'], cacheOnly: true });
+    // Arial Black is HyperFrames' own alias (Montserrat), unchanged.
+    expect(byFamily.Montserrat).toMatchObject({ as: ['Arial Black'] });
+    expect(plan.notes.filter((n) => n.includes('Impact'))).toEqual([expect.stringContaining('Archivo Black')]);
+  });
+
   it('leaves a family the page loads or declares itself', async () => {
     const dir = project({
       'index.html': page(

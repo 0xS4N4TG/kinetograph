@@ -14,7 +14,7 @@
 import { type ReactNode } from 'react';
 import { Audio, createSceneRoot } from '@kinetographdev/react';
 import { noteStylesheetProblem, registerStylesheet, setRemoteAssetResolver } from '@kinetographdev/compat/dom';
-import { hostOf, setPageDocument, setRefusedFetchHandler, setRemoteFiles, whenFetchesSettle } from '@kinetographdev/compat/shim';
+import { hostOf, setPageDocument, setRefusedFetchHandler, setRemoteFiles, whenFetchesSettle, withCurrentScript } from '@kinetographdev/compat/shim';
 import { continueRender, delayRender } from '../assets.js';
 import { Composition, registerRoot } from '../compositions.js';
 import { Sequence, useCurrentFrame, useVideoConfig } from '../timeline.js';
@@ -106,21 +106,9 @@ function buildNode(node: HfNode, parent: AnyRecord): void {
   parent.appendChild(el);
 }
 
-/**
- * `template.content`: the nodes of the template, kept out of the document. A browser's `DocumentFragment` has no
- * counterpart in the DOM shim, so `content.cloneNode(true)` is an `hf-fragment` element with `display: contents`
- * holding the clones, which lays out as its children do, and `content` itself is a detached holder with the nodes.
- */
+/** `template.content`: the shim's own fragment (a `DocumentFragment` with `getElementById`, `cloneNode(true)` and `querySelector`) holding the template's nodes, kept out of the document. */
 function defineTemplateContent(template: AnyRecord, nodes: HfNode[]): void {
-  const holder = doc().createElement('div');
-  for (const child of nodes) buildNode(child, holder);
-  holder.cloneNode = (deep = true): AnyRecord => {
-    const fragment = doc().createElement('hf-fragment');
-    fragment.style.setProperty('display', 'contents');
-    for (const child of Array.from(holder.childNodes) as AnyRecord[]) fragment.appendChild(child.cloneNode(deep));
-    return fragment;
-  };
-  Object.defineProperty(template, 'content', { configurable: true, get: () => holder });
+  for (const child of nodes) buildNode(child, template.content);
 }
 
 function applyAttrs(el: AnyRecord, attrs: [string, string][]): void {
@@ -224,7 +212,7 @@ class Runtime {
 
     for (const script of inRunOrder(plan.scripts)) {
       if (script.scope === null) {
-        runGlobalScript(script.code, script.file, report);
+        withCurrentScript(doc().body, () => runGlobalScript(script.code, script.file, report));
         continue;
       }
       const scope = script.scope;
@@ -241,7 +229,7 @@ class Runtime {
             path.startsWith('/') || /^[a-z]+:/i.test(path) ? path : `${sourceFile === null ? plan.baseDir : sourceFile.replace(/[/\\][^/\\]*$/, '')}/${path}`,
         },
       };
-      runScopedScript(script.code, script.file, env, report);
+      withCurrentScript(env.root() as any, () => runScopedScript(script.code, script.file, env, report));
     }
     // Pages listen for these; in a browser both have fired by the time a render starts.
     for (const target of [g.document, g]) {

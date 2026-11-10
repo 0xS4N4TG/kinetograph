@@ -25,6 +25,13 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Fixed
 
+- HyperFrames: `template.content` is the DOM shim's own fragment, so `content.getElementById(...)` works (a runtime stand-in `div` had none), as do the fragment's other methods.
+- HyperFrames: `Impact`, which HyperFrames reads from the machine that renders, is set in the bundled Archivo Black (a heavy face) instead of the regular weight of the next family, and the page is told once.
+- A canvas reads `color(srgb ...)` for `fillStyle`, `strokeStyle`, gradient stops and shadows, which is how `getComputedStyle` gives a `color-mix()` (ink-bleed-reveal drew black).
+- The DOM shim's inline `style` has `getPropertyPriority()`, and `setProperty(name, value, "important")` keeps the priority (a script that reads and restores a hidden clip's `display` threw on it).
+- The DOM shim has `svg.viewBox`, `createSVGPoint()` and `SVGPoint.matrixTransform` (also on `getPointAtLength()`), and `getCTM()` / `getScreenCTM()` give matrices with `inverse()` and `multiply()`; `getScreenCTM()` now includes the viewBox and the svg's place on the page.
+- The DOM shim has `XMLSerializer`: `serializeToString` writes an element, fragment, text node or document as XML with its namespaces.
+- HyperFrames: `document.currentScript` is the script that is running (a component finds its root with `document.currentScript.closest("#root")`), where it was always null.
 - HyperFrames: the root's timed children are taken out of flow, so a second sub-composition no longer draws black below the canvas.
 - HyperFrames: the root is clipped and sized from its `data-width` and `data-height`, so a root with no CSS size is not empty (#112).
 - A page edited from frame to frame draws and reads back as a fresh one does: an edited `::before` in an inline-block, boxes under `display: none`, an inline-block's `scrollWidth`.
