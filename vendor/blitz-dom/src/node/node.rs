@@ -511,6 +511,12 @@ impl Node {
         }
         let display = self.display_style().unwrap_or(StyloDisplay::inline());
         match display.outside() {
+            // A `display: contents` element's children are in its parent's flow.
+            DisplayOutside::None if display.inside() == DisplayInside::Contents => self
+                .children
+                .iter()
+                .copied()
+                .any(|child_id| self.tree()[child_id].is_or_contains_block()),
             DisplayOutside::None => false,
             DisplayOutside::Block => true,
             _ => {

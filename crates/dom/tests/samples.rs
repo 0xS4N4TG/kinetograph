@@ -818,6 +818,46 @@ fn a_fresh_document_draws_the_pseudo_element_of_a_nested_inline() {
     );
 }
 
+/// A block inside a `display: contents` element inside inline content breaks the line, as it does with an inline
+/// element there: Blitz did not look through the contents element for it, so it laid the block out as an inline box
+/// on the line, and an edit that made the element inline left the inline beside the block with no box (fuzz seed
+/// 1056963).
+#[test]
+fn a_block_inside_display_contents_inside_inline_content_breaks_the_line() {
+    let page = |b: &str| {
+        request(el(
+            "div",
+            "$0",
+            "position: absolute; inset: 0; font: 16px 'DM Sans'",
+            vec![el(
+                "em",
+                "$0.0",
+                "",
+                vec![
+                    el(
+                        "b",
+                        "$0.0.0",
+                        &format!("display: {b}"),
+                        vec![
+                            text("alpha"),
+                            el("span", "$0.0.0.1", "", vec![text("beta"), el("div", "$0.0.0.1.1", "", vec![])]),
+                        ],
+                    ),
+                    text("gamma"),
+                ],
+            )],
+        ))
+    };
+    let (_, _, width, _) = bounds(&resolve(&page("contents")), "$0.0.0.1.1");
+    assert_eq!(width, 1000.0, "the block takes the line's width");
+    let mut cache = IslandCache::default();
+    drawn(&mut cache, &page("contents"), Some(1));
+    assert_eq!(
+        drawn(&mut cache, &page("inline"), Some(2)),
+        drawn(&mut IslandCache::default(), &page("inline"), None)
+    );
+}
+
 /// Every rect shape in `layers`, as its width and height.
 fn rects(layers: &Value, out: &mut Vec<(f64, f64)>) {
     match layers {
