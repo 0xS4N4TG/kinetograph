@@ -356,6 +356,21 @@ fn computed_styles() {
 }
 
 #[test]
+fn a_percentage_translate_resolves_against_the_unrounded_box() {
+    // CSS Transforms: the resolved value of `transform` is the used matrix, percentages taken of the reference box, the
+    // border box at its layout size (200.25 high), not the pixel-snapped one (`offsetHeight` 200).
+    let root = el(
+        "div",
+        "$0",
+        "position: absolute; width: 300.5px; height: 200.25px; transform: translate(-50%, -50%)",
+        vec![],
+    );
+    let island = resolve(&request(root));
+    let v = readback::computed_style(&island, "$0", &["transform".to_string()]).unwrap();
+    assert_eq!(v[0], "matrix(1, 0, 0, 1, -150.25, -100.125)");
+}
+
+#[test]
 fn a_page_island_is_the_document_html_and_body_included() {
     // A HyperFrames page: the tree's root is an `<html>` with a `<body>`, which become the document's own.
     let root = el_attrs(

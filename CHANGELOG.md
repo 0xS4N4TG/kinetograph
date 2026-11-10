@@ -41,6 +41,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - HyperFrames: the page's `getVariables()` returns the defaults declared on any element outside the compositions it mounts, not only on the root (staggered-fade-up, typewriter).
 - HyperFrames: a block whose root says `data-composition-id="main"` but is mounted by a host with another id runs its own timeline and takes its rules for `main` (13 shader blocks and 9 transition reels).
 - HyperFrames: the page's scripts run before the scripts of the compositions it mounts, so a page script can still edit a `<template>` a component clones from.
+- `getComputedStyle(el).transform` resolves percentages against the box's layout size, not its pixel-snapped size.
 
 ## 0.3.0 (2026-11-03)
 
