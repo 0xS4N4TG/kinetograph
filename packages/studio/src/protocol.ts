@@ -1,4 +1,4 @@
-// The studio's HTTP and WebSocket API (packages/cli/skills/kinetograph/references/AUTHORING.md §11.5). The server
+// The studio's HTTP and WebSocket API (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §11.5). The server
 // answers with these shapes and the UI reads them; both import this file:
 // types and the binary frame codec, nothing that touches Node or the DOM.
 

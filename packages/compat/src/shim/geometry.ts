@@ -1,4 +1,4 @@
-// SVG measurement for `getBBox`, `getTotalLength` and `getPointAtLength` (packages/cli/skills/kinetograph/references/ENGINE.md §1, "Readback"). Shapes are
+// SVG measurement for `getBBox`, `getTotalLength` and `getPointAtLength` (packages/cli/skills/kinetograph-markup/references/ENGINE.md §1, "Readback"). Shapes are
 // written as path data and handed to the path measuring functions of `@kinetographdev/core/paths` (set with
 // `setPathMeasure`; compat cannot import core). Lengths are in the element's own user units, before any transform.
 

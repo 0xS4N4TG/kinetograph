@@ -18,7 +18,8 @@
     "CERES-LICENSE",
     "EIGEN-COPYING.BSD",
     "EIGEN-COPYING.MPL2",
-    "LIBMV-LICENSE"
+    "LIBMV-LICENSE",
+    "NOTICE"
   ],
   "description": "Node-API addon exposing the Kinetograph renderer",
   "keywords": [

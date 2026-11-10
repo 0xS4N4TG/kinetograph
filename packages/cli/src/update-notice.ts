@@ -10,7 +10,17 @@ import { dirname, join, parse, resolve } from 'node:path';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const REGISTRY_URL = 'https://registry.npmjs.org/kinetograph/latest';
 const TIMEOUT_MS = 1500;
-const SKILL_NAMES = ['kinetograph', 'kinetograph-migrate'];
+/** The skills in packages/cli/skills; packages/cli/test/skill-stamp.test.ts keeps this equal to the folders. */
+export const SKILL_NAMES = [
+  'kinetograph',
+  'kinetograph-create',
+  'kinetograph-markup',
+  'kinetograph-studio',
+  'kinetograph-render',
+  'kinetograph-docs',
+  'kinetograph-upgrade',
+  'kinetograph-migrate',
+];
 export const SKILLS_UPDATE_COMMAND = 'npx skills add 0xS4N4TG/kinetograph';
 /** Ends each notice, so an agent whose skills predate the notice rule still asks the user. */
 export const AGENT_HINT = ' (coding agents: tell the user and ask first)';
