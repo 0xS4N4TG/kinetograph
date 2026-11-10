@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   AUDIO_DATA_SAMPLE_RATE,
+  type MediaUtilsAudioData,
   getAudioData,
   getAudioDurationInSeconds,
   getWaveformPortion,
@@ -11,6 +12,7 @@ import {
 } from '../src/media-utils.js';
 import { NodeFontFace, installFontFace } from '../src/font-face.js';
 import { clearFonts, getFonts } from '../src/font-registry.js';
+import { fixture } from './helpers.js';
 
 const RATE = AUDIO_DATA_SAMPLE_RATE;
 
@@ -18,6 +20,38 @@ const RATE = AUDIO_DATA_SAMPLE_RATE;
 function sine(hz: number, seconds: number, amplitude = 1): Float32Array[] {
   const samples = Float32Array.from({ length: Math.round(seconds * RATE) }, (_, i) => amplitude * Math.sin((2 * Math.PI * hz * i) / RATE));
   return [samples, samples.slice()];
+}
+
+interface SignalSpec {
+  seconds: number;
+  sampleRate?: number;
+  channels: { seed?: number; parts: { kind: string; hz?: number; amp: number }[]; impulses?: [number, number][] }[];
+}
+
+/** The synthetic AudioData of a fixture spec (the recording script has the same generator). */
+function signalOf(spec: SignalSpec): MediaUtilsAudioData {
+  const rate = spec.sampleRate ?? 48000;
+  const n = Math.round(rate * spec.seconds);
+  const channelWaveforms = spec.channels.map((ch) => {
+    const a = new Float32Array(n);
+    let seed = ch.seed ?? 1;
+    for (let i = 0; i < n; i++) {
+      const t = i / rate;
+      let x = 0;
+      for (const part of ch.parts) {
+        if (part.kind === 'sine') x += part.amp * Math.sin(2 * Math.PI * part.hz! * t);
+        else if (part.kind === 'noise') {
+          seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+          x += part.amp * ((seed / 4294967296) * 2 - 1);
+        } else if (part.kind === 'dc') x += part.amp;
+        else if (part.kind === 'ramp') x += (t / spec.seconds) * part.amp * Math.sin(2 * Math.PI * part.hz! * t);
+      }
+      a[i] = x;
+    }
+    for (const [pos, amp] of ch.impulses ?? []) a[pos] = amp;
+    return a;
+  });
+  return { channelWaveforms, sampleRate: rate, durationInSeconds: n / rate, numberOfChannels: channelWaveforms.length, resultId: 'fixture', isRemote: false };
 }
 
 function serve(files: Record<string, Float32Array[]>) {
@@ -73,18 +107,29 @@ describe('getAudioData and its hooks', () => {
 });
 
 describe('visualizeAudio', () => {
-  it('puts a tone in its band, reads about 1 for a full-scale sine, and is the same on every call', () => {
+  it('puts a tone in its bins and is the same on every call', () => {
     serve({ 'tone.wav': sine(3000, 1) });
     const audioData = useAudioData('tone.wav')!;
     const bands = visualizeAudio({ audioData, frame: 15, fps: 30, numberOfSamples: 16 });
     expect(bands).toHaveLength(16);
-    // 16 bands over 0..24 kHz are 1.5 kHz each: 3 kHz is the start of band 2.
-    const loudest = bands.indexOf(Math.max(...bands));
-    expect(loudest).toBe(2);
-    expect(bands[loudest]).toBeGreaterThan(0.8);
-    expect(bands[loudest]).toBeLessThanOrEqual(1);
-    expect(bands[10]).toBeLessThan(0.01);
+    // 16 bins over 0..24 kHz are 1.5 kHz each: 3 kHz is the start of bin 2.
+    expect(bands.indexOf(Math.max(...bands))).toBe(2);
     expect(visualizeAudio({ audioData, frame: 15, fps: 30, numberOfSamples: 16 })).toEqual(bands);
+  });
+
+  // `how` of the fixture: the published package called on the synthetic signals of `signalOf`, on 63 cases (sizes,
+  // frames at and past both ends of the file, other frame rates and sample rates, a second channel, an offset).
+  it('gives what Remotion 4.0.542 gives', () => {
+    const recorded = fixture('visualize-audio-4.0.542.json');
+    for (const c of recorded.cases) {
+      const spec = recorded.specs[c.spec];
+      const audioData = signalOf(spec);
+      const got = visualizeAudio({ audioData, ...c.args });
+      expect(got, `${c.spec} ${JSON.stringify(c.args)}`).toHaveLength(c.result.length);
+      for (let i = 0; i < got.length; i++) {
+        if (Math.abs(got[i]! - c.result[i]) > 2e-5) expect.fail(`${c.spec} ${JSON.stringify(c.args)}: bin ${i} is ${got[i]}, Remotion gives ${c.result[i]}`);
+      }
+    }
   });
 
   // Remotion 4.0.539: a silent waveform used to give NaN in every band (a division by its peak, which was 0) and a waveform
@@ -100,7 +145,7 @@ describe('visualizeAudio', () => {
       expect(silence).toEqual(new Array(16).fill(0));
       const negative = visualizeAudio({ audioData: useAudioData('negative.wav')!, frame: 15, fps: 30, numberOfSamples: 16, smoothing });
       expect(negative).toHaveLength(16);
-      expect(negative.every((v) => Number.isFinite(v) && v >= 0 && v <= 1)).toBe(true);
+      expect(negative.every((v) => Number.isFinite(v) && v >= 0)).toBe(true);
     }
   });
 

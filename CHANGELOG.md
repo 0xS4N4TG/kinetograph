@@ -38,6 +38,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A `<Composition>` may leave out `fps` and `durationInFrames` when `calculateMetadata` returns them, as in Remotion (the audiogram, music-visualization and tiktok templates render unedited).
 - `createTikTokStyleCaptions()` breaks a page only before a caption that starts with a space (not a newline or tab), keeps whitespace-only captions in the page text but not as tokens, and ends the last page with the last caption.
 - A weight that was not loaded is measured in the nearest loaded one (CSS font matching) instead of throwing, and a render error after a `delayRender` fails the frame at once instead of at the handle's 30 s timeout (the audiogram template renders unedited, SSIM 0.965).
+- `visualizeAudio()` gives the values of Remotion 4.0.542: 16-bit samples, a plain FFT of 2 x `numberOfSamples`, three smoothing passes, scaled by the file's loudest sample (music-visualization template); samples past full scale wrap as 16-bit audio does.
 
 ## 0.3.0 (2026-11-03)
 
