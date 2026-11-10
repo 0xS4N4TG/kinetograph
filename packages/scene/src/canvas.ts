@@ -272,7 +272,9 @@ function fontOf(spec: FontSpec, fonts: Record<string, string>): string {
     const best = own.reduce((a, face) => (rank(face) < rank(a) ? face : a));
     return best.max > best.weight ? `${best.key}@${Math.min(best.max, Math.max(best.weight, spec.weight))}` : best.key;
   }
-  return fontKey(spec.families[0]!, spec.weight, spec.style);
+  // None is loaded: the whole list goes on, so a generic keyword at its end (`"Fira Code", monospace`) is set in the bundled
+  // font of that generic family.
+  return fontKey(spec.families.join(', '), spec.weight, spec.style);
 }
 
 interface State {

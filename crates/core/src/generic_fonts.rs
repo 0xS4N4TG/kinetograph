@@ -113,6 +113,12 @@ pub fn kind_of(name: &str) -> Option<Kind> {
     })
 }
 
+/// The first generic or system name of a comma-separated family list (`"JetBrains Mono", Menlo, monospace` is mono),
+/// which is the font the list is set in when it names no family that is loaded.
+pub fn kind_of_list(list: &str) -> Option<Kind> {
+    list.split(',').find_map(|name| kind_of(name.trim().trim_matches(['"', '\''])))
+}
+
 /// A bundled face and the weight (range) it is registered under.
 pub struct Styled {
     pub face: Face,

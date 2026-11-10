@@ -25,6 +25,8 @@ pub struct TextEngine {
     base_dir: PathBuf,
     /// Fonts of glyph runs (`GlyphRun::src`), read when first used.
     run_fonts: HashMap<(String, u32), Option<FontData>>,
+    /// The bundled fonts of the generic families are in `font_cx` (registered when a text first names one).
+    generics_registered: bool,
 }
 
 /// Shaped and positioned text. Coordinates are in pixels, relative to the
@@ -247,6 +249,7 @@ impl TextEngine {
             layout_cx: LayoutContext::new(),
             base_dir: base_dir.to_path_buf(),
             run_fonts: HashMap::new(),
+            generics_registered: false,
         })
     }
 
@@ -324,6 +327,35 @@ impl TextEngine {
         laid
     }
 
+    /// The generic family a font key stands for, with the weight and the italic its `:700i` suffix asks for, when the
+    /// key is not a family that is loaded (`generic_fonts::kind_of_list`). Registers the bundled fonts the first time.
+    fn generic_of(&mut self, key: &str) -> Option<(parley::fontique::GenericFamily, Option<f32>, bool)> {
+        if self.font_cx.collection.family_id(key).is_some() {
+            return None;
+        }
+        let (list, suffix) = match key.rsplit_once(':') {
+            Some((list, s)) if s.trim_end_matches('i').bytes().all(|b| b.is_ascii_digit()) && !s.is_empty() => (list, s),
+            _ => (key, ""),
+        };
+        let kind = crate::generic_fonts::kind_of_list(list)?;
+        if !self.generics_registered {
+            self.generics_registered = true;
+            let (sans, serif) = crate::generic_fonts::register(&mut self.font_cx.collection);
+            let mono = crate::fallback_fonts::register_monospace(&mut self.font_cx.collection);
+            for (kind, ids) in [
+                (crate::generic_fonts::Kind::Sans, sans),
+                (crate::generic_fonts::Kind::Serif, serif),
+                (crate::generic_fonts::Kind::Mono, mono.into_iter().collect()),
+            ] {
+                for g in crate::generic_fonts::generics(kind) {
+                    self.font_cx.collection.append_generic_families(*g, ids.iter().copied());
+                }
+            }
+        }
+        let weight = suffix.trim_end_matches('i').parse::<f32>().ok();
+        Some((crate::generic_fonts::generics(kind)[0], weight, suffix.ends_with('i')))
+    }
+
     /// Shapes `text` in the named font. `line_height` is a multiple of
     /// `size`; `max_width` wraps lines. `align` places each line within
     /// `max_width`, or within the widest line when there is none.
@@ -344,10 +376,23 @@ impl TextEngine {
             },
             None => (font, None),
         };
+        // A family list that names no loaded family but ends in a generic keyword (`"Fira Code", monospace`, which the
+        // canvas passes whole) is set in the bundled font of that generic family, as a browser sets it in the system's.
+        let generic = self.generic_of(font);
+        let (font, weight, italic) = match &generic {
+            Some((_, w, italic)) => (font, weight.or(*w), *italic),
+            None => (font, weight, false),
+        };
         let mut builder = self
             .layout_cx
             .ranged_builder(&mut self.font_cx, text, 1.0, false);
-        builder.push_default(StyleProperty::FontFamily(FontFamily::named(font)));
+        match &generic {
+            Some((g, _, _)) => builder.push_default(StyleProperty::from(*g)),
+            None => builder.push_default(StyleProperty::FontFamily(FontFamily::named(font))),
+        }
+        if italic {
+            builder.push_default(StyleProperty::FontStyle(parley::fontique::FontStyle::Italic));
+        }
         if let Some(w) = weight {
             builder.push_default(StyleProperty::FontWeight(FontWeight::new(w)));
         }
@@ -476,6 +521,24 @@ mod tests {
             .iter()
             .find(|r| r.glyphs.iter().any(|g| g.char_index == char_index))?;
         crate::fallback_fonts::name_of_blob(run.font.data.id())
+    }
+
+    /// CSS Fonts 4, generic families: a family list that names nothing loaded but ends in `monospace` is set in the
+    /// monospace font (here the bundled one), the way a browser sets it in the system's.
+    #[test]
+    fn a_family_list_that_ends_in_monospace_is_set_in_the_bundled_monospace_font() {
+        let mut e = engine();
+        let bundled = format!("builtin:{}", crate::fallback_fonts::monospace_face().name);
+        for font in ["monospace", "Fira Code, monospace", "Fira Code, monospace:700", "ui-monospace"] {
+            let t = e.layout("Hi Wide", font, 30.0, None, None, TextAlign::Left);
+            assert_eq!(font_of(&t, 0).as_deref(), Some(bundled.as_str()), "{font}");
+            // Every glyph is as wide as any other.
+            let widths: Vec<f32> = t.runs.iter().flat_map(|r| r.glyphs.iter().map(|g| g.advance)).collect();
+            assert!(widths.windows(2).all(|w| (w[0] - w[1]).abs() < 0.01), "{font}: {widths:?}");
+        }
+        // A list with no generic keyword stays as it was: the project's font, here the only one.
+        let t = e.layout("Hi", "Fira Code", 30.0, None, None, TextAlign::Left);
+        assert_ne!(font_of(&t, 0).as_deref(), Some(bundled.as_str()));
     }
 
     #[test]

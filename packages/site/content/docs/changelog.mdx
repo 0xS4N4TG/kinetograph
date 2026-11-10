@@ -43,6 +43,7 @@ Kinetograph is in beta, so APIs can still change between versions. The same list
 - A stylesheet rule that sets `mask-type` (Tailwind's `[mask-type:alpha]`) reaches an SVG `<mask>`: it masks by alpha, not luminance.
 - `background-clip: text` on an inline element (a gradient on a `<span>`) is cut to the element's glyphs; it was not drawn at all.
 - `mask-composite` `subtract`, `intersect` and `exclude` are drawn for alpha masks (two mask layers with `exclude` leave a ring); only `add` was.
+- Canvas text in `font = '700 24px "JetBrains Mono", monospace'` (no family of the list loaded, a generic keyword in it) is set in the bundled font of that generic family, not the default proportional one.
 
 ## 0.3.0 (2026-11-03)
 

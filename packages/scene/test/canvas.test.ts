@@ -566,6 +566,9 @@ describe('text', () => {
     expect(font('600 12px Missing, Inter')).toBe('Inter');
     // Nothing registered under that family: the key a text layer would use.
     expect(font('700 12px Unknown')).toBe('Unknown:700');
+    // A list that names nothing registered goes on whole, so a generic keyword in it (`monospace`) is set in the font of that
+    // generic family (CSS Fonts 4), which the renderer knows.
+    expect(font('700 12px "Fira Code", monospace')).toBe('Fira Code, monospace:700');
     expect(font('1.5em Inter')).toBe('Inter');
     expect((ctx.commands.at(-1) as { size: number }).size).toBe(24);
   });
