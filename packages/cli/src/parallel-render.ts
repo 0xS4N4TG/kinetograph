@@ -8,7 +8,7 @@ import type { AudioClipJson, Unsupported } from '@kinetographdev/scene';
 import { CliError } from './errors.js';
 import type { ImageFormat } from './image-sequence.js';
 import { ProfileLog, now, profiling, stage } from './profile.js';
-import type { FromWorker, ToWorker, WorkerInit } from './render-worker.js';
+import type { FromWorker, ToWorker, WorkerInit, WorkerStart } from './render-worker.js';
 import type { WorkerSpec } from './source.js';
 import { nowMs } from './time.js';
 
@@ -55,8 +55,73 @@ export function gpuBound(gpuWaitMs: number, busyMs: number): boolean {
   return gpuWaitMs > GPU_BOUND * busyMs;
 }
 
+/** A worker thread and what it said before the render took it (a `WorkerPool`'s), handed on when it is taken. */
+interface Started {
+  worker: Worker;
+  early: ((on: WorkerEvents) => void)[];
+  on?: WorkerEvents;
+}
+
+interface WorkerEvents {
+  message(message: FromWorker): void;
+  error(error: Error): void;
+  exit(code: number): void;
+}
+
+function startWorker(start: WorkerStart): Started {
+  const started: Started = { worker: new Worker(new URL('./render-worker.js', import.meta.url), { workerData: start }), early: [] };
+  const route = (event: (on: WorkerEvents) => void): void => {
+    if (started.on) event(started.on);
+    else started.early.push(event);
+  };
+  started.worker.on('message', (message: FromWorker) => route((on) => on.message(message)));
+  started.worker.on('error', (error) => route((on) => on.error(error)));
+  started.worker.on('exit', (code) => route((on) => on.exit(code)));
+  return started;
+}
+
+function listen(started: Started, on: WorkerEvents): void {
+  started.on = on;
+  for (const event of started.early.splice(0)) event(on);
+}
+
+const sameStart = (a: WorkerStart, b: WorkerStart): boolean =>
+  a.spec.entry === b.spec.entry &&
+  a.spec.bundleFile === b.spec.bundleFile &&
+  a.spec.props === b.spec.props &&
+  (a.spec.comp === undefined || a.spec.comp === b.spec.comp) &&
+  a.devReact === b.devReact &&
+  a.preferredEffectBackend === b.preferredEffectBackend;
+
+/**
+ * Render workers started as soon as the project's bundle is written, so they load it and make their renderers while
+ * this thread loads it, makes its own renderer and opens the encoder. A worker taken by `renderInParallel` is the
+ * same as one it starts itself; `dispose` stops the ones not taken.
+ */
+export class WorkerPool {
+  private readonly started: Started[] = [];
+
+  /** `start.spec.comp` undefined: the project's first composition, as the render opens when no `--comp` is given. */
+  constructor(private readonly start: WorkerStart, count: number) {
+    for (let i = 0; i < count; i++) this.started.push(startWorker(start));
+  }
+
+  /** Up to `count` workers, if they were started for `start`; the others are stopped. */
+  take(start: WorkerStart, count: number): Started[] {
+    const taken = sameStart(this.start, start) ? this.started.splice(0, count) : [];
+    this.dispose();
+    return taken;
+  }
+
+  dispose(): void {
+    for (const started of this.started.splice(0)) void started.worker.terminate();
+  }
+}
+
 export interface ParallelOptions {
   spec: WorkerSpec;
+  /** Workers already started for this render (`WorkerPool`); the rest are started here. */
+  pool?: WorkerPool;
   /** `render --scale`: the factor the scenes are drawn at (1 for full size). */
   scale: number;
   /** The pixel format the workers convert to, which the writer's encoder takes (`resolveExport`'s `convertFormat`); unused with `sequence`. */
@@ -131,6 +196,7 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
   const window = windowFrames(count);
 
   const pool: Worker[] = [];
+  const init: WorkerInit = { scale: options.scale, convertFormat: options.convertFormat, sequence: options.sequence, origin: options.origin, step: options.step };
   const log = profiling ? new ProfileLog(true) : undefined;
   let pushMs = 0;
   const started = log ? now() : 0;
@@ -325,6 +391,7 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
       switch (message.type) {
         case 'ready':
           stage('worker ready');
+          worker.postMessage({ type: 'start', ...init } satisfies ToWorker);
           idle.push(lane);
           give();
           break;
@@ -381,25 +448,23 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
       }
     };
 
-    for (let i = 0; i < count; i++) {
-      const init: WorkerInit = {
-        spec: options.spec,
-        scale: options.scale,
-        convertFormat: options.convertFormat,
-        sequence: options.sequence,
-        devReact: options.devReact,
-        preferredEffectBackend: options.preferredEffectBackend,
-        origin: options.origin,
-        step: options.step,
-      };
-      const worker = new Worker(new URL('./render-worker.js', import.meta.url), { workerData: init });
+    const start: WorkerStart = { spec: options.spec, devReact: options.devReact, preferredEffectBackend: options.preferredEffectBackend };
+    const taken = options.pool?.take(start, count) ?? [];
+    const all = Array.from({ length: count }, (_, i) => taken[i] ?? startWorker(start));
+    for (const { worker } of all) {
       lanes.set(worker, { worker, lastEnd: -2, progress: -1, givenAt: 0, played: 0, lastAt: Number.NaN });
-      worker.on('message', (message: FromWorker) => onMessage(worker, message));
-      worker.on('error', (error) => stop(error));
-      worker.on('exit', (code) => {
-        if (!settled && code !== 0) stop(new CliError('RENDER_FAILED', `a render worker exited with code ${code}`));
-      });
       pool.push(worker);
+    }
+    // What a taken worker said before (it may be ready already) is handled once every lane is in place.
+    for (const started of all) {
+      const { worker } = started;
+      listen(started, {
+        message: (message) => onMessage(worker, message),
+        error: (error) => stop(error),
+        exit: (code) => {
+          if (!settled && code !== 0) stop(new CliError('RENDER_FAILED', `a render worker exited with code ${code}`));
+        },
+      });
     }
   });
 }

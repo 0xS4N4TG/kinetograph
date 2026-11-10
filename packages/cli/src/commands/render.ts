@@ -6,11 +6,12 @@ import { parsePreferredEffectBackend } from '../effects.js';
 import { CliError } from '../errors.js';
 import { EXPORT_FLAGS, SCALE_OPTION, SEQUENCE_FLAGS, parseExportFlags, parseSequenceFlags } from '../export-options.js';
 import { FrameDrawer } from '../frame-drawer.js';
+import { WorkerPool } from '../parallel-render.js';
 import { renderSource, type RenderResult } from '../render-job.js';
 import { scaledSize } from '../scenes.js';
 import { native } from '../native.js';
 import { stage } from '../profile.js';
-import { checkFrame, type Source } from '../source.js';
+import { checkFrame, type Source, type WorkerSpec } from '../source.js';
 import { nowMs } from '../time.js';
 import {
   DEV_REACT_OPTION,
@@ -120,9 +121,17 @@ export const render: Command = {
     // worker threads are told too (`devReact`).
     const restoreReact = setReactMode(devReact);
     let source: Source | undefined;
+    let workerPool: WorkerPool | undefined;
     try {
       stage('render:start');
-      source = await openFromArgs(args);
+      // The workers start as soon as the bundle is written, and load it while this thread does (`WorkerPool`).
+      const preferredEffectBackend = parsePreferredEffectBackend(args.options['preferred-effect-backend']);
+      const onBundle = concurrency > 1
+        ? (spec: WorkerSpec): void => {
+            workerPool = new WorkerPool({ spec, devReact, preferredEffectBackend }, concurrency);
+          }
+        : undefined;
+      source = await openFromArgs(args, { onBundle });
       stage('source opened (bundle, load, ready)');
       const started = nowMs();
       const renderer = newRenderer();
@@ -141,10 +150,11 @@ export const render: Command = {
         export: flags.export,
         everyNthFrame: flags.everyNthFrame,
         devReact,
-        preferredEffectBackend: parsePreferredEffectBackend(args.options['preferred-effect-backend']),
+        preferredEffectBackend,
         strict: args.options.strict === true,
         concurrency,
         adaptiveWorkers: args.options.concurrency === undefined,
+        workerPool,
         progress: context.progress,
         onFrame(done, total) {
           if (done === total || done % Math.max(1, Math.floor(total / 10)) === 0) {
@@ -156,6 +166,7 @@ export const render: Command = {
       for (const line of describeLeftOut(summary.compat)) context.progress(line);
       return result(summary, nowMs() - started, format !== undefined);
     } finally {
+      workerPool?.dispose();
       source?.dispose();
       restoreReact();
     }

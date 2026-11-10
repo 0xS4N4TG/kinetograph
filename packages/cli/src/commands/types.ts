@@ -77,7 +77,7 @@ export function allOptions(command: Command): OptionSpec[] {
   return command.project ? [...command.options, ...PROJECT_OPTIONS] : command.options;
 }
 
-export function openFromArgs(args: ParsedArgs, extra: Pick<OpenOptions, 'unsupportedImports'> = {}): Promise<Source> {
+export function openFromArgs(args: ParsedArgs, extra: Pick<OpenOptions, 'unsupportedImports' | 'onBundle'> = {}): Promise<Source> {
   const offline = args.options.offline === true;
   setOffline(offline);
   // Before the project loads: a project that sets `window.remotion_preferredEffectBackend` itself has the last word.
