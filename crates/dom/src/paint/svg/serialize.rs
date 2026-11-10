@@ -35,6 +35,7 @@ use style_traits::ToCss;
 
 use super::css_filter::{self, FilterItem};
 use super::{color, css};
+use crate::paint::shim;
 
 /// A reason something is not drawn as Chrome would.
 #[derive(Clone, Debug)]
@@ -695,6 +696,25 @@ impl Writer<'_> {
             }
             scan_refs(&v, &mut self.refs);
             decls.push((n, v));
+        }
+        // What this Stylo drops, which `shim` carried in custom properties: a rule's `stop-color` on a `<stop>`.
+        for name in ["stop-color", "stop-opacity"] {
+            let value = self.doc.resolved_style_value(id, &shim::kg_name(name));
+            let value = value.trim();
+            if value.is_empty() || value == "initial" || decls.iter().any(|(d, _)| d == name) {
+                continue;
+            }
+            let mut value = value.to_string();
+            if color::COLOR_PROPERTIES.contains(&name) {
+                let tag = self
+                    .doc
+                    .get_node(id)
+                    .and_then(|x| x.element_data())
+                    .map(|e| e.name.local.to_string())
+                    .unwrap_or_default();
+                self.resolve_color(id, &tag, name, &mut value);
+            }
+            decls.push((name.to_string(), value));
         }
     }
 

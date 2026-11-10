@@ -51,6 +51,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A `backdrop-filter` with a colour function before `blur()` still reads only the backdrop inside the element's box.
 - `ProgressEvent` exists in page scripts, so three.js file loaders (the 3D devices of the liquid-glass pages, extruded-logo) no longer stop at "ProgressEvent is not defined".
 - A `url(#id)` in `mask-image` or another property names an element of the page, so it is no longer reported as a missing file.
+- A stylesheet rule that sets `stop-color` or `stop-opacity` on an SVG `<stop>` (`.a { stop-color: var(--brand, #f73) }`) colours the gradient; the stops were black.
 
 ## 0.3.0 (2026-11-03)
 
