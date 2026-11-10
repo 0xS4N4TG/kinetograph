@@ -119,3 +119,26 @@ fn a_custom_property_in_the_style_attribute_of_an_svg_shape_leaves_the_cascade_a
     // Inside the curve's bow nothing is drawn: the shape is not filled.
     assert_eq!(px(&frame, 300, 150), [255, 255, 255, 255]);
 }
+
+/// CSS Transforms 2: a box whose own corner lies left of and above the origin (a negative margin) and that is moved in
+/// 3D under a `perspective` (`translate3d` into the distance) is seen whole, not cut at the origin of its parent. Pushed
+/// back by 863 under 5669 of perspective, and halved by the scaled ancestor, a 450 box is about 195 wide round (960, 540).
+#[test]
+fn a_box_with_a_negative_margin_moved_in_3d_is_not_cut_at_the_origin() {
+    let frame = shoot(
+        "negative-margin-3d",
+        r##"<div style="position:relative;width:1920px;height:1080px;overflow:hidden;background:#fff">
+<div style="position:absolute;left:0;top:0;width:3840px;height:2160px;transform-origin:0 0;transform:scale(0.5)">
+<div style="position:absolute;inset:0;perspective:5669.2913px;perspective-origin:50% 50%">
+<div style="position:absolute;inset:0;transform-style:preserve-3d">
+<div style="position:absolute;inset:0;transform-style:preserve-3d">
+<div style="position:absolute;left:0;top:0;width:1500px;height:1500px;margin-left:-750px;margin-top:-750px;background:#cc0000;transform:translate3d(1920px,1080px,-863px) scale(0.3)"></div>
+</div></div></div></div></div>"##,
+        1920,
+        1080,
+    );
+    // The top left quarter of the box, which lies at negative coordinates before the move.
+    assert_eq!(px(&frame, 880, 460), [204, 0, 0, 255], "the top left of the box is missing");
+    assert_eq!(px(&frame, 1040, 620), [204, 0, 0, 255], "the bottom right");
+    assert_eq!(px(&frame, 850, 430), [255, 255, 255, 255], "the box is larger than it should be");
+}
