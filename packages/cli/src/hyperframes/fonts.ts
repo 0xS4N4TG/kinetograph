@@ -112,6 +112,15 @@ function resolveVar(value: string, custom: Map<string, string>, depth = 0): stri
   return resolveVar(custom.get(m[1]!) ?? m[2] ?? '', custom, depth + 1);
 }
 
+// The size in a `font` shorthand (a length or a size keyword, then an optional `/line-height`); the family list follows it.
+const FONT_SIZE =
+  /(?:^|\s)(?:\d*\.?\d+(?:px|pt|pc|em|rem|ex|ch|vw|vh|vmin|vmax|cm|mm|in|%)|xx-small|x-small|small|medium|large|x-large|xx-large|xxx-large|smaller|larger)(?:\s*\/\s*[^\s,]+)?\s+(\S.*)$/i;
+
+/** The family list of a `font` shorthand (`italic 700 20px/1.2 "Inter", sans-serif`), or null for a keyword such as `inherit`. */
+export function familyOfFontShorthand(value: string): string | null {
+  return FONT_SIZE.exec(value)?.[1] ?? null;
+}
+
 /** Reads the font-family declarations of CSS text (`@font-face` rules count as declaring their family). */
 export function noteCss(use: FontUse, css: string): void {
   let root: postcss.Root;
@@ -124,6 +133,11 @@ export function noteCss(use: FontUse, css: string): void {
     const prop = decl.prop.toLowerCase();
     if (prop.startsWith('--')) {
       use.custom.set(prop, decl.value);
+      return;
+    }
+    if (prop === 'font') {
+      const family = familyOfFontShorthand(decl.value);
+      if (family !== null) use.pending.push(family);
       return;
     }
     if (prop !== 'font-family') return;

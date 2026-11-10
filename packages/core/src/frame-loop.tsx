@@ -31,7 +31,7 @@ import {
   setHistoryMode,
   transitionWindowSeconds,
 } from '@kinetographdev/compat/dom';
-import { renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
+import { DELAY_RENDER_TIMEOUT, renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
 import { resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
 import { realTimers, resetVirtualClock, runAnimationFrames, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
@@ -309,6 +309,22 @@ class Renderer implements FrameRenderer {
     );
   }
 
+  /**
+   * A frame that gave up waiting for a `delayRender` handle never reaches its tree, and what stopped it may be what
+   * the engine cannot draw (an `<iframe>` whose `onLoad` never fires). The error carries the unsupported items the
+   * tree held when it gave up, as `unsupported`, for `doctor` to list.
+   */
+  private withLeftOut(error: unknown, scene: SceneRoot): unknown {
+    if (!(error instanceof Error) || (error as { code?: unknown }).code !== DELAY_RENDER_TIMEOUT) return error;
+    try {
+      const held = [...scene.snapshot().unsupported, ...reportedUnsupported()];
+      Object.assign(error, { unsupported: held });
+    } catch {
+      // The tree could not be read: the timeout is still the error.
+    }
+    return error;
+  }
+
   /** Renders, then waits until nothing is pending and returns the tree as it stands (`read` false: no tree, a frame that is only played through). */
   private async settle(scene: SceneRoot, render: () => void, animationFrames: boolean, read: false): Promise<null>;
   private async settle(scene: SceneRoot, render: () => void, animationFrames?: boolean): Promise<RenderedTree>;
@@ -321,7 +337,11 @@ class Renderer implements FrameRenderer {
     }
     for (;;) {
       await waitForFonts();
-      await whenRenderIdle();
+      try {
+        await whenRenderIdle();
+      } catch (error) {
+        throw this.withLeftOut(error, scene);
+      }
       // Let the state updates that continueRender's callers made reach the reconciler.
       await tick();
       if (openRenderHandles() === 0 && pendingFontLoads() === 0) break;

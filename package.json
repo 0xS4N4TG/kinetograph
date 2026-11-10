@@ -10,6 +10,7 @@
     "packages/react",
     "packages/core",
     "packages/audio",
+    "packages/video-matting",
     "packages/cli",
     "packages/plugins/gsap",
     "packages/plugins/p5-brush",

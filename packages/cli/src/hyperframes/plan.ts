@@ -703,7 +703,6 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
       }
     }
   }
-  if (builder.usesThree) builder.note('Three.js is not supported: its scenes are not drawn');
 
   const fonts = new Map<string, Set<string>>();
   for (const request of builder.fonts) {

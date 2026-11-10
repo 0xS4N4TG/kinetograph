@@ -7,6 +7,7 @@ import type { ReactNode } from 'react';
 import cli from '../../../../cli/package.json';
 
 import { GithubStars } from '@/components/github-stars';
+import { SearchPreload } from '@/components/search-preload';
 import { repoCounts } from '@/lib/repo';
 import { THEME } from '@/lib/theme';
 import { source } from '@/lib/source';
@@ -18,7 +19,8 @@ export const viewport: Viewport = { themeColor: '#111113' };
 export default async function Layout({ children }: { children: ReactNode }) {
   const counts = await repoCounts();
   return (
-    <RootProvider theme={THEME} search={{ options: { type: 'static', api: '/api/search' } }}>
+    <RootProvider theme={THEME} search={{ options: { type: 'static', api: '/api/search', delayMs: 0 } }}>
+      <SearchPreload api="/api/search" />
       <DocsLayout
         tree={source.getPageTree()}
         nav={{
@@ -46,9 +48,8 @@ export default async function Layout({ children }: { children: ReactNode }) {
           ),
         }}
         themeSwitch={{ enabled: false }}
-        // Fumadocs centres the layout and stretches the sidebar over the left gutter, which leaves empty space beside
-        // it on a wide screen. The same grid with no left gutter keeps the sidebar at the edge and the spare width on
-        // the right.
+        // Fumadocs centres the layout and stretches the sidebar over the left gutter, which leaves an empty strip
+        // beside it on a wide screen. The same grid with no left gutter keeps the sidebar full width at the edge.
         containerProps={{
           style: {
             gridTemplate: `"sidebar sidebar header toc toc"

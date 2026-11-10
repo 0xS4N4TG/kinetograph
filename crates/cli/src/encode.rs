@@ -505,6 +505,9 @@ pub struct Settings {
     pub audio_bitrate: Option<usize>,
     /// GIF only: the caller draws every nth frame, and the file plays them at the frame rate over n.
     pub every_nth_frame: Option<u32>,
+    /// The longest time between keyframes, in seconds, for every encoder that is not intra-only; the encoder's own
+    /// default (`sets_gop`) when left out.
+    pub keyframe_seconds: Option<f64>,
 }
 
 /// `Settings` checked against the output path and the ffmpeg that is linked: everything the encoder needs to open.
@@ -524,6 +527,7 @@ pub struct Resolved {
     pub audio_bitrate: Option<usize>,
     /// 1 unless `Settings::every_nth_frame` says.
     pub every_nth_frame: u32,
+    pub keyframe_seconds: Option<f64>,
 }
 
 /// The presets `--x264-preset` takes, fastest first: libx264's and libx265's `-preset` names.
@@ -919,6 +923,7 @@ pub fn resolve(
         audio_codec,
         audio_bitrate: settings.audio_bitrate,
         every_nth_frame,
+        keyframe_seconds: settings.keyframe_seconds,
     })
 }
 
@@ -1132,6 +1137,11 @@ fn encoder_options(
     // A keyframe every `KEYFRAME_SECONDS`, not FFmpeg's default of every 12 frames, where the encoder has no default of its own.
     if sets_gop(&settings.encoder, settings.codec) {
         video.set_gop(gop_size(fps) as u32);
+    }
+    if let Some(seconds) = settings.keyframe_seconds
+        && !matches!(settings.codec, Codec::ProRes | Codec::Gif)
+    {
+        video.set_gop((fps * seconds).round().clamp(1.0, f64::from(i32::MAX)) as u32);
     }
     match settings.encoder.as_str() {
         DEFAULT_ENCODER => {

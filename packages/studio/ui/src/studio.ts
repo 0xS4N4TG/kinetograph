@@ -14,6 +14,7 @@ import {
   type PanelAnswer,
   type PanelKind,
   type InspectResult,
+  type MattingJob,
   type ProjectInfo,
   type ReceivedFrame,
   type RenderJob,
@@ -29,6 +30,7 @@ import { PreviewAudio } from '@/lib/audio';
 import { findLayer } from '@/lib/inspect';
 import { numberByParent, numberTree } from '@/lib/names';
 import { Player } from '@/lib/player';
+import { upsertMattingJob } from '@/lib/matting';
 import { layerName, remapSelection, type FrameRange } from '@/lib/selection';
 
 function toStudioError(error: unknown): StudioError {
@@ -122,6 +124,8 @@ export interface Studio {
   submitPanel(id: string, answer: PanelAnswer[PanelKind]): boolean;
   dismissPanel(id: string): boolean;
 
+  /** The model downloads and background removals the server runs, newest state of each (`matting` messages). */
+  mattingJobs: MattingJob[];
   renders: RenderJob[];
   startRender(request: Omit<RenderRequest, 'comp' | 'props'>): Promise<RenderJob>;
   cancelRender(id: string): Promise<void>;
@@ -176,6 +180,7 @@ export function useStudio(api: StudioApi): Studio {
   const agentListeners = useRef(new Set<(event: AgentEvent) => void>());
   const historyListeners = useRef(new Set<(items: ChatRecord[]) => void>());
   const [renders, setRenders] = useState<RenderJob[]>([]);
+  const [mattingJobs, setMattingJobs] = useState<MattingJob[]>([]);
   const [panels, setPanels] = useState<OpenPanel[]>([]);
   const [panelErrors, setPanelErrors] = useState<Record<string, string>>({});
   /** Bumped by every `reload`: what the timeline and the scene tree show is from the old build. */
@@ -267,6 +272,9 @@ export function useStudio(api: StudioApi): Studio {
           break;
         case 'render':
           setRenders((jobs) => upsertJob(jobs, message.job));
+          break;
+        case 'matting':
+          setMattingJobs((jobs) => upsertMattingJob(jobs, message.job));
           break;
         case 'props':
           // Pushed by the agent: show that composition with these props (Reset still goes back to the defaults).
@@ -569,6 +577,7 @@ export function useStudio(api: StudioApi): Studio {
     panelErrors,
     submitPanel,
     dismissPanel,
+    mattingJobs,
     renders,
     startRender,
     cancelRender,
