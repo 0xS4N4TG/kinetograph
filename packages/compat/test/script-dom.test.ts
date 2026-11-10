@@ -135,3 +135,19 @@ describe('SVG viewBox, points and matrices', () => {
     expect(svg.getScreenCTM().inverse()).toBeDefined();
   });
 });
+
+describe('inline style priority', () => {
+  it('getPropertyPriority says important for what was written important, and reads the value without it', () => {
+    const el = doc().createElement('div');
+    doc().body.appendChild(el);
+    el.setAttribute('style', 'visibility:hidden');
+    expect(el.style.getPropertyPriority('visibility')).toBe('');
+    el.style.setProperty('display', 'none', 'important');
+    expect(el.style.getPropertyPriority('display')).toBe('important');
+    expect(el.style.getPropertyValue('display')).toBe('none');
+    expect(el.style.display).toBe('none');
+    el.style.setProperty('display', 'block');
+    expect(el.style.getPropertyPriority('display')).toBe('');
+    expect(el.style.getPropertyPriority('missing')).toBe('');
+  });
+});

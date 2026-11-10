@@ -83,6 +83,8 @@ const isFillLayer = (host: HostElement): boolean => host.type === 'kg-layer' && 
 
 const kebab = (name: string): string => cssPropertyName(name);
 
+const IMPORTANT = /\s*!\s*important\s*$/i;
+
 /**
  * What a script's write is stored as: the individual transform properties' initial value, `none` (GSAP writes it to
  * `translate`, `rotate` and `scale` beside its `transform`), is the same as nothing written.
@@ -106,21 +108,25 @@ function serialized(property: string, value: string): string {
 
 /** `element.style`: the inline style as React gave it, with what a script wrote on top. Properties read as camelCase. */
 function inlineStyle(host: HostElement, readbackOf: () => Readback): CSSStyleDeclarationShim {
-  const read = (property: string): string => {
+  /** The stored text of a property, with its `!important` if it has one. */
+  const stored = (property: string): string => {
     const overlay = overlayOf(host, false)?.style.get(property);
-    if (overlay !== undefined) return serialized(property, overlay);
+    if (overlay !== undefined) return overlay;
     const style = host.props.style;
     if (typeof style !== 'object' || style === null) return '';
     for (const [key, value] of Object.entries(style as Record<string, unknown>)) {
-      if (cssPropertyName(key) === property) return serialized(property, styleToCss({ [key]: value }).replace(/^[^:]*:\s*/, ''));
+      if (cssPropertyName(key) === property) return styleToCss({ [key]: value }).replace(/^[^:]*:\s*/, '');
     }
     return '';
   };
+  const read = (property: string): string => serialized(property, stored(property).replace(IMPORTANT, ''));
   const target = {
     getPropertyValue: read,
-    setProperty(property: string, value: string | null): void {
+    getPropertyPriority: (property: string): string => (IMPORTANT.test(stored(kebab(property))) ? 'important' : ''),
+    setProperty(property: string, value: string | null, priority = ''): void {
       const old = oldAttribute(host, 'style');
-      overlayOf(host, true)!.style.set(kebab(property), value === null ? '' : written(kebab(property), String(value)));
+      const important = value !== null && value !== '' && String(priority).toLowerCase() === 'important' ? ' !important' : '';
+      overlayOf(host, true)!.style.set(kebab(property), value === null ? '' : written(kebab(property), String(value)) + important);
       readbackOf().touch(host);
       recordAttribute(host, 'style', old);
     },
@@ -168,7 +174,8 @@ function inlineStyle(host: HostElement, readbackOf: () => Readback): CSSStyleDec
 export interface CSSStyleDeclarationShim {
   [property: string]: any;
   getPropertyValue(property: string): string;
-  setProperty(property: string, value: string | null): void;
+  getPropertyPriority(property: string): string;
+  setProperty(property: string, value: string | null, priority?: string): void;
   removeProperty(property: string): string;
   cssText: string;
 }

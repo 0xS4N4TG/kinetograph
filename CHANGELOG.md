@@ -25,6 +25,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Fixed
 
+- The DOM shim's inline `style` has `getPropertyPriority()`, and `setProperty(name, value, "important")` keeps the priority (a script that reads and restores a hidden clip's `display` threw on it).
 - The DOM shim has `svg.viewBox`, `createSVGPoint()` and `SVGPoint.matrixTransform` (also on `getPointAtLength()`), and `getCTM()` / `getScreenCTM()` give matrices with `inverse()` and `multiply()`; `getScreenCTM()` now includes the viewBox and the svg's place on the page.
 - The DOM shim has `XMLSerializer`: `serializeToString` writes an element, fragment, text node or document as XML with its namespaces.
 - HyperFrames: `document.currentScript` is the script that is running (a component finds its root with `document.currentScript.closest("#root")`), where it was always null.
