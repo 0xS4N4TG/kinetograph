@@ -1,4 +1,4 @@
-// `<GlslShader>` (packages/cli/skills/kinetograph/references/SCENE.md, "glsl"): a full-screen fragment shader becomes a glsl layer holding one draw of a
+// `<GlslShader>` (packages/cli/skills/kinetograph-markup/references/SCENE.md, "glsl"): a full-screen fragment shader becomes a glsl layer holding one draw of a
 // quad with the uniforms the props give.
 
 import { describe, expect, it } from 'vitest';

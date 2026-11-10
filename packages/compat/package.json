@@ -1,7 +1,7 @@
 {
   "name": "@kinetographdev/compat",
   "version": "0.3.0",
-  "description": "Remotion compat mode: DOM islands handed to the Rust CSS engine, and the DOM shim for refs and browser globals (packages/cli/skills/kinetograph/references/ENGINE.md, /docs/compat/)",
+  "description": "Remotion compat mode: DOM islands handed to the Rust CSS engine, and the DOM shim for refs and browser globals (packages/cli/skills/kinetograph-markup/references/ENGINE.md, /docs/compat/)",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

@@ -1,4 +1,4 @@
-// `navigator.gpu` and `GPUCanvasContext` that record instead of rasterising (packages/cli/skills/kinetograph/references/ENGINE.md,
+// `navigator.gpu` and `GPUCanvasContext` that record instead of rasterising (packages/cli/skills/kinetograph-markup/references/ENGINE.md,
 // "WebGPU"). A page's WebGPU code runs against these objects; the render passes it submits to a canvas become the
 // `webgpu` part of a `glsl` layer (`WebGpuContent`), and the renderer replays them on its own wgpu device with the page's
 // own WGSL. Nothing here reads a clock or anything outside the calls.
@@ -43,7 +43,7 @@ import { hashOf, LAYER_SOURCE, toBase64 } from './webgl.js';
 export class WebGpuUnsupportedError extends Error {
   override name = 'WebGpuUnsupportedError';
   constructor(what: string) {
-    super(`unsupported: ${what} (packages/cli/skills/kinetograph/references/ENGINE.md, "WebGPU")`);
+    super(`unsupported: ${what} (packages/cli/skills/kinetograph-markup/references/ENGINE.md, "WebGPU")`);
   }
 }
 

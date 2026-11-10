@@ -1,11 +1,11 @@
 ---
 title: Use with agents
-description: Give a coding agent the Kinetograph skill and MCP tools so it can write, check and render videos.
+description: Give a coding agent the Kinetograph skills and MCP tools so it can write, check and render videos.
 ---
 
 An [agent](/docs/terminology/agent/) can't watch a video, so Kinetograph gives it two things:
 
-- A **skill** that teaches it a loop: write, look, check, render. The agent can write a Remotion-style TSX project or an HTML page.
+- **Skills** that teach it a loop: write, look, check, render. The agent can write a Remotion-style TSX project or an HTML page.
 - An **MCP server** that runs each CLI command as a tool and returns frames as images.
 
 ## The MCP server
@@ -93,30 +93,39 @@ Or run `codex mcp add kinetograph -- npx -y kinetograph mcp`. `codex mcp list` s
 
 ## Install the skills
 
-There are two skills:
+There are eight skills, split by task. `kinetograph` is the entry point and says which of the others to read:
 
-- `kinetograph` teaches the write, look, check, render loop. It covers how a project is laid out, sound, Remotion compatibility, `doctor` and the CLI flags an agent needs.
-- `kinetograph-migrate` moves an existing Remotion project onto Kinetograph. See [Migrate from Remotion](/docs/guides/migrate/).
+| Skill | For |
+|---|---|
+| `kinetograph` | the loop, and which skill to use when |
+| `kinetograph-create` | a new project (`init`, `--html`), and `add` for components, templates and tastes |
+| `kinetograph-markup` | writing a composition: elements, effects, sound, fonts, plugins, what the engine draws |
+| `kinetograph-render` | `still`, `strip`, `onion`, `inspect`, `lint`, `doctor`, `render` and its export options |
+| `kinetograph-studio` | Studio, markup notes, props and presets, and the panels an agent can open |
+| `kinetograph-docs` | searching these docs and fetching a page as Markdown |
+| `kinetograph-upgrade` | updating `kinetograph`, its packages, plugins and the skills together |
+| `kinetograph-migrate` | moving an existing Remotion project onto Kinetograph. See [Migrate from Remotion](/docs/guides/migrate/) |
 
-Install both from the GitHub repo with the [`skills`](https://www.npmjs.com/package/skills) CLI. It asks which agents to install them for:
+Install them all from the GitHub repo with the [`skills`](https://www.npmjs.com/package/skills) CLI. It asks which agents to install them for:
 
 ```sh
 npx skills add 0xS4N4TG/kinetograph --list   # show what it found, install nothing
 npx skills add 0xS4N4TG/kinetograph          # install
 ```
 
-The skills also come inside the npm package. To copy them to where Claude Code looks for skills:
+To install them by hand, copy the folders from the GitHub repo:
 
 ```bash
 mkdir -p ~/.claude/skills
-cp -R node_modules/kinetograph/skills/kinetograph node_modules/kinetograph/skills/kinetograph-migrate ~/.claude/skills/
+git clone --depth 1 https://github.com/0xS4N4TG/kinetograph
+cp -R kinetograph/packages/cli/skills/kinetograph* ~/.claude/skills/
 ```
 
 For one project only, copy them to `.claude/skills/` in that project instead. Other agents that read `SKILL.md` files can use the same folders.
 
 One more skill, `kinetograph-taste-clone`, lives in [kinetograph-ui](https://github.com/0xS4N4TG/kinetograph-ui). It turns a reference reel into a spec or a reusable style. See [Match a reel, keep its taste](/docs/guides/taste/).
 
-## The loop the skill teaches
+## The loop the skills teach
 
 1. **Write** a project file that calls `registerRoot`.
 2. **Look.** `strip` shows twelve labelled frames at once, `still` shows one, and `onion` shows a motion path.

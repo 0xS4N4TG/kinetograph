@@ -1,6 +1,6 @@
 # @kinetographdev/scene
 
-The scene JSON format: types and helpers (packages/cli/skills/kinetograph/references/SCENE.md).
+The scene JSON format: types and helpers (packages/cli/skills/kinetograph-markup/references/SCENE.md).
 
 Part of [Kinetograph](https://github.com/0xS4N4TG/kinetograph), a programmatic video engine with no browser in it. See the repository for the documentation.
 
