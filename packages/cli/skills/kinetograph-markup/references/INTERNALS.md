@@ -96,7 +96,7 @@ libavformat-dev libswscale-dev libavutil-dev libclang-dev` on Debian and Ubuntu)
   test encode before they count as available (`external::opened`, tried plain and with `-low_power 1`), and
   `encode::unavailable` for the error. An encoder is looked up in each program in turn (`external::candidates`).
   Skia's CPU fallback reason comes from `skia/vk_report.rs` (Vulkan) and reaches `doctor` as `backendReason()`. The Node `kinetograph render` also writes H.265,
-  ProRes, VP9 and GIF, with `--scale`, `--crf` and the rest (packages/cli/skills/kinetograph/references/AUTHORING.md §9).
+  ProRes, VP9 and GIF, with `--scale`, `--crf` and the rest (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9).
 - **Container.** From the output's extension, `.mp4` or `.mov`; both are written with `+faststart` (the index first, so
   they play while downloading).
 - **Format.** RGBA is converted to `yuv420p` by swscale with BT.709 coefficients, limited range, and the stream is tagged

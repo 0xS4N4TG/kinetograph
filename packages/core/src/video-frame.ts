@@ -1,4 +1,4 @@
-// `onVideoFrame` of `<Video>`, `<OffthreadVideo>` and `<Html5Video>` (packages/cli/skills/kinetograph/references/AUTHORING.md
+// `onVideoFrame` of `<Video>`, `<OffthreadVideo>` and `<Html5Video>` (packages/cli/skills/kinetograph-markup/references/AUTHORING.md
 // §7.1): Remotion hands the project each shown frame as a `CanvasImageSource`. Here the frame is a `VideoFramePicture`
 // that names the file and the instant the video layer shows at that composition frame (the clip rules of SCENE.md,
 // "video"); the renderer decodes it, with the same decoder as a video layer, when a canvas draws or reads it.
