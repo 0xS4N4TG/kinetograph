@@ -965,7 +965,11 @@ impl LayoutPassState<'_> {
                 final_size.height - content_box_inset.vertical_axis_sum() - measured_size.height;
             taffy::compute_block_align_content_offset(align_content, free_space)
         };
-        inline_layout.block_offset = block_offset;
+        // Stored by the final layout only: a measurement (free space 0) after it would
+        // leave the offset wrong when the final layout is taken from taffy's cache.
+        if inputs.run_mode == RunMode::PerformLayout {
+            inline_layout.block_offset = block_offset;
+        }
         let line_box_top = container_pb.top + block_offset;
 
         // Store sizes and positions of inline boxes

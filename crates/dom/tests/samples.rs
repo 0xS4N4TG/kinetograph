@@ -889,6 +889,46 @@ fn an_element_given_another_path_is_found_by_it() {
     assert_eq!(paths(&resolved), paths(&fresh));
 }
 
+/// A table cell's text stays in the middle of its row when the cell's final layout is taken from taffy's cache: a
+/// measurement of it after its final layout (a sibling cell edited) set the text's offset for no free space, so the
+/// text sat at the top (fuzz seeds 1038 and 2031).
+#[test]
+fn a_cached_table_cell_keeps_its_text_in_the_middle() {
+    let page = |padding: &str| {
+        let td = |i: usize, style: &str| el("td", &format!("$0.0.0.0.0.{i}"), style, vec![text("alpha")]);
+        request(el(
+            "div",
+            "$0",
+            "position: absolute; inset: 0; font: 16px 'DM Sans'",
+            vec![el(
+                "section",
+                "$0.0",
+                "display: flex; flex-direction: column; position: absolute",
+                vec![
+                    el(
+                        "table",
+                        "$0.0.0",
+                        "",
+                        vec![el(
+                            "tr",
+                            "$0.0.0.0.0",
+                            "",
+                            vec![td(0, &format!("padding: {padding}")), td(1, ""), td(2, "height: 40px")],
+                        )],
+                    ),
+                    text("gamma"),
+                ],
+            )],
+        ))
+    };
+    let mut cache = IslandCache::default();
+    drawn(&mut cache, &page("0px"), Some(1));
+    assert_eq!(
+        drawn(&mut cache, &page("2px"), Some(2)),
+        drawn(&mut IslandCache::default(), &page("2px"), None)
+    );
+}
+
 /// Every rect shape in `layers`, as its width and height.
 fn rects(layers: &Value, out: &mut Vec<(f64, f64)>) {
     match layers {
