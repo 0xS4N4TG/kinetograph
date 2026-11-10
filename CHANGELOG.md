@@ -35,6 +35,13 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A package loaded twice (Studio, dev) no longer mixes up the island state of its two copies.
 - `staticFile()` returns forward slashes on Windows so CSS `url()` paths are not corrupted by backslash escapes (#100).
 - Paint decodes percent-encoded Windows drive paths with spaces in CSS background and border images (#100).
+- A font whose URL has a long name (Google Fonts' variable-axis files) is cached under a shortened file name instead of failing with ENAMETOOLONG.
+- A file named by an absolute path inside the project (the path a composition's `assetUrl()` returns) is read by `fetch` and `new Image` instead of being looked for under the project folder.
+- HyperFrames: a mounted file's root stays a child of its host, as in HyperFrames, so a host's own position and size are kept (77 catalog components drew at the top-left).
+- HyperFrames: the page's `getVariables()` returns the defaults declared on any element outside the compositions it mounts, not only on the root (staggered-fade-up, typewriter).
+- HyperFrames: a block whose root says `data-composition-id="main"` but is mounted by a host with another id runs its own timeline and takes its rules for `main` (13 shader blocks and 9 transition reels).
+- HyperFrames: the page's scripts run before the scripts of the compositions it mounts, so a page script can still edit a `<template>` a component clones from.
+- `getComputedStyle(el).transform` resolves percentages against the box's layout size, not its pixel-snapped size.
 
 ## 0.3.0 (2026-11-03)
 

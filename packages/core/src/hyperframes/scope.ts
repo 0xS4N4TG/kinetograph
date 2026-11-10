@@ -15,6 +15,12 @@ export interface ScopeEnv {
   /** The composition's root element, looked up lazily (the script may run before its host is found). */
   root: () => AnyRecord | null;
   hyperframes: AnyRecord;
+  /**
+   * The id the host has (`scope`) and the id the mounted file's root was written with, when the two differ. The file's
+   * selectors for its own id (`[data-composition-id="main"]`) mean the host, and the timeline it registers under its own
+   * id (`window.__timelines["main"]`) is the host's.
+   */
+  ids?: { scope: string; authored: string } | null;
 }
 
 const bound = (target: AnyRecord, value: unknown): unknown => (typeof value === 'function' ? value.bind(target) : value);
@@ -26,7 +32,7 @@ const IDENT_CHAR = /[\w-]|[^\x00-\x7f]/;
 const HEX = /[0-9a-fA-F]/;
 
 /**
- * `selector` with each `#<rootId>` token as an attribute selector on the host. Quoted strings and `[...]` are copied
+ * `selector` with each `#<rootId>` token as an attribute selector on the file's root (the child of the host that has the id). Quoted strings and `[...]` are copied
  * as written (an attribute value is not a lookup by id), and an id written with CSS escapes (`#a\.b`, `#\31 a`) is
  * compared unescaped. The DOM takes no escapes in an id selector, but takes them in an attribute value.
  */
@@ -76,7 +82,7 @@ export function rewriteRootId(selector: string, rootId: string): string {
           j++;
         } else break;
       }
-      out += name === rootId ? `[data-hf-root-id="${cssString(rootId)}"]` : selector.slice(i, j);
+      out += name === rootId ? `[data-hf-authored-id="${cssString(rootId)}"]` : selector.slice(i, j);
       i = j;
     } else {
       out += ch;
@@ -86,17 +92,30 @@ export function rewriteRootId(selector: string, rootId: string): string {
   return out;
 }
 
+/** `selector` with `[data-composition-id="authored"]` as the host's own, where the file's root went by another id than the host. */
+export function hostSelector(selector: string, ids: { scope: string; authored: string }): string {
+  const quote = (id: string): string => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const written = new RegExp(`\\[\\s*data-composition-id\\s*=\\s*(?:"${quote(ids.authored)}"|'${quote(ids.authored)}')\\s*\\]`, 'g');
+  return selector.replace(written, () => `[data-composition-id="${cssString(ids.scope)}"]`);
+}
+
 /** `document` limited to `root`. */
 export function scopedDocument(env: ScopeEnv): AnyRecord {
   const inside = (node: AnyRecord): boolean => {
     const root = env.root();
     return root === null || node === root || root.contains(node);
   };
-  // A mounted file's root element is the host; the planner keeps the id the file gave it as `data-hf-root-id`.
-  const rootIdOf = (): string | null => env.root()?.getAttribute?.('data-hf-root-id') ?? null;
+  // A mounted file's root element is a child of the host; the planner keeps the id the file gave it as `data-hf-authored-id`.
+  const rootIdOf = (): string | null => {
+    for (const child of Array.from((env.root()?.children ?? []) as ArrayLike<AnyRecord>)) {
+      if (child.getAttribute('data-hf-inner-root') === 'true') return child.getAttribute('data-hf-authored-id');
+    }
+    return null;
+  };
   const all = (selector: string): AnyRecord[] => {
     const rootId = rootIdOf();
-    const text = rootId === null || typeof selector !== 'string' ? selector : rewriteRootId(selector, rootId);
+    const named = env.ids == null || typeof selector !== 'string' ? selector : hostSelector(selector, env.ids);
+    const text = rootId === null || typeof named !== 'string' ? named : rewriteRootId(named, rootId);
     const found = Array.from(env.document.querySelectorAll(text) as ArrayLike<AnyRecord>);
     return env.root() === null ? found : found.filter(inside);
   };
@@ -111,8 +130,8 @@ export function scopedDocument(env: ScopeEnv): AnyRecord {
     if (found !== null && found !== undefined && inside(found)) return found;
     const root = env.root();
     if (root === null) return found ?? null;
-    if (root.id === id || rootIdOf() === id) return root;
-    return root.querySelector(`[id="${cssString(String(id))}"]`) ?? null;
+    if (root.id === id) return root;
+    return root.querySelector(`[id="${cssString(String(id))}"]`) ?? (rootIdOf() === id ? root.querySelector(`[data-hf-authored-id="${cssString(String(id))}"]`) : null);
   };
   return new Proxy(env.document, {
     get(target, prop) {
@@ -124,16 +143,49 @@ export function scopedDocument(env: ScopeEnv): AnyRecord {
   });
 }
 
-/** `window` with `__hyperframes` the composition's own (its `getVariables()`). */
+/**
+ * `window` with `__hyperframes` the composition's own (its `getVariables()`), and, where the host's id is not the one
+ * its file's root was written with, a `__timelines` that files what the script registers under the root's id under the
+ * host's, which is the clock the render seeks (HyperFrames' runtime does the same: it publishes the timeline under both
+ * ids, the authored one only when no other mount of the file owns it).
+ */
 export function scopedWindow(env: ScopeEnv): AnyRecord {
+  const ids = env.ids ?? null;
+  let registry: AnyRecord | null = null;
+  const aliased = (target: AnyRecord): AnyRecord => {
+    target.__timelines = target.__timelines ?? {};
+    if (ids === null || typeof Proxy !== 'function') return target.__timelines;
+    registry ??= new Proxy(target.__timelines as AnyRecord, {
+      get(timelines, prop) {
+        if (prop !== ids.authored) return Reflect.get(timelines, prop, timelines);
+        return Reflect.get(timelines, ids.scope, timelines) ?? Reflect.get(timelines, prop, timelines);
+      },
+      set(timelines, prop, value) {
+        if (prop !== ids.authored) return Reflect.set(timelines, prop, value, timelines);
+        const owned = Reflect.get(timelines, prop, timelines);
+        const ownsAuthored = owned === undefined || owned === Reflect.get(timelines, ids.scope, timelines);
+        const filed = Reflect.set(timelines, ids.scope, value, timelines);
+        return ownsAuthored ? Reflect.set(timelines, prop, value, timelines) && filed : filed;
+      },
+    });
+    return registry;
+  };
   return new Proxy(env.window, {
     get(target, prop) {
       if (prop === '__hyperframes') return env.hyperframes;
+      if (prop === '__timelines') return aliased(target);
       const value = Reflect.get(target, prop, target);
       // Classes keep their statics: only plain functions are bound.
       return typeof value === 'function' && value.prototype === undefined ? value.bind(target) : value;
     },
     set(target, prop, value) {
+      if (prop === '__timelines') {
+        // `window.__timelines = window.__timelines || {}` hands back the alias: the registry stays the page's.
+        if (value === registry) return true;
+        target.__timelines = value || {};
+        registry = null;
+        return true;
+      }
       return Reflect.set(target, prop, value, target);
     },
   });

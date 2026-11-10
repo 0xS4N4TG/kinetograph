@@ -1,5 +1,5 @@
 // A sub-composition's script finds the root its file wrote by that id (#109), through the planner and the runtime's
-// scoped document: the plan keeps the id as `data-hf-root-id` on the host, and the script's lookups resolve it.
+// scoped document: the root is a child of the host with the id as `data-hf-authored-id`, and the script's lookups resolve it.
 
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -35,7 +35,7 @@ const sub = `<template>
   <script>
     const root = document.getElementById('sub-root');
     window.seen = {
-      root: root && root.getAttribute('data-composition-id'),
+      root: root && root.getAttribute('data-hf-inner-root'),
       byQuery: document.querySelector('#sub-root > .m') !== null,
       byAttr: document.querySelectorAll('use[href="#sub-root"]').length,
       byGsap: gsap.utils.selector(root)('#sub-root').length,
@@ -43,7 +43,7 @@ const sub = `<template>
   </script></template>`;
 
 describe('a sub-composition root found by the id its file gave it', () => {
-  it('is the host, for getElementById, #id selectors and gsap.utils.selector', async () => {
+  it('is a child of the host, for getElementById, #id selectors and gsap.utils.selector', async () => {
     const dir = project({ 'index.html': index, 'compositions/sub.html': sub });
     const { plan } = await buildPlan(join(dir, 'index.html'), { probeDuration: () => 2 });
     const doc: any = (globalThis as any).document;
@@ -63,6 +63,6 @@ describe('a sub-composition root found by the id its file gave it', () => {
     const failures: string[] = [];
     runScopedScript(script.code, script.file, env, (m) => failures.push(m));
     expect(failures).toEqual([]);
-    expect(win.seen).toEqual({ root: 'sub', byQuery: true, byAttr: 1, byGsap: 1 });
+    expect(win.seen).toEqual({ root: 'true', byQuery: true, byAttr: 1, byGsap: 1 });
   });
 });

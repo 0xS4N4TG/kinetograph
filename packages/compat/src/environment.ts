@@ -48,11 +48,24 @@ export function resolveDocumentUrl(value: string): string {
 export function sameOriginPath(url: string): string | null {
   if (!url.toLowerCase().startsWith(DOCUMENT_URL)) return null;
   const path = url.slice(DOCUMENT_URL.length).split(/[?#]/)[0]!;
+  let decoded = path;
   try {
-    return decodeURIComponent(path);
+    decoded = decodeURIComponent(path);
   } catch {
-    return path;
+    // Not valid percent-encoding: the path as written.
   }
+  // `http://localhost/tmp/a.json` may name the file `/tmp/a.json` (a scoped `assetUrl()` gives an absolute path), and
+  // `http://localhost/C:/proj/a.json` the file `C:\proj\a.json`: it is kept as an absolute path when the file is in the
+  // project, and never otherwise (`http://localhost/etc/passwd` is the project's `etc/passwd`).
+  const drive = /^[A-Za-z]:\//.test(decoded);
+  const absolute = drive ? decoded : `/${decoded}`;
+  const inside = (root: string): boolean => {
+    const base = `${root.replace(/\\/g, '/').replace(/\/+$/, '')}/`;
+    return drive ? absolute.toLowerCase().startsWith(base.toLowerCase()) : absolute.startsWith(base);
+  };
+  const { baseDir, publicDir } = getDomEnvironment();
+  const inProject = [baseDir, publicDir].some((root) => root !== undefined && inside(root));
+  return inProject && !decoded.split('/').includes('..') ? absolute : decoded;
 }
 
 // ---- remote files ----
