@@ -20,6 +20,7 @@ import { Composition, registerRoot } from '../compositions.js';
 import { Sequence, useCurrentFrame, useVideoConfig } from '../timeline.js';
 import { finishFontLoadsSync, getFonts } from '../font-registry.js';
 import { makeGoogleFont } from '../google-fonts.js';
+import { setFrameReplay } from '../frame-replay.js';
 import { reportIsRead, reportUnsupported } from '../unsupported.js';
 import type { HfAudioFxJson } from '@kinetographdev/scene';
 import type { HfNode, HfPlan } from './plan.js';
@@ -455,6 +456,32 @@ class Runtime {
 
   /** Brings the document to `time` seconds. */
   seek(time: number, total: number, fps: number): void {
+    this.seekPage(time, total);
+    for (const el of Array.from(doc().querySelectorAll('video')) as AnyRecord[]) {
+      const clock = this.videoClock(el, time, fps);
+      // The clock the DOM painter draws the video from.
+      el.setAttribute('data-kg-video', JSON.stringify(clock.attribute));
+      el.currentTime = clock.currentTime;
+    }
+    this.applyGrading(time);
+  }
+
+  /**
+   * A frame that is played through and not drawn (the frames a worker skips over to reach its chunk, which it has to
+   * run for the page's scripts: a GSAP callback counts frames, a tween made when the timeline passes a time starts
+   * there). What the scripts can see of the frame is done: the clips, the timelines, `hf-seek`, and each video's
+   * `currentTime`. What only the picture needs is not: the videos' clock attribute for the painter, the grading, and
+   * the sounds (a frame that is drawn does them from what the scripts left).
+   */
+  replay(time: number, total: number, fps: number): void {
+    this.setup();
+    this.mount();
+    this.seekPage(time, total);
+    for (const el of Array.from(doc().querySelectorAll('video')) as AnyRecord[]) el.currentTime = this.videoClock(el, time, fps).currentTime;
+  }
+
+  /** The clips, the timelines and the page's own drawing at `time`: what a script can see of a frame. */
+  private seekPage(time: number, total: number): void {
     // Clips first: a hidden clip's contents stay hidden whatever a tween writes (the rule above is `!important`).
     for (const el of Array.from(doc().querySelectorAll('[data-start]')) as AnyRecord[]) {
       // `data-hidden` takes the clip out of the picture and leaves the rest of the pass to a clip that is not (runtime/init.ts:3094).
@@ -476,23 +503,23 @@ class Runtime {
     this.seekFailures = [];
     seekTimelines(g.__timelines ?? {}, this.plan.compositionId, time, (id) => this.clockOf(id), false, (message) => this.seekFailures.push(message));
     this.announceSeek(time);
-    for (const el of Array.from(doc().querySelectorAll('video')) as AnyRecord[]) {
-      const start = this.timing.start(el);
-      const rate = rateSpecOf(el);
-      const clock: Record<string, number> = { from: start * fps, trimBefore: sourceOffsetOf(el) * fps };
-      if (typeof rate === 'number') {
-        if (rate !== 1) clock.playbackRate = rate;
-      } else {
-        // A speed ramp: the file's time is the integral of the rate over the clip's own time (frameSources.ts:142). The
-        // engine's clock is linear, so it is handed the frame at which a plain clip would show that time.
-        clock.frame = start * fps + sourceTimeAt(rate, Math.max(0, time - start)) * fps;
-      }
-      el.setAttribute('data-kg-video', JSON.stringify(clock));
-      // The file's time at this instant, as a browser's seek leaves it: `drawImage(video)` reads the frame it names.
-      const into = Math.max(0, time - start);
-      el.currentTime = sourceOffsetOf(el) + (typeof rate === 'number' ? into * rate : sourceTimeAt(rate, into));
+  }
+
+  /** A `<video>` at `time`: the clock the engine draws it from (`data-kg-video`) and the `currentTime` a browser's seek leaves. */
+  private videoClock(el: AnyRecord, time: number, fps: number): { attribute: Record<string, number>; currentTime: number } {
+    const start = this.timing.start(el);
+    const rate = rateSpecOf(el);
+    const attribute: Record<string, number> = { from: start * fps, trimBefore: sourceOffsetOf(el) * fps };
+    if (typeof rate === 'number') {
+      if (rate !== 1) attribute.playbackRate = rate;
+    } else {
+      // A speed ramp: the file's time is the integral of the rate over the clip's own time (frameSources.ts:142). The
+      // engine's clock is linear, so it is handed the frame at which a plain clip would show that time.
+      attribute.frame = start * fps + sourceTimeAt(rate, Math.max(0, time - start)) * fps;
     }
-    this.applyGrading(time);
+    // The file's time at this instant, as a browser's seek leaves it: `drawImage(video)` reads the frame it names.
+    const into = Math.max(0, time - start);
+    return { attribute, currentTime: sourceOffsetOf(el) + (typeof rate === 'number' ? into * rate : sourceTimeAt(rate, into)) };
   }
 
   /** The animated values a tween leaves on an element (`--hf-color-grading-intensity`, `-lut-intensity`, `-exposure`). */
@@ -768,6 +795,7 @@ export function defineHyperframes(plan: HfPlan): void {
     }
   }
   const runtime = new Runtime(plan);
+  setFrameReplay((frame, fps, durationInFrames) => runtime.replay(frame / fps, durationInFrames / fps, fps));
   setRemoteFiles(plan.remoteData ?? {});
   setRefusedFetchHandler((url) =>
     noteStylesheetProblem(`fetch("${url}") was refused: the file is not cached. Run \`kinetograph fetch-deps <entry> --url ${url}\` once; a render never downloads it`),

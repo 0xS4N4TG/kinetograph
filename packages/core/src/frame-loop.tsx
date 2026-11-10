@@ -37,6 +37,7 @@ import { realTimers, resetVirtualClock, runAnimationFrames, setVirtualFrame, ste
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 import { endGsapSamples, gsapIsLoaded, sampleGsapAt, setGsapTime } from './gsap-clock.js';
 import { takePageErrors } from './page-errors.js';
+import { frameReplay, type FrameReplay } from './frame-replay.js';
 import { clearReportedUnsupported, reportedUnsupported, setReportIsRead } from './unsupported.js';
 
 export interface FrameResult {
@@ -161,9 +162,12 @@ class Renderer implements FrameRenderer {
         // GSAP's tweens are made by effects, which a frame's render runs: an effect that starts a tween at frame 30 has
         // to run at 30 for a frame after it to show the tween where a render of every frame has it. So a jump renders
         // the frames it skips, with the clock on each, and reads nothing from them.
+        const play = frameReplay();
         for (let at = was + 1; at < frame; at++) {
           setVirtualFrame(at, config.fps, { deferAnimationFrames: true });
-          await this.settle(scene, () => this.update(scene, this.element(component, config, at)), true, false);
+          // A source that says what its scripts see of a frame is played through that, without rendering the composition.
+          const render = play === null ? () => this.update(scene, this.element(component, config, at)) : () => this.replay(play, at, config);
+          await this.settle(scene, render, true, false);
         }
       } else {
         // A jump forward gives the animation-frame callbacks the frames it skipped (not rendered), so what is advanced
@@ -264,6 +268,15 @@ class Renderer implements FrameRenderer {
     clearReportedUnsupported();
     setReportIsRead(this.rendering === this.target);
     scene.update(element);
+  }
+
+  /** `update` for a frame that is played through and not drawn, by what its source says its scripts see (`frame-replay.ts`). */
+  private replay(play: FrameReplay, frame: number, config: VideoConfig): void {
+    this.rendering = frame;
+    resetCanvasStates();
+    clearReportedUnsupported();
+    setReportIsRead(false);
+    play(frame, config.fps, config.durationInFrames);
   }
 
   private startScene(config: VideoConfig): void {
