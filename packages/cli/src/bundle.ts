@@ -388,6 +388,8 @@ function bundleOptions(absolute: string, unsupported?: UnsupportedImport[], dev 
     // The studio's builds record where each element's JSX is (see `JSX_DEV_SHIM`).
     jsxDev: dev,
     sourcemap: 'inline',
+    // Stack traces only need the mappings; the sources' text (the core's included) would double the bundle's size.
+    sourcesContent: false,
     logLevel: 'silent',
     external: EXTERNAL,
     // An `import './index.css'` registers the stylesheet's text for the DOM engine (packages/cli/skills/kinetograph/references/ENGINE.md §1); Tailwind's
