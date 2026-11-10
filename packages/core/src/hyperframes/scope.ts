@@ -15,6 +15,12 @@ export interface ScopeEnv {
   /** The composition's root element, looked up lazily (the script may run before its host is found). */
   root: () => AnyRecord | null;
   hyperframes: AnyRecord;
+  /**
+   * The id the host has (`scope`) and the id the mounted file's root was written with, when the two differ. The file's
+   * selectors for its own id (`[data-composition-id="main"]`) mean the host, and the timeline it registers under its own
+   * id (`window.__timelines["main"]`) is the host's.
+   */
+  ids?: { scope: string; authored: string } | null;
 }
 
 const bound = (target: AnyRecord, value: unknown): unknown => (typeof value === 'function' ? value.bind(target) : value);
@@ -86,6 +92,13 @@ export function rewriteRootId(selector: string, rootId: string): string {
   return out;
 }
 
+/** `selector` with `[data-composition-id="authored"]` as the host's own, where the file's root went by another id than the host. */
+export function hostSelector(selector: string, ids: { scope: string; authored: string }): string {
+  const quote = (id: string): string => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const written = new RegExp(`\\[\\s*data-composition-id\\s*=\\s*(?:"${quote(ids.authored)}"|'${quote(ids.authored)}')\\s*\\]`, 'g');
+  return selector.replace(written, () => `[data-composition-id="${cssString(ids.scope)}"]`);
+}
+
 /** `document` limited to `root`. */
 export function scopedDocument(env: ScopeEnv): AnyRecord {
   const inside = (node: AnyRecord): boolean => {
@@ -101,7 +114,8 @@ export function scopedDocument(env: ScopeEnv): AnyRecord {
   };
   const all = (selector: string): AnyRecord[] => {
     const rootId = rootIdOf();
-    const text = rootId === null || typeof selector !== 'string' ? selector : rewriteRootId(selector, rootId);
+    const named = env.ids == null || typeof selector !== 'string' ? selector : hostSelector(selector, env.ids);
+    const text = rootId === null || typeof named !== 'string' ? named : rewriteRootId(named, rootId);
     const found = Array.from(env.document.querySelectorAll(text) as ArrayLike<AnyRecord>);
     return env.root() === null ? found : found.filter(inside);
   };
@@ -129,16 +143,49 @@ export function scopedDocument(env: ScopeEnv): AnyRecord {
   });
 }
 
-/** `window` with `__hyperframes` the composition's own (its `getVariables()`). */
+/**
+ * `window` with `__hyperframes` the composition's own (its `getVariables()`), and, where the host's id is not the one
+ * its file's root was written with, a `__timelines` that files what the script registers under the root's id under the
+ * host's, which is the clock the render seeks (HyperFrames' runtime does the same: it publishes the timeline under both
+ * ids, the authored one only when no other mount of the file owns it).
+ */
 export function scopedWindow(env: ScopeEnv): AnyRecord {
+  const ids = env.ids ?? null;
+  let registry: AnyRecord | null = null;
+  const aliased = (target: AnyRecord): AnyRecord => {
+    target.__timelines = target.__timelines ?? {};
+    if (ids === null || typeof Proxy !== 'function') return target.__timelines;
+    registry ??= new Proxy(target.__timelines as AnyRecord, {
+      get(timelines, prop) {
+        if (prop !== ids.authored) return Reflect.get(timelines, prop, timelines);
+        return Reflect.get(timelines, ids.scope, timelines) ?? Reflect.get(timelines, prop, timelines);
+      },
+      set(timelines, prop, value) {
+        if (prop !== ids.authored) return Reflect.set(timelines, prop, value, timelines);
+        const owned = Reflect.get(timelines, prop, timelines);
+        const ownsAuthored = owned === undefined || owned === Reflect.get(timelines, ids.scope, timelines);
+        const filed = Reflect.set(timelines, ids.scope, value, timelines);
+        return ownsAuthored ? Reflect.set(timelines, prop, value, timelines) && filed : filed;
+      },
+    });
+    return registry;
+  };
   return new Proxy(env.window, {
     get(target, prop) {
       if (prop === '__hyperframes') return env.hyperframes;
+      if (prop === '__timelines') return aliased(target);
       const value = Reflect.get(target, prop, target);
       // Classes keep their statics: only plain functions are bound.
       return typeof value === 'function' && value.prototype === undefined ? value.bind(target) : value;
     },
     set(target, prop, value) {
+      if (prop === '__timelines') {
+        // `window.__timelines = window.__timelines || {}` hands back the alias: the registry stays the page's.
+        if (value === registry) return true;
+        target.__timelines = value || {};
+        registry = null;
+        return true;
+      }
       return Reflect.set(target, prop, value, target);
     },
   });

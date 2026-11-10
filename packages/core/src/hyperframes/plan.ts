@@ -63,6 +63,8 @@ export interface HfPlan {
   googleFonts: HfGoogleFont[];
   /** The declared defaults and the host's values of each composition's variables (`getVariables()`), by composition id. */
   variables: Record<string, Record<string, unknown>>;
+  /** The id a mounted file's root was written with, by the id of the host that mounts it, where the two differ (`main` in a block, a host named for the block). */
+  authoredIds: Record<string, string>;
   /** Remote files the page fetches that `fetch-deps` has cached: URL to the cached file's path. `fetch(url)` of one reads it. */
   remoteData: Record<string, string>;
   /** Natural duration in seconds of each media file (absolute path), probed by the CLI. */

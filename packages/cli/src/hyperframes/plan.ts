@@ -90,6 +90,8 @@ interface Context {
   scope: string | null;
   /** The root element's id in a mounted file, whose rules apply to the file's root. */
   rootId: string | null;
+  /** The `data-composition-id` the mounted file's root was written with, when the host has another: rules and lookups that name it mean the host. */
+  authoredId?: string | null;
   stack: string[];
 }
 
@@ -105,6 +107,8 @@ class Builder {
   /** The font families the page's CSS names (`fonts.ts`). */
   readonly fontUse = emptyUse();
   readonly variables: Record<string, Record<string, unknown>> = {};
+  /** The id a mounted file's root was written with, by its host's id, where they differ. */
+  readonly authoredIds: Record<string, string> = {};
   readonly mediaFiles = new Set<string>();
   readonly notes: string[] = [];
   readonly files = new Set<string>();
@@ -332,7 +336,7 @@ class Builder {
     this.fonts.push(...taken.fonts);
     let css = this.localizeCss(absolutizeUrls(taken.css, ctx.dir));
     // The page's own rules stay as written: its `html` and `body` are the document's (core hyperframes/runtime.tsx).
-    if (ctx.scope !== null) css = scopeToComposition(css, ctx.scope, ctx.rootId);
+    if (ctx.scope !== null) css = scopeToComposition(css, ctx.scope, ctx.rootId, ctx.authoredId);
     if (css.trim() === '') return;
     noteCss(this.fontUse, css);
     this.stylesheets.push({ css, file });
@@ -515,7 +519,10 @@ class Builder {
     const inner = findComposition(content, hostId);
     const scope = hostId ?? (inner ? attrOf(inner, 'data-composition-id') : null) ?? ctx.scope;
     const rootId = inner ? attrOf(inner, 'id') : null;
-    const sub: Context = { file, dir: dirname(file), scope, rootId, stack: [...ctx.stack, file] };
+    const authoredId = inner ? attrOf(inner, 'data-composition-id') : null;
+    const aliased = scope !== null && authoredId !== null && authoredId !== scope ? authoredId : null;
+    if (scope !== null && aliased !== null) this.authoredIds[scope] = aliased;
+    const sub: Context = { file, dir: dirname(file), scope, rootId, authoredId: aliased, stack: [...ctx.stack, file] };
 
     // The variables the composition declares (on its root or `<html>`) under the values the host gives.
     const declared: Record<string, unknown> = {};
@@ -802,6 +809,7 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
     scripts: builder.scripts,
     googleFonts,
     variables: builder.variables,
+    authoredIds: builder.authoredIds,
     remoteData: builder.remoteData,
     mediaDurations,
     notes: builder.notes,

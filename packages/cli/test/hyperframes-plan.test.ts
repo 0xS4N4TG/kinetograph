@@ -113,6 +113,20 @@ describe('mounting compositions', () => {
     expect([attr(a, 'data-width'), attr(a, 'data-height'), attr(a, 'style')]).toEqual(['640', '360', 'width: 640px; height: 360px']);
   });
 
+  it("a host with another id than its file's root: the file's rules for its own id are the host's, and the plan says what the ids are", async () => {
+    const dir = project({
+      'index.html': index.replace('data-composition-id="card" data-composition-src', 'data-composition-id="card-host" data-composition-src'),
+      'compositions/card.html': card.replace('<style>', '<style>[data-composition-id="card"]{background:#123} [data-composition-id="card"] .title{x:y}'),
+      'assets/clip.mp4': 'x',
+    });
+    const { plan } = await buildPlan(join(dir, 'index.html'), { probeDuration: () => 4 });
+    expect(plan.authoredIds).toEqual({ 'card-host': 'card', card2: 'card' });
+    const css = plan.stylesheets.find((s) => s.file.endsWith('card.html'))!.css;
+    expect(css).toContain('[data-composition-id="card-host"]{background:#123}');
+    expect(css).toContain('[data-composition-id="card-host"] .title{x:y}');
+    expect(css).not.toContain('[data-composition-id="card"]');
+  });
+
   it('a missing composition file is a note, not a failure', async () => {
     const dir = project({ 'index.html': index.replace('compositions/card.html', 'compositions/none.html') });
     const { plan } = await buildPlan(join(dir, 'index.html'));

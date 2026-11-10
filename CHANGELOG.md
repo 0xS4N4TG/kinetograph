@@ -39,6 +39,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A file named by an absolute path inside the project (the path a composition's `assetUrl()` returns) is read by `fetch` and `new Image` instead of being looked for under the project folder.
 - HyperFrames: a mounted file's root stays a child of its host, as in HyperFrames, so a host's own position and size are kept (77 catalog components drew at the top-left).
 - HyperFrames: the page's `getVariables()` returns the defaults declared on any element outside the compositions it mounts, not only on the root (staggered-fade-up, typewriter).
+- HyperFrames: a block whose root says `data-composition-id="main"` but is mounted by a host with another id runs its own timeline and takes its rules for `main` (13 shader blocks and 9 transition reels).
 
 ## 0.3.0 (2026-11-03)
 

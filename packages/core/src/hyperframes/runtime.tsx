@@ -234,6 +234,7 @@ class Runtime {
         window: g,
         gsap: () => g.gsap,
         root: () => doc().querySelector(`[data-composition-id="${attrValue(scope)}"]`),
+        ids: plan.authoredIds?.[scope] === undefined ? null : { scope, authored: plan.authoredIds[scope]! },
         hyperframes: {
           getVariables: () => ({ ...(plan.variables[scope] ?? {}) }),
           assetUrl: (path: string) =>
