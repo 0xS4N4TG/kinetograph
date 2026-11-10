@@ -54,6 +54,18 @@ pub fn layout_boxes(island: &IslandDocument) -> BTreeMap<String, ElementBox> {
         .collect()
 }
 
+/// `layout_boxes` of the elements at `paths` alone: a path the island does not have is left out.
+pub fn layout_boxes_of(island: &IslandDocument, paths: &[String]) -> BTreeMap<String, ElementBox> {
+    let origin = border_box_origin(&island.doc, island.container);
+    paths
+        .iter()
+        .filter_map(|path| {
+            let id = island.paths.get(path)?;
+            Some((path.clone(), element_box(&island.doc, *id, origin)))
+        })
+        .collect()
+}
+
 /// The box of one node; `origin` is the island container's position, which is
 /// the island's origin.
 pub fn element_box(doc: &BaseDocument, id: NodeId, origin: (f64, f64)) -> ElementBox {

@@ -99,6 +99,8 @@ export function fakeNative(overrides: Partial<Record<string, unknown>> = {}): { 
       return { width: 4, height: 4, mime: 'image/jpeg', data: Buffer.from([0xff, 0xd8, 0xff, 0xfe, 0x00, 0x04, frame >> 8, frame & 0xff, 0xff, 0xd9]) };
     }
     forgetFrame(): void {}
+    /** The fake's frames are the same bytes converted or not. */
+    setYuv420(): void {}
     private started: number[] = [];
     startFrame(_scene: string, frame: number): void {
       this.started.push(frame);

@@ -62,6 +62,8 @@ pub struct IslandDocument {
     /// Sub-resources that could not be read (a missing image, a network URL),
     /// each with the reason.
     pub missing: Vec<String>,
+    /// The boxes a line clamp changed (`clamp::settle`), put back before the document is edited.
+    clamped: Vec<clamp::Clamped>,
 }
 
 impl IslandDocument {
@@ -220,6 +222,7 @@ fn build_root(
                 root: Some(html),
                 starting,
                 missing: Vec::new(),
+                clamped: Vec::new(),
             },
             files,
         ));
@@ -267,6 +270,7 @@ fn build_root(
             root,
             starting,
             missing: Vec::new(),
+            clamped: Vec::new(),
         },
         files,
     ))
@@ -341,7 +345,8 @@ fn resolve_keeping(
 
 /// The passes after styling that mend what Blitz leaves out. True when none
 /// of them changed the document's tree or styles, so the document is still
-/// what building the request's tree gives and [`changes`] can edit it.
+/// what building the request's tree gives and [`changes`] can edit it; a line
+/// clamp's changes are recorded and put back first (`IslandDocument::clamped`).
 #[inline(never)]
 fn settle(island: &mut IslandDocument, request: &IslandRequest) -> bool {
     let mut plain = true;
@@ -361,8 +366,7 @@ fn settle(island: &mut IslandDocument, request: &IslandRequest) -> bool {
     // `-webkit-line-clamp` boxes cut their height at the Nth line, which is
     // only known once the text is laid out.
     if clamp::requested(request) {
-        clamp::settle(&mut island.doc, request.time);
-        plain = false;
+        island.clamped = clamp::settle(&mut island.doc, request.time);
     }
     plain
 }
@@ -371,10 +375,12 @@ fn settle(island: &mut IslandDocument, request: &IslandRequest) -> bool {
 pub struct Resolved {
     pub island: IslandDocument,
     files: Arc<LocalFiles>,
-    /// Whether [`IslandCache`] may keep it.
+    /// Whether [`IslandCache`] may edit it to another request.
     plain: bool,
     /// The last paint of the document, and the style and box of each node then.
     painted: Option<(Painted, Vec<Stamp>)>,
+    /// The elements whose `style` the edits since that paint set, when they set nothing else.
+    edited: Option<Vec<NodeId>>,
     /// The elements whose transforms alone changed since that paint, when
     /// nothing else did (`Resolved::paint`).
     moved: Option<Vec<NodeId>>,
@@ -423,6 +429,7 @@ impl Resolved {
         };
         let (output, painted) = again.unwrap_or_else(|| paint::paint_keeping(doc, request));
         self.painted = Some((painted, stamps(doc)));
+        self.edited = Some(Vec::new());
         output
     }
 }
@@ -573,21 +580,12 @@ impl IslandCache {
         request: &IslandRequest,
         pass: Option<u64>,
     ) -> Result<Resolved, BuildError> {
-        if self.pass != pass {
-            match (self.pass, pass) {
-                // The next frame: the islands the last one rendered stay.
-                (Some(was), Some(now)) if now == was.wrapping_add(1) => {
-                    self.kept.retain(|_, kept| kept.pass == was);
-                }
-                _ => self.kept.clear(),
-            }
-            self.pass = pass;
-        }
+        self.enter(pass);
         let editable = pass.is_some()
             && self
                 .kept
                 .get(&request.path)
-                .is_some_and(|kept| !moves(request, &[&kept.request.root]));
+                .is_some_and(|kept| kept.resolved.plain && !moves(request, &[&kept.request.root]));
         if editable
             && let Some(mut kept) = self.kept.remove(&request.path)
             && same_page(&kept.request, request)
@@ -602,20 +600,34 @@ impl IslandCache {
                 files,
                 plain,
                 painted,
+                edited,
                 moved,
             } = &mut kept.resolved;
-            // A change to transforms alone can be painted from the last paint.
-            let edited = style_edits(&edits);
-            if !edits.is_empty() {
+            // A change to transforms alone can be painted from the last paint, after however many edits.
+            *edited = match (edited.take(), style_edits(&edits)) {
+                (Some(mut before), Some(now)) => {
+                    before.extend(now);
+                    Some(before)
+                }
+                _ => None,
+            };
+            // The document as built, then edited and clamped again.
+            let clamped = std::mem::take(&mut island.clamped);
+            clamp::undo(&mut island.doc, &clamped);
+            if !edits.is_empty() || !clamped.is_empty() {
                 apply(island, &edits);
                 load(island, files, request.time);
             }
             advance(&mut island.doc, request.time);
             *plain = settle(island, request);
+            // A clamp moves an ellipsis without a style changing: painted afresh.
+            if !clamped.is_empty() || !island.clamped.is_empty() {
+                *edited = None;
+            }
             island.missing = files.missing();
-            *moved = match (edited, painted.as_ref()) {
+            *moved = match (edited.as_ref(), painted.as_ref()) {
                 (Some(edited), Some((_, stamps))) if *plain => {
-                    transform_changes(island, &edited, stamps)
+                    transform_changes(island, edited, stamps)
                 }
                 _ => None,
             };
@@ -630,15 +642,29 @@ impl IslandCache {
             files: files.expect("a resolved island has its files"),
             plain,
             painted: None,
+            edited: None,
             moved: None,
         })
     }
 
-    /// Keeps `resolved` for the next sample of the same pass.
+    /// Moves the cache to pass `pass`: the pass after the last keeps the islands the last rendered, any other none.
+    pub fn enter(&mut self, pass: Option<u64>) {
+        if self.pass != pass {
+            match (self.pass, pass) {
+                // The next frame: the islands the last one rendered stay.
+                (Some(was), Some(now)) if now == was.wrapping_add(1) => {
+                    self.kept.retain(|_, kept| kept.pass == was);
+                }
+                _ => self.kept.clear(),
+            }
+            self.pass = pass;
+        }
+    }
+
+    /// Keeps `resolved` for the renders after it in the pass and the next: they edit it when it is plain, and use it
+    /// as it is for the same request (whoever holds the request knows that, see [`take`](Self::take)).
     pub fn keep(&mut self, request: IslandRequest, resolved: Resolved) {
-        if let Some(pass) = self.pass
-            && resolved.plain
-        {
+        if let Some(pass) = self.pass {
             self.kept.insert(
                 request.path.clone(),
                 Kept {
@@ -653,6 +679,13 @@ impl IslandCache {
     /// The kept document of the island at `path`, if there is one.
     pub fn peek(&self, path: &str) -> Option<&Resolved> {
         self.kept.get(path).map(|k| &k.resolved)
+    }
+
+    /// The kept document of the island at `path` and the request it shows, taken out of the cache: for a caller that
+    /// knows the request is the one it has, which needs no resolving again. (Call [`enter`](Self::enter) for the pass
+    /// first.)
+    pub fn take(&mut self, path: &str) -> Option<(IslandRequest, Resolved)> {
+        self.kept.remove(path).map(|k| (k.request, k.resolved))
     }
 
     /// How many renders edited a kept document, and how many built one.

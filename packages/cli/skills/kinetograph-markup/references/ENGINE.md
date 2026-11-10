@@ -42,7 +42,7 @@ calls it lazily and caches by tree generation.
 - Layer ids: derived from the node's explicit `id` attribute if it is a valid layer id, else its `path`, with the
   suffixes the painter needs (`.bg`, `.border`, `.text`, …), unique per island.
 - Addon functions: `renderDomIsland(requestJson: string, pass?: number): string` and
-  `domLayoutBoxes(requestJson: string): string` → `{ [path]: { x, y, width, height, rect: {x,y,width,height},
+  `domLayoutBoxes(requestJson: string, pass?: number, paths?: string[]): string` → `{ [path]: { x, y, width, height, rect: {x,y,width,height},
   client: {width,height}, scroll: {width,height} } }` (offset box in island coordinates; `rect` is the transformed
   bounding box, as `getBoundingClientRect` gives).
 - `pass` numbers the renders of one frame (its own and its motion-blur sub-frames'; compat's `beginSamplePass`). In a
@@ -358,8 +358,8 @@ for a `kg-*` element without padding, and it comes before the empty-box return, 
 **First run** (same placeholder patch): native 988 of 988; mean 4.2 to 28 levels, PSNR 15.8 to
 29.0 dB, 8755 to 384 196 pixels more than 48 apart, 3 559 263 summed.
 
-`domLayoutBoxes` answers `{ [path]: ElementBox }` for every element and native placeholder (`display: none` and
-`display: contents` are all zeros):
+`domLayoutBoxes` answers `{ [path]: ElementBox }` for every element and native placeholder, or for those at `paths`
+(`display: none` and `display: contents` are all zeros):
 
 | Field | Meaning |
 |---|---|

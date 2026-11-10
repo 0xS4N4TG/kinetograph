@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+  <head>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      .box { position: absolute; top: 4px; width: 10px; height: 10px; background: #fff; }
+    </style>
+  </head>
+  <body>
+    <!-- GSAP callbacks whose picture depends on passing through every frame: the frames must be the same however the
+         workers reach them. The root clips, so its layout check runs on the frames that are drawn. -->
+    <div id="root" data-composition-id="main" data-start="0" data-duration="2" data-width="128" data-height="72" style="position: relative; width: 128px; height: 72px; overflow: hidden; background: #000">
+      <div class="box" style="left: 4px"></div>
+      <div class="box" style="left: 18px"></div>
+      <div class="box" style="left: 32px"></div>
+      <div id="spin" style="position: absolute; left: 60px; top: 30px; width: 16px; height: 16px; background: #0f0"></div>
+      <div id="count" style="position: absolute; left: 0; top: 60px; width: 0; height: 6px; background: #f0f"></div>
+      <div id="flag" style="position: absolute; left: 100px; top: 30px; width: 12px; height: 12px; background: #00f"></div>
+      <div id="free" style="position: absolute; left: 4px; top: 40px; width: 8px; height: 8px; background: #ff0"></div>
+    </div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      tl.to('.box', { y: 30, duration: 0.5, stagger: 0.15 }, 0);
+      const inner = gsap.timeline();
+      inner.to('#spin', { rotation: 90, duration: 0.6 }).to('#spin', { x: 20, duration: 0.4 });
+      tl.add(inner, 0.3);
+      // A count of the updates: a frame's width depends on every frame before it having been played.
+      let updates = 0;
+      const state = { v: 0 };
+      tl.to(state, { v: 1, duration: 1.5, onUpdate: () => { updates += 1; document.getElementById('count').style.width = `${(updates * 3) % 128}px`; } }, 0.1);
+      tl.call(() => { document.getElementById('flag').style.background = '#f00'; }, null, 0.9);
+      // A tween on GSAP's root clock, made when the timeline passes 1 s: it starts where that frame is.
+      tl.call(() => { gsap.to('#free', { x: 100, duration: 0.5 }); }, null, 1);
+      tl.to({}, { duration: 2 }, 0);
+      window.__timelines = { main: tl };
+    </script>
+  </body>
+</html>

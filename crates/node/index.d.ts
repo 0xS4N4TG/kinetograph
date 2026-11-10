@@ -55,6 +55,12 @@ export declare class Renderer {
    * A render worker calls it at the start of each run of frames.
    */
   forgetFrame(): void
+  /**
+   * With `on`, `finishFrame` returns the frames `startFrame` begins after this as yuv420p planes (Y, U, V, rows
+   * packed), converted on the GPU byte for byte as `rgbaToYuv(rgba, w, h, 'yuv420p')` converts their RGBA. The
+   * frames' sides must be even, as the encoder's are. Set it before starting frames, not between.
+   */
+  setYuv420(on: boolean): void
   /** Times one frame or successive frames, as the Rust `bench`. */
   bench(sceneJson: string, options: BenchOptions, baseDir?: string | undefined | null): BenchResult
   /** A whole JSON scene to a video, as the Rust `render`. */
@@ -126,17 +132,21 @@ export declare function decodeAudio(path: string, sampleRate: number, baseDir?: 
 
 /**
  * `getComputedStyle` of the element at `path` in a DOM island: the resolved
- * value of each property (CSS or camelCase names), `""` for an unknown one.
+ * value of each property (CSS or camelCase names), `""` for an unknown one. `pass` as for `domLayoutBoxes`.
  */
-export declare function domComputedStyle(requestJson: string, path: string, properties: Array<string>): Array<string>
+export declare function domComputedStyle(requestJson: string, path: string, properties: Array<string>, pass?: number | undefined | null): Array<string>
 
 /**
  * The boxes of every element of a DOM island (packages/cli/skills/kinetograph-markup/references/ENGINE.md §2): an
  * `IslandRequest` as JSON in, `{ [path]: { x, y, width, height, rect, client,
  * scroll } }` as JSON out. `x`..`height` are the border box where layout put
  * it, `rect` the transformed bounding box `getBoundingClientRect` gives.
+ *
+ * `pass` is the frame's pass (`renderDomIsland`), when the scripts of the frame being drawn read it: the boxes are
+ * those of the document the frame's render then draws. With `paths`, only the boxes of those elements are given (a
+ * path the island does not have is left out).
  */
-export declare function domLayoutBoxes(requestJson: string): string
+export declare function domLayoutBoxes(requestJson: string, pass?: number | undefined | null, paths?: Array<string> | undefined | null): string
 
 /** `render`'s export options (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9); everything left out takes its default. */
 export interface ExportOptions {

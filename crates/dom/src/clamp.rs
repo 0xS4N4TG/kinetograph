@@ -14,7 +14,9 @@
 //! such box a block formatting context (as Chrome does), lays out again, finds
 //! the boxes whose lines pass the clamp, gives each a `height`, lays out once
 //! more and records the line to end with an ellipsis in the [`CLAMP_ATTR`]
-//! attribute, which the painter reads (`paint::ellipsis`).
+//! attribute, which the painter reads (`paint::ellipsis`). What it changed is
+//! recorded ([`Clamped`]), so that a document can be put back as built
+//! ([`undo`]) before it is edited to another tree and clamped again.
 
 use crate::paint::attr;
 use crate::request::{DomNode, IslandRequest};
@@ -149,14 +151,45 @@ pub fn requested(request: &IslandRequest) -> bool {
     request.stylesheets.iter().any(|s| s.contains(NAME)) || node(&request.root)
 }
 
+/// A box [`settle`] changed, with its `style` and [`CLAMP_ATTR`] attributes as they were built.
+pub struct Clamped {
+    id: NodeId,
+    style: Option<String>,
+    mark: Option<String>,
+}
+
 /// Clamps the document and lays it out again as often as that needs (two
 /// rounds at most; the third `apply` only confirms there is nothing left).
-pub fn settle(doc: &mut BaseDocument, time: f64) {
+/// Returns the boxes it changed.
+pub fn settle(doc: &mut BaseDocument, time: f64) -> Vec<Clamped> {
+    let mut changed = Vec::new();
     for _ in 0..3 {
-        if apply(doc) == 0 {
+        if apply(doc, &mut changed) == 0 {
             break;
         }
         doc.resolve(time);
+    }
+    changed
+}
+
+/// Puts the boxes [`settle`] changed back as they were built (it set their declarations, not their `style` text). The
+/// document has to be resolved again.
+pub fn undo(doc: &mut BaseDocument, changed: &[Clamped]) {
+    let name = |local: &str| QualName::new(None, ns!(), LocalName::from(local));
+    let mut m = doc.mutate();
+    for c in changed {
+        match &c.style {
+            Some(style) => m.set_attribute(c.id, name("style"), style),
+            None => {
+                // Setting the attribute parses the declarations again: an empty one leaves none, then it goes.
+                m.set_attribute(c.id, name("style"), "");
+                m.clear_attribute(c.id, name("style"));
+            }
+        }
+        match &c.mark {
+            Some(mark) => m.set_attribute(c.id, name(CLAMP_ATTR), mark),
+            None => m.clear_attribute(c.id, name(CLAMP_ATTR)),
+        }
     }
 }
 
@@ -172,8 +205,9 @@ struct Edit {
 /// the module docs. Returns how many changes it made; when it is not zero the
 /// document has to be laid out again and `apply` called once more (a box first
 /// becomes a block formatting context, as Chrome makes it, which moves its
-/// lines; the next call measures them).
-pub fn apply(doc: &mut BaseDocument) -> usize {
+/// lines; the next call measures them). The boxes it changes for the first
+/// time are added to `changed`, as they were.
+pub fn apply(doc: &mut BaseDocument, changed: &mut Vec<Clamped>) -> usize {
     let ids: Vec<NodeId> = doc
         .tree()
         .iter()
@@ -235,6 +269,16 @@ pub fn apply(doc: &mut BaseDocument) -> usize {
         });
     }
     let n = edits.len();
+    for e in &edits {
+        if !changed.iter().any(|c| c.id == e.id) {
+            let node = doc.get_node(e.id).expect("a node");
+            changed.push(Clamped {
+                id: e.id,
+                style: attr(node, "style").map(str::to_string),
+                mark: attr(node, CLAMP_ATTR).map(str::to_string),
+            });
+        }
+    }
     let mut m = doc.mutate();
     for e in edits {
         if let Some(display) = e.display {

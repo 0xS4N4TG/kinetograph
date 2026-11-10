@@ -11,10 +11,14 @@ export interface DomAddon {
   /** `renderDomIsland` queued behind the renders before it: a ticket for `finishDomIsland`, which waits for the output. */
   startDomIsland?(requestJson: string, pass?: number): number;
   finishDomIsland?(ticket: number): string;
-  /** `IslandRequest` JSON in, `{ [path]: { x, y, width, height, rect, client, scroll } }` JSON out. */
-  domLayoutBoxes(requestJson: string): string;
-  /** `IslandRequest` JSON, an element path and CSS property names in; the computed value of each, "" when unknown. */
-  domComputedStyle(requestJson: string, path: string, properties: string[]): string[];
+  /**
+   * `IslandRequest` JSON in, `{ [path]: { x, y, width, height, rect, client, scroll } }` JSON out. `pass` is the pass
+   * of the frame whose scripts read it (`currentSamplePass`): the document read is the one the frame's render draws.
+   * With `paths`, only those elements' boxes (an older addon gives them all).
+   */
+  domLayoutBoxes(requestJson: string, pass?: number, paths?: string[]): string;
+  /** `IslandRequest` JSON, an element path and CSS property names in; the computed value of each, "" when unknown. `pass` as above. */
+  domComputedStyle(requestJson: string, path: string, properties: string[], pass?: number): string[];
   /** A video's or GIF's header (`probeMedia` of the addon), for `<video>` load events and `duration`. */
   probeMedia?(path: string, baseDir?: string): { width: number; height: number; durationInSeconds: number };
   /** The text engine, for the size of native text in an island and of a canvas's `measureText`. */

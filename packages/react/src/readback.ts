@@ -5,11 +5,14 @@
 import {
   addonFunction,
   collectStyleElements,
+  currentSamplePass,
   hasAddonFunction,
   importedStylesheets,
   isDomElement,
+  lap,
   noteStylesheet,
   requestFor,
+  stamp,
 } from '@kinetographdev/compat/dom';
 import type { BoxInfo, Readback } from '@kinetographdev/compat/shim';
 import { effectiveParentOf, headHost, propsWithOverlay, rawParentOf, setRawParent } from '@kinetographdev/compat/shim';
@@ -46,7 +49,10 @@ interface Island {
   root: HostElement;
   path: string;
   json: string;
-  boxes?: Boxes;
+  /** The boxes read so far, by path; null for a path the island does not have. */
+  boxes: Map<string, BoxInfo | null>;
+  /** Whether `boxes` has every box of the island. */
+  allBoxes: boolean;
   computed: Map<string, string | null>;
 }
 
@@ -157,6 +163,7 @@ export function createReadback(container: Container, options: EmitOptions): Read
     const root = islandRootOf(host);
     let island = islands.get(root);
     if (island === undefined) {
+      const t = stamp();
       const path = pathOf(root);
       const stylesheets = [...importedStylesheets(), ...collectStyleElements([headHost, ...container.children])];
       for (const css of stylesheets) noteStylesheet(css);
@@ -169,8 +176,9 @@ export function createReadback(container: Container, options: EmitOptions): Read
         time: options.time?.() ?? 0,
         stylesheets,
       });
-      island = { root, path, json: JSON.stringify(request), computed: new Map() };
+      island = { root, path, json: JSON.stringify(request), boxes: new Map(), allBoxes: false, computed: new Map() };
       islands.set(root, island);
+      lap('rb_request', t);
     }
     return island;
   };
@@ -188,13 +196,26 @@ export function createReadback(container: Container, options: EmitOptions): Read
       if (!hasAddonFunction('domLayoutBoxes')) return null;
       const island = islandOf(host);
       if (island === null) return null;
+      const path = pathOf(host);
       try {
-        island.boxes ??= JSON.parse(addonFunction('domLayoutBoxes')(island.json)) as Boxes;
+        if (!island.allBoxes && !island.boxes.has(path)) {
+          // A page usually reads one box of a tree before it changes it: the first read asks for that box alone, and a
+          // second for all of them, which costs about what one does.
+          const one = island.boxes.size === 0 ? [path] : undefined;
+          let t = stamp();
+          const text = addonFunction('domLayoutBoxes')(island.json, currentSamplePass(), one);
+          t = lap('rb_box', t);
+          for (const [at, box] of Object.entries(JSON.parse(text) as Boxes)) island.boxes.set(at, box);
+          if (one === undefined) island.allBoxes = true;
+          else if (!island.boxes.has(path)) island.boxes.set(path, null);
+          lap('rb_box_parse', t);
+        }
       } catch (error) {
         failed(host, 'a box', error);
-        island.boxes = {};
+        island.boxes.clear();
+        island.allBoxes = true;
       }
-      return island.boxes[pathOf(host)] ?? null;
+      return island.boxes.get(path) ?? null;
     },
     computed(host, property) {
       measuring();
@@ -209,7 +230,9 @@ export function createReadback(container: Container, options: EmitOptions): Read
           // The engine styles the whole island for every call whatever the number of properties, and scripts read several
           // properties of one element (GSAP reads a dozen): ask for the usual ones together and answer the rest from the cache.
           const asked = [property, ...COMMON_PROPERTIES.filter((p) => p !== property && !island.computed.has(`${pathOf(host)}\0${p}`))];
-          const answer = addonFunction('domComputedStyle')(island.json, pathOf(host), asked);
+          const t = stamp();
+          const answer = addonFunction('domComputedStyle')(island.json, pathOf(host), asked, currentSamplePass());
+          lap('rb_style', t);
           asked.forEach((name, i) => island.computed.set(`${pathOf(host)}\0${name}`, answer[i] !== undefined && answer[i] !== '' ? answer[i]! : null));
           value = island.computed.get(key) ?? null;
         } catch (error) {

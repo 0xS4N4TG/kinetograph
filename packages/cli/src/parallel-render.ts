@@ -78,6 +78,18 @@ interface Lane {
   lastEnd: number;
   /** The highest frame of its chunk that has reached this thread. */
   progress: number;
+  /** When its chunk was given, and how many frames the chunk's start plays through to reach it (`playedTo`). */
+  givenAt: number;
+  played: number;
+  /** When the last frame of its chunk reached this thread; NaN before the first. */
+  lastAt: number;
+}
+
+/** The frames a worker whose last chunk ended at `lastEnd` (-2 for none) plays through to start a chunk at `first`. */
+function playedTo(lastEnd: number, first: number): number {
+  if (lastEnd >= 0 && first === lastEnd + 1) return 0;
+  // Forward it plays from where it is; back, or with nothing drawn yet, the composition starts over.
+  return lastEnd >= 0 && first > lastEnd ? first - lastEnd - 1 : first;
 }
 
 /**
@@ -108,6 +120,11 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
     /** Tails given up by a split, not yet taken, by first frame. */
     const returned: Job[] = [];
     let splitting = false; // a split has been asked for and not answered
+    /**
+     * What frames have cost so far, as they reach this thread: a frame drawn, and a frame a chunk start plays through
+     * (its JS runs, nothing is drawn; a page with GSAP plays every frame it jumps). A split is judged by them.
+     */
+    const cost = { drawn: 0, drawMs: 0, played: 0, playMs: 0 };
     const artifacts = new Map<string, ArtifactRecord>();
     let finished = 0;
 
@@ -131,18 +148,37 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
       return { job: { first: nextStart, last: Math.min(last, nextStart + CHUNK_FRAMES - 1) }, fresh: true };
     };
 
-    /** Asks the busy worker furthest back with enough left to give up the second half of its chunk. */
-    const split = (): void => {
+    /**
+     * Asks a busy worker with enough left to give up the tail of its chunk to the idle worker `thief`. Once frames have
+     * been timed, the tail is the one that ends the pair's work soonest counting what the thief's start plays through,
+     * and a split that would not end it sooner than the busy worker alone is not made; before, the worker furthest back
+     * gives up the second half.
+     */
+    const split = (thief: Lane): void => {
       if (splitting) return;
-      let victim: Lane | undefined;
+      const drawMs = cost.drawn > 0 ? cost.drawMs / cost.drawn : undefined;
+      const playMs = cost.played > 0 ? cost.playMs / cost.played : undefined;
+      let best: { lane: Lane; at: number; gain: number } | undefined;
       for (const lane of lanes.values()) {
-        if (!lane.job || lane.job.last - lane.progress < 2 * MIN_SPLIT) continue;
-        if (!victim || lane.job.first < victim.job!.first) victim = lane;
+        if (!lane.job) continue;
+        const left = lane.job.last - lane.progress;
+        if (left < 2 * MIN_SPLIT) continue;
+        let at = Math.floor((lane.progress + lane.job.last) / 2) + 1;
+        let gain = -lane.job.first;
+        if (drawMs !== undefined && playMs !== undefined) {
+          // The busy worker draws `keep` frames while the thief plays to the tail and draws the rest: as even as can be.
+          const keep = Math.round((left + (playedTo(thief.lastEnd, at) * playMs) / drawMs) / 2);
+          if (left - keep < MIN_SPLIT) continue;
+          at = lane.progress + 1 + keep;
+          const pair = Math.max(keep * drawMs, playedTo(thief.lastEnd, at) * playMs + (left - keep) * drawMs);
+          gain = left * drawMs - pair;
+          if (gain <= 0) continue;
+        }
+        if (!best || gain > best.gain) best = { lane, at, gain };
       }
-      if (!victim) return;
+      if (!best) return;
       splitting = true;
-      const at = Math.floor((victim.progress + victim.job!.last) / 2) + 1;
-      victim.worker.postMessage({ type: 'split', at } satisfies ToWorker);
+      best.lane.worker.postMessage({ type: 'split', at: best.at } satisfies ToWorker);
     };
 
     const give = (): void => {
@@ -154,9 +190,12 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
         else returned.shift();
         lane.job = next.job;
         lane.progress = next.job.first - 1;
+        lane.givenAt = nowMs();
+        lane.played = playedTo(lane.lastEnd, next.job.first);
+        lane.lastAt = Number.NaN;
         lane.worker.postMessage({ type: 'chunk', first: next.job.first, last: next.job.last } satisfies ToWorker);
       }
-      if (idle.length > 0) split();
+      if (idle.length > 0) split(idle[0]!);
     };
 
     let drainScheduled = false;
@@ -196,6 +235,24 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
       }
     };
 
+    /** Counts what the frame of `lane` that has just arrived cost: the first of a chunk includes the chunk's start. */
+    const timeFrame = (lane: Lane): void => {
+      const at = nowMs();
+      const first = Number.isNaN(lane.lastAt);
+      const ms = at - (first ? lane.givenAt : lane.lastAt);
+      lane.lastAt = at;
+      if (!first || lane.played === 0) {
+        cost.drawn += 1;
+        cost.drawMs += ms;
+        return;
+      }
+      // A chunk's first frame: what it took past one drawn frame is the frames its start played through.
+      const drawMs = cost.drawn > 0 ? cost.drawMs / cost.drawn : ms / (lane.played + 1);
+      cost.played += lane.played;
+      cost.playMs += Math.max(0, ms - drawMs);
+      lane.played = 0;
+    };
+
     const onMessage = (worker: Worker, message: FromWorker): void => {
       if (settled) return;
       const lane = lanes.get(worker)!;
@@ -208,6 +265,7 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
         case 'frame':
           if (log && message.frame === 0) stage('first frame arrived');
           lane.progress = Math.max(lane.progress, message.frame);
+          timeFrame(lane);
           arrived.set(message.frame, message);
           drain();
           break;
@@ -253,7 +311,7 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
         step: options.step,
       };
       const worker = new Worker(new URL('./render-worker.js', import.meta.url), { workerData: init });
-      lanes.set(worker, { worker, lastEnd: -2, progress: -1 });
+      lanes.set(worker, { worker, lastEnd: -2, progress: -1, givenAt: 0, played: 0, lastAt: Number.NaN });
       worker.on('message', (message: FromWorker) => onMessage(worker, message));
       worker.on('error', (error) => stop(error));
       worker.on('exit', (code) => {
