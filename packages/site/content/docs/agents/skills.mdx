@@ -1,0 +1,39 @@
+---
+title: Agent skills
+description: The Kinetograph skills, what each is for, and how to install and update them.
+---
+
+A skill is a folder with a `SKILL.md` that teaches a coding agent one job. Install them all with one command:
+
+```sh
+npx skills add 0xS4N4TG/kinetograph
+```
+
+The [`skills`](https://www.npmjs.com/package/skills) CLI asks which agents to install them for. `npx skills add 0xS4N4TG/kinetograph --list` shows what it found and installs nothing.
+
+## The skills
+
+| Skill | For |
+|---|---|
+| `kinetograph` | The loop an agent follows: write, look, check, render. Start here. |
+| `kinetograph-create` | Starting a new project. |
+| `kinetograph-markup` | Writing the video: layers, text, animation, effects and sound. |
+| `kinetograph-render` | Rendering and checking a project. |
+| `kinetograph-studio` | Working in Studio. |
+| `kinetograph-docs` | Looking things up in these docs. |
+| `kinetograph-upgrade` | Updating Kinetograph and the skills. |
+| `kinetograph-migrate` | Moving an existing Remotion project onto Kinetograph. See [Migrate from Remotion](/docs/migrating/remotion/). |
+| `kinetograph-taste-clone` | Turning a reference reel into a spec or a reusable style. It comes from [kinetograph-ui](https://github.com/0xS4N4TG/kinetograph-ui). See [Match a reference](/docs/agents/taste/). |
+
+## Keep them current
+
+Every Kinetograph command checks once a day whether the CLI or an installed skill is out of date, and prints one line. It never installs anything. `kinetograph doctor` shows the CLI version and each skill with its version.
+
+To update:
+
+```sh
+npm install kinetograph@latest
+npx skills add 0xS4N4TG/kinetograph
+```
+
+The skills also come inside the npm package, in `node_modules/kinetograph/skills/`.

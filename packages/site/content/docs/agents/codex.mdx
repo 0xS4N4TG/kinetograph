@@ -1,0 +1,36 @@
+---
+title: Codex
+description: Install the Kinetograph skills for OpenAI Codex CLI and connect the MCP server.
+---
+
+Install the skills with the `skills` CLI, and add the MCP server with one Codex command.
+
+```sh
+npx skills add 0xS4N4TG/kinetograph
+codex mcp add kinetograph -- npx -y kinetograph mcp
+```
+
+The first command asks which agents to install the skills for. Pick Codex. `codex mcp list` shows the result.
+
+## Config file
+
+The same server written by hand, in `~/.codex/config.toml`:
+
+```toml title="~/.codex/config.toml"
+[mcp_servers.kinetograph]
+command = "npx"
+args = ["-y", "kinetograph", "mcp"]
+```
+
+## Set it up with Codex itself
+
+`AGENTS.md` in the Kinetograph repository holds the install steps for an agent. Paste this into Codex:
+
+```txt title="Suggested prompt"
+Set up Kinetograph (https://github.com/0xS4N4TG/kinetograph) for me by following its AGENTS.md:
+https://github.com/0xS4N4TG/kinetograph/blob/main/AGENTS.md
+Ask me first whether I want the prebuilt package (recommended) or a build from source,
+and ask before installing anything system-wide or installing the Kinetograph agent skills.
+```
+
+[Agent skills](/docs/agents/skills/) lists what each skill does, and [Use with agents](/docs/agents/#the-mcp-server) lists the tools.

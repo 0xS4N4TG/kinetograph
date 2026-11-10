@@ -122,23 +122,4 @@ Select a video layer, then pick **Remove background** in the Scene tab or in Cmd
 
 ## The agent
 
-The chat on the left talks to your coding agent over the Agent Client Protocol (ACP). Studio finds Claude Code, Codex or Gemini CLI on your computer. The command menu switches between them and restarts the chat, and `--agent <command>` names another one. Only Claude Code is tested so far.
-
-The agent works in the folder you started Studio in. Studio asks you before it edits a file.
-
-You can send a message while the agent is still working. It waits in the **Up next** tray above the message box, a slim bar ("2 up next") that opens into a card for each message. A card has **Edit** (puts the words and pictures back in the message box), **Send now** (stops the current turn and sends that message next, after four seconds with an Undo), **Remove**, and a grip to drag it to a new place. **Clear** removes them all. When the turn ends, everything queued goes to the agent as one prompt, and the chat shows each message on its own. A panel's answer that is waiting for the turn to end shows in the same tray. Stop ends the turn and keeps the queue, and a reload keeps it too.
-
-Drop images onto the agent, paste one, or use the attach button left of Send (up to 6 per message, 20 MB each; PNG, JPEG, WebP, GIF or AVIF). Each appears as a thumbnail in the message box. On Send, Studio stores the originals in `public/refs/` and tells the agent the paths, so it can use one with `staticFile('refs/name.png')`. An agent that takes images also sees a scaled-down copy. A queued message keeps its images.
-
-Each tool call is one quiet line: an icon for what it did, the command (without its leading `cd`) or the file, a dot while it runs, a check when done, and how long it took. Click a line for the full command, output and diff. A run of calls folds into one block such as "Ran 3 commands · read 2 files".
-
-Each message carries the selection: the project file, the composition, and the frame or span. For each selected layer it adds the name, kind, source file and line, position, size and current look, and the plugin that draws it. Keep the picture switch on to attach a picture of the selected area, or a contact sheet for a span. With many layers selected the box shows three chips and "+N more", which lists them all (with Clear all); four or more layers of one kind fold into one chip, such as "28 shapes in showcase".
-
-The agent also gets a Kinetograph MCP server with every `kinetograph` command, the tools of your plugins, and four tools for the open window:
-
-- `studio_get_props` reads the props the preview shows, and `studio_set_props` sets them. The agent can try values while you watch the preview change.
-- `studio_open_panel` and `studio_panel_result` let it ask you for a decision in a panel.
-
-See [Studio's agent](/docs/plugins/#studios-agent).
-
-Studio listens on `127.0.0.1` by default, and the agent needs the token in the address Studio opens. If you set `--host` so other computers can reach Studio, the agent is off unless you pass `--allow-remote-agent`.
+The chat on the left talks to your coding agent. Each message carries the selection: the composition, and the frame or span. See [Studio's agent chat](/docs/agents/studio-agent/).
