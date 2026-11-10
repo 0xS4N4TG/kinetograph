@@ -1,0 +1,126 @@
+---
+title: Brand and templates
+description: How to point an agent at a real source of brand truth, keep a series consistent, and turn one video into a template that takes props or variables.
+---
+
+Give the agent a file to read, not the word "on-brand". Fix colours and fonts, let the layout be made for video, and put everything that changes between videos into props.
+
+## Point at a source of truth
+
+"On-brand" means nothing to an agent that hasn't seen your brand. Name something it can open:
+
+- **A spec file.** `brand.md` or `brand.json` in the project, with hex colours, font families, the logo path and a few rules ("never put the logo on red").
+- **A taste.** A taste is a brand file for motion: palette, type, how text enters, light, transitions and rhythm. It lives in `src/tastes/<name>/` as `TASTE.md` for people and agents and `taste.json` for values code can read. Install a published one with `npx kinetograph add <taste>` (`npx kinetograph add --list --type taste` shows what exists), or have `/kinetograph-taste-clone` write one from a video you already like. See [Match a reference](/docs/agents/taste/).
+- **A page.** Paste the URL and ask the agent to read the palette and fonts from it. A page drawn by script can give it very little to read, so check what it found.
+- **A brand kit.** Colours, fonts and logos you already have, as files.
+
+```txt title="Suggested prompt"
+/kinetograph-markup Read brand.md and src/tastes/<name>/TASTE.md. Use only the colours and fonts they name. Put the colours and font families in src/lib/brand.ts and import them everywhere, so none is typed twice.
+```
+
+## Brand is strict for colour and type
+
+Hold these fixed: colours, font families, the logo and its clear space. Let the rest be designed for video. A web page's layout, with small body text and a navigation bar, doesn't carry over. On screen, type is larger, there is one idea at a time, and motion does the work of hierarchy. Say it: "keep my palette and fonts, but lay it out for a vertical video, with a headline at least 100 px".
+
+## Supply assets by path
+
+Logos, fonts, photos and music go in `public/` (`public/images/`, `public/fonts/`, `public/audio/`, `public/video/`). Name each one in the prompt: "the logo is `public/images/logo.svg`". Prefer an SVG logo, because it stays sharp at any size. For a font file, give the family name too. See [Assets](/docs/making-videos/assets/) and [Fonts](/docs/making-videos/fonts/).
+
+Give brand inputs up front. Recolouring ten scenes afterwards costs more than stating the colours first.
+
+## Keep a series consistent
+
+Reuse the same brand file or taste in every project and change only the content. Start each project from the same template or the same `src/lib/brand.ts`. A plugin look carries across a series too: give every video the same [Hexed](/docs/plugins/hexed/) `seed` or `preset`, or the same [Paper](/docs/plugins/paper/) stock and edge. For a series, ask for the same intro, the same lower-third style and the same end card, and for the transitions to come from one short list.
+
+## Templates and props
+
+A template is a video whose content is props. In Kinetograph a Remotion composition takes props, and you declare them with a zod schema:
+
+```tsx title="src/index.tsx"
+import { Composition, registerRoot } from '@kinetographdev/core';
+import { z } from 'zod';
+import { zColor } from '@kinetographdev/core/zod-types';
+import { Card } from './scenes/Card';
+
+registerRoot(() => (
+  <Composition
+    id="Card"
+    component={Card}
+    durationInFrames={90}
+    fps={30}
+    width={1080}
+    height={1920}
+    schema={z.object({
+      title: z.string(),
+      accent: zColor(),
+      logo: z.string().describe('A path under public/'),
+    })}
+    defaultProps={{ title: 'Hello', accent: '#e0553a', logo: 'images/logo.svg' }}
+  />
+));
+```
+
+Ask for it in these words, and say which things vary:
+
+```txt title="Suggested prompt"
+/kinetograph-markup Make Card a template. The things that change are title, accent colour and the logo path. Put them in a zod schema with defaults, keep everything else fixed, and use staticFile(props.logo) for the logo.
+```
+
+- **Studio** draws a form from the schema, with a colour input for `zColor()`. **Save preset** keeps the props as `presets/Card/<name>.json`, which you can commit.
+- **`--props`** renders other values: a JSON object, or the path of a preset.
+- Registry templates install with `npx kinetograph add <name>` into `src/templates/<name>/`, and render on their own. `npx kinetograph add --list --type template` shows what exists.
+
+```sh
+npx kinetograph render src/index.tsx --comp Card --props '{"title":"Goodbye"}'
+npx kinetograph render src/index.tsx --comp Card --props presets/Card/spring.json
+```
+
+A render doesn't check props against the schema, so a misspelled key falls back to the default without an error. Run `check` to catch typos in the code, and prove the template with the next step.
+
+### HyperFrames pages
+
+A page declares variables on its root element, as a list of `{ id, default }`, and gets values from `data-variable-values`. The script reads them with `window.__hyperframes.getVariables()`, `data-var-text` and `data-var-src` fill text and pictures, and each text or number variable is also a CSS custom property, so `var(--accent)` works.
+
+```html
+<div id="root" data-composition-id="main" data-width="1920" data-height="1080" data-duration="6"
+     data-composition-variables='[{"id":"title","default":"Hello"},{"id":"accent","default":"#e0553a"}]'
+     data-variable-values='{"title":"Goodbye"}'>
+  <h1 data-var-text="title" style="color:var(--accent)"></h1>
+</div>
+```
+
+`--props` is for Remotion compositions. An HTML page takes its values from these attributes, so to render another set, change `data-variable-values`.
+
+### One render per record
+
+There is no batch mode. Render one props file at a time. A short loop does it:
+
+```sh
+for p in presets/Card/*.json; do
+  npx kinetograph render src/index.tsx --comp Card --props "$p" -o "out/renders/card-$(basename "$p" .json).mp4"
+done
+```
+
+Ask the agent to write a small script that turns your rows into one props file each and runs a loop like this one. Each render starts the project again.
+
+### Prove the template re-skins
+
+Render the same frame with two sets of props and compare:
+
+```txt title="Suggested prompt"
+/kinetograph-render Render frame 45 of Card twice, once with the defaults and once with {"title":"Goodbye","accent":"#2f6fed"}, to out/stills/a.png and out/stills/b.png. Tell me what differs and flag any prop that changed nothing.
+```
+
+If a prop changes nothing, it isn't wired in. That is the usual bug, and this finds it in two stills.
+
+## What can't be a prop
+
+Size, frame rate and length are set on the `Composition`. They aren't props, so the same template can't be 9:16 for one row and 16:9 for the next. Make two compositions that share the same scene. Fonts must be registered before text is measured, so a prop can pick among fonts you have already loaded, but not name one that isn't.
+
+## Common mistakes
+
+- "On-brand" with no file.
+- Colours typed in several files, so a recolour misses one.
+- A prop that is never read. The two-render check finds it.
+- A logo as a link. Put the file in `public/`.
+- Expecting a batch command. Loop over `--props`.

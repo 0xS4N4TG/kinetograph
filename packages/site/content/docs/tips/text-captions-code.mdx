@@ -1,0 +1,80 @@
+---
+title: Text, captions and code
+description: How to ask for on-screen text, timed captions and code that types itself, and how to keep every word readable.
+---
+
+Quote every word, name a font you can load, and say when each line arrives and leaves. Then ask for `lint`, which catches text that overflows its box or the canvas.
+
+## Text that stays readable
+
+- **Quote the copy.** "The headline reads "Ship it on Friday"." Unquoted copy gets reworded.
+- **Name the font, and load it.** Text uses only registered fonts, so a prompt that names a font needs a Google Fonts family or a file in `public/fonts/`. Without one the text falls back to the bundled DM Sans. See [Fonts](/docs/making-videos/fonts/).
+- **Give size and place.** "Headline 120 px, centred, 80 px from the top", or "fit on two lines inside 900 px". The agent can measure and fit text once the font is registered.
+- **Give contrast a number.** "White text on a 60% black bar" is clearer than "make it readable".
+
+```txt title="Suggested prompt"
+/kinetograph-markup Add the headline "Ship it on Friday" in Inter 700, white, fit to two lines inside 900 px, 120 px from the top. It arrives at 0:01 and leaves at 0:04. Run lint and fix anything it reports.
+```
+
+## Text effects
+
+Name the effect and when it happens. Kinetograph's `Text` can style each character, so "write on over 20 frames, one letter at a time" and "each word slides up from a 20 px offset, 3 frames apart" are both direct asks. For text over busy footage, ask for a dark bar, a drop shadow or a glow behind it.
+
+For type that moves with the voice, use the [Kinetic typography plugin](/docs/plugins/kinetic-typography/) (`npm install @kinetographdev/kinetic-typography`):
+
+- **`<Captions>`** sets a voiceover in fifteen named looks, such as `clean-hook`, `highlighter`, `typewriter`, `bold-captions` and `soft-minimal`. Each word arrives as it is said. A word you mark as big is set huge, with the small words round it.
+- **`<HandCaptions>`** writes each word a letter at a time in mixed handwriting, and can hang off a tracked subject.
+- **`<BoilStack>`** is a three-word title animated on twelves, like hand-made type.
+
+```txt title="Suggested prompt"
+/kinetograph-markup Use the kinetic-typography plugin. Caption public/captions/vo-words.json with the "highlighter" look, 3 words a line, and set the word "premium" big. Show the first hook and the first caption line as stills.
+```
+
+Name the look, how many words a line, and which words are big. `npx kinetograph plugins` shows the plugin's `SKILL.md`, which the agent reads for the rest. The plugin takes words with their frames, so it needs word-level timings.
+
+## Captions
+
+Kinetograph reads SRT and VTT files, and groups word timings into pages so one word can be lit as it is said. It doesn't make the timings. Give the agent the file, or the word timestamps from your speech-to-text tool.
+
+- **Word-level timings:** use the kinetic-typography plugin above for styled captions.
+- **An SRT or VTT file:** the agent builds them with `parseSrt` and `createTikTokStyleCaptions`.
+
+```txt title="Suggested prompt"
+/kinetograph-markup Caption the narration with public/captions/vo.srt. Show 3 to 5 words at a time in the lower third, Inter 800, white on a 60% black bar, and light the word being said in #ffd23f. Keep the captions inside the safe zone and run lint.
+```
+
+Things to say:
+
+- **How many words at a time**, and where they sit.
+- **How the current word is marked**: a colour, a scale, a background.
+- **One style for the whole video.** Mixing styles looks careless.
+- **Calm content wants calm captions.** Say "no pop or shake" if the video is quiet.
+
+If the video is a talking head, say so. The agent shows the captions over the footage and keeps them clear of the face. The plugin's `Captions` can read the footage for an accent colour and an open side.
+
+## Code on screen
+
+Paste the code in the prompt, in a fenced block, and say it must be shown exactly. Then choose the motion:
+
+- **Typing.** "Type it at 30 characters a second with a caret, and hold the end for 2 seconds."
+- **Highlight.** "Light lines 4 to 6 at 0:06, dim the rest to 30%."
+- **Diff.** "Show the old line struck through in red and the new line below it in green."
+- **Scroll.** "Scroll the file from the top to line 40 over 4 seconds with an ease."
+
+Name a monospace font (a Google Fonts family or a file) and the colours for keywords, strings and comments. The agent writes the text layers itself. Check the registry first with `npx kinetograph add --list --type component` in case a component fits.
+
+```txt title="Suggested prompt"
+/kinetograph-markup Show this code typed out at 30 characters a second on a dark panel (#12151c), in JetBrains Mono 36 px, keywords #7aa2f7, strings #9ece6a, comments #565f89. Hold the finished code for 2 seconds, then highlight the line that starts with "await".
+```
+
+## Lower thirds and overlays
+
+Say what it says, when it enters and leaves, and where: "a lower third "Mara Okafor, Founder" at the bottom left, in at 0:03, out at 0:08, with a 12 frame slide". To lay it over other footage, ask for it as its own video with a transparent background. See [Example prompts](/docs/tips/example-prompts/#a-lower-third-with-transparency).
+
+## Common mistakes
+
+- Copy given as a description, with no quotes.
+- A font named but not loaded.
+- Captions with no timing file.
+- Several caption styles in one video.
+- Text placed with no check at the end. Always ask for `lint`.

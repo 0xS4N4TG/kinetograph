@@ -1,0 +1,99 @@
+---
+title: Colour, effects and 3D
+description: How to ask for a colour grade, film and print looks, glow and shaders, and 3D with Kinetograph's own scene layer.
+---
+
+Name the look as a result ("warm highlights, lifted blacks, visible grain"), say which layer it goes on, and ask for a before and after. Effects remove detail, so the picture needs detail to begin with.
+
+## Say what the look does
+
+A grade changes the picture the way a medium would. Ask for the result and the agent picks the effect:
+
+| Ask for | The agent reaches for |
+|---|---|
+| Warmer, more contrast, lifted blacks | `colorGrade`, or `colorCorrection`, `levels` and `curves` |
+| A film stock or a preset look | `lut` with a `.cube` file you supply |
+| Two-tone, thermal, duotone | `gradientMap` |
+| Film grain, print dots, a dot-matrix screen | `grain`, `halftone`, `dotMatrix`, `dither` |
+| Glow, soft bloom | `glow` |
+| Colour fringing, a lens look | `chromaticAberration` |
+| A drop or inner shadow | `dropShadow`, `insetShadow` |
+| A flat picture pinned onto a screen | `cornerPin` |
+| A warm flare over a cut | `LightLeak` or `Starburst` |
+
+`npx kinetograph effects` lists every effect with its fields. See [Effects](/docs/making-videos/effects/), [Color correction](/docs/making-videos/color-correction/) and [Light leaks](/docs/making-videos/light-leaks/).
+
+```txt title="Suggested prompt"
+/kinetograph-markup Grade the photo warmer with a little more contrast, then add grain at a low strength. Keep the headline text clean: grade only the photo layer. Show frame 0 before and after.
+```
+
+## Where it applies
+
+- **On a layer.** An effect works on the pixels of the layer it sits on. Put the grade on the picture, and the text over it stays clean. To grade a whole scene, say "grade the whole scene", and the agent groups it in one layer.
+- **In order.** Effects run in the order you list them: correct the colour first, then apply the look.
+- **Room past the edge.** A glow or shadow reaches past the layer. Ask for room on the composition so nothing is cut off.
+- **Not one subject.** An effect works on the whole layer. To grade a background and leave a person alone, supply the person as a matte or a cut-out image with alpha, and ask for two layers. The engine has no subject selection of its own. The [VJ plugin](/docs/plugins/vj/) ships a `matte.mjs` tool that makes a matte of a person from a clip, and any background remover works for a picture.
+
+## Deliberate roughness
+
+Dither, halftone, grain and chromatic aberration say "printed", "old" or "broken". Pick one and say why: "a halftone dot on the photo, so it reads as a newspaper". Several at once usually reads as noise. For a repeatable, hand-made wobble, ask for seeded noise. See [Noise](/docs/making-videos/noise/).
+
+## Your own shader
+
+A `shader()` effect runs WGSL on its layer, and a `<canvas>` with a WebGL or WebGL 2 context runs GLSL on the GPU. A shader written for a browser usually runs as it is. Ask for the look, or paste the shader and say where it goes. A WGSL effect sees only its own layer. See [Shaders](/docs/making-videos/shaders/).
+
+## Looks from plugins
+
+Four plugins, each installed with `npm install @kinetographdev/<name>`, add looks you can ask for by name. Say which plugin, so the agent reads its `SKILL.md` (`npx kinetograph plugins` lists the path).
+
+- **[VJ](/docs/plugins/vj/): screen and sensor looks.** Layer effects `crt`, `vhs`, `oneBit`, `thermal`, `depthLook`, `pixels` and `halftonePoster`. Brightness stands in for heat and depth, so they are looks, not measurements. `<Blobs>` draws boxes and links on whatever moves, and `<Reticle>` follows one point. Tracking runs once, offline, with the plugin's tools, and the components draw the saved result. `<PopArt>` and `<HalftonePoster>` cut a person out with a matte.
+- **[Paper](/docs/plugins/paper/): paper as a material.** `<CutOut>` turns a picture with alpha into a paper cut-out with a torn, cut, wavy or sticker edge, and `<FoldOut>` unfolds it from a crumpled packet. `<MatchCut>` holds a keyword still while the page under it changes. `<Scrapline>` draws a hand-drawn border on torn paper round a subject. The cut-out must have its background removed first.
+- **[Hexed](/docs/plugins/hexed/): a rolled look.** `<Hexed seed={42}>` rolls a grade, glitch, grain, shake or print look onto a picture or clip from a number, and the same number gives the same look. Lock the parts you like and reroll the rest.
+- **[Kinetic typography](/docs/plugins/kinetic-typography/)** is for text. See [Text, captions and code](/docs/tips/text-captions-code/).
+
+```txt title="Suggested prompt"
+/kinetograph-markup Use the vj plugin. Put the thermal look on public/video/clip.mp4, track what moves with Blobs using box "corners" and links "chain", and show a strip. Run the tracking once and tell me where the JSON is.
+```
+
+```txt title="Suggested prompt"
+/kinetograph-markup Use the paper plugin. Show public/images/me.png, which has a transparent background, as a CutOut with a torn edge on kraft stock, and have it unfold with FoldOut at 0:01. Show a strip.
+```
+
+```txt title="Suggested prompt"
+/kinetograph-markup Use the hexed plugin. Roll a look onto the photo with seed 42, lock the grade, switch the mirror slot off, and show frame 0. Then try seed 43 and tell me which you prefer.
+```
+
+## Generated and supplied art
+
+Kinetograph draws; it doesn't generate pictures. Make or buy the artwork, put it in `public/images/`, and name the files. Ask the agent to animate it: a slow push-in, parallax between a foreground and a background cut-out, a card flip. Use PNG with alpha for cut-outs. For simple shapes and icons, ask for SVG or native shapes: they stay sharp at any size.
+
+## 3D
+
+Ask for what you want to see, and Kinetograph builds it with its own 3D layer. It has no Three.js behind it, and a page that loads Three.js is reported on every frame.
+
+- **A flat card turning.** "Flip the card over with a 3D turn and a camera." Cheap, and good for a card, a phone, a poster.
+- **A real scene.** "A `Scene3D` with a camera, a key light and a soft fill, and a torus turning slowly." It has boxes, spheres, planes, cylinders and tori, glTF and GLB models, 3D text and extruded SVG, a directional light with shadows and an environment map.
+
+```txt title="Suggested prompt"
+/kinetograph-markup Add a 960 by 540 3D scene on a dark floor: public/models/phone.glb turning 360 degrees over 6 seconds, one key light from the upper left that casts a shadow, a slow camera push-in. Run doctor and tell me if the model uses anything the engine can't read.
+```
+
+Say it in these terms:
+
+- The camera: where it starts, where it ends, how long.
+- The lights: how many, where, whether they cast a shadow.
+- The model by path, and its turn in degrees per second.
+
+If a model uses a glTF feature the engine doesn't read, `doctor` names it. A Three.js project needs to be rebuilt as a `Scene3D`: use `/kinetograph-migrate`. See [Transforms](/docs/making-videos/transforms/#3d-scenes) and [What works](/docs/compat/#3d).
+
+## Keep it deterministic
+
+A render must be the same every time. Ask for seeded randomness, not live data, and don't ask for anything that reads the clock. The agent will use `random('name')` and `noise`.
+
+## Common mistakes
+
+- A grade on a layer that holds text too.
+- Several looks at once.
+- "Make it cinematic" with no picture detail to work with. Name the grade.
+- Asking for Three.js. Ask for the 3D result.
+- A shadow that gets cut off because the composition has no margin.

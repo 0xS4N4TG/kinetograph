@@ -14,11 +14,12 @@ The first command asks which agents to install the skills for. Pick Claude Code.
 
 ## Skills
 
-To install them by hand, copy the folders from the npm package to where Claude Code looks for skills:
+To install them by hand, copy the folders from the GitHub repo:
 
 ```bash
+git clone --depth 1 https://github.com/0xS4N4TG/kinetograph
 mkdir -p ~/.claude/skills
-cp -R node_modules/kinetograph/skills/kinetograph node_modules/kinetograph/skills/kinetograph-migrate ~/.claude/skills/
+cp -R kinetograph/packages/cli/skills/kinetograph* ~/.claude/skills/
 ```
 
 For one project only, copy them to `.claude/skills/` in that project instead. [Agent skills](/docs/agents/skills/) lists what each one does.

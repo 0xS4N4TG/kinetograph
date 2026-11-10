@@ -1,0 +1,81 @@
+---
+title: Storyboards
+description: How to plan a multi-scene video once, so every scene follows the same direction, and how to use Studio's storyboard panel for it.
+---
+
+For a video with more than a few scenes, state the film's shape once, give one direction block that every scene inherits, and give each scene a job. Settle that plan before any animation, because it is cheaper to change a line of text than a render.
+
+## The film's shape
+
+Say these four things first:
+
+- **The point.** What a viewer should remember, in one sentence.
+- **The arc.** How it moves: a problem, then a turn, then a payoff.
+- **The audience.** Who watches, and where (a vertical feed, a keynote screen).
+- **The mood.** One or two words, and the length.
+
+## One direction block
+
+Write the rules that every scene follows, once, and tell the agent to apply them to all of them:
+
+- **Palette.** The colours and where each is used: "cream background, one accent, used only for the thing that matters".
+- **Type.** The families and the sizes for headline and label.
+- **Reveal timing.** How long things take to enter, and how long they hold.
+- **One breather.** A single scene with nothing moving, near the middle or before the turn. It lets the rest land.
+- **Banned.** What you don't want anywhere: "no stock gradients, no drop shadows on text, no spinning logos".
+
+## A job for each scene
+
+For each scene, one line each:
+
+- **What it is.** A title, a proof, a demo, a list, an end card.
+- **What it should make the viewer feel or understand.**
+- **The focal point.** The one thing the eye should land on.
+- **The elements.** What is on screen, and which is the hero and which is support.
+- **Seconds.** How long it runs, and how it joins the next scene.
+
+## Plant something, then call it back
+
+Pick a small thing in the first scene, such as a line, a shape or a sound, and bring it back in the last. The video feels planned, and you spent one line on it: "the thin accent line that draws in scene 1 draws out again under the end card".
+
+## An example
+
+```txt title="Suggested prompt"
+/kinetograph-markup Plan a 24 second vertical video, 1080 by 1920, for a budgeting app. Don't animate yet. Write the plan to plan/storyboard.md for me to approve.
+
+Film: the point is that you always know what is left to spend. Arc: confusion, then one number, then calm. Audience: people on a short-video feed, sound off. Mood: calm, confident.
+
+Direction for every scene: background #f6f0e4, text #1d1a16, accent #e0553a used only for the number that matters. Newsreader for the headline at 120 px, Inter for labels at 44 px. Entrances take 14 frames with an ease-out. Nothing bounces, nothing has a shadow. Scene 4 is the breather: nothing moves for 2 seconds.
+
+Scenes:
+1. 0:00 to 0:05, a hook. A pile of receipts and the words "Where did it go?". Focal point: the words. Draws a thin accent line under them.
+2. 0:05 to 0:12, the turn. The pile collapses into one number, "412 left". Focal point: the number, in the accent.
+3. 0:12 to 0:18, the proof. Three rows, "Rent", "Food", "Fun", each filling to a bar over 20 frames, one after the other.
+4. 0:18 to 0:21, the breather. The number alone.
+5. 0:21 to 0:24, the end. The logo from public/images/logo.svg and "Know what's left". The accent line from scene 1 draws out under it.
+```
+
+When you approve it, say "build it, hook and turn first, then show me a strip of each".
+
+## Plan in Studio
+
+Studio has panels for this. Ask the agent to open them, and it waits for your answer in the window:
+
+- A **brief** panel for purpose, audience, platform, size, length and the one takeaway.
+- A **script** panel for the lines and their timing.
+- A **storyboard** panel with a card for each shot: what it shows, how it moves, the line spoken, its seconds and the transition into the next. You can edit, remove and approve.
+- A **styleframes** panel that shows two or three looks as frames, so you pick one before any scene is built.
+- A **review** panel that sits beside the preview, where you leave notes on frames of a composition and approve it or ask for changes.
+
+```txt title="Suggested prompt"
+/kinetograph-studio Open Studio on src/index.tsx. Start with a brief for a 24 second launch video, then a storyboard, and wait for my answers in the panels before you animate anything.
+```
+
+Your answers are saved in `plan/` next to the project, so a restart doesn't lose them. See [Panels](/docs/studio/panels/).
+
+## Common mistakes
+
+- Describing each scene on its own, so the look drifts.
+- No breather, so the whole video runs at one level.
+- Animating before the plan is approved.
+- A scene with three focal points.
