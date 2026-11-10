@@ -55,3 +55,18 @@ fn a_transformed_element_paints_over_an_earlier_positioned_sibling() {
     let p = px(&frame, 100, 100);
     assert!(p[2] > 200 && p[0] < 60, "the blue box is under the red backdrop: {p:?}");
 }
+
+/// CSS Masking 1, `mask-type`: set by a stylesheet rule on a `<mask>` (not only as an attribute), `alpha` keeps what
+/// the mask's content covers instead of its luminance, which for black content would hide the masked box whole.
+#[test]
+fn an_svg_mask_with_mask_type_alpha_from_a_class_masks_by_alpha() {
+    let frame = shoot(
+        "mask-type",
+        r##"<style>.\[mask-type\:alpha\]{mask-type:alpha}</style>
+<svg width="200" height="100" viewBox="0 0 200 100" style="display:block"><mask id="m" class="[mask-type:alpha]"><circle cx="50" cy="50" r="40" fill="#000"/></mask><rect width="200" height="100" fill="#00c000" mask="url(#m)"/></svg>"##,
+        200,
+        100,
+    );
+    assert_eq!(px(&frame, 50, 50), [0, 192, 0, 255], "inside the circle");
+    assert_eq!(px(&frame, 150, 50), [255, 255, 255, 255], "outside it");
+}

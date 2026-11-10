@@ -139,7 +139,7 @@ const DECLARED: [&str; 2] = ["clip-path", "mask"];
 
 /// The presentation properties read from the cascade: CSS name, Stylo's id,
 /// whether the property inherits, and its initial value as Stylo prints it.
-const CASCADED: [(&str, LonghandId, bool, &str); 35] = [
+const CASCADED: [(&str, LonghandId, bool, &str); 36] = [
     ("fill", LonghandId::Fill, true, "rgb(0, 0, 0)"),
     ("fill-opacity", LonghandId::FillOpacity, true, "1"),
     ("fill-rule", LonghandId::FillRule, true, "nonzero"),
@@ -195,6 +195,7 @@ const CASCADED: [(&str, LonghandId, bool, &str); 35] = [
     ("filter", LonghandId::Filter, false, "none"),
     ("clip-path", LonghandId::ClipPath, false, "none"),
     ("mask", LonghandId::MaskImage, false, "none"),
+    ("mask-type", LonghandId::MaskType, false, "luminance"),
 ];
 
 pub fn canonical_tag(tag: &str) -> String {

@@ -31,6 +31,7 @@ Upstream: crates.io `stylo` 0.22.0 (`servo/stylo`, commit `34d25f741765a0bdb894f
 - `properties/longhands.toml`: `text-anchor`, `shape-rendering`, `paint-order`, `clip-rule` and `dominant-baseline` lose `engine = "gecko"`, so the Servo build parses and computes them; the SVG painter reads them from the cascade (`paint/svg/serialize.rs`).
 - `properties/properties.mako.rs`: new `ComputedValues::same_values_except(other, except)`, used by `kinetograph-dom` (`dirty.rs`) to tell an edited document's unchanged nodes and its group-only changes.
 - `properties/longhands.toml`: `offset-path`, `offset-distance`, `offset-rotate`, `offset-anchor` and `offset-position` lose `engine = "gecko"` / `servo_pref`, so the Servo build parses and computes them; `crates/dom/src/motion.rs` follows the path.
+- `properties/longhands.toml`: `mask-type` loses `servo_pref = "layout.unimplemented"`, so the Servo build parses and computes it; the SVG painter reads it from the cascade (`paint/svg/serialize.rs`), where Tailwind's `[mask-type:alpha]` class sets it.
 
 Drop when a stylo release parses `@container` without Gecko and computes the SVG properties above in its Servo build. `same_values_except` can move to `kinetograph-dom`.
 
