@@ -159,3 +159,35 @@ fn a_box_with_a_negative_margin_moved_in_3d_is_not_cut_at_the_origin() {
     assert_eq!(px(&frame, 1040, 620), [204, 0, 0, 255], "the bottom right");
     assert_eq!(px(&frame, 850, 430), [255, 255, 255, 255], "the box is larger than it should be");
 }
+
+/// CSS 2.1 Appendix E, steps 8 and 9, in the layouts a stacking context at z-index 0 sits in: in block flow, as a float,
+/// and with a positioned box after it (tree order wins either way); and a descendant at `z-index: -1` of a box that makes
+/// a stacking context by its blend mode stays inside it, above the box's own background.
+#[test]
+fn stacking_contexts_at_z_index_zero_paint_in_tree_order_with_positioned_boxes() {
+    let red = [255, 0, 0, 255];
+    let blue = [0, 0, 255, 255];
+    let green = [0, 128, 0, 255];
+    // In a positioned container: an absolute box whose containing block is further up is listed with that block's children
+    // by Blitz, after the whole subtree it sits in (a limit of the vendored layout, not tested here).
+    let abs = |color: &str| format!(r#"<div style="position:absolute;left:0;top:0;width:100px;height:100px;background:{color}"></div>"#);
+    let wrap = |inner: String| format!(r#"<div style="position:relative;width:200px;height:100px">{inner}</div>"#);
+    // A transformed block in flow, after an absolute box.
+    let f = shoot("order-block", &wrap(format!(r##"{}<div style="width:100px;height:100px;background:#00f;transform:translate(0,0)"></div>"##, abs("#f00"))), 200, 100);
+    assert_eq!(px(&f, 50, 50), blue, "block");
+    // A transformed float, after an absolute box.
+    let f = shoot("order-float", &wrap(format!(r##"{}<div style="float:left;width:100px;height:100px;background:#00f;opacity:0.999"></div>"##, abs("#f00"))), 200, 100);
+    let p = px(&f, 50, 50);
+    assert!(p[2] > 250 && p[0] < 5, "float: {p:?}");
+    // An absolute box after a transformed one is over it.
+    let f = shoot("order-later", &wrap(format!(r##"<div style="width:100px;height:100px;background:#00f;transform:translate(0,0)"></div>{}"##, abs("#008000"))), 200, 100);
+    assert_eq!(px(&f, 50, 50), green, "later absolute");
+    // z-index -1 inside a blend-mode box.
+    let f = shoot(
+        "order-blend",
+        r##"<div style="position:absolute;left:0;top:0;width:100px;height:100px;background:#ff0;mix-blend-mode:multiply"><div style="position:absolute;left:20px;top:20px;width:40px;height:40px;background:#f00;z-index:-1"></div></div>"##,
+        200,
+        100,
+    );
+    assert_eq!(px(&f, 40, 40), red, "the z-index -1 child escaped its blend-mode parent");
+}

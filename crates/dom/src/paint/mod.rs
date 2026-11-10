@@ -592,9 +592,9 @@ impl<'a> Painter<'a> {
 
     // ---- small queries ----
 
-    /// Whether `node` makes a stacking context: Blitz's rule plus what it
-    /// leaves out (`mix-blend-mode`, `perspective`, `preserve-3d`,
-    /// `backdrop-filter`, a `url()` filter).
+    /// Whether `node` makes a stacking context: Blitz's rule (`is_stacking_context_root`,
+    /// which also sorts and hoists) plus what it cannot see (a `url()` filter,
+    /// a graded picture).
     pub fn is_sc(&self, node: &Node, parent_flex: bool) -> bool {
         if node.is_stacking_context_root(parent_flex) {
             return true;
@@ -613,16 +613,7 @@ impl<'a> Painter<'a> {
         if node.is_element() && attr(node, grade::GRADE_ATTR).is_some() {
             return true;
         }
-        node.primary_styles().is_some_and(|s| {
-            use style::computed_values::mix_blend_mode::T as Blend;
-            use style::computed_values::transform_style::T as Style3d;
-            use style::values::computed::Perspective;
-            let b = s.get_box();
-            s.get_effects().mix_blend_mode != Blend::Normal
-                || !matches!(b.perspective, Perspective::None)
-                || b.transform_style == Style3d::Preserve3d
-                || !s.get_effects().backdrop_filter.0.is_empty()
-        })
+        false
     }
 
     pub fn is_visible(&self, node: &Node) -> bool {

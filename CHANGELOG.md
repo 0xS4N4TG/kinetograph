@@ -46,6 +46,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A layer moved in 3D (`translate3d` under a `perspective`) whose box starts left of or above its parent's origin (a negative margin, as 3D carousels centre their cards with) is drawn whole; the part at negative coordinates was cut off before it was placed.
 - `backdrop-filter` draws its colour functions (`saturate()`, `brightness()`, `contrast()`, `grayscale()`, `sepia()`, `invert()`, `hue-rotate()`) in the order of the list, not only `blur()`; `drop-shadow()` and `opacity()` are still reported.
 - Canvas `measureText` measures a font list that ends in a generic family (`"Fira Code", monospace`) in the font it is drawn in, and counts the white space at the ends of the text; before, it returned half an em a character, so tokens drawn one after another overlapped.
+- A `z-index: -1` descendant of a box that is a stacking context by its `mix-blend-mode`, `perspective`, `transform-style: preserve-3d` or `backdrop-filter` stays inside it; the paint order and the hoisting of z-indexed boxes now use the same rule.
 
 ## 0.3.0 (2026-11-03)
 
