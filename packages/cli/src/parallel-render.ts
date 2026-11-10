@@ -8,7 +8,7 @@ import type { AudioClipJson, Unsupported } from '@kinetographdev/scene';
 import { CliError } from './errors.js';
 import type { ImageFormat } from './image-sequence.js';
 import { ProfileLog, now, profiling, stage } from './profile.js';
-import type { FromWorker, ToWorker, WorkerInit } from './render-worker.js';
+import type { FromWorker, ToWorker, WorkerInit, WorkerStart } from './render-worker.js';
 import type { WorkerSpec } from './source.js';
 import { nowMs } from './time.js';
 
@@ -37,8 +37,91 @@ const DRAIN_SLICE_MS = process.env.KINETOGRAPH_DRAIN_MS === undefined ? 2 : Numb
 /** A running chunk with fewer than twice this many frames left is not split: the new chunk's start would cost more than it saves. */
 const MIN_SPLIT = Number(process.env.KINETOGRAPH_MINSPLIT) || 8;
 
+/** Frames each worker draws, on average and after its chunk's first, before the workers are judged (`gpuBound`, `adaptive`). */
+const JUDGE_FRAMES = 8;
+
+/**
+ * Workers that wait for the GPU more than this share of their time are held up by the GPU they share, not their own
+ * work (`KINETOGRAPH_GPU_BOUND`: 0 hands every render back to the main thread, above 1 none).
+ */
+const GPU_BOUND = process.env.KINETOGRAPH_GPU_BOUND === undefined ? 0.5 : Number(process.env.KINETOGRAPH_GPU_BOUND);
+
+/**
+ * Whether workers that spent `busyMs` on frames, `gpuWaitMs` of it waiting for the GPU (`takeGpuWaitMs`), were held up
+ * by it. Each worker has a GPU device of its own, which the GPU switches between, and draws a frame with less overlap
+ * than the main thread's writer, so a render held up by the GPU is no faster with workers, and often slower.
+ */
+export function gpuBound(gpuWaitMs: number, busyMs: number): boolean {
+  return gpuWaitMs > GPU_BOUND * busyMs;
+}
+
+/** A worker thread and what it said before the render took it (a `WorkerPool`'s), handed on when it is taken. */
+interface Started {
+  worker: Worker;
+  early: ((on: WorkerEvents) => void)[];
+  on?: WorkerEvents;
+}
+
+interface WorkerEvents {
+  message(message: FromWorker): void;
+  error(error: Error): void;
+  exit(code: number): void;
+}
+
+function startWorker(start: WorkerStart): Started {
+  const started: Started = { worker: new Worker(new URL('./render-worker.js', import.meta.url), { workerData: start }), early: [] };
+  const route = (event: (on: WorkerEvents) => void): void => {
+    if (started.on) event(started.on);
+    else started.early.push(event);
+  };
+  started.worker.on('message', (message: FromWorker) => route((on) => on.message(message)));
+  started.worker.on('error', (error) => route((on) => on.error(error)));
+  started.worker.on('exit', (code) => route((on) => on.exit(code)));
+  return started;
+}
+
+function listen(started: Started, on: WorkerEvents): void {
+  started.on = on;
+  for (const event of started.early.splice(0)) event(on);
+}
+
+const sameStart = (a: WorkerStart, b: WorkerStart): boolean =>
+  a.spec.entry === b.spec.entry &&
+  a.spec.bundleFile === b.spec.bundleFile &&
+  a.spec.props === b.spec.props &&
+  (a.spec.comp === undefined || a.spec.comp === b.spec.comp) &&
+  a.devReact === b.devReact &&
+  a.preferredEffectBackend === b.preferredEffectBackend;
+
+/**
+ * Render workers started as soon as the project's bundle is written, so they load it and make their renderers while
+ * this thread loads it, makes its own renderer and opens the encoder. A worker taken by `renderInParallel` is the
+ * same as one it starts itself; `dispose` stops the ones not taken.
+ */
+export class WorkerPool {
+  private readonly started: Started[] = [];
+
+  /** `start.spec.comp` undefined: the project's first composition, as the render opens when no `--comp` is given. */
+  constructor(private readonly start: WorkerStart, count: number) {
+    for (let i = 0; i < count; i++) this.started.push(startWorker(start));
+  }
+
+  /** Up to `count` workers, if they were started for `start`; the others are stopped. */
+  take(start: WorkerStart, count: number): Started[] {
+    const taken = sameStart(this.start, start) ? this.started.splice(0, count) : [];
+    this.dispose();
+    return taken;
+  }
+
+  dispose(): void {
+    for (const started of this.started.splice(0)) void started.worker.terminate();
+  }
+}
+
 export interface ParallelOptions {
   spec: WorkerSpec;
+  /** Workers already started for this render (`WorkerPool`); the rest are started here. */
+  pool?: WorkerPool;
   /** `render --scale`: the factor the scenes are drawn at (1 for full size). */
   scale: number;
   /** The pixel format the workers convert to, which the writer's encoder takes (`resolveExport`'s `convertFormat`); unused with `sequence`. */
@@ -49,6 +132,12 @@ export interface ParallelOptions {
   devReact: boolean;
   preferredEffectBackend?: string;
   workers: number;
+  /**
+   * Judge the workers once they have drawn `JUDGE_FRAMES` frames each past the first (`gpuBound`): held up by the GPU,
+   * they stop after the frames they have begun, and the caller draws the rest (after the last frame `onPushed` saw).
+   * For a worker count the user did not set.
+   */
+  adaptive?: boolean;
   /** The frames drawn are numbered `0..count-1` here; index `i` is frame `origin + i * step` of the composition. */
   origin: number;
   step: number;
@@ -103,10 +192,11 @@ function playedTo(lastEnd: number, first: number): number {
 export async function renderInParallel(options: ParallelOptions): Promise<ArtifactRecord[]> {
   const { workers: count } = options;
   const first = 0;
-  const last = options.count - 1;
+  let last = options.count - 1;
   const window = windowFrames(count);
 
   const pool: Worker[] = [];
+  const init: WorkerInit = { scale: options.scale, convertFormat: options.convertFormat, sequence: options.sequence, origin: options.origin, step: options.step };
   const log = profiling ? new ProfileLog(true) : undefined;
   let pushMs = 0;
   const started = log ? now() : 0;
@@ -127,6 +217,45 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
     const cost = { drawn: 0, drawMs: 0, played: 0, playMs: 0 };
     const artifacts = new Map<string, ArtifactRecord>();
     let finished = 0;
+    let finishing = false;
+    /** Until the workers are judged (`adaptive`): their time on frames, and of that, waiting for the GPU. */
+    let judged = !options.adaptive;
+    const gpu = { frames: 0, busyMs: 0, waitMs: 0 };
+    /** Split answers still to come once the workers are found held up by the GPU and told to stop (`judge`). */
+    let cutting = 0;
+
+    /** The last frame from the next one to push on that has arrived or is still to come from a worker's chunk. */
+    const frontier = (): number => {
+      let frame = nextFrame;
+      const coming = (f: number): boolean => [...lanes.values()].some((lane) => lane.job && lane.job.first <= f && f <= lane.job.last);
+      while (frame <= last && (arrived.has(frame) || coming(frame))) frame += 1;
+      return frame - 1;
+    };
+
+    /**
+     * Held up by the GPU, the workers stop after the frames they have begun and give out no more chunks; the frames
+     * up to the first gap are pushed, and the caller draws the rest.
+     */
+    const judge = (): void => {
+      judged = true;
+      const bound = gpuBound(gpu.waitMs, gpu.busyMs);
+      if (log) log.add({ kind: 'judged', share: gpu.waitMs / gpu.busyMs, bound: bound ? 1 : 0, t: now() });
+      if (!bound) return;
+      last = Math.min(last, nextStart - 1);
+      returned.length = 0;
+      // An answer to a split asked for before is still to come too.
+      cutting = splitting ? 1 : 0;
+      splitting = true;
+      for (const lane of lanes.values()) {
+        if (!lane.job) continue;
+        lane.worker.postMessage({ type: 'split', at: lane.progress + 1 } satisfies ToWorker);
+        cutting += 1;
+      }
+      if (cutting === 0) {
+        last = frontier();
+        drain();
+      }
+    };
 
     const stop = (error?: unknown): void => {
       if (settled) return;
@@ -229,7 +358,10 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
         }
         if (log && pushed > 0) log.add({ kind: 'drain', t0: sliceStart, t1: now(), pushed, more: 0 });
         give();
-        if (nextFrame > last) for (const worker of pool) worker.postMessage({ type: 'finish' } satisfies ToWorker);
+        if (nextFrame > last && !finishing) {
+          finishing = true;
+          for (const worker of pool) worker.postMessage({ type: 'finish' } satisfies ToWorker);
+        }
       } catch (error) {
         stop(error);
       }
@@ -259,6 +391,7 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
       switch (message.type) {
         case 'ready':
           stage('worker ready');
+          worker.postMessage({ type: 'start', ...init } satisfies ToWorker);
           idle.push(lane);
           give();
           break;
@@ -266,10 +399,26 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
           if (log && message.frame === 0) stage('first frame arrived');
           lane.progress = Math.max(lane.progress, message.frame);
           timeFrame(lane);
+          if (message.busyMs > 0) {
+            gpu.busyMs += message.busyMs;
+            gpu.waitMs += message.gpuWaitMs;
+            gpu.frames += 1;
+          }
           arrived.set(message.frame, message);
+          if (!judged && gpu.frames >= count * JUDGE_FRAMES) judge();
           drain();
           break;
         case 'split':
+          if (cutting > 0) {
+            if (lane.job && message.first <= message.last) lane.job.last = message.first - 1;
+            cutting -= 1;
+            if (cutting === 0) {
+              splitting = false;
+              last = frontier();
+              drain();
+            }
+            break;
+          }
           splitting = false;
           if (lane.job && message.first <= message.last) {
             lane.job.last = message.first - 1;
@@ -299,25 +448,23 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
       }
     };
 
-    for (let i = 0; i < count; i++) {
-      const init: WorkerInit = {
-        spec: options.spec,
-        scale: options.scale,
-        convertFormat: options.convertFormat,
-        sequence: options.sequence,
-        devReact: options.devReact,
-        preferredEffectBackend: options.preferredEffectBackend,
-        origin: options.origin,
-        step: options.step,
-      };
-      const worker = new Worker(new URL('./render-worker.js', import.meta.url), { workerData: init });
+    const start: WorkerStart = { spec: options.spec, devReact: options.devReact, preferredEffectBackend: options.preferredEffectBackend };
+    const taken = options.pool?.take(start, count) ?? [];
+    const all = Array.from({ length: count }, (_, i) => taken[i] ?? startWorker(start));
+    for (const { worker } of all) {
       lanes.set(worker, { worker, lastEnd: -2, progress: -1, givenAt: 0, played: 0, lastAt: Number.NaN });
-      worker.on('message', (message: FromWorker) => onMessage(worker, message));
-      worker.on('error', (error) => stop(error));
-      worker.on('exit', (code) => {
-        if (!settled && code !== 0) stop(new CliError('RENDER_FAILED', `a render worker exited with code ${code}`));
-      });
       pool.push(worker);
+    }
+    // What a taken worker said before (it may be ready already) is handled once every lane is in place.
+    for (const started of all) {
+      const { worker } = started;
+      listen(started, {
+        message: (message) => onMessage(worker, message),
+        error: (error) => stop(error),
+        exit: (code) => {
+          if (!settled && code !== 0) stop(new CliError('RENDER_FAILED', `a render worker exited with code ${code}`));
+        },
+      });
     }
   });
 }

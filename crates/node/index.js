@@ -783,6 +783,7 @@ module.exports.Renderer = nativeBinding.Renderer
 module.exports.VideoWriter = nativeBinding.VideoWriter
 module.exports.decodeAudio = nativeBinding.decodeAudio
 module.exports.domComputedStyle = nativeBinding.domComputedStyle
+module.exports.domIslandEdits = nativeBinding.domIslandEdits
 module.exports.domLayoutBoxes = nativeBinding.domLayoutBoxes
 module.exports.finishDomIsland = nativeBinding.finishDomIsland
 module.exports.inspect = nativeBinding.inspect

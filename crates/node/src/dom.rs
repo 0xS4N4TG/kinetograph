@@ -13,10 +13,11 @@ use kinetograph_core::dom_layout::{
     DomLayoutBox, DomLayoutError, DomLayoutRequest, TextSize, has_text, layout_dom as lay_out,
     measure_text,
 };
-use kinetograph_dom::document::{self, BuildError, IslandCache, IslandDocument, Resolved};
+use kinetograph_dom::document::{
+    self, BuildError, EditsError, IslandCache, IslandDocument, Resolved,
+};
 use kinetograph_dom::readback;
-use kinetograph_dom::request::{self, IslandRequest, Unsupported};
-use serde_json::Value;
+use kinetograph_dom::request::{self, IslandEdits, IslandRequest, Unsupported};
 
 use crate::error::{Code, Result, error, invalid};
 use crate::layout::with_engine;
@@ -182,80 +183,196 @@ fn parse_island(request_json: &str, what: &str) -> std::result::Result<IslandReq
         .map_err(|e| (Code::InvalidArg, format!("invalid {what} request: {e}")))
 }
 
-/// Documents kept from one render or readback to the next (`IslandCache`), with the text of the request each was
-/// resolved from: a request with the same text is answered from its document as it is, with no parse of it, no edit
-/// and no restyle. A frame's scripts read the layout of the tree they leave, and the frame then draws that same tree:
-/// the readback and the render share one document.
+/// Documents kept from one render or readback to the next (`IslandCache`), with what the caller knows each as
+/// (`Source`): a request with the same text, or edits of the same number, is answered from its document as it is, with
+/// no parse of it, no edit and no restyle. A frame's scripts read the layout of the tree they leave, and the frame then
+/// draws that same tree: the readback and the render share one document.
 #[derive(Default)]
 struct Islands {
     cache: IslandCache,
-    /// Island path → the text of the request its kept document shows.
-    sources: HashMap<String, String>,
+    /// Island path → what its kept document shows.
+    sources: HashMap<String, Source>,
+}
+
+/// What a kept document shows: the request of this text (none once edits were made to it), and the state the caller
+/// numbered so (`IslandEdits::stamp`), when it did.
+#[derive(Default)]
+struct Source {
+    text: Option<String>,
+    stamp: Option<u64>,
 }
 
 impl Islands {
     /// The path of the kept document resolved from exactly `json`.
     fn path_of(&self, json: &str) -> Option<&str> {
-        let (path, _) = self.sources.iter().find(|(_, text)| text.as_str() == json)?;
+        let (path, _) = self
+            .sources
+            .iter()
+            .find(|(_, source)| source.text.as_deref() == Some(json))?;
         Some(path)
     }
 
-    /// The kept document resolved from exactly `json` in `pass`.
-    fn same(&mut self, json: &str, pass: Option<u64>) -> Option<&Resolved> {
+    /// The kept document of what `asked` names, as it is, in `pass`. A request of the text it shows that numbers its
+    /// state gives the document that number.
+    fn same(&mut self, asked: &Asked, pass: Option<u64>) -> Option<&Resolved> {
         self.cache.enter(pass);
-        let path = self.path_of(json)?;
-        self.cache.peek(path)
+        let path = match asked {
+            Asked::Request { text, stamp } => {
+                let path = self.path_of(text)?.to_string();
+                if stamp.is_some() {
+                    self.sources.get_mut(&path)?.stamp = *stamp;
+                }
+                path
+            }
+            Asked::Edits(edits) => {
+                let source = self.sources.get(&edits.path)?;
+                (source.stamp == Some(edits.stamp)).then(|| edits.path.clone())?
+            }
+        };
+        self.cache.peek(&path)
     }
 
-    /// The kept document resolved from exactly `json` in `pass`, and its request, taken out: hand them back to `keep`.
-    fn take(&mut self, json: &str, pass: Option<u64>) -> Option<(IslandRequest, Resolved)> {
-        self.cache.enter(pass);
-        let path = self.path_of(json)?.to_string();
-        self.sources.remove(&path);
-        self.cache.take(&path)
+    /// The kept document of what `asked` names, as it is, in `pass`, its request and the caller's number for its
+    /// state, taken out: hand them back to `keep`.
+    fn take(
+        &mut self,
+        asked: &Asked,
+        pass: Option<u64>,
+    ) -> Option<(IslandRequest, Resolved, Option<u64>)> {
+        self.same(asked, pass)?;
+        let path = match asked {
+            Asked::Request { text, .. } => self.path_of(text)?.to_string(),
+            Asked::Edits(edits) => edits.path.clone(),
+        };
+        let stamp = self.sources.remove(&path).and_then(|source| source.stamp);
+        let (request, resolved) = self.cache.take(&path)?;
+        Some((request, resolved, stamp))
     }
 
-    /// The kept document of the island edited to `request` in `pass`, or a new one (`IslandCache::resolve`). Hand it
-    /// back to `keep`.
+    /// The kept document of the island edited to `request` in `pass`, or a new one (`IslandCache::resolve`), and the
+    /// caller's number for its state when the request is the one the kept document showed (its text came another way:
+    /// a render's request of the tree a readback sent as edits). Hand them back to `keep`.
     fn resolve(
         &mut self,
         request: &IslandRequest,
         pass: Option<u64>,
-    ) -> std::result::Result<Resolved, BuildError> {
-        self.sources.remove(&request.path);
-        self.cache.resolve(request, pass)
+    ) -> std::result::Result<(Resolved, Option<u64>), BuildError> {
+        self.cache.enter(pass);
+        let stamp = self
+            .sources
+            .remove(&request.path)
+            .and_then(|source| source.stamp);
+        let stamp = stamp.filter(|_| self.cache.request(&request.path) == Some(request));
+        Ok((self.cache.resolve(request, pass)?, stamp))
     }
 
-    fn keep(&mut self, request: IslandRequest, json: String, resolved: Resolved) {
+    /// The kept document of the state `edits.base` with `edits` made to it in `pass`, and its request
+    /// (`IslandCache::resolve_edits`). Hand them back to `keep`. A `STALE_BASE` error when that state is not the one
+    /// kept, or the edits do not fit it: the caller sends the whole request instead.
+    fn resolve_edits(
+        &mut self,
+        edits: &IslandEdits,
+        pass: Option<u64>,
+    ) -> std::result::Result<(IslandRequest, Resolved), Failure> {
+        self.cache.enter(pass);
+        let stale = |why: String| (Code::StaleBase, format!("{why}: send the whole request"));
+        let held = self
+            .sources
+            .get(&edits.path)
+            .and_then(|source| source.stamp);
+        if held != Some(edits.base) {
+            let why = format!("island {} is not kept as state {}", edits.path, edits.base);
+            return Err(stale(why));
+        }
+        let resolved = self.cache.resolve_edits(edits, pass).map_err(|e| match e {
+            EditsError::Stale(why) => stale(why),
+            EditsError::Build(e) => (Code::Render, e.to_string()),
+        })?;
+        self.sources.remove(&edits.path);
+        Ok(resolved)
+    }
+
+    fn keep(&mut self, request: IslandRequest, source: Source, resolved: Resolved) {
         let path = request.path.clone();
         self.cache.keep(request, resolved);
         if self.cache.peek(&path).is_some() {
-            self.sources.insert(path, json);
+            self.sources.insert(path, source);
         } else {
             self.sources.remove(&path);
         }
     }
 }
 
+/// What a readback is asked of: a request, or edits to a state of the island the caller sent before. A request whose
+/// state the caller numbers comes as `{"stamp":N,"request":REQUEST}`.
+enum Asked<'a> {
+    Request { text: &'a str, stamp: Option<u64> },
+    Edits(IslandEdits),
+}
+
+fn asked<'a>(json: &'a str, what: &str) -> std::result::Result<Asked<'a>, Failure> {
+    let Some(rest) = json.strip_prefix(r#"{"stamp":"#) else {
+        return Ok(Asked::Request {
+            text: json,
+            stamp: None,
+        });
+    };
+    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+    let request = rest[digits..]
+        .strip_prefix(r#","request":"#)
+        .and_then(|r| r.strip_suffix('}'));
+    if let (Ok(stamp), Some(text)) = (rest[..digits].parse(), request) {
+        return Ok(Asked::Request {
+            text,
+            stamp: Some(stamp),
+        });
+    }
+    serde_json::from_str(json)
+        .map(Asked::Edits)
+        .map_err(|e| (Code::InvalidArg, format!("invalid {what} edits: {e}")))
+}
+
 thread_local! {
     /// The islands of the pass in progress: the frame's renders, its motion-blur samples' and its scripts' readbacks.
     static SAMPLES: std::cell::RefCell<Islands> = std::cell::RefCell::new(Islands::default());
-    /// The first layers each island drew in the pass in progress, which the
-    /// later renders of the pass are written against (`request::delta`).
-    static BASES: std::cell::RefCell<(Option<u64>, Bases)> =
+    /// The layers each island's renders are written against (`request::write_output`), by island path, and the pass in
+    /// progress.
+    static BASES: std::cell::RefCell<(Option<u64>, HashMap<String, Base>)> =
         std::cell::RefCell::new((None, HashMap::new()));
 }
 
-/// Layers by island path.
-type Bases = HashMap<String, Vec<Value>>;
+/// The layers of an island's first render in `pass`, or of its last render written in full, as written. The caller
+/// holds the same layers (it names their pass), and the renders after them are written as changes from them, in that
+/// pass and the next.
+struct Base {
+    pass: u64,
+    layers: Vec<request::Written>,
+}
+
+/// Moves the bases to `pass`, as `IslandCache::enter` moves the documents: the pass after the last keeps the bases the
+/// last made, any other none.
+fn enter_bases(at: &mut Option<u64>, bases: &mut HashMap<String, Base>, pass: Option<u64>) {
+    if *at == pass {
+        return;
+    }
+    match (*at, pass) {
+        (Some(was), Some(now)) if now == was.wrapping_add(1) => bases.retain(|_, b| b.pass == was),
+        _ => bases.clear(),
+    }
+    *at = pass;
+}
 
 /// One DOM island at one frame: an `IslandRequest` as JSON in, an
 /// `IslandOutput` as JSON out. `pass` numbers the renders of one frame, its
 /// motion-blur sub-frames included: they update one document per island
-/// instead of building it again, and each render after an island's first
-/// gives its layers as changes from that first's (`delta`).
-pub fn render_dom_island(request_json: &str, pass: Option<u64>) -> Result<String> {
-    wait_for(start_dom_island(request_json, pass)?)
+/// instead of building it again. `base` is the pass of the layers of this island the caller holds (`Base`): when they
+/// are the ones kept here, the layers come back as changes from them (`delta`), with `"delta": base`.
+pub fn render_dom_island(
+    request_json: &str,
+    pass: Option<u64>,
+    base: Option<u64>,
+) -> Result<String> {
+    wait_for(start_dom_island(request_json, pass, base)?)
 }
 
 thread_local! {
@@ -267,8 +384,8 @@ thread_local! {
 /// `render_dom_island` without waiting: the render is queued on the island
 /// thread after the ones before it, and the ticket returned finishes it
 /// (`finish_dom_island`). The caller can build what comes next meanwhile.
-pub fn start_island(request_json: &str, pass: Option<u64>) -> Result<u32> {
-    let outcome = start_dom_island(request_json, pass)?;
+pub fn start_island(request_json: &str, pass: Option<u64>, base: Option<u64>) -> Result<u32> {
+    let outcome = start_dom_island(request_json, pass, base)?;
     Ok(STARTED.with(|started| {
         let (next, pending) = &mut *started.borrow_mut();
         *next = next.wrapping_add(1);
@@ -286,39 +403,74 @@ pub fn finish_island(ticket: u32) -> Result<String> {
     }
 }
 
-fn start_dom_island(request_json: &str, pass: Option<u64>) -> Result<Outcome<String>> {
+fn start_dom_island(
+    request_json: &str,
+    pass: Option<u64>,
+    base: Option<u64>,
+) -> Result<Outcome<String>> {
     let json = request_json.to_string();
     let caller = kinetograph_core::profile::caller();
     start_on_island_thread(RENDER_STAGES, move || {
         use kinetograph_core::profile::{add_for_since, add_shared_since};
+        // A request, or the state a readback of the frame left (edits that change nothing).
+        let asked = asked(&json, "renderDomIsland")?;
+        if let Asked::Edits(edits) = &asked
+            && !(edits.set.is_empty() && edits.stamp == edits.base)
+        {
+            return Err((
+                Code::InvalidArg,
+                "a render names the state a readback left, with no edits".to_string(),
+            ));
+        }
+        // The text of the request, kept when it came as one.
+        let whole = matches!(asked, Asked::Request { stamp: None, .. });
         // The tree the frame's scripts read last is drawn from the document they read.
-        let (request, mut resolved) = match SAMPLES.with(|islands| islands.borrow_mut().take(&json, pass)) {
+        let (request, mut resolved, stamp) = match SAMPLES
+            .with(|islands| islands.borrow_mut().take(&asked, pass))
+        {
             Some(kept) => {
                 kinetograph_core::profile::add_for(&caller, "n_reused", 1.0);
                 kept
             }
             None => {
+                let Asked::Request { text, .. } = asked else {
+                    let message =
+                        "the island is not kept as the state named: send the whole request";
+                    return Err((Code::StaleBase, message.to_string()));
+                };
                 let timer = kinetograph_core::profile::start();
-                let request = parse_island(&json, "renderDomIsland")?;
+                let request = parse_island(text, "renderDomIsland")?;
                 add_shared_since("dom_parse", timer);
                 add_for_since(&caller, "n_parse", timer);
                 let timer = kinetograph_core::profile::start();
-                let (was_edited, was_built) = SAMPLES.with(|islands| islands.borrow().cache.counts());
-                let resolved = SAMPLES
+                let (was_edited, was_built) =
+                    SAMPLES.with(|islands| islands.borrow().cache.counts());
+                let (resolved, stamp) = SAMPLES
                     .with(|islands| islands.borrow_mut().resolve(&request, pass))
                     .map_err(|e| (Code::Render, e.to_string()))?;
                 add_shared_since("dom_resolve", timer);
                 add_for_since(&caller, "n_resolve", timer);
                 let (edited, built) = SAMPLES.with(|islands| islands.borrow().cache.counts());
-                kinetograph_core::profile::add_for(&caller, "n_edited", (edited - was_edited) as f64);
+                kinetograph_core::profile::add_for(
+                    &caller,
+                    "n_edited",
+                    (edited - was_edited) as f64,
+                );
                 kinetograph_core::profile::add_for(&caller, "n_built", (built - was_built) as f64);
-                (request, resolved)
+                (request, resolved, stamp)
             }
         };
         let timer = kinetograph_core::profile::start();
         let mut output = resolved.paint(&request);
         add_shared_since("dom_paint", timer);
         add_for_since(&caller, "n_paint", timer);
+        take_counters(&caller);
+        if crate::dom_verify::enabled() {
+            crate::dom_verify::check_render(&json, &request, &resolved.island, &output)?;
+        }
+        let (replayed, painted) = resolved.replayed();
+        kinetograph_core::profile::add_for(&caller, "n_sc_replayed", replayed as f64);
+        kinetograph_core::profile::add_for(&caller, "n_sc_painted", painted as f64);
         let write_timer = kinetograph_core::profile::start();
         let island = &resolved.island;
         // A file the island named that could not be read is not drawn as the
@@ -333,35 +485,36 @@ fn start_dom_island(request_json: &str, pass: Option<u64>) -> Result<Outcome<Str
             });
         }
         let path = request.path.clone();
-        SAMPLES.with(|islands| islands.borrow_mut().keep(request, json, resolved));
-        // The first render of an island in the pass is kept, once written,
-        // for the later ones to be written against.
-        let (mut delta, mut first) = (false, None);
-        if pass.is_some() {
+        SAMPLES.with(|islands| {
+            let source = Source {
+                text: whole.then_some(json),
+                stamp,
+            };
+            islands.borrow_mut().keep(request, source, resolved)
+        });
+        // Written as changes from the layers the caller holds, when they are the ones kept here; the island's first
+        // render of the pass, and one written in full, are kept for the later ones to be written against.
+        let write = |e: serde_json::Error| (Code::Render, format!("cannot write the island: {e}"));
+        let layers = request::written(&output.layers).map_err(write)?;
+        let (mut json, mut keep_base) = (None, None);
+        if let Some(now) = pass {
             BASES.with(|bases| {
                 let (at, bases) = &mut *bases.borrow_mut();
-                if *at != pass {
-                    bases.clear();
-                    *at = pass;
-                }
-                match bases.get(&path) {
-                    Some(base) => {
-                        output.layers = request::delta(std::mem::take(&mut output.layers), base);
-                        delta = true;
-                    }
-                    None => first = Some(path),
+                enter_bases(at, bases, pass);
+                let kept = bases.get(&path).filter(|kept| Some(kept.pass) == base);
+                json = kept.map(|kept| {
+                    request::write_output(&output, &layers, Some((&kept.layers, kept.pass)))
+                });
+                if kept.is_none_or(|kept| kept.pass != now) {
+                    keep_base = Some(now);
                 }
             });
         }
-        let mut json = serde_json::to_string(&output)
-            .map_err(|e| (Code::Render, format!("cannot write the island: {e}")))?;
-        if delta {
-            // The output is an object: say that its layers are changes.
-            json.pop();
-            json.push_str(r#","delta":true}"#);
-        }
-        if let Some(path) = first {
-            BASES.with(|bases| bases.borrow_mut().1.insert(path, output.layers));
+        let json = json
+            .unwrap_or_else(|| request::write_output(&output, &layers, None))
+            .map_err(write)?;
+        if let Some(pass) = keep_base {
+            BASES.with(|bases| bases.borrow_mut().1.insert(path, Base { pass, layers }));
         }
         kinetograph_core::profile::add_shared_since("dom_write", write_timer);
         kinetograph_core::profile::add_for_since(&caller, "n_write", write_timer);
@@ -377,8 +530,10 @@ thread_local! {
 
 /// Runs `read` on the island of `json`. A page reads thousands of styles of one tree, and the tree changes between
 /// some of the reads (a script writes a style): the same request is answered from the document as it is, and a changed
-/// one edits that document to the new tree, so only what changed is restyled. In a pass (`pass`, the frame's), the
-/// document is the one the frame's render draws, kept from the frame before; outside one, the readbacks' own.
+/// one edits that document to the new tree, so only what changed is restyled. The change can come as the edits a
+/// script made since a state sent before (`Asked::Edits`), which skips writing, sending, parsing and comparing the
+/// whole tree. In a pass (`pass`, the frame's), the document is the one the frame's render draws, kept from the frame
+/// before; outside one, the readbacks' own.
 fn with_readback_island<T>(
     caller: &str,
     json: String,
@@ -386,42 +541,80 @@ fn with_readback_island<T>(
     what: &str,
     read: impl FnOnce(&IslandDocument) -> std::result::Result<T, Failure>,
 ) -> std::result::Result<T, Failure> {
-    let answer = |islands: &mut Islands, json: String, pass: Option<u64>| {
+    let asked = asked(&json, what)?;
+    let answer = |islands: &mut Islands, asked: Asked, pass: Option<u64>| {
         use kinetograph_core::profile::{add_for, add_for_since, start};
-        if let Some(kept) = islands.same(&json, pass) {
+        if let Some(kept) = islands.same(&asked, pass) {
             add_for(caller, "rb_same", 1.0);
             let timer = start();
             let answer = read(&kept.island);
             add_for_since(caller, "rb_read", timer);
             return answer;
         }
-        add_for(caller, "rb_bytes", json.len() as f64);
-        let timer = start();
-        let request = parse_island(&json, what)?;
-        add_for_since(caller, "rb_parse", timer);
-        let timer = start();
         let (was_edited, _) = islands.cache.counts();
-        let resolved = islands
-            .resolve(&request, pass)
-            .map_err(|e| (Code::Render, e.to_string()))?;
-        add_for_since(caller, "rb_resolve", timer);
-        add_for(caller, "rb_edited", (islands.cache.counts().0 - was_edited) as f64);
+        let (request, source, resolved) = match asked {
+            Asked::Request { text, stamp } => {
+                add_for(caller, "rb_bytes", text.len() as f64);
+                let timer = start();
+                let request = parse_island(text, what)?;
+                add_for_since(caller, "rb_parse", timer);
+                let timer = start();
+                let (resolved, held) = islands
+                    .resolve(&request, pass)
+                    .map_err(|e| (Code::Render, e.to_string()))?;
+                add_for_since(caller, "rb_resolve", timer);
+                let source = Source {
+                    text: Some(text.to_string()),
+                    stamp: stamp.or(held),
+                };
+                (request, source, resolved)
+            }
+            Asked::Edits(edits) => {
+                add_for(caller, "rb_edits", 1.0);
+                let timer = start();
+                let (request, resolved) = islands.resolve_edits(&edits, pass)?;
+                add_for_since(caller, "rb_resolve", timer);
+                let source = Source {
+                    text: None,
+                    stamp: Some(edits.stamp),
+                };
+                (request, source, resolved)
+            }
+        };
+        add_for(
+            caller,
+            "rb_edited",
+            (islands.cache.counts().0 - was_edited) as f64,
+        );
+        take_counters(caller);
+        if crate::dom_verify::enabled() {
+            crate::dom_verify::check_readback(&json, &request, &resolved.island)?;
+        }
         let timer = start();
         let answer = read(&resolved.island);
         add_for_since(caller, "rb_read", timer);
-        islands.keep(request, json, resolved);
+        islands.keep(request, source, resolved);
         answer
     };
     match pass {
-        Some(_) => SAMPLES.with(|islands| answer(&mut islands.borrow_mut(), json, pass)),
+        Some(_) => SAMPLES.with(|islands| answer(&mut islands.borrow_mut(), asked, pass)),
         None => READBACK.with(|state| {
             let (islands, last) = &mut *state.borrow_mut();
-            // A request seen last is read where it is; any other is the next pass.
-            if islands.same(&json, Some(*last)).is_none() {
+            // What was read last is read where it is; anything else is the next pass.
+            if islands.same(&asked, Some(*last)).is_none() {
                 *last += 1;
             }
-            answer(islands, json, Some(*last))
+            answer(islands, asked, Some(*last))
         }),
+    }
+}
+
+/// Hands what the island thread's resolves and paints did (`kinetograph_dom::counters`) to the profile of `caller`.
+fn take_counters(caller: &str) {
+    if kinetograph_core::profile::enabled() {
+        for (stage, value) in kinetograph_dom::counters::take() {
+            kinetograph_core::profile::add_for(caller, stage, value);
+        }
     }
 }
 

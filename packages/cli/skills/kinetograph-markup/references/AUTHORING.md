@@ -1126,7 +1126,7 @@ without it they write to `out/stills/<comp>-f<frame>.png`, `out/renders/<comp>.<
 | `add <name…> [--overwrite] [--yes] [--dir <folder>]`, `add --list [--type component\|template\|taste]` | installs registry components (`src/components/<name>/`), templates (`src/templates/<name>/`) and tastes (`src/tastes/<name>/`), with their assets in `public/<kind>/<name>/` and the items they depend on; never overwrites a file unless `--overwrite`; installs missing npm packages after `--yes` or a terminal yes (with `--json` it only prints the command); the format is in `docs/registry.md` |
 | `compositions <entry>` | lists compositions |
 | `still <entry> <frame> [-o file.png] [--scale N] [--strict] [--dev-react]` | one PNG, drawn at N times the size; unsupported content is drawn without and warned about on stderr, `--strict` fails instead (the Remotion compatibility docs, `/docs/compat/`) |
-| `render <entry> [-o file.mp4] [--range a..b] [--scale N] [--codec C] [--crf N \| --video-bitrate R] [--concurrency N] [--strict] [--dev-react] …` | video with audio; the export options are below; `--draft` is `--scale 0.5`; `--concurrency N` draws N frames at once (default half the cores, at most 4; below); unsupported content is drawn without and warned about, `--strict` fails on the first frame that has some (the Remotion compatibility docs, `/docs/compat/`); React runs in production mode unless `--dev-react` (below) |
+| `render <entry> [-o file.mp4] [--range a..b] [--scale N] [--codec C] [--crf N \| --video-bitrate R] [--concurrency N] [--strict] [--dev-react] …` | video with audio; the export options are below; `--draft` is `--scale 0.5`; `--concurrency N` draws N frames at once (default half the cores, at most 4, handed back to the main thread when the GPU holds the workers up; below); unsupported content is drawn without and warned about, `--strict` fails on the first frame that has some (the Remotion compatibility docs, `/docs/compat/`); React runs in production mode unless `--dev-react` (below) |
 | `strip <entry> -n 12 [-o file.png] [--scale N] [--strict]` | contact sheet of evenly spaced frames, labelled, built as a scene and rendered by the engine; `--scale` draws the frames and the sheet at N times the size |
 | `onion <entry> <range> -n 6 [-o file.png] [--scale N]` | frames of the range blended over one another, drawn at N times the size |
 | `inspect <entry> [--frame N]` | `InspectResult` |
@@ -1214,7 +1214,10 @@ draws every frame in the main thread as before. Chunks are handed out in order a
 frames past the next frame the encoder needs, which bounds the frames held in memory. Frames are not equally dear (a
 motion-blur stretch costs several times a plain one), so a worker that has no chunk it may take asks the busy worker
 furthest back to stop its chunk early, and draws the rest of it. Each worker is a full renderer, so memory grows with N
-(0.5 to 1 GB a worker on the launch film). `<Artifact>` files are collected from the workers; thumbnails are drawn by the
+(0.5 to 1 GB a worker on the launch film). Without `--concurrency`, once the workers have drawn 8 frames each past their first, a render
+whose workers spent more than half that time waiting for the GPU is GPU-bound: the workers stop after the frames they
+have begun and the main thread draws the rest, as with `--concurrency 1` (they share one GPU, so they are no faster;
+`KINETOGRAPH_GPU_BOUND` sets the share). `<Artifact>` files are collected from the workers; thumbnails are drawn by the
 main thread. `KINETOGRAPH_CHUNK`, `KINETOGRAPH_WINDOW` and `KINETOGRAPH_MINSPLIT` (frames) override the chunk size, the
 window and the smallest chunk that is split, for tuning and tests.
 

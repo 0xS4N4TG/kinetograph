@@ -104,23 +104,33 @@ impl BaseDocument {
         // Put children back
         self.nodes[node_id].children = children;
 
+        // A table's layout context is built with its box from the styles of its
+        // parts (`build_table_context`), so any change inside it rebuilds the
+        // table, which is then laid out again.
+        if !damage.is_empty() && self.nodes[node_id].flags.is_table_root() {
+            damage.insert(CONSTRUCT_BOX);
+        }
+
         if damage.contains(CONSTRUCT_BOX) {
             damage.insert(RestyleDamage::RELAYOUT);
         }
 
         // Compute damage to propagate to parent
-        let mut damage_for_parent = damage; // & RestyleDamage::RELAYOUT;
+        let mut damage_for_parent = self.damage_for_parent(node_id, own_damage, damage);
 
         if reorder {
             damage.insert(CONSTRUCT_BOX);
             damage_for_parent.insert(CONSTRUCT_DESCENDENT);
         }
 
-        // An inline `<svg>` is rendered from a snapshot of its subtree (with
-        // `currentColor` resolved) taken during box construction, so it must be
-        // rebuilt whenever the style of the `<svg>` or any descendant changes.
+        // An inline `<svg>` keeps a snapshot of its subtree (`usvg`), taken
+        // during box construction. Kinetograph paints the SVG from the DOM
+        // (`paint/svg`) and reads the snapshot only for the box's intrinsic
+        // size, which comes from the `<svg>` element itself: so only a change
+        // to the `<svg>`'s own style rebuilds it, not one to a descendant
+        // (Blitz's own renderer would draw the stale snapshot).
         #[cfg(feature = "svg")]
-        if !damage.is_empty()
+        if !own_damage.is_empty()
             && self.nodes[node_id]
                 .data
                 .is_element_with_tag_name(&local_name!("svg"))
@@ -132,7 +142,8 @@ impl BaseDocument {
         if !own_damage.is_empty() && !damage.intersects(CONSTRUCT_BOX | CONSTRUCT_FC) {
             let anonymous_damage = self.refresh_anonymous_block_styles(node_id);
             damage |= anonymous_damage;
-            damage_for_parent |= anonymous_damage;
+            damage_for_parent |=
+                self.damage_for_parent(node_id, RestyleDamage::empty(), anonymous_damage);
         }
 
         let node = &mut self.nodes[node_id];
@@ -173,25 +184,40 @@ impl BaseDocument {
             }
         }
 
-        // let _is_fc_root = node
-        //     .primary_styles()
-        //     .map(|s| is_fc_root(&s))
-        //     .unwrap_or(false);
-
-        // if damage.contains(CONSTRUCT_BOX) {
-        //     // damage_for_parent.insert(CONSTRUCT_FC | CONSTRUCT_DESCENDENT);
-        //     damage_for_parent.insert(CONSTRUCT_BOX);
-        // }
-
-        // if damage.contains(CONSTRUCT_FC) {
-        //     damage_for_parent.insert(CONSTRUCT_DESCENDENT);
-        //     // if !is_fc_root {
-        //     damage_for_parent.insert(CONSTRUCT_FC);
-        //     // }
-        // }
-
         // Propagate damage to parent
         damage_for_parent
+    }
+
+    /// What a node's parent has to do about `damage` (the node's and its
+    /// subtree's; `own` the node's alone). A box built again, or whose display
+    /// changed, makes its parent collect its layout children again, as the parent
+    /// wraps them (one level). Inline content and `display: contents` are
+    /// collected by the box that holds them, so they hand on what they got. Above
+    /// that, a box built again is only laid out again.
+    fn damage_for_parent(
+        &self,
+        node_id: NodeId,
+        own: RestyleDamage,
+        damage: RestyleDamage,
+    ) -> RestyleDamage {
+        let construct = CONSTRUCT_BOX | CONSTRUCT_FC | CONSTRUCT_DESCENDENT;
+        if !damage.intersects(construct) {
+            return damage;
+        }
+        let node = &self.nodes[node_id];
+        let collected_by_parent = node.is_non_atomic_inline()
+            || node
+                .primary_styles()
+                .is_some_and(|s| s.clone_display().inside() == DisplayInside::Contents);
+        if collected_by_parent {
+            return damage;
+        }
+        let mut for_parent =
+            damage.difference(construct) | RestyleDamage::RELAYOUT | CONSTRUCT_DESCENDENT;
+        if own.intersects(CONSTRUCT_BOX | CONSTRUCT_FC) {
+            for_parent.insert(CONSTRUCT_BOX);
+        }
+        for_parent
     }
 
     /// Refresh owned anonymous boxes without revisiting their DOM children.

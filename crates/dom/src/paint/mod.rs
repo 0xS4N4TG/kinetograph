@@ -31,6 +31,7 @@ mod images;
 mod mat;
 mod opt;
 mod replaced;
+mod retain;
 mod shadow;
 mod shim;
 pub mod svg;
@@ -43,8 +44,6 @@ pub use fonts::register_font_path;
 pub use shim::{kg_properties, register_properties, shim_css};
 pub(crate) use util::{current_color, rgba};
 
-use std::collections::{HashMap, HashSet};
-
 use blitz_dom::{BaseDocument, Node, local_name};
 use blitz_traits::node_id::NodeId;
 use serde_json::Value;
@@ -55,107 +54,44 @@ use style::values::specified::box_::{DisplayInside, DisplayOutside};
 
 use crate::request::{IslandOutput, IslandRequest, Unsupported};
 
+pub use retain::Fragments;
+
 /// Paints a document that `resolve` has styled and laid out.
 pub fn paint(doc: &BaseDocument, request: &IslandRequest) -> IslandOutput {
-    paint_keeping(doc, request).0
-}
-
-/// What a paint of a document leaves for [`repaint_transforms`]: its layers
-/// before `opt::optimize`, where each stacking context's group is in them,
-/// and the rest of its output.
-pub struct Painted {
-    raw: Vec<Value>,
-    /// The id and the place in its parent's frame of each group an element
-    /// was painted as (an element can be painted as more than one: an inline
-    /// box that a line break split, or one painted again).
-    groups: HashMap<NodeId, Vec<(String, Origin)>>,
-    output: IslandOutput,
-}
-
-/// [`paint`], and what [`repaint_transforms`] needs to paint the document
-/// again after a change to transforms only.
-pub fn paint_keeping(doc: &BaseDocument, request: &IslandRequest) -> (IslandOutput, Painted) {
     let mut painter = Painter::new(doc, request);
-    let raw = painter.paint_root();
-    let layers = opt::optimize(raw.clone());
-    let output = IslandOutput {
-        layers,
-        unsupported: painter.unsupported,
-        camera: painter.camera,
-        margin: (painter.margin_reach > 0.0).then(|| painter.margin_reach.ceil() as u32),
-        blend_space: "srgb",
-    };
-    let mut groups: HashMap<NodeId, Vec<(String, Origin)>> = HashMap::new();
-    for (node, id, at) in painter.groups {
-        groups.entry(node).or_default().push((id, at));
-    }
-    let rest = IslandOutput {
-        layers: Vec::new(),
-        ..output.clone()
-    };
-    (
-        output,
-        Painted {
-            raw,
-            groups,
-            output: rest,
-        },
-    )
+    let layers = painter.paint_root();
+    painter.output(layers)
 }
 
-/// The paint of `doc` when it differs from the one `painted` was made of in
-/// the transforms of the elements `moved` alone: the same layers, each of
-/// those elements' groups with its new `transform`, and what `painted`
-/// becomes. The caller makes sure nothing else changed (styles, boxes, text,
-/// files): only what the transforms make is worked out again here. None when
-/// an element was not painted as a group whose transform is a matrix, or no
-/// longer would be.
-pub fn repaint_transforms(
+/// A paint that replayed what it could of the last one.
+pub struct Retained {
+    pub output: IslandOutput,
+    /// The fragments of this paint, for the next.
+    pub fragments: Fragments,
+    /// How many stacking contexts' contents it replayed and how many it painted.
+    pub replayed: u64,
+    pub painted: u64,
+}
+
+/// [`paint`], replaying the stacking contexts of `kept` (the fragments of the
+/// last paint of the same document) that `dirty` (what changed in it since,
+/// None if that is not known) leaves as they were.
+pub fn paint_retaining(
     doc: &BaseDocument,
     request: &IslandRequest,
-    mut painted: Painted,
-    moved: &[NodeId],
-) -> Option<(IslandOutput, Painted)> {
+    kept: Fragments,
+    dirty: Option<&crate::dirty::Dirty>,
+) -> Retained {
     let mut painter = Painter::new(doc, request);
-    for id in moved {
-        let node = doc.get_node(*id)?;
-        for (group_id, at) in painted.groups.get(id)? {
-            let style = node.primary_styles()?;
-            let geom = deco::box_geom(node, &style);
-            let (transform, _) = painter.group_transform(node, &style, &geom, *at);
-            drop(style);
-            // A transform that is only a move (or none) is folded into the layers
-            // around it, and one that cannot be a matrix is reported: either
-            // changes more than the group.
-            let transform = transform.filter(|t| t.get("matrix").is_some())?;
-            if !painter.unsupported.is_empty() {
-                return None;
-            }
-            let group = find_layer(&mut painted.raw, group_id)?;
-            group.get("transform").and_then(|t| t.get("matrix"))?;
-            group["transform"] = transform;
-        }
+    painter.retain = Some(retain::Retain::new(kept, dirty));
+    let layers = painter.paint_root();
+    let retain = painter.retain.take().expect("retaining");
+    Retained {
+        replayed: retain.replayed,
+        painted: retain.painted,
+        output: painter.output(layers),
+        fragments: retain.into_made(),
     }
-    let output = IslandOutput {
-        layers: opt::optimize(painted.raw.clone()),
-        ..painted.output.clone()
-    };
-    Some((output, painted))
-}
-
-/// The layer with `id` in `layers`, at any depth.
-fn find_layer<'v>(layers: &'v mut [Value], id: &str) -> Option<&'v mut Value> {
-    for layer in layers {
-        if layer.get("id").and_then(Value::as_str) == Some(id) {
-            return Some(layer);
-        }
-        if let Some(Value::Array(children)) = layer.get_mut("children")
-            && let Some(found) = find_layer(children, id)
-        {
-            return Some(found);
-        }
-    }
-    None
 }
 
 /// The lists a stacking context (or an element painted as one) collects before
@@ -191,20 +127,19 @@ pub(crate) struct Painter<'a> {
     pub doc: &'a BaseDocument,
     pub req: &'a IslandRequest,
     pub unsupported: Vec<Unsupported>,
-    unsupported_seen: HashSet<String>,
-    ids: HashSet<String>,
+    unsupported_seen: retain::Ledger<String>,
+    ids: retain::Ledger<String>,
     pub camera: Option<Value>,
     /// The node whose background went to the canvas.
     pub canvas_node: Option<NodeId>,
     /// The farthest a blur reaches past its layer, for the scene's margin.
     pub margin_reach: f64,
     /// Nodes `audit` has looked at.
-    audited: HashSet<u64>,
+    audited: retain::Ledger<u64>,
     /// The mode (`alpha` or `luminance`) of each mask source group, by id.
     pub mask_modes: std::collections::HashMap<String, &'static str>,
-    /// Each element painted as a group of its own: its node, the group's id
-    /// and where its border box is in its parent's frame (`Painted`).
-    groups: Vec<(NodeId, String, Origin)>,
+    /// The stacking contexts' contents to replay and to keep (`retain`).
+    retain: Option<retain::Retain<'a>>,
 }
 
 /// Where a box's border-box top-left corner is in the current frame.
@@ -216,14 +151,25 @@ impl<'a> Painter<'a> {
             doc,
             req,
             unsupported: Vec::new(),
-            unsupported_seen: HashSet::new(),
-            ids: HashSet::new(),
+            unsupported_seen: Default::default(),
+            ids: Default::default(),
             camera: None,
             canvas_node: None,
             margin_reach: 0.0,
-            audited: HashSet::new(),
+            audited: Default::default(),
             mask_modes: Default::default(),
-            groups: Vec::new(),
+            retain: None,
+        }
+    }
+
+    /// The island's output for its painted `layers`.
+    fn output(self, layers: Vec<Value>) -> IslandOutput {
+        IslandOutput {
+            layers: opt::optimize(layers),
+            unsupported: self.unsupported,
+            camera: self.camera,
+            margin: (self.margin_reach > 0.0).then(|| self.margin_reach.ceil() as u32),
+            blend_space: "srgb",
         }
     }
 
@@ -262,6 +208,10 @@ impl<'a> Painter<'a> {
             let parent = self.doc.get_node(cur.parent.or(cur.layout_parent.get())?)?;
             let at = if let Some(i) = parent.children.iter().position(|c| *c == cur.id) {
                 format!("c{i}")
+            } else if parent.before() == Some(cur.id) {
+                "before".to_string()
+            } else if parent.after() == Some(cur.id) {
+                "after".to_string()
             } else if let Some(i) = parent.anonymous_blocks.iter().position(|c| *c == cur.id) {
                 format!("a{i}")
             } else {
@@ -290,7 +240,7 @@ impl<'a> Painter<'a> {
         let explicit =
             attr(node, "id").filter(|id| !id.is_empty() && !id.contains(char::is_whitespace));
         let base = match explicit {
-            Some(id) if !self.ids.contains(id) || !suffix.is_empty() => id.to_string(),
+            Some(id) if !suffix.is_empty() || !self.ids.contains(&id.to_string()) => id.to_string(),
             _ => self.path_of(node),
         };
         let mut id = if suffix.is_empty() {
@@ -358,7 +308,7 @@ impl<'a> Painter<'a> {
         if let Some((source, _from_body)) = self.canvas_background(root, body) {
             out.extend(self.canvas_layers(source, viewport));
         }
-        out.extend(self.sc_content(root));
+        out.extend(self.retained_content(root));
         out
     }
 
@@ -472,17 +422,9 @@ impl<'a> Painter<'a> {
     /// parent's frame.
     fn paint_context(&mut self, node: &'a Node, at: Origin) -> Vec<Value> {
         let id = self.layer_id(node, "");
-        let children = self.sc_content(node);
+        let children = self.retained_content(node);
         match self.context_group(node, &id, at, children) {
-            Some(group) => {
-                let layers = flatten_plain_group(group);
-                if let [layer] = layers.as_slice()
-                    && layer.get("id").and_then(Value::as_str) == Some(&id)
-                {
-                    self.groups.push((node.id, id, at));
-                }
-                layers
-            }
+            Some(group) => flatten_plain_group(group),
             None => Vec::new(),
         }
     }

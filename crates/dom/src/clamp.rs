@@ -172,6 +172,23 @@ pub fn settle(doc: &mut BaseDocument, time: f64) -> Vec<Clamped> {
     changed
 }
 
+/// The boxes [`settle`] changed, with the line each was cut at (its mark), in
+/// id order: two clamps that give the same draw the same ellipses.
+pub fn marks(doc: &BaseDocument, changed: &[Clamped]) -> Vec<(u64, Option<String>)> {
+    let mut marks: Vec<(u64, Option<String>)> = changed
+        .iter()
+        .map(|c| {
+            let mark = doc
+                .get_node(c.id)
+                .and_then(|n| attr(n, CLAMP_ATTR))
+                .map(str::to_string);
+            (c.id.as_u64(), mark)
+        })
+        .collect();
+    marks.sort();
+    marks
+}
+
 /// Puts the boxes [`settle`] changed back as they were built (it set their declarations, not their `style` text). The
 /// document has to be resolved again.
 pub fn undo(doc: &mut BaseDocument, changed: &[Clamped]) {

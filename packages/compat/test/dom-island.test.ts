@@ -1,12 +1,15 @@
 // mapDomIsland on the addon's renderDomIsland (packages/cli/skills/kinetograph-markup/references/ENGINE.md §2), with a stand-in addon: what is sent, and how the
 // answer is turned into layers (native placeholders filled and placed, top-level layers made absolute).
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LayerJson } from '@kinetographdev/scene';
 import {
   beginSamplePass,
+  breakSamplePasses,
+  currentSamplePass,
   endSamplePass,
   mapDomIsland,
+  noteIslandState,
   registerStylesheet,
   resetStylesheets,
   setCssFontFaceHandler,
@@ -153,44 +156,95 @@ describe('mapDomIsland', () => {
 describe('a pass of island renders', () => {
   const leaf = (id: string, x: number) => ({ id, type: 'shape', shape: { kind: 'rect', width: 1, height: 1 }, transform: { x } });
   const first = { id: '$1', type: 'group', transform: { x: 1 }, children: [leaf('a', 0), leaf('b', 0), leaf('c', 0)] };
-  afterEach(() => endSamplePass());
-
-  it('builds a later render from what it shares with the first, sharing those layers', () => {
-    const pass: unknown[] = [];
+  /** The pass and base of each render the addon was asked for. */
+  let calls: { pass?: number; base?: number }[] = [];
+  beforeEach(() => {
+    calls = [];
     setDomAddon({
-      renderDomIsland(json: string, id?: number) {
-        pass.push(id);
+      renderDomIsland(_json: string, pass?: number, base?: number) {
+        calls.push({ pass, base });
         return JSON.stringify(answer);
       },
     });
+  });
+  afterEach(() => endSamplePass());
+  const full = (layers: unknown[]) => ({ layers, unsupported: [], camera: null });
+  const changes = (layers: unknown[], delta: number) => ({ layers, unsupported: [], camera: null, delta });
+
+  it('builds a later render from what it shares with the first, sharing those layers', () => {
     beginSamplePass();
-    answer = { layers: [first, leaf('d', 0)], unsupported: [], camera: null };
+    answer = full([first, leaf('d', 0)]);
     const a = mapDomIsland(node('div'), context()).layers as any[];
+    const pass = calls[0]!.pass!;
     // The group moved and its second child changed; the rest is as it was.
-    answer = {
-      layers: [{ id: '$1', type: 'group', transform: { x: 2 }, $base: 0, children: [{ $same: 0 }, leaf('b', 5), { $same: 2 }] }, { $same: 1 }],
-      unsupported: [],
-      camera: null,
-      delta: true,
-    };
+    answer = changes([{ id: '$1', type: 'group', transform: { x: 2 }, $base: 0, children: [{ $same: 0 }, leaf('b', 5), { $same: 2 }] }, { $same: 1 }], pass);
     const b = mapDomIsland(node('div'), context()).layers as any[];
     expect(b[0]).toMatchObject({ id: '$1', type: 'group', transform: { x: 2 }, children: [leaf('a', 0), leaf('b', 5), leaf('c', 0)] });
     expect(b[0]).not.toHaveProperty('$base');
+    // The keys keep the order they came in, as a group written whole has them.
+    expect(Object.keys(b[0]).slice(0, 4)).toEqual(['id', 'type', 'transform', 'children']);
     expect(b[0].children[0]).toBe(a[0].children[0]);
     expect(b[0].children[2]).toBe(a[0].children[2]);
     expect(b[1]).toEqual(a[1]);
-    // Both renders are of one pass.
-    expect(pass).toHaveLength(2);
-    expect(pass[0]).toBeTypeOf('number');
-    expect(pass[1]).toBe(pass[0]);
+    // Both renders are of one pass; the first had no base, the second names the first's pass.
+    expect(pass).toBeTypeOf('number');
+    expect(calls).toEqual([{ pass, base: undefined }, { pass, base: pass }]);
   });
 
-  it('starts again with each pass, and refuses changes from a render it did not make', () => {
+  it("writes the next pass against the last pass's first render, then against its own first", () => {
     beginSamplePass();
-    answer = { layers: [first], unsupported: [], camera: null };
+    answer = full([first]);
+    const a = mapDomIsland(node('div'), context()).layers as any[];
+    endSamplePass();
+    beginSamplePass();
+    const p0 = calls[0]!.pass!;
+    answer = changes([{ $same: 0 }], p0);
+    const b = mapDomIsland(node('div'), context()).layers as any[];
+    // An unchanged layer is the same object from one frame to the next.
+    expect(b[0].children[1]).toBe(a[0].children[1]);
+    const p1 = calls[1]!.pass!;
+    expect(p1).toBe(p0 + 1);
+    expect(calls[1]!.base).toBe(p0);
+    // A later render of the second pass is written against that pass's first.
+    answer = changes([{ $same: 0 }], p1);
     mapDomIsland(node('div'), context());
+    expect(calls[2]).toEqual({ pass: p1, base: p1 });
+  });
+
+  it('keeps a render written in full as the base', () => {
     beginSamplePass();
-    answer = { layers: [{ $same: 0 }], unsupported: [], camera: null, delta: true };
+    answer = full([first]);
+    mapDomIsland(node('div'), context());
+    const p = calls[0]!.pass!;
+    // The addon held other layers and wrote this render in full: the next one is written against it.
+    answer = full([leaf('z', 9)]);
+    mapDomIsland(node('div'), context());
+    answer = changes([{ $same: 0 }], p);
+    expect((mapDomIsland(node('div'), context()).layers as any[])[0]).toMatchObject({ id: 'z' });
+  });
+
+  it('drops the bases when a pass does not follow the last', () => {
+    beginSamplePass();
+    answer = full([first]);
+    mapDomIsland(node('div'), context());
+    endSamplePass();
+    breakSamplePasses();
+    beginSamplePass();
+    mapDomIsland(node('div'), context());
+    expect(calls[1]!.pass).toBe(calls[0]!.pass! + 2);
+    expect(calls[1]!.base).toBeUndefined();
+  });
+
+  it('refuses changes from a render it did not make', () => {
+    beginSamplePass();
+    answer = full([first]);
+    mapDomIsland(node('div'), context());
+    answer = changes([{ $same: 0 }], calls[0]!.pass! - 1);
+    expect(() => mapDomIsland(node('div'), context())).toThrow(/did not make/);
+    endSamplePass();
+    breakSamplePasses();
+    beginSamplePass();
+    answer = changes([{ $same: 0 }], calls[0]!.pass!);
     expect(() => mapDomIsland(node('div'), context())).toThrow(/did not make/);
   });
 });
@@ -210,5 +264,59 @@ describe('fonts of the page\'s own CSS', () => {
     } finally {
       setCssFontFaceHandler(null);
     }
+  });
+});
+
+describe('a render of the state a readback left', () => {
+  afterEach(() => {
+    endSamplePass();
+    noteIslandState('$1', null);
+  });
+
+  it('names the state instead of sending the request, and sends it when the addon does not hold the state', () => {
+    const got: string[] = [];
+    let stale = false;
+    setDomAddon({
+      renderDomIsland(json: string) {
+        got.push(json);
+        if (stale && json.startsWith('{"stamp"')) throw Object.assign(new Error('not kept'), { code: 'STALE_BASE' });
+        return JSON.stringify({ layers: [], unsupported: [], camera: null });
+      },
+    });
+    const tree = node('div', { style: { width: 5 } });
+    // The request a readback sent: the one this render builds.
+    mapDomIsland(tree, context());
+    const request = JSON.parse(got[0]!);
+    beginSamplePass();
+    // A state of another pass is not named.
+    noteIslandState('$1', { stamp: 7, pass: -1, request });
+    mapDomIsland(tree, context());
+    noteIslandState('$1', { stamp: 7, pass: currentSamplePass(), request });
+    mapDomIsland(tree, context());
+    // Another tree is sent.
+    mapDomIsland(node('div', { style: { width: 6 } }), context());
+    // A state the addon does not hold: the request is sent after all.
+    stale = true;
+    mapDomIsland(tree, context());
+    expect(got.slice(1).map((json) => JSON.parse(json).stamp ?? 'request')).toEqual(['request', 7, 'request', 7, 'request']);
+    expect(JSON.parse(got[2]!)).toEqual({ stamp: 7, base: 7, path: '$1', time: 0, set: [] });
+  });
+});
+
+describe('two copies of the module in one thread', () => {
+  it('hand out different pass and state numbers, as the addon keeps one set of islands per thread', async () => {
+    vi.resetModules();
+    const a = await import('../src/dom/index.js');
+    vi.resetModules();
+    const b = await import('../src/dom/index.js');
+    expect(a).not.toBe(b);
+    const stamps = [a.nextIslandStamp(), b.nextIslandStamp(), a.nextIslandStamp()];
+    expect(new Set(stamps).size).toBe(3);
+    a.beginSamplePass();
+    const first = a.currentSamplePass();
+    a.endSamplePass();
+    b.beginSamplePass();
+    expect(b.currentSamplePass()).not.toBe(first);
+    b.endSamplePass();
   });
 });

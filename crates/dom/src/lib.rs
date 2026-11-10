@@ -7,6 +7,8 @@
 
 pub mod clamp;
 pub mod collapse;
+pub mod counters;
+pub mod dirty;
 pub mod document;
 pub mod fonts;
 pub mod inline;

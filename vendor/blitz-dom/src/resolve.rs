@@ -22,7 +22,7 @@ thread_local! {
 use taffy::AvailableSpace;
 
 use crate::{
-    BaseDocument,
+    BaseDocument, counters,
     layout::{
         LayoutPassState,
         construct::{
@@ -119,9 +119,11 @@ impl BaseDocument {
         // accumulated since the last resolve as a single device rebuild.
         self.flush_pending_device_changes();
 
+        let mut lap = std::time::Instant::now();
         // we need to resolve stylist first since it will need to drive our layout bits
         self.resolve_stylist(current_time_for_animations);
         timer.record_time("style");
+        let style_ns = counters::lap(&mut lap);
 
         // Non-incremental mode is "every node is damaged every frame": mark the
         // whole tree and let the same damage pipeline reconstruct and relayout
@@ -134,12 +136,14 @@ impl BaseDocument {
         // Propagate damage flags (from mutation and restyles) up and down the tree
         self.propagate_damage_flags(root_node_id);
         timer.record_time("damage");
+        let damage_ns = counters::lap(&mut lap);
 
         // Fix up tree for layout (insert anonymous blocks as necessary, etc)
         self.resolve_layout_children();
         #[cfg(debug_assertions)]
         self.assert_layout_parents_consistent();
         timer.record_time("construct");
+        let construct_ns = counters::lap(&mut lap);
 
         self.resolve_deferred_tasks();
         // Flush background/mask images from style to dedicated storage on the
@@ -147,15 +151,19 @@ impl BaseDocument {
         // pseudo-element box construction), fetching any not-yet-loaded images.
         self.flush_pending_style_images();
         timer.record_time("pconstruct");
+        let inline_ns = counters::lap(&mut lap);
 
-        // Next we resolve layout with the data resolved by stlist
-        self.resolve_layout();
+        // Next we resolve layout with the data resolved by stlist (and rounds it,
+        // which it counts itself)
+        let round_ns = self.resolve_layout();
         timer.record_time("layout");
+        let layout_ns = counters::lap(&mut lap) - round_ns;
         self.nodes.bump_geometry_generation();
 
         // Resolve transforms
         self.resolve_transforms(root_node_id);
         timer.record_time("transform");
+        counters::lap(&mut lap);
 
         // Build paint children / stacking contexts for damaged subtrees. Runs
         // after layout and transforms so that stacking-context roots created by
@@ -166,6 +174,17 @@ impl BaseDocument {
             self.build_paint_tree(id);
         }
         timer.record_time("paint_tree");
+        let paint_tree_ns = counters::lap(&mut lap);
+        counters::add(|c| {
+            c.passes += 1;
+            c.style_ns += style_ns;
+            c.damage_ns += damage_ns;
+            c.construct_ns += construct_ns;
+            c.inline_ns += inline_ns;
+            c.layout_ns += layout_ns;
+            c.round_ns += round_ns;
+            c.paint_tree_ns += paint_tree_ns;
+        });
 
         // Clear all damage and dirty flags, walking only subtrees which are
         // marked as (potentially) containing damage.
@@ -354,6 +373,8 @@ impl BaseDocument {
         // Deduplicate deferred tasks by node_id to avoid redundant work
         deferred_construction_nodes.sort_unstable_by_key(|task| task.node_id);
         deferred_construction_nodes.dedup_by_key(|task| task.node_id);
+        let rebuilt = deferred_construction_nodes.len() as u64;
+        counters::add(|c| c.inline_rebuilt += rebuilt);
 
         #[cfg(feature = "parallel-construct")]
         let iter = deferred_construction_nodes.into_par_iter();
@@ -431,7 +452,8 @@ impl BaseDocument {
     ///
     /// TODO: update taffy to use an associated type instead of slab key
     /// TODO: update taffy to support traited styles so we don't even need to rely on taffy for storage
-    pub fn resolve_layout(&mut self) {
+    /// Returns the nanoseconds spent rounding the layout.
+    pub fn resolve_layout(&mut self) -> u64 {
         let size = self.stylist.device().au_viewport_size();
 
         let available_space = taffy::Size {
@@ -455,10 +477,13 @@ impl BaseDocument {
             }
         };
         taffy::compute_root_layout(&mut state, root_element_id, available_space);
+        let mut round_ns = 0;
+        let mut lap = std::time::Instant::now();
         #[cfg(feature = "writing-mode")]
         state.physicalise_and_round_layout(root_element_id);
         #[cfg(not(feature = "writing-mode"))]
         taffy::round_layout(&mut state, root_element_id);
+        round_ns += counters::lap(&mut lap);
 
         // A `foreignObject`'s content is a layout tree of its own, the size
         // of its box, which the `<svg>` around it does not lay out.
@@ -473,14 +498,17 @@ impl BaseDocument {
                 state.layout_wm = state.layout_wm_of(id);
             }
             taffy::compute_root_layout(&mut state, taffy_id, space);
+            let mut lap = std::time::Instant::now();
             #[cfg(feature = "writing-mode")]
             state.physicalise_and_round_layout(taffy_id);
             #[cfg(not(feature = "writing-mode"))]
             taffy::round_layout(&mut state, taffy_id);
+            round_ns += counters::lap(&mut lap);
         }
 
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)
+        round_ns
     }
 }
 
@@ -503,6 +531,11 @@ pub(crate) fn construct_subtree(doc: &mut BaseDocument, node_id: NodeId) {
         // reconstructing without freeing them would leak a slab entry per
         // anonymous block per reconstruction.
         let old_anonymous_blocks = std::mem::take(&mut doc.nodes[node_id].anonymous_blocks);
+        let freed = old_anonymous_blocks.len() as u64;
+        counters::add(|c| {
+            c.nodes_reconstructed += 1;
+            c.anonymous_freed += freed;
+        });
         for anon_id in old_anonymous_blocks {
             doc.deallocate_anonymous_block(anon_id);
         }
