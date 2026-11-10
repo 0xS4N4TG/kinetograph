@@ -35,6 +35,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A package loaded twice (Studio, dev) no longer mixes up the island state of its two copies.
 - `staticFile()` returns forward slashes on Windows so CSS `url()` paths are not corrupted by backslash escapes (#100).
 - Paint decodes percent-encoded Windows drive paths with spaces in CSS background and border images (#100).
+- A font whose URL has a long name (Google Fonts' variable-axis files) is cached under a shortened file name instead of failing with ENAMETOOLONG.
 
 ## 0.3.0 (2026-11-03)
 

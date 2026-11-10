@@ -89,10 +89,15 @@ const textFile = (url: string, options: FontDownloadOptions, userAgent: string):
   return { dir, file: join(dir, `css-${sha(userAgent === USER_AGENT ? url : `${userAgent}\n${url}`)}.css`) };
 };
 
+/** The longest name a cached file keeps of its URL's (a file name may hold 255 bytes). */
+const MAX_NAME = 120;
+
 const binaryFile = (url: string, options: FontDownloadOptions): { dir: string; file: string } => {
   const dir = options.cacheDir ?? defaultFontCacheDir();
   const name = basename(new URL(url).pathname).replace(/[^A-Za-z0-9._-]/g, '_');
-  return { dir, file: join(dir, `${sha(url)}-${name}`) };
+  // The hash tells the files apart; a long name (a Google Fonts variable-axis URL) is cut short so the file name stays under the limit.
+  const short = name.length > MAX_NAME ? `${name.slice(0, MAX_NAME - 12)}${name.match(/\.[A-Za-z0-9]{1,8}$/)?.[0] ?? ''}` : name;
+  return { dir, file: join(dir, `${sha(url)}-${short}`) };
 };
 
 /** Where `fetchFileCached` keeps the file at `url`. */
