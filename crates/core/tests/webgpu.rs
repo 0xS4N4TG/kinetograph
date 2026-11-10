@@ -1,5 +1,5 @@
 //! WebGPU compute (`webgpu::Step::Compute` and the buffer steps): what a recording that dispatches leaves in the pixels
-//! (packages/cli/skills/kinetograph/references/ENGINE.md, "WebGPU"). Each case is a `glsl` layer of 16 x 16 whose
+//! (packages/cli/skills/kinetograph-markup/references/ENGINE.md, "WebGPU"). Each case is a `glsl` layer of 16 x 16 whose
 //! `webgpu` part runs a compute pass that writes a known pattern into a storage texture or a storage buffer, then a render
 //! pass that reads it back into the canvas, so the pixels are the pattern, exactly. A recording that asks for more than
 //! the device has, or for what wgpu refuses, is a transparent canvas and a warning, never a panic.

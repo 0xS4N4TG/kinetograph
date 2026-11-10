@@ -31,7 +31,7 @@ export interface RenderJobOptions {
    * written; the video options (`export`, `encoder`, `everyNthFrame`) must be left out.
    */
   sequence?: { format: ImageFormat; stem: string };
-  /** Codec, quality, pixel format and audio (packages/cli/skills/kinetograph/references/AUTHORING.md §9). */
+  /** Codec, quality, pixel format and audio (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9). */
   export?: ExportOptions;
   /** GIF: draw every nth frame of the range (a project only). */
   everyNthFrame?: number;
@@ -44,7 +44,7 @@ export interface RenderJobOptions {
    */
   strict?: boolean;
   /**
-   * Frames drawn at once (packages/cli/skills/kinetograph/references/AUTHORING.md §9): the composition's JS runs in this many worker threads, each with a
+   * Frames drawn at once (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9): the composition's JS runs in this many worker threads, each with a
    * renderer of its own, and the frames are encoded in order. Default 1, which draws every frame in this thread. Only a
    * project (not a `.json` scene, which the addon draws whole) uses more.
    */
@@ -190,7 +190,7 @@ async function renderSequence(
 }
 
 /**
- * Renders `source` to `options.output` with `renderer` (the `render` command, packages/cli/skills/kinetograph/references/AUTHORING.md §9): a `.json` scene
+ * Renders `source` to `options.output` with `renderer` (the `render` command, packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9): a `.json` scene
  * goes to the addon whole, a project is pushed frame by frame and its audio mixed at the end.
  *
  * Every frame goes to the addon. One that holds something the engine cannot draw is drawn without it, and the summary

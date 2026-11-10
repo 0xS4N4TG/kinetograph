@@ -1,4 +1,4 @@
-// The frame loop (packages/cli/skills/kinetograph/references/AUTHORING.md §7.3): one composition, one `SceneRoot`
+// The frame loop (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §7.3): one composition, one `SceneRoot`
 // kept across frames (as a Remotion tab keeps its page), and for each frame
 //
 //   1. move the virtual clock to the frame (timers and animation frames run),
@@ -31,7 +31,7 @@ import {
   setHistoryMode,
   transitionWindowSeconds,
 } from '@kinetographdev/compat/dom';
-import { renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
+import { DELAY_RENDER_TIMEOUT, renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
 import { resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
 import { realTimers, resetVirtualClock, runAnimationFrames, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
@@ -42,7 +42,7 @@ import { clearReportedUnsupported, reportedUnsupported, setReportIsRead } from '
 export interface FrameResult {
   scene: SceneJson;
   audio: AudioClipJson[];
-  /** Every `<Sequence>` in the frame's tree, showing or not (packages/cli/skills/kinetograph/references/AUTHORING.md §11.4). */
+  /** Every `<Sequence>` in the frame's tree, showing or not (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §11.4). */
   sequences: SequenceJson[];
   /** Layer id to name and source; studio builds only. */
   names?: LayerNames;
@@ -174,7 +174,7 @@ class Renderer implements FrameRenderer {
       setHistoryMode({ record: true });
       main = await this.settle(scene, () => this.update(scene, this.element(component, config, frame)));
     }
-    // CSS transitions need the states of the islands before this frame (packages/cli/skills/kinetograph/references/ENGINE.md §7.12). A frame has the
+    // CSS transitions need the states of the islands before this frame (packages/cli/skills/kinetograph-markup/references/ENGINE.md §7.12). A frame has the
     // same history whichever frames were rendered before it: a sequential render keeps what it has seen, anything
     // else renders the frames of the window again, with the addon off, to see them.
     const window = Math.ceil(transitionWindowSeconds() * config.fps);
@@ -310,6 +310,22 @@ class Renderer implements FrameRenderer {
     );
   }
 
+  /**
+   * A frame that gave up waiting for a `delayRender` handle never reaches its tree, and what stopped it may be what
+   * the engine cannot draw (an `<iframe>` whose `onLoad` never fires). The error carries the unsupported items the
+   * tree held when it gave up, as `unsupported`, for `doctor` to list.
+   */
+  private withLeftOut(error: unknown, scene: SceneRoot): unknown {
+    if (!(error instanceof Error) || (error as { code?: unknown }).code !== DELAY_RENDER_TIMEOUT) return error;
+    try {
+      const held = [...scene.snapshot().unsupported, ...reportedUnsupported()];
+      Object.assign(error, { unsupported: held });
+    } catch {
+      // The tree could not be read: the timeout is still the error.
+    }
+    return error;
+  }
+
   /** Renders, then waits until nothing is pending and returns the tree as it stands (`read` false: no tree, a frame that is only played through). */
   private async settle(scene: SceneRoot, render: () => void, animationFrames: boolean, read: false): Promise<null>;
   private async settle(scene: SceneRoot, render: () => void, animationFrames?: boolean): Promise<RenderedTree>;
@@ -322,7 +338,11 @@ class Renderer implements FrameRenderer {
     }
     for (;;) {
       await waitForFonts();
-      await whenRenderIdle();
+      try {
+        await whenRenderIdle();
+      } catch (error) {
+        throw this.withLeftOut(error, scene);
+      }
       // Let the state updates that continueRender's callers made reach the reconciler.
       await tick();
       if (openRenderHandles() === 0 && pendingFontLoads() === 0) break;

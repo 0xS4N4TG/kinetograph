@@ -1,7 +1,7 @@
 {
   "name": "@kinetographdev/scene",
   "version": "0.3.0",
-  "description": "Types and helpers for Kinetograph scene JSON (packages/cli/skills/kinetograph/references/SCENE.md)",
+  "description": "Types and helpers for Kinetograph scene JSON (packages/cli/skills/kinetograph-markup/references/SCENE.md)",
   "license": "PolyForm-Small-Business-1.0.0",
   "repository": {
     "type": "git",

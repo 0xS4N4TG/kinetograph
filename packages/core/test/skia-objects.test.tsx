@@ -1,4 +1,4 @@
-// What a project makes with `Skia.*` and hooks rather than JSX (packages/cli/skills/kinetograph/references/AUTHORING.md
+// What a project makes with `Skia.*` and hooks rather than JSX (packages/cli/skills/kinetograph-markup/references/AUTHORING.md
 // §7.7): shared values, FitBox, surfaces and drawn elements, data, typefaces, animated pictures, paragraph
 // measurement, paints with shaders and filters, and the text of an SVG. Skipped when `@kinetographdev/skia` is not built.
 

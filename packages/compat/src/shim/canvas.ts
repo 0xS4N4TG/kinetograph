@@ -1,4 +1,4 @@
-// `<canvas>` and `getContext('2d')` in compat mode (packages/cli/skills/kinetograph/references/SCENE.md, "canvas"): the context records its calls
+// `<canvas>` and `getContext('2d')` in compat mode (packages/cli/skills/kinetograph-markup/references/SCENE.md, "canvas"): the context records its calls
 // (`createCanvasContext` of `@kinetographdev/scene`) and the commands reach the renderer as a canvas layer. A canvas in
 // the tree keeps its context with its host element; one that is not in the tree (`document.createElement('canvas')`,
 // `OffscreenCanvas`) is a `CanvasSurface`. Everything a canvas needs of the engine (the fonts, the text engine, the
@@ -158,7 +158,7 @@ export function bitmapSide(attribute: string | null, fallback: number): number {
 export { DEFAULT_HEIGHT, DEFAULT_WIDTH };
 
 const contexts = new WeakMap<object, CanvasContext2D>();
-/** The WebGL contexts of canvases in the tree (packages/cli/skills/kinetograph/references/SCENE.md, "glsl"). */
+/** The WebGL contexts of canvases in the tree (packages/cli/skills/kinetograph-markup/references/SCENE.md, "glsl"). */
 /** A WebGL or WebGPU context: what a canvas that is drawn by the GPU holds. */
 export type GlRecorder = WebGLContext | GPUCanvasContextShim;
 const glContexts = new WeakMap<object, GlRecorder>();

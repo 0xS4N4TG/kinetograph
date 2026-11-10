@@ -1,5 +1,5 @@
 // `kinetograph track <video> --point x,y`: tracks points through a video with Blender's tracker (libmv, in the addon)
-// and writes `<video>.track.json`, which `useTrack()` reads (packages/cli/skills/kinetograph/references/AUTHORING.md,
+// and writes `<video>.track.json`, which `useTrack()` reads (packages/cli/skills/kinetograph-markup/references/AUTHORING.md,
 // "Motion tracking"). `--detect` places points with Blender's Detect Features first; `--plane` makes plane tracks
 // from the tracked points, which `usePlaneTrack()` reads. Precomputed: a render never tracks.
 
