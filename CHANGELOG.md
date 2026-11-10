@@ -46,6 +46,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - `useWindowedAudioData()` returns the window of the frame with the one before and after, and `visualizeAudio()` scales by the loudest sample of that slice, as Remotion's does.
 - An `<AbsoluteFill>` that is a `div` has Remotion's own style (top, left, right and bottom 0, width and height 100%), so a style key set to `undefined` (`top: undefined`) takes its default away as in a browser.
 - A Remotion project's DOM elements are `box-sizing: border-box`, as on Remotion's render page, so a `width: 100%` with padding does not overflow (a HyperFrames or plain HTML page keeps the browser's content-box; `registerRoot` starts every entry as a Remotion page, so a Remotion project loaded after a HyperFrames one gets it again).
+- ProRes (every core) and VP9 (a fixed 4 threads) encode on more than one thread instead of one (a 75-frame ProRes 4444 overlay: 4.6 s to 1.6 s a render). The decoded frames were compared for ProRes only (identical); VP9 at a fixed 4 threads is the same on every machine, and OpenH264 stays at 1 thread, since its output would follow the core count.
 
 ## 0.3.0 (2026-11-03)
 
