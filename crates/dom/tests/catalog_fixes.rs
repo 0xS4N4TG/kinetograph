@@ -99,3 +99,23 @@ fn mask_composite_exclude_leaves_a_ring() {
     assert_eq!(px(&frame, 100, 100), [255, 255, 255, 255], "the inside of the ring");
     assert_eq!(px(&frame, 10, 100), [34, 170, 221, 255], "the ring");
 }
+
+/// CSS Custom Properties 1: a custom property in an element's `style` attribute styles nothing by itself and takes
+/// nothing away: the rest of the cascade (here a stylesheet rule's `fill: none` and stroke) still applies to the
+/// SVG shape, with `var()` read from it.
+#[test]
+fn a_custom_property_in_the_style_attribute_of_an_svg_shape_leaves_the_cascade_alone() {
+    let frame = shoot(
+        "custom-property",
+        r##"<div class="w"><svg viewBox="0 0 520 220"><path d="M24 160 C90 28, 188 40, 228 128 S356 234, 494 68" style="--dash: 0"/></svg></div>
+<style>
+  .w { width: 560px; padding: 20px; background: #fff; display: grid; place-items: center }
+  .w svg { width: 520px; height: 220px; overflow: visible; }
+  .w path { fill: none; stroke: #18181b; stroke-width: 12; stroke-dasharray: 900; stroke-dashoffset: var(--dash, 0); }
+</style>"##,
+        620,
+        300,
+    );
+    // Inside the curve's bow nothing is drawn: the shape is not filled.
+    assert_eq!(px(&frame, 300, 150), [255, 255, 255, 255]);
+}

@@ -626,7 +626,12 @@ impl Writer<'_> {
             let name = canonical_attr(&a.name.local);
             let value = a.value.to_string();
             match &*name {
-                "style" => decls = css::declarations(&value),
+                // A custom property styles nothing by itself, and usvg's CSS reader drops a style it cannot read from the
+                // first one it does not know: the cascade supplies what `var()` stands for.
+                "style" => {
+                    decls = css::declarations(&value);
+                    decls.retain(|(n, _)| !n.starts_with("--"));
+                }
                 "xmlns" => {}
                 n if n.starts_with("xmlns:") || n.starts_with("data-") => {}
                 _ => attrs.push((name.into_owned(), value)),
