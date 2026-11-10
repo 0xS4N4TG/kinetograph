@@ -125,16 +125,19 @@ fn a_custom_property_in_the_style_attribute_of_an_svg_shape_leaves_the_cascade_a
     let frame = shoot(
         "custom-property",
         r##"<div class="w"><svg viewBox="0 0 520 220"><path d="M24 160 C90 28, 188 40, 228 128 S356 234, 494 68" style="--dash: 0"/></svg></div>
+<div class="w"><svg viewBox="0 0 520 220"><path d="M24 160 C90 28, 188 40, 228 128 S356 234, 494 68" style="stroke-dashoffset: var(--dash)"/></svg></div>
 <style>
   .w { width: 560px; padding: 20px; background: #fff; display: grid; place-items: center }
   .w svg { width: 520px; height: 220px; overflow: visible; }
   .w path { fill: none; stroke: #18181b; stroke-width: 12; stroke-dasharray: 900; stroke-dashoffset: var(--dash, 0); }
 </style>"##,
         620,
-        300,
+        600,
     );
-    // Inside the curve's bow nothing is drawn: the shape is not filled.
+    // Inside the curve's bow nothing is drawn: the shape is not filled, whether the custom property is declared or
+    // read by the element's own `style`.
     assert_eq!(px(&frame, 300, 150), [255, 255, 255, 255]);
+    assert_eq!(px(&frame, 300, 150 + 260), [255, 255, 255, 255]);
 }
 
 /// CSS Transforms 2: a box whose own corner lies left of and above the origin (a negative margin) and that is moved in

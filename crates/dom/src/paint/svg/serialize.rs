@@ -627,10 +627,11 @@ impl Writer<'_> {
             let value = a.value.to_string();
             match &*name {
                 // A custom property styles nothing by itself, and usvg's CSS reader drops a style it cannot read from the
-                // first one it does not know: the cascade supplies what `var()` stands for.
+                // first one it does not know, as it does one that still holds `var()` (`stroke-dashoffset: var(--d)`):
+                // the cascade supplies what they stand for, once they are not here to be kept as written.
                 "style" => {
                     decls = css::declarations(&value);
-                    decls.retain(|(n, _)| !n.starts_with("--"));
+                    decls.retain(|(n, v)| !n.starts_with("--") && !v.contains("var("));
                 }
                 "xmlns" => {}
                 n if n.starts_with("xmlns:") || n.starts_with("data-") => {}
