@@ -106,21 +106,9 @@ function buildNode(node: HfNode, parent: AnyRecord): void {
   parent.appendChild(el);
 }
 
-/**
- * `template.content`: the nodes of the template, kept out of the document. A browser's `DocumentFragment` has no
- * counterpart in the DOM shim, so `content.cloneNode(true)` is an `hf-fragment` element with `display: contents`
- * holding the clones, which lays out as its children do, and `content` itself is a detached holder with the nodes.
- */
+/** `template.content`: the shim's own fragment (a `DocumentFragment` with `getElementById`, `cloneNode(true)` and `querySelector`) holding the template's nodes, kept out of the document. */
 function defineTemplateContent(template: AnyRecord, nodes: HfNode[]): void {
-  const holder = doc().createElement('div');
-  for (const child of nodes) buildNode(child, holder);
-  holder.cloneNode = (deep = true): AnyRecord => {
-    const fragment = doc().createElement('hf-fragment');
-    fragment.style.setProperty('display', 'contents');
-    for (const child of Array.from(holder.childNodes) as AnyRecord[]) fragment.appendChild(child.cloneNode(deep));
-    return fragment;
-  };
-  Object.defineProperty(template, 'content', { configurable: true, get: () => holder });
+  for (const child of nodes) buildNode(child, template.content);
 }
 
 function applyAttrs(el: AnyRecord, attrs: [string, string][]): void {

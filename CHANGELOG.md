@@ -25,6 +25,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Fixed
 
+- HyperFrames: `template.content` is the DOM shim's own fragment, so `content.getElementById(...)` works (a runtime stand-in `div` had none), as do the fragment's other methods.
 - HyperFrames: `Impact`, which HyperFrames reads from the machine that renders, is set in the bundled Archivo Black (a heavy face) instead of the regular weight of the next family, and the page is told once.
 - A canvas reads `color(srgb ...)` for `fillStyle`, `strokeStyle`, gradient stops and shadows, which is how `getComputedStyle` gives a `color-mix()` (ink-bleed-reveal drew black).
 - The DOM shim's inline `style` has `getPropertyPriority()`, and `setProperty(name, value, "important")` keeps the priority (a script that reads and restores a hidden clip's `display` threw on it).
