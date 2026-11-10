@@ -13,7 +13,7 @@ use style::values::specified::TextDecorationLine;
 use style::values::specified::box_::DisplayOutside;
 use style_traits::ToCss;
 
-use super::geom::Rect;
+use super::geom::{BoxGeom, Rect};
 use super::text_stroke::TextStroke;
 use super::util::{Layer, current_color, hex_of, num, num4, resolve_color, rgba, shift};
 use super::{Origin, Painter, Phases};
@@ -127,7 +127,7 @@ impl<'a> Painter<'a> {
 
         // Backgrounds and borders of inline elements go under the text.
         let mut inline_boxes = Vec::new();
-        self.inline_element_boxes(node, origin, None, &sinks, &mut inline_boxes);
+        self.inline_element_boxes(node, origin, (node.id, content), None, &sinks, &mut inline_boxes);
         for (owner, layers) in inline_boxes {
             sinks.put(ph, owner, layers);
         }
@@ -761,6 +761,8 @@ impl<'a> Painter<'a> {
         &mut self,
         node: &'a Node,
         root_origin: Origin,
+        // The inline formatting context root and where its content starts (the glyphs' origin).
+        root: (NodeId, Origin),
         owner: Option<NodeId>,
         sinks: &InlineSinks,
         out: &mut Vec<(Option<NodeId>, Vec<Value>)>,
@@ -788,17 +790,22 @@ impl<'a> Painter<'a> {
                         )
                     })
                     .collect();
-                let layers = self.inline_fragments(child, &rects);
+                let layers = self.inline_fragments(child, &rects, root);
                 out.push((owner, layers));
             }
-            self.inline_element_boxes(child, root_origin, owner, sinks, out);
+            self.inline_element_boxes(child, root_origin, root, owner, sinks, out);
         }
     }
 
     /// Backgrounds, shadows and borders of one inline element over its line
     /// fragments (`box-decoration-break: slice`: the ends of the element carry
     /// the border edges).
-    fn inline_fragments(&mut self, node: &'a Node, rects: &[Rect]) -> Vec<Value> {
+    fn inline_fragments(
+        &mut self,
+        node: &'a Node,
+        rects: &[Rect],
+        root: (NodeId, Origin),
+    ) -> Vec<Value> {
         let Some(style) = node.primary_styles() else {
             return Vec::new();
         };
@@ -823,7 +830,9 @@ impl<'a> Painter<'a> {
             return out;
         }
         for (i, r) in rects.iter().enumerate() {
-            let geom = self.inline_fragment_geom(node, &style, *r, i == 0, i + 1 == count);
+            let mut geom = self.inline_fragment_geom(node, &style, *r, i == 0, i + 1 == count);
+            // The fragment's layers are moved to `r` afterwards, so the text is where the root's content is from there.
+            geom.inline_text = Some((root.0, (root.1.0 - r.x, root.1.1 - r.y)));
             let mut layers = Vec::new();
             layers.extend(self.box_shadows(node, &style, &geom, false));
             layers.extend(self.background(node, &style, &geom));
@@ -899,6 +908,7 @@ impl<'a> Painter<'a> {
                 if first { pad(&p.padding_left.0) } else { 0.0 },
             ],
             radii,
+            inline_text: None,
         }
     }
 }
@@ -906,12 +916,109 @@ impl<'a> Painter<'a> {
 impl<'a> Painter<'a> {
     /// White text layers of every glyph `node` and its descendants hold, in
     /// `node`'s own space: the shape `background-clip: text` cuts the
-    /// background to.
-    pub fn text_mask_layers(&mut self, node: &'a Node, id: &str) -> Vec<Value> {
+    /// background to. An inline element has no text layout of its own: its
+    /// glyphs are the ones of the inline formatting context that hold it
+    /// (`geom.inline_text`).
+    pub fn text_mask_layers(&mut self, node: &'a Node, geom: &BoxGeom, id: &str) -> Vec<Value> {
         let mut out = Vec::new();
         let mut n = 0;
-        self.collect_text_mask(node, (0.0, 0.0), id, &mut n, &mut out);
+        match geom.inline_text {
+            Some((root, content)) => {
+                let root = self.node(root);
+                self.mask_text_layer(root, content, Some(node), id, &mut n, &mut out);
+            }
+            None => self.collect_text_mask(node, (0.0, 0.0), id, &mut n, &mut out),
+        }
         out
+    }
+
+    /// Whether `node` is `ancestor` or below it.
+    fn is_within(&self, node: &Node, ancestor: &Node) -> bool {
+        let mut cur = node;
+        loop {
+            if cur.id == ancestor.id {
+                return true;
+            }
+            match cur.parent {
+                Some(p) => cur = self.node(p),
+                None => return false,
+            }
+        }
+    }
+
+    /// One white text layer of the glyphs of `root`'s inline layout, at `content` (the layout's origin), added to
+    /// `out`. With `only`, the glyphs of that element and what is below it.
+    fn mask_text_layer(
+        &mut self,
+        root: &'a Node,
+        content: Origin,
+        only: Option<&'a Node>,
+        id: &str,
+        n: &mut usize,
+        out: &mut Vec<Value>,
+    ) {
+        let Some(ild) = root
+            .element_data()
+            .and_then(|e| e.inline_layout_data.as_ref())
+        else {
+            return;
+        };
+        let layout = &ild.layout;
+        let scale = f64::from(layout.scale()).max(1e-6);
+        let mut runs: Vec<Value> = Vec::new();
+        for line in layout.lines() {
+            for item in line.items() {
+                let PositionedLayoutItem::GlyphRun(gr) = item else {
+                    continue;
+                };
+                if let Some(only) = only {
+                    let brush = self.node(NodeId::from_u64(gr.style().brush.id.as_u64()));
+                    if !self.is_within(brush, only) {
+                        continue;
+                    }
+                }
+                let run = gr.run();
+                let Some(src) = self.font_path(run.font()) else {
+                    continue;
+                };
+                let glyphs: Vec<Value> = gr
+                    .positioned_glyphs()
+                    .map(|g| {
+                        json!([
+                            g.id,
+                            num(f64::from(g.x) / scale),
+                            num(f64::from(g.y) / scale)
+                        ])
+                    })
+                    .collect();
+                if glyphs.is_empty() {
+                    continue;
+                }
+                let mut r = json!({ "src": src, "index": run.font().index, "size": num(f64::from(run.font_size()) / scale), "glyphs": glyphs });
+                let coords: Vec<i16> = run
+                    .normalized_coords()
+                    .iter()
+                    .map(|c| c.to_bits())
+                    .collect();
+                if !coords.is_empty() {
+                    r["coords"] = json!(coords);
+                }
+                if let Some(skew) = run.synthesis().skew() {
+                    r["skew"] = json!(skew);
+                }
+                runs.push(r);
+            }
+        }
+        if !runs.is_empty() {
+            *n += 1;
+            let layer = Layer::new(&format!("{id}.{n}"), "text")
+                .set("color", json!("#ffffff"))
+                .set("boxWidth", num(f64::from(layout.width()) / scale))
+                .set("boxHeight", num(f64::from(layout.height()) / scale))
+                .set("runs", Value::Array(runs))
+                .at(content.0, content.1);
+            out.push(layer.build());
+        }
     }
 
     fn collect_text_mask(
@@ -922,65 +1029,20 @@ impl<'a> Painter<'a> {
         n: &mut usize,
         out: &mut Vec<Value>,
     ) {
-        if let Some(ild) = node
+        if node
             .element_data()
-            .and_then(|e| e.inline_layout_data.as_ref())
+            .is_some_and(|e| e.inline_layout_data.is_some())
         {
             let l = node.final_layout();
+            let block_offset = node
+                .element_data()
+                .and_then(|e| e.inline_layout_data.as_ref())
+                .map_or(0.0, |ild| f64::from(ild.block_offset));
             let content = (
                 origin.0 + f64::from(l.border.left + l.padding.left),
-                origin.1 + f64::from(l.border.top + l.padding.top) + f64::from(ild.block_offset),
+                origin.1 + f64::from(l.border.top + l.padding.top) + block_offset,
             );
-            let layout = &ild.layout;
-            let scale = f64::from(layout.scale()).max(1e-6);
-            let mut runs: Vec<Value> = Vec::new();
-            for line in layout.lines() {
-                for item in line.items() {
-                    let PositionedLayoutItem::GlyphRun(gr) = item else {
-                        continue;
-                    };
-                    let run = gr.run();
-                    let Some(src) = self.font_path(run.font()) else {
-                        continue;
-                    };
-                    let glyphs: Vec<Value> = gr
-                        .positioned_glyphs()
-                        .map(|g| {
-                            json!([
-                                g.id,
-                                num(f64::from(g.x) / scale),
-                                num(f64::from(g.y) / scale)
-                            ])
-                        })
-                        .collect();
-                    if glyphs.is_empty() {
-                        continue;
-                    }
-                    let mut r = json!({ "src": src, "index": run.font().index, "size": num(f64::from(run.font_size()) / scale), "glyphs": glyphs });
-                    let coords: Vec<i16> = run
-                        .normalized_coords()
-                        .iter()
-                        .map(|c| c.to_bits())
-                        .collect();
-                    if !coords.is_empty() {
-                        r["coords"] = json!(coords);
-                    }
-                    if let Some(skew) = run.synthesis().skew() {
-                        r["skew"] = json!(skew);
-                    }
-                    runs.push(r);
-                }
-            }
-            if !runs.is_empty() {
-                *n += 1;
-                let layer = Layer::new(&format!("{id}.{n}"), "text")
-                    .set("color", json!("#ffffff"))
-                    .set("boxWidth", num(f64::from(layout.width()) / scale))
-                    .set("boxHeight", num(f64::from(layout.height()) / scale))
-                    .set("runs", Value::Array(runs))
-                    .at(content.0, content.1);
-                out.push(layer.build());
-            }
+            self.mask_text_layer(node, content, None, id, n, out);
         }
         let children: Vec<NodeId> = node
             .layout_children

@@ -70,3 +70,18 @@ fn an_svg_mask_with_mask_type_alpha_from_a_class_masks_by_alpha() {
     assert_eq!(px(&frame, 50, 50), [0, 192, 0, 255], "inside the circle");
     assert_eq!(px(&frame, 150, 50), [255, 255, 255, 255], "outside it");
 }
+
+/// CSS Backgrounds 4, `background-clip: text`: the background of an inline element is cut to the glyphs of its text.
+#[test]
+fn background_clip_text_on_an_inline_span_shows_the_gradient_in_the_glyphs() {
+    let frame = shoot(
+        "clip-text-inline",
+        r##"<div style="font-size:60px;font-weight:700;padding:10px 20px"><span style="background:linear-gradient(to right, red, blue);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Heading</span></div>"##,
+        400,
+        100,
+    );
+    let inked = frame.rgba.chunks(4).filter(|p| p[0] != 255 || p[1] != 255 || p[2] != 255).count();
+    // The glyphs, not the span's whole box (about 330 x 70 pixels).
+    assert!(inked > 1500, "no gradient in the glyphs: {inked}");
+    assert!(inked < 330 * 70 / 2, "the whole box is filled: {inked}");
+}
