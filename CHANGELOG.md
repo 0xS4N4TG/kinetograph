@@ -49,6 +49,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A `z-index: -1` descendant of a box that is a stacking context by its `mix-blend-mode`, `perspective`, `transform-style: preserve-3d` or `backdrop-filter` stays inside it; the paint order and the hoisting of z-indexed boxes now use the same rule.
 - A `var()` in the `style` attribute of an SVG shape (`stroke-dashoffset: var(--d)`) no longer drops the declarations after it.
 - A `backdrop-filter` with a colour function before `blur()` still reads only the backdrop inside the element's box.
+- `ProgressEvent` exists in page scripts, so three.js file loaders (the 3D devices of the liquid-glass pages, extruded-logo) no longer stop at "ProgressEvent is not defined".
 
 ## 0.3.0 (2026-11-03)
 

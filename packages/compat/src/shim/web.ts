@@ -124,6 +124,19 @@ class BrowserEventTarget extends EventTarget {
   }
 }
 
+/** `new ProgressEvent(type, { lengthComputable, loaded, total })` (XHR spec, Progress Events). Node has no such global. */
+class ProgressEventShim extends Event {
+  readonly lengthComputable: boolean;
+  readonly loaded: number;
+  readonly total: number;
+  constructor(type: string, init: { lengthComputable?: boolean; loaded?: number; total?: number; bubbles?: boolean; cancelable?: boolean } = {}) {
+    super(type, init);
+    this.lengthComputable = Boolean(init.lengthComputable);
+    this.loaded = Number(init.loaded ?? 0);
+    this.total = Number(init.total ?? 0);
+  }
+}
+
 class MediaQueryListShim extends BrowserEventTarget {
   onchange: ((event: unknown) => void) | null = null;
   constructor(readonly media: string) {
@@ -632,6 +645,7 @@ export function installDomGlobals(): void {
   define(g, 'AnimationTimeline', AnimationTimelineShim);
   define(g, 'DocumentTimeline', DocumentTimelineShim);
   define(g, 'AnimationPlaybackEvent', AnimationPlaybackEventShim);
+  define(g, 'ProgressEvent', ProgressEventShim);
 
   // `fetch` of project files only. The real one stays reachable for the font downloads, which are explicit and cached.
   if (typeof g.fetch === 'function' && (g.fetch as { kinetograph?: boolean }).kinetograph !== true) {
