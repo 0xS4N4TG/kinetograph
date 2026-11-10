@@ -1,4 +1,4 @@
-//! Constructs the Remotion and HyperFrames template catalogs drew wrong, one small page each.
+//! Web-platform behaviours the painter got wrong, one minimal page each: what the CSS or SVG spec says the picture is.
 
 mod common;
 mod paintkit;
@@ -16,8 +16,8 @@ fn shoot(name: &str, body: &str, w: u32, h: u32) -> Frame {
     frame
 }
 
-/// An ellipse stroked with a gradient (an outline, dashed by kurbo) whose one dash covers the whole outline, as
-/// Remotion's hello-world arc does once its progress reaches 1.
+/// SVG 2 painting, `stroke-dasharray`: a dash as long as a closed shape's outline (or longer) strokes the whole
+/// outline, a ring. A gradient stroke is drawn as an outline we dash ourselves.
 #[test]
 fn a_dashed_gradient_ellipse_under_a_css_rotation_is_a_whole_ring() {
     let svg = |ellipse: &str| {
@@ -40,8 +40,8 @@ fn a_dashed_gradient_ellipse_under_a_css_rotation_is_a_whole_ring() {
     assert_eq!(px(&frame, 200, 200), [255, 255, 255, 255]);
 }
 
-/// The electron template: a flex `AbsoluteFill` holds a full-size positioned backdrop and then a flex item that
-/// has a transform and an opacity (a stacking context at z-index 0, in tree order with the positioned backdrop).
+/// CSS 2.1 Appendix E, step 8: a box that makes a stacking context at z-index 0 (here a transform and an opacity)
+/// paints in tree order with the positioned boxes, so over an earlier positioned sibling.
 #[test]
 fn a_transformed_element_paints_over_an_earlier_positioned_sibling() {
     let frame = shoot(
@@ -100,6 +100,23 @@ fn mask_composite_exclude_leaves_a_ring() {
     assert_eq!(px(&frame, 10, 100), [34, 170, 221, 255], "the ring");
 }
 
+/// Filter Effects 2, `backdrop-filter`: every filter function acts on what is behind the element, not only `blur()`.
+/// `saturate(0)` over a red box leaves grey inside the element and the red outside it.
+#[test]
+fn backdrop_filter_saturate_greys_what_is_behind() {
+    let frame = shoot(
+        "backdrop-saturate",
+        r##"<div style="position:absolute;left:0;top:0;width:200px;height:100px;background:#c86464"></div>
+<div style="position:absolute;left:50px;top:20px;width:100px;height:60px;backdrop-filter:saturate(0)"></div>"##,
+        200,
+        100,
+    );
+    assert_eq!(px(&frame, 10, 10), [200, 100, 100, 255], "outside");
+    // Rec. 709 luma of (200, 100, 100) as the saturate matrix has it: 0.213 * 200 + 0.715 * 100 + 0.072 * 100.
+    let inside = px(&frame, 100, 50);
+    assert!(inside[0].abs_diff(121) <= 2 && inside[0].abs_diff(inside[1]) <= 1 && inside[0].abs_diff(inside[2]) <= 1, "{inside:?}");
+}
+
 /// CSS Custom Properties 1: a custom property in an element's `style` attribute styles nothing by itself and takes
 /// nothing away: the rest of the cascade (here a stylesheet rule's `fill: none` and stroke) still applies to the
 /// SVG shape, with `var()` read from it.
@@ -141,21 +158,4 @@ fn a_box_with_a_negative_margin_moved_in_3d_is_not_cut_at_the_origin() {
     assert_eq!(px(&frame, 880, 460), [204, 0, 0, 255], "the top left of the box is missing");
     assert_eq!(px(&frame, 1040, 620), [204, 0, 0, 255], "the bottom right");
     assert_eq!(px(&frame, 850, 430), [255, 255, 255, 255], "the box is larger than it should be");
-}
-
-/// Filter Effects 2, `backdrop-filter`: every filter function acts on what is behind the element, not only `blur()`.
-/// `saturate(0)` over a red box leaves grey inside the element and the red outside it.
-#[test]
-fn backdrop_filter_saturate_greys_what_is_behind() {
-    let frame = shoot(
-        "backdrop-saturate",
-        r##"<div style="position:absolute;left:0;top:0;width:200px;height:100px;background:#c86464"></div>
-<div style="position:absolute;left:50px;top:20px;width:100px;height:60px;backdrop-filter:saturate(0)"></div>"##,
-        200,
-        100,
-    );
-    assert_eq!(px(&frame, 10, 10), [200, 100, 100, 255], "outside");
-    // Rec. 709 luma of (200, 100, 100) as the saturate matrix has it: 0.213 * 200 + 0.715 * 100 + 0.072 * 100.
-    let inside = px(&frame, 100, 50);
-    assert!(inside[0].abs_diff(121) <= 2 && inside[0].abs_diff(inside[1]) <= 1 && inside[0].abs_diff(inside[2]) <= 1, "{inside:?}");
 }
