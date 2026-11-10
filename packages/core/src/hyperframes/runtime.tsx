@@ -22,7 +22,7 @@ import { finishFontLoadsSync, getFonts } from '../font-registry.js';
 import { makeGoogleFont } from '../google-fonts.js';
 import { reportIsRead, reportUnsupported } from '../unsupported.js';
 import type { HfAudioFxJson } from '@kinetographdev/scene';
-import type { HfNode, HfPlan } from './plan.js';
+import { inRunOrder, type HfNode, type HfPlan } from './plan.js';
 import { runGlobalScript, runScopedScript, type ScopeEnv } from './scope.js';
 import { laneGain, MAX_GAIN, parseAutomation, sourceTimeAt, type AutomationLane } from './automation.js';
 import { ANIMATED_EFFECT_LIMITS, gradeAttribute, gradeNotDrawn, normalizeGrade, seedOf } from './grading.js';
@@ -222,7 +222,7 @@ class Runtime {
     this.mount();
     this.bindVariables();
 
-    for (const script of plan.scripts) {
+    for (const script of inRunOrder(plan.scripts)) {
       if (script.scope === null) {
         runGlobalScript(script.code, script.file, report);
         continue;

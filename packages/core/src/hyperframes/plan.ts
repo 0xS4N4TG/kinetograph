@@ -26,6 +26,15 @@ export interface HfScript {
   sourceFile: string | null;
 }
 
+/**
+ * The order the scripts run in: the page's own first (classic scripts, then modules), then each mounted composition's.
+ * HyperFrames' runtime mounts the compositions once the page has been parsed and run, then runs their scripts, so a page
+ * script can still edit what a composition will import (a `<template>` it clones from) when the composition's script runs.
+ */
+export function inRunOrder(scripts: readonly HfScript[]): HfScript[] {
+  return [...scripts.filter((s) => s.scope === null), ...scripts.filter((s) => s.scope !== null)];
+}
+
 export interface HfStylesheet {
   css: string;
   file: string;
