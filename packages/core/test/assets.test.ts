@@ -120,4 +120,55 @@ describe('delayRender', () => {
     cancelRender('bad data');
     await expect(whenRenderIdle()).rejects.toThrow('bad data');
   });
+
+  it('keeps the process alive while something waits, so the timeout can fire (Node exited with code 13 before)', async () => {
+    const timeouts = () => process.getActiveResourcesInfo().filter((name) => name === 'Timeout').length;
+    const before = timeouts();
+    const handle = delayRender('held', { timeoutInMilliseconds: 10_000 });
+    // Nothing waits yet: the timer alone does not hold the process.
+    expect(timeouts()).toBe(before);
+    const waiting = whenRenderIdle();
+    expect(timeouts()).toBe(before + 1);
+    continueRender(handle);
+    await waiting;
+    expect(timeouts()).toBe(before);
+  });
+
+  it('references a handle opened while a wait is in progress', async () => {
+    const timeouts = () => process.getActiveResourcesInfo().filter((name) => name === 'Timeout').length;
+    const before = timeouts();
+    const first = delayRender('first', { timeoutInMilliseconds: 10_000 });
+    const waiting = whenRenderIdle();
+    const second = delayRender('second', { timeoutInMilliseconds: 10_000 });
+    expect(timeouts()).toBe(before + 2);
+    continueRender(first);
+    continueRender(second);
+    await waiting;
+  });
+
+  it('fails with a code the CLI reports and the label, like Remotion', async () => {
+    delayRender('waiting for the page', { timeoutInMilliseconds: 20 });
+    const error = await whenRenderIdle().then(
+      () => null,
+      (e: Error) => e,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(error!.message).toContain('A delayRender() "waiting for the page" was called but not cleared after 20ms');
+    expect((error as Error & { code?: string }).code).toBe('DELAY_RENDER_TIMEOUT');
+  });
+
+  it('takes its default timeout from KINETOGRAPH_DELAY_RENDER_TIMEOUT (the CLI --timeout), and timeoutInMilliseconds wins', async () => {
+    const before = process.env.KINETOGRAPH_DELAY_RENDER_TIMEOUT;
+    process.env.KINETOGRAPH_DELAY_RENDER_TIMEOUT = '25';
+    try {
+      delayRender('flag');
+      await expect(whenRenderIdle()).rejects.toThrow(/"flag" was called but not cleared after 25ms/);
+      resetRenderState();
+      delayRender('own', { timeoutInMilliseconds: 40 });
+      await expect(whenRenderIdle()).rejects.toThrow(/"own" was called but not cleared after 40ms/);
+    } finally {
+      if (before === undefined) delete process.env.KINETOGRAPH_DELAY_RENDER_TIMEOUT;
+      else process.env.KINETOGRAPH_DELAY_RENDER_TIMEOUT = before;
+    }
+  });
 });

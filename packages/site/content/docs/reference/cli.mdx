@@ -20,12 +20,13 @@ The entry is a `.tsx`, `.ts`, `.jsx` or `.js` project file, a `.json` scene, or 
 
 Without `-o`, `still`, `strip`, `onion` and `render` write under `out/` in the project folder (the folder of the nearest `package.json`): `out/stills/`, `out/sheets/` and `out/renders/`, named after the composition.
 
-Commands that open a project take two more options. These are `still`, `render`, `strip`, `onion`, `inspect`, `lint`, `bench`, `audio analyze`, `snapshot` and `doctor`.
+Commands that open a project take more options. These are `still`, `render`, `strip`, `onion`, `inspect`, `lint`, `bench`, `audio analyze`, `snapshot` and `doctor`.
 
 | Option | Meaning |
 |---|---|
 | `--comp <id>` | The composition to use. The default is the first one. |
 | `--props <json>` | Input props as a JSON object. See [Authoring](/docs/guides/authoring/#compositions). |
+| `--timeout <ms>` | How long a `delayRender()` may stay open before its frame fails with `DELAY_RENDER_TIMEOUT`. The default is 30000, as in Remotion. `delayRender(label, { timeoutInMilliseconds })` wins. |
 
 ### Frames and ranges
 
