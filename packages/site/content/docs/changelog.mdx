@@ -37,6 +37,8 @@ Kinetograph is in beta, so APIs can still change between versions. The same list
 - The DOM shim has `svg.viewBox`, `createSVGPoint()` and `SVGPoint.matrixTransform` (also on `getPointAtLength()`), and `getCTM()` / `getScreenCTM()` give matrices with `inverse()` and `multiply()`; `getScreenCTM()` now includes the viewBox and the svg's place on the page.
 - The DOM shim has `XMLSerializer`: `serializeToString` writes an element, fragment, text node or document as XML with its namespaces.
 - HyperFrames: `document.currentScript` is the script that is running (a component finds its root with `document.currentScript.closest("#root")`), where it was always null.
+- Boxes at one depth in a `preserve-3d` element are painted in painting order, not by how far their middles are from the viewer, so a `::after` or a border on a tilted box is no longer hidden under its parent's background.
+- A `::before` or `::after` box paints its own background, border and shadow, as the box CSS 2.1 §12.1 says it is, in a line of text too.
 - HyperFrames: the root's timed children are taken out of flow, so a second sub-composition no longer draws black below the canvas.
 - HyperFrames: the root is clipped and sized from its `data-width` and `data-height`, so a root with no CSS size is not empty (#112).
 - A page edited from frame to frame draws and reads back as a fresh one does: an edited `::before` in an inline-block, boxes under `display: none`, an inline-block's `scrollWidth`.

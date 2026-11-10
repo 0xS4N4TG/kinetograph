@@ -673,9 +673,17 @@ impl<'a> Painter<'a> {
         parent: Option<NodeId>,
         out: &mut Vec<InlineGroup>,
     ) {
-        for cid in node.children.iter() {
-            let child = self.node(*cid);
-            if !child.is_element() || !child.is_non_atomic_inline() {
+        // The `::before` and `::after` of an element are inline boxes of its text too (CSS 2.1 §12.1).
+        let ids: Vec<NodeId> = node
+            .before()
+            .into_iter()
+            .chain(node.children.iter().copied())
+            .chain(node.after())
+            .collect();
+        for cid in ids {
+            let child = self.node(cid);
+            let pseudo = node.before() == Some(cid) || node.after() == Some(cid);
+            if !(child.is_element() || pseudo) || !child.is_non_atomic_inline() {
                 continue;
             }
             let opacity = child
@@ -767,9 +775,17 @@ impl<'a> Painter<'a> {
         sinks: &InlineSinks,
         out: &mut Vec<(Option<NodeId>, Vec<Value>)>,
     ) {
-        for cid in node.children.iter() {
-            let child = self.node(*cid);
-            if !child.is_element() || !child.is_non_atomic_inline() {
+        // The `::before` and `::after` of an element are inline boxes of its text too (CSS 2.1 §12.1).
+        let ids: Vec<NodeId> = node
+            .before()
+            .into_iter()
+            .chain(node.children.iter().copied())
+            .chain(node.after())
+            .collect();
+        for cid in ids {
+            let child = self.node(cid);
+            let pseudo = node.before() == Some(cid) || node.after() == Some(cid);
+            if !(child.is_element() || pseudo) || !child.is_non_atomic_inline() {
                 continue;
             }
             let owner = if sinks.groups.iter().any(|g| g.node == child.id) {

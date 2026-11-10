@@ -209,3 +209,77 @@ fn stacking_contexts_at_z_index_zero_paint_in_tree_order_with_positioned_boxes()
     );
     assert_eq!(px(&f, 40, 40), red, "the z-index -1 child escaped its blend-mode parent");
 }
+
+/// CSS 2.1 §12.1: `::before` and `::after` generate boxes, with their own background, in flow or positioned. A
+/// `::after` that only carries a background is drawn, in a flat parent and in a `preserve-3d` one alike.
+#[test]
+fn a_pseudo_element_box_paints_its_background() {
+    let frame = shoot(
+        "pseudo-box",
+        r##"<style>.t{position:absolute;width:120px;height:160px;background:#1d2b4d;top:20px}
+.t::after{content:"";position:absolute;inset:18px 14px;background:repeating-linear-gradient(0deg,#ffd48a 0 10px,transparent 10px 34px)}
+.f{position:absolute;left:340px;top:20px;width:100px}.f::before{content:"";display:block;height:30px;background:#0f0}
+.p{position:absolute;left:170px;top:0;width:150px;height:220px;transform-style:preserve-3d}</style>
+<div class="t" style="left:20px"></div>
+<div class="p"><div class="t" style="left:0;transform:translateZ(-240px)"></div></div>
+<div class="f"></div>"##,
+        460,
+        220,
+    );
+    let striped = |x: u32| (0..160).any(|dy| px(&frame, x, 20 + dy)[0] > 200 && px(&frame, x, 20 + dy)[2] < 160);
+    assert!(striped(80), "the flat tower has no stripes");
+    assert!(striped(230), "the tower in the preserve-3d parent has no stripes");
+    assert_eq!(px(&frame, 390, 30), [0, 255, 0, 255], "an in-flow ::before block has no background");
+}
+
+/// CSS 2.1 §12.1 and §9.2.2: a `::before` in a line of text is an inline box (or an inline-block) with its own background, drawn once
+/// among the line's text. A half-transparent green over white is (127, 255, 127) once and (64, 255, 64) twice.
+#[test]
+fn an_inline_pseudo_element_in_a_line_of_text_paints_its_background_once() {
+    let frame = shoot(
+        "pseudo-inline",
+        r##"<style>p{margin:0;font-size:16px;line-height:20px;height:40px}
+.a::before{content:"";display:inline-block;width:30px;height:20px;background:rgba(0,255,0,.5)}
+.b::before{content:"ab";background:rgba(0,255,0,.5)}</style>
+<p class="a">text</p><p class="b">text</p>"##,
+        200,
+        80,
+    );
+    for (name, at) in [("inline-block", (15, 10)), ("inline", (4, 45))] {
+        let p = px(&frame, at.0, at.1);
+        assert!(
+            (p[0] as i32 - 127).abs() < 3 && p[1] == 255 && (p[2] as i32 - 127).abs() < 3,
+            "the {name} ::before is not drawn once at {at:?}: {p:?}"
+        );
+    }
+}
+
+/// CSS Transforms 2 §6: planes at one depth in a `preserve-3d` element, which every box without a 3D transform of its
+/// own is, are drawn in painting order (CSS 2.1 Appendix E), not by how far their middles are from the viewer: on a
+/// tilted element the middle of an inner box can be farther than the middle of the box it sits on.
+#[test]
+fn boxes_without_a_transform_in_a_tilted_preserve_3d_element_keep_their_painting_order() {
+    let tower = |tilt: &str, left: u32| {
+        format!(
+            r##"<div style="position:absolute;left:{left}px;top:0;width:200px;height:200px;transform-style:preserve-3d;transform:{tilt}"><div class="t"></div></div>"##
+        )
+    };
+    let frame = shoot(
+        "plane-order",
+        &format!(
+            r##"<style>.t{{position:absolute;left:30px;top:30px;width:140px;height:140px;background:#1d2b4d}}
+.t::after{{content:"";position:absolute;left:70px;top:20px;width:60px;height:100px;background:#0f0}}</style>
+<div style="position:absolute;left:0;top:0;width:420px;height:200px;perspective:700px">{}{}</div>"##,
+            tower("rotateY(40deg)", 0),
+            tower("rotateY(-40deg)", 220)
+        ),
+        420,
+        200,
+    );
+    let green = |x0: u32, x1: u32| {
+        (0..200).flat_map(|y| (x0..x1).map(move |x| (x, y))).filter(|&(x, y)| px(&frame, x, y) == [0, 255, 0, 255]).count()
+    };
+    // Each tilted `::after` shows over its box: about 60 x 100 px, foreshortened.
+    assert!(green(0, 210) > 2000, "the ::after of the left box is under it: {} green px", green(0, 210));
+    assert!(green(210, 420) > 2000, "the ::after of the right box is under it: {} green px", green(210, 420));
+}

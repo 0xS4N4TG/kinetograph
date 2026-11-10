@@ -473,9 +473,10 @@ impl<'a> Painter<'a> {
             let child = self.node(cid);
             let loc = child.final_layout().location;
             let at = (origin.0 + f64::from(loc.x), origin.1 + f64::from(loc.y));
-            if child.is_anonymous() {
+            if child.is_anonymous() && !is_pseudo_element(node, child) {
                 // A box Blitz made to hold inline content among blocks: no box
-                // of its own to paint.
+                // of its own to paint. (A `::before` or `::after` is built as an
+                // anonymous node too, but it is a box with a style of its own.)
                 self.walk(child, at, ph, pos);
                 continue;
             }
@@ -695,6 +696,11 @@ fn flatten_plain_group(group: Value) -> Vec<Value> {
         util::shift(l, dx, dy);
     }
     out
+}
+
+/// Whether `child` is the `::before` or `::after` of `parent`.
+fn is_pseudo_element(parent: &Node, child: &Node) -> bool {
+    parent.before() == Some(child.id) || parent.after() == Some(child.id)
 }
 
 /// An attribute of an element, by name.

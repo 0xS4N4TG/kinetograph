@@ -52,6 +52,9 @@ pub(super) struct DepthItem<'a> {
     pub(super) opacity: f32,
     /// What it is sorted by: the z of the layer's centre once placed.
     pub(super) depth: f64,
+    /// Its place in painting order, among the layers of the group: the order the layers are listed in, which
+    /// is z order.
+    pub(super) order: usize,
     /// Its box in its own space (`Renderer::plane_extent`), if it has one.
     pub(super) extent: Option<Rect>,
 }
@@ -114,6 +117,7 @@ pub(super) fn collect_preserve3d<'a>(
             },
             opacity: space.opacity,
             depth: warp::depth(&world, (centre.x, centre.y)),
+            order: out.len(),
             extent,
         });
     }
@@ -150,6 +154,7 @@ pub(super) fn preserve3d_pieces(items: &[DepthItem<'_>], projection: DMat4, whol
                 ],
             };
             bsp::Plane {
+                order: item.order,
                 to_world,
                 corners: corners.map(|p| [p.x, p.y]),
             }
@@ -419,9 +424,10 @@ mod tests {
         assert_eq!(ids(&order), ["b", "a", "c", "d"]);
     }
     #[test]
-    fn turning_the_group_turns_the_depth_order() {
-        // Three cards side by side at one depth. Turn the group a quarter
-        // about the vertical axis and the one on the right is the farthest.
+    fn turning_the_group_leaves_cards_in_one_plane_in_painting_order() {
+        // Three cards side by side at one depth. Turn the group about the vertical axis: the one on the right is
+        // farther or nearer by its middle, but they are in one plane, so they stay in painting order (CSS
+        // Transforms 2 §6), as they do in a browser.
         let cards = [
             card("left", r#"{"x": -40}"#),
             card("middle", r#"{"x": 0}"#),
@@ -434,15 +440,14 @@ mod tests {
                      "transform": {{"x": 200, "y": 150, "rotateY": {turn}}}, "children": [{cards}]}}]"#
             ))
         };
-        let flat = group(0.0);
-        assert_eq!(ids(&painting_order(&flat).0), ["left", "middle", "right"]);
-        let turned = group(60.0);
-        assert_eq!(ids(&painting_order(&turned).0), ["right", "middle", "left"]);
-        let other_way = group(-60.0);
-        assert_eq!(
-            ids(&painting_order(&other_way).0),
-            ["left", "middle", "right"]
-        );
+        for turn in [0.0, 60.0, -60.0] {
+            let turned = group(turn);
+            assert_eq!(
+                ids(&painting_order(&turned).0),
+                ["left", "middle", "right"],
+                "turned {turn} degrees"
+            );
+        }
     }
     #[test]
     fn a_layers_depth_is_measured_at_the_middle_of_its_box() {
