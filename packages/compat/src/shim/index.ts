@@ -8,6 +8,8 @@ export { overlayOf, propsWithOverlay, rawParentOf, setRawParent, effectiveParent
 export { recordMutation, isRecordingMutations, setMutationSink, insertChild, removeChild } from './tree.js';
 export type { HostMutation } from './tree.js';
 export { RangeShim } from './range.js';
+export { probeOnDraw, takeProbe } from './probes.js';
+export type { LayoutProbe, ProbeAnswer } from './probes.js';
 export {
   deliverObservations,
   hasObservers,

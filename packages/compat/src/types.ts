@@ -1,6 +1,7 @@
 // The types compat mode's streams share (kinetograph site, /docs/compat/).
 
 import type { CameraJson, LayerJson, Unsupported } from '@kinetographdev/scene';
+import type { LayoutProbe } from './shim/probes.js';
 
 export type { Unsupported };
 
@@ -30,6 +31,8 @@ export interface IslandContext {
   publicDir?: string;
   /** Document-wide CSS: imported files, then every `<style>` element of the tree. Default: the imported ones. */
   stylesheets?: readonly string[];
+  /** Host-tree paths of elements the render reports on (`IslandResult.probes`), read from the layout it draws. */
+  probes?: readonly string[];
 }
 
 export interface IslandResult {
@@ -41,4 +44,6 @@ export interface IslandResult {
   margin?: number;
   /** The scene's `blendSpace` the island is painted for (ENGINE.md §2). */
   blendSpace?: 'linear' | 'srgb';
+  /** For each path in `IslandContext.probes` the island has: its size and overflow in the layout the island was drawn from. */
+  probes?: Record<string, LayoutProbe>;
 }

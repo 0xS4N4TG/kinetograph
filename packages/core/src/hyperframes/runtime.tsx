@@ -14,7 +14,7 @@
 import { type ReactNode } from 'react';
 import { Audio, createSceneRoot } from '@kinetographdev/react';
 import { noteStylesheetProblem, registerStylesheet, setRemoteAssetResolver } from '@kinetographdev/compat/dom';
-import { hostOf, setPageDocument, setRefusedFetchHandler, setRemoteFiles, whenFetchesSettle } from '@kinetographdev/compat/shim';
+import { hostOf, probeOnDraw, setPageDocument, setRefusedFetchHandler, setRemoteFiles, whenFetchesSettle } from '@kinetographdev/compat/shim';
 import { continueRender, delayRender } from '../assets.js';
 import { Composition, registerRoot } from '../compositions.js';
 import { Sequence, useCurrentFrame, useVideoConfig } from '../timeline.js';
@@ -684,25 +684,30 @@ class Runtime {
 
   /**
    * The root composition, with children, that clips (`overflow` hidden, clip, scroll or auto) and is laid out to no width
-   * or no height: it draws nothing and looks fine. Decided on every frame, as a script can resize the root over time.
-   * The layout readback (~3 ms a frame) is made only for a root that clips: one that does not still draws its
+   * or no height: it draws nothing and looks fine. Decided on every drawn frame, as a script can resize the root over
+   * time. The layout is not read back for it: the render that draws the frame reports the root's size and overflow from
+   * the layout it draws (`probeOnDraw`), which saves a trip to the addon a frame. A root that does not clip still draws its
    * absolutely positioned children whatever its size.
    */
   private reportCollapsedRoot(): void {
     const root = doc().querySelector(`[data-composition-id="${attrValue(this.plan.compositionId)}"]`) as AnyRecord | null;
     if (root === null || (root.children?.length ?? 0) === 0) return;
-    const style = g.getComputedStyle(root) as AnyRecord;
-    const clips = (value: unknown): boolean => value !== 'visible' && value !== '' && value !== undefined && value !== null;
-    if (!clips(style.overflowX) && !clips(style.overflowY)) return;
-    const { width, height } = root.getBoundingClientRect();
-    if (width > 0 && height > 0) return;
-    reportUnsupported(
-      'HyperFrames',
-      null,
-      null,
-      `the root composition #${root.id || this.plan.compositionId} clips its contents and is laid out ${width}x${height}, so they are not drawn: ` +
-        'give it a size in pixels, or a percentage of a parent that has one (html and body default to the composition height)',
-    );
+    const host = hostOf(root);
+    if (host === null) return;
+    probeOnDraw(host, (probe) => {
+      if (probe === null) return;
+      const clips = (value: string): boolean => value !== 'visible' && value !== '';
+      if (!clips(probe.overflowX) && !clips(probe.overflowY)) return;
+      const { width, height } = probe;
+      if (width > 0 && height > 0) return;
+      reportUnsupported(
+        'HyperFrames',
+        null,
+        null,
+        `the root composition #${root.id || this.plan.compositionId} clips its contents and is laid out ${width}x${height}, so they are not drawn: ` +
+          'give it a size in pixels, or a percentage of a parent that has one (html and body default to the composition height)',
+      );
+    });
   }
 }
 

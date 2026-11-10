@@ -170,6 +170,7 @@ impl<'a> Painter<'a> {
             camera: self.camera,
             margin: (self.margin_reach > 0.0).then(|| self.margin_reach.ceil() as u32),
             blend_space: "srgb",
+            probes: Default::default(),
         }
     }
 

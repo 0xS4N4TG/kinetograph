@@ -7,6 +7,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Changed
 
+- A HyperFrames page's collapsed-root check is answered by the render that draws the frame (its size and overflow come back in the island's output) instead of a layout readback of its own (film 9.98 → 8.90 s, steady JS 11.7 → 9.2 ms a frame).
 - DOM islands replay unchanged stacking contexts from the last paint (mg1 island paint 23.8 → 6 ms a frame).
 - A frame's layout reads and its render share one island document; a read sends only what scripts changed, and the render draws the state the reads left.
 - An island's layers are sent as changes from the last frame's.
