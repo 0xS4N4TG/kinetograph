@@ -6,7 +6,7 @@
 // (kinetograph site, /docs/compat/).
 
 import type { CSSProperties, ReactNode } from 'react';
-import { Image, Layer, Rect } from '@kinetographdev/react';
+import { ABSOLUTE_FILL_STYLE, Image, Layer, Rect } from '@kinetographdev/react';
 import type { Layout } from '@kinetographdev/scene';
 import { parseColor } from './colors.js';
 import { CanvasImage, hasEffects, type EffectsOutputSize, type EffectsProp } from './effects.js';
@@ -114,7 +114,7 @@ export function AbsoluteFill({ style = {}, id, className, children }: AbsoluteFi
   if (className !== undefined || hasOtherKeys(style, FILL_KEYS) || !layerCanTake(style)) {
     // Remotion's own: a column flex box over the whole page, the author's style laid over it.
     return (
-      <div id={id} className={className} style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', ...style }}>
+      <div id={id} className={className} style={{ ...ABSOLUTE_FILL_STYLE, ...style }}>
         {children}
       </div>
     );

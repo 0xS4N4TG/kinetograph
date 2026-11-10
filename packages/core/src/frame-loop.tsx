@@ -11,6 +11,7 @@
 
 import type { ReactNode } from 'react';
 import { resetCanvasStates } from '@kinetographdev/compat/shim';
+import { setDefaultStylesheet } from '@kinetographdev/compat/dom';
 import { createSceneRoot, finishIslands, TimelineContext, type LayerNames, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
   attachMotionChanges,
@@ -31,8 +32,8 @@ import {
   setHistoryMode,
   transitionWindowSeconds,
 } from '@kinetographdev/compat/dom';
-import { renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
-import { resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
+import { rejectRenderWaits, renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
+import { isRemotionPage, resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
 import { realTimers, resetVirtualClock, runAnimationFrames, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 import { endGsapSamples, gsapIsLoaded, sampleGsapAt, setGsapTime } from './gsap-clock.js';
@@ -280,6 +281,8 @@ class Renderer implements FrameRenderer {
   }
 
   private startScene(config: VideoConfig): void {
+    // Remotion's page gives every element `box-sizing: border-box`: a `width: 100%` with padding does not overflow.
+    setDefaultStylesheet(isRemotionPage() ? REMOTION_DEFAULT_CSS : null);
     breakSamplePasses();
     this.scene?.unmount();
     // `time` is the virtual clock in seconds (frame / fps, also on a motion-blur sub-frame): the clock CSS animations read.
@@ -288,6 +291,8 @@ class Renderer implements FrameRenderer {
       fonts: getFonts,
       time: () => virtualNow() / 1000,
       subFrameLayers: () => this.subFrameLayers,
+      // A render that fails while a delayRender is open would otherwise wait for that handle's timeout.
+      onError: (error) => rejectRenderWaits(error instanceof Error ? error : new Error(String(error))),
     });
     this.lastFrame = -1;
     resetVirtualClock({ keepAnimationFrames: true });
@@ -358,6 +363,8 @@ class Renderer implements FrameRenderer {
     return tree;
   }
 }
+
+const REMOTION_DEFAULT_CSS = '* { box-sizing: border-box; }';
 
 export function createFrameRenderer(
   compositionId: string,

@@ -59,6 +59,55 @@ export function getFonts(): Record<string, string> {
   return Object.fromEntries(fonts);
 }
 
+interface ParsedKey {
+  family: string;
+  /** The weight, or the bottom of a variable face's range. */
+  weight: number;
+  weightMax: number;
+  italic: boolean;
+}
+
+/** A `fontKey` taken apart: `Inter`, `Inter:700`, `Inter:400i`, `Inter:100-900`. */
+function parseFontKey(key: string): ParsedKey {
+  const match = /^(.*):(\d+)(?:-(\d+))?(i)?$/.exec(key);
+  if (match === null) return { family: key, weight: 400, weightMax: 400, italic: false };
+  const weight = Number(match[2]);
+  return { family: match[1]!, weight, weightMax: match[3] === undefined ? weight : Number(match[3]), italic: match[4] === 'i' };
+}
+
+/**
+ * The registered key a request for `key` is set in, by CSS font matching (CSS Fonts 4 §5.2): the same family (any case)
+ * and style, then the other style; within that, the weight itself, else for 400 to 500 the next heavier up to 500, then
+ * lighter, then heavier; for under 400 lighter then heavier; for over 500 heavier then lighter. A face with a weight range
+ * counts as the weight in its range nearest the request. Null when the family has no registered face.
+ */
+export function matchFontKey(registered: Iterable<string>, key: string): string | null {
+  const wanted = parseFontKey(key);
+  const faces = [...registered]
+    .map((name) => ({ name, ...parseFontKey(name) }))
+    .filter((face) => face.family.toLowerCase() === wanted.family.toLowerCase());
+  const sameStyle = faces.filter((face) => face.italic === wanted.italic);
+  const pool = sameStyle.length > 0 ? sameStyle : faces;
+  const w = wanted.weight;
+  // The weight each face is drawn at for this request.
+  const drawnAt = (face: { weight: number; weightMax: number }): number => Math.min(Math.max(w, face.weight), face.weightMax);
+  const order = (list: typeof pool, ascending: boolean) =>
+    [...list].sort((a, b) => (ascending ? drawnAt(a) - drawnAt(b) : drawnAt(b) - drawnAt(a)));
+  const exact = pool.find((face) => drawnAt(face) === w);
+  if (exact) return exact.name;
+  const heavier = pool.filter((face) => drawnAt(face) > w);
+  const lighter = pool.filter((face) => drawnAt(face) < w);
+  let candidates: typeof pool;
+  if (w >= 400 && w <= 500) {
+    candidates = [...order(heavier.filter((f) => drawnAt(f) <= 500), true), ...order(lighter, false), ...order(heavier.filter((f) => drawnAt(f) > 500), true)];
+  } else if (w < 400) {
+    candidates = [...order(lighter, false), ...order(heavier, true)];
+  } else {
+    candidates = [...order(heavier, true), ...order(lighter, false)];
+  }
+  return candidates[0]?.name ?? null;
+}
+
 /** Forgets every registered font (tests). */
 export function clearFonts(): void {
   fonts.clear();

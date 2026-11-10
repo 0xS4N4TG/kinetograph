@@ -16,7 +16,7 @@ import { Audio, createSceneRoot } from '@kinetographdev/react';
 import { noteStylesheetProblem, registerStylesheet, setRemoteAssetResolver } from '@kinetographdev/compat/dom';
 import { hostOf, probeOnDraw, setPageDocument, setRefusedFetchHandler, setRemoteFiles, whenFetchesSettle, withCurrentScript } from '@kinetographdev/compat/shim';
 import { continueRender, delayRender } from '../assets.js';
-import { Composition, registerRoot } from '../compositions.js';
+import { Composition, registerRoot, setRemotionPage } from '../compositions.js';
 import { Sequence, useCurrentFrame, useVideoConfig } from '../timeline.js';
 import { finishFontLoadsSync, getFonts } from '../font-registry.js';
 import { makeGoogleFont } from '../google-fonts.js';
@@ -817,4 +817,6 @@ export function defineHyperframes(plan: HfPlan): void {
       calculateMetadata={plan.durationSeconds === null ? async () => ({ durationInFrames: frames(await runtime.seconds()) }) : undefined}
     />
   ));
+  // A HyperFrames page is a browser's own page: no Remotion default CSS (content-box stays content-box).
+  setRemotionPage(false);
 }

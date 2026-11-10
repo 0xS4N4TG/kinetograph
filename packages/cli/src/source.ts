@@ -208,7 +208,20 @@ async function loadProject(
 export async function listCompositions(entry: string, options: { bundleFile?: string; offline?: boolean; progress?: (message: string) => void } = {}): Promise<CompositionInfo[]> {
   const absolute = requireEntry(entry);
   if (isSceneFile(absolute)) return [sceneComposition(absolute, readFileSync(absolute, 'utf8'))];
-  return (await loadProject(absolute, options.bundleFile, undefined, options)).mod.getCompositions();
+  const { mod } = await loadProject(absolute, options.bundleFile, undefined, options);
+  // A composition whose fps or length comes from `calculateMetadata` is listed with what that returns, as Remotion's does.
+  return Promise.all(
+    mod.getCompositions().map(async ({ metadataPending, ...info }) => {
+      if (!metadataPending) return info;
+      const renderer = mod.createFrameRenderer(info.id);
+      try {
+        const config = await renderer.ready();
+        return { ...info, width: config.width, height: config.height, fps: config.fps, durationInFrames: config.durationInFrames };
+      } finally {
+        renderer.dispose();
+      }
+    }),
+  );
 }
 
 function sceneComposition(file: string, text: string): CompositionInfo {

@@ -7,8 +7,10 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import { resolveCachedRemoteFile } from '@kinetographdev/compat/dom';
 import { imageSizeOfBytes, projectFileOf, remoteMessage } from '@kinetographdev/compat/shim';
 import type { MediaInfo } from '@kinetographdev/native';
+import { mediaParserAddon } from './media-parser/addon.js';
 
 export type ProbeMedia = (path: string, baseDir?: string) => MediaInfo;
 
@@ -53,6 +55,14 @@ function loadNative(): ProbeMedia {
   );
 }
 
+/** `src`, or for an http(s) URL the file `fetch-deps` downloaded and locked for it; a URL that is not cached is an error. */
+function remoteOrLocal(src: string): string {
+  if (!/^https?:\/\//i.test(src)) return src;
+  const cached = resolveCachedRemoteFile(src);
+  if (cached === null) throw new Error(`Cannot read ${src}: remote files are not supported, download it and use staticFile() instead`);
+  return cached;
+}
+
 /** What the addon reads from the header of the video or GIF at `src`; with `cache`, read once per `src`. */
 export function probeMedia(src: string, options: { cache?: boolean } = {}): MediaInfo {
   if (options.cache) {
@@ -64,19 +74,30 @@ export function probeMedia(src: string, options: { cache?: boolean } = {}): Medi
     return info;
   }
   if (typeof src !== 'string' || src === '') throw new TypeError(`src must be a file path, but got ${JSON.stringify(src)}`);
-  if (/^https?:\/\//i.test(src)) {
-    throw new Error(`Cannot read ${src}: remote files are not supported, download it and use staticFile() instead`);
-  }
-  if (probeOverride) return probeOverride(src);
+  const path = remoteOrLocal(src);
+  if (probeOverride) return probeOverride(path);
   probeNative ??= loadNative();
-  return probeNative(src);
+  return probeNative(path);
+}
+
+/**
+ * How long a browser says a video is: the container's length, which is the longest of its streams, so a sound that runs
+ * past the last picture counts (`probeMedia` gives the picture's). The picture's when the container says nothing longer.
+ */
+function containerDuration(src: string, videoSeconds: number): number {
+  try {
+    const container = mediaParserAddon().probeStreams(remoteOrLocal(src)).durationInSeconds;
+    return container != null && container > videoSeconds ? container : videoSeconds;
+  } catch {
+    return videoSeconds;
+  }
 }
 
 /** The duration, size and frame rate of a local video, read from its header. */
 export async function getVideoMetadata(src: string): Promise<VideoMetadata> {
   const info = probeMedia(src);
   return {
-    durationInSeconds: info.durationInSeconds,
+    durationInSeconds: info.kind === 'video' ? containerDuration(src, info.durationInSeconds) : info.durationInSeconds,
     width: info.width,
     height: info.height,
     aspectRatio: info.width / info.height,
@@ -119,6 +140,7 @@ const cacheKey = (src: string, sampleRate: number) => `${sampleRate}:${src}`;
 export function setAudioDecoder(fn: DecodeAudio | null): void {
   decodeOverride = fn;
   audioCache.clear();
+  windows.clear();
 }
 
 function loadNativeDecoder(): DecodeAudio {
@@ -142,12 +164,9 @@ export function readAudioData(src: string, sampleRate: number = AUDIO_DATA_SAMPL
   if (!Number.isFinite(sampleRate) || sampleRate <= 0) throw new TypeError(`sampleRate must be a positive number, but got ${sampleRate}`);
   const known = audioCache.get(cacheKey(src, sampleRate));
   if (known) return known;
-  if (/^https?:\/\//i.test(src)) {
-    throw new Error(`Cannot read ${src}: remote files are not supported, download it and use staticFile() instead`);
-  }
   let decode = decodeOverride;
   if (!decode) decode = decodeNative ??= loadNativeDecoder();
-  const pcm = decode(src, sampleRate);
+  const pcm = decode(remoteOrLocal(src), sampleRate);
   if (pcm === null || pcm.channels.length === 0) throw new Error(`${src} has no audio stream`);
   const length = pcm.channels[0]!.length;
   const data: MediaUtilsAudioData = {
@@ -172,9 +191,13 @@ export function useAudioData(src: string): MediaUtilsAudioData | null {
   return readAudioData(src);
 }
 
+const windows = new Map<string, MediaUtilsAudioData>();
+
 /**
- * Remotion's windowed hook, for long files. The whole file is decoded once here anyway, so the window is the whole
- * file and the offset is 0; `visualizeAudio` and `getWaveformPortion` read it the same way.
+ * Remotion's windowed hook, for long files: the audio is cut into windows of `windowInSeconds`, and the data is the
+ * window of the current frame with the one before and the one after (up to three windows, as its documentation says), with
+ * `dataOffsetInSeconds` where that slice starts in the file. `visualizeAudio` scales by the loudest sample of the data it
+ * is given, so the slice matters: it is the slice's, not the whole file's. The file is decoded whole here anyway.
  */
 export function useWindowedAudioData(options: {
   src: string;
@@ -182,25 +205,33 @@ export function useWindowedAudioData(options: {
   fps: number;
   windowInSeconds: number;
 }): { audioData: MediaUtilsAudioData | null; dataOffsetInSeconds: number } {
-  return { audioData: readAudioData(options.src), dataOffsetInSeconds: 0 };
+  const whole = readAudioData(options.src);
+  const rate = whole.sampleRate;
+  const window = options.windowInSeconds;
+  const current = Math.floor(options.frame / options.fps / window);
+  const length = whole.channelWaveforms[0]!.length;
+  const start = Math.min(length, Math.max(0, Math.floor((current - 1) * window * rate)));
+  const end = Math.min(length, Math.ceil((current + 2) * window * rate));
+  if (start === 0 && end === length) return { audioData: whole, dataOffsetInSeconds: 0 };
+  const key = `${whole.resultId}:${start}:${end}`;
+  let slice = windows.get(key);
+  if (slice === undefined) {
+    // The slices are views, but keep the map small over a long session.
+    if (windows.size >= 16) windows.clear();
+    slice = {
+      ...whole,
+      channelWaveforms: whole.channelWaveforms.map((channel) => channel.subarray(start, end)),
+      durationInSeconds: (end - start) / rate,
+      resultId: `${whole.resultId}@${start}-${end}`,
+    };
+    windows.set(key, slice);
+  }
+  return { audioData: slice, dataOffsetInSeconds: start / rate };
 }
 
 /** How long the audio at `src` plays, from its decoded samples. */
 export async function getAudioDurationInSeconds(src: string): Promise<number> {
   return readAudioData(src).durationInSeconds;
-}
-
-/** Channel 0..n-1 averaged into one, from `start` for `length` samples; zero outside the file. */
-function monoWindow(audioData: MediaUtilsAudioData, start: number, length: number): Float64Array {
-  const out = new Float64Array(length);
-  const channels = audioData.channelWaveforms;
-  for (const channel of channels) {
-    for (let i = 0; i < length; i++) {
-      const at = start + i;
-      if (at >= 0 && at < channel.length) out[i]! += channel[at]! / channels.length;
-    }
-  }
-  return out;
 }
 
 /** In-place radix-2 FFT; `re.length` is a power of two. */
@@ -215,12 +246,13 @@ function fft(re: Float64Array, im: Float64Array): void {
       [im[i], im[j]] = [im[j]!, im[i]!];
     }
   }
+  const twiddles = twiddlesOf(n);
   for (let size = 2; size <= n; size <<= 1) {
-    const angle = (-2 * Math.PI) / size;
+    const step = n / size;
     for (let start = 0; start < n; start += size) {
       for (let k = 0; k < size / 2; k++) {
-        const wr = Math.cos(angle * k);
-        const wi = Math.sin(angle * k);
+        const wr = twiddles.cos[k * step]!;
+        const wi = twiddles.sin[k * step]!;
         const a = start + k;
         const b = a + size / 2;
         const tr = re[b]! * wr - im[b]! * wi;
@@ -234,46 +266,86 @@ function fft(re: Float64Array, im: Float64Array): void {
   }
 }
 
-/** The analysis window: about one frame of 30 fps audio at 48 kHz, and never fewer samples than two per band. */
-const MIN_FFT_SIZE = 2048;
+const twiddleTables = new Map<number, { cos: Float64Array; sin: Float64Array }>();
+
+/** cos and sin of -2*pi*k/n for k below n/2, kept per size. */
+function twiddlesOf(n: number): { cos: Float64Array; sin: Float64Array } {
+  let table = twiddleTables.get(n);
+  if (table === undefined) {
+    table = { cos: new Float64Array(n / 2), sin: new Float64Array(n / 2) };
+    for (let k = 0; k < n / 2; k++) {
+      table.cos[k] = Math.cos((-2 * Math.PI * k) / n);
+      table.sin[k] = Math.sin((-2 * Math.PI * k) / n);
+    }
+    twiddleTables.set(n, table);
+  }
+  return table;
+}
 
 function isPowerOfTwo(n: number): boolean {
   return Number.isInteger(n) && n > 0 && (n & (n - 1)) === 0;
 }
 
-/** The spectrum at one moment: `numberOfSamples` bands from 0 Hz to half the sample rate, each 0..1. */
-function spectrumAt(audioData: MediaUtilsAudioData, seconds: number, numberOfSamples: number): number[] {
-  const size = Math.max(MIN_FFT_SIZE, numberOfSamples * 2);
-  // The window is centred on the moment.
-  const start = Math.round(seconds * audioData.sampleRate) - size / 2;
-  const samples = monoWindow(audioData, start, size);
-  const re = new Float64Array(size);
-  const im = new Float64Array(size);
-  let windowSum = 0;
-  for (let i = 0; i < size; i++) {
-    const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (size - 1));
-    re[i] = samples[i]! * w;
-    windowSum += w;
+/** A sample as 16-bit audio: 0x7fff for full scale up, 0x8000 for full scale down. */
+const toInt16 = (x: number): number => (x > 0 ? x * 0x7fff : x * 0x8000);
+
+// The loudest 16-bit sample of a waveform (1 for silence), found once: every frame divides by it.
+const peaks = new WeakMap<Float32Array, number>();
+
+function peakOf(waveform: Float32Array): number {
+  let peak = peaks.get(waveform);
+  if (peak === undefined) {
+    peak = 0;
+    for (let i = 0; i < waveform.length; i++) peak = Math.max(peak, Math.abs(toInt16(waveform[i]!)));
+    peak ||= 1;
+    peaks.set(waveform, peak);
   }
-  fft(re, im);
-  // A full-scale sine reads about 1 in its band: amplitude = |X| * 2 / sum(window).
-  const bins = size / 2;
-  const perBand = bins / numberOfSamples;
-  const out: number[] = [];
-  for (let band = 0; band < numberOfSamples; band++) {
-    let peak = 0;
-    for (let b = Math.floor(band * perBand); b < Math.floor((band + 1) * perBand); b++) {
-      peak = Math.max(peak, (Math.hypot(re[b]!, im[b]!) * 2) / windowSum);
-    }
-    out.push(Math.min(1, peak));
+  return peak;
+}
+
+/**
+ * Three passes of a three-point mean over the bins, the ends kept. The first pass reads the bins as they were; the
+ * next two update in place, so each point sees its left neighbour already smoothed, as Remotion's does.
+ */
+function smoothen(bins: number[]): number[] {
+  const out = bins.slice();
+  let source = bins;
+  for (let pass = 0; pass < 3; pass++) {
+    for (let i = 1; i < bins.length - 1; i++) out[i] = (source[i - 1]! + source[i]! + source[i + 1]!) / 3;
+    source = out;
   }
   return out;
 }
 
 /**
+ * The spectrum at one moment, as Remotion 4.0.542 gives it. The documentation says little about it (values 0 to 1,
+ * low frequencies first), so this follows what the published package does, found by calling it on test signals: the
+ * first channel's `2 * numberOfSamples` samples from `numberOfSamples` before the moment (from the start of the file when
+ * that is earlier; silence past its end), as 16-bit integers, go through a plain FFT with no window function, the
+ * magnitudes of its lower half are smoothed (`smoothen`) and divided by `numberOfSamples` and by the loudest 16-bit sample
+ * of the whole channel. A constant signal reads 2 in the first bin; nothing is clamped.
+ */
+function spectrumAt(audioData: MediaUtilsAudioData, seconds: number, numberOfSamples: number): number[] {
+  const waveform = audioData.channelWaveforms[0]!;
+  const size = numberOfSamples * 2;
+  if (waveform.length < size) throw new TypeError(`Audio data is not big enough to provide ${size} bars.`);
+  const start = Math.max(0, Math.floor(seconds * audioData.sampleRate) - numberOfSamples);
+  const re = new Float64Array(size);
+  const im = new Float64Array(size);
+  const end = Math.min(waveform.length, start + size);
+  // The samples go into 16-bit integers, which drop what is after the point and wrap what is past full scale.
+  for (let i = start; i < end; i++) re[i - start] = (Math.trunc(Math.fround(toInt16(waveform[i]!))) << 16) >> 16;
+  fft(re, im);
+  const magnitudes: number[] = [];
+  for (let k = 0; k < numberOfSamples; k++) magnitudes.push(Math.hypot(re[k]!, im[k]!));
+  const peak = peakOf(waveform);
+  return smoothen(magnitudes).map((m) => m / numberOfSamples / peak);
+}
+
+/**
  * The frequency spectrum at `frame`, as `@remotion/media-utils`' `visualizeAudio`: `numberOfSamples` (a power of two)
- * values 0..1, low frequencies first, in equal bands up to half the sample rate. `smoothing` (default true) averages
- * the frame before, the frame and the frame after. `optimizeFor` is accepted and changes nothing.
+ * values, low frequencies first, each a bin of the first channel's spectrum at that moment (`spectrumAt`). `smoothing`
+ * (default true) averages the frame before, the frame and the frame after. `optimizeFor` is accepted and changes nothing.
  */
 export function visualizeAudio(options: {
   audioData: MediaUtilsAudioData;

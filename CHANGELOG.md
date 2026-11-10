@@ -52,6 +52,18 @@ Kinetograph is in beta, so APIs can still change between versions.
 - HyperFrames: a block whose root says `data-composition-id="main"` but is mounted by a host with another id runs its own timeline and takes its rules for `main` (13 shader blocks and 9 transition reels).
 - HyperFrames: the page's scripts run before the scripts of the compositions it mounts, so a page script can still edit a `<template>` a component clones from.
 - `getComputedStyle(el).transform` resolves percentages against the box's layout size, not its pixel-snapped size.
+- A `<Composition>` may leave out `fps` and `durationInFrames` when `calculateMetadata` returns them, as in Remotion (the audiogram, music-visualization and tiktok templates render unedited).
+- `createTikTokStyleCaptions()` breaks a page only before a caption that starts with a space (not a newline or tab), keeps whitespace-only captions in the page text but not as tokens, and ends the last page with the last caption.
+- A weight that was not loaded is measured in the nearest loaded one (CSS font matching) instead of throwing, and a render error after a `delayRender` fails the frame at once instead of at the handle's 30 s timeout (the audiogram template renders unedited, SSIM 0.965).
+- `visualizeAudio()` gives the values of Remotion 4.0.542: 16-bit samples, a plain FFT of 2 x `numberOfSamples`, three smoothing passes, scaled by the file's loudest sample (music-visualization template); samples past full scale wrap as 16-bit audio does.
+- `getVideoMetadata()` reports the container's length, as a browser does, so a sound that runs past the last picture counts (the tiktok template renders 358 frames, as in Remotion, not 357).
+- A remote `@import` of a stylesheet (Google Fonts' `css2?family=...`) in a Remotion project's CSS is downloaded and locked by `fetch-deps` (and before a render), with the font files it names, and loaded as a browser would; https only, from the locked cache only (never during a render), each stylesheet read once, at most 16 and 1 MiB, only its `@font-face` rules are used (nothing of it reaches the page), relative URLs resolved against the stylesheet.
+- A remote file is read at render time (`fetch()`, audio data, video length) only from what `fetch-deps` downloaded and locked, and only for a GET or HEAD without a body.
+- Listing compositions (`kinetograph compositions`, Studio) runs `calculateMetadata` for a composition whose fps or length comes from it, instead of showing placeholders.
+- `useWindowedAudioData()` returns the window of the frame with the one before and after, and `visualizeAudio()` scales by the loudest sample of that slice, as Remotion's does.
+- An `<AbsoluteFill>` that is a `div` has Remotion's own style (top, left, right and bottom 0, width and height 100%), so a style key set to `undefined` (`top: undefined`) takes its default away as in a browser.
+- A Remotion project's DOM elements are `box-sizing: border-box`, as on Remotion's render page, so a `width: 100%` with padding does not overflow (a HyperFrames or plain HTML page keeps the browser's content-box; `registerRoot` starts every entry as a Remotion page, so a Remotion project loaded after a HyperFrames one gets it again).
+- ProRes (every core) and VP9 (a fixed 4 threads) encode on more than one thread instead of one (a 75-frame ProRes 4444 overlay: 4.6 s to 1.6 s a render). The decoded frames were compared for ProRes only (identical); VP9 at a fixed 4 threads is the same on every machine, and OpenH264 stays at 1 thread, since its output would follow the core count.
 
 ## 0.3.0 (2026-11-03)
 

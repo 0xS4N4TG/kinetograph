@@ -35,6 +35,15 @@ describe('readStylesheet', () => {
     expect(warnings).toEqual([]);
   });
 
+  it('leaves a remote @import whose URL contains a semicolon (Google Fonts) whole', () => {
+    const url = 'https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;900';
+    const dir = project({ 'a.css': `@import url("${url}");\n@import '${url}' screen;\n.a { color: red }` });
+    const { css, warnings } = readStylesheet(join(dir, 'a.css'));
+    expect(css).toContain(`@import url("${url}");`);
+    expect(css).toContain(`@import '${url}' screen;`);
+    expect(warnings).toEqual([]);
+  });
+
   it('warns about an import that is not there and survives an import cycle', () => {
     const dir = project({ 'a.css': `@import './nope.css'; @import './b.css';`, 'b.css': `@import './a.css'; .b{}` });
     const { warnings, css } = readStylesheet(join(dir, 'a.css'));
