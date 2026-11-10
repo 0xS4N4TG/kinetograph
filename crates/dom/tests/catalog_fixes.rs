@@ -142,3 +142,20 @@ fn a_box_with_a_negative_margin_moved_in_3d_is_not_cut_at_the_origin() {
     assert_eq!(px(&frame, 1040, 620), [204, 0, 0, 255], "the bottom right");
     assert_eq!(px(&frame, 850, 430), [255, 255, 255, 255], "the box is larger than it should be");
 }
+
+/// Filter Effects 2, `backdrop-filter`: every filter function acts on what is behind the element, not only `blur()`.
+/// `saturate(0)` over a red box leaves grey inside the element and the red outside it.
+#[test]
+fn backdrop_filter_saturate_greys_what_is_behind() {
+    let frame = shoot(
+        "backdrop-saturate",
+        r##"<div style="position:absolute;left:0;top:0;width:200px;height:100px;background:#c86464"></div>
+<div style="position:absolute;left:50px;top:20px;width:100px;height:60px;backdrop-filter:saturate(0)"></div>"##,
+        200,
+        100,
+    );
+    assert_eq!(px(&frame, 10, 10), [200, 100, 100, 255], "outside");
+    // Rec. 709 luma of (200, 100, 100) as the saturate matrix has it: 0.213 * 200 + 0.715 * 100 + 0.072 * 100.
+    let inside = px(&frame, 100, 50);
+    assert!(inside[0].abs_diff(121) <= 2 && inside[0].abs_diff(inside[1]) <= 1 && inside[0].abs_diff(inside[2]) <= 1, "{inside:?}");
+}

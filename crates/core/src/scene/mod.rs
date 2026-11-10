@@ -404,6 +404,10 @@ pub enum Effect {
         #[serde(default, rename = "edgeMode")]
         edge_mode: BackdropEdge,
     },
+    /// The colour functions of a CSS `backdrop-filter` (`saturate`, `brightness`, `contrast`, `grayscale`, `sepia`,
+    /// `invert`, `hueRotate`): `effects`, colour effects in order, change what is behind the layer. Put after the
+    /// `backdropBlur` that comes before them in the filter list.
+    BackdropFilter { effects: Vec<Effect> },
     /// A halo: the layer blurred, drawn under itself. `radius` is like
     /// `blur`'s. `color` replaces the halo's colours (its alpha scales the
     /// halo); `intensity` scales it, 0..4.
@@ -825,7 +829,8 @@ impl Effect {
                 amount.max().abs().max(amount.min().abs())
             }
             // Colour filters change pixels in place.
-            Effect::Saturate { .. }
+            Effect::BackdropFilter { .. }
+            | Effect::Saturate { .. }
             | Effect::Contrast { .. }
             | Effect::Brightness { .. }
             | Effect::Grayscale { .. }
@@ -2450,6 +2455,20 @@ mod tests {
         // A blur beside the mesh, not around it, has nothing to cut.
         let beside = format!(r#"{{"id": "g", "type": "group", {blur} "children": [{rect}]}}, {mesh}"#);
         assert_eq!(margin(&beside), 0);
+    }
+
+    #[test]
+    fn a_backdrop_filter_holds_colour_effects_and_adds_no_margin() {
+        let scene = effects_of(
+            r#"[{"type": "backdropBlur", "radius": 4, "edgeMode": "mirror"},
+                {"type": "backdropFilter", "effects": [{"type": "saturate", "amount": 1.8}, {"type": "brightness", "amount": 1.1}]}]"#,
+        );
+        let Effect::BackdropFilter { effects } = &scene.layers[0].effects[1] else {
+            panic!("not a backdrop filter");
+        };
+        assert!(matches!(effects[..], [Effect::Saturate { .. }, Effect::Brightness { .. }]));
+        // Mirrored, so the blur reads nothing past the box; the colours reach nowhere.
+        assert_eq!(scene.margin(), 0);
     }
 
     #[test]

@@ -2197,7 +2197,7 @@ fn needs_box(effects: &[ResolvedEffect]) -> bool {
 fn has_backdrop_blur(effects: &[ResolvedEffect]) -> bool {
     effects
         .iter()
-        .any(|e| matches!(e, ResolvedEffect::BackdropBlur { radius, .. } if *radius >= MIN_RADIUS))
+        .any(|e| matches!(e, ResolvedEffect::BackdropBlur { radius, .. } if *radius >= MIN_RADIUS) || matches!(e, ResolvedEffect::BackdropColor(m) if *m != crate::color::ColorMatrix::IDENTITY))
 }
 
 /// Whether drawing `layer` looks at what is behind it: it blurs the backdrop,
