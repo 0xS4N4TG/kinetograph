@@ -85,3 +85,17 @@ fn background_clip_text_on_an_inline_span_shows_the_gradient_in_the_glyphs() {
     assert!(inked > 1500, "no gradient in the glyphs: {inked}");
     assert!(inked < 330 * 70 / 2, "the whole box is filled: {inked}");
 }
+
+/// CSS Masking 1, `mask-composite: exclude`: of two mask layers, what only one of them covers is kept: here the
+/// border box minus the padding box, a ring.
+#[test]
+fn mask_composite_exclude_leaves_a_ring() {
+    let frame = shoot(
+        "mask-exclude",
+        r##"<div style="width:160px;height:160px;border:20px solid transparent;background:#2ad;mask:linear-gradient(#000 0 0) padding-box,linear-gradient(#000 0 0) border-box;-webkit-mask:linear-gradient(#000 0 0) padding-box,linear-gradient(#000 0 0) border-box;mask-composite:exclude;-webkit-mask-composite:xor"></div>"##,
+        200,
+        200,
+    );
+    assert_eq!(px(&frame, 100, 100), [255, 255, 255, 255], "the inside of the ring");
+    assert_eq!(px(&frame, 10, 100), [34, 170, 221, 255], "the ring");
+}

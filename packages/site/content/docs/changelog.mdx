@@ -42,6 +42,7 @@ Kinetograph is in beta, so APIs can still change between versions. The same list
 - A transformed or non-opaque element with `z-index: auto` is painted above an earlier positioned sibling (Remotion's electron template), as CSS paints a stacking context at z-index 0 in tree order with the positioned boxes.
 - A stylesheet rule that sets `mask-type` (Tailwind's `[mask-type:alpha]`) reaches an SVG `<mask>`: it masks by alpha, not luminance.
 - `background-clip: text` on an inline element (a gradient on a `<span>`) is cut to the element's glyphs; it was not drawn at all.
+- `mask-composite` `subtract`, `intersect` and `exclude` are drawn for alpha masks (two mask layers with `exclude` leave a ring); only `add` was.
 
 ## 0.3.0 (2026-11-03)
 
