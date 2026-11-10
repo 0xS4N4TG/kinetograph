@@ -9,6 +9,8 @@ export { recordMutation, isRecordingMutations, setMutationSink, insertChild, rem
 export type { HostMutation } from './tree.js';
 export { withCurrentScript } from './document.js';
 export { RangeShim } from './range.js';
+export { probeOnDraw, takeProbe } from './probes.js';
+export type { LayoutProbe, ProbeAnswer } from './probes.js';
 export {
   deliverObservations,
   hasObservers,

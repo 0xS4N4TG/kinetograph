@@ -9,6 +9,9 @@ Kinetograph is in beta, so APIs can still change between versions. The same list
 
 ### Changed
 
+- A frame a HyperFrames worker plays through to reach its chunk is not rendered: only the clips, the timelines, `hf-seek` and the videos' `currentTime` are done (film 9.41 → 8.50 s, mg1 3.39 → 3.21 s).
+- A bundle whose inputs have not changed is used again instead of built again, and Node's compile cache (`~/.cache/kinetograph/compile-cache`) serves the CLI and the render workers (compat 0.78 → 0.64 s, mg2 0.86 → 0.71 s).
+- A HyperFrames page's collapsed-root check is answered by the render that draws the frame (its size and overflow come back in the island's output) instead of a layout readback of its own (film 9.98 → 8.90 s, steady JS 11.7 → 9.2 ms a frame).
 - DOM islands replay unchanged stacking contexts from the last paint (mg1 island paint 23.8 → 6 ms a frame).
 - A frame's layout reads and its render share one island document; a read sends only what scripts changed, and the render draws the state the reads left.
 - An island's layers are sent as changes from the last frame's.

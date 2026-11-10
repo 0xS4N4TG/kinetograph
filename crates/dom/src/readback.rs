@@ -9,6 +9,7 @@ use blitz_dom::{BaseDocument, Node, NodeId};
 use serde::Serialize;
 
 use crate::document::IslandDocument;
+use crate::request::Probe;
 use crate::transform::{self, Matrix};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
@@ -62,6 +63,30 @@ pub fn layout_boxes_of(island: &IslandDocument, paths: &[String]) -> BTreeMap<St
         .filter_map(|path| {
             let id = island.paths.get(path)?;
             Some((path.clone(), element_box(&island.doc, *id, origin)))
+        })
+        .collect()
+}
+
+/// What a render reports of the elements at `paths` (`Probe`), read from the layout it drew: the same numbers
+/// `layout_boxes_of` and `computed_style` give a script that asks after the frame's tree is laid out. A path the island
+/// does not have is left out.
+pub fn probes(island: &IslandDocument, paths: &[String]) -> BTreeMap<String, Probe> {
+    let origin = border_box_origin(&island.doc, island.container);
+    paths
+        .iter()
+        .filter_map(|path| {
+            let id = *island.paths.get(path)?;
+            let rect = element_box(&island.doc, id, origin).rect;
+            let overflow = |name: &str| island.doc.resolved_style_value(id, name);
+            Some((
+                path.clone(),
+                Probe {
+                    width: rect.width,
+                    height: rect.height,
+                    overflow_x: overflow("overflow-x"),
+                    overflow_y: overflow("overflow-y"),
+                },
+            ))
         })
         .collect()
 }

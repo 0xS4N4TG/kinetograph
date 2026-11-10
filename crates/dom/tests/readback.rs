@@ -438,3 +438,34 @@ fn boxes_of_some_paths_are_those_of_all() {
     assert_eq!(some.keys().collect::<Vec<_>>(), ["$0.0"]);
     assert_eq!(some["$0.0"], all["$0.0"]);
 }
+
+#[test]
+fn probes_are_what_a_script_reads_of_the_layout_the_frame_draws() {
+    let root = el(
+        "div",
+        "$0",
+        "position: relative; overflow: hidden; width: 100%; height: 0",
+        vec![el(
+            "div",
+            "$0.0",
+            "position: absolute; left: 10px; top: 20px; width: 100px; height: 50px; overflow-x: scroll; \
+             transform: scale(2); transform-origin: 0 0",
+            vec![],
+        )],
+    );
+    let island = resolve(&request(root));
+    let paths = ["$0".to_string(), "$0.0".to_string(), "$9".to_string()];
+    let probes = readback::probes(&island, &paths);
+    assert_eq!(probes.len(), 2, "a path the island does not have is left out");
+    let boxes = readback::layout_boxes(&island);
+    for path in ["$0", "$0.0"] {
+        let rect = boxes[path].rect;
+        assert_eq!((probes[path].width, probes[path].height), (rect.width, rect.height), "{path}");
+    }
+    assert_eq!((probes["$0"].width, probes["$0"].height), (1000.0, 0.0));
+    assert_eq!((probes["$0.0"].width, probes["$0.0"].height), (200.0, 100.0));
+    assert_eq!((probes["$0"].overflow_x.as_str(), probes["$0"].overflow_y.as_str()), ("hidden", "hidden"));
+    assert_eq!((probes["$0.0"].overflow_x.as_str(), probes["$0.0"].overflow_y.as_str()), ("scroll", "auto"));
+    let computed = |path: &str| readback::computed_style(&island, path, &["overflow-x".into(), "overflow-y".into()]).unwrap();
+    assert_eq!(computed("$0.0"), [probes["$0.0"].overflow_x.clone(), probes["$0.0"].overflow_y.clone()]);
+}
