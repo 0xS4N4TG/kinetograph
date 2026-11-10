@@ -129,7 +129,11 @@ pub fn is_identity(h: &DMat3) -> bool {
 /// texture on each axis it fits, by the least that does it; one that is wider
 /// than the texture is left where it is. `(0, 0)` when it already fits, give or
 /// take a pixel.
-pub fn source_shift(h: &DMat3, size: (f64, f64)) -> (f64, f64) {
+///
+/// `content` is the box the layer draws in, in the texture's coordinates, when it is known: only the part of the
+/// canvas's pull-back that lies in it matters, so a small layer under a wide view (a card whose box starts left of
+/// the origin, seen from far away) is moved onto the texture too, though the whole pull-back is far wider than it.
+pub fn source_shift(h: &DMat3, size: (f64, f64), content: Option<kurbo::Rect>) -> (f64, f64) {
     let g = h.inverse();
     // `lambda` is 1 / w of the canvas point `(x, y)` as the plane puts it: positive in front of the camera.
     let lambda = |x: f64, y: f64| g.x_axis.z * x + g.y_axis.z * y + g.z_axis.z;
@@ -156,6 +160,13 @@ pub fn source_shift(h: &DMat3, size: (f64, f64)) -> (f64, f64) {
         let p = g * DVec3::new(x, y, 1.0);
         let (u, v) = (p.x / p.z, p.y / p.z);
         (x0, y0, x1, y1) = (x0.min(u), y0.min(v), x1.max(u), y1.max(v));
+    }
+    if let Some(c) = content {
+        (x0, y0, x1, y1) = (x0.max(c.x0), y0.max(c.y0), x1.min(c.x1), y1.min(c.y1));
+        if x0 >= x1 || y0 >= y1 {
+            // None of the layer is brought onto the canvas.
+            return (0.0, 0.0);
+        }
     }
     let axis = |lo: f64, hi: f64, extent: f64| {
         if !(lo.is_finite() && hi.is_finite()) || hi - lo > extent {
@@ -687,16 +698,22 @@ mod tests {
             )
         };
         // Slid right 60: the canvas shows the plane from x -60, so draw 60 right.
-        assert_eq!(source_shift(&slide(60.0, 0.0), size), (60.0, 0.0));
-        assert_eq!(source_shift(&slide(-60.5, 12.0), size), (-61.0, 12.0));
+        assert_eq!(source_shift(&slide(60.0, 0.0), size, None), (60.0, 0.0));
+        assert_eq!(source_shift(&slide(-60.5, 12.0), size, None), (-61.0, 12.0));
         // Within a pixel of the canvas: nothing moves.
-        assert_eq!(source_shift(&slide(0.5, -0.5), size), (0.0, 0.0));
+        assert_eq!(source_shift(&slide(0.5, -0.5), size, None), (0.0, 0.0));
         // Halved about the middle, the canvas shows twice its width: too wide to fit.
         let half = DMat3::from_cols(
             DVec3::new(0.5, 0.0, 0.0),
             DVec3::new(0.0, 0.5, 0.0),
             DVec3::new(50.0, 25.0, 1.0),
         );
-        assert_eq!(source_shift(&half, size), (0.0, 0.0));
+        assert_eq!(source_shift(&half, size, None), (0.0, 0.0));
+        // The layer's own box, which starts at x -30, is what has to fit: it is moved onto the texture.
+        let content = kurbo::Rect::new(-30.0, 10.0, 60.0, 60.0);
+        assert_eq!(source_shift(&half, size, Some(content)), (30.0, 0.0));
+        // A layer that lies where the canvas shows nothing of it moves nothing.
+        let away = kurbo::Rect::new(-900.0, 10.0, -800.0, 60.0);
+        assert_eq!(source_shift(&half, size, Some(away)), (0.0, 0.0));
     }
 }

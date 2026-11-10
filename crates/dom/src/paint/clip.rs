@@ -224,14 +224,11 @@ impl<'a> Painter<'a> {
                 continue;
             }
             let comp = &svg.mask_composite.0;
-            if !comp.is_empty() && format!("{:?}", comp[pick(comp.len(), i)]) != "Add" {
-                self.report(
-                    node,
-                    "mask-composite",
-                    format!("{:?}", comp[pick(comp.len(), i)]),
-                    "only add compositing of mask layers is drawn",
-                );
-            }
+            let op = if comp.is_empty() {
+                "Add".to_string()
+            } else {
+                format!("{:?}", comp[pick(comp.len(), i)])
+            };
             let list_len = |l: usize| l.max(1);
             let _ = list_len;
             let sz = &svg.mask_size.0;
@@ -295,7 +292,20 @@ impl<'a> Painter<'a> {
                 if super::util::nearest_sampling(style) {
                     super::util::mark_nearest(&mut l);
                 }
-                layers.push(l);
+                // The bottom layer has nothing under it to combine with.
+                if op == "Add" || layers.is_empty() {
+                    layers.push(l);
+                } else if this == "alpha" {
+                    layers = composite_mask_layer(&op, layers, l, &lid);
+                } else {
+                    self.report(
+                        node,
+                        "mask-composite",
+                        op,
+                        "only add compositing is drawn for a mask in luminance mode",
+                    );
+                    layers.push(l);
+                }
             }
         }
         // A mask whose images could not be drawn hides nothing (and was
@@ -312,6 +322,57 @@ impl<'a> Painter<'a> {
             .insert(id.clone(), mode_name.unwrap_or("alpha"));
         Some(id)
     }
+}
+
+/// `source`, a mask layer, combined with the layers `below` it by the `mask-composite` operator `op` (alpha masks):
+/// `Subtract` keeps the source where the layers below are not, `Intersect` where they are too, and `Exclude`
+/// where only one of the two is. A layer that is the source of a matte is not drawn itself, so what is read twice is
+/// there twice, under other ids.
+fn composite_mask_layer(op: &str, below: Vec<Value>, source: Value, id: &str) -> Vec<Value> {
+    let dest = |suffix: &str| {
+        let kids: Vec<Value> = below.iter().map(|l| with_id_suffix(l, suffix)).collect();
+        super::util::group(&format!("{id}.dest{suffix}"), kids).build()
+    };
+    let matted = |mut layer: Value, by: &str, mode: &str| {
+        layer["matte"] = json!({ "layer": by, "mode": mode });
+        layer
+    };
+    match op {
+        "Intersect" => vec![dest(""), matted(source, &format!("{id}.dest"), "alpha")],
+        "Subtract" => vec![dest(""), matted(source, &format!("{id}.dest"), "alphaInverted")],
+        // Exclude: the source outside the layers below, and those outside the source.
+        _ => {
+            let source_copy = with_id_suffix(&source, ".copy");
+            let copy_id = source_copy["id"].as_str().unwrap_or_default().to_string();
+            let outside = matted(dest(".b"), &copy_id, "alphaInverted");
+            vec![
+                dest(".a"),
+                matted(source, &format!("{id}.dest.a"), "alphaInverted"),
+                source_copy,
+                outside,
+            ]
+        }
+    }
+}
+
+/// `layer` with `suffix` added to its id and to the id of its matte source, and in what it holds.
+fn with_id_suffix(layer: &Value, suffix: &str) -> Value {
+    let mut layer = layer.clone();
+    fn walk(v: &mut Value, suffix: &str) {
+        if let Some(id) = v.get("id").and_then(Value::as_str).map(str::to_string) {
+            v["id"] = json!(format!("{id}{suffix}"));
+        }
+        if let Some(m) = v.get("matte").and_then(|m| m["layer"].as_str()).map(str::to_string) {
+            v["matte"]["layer"] = json!(format!("{m}{suffix}"));
+        }
+        if let Some(kids) = v.get_mut("children").and_then(Value::as_array_mut) {
+            for k in kids {
+                walk(k, suffix);
+            }
+        }
+    }
+    walk(&mut layer, suffix);
+    layer
 }
 
 #[allow(dead_code)]

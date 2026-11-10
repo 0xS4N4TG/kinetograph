@@ -53,7 +53,7 @@ pub(super) struct DepthItem<'a> {
     /// What it is sorted by: the z of the layer's centre once placed.
     pub(super) depth: f64,
     /// Its box in its own space (`Renderer::plane_extent`), if it has one.
-    extent: Option<Rect>,
+    pub(super) extent: Option<Rect>,
 }
 
 /// Lists the layers a `preserve3d` group draws: its `children`, with those of

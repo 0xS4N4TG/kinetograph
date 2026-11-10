@@ -1050,7 +1050,8 @@ impl Renderer {
         };
         let backdrop = needs_backdrop.then(|| combined.as_ref().unwrap_or(canvas));
         let shift = if backdrop.is_none() {
-            self.source_shift(&placement)
+            let matrix = item.flat_parent * item.layer.transform.matrix();
+            self.source_shift(&placement, item.extent.map(|b| bounds::transformed(matrix, b)))
         } else {
             (0.0, 0.0)
         };
@@ -1393,7 +1394,12 @@ impl Renderer {
     ) -> Result<Option<Tex>> {
         if layer.motion.is_empty() {
             let shift = match &placement {
-                Some(placement) if backdrop.is_none() => self.source_shift(placement),
+                Some(placement) if backdrop.is_none() => {
+                    let content = self
+                        .plane_extent(layer)?
+                        .map(|b| bounds::transformed(parent * layer.transform.matrix(), b));
+                    self.source_shift(placement, content)
+                }
                 _ => (0.0, 0.0),
             };
             let src =
@@ -1433,7 +1439,12 @@ impl Renderer {
                 backface_hidden: sub.transform.backface_hidden,
             });
             let shift = match &placement {
-                Some(placement) if backdrop.is_none() => self.source_shift(placement),
+                Some(placement) if backdrop.is_none() => {
+                    let content = self
+                        .plane_extent(sub)?
+                        .map(|b| bounds::transformed(parent * sub.transform.matrix(), b));
+                    self.source_shift(placement, content)
+                }
                 _ => (0.0, 0.0),
             };
             let src = self.layer_texture(
@@ -1460,11 +1471,12 @@ impl Renderer {
     /// Where the flat texture of a layer with this `placement` is drawn, in
     /// pixels right and down, so that the warp finds what it brings onto the
     /// canvas (`warp::source_shift`). `place` is told the same.
-    fn source_shift(&self, placement: &Placement) -> (f64, f64) {
+    fn source_shift(&self, placement: &Placement, content: Option<Rect>) -> (f64, f64) {
         match warp::plane_homography(self.projection, placement.parent, placement.world) {
             Some(h) if !warp::is_identity(&h) => warp::source_shift(
                 &h,
                 (f64::from(self.target_size.0), f64::from(self.target_size.1)),
+                content,
             ),
             _ => (0.0, 0.0),
         }
@@ -2185,7 +2197,7 @@ fn needs_box(effects: &[ResolvedEffect]) -> bool {
 fn has_backdrop_blur(effects: &[ResolvedEffect]) -> bool {
     effects
         .iter()
-        .any(|e| matches!(e, ResolvedEffect::BackdropBlur { radius, .. } if *radius >= MIN_RADIUS))
+        .any(|e| matches!(e, ResolvedEffect::BackdropBlur { radius, .. } if *radius >= MIN_RADIUS) || matches!(e, ResolvedEffect::BackdropColor(m) if *m != crate::color::ColorMatrix::IDENTITY))
 }
 
 /// Whether drawing `layer` looks at what is behind it: it blurs the backdrop,

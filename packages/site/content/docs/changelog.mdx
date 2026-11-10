@@ -66,6 +66,20 @@ Kinetograph is in beta, so APIs can still change between versions. The same list
 - An `<AbsoluteFill>` that is a `div` has Remotion's own style (top, left, right and bottom 0, width and height 100%), so a style key set to `undefined` (`top: undefined`) takes its default away as in a browser.
 - A Remotion project's DOM elements are `box-sizing: border-box`, as on Remotion's render page, so a `width: 100%` with padding does not overflow (a HyperFrames or plain HTML page keeps the browser's content-box; `registerRoot` starts every entry as a Remotion page, so a Remotion project loaded after a HyperFrames one gets it again).
 - ProRes (every core) and VP9 (a fixed 4 threads) encode on more than one thread instead of one (a 75-frame ProRes 4444 overlay: 4.6 s to 1.6 s a render). The decoded frames were compared for ProRes only (identical); VP9 at a fixed 4 threads is the same on every machine, and OpenH264 stays at 1 thread, since its output would follow the core count.
+- A gradient-stroked ellipse or circle whose one dash covers the whole outline (a dash as long as the outline, as Remotion's hello-world arc has at the end of its draw-on) is a whole ring again, not an arc closed by a chord.
+- A closed SVG outline stroked with a gradient or pattern and a dash as long as the outline (a dash measured by `getTotalLength`) is a whole ring even when the two lengths differ in the last digits.
+- A transformed or non-opaque element with `z-index: auto` is painted above an earlier positioned sibling (Remotion's electron template), as CSS paints a stacking context at z-index 0 in tree order with the positioned boxes.
+- A stylesheet rule that sets `mask-type` (Tailwind's `[mask-type:alpha]`) reaches an SVG `<mask>`: it masks by alpha, not luminance.
+- `background-clip: text` on an inline element (a gradient on a `<span>`) is cut to the element's glyphs; it was not drawn at all.
+- `mask-composite` `subtract`, `intersect` and `exclude` are drawn for alpha masks (two mask layers with `exclude` leave a ring); only `add` was.
+- Canvas text in `font = '700 24px "JetBrains Mono", monospace'` (no family of the list loaded, a generic keyword in it) is set in the bundled font of that generic family, not the default proportional one.
+- A custom property in the `style` attribute of an SVG shape (`style="--hf-dash: 0"`, which GSAP sets) no longer drops the stylesheet's `fill`, `stroke` and dashes: the shape was drawn as a black fill.
+- A layer moved in 3D (`translate3d` under a `perspective`) whose box starts left of or above its parent's origin (a negative margin, as 3D carousels centre their cards with) is drawn whole; the part at negative coordinates was cut off before it was placed.
+- `backdrop-filter` draws its colour functions (`saturate()`, `brightness()`, `contrast()`, `grayscale()`, `sepia()`, `invert()`, `hue-rotate()`) in the order of the list, not only `blur()`; `drop-shadow()` and `opacity()` are still reported.
+- Canvas `measureText` measures a font list that ends in a generic family (`"Fira Code", monospace`) in the font it is drawn in, and counts the white space at the ends of the text; before, it returned half an em a character, so tokens drawn one after another overlapped.
+- A `z-index: -1` descendant of a box that is a stacking context by its `mix-blend-mode`, `perspective`, `transform-style: preserve-3d` or `backdrop-filter` stays inside it; the paint order and the hoisting of z-indexed boxes now use the same rule.
+- A `var()` in the `style` attribute of an SVG shape (`stroke-dashoffset: var(--d)`) no longer drops the declarations after it.
+- A `backdrop-filter` with a colour function before `blur()` still reads only the backdrop inside the element's box.
 
 ## 0.3.0 (2026-11-03)
 
