@@ -1,4 +1,4 @@
-// For every publishable package directory given (default: all): `npm pack --dry-run` must list LICENSE.md, a README and
+// For every publishable package directory given (default: all): `npm pack --dry-run` must list LICENSE.md (Apache-2.0), NOTICE, a README and
 // no source, test or source-map files, and every `@kinetographdev/*` or `kinetograph` dependency must be an exact version.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -12,9 +12,10 @@ for (const dir of dirs) {
   const [entry] = JSON.parse(execFileSync('npm', ['pack', '--dry-run', '--json'], { cwd: dir, encoding: 'utf8', shell: process.platform === 'win32', stdio: ['ignore', 'pipe', 'ignore'] }));
   const paths = entry.files.map((f) => f.path);
   const problems = [];
-  for (const need of ['LICENSE.md', 'README.md', 'package.json']) if (!paths.includes(need)) problems.push(`missing ${need}`);
+  for (const need of ['LICENSE.md', 'NOTICE', 'README.md', 'package.json']) if (!paths.includes(need)) problems.push(`missing ${need}`);
   for (const p of paths) if (/\.map$|(^|\/)(src|test|tests|scratch)\//.test(p)) problems.push(`should not ship ${p}`);
-  if (!/^Required Notice:/m.test(fs.readFileSync(`${dir}/LICENSE.md`, 'utf8'))) problems.push('LICENSE.md has no Required Notice line');
+  if (!/Apache License\s+Version 2\.0/.test(fs.readFileSync(`${dir}/LICENSE.md`, 'utf8'))) problems.push('LICENSE.md is not the Apache License 2.0');
+  if (pkg.license !== 'Apache-2.0' && pkg.license !== 'SEE LICENSE IN LICENSE.md') problems.push(`license is ${pkg.license}, not Apache-2.0`);
   for (const [name, range] of Object.entries({ ...pkg.dependencies, ...pkg.optionalDependencies })) {
     if ((name === 'kinetograph' || name.startsWith('@kinetographdev/')) && !/^\d+\.\d+\.\d+$/.test(range)) problems.push(`${name} is ${range}, not an exact version`);
   }
