@@ -1,4 +1,4 @@
-// kinetograph: the agent CLI and MCP server (packages/cli/skills/kinetograph/references/AUTHORING.md §9).
+// kinetograph: the agent CLI and MCP server (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9).
 
 import { cliVersion } from './version.js';
 

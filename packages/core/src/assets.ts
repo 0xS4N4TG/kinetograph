@@ -1,4 +1,4 @@
-// staticFile and the delayRender family (packages/cli/skills/kinetograph/references/AUTHORING.md §7.1).
+// staticFile and the delayRender family (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §7.1).
 //
 // A frame is not final while a `delayRender()` handle is open: the frame loop
 // waits for every handle to be continued, and fails if one stays open too long
@@ -45,6 +45,17 @@ export function staticFile(name: string): string {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+/** The CLI's `--timeout`, handed to the project (and its render workers) as the default for `delayRender`. */
+const TIMEOUT_ENV = 'KINETOGRAPH_DELAY_RENDER_TIMEOUT';
+
+/** The `code` of the error a handle that is never cleared fails the frame with (the CLI reports it in `--json`). */
+export const DELAY_RENDER_TIMEOUT = 'DELAY_RENDER_TIMEOUT';
+
+function defaultTimeout(): number {
+  const fromEnvironment = Number(process.env[TIMEOUT_ENV]);
+  return Number.isFinite(fromEnvironment) && fromEnvironment > 0 ? fromEnvironment : DEFAULT_TIMEOUT_MS;
+}
+
 interface Handle {
   label: string;
   timer: ReturnType<typeof realTimers.setTimeout>;
@@ -59,10 +70,24 @@ function openLabels(): string[] {
   return [...open.values()].map((handle) => handle.label);
 }
 
+/**
+ * A handle's timer holds the process only while something waits for the handle. Unreferenced, a wait that nothing
+ * else keeps alive let Node exit (code 13, "unsettled top-level await") before the timeout could fire; referenced
+ * with nobody waiting, a handle a project leaves open would keep a finished process from exiting.
+ */
+function holdProcessWhileWaiting(): void {
+  for (const handle of open.values()) {
+    const timer = handle.timer as { ref?: () => void; unref?: () => void };
+    if (waiters.size > 0) timer.ref?.();
+    else timer.unref?.();
+  }
+}
+
 function fail(error: Error): void {
   failure ??= error;
   for (const waiter of [...waiters]) waiter.reject(failure);
   waiters.clear();
+  holdProcessWhileWaiting();
 }
 
 function settleIfIdle(): void {
@@ -72,7 +97,7 @@ function settleIfIdle(): void {
 }
 
 export interface DelayRenderOptions {
-  /** Real milliseconds to wait for `continueRender` before the frame fails. Default 30000. */
+  /** Real milliseconds to wait for `continueRender` before the frame fails. Default 30000, or the CLI's `--timeout`. */
   timeoutInMilliseconds?: number;
 }
 
@@ -80,19 +105,22 @@ export interface DelayRenderOptions {
 export function delayRender(label?: string, options: DelayRenderOptions = {}): number {
   const handle = nextHandle++;
   const text = label ?? `handle ${handle}`;
-  const timeout = options.timeoutInMilliseconds ?? DEFAULT_TIMEOUT_MS;
+  const timeout = options.timeoutInMilliseconds ?? defaultTimeout();
   const timer = realTimers.setTimeout(() => {
     fail(
-      new Error(
-        `A delayRender() "${text}" was called but not cleared after ${timeout}ms. Still open: ${openLabels()
-          .map((l) => `"${l}"`)
-          .join(', ')}. Call continueRender() when the data is ready, or cancelRender() on failure.`,
+      Object.assign(
+        new Error(
+          `A delayRender() "${text}" was called but not cleared after ${timeout}ms. Still open: ${openLabels()
+            .map((l) => `"${l}"`)
+            .join(', ')}. Call continueRender() when the data is ready, or cancelRender() on failure; ` +
+            'a longer wait takes --timeout (the CLI) or delayRender(label, { timeoutInMilliseconds }).',
+        ),
+        { code: DELAY_RENDER_TIMEOUT },
       ),
     );
   }, timeout);
-  // A pending render must not keep the process alive on its own.
-  (timer as { unref?: () => void }).unref?.();
   open.set(handle, { label: text, timer });
+  holdProcessWhileWaiting();
   return handle;
 }
 
@@ -137,6 +165,7 @@ export function whenRenderIdle(): Promise<void> {
   if (open.size === 0) return Promise.resolve();
   return new Promise<void>((resolveWait, rejectWait) => {
     waiters.add({ resolve: resolveWait, reject: rejectWait });
+    holdProcessWhileWaiting();
   });
 }
 

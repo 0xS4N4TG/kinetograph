@@ -131,7 +131,7 @@ pub fn filter_graph(doc: &BaseDocument, request: &IslandRequest, fragment: &str,
   units and the default region (-10%, -10%, 120%, 120%). It returns `None` for an id that names no `<filter>`
   (CSS ignores the reference then). A filter of the wrong kind of element is `None` too.
 - Both return `Unsupported` items for what they could not draw as Chrome would.
-- The `filterGraph` effect is documented in `packages/cli/skills/kinetograph/references/SCENE.md` ("filterGraph").
+- The `filterGraph` effect is documented in `packages/cli/skills/kinetograph-markup/references/SCENE.md` ("filterGraph").
 
 ## 7. Notes: front (Blitz document, fonts, files, animations, readback)
 
@@ -832,7 +832,7 @@ The same cases blended in linear light (`blendSpace: linear`) were 3 to 15 times
 ### Scene changes
 
 `TextLayer.runs` / `boxWidth` / `boxHeight`, `Transform.matrix` / `backfaceHidden`, `Paint::Image`, scene
-`blendSpace` (all in packages/cli/skills/kinetograph/references/SCENE.md, "Boxes from the DOM painter"), `data:` URLs as image sources, `Gradient.transform`
+`blendSpace` (all in packages/cli/skills/kinetograph-markup/references/SCENE.md, "Boxes from the DOM painter"), `data:` URLs as image sources, `Gradient.transform`
 (also used here). Core goldens are unchanged byte for byte.
 
 ### Known gaps and findings
@@ -1008,7 +1008,7 @@ Goal: stop redoing what did not change between frames. What was found, measured 
 - **Overlap.** `Renderer.startFrame` and `VideoWriter.pushFrame` queue the scene parse and the GPU start on a thread of
   their own, so the JS of frame N+1 runs while N is started (`KINETOGRAPH_SYNC_START=1` gives the old order). Worth
   0.5-1.6 s of wall at one worker, nothing measurable at four. Errors of a queued frame come from `finishFrame`, or
-  from the next `pushFrame` or `finish` (packages/cli/skills/kinetograph/references/AUTHORING.md).
+  from the next `pushFrame` or `finish` (packages/cli/skills/kinetograph-markup/references/AUTHORING.md).
 - **The layer cache cannot do more here.** In frames 140-150, 158 of 167 layers are byte-identical to the frame before,
   yet 1-3 of 140-200 lookups a frame hit: the groups around them animate a scale (`matrix`) every frame, and a group's
   children are rasterised at the final matrix, so the parent matrix is in every key. No group changed by a

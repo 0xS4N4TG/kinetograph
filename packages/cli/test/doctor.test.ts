@@ -280,3 +280,66 @@ describe('lint with compat issues', () => {
     expect(text.text).toContain('warning compat at frames 10, 15: not supported');
   });
 });
+
+describe('doctor with a delayRender() that is never cleared', () => {
+  const iframe: Unsupported = { path: '$0.0 <iframe>', element: 'iframe', property: null, value: null, reason: 'an embedded document is not painted' };
+  const timeout = Object.assign(new Error('A delayRender() "waiting for the page" was called but not cleared after 300ms.'), {
+    code: 'DELAY_RENDER_TIMEOUT',
+    unsupported: [iframe],
+  });
+
+  it('reports the timeout for the composition, lists the <iframe> that held the frame, and stops at it', async () => {
+    const { source, asked, disposed } = stubProject(() => [], 20);
+    const frame = source.frame;
+    source.frame = async (n) => {
+      if (n === 3) throw timeout;
+      return frame(n);
+    };
+    seam.project = () => source;
+    const r = await cli('doctor', 'index.tsx', '--json');
+    expect(r.code).toBe(1);
+    expect(r.json).toMatchObject({ comp: 'Main', first: 0, last: 3, frames: 4, cleanFrames: 3, unsupportedFrames: 1 });
+    expect(r.json.issues).toEqual([
+      { element: 'iframe', property: null, reason: 'an embedded document is not painted', values: [], paths: ['$0.0 <iframe>'], ranges: [[3, 3]], frames: 1 },
+    ]);
+    expect(r.json.renderErrors).toEqual([{ message: timeout.message, ranges: [[3, 3]], frames: 1 }]);
+    // Every frame after a stuck one fails the same way: they are not drawn again.
+    expect(asked).toEqual([0, 1, 2]);
+    expect(disposed()).toBe(1);
+    const text = await cli('doctor', 'index.tsx');
+    expect(text.text).toContain('"waiting for the page" was called but not cleared');
+    expect(text.text).toContain('iframe: an embedded document is not painted');
+  });
+
+  it('hands --timeout to the project as its default for delayRender, and takes it back for the next command', async () => {
+    const seen: (string | undefined)[] = [];
+    const { source } = stubProject(() => []);
+    seam.project = () => {
+      seen.push(process.env.KINETOGRAPH_DELAY_RENDER_TIMEOUT);
+      return source;
+    };
+    await cli('doctor', 'index.tsx', '--timeout', '777', '--json');
+    await cli('doctor', 'index.tsx', '--json');
+    expect(seen).toEqual(['777', undefined]);
+  });
+
+  it('refuses a --timeout that is not a positive whole number', async () => {
+    seam.project = () => stubProject(() => []).source;
+    for (const bad of ['0', '1.5', 'soon']) {
+      const r = await cli('doctor', 'index.tsx', '--timeout', bad, '--json');
+      expect(r.code, bad).toBe(1);
+      expect(r.json.error.code, bad).toBe('INVALID_ARG');
+    }
+  });
+
+  it('still fails on any other error, as before', async () => {
+    const { source } = stubProject(() => []);
+    source.frame = async () => {
+      throw new Error('boom');
+    };
+    seam.project = () => source;
+    const r = await cli('doctor', 'index.tsx', '--json');
+    expect(r.code).toBe(1);
+    expect(r.json).toEqual({ error: { code: 'INTERNAL', message: 'boom' } });
+  });
+});

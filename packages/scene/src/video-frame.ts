@@ -1,4 +1,4 @@
-// The picture a `<Video>`'s `onVideoFrame` hands a project (packages/cli/skills/kinetograph/references/AUTHORING.md §7.1): a
+// The picture a `<Video>`'s `onVideoFrame` hands a project (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §7.1): a
 // `CanvasImageSource` whose pixels are the decoded frame the video shows at that composition frame. It names the file
 // and the instant (a canvas command `{ kind: 'video' }`); the renderer decodes it with the engine's own decoder when a
 // canvas draws it or reads it, so holding one costs nothing and the frame is a function of the frame number alone.

@@ -463,7 +463,7 @@ fn touched_by(doc: &BaseDocument, edits: &[Edit]) -> Option<Vec<NodeId>> {
     Some(touched)
 }
 
-/// The islands of one motion-blurred frame's samples (packages/cli/skills/kinetograph/references/SCENE.md, "Motion
+/// The islands of one motion-blurred frame's samples (packages/cli/skills/kinetograph-markup/references/SCENE.md, "Motion
 /// blur"). A layer is drawn at several moments of the same frame, and its
 /// islands differ in a few styles (a transform, an opacity) while their
 /// structure, text and sheets stay. The document of an earlier sample is

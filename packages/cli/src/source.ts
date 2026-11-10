@@ -13,7 +13,7 @@ import { prefetchBeforePlan, prefetchBundleAssets } from './prefetch.js';
 import { native } from './native.js';
 import { nowMs } from './time.js';
 
-/** What the bundle exports: the parts of `@kinetographdev/core` the CLI drives (packages/cli/skills/kinetograph/references/AUTHORING.md §7). */
+/** What the bundle exports: the parts of `@kinetographdev/core` the CLI drives (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §7). */
 interface ProjectModule {
   getCompositions(): CompositionInfo[];
   createFrameRenderer(id: string, options?: { inputProps?: Record<string, unknown> }): FrameRenderer;
@@ -27,7 +27,7 @@ interface ProjectModule {
   setDomEnvironment(environment: { baseDir: string; publicDir?: string }): void;
   /** Problems with the project's stylesheets (Tailwind that could not be built, a remote font). */
   stylesheetNotes(): string[];
-  /** The files `<Artifact>`s asked the render to write (packages/cli/skills/kinetograph/references/AUTHORING.md §9). */
+  /** The files `<Artifact>`s asked the render to write (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9). */
   getArtifacts(): ArtifactRecord[];
   clearArtifacts(): void;
 }
@@ -36,7 +36,7 @@ export interface FrameOutput {
   /** The frame's scene as the addon takes it. */
   sceneJson: string;
   audio: AudioClipJson[];
-  /** Every `<Sequence>` in the frame's tree (packages/cli/skills/kinetograph/references/AUTHORING.md §11.4); none for a scene file. */
+  /** Every `<Sequence>` in the frame's tree (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §11.4); none for a scene file. */
   sequences?: SequenceJson[];
   /** Layer id to name and source; only in the studio's builds. */
   names?: Record<string, LayerName>;

@@ -4,7 +4,7 @@ import { prefetchBeforePlan, setOffline } from '../prefetch.js';
 import { parseProps } from '../source.js';
 import { ENTRY, type Command } from './types.js';
 
-/** What the command needs of `@kinetographdev/studio` (its `startStudio`, packages/cli/skills/kinetograph/references/AUTHORING.md §11.5). */
+/** What the command needs of `@kinetographdev/studio` (its `startStudio`, packages/cli/skills/kinetograph-markup/references/AUTHORING.md §11.5). */
 export interface StudioModule {
   startStudio(options: {
     entry: string;
