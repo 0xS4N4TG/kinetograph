@@ -25,7 +25,7 @@ Commands that open a project take more options. These are `still`, `render`, `st
 | Option | Meaning |
 |---|---|
 | `--comp <id>` | The composition to use. The default is the first one. |
-| `--props <json>` | Input props as a JSON object. See [Authoring](/docs/guides/authoring/#compositions). |
+| `--props <json>` | Input props as a JSON object. See [Compositions and props](/docs/making-videos/compositions/#props). |
 | `--timeout <ms>` | How long a `delayRender()` may stay open before its frame fails with `DELAY_RENDER_TIMEOUT`. The default is 30000, as in Remotion. `delayRender(label, { timeoutInMilliseconds })` wins. |
 
 ### Frames and ranges
@@ -44,7 +44,7 @@ Creates a project folder with a starter title card.
 npx kinetograph init [dir] [--html]
 ```
 
-It writes `src/index.tsx`, `src/scenes/Title.tsx`, `package.json`, `tsconfig.json` and `.gitignore`, and makes the `src/`, `public/` and `out/` folders. With `--html` it writes `html/index.html` instead of the TSX files. `dir` defaults to the current folder. Files that already exist are skipped, never overwritten. It does not run `npm install`.
+It writes the files and folders listed in [Project structure](/docs/getting-started/project-structure/). With `--html` it writes `html/index.html` instead of the TSX files. `dir` defaults to the current folder. Files that already exist are skipped, never overwritten. It does not run `npm install`.
 
 ## add
 
@@ -59,7 +59,7 @@ npx kinetograph add hyperframes (--list | --search <text>) [--type block|compone
 
 Components go to `src/components/<name>/`, templates to `src/templates/<name>/`, tastes to `src/tastes/<name>/`, and their pictures, fonts and audio to `public/<kind>/<name>/`. Items an item depends on are installed first. A file that already exists is skipped and reported; `--overwrite` replaces it. If the item needs npm packages the project lacks, the command shows them and asks before installing (`--yes` skips the question; with `--json` or no terminal it only prints the install command). Run it inside a project made by `init`. An item that is not published yet says so and installs nothing.
 
-`add hyperframes/<name>` (or `hf/<name>`) installs a block or component from HeyGen's [HyperFrames registry](/docs/guides/hyperframes-registry/); `add hyperframes --list` and `--search <text>` list its items, and a file that exists stops the install unless `--overwrite` is given. The Google Fonts, font files and JSON files an item loads from the web are downloaded into `public/fonts` and `public/data` with the install (`--keep-remote` leaves them as written).
+`add hyperframes/<name>` (or `hf/<name>`) installs a block or component from HeyGen's [HyperFrames registry](/docs/making-videos/hyperframes-registry/); `add hyperframes --list` and `--search <text>` list its items, and a file that exists stops the install unless `--overwrite` is given. The Google Fonts, font files and JSON files an item loads from the web are downloaded into `public/fonts` and `public/data` with the install (`--keep-remote` leaves them as written).
 
 ## compositions
 
@@ -82,7 +82,7 @@ npx kinetograph still <entry> <frame> [-o <output.png>] [options]
 | `-o, --output <path>` | The PNG to write. The default is `out/stills/<comp>-f<frame>.png`. |
 | `--strict` | Fail on the first frame with content the engine cannot draw. See [What works](/docs/compat/). |
 | `--dev-react` | Use React's development build. It prints React's warnings and is slower. |
-| `--preferred-effect-backend <name>` | The backend `@remotion/effects` tries first: `webgpu`, `webgl2` or `2d`. See [Remotion effects](/docs/guides/remotion-effects/). |
+| `--preferred-effect-backend <name>` | The backend `@remotion/effects` tries first: `webgpu`, `webgl2` or `2d`. See [Remotion effects](/docs/making-videos/remotion-effects/). |
 | `--comp`, `--props` | See above. |
 
 ## render
@@ -131,6 +131,8 @@ npx kinetograph render <entry> [-o <output.mp4>] [options]
 | `--audio-bitrate <rate>` | Total audio bit rate, such as `320k`. The default is 96 kbit/s per channel. Not for `pcm`. |
 | `--every-nth-frame <n>` | With `--codec gif`. Draws every nth frame and keeps the length. |
 | `--strict` | Fail on the first frame with content the engine cannot draw. No output file is left. |
+| `--sequence` | Write one image per frame into the `-o` folder instead of a video, named `<id>-<frame>.png` (`Main-042.png`). No audio, and the video flags are refused. See [Rendering](/docs/rendering/#image-sequences). |
+| `--image-format <name>` | With `--sequence`: `png` (default, alpha included) or `jpeg` (quality 80, no alpha: flattened over black). |
 | `--dev-react` | Use React's development build. |
 | `--preferred-effect-backend <name>` | See `still`. |
 | `--comp`, `--props` | See above. |
@@ -232,7 +234,7 @@ npx kinetograph bench <entry> --range 40..90
 
 ## audio analyze
 
-Mixes the project's audio and measures it: integrated loudness (LUFS), true peak (dBTP), clipped samples and silences. See [Audio](/docs/guides/audio/#check-the-loudness).
+Mixes the project's audio and measures it: integrated loudness (LUFS), true peak (dBTP), clipped samples and silences. See [Audio](/docs/making-videos/audio/#check-the-loudness).
 
 ```sh
 npx kinetograph audio analyze <entry> --scenes 0..90,90..180
@@ -261,7 +263,7 @@ A frame matches when no colour channel is off by more than 2 levels. A mismatch 
 
 ## matte
 
-Separates a video into a foreground with alpha, and optionally an opaque base, with a matting model that runs natively. The model downloads on first use. See [Video matting](/docs/guides/video-matting/).
+Separates a video into a foreground with alpha, and optionally an opaque base, with a matting model that runs natively. The model downloads on first use. See [Video matting](/docs/making-videos/video-matting/).
 
 ```sh
 npx kinetograph matte public/original.mp4 -o public/foreground.webm --base public/base.webm
@@ -321,7 +323,7 @@ It prints the Node version, the platform, whether the addon loaded, and which re
 
 ## studio
 
-Opens the local editor in a browser. See [Studio](/docs/guides/studio/).
+Opens the local editor in a browser. See [Studio](/docs/studio/).
 
 ```sh
 npx kinetograph studio <entry>
@@ -375,7 +377,7 @@ For a Remotion project, `fetch-deps` fetches the remote pictures and videos its 
 
 ## mcp
 
-Runs the MCP server on stdio. It has one tool for each command except `studio`. See [Use with agents](/docs/guides/agents/).
+Runs the MCP server on stdio. It has one tool for each command except `studio`. See [Use with agents](/docs/agents/).
 
 ```sh
 npx kinetograph mcp

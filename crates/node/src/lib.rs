@@ -299,20 +299,29 @@ pub fn finish_dom_island(ticket: u32) -> Result<String> {
 /// `IslandRequest` as JSON in, `{ [path]: { x, y, width, height, rect, client,
 /// scroll } }` as JSON out. `x`..`height` are the border box where layout put
 /// it, `rect` the transformed bounding box `getBoundingClientRect` gives.
+///
+/// `pass` is the frame's pass (`renderDomIsland`), when the scripts of the frame being drawn read it: the boxes are
+/// those of the document the frame's render then draws. With `paths`, only the boxes of those elements are given (a
+/// path the island does not have is left out).
 #[napi]
-pub fn dom_layout_boxes(request_json: String) -> Result<String> {
-    dom::dom_layout_boxes(&request_json)
+pub fn dom_layout_boxes(
+    request_json: String,
+    pass: Option<u32>,
+    paths: Option<Vec<String>>,
+) -> Result<String> {
+    dom::dom_layout_boxes(&request_json, pass.map(u64::from), paths)
 }
 
 /// `getComputedStyle` of the element at `path` in a DOM island: the resolved
-/// value of each property (CSS or camelCase names), `""` for an unknown one.
+/// value of each property (CSS or camelCase names), `""` for an unknown one. `pass` as for `domLayoutBoxes`.
 #[napi]
 pub fn dom_computed_style(
     request_json: String,
     path: String,
     properties: Vec<String>,
+    pass: Option<u32>,
 ) -> Result<Vec<String>> {
-    dom::dom_computed_style(&request_json, &path, &properties)
+    dom::dom_computed_style(&request_json, &path, &properties, pass.map(u64::from))
 }
 
 /// A Rive file (`.riv`) played to a time, as the commands of a canvas layer
@@ -927,6 +936,15 @@ impl Renderer {
                 Ok(())
             }
         }
+    }
+
+    /// With `on`, `finishFrame` returns the frames `startFrame` begins after this as yuv420p planes (Y, U, V, rows
+    /// packed), converted on the GPU byte for byte as `rgbaToYuv(rgba, w, h, 'yuv420p')` converts their RGBA. The
+    /// frames' sides must be even, as the encoder's are. Set it before starting frames, not between.
+    #[napi]
+    pub fn set_yuv420(&mut self, on: bool) -> Result<()> {
+        self.shared.idle()?.set_yuv420(on);
+        Ok(())
     }
 
     /// Times one frame or successive frames, as the Rust `bench`.

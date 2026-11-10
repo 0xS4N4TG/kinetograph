@@ -2,7 +2,7 @@
   "name": "@kinetographdev/audio",
   "version": "0.3.0",
   "description": "Web Audio synthesis and mixing for Kinetograph, through node-web-audio-api",
-  "license": "PolyForm-Small-Business-1.0.0",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/0xS4N4TG/kinetograph.git",
@@ -31,7 +31,8 @@
     "dist",
     "!dist/**/*.map",
     "THIRD-PARTY-NOTICES.md",
-    "LICENSE-APACHE-2.0.txt"
+    "LICENSE-APACHE-2.0.txt",
+    "NOTICE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

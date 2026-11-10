@@ -1,0 +1,43 @@
+---
+title: Captions
+description: Parse SRT and WebVTT files, group word timings into pages, and show each page with the frame.
+---
+
+`parseSrt` turns a subtitle file into captions with start and end times in milliseconds. Show the one that matches the current time.
+
+```tsx title="src/Subtitles.tsx"
+import { readFileSync } from 'node:fs';
+import { AbsoluteFill, Text, staticFile, useCurrentFrame, useVideoConfig } from '@kinetographdev/core';
+import { parseSrt } from '@kinetographdev/core/captions';
+
+const { captions } = parseSrt({ input: readFileSync(staticFile('captions/line.srt'), 'utf8') });
+
+export const Subtitles = () => {
+  const ms = (useCurrentFrame() / useVideoConfig().fps) * 1000;
+  const caption = captions.find((c) => ms >= c.startMs && ms < c.endMs);
+  return (
+    <AbsoluteFill>
+      {caption ? (
+        <Text font="DM Sans" size={56} color="#ffffff" x={120} y={600}>
+          {caption.text}
+        </Text>
+      ) : null}
+    </AbsoluteFill>
+  );
+};
+```
+
+## The functions
+
+- `parseSrt({ input })` and `parseVtt({ input })` return `{ captions }`. Each caption has `text`, `startMs`, `endMs`, `timestampMs` and `confidence`.
+- `serializeSrt({ lines })` writes captions back to SRT.
+- `createTikTokStyleCaptions({ captions, combineTokensWithinMilliseconds })` groups word captions into pages. Each page has `text`, `startMs`, `durationMs` and `tokens`, and lasts until the next page begins. Use a page to highlight the word that is being said.
+
+Read the file at the top of the module, once. Kinetograph does not make the timings. Bring them from your own speech-to-text tool.
+
+## What works
+
+- Drawn natively: `parseSrt`, `parseVtt`, `serializeSrt` and `createTikTokStyleCaptions` from `@remotion/captions` (4 of 5 exports).
+- Approximated: nothing is listed.
+- Not supported: `CaptionsInternals`, which is internal to Remotion.
+- See [What works](/docs/compat/#remotion-packages).

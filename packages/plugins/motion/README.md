@@ -27,4 +27,4 @@ const y = useSpringAt({ to: 120, stiffness: 60, damping: 8, delay: 10 });
 - Kinetograph's engine already gives Motion's own loop the same frame alone and in sequence; these make it explicit and keep the project the same under Remotion.
 - A `useSpring` that follows a changing value depends on the frames visited before it. Use `useSpringAt` or `useMotionTime` + `useTransform` for those.
 
-Licensed under the PolyForm Small Business License 1.0.0, see `LICENSE.md`.
+Licensed under the Apache License 2.0, see `LICENSE.md`.

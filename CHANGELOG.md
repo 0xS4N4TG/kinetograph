@@ -18,6 +18,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - WebGL multisampled renderbuffers (`renderbufferStorageMultisample`, `MAX_SAMPLES` 4), resolved by `blitFramebuffer`.
 - WebGL `copyTexImage2D` and `copyTexSubImage2D`.
 - WebGL `TEXTURE_BASE_LEVEL`.
+Kinetograph is now open source under the Apache License 2.0. Earlier versions stay under PolyForm Small Business 1.0.0.
 
 ### Fixed
 
