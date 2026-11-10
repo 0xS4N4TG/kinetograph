@@ -162,13 +162,18 @@ const IMPORT = /@import\s+(?:url\(\s*)?(['"]?)([^'")\s;]+)\1\s*\)?([^;]*);/g;
 
 const isRemote = (target: string): boolean => /^([a-z][a-z0-9+.-]*:|\/\/)/i.test(target) || target.startsWith('#');
 
-/** Rewrites `url(relative)` to `url("<absolute>")` when the file exists next to `base`. */
-export function absolutizeUrls(css: string, base: string): string {
+/**
+ * Rewrites `url(relative)` to `url("<absolute>")` when the file exists next to `base`. Each path it looked for, found or
+ * not, is added to `looked`: a file that appears later changes the result.
+ */
+export function absolutizeUrls(css: string, base: string, looked: string[] = []): string {
   return css.replace(/url\(\s*(['"]?)([^'")]*)\1\s*\)/g, (match, _quote: string, target: string) => {
     const t = target.trim();
     if (t === '' || isRemote(t)) return match;
     const absolute = isAbsolute(t) ? t : resolve(base, t.split(/[?#]/)[0]!);
-    if (!existsSync(absolute.split(/[?#]/)[0]!)) return match;
+    const file = absolute.split(/[?#]/)[0]!;
+    looked.push(file);
+    if (!existsSync(file)) return match;
     const suffix = /[?#].*$/.exec(t)?.[0] ?? '';
     return `url("${absolute + suffix}")`;
   });
@@ -178,12 +183,15 @@ export interface ReadCss {
   css: string;
   /** Every file read, for the bundler to watch. */
   files: string[];
+  /** Every other path it looked for, found or not (an `@import` or `url()` target): one that appears or goes changes the result. */
+  looked: string[];
   warnings: string[];
 }
 
 /** The stylesheet at `file` with its local `@import`s inlined (media queries on an import wrap the inlined text). */
 export function readStylesheet(file: string, seen = new Set<string>()): ReadCss {
   const files = [file];
+  const looked: string[] = [];
   const warnings: string[] = [];
   seen.add(file);
   let css = readFileSync(file, 'utf8');
@@ -199,10 +207,12 @@ export function readStylesheet(file: string, seen = new Set<string>()): ReadCss 
         path = createRequire(file).resolve(target);
       } catch {
         const beside = resolve(dirname(file), target);
+        looked.push(beside);
         path = existsSync(beside) ? beside : null;
       }
     }
     if (path !== null && !/\.css$/i.test(path)) path = null;
+    if (path !== null) looked.push(path);
     if (path === null || !existsSync(path)) {
       warnings.push(`${file}: @import "${target}" was not found`);
       return '';
@@ -210,11 +220,12 @@ export function readStylesheet(file: string, seen = new Set<string>()): ReadCss 
     if (seen.has(path)) return '';
     const inner = readStylesheet(path, seen);
     files.push(...inner.files);
+    looked.push(...inner.looked);
     warnings.push(...inner.warnings);
     const media = tail.trim();
     return media === '' ? inner.css : `@media ${media} {\n${inner.css}\n}`;
   });
-  return { css: absolutizeUrls(css, dirname(file)), files, warnings };
+  return { css: absolutizeUrls(css, dirname(file), looked), files, looked, warnings };
 }
 
 // ---- CSS modules ----
@@ -264,7 +275,7 @@ export function cssPlugin(): Plugin {
         const read = readStylesheet(args.path);
         for (const text of read.warnings) warnings.push({ text });
         let css = read.css;
-        const files = [...read.files];
+        const files = [...read.files, ...read.looked];
         const tailwind = usesTailwind(readFileSync(args.path, 'utf8'));
         if (tailwind) {
           const built = await buildTailwind(args.path);

@@ -1,7 +1,7 @@
 // A bundle whose inputs have not changed is used again instead of built again (`bundle-cache.ts`), and any change to
 // what it was built from builds it again. "Used again" is seen by marking the bundle's file: a build writes the file anew.
 
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -97,6 +97,49 @@ describe('a bundle used again', () => {
     // `helper.ts` goes; `index.ts` now has nothing to import, and the build says so rather than use the bundle it had.
     rmSync(join(dir, 'helper.ts'));
     await expect(bundle(join(dir, 'index.ts'))).rejects.toThrow(/helper/);
+  });
+
+  it('is built again for a same-size edit that keeps the modification time (a coarse clock, or a restore that keeps times)', async () => {
+    const dir = project({ 'index.ts': INDEX, 'helper.ts': `export const helper = 'AAAA';` });
+    const first = await bundle(join(dir, 'index.ts'));
+    appendFileSync(first.file, MARK);
+    expect((await bundle(join(dir, 'index.ts'))).reused).toBe(true);
+    const before = statSync(join(dir, 'helper.ts'));
+    writeFileSync(join(dir, 'helper.ts'), `export const helper = 'BBBB';`);
+    utimesSync(join(dir, 'helper.ts'), before.atime, before.mtime);
+    expect(statSync(join(dir, 'helper.ts')).mtimeMs).toBe(before.mtimeMs);
+    expect(statSync(join(dir, 'helper.ts')).size).toBe(before.size);
+    const edited = await bundle(join(dir, 'index.ts'));
+    expect(edited.reused).toBe(false);
+    expect(edited.code).toContain('BBBB');
+  });
+
+  it('is built again when a file a stylesheet looked for and did not find is created, in a folder that holds no input', async () => {
+    const dir = project({
+      'src/index.ts': `import { registerRoot } from 'remotion'; import './style.css'; registerRoot(() => null);`,
+      'src/style.css': `@import '../shared/theme.css';\n.a { background: url(../fonts/a.png); }`,
+    });
+    const entry = join(dir, 'src', 'index.ts');
+    const first = await bundle(entry);
+    expect(first.code).not.toContain('THEME-RULE');
+    expect(first.code).toContain('url(../fonts/a.png)');
+    appendFileSync(first.file, MARK);
+    expect((await bundle(entry)).reused).toBe(true);
+
+    // The `@import` is found now: its text is in the bundle.
+    write(dir, 'shared/theme.css', '.theme { color: red } /* THEME-RULE */');
+    const imported = await bundle(entry);
+    expect(imported.reused).toBe(false);
+    expect(imported.code).toContain('THEME-RULE');
+    appendFileSync(imported.file, MARK);
+    expect((await bundle(entry)).reused).toBe(true);
+
+    // The `url()` is found now: it is the file's absolute path.
+    write(dir, 'fonts/a.png', 'not really a picture');
+    const url = await bundle(entry);
+    expect(url.reused).toBe(false);
+    expect(url.code).toContain(join(realpathSync(dir), 'fonts', 'a.png'));
+    expect(url.code).not.toContain('url(../fonts/a.png)');
   });
 
   it('does not record a build whose inputs were modified while it ran', async () => {

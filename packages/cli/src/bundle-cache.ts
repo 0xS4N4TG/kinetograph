@@ -6,8 +6,10 @@
 //   - every file it read is as it was, and so are the directories and package files its resolution looked in (a file
 //     added next to an import changes which file the import means), and
 //   - for a HyperFrames project, the module its plan makes (which reads files and caches the files do not list) is the same.
-// Any mismatch builds again. A file modified while a build ran may have been read before or after, so a build that has
-// such an input is not recorded.
+// Any mismatch builds again. A file is also known by a hash of its bytes: modification times are whole seconds (or two)
+// on some file systems, and a restore can keep them, so a same-size edit in the same second would not show in them. A
+// file modified while a build ran may have been read before or after, so a build with an input modified within the last
+// 2.5 s (a coarse clock's rounding) is not recorded.
 
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
@@ -17,8 +19,11 @@ import type { BuildOptions, Metafile, Plugin } from 'esbuild';
 import { version as esbuildVersion } from 'esbuild';
 import { UNCACHEABLE } from './css.js';
 
-/** A file or directory as a build found it: `size` is -1 for a directory, and the whole stamp is null when it is not there. */
-type Stamp = [path: string, mtimeMs: number, size: number] | [path: string, absent: true];
+/**
+ * A file or directory as a build found it: `size` is -1 for a directory (which has no hash), and a path that is not there
+ * is `absent`: a path the build looked for and did not find is stamped too, as one created later changes the build.
+ */
+type Stamp = [path: string, mtimeMs: number, size: number, hash: string] | [path: string, absent: true];
 
 interface KeyRecord {
   format: 1;
@@ -51,17 +56,35 @@ export function recipeOf(options: BuildOptions, module: string | null): string {
   return createHash('sha256').update(text).digest('hex');
 }
 
+const hashOf = (path: string): string => {
+  try {
+    return createHash('sha1').update(readFileSync(path)).digest('base64');
+  } catch {
+    return '';
+  }
+};
+
 function stampOf(path: string): Stamp {
   try {
     const info = statSync(path);
-    return [path, info.mtimeMs, info.isDirectory() ? -1 : info.size];
+    return info.isDirectory() ? [path, info.mtimeMs, -1, ''] : [path, info.mtimeMs, info.size, hashOf(path)];
   } catch {
     return [path, true];
   }
 }
 
-function same(a: Stamp, b: Stamp): boolean {
-  return a.length === b.length && a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
+/** Whether `path` is as `before` stamped it. The bytes are read only when the time and size say nothing changed. */
+function unchanged(before: Stamp): boolean {
+  let info;
+  try {
+    info = statSync(before[0]);
+  } catch {
+    return before.length === 2;
+  }
+  if (before.length === 2) return false;
+  if (info.mtimeMs !== before[1]) return false;
+  if (info.isDirectory()) return before[2] === -1;
+  return info.size === before[2] && hashOf(before[0]) === before[3];
 }
 
 /** Where a metafile input lies: relative to the working directory for a file; a plugin's namespace names its path after a colon. Null for one that is no file. */
@@ -159,7 +182,7 @@ export function cachedBundle(keyFile: string, recipe: string, directory: string)
     return null;
   }
   if (record.format !== 1 || record.recipe !== recipe || !existsSync(join(directory, record.file))) return null;
-  for (const before of record.inputs) if (!same(before, stampOf(before[0]))) return null;
+  for (const before of record.inputs) if (!unchanged(before)) return null;
   return { file: record.file, warnings: record.warnings };
 }
 
@@ -173,9 +196,10 @@ export function recordBundle(
 ): void {
   if (build.watched.uncacheable) return;
   const stamps = dependencies(build.metafile, build.workingDir, [...build.watched.files]).map(stampOf);
-  // The file systems' clocks are coarse: a change within this much of the build's start may have come after the read.
-  const margin = 50;
-  if (stamps.some((s) => s.length === 3 && s[1] > build.startedAt - margin)) return;
+  // The file systems' clocks are coarse (a second, or two on FAT): a change within this much of the build's start may
+  // have come after the read, and its time would not say so.
+  const margin = 2500;
+  if (stamps.some((s) => s.length === 4 && s[1] > build.startedAt - margin)) return;
   const record: KeyRecord = { format: 1, recipe, file, warnings, inputs: stamps };
   const temporary = `${keyFile}.${process.pid}.tmp`;
   writeFileSync(temporary, JSON.stringify(record));
