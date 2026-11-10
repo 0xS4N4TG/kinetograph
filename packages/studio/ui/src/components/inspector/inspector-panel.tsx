@@ -5,6 +5,7 @@ import { PropsPanel } from '@/components/inspector/props-panel';
 import { RenderQueue } from '@/components/inspector/render-queue';
 import { SceneTree } from '@/components/inspector/scene-tree';
 import { Badge } from '@/components/ui/badge';
+import type { InspectLayer } from '@/lib/inspect';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export type InspectorTab = 'props' | 'scene' | 'renders';
@@ -49,6 +50,8 @@ interface InspectorPanelProps {
   selectedPlugins?: ReadonlySet<string>;
   onSelectPlugin?(name: string): void;
   onAskAgent?(text: string): void;
+  /** Opens "Remove background" for the selected video layer. */
+  onRemoveBackground?(layer: InspectLayer): void;
 }
 
 /** Props first, then the Scene tree and the Renders: the panel on the right. */
@@ -77,6 +80,7 @@ export const InspectorPanel = memo(function InspectorPanel({
   selectedPlugins,
   onSelectPlugin,
   onAskAgent,
+  onRemoveBackground,
 }: InspectorPanelProps) {
   const activeRenders = renders.filter((job) => job.status === 'queued' || job.status === 'running').length;
 
@@ -129,6 +133,7 @@ export const InspectorPanel = memo(function InspectorPanel({
           selectedLayers={selectedLayers}
           onSelect={onSelectLayer}
           {...(onSelectLayers ? { onSelectMany: onSelectLayers } : {})}
+          {...(onRemoveBackground ? { onRemoveBackground } : {})}
           agent={project && comp ? { entry: project.entry, cwd: project.cwd, comp, timeline } : null}
         />
       </TabsContent>

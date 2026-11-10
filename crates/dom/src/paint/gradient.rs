@@ -1,7 +1,8 @@
 //! CSS gradients (`linear-gradient()` and friends) as scene gradients.
 
 use serde_json::{Value, json};
-use style::color::AbsoluteColor;
+use style::color::mix::{ColorInterpolationMethod, ColorMixItem, mix_many};
+use style::color::{AbsoluteColor, ColorSpace};
 use style::values::computed::AngleOrPercentage;
 use style::values::computed::image::{EndingShape, Gradient, LineDirection};
 use style::values::generics::image::{
@@ -18,13 +19,37 @@ use super::util::{hex_of, lp, num4, resolve_color, rgba};
 struct Stop {
     pos: f64,
     color: [f32; 4],
+    /// The colour as written, in its own space, for interpolating elsewhere.
+    abs: AbsoluteColor,
 }
 
-/// Whether the colours interpolate the way the scene's gradients do (sRGB,
-/// premultiplied, which is CSS's default for the legacy colour syntaxes).
-fn plain_interpolation(g: &Gradient) -> bool {
-    use style::color::ColorSpace;
-    let m = match g {
+/// How many pieces each span between two stops is cut into when the colours
+/// interpolate outside sRGB. The scene blends the pieces' ends in sRGB, so the
+/// error is the bend of the curve over one piece (see the ΔE test).
+const SPACE_STEPS: usize = 64;
+
+/// The colour `w` of the way from `a` to `b` in the gradient's space, as sRGB
+/// plus the colour in that space. CSS Color 4 §12: premultiplied, a missing or
+/// powerless component taken from the other side, hues by the method.
+fn mix_in(
+    m: ColorInterpolationMethod,
+    a: AbsoluteColor,
+    b: AbsoluteColor,
+    w: f64,
+) -> (AbsoluteColor, [f32; 4]) {
+    let w = w as f32;
+    let c = mix_many(
+        m,
+        [ColorMixItem::new(a, 1.0 - w), ColorMixItem::new(b, w)],
+        Default::default(),
+    );
+    (c, rgba(&c))
+}
+
+
+/// The colour interpolation method of a gradient.
+fn method_of(g: &Gradient) -> ColorInterpolationMethod {
+    match g {
         Gradient::Linear {
             color_interpolation_method: m,
             ..
@@ -36,9 +61,8 @@ fn plain_interpolation(g: &Gradient) -> bool {
         | Gradient::Conic {
             color_interpolation_method: m,
             ..
-        } => m,
-    };
-    m.space == ColorSpace::Srgb
+        } => *m,
+    }
 }
 
 /// Fixes up color stop positions as CSS Images 3 §3.4.3 says: the first stop
@@ -85,7 +109,8 @@ fn fix_positions(positions: &mut [Option<f64>], full: f64) {
 /// Adds stops that follow an interpolation hint's curve: the colour halfway
 /// between two stops is at the hint, and elsewhere the weight is
 /// `t ^ (ln 0.5 / ln h)` (CSS Images 4).
-fn with_hints(items: Vec<Entry>, full: f64) -> Vec<Stop> {
+fn with_hints(items: Vec<Entry>, full: f64, m: ColorInterpolationMethod) -> Vec<Stop> {
+    let srgb = m.space == ColorSpace::Srgb;
     // Resolve positions first, hints included, so a hint is placed too.
     let mut positions: Vec<Option<f64>> = items.iter().map(|e| e.pos).collect();
     // A hint takes its position as given; a hint with none is not valid.
@@ -94,7 +119,7 @@ fn with_hints(items: Vec<Entry>, full: f64) -> Vec<Stop> {
     for (i, e) in items.iter().enumerate() {
         let pos = positions[i].unwrap_or(0.0);
         match e.kind {
-            EntryKind::Stop(color) => out.push(Stop { pos, color }),
+            EntryKind::Stop(color, abs) => out.push(Stop { pos, color, abs }),
             EntryKind::Hint => {
                 let (Some(prev), Some(next)) =
                     (out.last().copied(), next_stop(&items, &positions, i))
@@ -107,9 +132,16 @@ fn with_hints(items: Vec<Entry>, full: f64) -> Vec<Stop> {
                 }
                 let h = ((pos - prev.pos) / span).clamp(0.001, 0.999);
                 let exponent = 0.5_f64.ln() / h.ln();
-                for k in 1..8 {
-                    let t = f64::from(k) / 8.0;
+                let steps = if srgb { 8 } else { SPACE_STEPS };
+                for k in 1..steps {
+                    let t = k as f64 / steps as f64;
                     let w = t.powf(exponent);
+                    let pos = prev.pos + span * t;
+                    if !srgb {
+                        let (abs, color) = mix_in(m, prev.abs, next.abs, w);
+                        out.push(Stop { pos, color, abs });
+                        continue;
+                    }
                     let mut c = [0.0_f32; 4];
                     // Premultiplied interpolation.
                     let (pa, na) = (f64::from(prev.color[3]), f64::from(next.color[3]));
@@ -117,27 +149,32 @@ fn with_hints(items: Vec<Entry>, full: f64) -> Vec<Stop> {
                     for (ch, slot) in c.iter_mut().enumerate().take(3) {
                         let pm = f64::from(prev.color[ch]) * pa;
                         let nm = f64::from(next.color[ch]) * na;
-                        let m = pm + (nm - pm) * w;
-                        *slot = if a > 0.0 { (m / a) as f32 } else { 0.0 };
+                        let mm = pm + (nm - pm) * w;
+                        *slot = if a > 0.0 { (mm / a) as f32 } else { 0.0 };
                     }
                     c[3] = a as f32;
                     out.push(Stop {
-                        pos: prev.pos + span * t,
+                        pos,
                         color: c,
+                        abs: prev.abs,
                     });
                 }
             }
         }
+    }
+    if !srgb {
+        out = subdivide(&out, m);
     }
     out
 }
 
 fn next_stop(items: &[Entry], positions: &[Option<f64>], from: usize) -> Option<Stop> {
     for i in from + 1..items.len() {
-        if let EntryKind::Stop(color) = items[i].kind {
+        if let EntryKind::Stop(color, abs) = items[i].kind {
             return Some(Stop {
                 pos: positions[i].unwrap_or(0.0),
                 color,
+                abs,
             });
         }
     }
@@ -146,7 +183,7 @@ fn next_stop(items: &[Entry], positions: &[Option<f64>], from: usize) -> Option<
 
 #[derive(Clone, Copy)]
 enum EntryKind {
-    Stop([f32; 4]),
+    Stop([f32; 4], AbsoluteColor),
     Hint,
 }
 
@@ -154,6 +191,30 @@ enum EntryKind {
 struct Entry {
     kind: EntryKind,
     pos: Option<f64>,
+}
+
+/// Cuts every span between two stops into `SPACE_STEPS` pieces coloured by
+/// interpolating in the gradient's space. A span with no length (a hard edge)
+/// is kept as is.
+fn subdivide(stops: &[Stop], m: ColorInterpolationMethod) -> Vec<Stop> {
+    let mut out = Vec::with_capacity(stops.len() * SPACE_STEPS);
+    for (i, a) in stops.iter().enumerate() {
+        out.push(*a);
+        let Some(b) = stops.get(i + 1) else { break };
+        if b.pos - a.pos < 1e-9 {
+            continue;
+        }
+        for k in 1..SPACE_STEPS {
+            let t = k as f64 / SPACE_STEPS as f64;
+            let (abs, color) = mix_in(m, a.abs, b.abs, t);
+            out.push(Stop {
+                pos: a.pos + (b.pos - a.pos) * t,
+                color,
+                abs,
+            });
+        }
+    }
+    out
 }
 
 fn stops_json(stops: &[Stop], lo: f64, hi: f64) -> Value {
@@ -182,9 +243,7 @@ fn solid(stops: &[Stop]) -> Value {
 /// The result of converting a gradient: a scene paint (`fill`) in the
 /// coordinates of the box `tile`, which is the gradient's image.
 pub fn gradient_paint(g: &Gradient, tile: Rect, current: &AbsoluteColor) -> Result<Value, String> {
-    if !plain_interpolation(g) {
-        return Err("a gradient that interpolates in a colour space other than sRGB".into());
-    }
+    let method = method_of(g);
     match g {
         Gradient::Linear {
             direction,
@@ -238,7 +297,7 @@ pub fn gradient_paint(g: &Gradient, tile: Rect, current: &AbsoluteColor) -> Resu
                 .iter()
                 .map(|item| entry(item, current, |p| lp(p, len)))
                 .collect::<Vec<_>>();
-            let stops = with_hints(entries, len);
+            let stops = with_hints(entries, len, method);
             if stops.is_empty() {
                 return Err("a gradient with no colour stops".into());
             }
@@ -279,7 +338,7 @@ pub fn gradient_paint(g: &Gradient, tile: Rect, current: &AbsoluteColor) -> Resu
                 .iter()
                 .map(|item| entry(item, current, |p| lp(p, rx)))
                 .collect::<Vec<_>>();
-            let stops = with_hints(entries, rx);
+            let stops = with_hints(entries, rx, method);
             if stops.is_empty() {
                 return Err("a gradient with no colour stops".into());
             }
@@ -319,11 +378,11 @@ pub fn gradient_paint(g: &Gradient, tile: Rect, current: &AbsoluteColor) -> Resu
                 .iter()
                 .map(|item| match item {
                     Item::SimpleColorStop(c) => Entry {
-                        kind: EntryKind::Stop(rgba(&resolve_color(c, current))),
+                        kind: stop_of(c, current),
                         pos: None,
                     },
                     Item::ComplexColorStop { color, position } => Entry {
-                        kind: EntryKind::Stop(rgba(&resolve_color(color, current))),
+                        kind: stop_of(color, current),
                         pos: Some(turn_fraction(position)),
                     },
                     Item::InterpolationHint(position) => Entry {
@@ -332,7 +391,7 @@ pub fn gradient_paint(g: &Gradient, tile: Rect, current: &AbsoluteColor) -> Resu
                     },
                 })
                 .collect::<Vec<_>>();
-            let stops = with_hints(entries, 1.0);
+            let stops = with_hints(entries, 1.0, method);
             if stops.is_empty() {
                 return Err("a gradient with no colour stops".into());
             }
@@ -354,6 +413,11 @@ pub fn gradient_paint(g: &Gradient, tile: Rect, current: &AbsoluteColor) -> Resu
     }
 }
 
+fn stop_of(c: &style::values::computed::Color, current: &AbsoluteColor) -> EntryKind {
+    let abs = resolve_color(c, current);
+    EntryKind::Stop(rgba(&abs), abs)
+}
+
 fn turn_fraction(p: &AngleOrPercentage) -> f64 {
     match p {
         AngleOrPercentage::Percentage(p) => f64::from(p.0),
@@ -368,11 +432,11 @@ fn entry<T>(
 ) -> Entry {
     match item {
         Item::SimpleColorStop(c) => Entry {
-            kind: EntryKind::Stop(rgba(&resolve_color(c, current))),
+            kind: stop_of(c, current),
             pos: None,
         },
         Item::ComplexColorStop { color, position } => Entry {
-            kind: EntryKind::Stop(rgba(&resolve_color(color, current))),
+            kind: stop_of(color, current),
             pos: Some(pos(position)),
         },
         Item::InterpolationHint(position) => Entry {
@@ -449,5 +513,103 @@ mod tests {
         assert!((p[3] - 0.5).abs() < 1e-9);
         assert!((p[4] - 0.5).abs() < 1e-9);
         assert!((p[5] - 1.0).abs() < 1e-9);
+    }
+
+    use style::color::mix::HueInterpolationMethod as Hue;
+
+    fn method(space: ColorSpace, hue: Hue) -> ColorInterpolationMethod {
+        ColorInterpolationMethod { space, hue }
+    }
+
+    fn srgb(r: f32, g: f32, b: f32, a: f32) -> AbsoluteColor {
+        AbsoluteColor::new(ColorSpace::Srgb, r, g, b, a)
+    }
+
+    fn hue_of(c: &AbsoluteColor, space: ColorSpace) -> f32 {
+        c.to_color_space(space).components.0
+    }
+
+    #[test]
+    fn endpoints_are_the_stops() {
+        let (a, b) = (srgb(1.0, 0.0, 0.0, 1.0), srgb(0.0, 0.0, 1.0, 1.0));
+        for space in [
+            ColorSpace::Oklab,
+            ColorSpace::Oklch,
+            ColorSpace::Lab,
+            ColorSpace::Hsl,
+        ] {
+            let m = method(space, Hue::Shorter);
+            let (_, c0) = mix_in(m, a, b, 0.0);
+            let (_, c1) = mix_in(m, a, b, 1.0);
+            for k in 0..3 {
+                assert!((c0[k] - [1.0, 0.0, 0.0][k]).abs() < 2e-3, "{space:?} {c0:?}");
+                assert!((c1[k] - [0.0, 0.0, 1.0][k]).abs() < 2e-3, "{space:?} {c1:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn linear_light_midpoint_is_brighter_than_srgb() {
+        // Black to white in linear light: 0.5 linear is 0.735 in sRGB.
+        let (a, b) = (srgb(0.0, 0.0, 0.0, 1.0), srgb(1.0, 1.0, 1.0, 1.0));
+        let (_, c) = mix_in(method(ColorSpace::SrgbLinear, Hue::Shorter), a, b, 0.5);
+        assert!((c[0] - 0.7354).abs() < 2e-3, "{c:?}");
+    }
+
+    #[test]
+    fn oklab_midpoint_of_black_and_white_is_oklab_grey() {
+        // L 0.5 in Oklab is 0.5^3 = 0.125 linear light, 0.389 in sRGB.
+        let (a, b) = (srgb(0.0, 0.0, 0.0, 1.0), srgb(1.0, 1.0, 1.0, 1.0));
+        let (_, c) = mix_in(method(ColorSpace::Oklab, Hue::Shorter), a, b, 0.5);
+        assert!((c[0] - 0.3892).abs() < 3e-3, "{c:?}");
+    }
+
+    #[test]
+    fn hue_methods_go_the_right_way_round() {
+        // Hues 20 and 340 in HSL: shorter crosses 0, longer goes through 180.
+        let a = AbsoluteColor::new(ColorSpace::Hsl, 20.0, 1.0, 0.5, 1.0);
+        let b = AbsoluteColor::new(ColorSpace::Hsl, 340.0, 1.0, 0.5, 1.0);
+        let at = |hue| mix_in(method(ColorSpace::Hsl, hue), a, b, 0.5).0;
+        let near = |h: f32, want: f32| ((h - want + 540.0).rem_euclid(360.0) - 180.0).abs() < 1.0;
+        assert!(near(hue_of(&at(Hue::Shorter), ColorSpace::Hsl), 0.0));
+        assert!(near(hue_of(&at(Hue::Longer), ColorSpace::Hsl), 180.0));
+        // 20 -> 340 increasing runs up through 180; decreasing runs down through 0.
+        assert!(near(hue_of(&at(Hue::Increasing), ColorSpace::Hsl), 180.0));
+        assert!(near(hue_of(&at(Hue::Decreasing), ColorSpace::Hsl), 0.0));
+    }
+
+    #[test]
+    fn a_grey_stop_has_a_powerless_hue() {
+        // Grey to red in Oklch takes red's hue all the way.
+        let (g, r) = (srgb(0.5, 0.5, 0.5, 1.0), srgb(1.0, 0.0, 0.0, 1.0));
+        let m = method(ColorSpace::Oklch, Hue::Shorter);
+        let red_hue = r.to_color_space(ColorSpace::Oklch).components.2;
+        let (c, _) = mix_in(m, g, r, 0.5);
+        // Component order is L, C, H: the hue is the third.
+        let h = c.to_color_space(ColorSpace::Oklch).components.2;
+        assert!((h - red_hue).abs() < 1.0, "{c:?}");
+    }
+
+    #[test]
+    fn alpha_is_premultiplied() {
+        // Opaque red to transparent blue: the midpoint is still red, half opaque.
+        let (a, b) = (srgb(1.0, 0.0, 0.0, 1.0), srgb(0.0, 0.0, 1.0, 0.0));
+        let (_, c) = mix_in(method(ColorSpace::Oklab, Hue::Shorter), a, b, 0.5);
+        assert!((c[3] - 0.5).abs() < 2e-3, "{c:?}");
+        assert!(c[0] > 0.95 && c[2] < 0.05, "{c:?}");
+    }
+
+    #[test]
+    fn subdivide_keeps_hard_edges_and_fills_spans() {
+        let m = method(ColorSpace::Oklab, Hue::Shorter);
+        let mk = |pos, abs: AbsoluteColor| Stop {
+            pos,
+            color: rgba(&abs),
+            abs,
+        };
+        let (r, b) = (srgb(1.0, 0.0, 0.0, 1.0), srgb(0.0, 0.0, 1.0, 1.0));
+        let out = subdivide(&[mk(0.0, r), mk(0.5, b), mk(0.5, r), mk(1.0, b)], m);
+        assert_eq!(out.len(), 2 * SPACE_STEPS + 2);
+        assert!(out.windows(2).all(|w| w[1].pos >= w[0].pos));
     }
 }

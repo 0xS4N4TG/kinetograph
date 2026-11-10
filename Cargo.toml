@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/cli", "crates/node", "crates/dom", "crates/rive", "crates/libmv-sys", "crates/track"]
+members = ["crates/core", "crates/cli", "crates/node", "crates/dom", "crates/rive", "crates/libmv-sys", "crates/track", "crates/matte"]
 exclude = ["phase0"]
 
 [workspace.package]

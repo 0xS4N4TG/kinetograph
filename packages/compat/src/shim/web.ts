@@ -635,6 +635,18 @@ export function installDomGlobals(): void {
     Object.defineProperty(g, REAL_FETCH, { value: real, configurable: true, enumerable: false });
     g.fetch = wrapped;
   }
+  // `new Request('assets/a.glb')` (three.js's FileLoader makes one for each file) resolves against the document, as in a
+  // browser: Node's has no base and throws. The URL then names the project, which `fetch` reads like any other file.
+  if (typeof g.Request === 'function' && (g.Request as { kinetograph?: boolean }).kinetograph !== true) {
+    const RealRequest = g.Request as typeof Request;
+    class DocumentRequest extends RealRequest {
+      static readonly kinetograph = true;
+      constructor(input: RequestInfo | URL, init?: RequestInit) {
+        super(typeof input === 'string' ? resolveDocumentUrl(input) : input, init);
+      }
+    }
+    g.Request = DocumentRequest;
+  }
 
   // `document`: `fonts` was put there by installFontFace; the rest is queries over the host trees and scratch nodes.
   const doc = (g.document ??= {}) as Record<string, unknown>;

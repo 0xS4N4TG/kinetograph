@@ -40,3 +40,32 @@ substantial portions; the software is provided "as is", without warranty of any 
 `packages/site/scripts/engine-diagram.mjs` uses opentype.js, a build-time tool only (nothing from it ships), to turn the
 diagram's text into outlines. Copyright (c) 2020 Frederik De Bleser and the opentype.js contributors,
 https://github.com/opentypejs/opentype.js, licensed under the MIT License, on the same terms as above.
+
+## MODNet and BEN2 (video matting models)
+
+`kinetograph matte` and `@kinetographdev/video-matting` download two models on request, from Hugging Face, into the
+user's cache directory. They are never bundled in the packages or the repository, and are downloaded unchanged.
+
+- `modnet`: the ONNX export `Xenova/modnet` (https://huggingface.co/Xenova/modnet, `onnx/model.onnx`) of MODNet
+  (https://github.com/ZHKKKe/MODNet), licensed under the Apache License, Version 2.0
+  (http://www.apache.org/licenses/LICENSE-2.0).
+- `ben2-base`: the ONNX export `onnx-community/BEN2-ONNX` (https://huggingface.co/onnx-community/BEN2-ONNX,
+  `onnx/model_fp16.onnx`) of BEN2 Base by PramaLLC (https://huggingface.co/PramaLLC/BEN2), licensed under the MIT
+  License.
+
+Weights provenance: both licences cover the model code and the published weights as released, but neither model's
+training data is cleared for commercial use. MODNet's backbone was pretrained on Supervisely, and BEN2 was trained on
+DIS5K, both of which carry non-commercial terms. Kinetograph does not redistribute either set of weights, so each user
+downloads them on first use and is responsible for checking those terms against their own use. Mattes are written
+into files the user owns; no model output is sent anywhere.
+
+## ONNX Runtime and the `ort` crate
+
+The matting crate (`crates/matte`) runs the models with ONNX Runtime through the `ort` crate.
+
+- ONNX Runtime (https://github.com/microsoft/onnxruntime), Copyright (c) Microsoft Corporation, licensed under the MIT
+  License. It is not part of the addon: Microsoft's release archive (the CPU build, version 1.31.0)
+  is downloaded on the first use of matting, checked against a pinned SHA-256 and kept in the model cache. The archive
+  carries its own third-party notices.
+- `ort` (https://github.com/pykeio/ort), Copyright (c) pyke.io, licensed under the Apache License, Version 2.0 or the
+  MIT License, at your option.

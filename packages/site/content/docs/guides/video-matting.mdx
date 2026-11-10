@@ -1,0 +1,158 @@
+---
+title: Video matting
+description: Cut the subject out of a video, with alpha, and put text behind it, blur or replace the background, or add effects to the subject only.
+---
+
+Video matting separates a video into a **foreground** (the subject, with alpha) and a **base** (the original picture, opaque). A model finds the subject. Kinetograph runs it natively through ONNX Runtime, with no browser and no WebGPU. The API is the one of Remotion's [`@remotion/video-matting`](https://www.remotion.dev/docs/video-matting).
+
+You run it once, before rendering. It writes video files, and your composition plays them like any other video. Rendering never runs a model, so every render comes out the same.
+
+## Models
+
+| Model | Segments | Size | Licence |
+|---|---|---|---|
+| `modnet` (default) | People | 25.9 MB | [Apache-2.0](https://huggingface.co/Xenova/modnet) |
+| `ben2-base` | Any foreground subject. Experimental and heavier. | 219.1 MB | [MIT](https://huggingface.co/onnx-community/BEN2-ONNX) |
+
+The first run downloads the model from Hugging Face, checks it against a pinned SHA-256 and caches it in `$KINETOGRAPH_MODEL_DIR`, or in the `kinetograph/models` folder of your OS cache directory. No model ships in the npm packages. The model credits are in the repository's `THIRD-PARTY-NOTICES.md`.
+
+ONNX Runtime is not bundled in the addon. The first run downloads Microsoft's CPU release (version 1.31.0, 36.5 MB on macOS, 11.4 MB on Linux, 82.9 MB on Windows), checks its SHA-256 and keeps it beside the models. Set `ORT_DYLIB_PATH` to use a library of your own instead, and nothing is downloaded.
+
+`ben2-base` runs on CoreML on macOS. On Windows and Linux it runs on the CPU, which is slower; DirectML is not used, because Microsoft ships it as a separate package. A build with the `cuda` or `webgpu` feature uses that backend when `ORT_DYLIB_PATH` names a library that has it. `modnet` always runs on the CPU. [`canUseVideoMatting()`](/docs/reference/video-matting/#canusevideomatting) reports the backend. [`canUseVideoMatting()`](/docs/reference/video-matting/#canusevideomatting) reports the backend.
+
+### Model licences
+
+MODNet is Apache-2.0 and BEN2 is MIT, and Kinetograph never bundles either; you download them on first use. Both have a training-data caveat: MODNet's backbone was pretrained on Supervisely and BEN2 was trained on DIS5K, and both datasets carry non-commercial terms. Check those against your use before you ship mattes of footage commercially. ONNX Runtime (MIT) and the `ort` crate (Apache-2.0 or MIT) run the models, with ONNX Runtime downloaded from Microsoft. Details are in `THIRD-PARTY-NOTICES.md`.
+
+## In Studio
+
+Select a video and choose **Remove background**. A dialog sets the output file in `public/`, the model, the audio and the video quality, and has a Models section to download or remove models. When it finishes, the video's source is swapped for the transparent file. Duplicate the layer first to keep the original.
+
+## From the command line
+
+```sh
+npx kinetograph matte public/original.mp4 -o public/foreground.webm
+```
+
+This writes the foreground as VP9 WebM with alpha. Add `--base public/base.webm` to also write the opaque base. A `.mov` name writes ProRes 4444 instead.
+
+| Option | Default | What it does |
+|---|---|---|
+| `-o` | `<video>.foreground.webm` | The foreground file, `.webm` or `.mov`. |
+| `--base` | none | Also write the opaque base layer here. |
+| `--model` | `modnet` | `modnet` or `ben2-base`. |
+| `--audio` | `keep` | `keep` copies the video's audio into the files written. `drop` writes them silent. |
+| `--quality` | `very-high` | `very-low`, `low`, `medium`, `high` or `very-high`. Higher keeps fine alpha edges and makes larger files. |
+| `--offline` | off | Never download: the model must already be cached. |
+
+With `--json` the result has the files, `model`, `backend`, `frames`, the size and duration, and the bytes written. The options are checked before anything is downloaded.
+
+## From code
+
+```ts
+import { canUseVideoMatting, downloadVideoMattingModel, separateVideoLayers } from '@kinetographdev/video-matting';
+
+const support = await canUseVideoMatting({ model: 'modnet' });
+if (!support.supported) throw new Error(support.detailedReason);
+
+await downloadVideoMattingModel({ model: 'modnet', onProgress: ({ progress }) => console.log(progress) });
+
+await using result = await separateVideoLayers({
+  src: 'public/original.mp4',
+  outputs: { foreground: { path: 'public/foreground.webm' }, base: false },
+  onProgress: ({ progress }) => console.log(progress),
+});
+```
+
+In a Kinetograph project, `import ... from '@remotion/video-matting'` resolves to the same package. The [reference](/docs/reference/video-matting/) lists every function.
+
+## With an agent
+
+The `matte` tool of the [MCP server](/docs/guides/agents/#the-mcp-server) takes the CLI's options, and the Kinetograph skill points to this guide for the recipes below. You can ask:
+
+> Put animated text reading "BEHIND THE SCENES" behind the subject in public/original.mp4 using video matting. Keep the original background and audio.
+
+## Recipes
+
+Each recipe uses `public/original.mp4` and the `public/foreground.webm` made above. Draw layers back to front: the original, whatever goes behind or on the subject, then the foreground. All of them fill the frame with this style:
+
+```tsx
+const fill = { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' } as const;
+```
+
+### Text behind a subject
+
+Three layers: the original, the text, and the foreground on top. The foreground is muted, and the original keeps the audio.
+
+```tsx
+import { AbsoluteFill, Video, interpolate, staticFile, useCurrentFrame } from 'remotion';
+
+export const TextBehindVideo = () => {
+  const frame = useCurrentFrame();
+  const opacity = interpolate(frame, [0, 20], [0, 1], { extrapolateRight: 'clamp' });
+  return (
+    <>
+      <Video src={staticFile('original.mp4')} style={fill} />
+      <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', color: 'white', fontSize: 120, fontWeight: 800, opacity }}>
+        BEHIND THE SCENES
+      </AbsoluteFill>
+      <Video src={staticFile('foreground.webm')} muted style={fill} />
+    </>
+  );
+};
+```
+
+### Background blur
+
+Blur the original and put the sharp foreground on top.
+
+```tsx
+import { Video, staticFile } from 'remotion';
+import { blur } from '@kinetographdev/core';
+
+export const BackgroundBlur = () => (
+  <>
+    <Video src={staticFile('original.mp4')} effects={[blur(16)]} style={fill} />
+    <Video src={staticFile('foreground.webm')} muted style={fill} />
+  </>
+);
+```
+
+The blurred original still holds the subject, so a strong blur can leave a halo around its edges. Lower the radius if it shows. You can also darken the base with `brightness(0.8)` while leaving the foreground alone.
+
+### Background replacement
+
+Leave out the original and draw the foreground over something else: a colour, a picture, another video or HTML. Make the foreground with `--audio keep` (the default) so it carries the sound, as here, or add an `<Audio>` layer.
+
+```tsx
+import { AbsoluteFill, Video, staticFile } from 'remotion';
+
+export const BackgroundReplacement = () => (
+  <>
+    <AbsoluteFill style={{ backgroundColor: '#0b1533' }} />
+    <Video src={staticFile('foreground.webm')} style={{ ...fill, objectFit: 'contain' }} />
+  </>
+);
+```
+
+### Foreground effects
+
+Give effects to the foreground only. A glow lifts the subject, a drop shadow separates a cutout from a new background, and colour filters match it to a new scene.
+
+```tsx
+import { AbsoluteFill, Video, staticFile } from 'remotion';
+import { dropShadow, glow, saturate, sepia } from '@kinetographdev/core';
+
+export const ForegroundEffects = () => (
+  <>
+    <AbsoluteFill style={{ backgroundColor: '#e8e8e8' }} />
+    <Video
+      src={staticFile('foreground.webm')}
+      effects={[glow({ radius: 12, intensity: 0.6 }), dropShadow({ x: 0, y: 12, blur: 24, color: '#00000066' }), sepia(0.2), saturate(1.1)]}
+      style={{ ...fill, objectFit: 'contain' }}
+    />
+  </>
+);
+```
+
+The effects are the engine's own; `npx kinetograph effects` lists them. See [Remotion effects](/docs/guides/remotion-effects/) for `@remotion/effects`, which also works on `<Video>` from `@remotion/media`.

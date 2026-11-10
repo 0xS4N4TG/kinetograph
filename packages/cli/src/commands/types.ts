@@ -2,11 +2,14 @@ import { mkdirSync } from 'node:fs';
 import type { Renderer } from '@kinetographdev/native';
 import { dirname, join } from 'node:path';
 import type { OptionSpec, ParsedArgs, PositionalSpec } from '../args.js';
-import { PROJECT_OPTIONS } from '../args.js';
+import { PROJECT_OPTIONS, whole } from '../args.js';
 import { PREFERRED_EFFECT_BACKEND_OPTION, parsePreferredEffectBackend, setPreferredEffectBackend } from '../effects.js';
 import { native } from '../native.js';
 import { setOffline } from '../prefetch.js';
 import { openSource, projectRootOf, type OpenOptions, type Source } from '../source.js';
+
+/** What core's `delayRender` reads for its default timeout (packages/core/src/assets.ts). */
+const DELAY_RENDER_TIMEOUT_ENV = 'KINETOGRAPH_DELAY_RENDER_TIMEOUT';
 
 export interface Context {
   /** Progress for people (stderr). Silent for `--json`. */
@@ -80,6 +83,11 @@ export function allOptions(command: Command): OptionSpec[] {
 export function openFromArgs(args: ParsedArgs, extra: Pick<OpenOptions, 'unsupportedImports'> = {}): Promise<Source> {
   const offline = args.options.offline === true;
   setOffline(offline);
+  // The default for every delayRender() of the project, read when one is called (so, in the render workers too, which
+  // copy the environment). Set or cleared on each call: the MCP server runs many commands in one process.
+  const timeout = args.options.timeout === undefined ? undefined : whole('--timeout', args.options.timeout as number, 1);
+  if (timeout === undefined) delete process.env[DELAY_RENDER_TIMEOUT_ENV];
+  else process.env[DELAY_RENDER_TIMEOUT_ENV] = String(timeout);
   // Before the project loads: a project that sets `window.remotion_preferredEffectBackend` itself has the last word.
   setPreferredEffectBackend(parsePreferredEffectBackend(args.options['preferred-effect-backend']));
   return openSource(String(args.positionals.entry), {

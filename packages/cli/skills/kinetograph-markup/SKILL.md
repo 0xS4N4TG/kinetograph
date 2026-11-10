@@ -97,7 +97,7 @@ Read the part you need; these files are large.
 
 | File | What it holds |
 |---|---|
-| `references/capabilities.md` | the `@remotion/*` packages that import, compat mode (DOM, CSS, SVG, Canvas, WebGL), libraries and plugins that render, HTML and HyperFrames pages, fonts, datamosh, motion tracking |
+| `references/capabilities.md` | the `@remotion/*` packages that import, compat mode (DOM, CSS, SVG, Canvas, WebGL), libraries and plugins that render, HTML and HyperFrames pages, fonts, datamosh, motion tracking, video matting |
 | `references/AUTHORING.md` | the contract of each package: §5 helpers, §6 elements and their JSON, §7 the Remotion API, §8 audio, §9 CLI and export, §11 video layers, GSAP and plugins |
 | `references/SCENE.md` | the `.json` scene: every layer type, effect and field, and what each means exactly |
 | `references/ENGINE.md` | the DOM and CSS engine: what CSS and SVG it draws |

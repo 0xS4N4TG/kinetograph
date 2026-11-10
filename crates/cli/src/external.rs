@@ -369,6 +369,7 @@ fn probe(program: &Path, name: &str, hw: Hw, device: Option<&str>) -> Result<Ope
         audio_codec: None,
         audio_bitrate: None,
         every_nth_frame: 1,
+        keyframe_seconds: None,
     };
     let size: usize = Pix::Yuv420p
         .planes(width as usize, height as usize)
@@ -515,7 +516,9 @@ fn encoder_args(settings: &Resolved, width: u32, height: u32, fps: f64) -> Vec<S
     };
     push("-c:v", settings.encoder.clone());
     // The same keyframe interval the linked encoders get; libx264, libx265 and libvpx-vp9 keep their own.
-    if encode::sets_gop(&settings.encoder, settings.codec) {
+    if let Some(seconds) = settings.keyframe_seconds {
+        push("-g", ((fps * seconds).round().max(1.0) as u32).to_string());
+    } else if encode::sets_gop(&settings.encoder, settings.codec) {
         push("-g", encode::gop_size(fps).to_string());
     }
     match settings.encoder.as_str() {
@@ -957,6 +960,7 @@ mod tests {
             audio_codec: None,
             audio_bitrate: None,
             every_nth_frame: 1,
+            keyframe_seconds: None,
         }
     }
 

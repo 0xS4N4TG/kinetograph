@@ -30,7 +30,7 @@ const platformDir = path.join(tmp, 'platform');
 fs.cpSync(path.join(root, 'crates/node/npm', platform), platformDir, { recursive: true });
 fs.copyFileSync(built, path.join(platformDir, nodeFile));
 files.push(pack(platformDir));
-for (const dir of ['crates/node', 'packages/scene', 'packages/compat', 'packages/react', 'packages/core', 'packages/audio', 'packages/cli', 'packages/studio']) {
+for (const dir of ['crates/node', 'packages/scene', 'packages/compat', 'packages/react', 'packages/core', 'packages/audio', 'packages/video-matting', 'packages/cli', 'packages/studio']) {
   files.push(pack(path.join(root, dir)));
 }
 

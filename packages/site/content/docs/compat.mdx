@@ -30,7 +30,7 @@ npx kinetograph render src/index.ts --strict
 - Kinetograph reads no system fonts, so a render looks the same everywhere. With no font loaded, text uses the bundled DM Sans. Variable fonts follow the requested weight.
 - A missing character comes from Noto Sans Symbols 2, Noto Sans Math or Noto Emoji. Emoji are monochrome.
 - CJK, Arabic, Devanagari and similar scripts have no bundled font. They are drawn as boxes and reported. Load a font that has them.
-- `monospace` falls back to a proportional face, so code blocks (Shiki, Code Hike) look wider than in Chrome. Load a monospace font.
+- Generic and system family names are bundled fonts: `sans-serif`, `system-ui`, `Arial`, `Segoe UI` and the like are Inter; `serif`, `Georgia` and `Times New Roman` are EB Garamond; `monospace`, `Menlo` and `Consolas` are JetBrains Mono. A web font such as `Poppins` is not a system name: load it.
 - `ex` uses the first font's x-height. With only a generic family such as `serif`, a MathJax formula comes out about 10% larger. `ex` in SVG shape attributes is half an em.
 
 ## Video and audio
@@ -45,6 +45,7 @@ npx kinetograph render src/index.ts --strict
 ## CSS and SVG
 
 - `import './index.css'`, local `@import`s, Tailwind (built with your project's setup) and `*.module.css` work. `staticFile` reads `public/` next to the entry, else next to the nearest `package.json`.
+- Linear, radial and conic gradients (repeating too) interpolate in any colour space: `in oklch`, `oklab`, `srgb-linear`, `hsl`, `hwb`, `lch`, `lab`, `xyz`, `display-p3`, with `shorter`, `longer`, `increasing` and `decreasing hue`. Each span is drawn as 64 sRGB stops; against Chrome the mean error is about 0.3 ΔE and the worst pixel under 3.5. A white or grey stop in a polar space takes its neighbour's hue (CSS Color 4), where Chrome picks an arbitrary hue.
 - `filter: blur()`, `drop-shadow()` and `backdrop-filter` take any radius; past 532 px they are drawn 532 px wide, as in Chrome. `backdrop-filter: blur()` reads only the backdrop inside the element's border box. The same filter functions work inside `<svg>`, next to `filter: url(#id)`.
 - `transform-style: preserve-3d` planes that cross intersect, and are flattened where a browser flattens them (`opacity` below 1, `filter`, `clip-path`, `mask-image`, `mix-blend-mode`, non-visible `overflow`).
 - A `backdrop-filter` in a `preserve-3d` context inside an element drawn as one group blurs only what its own 3D context drew, not the whole group as Chrome does. Reported as approximated.
@@ -63,9 +64,9 @@ npx kinetograph render src/index.ts --strict
 
 `<canvas>` with a `webgl` or `webgl2` context runs on the GPU. p5.brush's standalone build draws as in Chrome.
 
-- Works: fragment shaders, framebuffers, `gl_PointSize`, instancing, `blitFramebuffer`, depth and stencil tests, `drawBuffers`, depth textures.
+- Works: fragment shaders, framebuffers, `gl_PointSize`, instancing, `blitFramebuffer`, depth and stencil tests, `drawBuffers`, depth textures, cube maps (six `texImage2D` faces of RGBA8, `samplerCube`, `generateMipmap`; sampled seamlessly, with GL's face order and orientation).
 - Every frame starts with an empty canvas, also with `preserveDrawingBuffer`, because a frame is a function of its own number.
-- Not drawn: multisampled renderbuffers, `readPixels`, lines, instanced points and a `vertexAttribDivisor` above 1, cube textures, float render targets (float textures from `texImage2D` and 3D textures work), `sampler2DShadow`, non-RGBA render targets, mixed-size framebuffer attachments, `generateMipmap` on a drawn-into texture, and a `TEXTURE_BASE_LEVEL` other than 0.
+- Not drawn: multisampled renderbuffers, `readPixels`, lines wider than one pixel (lines are one pixel wide, as in WebGL), instanced points and a `vertexAttribDivisor` above 1, cube faces that are float, depth or a `texSubImage2D` target, blending into 32-bit float render targets and blitting to or from float ones (float render targets, float textures from `texImage2D`, 3D textures and 2D array textures work), `sampler2DShadow`, render targets that are neither RGBA8 nor R, RG or RGBA of 16 or 32-bit floats, mixed-size framebuffer attachments, `generateMipmap` on a drawn-into texture, and a `TEXTURE_BASE_LEVEL` other than 0.
 - Differs from a browser: the depth buffer holds 32-bit floats, `depth: false` makes the depth test always pass, a depth texture is sampled `NEAREST`, points are squares of at most 511 px, and `gl_VertexID` with `drawElements` is the position in the index list.
 
 ## WebGPU
@@ -117,7 +118,7 @@ How to write code for GSAP, Motion, anime.js, d3, Chart.js, Recharts and the res
 - **Fonts:** the 18 families HyperFrames embeds come in every weight Google serves, from the cache `fetch-deps` fills. A render never downloads a font. System names map as in HyperFrames: `Arial` to Inter, `Consolas` to JetBrains Mono, `Georgia` to EB Garamond. A page that calls `measureText` before its `@font-face` loads gets fallback widths in Chrome; Kinetograph measures with the registered font, so it can pick a larger size.
 - **Scripts:** `<script type="importmap">` is read (one with a `src` is ignored, as in Chrome), and each module is bundled and runs after the classic scripts. Top-level `await` works, but the runtime doesn't wait for it. CSS and JSON import attributes are not supported.
 - **WebGPU:** pages that use it, such as the `shaders.iife.js` blocks (`aurora`, `blob`, `ripples`, `swirl`), are drawn natively. See WebGPU above.
-- **Three.js** is not drawn. A page that loads it is reported on every frame, and `--strict` fails.
+- **Three.js** is drawn through the WebGL stand-in (see the WebGL section). Only what it does that the stand-in cannot draw is reported, and `--strict` fails on that.
 
 ### Downloads and the lock file
 

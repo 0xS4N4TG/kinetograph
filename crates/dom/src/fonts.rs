@@ -16,9 +16,9 @@ use std::time::SystemTime;
 
 use blitz_dom::FontContext;
 use parley::fontique::{
-    Blob, Collection, CollectionOptions, FontInfoOverride, FontStyle, FontWeight, GenericFamily,
-    SourceCache,
+    Blob, Collection, CollectionOptions, FontInfoOverride, FontStyle, FontWeight, SourceCache,
 };
+use kinetograph_core::generic_fonts::{self, Kind};
 
 /// The key the host registers the built-in fallback font under when the project
 /// registered no font at all. Text then has to be set in it, which is not what
@@ -38,8 +38,11 @@ pub const FALLBACK_REASON: &str = "font not loaded; drawn with the built-in fall
 pub const UNLOADED_REASON: &str = "font not loaded; drawn with another loaded font (system fonts are not used: register the font file with loadFont, or an @font-face with a url())";
 
 /// Why text asking for the font-family `stack` (as CSS writes it) is not set
-/// in a font of the project's, if it is not: none of its families is
-/// registered. Generic families alone (`serif`) name nothing loaded.
+/// in the font it asks for, if it is not: none of its families is registered,
+/// and it starts with a generic or system name (`system-ui`, `Georgia`) and has a
+/// generic keyword (`serif`) to fall to, which is set in a bundled font
+/// (`kinetograph_core::generic_fonts`). A web font that comes first and is not
+/// loaded is reported.
 pub fn unloaded_reason(stack: &str, fonts: &BTreeMap<String, String>) -> Option<&'static str> {
     let loaded = |name: &str| {
         fonts
@@ -47,10 +50,16 @@ pub fn unloaded_reason(stack: &str, fonts: &BTreeMap<String, String>) -> Option<
             .filter(|k| k.as_str() != FALLBACK_KEY)
             .any(|k| parse_key(k).0.eq_ignore_ascii_case(name))
     };
-    let named = stack
+    let names: Vec<&str> = stack
         .split(',')
         .map(|f| f.trim().trim_matches(|c| c == '"' || c == '\'').trim())
-        .any(|f| !f.is_empty() && loaded(f));
+        .filter(|f| !f.is_empty())
+        .collect();
+    let named = names.iter().any(|f| loaded(f))
+        || (names.iter().any(|f| generic_fonts::is_generic(f))
+            && names
+                .first()
+                .is_some_and(|f| generic_fonts::kind_of(f).is_some()));
     if named {
         None
     } else if is_fallback(fonts) {
@@ -151,6 +160,16 @@ pub fn font_context(
     fonts: &BTreeMap<String, String>,
     base_dir: &std::path::Path,
 ) -> Result<FontContext, String> {
+    font_context_and_default(fonts, base_dir).map(|(ctx, _)| ctx)
+}
+
+/// [`font_context`], and the family text that names no `font-family` is set in: the project's first proportional font
+/// (the initial `font-family` is `serif`, which is the bundled serif when a page asks for it, not for text that says
+/// nothing). `None` when the project registered no font.
+pub fn font_context_and_default(
+    fonts: &BTreeMap<String, String>,
+    base_dir: &std::path::Path,
+) -> Result<(FontContext, Option<String>), String> {
     let mut ctx = FontContext {
         source_cache: SourceCache::new_shared(),
         collection: Collection::new(CollectionOptions {
@@ -195,14 +214,15 @@ pub fn font_context(
             }
         }
     }
-    // `monospace` falls back to a fixed-pitch font if the project registered
-    // one, else to the bundled JetBrains Mono; every other generic family prefers the proportional ones.
+    // The generic families are the bundled fonts (`kinetograph_core::generic_fonts`), as a browser's are the system's, and
+    // then the project's: Inter for the sans ones, EB Garamond for the serif ones. `monospace` is the project's first
+    // fixed-pitch font if it registered one, else the bundled JetBrains Mono.
     let proportional: Vec<_> = families
         .iter()
         .copied()
         .filter(|id| !fixed_pitch.contains(id))
         .collect();
-    // With none, the bundled JetBrains Mono leads, so code columns line up.
+    let (sans, serif) = generic_fonts::register(&mut ctx.collection);
     let monospace_first: Vec<_> = if fixed_pitch.is_empty() {
         kinetograph_core::fallback_fonts::register_monospace(&mut ctx.collection)
             .into_iter()
@@ -211,30 +231,26 @@ pub fn font_context(
     } else {
         fixed_pitch.iter().chain(&proportional).copied().collect()
     };
-    let proportional_first: Vec<_> = proportional.iter().chain(&fixed_pitch).copied().collect();
-    for generic in [
-        GenericFamily::SansSerif,
-        GenericFamily::Serif,
-        GenericFamily::Monospace,
-        GenericFamily::Cursive,
-        GenericFamily::Fantasy,
-        GenericFamily::SystemUi,
-        GenericFamily::UiSansSerif,
-        GenericFamily::UiSerif,
-        GenericFamily::UiMonospace,
-        GenericFamily::UiRounded,
+    let project_first: Vec<_> = proportional.iter().chain(&fixed_pitch).copied().collect();
+    let bundled_first = |lead: Vec<_>| -> Vec<_> { lead.iter().chain(&project_first).copied().collect() };
+    for (kind, order) in [
+        (Kind::Sans, bundled_first(sans)),
+        (Kind::Serif, bundled_first(serif)),
+        (Kind::Mono, monospace_first),
     ] {
-        let order = match generic {
-            GenericFamily::Monospace | GenericFamily::UiMonospace => &monospace_first,
-            _ => &proportional_first,
-        };
-        ctx.collection
-            .append_generic_families(generic, order.iter().copied());
+        for generic in generic_fonts::generics(kind) {
+            ctx.collection
+                .append_generic_families(*generic, order.iter().copied());
+        }
     }
     // After the project's fonts and the generics built from them: a character
     // none of them has falls back to the bundled symbol fonts.
-    kinetograph_core::fallback_fonts::register(&mut ctx.collection, &proportional_first);
-    Ok(ctx)
+    kinetograph_core::fallback_fonts::register(&mut ctx.collection, &project_first);
+    let default = project_first
+        .first()
+        .and_then(|id| ctx.collection.family_name(*id))
+        .map(str::to_string);
+    Ok((ctx, default))
 }
 
 /// Whether the font says all its glyphs are as wide as each other (the `post`
@@ -250,6 +266,7 @@ fn is_fixed_pitch(data: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use parley::fontique::GenericFamily;
 
     /// The family names of a generic family, in order.
     fn generic(ctx: &mut FontContext, generic: GenericFamily) -> Vec<String> {
@@ -286,9 +303,14 @@ mod tests {
             generic(&mut ctx, GenericFamily::UiMonospace),
             ["Code", "Text"]
         );
+        // The sans and serif families lead with the bundled fonts, then the project's.
         assert_eq!(
             generic(&mut ctx, GenericFamily::SansSerif),
-            ["Text", "Code"]
+            ["Kinetograph Sans", "Text", "Code"]
+        );
+        assert_eq!(
+            generic(&mut ctx, GenericFamily::SystemUi),
+            ["Kinetograph Sans", "Text", "Code"]
         );
         // Without one, the bundled font leads `monospace`, and no other generic family.
         let fonts = BTreeMap::from([("Text".to_string(), fixture("inter-800-latin.woff2"))]);
@@ -301,7 +323,30 @@ mod tests {
             generic(&mut ctx, GenericFamily::UiMonospace),
             [bundled, "Text"]
         );
-        assert_eq!(generic(&mut ctx, GenericFamily::Serif), ["Text"]);
+        assert_eq!(
+            generic(&mut ctx, GenericFamily::Serif),
+            ["Kinetograph Serif", "Text"]
+        );
+    }
+
+    #[test]
+    fn a_stack_that_starts_with_a_generic_or_system_name_is_not_reported() {
+        let fonts = BTreeMap::from([("Text".to_string(), "Text.ttf".to_string())]);
+        for stack in [
+            "system-ui, sans-serif",
+            "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+            "Georgia, serif",
+            "ui-monospace, SFMono-Regular, Menlo, monospace",
+            "monospace",
+            "\"Text\", sans-serif",
+        ] {
+            assert_eq!(unloaded_reason(stack, &fonts), None, "{stack}");
+        }
+        // A web font that is not loaded is reported even with a generic family after it.
+        assert!(unloaded_reason("Poppins, sans-serif", &fonts).is_some());
+        assert!(unloaded_reason("Roboto", &fonts).is_some());
+        // A system name with no generic keyword after it is not a family of the collection.
+        assert!(unloaded_reason("Georgia, Times New Roman", &fonts).is_some());
     }
 
     #[test]

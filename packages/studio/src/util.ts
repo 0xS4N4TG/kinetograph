@@ -37,6 +37,8 @@ export function httpError(error: unknown): { status: number; error: StudioError 
       return { status: 404, error: { code: 'NOT_FOUND', message } };
     case 'FORBIDDEN':
       return { status: 403, error: { code, message } };
+    case 'UNAVAILABLE':
+      return { status: 501, error: { code, message } };
     case 'BUILD':
     case 'SUPERSEDED':
       return { status: 409, error: { code, message } };
