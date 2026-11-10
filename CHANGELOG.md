@@ -25,6 +25,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Fixed
 
+- The DOM shim has `XMLSerializer`: `serializeToString` writes an element, fragment, text node or document as XML with its namespaces.
 - HyperFrames: `document.currentScript` is the script that is running (a component finds its root with `document.currentScript.closest("#root")`), where it was always null.
 - HyperFrames: the root's timed children are taken out of flow, so a second sub-composition no longer draws black below the canvas.
 - HyperFrames: the root is clipped and sized from its `data-width` and `data-height`, so a root with no CSS size is not empty (#112).

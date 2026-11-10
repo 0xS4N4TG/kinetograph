@@ -1688,6 +1688,34 @@ export function serializeHost(node: DomNode, inSvg = false): string {
   return `${open}>${inner}</${node.type}>`;
 }
 
+const xmlEscape = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/**
+ * A host node as XML (`XMLSerializer`): void elements and empty SVG ones self-close, text and attribute values are escaped for
+ * XML, and an element whose namespace differs from its parent's declares it (`xmlns`), so a `<svg>` in HTML and the
+ * HTML inside a `foreignObject` each carry theirs.
+ */
+export function serializeXml(node: DomNode, parentNs: string | null = null, inSvg = false): string {
+  if (node.kind === 'text') return xmlEscape(node.text);
+  if (node.type === 'kg-sequence' || node.type === FRAGMENT) return node.children.map((c) => serializeXml(c, parentNs, inSvg)).join('');
+  if (!isDomElement(node.type)) return '';
+  const svg = inSvg || isSvgTag(node.type);
+  const props = propsWithOverlay(node);
+  const attributes = attributesOf(props, svg);
+  const style = styleToCss(props.style);
+  const ns = attributes.xmlns ?? (svg ? SVG_NS : HTML_NS);
+  const entries = Object.entries(attributes).filter(([name]) => name !== 'xmlns');
+  if (style !== '' && attributes.style === undefined) entries.push(['style', style]);
+  const written = entries.map(([name, value]) => ` ${name}="${xmlEscape(value).replace(/"/g, '&quot;')}"`).join('');
+  const open = `<${node.type}${ns !== parentNs ? ` xmlns="${xmlEscape(ns).replace(/"/g, '&quot;')}"` : ''}${written}`;
+  const content = templateContents.get(node);
+  const inner = (content !== undefined ? content.children : node.children).map((c) => serializeXml(c, ns, svg && node.type !== 'foreignObject')).join('');
+  // As the DOM Parsing spec writes it: an HTML element has an end tag unless it is void (`<br />`), so the text read back
+  // through `innerHTML` nests as it was; any other namespace self-closes when empty.
+  if (ns === HTML_NS) return VOID_TAGS.has(node.type) ? `${open} />` : `${open}>${inner}</${node.type}>`;
+  return inner === '' ? `${open}/>` : `${open}>${inner}</${node.type}>`;
+}
+
 /** A text node of the host tree, as a script sees it. */
 export class DomText extends DomNodeBase {
   constructor(readonly host: HostText) {

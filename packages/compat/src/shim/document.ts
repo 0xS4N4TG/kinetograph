@@ -16,6 +16,7 @@ import {
   domTextFor,
   hostNodeOf,
   parsedNodes,
+  serializeXml,
   setDocumentRoot,
   setInertDocumentFactory,
   setOwnerDocument,
@@ -580,6 +581,16 @@ export class DOMParserShim {
       doc.setRoot(root);
     }
     return doc;
+  }
+}
+
+export class XMLSerializerShim {
+  serializeToString(node: unknown): string {
+    // A document is its root element (a page has no doctype to write).
+    const target = node instanceof DocumentShim || (node as { nodeType?: number } | null)?.nodeType === 9 ? (node as DocumentShim).documentElement : node;
+    const host = hostNodeOf(target);
+    if (host === null) throw new TypeError("Failed to execute 'serializeToString' on 'XMLSerializer': parameter 1 is not of type 'Node'.");
+    return serializeXml(host);
   }
 }
 
