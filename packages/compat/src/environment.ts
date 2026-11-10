@@ -486,9 +486,19 @@ export function noteStylesheet(css: string): void {
   registerFontFaces(withoutRemoteImports(css));
 }
 
-/** What the project's imports added, in import order. */
+let defaultSheet: string | null = null;
+
+/**
+ * CSS the page has before the project's own (null for none). A Remotion render page sets `box-sizing: border-box` on every
+ * element, so the host lays that under a Remotion project's styles; a plain HTML page has no such rule.
+ */
+export function setDefaultStylesheet(css: string | null): void {
+  defaultSheet = css;
+}
+
+/** What the page's CSS is: the default sheet, then what the project's imports added, in import order. */
 export function importedStylesheets(): string[] {
-  return sheets.map((sheet) => sheet.css);
+  return [...(defaultSheet === null ? [] : [defaultSheet]), ...sheets.map((sheet) => sheet.css)];
 }
 
 /** Problems with the project's stylesheets that `doctor` reports (an unprocessed Tailwind file, a font that did not download). */
@@ -512,6 +522,7 @@ export function readLocalStylesheet(href: string): string | null {
 /** For tests: forgets every stylesheet, note and registered face. */
 export function resetStylesheets(): void {
   sheets.length = 0;
+  defaultSheet = null;
   notes.length = 0;
   registeredFaces.clear();
   seenSheets.clear();

@@ -207,12 +207,29 @@ export function Folder({ name, children }: { name: string; children?: ReactNode 
 let root: ComponentType | null = null;
 let discovered: CompositionEntry[] | null = null;
 
+let remotionPage = true;
+
+/**
+ * Whether the pages this process draws are Remotion compositions, whose render page has `* { box-sizing: border-box }`.
+ * `registerRoot` sets it (a Remotion project calls it); a HyperFrames or plain HTML page is a browser's own, content-box,
+ * and `defineHyperframes` turns it off after its own `registerRoot`.
+ */
+export function setRemotionPage(on: boolean): void {
+  remotionPage = on;
+}
+
+export function isRemotionPage(): boolean {
+  return remotionPage;
+}
+
 export function registerRoot(component: ComponentType): void {
   if (typeof component !== 'function' && typeof component !== 'object') {
     throw new TypeError('registerRoot() takes a React component');
   }
   root = component;
   discovered = null;
+  // Every entry starts as a Remotion project; a HyperFrames one says otherwise right after (`setRemotionPage(false)`).
+  remotionPage = true;
 }
 
 function discover(): CompositionEntry[] {

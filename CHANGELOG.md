@@ -44,6 +44,8 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A remote file is read at render time (`fetch()`, audio data, video length) only from what `fetch-deps` downloaded and locked, and only for a GET or HEAD without a body.
 - Listing compositions (`kinetograph compositions`, Studio) runs `calculateMetadata` for a composition whose fps or length comes from it, instead of showing placeholders.
 - `useWindowedAudioData()` returns the window of the frame with the one before and after, and `visualizeAudio()` scales by the loudest sample of that slice, as Remotion's does.
+- An `<AbsoluteFill>` that is a `div` has Remotion's own style (top, left, right and bottom 0, width and height 100%), so a style key set to `undefined` (`top: undefined`) takes its default away as in a browser.
+- A Remotion project's DOM elements are `box-sizing: border-box`, as on Remotion's render page, so a `width: 100%` with padding does not overflow (a HyperFrames or plain HTML page keeps the browser's content-box; `registerRoot` starts every entry as a Remotion page, so a Remotion project loaded after a HyperFrames one gets it again).
 
 ## 0.3.0 (2026-11-03)
 

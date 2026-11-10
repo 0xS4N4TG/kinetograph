@@ -67,7 +67,7 @@ describe('AbsoluteFill with DOM children', () => {
       tag: 'div',
       path: '$0',
       attrs: { id: 'fill' },
-      style: 'position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center',
+      style: 'position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center',
     });
     expect(sent[0].root.children.map((c: any) => [c.kind, c.tag ?? '', c.path])).toEqual([
       ['element', 'p', '$0.0'],

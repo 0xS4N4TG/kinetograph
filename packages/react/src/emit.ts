@@ -239,6 +239,23 @@ function holdsDom(nodes: HostNode[]): boolean {
 }
 
 /**
+ * The style Remotion gives an `<AbsoluteFill>` (remotion.dev/docs/absolute-fill). The author's style is laid over it, so a
+ * key set to `undefined` (`top: undefined`) takes the default away, as it does in a browser. (Remotion's page also sets
+ * `box-sizing: border-box`, which the host lays under a Remotion project's styles: `setDefaultStylesheet`.)
+ */
+export const ABSOLUTE_FILL_STYLE = {
+  position: 'absolute',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  width: '100%',
+  height: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+} as const;
+
+/**
  * `<AbsoluteFill>` (and the wrapper of a `<Sequence>` or `<Loop>`, which is one in Remotion) as the `div` it is in
  * Remotion, when what is inside it holds DOM elements or it sits inside DOM already: a column flex box over
  * the whole page with the author's style laid over it, so that `justifyContent`, `alignItems` and the rest place the
@@ -255,7 +272,7 @@ export function domFillOf(element: HostElement, insideDom = false): HostElement 
     type: 'div',
     props: {
       ...(fill.id !== undefined ? { id: fill.id } : {}),
-      style: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', ...fill.style },
+      style: { ...ABSOLUTE_FILL_STYLE, ...fill.style },
     },
     // The layer mapping's own background rectangle is the style's `backgroundColor` here.
     children: fill.background ? element.children.slice(1) : element.children,

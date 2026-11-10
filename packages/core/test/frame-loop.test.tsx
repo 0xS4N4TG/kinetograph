@@ -11,11 +11,14 @@ import {
   Folder,
   getCompositions,
   getInputProps,
+  isRemotionPage,
   registerRoot,
   resetCompositions,
+  setRemotionPage,
   setInputProps,
   Still,
 } from '../src/compositions.js';
+import { importedStylesheets, setDomAddon } from '@kinetographdev/compat/dom';
 import { installDeterminism, resetVirtualClock, uninstallDeterminism } from '../src/determinism.js';
 import { clearFonts, getFonts, registerFont, trackFontLoad } from '../src/font-registry.js';
 import { createFrameRenderer } from '../src/frame-loop.js';
@@ -438,6 +441,60 @@ describe('the frame loop', () => {
     }
     registerRoot(() => <Composition id="Late" width={10} height={10} fps={30} durationInFrames={2} component={Late} />);
     await expect(createFrameRenderer('Late').renderFrame(0)).rejects.toThrow(/boom after the effect/);
+  });
+
+  it('lays Remotion\'s default CSS (box-sizing: border-box on every element) under a project\'s styles', async () => {
+    registerOne();
+    await createFrameRenderer('Main').renderFrame(0);
+    expect(importedStylesheets()[0]).toBe('* { box-sizing: border-box; }');
+  });
+
+  it('sends the default CSS whether a render starts at frame 0 or part way, so a range and a full render agree', async () => {
+    const sent: { stylesheets: string[]; path: string }[] = [];
+    setDomAddon({
+      renderDomIsland(json: string) {
+        const request = JSON.parse(json);
+        sent.push({ stylesheets: request.stylesheets, path: request.path });
+        return JSON.stringify({ layers: [{ id: request.path, type: 'group', children: [] }], unsupported: [], camera: null });
+      },
+    });
+    try {
+      registerRoot(() => (
+        <Composition id="Box" width={100} height={50} fps={30} durationInFrames={20} component={() => <div style={{ width: '100%', padding: 8 }}>box</div>} />
+      ));
+      const lastSheets = async (frames: number[]) => {
+        sent.length = 0;
+        const renderer = createFrameRenderer('Box');
+        for (const frame of frames) await renderer.renderFrame(frame);
+        renderer.dispose();
+        return sent.map((request) => request.stylesheets);
+      };
+      const full = await lastSheets([0, 1, 2, 3, 4, 5]);
+      const part = await lastSheets([5]);
+      const defaultCss = '* { box-sizing: border-box; }';
+      expect(full.length).toBeGreaterThan(0);
+      expect(part.length).toBeGreaterThan(0);
+      for (const sheets of [...full, ...part]) expect(sheets).toEqual([defaultCss]);
+    } finally {
+      setDomAddon(null);
+    }
+  });
+
+  it('leaves a page that is not a Remotion composition (HyperFrames, plain HTML) in the browser\'s content-box', async () => {
+    registerOne();
+    setRemotionPage(false);
+    try {
+      await createFrameRenderer('Main').renderFrame(0);
+      expect(importedStylesheets()).not.toContain('* { box-sizing: border-box; }');
+    } finally {
+      setRemotionPage(true);
+    }
+  });
+
+  it('starts every entry as a Remotion page, so a Remotion project loaded after a HyperFrames one gets border-box again', () => {
+    setRemotionPage(false);
+    registerRoot(() => <Composition id="A" component={Hello} width={10} height={10} fps={30} durationInFrames={5} />);
+    expect(isRemotionPage()).toBe(true);
   });
 
   it('shows Sequence timing in the scene', async () => {

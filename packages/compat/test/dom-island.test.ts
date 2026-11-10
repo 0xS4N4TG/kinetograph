@@ -19,6 +19,7 @@ import {
   setDomAddon,
   setDomEnvironment,
   resolveProjectFile,
+  setDefaultStylesheet,
   setRemoteStylesheetResolver,
 } from '../src/dom/index.js';
 import type { DomNode } from '../src/types.js';
@@ -423,6 +424,17 @@ describe('a remote @import in a stylesheet', () => {
     expect(resolveProjectFile('/etc/passwd')).toBeNull();
     expect(resolveProjectFile('../../../../../../etc/passwd')).toBeNull();
     expect(resolveProjectFile('/etc/../etc/hosts')).toBeNull();
+  });
+});
+
+describe('the default stylesheet', () => {
+  it('is sent before the project\'s own sheets, and only when the host set one', () => {
+    registerStylesheet('.a { color: red }');
+    mapDomIsland(node('div'), context());
+    expect(sent[0].stylesheets).toEqual(['.a { color: red }']);
+    setDefaultStylesheet('* { box-sizing: border-box; }');
+    mapDomIsland(node('div'), context());
+    expect(sent[1].stylesheets).toEqual(['* { box-sizing: border-box; }', '.a { color: red }']);
   });
 });
 

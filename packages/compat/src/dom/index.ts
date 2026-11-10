@@ -23,6 +23,7 @@ export {
   noteStylesheet,
   noteStylesheetProblem,
   importedStylesheets,
+  setDefaultStylesheet,
   stylesheetNotes,
   resetStylesheets,
   setCssFontFaceHandler,
