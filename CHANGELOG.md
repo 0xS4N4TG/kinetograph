@@ -36,6 +36,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - `staticFile()` returns forward slashes on Windows so CSS `url()` paths are not corrupted by backslash escapes (#100).
 - Paint decodes percent-encoded Windows drive paths with spaces in CSS background and border images (#100).
 - A `<Composition>` may leave out `fps` and `durationInFrames` when `calculateMetadata` returns them, as in Remotion (the audiogram, music-visualization and tiktok templates render unedited).
+- `createTikTokStyleCaptions()` breaks a page only before a caption that starts with a space (not a newline or tab), keeps whitespace-only captions in the page text but not as tokens, and ends the last page with the last caption.
 
 ## 0.3.0 (2026-11-03)
 
