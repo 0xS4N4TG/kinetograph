@@ -34,6 +34,15 @@ pub fn inter_800() -> String {
     fixture("fonts/inter-800-latin.woff2")
 }
 
+/// A font the engine bundles for generic and system family names (`crates/core/fonts`).
+pub fn bundled(file: &str) -> String {
+    manifest_dir()
+        .join("../core/fonts")
+        .join(file)
+        .to_string_lossy()
+        .into_owned()
+}
+
 pub fn archivo_black() -> String {
     fixture("fonts/archivo-black-400-latin.woff2")
 }

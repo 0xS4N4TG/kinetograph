@@ -10,6 +10,9 @@ import {
   type CompositionInfo,
   type FrameArgs,
   type InspectResult,
+  type MattingJob,
+  type MattingRequest,
+  type MattingStatus,
   type PanelClientMessage,
   type PluginSummary,
   type PresetInfo,
@@ -156,6 +159,55 @@ export class MockServer implements StudioApi {
     };
     this.jobs = [...this.jobs, job];
     return job;
+  }
+
+  /** What `matting()` answers, and every call the dialog made. */
+  mattingStatus: MattingStatus = {
+    available: true,
+    models: [
+      { name: 'modnet', modelId: 'Xenova/modnet', purpose: 'people', size: 25_900_000, cached: true },
+      { name: 'ben2-base', modelId: 'onnx-community/BEN2-ONNX', purpose: 'any foreground subject (experimental)', size: 223_000_000, cached: false },
+    ],
+    jobs: [],
+  };
+  mattingError: ApiError | null = null;
+  startMattingCalls: MattingRequest[] = [];
+  mattingCalls: string[] = [];
+
+  async matting(): Promise<MattingStatus> {
+    this.mattingCalls.push('status');
+    return this.mattingStatus;
+  }
+
+  async startMatting(request: MattingRequest): Promise<MattingJob> {
+    this.startMattingCalls.push(request);
+    if (this.mattingError) throw this.mattingError;
+    return {
+      id: String(this.startMattingCalls.length),
+      kind: 'matte',
+      model: request.model ?? 'modnet',
+      status: 'running',
+      stage: 'processing',
+      progress: 0,
+      output: `public/${request.output}`,
+      staticName: request.output,
+      error: null,
+    };
+  }
+
+  async cancelMatting(id: string): Promise<MattingJob> {
+    this.mattingCalls.push(`cancel ${id}`);
+    return { id, kind: 'matte', model: 'modnet', status: 'cancelled', stage: 'processing', progress: null, error: null };
+  }
+
+  async downloadMattingModel(model: string): Promise<MattingJob> {
+    this.mattingCalls.push(`download ${model}`);
+    return { id: `d-${model}`, kind: 'download', model, status: 'running', stage: 'downloading', progress: 0, error: null };
+  }
+
+  async removeMattingModel(model: string): Promise<void> {
+    this.mattingCalls.push(`remove ${model}`);
+    this.mattingStatus = { ...this.mattingStatus, models: this.mattingStatus.models.map((m) => (m.name === model ? { ...m, cached: false } : m)) };
   }
 
   async cancelRender(id: string): Promise<RenderJob> {

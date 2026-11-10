@@ -243,7 +243,10 @@ function blobOf(tables: Tables, bytes: Bytes): string {
 export class GPUBufferShim extends GpuObject {
   readonly size: number;
   readonly usage: number;
-  readonly mapState = 'unmapped';
+  /** `mapped` from `createBuffer({ mappedAtCreation })` until `unmap`; no buffer is mapped otherwise (`mapAsync` is not available). */
+  mapState: 'mapped' | 'unmapped' = 'unmapped';
+  /** What `getMappedRange` gave out, which `unmap` copies into the buffer and detaches. */
+  private mapping: ArrayBuffer | null = null;
   /** The bytes as the queue has them (shadow of the GPU's) until a pass writes the buffer; after that, the bytes it was given by then. */
   readonly data: Bytes;
   version = 0;
@@ -266,7 +269,10 @@ export class GPUBufferShim extends GpuObject {
     this.size = size;
     this.usage = Number(descriptor.usage);
     this.data = new Uint8Array(size);
-    if (descriptor.mappedAtCreation) throw new WebGpuUnsupportedError('createBuffer({ mappedAtCreation }); write the data with queue.writeBuffer');
+    if (descriptor.mappedAtCreation) {
+      if (size % 4 !== 0) throw new RangeError('OperationError: createBuffer: a buffer mapped at creation has a size that is a multiple of 4');
+      this.mapState = 'mapped';
+    }
   }
   /** The id of the bytes now in the buffer, which `into` then holds (base64). */
   snapshot(into: Map<string, string>): string {
@@ -294,10 +300,23 @@ export class GPUBufferShim extends GpuObject {
   mapAsync(): never {
     throw new WebGpuUnsupportedError('buffer.mapAsync; reading a buffer back');
   }
-  getMappedRange(): never {
-    throw new WebGpuUnsupportedError('buffer.getMappedRange');
+  /** The whole buffer, to write: only a buffer made with `mappedAtCreation` is mapped. */
+  getMappedRange(offset = 0, size?: number): ArrayBuffer {
+    if (this.mapState !== 'mapped') throw new DOMException('OperationError: getMappedRange: the buffer is not mapped', 'OperationError');
+    if (offset !== 0 || (size !== undefined && size !== this.size)) throw new WebGpuUnsupportedError('buffer.getMappedRange of part of the buffer; map the whole of it');
+    this.mapping ??= new ArrayBuffer(this.size);
+    return this.mapping;
   }
-  unmap(): void {}
+  /** What was written into the mapped range becomes the buffer's bytes, and the range is detached, as in a browser. */
+  unmap(): void {
+    if (this.mapState !== 'mapped') return;
+    this.mapState = 'unmapped';
+    if (this.mapping !== null) {
+      this.write(0, new Uint8Array(this.mapping));
+      structuredClone(this.mapping, { transfer: [this.mapping] });
+      this.mapping = null;
+    }
+  }
   destroy(): void {
     if (!this.destroyed) {
       this.destroyed = true;

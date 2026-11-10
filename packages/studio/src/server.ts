@@ -17,6 +17,7 @@ import { IMAGE_DIR, MAX_IMAGES, isStoredName, missingImages } from './agent-imag
 import { ChatLog } from './chat-log.js';
 import { isInside } from './agent-fs.js';
 import { availableAgents } from './agent-presets.js';
+import { Matting, loadMattingPackage } from './matting.js';
 import { openBrowser } from './open-browser.js';
 import { isPlanFile, readPlan, restorePanels, writePlan } from './panels/plan.js';
 import { planFileOf } from './panels/placement.js';
@@ -38,6 +39,7 @@ import {
   type FrameHeader,
   type FrameRequest,
   type LiveProps,
+  type MattingRequest,
   type PluginSummary,
   type QueuedMessage,
   type ProjectInfo,
@@ -284,6 +286,9 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     return a.length === b.length && timingSafeEqual(a, b);
   };
   const tokenOk = (given: string | null | undefined): boolean => matches(given, token);
+
+  // "Remove background": downloads and separations run as jobs here, and their progress goes to every window.
+  const matting = new Matting({ projectDir: dirname(entry), load: options.matting ?? loadMattingPackage, onJob: (job) => broadcast({ type: 'matting', job }) });
 
   // ---- panels ----
 
@@ -789,6 +794,22 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
       if (!found) throw new StudioFailure('NOT_FOUND', `no audio clip "${clip}" in "${comp}"`);
       return json(res, 200, { peaks: resamplePeaks(found.peaks, buckets), startFrame: found.startFrame, endFrame: found.endFrame });
     }
+    if (path === '/api/matting' || path.startsWith('/api/matting/')) {
+      // It reads files and downloads models: the window's token only (not the agent's).
+      if (!tokenOk(req.headers['x-studio-token'] as string | undefined)) {
+        throw new StudioFailure('FORBIDDEN', 'removing a background needs the studio token from the address the studio opened');
+      }
+      if (method === 'GET' && path === '/api/matting') return json(res, 200, await matting.status());
+      if (method === 'POST' && path === '/api/matting/jobs') return json(res, 201, await matting.separate((await readBody(req)) as MattingRequest));
+      const job = /^\/api\/matting\/jobs\/([^/]+)$/.exec(path);
+      if (method === 'DELETE' && job) return json(res, 200, matting.cancel(decodeURIComponent(job[1]!)));
+      const model = /^\/api\/matting\/models\/([^/]+)$/.exec(path);
+      if (model && method === 'POST') return json(res, 201, await matting.downloadModel(decodeURIComponent(model[1]!)));
+      if (model && method === 'DELETE') {
+        await matting.removeModel(decodeURIComponent(model[1]!));
+        return json(res, 200, { removed: decodeURIComponent(model[1]!) });
+      }
+    }
     if (method === 'GET' && path === '/api/renders') return json(res, 200, queue.list());
     if (method === 'POST' && path === '/api/renders') return json(res, 201, await createRender(await readBody(req)));
     const cancel = /^\/api\/renders\/([^/]+)$/.exec(path);
@@ -1088,6 +1109,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
     close() {
       closing ??= (async () => {
         for (const state of throttle.values()) if (state.timer) clearTimeout(state.timer);
+        matting.close();
         await queue.close();
         await bridge.close();
         for (const ws of sockets) ws.terminate();

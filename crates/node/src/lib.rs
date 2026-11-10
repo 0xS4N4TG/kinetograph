@@ -4,7 +4,7 @@
 //!
 //! The functions that need no GPU (`validateScene`, `inspect`, `layoutText`,
 //! `parseRange`, `probeMedia`, `probeStreams`, `scanStreams`, `decodeAudio`, `modelUnsupported`, `riveFrame`, `riveInfo`, `track`,
-//! `version`) never open a device; `new Renderer()` does, once, and every scene given to it afterwards reuses that
+//! `mattingSupport`, `matteVideo`, `version`) never open a device; `new Renderer()` does, once, and every scene given to it afterwards reuses that
 //! setup.
 //!
 //! Every call is synchronous and runs on the JS thread. A thrown error is an
@@ -15,6 +15,7 @@ mod canvas;
 mod dom;
 mod error;
 mod layout;
+mod matte;
 mod media;
 mod preview;
 mod rive;

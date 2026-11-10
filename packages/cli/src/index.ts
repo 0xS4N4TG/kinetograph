@@ -4,6 +4,7 @@ import { parseCommandArgs, usage } from './args.js';
 import { allOptions, type Context } from './commands/types.js';
 import { commands, findCommand } from './commands/index.js';
 import { CliError, toErrorObject } from './errors.js';
+import { withConsoleOnStderr } from './json-console.js';
 import { beginNotices } from './update-notice.js';
 import { cliVersion } from './version.js';
 
@@ -50,6 +51,10 @@ function help(): string {
  * one JSON object with `--json`); progress and plain errors to `io.err`.
  */
 export async function run(argv: string[], io: Io = processIo): Promise<number> {
+  return argv.includes('--json') && argv[0] !== 'mcp' ? withConsoleOnStderr(io, () => runCommand(argv, io)) : runCommand(argv, io);
+}
+
+async function runCommand(argv: string[], io: Io): Promise<number> {
   const asJson = argv.includes('--json');
   // Update notices (update-notice.ts): to stderr, and in `notices` of a `--json` result. Not for `studio`, which serves
   // until it is stopped, or `mcp`, whose stderr no agent reads (the server puts them in its first tool result).

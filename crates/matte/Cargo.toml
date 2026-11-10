@@ -1,0 +1,33 @@
+[package]
+name = "kinetograph-matte"
+description = "Video matting: a person or any subject cut out of a video with MODNet or BEN2 through ONNX Runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+kinetograph-core = { path = "../core" }
+kinetograph-cli = { path = "../cli" }
+ffmpeg = { package = "ffmpeg-next", version = "9.0.0" }
+# ONNX Runtime is not linked: `load-dynamic` opens its library at run time (`infer.rs`), from the path `Options.runtime_path`
+# gives or `ORT_DYLIB_PATH` names. The addon downloads the library on the first use of matting
+# (packages/video-matting/src/runtime.ts), so a build links nothing from it and loads on the glibc and libstdc++ of
+# older systems. api-17, not the default api-31: from api-22 on every session picks its execution provider by ONNX
+# Runtime's automatic policy (it chose CoreML on a Mac, which fails on BEN2's fp16 model), and this crate wants only the
+# ones it names.
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "api-17", "load-dynamic"] }
+
+# Microsoft's macOS library is built with CoreML, which `coreml` makes `ort` expose. Its Windows and Linux libraries are
+# CPU only (DirectML is a separate package, not used).
+[target.'cfg(target_os = "macos")'.dependencies]
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["coreml"] }
+
+[features]
+# Links the LGPL-only static ffmpeg, as `kinetograph-node` does (CI tests this crate against it).
+ffmpeg-static = ["ffmpeg/static"]
+# GPUs, one at a time, for a build run with an ONNX Runtime library that has them (`ORT_DYLIB_PATH`; the downloaded one
+# has neither): WebGPU (Vulkan, Metal, Direct3D 12) for any GPU, or CUDA for NVIDIA's. Without either, a Mac uses CoreML
+# and Windows and Linux the CPU.
+webgpu = ["ort/webgpu"]
+cuda = ["ort/cuda"]

@@ -116,6 +116,10 @@ The **Plugins** list at the bottom of the tab has two parts. **In this project**
 
 The export uses the props you edited. It joins the Renders queue, and the top bar shows its progress.
 
+## Remove background
+
+Select a video layer, then pick **Remove background** in the Scene tab or in Cmd+K. The dialog sets the file in `public/` (default `<name>-no-background.webm`), the model, whether to keep the audio, and the video quality. Its **Models** tab downloads and removes the models. When the file is written, Studio asks the agent to change that video's `src` to `staticFile('<name>-no-background.webm')`. Studio does not edit your code itself, so the agent makes that one-line edit after you allow it.
+
 ## The agent
 
 The chat on the left talks to your coding agent. Each message carries the selection: the composition, and the frame or span. See [Studio's agent chat](/docs/agents/studio-agent/). When the agent needs a decision from you, it opens a box in the window: see [Panels](/docs/studio/panels/).

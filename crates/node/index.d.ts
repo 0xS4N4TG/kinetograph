@@ -9,6 +9,16 @@
  */
 export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-wasip1'
 
+/**
+ * Stops a `matteVideo` it was passed to: the call rejects with a `Cancelled` error between two frames and leaves no
+ * file. (`signal.addEventListener('abort', () => token.cancel())` is how an `AbortSignal` is wired to it.)
+ */
+export declare class MatteToken {
+  constructor()
+  cancel(): void
+  get cancelled(): boolean
+}
+
 /** One GPU setup, reused for every scene and frame given to it. */
 export declare class Renderer {
   /** Opens the GPU and builds the pipelines, once. */
@@ -195,6 +205,75 @@ export declare function layoutDom(requestJson: string): string
  */
 export declare function layoutText(request: TextLayoutRequest): TextLayout
 
+export interface MatteOptions {
+  /** Any video FFmpeg can decode. */
+  input: string
+  /** The `.onnx` file of `model`. */
+  modelPath: string
+  /**
+   * ONNX Runtime's library (`libonnxruntime.dylib`, `.so` or `onnxruntime.dll`); `ORT_DYLIB_PATH` names it when
+   * this is absent. The addon does not link ONNX Runtime: `@kinetographdev/video-matting` downloads it on first use.
+   */
+  runtimePath?: string
+  /** `modnet` or `ben2-base`. */
+  model: string
+  /** Output: the subject with alpha. `.webm` is VP9 `yuva420p`, `.mov` is ProRes 4444. */
+  foreground: string
+  /** Output: the opaque base layer, the clip itself at the same size and rate (`.webm`, `.mp4` or `.mov`). */
+  base?: string
+  /** Without `audio`: copy the input's audio into the foreground and base files (true), or drop it (false). */
+  keepAudio?: boolean
+  /**
+   * Which files get the input's audio: `both`, `base`, `foreground` or `none`. Takes the place of `keepAudio`;
+   * `base` when neither is given.
+   */
+  audio?: string
+  /** `very-low`, `low`, `medium`, `high` (default) or `very-high`. */
+  quality?: string
+  /** Bits per second for the video of both files, in place of `quality`'s encoder setting (not for ProRes). */
+  videoBitrate?: number
+  /** Bits per second for the audio that is encoded (Opus, AAC). */
+  audioBitrate?: number
+  /** The longest time between keyframes in both files, in seconds (1). */
+  keyframeIntervalInSeconds?: number
+  /** Pieces of the clip matted at once (2). */
+  jobs?: number
+}
+
+export interface MatteResult {
+  foreground: string
+  base?: string
+  frames: number
+  /** What the model ran on: see `MattingSupport.backend`. */
+  backend: string
+}
+
+/**
+ * Mattes every frame of `input` and writes the subject with alpha to `foreground` (and the clip as an opaque `base`).
+ * `onProgress(doneFrames, totalFrames)` is called on the event loop as frames finish. Every failure rejects the
+ * promise: a bad option or a missing input or model file (`InvalidArg`), a file that cannot be read or written
+ * (`GenericFailure`), or `token.cancel()` (`Cancelled`).
+ */
+export declare function matteVideo(options: MatteOptions, onProgress?: ((doneFrames: number, totalFrames: number) => void) | undefined | null, token?: MatteToken | undefined | null): Promise<MatteResult>
+
+export declare function mattingSupport(): MattingSupport
+
+/** Whether `matteVideo` can run here, and on what. */
+export interface MattingSupport {
+  /**
+   * Matting can run here. ONNX Runtime is not linked: it is downloaded on first use, so this does not open it unless
+   * `ORT_DYLIB_PATH` names a library.
+   */
+  available: boolean
+  /**
+   * What `ben2-base` runs on: `coreml` (a Mac), `cuda` or `webgpu` (builds with them), else `cpu`. `modnet` always
+   * runs on the CPU, at video speed (CoreML did not help it).
+   */
+  backend: string
+  /** Why `available` is false, or why the backend is `cpu`. */
+  reason?: string
+}
+
 /** What `probeMedia` reads from a video's or GIF's header (packages/cli/skills/kinetograph/references/AUTHORING.md §11.2). */
 export interface MediaInfo {
   /** `video` or `gif`. */
@@ -332,12 +411,6 @@ export interface RenderSummary {
  */
 export declare function resolveExport(output: string, options?: ExportOptions | undefined | null): ExportPlan
 
-/**
- * Tells the encoder where the separate GPL `ffmpeg` program is (the platform package's `bin/ffmpeg`), which has the
- * encoders the linked LGPL ffmpeg lacks (libx264, libx265). `KINETOGRAPH_FFMPEG` takes precedence. `null` forgets it.
- */
-export declare function setFfmpegPath(path?: string | undefined | null): void
-
 export interface RgbaFrame {
   width: number
   height: number
@@ -369,12 +442,6 @@ export declare function rgbaToYuv(rgba: Buffer, width: number, height: number, p
 export declare function riveFrame(requestJson: string): string
 
 /**
- * The JSON path of each key in a scene file that the format does not read
- * (`layers[0].opacty`): serde skips such a key, so it is said here instead.
- */
-export declare function sceneUnknownKeys(sceneJson: string): Array<string>
-
-/**
  * `{ src, baseDir, assets }` in; the file's artboards (with their animations, state machines and inputs) and assets
  * (in the file, given, or missing) out, as JSON.
  */
@@ -390,6 +457,18 @@ export interface SceneInfo {
   durationInFrames: number
   margin: number
 }
+
+/**
+ * The JSON path of each key in a scene file that the format does not read
+ * (`layers[0].opacty`): serde skips such a key, so it is said here instead.
+ */
+export declare function sceneUnknownKeys(sceneJson: string): Array<string>
+
+/**
+ * Tells the encoder where the separate GPL `ffmpeg` program is (the platform package's `bin/ffmpeg`), which has the
+ * encoders the linked LGPL ffmpeg lacks (libx264, libx265). `KINETOGRAPH_FFMPEG` takes precedence. `null` forgets it.
+ */
+export declare function setFfmpegPath(path?: string | undefined | null): void
 
 /**
  * `renderDomIsland` without waiting: queues the render on the calling

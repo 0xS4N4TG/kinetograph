@@ -116,8 +116,11 @@ export function parseGoogleFontsUrl(url: string): GoogleFontRequest[] {
 /** `@import url(https://fonts.googleapis.com/…)` rules removed from the CSS, with the fonts they asked for. */
 export function extractGoogleFontImports(css: string): { css: string; fonts: GoogleFontRequest[] } {
   const fonts: GoogleFontRequest[] = [];
-  const rest = css.replace(/@import\s+(?:url\(\s*)?(['"]?)(https?:\/\/fonts\.googleapis\.com\/[^'")\s;]+)\1\s*\)?[^;]*;/gi, (_m, _q: string, url: string) => {
-    fonts.push(...parseGoogleFontsUrl(url.replace(/&amp;/g, '&')));
+  // A quoted URL may hold `;` (`wght@400;700`), so it ends at its closing quote; an unquoted one ends at `)`, a space or `;`.
+  const host = String.raw`https?:\/\/fonts\.googleapis\.com\/`;
+  const pattern = new RegExp(String.raw`@import\s+(?:url\(\s*)?(?:"(${host}[^"]+)"|'(${host}[^']+)'|(${host}[^)\s;'"]+))\s*\)?[^;]*;`, 'gi');
+  const rest = css.replace(pattern, (_m, double?: string, single?: string, bare?: string) => {
+    fonts.push(...parseGoogleFontsUrl((double ?? single ?? bare ?? '').replace(/&amp;/g, '&')));
     return '';
   });
   return { css: rest, fonts };

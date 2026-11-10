@@ -182,17 +182,25 @@ fn family_stack_and_names() {
         width(fonts.clone(), "font-family: \"ARCHIVO\"; font-weight: 800"),
         archivo
     );
-    // A generic family, or a stack of nothing registered, falls back to a
-    // registered font (the first key), never to a system font.
-    // Here that is "Archivo:800", first in key order.
-    assert_eq!(width(fonts.clone(), "font-family: sans-serif"), archivo);
+    // A generic family, or a stack of nothing registered, is a bundled font
+    // (Inter for the sans ones, EB Garamond for the serif ones), never a system
+    // font and not a registered one.
+    let inter = reference(&bundled("Inter-Variable-latin.woff2"));
+    let garamond = reference(&bundled("EBGaramond-Regular-latin.woff2"));
+    assert_ne!(inter, archivo);
+    assert_eq!(width(fonts.clone(), "font-family: sans-serif"), inter);
+    assert_eq!(width(fonts.clone(), "font-family: system-ui"), inter);
     assert_eq!(
         width(
             fonts.clone(),
             "font-family: Helvetica Neue, Arial, sans-serif"
         ),
-        archivo
+        inter
     );
+    assert_eq!(width(fonts.clone(), "font-family: serif"), garamond);
+    assert_eq!(width(fonts.clone(), "font-family: Georgia, serif"), garamond);
+    // A registered font of the stack still comes first.
+    assert_eq!(width(fonts.clone(), "font-family: 'DM Sans', serif"), dm);
     // No fixed-pitch font registered: `monospace` is the bundled JetBrains
     // Mono (the same advance as the registered one at any weight), not a
     // proportional face.
@@ -210,27 +218,30 @@ fn family_stack_and_names() {
         mono("font-family: Missing, monospace; font-weight: 800"),
         reference
     );
-    // Other generic families are unchanged.
-    assert_eq!(width(fonts, "font-family: cursive"), archivo);
+    // `cursive` has no face of its own and is sans.
+    assert_eq!(width(fonts, "font-family: cursive"), inter);
 }
 
 #[test]
 fn monospace_falls_back_to_a_fixed_pitch_font() {
     let dm = reference(&dm_sans());
     let mono = reference(&jetbrains_mono());
-    // JetBrains Mono sorts before... after "DM Sans" ("J" > "D"); generic
-    // families still prefer the proportional font, and `monospace` the fixed one.
+    // The sans and serif families are the bundled ones, and `monospace` the
+    // registered fixed-pitch font.
+    let inter = reference(&bundled("Inter-Variable-latin.woff2"));
+    let garamond = reference(&bundled("EBGaramond-Regular-latin.woff2"));
     let fonts = json!({ "DM Sans": dm_sans(), "JetBrains Mono": jetbrains_mono() });
-    assert_eq!(width(fonts.clone(), "font-family: sans-serif"), dm);
-    assert_eq!(width(fonts.clone(), "font-family: Nope, serif"), dm);
+    assert_eq!(width(fonts.clone(), "font-family: sans-serif"), inter);
+    assert_eq!(width(fonts.clone(), "font-family: Nope, serif"), garamond);
     assert_eq!(width(fonts.clone(), "font-family: monospace"), mono);
     assert_eq!(
         width(fonts.clone(), "font-family: ui-monospace, monospace"),
         mono
     );
-    // With only a mono font registered everything is mono.
+    // With only a mono font registered `sans-serif` is still Inter.
     let only = json!({ "JetBrains Mono": jetbrains_mono() });
-    assert_eq!(width(only, "font-family: sans-serif"), mono);
+    assert_eq!(width(only, "font-family: sans-serif"), inter);
+    assert_ne!(dm, inter);
     // <code> and <pre> use `monospace` in the UA stylesheet.
     let root = el(
         "div",
@@ -312,7 +323,7 @@ fn html_text_with_no_loaded_font_is_drawn_in_the_fallback_and_reported() {
     let root = el(
         "div",
         "$0",
-        "font-size: 40px; font-family: 'Helvetica Neue', Arial",
+        "font-size: 40px; font-family: 'Poppins', Roboto",
         vec![text("Hello")],
     );
     let out = painted(root.clone(), fallback_only());
@@ -329,7 +340,7 @@ fn html_text_with_no_loaded_font_is_drawn_in_the_fallback_and_reported() {
             .value
             .as_deref()
             .unwrap()
-            .contains("Helvetica Neue")
+            .contains("Poppins")
     );
 
     // A project that registered a font is not told anything.
@@ -342,7 +353,7 @@ fn svg_text_with_no_loaded_font_is_drawn_in_the_fallback_and_reported() {
     let label = el_attrs(
         "text",
         "$0.0.0",
-        json!({ "x": "10", "y": "60", "font-size": "40", "font-family": "Helvetica Neue" }),
+        json!({ "x": "10", "y": "60", "font-size": "40", "font-family": "Poppins" }),
         "",
         vec![text("Hello")],
     );
@@ -358,7 +369,7 @@ fn svg_text_with_no_loaded_font_is_drawn_in_the_fallback_and_reported() {
     let notes = fallback_notes(&out);
     assert_eq!(notes.len(), 1, "{:?}", out.unsupported);
     assert_eq!(notes[0].element, "text");
-    assert_eq!(notes[0].value.as_deref(), Some("Helvetica Neue"));
+    assert_eq!(notes[0].value.as_deref(), Some("Poppins"));
     assert!(
         out.layers
             .iter()
@@ -396,7 +407,7 @@ fn text_whose_families_are_all_unloaded_is_drawn_and_reported_when_another_font_
     let unloaded = kinetograph_dom::fonts::UNLOADED_REASON.to_string();
 
     // Drawn in the registered font (what fontique picks), and reported.
-    let arial = one("font-family: Arial");
+    let arial = one("font-family: Poppins");
     let json = arial
         .layers
         .iter()
@@ -405,13 +416,22 @@ fn text_whose_families_are_all_unloaded_is_drawn_and_reported_when_another_font_
     assert!(json.contains("glyphs") && json.contains("DMSans"), "{json}");
     assert_eq!(
         family_notes(&arial),
-        vec![("Arial".to_string(), unloaded.clone())]
+        vec![("Poppins".to_string(), unloaded.clone())]
     );
 
-    // No font-family at all: the default serif names nothing loaded.
+    // No font-family at all: set in the project's first font, as before, not in the bundled serif.
     let none = one("");
-    assert_eq!(family_notes(&none).len(), 1, "{:?}", none.unsupported);
-    assert_eq!(family_notes(&none)[0].1, unloaded);
+    assert!(family_notes(&none).is_empty(), "{:?}", none.unsupported);
+    let drawn = none.layers.iter().map(|l| l.to_string()).collect::<String>();
+    assert!(drawn.contains("DMSans") && !drawn.contains("builtin:"), "{drawn}");
+    // A generic or system name first is not reported either, and is set in a bundled font.
+    for family in ["system-ui", "Georgia, serif", "ui-monospace, SFMono-Regular, Menlo, monospace"] {
+        let out = one(&format!("font-family: {family}"));
+        assert!(family_notes(&out).is_empty(), "{family}: {:?}", out.unsupported);
+        let drawn = out.layers.iter().map(|l| l.to_string()).collect::<String>();
+        assert!(drawn.contains("builtin:"), "{family}: {drawn}");
+        assert!(!drawn.contains("DMSans"), "{family}: {drawn}");
+    }
 
     // Quoted names are the same family.
     assert!(family_notes(&one("font-family: \"DM Sans\"")).is_empty());
@@ -441,11 +461,11 @@ fn svg_text_whose_families_are_all_unloaded_is_reported_when_another_font_is_loa
         );
         painted(el("div", "$0", "", vec![svg]), fonts.clone())
     };
-    let helvetica = svg("Helvetica");
+    let helvetica = svg("Poppins");
     assert_eq!(
         family_notes(&helvetica),
         vec![(
-            "Helvetica".to_string(),
+            "Poppins".to_string(),
             kinetograph_dom::fonts::UNLOADED_REASON.to_string()
         )]
     );
