@@ -25,8 +25,6 @@ pub struct TextEngine {
     base_dir: PathBuf,
     /// Fonts of glyph runs (`GlyphRun::src`), read when first used.
     run_fonts: HashMap<(String, u32), Option<FontData>>,
-    /// The bundled fonts of the generic families are in `font_cx` (registered when a text first names one).
-    generics_registered: bool,
 }
 
 /// Shaped and positioned text. Coordinates are in pixels, relative to the
@@ -199,6 +197,20 @@ fn weight_range(key: &str) -> (f32, Option<f32>) {
     }
 }
 
+/// The bundled fonts of the generic families, in `collection`: Inter for the sans ones, EB Garamond for the serif ones and
+/// JetBrains Mono for the monospace ones. Done when the engine is made, so what a text is set in never depends on which
+/// texts were laid out before it (a render of a part of a scene must equal the render of the whole).
+fn register_generics(collection: &mut Collection) {
+    use crate::generic_fonts::{Kind, generics, register};
+    let (sans, serif) = register(collection);
+    let mono = crate::fallback_fonts::register_monospace(collection);
+    for (kind, ids) in [(Kind::Sans, sans), (Kind::Serif, serif), (Kind::Mono, mono.into_iter().collect())] {
+        for g in generics(kind) {
+            collection.append_generic_families(*g, ids.iter().copied());
+        }
+    }
+}
+
 /// A font key whose family list names no font of the project but a generic or system family (`"Fira Code", monospace`,
 /// `Menlo:700`): the kind of font it is set in, and the weight and italic its `:700i` suffix asks for. A text layout
 /// sets such a key in the bundled font of that kind (`TextEngine::layout`), and a measurement can ask for it, too.
@@ -257,12 +269,12 @@ impl TextEngine {
             }
         }
         crate::fallback_fonts::register(&mut font_cx.collection, &project);
+        register_generics(&mut font_cx.collection);
         Ok(TextEngine {
             font_cx,
             layout_cx: LayoutContext::new(),
             base_dir: base_dir.to_path_buf(),
             run_fonts: HashMap::new(),
-            generics_registered: false,
         })
     }
 
@@ -340,27 +352,12 @@ impl TextEngine {
         laid
     }
 
-    /// The generic family a font key stands for (`generic_key`), when the key is not a family that is loaded. Registers
-    /// the bundled fonts the first time.
+    /// The generic family a font key stands for (`generic_key`), when the key is not a family that is loaded.
     fn generic_of(&mut self, key: &str) -> Option<(parley::fontique::GenericFamily, Option<f32>, bool)> {
         if self.font_cx.collection.family_id(key).is_some() {
             return None;
         }
         let (kind, weight, italic) = generic_key(key)?;
-        if !self.generics_registered {
-            self.generics_registered = true;
-            let (sans, serif) = crate::generic_fonts::register(&mut self.font_cx.collection);
-            let mono = crate::fallback_fonts::register_monospace(&mut self.font_cx.collection);
-            for (kind, ids) in [
-                (crate::generic_fonts::Kind::Sans, sans),
-                (crate::generic_fonts::Kind::Serif, serif),
-                (crate::generic_fonts::Kind::Mono, mono.into_iter().collect()),
-            ] {
-                for g in crate::generic_fonts::generics(kind) {
-                    self.font_cx.collection.append_generic_families(*g, ids.iter().copied());
-                }
-            }
-        }
         Some((crate::generic_fonts::generics(kind)[0], weight, italic))
     }
 
@@ -529,6 +526,21 @@ mod tests {
             .iter()
             .find(|r| r.glyphs.iter().any(|g| g.char_index == char_index))?;
         crate::fallback_fonts::name_of_blob(run.font.data.id())
+    }
+
+    /// A text is set the same whatever was laid out before it: the generic families are in the engine from the start, not
+    /// from the first text that names one (a render of a part of a scene must equal the render of the whole).
+    #[test]
+    fn what_a_text_is_set_in_does_not_depend_on_the_texts_laid_out_before_it() {
+        let glyphs = |t: &LaidOutText| t.runs.iter().flat_map(|r| r.glyphs.iter().map(|g| (g.id, g.advance.to_bits()))).collect::<Vec<_>>();
+        let mut first = engine();
+        let a1 = first.layout("Hello wide world", "Unknown Family", 30.0, None, None, TextAlign::Left);
+        let b1 = first.layout("Hello wide world", "monospace", 30.0, None, None, TextAlign::Left);
+        let mut second = engine();
+        let b2 = second.layout("Hello wide world", "monospace", 30.0, None, None, TextAlign::Left);
+        let a2 = second.layout("Hello wide world", "Unknown Family", 30.0, None, None, TextAlign::Left);
+        assert_eq!(glyphs(&a1), glyphs(&a2));
+        assert_eq!(glyphs(&b1), glyphs(&b2));
     }
 
     /// CSS Fonts 4, generic families: a family list that names nothing loaded but ends in `monospace` is set in the
