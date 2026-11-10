@@ -1,6 +1,9 @@
 // mapDomIsland on the addon's renderDomIsland (packages/cli/skills/kinetograph/references/ENGINE.md §2), with a stand-in addon: what is sent, and how the
 // answer is turned into layers (native placeholders filled and placed, top-level layers made absolute).
 
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LayerJson } from '@kinetographdev/scene';
 import {
@@ -15,6 +18,8 @@ import {
   setCssFontFaceHandler,
   setDomAddon,
   setDomEnvironment,
+  resolveProjectFile,
+  setRemoteStylesheetResolver,
 } from '../src/dom/index.js';
 import type { DomNode } from '../src/types.js';
 
@@ -264,6 +269,160 @@ describe('fonts of the page\'s own CSS', () => {
     } finally {
       setCssFontFaceHandler(null);
     }
+  });
+});
+
+describe('a remote @import in a stylesheet', () => {
+  afterEach(() => {
+    setCssFontFaceHandler(null);
+    setRemoteStylesheetResolver(null);
+  });
+
+  /** Serves `files` (URL to text) as the locked cache; returns the URLs asked for. */
+  const sheets = (files: Record<string, string>) => {
+    const dir = mkdtempSync(join(tmpdir(), 'kg-import-'));
+    const paths: Record<string, string> = {};
+    for (const [url, text] of Object.entries(files)) {
+      paths[url] = join(dir, `${Object.keys(paths).length}.css`);
+      writeFileSync(paths[url]!, text);
+    }
+    const asked: string[] = [];
+    setRemoteStylesheetResolver((url) => {
+      asked.push(url);
+      return paths[url] ?? null;
+    });
+    return asked;
+  };
+  const faces: { family: string; url: string; weight: string; remote?: boolean }[] = [];
+  beforeEach(() => {
+    faces.length = 0;
+    setCssFontFaceHandler((face) => faces.push({ family: face.family, url: face.url, weight: face.weight, remote: face.remote }));
+  });
+
+  it('registers the fonts of the cached stylesheet as remote faces, and puts nothing of that sheet in the page', () => {
+    const wanted = 'https://fonts.googleapis.com/css2?family=Inter:wght@500&display=swap';
+    sheets({
+      [wanted]: '/* latin */\n@font-face { font-family: "Inter"; font-style: normal; font-weight: 500; src: url(https://fonts.gstatic.com/s/inter/v20/inter-500.ttf) format("truetype"); }\n.x { background: url(https://tracker.test/p.png) }',
+    });
+    registerStylesheet(`@import url("${wanted}");\n@import url("https://elsewhere.test/other.css");\n@import "local.css";\n.a { color: red }`);
+    expect(faces).toEqual([{ family: 'Inter', url: 'https://fonts.gstatic.com/s/inter/v20/inter-500.ttf', weight: '500', remote: true }]);
+    mapDomIsland(node('div'), context());
+    const [sheet] = sent[0].stylesheets;
+    // The imports of another origin are gone, a relative one stays, and nothing of the remote sheet is inlined.
+    expect(sheet).not.toContain('googleapis');
+    expect(sheet).not.toContain('elsewhere');
+    expect(sheet).not.toContain('tracker.test');
+    expect(sheet).not.toContain('gstatic');
+    expect(sheet).toContain('@import "local.css"');
+    expect(sheet).toContain('.a { color: red }');
+  });
+
+  it('reads each stylesheet once, so a cycle or a repeat ends', () => {
+    const a = 'https://a.test/a.css';
+    const b = 'https://a.test/b.css';
+    const asked = sheets({
+      [a]: `@import url("${b}");\n@font-face { font-family: A; src: url(a.woff2); }`,
+      [b]: `@import url("${a}");\n@import url("${b}");\n@font-face { font-family: B; src: url(b.woff2); }`,
+    });
+    registerStylesheet(`@import url("${a}");\n@import url("${a}");`);
+    expect(asked).toEqual([a, b]);
+    expect(faces.map((f) => f.family)).toEqual(['A', 'B']);
+  });
+
+  it('stops after the most imports one sheet may pull in', () => {
+    const urls = Array.from({ length: 40 }, (_, i) => `https://many.test/${i}.css`);
+    const asked = sheets(Object.fromEntries(urls.map((u, i) => [u, `@font-face { font-family: F${i}; src: url(f${i}.woff2); }`])));
+    registerStylesheet(urls.map((u) => `@import url("${u}");`).join('\n'));
+    expect(asked).toHaveLength(16);
+    expect(faces).toHaveLength(16);
+  });
+
+  it('resolves url() and @import in a remote sheet against that sheet, and drops what is not https', () => {
+    const sheet = 'https://fonts.example/css/v2/app.css';
+    sheets({
+      [sheet]: [
+        '@import "theme.css";',
+        '@font-face { font-family: A; src: url(../files/a.woff2); }',
+        '@font-face { font-family: B; src: url(http://insecure.test/b.woff2); }',
+        '@font-face { font-family: C; src: url(//cdn.example/c.woff2); }',
+        '@font-face { font-family: E; src: url(file:///etc/passwd), url(/etc/passwd); }',
+      ].join('\n'),
+      'https://fonts.example/css/v2/theme.css': '@font-face { font-family: D; src: url(d.woff2); }',
+    });
+    registerStylesheet(`@import url("${sheet}");`);
+    expect(faces.map((f) => f.url).sort()).toEqual([
+      'https://cdn.example/c.woff2',
+      'https://fonts.example/css/files/a.woff2',
+      'https://fonts.example/css/v2/d.woff2',
+      'https://fonts.example/etc/passwd',
+    ]);
+    expect(faces.every((f) => f.remote === true)).toBe(true);
+  });
+
+  it('is not confused by } or /* inside a url(), or by a url that does not parse', () => {
+    const sheet = 'https://fonts.example/css/odd.css';
+    sheets({
+      [sheet]: [
+        '@font-face { font-family: A; src: url(https://h.test/a}b/*c.woff2); }',
+        '@font-face { font-family: B; src: url("https://h.test/b.woff2"); }',
+        `@font-face { font-family: C; src: url('a") b.woff2'); }`,
+        '@font-face { font-family: D; src: url("x" y); }',
+        '@font-face { font-family: E; /* url(https://h.test/no.woff2) */ src: url(https://h.test/e.woff2) /* } */; }',
+      ].join('\n'),
+    });
+    registerStylesheet(`@import url("${sheet}");`);
+    const byFamily = Object.fromEntries(faces.map((f) => [f.family, f.url]));
+    expect(byFamily).toEqual({
+      A: 'https://h.test/a%7Db/*c.woff2',
+      B: 'https://h.test/b.woff2',
+      C: 'https://fonts.example/css/a%22)%20b.woff2',
+      E: 'https://h.test/e.woff2',
+    });
+  });
+
+  it('survives a sheet nested 10,000 deep, closed or not, and still finds a face nested a few deep', () => {
+    const open = '@media screen {'.repeat(10000);
+    const sheet = 'https://fonts.example/css/deep.css';
+    sheets({
+      [sheet]: `@font-face { font-family: Top; src: url(top.woff2); }\n${open}@font-face { font-family: Deep; src: url(deep.woff2); }${'}'.repeat(10000)}\n${open}@font-face { font-family: Open; src: url(open.woff2); }`,
+    });
+    registerStylesheet(`@import url("${sheet}");`);
+    expect(faces.map((f) => f.family)).toEqual(['Top']);
+    faces.length = 0;
+    const shallow = 'https://fonts.example/css/shallow.css';
+    sheets({ [shallow]: `@media screen { @supports (x: y) { @font-face { font-family: Few; src: url(few.woff2); } } }` });
+    registerStylesheet(`@import url("${shallow}");`);
+    expect(faces.map((f) => f.family)).toEqual(['Few']);
+  });
+
+  it('does not import over http', () => {
+    const asked = sheets({ 'http://plain.test/a.css': '@font-face { font-family: A; src: url(a.woff2); }' });
+    registerStylesheet('@import url("http://plain.test/a.css");');
+    expect(asked).toEqual([]);
+    expect(faces).toEqual([]);
+  });
+
+  it('resolveProjectFile refuses a path that leaves the project', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kg-proj-'));
+    writeFileSync(join(dir, 'package.json'), '{}');
+    mkdirSync(join(dir, 'src'));
+    mkdirSync(join(dir, 'public'));
+    writeFileSync(join(dir, 'src', 'a.png'), 'x');
+    writeFileSync(join(dir, 'public', 'b.png'), 'x');
+    setDomEnvironment({ baseDir: join(dir, 'src'), publicDir: join(dir, 'public') });
+    expect(resolveProjectFile('a.png')).toBe(join(dir, 'src', 'a.png'));
+    expect(resolveProjectFile('/b.png')).toBe(join(dir, 'public', 'b.png'));
+    expect(resolveProjectFile(join(dir, 'src', 'a.png'))).toBe(join(dir, 'src', 'a.png'));
+    // A sibling folder of the same repository (a shared kit beside the episode) is a project file; a folder named `..x` is not `..`.
+    mkdirSync(join(dir, '.git'));
+    mkdirSync(join(dir, 'kit'));
+    mkdirSync(join(dir, 'src', '..x'));
+    writeFileSync(join(dir, 'kit', 'k.png'), 'x');
+    expect(resolveProjectFile(join(dir, 'kit', 'k.png'))).toBe(join(dir, 'kit', 'k.png'));
+    expect(resolveProjectFile('../kit/k.png')).toBe(join(dir, 'kit', 'k.png'));
+    expect(resolveProjectFile('/etc/passwd')).toBeNull();
+    expect(resolveProjectFile('../../../../../../etc/passwd')).toBeNull();
+    expect(resolveProjectFile('/etc/../etc/hosts')).toBeNull();
   });
 });
 

@@ -4,6 +4,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setDomEnvironment } from '@kinetographdev/compat/dom';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   audioBufferToDataUrl,
@@ -116,6 +117,8 @@ describe('getImageDimensions', () => {
 
   it('reads a project file and a data URL', async () => {
     dir = mkdtempSync(join(tmpdir(), 'kg-image-'));
+    // A file outside the project is not a project file: the project is where the entry is.
+    setDomEnvironment({ baseDir: dir });
     const path = join(dir, 'a.png');
     writeFileSync(path, png);
     await expect(getImageDimensions(path)).resolves.toEqual({ width: 3, height: 2 });
@@ -127,6 +130,7 @@ describe('getImageDimensions', () => {
     await expect(getImageDimensions('https://example.com/a.png')).rejects.toThrow(/remote URLs are not available/);
     await expect(getImageDimensions('/no/such/dir/a.png')).rejects.toThrow();
     dir = mkdtempSync(join(tmpdir(), 'kg-image-'));
+    setDomEnvironment({ baseDir: dir });
     const path = join(dir, 'a.txt');
     writeFileSync(path, 'not an image');
     await expect(getImageDimensions(path)).rejects.toThrow(/Cannot read the size/);

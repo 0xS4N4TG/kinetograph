@@ -5,9 +5,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { relative } from 'node:path';
 import { lockPathOf } from '@kinetographdev/core/lock';
-import { prefetchRemoteAssets } from '@kinetographdev/core/remote-assets';
+import { prefetchRemoteAssets, prefetchStylesheetFonts } from '@kinetographdev/core/remote-assets';
 import { bundleProject } from '../bundle.js';
-import { scanRemoteUrls } from '../prefetch.js';
+import { isStylesheetUrl, scanRemoteUrls } from '../prefetch.js';
 import { CliError } from '../errors.js';
 import { isHyperframesEntry, resolveEntry } from '../hyperframes/entry.js';
 import { cdnCacheDir } from '../hyperframes/deps.js';
@@ -21,13 +21,16 @@ async function fetchRemotionAssets(entry: string, update: boolean): Promise<Comm
   const lockFile = lockPathOf(entry);
   const urls = scanRemoteUrls(readFileSync(file, 'utf8'));
   const result = await prefetchRemoteAssets(urls, { lockFile, update });
+  const fonts = await prefetchStylesheetFonts(urls.filter(isStylesheetUrl), { lockFile, update });
   const lines = [
     `lock: ${relative(process.cwd(), lockFile) || lockFile}`,
     ...result.fetched.map((u) => `  fetched   ${u}`),
     ...result.cached.map((u) => `  cached    ${u}`),
     ...result.failed.map((f) => `  failed    ${f.url}  (${f.error})`),
+    ...(fonts.fetched > 0 ? [`  ${fonts.fetched} font file(s) of the imported stylesheets are in the font cache`] : []),
+    ...fonts.failed.map((f) => `  failed    ${f.url}  (${f.error})`),
   ];
-  return { data: { lock: lockFile, ...result }, text: lines.join('\n'), exitCode: result.failed.length > 0 ? 1 : 0 };
+  return { data: { lock: lockFile, ...result, fonts }, text: lines.join('\n'), exitCode: result.failed.length + fonts.failed.length > 0 ? 1 : 0 };
 }
 
 export const fetchDeps: Command = {

@@ -28,6 +28,10 @@ export {
   setCssFontFaceHandler,
   setRemoteAssetResolver,
   resolveRemoteAsset,
+  setRemoteStylesheetResolver,
+  resolveCachedRemoteFile,
+  parseRemoteSheet,
+  MAX_REMOTE_IMPORTS,
   parseFontFaces,
   resolveProjectFile,
 } from '../environment.js';

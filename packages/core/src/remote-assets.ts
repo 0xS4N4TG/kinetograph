@@ -9,6 +9,7 @@
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { MAX_REMOTE_IMPORTS, parseRemoteSheet } from '@kinetographdev/compat/dom';
 import { fetchFileCached, fetchFileCachedSync, fileCachePath, FontDownloadError, type FontDownloadOptions } from './font-files.js';
 import { lockMismatch, readLock, recordInLock, sha256Hex, writeLock } from './lock.js';
 
@@ -21,6 +22,15 @@ export interface RemoteAssetOptions extends FontDownloadOptions {
   lockFile?: string | null;
   /** Never download (default: `$KINETOGRAPH_OFFLINE` is `1`). */
   offline?: boolean;
+}
+
+/** Options of `makeRemoteAssetResolver` only. */
+export interface RemoteResolverOptions extends RemoteAssetOptions {
+  /**
+   * Answer only with a file that is already cached and, when there is a lock, in it (what `fetch-deps` made): never download
+   * during a render, and say what to run when the file is not there.
+   */
+  cachedOnly?: boolean;
 }
 
 const lockFileOf = (options: RemoteAssetOptions): string | null => options.lockFile !== undefined ? options.lockFile : (process.env.KINETOGRAPH_LOCK_FILE ?? null);
@@ -38,6 +48,12 @@ function checkLock(url: string, file: string, options: RemoteAssetOptions): void
   const mismatch = lockMismatch(lock, url, bytes);
   if (mismatch !== null) throw new Error(mismatch);
   if (!lock.files[url]) recordInLock(lockFile, url, { sha256: sha256Hex(bytes), size: bytes.length });
+}
+
+function forgetInLock(lockFile: string, url: string): void {
+  const lock = readLock(lockFile);
+  delete lock.files[url];
+  writeLock(lockFile, lock);
 }
 
 /**
@@ -58,11 +74,7 @@ export async function prefetchRemoteAssets(
       if (options.update) {
         // Another copy of the bytes replaces the cached ones; the lock then takes their hash.
         const lockFile = lockFileOf(opts);
-        if (lockFile !== null) {
-          const lock = readLock(lockFile);
-          delete lock.files[url];
-          writeLock(lockFile, lock);
-        }
+        if (lockFile !== null) forgetInLock(lockFile, url);
         rmSync(file, { force: true });
       }
       await fetchFileCached(url, opts);
@@ -82,12 +94,90 @@ export async function prefetchRemoteAssets(
 }
 
 /**
+ * Whether the file cached for `url` is what the lock pinned, when the lock has it: a font a render reads is checked the way
+ * a picture is. Throws with the lock's message on a mismatch; nothing when there is no lock or no entry.
+ */
+export function verifyLocked(url: string, file: string, options: RemoteAssetOptions = {}): void {
+  const lockFile = lockFileOf(options);
+  if (lockFile === null) return;
+  const mismatch = lockMismatch(readLock(lockFile), url, readFileSync(file));
+  if (mismatch !== null) throw new Error(mismatch);
+}
+
+/**
+ * The cached file of a font a remote stylesheet names, for a render: only one that `prefetchStylesheetFonts` downloaded and
+ * locked (null when it is not cached, or the lock has no entry), checked against the lock; never a download.
+ */
+export function lockedFontFile(url: string, options: RemoteAssetOptions & { fontCacheDir?: string } = {}): string | null {
+  const file = fileCachePath(url, { ...options, cacheDir: options.fontCacheDir });
+  if (!existsSync(file)) return null;
+  const lockFile = lockFileOf(options);
+  if (lockFile !== null) {
+    if (!readLock(lockFile).files[url]) return null;
+    verifyLocked(url, file, options);
+  }
+  return file;
+}
+
+/**
+ * The font files the stylesheets at `stylesheetUrls` name (`prefetchRemoteAssets` has downloaded them: Google Fonts'
+ * `css2` answers with `@font-face` rules that point at `fonts.gstatic.com`), into the font cache, where a render
+ * reads them, and pinned in the lock like every other download. Stylesheets they import are downloaded and locked
+ * too (a few, once each); only https URLs are followed. Resolves to the files that could not be had, with why.
+ */
+export async function prefetchStylesheetFonts(
+  stylesheetUrls: Iterable<string>,
+  options: RemoteAssetOptions & { fontCacheDir?: string; update?: boolean } = {},
+): Promise<{ fetched: number; failed: { url: string; error: string }[] }> {
+  const assets = { cacheDir: defaultAssetCacheDir(), ...options };
+  const fonts = { ...options, cacheDir: options.fontCacheDir };
+  const out = { fetched: 0, failed: [] as { url: string; error: string }[] };
+  const queue = [...new Set(stylesheetUrls)];
+  const seen = new Set<string>(queue);
+  for (let i = 0; i < queue.length; i++) {
+    const sheet = queue[i]!;
+    const file = fileCachePath(sheet, assets);
+    if (!existsSync(file)) continue;
+    const parsed = parseRemoteSheet(readFileSync(file, 'utf8'), sheet);
+    for (const nested of parsed.imports) {
+      if (seen.has(nested) || seen.size >= MAX_REMOTE_IMPORTS) continue;
+      seen.add(nested);
+      queue.push(nested);
+      const got = await prefetchRemoteAssets([nested], options);
+      for (const f of got.failed) out.failed.push({ url: f.url, error: f.error });
+    }
+    for (const face of parsed.faces) {
+      try {
+        const path = await fetchFileCached(face.url, fonts);
+        const lockFile = lockFileOf(options);
+        if (lockFile !== null) {
+          if (options.update) forgetInLock(lockFile, face.url);
+          const bytes = readFileSync(path);
+          const lock = readLock(lockFile);
+          const mismatch = lockMismatch(lock, face.url, bytes);
+          if (mismatch !== null) {
+            out.failed.push({ url: face.url, error: mismatch });
+            continue;
+          }
+          if (!lock.files[face.url]) recordInLock(lockFile, face.url, { sha256: sha256Hex(bytes), size: bytes.length });
+        }
+        out.fetched++;
+      } catch (error) {
+        if (!(error instanceof FontDownloadError)) throw error;
+        out.failed.push({ url: face.url, error: error.message });
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * The resolver `setRemoteAssetResolver` takes. `note` hears about each URL that could not be had, once. `options` replace
  * the network and the cache (tests).
  */
 export function makeRemoteAssetResolver(
   note: (message: string) => void,
-  options: RemoteAssetOptions = {},
+  options: RemoteResolverOptions = {},
 ): (url: string) => string | null {
   const known = new Map<string, string | null>();
   const opts = { cacheDir: defaultAssetCacheDir(), ...options };
@@ -95,7 +185,10 @@ export function makeRemoteAssetResolver(
     if (known.has(url)) return known.get(url) ?? null;
     let path: string | null = null;
     const cached = fileCachePath(url, opts);
-    if (existsSync(cached)) {
+    const lockFile = lockFileOf(opts);
+    if (opts.cachedOnly && (!existsSync(cached) || (lockFile !== null && !readLock(lockFile).files[url]))) {
+      note(`${url} is not downloaded and locked, so it is left out (run \`kinetograph fetch-deps <entry>\`)`);
+    } else if (existsSync(cached)) {
       // Throws when the file is not what the lock recorded: the render stops rather than draw another picture.
       checkLock(url, cached, opts);
       path = cached;
