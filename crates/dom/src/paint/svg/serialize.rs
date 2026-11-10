@@ -34,7 +34,7 @@ use style::properties::{LonghandId, PropertyDeclarationId};
 use style_traits::ToCss;
 
 use super::css_filter::{self, FilterItem};
-use super::{color, css};
+use super::{color, css, mask_layers};
 use crate::paint::shim;
 
 /// A reason something is not drawn as Chrome would.
@@ -355,7 +355,7 @@ pub fn serialize(doc: &BaseDocument, node: NodeId, size: [f64; 2]) -> Serialized
 }
 
 /// An attribute by its name in any letter case.
-fn attr_ci<'a>(node: &'a blitz_dom::Node, name: &str) -> Option<&'a str> {
+pub(super) fn attr_ci<'a>(node: &'a blitz_dom::Node, name: &str) -> Option<&'a str> {
     node.attrs()?
         .iter()
         .find(|a| (*a.name.local).eq_ignore_ascii_case(name))
@@ -513,7 +513,7 @@ fn cascaded(doc: &BaseDocument, id: NodeId, root: bool) -> Vec<(String, String, 
 /// `url()` in a computed `filter`, `clip-path` or `mask-image`, so these are
 /// read from the matched rules instead: the winning declaration, by the rule
 /// tree's order (most specific and last first, `!important` where it sits).
-fn declared(
+pub(super) fn declared(
     doc: &BaseDocument,
     style: &style::properties::ComputedValues,
     longhand: LonghandId,
@@ -571,7 +571,7 @@ fn rgba(c: [f32; 4]) -> String {
     }
 }
 
-type Attrs = Vec<(String, String)>;
+pub(super) type Attrs = Vec<(String, String)>;
 
 /// Removes `name` from the declarations and the attributes, the declaration
 /// winning as CSS has it.
@@ -926,6 +926,59 @@ impl Writer<'_> {
             attrs.retain(|(n, _)| n != "transform");
             attrs.push(("transform".into(), t));
         }
+        // A `mask-image` list, or one with a gradient, is written as masks usvg reads (`mask_layers`).
+        let layers = mask_layers::plan(
+            self.doc,
+            id,
+            &tag,
+            &attrs,
+            &decls,
+            self.reference,
+            &mut self.counter,
+        );
+        let mut around = Vec::new();
+        if let Some(plan) = layers {
+            take(&mut attrs, &mut decls, "mask");
+            self.out.push_str(&plan.defs);
+            self.refs.extend(plan.refs);
+            self.notes.extend(plan.notes);
+            let mut masks = plan.masks.into_iter();
+            if let Some(first) = masks.next() {
+                attrs.push(("mask".into(), format!("url(#{first})")));
+            }
+            around = masks.collect();
+        }
+        // The other layers' groups turn with the element, and so hold its transform.
+        let moved = if around.is_empty() {
+            None
+        } else {
+            attrs
+                .iter()
+                .position(|(n, _)| n == "transform")
+                .map(|i| attrs.remove(i))
+        };
+        for (i, mask) in around.iter().enumerate() {
+            let mut group = vec![("mask".to_string(), format!("url(#{mask})"))];
+            if i == 0 {
+                group.extend(moved.clone());
+            }
+            self.open("g", &group);
+        }
+        self.element_body(id, tag, attrs, decls, filter);
+        for _ in &around {
+            self.out.push_str("</g>");
+        }
+    }
+
+    /// The element with its `filter`, wrapped as the filter needs, and what it holds.
+    fn element_body(
+        &mut self,
+        id: NodeId,
+        tag: String,
+        mut attrs: Attrs,
+        decls: Attrs,
+        filter: Option<String>,
+    ) {
         if !decls.is_empty() {
             attrs.push(("style".into(), css::to_style(&decls)));
         }

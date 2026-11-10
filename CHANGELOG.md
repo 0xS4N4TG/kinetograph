@@ -52,6 +52,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - `ProgressEvent` exists in page scripts, so three.js file loaders (the 3D devices of the liquid-glass pages, extruded-logo) no longer stop at "ProgressEvent is not defined".
 - A `url(#id)` in `mask-image` or another property names an element of the page, so it is no longer reported as a missing file.
 - A stylesheet rule that sets `stop-color` or `stop-opacity` on an SVG `<stop>` (`.a { stop-color: var(--brand, #f73) }`) colours the gradient; the stops were black.
+- `mask-image` on an SVG element is a list of layers: a `url(#mask)` and a gradient (`mask-composite: intersect`) mask it, as one `url(#mask)` already did (HyperFrames svg-mask-reveal).
 
 ## 0.3.0 (2026-11-03)
 
