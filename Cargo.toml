@@ -6,7 +6,7 @@ exclude = ["phase0"]
 [workspace.package]
 version = "0.3.0"
 edition = "2024"
-license = "PolyForm-Small-Business-1.0.0"
+license = "Apache-2.0"
 
 # fontique 0.12 follows the requested weight on a variable font's `wght` axis;
 # a face registered at one weight must stay at it, as a CSS @font-face with a

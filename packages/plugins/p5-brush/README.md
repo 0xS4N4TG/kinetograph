@@ -23,4 +23,4 @@ import { BrushCanvas } from '@kinetographdev/p5-brush';
 - A render waits (`delayRender`) until the first frame is drawn.
 - Needs the WebGL support of Kinetograph (a `webgl2` canvas context that the engine draws).
 
-Licensed under the PolyForm Small Business License 1.0.0, see `LICENSE.md`.
+Licensed under the Apache License 2.0, see `LICENSE.md`.

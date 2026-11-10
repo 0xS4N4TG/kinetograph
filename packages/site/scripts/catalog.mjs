@@ -34,6 +34,15 @@ if (!existsSync(join(root, 'plugins'))) {
   process.exit(0);
 }
 
+/** Whether `name@version` is on the npm registry (false when offline or not published). */
+function onNpm(name, version) {
+  try {
+    return execFileSync('npm', ['view', `${name}@${version}`, 'version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() === version;
+  } catch {
+    return false;
+  }
+}
+
 /** Showrooms of a plugin: listed under the plugins they demo (folder names), never as templates. */
 const DEMOS = {
   'match-cut': { title: 'Match cut presets', plugins: ['paper'] },
@@ -225,6 +234,8 @@ function buildCore() {
     const out = {
       slug: d,
       name: pkg.name,
+      // On npm at this version: the plugin pages and Studio's catalog drop their "coming soon" labels.
+      published: onNpm(pkg.name, pkg.version),
       title: k.title ?? titleCase(pkg.name.replace(/^@[^/]+\//, '')),
       description: c?.summary ?? k.description ?? firstParagraph(readme) ?? pkg.description ?? '',
       components: items.filter((e) => e.kind === 'component').map((e) => e.name),

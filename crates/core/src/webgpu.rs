@@ -1,5 +1,5 @@
 //! WebGPU, native: the render passes a page submitted to its canvas, replayed on the shared wgpu device with the
-//! page's own WGSL (packages/cli/skills/kinetograph/references/ENGINE.md, "WebGPU").
+//! page's own WGSL (packages/cli/skills/kinetograph-markup/references/ENGINE.md, "WebGPU").
 //!
 //! The authoring side (`navigator.gpu` of `@kinetographdev/scene`) records what a frame drew as the `webgpu` part of
 //! a `glsl` layer: modules, bind group layouts, pipelines (render and compute), buffer contents at the time of the

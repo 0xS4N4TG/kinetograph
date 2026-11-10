@@ -27,11 +27,12 @@ export interface ParsedArgs {
   json: boolean;
 }
 
-/** Options every command that opens a project takes (packages/cli/skills/kinetograph/references/AUTHORING.md §9). */
+/** Options every command that opens a project takes (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9). */
 export const PROJECT_OPTIONS: OptionSpec[] = [
   { name: 'comp', type: 'string', description: 'Composition id (default: the first composition)' },
   { name: 'props', type: 'string', description: 'Input props: a JSON object, or the path of a JSON file' },
   { name: 'offline', type: 'boolean', description: 'Never download: remote scripts, modules, pictures and media must already be cached (a missing one is an error, as before the pre-download step)' },
+  { name: 'timeout', type: 'number', description: 'Milliseconds a delayRender() may stay open before its frame fails (default 30000, as Remotion); delayRender(label, { timeoutInMilliseconds }) wins' },
 ];
 
 export const JSON_OPTION: OptionSpec = {

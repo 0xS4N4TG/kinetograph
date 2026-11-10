@@ -1,4 +1,4 @@
-// A render worker (`render --concurrency N`, packages/cli/skills/kinetograph/references/AUTHORING.md §9): a worker thread that opens the composition itself,
+// A render worker (`render --concurrency N`, packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9): a worker thread that opens the composition itself,
 // runs its JS for the chunks of frames it is given, draws them with a renderer of its own and posts the pixels back.
 
 import { parentPort, workerData } from 'node:worker_threads';
@@ -45,7 +45,7 @@ export type ToWorker =
 export type FromWorker =
   | { type: 'ready' }
   /**
-   * `repeated`: the frame was not drawn, being the same as the one before it in its chunk (packages/cli/skills/kinetograph/references/AUTHORING.md §9).
+   * `repeated`: the frame was not drawn, being the same as the one before it in its chunk (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9).
    * `busyMs`: the worker's time on it since the frame before (0 for a chunk's first); `gpuWaitMs`: of that, waiting for the GPU.
    */
   | {

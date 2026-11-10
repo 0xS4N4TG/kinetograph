@@ -1,4 +1,4 @@
-// @kinetographdev/core: the Remotion-shaped authoring API (packages/cli/skills/kinetograph/references/AUTHORING.md
+// @kinetographdev/core: the Remotion-shaped authoring API (packages/cli/skills/kinetograph-markup/references/AUTHORING.md
 // §7). Projects import everything from here (and from `remotion`, which the
 // CLI aliases to this package). Implemented from Remotion's documented
 // behaviour, never from its source; the numeric functions are checked against

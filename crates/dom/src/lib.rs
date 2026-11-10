@@ -1,4 +1,4 @@
-//! The full engine's front half (packages/cli/skills/kinetograph/references/ENGINE.md): a React host tree styled by
+//! The full engine's front half (packages/cli/skills/kinetograph-markup/references/ENGINE.md): a React host tree styled by
 //! Stylo and laid out by taffy and Parley through Blitz's DOM, then painted as
 //! Kinetograph scene layers by our own compositor.
 //!

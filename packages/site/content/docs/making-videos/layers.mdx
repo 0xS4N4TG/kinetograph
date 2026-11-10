@@ -1,0 +1,105 @@
+---
+title: Layers
+description: The native elements a frame is made of, how to group and stack them, and how to clip, mask and blend them.
+---
+
+A frame is a stack of layers, drawn bottom to top. Each element you write, such as `Rect`, `Text` or `Image`, is one layer, and a `Layer` groups several.
+
+```tsx title="src/Card.tsx"
+import { AbsoluteFill, Layer, Rect, Text, dropShadow, linearGradient } from '@kinetographdev/core';
+
+export const Card = () => (
+  <AbsoluteFill style={{ backgroundColor: '#14171f' }}>
+    <Layer x={320} y={180} effects={[dropShadow({ y: 12, blur: 24, color: '#00000060' })]}>
+      <Rect width={640} height={360} radius={32} fill={linearGradient(['#f9a8d4', '#fcd34d'], { angle: 160 })} />
+      <Text font="DM Sans" size={72} color="#14171f" x={48} y={140}>Layers</Text>
+    </Layer>
+  </AbsoluteFill>
+);
+```
+
+Later children are drawn over earlier ones. `x` and `y` move a layer inside its parent, so the children of the `Layer` above move with it. Raw text outside `Text` is an error.
+
+## The elements
+
+| Element | Draws |
+|---|---|
+| `Layer` | A group of layers. Takes `layout` for flexbox and `preserve3d` for 3D. |
+| `Rect`, `Ellipse`, `Path`, `Shape` | Shapes, with `fill` and `stroke`. `Rect` also takes `radius`. |
+| `Text` | Text in a [registered font](/docs/making-videos/fonts/): `font`, `weight`, `fontStyle`, `size`, `color`, `lineHeight`, `maxWidth`, `align` and `chars`. |
+| `Image`, `Img` | A picture file. See [Assets](/docs/making-videos/assets/). |
+| `Video`, `OffthreadVideo`, `Gif`, `Audio` | Video, animated GIFs and sound. |
+| `Noise`, `MeshGradient` | Noise and mesh gradients. |
+| `Canvas`, `GlslShader` | Canvas 2D and GLSL drawing. See [Shaders](/docs/making-videos/shaders/). |
+| `Lottie` | A Lottie animation, from `src` or `animationData`. |
+| `Scene3D` and its children | A 3D scene. See [Transforms](/docs/making-videos/transforms/#3d-scenes). |
+
+`<div>`, `className`, stylesheets and SVG work too, and the engine's own CSS engine draws them. Use the native elements for new work. Remotion's `AbsoluteFill` fills the composition and stacks its children over the layers below it.
+
+## Common props
+
+Every element takes `id`, `x`, `y`, `scale`, `rotation`, `opacity`, `blendMode`, `effects`, `clip`, `mask`, `matte` and `motionBlur`, and the 3D props `z`, `rotateX` and `rotateY`. The position and turn props are on [Transforms](/docs/making-videos/transforms/). Numbers can be plain, or computed from the frame.
+
+Give an `id` to a layer that a matte uses, or one whose name should survive changes to the tree. Without one the layer is named after its place in the tree, and two layers with the same `id` are an error.
+
+## Group and arrange
+
+`Layer` with `layout` places its children with flexbox, using CSS's names:
+
+```tsx title="src/Row.tsx"
+import { Layer, Rect } from '@kinetographdev/core';
+
+export const Row = () => (
+  <Layer layout={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 24, width: 1280, height: 400 }}>
+    <Rect width={200} height={120} fill="#f6c177" />
+    <Rect width={200} height={120} fill="#9ccfd8" layoutItem={{ flexGrow: 1 }} />
+    <Rect width={20} height={20} fill="#eb6f92" layoutItem={{ position: 'absolute' }} />
+  </Layer>
+);
+```
+
+`layout` takes `flexDirection`, `flexWrap`, `justifyContent`, `alignItems`, `alignContent`, `gap`, `padding`, `width` and `height`. `layoutItem` takes how one child joins in, such as `flexGrow`, `margin` and `position`. The full tables are in the [scene format](/docs/reference/scene-format/#layout).
+
+## Clip, mask and matte
+
+Three props cut a layer. They run in this order, after its `effects`: `clip`, then `mask`, then `matte`. After that come `opacity` and `blendMode`.
+
+```tsx title="src/Cutouts.tsx"
+import { Image, Layer, Text, radialGradient, staticFile } from '@kinetographdev/core';
+
+export const Cutouts = () => (
+  <Layer>
+    <Image src={staticFile('images/photo.jpg')} width={320} height={240} clip={{ kind: 'inset', left: 40, radius: 16 }} />
+    <Image
+      src={staticFile('images/photo.jpg')}
+      width={320}
+      height={240}
+      x={360}
+      mask={{ mode: 'luminance', gradient: radialGradient(['#ffffff', '#000000']) }}
+    />
+    <Image src={staticFile('images/photo.jpg')} width={320} height={240} x={720} matte={{ layer: 'word', mode: 'alpha' }} />
+    <Text id="word" font="DM Sans" size={120} color="#ffffff" x={720}>Wave</Text>
+  </Layer>
+);
+```
+
+- **`clip`** cuts to a shape: `polygon`, `inset`, `ellipse` or `path`. Its numbers can animate. `inset` is measured from the layer's own box and needs a layer with a box, so it does not work on a group without a `layout`.
+- **`mask`** fades the layer by a gradient. `mode: 'alpha'` keeps it where the gradient is opaque, and `'luminance'` where it is light.
+- **`matte`** cuts the layer by another layer, the matte source, named by `id`. The source must be a sibling, is not drawn on its own, and can move, blur or fade. `mode` is `alpha`, `alphaInverted`, `luminance`, `luminanceInverted` or `srgbLuminance`.
+
+## Blend modes
+
+`blendMode` takes the 16 modes of CSS: `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `colorDodge`, `colorBurn`, `hardLight`, `softLight`, `difference`, `exclusion`, `hue`, `saturation`, `color` and `luminosity`. Layers blend in sRGB, like a browser. A [JSON scene](/docs/reference/scene-format/) can set `blendSpace: 'linear'` for linear-light blending.
+
+## Suggested prompt
+
+```txt title="Suggested prompt"
+/kinetograph-markup Put the photo in a rounded card with a drop shadow, and cut the title out of it with a matte. Check it with strip.
+```
+
+## What works
+
+- Drawn natively: all the elements above, flexbox layout, `clip`, `mask`, `matte`, the 16 blend modes and effects.
+- Approximated: a `backdrop-filter` on a turned element, and groups that cross in 3D, are drawn as close as the engine can. These are reported.
+- Not supported: `<IFrame>`, which needs a browser. A basic shape such as `inset()` as `clip-path` inside an `<svg>` is not drawn.
+- `doctor` goes through every frame and lists each element and property that cannot be drawn, with its frames. See [What works](/docs/compat/).

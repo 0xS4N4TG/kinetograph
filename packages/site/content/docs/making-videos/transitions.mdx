@@ -1,0 +1,86 @@
+---
+title: Transitions
+description: Cut from one scene to the next with fades, slides, wipes, flips and shader transitions.
+---
+
+`TransitionSeries` plays scenes one after another and puts a transition between them. Each transition is a presentation, such as `fade()`, with a timing that sets its length.
+
+```tsx title="src/Show.tsx"
+import { TransitionSeries, linearTiming } from '@kinetographdev/core/transitions';
+import { fade } from '@kinetographdev/core/transitions/fade';
+import { slide } from '@kinetographdev/core/transitions/slide';
+import { SceneA, SceneB, SceneC } from './scenes';
+
+export const Show = () => (
+  <TransitionSeries>
+    <TransitionSeries.Sequence durationInFrames={60}>
+      <SceneA />
+    </TransitionSeries.Sequence>
+    <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 20 })} />
+    <TransitionSeries.Sequence durationInFrames={60}>
+      <SceneB />
+    </TransitionSeries.Sequence>
+    <TransitionSeries.Transition presentation={slide({ direction: 'from-right' })} timing={linearTiming({ durationInFrames: 15 })} />
+    <TransitionSeries.Sequence durationInFrames={60}>
+      <SceneC />
+    </TransitionSeries.Sequence>
+  </TransitionSeries>
+);
+```
+
+A transition overlaps the two scenes around it for its length, so the video is shorter than the sum of the scenes by the sum of the transitions. A project that already uses `@remotion/transitions` keeps its imports.
+
+## Presentations
+
+Import each presentation from its own path, `@kinetographdev/core/transitions/<name>`.
+
+| Presentation | Options |
+|---|---|
+| `fade`, `none` | None. |
+| `slide` | `direction`: `from-left`, `from-top`, `from-right` or `from-bottom`. |
+| `wipe` | `direction`: the four above, or `from-top-left`, `from-top-right`, `from-bottom-left` or `from-bottom-right`. |
+| `flip` | `direction` as for `slide`, and `perspective`. |
+| `iris`, `clockWipe` | `width` and `height` of the composition. |
+| `blurSlide`, `bookFlip`, `crossZoom`, `crosswarp`, `dissolve`, `dreamyZoom`, `filmBurn`, `linearBlur`, `pushCut`, `ripple`, `swap`, `zoomBlur`, `zoomInOut` | Shader transitions. Each takes its own options. |
+
+The shader transitions are WebGL shaders drawn over the two scenes. `effects` on a shader presentation are ignored. `makeHtmlInCanvasPresentation` lets you write your own from a GLSL fragment shader.
+
+## Timing
+
+- `linearTiming({ durationInFrames, easing })` moves in a straight line, or eased.
+- `springTiming({ config, durationInFrames, durationRestThreshold, reverse })` follows a spring. It lasts until the spring settles, unless you give a duration.
+
+## Moving things with a transition
+
+`useTransitionProgress()` runs inside a scene and tells you how far the transitions around it have gone:
+
+```tsx title="src/scenes.tsx"
+import { Rect } from '@kinetographdev/core';
+import { useTransitionProgress } from '@kinetographdev/core/transitions';
+
+export const SceneB = () => {
+  const { entering } = useTransitionProgress();
+  return <Rect width={400} height={200} fill="#f6c177" x={200 * entering} y={100} />;
+};
+```
+
+`entering` goes from 0 to 1 as the scene comes in, and `exiting` from 0 to 1 as it goes out. Outside a transition, `entering` is 1 and `exiting` is 0.
+
+## Rules
+
+- `TransitionSeries` takes only `Sequence`, `Transition` and `Overlay` children. Children inside a fragment are fine, so a `.map()` can return a pair.
+- A `Sequence` takes `offset` to leave a gap (positive) or overlap the scene before it (negative).
+- `TransitionSeries.Overlay` puts a layer over a cut, such as a light leak. It cannot sit next to a `Transition`, and it cannot start before frame 0.
+
+## Suggested prompt
+
+```txt title="Suggested prompt"
+/kinetograph-markup Join my three scenes with a 15 frame slide and then a dissolve, and check the overlap with a strip.
+```
+
+## What works
+
+- Drawn natively: every presentation above, linear and spring timing, `Overlay` and `useTransitionProgress`.
+- Approximated: nothing is listed as approximated. A transition is a shader, or layers with opacity, transforms and clips.
+- Not supported: nothing. Every export of `@remotion/transitions` exists.
+- See [What works](/docs/compat/#remotion-packages) and [Migrate from Remotion](/docs/migrating/remotion/).
