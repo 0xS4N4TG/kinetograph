@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_OPS_PER_TARGET } from '../src/webgl-carry.js';
 import { createWebGLContext, glslShader, GL, GL2, layerPicture, VideoFramePicture, WebGLUnsupportedError, type WebGLContext } from '../src/index.js';
 
 const VERTEX = 'attribute vec2 p; varying vec2 v; void main() { v = p; gl_Position = vec4(p, 0.0, 1.0); }';
@@ -468,12 +469,18 @@ describe('the recording WebGL context', () => {
       expect(draws(gl)[3]!.target).not.toBe(first!.target);
     });
 
-    it('starts each frame with its textures empty', () => {
-      const { gl } = setup();
+    it('starts each frame with its textures as its own draws leave them, over the whole of each', () => {
+      const { gl, program } = setup();
       attach(gl, 4, 2);
-      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      const quad = () => {
+        gl.bindBuffer(GL.ARRAY_BUFFER, gl.createBuffer());
+        gl.bufferData(GL.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), GL.STATIC_DRAW);
+        gl.vertexAttribPointer(gl.getAttribLocation(program, 'p'), 2, GL.FLOAT, false, 0, 0);
+        gl.drawArrays(GL.TRIANGLE_STRIP, 0, 4);
+      };
+      quad();
       gl.resetState();
-      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      quad();
       const content = gl.content();
       expect(content.ops).toHaveLength(1);
       expect(Object.keys(content.textures)).toEqual([draws(gl)[0]!.target]);
@@ -2207,6 +2214,400 @@ describe('the recording WebGL context', () => {
       gl.enable(GL.SCISSOR_TEST);
       gl.colorMask(true, false, true, true);
       expect(() => gl.clear(GL.COLOR_BUFFER_BIT)).toThrow(/^unsupported:.*colour mask/);
+    });
+  });
+
+  describe('render targets across frames', () => {
+    /** A texture of this size allocated as a render target, with a framebuffer that has it attached and is bound. */
+    function attach(gl: WebGLContext, width: number, height: number) {
+      const texture = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, width, height, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+      const framebuffer = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, framebuffer);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0);
+      gl.bindTexture(GL.TEXTURE_2D, null);
+      gl.viewport(0, 0, width, height);
+      return { texture, framebuffer };
+    }
+    /** Draws the canvas with the texture bound to unit 0. */
+    function drawCanvasWith(gl: WebGLContext, program: ReturnType<WebGLContext['createProgram']>, texture: ReturnType<WebGLContext['createTexture']>) {
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      gl.viewport(0, 0, 8, 4);
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.uniform1i(gl.getUniformLocation(program, 'tex'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      gl.bindTexture(GL.TEXTURE_2D, null);
+    }
+    const kinds = (gl: WebGLContext) => gl.content().ops.map((o) => `${o.op}${o.op !== 'upload' && o.target !== undefined ? ':target' : ''}`);
+
+    it('keeps what was drawn into a texture for the frames after it (an environment map drawn once, read in every frame)', () => {
+      const { gl, program } = setup();
+      const { texture } = attach(gl, 4, 2);
+      gl.clearColor(1, 0, 0, 1);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      // Over part of it: the clear still shows around it.
+      gl.viewport(0, 0, 2, 2);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      gl.resetState();
+      drawCanvasWith(gl, program, texture);
+      expect(kinds(gl)).toEqual(['clear:target', 'draw:target', 'draw']);
+      const content = gl.content();
+      const id = (content.ops[0] as { target: string }).target;
+      expect(content.textures[id]).toMatchObject({ target: true, width: 4, height: 2 });
+      expect(Object.keys(content.programs)).toHaveLength(1);
+      expect(Object.keys(content.buffers)).toHaveLength(1);
+      // And the frame after that one: the same.
+      gl.resetState();
+      drawCanvasWith(gl, program, texture);
+      expect(kinds(gl)).toEqual(['clear:target', 'draw:target', 'draw']);
+    });
+
+    it('opens a frame with only the target ops it reads', () => {
+      const { gl, program } = setup();
+      const used = attach(gl, 4, 2);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      attach(gl, 2, 2);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      gl.resetState();
+      drawCanvasWith(gl, program, used.texture);
+      expect(kinds(gl)).toEqual(['draw:target', 'draw']);
+    });
+
+    it('drops what a frame draws over a texture whole before anything reads it, so the ops do not pile up', () => {
+      const { gl, program } = setup();
+      const { texture } = attach(gl, 4, 2);
+      for (let frame = 0; frame < 5; frame++) {
+        gl.clear(GL.COLOR_BUFFER_BIT);
+        gl.drawArrays(GL.TRIANGLES, 0, 3);
+        drawCanvasWith(gl, program, texture);
+        // Back to the framebuffer for the next frame.
+        gl.resetState();
+        const framebuffer = gl.createFramebuffer();
+        gl.bindFramebuffer(GL.FRAMEBUFFER, framebuffer);
+        gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0);
+        gl.viewport(0, 0, 4, 2);
+      }
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      drawCanvasWith(gl, program, texture);
+      // The frame's own clear and draw alone: none of the five before it.
+      expect(kinds(gl)).toEqual(['clear:target', 'draw:target', 'draw']);
+    });
+
+    /** Draws a strip of four vertices over the clip square: every texel of a target the viewport holds. */
+    function fullscreen(gl: WebGLContext, program: ReturnType<WebGLContext['createProgram']>) {
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(GL.ARRAY_BUFFER, buffer);
+      gl.bufferData(GL.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), GL.STATIC_DRAW);
+      gl.vertexAttribPointer(gl.getAttribLocation(program, 'p'), 2, GL.FLOAT, false, 0, 0);
+      gl.drawArrays(GL.TRIANGLE_STRIP, 0, 4);
+    }
+    /** A frame that ends, with the framebuffer of `texture` bound again for the next. */
+    function nextFrame(gl: WebGLContext, texture: ReturnType<WebGLContext['createTexture']>) {
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      gl.resetState();
+      const framebuffer = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, framebuffer);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0);
+      gl.viewport(0, 0, 4, 2);
+    }
+
+    it('drops the draws under a draw whose triangles cover the clip square, with nothing to blend, discard or cull it', () => {
+      const { gl, program } = setup();
+      const { texture } = attach(gl, 4, 2);
+      for (let frame = 0; frame < 5; frame++) {
+        fullscreen(gl, program);
+        nextFrame(gl, texture);
+      }
+      fullscreen(gl, program);
+      drawCanvasWith(gl, program, texture);
+      expect(kinds(gl)).toEqual(['draw:target', 'draw']);
+      gl.resetState();
+      drawCanvasWith(gl, program, texture);
+      expect(kinds(gl)).toEqual(['draw:target', 'draw']);
+    });
+
+    it('keeps the draws under one that may not cover the texture: a sprite, a discard, a cull', () => {
+      const carriedAfter = (draw: (gl: WebGLContext, program: ReturnType<WebGLContext['createProgram']>) => void, shaded?: string, vertex = VERTEX) => {
+        const { gl, program } = setup();
+        const { texture } = attach(gl, 4, 2);
+        let program2 = program;
+        if (shaded !== undefined) {
+          program2 = gl.createProgram();
+          for (const [type, source] of [[GL.VERTEX_SHADER, vertex], [GL.FRAGMENT_SHADER, shaded]] as const) {
+            const shader = gl.createShader(type)!;
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            gl.attachShader(program2, shader);
+          }
+          gl.linkProgram(program2);
+          gl.useProgram(program2);
+        }
+        for (let frame = 0; frame < 3; frame++) {
+          draw(gl, program2);
+          nextFrame(gl, texture);
+        }
+        draw(gl, program2);
+        drawCanvasWith(gl, program2, texture);
+        return kinds(gl).filter((k) => k === 'draw:target').length;
+      };
+      // Three vertices over half of the square.
+      expect(carriedAfter((gl) => gl.drawArrays(GL.TRIANGLES, 0, 3))).toBe(4);
+      // The whole square, but the fragment shader may discard.
+      expect(carriedAfter(fullscreen, 'precision mediump float; varying vec2 v; uniform sampler2D tex; void main() { if (v.x > 0.5) discard; gl_FragColor = texture2D(tex, v); }')).toBe(4);
+      // The whole square, but in front of the near plane, so clipped away.
+      const FRAGMENT_OPEN = 'precision mediump float; varying vec2 v; uniform sampler2D tex; void main() { gl_FragColor = texture2D(tex, v); }';
+      expect(carriedAfter(fullscreen, FRAGMENT_OPEN, 'attribute vec2 p; varying vec2 v; void main() { v = p; gl_Position = vec4(p, 3.0, 1.0); }')).toBe(4);
+      // The whole square, wound clockwise and back faces culled.
+      expect(
+        carriedAfter((gl, program) => {
+          gl.enable(GL.CULL_FACE);
+          gl.cullFace(GL.FRONT);
+          fullscreen(gl, program);
+        }),
+      ).toBe(4);
+    });
+
+    it('drops the draws under a texSubImage2D that covers the texture', () => {
+      const { gl, program } = setup();
+      const { texture } = attach(gl, 4, 2);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 4, 2, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4 * 2 * 4));
+      gl.bindTexture(GL.TEXTURE_2D, null);
+      nextFrame(gl, texture);
+      drawCanvasWith(gl, program, texture);
+      expect(kinds(gl)).toEqual(['upload', 'draw']);
+    });
+
+    it('says a frame depends on the frames before it only when it makes a target from what the target held', () => {
+      const { gl, program } = setup();
+      const { texture } = attach(gl, 4, 2);
+      fullscreen(gl, program);
+      nextFrame(gl, texture);
+      // The frame after the one that drew the target reads what that frame wrote.
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      drawCanvasWith(gl, program, texture);
+      expect(gl.dependsOnHistory).toBe(true);
+      // Only reading the target, as the frames after one that drew nothing do (an environment map drawn once).
+      nextFrame(gl, texture);
+      nextFrame(gl, texture);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      drawCanvasWith(gl, program, texture);
+      expect(gl.dependsOnHistory).toBe(false);
+      // Showing the target on the canvas, then covering it again: the canvas showed what the frame before left.
+      gl.resetState();
+      nextFrame(gl, texture);
+      nextFrame(gl, texture);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      drawCanvasWith(gl, program, texture);
+      gl.viewport(0, 0, 4, 2);
+      const again = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, again);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0);
+      fullscreen(gl, program);
+      expect(gl.dependsOnHistory).toBe(true);
+      // Covering it, then reading it.
+      gl.resetState();
+      const framebuffer = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, framebuffer);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0);
+      gl.viewport(0, 0, 4, 2);
+      fullscreen(gl, program);
+      drawCanvasWith(gl, program, texture);
+      expect(gl.dependsOnHistory).toBe(false);
+      // A clear, then a sprite over it.
+      nextFrame(gl, texture);
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.dependsOnHistory).toBe(false);
+      // A sprite over what the frame before left (a trail).
+      nextFrame(gl, texture);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.dependsOnHistory).toBe(true);
+      // Two passes that cover a target while reading the other, which the frame writes next (a ping-pong, feedback).
+      nextFrame(gl, texture);
+      const other = attach(gl, 4, 2);
+      gl.viewport(0, 0, 4, 2);
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      fullscreen(gl, program);
+      gl.bindTexture(GL.TEXTURE_2D, null);
+      const back = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, back);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0);
+      gl.bindTexture(GL.TEXTURE_2D, other.texture);
+      fullscreen(gl, program);
+      gl.bindTexture(GL.TEXTURE_2D, null);
+      expect(gl.dependsOnHistory).toBe(true);
+    });
+
+    /** A draw of `positions` (x, y pairs) in `mode`, over the clip square or not. */
+    function drawPositions(gl: WebGLContext, program: ReturnType<WebGLContext['createProgram']>, positions: number[], mode: number, count: number) {
+      gl.bindBuffer(GL.ARRAY_BUFFER, gl.createBuffer());
+      gl.bufferData(GL.ARRAY_BUFFER, new Float32Array(positions), GL.STATIC_DRAW);
+      gl.vertexAttribPointer(gl.getAttribLocation(program, 'p'), 2, GL.FLOAT, false, 0, 0);
+      gl.drawArrays(mode, 0, count);
+    }
+    /** How many draws into a target the canvas draw after three frames of `positions` still needs. */
+    function neededAfter(positions: number[], mode: number, count: number): number {
+      const { gl, program } = setup();
+      const { texture } = attach(gl, 4, 2);
+      for (let frame = 0; frame < 3; frame++) {
+        drawPositions(gl, program, positions, mode, count);
+        nextFrame(gl, texture);
+      }
+      drawPositions(gl, program, positions, mode, count);
+      drawCanvasWith(gl, program, texture);
+      return kinds(gl).filter((k) => k === 'draw:target').length;
+    }
+
+    it('counts a draw as covering the clip square only when its triangles provably do', () => {
+      // One triangle that holds the four corners (the fullscreen triangle), and two that make the square.
+      expect(neededAfter([-1, -1, 3, -1, -1, 3], GL.TRIANGLES, 3)).toBe(1);
+      expect(neededAfter([-1, -1, 1, -1, -1, 1, 1, 1], GL.TRIANGLE_STRIP, 4)).toBe(1);
+      expect(neededAfter([-1, -1, 1, -1, 1, 1, -1, 1], GL.TRIANGLE_FAN, 4)).toBe(1);
+      // Two triangles that hit the nine sample points of the square but leave a band of it bare.
+      const bare = [-1, -1, 1, -1, -1, 1, 1.01, 1.01, 1.01, -0.1, -0.1, 1.01];
+      expect(neededAfter(bare, GL.TRIANGLES, 6)).toBe(4);
+      // Two triangles that share an edge but do not make a convex quad.
+      expect(neededAfter([-1, -1, 1, -1, 0, 0, -1, -1, 1, -1, 0, -2], GL.TRIANGLES, 6)).toBe(4);
+      // A triangle with no area holds nothing.
+      expect(neededAfter([-1, -1, -1, -1, -1, -1], GL.TRIANGLES, 3)).toBe(4);
+    });
+
+    /** A 300-frame loop of a target drawn, given every level, and shown, as three.js does for glass; what each frame needs of the frames before it. */
+    it('keeps a mipmapped render target from growing or being reported, however many frames draw it', () => {
+      const said: string[] = [];
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), report: (what) => said.push(what) });
+      const program = gl.createProgram();
+      for (const [type, source] of [[GL.VERTEX_SHADER, VERTEX], [GL.FRAGMENT_SHADER, FRAGMENT]] as const) {
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        gl.attachShader(program, shader);
+      }
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      gl.bindBuffer(GL.ARRAY_BUFFER, gl.createBuffer());
+      gl.bufferData(GL.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1]), GL.STATIC_DRAW);
+      gl.enableVertexAttribArray(gl.getAttribLocation(program, 'p'));
+      gl.vertexAttribPointer(gl.getAttribLocation(program, 'p'), 2, GL.FLOAT, false, 0, 0);
+      const { texture, framebuffer } = attach(gl, 8, 4);
+      const counts: number[] = [];
+      for (let frame = 0; frame < 300; frame++) {
+        gl.bindFramebuffer(GL.FRAMEBUFFER, framebuffer);
+        gl.viewport(0, 0, 8, 4);
+        gl.clear(GL.COLOR_BUFFER_BIT);
+        gl.drawArrays(GL.TRIANGLES, 0, 3);
+        gl.bindTexture(GL.TEXTURE_2D, texture);
+        gl.generateMipmap(GL.TEXTURE_2D);
+        gl.bindTexture(GL.TEXTURE_2D, null);
+        drawCanvasWith(gl, program, texture);
+        counts.push(gl.content().ops.length);
+        gl.resetState();
+      }
+      // The frame's own clear, draw, three level blits and canvas draw; nothing of the 299 frames before it.
+      expect(new Set(counts.slice(2))).toEqual(new Set([6]));
+      expect(said).toEqual([]);
+    });
+
+    it('caps a target drawn with a depth test every frame, naming it and its depth buffer, and reports it', () => {
+      const said: string[] = [];
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), report: (what) => said.push(what) });
+      const program = gl.createProgram();
+      for (const [type, source] of [[GL.VERTEX_SHADER, VERTEX], [GL.FRAGMENT_SHADER, FRAGMENT]] as const) {
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        gl.attachShader(program, shader);
+      }
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      gl.bindBuffer(GL.ARRAY_BUFFER, gl.createBuffer());
+      gl.bufferData(GL.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1]), GL.STATIC_DRAW);
+      gl.enableVertexAttribArray(gl.getAttribLocation(program, 'p'));
+      gl.vertexAttribPointer(gl.getAttribLocation(program, 'p'), 2, GL.FLOAT, false, 0, 0);
+      const { texture } = attach(gl, 4, 2);
+      const depth = gl.createRenderbuffer();
+      gl.bindRenderbuffer(GL.RENDERBUFFER, depth);
+      gl.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH_COMPONENT16, 4, 2);
+      gl.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, depth);
+      gl.enable(GL.DEPTH_TEST);
+      gl.depthFunc(GL.ALWAYS);
+      for (let i = 0; i < MAX_OPS_PER_TARGET + 10; i++) gl.drawArrays(GL.TRIANGLES, 0, 3);
+      gl.resetState();
+      drawCanvasWith(gl, program, texture);
+      // A draw writes the colour target and the depth buffer; over the cap for either, it goes.
+      expect(kinds(gl)).toHaveLength(MAX_OPS_PER_TARGET + 1);
+      expect(said.length).toBeGreaterThan(0);
+      expect(said[0]).toMatch(/render target .*feedback/);
+    });
+
+    it('drops the oldest draws of a target past the cap, never another target\'s, and says the frames that read it are not drawn right', () => {
+      const said: string[] = [];
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), report: (what) => said.push(what) });
+      const program = gl.createProgram();
+      for (const [type, source] of [[GL.VERTEX_SHADER, VERTEX], [GL.FRAGMENT_SHADER, FRAGMENT]] as const) {
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        gl.attachShader(program, shader);
+      }
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(GL.ARRAY_BUFFER, buffer);
+      gl.bufferData(GL.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1]), GL.STATIC_DRAW);
+      gl.enableVertexAttribArray(gl.getAttribLocation(program, 'p'));
+      gl.vertexAttribPointer(gl.getAttribLocation(program, 'p'), 2, GL.FLOAT, false, 0, 0);
+      const quiet = attach(gl, 4, 2);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      const busy = attach(gl, 2, 2);
+      for (let i = 0; i < MAX_OPS_PER_TARGET + 10; i++) gl.drawArrays(GL.TRIANGLES, 0, 3);
+      gl.resetState();
+      // Reading the quiet one: all its draws, and nothing said.
+      drawCanvasWith(gl, program, quiet.texture);
+      expect(kinds(gl)).toEqual(['draw:target', 'draw']);
+      expect(said).toEqual([]);
+      // Reading the busy one: the newest draws, and it is said.
+      gl.resetState();
+      drawCanvasWith(gl, program, busy.texture);
+      expect(kinds(gl)).toHaveLength(MAX_OPS_PER_TARGET + 1);
+      // Once for each time the recording was made.
+      expect(new Set(said).size).toBe(1);
+      expect(said[0]).toMatch(/render target .*feedback/);
+    });
+
+    it('does not carry what went to the canvas', () => {
+      const { gl, program } = setup();
+      const { texture } = attach(gl, 4, 2);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      gl.viewport(0, 0, 8, 4);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      gl.resetState();
+      expect(gl.drawn).toBe(false);
+      drawCanvasWith(gl, program, texture);
+      expect(kinds(gl)).toEqual(['draw:target', 'draw']);
+    });
+
+    it('keeps the render targets when the canvas is resized, as a browser keeps its framebuffer objects', () => {
+      const { gl, program } = setup();
+      const { texture } = attach(gl, 4, 2);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      gl.resetState();
+      gl.reset();
+      drawCanvasWith(gl, program, texture);
+      expect(kinds(gl)).toEqual(['draw:target', 'draw']);
+      // And what the frame drew into them before the resize.
+      const other = setup();
+      const attached = attach(other.gl, 4, 2);
+      other.gl.drawArrays(GL.TRIANGLES, 0, 3);
+      other.gl.reset();
+      drawCanvasWith(other.gl, other.program, attached.texture);
+      expect(kinds(other.gl)).toEqual(['draw:target', 'draw']);
     });
   });
 });

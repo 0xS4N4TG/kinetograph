@@ -23,7 +23,7 @@ export { deliverMediaEvents } from './media-events.js';
 export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf, setRemoteFiles, setRefusedFetchHandler, whenFetchesSettle, trackPending } from './web.js';
 export { setPathMeasure } from './geometry.js';
 export { animationClockMoved, animationsPending, resetAnimations, setAnimationClock, tickAnimations } from './animations.js';
-export { canvasEnvironment, LayerPicturesNotReady, setLayerPictures, type LayerPictures, rasterizeCanvas, webgpuDeviceInfo, canvasCommandsOf, withCanvasCommands, resetCanvasStates, setCanvasFonts, CanvasSurface } from './canvas.js';
+export { canvasEnvironment, LayerPicturesNotReady, setLayerPictures, type LayerPictures, rasterizeCanvas, webgpuDeviceInfo, canvasCommandsOf, withCanvasCommands, resetCanvasStates, takeGlReports, glDependsOnHistory, glHoldsTargets, snapshotGlStates, setCanvasFonts, CanvasSurface } from './canvas.js';
 export type { PathMeasure } from './geometry.js';
 export { imageSizeOfBytes } from './image-size.js';
 export { matches, queryAll, parseSelectorList } from './selector.js';

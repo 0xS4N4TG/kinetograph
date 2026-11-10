@@ -9,6 +9,7 @@ Kinetograph is in beta, so APIs can still change between versions. The same list
 
 ### Fixed
 
+- WebGL render targets keep what was drawn into them across frames, so an environment map Three.js prefilters (`PMREMGenerator`) once reflects in every frame, not only in the first.
 - `staticFile()` returns forward slashes on Windows so CSS `url()` paths are not corrupted by backslash escapes (#100).
 - Paint decodes percent-encoded Windows drive paths with spaces in CSS background and border images (#100).
 

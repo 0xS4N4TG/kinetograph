@@ -14,6 +14,7 @@
 import type { CanvasSource, GlslContent, GlslDraw, GlslLayer, GlslOp, GlslOutput, GlslPatch, GlslSampler, GlslStencil, GlslStencilFace, GlslTexture, GlslUniform } from './types.js';
 import { CANVAS_SOURCE, pictureOf, type CanvasPicture } from './canvas.js';
 import { preprocess } from './glsl-cpp.js';
+import { carriedFor, carryOn, dependsOnHistory, emptyCarry, isCanvasOp, MAX_OPS_PER_TARGET, namedBy, pick, readsLastFrame, type Resources } from './webgl-carry.js';
 
 /** The method a picture of another layer answers a texture upload with (`layerPicture`). */
 export const LAYER_SOURCE: unique symbol = Symbol.for('kinetograph.layerSource');
@@ -844,6 +845,8 @@ export interface WebGLContextOptions {
   attributes?: WebGLContextAttributesLike;
   /** The straight-alpha RGBA8 pixels of a canvas drawn into a texture, or null when they cannot be had. */
   rasterize?: (source: Extract<CanvasSource, { kind: 'canvas' }>) => Uint8Array | null;
+  /** Told what a recording leaves out where the engine does not draw it right (the frame reports it as unsupported). */
+  report?: (what: string) => void;
 }
 
 interface Capability {
@@ -959,12 +962,6 @@ const COLOR_TARGETS: Record<number, NonNullable<GlslTexture['colorFormat']>> = {
 /** Formats of a texture that colour cannot be drawn into. */
 const NOT_RENDERABLE = new Set<number>([GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA, GL.DEPTH_COMPONENT]);
 
-/** Whether an op goes to the canvas: its drawing buffer, or its depth and stencil buffer. */
-function isCanvasOp(op: GlslOp): boolean {
-  if (op.op === 'upload') return false;
-  return op.target === undefined && (op.op === 'blit' || (op.outputs === undefined && op.depthStencil === undefined));
-}
-
 /**
  * `WebGLRenderingContext` (and, with `version: 2`, the `WebGL2RenderingContext` calls shader pages use) as a recorder.
  * `content()` is what the `glsl` layer is made of. A context keeps its objects (programs, buffers, textures) and its
@@ -977,6 +974,8 @@ export class WebGLContext {
   private readonly options: WebGLContextOptions;
   private readonly attributes: Required<Pick<WebGLContextAttributesLike, 'alpha' | 'premultipliedAlpha' | 'preserveDrawingBuffer' | 'antialias' | 'depth' | 'stencil'>>;
   private ops: GlslOp[] = [];
+  /** What the frames before drew into render targets (`webgl-carry.ts`); a frame's recording opens with what its ops read of it. */
+  private carry = emptyCarry();
   /** The next draw or clear starts a fresh drawing buffer. */
   private stale = false;
   private error: number = GL.NO_ERROR;
@@ -1048,16 +1047,64 @@ export class WebGLContext {
 
   /** The recording: what the `glsl` layer holds. */
   content(): GlslContent {
+    const known = this.known();
+    const { ops: carried, incomplete } = carriedFor(this.carry.ops, this.carry.lost, this.ops, known);
+    for (const id of incomplete) {
+      this.options.report?.(`a render target is drawn into by more than ${MAX_OPS_PER_TARGET} ops that each read what the frames before left (feedback), so its oldest are dropped and it is not what the page drew (${id})`);
+    }
+    const named = namedBy(carried, known.textures);
     return {
       premultipliedAlpha: this.attributes.premultipliedAlpha,
       alpha: this.attributes.alpha,
       ...(this.attributes.depth ? {} : { depth: false }),
       ...(this.attributes.stencil ? { stencil: true } : {}),
       ...(this.attributes.antialias ? { antialias: true } : {}),
-      programs: Object.fromEntries(this.programs),
-      buffers: Object.fromEntries(this.buffers),
-      textures: Object.fromEntries(this.textures),
-      ops: this.ops,
+      programs: Object.fromEntries(new Map([...pick(named.programs, this.carry.programs), ...this.programs])),
+      buffers: Object.fromEntries(new Map([...pick(named.buffers, this.carry.buffers), ...this.buffers])),
+      textures: Object.fromEntries(new Map([...pick(named.textures, this.carry.textures), ...this.textures])),
+      ops: carried.length === 0 ? this.ops : [...carried, ...this.ops],
+    };
+  }
+
+  /** What the carried ops and this frame's name, the frame's own entries over the carried ones. */
+  private known(): Resources {
+    return {
+      programs: new Map([...this.carry.programs, ...this.programs]),
+      buffers: new Map([...this.carry.buffers, ...this.buffers]),
+      textures: new Map([...this.carry.textures, ...this.textures]),
+    };
+  }
+
+  /**
+   * Whether this frame depends on the frames before it (`webgl-carry.ts`): it makes a render target from what it held
+   * (a trail), reads one before covering it that it writes later, or reads one the frame before it wrote.
+   */
+  get dependsOnHistory(): boolean {
+    const known = this.known();
+    return dependsOnHistory(this.ops, known) || readsLastFrame(this.carry, this.ops, known);
+  }
+
+  /** Whether render targets hold what was drawn into them (carried, or drawn this frame). */
+  get holdsTargets(): boolean {
+    return this.carry.ops.length > 0 || this.ops.some((op) => !isCanvasOp(op));
+  }
+
+  /**
+   * The state a frame's recording is made from, to put back with the function it returns. The frame loop takes it
+   * before it renders the sub-frames of a motion blur and puts it back after them: what a sub-frame draws is its own,
+   * and the frame after the frame is the same whether or not the sub-frames were rendered.
+   */
+  snapshot(): () => void {
+    const { carry, ops, stale } = this;
+    const [programs, buffers, textures] = [new Map(this.programs), new Map(this.buffers), new Map(this.textures)];
+    return () => {
+      this.carry = carry;
+      this.ops = ops;
+      this.stale = stale;
+      for (const [held, kept] of [[this.programs, programs], [this.buffers, buffers], [this.textures, textures]] as const) {
+        held.clear();
+        for (const [id, value] of kept as Map<string, unknown>) (held as Map<string, unknown>).set(id, value);
+      }
     };
   }
 
@@ -1068,18 +1115,41 @@ export class WebGLContext {
 
   /**
    * The frame loop calls this before each frame: the drawing buffer is emptied, so a frame is what its own draws
-   * make, whichever frame was rendered before (a frame is a function of its number, and the frames of one render
-   * may be made in any order or by different processes). It holds with `preserveDrawingBuffer` too, which in a page
-   * keeps the picture from one presented frame to the next; here each frame is a new context's first. A frame that
-   * draws nothing draws nothing.
+   * make, whichever frame was rendered before. It holds with `preserveDrawingBuffer` too, which in a page keeps the
+   * picture from one presented frame to the next; here each frame is a new context's first. A frame that draws
+   * nothing draws nothing. What was drawn into render targets stays: it is what a texture holds, and a page that drew
+   * a texture once (an environment map prefiltered when the scene was built) reads it in every frame. A target a
+   * frame reads before it overwrites it then depends on the frames before that one (`webgl-carry.ts`).
    */
   resetState(): void {
+    this.keepTargets();
     this.stale = true;
     this.ops = [];
   }
 
+  /** Carries the render-target ops of the frame that ends, with the programs, buffers and textures they name. */
+  private keepTargets(): void {
+    if (this.ops.length === 0) {
+      this.carry = { ...this.carry, last: new Set() };
+      return;
+    }
+    const known = this.known();
+    const { ops, lost, last } = carryOn(this.carry.ops, this.ops, known);
+    const named = namedBy(ops, known.textures);
+    this.carry = {
+      ops,
+      programs: pick(named.programs, this.programs, this.carry.programs),
+      buffers: pick(named.buffers, this.buffers, this.carry.buffers),
+      textures: pick(named.textures, this.textures, this.carry.textures),
+      lost: new Set([...this.carry.lost, ...lost]),
+      last,
+    };
+  }
+
   /** Empties the drawing buffer (`canvas.width` was set). */
   reset(): void {
+    // Framebuffer objects, and what was drawn into their textures, outlive a resize.
+    this.keepTargets();
     this.ops = [];
     this.programs.clear();
     this.buffers.clear();

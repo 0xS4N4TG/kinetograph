@@ -10,7 +10,7 @@
 //      attach what each sub-frame changes in them.
 
 import type { ReactNode } from 'react';
-import { resetCanvasStates } from '@kinetographdev/compat/shim';
+import { glDependsOnHistory, glHoldsTargets, resetCanvasStates, snapshotGlStates, takeGlReports } from '@kinetographdev/compat/shim';
 import { createSceneRoot, finishIslands, TimelineContext, type LayerNames, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
   attachMotionChanges,
@@ -37,7 +37,7 @@ import { realTimers, resetVirtualClock, runAnimationFrames, setVirtualFrame, ste
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 import { endGsapSamples, gsapIsLoaded, sampleGsapAt, setGsapTime } from './gsap-clock.js';
 import { takePageErrors } from './page-errors.js';
-import { clearReportedUnsupported, reportedUnsupported } from './unsupported.js';
+import { clearReportedUnsupported, reportedUnsupported, reportUnsupported } from './unsupported.js';
 
 export interface FrameResult {
   scene: SceneJson;
@@ -68,6 +68,8 @@ class Renderer implements FrameRenderer {
   /** The frames whose islands' states are kept, for CSS transitions (compat's history): a continuous run. */
   private trailFrom = -1;
   private trailTo = -1;
+  /** A frame that followed a jump depends on the frames before it through a WebGL render target (`glDependsOnHistory`): a jump renders the frames it skips. */
+  private historyDependent = false;
   private disposed = false;
   /** The `renderFrame` call in progress, the one whose renders the open island pass holds (-1: none), and the frame
    *  being rendered: the frame's own renders and its sub-frames are one pass of the islands' documents (compat/dom). */
@@ -157,14 +159,23 @@ class Renderer implements FrameRenderer {
         setVirtualFrame(0, config.fps, { deferAnimationFrames: true });
         await this.settle(scene, () => this.update(scene, this.element(component, config, 0)));
       }
-      if (gsapIsLoaded()) {
+      if (gsapIsLoaded() || this.historyDependent) {
         // GSAP's tweens are made by effects, which a frame's render runs: an effect that starts a tween at frame 30 has
         // to run at 30 for a frame after it to show the tween where a render of every frame has it. So a jump renders
         // the frames it skips, with the clock on each, and reads nothing from them.
+        // A WebGL render target a frame makes from what it held before (a trail) is the same, once a frame has shown it
+        // (below): a draw made by a render or an animation-frame callback of a skipped frame is not made unless that
+        // frame is rendered.
         for (let at = was + 1; at < frame; at++) {
           setVirtualFrame(at, config.fps, { deferAnimationFrames: true });
           await this.settle(scene, () => this.update(scene, this.element(component, config, at)), true, false);
         }
+      } else if (frame - was > 1 && glHoldsTargets()) {
+        // A WebGL render target a frame reads that the frame before wrote is what that frame drew (a ping-pong that swaps
+        // its targets each frame), so the frame before this one is rendered too; the frames before that are stepped.
+        stepAnimationFrames(was + 1, frame - 1, config.fps);
+        setVirtualFrame(frame - 1, config.fps, { deferAnimationFrames: true });
+        await this.settle(scene, () => this.update(scene, this.element(component, config, frame - 1)), true, false);
       } else {
         // A jump forward gives the animation-frame callbacks the frames it skipped (not rendered), so what is advanced
         // by their time (Motion) shows the same as in a render of every frame.
@@ -173,6 +184,26 @@ class Renderer implements FrameRenderer {
       setVirtualFrame(frame, config.fps, { deferAnimationFrames: true });
       setHistoryMode({ record: true });
       main = await this.settle(scene, () => this.update(scene, this.element(component, config, frame)));
+      if (frame - was > 1 && !gsapIsLoaded() && !this.historyDependent && glDependsOnHistory()) {
+        // The frame makes a target from what it held before, and the frames it skipped were not rendered. A frame can
+        // only be seen to do that by rendering it, so the composition starts over and renders the frames before it
+        // (once: a later jump renders what it skips). A target that no frame writes after frame 0 (an environment map
+        // drawn at mount) never gets here, and the skipped frames of a chunk are not rendered.
+        this.historyDependent = true;
+        this.startScene(config);
+        clearHistory();
+        setHistoryMode({ record: false });
+        const again = this.scene!;
+        for (let at = 0; at < frame; at++) {
+          setVirtualFrame(at, config.fps, { deferAnimationFrames: true });
+          if (at === 0) await this.settle(again, () => this.update(again, this.element(component, config, 0)));
+          else await this.settle(again, () => this.update(again, this.element(component, config, at)), true, false);
+        }
+        setVirtualFrame(frame, config.fps, { deferAnimationFrames: true });
+        setHistoryMode({ record: true });
+        main = await this.settle(again, () => this.update(again, this.element(component, config, frame)));
+        this.lastFrame = frame;
+      }
     }
     // CSS transitions need the states of the islands before this frame (packages/cli/skills/kinetograph-markup/references/ENGINE.md §7.12). A frame has the
     // same history whichever frames were rendered before it: a sequential render keeps what it has seen, anything
@@ -201,11 +232,17 @@ class Renderer implements FrameRenderer {
         main = await this.settle(again, () => this.update(again, this.element(component, config, frame)));
         this.lastFrame = frame;
         this.trailFrom = start;
+        // The frames between 0 and the window were not rendered, so a target the frame makes from what it held before
+        // is not what the page drew. Said in every such frame, as the render of every frame would draw it right.
+        if (start > 1 && (this.historyDependent || glDependsOnHistory())) {
+          reportUnsupported('canvas', 'webgl', 'render target', 'a render target is made from what it held before the frame (a trail) on a page with CSS transitions, whose frames that do not follow the one before are drawn from a replay of the transition window only, so it is not what the page drew');
+        }
       }
     }
     setHistoryMode({ record: false });
     // What components that draw through a canvas left out, as the frame's own render reported it.
-    const reported = reportedUnsupported();
+    for (const what of takeGlReports()) reportUnsupported('canvas', 'webgl', 'render target', what);
+    let reported = reportedUnsupported();
     // The motion-blur sub-frames render the composition again; fonts or data they ask for are awaited too.
     const times = collectMotionTimes(main.layers, frame);
     let layers = main.layers;
@@ -214,6 +251,9 @@ class Renderer implements FrameRenderer {
       // The samples share the islands' documents with the frame's own render (compat/dom), and only their blurred
       // layers are read: the rest of each sub-frame's tree is left out.
       this.openPass();
+      // What a sub-frame draws into a WebGL render target is its own: the frame after this one starts from what the
+      // frame's own render left, as it does when the frames before it were rendered without sub-frames.
+      const restoreGl = snapshotGlStates();
       this.subFrameLayers = collectMotionLayers(main.layers, frame);
       for (const time of times) {
         if (time === frame) {
@@ -230,6 +270,11 @@ class Renderer implements FrameRenderer {
         treesAt.set(time, tree.layers);
       }
       this.subFrameLayers = null;
+      // What the sub-frames' recordings left out is said too, each once.
+      for (const what of takeGlReports()) reportUnsupported('canvas', 'webgl', 'render target', what);
+      const had = new Set(reported.map((item) => JSON.stringify(item)));
+      reported = [...reported, ...reportedUnsupported().filter((item) => !had.has(JSON.stringify(item)))];
+      restoreGl();
       // GSAP goes back to the frame's own time, as the frames after this one expect to find it.
       endGsapSamples();
       // The sub-frames' islands were drawn while the next sub-frames rendered.
