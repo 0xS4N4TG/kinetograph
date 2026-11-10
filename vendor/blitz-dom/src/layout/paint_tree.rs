@@ -448,24 +448,46 @@ fn float_to_order(pos: Float) -> i32 {
     }
 }
 
+/// Whether the box paints in the layer of positioned `z-index: auto` boxes (CSS 2.1 Appendix E step 8) whatever its
+/// `position`: it makes a stacking context (a transform or an opacity, say) at z-index 0.
+fn paints_with_positioned(node: &Node, is_flex_or_grid: bool) -> bool {
+    use style::computed_values::mix_blend_mode::T as Blend;
+    use style::computed_values::transform_style::T as Style3d;
+    use style::values::computed::Perspective;
+    if node.is_stacking_context_root(is_flex_or_grid) {
+        return true;
+    }
+    node.primary_styles().is_some_and(|s| {
+        let b = s.get_box();
+        s.get_effects().mix_blend_mode != Blend::Normal
+            || !matches!(b.perspective, Perspective::None)
+            || b.transform_style == Style3d::Preserve3d
+            || !s.get_effects().backdrop_filter.0.is_empty()
+    })
+}
+
 /// Paint sort key: (paint level, order-modified position). Positioned
-/// (z-index: auto) descendants paint above in-flow content (CSS 2.1
-/// Appendix E step 8); within a level the stable sort preserves
-/// (order-modified) document order.
+/// (z-index: auto) descendants and stacking contexts at z-index 0 paint above
+/// in-flow content (CSS 2.1 Appendix E step 8); within a level the stable sort
+/// preserves (order-modified) document order.
 #[inline(always)]
 fn node_to_paint_order(node: &Node, is_flex_or_grid: bool) -> (i32, i32) {
     let Some(style) = node.primary_styles() else {
         return (0, 0);
     };
     let position = style.clone_position();
+    let context = paints_with_positioned(node, is_flex_or_grid);
     if is_flex_or_grid {
         match position {
+            Position::Static if context => (2, style.clone_order()),
             Position::Static => (0, style.clone_order()),
             Position::Relative | Position::Sticky => (2, style.clone_order()),
             // Out-of-flow children are not flex/grid items: `order` does
             // not apply; tree order does.
             Position::Absolute | Position::Fixed => (2, 0),
         }
+    } else if context {
+        (2, 0)
     } else {
         (
             position_to_order(position) + float_to_order(style.clone_float()),

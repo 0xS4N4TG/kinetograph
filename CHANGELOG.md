@@ -37,6 +37,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - Paint decodes percent-encoded Windows drive paths with spaces in CSS background and border images (#100).
 - A gradient-stroked ellipse or circle whose one dash covers the whole outline (a dash as long as the outline, as Remotion's hello-world arc has at the end of its draw-on) is a whole ring again, not an arc closed by a chord.
 - A closed SVG outline stroked with a gradient or pattern and a dash as long as the outline (a dash measured by `getTotalLength`) is a whole ring even when the two lengths differ in the last digits.
+- A transformed or non-opaque element with `z-index: auto` is painted above an earlier positioned sibling (Remotion's electron template), as CSS paints a stacking context at z-index 0 in tree order with the positioned boxes.
 
 ## 0.3.0 (2026-11-03)
 

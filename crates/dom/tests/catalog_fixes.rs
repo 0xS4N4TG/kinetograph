@@ -39,3 +39,19 @@ fn a_dashed_gradient_ellipse_under_a_css_rotation_is_a_whole_ring() {
     assert!(on_the_arc[1] < 100, "the circle is missing its arc at (291, 158): {on_the_arc:?}");
     assert_eq!(px(&frame, 200, 200), [255, 255, 255, 255]);
 }
+
+/// The electron template: a flex `AbsoluteFill` holds a full-size positioned backdrop and then a flex item that
+/// has a transform and an opacity (a stacking context at z-index 0, in tree order with the positioned backdrop).
+#[test]
+fn a_transformed_element_paints_over_an_earlier_positioned_sibling() {
+    let frame = shoot(
+        "order",
+        r##"<div style="position:absolute;left:0;top:0;width:300px;height:200px;display:flex;flex-direction:column;overflow:hidden;background:#222">
+<div style="position:absolute;inset:0;background:#ff0000"></div>
+<div style="width:100%;height:100%;display:flex;transform:translateY(10px) scale(1);opacity:0.99;padding:20px"><div style="width:200px;height:100px;background:#0000ff"></div></div></div>"##,
+        300,
+        200,
+    );
+    let p = px(&frame, 100, 100);
+    assert!(p[2] > 200 && p[0] < 60, "the blue box is under the red backdrop: {p:?}");
+}
