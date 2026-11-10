@@ -3,8 +3,8 @@
 // `kinetograph.lock.json` (`lock.ts`); a render then only reads that cache, so a frame is a function of the project.
 // A URL that first shows up during a render (built at run time) is downloaded once then, added to the lock, and said so
 // in a note. With `--offline` nothing is downloaded: a URL that is not cached is drawn without and noted. A download
-// that fails is a note too, and the URL is left as it is for the engine to report. `fetch()` and `new Image().src` of a
-// remote URL stay refused: a script cannot wait for the file.
+// that fails is a note too, and the URL is left as it is for the engine to report. `fetch()` of a remote URL reads the same
+// cache; `new Image().src` of a remote URL stays refused.
 
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';

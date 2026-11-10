@@ -622,7 +622,7 @@ class Emitter {
         this.cameras.push({ perspective: props.perspective, ...pick(props, ['x', 'y']) } as CameraJson);
         return null;
       case 'kg-audio':
-        this.audio.push({ id, ...props.clip });
+        this.audio.push({ id, ...props.clip, ...localSrc(props.clip) });
         return null;
       case 'kg-layer': {
         // A native element met inside an island (`emitNative`) can be an `<AbsoluteFill>` that holds DOM elements.
@@ -771,7 +771,7 @@ class Emitter {
         throw new Error(`<${name}> must be inside a <Scene3D>`);
       case 'kg-video':
         // The sound is not part of the layer: it is an audio clip with the layer's id.
-        this.audio.push({ id, ...props.sound });
+        this.audio.push({ id, ...props.sound, ...localSrc(props.sound) });
         return {
           id,
           type: 'video',

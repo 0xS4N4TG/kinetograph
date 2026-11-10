@@ -10,6 +10,7 @@ import {
   useWindowedAudioData,
   visualizeAudio,
 } from '../src/media-utils.js';
+import { setRemoteStylesheetResolver } from '@kinetographdev/compat/dom';
 import { NodeFontFace, installFontFace } from '../src/font-face.js';
 import { clearFonts, getFonts } from '../src/font-registry.js';
 import { fixture } from './helpers.js';
@@ -65,7 +66,10 @@ function serve(files: Record<string, Float32Array[]>) {
   return calls;
 }
 
-afterEach(() => setAudioDecoder(null));
+afterEach(() => {
+  setAudioDecoder(null);
+  setRemoteStylesheetResolver(null);
+});
 
 describe('getAudioData and its hooks', () => {
   it('decode a file once and report Remotion’s fields', async () => {
@@ -103,6 +107,19 @@ describe('getAudioData and its hooks', () => {
     serve({ 'silent.mp4': [] });
     await expect(getAudioData('silent.mp4')).rejects.toThrow(/no audio stream/);
     await expect(getAudioData('https://example.com/a.mp3')).rejects.toThrow(/remote files/);
+  });
+});
+
+describe('a remote file the host has cached', () => {
+  it('is decoded from the cache, under the URL it was asked for', async () => {
+    const url = 'https://remotion.media/track.mp3';
+    serve({ '/cache/track.mp3': sine(440, 1) });
+    setRemoteStylesheetResolver((u) => (u === url ? '/cache/track.mp3' : null));
+    const data = await getAudioData(url);
+    expect(data.durationInSeconds).toBeCloseTo(1, 3);
+    expect(data.resultId).toBe(`kinetograph-audio:${url}`);
+    expect(useWindowedAudioData({ src: url, frame: 0, fps: 30, windowInSeconds: 10 }).audioData).toBe(data);
+    await expect(getAudioData('https://remotion.media/other.mp3')).rejects.toThrow(/remote files/);
   });
 });
 

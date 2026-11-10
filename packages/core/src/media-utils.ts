@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import { resolveCachedRemoteFile } from '@kinetographdev/compat/dom';
 import { imageSizeOfBytes, projectFileOf, remoteMessage } from '@kinetographdev/compat/shim';
 import type { MediaInfo } from '@kinetographdev/native';
 import { mediaParserAddon } from './media-parser/addon.js';
@@ -54,6 +55,14 @@ function loadNative(): ProbeMedia {
   );
 }
 
+/** `src`, or for an http(s) URL the file `fetch-deps` downloaded and locked for it; a URL that is not cached is an error. */
+function remoteOrLocal(src: string): string {
+  if (!/^https?:\/\//i.test(src)) return src;
+  const cached = resolveCachedRemoteFile(src);
+  if (cached === null) throw new Error(`Cannot read ${src}: remote files are not supported, download it and use staticFile() instead`);
+  return cached;
+}
+
 /** What the addon reads from the header of the video or GIF at `src`; with `cache`, read once per `src`. */
 export function probeMedia(src: string, options: { cache?: boolean } = {}): MediaInfo {
   if (options.cache) {
@@ -65,12 +74,10 @@ export function probeMedia(src: string, options: { cache?: boolean } = {}): Medi
     return info;
   }
   if (typeof src !== 'string' || src === '') throw new TypeError(`src must be a file path, but got ${JSON.stringify(src)}`);
-  if (/^https?:\/\//i.test(src)) {
-    throw new Error(`Cannot read ${src}: remote files are not supported, download it and use staticFile() instead`);
-  }
-  if (probeOverride) return probeOverride(src);
+  const path = remoteOrLocal(src);
+  if (probeOverride) return probeOverride(path);
   probeNative ??= loadNative();
-  return probeNative(src);
+  return probeNative(path);
 }
 
 /**
@@ -156,12 +163,9 @@ export function readAudioData(src: string, sampleRate: number = AUDIO_DATA_SAMPL
   if (!Number.isFinite(sampleRate) || sampleRate <= 0) throw new TypeError(`sampleRate must be a positive number, but got ${sampleRate}`);
   const known = audioCache.get(cacheKey(src, sampleRate));
   if (known) return known;
-  if (/^https?:\/\//i.test(src)) {
-    throw new Error(`Cannot read ${src}: remote files are not supported, download it and use staticFile() instead`);
-  }
   let decode = decodeOverride;
   if (!decode) decode = decodeNative ??= loadNativeDecoder();
-  const pcm = decode(src, sampleRate);
+  const pcm = decode(remoteOrLocal(src), sampleRate);
   if (pcm === null || pcm.channels.length === 0) throw new Error(`${src} has no audio stream`);
   const length = pcm.channels[0]!.length;
   const data: MediaUtilsAudioData = {

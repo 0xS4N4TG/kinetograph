@@ -2,12 +2,14 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { setRemoteStylesheetResolver } from '../src/environment.js';
 import { installDomGlobals, setRefusedFetchHandler, setRemoteFiles, whenFetchesSettle } from '../src/shim/index.js';
 
 installDomGlobals();
 afterEach(() => {
   setRemoteFiles({});
   setRefusedFetchHandler(null);
+  setRemoteStylesheetResolver(null);
 });
 
 describe('fetch of a remote URL', () => {
@@ -24,6 +26,28 @@ describe('fetch of a remote URL', () => {
     expect(response.headers.get('content-type')).toBe('application/json');
     await expect(fetch(`${url}?x=1`)).rejects.toThrow(/remote URLs are not available/);
     expect(refused).toEqual([`${url}?x=1`]);
+  });
+
+  it('reads a file the host has cached for the URL (fetch-deps of a Remotion project), and refuses what it cannot find', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kg-remote-'));
+    const file = join(dir, 'track.mp3');
+    writeFileSync(file, 'ID3-bytes');
+    const url = 'https://remotion.media/music-visualization-demo-track.mp3';
+    const refused: string[] = [];
+    setRefusedFetchHandler((u) => refused.push(u));
+    setRemoteStylesheetResolver((u) => (u === url ? file : null));
+    const response = await fetch(url);
+    expect(await response.text()).toBe('ID3-bytes');
+    expect(response.headers.get('content-type')).toBe('audio/mpeg');
+    await expect(fetch('https://remotion.media/other.mp3')).rejects.toThrow(/remote URLs are not available/);
+    expect(refused).toEqual(['https://remotion.media/other.mp3']);
+    // A request that is not a plain GET is not answered with the file's bytes.
+    await expect(fetch(url, { method: 'POST', body: 'x' })).rejects.toThrow(/remote URLs are not available/);
+    await expect(fetch(url, { method: 'GET', body: 'x' })).rejects.toThrow();
+    expect(refused).toContain(url);
+    // Nor is an http URL.
+    setRemoteStylesheetResolver(() => file);
+    await expect(fetch('http://remotion.media/a.mp3')).rejects.toThrow(/remote URLs are not available/);
   });
 
   it('settles when what a page fetched at load has been drawn, including what that started', async () => {
