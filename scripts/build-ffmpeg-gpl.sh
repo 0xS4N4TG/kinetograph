@@ -7,7 +7,7 @@
 #
 # Licence: this program is GPL-2.0-or-later (--enable-gpl, with libx264 and libx265, which are GPL). It is a separate
 # executable that the addon runs as a child process for the encoders its own LGPL-only ffmpeg (scripts/build-ffmpeg.sh)
-# lacks; nothing GPL is ever linked into the PolyForm-licensed addon. This is how Remotion ships its ffmpeg too.
+# lacks; nothing GPL is ever linked into the Apache-2.0-licensed addon. This is how Remotion ships its ffmpeg too.
 # It has x264 (H.264), x265 (H.265, 8/10/12 bit) and libvpx (VP8, VP9), and only the other components the addon's
 # pipe-in, file-out use needs (rawvideo in; mp4, mov, webm, matroska out; AAC, PCM; scale and format filters).
 #

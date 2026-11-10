@@ -5,6 +5,8 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ## Unreleased
 
+Kinetograph is now open source under the Apache License 2.0. Earlier versions stay under PolyForm Small Business 1.0.0.
+
 ### Fixed
 
 - `staticFile()` returns forward slashes on Windows so CSS `url()` paths are not corrupted by backslash escapes (#100).

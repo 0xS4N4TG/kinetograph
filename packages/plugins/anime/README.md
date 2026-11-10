@@ -22,4 +22,4 @@ return <div ref={scope}>{/* elements with className="box" and "dot" */}</div>;
 - `<AnimeTimeline build={...} deps={...}>` is the same as a `<div>`.
 - An animation made in `build` that is not on `tl` (`animate(...)` instead of `tl.add(...)`) is warned about once: it would play on anime.js's own loop.
 
-Licensed under the PolyForm Small Business License 1.0.0, see `LICENSE.md`.
+Licensed under the Apache License 2.0, see `LICENSE.md`.

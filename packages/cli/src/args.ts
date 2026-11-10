@@ -27,7 +27,7 @@ export interface ParsedArgs {
   json: boolean;
 }
 
-/** Options every command that opens a project takes (packages/cli/skills/kinetograph/references/AUTHORING.md §9). */
+/** Options every command that opens a project takes (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9). */
 export const PROJECT_OPTIONS: OptionSpec[] = [
   { name: 'comp', type: 'string', description: 'Composition id (default: the first composition)' },
   { name: 'props', type: 'string', description: 'Input props: a JSON object, or the path of a JSON file' },

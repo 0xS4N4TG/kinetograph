@@ -5,7 +5,7 @@ description: Give a coding agent the Kinetograph skills and MCP tools so it can 
 
 An [agent](/docs/terminology/agent/) can't watch a video, so Kinetograph gives it two things:
 
-- A **skill** that teaches it a loop: write, look, check, render. The agent can write a Remotion-style TSX project or an HTML page.
+- **Skills** that teach it a loop: write, look, check, render. The agent can write a Remotion-style TSX project or an HTML page.
 - An **MCP server** that runs each CLI command as a tool and returns frames as images.
 
 ## The MCP server
@@ -56,7 +56,7 @@ Every client runs the same command, `npx -y kinetograph mcp`, and needs Node 22 
 
 [Agent skills](/docs/agents/skills/) lists the skills and how to install them. [Studio's agent chat](/docs/agents/studio-agent/) is the chat inside Studio, and [Match a reference](/docs/agents/taste/) is the skill that works from a reel.
 
-## The loop the skill teaches
+## The loop the skills teach
 
 1. **Write** a project file that calls `registerRoot`.
 2. **Look.** `strip` shows twelve labelled frames at once, `still` shows one, and `onion` shows a motion path.

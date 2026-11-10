@@ -1,5 +1,5 @@
 //! `@kinetographdev/skia`: the optional addon that draws React Native Skia scene
-//! trees with Skia's CPU rasteriser (packages/cli/skills/kinetograph/references/AUTHORING.md §7.7). It is separate from
+//! trees with Skia's CPU rasteriser (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §7.7). It is separate from
 //! `@kinetographdev/native` so that nothing else links Skia. Every call is
 //! synchronous and takes and returns JSON strings.
 
