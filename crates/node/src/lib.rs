@@ -13,6 +13,7 @@
 mod bench;
 mod canvas;
 mod dom;
+mod dom_verify;
 mod error;
 mod layout;
 mod matte;
@@ -275,17 +276,25 @@ pub fn layout_dom(request_json: String) -> Result<String> {
 /// JSON in, an `IslandOutput` (`layers`, `unsupported`, `camera`) as JSON out.
 /// Styled and laid out by Stylo, taffy and Parley through Blitz's DOM, then
 /// painted as scene layers. CPU only.
+///
+/// `pass` numbers the renders of one frame (its motion-blur samples included); `base` is the pass of the layers of
+/// this island the caller kept from an earlier render. When the addon kept the same ones, the layers come back as
+/// changes from them and the output says `"delta": base`.
 #[napi]
-pub fn render_dom_island(request_json: String, pass: Option<u32>) -> Result<String> {
-    dom::render_dom_island(&request_json, pass.map(u64::from))
+pub fn render_dom_island(
+    request_json: String,
+    pass: Option<u32>,
+    base: Option<u32>,
+) -> Result<String> {
+    dom::render_dom_island(&request_json, pass.map(u64::from), base.map(u64::from))
 }
 
 /// `renderDomIsland` without waiting: queues the render on the calling
 /// thread's island thread, after the renders queued before it, and returns a
 /// ticket for `finishDomIsland`, which gives its output once it is done.
 #[napi]
-pub fn start_dom_island(request_json: String, pass: Option<u32>) -> Result<u32> {
-    dom::start_island(&request_json, pass.map(u64::from))
+pub fn start_dom_island(request_json: String, pass: Option<u32>, base: Option<u32>) -> Result<u32> {
+    dom::start_island(&request_json, pass.map(u64::from), base.map(u64::from))
 }
 
 /// The output of a render `startDomIsland` queued, waiting for it if it is not
@@ -310,6 +319,16 @@ pub fn dom_layout_boxes(
     paths: Option<Vec<String>>,
 ) -> Result<String> {
     dom::dom_layout_boxes(&request_json, pass.map(u64::from), paths)
+}
+
+/// The version of the island edits `domLayoutBoxes` and `domComputedStyle` take in place of a request (1): a request
+/// numbered by the caller as `{"stamp":N,"request":REQUEST}`, then the changes since a numbered state as
+/// `{"stamp":M,"base":N,"path","time","set":[{"path","attrs"?,"style"?,"texts"?:[[index,text]]}]}`
+/// (packages/cli/skills/kinetograph-markup/references/ENGINE.md §2). Edits to a state the addon no longer holds fail with
+/// `STALE_BASE`, and the caller sends the whole request.
+#[napi]
+pub fn dom_island_edits() -> u32 {
+    1
 }
 
 /// `getComputedStyle` of the element at `path` in a DOM island: the resolved
@@ -708,6 +727,8 @@ pub struct Renderer {
     /// The thread that starts frames (parses their scene, builds and submits their GPU work) while the caller
     /// goes on to the JS of the next one; started with the first frame.
     starter: Option<std::sync::mpsc::Sender<StartJob>>,
+    /// Milliseconds `finishFrame` has waited for the GPU to finish frames, since `takeGpuWaitMs`.
+    gpu_wait_ms: f64,
 }
 
 /// Whether `startFrame` waits for the frame to be started (`KINETOGRAPH_SYNC_START=1`).
@@ -785,6 +806,7 @@ impl Renderer {
             layer_cache,
             started: std::collections::VecDeque::new(),
             starter: None,
+            gpu_wait_ms: 0.0,
         })
     }
 
@@ -912,13 +934,23 @@ impl Renderer {
             .map_err(|_| error(Code::Render, "the frame starter thread has stopped"))??;
         let mut gpu = self.shared.idle()?;
         let repeated = pending.is_repeat();
+        let waited = std::time::Instant::now();
         let rendered = gpu.finish_frame(pending).map_err(from_core)?;
+        self.gpu_wait_ms += waited.elapsed().as_secs_f64() * 1000.0;
         Ok(RgbaFrame {
             width: rendered.width,
             height: rendered.height,
             data: Buffer::from(rendered.rgba),
             repeated,
         })
+    }
+
+    /// The milliseconds `finishFrame` has waited for the GPU to finish frames and read them back since the last call,
+    /// emptied: a render worker reports it, to say whether the workers are held up by the GPU they share. It only
+    /// times the wait; it changes nothing drawn.
+    #[napi]
+    pub fn take_gpu_wait_ms(&mut self) -> f64 {
+        std::mem::take(&mut self.gpu_wait_ms)
     }
 
     /// Makes the next frame `startFrame` begins be drawn, whatever the frame

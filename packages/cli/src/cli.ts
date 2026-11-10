@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { run } from './index.js';
+import { run } from './run.js';
 
 const code = await run(process.argv.slice(2));
 // Wait for stdout to drain before leaving: a render that has the addon's threads or a project's handles open would

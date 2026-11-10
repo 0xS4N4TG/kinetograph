@@ -2,7 +2,7 @@
 // taffy and Parley style and lay it out, our compositor paints it, and the layers come back as scene JSON. Native
 // (`kg-*`) elements inside the island are drawn here and put where Rust placed their boxes.
 
-import type { CameraJson, LayerJson, Unsupported } from '@kinetographdev/scene';
+import { sameJson, type CameraJson, type LayerJson, type Unsupported } from '@kinetographdev/scene';
 import { addonFunction, hasAddonFunction } from '../addon.js';
 import { fontFacesRegistered, getDomEnvironment, importedStylesheets, noteStylesheet, readLocalStylesheet } from '../environment.js';
 import { buildIslandRequest, type IslandRequestJson } from '../request/build.js';
@@ -33,6 +33,8 @@ export {
 } from '../environment.js';
 export type { DomEnvironment, CssFontFace } from '../environment.js';
 export { buildIslandRequest, collectStyleElements, styleText } from '../request/build.js';
+export { editableRequest, islandEdits } from '../request/edits.js';
+export type { ChangedElement, EditableRequest, NodeEditJson } from '../request/edits.js';
 export { parseSrcset, sourceSize, srcsetCandidate } from '../request/srcset.js';
 export type { IslandRequestJson, RequestNode, BuildOptions, BuiltRequest } from '../request/build.js';
 export { styleToCss } from '../request/style.js';
@@ -53,29 +55,50 @@ interface IslandOutputJson {
   camera?: CameraJson | null;
   margin?: number | null;
   blendSpace?: 'linear' | 'srgb';
-  /** In a pass: `layers` are written as changes from the island's first layers in the pass (`expand`). */
-  delta?: boolean;
+  /** In a pass: `layers` are written as changes from the island's kept layers of that pass (`bases`, `expand`). */
+  delta?: number;
 }
 
 /** The pass in progress, or null (packages/cli/skills/kinetograph-markup/references/SCENE.md, "Motion blur"). */
 let samplePass: number | null = null;
-let passes = 0;
-/** The first layers each island drew in the pass, by path: the addon writes the later ones against them. */
-const bases = new Map<string, unknown[]>();
+
+/**
+ * The numbers of the thread's passes and of the island states its readbacks send (`nextIslandStamp`). The addon keeps
+ * islands per thread, so every copy of this module loaded in the thread (a package loaded twice, in Studio or dev)
+ * counts on these, and no two copies hand out one number.
+ */
+const counts = ((globalThis as Record<symbol, unknown>)[Symbol.for('kinetograph.islandCounts')] ??= { passes: 0, stamps: 0 }) as {
+  passes: number;
+  stamps: number;
+};
+/** The pass before the one in progress, or null. */
+let lastPass: number | null = null;
+
+/**
+ * The layers each island's renders are written against, by path (`Base` of crates/node/src/dom.rs): its first render
+ * of a pass, or its last one written in full. The addon keeps the same ones, and writes the island's later renders in
+ * the pass and in the next one as changes from them; a layer that did not change is the same object as here.
+ */
+const bases = new Map<string, { pass: number; layers: unknown[] }>();
 
 /**
  * Marks the islands rendered from now to `endSamplePass()` as the renders of one frame: the frame itself and the
  * samples of its motion blur. The addon keeps an island's document between them, and from one frame to the next
  * (`breakSamplePasses`), and edits it from one render to the next instead of building it again; each is drawn as if it
- * were built afresh. A later render of an island gives back
- * what changed from its first, and shares the layers that did not with that first's.
+ * were built afresh. A later render of an island, in the pass or the next, gives back what changed from its `bases`
+ * entry, and shares the layers that did not with it.
  */
 export function beginSamplePass(): void {
   dropQueue();
   if (typeof process !== 'undefined' && process.env?.KINETOGRAPH_NO_INCREMENTAL) breakSamplePasses();
-  passes = (passes % 0x7fffffff) + 1;
-  samplePass = passes;
-  bases.clear();
+  counts.passes = (counts.passes % 0x7fffffff) + 1;
+  samplePass = counts.passes;
+  // As the addon does: the pass after the last keeps the bases the last made, any other none.
+  if (lastPass !== null && samplePass === lastPass + 1) {
+    for (const [path, base] of bases) if (base.pass !== lastPass) bases.delete(path);
+  } else {
+    bases.clear();
+  }
 }
 
 /**
@@ -83,13 +106,18 @@ export function beginSamplePass(): void {
  * keeps an island's document from one pass to the next pass only when the numbers are in sequence, so this skips one.
  */
 export function breakSamplePasses(): void {
-  passes = (passes % 0x7fffffff) + 1;
+  counts.passes = (counts.passes % 0x7fffffff) + 1;
+}
+
+/** A number for a state of an island that no other in the thread has (`IslandEdits::stamp` of crates/dom/src/request.rs). */
+export function nextIslandStamp(): number {
+  return ++counts.stamps;
 }
 
 export function endSamplePass(): void {
   dropQueue();
+  lastPass = samplePass;
   samplePass = null;
-  bases.clear();
 }
 
 /**
@@ -102,14 +130,19 @@ export function currentSamplePass(): number | undefined {
 
 type Written = Record<string, unknown> & { $same?: number; $base?: number; children?: Written[] };
 
-/** The layers the addon wrote as changes from `base` (`delta` of crates/dom/src/request.rs), sharing what is the same. */
+/** The layers the addon wrote as changes from `base` (`write_output` of crates/dom/src/request.rs), sharing what is the same. */
 function expand(layers: Written[], base: unknown[]): unknown[] {
   return layers.map((layer) => {
     if (typeof layer.$same === 'number') return base[layer.$same];
     if (typeof layer.$base !== 'number') return layer;
-    const { $base: at, children, ...own } = layer;
-    const theirs = (base[at] as { children: unknown[] }).children;
-    return { ...own, children: expand(children ?? [], theirs) };
+    const theirs = (base[layer.$base] as { children: unknown[] }).children;
+    // The keys in the order they came, as a layer written whole has them.
+    const out: Record<string, unknown> = {};
+    for (const key in layer) {
+      if (key === 'children') out.children = expand(layer.children ?? [], theirs);
+      else if (key !== '$base') out[key] = layer[key];
+    }
+    return out;
   });
 }
 
@@ -144,13 +177,44 @@ export function requestFor(root: Extract<DomNode, { kind: 'element' }>, context:
   return built;
 }
 
+/**
+ * The state of an island a readback of the frame left in the addon (`Kept` of `@kinetographdev/react`'s readback): the
+ * number it holds it as, the pass, and the request it shows.
+ */
+export interface IslandState {
+  readonly stamp: number;
+  readonly pass: number | undefined;
+  readonly request: IslandRequestJson;
+}
+
+/** The state the readbacks last left of each island, by path: a render of the same request names it instead of sending it. */
+const readStates = new Map<string, IslandState>();
+
+/** Notes the state a readback left of the island at `path` (null: none the addon is known to hold). */
+export function noteIslandState(path: string, state: IslandState | null): void {
+  if (state === null) readStates.delete(path);
+  else readStates.set(path, state);
+}
+
 export function mapDomIsland(root: DomNode, context: IslandContext): IslandResult {
   let t = stamp();
   const prepared = prepare(root, context);
   t = lap('dom_prep', t);
   if (prepared === null) return { layers: [], unsupported: [], camera: null };
-  const { request, natives, json } = prepared;
-  const text = samplePass === null ? addonFunction('renderDomIsland')(json) : addonFunction('renderDomIsland')(json, samplePass);
+  const { request, natives } = prepared;
+  const render = (json: string): string =>
+    samplePass === null ? addonFunction('renderDomIsland')(json) : addonFunction('renderDomIsland')(json, samplePass, bases.get(request.path)?.pass);
+  // The frame draws the tree its scripts read last: when the request is the state a readback left, it is named, not sent.
+  const state = samplePass === null ? undefined : readStates.get(request.path);
+  let text: string | null = null;
+  if (state !== undefined && state.pass === samplePass && sameJson(request, state.request)) {
+    try {
+      text = render(JSON.stringify({ stamp: state.stamp, base: state.stamp, path: request.path, time: request.time, set: [] }));
+    } catch (error) {
+      if ((error as { code?: unknown }).code !== 'STALE_BASE') throw error;
+    }
+  }
+  text ??= render(JSON.stringify(request));
   t = lap('dom_native', t);
   const output = JSON.parse(text) as IslandOutputJson;
   const result = assemble(output, request.path, (path) => {
@@ -176,18 +240,19 @@ function prepare(root: DomNode, context: IslandContext) {
   // it would not read is not sent.
   if (history.length > 0 && islandMoves(request.stylesheets, [request.root, ...history.map((state) => state.root)])) request.history = history;
   if (isWarming()) return null;
-  return { request, natives, json: JSON.stringify(request) };
+  return { request, natives };
 }
 
 /** An island's result from the addon's output; `emitNative` gives the layers of the native element at a path. */
 function assemble(output: IslandOutputJson, path: string, emitNative: (path: string) => LayerJson | null): IslandResult {
   let drawn = output.layers;
-  if (output.delta) {
+  if (typeof output.delta === 'number') {
     const base = bases.get(path);
-    if (base === undefined) throw new Error(`renderDomIsland wrote island ${path} as changes from a render it did not make`);
-    drawn = expand(drawn as Written[], base);
+    if (base === undefined || base.pass !== output.delta) throw new Error(`renderDomIsland wrote island ${path} as changes from a render it did not make`);
+    drawn = expand(drawn as Written[], base.layers);
+    if (samplePass !== null && base.pass !== samplePass) bases.set(path, { pass: samplePass, layers: drawn });
   } else if (samplePass !== null) {
-    bases.set(path, drawn);
+    bases.set(path, { pass: samplePass, layers: drawn });
   }
   const placed = fillNatives(drawn, emitNative);
   // The island is laid out in the composition's box already: a flex layout around it must not place it again.
@@ -235,8 +300,8 @@ export function startDomIsland(root: DomNode, context: IslandContext): StartedIs
     const nothing: IslandResult = { layers: [], unsupported: [], camera: null };
     return { finish: () => nothing };
   }
-  const { request, natives, json } = prepared;
-  const ticket = addonFunction('startDomIsland')(json, samplePass ?? undefined);
+  const { request, natives } = prepared;
+  const ticket = addonFunction('startDomIsland')(JSON.stringify(request), samplePass ?? undefined, samplePass === null ? undefined : bases.get(request.path)?.pass);
   lap('dom_start', t);
   // In the queue before the islands its native elements start: finished in the order the addon draws them.
   const queued: Queued = { ticket, path: request.path, natives: new Map(), result: null };

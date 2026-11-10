@@ -120,14 +120,14 @@ function inlineStyle(host: HostElement, readbackOf: () => Readback): CSSStyleDec
     setProperty(property: string, value: string | null): void {
       const old = oldAttribute(host, 'style');
       overlayOf(host, true)!.style.set(kebab(property), value === null ? '' : written(kebab(property), String(value)));
-      readbackOf().touch();
+      readbackOf().touch(host);
       recordAttribute(host, 'style', old);
     },
     removeProperty(property: string): string {
       const old = read(kebab(property));
       const was = oldAttribute(host, 'style');
       overlayOf(host, true)!.style.set(kebab(property), '');
-      readbackOf().touch();
+      readbackOf().touch(host);
       recordAttribute(host, 'style', was);
       return old;
     },
@@ -144,7 +144,7 @@ function inlineStyle(host: HostElement, readbackOf: () => Readback): CSSStyleDec
           overlay.style.set(name, written(name, part.slice(colon + 1).trim()));
         }
       }
-      readbackOf().touch();
+      readbackOf().touch(host);
       recordAttribute(host, 'style', was);
     },
     item: () => '',
@@ -557,14 +557,14 @@ export class DomElement extends DomNodeBase {
   setAttribute(name: string, value: unknown): void {
     const old = oldAttribute(this.host, name);
     overlayOf(this.host, true)!.attrs.set(name, String(value));
-    this.readback.touch();
+    this.readback.touch(this.host);
     recordAttribute(this.host, name, old);
   }
   removeAttribute(name: string): void {
     const old = oldAttribute(this.host, name);
     if (old === null) return;
     overlayOf(this.host, true)!.attrs.set(name, null);
-    this.readback.touch();
+    this.readback.touch(this.host);
     recordAttribute(this.host, name, old);
   }
   // The namespaced forms keep the qualified name as the attribute's name; `xlink:href` also answers as `href` (what <use> and <image> read).

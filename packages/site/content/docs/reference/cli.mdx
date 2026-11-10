@@ -120,7 +120,7 @@ npx kinetograph render <entry> [-o <output.mp4>] [options]
 | `--range <a..b>` | The frames to render. The default is all of them. |
 | `--draft` | Half size, for a quick look. Same as `--scale 0.5`. |
 | `--scale <n>` | Size multiplier, above 0 and at most 8. Each side rounds down to an even number. |
-| `--concurrency <n>` | Frames drawn at once. The default is half the cores, at most 4. `1` uses the main thread. |
+| `--concurrency <n>` | Frames drawn at once. The default is half the cores, at most 4, and the main thread takes over if the workers mostly wait for the GPU. `1` uses the main thread. |
 | `--codec <name>` | `h264` (default), `h265`, `prores`, `vp9` or `gif`. A `.webm` path defaults to `vp9`, and a `.gif` path to `gif`. |
 | `--encoder <name>` | An ffmpeg encoder to use in place of the default: libx264 for H.264 and libx265 for H.265 on every platform. See below. |
 | `--crf <n>` | Constant quality, lower is better. 0 to 51 for h264 and h265, 0 to 63 for vp9. Not with `--video-bitrate`. |

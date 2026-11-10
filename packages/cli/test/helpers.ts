@@ -109,6 +109,9 @@ export function fakeNative(overrides: Partial<Record<string, unknown>> = {}): { 
       const frame = this.started.shift()!;
       return { width: 1, height: 1, data: Buffer.from([frame >> 8, frame & 0xff, 0, 255]), repeated: false };
     }
+    takeGpuWaitMs(): number {
+      return 0;
+    }
     render(scene: string, output: string, options: unknown) {
       calls.render.push({ scene: JSON.parse(scene), output, options });
       return summary(output);

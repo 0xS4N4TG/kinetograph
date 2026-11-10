@@ -450,7 +450,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: 
 
 /** Tells the readback the host's style changed (an animation moved, started or stopped). */
 function touch(host: HostElement | null): void {
-  if (host !== null) readbackOfHost(host).touch();
+  if (host !== null) readbackOfHost(host).touch(host);
 }
 
 export class AnimationShim {
@@ -895,7 +895,7 @@ export function animationClockMoved(): void {
     const target = animation.host();
     if (target !== null && !seen.has(target)) {
       seen.add(target);
-      readbackOfHost(target).touch();
+      readbackOfHost(target).touch(target);
     }
   }
 }
