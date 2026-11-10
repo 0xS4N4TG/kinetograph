@@ -1,4 +1,4 @@
-//! `getImageData` of a canvas that holds one decoded picture, answered on the CPU (packages/cli/skills/kinetograph/references/SCENE.md,
+//! `getImageData` of a canvas that holds one decoded picture, answered on the CPU (packages/cli/skills/kinetograph-markup/references/SCENE.md,
 //! "canvas"). A project that reads video pixels per frame (`onVideoFrame`, then `drawImage` and `getImageData`) cannot
 //! afford to open the GPU for each read, so when the commands so far are one plain `drawImage` of a picture file or a
 //! video frame, the pixels come from the decoder's cache and are resampled here. Any other canvas is drawn by the

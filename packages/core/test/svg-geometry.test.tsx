@@ -1,4 +1,4 @@
-// getTotalLength, getPointAtLength and getBBox on refs to SVG elements (packages/cli/skills/kinetograph/references/ENGINE.md §1, "Readback"): the maths is
+// getTotalLength, getPointAtLength and getBBox on refs to SVG elements (packages/cli/skills/kinetograph-markup/references/ENGINE.md §1, "Readback"): the maths is
 // the Remotion path functions of `@kinetographdev/core/paths`, handed to the shim by `web/install`.
 
 import { useLayoutEffect, useRef } from 'react';

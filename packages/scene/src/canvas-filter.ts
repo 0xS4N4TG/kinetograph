@@ -1,6 +1,6 @@
 // The CSS `filter` strings a Canvas 2D context takes (`ctx.filter`): `none`, or a list of `blur()`, `brightness()`,
 // `contrast()`, `drop-shadow()`, `grayscale()`, `hue-rotate()`, `invert()`, `opacity()`, `saturate()` and `sepia()`.
-// They become the functions the renderer runs (packages/cli/skills/kinetograph/references/SCENE.md, "canvas"), which are the passes of the scene's effects
+// They become the functions the renderer runs (packages/cli/skills/kinetograph-markup/references/SCENE.md, "canvas"), which are the passes of the scene's effects
 // of the same names. A `url()` reference names an SVG `<filter>` of the page the canvas is in, which the page's painter
 // finds (crates/dom); where there is no page, it is reported and drawn without.
 

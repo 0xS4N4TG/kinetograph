@@ -1,4 +1,4 @@
-// What the DOM shim needs from the reconciler (packages/cli/skills/kinetograph/references/ENGINE.md §1, "Readback"): the host tree around an element and the
+// What the DOM shim needs from the reconciler (packages/cli/skills/kinetograph-markup/references/ENGINE.md §1, "Readback"): the host tree around an element and the
 // island's boxes and computed styles, which come from the addon. `@kinetographdev/react` implements `Readback` per root.
 
 import type { DomNode } from '../types.js';

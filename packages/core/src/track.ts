@@ -1,5 +1,5 @@
 // `useTrack(file, trackName?)`: a tracked point from a `.track.json` that `kinetograph track` wrote (Blender's tracker),
-// at the current frame (packages/cli/skills/kinetograph/references/AUTHORING.md, "Motion tracking").
+// at the current frame (packages/cli/skills/kinetograph-markup/references/AUTHORING.md, "Motion tracking").
 //
 // A pure function of the file and the frame: composition frame f is the clip's frame floor(f * clip fps / fps), the
 // picture a <Video> starting at frame 0 shows then; the value is that frame's marker, or the last one before it (a track
