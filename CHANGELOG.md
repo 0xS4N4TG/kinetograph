@@ -45,6 +45,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A custom property in the `style` attribute of an SVG shape (`style="--hf-dash: 0"`, which GSAP sets) no longer drops the stylesheet's `fill`, `stroke` and dashes: the shape was drawn as a black fill.
 - A layer moved in 3D (`translate3d` under a `perspective`) whose box starts left of or above its parent's origin (a negative margin, as 3D carousels centre their cards with) is drawn whole; the part at negative coordinates was cut off before it was placed.
 - `backdrop-filter` draws its colour functions (`saturate()`, `brightness()`, `contrast()`, `grayscale()`, `sepia()`, `invert()`, `hue-rotate()`) in the order of the list, not only `blur()`; `drop-shadow()` and `opacity()` are still reported.
+- Canvas `measureText` measures a font list that ends in a generic family (`"Fira Code", monospace`) in the font it is drawn in, and counts the white space at the ends of the text; before, it returned half an em a character, so tokens drawn one after another overlapped.
 
 ## 0.3.0 (2026-11-03)
 

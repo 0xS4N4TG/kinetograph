@@ -199,6 +199,19 @@ fn weight_range(key: &str) -> (f32, Option<f32>) {
     }
 }
 
+/// A font key whose family list names no font of the project but a generic or system family (`"Fira Code", monospace`,
+/// `Menlo:700`): the kind of font it is set in, and the weight and italic its `:700i` suffix asks for. A text layout
+/// sets such a key in the bundled font of that kind (`TextEngine::layout`), and a measurement can ask for it, too.
+pub fn generic_key(key: &str) -> Option<(crate::generic_fonts::Kind, Option<f32>, bool)> {
+    let key = key.rsplit_once('@').map_or(key, |(k, _)| k);
+    let (list, suffix) = match key.rsplit_once(':') {
+        Some((list, s)) if !s.is_empty() && s.trim_end_matches('i').bytes().all(|b| b.is_ascii_digit()) => (list, s),
+        _ => (key, ""),
+    };
+    let kind = crate::generic_fonts::kind_of_list(list)?;
+    Some((kind, suffix.trim_end_matches('i').parse::<f32>().ok(), suffix.ends_with('i')))
+}
+
 impl TextEngine {
     /// Registers every font in `fonts` (family name -> path, relative to
     /// `base_dir`) under its scene name.
@@ -327,17 +340,13 @@ impl TextEngine {
         laid
     }
 
-    /// The generic family a font key stands for, with the weight and the italic its `:700i` suffix asks for, when the
-    /// key is not a family that is loaded (`generic_fonts::kind_of_list`). Registers the bundled fonts the first time.
+    /// The generic family a font key stands for (`generic_key`), when the key is not a family that is loaded. Registers
+    /// the bundled fonts the first time.
     fn generic_of(&mut self, key: &str) -> Option<(parley::fontique::GenericFamily, Option<f32>, bool)> {
         if self.font_cx.collection.family_id(key).is_some() {
             return None;
         }
-        let (list, suffix) = match key.rsplit_once(':') {
-            Some((list, s)) if s.trim_end_matches('i').bytes().all(|b| b.is_ascii_digit()) && !s.is_empty() => (list, s),
-            _ => (key, ""),
-        };
-        let kind = crate::generic_fonts::kind_of_list(list)?;
+        let (kind, weight, italic) = generic_key(key)?;
         if !self.generics_registered {
             self.generics_registered = true;
             let (sans, serif) = crate::generic_fonts::register(&mut self.font_cx.collection);
@@ -352,8 +361,7 @@ impl TextEngine {
                 }
             }
         }
-        let weight = suffix.trim_end_matches('i').parse::<f32>().ok();
-        Some((crate::generic_fonts::generics(kind)[0], weight, suffix.ends_with('i')))
+        Some((crate::generic_fonts::generics(kind)[0], weight, italic))
     }
 
     /// Shapes `text` in the named font. `line_height` is a multiple of
