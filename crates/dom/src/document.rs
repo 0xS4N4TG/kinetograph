@@ -1080,7 +1080,18 @@ fn apply(island: &mut IslandDocument, edits: &[Edit]) {
     let mut m = island.doc.mutate();
     for edit in edits {
         match edit {
-            Edit::Attr(id, name, Some(value)) => m.set_attribute(*id, name.clone(), value),
+            Edit::Attr(id, name, Some(value)) => {
+                // An element given another path (a sibling before it added or taken away) is found by the new one.
+                if name.local == *PATH_ATTR {
+                    if let Some(old) = island.node_paths.insert(*id, value.clone())
+                        && island.paths.get(&old) == Some(id)
+                    {
+                        island.paths.remove(&old);
+                    }
+                    island.paths.insert(value.clone(), *id);
+                }
+                m.set_attribute(*id, name.clone(), value)
+            }
             Edit::Attr(id, name, None) => m.clear_attribute(*id, name.clone()),
             Edit::Text(id, text) => m.set_node_text(*id, text),
         }

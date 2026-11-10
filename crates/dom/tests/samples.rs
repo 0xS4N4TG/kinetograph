@@ -858,6 +858,37 @@ fn a_block_inside_display_contents_inside_inline_content_breaks_the_line() {
     );
 }
 
+/// An edit that gives elements other paths, as adding or taking away a sibling before them does while the tree keeps
+/// its shape, finds them by the new paths: the document kept the paths it was built with, so its boxes were read back
+/// under the old ones (fuzz seeds 1050087, 1051753, 1051937, 1053790 and 1053819).
+#[test]
+fn an_element_given_another_path_is_found_by_it() {
+    let page = |a: &str, b: &str| {
+        request(el(
+            "div",
+            "$0",
+            "position: absolute; inset: 0",
+            vec![
+                el("div", a, "width: 10px; height: 10px", vec![]),
+                el("div", b, "width: 20px; height: 20px", vec![]),
+            ],
+        ))
+    };
+    let (first, edited) = (page("$0.0", "$0.1"), page("$0.1", "$0.2"));
+    let mut cache = IslandCache::default();
+    drawn(&mut cache, &first, Some(1));
+    let request = parse(&edited);
+    let resolved = cache.resolve(&request, Some(2)).unwrap();
+    let fresh = IslandCache::default().resolve(&request, None).unwrap();
+    let paths = |r: &kinetograph_dom::document::Resolved| {
+        readback::layout_boxes(&r.island)
+            .into_iter()
+            .map(|(path, b)| (path, b.width))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(paths(&resolved), paths(&fresh));
+}
+
 /// Every rect shape in `layers`, as its width and height.
 fn rects(layers: &Value, out: &mut Vec<(f64, f64)>) {
     match layers {
