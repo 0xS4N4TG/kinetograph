@@ -593,12 +593,33 @@ const tagClass = (tag: string): typeof DomElement =>
 export const HTMLTemplateElementShim = tagClass('template');
 export const HTMLFormElementShim = tagClass('form');
 
+let currentScript: DomElement | null = null;
+
+/**
+ * Runs `run` as a classic script that sits in `parent` (appended there for the run only, as the last child, so
+ * `document.currentScript.closest(...)` and `.parentElement` find the script's surroundings); `document.currentScript`
+ * is that `<script>` during the run and null before and after, also when `run` throws.
+ */
+export function withCurrentScript<T>(parent: DomElement | null, run: () => T): T {
+  const previous = currentScript;
+  const script = domElementFor(createHostElement('script'));
+  parent?.appendChild(script);
+  currentScript = script;
+  try {
+    return run();
+  } finally {
+    currentScript = previous;
+    // `remove()`, not `parent.removeChild`: a script that reset its parent has already detached the marker.
+    script.remove();
+  }
+}
+
 /** Gives the page's own `document` what a document has beyond queries: its type, an implementation and the walkers. */
 export function installDocumentMembers(doc: Record<string, unknown>, define: (target: Record<string, unknown>, name: string, value: unknown) => void): void {
   define(doc, 'nodeType', 9);
   define(doc, 'nodeName', '#document');
   define(doc, 'doctype', null);
-  define(doc, 'currentScript', null);
+  Object.defineProperty(doc, 'currentScript', { get: () => currentScript, configurable: true, enumerable: false });
   define(doc, 'implementation', implementation);
   define(doc, 'createNodeIterator', createNodeIterator);
   define(doc, 'createTreeWalker', createTreeWalker);

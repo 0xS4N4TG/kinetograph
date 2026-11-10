@@ -14,7 +14,7 @@
 import { type ReactNode } from 'react';
 import { Audio, createSceneRoot } from '@kinetographdev/react';
 import { noteStylesheetProblem, registerStylesheet, setRemoteAssetResolver } from '@kinetographdev/compat/dom';
-import { hostOf, setPageDocument, setRefusedFetchHandler, setRemoteFiles, whenFetchesSettle } from '@kinetographdev/compat/shim';
+import { hostOf, setPageDocument, setRefusedFetchHandler, setRemoteFiles, whenFetchesSettle, withCurrentScript } from '@kinetographdev/compat/shim';
 import { continueRender, delayRender } from '../assets.js';
 import { Composition, registerRoot } from '../compositions.js';
 import { Sequence, useCurrentFrame, useVideoConfig } from '../timeline.js';
@@ -224,7 +224,7 @@ class Runtime {
 
     for (const script of plan.scripts) {
       if (script.scope === null) {
-        runGlobalScript(script.code, script.file, report);
+        withCurrentScript(doc().body, () => runGlobalScript(script.code, script.file, report));
         continue;
       }
       const scope = script.scope;
@@ -240,7 +240,7 @@ class Runtime {
             path.startsWith('/') || /^[a-z]+:/i.test(path) ? path : `${sourceFile === null ? plan.baseDir : sourceFile.replace(/[/\\][^/\\]*$/, '')}/${path}`,
         },
       };
-      runScopedScript(script.code, script.file, env, report);
+      withCurrentScript(env.root() as any, () => runScopedScript(script.code, script.file, env, report));
     }
     // Pages listen for these; in a browser both have fired by the time a render starts.
     for (const target of [g.document, g]) {
