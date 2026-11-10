@@ -35,6 +35,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A package loaded twice (Studio, dev) no longer mixes up the island state of its two copies.
 - `staticFile()` returns forward slashes on Windows so CSS `url()` paths are not corrupted by backslash escapes (#100).
 - Paint decodes percent-encoded Windows drive paths with spaces in CSS background and border images (#100).
+- A gradient-stroked ellipse or circle whose one dash covers the whole outline (a dash as long as the outline, as Remotion's hello-world arc has at the end of its draw-on) is a whole ring again, not an arc closed by a chord.
 
 ## 0.3.0 (2026-11-03)
 
