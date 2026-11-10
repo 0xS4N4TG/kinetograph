@@ -175,7 +175,7 @@ const HWF_CSS = `
 export default function HalftoneWordmarkFooter({
   wordmark = "kinetograph",
   label = "Kinetograph",
-  meta = "© 2026 · PolyForm Small Business 1.0.0",
+  meta = "© 2026 · Apache-2.0",
   columns = DEFAULT_COLUMNS,
   backToTop = true,
   preset = "cobalt",

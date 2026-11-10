@@ -1,0 +1,50 @@
+---
+title: Measuring text
+description: Find how wide text is, and fit it to a width or a number of lines, after its font is registered.
+---
+
+`measureText` returns the width and height of a piece of text in a font. Register the font first: text is never measured before its fonts are.
+
+```tsx title="src/Headline.tsx"
+import { Text } from '@kinetographdev/core';
+import { fitText } from '@kinetographdev/core/layout-utils';
+import { loadFont } from '@remotion/google-fonts/Inter';
+
+const { fontFamily } = loadFont('normal', { weights: ['700'] });
+
+export const Headline = () => {
+  const { fontSize } = fitText({ text: 'Hello, Kinetograph', withinWidth: 900, fontFamily, fontWeight: 700 });
+  return (
+    <Text font={fontFamily} weight={700} size={Math.min(fontSize, 120)} color="#ffffff">
+      Hello, Kinetograph
+    </Text>
+  );
+};
+```
+
+## The functions
+
+- `measureText({ text, fontFamily, fontSize, fontWeight, fontStyle, letterSpacing, textTransform })` returns `{ width, height }`.
+- `fitText({ text, withinWidth, fontFamily, ... })` returns the largest `fontSize` at which the text is no wider than `withinWidth`.
+- `fitTextOnNLines({ text, maxLines, maxBoxWidth, maxFontSize, fontFamily, ... })` returns the `fontSize` and the `lines`.
+- `fillTextBox({ maxBoxWidth, maxLines })` adds words one at a time and tells you when the box is full.
+
+## Measuring a layer
+
+`inspect` prints each layer's bounds at a frame, and `lint` reports text that overflows its box or the canvas:
+
+```sh
+npx kinetograph inspect src/index.tsx --frame 30
+```
+
+## Rules
+
+- **Register fonts first.** See [Fonts](/docs/making-videos/fonts/). `validateFontIsLoaded` is accepted, and the font must be registered either way.
+- **Variable fonts** that set `font-variation-settings` per element can measure wider than in Chrome, so a line fitted by `measureText` may wrap.
+
+## What works
+
+- Drawn natively: `measureText`, `fitText`, `fillTextBox` and `fitTextOnNLines` from `@remotion/layout-utils` (4 of 4 exports), following the published package's steps.
+- Approximated: `ex` uses the first font's x-height. With only a generic family such as `serif`, a MathJax formula comes out about 10% larger.
+- Not supported: measuring text in a font that is not registered.
+- See [What works](/docs/compat/#text-and-fonts).
