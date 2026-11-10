@@ -38,6 +38,7 @@ Kinetograph is in beta, so APIs can still change between versions. The same list
 - `staticFile()` returns forward slashes on Windows so CSS `url()` paths are not corrupted by backslash escapes (#100).
 - Paint decodes percent-encoded Windows drive paths with spaces in CSS background and border images (#100).
 - A font whose URL has a long name (Google Fonts' variable-axis files) is cached under a shortened file name instead of failing with ENAMETOOLONG.
+- A file named by an absolute path inside the project (the path a composition's `assetUrl()` returns) is read by `fetch` and `new Image` instead of being looked for under the project folder.
 
 ## 0.3.0 (2026-11-03)
 
