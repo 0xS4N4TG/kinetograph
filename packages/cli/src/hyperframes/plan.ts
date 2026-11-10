@@ -767,7 +767,19 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
   // The root's own variables: what `<html>` and the root element declare, under the values the root element gives.
   const rootId = attr('data-composition-id') ?? 'main';
   const declared: Record<string, unknown> = {};
-  for (const text of [attrsOf(html).find(([n]) => n === 'data-composition-variables')?.[1] ?? null, attr('data-composition-variables')]) {
+  // So does any other element of the page outside the compositions it mounts (HyperFrames' `getVariables()` gathers them all).
+  const declarations = [attrsOf(html).find(([n]) => n === 'data-composition-variables')?.[1] ?? null];
+  const gather = (nodes: HfNode[]): void => {
+    for (const node of nodes) {
+      if (node.t !== 'el') continue;
+      const id = attrValue(node, 'data-composition-id');
+      if (id !== null && id !== rootId && id in builder.variables) continue;
+      declarations.push(attrValue(node, 'data-composition-variables'));
+      gather(node.children);
+    }
+  };
+  gather(body);
+  for (const text of declarations) {
     for (const item of (safeJson(text) as { id?: string; default?: unknown }[] | null) ?? []) {
       if (item && typeof item.id === 'string' && 'default' in item) declared[item.id] = item.default;
     }

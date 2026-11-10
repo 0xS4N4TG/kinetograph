@@ -132,6 +132,22 @@ describe('mounting compositions', () => {
   });
 });
 
+describe('the root composition\'s variables', () => {
+  it('are the defaults every element of the page declares, outside the compositions it mounts, under the values given', async () => {
+    const dir = project({
+      'index.html': `<!doctype html><html data-composition-variables='[{"id":"a","type":"string","default":"html"}]'><body>
+        <div id="root" data-composition-id="main" data-start="0" data-duration="2" data-width="640" data-height="360" data-composition-variables='[{"id":"b","type":"number","default":2}]'>
+          <div class="part" data-composition-variables='[{"id":"words","type":"string","default":"Staggered fade up"}]'></div>
+          <div data-composition-id="card" data-composition-src="compositions/card.html" data-start="0" data-duration="2"></div>
+        </div></body></html>`,
+      'compositions/card.html': `<template><div id="inner" data-composition-id="card" data-composition-variables='[{"id":"title","type":"string","default":"Card"}]'></div></template>`,
+    });
+    const { plan } = await buildPlan(join(dir, 'index.html'));
+    expect(plan.variables.main).toEqual({ a: 'html', b: 2, words: 'Staggered fade up' });
+    expect(plan.variables.card).toEqual({ title: 'Card' });
+  });
+});
+
 describe('a page without the root attributes', () => {
   const noteOf = async (html: string): Promise<string> => {
     const dir = project({ 'index.html': html });
