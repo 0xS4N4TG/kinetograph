@@ -82,3 +82,56 @@ describe('XMLSerializer', () => {
     expect(s.serializeToString(doc().createTextNode('a<b'))).toBe('a&lt;b');
   });
 });
+
+describe('SVG viewBox, points and matrices', () => {
+  const svgIn = (html: string): any => {
+    const host = doc().createElement('div');
+    host.innerHTML = html;
+    doc().body.appendChild(host);
+    return host.querySelector('svg');
+  };
+
+  it('svg.viewBox.baseVal is the viewBox attribute as a rect', () => {
+    const svg = svgIn('<svg id="s" viewBox="10 20 520 220"></svg>');
+    const vb = svg.viewBox.baseVal;
+    expect([vb.x, vb.y, vb.width, vb.height]).toEqual([10, 20, 520, 220]);
+    // No attribute: a browser gives an empty rect, not undefined.
+    const bare = svgIn('<svg></svg>');
+    expect([bare.viewBox.baseVal.width, bare.viewBox.baseVal.height]).toEqual([0, 0]);
+    // An HTML element has none.
+    expect(doc().createElement('div').viewBox).toBeUndefined();
+  });
+
+  it('a point from getPointAtLength or createSVGPoint goes through a matrix', () => {
+    // The path functions core hands over, here a stand-in for a straight line along x.
+    setPathMeasure({ getLength: () => 50, getPointAtLength: (_d, length) => ({ x: length, y: 0 }), getBoundingBox: () => ({ x1: 0, y1: 0, x2: 50, y2: 0, width: 50, height: 0 }) });
+    const svg = svgIn('<svg><path id="p" d="M0 0 L50 0"/></svg>');
+    const p = svg.querySelector('#p').getPointAtLength(10).matrixTransform({ a: 1, b: 0, c: 0, d: 1, e: 5, f: 5 });
+    expect([p.x, p.y]).toEqual([15, 5]);
+    const q = svg.createSVGPoint();
+    q.x = 2;
+    q.y = 3;
+    const r = q.matrixTransform({ a: 2, b: 0, c: 0, d: 4, e: 1, f: 0 });
+    expect([r.x, r.y]).toEqual([5, 12]);
+    // The point is not changed.
+    expect([q.x, q.y]).toEqual([2, 3]);
+    setPathMeasure(null);
+  });
+
+  it('getCTM and getScreenCTM are matrices that invert and multiply', () => {
+    const svg = svgIn('<svg width="100" height="100"><g transform="translate(10 20) scale(2)"><rect id="r" width="5" height="5"/></g></svg>');
+    const m = svg.querySelector('#r').getCTM();
+    expect([m.a, m.d, m.e, m.f]).toEqual([2, 2, 10, 20]);
+    const back = m.inverse().multiply(m);
+    expect([back.a, back.b, back.c, back.d, back.e, back.f].map((v: number) => Math.round(v * 1e9) / 1e9)).toEqual([1, 0, 0, 1, 0, 0]);
+    // Unlaid out, the svg sits at the page origin: the screen matrix is the transforms, and its inverse maps a page point back.
+    const screen = svg.querySelector('#r').getScreenCTM();
+    const pt = svg.createSVGPoint();
+    pt.x = 20;
+    pt.y = 30;
+    const inUser = pt.matrixTransform(screen.inverse());
+    expect([inUser.x, inUser.y]).toEqual([5, 5]);
+    // The svg itself has one too (the usual pointer-to-user-space pattern).
+    expect(svg.getScreenCTM().inverse()).toBeDefined();
+  });
+});

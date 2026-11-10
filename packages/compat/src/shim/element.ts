@@ -29,6 +29,7 @@ import { isKnownCssProperty } from './css-names.js';
 import { collectionOf, nodeListOf, type HTMLCollection, type NodeList } from './lists.js';
 import { GEOMETRY_TAGS, pathMeasure, shapePath } from './geometry.js';
 import { AnimationShim, animationsOf, documentTimeline, KeyframeEffectShim, setAnimationTargetResolver, type AnimationTimelineShim } from './animations.js';
+import { animatedRect, SVGMatrixShim, SVGPointShim } from './svg-matrix.js';
 import { cssTransformMatrix, IDENTITY, mapBox, mulAffine, parseViewBox, svgLength, viewBoxMatrix, type Affine } from './svg-transform.js';
 import { parseHtmlFragment } from '../request/html.js';
 import { attributeMapOf, AttrShim, type NamedNodeMapShim } from './attributes.js';
@@ -320,6 +321,7 @@ function documentPosition(a: Positioned, b: unknown): number {
 }
 
 const TEXT_TAGS = new Set(['text', 'tspan']);
+const VIEWBOX_TAGS = new Set(['svg', 'symbol', 'marker', 'pattern', 'view']);
 /** The HTML elements whose IDL attribute of each name reflects the content attribute (HTML, "reflect"). */
 const REFLECTED: Record<string, Set<string>> = {
   src: new Set(['img', 'video', 'audio', 'source', 'track', 'script', 'iframe', 'embed', 'input']),
@@ -1011,7 +1013,14 @@ export class DomElement extends DomNodeBase {
    * placed at the outer `<svg>`'s box. A box through a rotation is the box around its corners. Null for anything else.
    */
   private svgClientRect(): DOMRectShim | null {
-    if (this.ownerSVGElement === null) return null;
+    const m = this.ownerSVGElement === null ? null : this.svgToPage();
+    if (m === null) return null;
+    const b = this.getBBox();
+    const r = mapBox(m, b.x, b.y, b.width, b.height);
+    return new DOMRectShim(r.x, r.y, r.width, r.height);
+  }
+  /** The matrix from this SVG element's user space to the page, or null when no outer `<svg>` is above it. */
+  private svgToPage(): Affine | null {
     let m: Affine = IDENTITY;
     let outer: HostElement | null = null;
     for (let h: HostElement | null = this.host; h !== null; h = this.readback.parent(h)) {
@@ -1031,9 +1040,7 @@ export class DomElement extends DomNodeBase {
       if (view !== null) m = mulAffine(viewBoxMatrix(view, svgElement.getAttribute('preserveAspectRatio'), svg.width, svg.height), m);
       m = mulAffine([1, 0, 0, 1, svg.rect.x, svg.rect.y], m);
     }
-    const b = this.getBBox();
-    const r = mapBox(m, b.x, b.y, b.width, b.height);
-    return new DOMRectShim(r.x, r.y, r.width, r.height);
+    return m;
   }
   /** The nearest `<svg>` above `h`, or null (an outer `<svg>`, or HTML in a `foreignObject`). */
   private svgParentOf(h: HostElement): HostElement | null {
@@ -1351,11 +1358,22 @@ export class DomElement extends DomNodeBase {
   getTotalLength(): number {
     return pathMeasure().getLength(this.requireGeometry('getTotalLength'));
   }
-  getPointAtLength(length: number): { x: number; y: number } {
+  getPointAtLength(length: number): SVGPointShim {
     const d = this.requireGeometry('getPointAtLength');
     const total = pathMeasure().getLength(d);
     const clamped = Math.min(Math.max(Number(length) || 0, 0), total);
-    return pathMeasure().getPointAtLength(d, clamped) ?? { x: 0, y: 0 };
+    const at = pathMeasure().getPointAtLength(d, clamped) ?? { x: 0, y: 0 };
+    return new SVGPointShim(at.x, at.y);
+  }
+  /** `svg.viewBox` of an `<svg>`, `<symbol>`, `<marker>`, `<pattern>` or `<view>`; undefined on other elements. */
+  get viewBox(): ReturnType<typeof animatedRect> | undefined {
+    return VIEWBOX_TAGS.has(this.host.type) ? animatedRect(parseViewBox(this.getAttribute('viewBox'))) : undefined;
+  }
+  createSVGPoint(): SVGPointShim {
+    return new SVGPointShim();
+  }
+  createSVGMatrix(): SVGMatrixShim {
+    return new SVGMatrixShim();
   }
   /** The element's box in its own user space, before its transform: geometry, or the union of its children's. */
   getBBox(): DOMRectShim {
@@ -1404,7 +1422,7 @@ export class DomElement extends DomNodeBase {
     return this.ownerSVGElement;
   }
   /** The element's transform to its `<svg>`'s user space: its own `transform` attribute and its ancestors', up to the `<svg>`. */
-  getCTM(): { a: number; b: number; c: number; d: number; e: number; f: number } | null {
+  getCTM(): SVGMatrixShim | null {
     if (!this.inSvg) return null;
     let m: [number, number, number, number, number, number] = [1, 0, 0, 1, 0, 0];
     for (let h: HostElement | null = this.host; h !== null && h.type !== 'svg'; h = this.readback.parent(h)) {
@@ -1415,10 +1433,12 @@ export class DomElement extends DomNodeBase {
         t[0] * m[4] + t[2] * m[5] + t[4], t[1] * m[4] + t[3] * m[5] + t[5],
       ];
     }
-    return { a: m[0], b: m[1], c: m[2], d: m[3], e: m[4], f: m[5] };
+    return SVGMatrixShim.of(m);
   }
-  getScreenCTM(): { a: number; b: number; c: number; d: number; e: number; f: number } | null {
-    return this.getCTM();
+  /** The element's user space to the page: its transforms, the viewports around it and the outer `<svg>`'s box. */
+  getScreenCTM(): SVGMatrixShim | null {
+    const m = this.inSvg ? this.svgToPage() : null;
+    return m === null ? null : SVGMatrixShim.of(m);
   }
   /** `element.transform.baseVal`: the `transform` attribute as one matrix (`consolidate()`), for libraries that read it. */
   get transform(): { baseVal: { numberOfItems: number; consolidate(): { matrix: Record<string, number> } | null; getItem(index: number): { matrix: Record<string, number> } } } | undefined {
