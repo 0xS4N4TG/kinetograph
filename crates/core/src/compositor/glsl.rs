@@ -930,6 +930,9 @@ impl Compositor {
 
         let canvas = self.glsl.target.as_ref().expect("made above");
         for step in &steps {
+            // A recording of thousands of passes (a cube camera drawn again each frame) is sent in pieces: one
+            // command buffer of that size is not accepted by the driver (`submit_if_large`).
+            self.submit_if_large();
             let pass = match step {
                 Step::Write(id, [x, y, w, h], bytes) => {
                     // The passes before it run first: a queue write lands before whatever is
