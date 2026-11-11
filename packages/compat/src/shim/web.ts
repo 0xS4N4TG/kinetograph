@@ -24,10 +24,20 @@ import { createHostElement, createHostText } from './tree.js';
 import { imageSizeOfBytes } from './image-size.js';
 import { IntersectionObserverShim, MutationObserverShim, readbackRoots, ResizeObserverShim } from './observers.js';
 import { matches, queryAll } from './selector.js';
+import { XMLHttpRequestShim } from './xhr.js';
+import { MessageChannelShim, MessagePortShim, WorkerShim } from './worker.js';
 
 // ---- the window ----
 
 let viewport = { width: 1920, height: 1080 };
+
+/**
+ * What `navigator.hardwareConcurrency` says, whatever the machine has, so a library that sizes its workers by it (MapLibre
+ * makes that many; Basis and Draco transcoders the same) does the same work on every machine. 4 is what such libraries
+ * assume when the property is missing, and a worker here runs on the page's own thread, so more would only be more
+ * workers taking turns.
+ */
+export const HARDWARE_CONCURRENCY = 4;
 
 /** The composition's size, which `window.innerWidth`, `matchMedia` and `document.documentElement` report. */
 export function setWebViewport(size: { width: number; height: number }): void {
@@ -338,6 +348,12 @@ class ImageBitmapShim {
   [CANVAS_SOURCE](): CanvasPicture | null {
     return this.closed ? null : this.picture;
   }
+  /** `postMessage` of a bitmap: the picture is fixed, so the copy shares it; a transferred bitmap is closed on the sender's side. */
+  [Symbol.for('kinetograph.structuredClone')](transferred: boolean): ImageBitmapShim {
+    const copy = new ImageBitmapShim(this.picture);
+    if (transferred) this.closed = true;
+    return copy;
+  }
 }
 
 /** `createImageBitmap(source)` for an image, a canvas, `ImageData`, another bitmap or a `Blob` that holds an image file. */
@@ -630,6 +646,7 @@ export function installDomGlobals(): void {
   // `navigator.gpu` records (packages/scene/src/webgpu.ts); the canvas's 'webgpu' context is made by `getContext`.
   for (const [name, value] of Object.entries(GPU_GLOBALS)) define(g, name, value);
   const navigator = (g.navigator ??= {}) as Record<string, unknown>;
+  Object.defineProperty(navigator, 'hardwareConcurrency', { value: HARDWARE_CONCURRENCY, configurable: true, enumerable: true });
   if (!('gpu' in navigator)) Object.defineProperty(navigator, 'gpu', { value: createGpu({ rasterize: rasterizeCanvas, info: webgpuDeviceInfo }), configurable: true, enumerable: false });
   define(g, 'CanvasGradient', CanvasGradient);
   define(g, 'CanvasPattern', CanvasPattern);
@@ -637,6 +654,13 @@ export function installDomGlobals(): void {
   define(g, 'ImageData', ImageData);
   define(g, 'ImageBitmap', ImageBitmapShim);
   define(g, 'createImageBitmap', createImageBitmapShim);
+  // `XMLHttpRequest` reads through `fetch`, so it follows the same rules (xhr.ts).
+  define(g, 'XMLHttpRequest', XMLHttpRequestShim);
+  // `Worker` runs its script on this thread and `MessageChannel` delivers on one queue, so a frame can wait for the messages
+  // in flight (worker.ts). Node's own `MessageChannel` is replaced: its messages arrive when the event loop gets to them.
+  define(g, 'Worker', WorkerShim);
+  define(g, 'MessageChannel', MessageChannelShim, true);
+  define(g, 'MessagePort', MessagePortShim, true);
   define(g, 'Element', DomElement);
   define(g, 'HTMLElement', HTMLElementShim);
   define(g, 'SVGElement', SVGElementShim);

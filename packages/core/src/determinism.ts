@@ -165,6 +165,9 @@ function virtualRequestAnimationFrame(callback: (time: number) => void): number 
   }
   const id = nextAnimationId++;
   animationQueue.push({ id, callback });
+  const waiting = animationFrameWaiters;
+  animationFrameWaiters = [];
+  for (const wake of waiting) wake();
   return id;
 }
 function virtualCancelAnimationFrame(id: number): void {
@@ -263,6 +266,18 @@ export function setVirtualFrame(frame: number, fps: number, options: VirtualFram
   animationClockMoved();
   tickAnimations();
   if (options.deferAnimationFrames !== true) runAnimationFrames();
+}
+
+let animationFrameWaiters: (() => void)[] = [];
+
+/** Resolves when an animation frame is next requested (the frame loop wakes to run it while a handle is open). */
+export function whenAnimationFrameRequested(): Promise<void> {
+  return new Promise<void>((resolve) => animationFrameWaiters.push(resolve));
+}
+
+/** Whether animation-frame callbacks are waiting to run. */
+export function animationFramesQueued(): boolean {
+  return animationQueue.length > 0;
 }
 
 /** Runs the animation-frame callbacks queued so far, once, with the virtual `performance.now()`; what they ask for waits for the next call. */

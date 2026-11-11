@@ -21,6 +21,7 @@ export {
 } from './observers.js';
 export { deliverMediaEvents } from './media-events.js';
 export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf, setRemoteFiles, setRefusedFetchHandler, whenFetchesSettle, trackPending, pendingImageLoads, pendingFetches } from './web.js';
+export { setWorkerHold, setWorkerModuleLoader, whenWorkersIdle, resetWorkers, workersStarted, cloneMessage, WorkerShim, MessageChannelShim, MessagePortShim } from './worker.js';
 export { setPathMeasure } from './geometry.js';
 export { animationClockMoved, animationsPending, resetAnimations, setAnimationClock, tickAnimations } from './animations.js';
 export { canvasEnvironment, LayerPicturesNotReady, setLayerPictures, type LayerPictures, rasterizeCanvas, webgpuDeviceInfo, canvasCommandsOf, withCanvasCommands, resetCanvasStates, takeGlReports, glDependsOnHistory, glHoldsTargets, snapshotGlStates, setCanvasFonts, CanvasSurface } from './canvas.js';

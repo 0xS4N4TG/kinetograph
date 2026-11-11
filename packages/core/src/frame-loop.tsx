@@ -31,9 +31,9 @@ import {
   setHistoryMode,
   transitionWindowSeconds,
 } from '@kinetographdev/compat/dom';
-import { DELAY_RENDER_TIMEOUT, renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
+import { DELAY_RENDER_TIMEOUT, renderFailure, renderHandlesMade, whenRenderIdle, openRenderHandles } from './assets.js';
 import { resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
-import { fireHoldTimer, realTimers, resetVirtualClock, runAnimationFrames, setHoldProbe, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
+import { animationFramesQueued, fireHoldTimer, realTimers, resetVirtualClock, runAnimationFrames, setHoldProbe, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 import { endGsapSamples, gsapIsLoaded, sampleGsapAt, setGsapTime } from './gsap-clock.js';
 import { takePageErrors } from './page-errors.js';
@@ -73,7 +73,7 @@ setHoldProbe(heldOpen);
  * loading, for two turns of the event loop), the earliest hold timer fires at once, in (due time, creation order), without
  * the clock moving. Timeouts made while the frame is not held, and every interval, follow the frame clock as before.
  */
-async function whenReleased(): Promise<void> {
+async function whenReleased(animationFrames = false): Promise<void> {
   let quiet = 0;
   while (openRenderHandles() > 0) {
     // A waiter for the release; a new one once that has been released and a handle was opened again.
@@ -81,6 +81,14 @@ async function whenReleased(): Promise<void> {
     let released = false;
     idle.then(() => (released = true), () => (released = true));
     while (!released && openRenderHandles() > 0) {
+      // While a handle is open the animation-frame callbacks run as they are asked for, as in a browser, where a page
+      // waiting for its map's `idle` (which a repaint in a frame callback brings) is not stuck. That is not quiet.
+      if (animationFrames && animationFramesQueued()) {
+        runAnimationFrames();
+        await tick();
+        quiet = 0;
+        continue;
+      }
       await Promise.race([idle, tick()]);
       if (released) break;
       quiet = pendingFetches() === 0 && pendingImageLoads() === 0 && pendingFontLoads() === 0 ? quiet + 1 : 0;
@@ -414,23 +422,27 @@ class Renderer implements FrameRenderer {
     for (;;) {
       await waitForFonts();
       try {
-        await whenReleased();
+        await whenReleased(animationFrames);
       } catch (error) {
         throw this.withLeftOut(error, scene);
       }
       // Let the state updates that continueRender's callers made reach the reconciler.
       await tick();
       // A script's `<img>` or `new Image()` that has not fired `load` yet holds the frame like a font that is still loading.
-      if (openRenderHandles() === 0 && pendingFontLoads() === 0 && pendingImageLoads() === 0) break;
-    }
-    // requestAnimationFrame callbacks run once the frame has rendered, as a browser runs them before it paints:
-    // a library that draws in one after being told what to show (Motion's render step) shows this frame, not the one before.
-    if (animationFrames) {
+      if (openRenderHandles() > 0 || pendingFontLoads() > 0 || pendingImageLoads() > 0) continue;
+      if (!animationFrames) break;
+      // requestAnimationFrame callbacks run once the frame has rendered, as a browser runs them before it paints:
+      // a library that draws in one after being told what to show (Motion's render step) shows this frame, not the one before.
+      const made = renderHandlesMade();
       runAnimationFrames();
       // GSAP renders what the frame's own render made (a `from()` is drawn lazily, on the next tick) at the frame's time.
       setGsapTime(virtualNow() / 1000);
       await tick();
-    } else if (read) {
+      // A callback that started work (a map asking its workers for tiles, a fetch) holds the frame as a handle does: wait
+      // for it, and run the callbacks its end asked for, until a pass leaves nothing pending.
+      if (renderHandlesMade() === made && pendingFontLoads() === 0 && pendingImageLoads() === 0) break;
+    }
+    if (!animationFrames && read) {
       // A motion-blur sub-frame: what plays on GSAP's root clock is shown at the sub-frame's time (undone after the
       // last one, by `endGsapSamples`).
       sampleGsapAt(virtualNow() / 1000);

@@ -93,6 +93,7 @@ describe('syntheticEntry', () => {
       `export { setLayoutText } from '@kinetographdev/core/layout-utils';`,
       `export { setAudioDecoder, setMediaProbe } from '@kinetographdev/core/media-utils';`,
       `export { setMediaParserAddon } from '@kinetographdev/core/media-parser';`,
+      `export { setWorkerModuleLoader } from '@kinetographdev/compat/shim';`,
       `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetographdev/compat/dom';`,
     ]);
   });

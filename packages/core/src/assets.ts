@@ -149,6 +149,11 @@ export function useDelayRender(): typeof delayRenderHook {
   return delayRenderHook;
 }
 
+/** How many handles `delayRender` has made so far: a pass that made one started work, however soon it ended. */
+export function renderHandlesMade(): number {
+  return nextHandle;
+}
+
 /** Handles currently open (for the frame loop and tests). */
 export function openRenderHandles(): number {
   return open.size;

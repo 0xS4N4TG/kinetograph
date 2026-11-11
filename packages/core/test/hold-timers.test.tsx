@@ -84,4 +84,26 @@ describe('a timeout set while the frame is held open', () => {
     await renderer.renderFrame(3);
     expect(log).toEqual(['early']);
   });
+
+  it('runs the animation frames a held frame asks for and fires the hold timers they set, in one frame', async () => {
+    // The release waits on a timeout that only an animation-frame callback sets (a repaint that schedules the next step):
+    // neither the frame callbacks alone nor the hold timers alone release it.
+    function Both() {
+      useState(() => {
+        const handle = delayRender('waiting on a frame callback and a timeout');
+        requestAnimationFrame(() => {
+          log.push('raf');
+          setTimeout(() => {
+            log.push('hold:300');
+            continueRender(handle);
+          }, 300);
+        });
+      });
+      return <Rect id="r" width={4} height={4} fill="#fff" />;
+    }
+    root(<Both />);
+    await createFrameRenderer('T').renderFrame(0);
+    expect(log).toEqual(['raf', 'hold:300']);
+    expect(virtualNow()).toBe(0);
+  });
 });
