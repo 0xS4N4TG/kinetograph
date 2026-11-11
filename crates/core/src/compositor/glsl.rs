@@ -1715,7 +1715,7 @@ impl Compositor {
 
         // Pipeline.
         let key = format!(
-            "{:p}|{layouts:?}|{topology:?}|{}|{:?}|{:?}|{:?}|{:?}|{:?}|{shape:?}|{ds:?}|{samples}|{:?}|{depths:?}",
+            "{:p}|{layouts:?}|{topology:?}|{}|{:?}|{:?}|{:?}|{:?}|{:?}|{shape:?}|{ds:?}|{samples}|{:?}|{depths:?}|{}",
             Arc::as_ptr(&program),
             index_list.is_some() && topology.is_strip(),
             draw.blend.as_ref().map(blend_key),
@@ -1727,6 +1727,7 @@ impl Compositor {
             draw.stencil
                 .as_ref()
                 .map(|s| (s.value_mask, s.write_mask, &s.front, &s.back)),
+            draw.alpha_to_coverage && samples > 1,
         );
         let (bind_group_layout, pipeline_layout) = self.glsl_layout(&program, &depths);
         let pipeline = match self.glsl.pipelines.get(&key) {
@@ -2262,6 +2263,8 @@ impl Compositor {
                 depth_stencil,
                 multisample: wgpu::MultisampleState {
                     count: samples,
+                    // WebGL: SAMPLE_ALPHA_TO_COVERAGE does nothing in a buffer of one sample.
+                    alpha_to_coverage_enabled: draw.alpha_to_coverage && samples > 1,
                     ..Default::default()
                 },
                 multiview_mask: None,

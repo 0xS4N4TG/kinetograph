@@ -684,6 +684,9 @@ pub struct GlslDraw {
     /// `x, y, width, height`, y up from the bottom row.
     pub viewport: [i32; 4],
     pub scissor: Option<[i32; 4]>,
+    /// `SAMPLE_ALPHA_TO_COVERAGE` was on: it takes effect in a multisampled buffer only.
+    #[serde(default)]
+    pub alpha_to_coverage: bool,
     pub blend: Option<GlslBlend>,
     #[serde(default = "all_true")]
     pub color_mask: [bool; 4],

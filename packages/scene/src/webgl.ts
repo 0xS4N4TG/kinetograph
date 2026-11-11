@@ -947,6 +947,7 @@ interface Capability {
   depth: boolean;
   stencil: boolean;
   polygonOffset: boolean;
+  alphaToCoverage: boolean;
 }
 
 /** The depth functions, by the name the recording uses. */
@@ -1027,7 +1028,6 @@ interface BlendState {
 }
 
 const UNSUPPORTED_CAPS = new Map<number, string>([
-  [GL.SAMPLE_ALPHA_TO_COVERAGE, 'alpha to coverage'],
   [GL.SAMPLE_COVERAGE, 'sample coverage'],
 ]);
 
@@ -1090,7 +1090,7 @@ export class WebGLContext {
   private readonly unitsArray = new Map<number, WebGLTexture>();
   /** What each unit holds at `TEXTURE_CUBE_MAP`. */
   private readonly unitsCube = new Map<number, WebGLTexture>();
-  private caps: Capability = { blend: false, cull: false, scissor: false, depth: false, stencil: false, polygonOffset: false };
+  private caps: Capability = { blend: false, cull: false, scissor: false, depth: false, stencil: false, polygonOffset: false, alphaToCoverage: false };
   private depthFuncValue: number = GL.LESS;
   private depthMaskValue = true;
   private clearDepthValue = 1;
@@ -1421,6 +1421,8 @@ export class WebGLContext {
         return this.caps.stencil;
       case GL.POLYGON_OFFSET_FILL:
         return this.caps.polygonOffset;
+      case GL.SAMPLE_ALPHA_TO_COVERAGE:
+        return this.caps.alphaToCoverage;
       case GL.DEPTH_FUNC:
         return this.depthFuncValue;
       case GL.DEPTH_WRITEMASK:
@@ -1679,6 +1681,9 @@ export class WebGLContext {
         break;
       case GL.POLYGON_OFFSET_FILL:
         this.caps.polygonOffset = on;
+        break;
+      case GL.SAMPLE_ALPHA_TO_COVERAGE:
+        this.caps.alphaToCoverage = on;
         break;
       case GL.DITHER:
         break;
@@ -3736,6 +3741,7 @@ export class WebGLContext {
 
     // State.
     if (this.caps.scissor) draw.scissor = this.scissorNow();
+    if (this.caps.alphaToCoverage) draw.alphaToCoverage = true;
     if (this.caps.blend) {
       const into32 = this.drawFramebuffer !== null && this.outputsOf(this.drawFramebuffer).some((a) => a !== null && FLOAT_FORMATS[('texture' in a ? a.texture.format : a.renderbuffer.format) ?? 0]?.bits === 32);
       // As in a browser, without EXT_float_blend enabled such a draw is refused.
