@@ -11,9 +11,22 @@ Your agent made a project in a folder. Open that same folder in Studio to see it
 
 Run Studio on the project's entry file. For a project made with `kinetograph init` that is `src/index.tsx`; for an HTML project it is the page:
 
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
 ```sh
 npx kinetograph studio src/index.tsx
 ```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph studio html/index.html
+```
+
+  </Tab>
+</IconTabs>
 
 If you are not sure what the entry is, ask your agent. It is the file that calls `registerRoot`, or the project's `index.html`.
 

@@ -43,7 +43,7 @@ The entry must call `registerRoot`.
 
 ## Props
 
-Props are the values a composition receives, such as a title. Set them from the command line with a JSON object or the path of a JSON file:
+Props are the values a composition receives, such as a title. In a TypeScript project, set them from the command line with a JSON object or the path of a JSON file (an HTML page takes no command-line props):
 
 ```sh
 npx kinetograph render src/index.tsx --comp Card --props '{"title":"Goodbye"}'
@@ -51,7 +51,7 @@ npx kinetograph render src/index.tsx --comp Card --props '{"title":"Goodbye"}'
 
 Props saved as a preset in Studio are a JSON file in `presets/`, and `--props` renders it too.
 
-`npx kinetograph compositions src/index.tsx` lists each composition's id, size, frame rate and length.
+`npx kinetograph compositions src/index.tsx` lists each composition's id, size, frame rate and length. Give it `html/index.html` for a page, which has one.
 
 ## HTML pages
 
