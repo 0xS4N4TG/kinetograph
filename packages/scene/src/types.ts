@@ -922,8 +922,14 @@ export interface GlslStencil {
 export interface GlslAttribute {
   buffer: string;
   size: number;
-  type: 'f32' | 'u8' | 'i8' | 'u16' | 'i16' | 'u32';
+  type: 'f32' | 'u8' | 'i8' | 'u16' | 'i16' | 'u32' | 'i32';
   normalized?: boolean;
+  /**
+   * `vertexAttribIPointer`: the shader reads the values as integers (`ivecN`, `uvecN`, `int`, `uint`), unconverted.
+   * Without it the shader reads floats: an integer `type` is converted to float, or with `normalized` scaled to 0..1
+   * (-1..1 for a signed type).
+   */
+  integer?: boolean;
   stride?: number;
   offset?: number;
   /** `vertexAttribDivisor`: 1 advances for each instance, `n` for each `n` of them (default 0, for each vertex). */

@@ -469,6 +469,27 @@ pub enum GlslType {
     I16,
     #[serde(rename = "u32")]
     U32,
+    #[serde(rename = "i32")]
+    I32,
+}
+
+impl GlslType {
+    /// The bytes of one value.
+    pub fn size(self) -> u64 {
+        match self {
+            GlslType::U8 | GlslType::I8 => 1,
+            GlslType::U16 | GlslType::I16 => 2,
+            GlslType::F32 | GlslType::U32 | GlslType::I32 => 4,
+        }
+    }
+}
+
+/// What a vertex shader input is, with its components: the value a draw must feed it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AttrKind {
+    Float(u32),
+    Int(u32),
+    Uint(u32),
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -480,6 +501,10 @@ pub struct GlslAttribute {
     pub ty: GlslType,
     #[serde(default)]
     pub normalized: bool,
+    /// `vertexAttribIPointer`: the shader reads the values as integers (`ivecN`, `uvecN`, `int`, `uint`); else as
+    /// floats, an integer type converted (or with `normalized`, scaled to 0..1, or -1..1 if signed).
+    #[serde(default)]
+    pub integer: bool,
     /// Bytes; 0 is tightly packed.
     #[serde(default)]
     pub stride: u32,
@@ -728,12 +753,18 @@ fn type_locations(ty: &str) -> Option<u32> {
 
 /// The float components of an attribute type, or `None` for a type a vertex
 /// buffer cannot feed.
-fn float_components(ty: &str) -> Option<u32> {
-    match ty {
-        "float" => Some(1),
-        "vec2" => Some(2),
-        "vec3" => Some(3),
-        "vec4" => Some(4),
+fn attribute_kind(ty: &str) -> Option<AttrKind> {
+    let (head, n) = match ty {
+        "float" => return Some(AttrKind::Float(1)),
+        "int" => return Some(AttrKind::Int(1)),
+        "uint" => return Some(AttrKind::Uint(1)),
+        _ => ty.split_at(ty.len().checked_sub(1)?),
+    };
+    let n: u32 = n.parse().ok().filter(|n| (2..=4).contains(n))?;
+    match head {
+        "vec" => Some(AttrKind::Float(n)),
+        "ivec" => Some(AttrKind::Int(n)),
+        "uvec" => Some(AttrKind::Uint(n)),
         _ => None,
     }
 }
@@ -935,7 +966,7 @@ struct Rewritten {
     /// they travel as `vec4`s.
     packed: Vec<PackedArray>,
     /// Attribute name, location, float components.
-    attributes: Vec<(String, u32, Option<u32>)>,
+    attributes: Vec<(String, u32, Option<AttrKind>)>,
     /// The `mat2`, `mat3` and `mat4` attributes: name, size and first location. Each is read as that many `vecN` columns.
     mat_attributes: Vec<(String, u32, u32)>,
     /// The varyings the fragment shader declares and the vertex shader does not write: an error if it reads one.
@@ -2020,12 +2051,12 @@ fn declaration(
                     // A matrix cannot be a vertex input: its columns are, at consecutive locations, and the
                     // matrix is made of them at the start of `main`.
                     for column in 0..n {
-                        r.attributes.push((format!("{name}[{column}]"), at + column, Some(n)));
+                        r.attributes.push((format!("{name}[{column}]"), at + column, Some(AttrKind::Float(n))));
                     }
                     r.mat_attributes.push((name.clone(), n, at));
                     continue;
                 }
-                r.attributes.push((name.clone(), at, float_components(&ty)));
+                r.attributes.push((name.clone(), at, attribute_kind(&ty)));
                 text_out.push_str(&format!("layout(location={at}) in {ty} {name}; "));
             }
         }
@@ -2210,7 +2241,7 @@ pub struct Stage {
     pub uniform_size: u32,
     pub samplers: Vec<SamplerBinding>,
     /// Attribute name, location, float components.
-    pub attributes: Vec<(String, u32, Option<u32>)>,
+    pub attributes: Vec<(String, u32, Option<AttrKind>)>,
     /// The locations the fragment shader writes colour at (empty for the
     /// vertex stage).
     pub outputs: Vec<u32>,
@@ -3066,7 +3097,7 @@ mod tests {
              void main() { gl_FragColor = vec4(v_uv, 0.5 + 0.5 * sin(u_time), 1.0); }",
         ))
         .unwrap();
-        assert_eq!(t.vertex.attributes, vec![("a_pos".into(), 0, Some(2))]);
+        assert_eq!(t.vertex.attributes, vec![("a_pos".into(), 0, Some(AttrKind::Float(2)))]);
         let names: Vec<_> = t
             .fragment
             .uniforms
@@ -3744,5 +3775,27 @@ mod tests {
         assert!(t.fragment.module.entry_points.len() == 1);
         // An error in a branch that is left out is not read.
         translate(&program(QUAD_ES1, "#if 0\nthis is not GLSL\n#endif\nvoid main() { gl_FragColor = vec4(1.0); }")).unwrap();
+    }
+
+    #[test]
+    fn integer_inputs_keep_their_type_and_bit_operations_read() {
+        let t = translate(&program(
+            "#version 300 es\nin vec2 a_pos; in uvec4 joints; in ivec2 shift; in uint flag; in int step_;\n\
+             void main() { uint j = (joints.x & 255u) | (joints.y << 8u); \
+             gl_Position = vec4(a_pos, float(j) + float(shift.x >> 1) + float(flag ^ 3u) + float(step_), 1.0); }",
+            FRAGMENT_ES3,
+        ))
+        .unwrap();
+        let kinds: Vec<_> = t.vertex.attributes.iter().map(|a| (a.0.as_str(), a.2)).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                ("a_pos", Some(AttrKind::Float(2))),
+                ("joints", Some(AttrKind::Uint(4))),
+                ("shift", Some(AttrKind::Int(2))),
+                ("flag", Some(AttrKind::Uint(1))),
+                ("step_", Some(AttrKind::Int(1))),
+            ]
+        );
     }
 }

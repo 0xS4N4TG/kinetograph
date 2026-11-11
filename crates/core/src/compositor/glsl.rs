@@ -1406,6 +1406,8 @@ impl Compositor {
         let mut shapes: Vec<(&str, u64, u64, u64)> = Vec::new();
         // The attributes with a divisor above 1, by their place in `sources`, and the divisor.
         let mut divided: Vec<(usize, u32)> = Vec::new();
+        // The attributes whose values are converted on the CPU (`widen`), by their place in `sources`.
+        let mut widens: Vec<Option<Widen>> = Vec::new();
         let last = match &draw.indices {
             Some(indices) => {
                 let max = self.glsl_max_index(content, indices, draw, buffers)?;
@@ -1413,7 +1415,7 @@ impl Compositor {
             }
             None => u64::from(draw.first) + u64::from(draw.count),
         };
-        for (name, location, components) in &vertex.attributes {
+        for (name, location, kind) in &vertex.attributes {
             let a = draw.attributes.get(name).ok_or_else(|| {
                 render_error(format!(
                     "the attribute `{name}` has no data (an enabled array with no buffer, which WebGL \
@@ -1423,13 +1425,13 @@ impl Compositor {
             // An attribute with a divisor advances for each instance (or each `divisor` of them); a
             // point's attributes all do, as it is an instance itself.
             let per_instance = a.divisor >= 1 && !points;
-            let (format, element) = vertex_format(a, name, *components)?;
+            let (format, element, widen) = vertex_format(a, name, *kind)?;
             let stride = if a.stride == 0 {
                 element
             } else {
                 u64::from(a.stride)
             };
-            if stride % 4 != 0 || a.offset % 4 != 0 {
+            if widen.is_none() && (stride % 4 != 0 || a.offset % 4 != 0) {
                 return Err(render_error(format!(
                     "unsupported: the attribute `{name}` has a stride of {stride} bytes and an \
                      offset of {}; both must be multiples of 4",
@@ -1507,6 +1509,7 @@ impl Compositor {
             layouts.push((*location, format, stride, in_vertex, step));
             sources.push((&a.buffer, bound_at, stride));
             shapes.push((&a.buffer, stride, offset, element));
+            widens.push(widen.map(|w| Widen { count: reads, ..w }));
         }
 
         // The index list, expanded to triangles when the mode needs it.
@@ -1549,6 +1552,22 @@ impl Compositor {
                 sources[k].1 = 0;
             }
             instances = (0, list.len() as u32);
+        }
+        // Values the GPU cannot read as they are (a non-normalised short for a float input, any integer array)
+        // are converted to 32-bit ones, exactly: one pass over what the draw reads, after the gathering above.
+        for (k, widen) in widens.iter().enumerate() {
+            let Some(widen) = widen else { continue };
+            let (buffer, stride, offset, element) = shapes[k];
+            let out = match gathered[k].take() {
+                Some(raw) => widen_values(&raw, (0, element, raw.len() as u64 / element), widen)?,
+                None => {
+                    let bytes = glsl_buffer(content, buffer, buffers)?;
+                    widen_values(bytes, (offset, stride, widen.count), widen)?
+                }
+            };
+            gathered[k] = Some(out);
+            layouts[k] = (layouts[k].0, widen.format, widen.format.size(), 0, layouts[k].4);
+            sources[k].1 = 0;
         }
         if draw.mode == GlslMode::TriangleFan {
             let list = index_list
@@ -3906,42 +3925,166 @@ fn read_indices(bytes: &[u8], ty: GlslType, offset: u32, count: u32) -> Result<V
         .collect())
 }
 
-/// The wgpu format of an attribute's data and its size in bytes, if the
-/// shader reads floats of this many components.
+/// Values converted to what the shader reads, on the CPU: the type and size the page gave, and what the shader's
+/// input is.
+#[derive(Clone, Copy)]
+struct Widen {
+    ty: GlslType,
+    normalized: bool,
+    size: u32,
+    kind: gl::AttrKind,
+    /// The elements the draw reads.
+    count: u64,
+    /// The format of the converted values: 32-bit floats, signed or unsigned integers, as many as the input has.
+    format: wgpu::VertexFormat,
+}
+
+/// The format a vertex attribute is read in, the bytes of one element in the buffer, and, when the GPU cannot read
+/// the buffer's values as they are, how to convert them. wgpu reads floats and the normalised 8- and 16-bit types
+/// of 2 or 4 components directly; every integer array, a non-normalised 8- or 16-bit one for a float input (GLES 3.0
+/// section 2.9 converts the value to float) and an array of 1 or 3 components are widened to 32-bit values on the CPU,
+/// which is exact for every value of the types and needs no shader of its own for each way a page binds the buffer.
 fn vertex_format(
     a: &GlslAttribute,
     name: &str,
-    components: Option<u32>,
-) -> Result<(wgpu::VertexFormat, u64)> {
+    kind: Option<gl::AttrKind>,
+) -> Result<(wgpu::VertexFormat, u64, Option<Widen>)> {
+    use gl::AttrKind as K;
     use wgpu::VertexFormat as F;
-    if components.is_none() {
+    let Some(kind) = kind else {
         return Err(render_error(format!(
-            "unsupported: the attribute `{name}` is not a float or a float vector"
+            "unsupported: the attribute `{name}` is not a float, an integer or a vector of them"
         )));
-    }
+    };
     let n = a.size;
-    let format = match (a.ty, a.normalized, n) {
-        (GlslType::F32, _, 1) => F::Float32,
-        (GlslType::F32, _, 2) => F::Float32x2,
-        (GlslType::F32, _, 3) => F::Float32x3,
-        (GlslType::F32, _, 4) => F::Float32x4,
-        (GlslType::U8, true, 2) => F::Unorm8x2,
-        (GlslType::U8, true, 4) => F::Unorm8x4,
-        (GlslType::I8, true, 2) => F::Snorm8x2,
-        (GlslType::I8, true, 4) => F::Snorm8x4,
-        (GlslType::U16, true, 2) => F::Unorm16x2,
-        (GlslType::U16, true, 4) => F::Unorm16x4,
-        (GlslType::I16, true, 2) => F::Snorm16x2,
-        (GlslType::I16, true, 4) => F::Snorm16x4,
-        _ => {
+    let raw = u64::from(n) * a.ty.size();
+    let widen = |format: F| {
+        (
+            format,
+            raw,
+            Some(Widen {
+                ty: a.ty,
+                normalized: a.normalized,
+                size: n,
+                kind,
+                count: 0,
+                format,
+            }),
+        )
+    };
+    // As many components as the input reads (the rest are GL's 0, 0, 0, 1) and the values give.
+    let width = n.max(match kind {
+        K::Float(c) | K::Int(c) | K::Uint(c) => c,
+    });
+    if a.integer {
+        if a.ty == GlslType::F32 || a.constant.is_some() {
             return Err(render_error(format!(
-                "unsupported: the attribute `{name}` is {n} {:?} value(s), normalized: {}; use FLOAT, \
-                 or a normalized byte or short with 2 or 4 components",
-                a.ty, a.normalized
+                "unsupported: the attribute `{name}` is an integer array of floats or a disabled one"
             )));
         }
+        let format = match (kind, width) {
+            (K::Int(_), 1) => F::Sint32,
+            (K::Int(_), 2) => F::Sint32x2,
+            (K::Int(_), 3) => F::Sint32x3,
+            (K::Int(_), _) => F::Sint32x4,
+            (K::Uint(_), 1) => F::Uint32,
+            (K::Uint(_), 2) => F::Uint32x2,
+            (K::Uint(_), 3) => F::Uint32x3,
+            (K::Uint(_), _) => F::Uint32x4,
+            (K::Float(_), _) => {
+                return Err(render_error(format!(
+                    "unsupported: the attribute `{name}` is a float input but its array is of integers \
+                     (vertexAttribIPointer); declare it ivecN or uvecN, or use vertexAttribPointer"
+                )));
+            }
+        };
+        return Ok(widen(format));
+    }
+    let K::Float(_) = kind else {
+        return Err(render_error(format!(
+            "unsupported: the attribute `{name}` is an integer input but its array is not (vertexAttribPointer); \
+             use vertexAttribIPointer"
+        )));
     };
-    Ok((format, format.size()))
+    let direct = match (a.ty, a.normalized, n) {
+        (GlslType::F32, _, 1) => Some(F::Float32),
+        (GlslType::F32, _, 2) => Some(F::Float32x2),
+        (GlslType::F32, _, 3) => Some(F::Float32x3),
+        (GlslType::F32, _, 4) => Some(F::Float32x4),
+        (GlslType::U8, true, 2) => Some(F::Unorm8x2),
+        (GlslType::U8, true, 4) => Some(F::Unorm8x4),
+        (GlslType::I8, true, 2) => Some(F::Snorm8x2),
+        (GlslType::I8, true, 4) => Some(F::Snorm8x4),
+        (GlslType::U16, true, 2) => Some(F::Unorm16x2),
+        (GlslType::U16, true, 4) => Some(F::Unorm16x4),
+        (GlslType::I16, true, 2) => Some(F::Snorm16x2),
+        (GlslType::I16, true, 4) => Some(F::Snorm16x4),
+        _ => None,
+    };
+    if let Some(format) = direct {
+        return Ok((format, format.size(), None));
+    }
+    Ok(widen(match width {
+        1 => F::Float32,
+        2 => F::Float32x2,
+        3 => F::Float32x3,
+        _ => F::Float32x4,
+    }))
+}
+
+/// `count` elements of `size` values of `widen.ty`, read at `(start, stride, count)` of `bytes`, as 32-bit floats
+/// (scaled to 0..1 or -1..1 when normalised), signed or unsigned integers, each element padded to the format's width
+/// with GL's 0, 0, 0, 1.
+fn widen_values(bytes: &[u8], (start, stride, count): (u64, u64, u64), widen: &Widen) -> Result<Vec<u8>> {
+    let width = widen.format.size() as usize / 4;
+    let size = widen.size as usize;
+    let tsz = widen.ty.size() as usize;
+    let mut out = Vec::with_capacity(count as usize * width * 4);
+    for i in 0..count {
+        let at = (start + i * stride) as usize;
+        for c in 0..width {
+            let default = if c == 3 { 1 } else { 0 };
+            let value: i64 = if c < size {
+                let from = at + c * tsz;
+                let b = bytes.get(from..from + tsz).ok_or_else(|| {
+                    render_error("the draw reads past the end of an attribute's buffer")
+                })?;
+                match widen.ty {
+                    GlslType::U8 => i64::from(b[0]),
+                    GlslType::I8 => i64::from(b[0] as i8),
+                    GlslType::U16 => i64::from(u16::from_le_bytes([b[0], b[1]])),
+                    GlslType::I16 => i64::from(i16::from_le_bytes([b[0], b[1]])),
+                    GlslType::U32 => i64::from(u32::from_le_bytes([b[0], b[1], b[2], b[3]])),
+                    GlslType::I32 | GlslType::F32 => {
+                        i64::from(i32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                    }
+                }
+            } else {
+                default
+            };
+            match widen.kind {
+                gl::AttrKind::Float(_) => {
+                    let v = value as f64;
+                    let scaled = if widen.normalized && c < size {
+                        match widen.ty {
+                            GlslType::U8 => v / 255.0,
+                            GlslType::U16 => v / 65535.0,
+                            GlslType::U32 => v / 4_294_967_295.0,
+                            GlslType::I8 => (v / 127.0).max(-1.0),
+                            GlslType::I16 => (v / 32767.0).max(-1.0),
+                            GlslType::I32 | GlslType::F32 => (v / 2_147_483_647.0).max(-1.0),
+                        }
+                    } else {
+                        v
+                    };
+                    out.extend_from_slice(&(scaled as f32).to_le_bytes());
+                }
+                gl::AttrKind::Int(_) => out.extend_from_slice(&(value as i32).to_le_bytes()),
+                gl::AttrKind::Uint(_) => out.extend_from_slice(&(value as u32).to_le_bytes()),
+            }
+        }
+    }
+    Ok(out)
 }
 
 fn min_filter(name: &str) -> (wgpu::FilterMode, wgpu::MipmapFilterMode, bool) {
