@@ -3608,6 +3608,22 @@ mod tests {
     }
 
     #[test]
+    fn an_element_of_an_array_of_samplers_may_be_read_by_a_macro_that_is_a_number() {
+        // What three.js writes for a spot light's map: the index is a macro a #if chose the value of.
+        let t = es3_fragment(
+            "uniform sampler2D maps[2];\n\
+             void main() {\n\
+             #if ( 1 < 1 )\n#define MAP_INDEX 0\n#else\n#define MAP_INDEX ( 0 - 1 + 2 )\n#endif\n\
+             o = texture(maps[ MAP_INDEX ], v_uv);\n\
+             #undef MAP_INDEX\n\
+             }",
+        )
+        .unwrap();
+        let names: Vec<&str> = t.fragment.samplers.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"_k_sa_maps_1"), "{names:?}");
+    }
+
+    #[test]
     fn the_unit_of_an_element_of_an_array_of_samplers_comes_from_the_calls_of_the_array() {
         let calls = |index: u32, units: &[f64]| GlslUniform {
             kind: GlslUniformKind::Int,

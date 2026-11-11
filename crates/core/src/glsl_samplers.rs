@@ -7,6 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::glsl::{Kind, Tok, tokenize};
+use crate::glsl_cpp::Cpp;
 
 /// The sampler types: their texture type's placeholder.
 const SAMPLERS: [(&str, &str); 7] = [
@@ -74,17 +75,29 @@ pub(crate) fn expand_sampler_arrays(src: &str) -> String {
     if arrays.is_empty() {
         return src.to_string();
     }
+    // An element is read by a number, or by an expression of macros that is one where it stands (three.js writes
+    // `spotLightMap[ SPOT_LIGHT_MAP_INDEX ]` after a `#define` the unrolled loop made), so the directives are followed.
+    let mut cpp = Cpp::new();
+    let mut line_end = 0;
     for i in 0..toks.len().saturating_sub(3) {
-        if toks[i].kind == Kind::Ident
-            && w(i + 1) == "["
-            && toks[i + 2].kind == Kind::Number
-            && w(i + 3) == "]"
-            && arrays.contains_key(w(i))
-            && !edits.iter().any(|e| toks[i].start >= e.0 && toks[i].end <= e.1)
-        {
-            if let Ok(k) = w(i + 2).parse::<usize>() {
-                edits.push((toks[i].start, toks[i + 3].end, format!("_k_sa_{}_{k}", w(i))));
+        if toks[i].kind != Kind::Ident || w(i + 1) != "[" || !arrays.contains_key(w(i)) || edits.iter().any(|e| toks[i].start >= e.0 && toks[i].end <= e.1) {
+            continue;
+        }
+        // The directives up to this token's line, so the macros are those of this point.
+        while line_end <= toks[i].start {
+            let line_start = line_end;
+            line_end = src[line_start..].find('\n').map_or(src.len(), |n| line_start + n + 1);
+            if let Some(directive) = src[line_start..line_end].trim_start().strip_prefix('#') {
+                let _ = cpp.directive(directive.trim_end());
             }
+        }
+        let Some(close) = (i + 2..toks.len()).find(|&k| w(k) == "]") else { continue };
+        if close == i + 2 || (i + 2..close).any(|k| w(k) == "[") {
+            continue;
+        }
+        let written = src[toks[i + 2].start..toks[close - 1].end].trim();
+        if let Ok(k) = cpp.length(written).parse::<usize>() {
+            edits.push((toks[i].start, toks[close].end, format!("_k_sa_{}_{k}", w(i))));
         }
     }
     edits.sort_by_key(|e| e.0);
