@@ -31,12 +31,12 @@ export function Engine() {
             </p>
           </div>
         </div>
-        <div data-reveal style={{ '--i': 1 } as React.CSSProperties} className="kg-tray min-h-[320px] max-lg:aspect-[4/3] lg:col-span-5">
+        <div data-reveal style={{ '--i': 1 } as React.CSSProperties} className="kg-tray max-lg:aspect-[956/874] max-lg:md:aspect-[4/3] lg:col-span-5 lg:min-h-[320px]">
           <Pic
             tint="/retro/engine-mark.webp"
             alt="An engraving of a film camera mechanism: two toothed reels, a strip of film and a lens."
-            className="size-full min-h-[320px]"
-            containBelowLg
+            className="size-full lg:min-h-[320px]"
+            contain
           />
         </div>
         <div id="agents" data-reveal style={{ '--i': 2 } as React.CSSProperties} className="kg-tray scroll-mt-6 lg:col-span-5">
