@@ -104,10 +104,51 @@ const Scene = () => (
 registerRoot(() => <Composition id="Main" component={Scene} width={256} height={144} fps={30} durationInFrames={6} />);
 `;
 
+// A metal sphere lit only by `scene.environment`, which a child sets in a passive effect from a half-float equirect upload
+// with flipY on, as drei's `<Environment>` does with an HDR file: the frame must be drawn after that effect, and the float upload
+// must be taken. Without the environment the sphere is black, so the two pictures differ.
+const lit = (environment: boolean): string => `
+import { AbsoluteFill, Composition, registerRoot } from 'remotion';
+import { ThreeCanvas } from '@remotion/three';
+import { useThree } from '@react-three/fiber';
+import { useEffect } from 'react';
+import { DataTexture, DataUtils, EquirectangularReflectionMapping, HalfFloatType, LinearFilter, RGBAFormat } from 'three';
+
+const Sky = () => {
+  const scene = useThree((state) => state.scene);
+  useEffect(() => {
+    const half = new Uint16Array(8 * 4 * 4);
+    for (let i = 0; i < 8 * 4; i++) [0.9, 0.9, 1, 1].forEach((v, c) => (half[i * 4 + c] = DataUtils.toHalfFloat(v * (i < 16 ? 4 : 0.3))));
+    const sky = new DataTexture(half, 8, 4, RGBAFormat, HalfFloatType);
+    sky.mapping = EquirectangularReflectionMapping;
+    sky.minFilter = sky.magFilter = LinearFilter;
+    sky.generateMipmaps = false;
+    sky.flipY = true;
+    sky.needsUpdate = true;
+    scene.environment = sky;
+  }, [scene]);
+  return null;
+};
+
+const Scene = () => (
+  <AbsoluteFill style={{ background: '#101820' }}>
+    <ThreeCanvas width={256} height={144} camera={{ position: [0, 0, 3.5], fov: 45 }} flat>
+      ${environment ? '<Sky />' : ''}
+      <mesh>
+        <sphereGeometry args={[1, 24, 16]} />
+        <meshStandardMaterial color="#d8d8e0" metalness={1} roughness={0.15} />
+      </mesh>
+    </ThreeCanvas>
+  </AbsoluteFill>
+);
+registerRoot(() => <Composition id="Main" component={Scene} width={256} height={144} fps={30} durationInFrames={2} />);
+`;
+
 // Inside this package's node_modules, which is ignored: `three` and `@react-three/fiber` are linked in, as a project has them.
 const root = join(here, '..', 'node_modules', '.cache', 'three-render-test');
 const htmlDir = join(root, 'html');
 const reactDir = join(root, 'react');
+const litDirs = { sky: join(root, 'lit-sky'), dark: join(root, 'lit-dark') };
 beforeAll(() => {
   if (!ready) return;
   rmSync(root, { recursive: true, force: true });
@@ -119,6 +160,13 @@ beforeAll(() => {
   writeFileSync(join(reactDir, 'index.tsx'), REACT);
   symlinkSync(threeDir!, join(reactDir, 'node_modules', 'three'));
   symlinkSync(fiberDir!, join(reactDir, 'node_modules', '@react-three', 'fiber'));
+  for (const [key, dir] of Object.entries(litDirs)) {
+    mkdirSync(join(dir, 'node_modules', '@react-three'), { recursive: true });
+    writeFileSync(join(dir, 'package.json'), '{"name":"p","private":true}');
+    writeFileSync(join(dir, 'index.tsx'), lit(key === 'sky'));
+    symlinkSync(threeDir!, join(dir, 'node_modules', 'three'));
+    symlinkSync(fiberDir!, join(dir, 'node_modules', '@react-three', 'fiber'));
+  }
 });
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
@@ -158,3 +206,11 @@ for (const [name, dir, entry] of [
     });
   });
 }
+
+describe.skipIf(!ready)('<ThreeCanvas> with scene.environment set by a child effect', () => {
+  it('lights the scene: the frame is drawn after the effect, from a flipped half-float upload', () => {
+    const sky = hashes(render(litDirs.sky, 'index.tsx', 'out', ['--range', '0..=0']));
+    const dark = hashes(render(litDirs.dark, 'index.tsx', 'out', ['--range', '0..=0']));
+    expect(sky[0]).not.toBe(dark[0]);
+  });
+});

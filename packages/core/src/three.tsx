@@ -9,7 +9,7 @@
 // A `<Sequence>` inside the canvas works (Remotion tells to give it `layout="none"`); it takes its place in the scene as a
 // `THREE.Group`, so it is not recorded in the timeline the way a Sequence of the page is.
 
-import { Suspense, useEffect, useLayoutEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { Suspense, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { Canvas, extend, useThree, type CanvasProps } from '@react-three/fiber';
 import { Group } from 'three';
 import { continueRender, delayRender } from './assets.js';
@@ -25,10 +25,14 @@ export type ThreeCanvasProps = Omit<CanvasProps, 'frameloop' | 'style' | 'childr
   children?: ReactNode;
 };
 
-/** Draws the scene for the current frame: after the children are in place, which is also after a Suspense reveal. */
+/**
+ * Draws the scene for the current frame: after the children are in place, which is also after a Suspense reveal. It is
+ * the last child and draws in a passive effect, as the children's own passive effects run first: drei's `<Environment>`
+ * sets `scene.environment` in one, and a draw before it would show the frame without the lighting.
+ */
 function Advance({ seconds }: { seconds: number }) {
   const advance = useThree((state) => state.advance);
-  useLayoutEffect(() => {
+  useEffect(() => {
     advance(seconds);
   }, [advance, seconds]);
   return null;
@@ -53,8 +57,8 @@ export function ThreeCanvas({ width, height, style, children, ...canvas }: Three
     // The size of the canvas is known: the measuring library's own debounce would be a timer that only fires frames later.
     <Canvas resize={{ scroll: false, debounce: 0 }} {...rest} frameloop="never" style={{ width, height, ...style }}>
       <Suspense fallback={<HoldFrame />}>
-        <Advance seconds={frame / fps} />
         {children}
+        <Advance seconds={frame / fps} />
       </Suspense>
     </Canvas>
   );
