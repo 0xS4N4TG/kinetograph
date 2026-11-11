@@ -1184,6 +1184,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         prelude.push_str(text);
     }
     prelude.push_str(&builtin_helpers(&body));
+    let body = order_functions(&body);
     let mut members = String::new();
     if fragment {
         members.push_str("float _k_fbh; ");
@@ -1415,6 +1416,147 @@ fn blank_qualifiers(code: &str) -> String {
         }
     }
     out
+}
+
+/// One top-level item of a shader: a function definition (its name, and the functions its body calls), or anything else.
+struct Item {
+    text: String,
+    function: Option<String>,
+    calls: Vec<String>,
+}
+
+/// `body` split into top-level items: a function definition ends at its closing brace, any other item at its semicolon.
+fn top_level_items(body: &str) -> Vec<Item> {
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    let mut items = Vec::new();
+    let (mut start, mut depth, mut paren) = (0, 0usize, 0usize);
+    let mut header_end: Option<usize> = None;
+    let bytes: Vec<(usize, char)> = body.char_indices().collect();
+    for &(at, c) in &bytes {
+        match c {
+            '(' => paren += 1,
+            ')' => paren = paren.saturating_sub(1),
+            '{' => {
+                if depth == 0 {
+                    header_end = Some(at);
+                }
+                depth += 1;
+            }
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    // A function definition ends here; a struct or a block goes on to its semicolon.
+                    let header = body[start..header_end.unwrap_or(start)].trim_end();
+                    if header.ends_with(')') && !header.starts_with("struct") {
+                        items.push((start, at + 1, header_end));
+                        start = at + 1;
+                        header_end = None;
+                    }
+                }
+            }
+            ';' if depth == 0 && paren == 0 => {
+                items.push((start, at + 1, None));
+                start = at + 1;
+                header_end = None;
+            }
+            _ => {}
+        }
+    }
+    if start < body.len() {
+        items.push((start, body.len(), None));
+    }
+    items
+        .into_iter()
+        .map(|(from, to, header_end)| {
+            let text = body[from..to].to_string();
+            let Some(open) = header_end else {
+                return Item { text, function: None, calls: Vec::new() };
+            };
+            let header = &body[from..open];
+            let name: String = header
+                .trim_end()
+                .trim_end_matches(')')
+                .split('(')
+                .next()
+                .unwrap_or("")
+                .trim_end()
+                .chars()
+                .rev()
+                .take_while(|c| word(*c))
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+            let calls = body[open..to]
+                .match_indices('(')
+                .filter_map(|(paren, _)| {
+                    let before = body[open..open + paren].trim_end();
+                    let id: String = before.chars().rev().take_while(|c| word(*c)).collect::<Vec<_>>().into_iter().rev().collect();
+                    (!id.is_empty()).then_some(id)
+                })
+                .collect();
+            Item { text, function: (!name.is_empty()).then_some(name), calls }
+        })
+        .collect()
+}
+
+/// `body` with its function definitions in an order naga reads: a function after the functions it calls. GLSL lets a
+/// shader declare a function first and define it after its caller; naga needs the callee defined first. The functions
+/// change places among the positions the definitions have; nothing else moves, and a body already in order is left as it is.
+fn order_functions(body: &str) -> String {
+    let items = top_level_items(body);
+    let slots: Vec<usize> = (0..items.len()).filter(|&i| items[i].function.is_some()).collect();
+    let by_name = |name: &str| -> Vec<usize> { slots.iter().copied().filter(|&i| items[i].function.as_deref() == Some(name)).collect() };
+    // Whether any function calls one that is defined after it.
+    let forward = slots.iter().any(|&i| items[i].calls.iter().any(|c| by_name(c).iter().any(|&j| j > i)));
+    if !forward {
+        return body.to_string();
+    }
+    let mut order: Vec<usize> = Vec::new();
+    let mut state = vec![0u8; items.len()];
+    fn visit(i: usize, items: &[Item], by_name: &dyn Fn(&str) -> Vec<usize>, state: &mut [u8], order: &mut Vec<usize>) -> bool {
+        match state[i] {
+            2 => return true,
+            1 => return false,
+            _ => {}
+        }
+        state[i] = 1;
+        for call in &items[i].calls {
+            for j in by_name(call) {
+                if j != i && !visit(j, items, by_name, state, order) {
+                    return false;
+                }
+            }
+        }
+        state[i] = 2;
+        order.push(i);
+        true
+    }
+    for &i in &slots {
+        if !visit(i, &items, &by_name, &mut state, &mut order) {
+            // A cycle is recursion, which GLSL does not have: leave it for naga to report.
+            return body.to_string();
+        }
+    }
+    let mut next = order.into_iter();
+    let mut out = String::with_capacity(body.len());
+    for (i, item) in items.iter().enumerate() {
+        if slots.contains(&i) {
+            out.push_str(&items[next.next().expect("one function for each slot")].text);
+        } else if !is_prototype(&item.text) {
+            out.push_str(&item.text);
+        }
+    }
+    out
+}
+
+/// Whether an item is a function prototype (`vec4 f(float v);`). naga gives a function its place where it is first
+/// declared, so a prototype that stays ahead of the definitions puts the function before the ones it calls: once the
+/// definitions are in order the prototypes are not needed.
+fn is_prototype(item: &str) -> bool {
+    let text = item.trim();
+    let Some(open) = text.find('(') else { return false };
+    text.ends_with(");") && !text[..open].contains('=') && text[..open].split_whitespace().count() >= 2
 }
 
 /// The built-in functions of GLSL ES 3.00 that naga's GLSL front end does not have, written in GLSL, for those `body`
@@ -3670,6 +3812,19 @@ mod tests {
         assert_eq!((w, h), (1, 1));
         let Texels::Rgba32F(bytes) = next else { panic!("a 32-bit level") };
         assert_eq!(f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]), 2.0);
+    }
+
+    #[test]
+    fn a_function_may_be_declared_first_and_defined_after_its_caller() {
+        // A ray marcher's shape: main calls cast_iso, which calls add_lighting, defined after it.
+        let t = es3_fragment(
+            "void cast_iso(vec3 s);\n\
+             vec4 add_lighting(float v);\n\
+             void main() { cast_iso(vec3(v_uv, 0.0)); }\n\
+             void cast_iso(vec3 s) { o = add_lighting(s.x); }\n\
+             vec4 add_lighting(float v) { return vec4(v); }",
+        );
+        assert!(t.is_ok(), "{t:?}");
     }
 
     #[test]
