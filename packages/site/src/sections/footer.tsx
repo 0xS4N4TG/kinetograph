@@ -46,7 +46,7 @@ export function Footer({ columns }: { columns: FooterColumn[] }) {
         <div aria-hidden className="kg-fit -mb-[0.012em] select-none">
           <span className="kg-wordmark-fit text-on-field/14" style={{ '--r': 5.805 } as React.CSSProperties}>
             <span className="in">
-              kinetograph<span className="text-flag">.</span>
+              kinetograph<span className="text-flag/55">.</span>
             </span>
           </span>
         </div>
