@@ -190,6 +190,11 @@ fn webgl2_attr_int() {
 }
 
 #[test]
+fn webgl2_prelude() {
+    run("webgl2_prelude", 1.0);
+}
+
+#[test]
 fn a_canvas_with_a_recording_is_one_glsl_layer_at_its_bitmap_size() {
     let recording = case_file("webgl_gradient", "json");
     let body = format!(
@@ -232,6 +237,7 @@ fn the_committed_recordings_parse_as_the_scene_format_does() {
         "webgl2_ubo_range",
         "webgl2_attr_int_to_float",
         "webgl2_attr_int",
+        "webgl2_prelude",
     ] {
         let content: serde_json::Value = serde_json::from_str(&case_file(name, "json")).unwrap();
         let mut layer = serde_json::json!({ "id": "c", "type": "glsl", "width": 10, "height": 10 });
