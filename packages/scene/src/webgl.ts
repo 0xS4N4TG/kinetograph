@@ -2166,8 +2166,9 @@ export class WebGLContext {
 
   // ---- uniforms ----
 
-  private setUniform(location: WebGLUniformLocation | null, kind: 'f' | 'i' | 'm', value: ArrayLike<number>, components: number): void {
-    if (location === null) return;
+  private setUniform(location: WebGLUniformLocation | null | undefined, kind: 'f' | 'i' | 'm', value: ArrayLike<number>, components: number): void {
+    // WebGL ignores a null location, and a library hands in undefined for a uniform the program lacks.
+    if (location === null || location === undefined) return;
     const program = this.program;
     if (program === null) return this.fail(GL.INVALID_OPERATION);
     if (location.program !== program) return this.fail(GL.INVALID_OPERATION);
@@ -2179,85 +2180,85 @@ export class WebGLContext {
     else calls.push(call);
     program.uniforms.set(location.name, calls);
   }
-  uniform1f(l: WebGLUniformLocation | null, x: number): void {
+  uniform1f(l: WebGLUniformLocation | null | undefined, x: number): void {
     this.setUniform(l, 'f', [x], 1);
   }
-  uniform2f(l: WebGLUniformLocation | null, x: number, y: number): void {
+  uniform2f(l: WebGLUniformLocation | null | undefined, x: number, y: number): void {
     this.setUniform(l, 'f', [x, y], 2);
   }
-  uniform3f(l: WebGLUniformLocation | null, x: number, y: number, z: number): void {
+  uniform3f(l: WebGLUniformLocation | null | undefined, x: number, y: number, z: number): void {
     this.setUniform(l, 'f', [x, y, z], 3);
   }
-  uniform4f(l: WebGLUniformLocation | null, x: number, y: number, z: number, w: number): void {
+  uniform4f(l: WebGLUniformLocation | null | undefined, x: number, y: number, z: number, w: number): void {
     this.setUniform(l, 'f', [x, y, z, w], 4);
   }
-  uniform1i(l: WebGLUniformLocation | null, x: number): void {
+  uniform1i(l: WebGLUniformLocation | null | undefined, x: number): void {
     this.setUniform(l, 'i', [x], 1);
   }
-  uniform2i(l: WebGLUniformLocation | null, x: number, y: number): void {
+  uniform2i(l: WebGLUniformLocation | null | undefined, x: number, y: number): void {
     this.setUniform(l, 'i', [x, y], 2);
   }
-  uniform3i(l: WebGLUniformLocation | null, x: number, y: number, z: number): void {
+  uniform3i(l: WebGLUniformLocation | null | undefined, x: number, y: number, z: number): void {
     this.setUniform(l, 'i', [x, y, z], 3);
   }
-  uniform4i(l: WebGLUniformLocation | null, x: number, y: number, z: number, w: number): void {
+  uniform4i(l: WebGLUniformLocation | null | undefined, x: number, y: number, z: number, w: number): void {
     this.setUniform(l, 'i', [x, y, z, w], 4);
   }
-  uniform1ui(l: WebGLUniformLocation | null, x: number): void {
+  uniform1ui(l: WebGLUniformLocation | null | undefined, x: number): void {
     this.setUniform(l, 'i', [x], 1);
   }
-  uniform2ui(l: WebGLUniformLocation | null, x: number, y: number): void {
+  uniform2ui(l: WebGLUniformLocation | null | undefined, x: number, y: number): void {
     this.setUniform(l, 'i', [x, y], 2);
   }
-  uniform3ui(l: WebGLUniformLocation | null, x: number, y: number, z: number): void {
+  uniform3ui(l: WebGLUniformLocation | null | undefined, x: number, y: number, z: number): void {
     this.setUniform(l, 'i', [x, y, z], 3);
   }
-  uniform4ui(l: WebGLUniformLocation | null, x: number, y: number, z: number, w: number): void {
+  uniform4ui(l: WebGLUniformLocation | null | undefined, x: number, y: number, z: number, w: number): void {
     this.setUniform(l, 'i', [x, y, z, w], 4);
   }
-  uniform1fv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform1fv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'f', v, 1);
   }
-  uniform2fv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform2fv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'f', v, 2);
   }
-  uniform3fv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform3fv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'f', v, 3);
   }
-  uniform4fv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform4fv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'f', v, 4);
   }
-  uniform1iv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform1iv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'i', v, 1);
   }
-  uniform2iv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform2iv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'i', v, 2);
   }
-  uniform3iv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform3iv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'i', v, 3);
   }
-  uniform4iv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform4iv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'i', v, 4);
   }
-  uniform1uiv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform1uiv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'i', v, 1);
   }
-  uniform2uiv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform2uiv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'i', v, 2);
   }
-  uniform3uiv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform3uiv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'i', v, 3);
   }
-  uniform4uiv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform4uiv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'i', v, 4);
   }
-  uniformMatrix2fv(l: WebGLUniformLocation | null, transpose: boolean, v: ArrayLike<number>): void {
+  uniformMatrix2fv(l: WebGLUniformLocation | null | undefined, transpose: boolean, v: ArrayLike<number>): void {
     this.setUniform(l, 'm', this.matrixValue(transpose, v, 2), 4);
   }
-  uniformMatrix3fv(l: WebGLUniformLocation | null, transpose: boolean, v: ArrayLike<number>): void {
+  uniformMatrix3fv(l: WebGLUniformLocation | null | undefined, transpose: boolean, v: ArrayLike<number>): void {
     this.setUniform(l, 'm', this.matrixValue(transpose, v, 3), 9);
   }
-  uniformMatrix4fv(l: WebGLUniformLocation | null, transpose: boolean, v: ArrayLike<number>): void {
+  uniformMatrix4fv(l: WebGLUniformLocation | null | undefined, transpose: boolean, v: ArrayLike<number>): void {
     this.setUniform(l, 'm', this.matrixValue(transpose, v, 4), 16);
   }
   private matrixValue(transpose: boolean, v: ArrayLike<number>, n: number): ArrayLike<number> {
@@ -2273,7 +2274,7 @@ export class WebGLContext {
     return out;
   }
   /** A uniform set by kind and values, without the component check of the `uniform*` calls (for `glslShader`). */
-  setUniformCall(location: WebGLUniformLocation | null, kind: 'f' | 'i' | 'm', value: ArrayLike<number>): void {
+  setUniformCall(location: WebGLUniformLocation | null | undefined, kind: 'f' | 'i' | 'm', value: ArrayLike<number>): void {
     this.setUniform(location, kind, value, 1);
   }
   /** Makes `texture` (bound) an image file of the scene. */

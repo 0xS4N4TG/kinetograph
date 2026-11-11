@@ -239,6 +239,22 @@ describe('the recording WebGL context', () => {
     for (let unit = 0; unit < 16; unit += 1) expect(constants[`TEXTURE${unit}`]).toBe(GL.TEXTURE0 + unit);
   });
 
+  it('ignores a uniform call whose location is null or undefined, as WebGL does', () => {
+    const { gl, program } = setup();
+    const lacking = gl.getUniformLocation(program, 'nope');
+    expect(lacking).toBeNull();
+    for (const location of [lacking, undefined]) {
+      gl.uniform1f(location, 1);
+      gl.uniform4fv(location, [1, 2, 3, 4]);
+      gl.uniformMatrix4fv(location, false, new Float32Array(16));
+      gl.uniform1i(location, 0);
+    }
+    expect(gl.getError()).toBe(GL.NO_ERROR);
+    gl.drawArrays(GL.TRIANGLES, 0, 3);
+    const draw = gl.content().ops.find((o) => o.op === 'draw');
+    expect(draw !== undefined && 'uniforms' in draw && Object.keys(draw.uniforms)).toEqual([]);
+  });
+
   it('says unsupported, naming what to do, for what it does not draw', () => {
     const { gl } = setup();
     const refused = (fn: () => void): string => {
