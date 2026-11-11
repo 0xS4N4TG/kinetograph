@@ -28,8 +28,6 @@ then upload the result to the host.
 | `title-cards-and-text` | `making/title-cards-and-text` | 6 s | silent | A headline writes on one letter at a time, then three words slide up, 3 frames apart. | New small project; the write-on is `<HandCaptions>` from `plugins/kinetic-typography` |
 | `photos-and-footage` | `making/photos-and-footage` | 8 s | silent | Four photos, each with a slow push-in and a dissolve between them, ending on a short clip. | New small project using photos and a clip from `examples/launch/public`; the prompt on the page makes it |
 | `voice-music-captions` | `making/voice-music-captions` | 10 s | on | A clip with a narration, a music bed that ducks under it, and captions that light the word being said. | Excerpt of `examples/launch` (voice and music) with `<Captions preset="highlighter">` |
-| `paper-cut` | `making/paper-cut` | 6 s | silent | A cut-out photo unfolds from a crumpled packet on kraft paper, then a hand-drawn line circles it. | `examples/rajz-cards` and `papercut-card.json`; `<FoldOut>` and `<Scrapline>` from `plugins/paper` |
-| `glitch-effects` | `making/glitch-effects` | 6 s | silent | A datamosh cut (the old picture melts along the new shot's motion), then the same clip with a VHS look. | `examples/datamosh` (pig and clouds clips) and `vhs()` from `plugins/vj` |
 | `pin-text` | `making/pin-text` | 6 s | silent | A box and the label "Look here" follow a blacksmith's hammer. | Re-encode `public/docs-media/making-videos/motion-tracking-example.mp4` (from `making-videos/motion-tracking`) |
 | `bring-a-project` | `making/bring-a-project` | 8 s | silent | A Remotion project in Remotion Studio, then the same project rendered by Kinetograph, side by side. | Screen recording of Remotion Studio plus the Kinetograph render of `examples/rajz-cards` |
 | `library-item` | `library/use-an-item` | 8 s | silent | A template added with `npx kinetograph add`, then its words changed. | Screen recording of the command, then renders of the template before and after |
@@ -76,8 +74,6 @@ poster, a frame from the films above. The routes with no poster (pin text, data,
 | `routes-title.mp4` | Title card or moving text | `films-match-cut`, 16:9 crop |
 | `routes-photos.mp4` | Photos and footage | `films-worlds` cut |
 | `routes-sound.mp4` | Voice, music and captions | `films-launch2` cut (poster: its frame at 28.9 s) |
-| `routes-paper.mp4` | Paper-cut | `films-papercut-demo`, 16:9 crop |
-| `routes-glitch.mp4` | Glitch effects | `films-launch` GLSL shot |
 
 ## Studio clips (Studio section)
 
