@@ -135,13 +135,13 @@ describe('the recording WebGL context', () => {
     gl.vertexAttribDivisor(at, 1);
     gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 5);
     gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 0);
-    gl.vertexAttribDivisor(at, 2);
-    expect(() => gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 2)).toThrow(/vertexAttribDivisor\(2/);
-    const ops = gl.content().ops;
-    expect(ops).toHaveLength(1);
-    const draw = ops[0] as { instances?: number; attributes: Record<string, { divisor?: number }> };
-    expect(draw.instances).toBe(5);
-    expect(Object.values(draw.attributes)[0]!.divisor).toBe(1);
+    gl.vertexAttribDivisor(at, 3);
+    gl.drawArraysInstanced(GL.TRIANGLES, 0, 3, 2);
+    const ops = gl.content().ops as { instances?: number; attributes: Record<string, { divisor?: number }> }[];
+    expect(ops).toHaveLength(2);
+    expect(ops[0]!.instances).toBe(5);
+    expect(Object.values(ops[0]!.attributes)[0]!.divisor).toBe(1);
+    expect(Object.values(ops[1]!.attributes)[0]!.divisor).toBe(3);
   });
 
   it('starts every frame fresh with preserveDrawingBuffer too (a frame does not depend on the one before)', () => {
@@ -251,7 +251,7 @@ describe('the recording WebGL context', () => {
     };
     const gl2 = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
     gl2.bindRenderbuffer(GL.RENDERBUFFER, gl2.createRenderbuffer());
-    expect(refused(() => gl2.renderbufferStorageMultisample(GL.RENDERBUFFER, 4, GL2.RGBA8, 4, 4))).toMatch(/^unsupported:.*multisampled/);
+    expect(refused(() => gl2.renderbufferStorageMultisample(GL.RENDERBUFFER, 4, GL2.RGBA32F, 4, 4))).toMatch(/^unsupported:.*multisampled/);
     expect(refused(() => gl.readPixels())).toMatch(/^unsupported:/);
     expect(refused(() => gl.bindTexture(0x8d65, gl.createTexture()))).toMatch(/textures other than.*0x8d65/);
     expect(refused(() => gl.drawArraysInstanced(GL.POINTS, 0, 3, 4))).toMatch(/instanced points/);
@@ -570,11 +570,12 @@ describe('the recording WebGL context', () => {
       expect(refused(() => gl.clear(GL.COLOR_BUFFER_BIT))).toMatch(/RGBA/);
       expect(framebuffer.color).toBe(texture);
 
-      // Once drawn in, a texture is not mipmapped from the page.
+      // Once drawn in, a texture's mipmaps are made from what was drawn (a 1 x 1 one has none to make).
       specify(GL.RGBA, null);
       gl.drawArrays(GL.TRIANGLES, 0, 3);
       gl.bindTexture(GL.TEXTURE_2D, texture);
-      expect(refused(() => gl.generateMipmap(GL.TEXTURE_2D))).toMatch(/generateMipmap/);
+      gl.generateMipmap(GL.TEXTURE_2D);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
     });
 
     it('records texSubImage2D into a texture drawn in as an upload after the draws, at the offset', () => {
@@ -625,6 +626,41 @@ describe('the recording WebGL context', () => {
       gl.renderbufferStorage(GL.RENDERBUFFER, format, width, height);
       return r;
     }
+
+    it('records TEXTURE_BASE_LEVEL with the sampler that reads the texture', () => {
+      const { gl, program } = setup2();
+      const texture = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 4, 4, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, gl.createFramebuffer());
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0);
+      gl.bindTexture(GL.TEXTURE_2D, null);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.texParameteri(GL.TEXTURE_2D, GL2.TEXTURE_BASE_LEVEL, 2);
+      gl.uniform1i(gl.getUniformLocation(program, 'tex'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect((gl.content().ops.at(-1) as { units: Record<string, object> }).units['0']).toMatchObject({ baseLevel: 2 });
+    });
+
+    it('clamps the base and max level of a texStorage2D texture to its levels, so a short chain is complete', () => {
+      const { gl, program } = setup2();
+      const texture = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.texStorage2D(GL.TEXTURE_2D, 3, GL2.RGBA8, 32, 32);
+      gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST_MIPMAP_NEAREST);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, gl.createFramebuffer());
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0);
+      gl.bindTexture(GL.TEXTURE_2D, null);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.texParameteri(GL.TEXTURE_2D, GL2.TEXTURE_BASE_LEVEL, 5);
+      gl.uniform1i(gl.getUniformLocation(program, 'tex'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect((gl.content().ops.at(-1) as { units: Record<string, object> }).units['0']).toMatchObject({ baseLevel: 2, maxLevel: 2 });
+    });
 
     it('records the stencil test with each draw where the buffer drawn into has a stencil buffer', () => {
       const { gl } = setup2({ stencil: true });
@@ -1131,7 +1167,281 @@ describe('the recording WebGL context', () => {
       for (let f = 0; f < 6; f += 1) gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X + f, 0, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4));
       expect(gl.getError()).toBe(GL.NO_ERROR);
       expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 1, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
-      expect(() => gl.texSubImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
+      expect(() => gl.texSubImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 1, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
+    });
+  });
+
+  describe('copyTexImage2D and copyTexSubImage2D', () => {
+    it('record a NEAREST blit of the read buffer into the texture, which becomes a render target', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const t = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, t);
+      gl.copyTexImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 1, 2, 4, 2, 0);
+      gl.copyTexSubImage2D(GL.TEXTURE_2D, 0, 2, 1, 0, 0, 2, 1);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const [first, second] = gl.content().ops;
+      expect(first).toMatchObject({ op: 'blit', from: [1, 2, 5, 4], to: [0, 0, 4, 2] });
+      expect(second).toMatchObject({ op: 'blit', from: [0, 0, 2, 1], to: [2, 1, 4, 2] });
+      expect(first).not.toHaveProperty('src');
+      const id = (first as { target: string }).target;
+      expect(gl.content().textures[id]).toEqual({ target: true, width: 4, height: 2 });
+      gl.copyTexSubImage2D(GL.TEXTURE_2D, 0, 3, 0, 0, 0, 2, 1);
+      expect(gl.getError()).toBe(GL.INVALID_VALUE);
+    });
+
+    it('refuse a texture that holds uploaded pixels, and read a framebuffer\'s read buffer', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const uploaded = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, uploaded);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array([1, 2, 3, 4]));
+      expect(() => gl.copyTexSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 0, 0, 1, 1)).toThrow(WebGLUnsupportedError);
+      const drawn = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, drawn);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 2, 2, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, drawn, 0);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      const into = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, into);
+      gl.copyTexImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 0, 0, 2, 2, 0);
+      const [clear, blit] = gl.content().ops;
+      if (clear?.op !== 'clear') throw new Error('not a clear');
+      expect(blit).toMatchObject({ op: 'blit', src: clear.target });
+    });
+  });
+
+  describe('multisampled renderbuffers', () => {
+    function msaa() {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const color = gl.createRenderbuffer();
+      gl.bindRenderbuffer(GL.RENDERBUFFER, color);
+      gl.renderbufferStorageMultisample(GL.RENDERBUFFER, 2, GL2.RGBA8, 4, 4);
+      const depth = gl.createRenderbuffer();
+      gl.bindRenderbuffer(GL.RENDERBUFFER, depth);
+      gl.renderbufferStorageMultisample(GL.RENDERBUFFER, 4, GL2.DEPTH24_STENCIL8, 4, 4);
+      const ms = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, ms);
+      gl.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.RENDERBUFFER, color);
+      gl.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_STENCIL_ATTACHMENT, GL.RENDERBUFFER, depth);
+      const texture = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 4, 4, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+      const resolve = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, resolve);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0);
+      return { gl, color, ms, resolve };
+    }
+
+    it('has MAX_SAMPLES samples, and records them on the target', () => {
+      const { gl, color, ms } = msaa();
+      expect(gl.getParameter(GL2.MAX_SAMPLES)).toBe(4);
+      gl.bindRenderbuffer(GL.RENDERBUFFER, color);
+      expect(gl.getRenderbufferParameter(GL.RENDERBUFFER, GL2.RENDERBUFFER_SAMPLES)).toBe(4);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, ms);
+      expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_COMPLETE);
+      expect(gl.getParameter(GL.SAMPLES)).toBe(4);
+      gl.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT);
+      const clear = gl.content().ops[0]!;
+      if (clear.op !== 'clear') throw new Error('not a clear');
+      expect(gl.content().textures[clear.target!]).toEqual({ target: true, width: 4, height: 4, samples: 4 });
+      expect(gl.content().textures[clear.depthStencil!]).toMatchObject({ format: 'depthStencil', samples: 4 });
+    });
+
+    it('resolves with a blit of the same rectangle, and refuses another rectangle or a multisampled destination', () => {
+      const { gl, ms, resolve } = msaa();
+      gl.bindFramebuffer(GL2.READ_FRAMEBUFFER, ms);
+      gl.bindFramebuffer(GL2.DRAW_FRAMEBUFFER, resolve);
+      gl.blitFramebuffer(0, 0, 4, 4, 0, 0, 2, 2, GL.COLOR_BUFFER_BIT, GL.NEAREST);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+      gl.blitFramebuffer(0, 0, 4, 4, 0, 0, 4, 4, GL.COLOR_BUFFER_BIT, GL.NEAREST);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      expect(gl.content().ops).toHaveLength(1);
+      gl.bindFramebuffer(GL2.READ_FRAMEBUFFER, resolve);
+      gl.bindFramebuffer(GL2.DRAW_FRAMEBUFFER, ms);
+      gl.blitFramebuffer(0, 0, 4, 4, 0, 0, 4, 4, GL.COLOR_BUFFER_BIT, GL.NEAREST);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+    });
+
+    it('is incomplete with attachments of different samples', () => {
+      const { gl, ms } = msaa();
+      const single = gl.createRenderbuffer();
+      gl.bindRenderbuffer(GL.RENDERBUFFER, single);
+      gl.renderbufferStorage(GL.RENDERBUFFER, GL2.DEPTH24_STENCIL8, 4, 4);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, ms);
+      gl.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.DEPTH_STENCIL_ATTACHMENT, GL.RENDERBUFFER, single);
+      expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL2.FRAMEBUFFER_INCOMPLETE_MULTISAMPLE);
+    });
+  });
+
+  describe('cube map render targets', () => {
+    const FRAGMENT_CUBE = 'precision mediump float; varying vec2 v; uniform samplerCube env; void main() { gl_FragColor = textureCube(env, vec3(v, 1.0)); }';
+
+    function setup() {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const program = gl.createProgram();
+      for (const [type, source] of [[GL.VERTEX_SHADER, VERTEX], [GL.FRAGMENT_SHADER, FRAGMENT_CUBE]] as const) {
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source);
+        gl.attachShader(program, shader);
+      }
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(GL.ARRAY_BUFFER, buffer);
+      gl.bufferData(GL.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1]), GL.STATIC_DRAW);
+      const at = gl.getAttribLocation(program, 'p');
+      gl.enableVertexAttribArray(at);
+      gl.vertexAttribPointer(at, 2, GL.FLOAT, false, 0, 0);
+      const cube = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_CUBE_MAP, cube);
+      gl.texStorage2D(GL.TEXTURE_CUBE_MAP, 1, GL2.RGBA8, 4, 4);
+      gl.texParameteri(GL.TEXTURE_CUBE_MAP, GL.TEXTURE_MIN_FILTER, GL.LINEAR);
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, fb);
+      return { gl, program, cube, fb };
+    }
+
+    it('draws into each face and samples the six targets as one cube map', () => {
+      const { gl, program, cube } = setup();
+      for (let f = 0; f < 6; f += 1) {
+        gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_CUBE_MAP_POSITIVE_X + f, cube, 0);
+        expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_COMPLETE);
+        gl.clearColor(f / 5, 0, 0, 1);
+        gl.clear(GL.COLOR_BUFFER_BIT);
+      }
+      expect(gl.getFramebufferAttachmentParameter(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME)).toBe(cube);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      gl.uniform1i(gl.getUniformLocation(program, 'env'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const content = gl.content();
+      const clears = content.ops.filter((o) => o.op === 'clear').map((o) => (o as { target?: string }).target);
+      const draw = content.ops.at(-1)!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      const texture = content.textures[draw.units['0']!.texture]!;
+      expect(texture).toEqual({ cube: true, targets: clears });
+      expect(new Set(clears).size).toBe(6);
+      expect(content.textures[clears[0]!]).toEqual({ target: true, width: 4, height: 4 });
+    });
+
+    it('takes empty float faces from texImage2D as render targets', () => {
+      const { gl, cube } = setup();
+      const floats = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_CUBE_MAP, floats);
+      for (let f = 0; f < 6; f += 1) gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X + f, 0, GL2.RGBA16F, 2, 2, 0, GL.RGBA, GL.HALF_FLOAT, null);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_CUBE_MAP_NEGATIVE_Z, floats, 0);
+      expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_COMPLETE);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      const clear = gl.content().ops[0]!;
+      if (clear.op !== 'clear') throw new Error('not a clear');
+      expect(gl.content().textures[clear.target!]).toMatchObject({ target: true, colorFormat: 'RGBA16F' });
+      expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL2.RGBA16F, 2, 2, 0, GL.RGBA, GL.FLOAT, new Float32Array(16))).toThrow(WebGLUnsupportedError);
+      void cube;
+    });
+
+    it('refuses a sampler that reads the cube map a face of which the draw writes, and a face target of a 2D texture', () => {
+      const { gl, program, cube } = setup();
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_CUBE_MAP_POSITIVE_Y, cube, 0);
+      gl.uniform1i(gl.getUniformLocation(program, 'env'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+      const flat = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, flat);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_CUBE_MAP_POSITIVE_X, flat, 0);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, cube, 0);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+    });
+
+    it('makes the mipmaps of drawn faces with a LINEAR blit from each level to the next', () => {
+      const { gl, program } = setup();
+      const cube = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_CUBE_MAP, cube);
+      gl.texStorage2D(GL.TEXTURE_CUBE_MAP, 3, GL2.RGBA8, 4, 4);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_CUBE_MAP_POSITIVE_Z, cube, 0);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      gl.generateMipmap(GL.TEXTURE_CUBE_MAP);
+      gl.uniform1i(gl.getUniformLocation(program, 'env'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const content = gl.content();
+      const blits = content.ops.filter((o) => o.op === 'blit');
+      expect(blits).toHaveLength(12);
+      const draw = content.ops.at(-1)!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      const faces = content.textures[draw.units['0']!.texture]!.targets!;
+      expect(blits.slice(8, 10)).toEqual([
+        { op: 'blit', src: faces[4], target: faces[4], level: 1, from: [0, 0, 4, 4], to: [0, 0, 2, 2], linear: true },
+        { op: 'blit', src: faces[4], srcLevel: 1, target: faces[4], level: 2, from: [0, 0, 2, 2], to: [0, 0, 1, 1], linear: true },
+      ]);
+      for (const f of faces) expect(content.textures[f]).toEqual({ target: true, width: 4, height: 4, levels: 3 });
+    });
+
+    it('records TEXTURE_BASE_LEVEL on the sampler, and makes mipmaps from it', () => {
+      const { gl, program } = setup();
+      const t = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, t);
+      gl.texStorage2D(GL.TEXTURE_2D, 3, GL2.RGBA8, 4, 4);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, t, 1);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      gl.texParameteri(GL.TEXTURE_2D, GL2.TEXTURE_BASE_LEVEL, 1);
+      gl.generateMipmap(GL.TEXTURE_2D);
+      const blits = gl.content().ops.filter((o) => o.op === 'blit');
+      expect(blits).toEqual([expect.objectContaining({ srcLevel: 1, level: 2 })]);
+      void program;
+    });
+
+    it('gives a drawn 2D texture all its levels at generateMipmap, and refuses a 32-bit float one', () => {
+      const { gl } = setup();
+      const t = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, t);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 8, 2, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, t, 0);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      gl.generateMipmap(GL.TEXTURE_2D);
+      const content = gl.content();
+      const blits = content.ops.filter((o) => o.op === 'blit');
+      expect(blits.map((b) => (b as { to: number[] }).to)).toEqual([[0, 0, 4, 1], [0, 0, 2, 1], [0, 0, 1, 1]]);
+      expect(content.textures[(blits[0] as { target: string }).target]).toMatchObject({ levels: 4 });
+      const f = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, f);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL2.RGBA32F, 2, 2, 0, GL.RGBA, GL.FLOAT, null);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, f, 0);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      expect(() => gl.generateMipmap(GL.TEXTURE_2D)).toThrow(WebGLUnsupportedError);
+    });
+
+    it('takes whole faces from texSubImage2D into texStorage2D, as three.js uploads a cube map', () => {
+      const { gl, program } = setup();
+      const cube = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_CUBE_MAP, cube);
+      gl.texStorage2D(GL.TEXTURE_CUBE_MAP, 2, GL2.SRGB8_ALPHA8, 2, 2);
+      for (let f = 0; f < 6; f += 1) gl.texSubImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X + f, 0, 0, 0, 2, 2, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(16).fill(f + 1));
+      gl.generateMipmap(GL.TEXTURE_CUBE_MAP);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      gl.uniform1i(gl.getUniformLocation(program, 'env'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const draw = gl.content().ops.at(-1)!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      const texture = gl.content().textures[draw.units['0']!.texture]!;
+      expect(texture).toMatchObject({ cube: true, width: 2, srgb: true, mipmaps: true });
+      expect(Buffer.from(texture.faces![5]!.pixels!, 'base64')[0]).toBe(6);
+      expect(() => gl.texSubImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0, 1, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
+    });
+
+    it('refuses a cube map of uploaded and drawn faces', () => {
+      const { gl, program } = setup();
+      const mixed = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_CUBE_MAP, mixed);
+      for (let f = 0; f < 6; f += 1) gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X + f, 0, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, f === 0 ? null : new Uint8Array([9, 9, 9, 255]));
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_CUBE_MAP_POSITIVE_X, mixed, 0);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      gl.uniform1i(gl.getUniformLocation(program, 'env'), 0);
+      expect(() => gl.drawArrays(GL.TRIANGLES, 0, 3)).toThrow(WebGLUnsupportedError);
     });
   });
 
@@ -1508,12 +1818,18 @@ describe('the recording WebGL context', () => {
       expect(() => gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL.RGBA, GL.FLOAT, new Float32Array(4))).toThrow(/^unsupported:.*UNPACK_FLIP_Y/);
     });
 
-    it('refuses blending into a 32-bit target and RGB16F, and says what to use', () => {
+    it('blends into a 32-bit target once EXT_float_blend is enabled, as a browser does, and refuses RGB16F', () => {
       const { gl } = floatContext(GL2.RGBA32F, true);
+      expect(gl.getSupportedExtensions()).toEqual(expect.arrayContaining(['EXT_color_buffer_float', 'EXT_color_buffer_half_float', 'EXT_float_blend']));
       gl.enable(GL.BLEND);
-      expect(() => gl.drawArrays(GL.TRIANGLES, 0, 3)).toThrow(/^unsupported:.*32-bit float render target/);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+      expect(gl.getExtension('EXT_float_blend')).not.toBeNull();
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      expect(gl.content().ops.at(-1)).toMatchObject({ op: 'draw', blend: { srcRgb: 'ONE' } });
       const rgb = floatContext(GL2.RGB16F, true).gl;
-      expect(() => rgb.drawArrays(GL.TRIANGLES, 0, 3)).toThrow(/^unsupported:.*allocate it as RGBA, or as R16F/);
+      expect(() => rgb.drawArrays(GL.TRIANGLES, 0, 3)).toThrow(/^unsupported:.*allocate it as RGBA, SRGB8_ALPHA8, R8, RG8, or as R16F/);
     });
 
     it('keeps blending into a 16-bit one', () => {
@@ -1629,11 +1945,62 @@ describe('the recording WebGL context', () => {
       }
     });
 
-    it('refuses what it cannot read as sRGB: cube faces, layer pictures and a render target', () => {
+    it('draws into SRGB8_ALPHA8 textures, cube faces and renderbuffers, and float renderbuffers', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, fb);
+      const colorFormatOf = () => {
+        const clear = gl.content().ops.at(-1)!;
+        if (clear.op !== 'clear') throw new Error('not a clear');
+        return gl.content().textures[clear.target!]!.colorFormat;
+      };
+      const t = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, t);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL2.SRGB8_ALPHA8, 2, 2, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, t, 0);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      expect(colorFormatOf()).toBe('SRGB8_ALPHA8');
+      const cube = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_CUBE_MAP, cube);
+      gl.texStorage2D(GL.TEXTURE_CUBE_MAP, 1, GL2.SRGB8_ALPHA8, 2, 2);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_CUBE_MAP_NEGATIVE_Y, cube, 0);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      expect(colorFormatOf()).toBe('SRGB8_ALPHA8');
+      for (const [format, name] of [[GL2.SRGB8_ALPHA8, 'SRGB8_ALPHA8'], [GL2.RGBA16F, 'RGBA16F']] as const) {
+        const rb = gl.createRenderbuffer();
+        gl.bindRenderbuffer(GL.RENDERBUFFER, rb);
+        gl.renderbufferStorage(GL.RENDERBUFFER, format, 2, 2);
+        gl.framebufferRenderbuffer(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.RENDERBUFFER, rb);
+        expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_COMPLETE);
+        gl.clear(GL.COLOR_BUFFER_BIT);
+        expect(colorFormatOf()).toBe(name);
+      }
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+    });
+
+    it('draws into R8 and RG8 textures, and refuses an upload over a drawn one', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      gl.bindFramebuffer(GL.FRAMEBUFFER, gl.createFramebuffer());
+      for (const [format, base, name] of [[GL2.R8, GL2.RED, 'R8'], [GL2.RG8, GL2.RG, 'RG8']] as const) {
+        const t = gl.createTexture();
+        gl.bindTexture(GL.TEXTURE_2D, t);
+        gl.texImage2D(GL.TEXTURE_2D, 0, format, 2, 2, 0, base, GL.UNSIGNED_BYTE, null);
+        gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, t, 0);
+        gl.clear(GL.COLOR_BUFFER_BIT);
+        const clear = gl.content().ops.at(-1)!;
+        if (clear.op !== 'clear') throw new Error('not a clear');
+        expect(gl.content().textures[clear.target!]!.colorFormat).toBe(name);
+        expect(() => gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 1, 1, base, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
+      }
+    });
+
+    it('records a cube map of sRGB faces as sRGB, and refuses a float face with pixels', () => {
       const { gl } = setup();
       const cube = gl.createTexture();
       gl.bindTexture(GL.TEXTURE_CUBE_MAP, cube);
-      expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL2.SRGB8_ALPHA8, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(/^unsupported:.*sRGB/);
+      expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL2.RGBA16F, 1, 1, 0, GL.RGBA, GL.FLOAT, new Float32Array(4))).toThrow(/^unsupported:.*float pixels/);
+      for (let f = 0; f < 6; f += 1) gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X + f, 0, GL2.SRGB8_ALPHA8, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4));
+      expect(gl.getError()).toBe(GL.NO_ERROR);
     });
   });
 

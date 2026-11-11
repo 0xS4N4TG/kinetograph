@@ -137,7 +137,7 @@ pub struct GlslTexture {
     pub target: bool,
     /// What a target holds: colour (RGBA8) without one.
     pub format: Option<TargetFormat>,
-    /// An `SRGB8_ALPHA8` texture: the bytes are sRGB and a shader reads them as linear.
+    /// An `SRGB8_ALPHA8` texture (2D, or the faces of a cube map): the bytes are sRGB and a shader reads them as linear.
     #[serde(default)]
     pub srgb: bool,
     /// A colour target of a float format, which draws write and samplers read as floats (`EXT_color_buffer_float`).
@@ -145,6 +145,10 @@ pub struct GlslTexture {
     /// The mip levels of a colour target; an op's `level` draws into one.
     #[serde(default = "one")]
     pub levels: u32,
+    /// The samples of a target (`renderbufferStorageMultisample`): 1, or 4 for a multisampled one, which a
+    /// colour `blit` resolves and a depth and stencil one reads the first sample of.
+    #[serde(default = "one")]
+    pub samples: u32,
     /// A depth texture of a WebGL 1 context, which samples it as (d, d, d,
     /// 1); WebGL 2 samples (d, 0, 0, 1).
     #[serde(default)]
@@ -172,6 +176,10 @@ pub struct GlslTexture {
     pub cube: bool,
     #[serde(default)]
     pub faces: Vec<GlslFace>,
+    /// With `cube`, in place of `faces`: the six colour targets framebuffers drew the faces in, in GL's order
+    /// (`framebufferTexture2D` of `TEXTURE_CUBE_MAP_POSITIVE_X` and the others). Square, of one format and level count.
+    #[serde(default)]
+    pub targets: Vec<String>,
 }
 
 /// One face of a cube map.
@@ -186,7 +194,8 @@ pub struct GlslFace {
     pub premultiply: bool,
 }
 
-/// The float formats a colour target can have.
+/// The formats other than RGBA8 a colour target can have: floats, sRGB (written and blended as linear, kept
+/// encoded), and the 8-bit red and red-green ones.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
 pub enum ColorFormat {
     R16F,
@@ -195,6 +204,10 @@ pub enum ColorFormat {
     R32F,
     RG32F,
     RGBA32F,
+    #[serde(rename = "SRGB8_ALPHA8")]
+    Srgb8Alpha8,
+    R8,
+    RG8,
 }
 
 impl ColorFormat {
@@ -207,6 +220,9 @@ impl ColorFormat {
             ColorFormat::R32F => F::R32Float,
             ColorFormat::RG32F => F::Rg32Float,
             ColorFormat::RGBA32F => F::Rgba32Float,
+            ColorFormat::Srgb8Alpha8 => F::Rgba8UnormSrgb,
+            ColorFormat::R8 => F::R8Unorm,
+            ColorFormat::RG8 => F::Rg8Unorm,
         }
     }
 
@@ -464,7 +480,7 @@ pub struct GlslAttribute {
     pub stride: u32,
     #[serde(default)]
     pub offset: u32,
-    /// `vertexAttribDivisor`: 0 advances for each vertex, 1 for each instance.
+    /// `vertexAttribDivisor`: 0 advances for each vertex, 1 for each instance, `n` for each `n` instances.
     #[serde(default)]
     pub divisor: u32,
     /// The attribute's array is disabled and it reads the current value (`vertexAttrib4f` and the like), the same for
@@ -523,6 +539,9 @@ pub struct GlslSampler {
     pub wrap_r: String,
     /// `TEXTURE_MAX_LEVEL`, when it was set: the last level sampling reads.
     pub max_level: Option<u32>,
+    /// `TEXTURE_BASE_LEVEL`: the first level sampling reads (`textureSize` and `texelFetch` count from it).
+    #[serde(default)]
+    pub base_level: u32,
     /// `TEXTURE_COMPARE_MODE` was `COMPARE_REF_TO_TEXTURE`: a shadow sampler compares the depth with its reference by
     /// this function (`LEQUAL`, ...).
     pub compare: Option<String>,
@@ -3387,6 +3406,7 @@ mod tests {
             target: false,
             format: None,
             levels: 1,
+            samples: 1,
             luminance: false,
             patches: Vec::new(),
             depth: 2,
@@ -3397,6 +3417,7 @@ mod tests {
             float32: false,
             cube: false,
             faces: Vec::new(),
+            targets: Vec::new(),
         };
         let rgba8 = decode_texels(&texture(Some(b64(&[7; 16])), None)).unwrap();
         assert_eq!(rgba8, Texels::Rgba8(vec![7; 16]));

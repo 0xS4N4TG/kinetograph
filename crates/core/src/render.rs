@@ -2263,8 +2263,8 @@ pub fn webgpu_device_info() -> Option<String> {
 
 /// The GPU device: the default adapter, default limits (but up to 16 vertex buffers, as a `glsl` draw gives each
 /// attribute one and a shader may have ten), `CLEAR_TEXTURE` and `PIPELINE_CACHE` when there, plus
-/// `TIMESTAMP_QUERY` when there, for `set_pass_timing`, and `FLOAT32_FILTERABLE` when there, so that a WebGPU page may
-/// filter 32-bit float textures.
+/// `TIMESTAMP_QUERY` when there, for `set_pass_timing`, `FLOAT32_FILTERABLE` when there, so that a WebGPU page may
+/// filter 32-bit float textures, and `FLOAT32_BLENDABLE` when there, for WebGL's `EXT_float_blend`.
 async fn new_device(instance: &wgpu::Instance) -> Option<(wgpu::Device, wgpu::Queue)> {
     let adapter = wgpu::util::initialize_adapter_from_env_or_default(instance, None)
         .await
@@ -2272,7 +2272,8 @@ async fn new_device(instance: &wgpu::Instance) -> Option<(wgpu::Device, wgpu::Qu
     let wanted = wgpu::Features::CLEAR_TEXTURE
         | wgpu::Features::PIPELINE_CACHE
         | wgpu::Features::TIMESTAMP_QUERY
-        | wgpu::Features::FLOAT32_FILTERABLE;
+        | wgpu::Features::FLOAT32_FILTERABLE
+        | wgpu::Features::FLOAT32_BLENDABLE;
     adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: None,

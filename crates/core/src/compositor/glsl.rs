@@ -93,6 +93,8 @@ struct Target {
     levels: Vec<wgpu::TextureView>,
     /// What a depth or stencil target holds; `None` for colour.
     ds: Option<TargetFormat>,
+    /// 1, or `MSAA_SAMPLES` for a multisampled renderbuffer (and the drawing buffer's depth when it is one).
+    samples: u32,
     _texture: wgpu::Texture,
 }
 
@@ -106,6 +108,7 @@ impl Target {
             levels: vec![view.clone()],
             view,
             ds: None,
+            samples: 1,
             _texture: texture,
         }
     }
@@ -164,6 +167,10 @@ enum Step<'c> {
     /// A depth target's depth as it is now, copied into the red channel of an
     /// R32Float texture for draws to sample (`glsl_depth_colour.wgsl`).
     DepthCopy(&'c str, wgpu::Texture),
+    /// A multisampled colour target resolved into a texture of one sample, for a blit to read.
+    Resolve(&'c str, wgpu::Texture),
+    /// The six face targets of a cube map, every level, copied into the layers of a cube texture for draws to sample.
+    CubeCopy(&'c [String], wgpu::Texture),
 }
 
 struct Blit {
@@ -198,10 +205,10 @@ pub(super) struct GlslGpu {
     /// Whether the replay in hand draws into `msaa` (see `glsl_multisampled`).
     msaa_on: bool,
     blit: Option<Blit>,
-    /// The pass behind `blitFramebuffer`.
-    copy: Option<Blit>,
-    /// The passes behind a depth and stencil `blitFramebuffer`, by format.
-    ds_copies: HashMap<wgpu::TextureFormat, Arc<DsCopy>>,
+    /// The passes behind `blitFramebuffer`, by the destination's format and whether the source can be filtered.
+    copies: HashMap<(wgpu::TextureFormat, bool), Blit>,
+    /// The passes behind a depth and stencil `blitFramebuffer`, by format and whether the source is multisampled.
+    ds_copies: HashMap<(wgpu::TextureFormat, bool), Arc<DsCopy>>,
     /// The passes that copy a depth texture for draws to sample: as red, and
     /// as luminance.
     depth_colour: Option<([wgpu::RenderPipeline; 2], wgpu::BindGroupLayout)>,
@@ -364,6 +371,7 @@ impl Compositor {
                 include_str!("../shaders/glsl_input.wgsl"),
                 ("vs_input", "fs_input"),
                 wgpu::TextureFormat::Rgba8Unorm,
+                true,
             ));
         }
         while self.glsl.inputs.len() <= n {
@@ -603,6 +611,9 @@ impl Compositor {
         let mut steps: Vec<Step> = Vec::new();
         // The copies of depth targets draws sample, while what they hold is the target's.
         let mut depth_copies: HashMap<&str, wgpu::TextureView> = HashMap::new();
+        // The same for cube maps whose faces are targets, and for multisampled colour targets a blit reads.
+        let mut cube_copies: HashMap<&str, wgpu::TextureView> = HashMap::new();
+        let mut resolved: HashMap<&str, wgpu::TextureView> = HashMap::new();
         let mut started: HashSet<(Option<&str>, u32)> = HashSet::new();
         for (i, op) in content.ops.iter().enumerate() {
             if dead[i] {
@@ -744,10 +755,78 @@ impl Compositor {
                     steps.insert(at, Step::DepthCopy(id, copy));
                 }
             }
+            // A cube map whose faces are targets is copied from them before the pass, in the same way.
+            if let GlslOp::Draw(draw) = op {
+                for unit in draw.units.values() {
+                    let id = unit.texture.as_str();
+                    let Some(texture) = content
+                        .textures
+                        .get(id)
+                        .filter(|t| t.cube && !t.targets.is_empty())
+                    else {
+                        continue;
+                    };
+                    if cube_copies.contains_key(id) {
+                        continue;
+                    }
+                    let copy =
+                        self.glsl_cube_of_targets(&mut targets, content, &texture.targets)?;
+                    cube_copies.insert(
+                        id,
+                        copy.create_view(&wgpu::TextureViewDescriptor {
+                            dimension: Some(wgpu::TextureViewDimension::Cube),
+                            ..Default::default()
+                        }),
+                    );
+                    let at = if joins { steps.len() - 1 } else { steps.len() };
+                    steps.insert(at, Step::CubeCopy(&texture.targets, copy));
+                }
+            }
+            // A multisampled colour target a blit reads is resolved into a texture of one sample before the pass.
+            if let GlslOp::Blit(blit) = op
+                && blit.aspect.is_none()
+                && let Some(id) = blit.src.as_deref()
+                && !resolved.contains_key(id)
+            {
+                let t = self.glsl_target(&mut targets, content, id, canvas_ds)?;
+                if t.samples > 1 {
+                    let (size, format) = (t.size, t.format);
+                    let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("glsl resolved target"),
+                        size: wgpu::Extent3d {
+                            width: size.0,
+                            height: size.1,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format,
+                        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                            | wgpu::TextureUsages::TEXTURE_BINDING,
+                        view_formats: &[],
+                    });
+                    resolved.insert(
+                        id,
+                        texture.create_view(&wgpu::TextureViewDescriptor::default()),
+                    );
+                    let at = if joins { steps.len() - 1 } else { steps.len() };
+                    steps.insert(at, Step::Resolve(id, texture));
+                }
+            }
             // What an op draws in no longer holds what a copy of it does.
             if let Some(key) = ds {
                 depth_copies.remove(key);
             }
+            resolved.retain(|id, _| !colors.iter().flatten().any(|(c, _)| *c == Some(*id)));
+            cube_copies.retain(|id, _| {
+                !content.textures[*id].targets.iter().any(|face| {
+                    colors
+                        .iter()
+                        .flatten()
+                        .any(|(c, _)| *c == Some(face.as_str()))
+                })
+            });
             if !joins {
                 let loads = colors
                     .iter()
@@ -773,8 +852,16 @@ impl Compositor {
                     slot.map(|(id, _)| id.map_or(COLOR_FORMAT, |id| targets[id].format))
                 })
                 .collect();
-            let samples = if self.glsl.msaa_on
-                && (colors.as_slice() == [Some((None, 0))] || ds == Some(CANVAS_DS))
+            // A pass is multisampled when it draws into the multisampled drawing buffer or a multisampled
+            // renderbuffer (every attachment of a framebuffer has one number of samples).
+            let multisampled_target = colors
+                .iter()
+                .flatten()
+                .any(|(id, _)| id.is_some_and(|id| targets[id].samples > 1))
+                || ds.is_some_and(|key| targets[key].samples > 1);
+            let samples = if multisampled_target
+                || (self.glsl.msaa_on
+                    && (colors.as_slice() == [Some((None, 0))] || ds == Some(CANVAS_DS)))
             {
                 MSAA_SAMPLES
             } else {
@@ -786,7 +873,7 @@ impl Compositor {
                         content,
                         draw,
                         size,
-                        (base_dir, inputs, &depth_copies),
+                        (base_dir, inputs, &depth_copies, &cube_copies),
                         &mut buffers,
                         &mut targets,
                         (&shape, ds_format, samples),
@@ -794,7 +881,7 @@ impl Compositor {
                     .into_iter()
                     .collect(),
                 GlslOp::Blit(blit) if blit.aspect.is_none() => self
-                    .glsl_copy(content, blit, size, &mut targets, canvas_ds)?
+                    .glsl_copy(content, blit, size, &mut targets, (canvas_ds, &resolved))?
                     .into_iter()
                     .collect(),
                 GlslOp::Blit(blit) => self.glsl_ds_copy(content, blit, &mut targets, canvas_ds)?,
@@ -888,6 +975,58 @@ impl Compositor {
                 }
                 Step::DepthCopy(id, copy) => {
                     self.glsl_depth_colour(&targets[id], copy);
+                    continue;
+                }
+                Step::Resolve(id, texture) => {
+                    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                    let mut encoder = self.encoder();
+                    let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("glsl resolve"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &targets[id].levels[0],
+                            depth_slice: None,
+                            resolve_target: Some(&view),
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        ..Default::default()
+                    });
+                    drop(pass);
+                    continue;
+                }
+                Step::CubeCopy(faces, cube) => {
+                    let mut encoder = self.encoder();
+                    for (layer, face) in faces.iter().enumerate() {
+                        let t = &targets[face.as_str()];
+                        for level in 0..t.levels.len() as u32 {
+                            let (width, height) = t.level_size(level);
+                            encoder.copy_texture_to_texture(
+                                wgpu::TexelCopyTextureInfo {
+                                    texture: &t._texture,
+                                    mip_level: level,
+                                    origin: wgpu::Origin3d::ZERO,
+                                    aspect: wgpu::TextureAspect::All,
+                                },
+                                wgpu::TexelCopyTextureInfo {
+                                    texture: cube,
+                                    mip_level: level,
+                                    origin: wgpu::Origin3d {
+                                        x: 0,
+                                        y: 0,
+                                        z: layer as u32,
+                                    },
+                                    aspect: wgpu::TextureAspect::All,
+                                },
+                                wgpu::Extent3d {
+                                    width,
+                                    height,
+                                    depth_or_array_layers: 1,
+                                },
+                            );
+                        }
+                    }
                     continue;
                 }
                 Step::Pass(pass) => pass,
@@ -989,12 +1128,14 @@ impl Compositor {
         canvas_ds: Option<TargetFormat>,
     ) -> Result<&'a Target> {
         if !targets.contains_key(id) {
-            let (width, height, ds, levels, color) = if id == CANVAS_DS {
+            let (width, height, ds, levels, color, samples) = if id == CANVAS_DS {
                 let format = canvas_ds.ok_or_else(|| {
                     render_error("an op uses the drawing buffer's depth or stencil buffer, which the context was made without")
                 })?;
                 let size = self.glsl.target.as_ref().expect("made by glsl_draw").size;
-                (size.0, size.1, Some(format), 1, None)
+                // The drawing buffer's depth and stencil are multisampled with it.
+                let samples = if self.glsl.msaa_on { MSAA_SAMPLES } else { 1 };
+                (size.0, size.1, Some(format), 1, None, samples)
             } else {
                 let texture = content
                     .textures
@@ -1005,12 +1146,20 @@ impl Compositor {
                             "an op targets {id:?}, which is not a target texture of the recording"
                         ))
                     })?;
+                if texture.samples != 1 && (texture.samples != MSAA_SAMPLES || texture.levels != 1)
+                {
+                    return Err(render_error(format!(
+                        "a render target of {} samples and {} levels; a multisampled one has {MSAA_SAMPLES} and 1",
+                        texture.samples, texture.levels
+                    )));
+                }
                 (
                     texture.width,
                     texture.height,
                     texture.format,
                     texture.levels,
                     texture.color_format,
+                    texture.samples,
                 )
             };
             let limit = self
@@ -1032,13 +1181,20 @@ impl Compositor {
             let bytes = |(w, h): (u32, u32), levels: usize, texel: u64| {
                 u64::from(w) * u64::from(h) * texel * if levels > 1 { 2 } else { 1 }
             };
-            let texel_of = |t: &Target| u64::from(t.format.block_copy_size(None).unwrap_or(4));
+            let texel_of = |t: &Target| {
+                u64::from(t.format.block_copy_size(None).unwrap_or(4)) * u64::from(t.samples)
+            };
             let held: u64 = targets
                 .values()
                 .map(|t| bytes(t.size, t.levels.len(), texel_of(t)))
                 .sum();
             let format = ds.map_or_else(|| color.map_or(COLOR_FORMAT, gl::ColorFormat::device), ds_format);
-            let texel = u64::from(format.block_copy_size(None).unwrap_or(4));
+            if samples > 1 && is_float32(format) {
+                return Err(render_error(
+                    "unsupported: a multisampled render target of 32-bit floats; use a 16-bit one",
+                ));
+            }
+            let texel = u64::from(format.block_copy_size(None).unwrap_or(4)) * u64::from(samples);
             if held + bytes((width, height), levels as usize, texel) > MAX_TARGET_BYTES {
                 return Err(render_error(format!(
                     "unsupported: the render targets hold more than {} MiB",
@@ -1057,20 +1213,16 @@ impl Compositor {
                     depth_or_array_layers: 1,
                 },
                 mip_level_count: levels,
-                // The drawing buffer's depth and stencil are multisampled with it.
-                sample_count: if id == CANVAS_DS && self.glsl.msaa_on {
-                    MSAA_SAMPLES
-                } else {
-                    1
-                },
+                sample_count: samples,
                 dimension: wgpu::TextureDimension::D2,
                 format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                     | wgpu::TextureUsages::TEXTURE_BINDING
-                    | if ds.is_some() {
+                    | if ds.is_some() || samples > 1 {
                         wgpu::TextureUsages::empty()
                     } else {
-                        wgpu::TextureUsages::COPY_DST
+                        // A cube map's faces are copied from their targets.
+                        wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC
                     },
                 view_formats: &[],
             });
@@ -1099,11 +1251,55 @@ impl Compositor {
                     view,
                     levels: level_views,
                     ds,
+                    samples,
                     _texture: texture,
                 },
             );
         }
         Ok(&targets[id])
+    }
+
+    /// The cube texture a cube map whose faces are the targets `faces` is copied into (`Step::CubeCopy`): the
+    /// faces' side, format and levels, which must be one for all six, as GL's cube completeness asks.
+    fn glsl_cube_of_targets<'c>(
+        &self,
+        targets: &mut HashMap<&'c str, Target>,
+        content: &'c GlslContent,
+        faces: &'c [String],
+    ) -> Result<wgpu::Texture> {
+        if faces.len() != 6 {
+            return Err(render_error(format!(
+                "a cube map names {} face targets; it has 6",
+                faces.len()
+            )));
+        }
+        let mut shape = None;
+        for face in faces {
+            let t = self.glsl_target(targets, content, face, None)?;
+            let this = (t.size, t.format, t.levels.len(), t.ds.is_none());
+            if this.0.0 != this.0.1 || !this.3 || shape.is_some_and(|s| s != this) {
+                return Err(render_error(
+                    "a cube map's face targets are not six square colour targets of one size, format and \
+                     level count (WebGL samples such a cube map as incomplete)",
+                ));
+            }
+            shape = Some(this);
+        }
+        let ((side, _), format, levels, _) = shape.expect("six faces");
+        Ok(self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("glsl cube of targets"),
+            size: wgpu::Extent3d {
+                width: side,
+                height: side,
+                depth_or_array_layers: 6,
+            },
+            mip_level_count: levels as u32,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        }))
     }
 
     /// The size of what an op with these attachments draws into: every
@@ -1148,7 +1344,12 @@ impl Compositor {
         content: &'c GlslContent,
         draw: &'c GlslDraw,
         size: (u32, u32),
-        (base_dir, inputs, depth_copies): (&Path, &Inputs, &HashMap<&str, wgpu::TextureView>),
+        (base_dir, inputs, depth_copies, cube_copies): (
+            &Path,
+            &Inputs,
+            &HashMap<&str, wgpu::TextureView>,
+            &HashMap<&str, wgpu::TextureView>,
+        ),
         buffers: &mut HashMap<&'c str, (Vec<u8>, Option<wgpu::Buffer>)>,
         targets: &mut HashMap<&'c str, Target>,
         (shape, ds, samples): (&[Option<wgpu::TextureFormat>], Option<TargetFormat>, u32),
@@ -1203,6 +1404,8 @@ impl Compositor {
         let mut sources: Vec<(&str, u64, u64)> = Vec::new();
         // Buffer, stride, offset and element size of each, for gathering.
         let mut shapes: Vec<(&str, u64, u64, u64)> = Vec::new();
+        // The attributes with a divisor above 1, by their place in `sources`, and the divisor.
+        let mut divided: Vec<(usize, u32)> = Vec::new();
         let last = match &draw.indices {
             Some(indices) => {
                 let max = self.glsl_max_index(content, indices, draw, buffers)?;
@@ -1217,16 +1420,9 @@ impl Compositor {
                      refuses with INVALID_OPERATION)"
                 ))
             })?;
-            if a.divisor > 1 {
-                return Err(render_error(format!(
-                    "unsupported: vertexAttribDivisor({}) of the attribute `{name}`; 0 and 1 are \
-                     drawn",
-                    a.divisor
-                )));
-            }
-            // An attribute with a divisor advances for each instance; a
+            // An attribute with a divisor advances for each instance (or each `divisor` of them); a
             // point's attributes all do, as it is an instance itself.
-            let per_instance = a.divisor == 1 && !points;
+            let per_instance = a.divisor >= 1 && !points;
             let (format, element) = vertex_format(a, name, *components)?;
             let stride = if a.stride == 0 {
                 element
@@ -1272,7 +1468,7 @@ impl Compositor {
             }
             let bytes = glsl_buffer(content, &a.buffer, buffers)?.len() as u64;
             let reads = if per_instance {
-                u64::from(draw.instances)
+                u64::from(draw.instances.div_ceil(a.divisor))
             } else {
                 last
             };
@@ -1298,6 +1494,16 @@ impl Compositor {
             } else {
                 step
             };
+            if per_instance && a.divisor > 1 {
+                if draw.instances > MAX_DRAW_VERTICES {
+                    return Err(render_error(format!(
+                        "unsupported: {} instances of the attribute `{name}` with vertexAttribDivisor({}); \
+                         at most {MAX_DRAW_VERTICES}",
+                        draw.instances, a.divisor
+                    )));
+                }
+                divided.push((sources.len(), a.divisor));
+            }
             layouts.push((*location, format, stride, in_vertex, step));
             sources.push((&a.buffer, bound_at, stride));
             shapes.push((&a.buffer, stride, offset, element));
@@ -1314,6 +1520,21 @@ impl Compositor {
         // of the list, one element for each point.
         let mut instances = (draw.first, draw.first + draw.count);
         let mut gathered: Vec<Option<Vec<u8>>> = vec![None; sources.len()];
+        // wgpu's instance step is a divisor of 1: an attribute with a larger one is gathered, an element for each
+        // instance, instance `i` reading element `i / divisor`.
+        for (k, divisor) in divided {
+            let (buffer, stride, offset, element) = shapes[k];
+            let bytes = glsl_buffer(content, buffer, buffers)?;
+            let mut out = Vec::with_capacity(draw.instances as usize * element as usize);
+            for i in 0..u64::from(draw.instances) {
+                let at = (offset + i / u64::from(divisor) * stride) as usize;
+                out.extend_from_slice(&bytes[at..at + element as usize]);
+            }
+            gathered[k] = Some(out);
+            layouts[k].2 = element;
+            layouts[k].3 = 0;
+            sources[k].1 = 0;
+        }
         if points && let Some(list) = index_list.take() {
             for (k, (buffer, stride, offset, element)) in shapes.iter().enumerate() {
                 let bytes = glsl_buffer(content, buffer, buffers)?;
@@ -1397,7 +1618,28 @@ impl Compositor {
                             binding.name, state.texture
                         )));
                     }
-                    let uploaded = if texture.cube {
+                    let uploaded = if texture.cube && !texture.targets.is_empty() {
+                        let drawn_into = texture.targets.iter().any(|face| {
+                            colors
+                                .iter()
+                                .flatten()
+                                .any(|(id, _)| *id == Some(face.as_str()))
+                        });
+                        if drawn_into {
+                            return Err(render_error(format!(
+                                "a draw samples the cube map {:?} while it renders to one of its faces \
+                                 (WebGL refuses such a draw with INVALID_OPERATION)",
+                                state.texture
+                            )));
+                        }
+                        let face = &targets[texture.targets[0].as_str()];
+                        Arc::new(Uploaded {
+                            view: cube_copies[state.texture.as_str()].clone(),
+                            mipmapped: target_mipmapped(face, state.max_level),
+                            depth: false,
+                            float32: is_float32(face.format),
+                        })
+                    } else if texture.cube {
                         self.glsl_cube(&state.texture, texture, base_dir)?
                     } else if texture.depth > 0 || texture.floats.is_some() {
                         self.glsl_texture_texels(&state.texture, texture)?
@@ -1432,13 +1674,9 @@ impl Compositor {
                                 .clone(),
                             None => target.view.clone(),
                         };
-                        // Its levels are complete when they reach 1 x 1, or reach TEXTURE_MAX_LEVEL.
-                        let levels = target.levels.len() as u32;
-                        let full = target.size.0.max(target.size.1).ilog2() + 1;
                         Arc::new(Uploaded {
                             view,
-                            mipmapped: levels > 1
-                                && (levels == full || state.max_level.is_some_and(|m| m < levels)),
+                            mipmapped: target_mipmapped(target, state.max_level),
                             depth: target.ds.is_some(),
                             float32: texture.color_format.is_some_and(gl::ColorFormat::is_32),
                         })
@@ -1525,6 +1763,7 @@ impl Compositor {
                         wrap_t: "CLAMP_TO_EDGE".into(),
                         wrap_r: "CLAMP_TO_EDGE".into(),
                         max_level: None,
+                        base_level: 0,
                         compare: None,
                     };
                     (black.view.clone(), self.glsl_sampler_for(&nearest, false))
@@ -1868,6 +2107,19 @@ impl Compositor {
             }
         }
         let blend = draw.blend.as_ref().map(blend_state).transpose()?;
+        // `EXT_float_blend`: blending into 32-bit floats needs the device's feature (every Apple GPU has it).
+        if blend.is_some()
+            && shape.iter().flatten().any(|f| is_float32(*f))
+            && !self
+                .device
+                .features()
+                .contains(wgpu::Features::FLOAT32_BLENDABLE)
+        {
+            return Err(render_error(
+                "unsupported: blending into a 32-bit float render target on a GPU without float32-blendable; \
+                 draw it without blending, or use a 16-bit one",
+            ));
+        }
         let depth_stencil = ds
             .map(|format| -> Result<wgpu::DepthStencilState> {
                 // Without the test the buffer is neither tested nor written.
@@ -2097,7 +2349,7 @@ impl Compositor {
             .map(|s| file_stamp(&base_dir.join(s)))
             .collect::<Vec<_>>()
             .join("|");
-        let key = format!("{id}|cube|{}|{stamp}", texture.mipmaps);
+        let key = format!("{id}|cube|{}|{}|{stamp}", texture.mipmaps, texture.srgb);
         if let Some(t) = self.glsl.textures.get(&key) {
             return Ok(t.clone());
         }
@@ -2121,7 +2373,11 @@ impl Compositor {
             mip_level_count: levels,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: COLOR_FORMAT,
+            format: if texture.srgb {
+                wgpu::TextureFormat::Rgba8UnormSrgb
+            } else {
+                COLOR_FORMAT
+            },
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
@@ -2451,6 +2707,35 @@ impl Compositor {
         if dim.shadow() {
             return (texture.view.clone(), self.glsl_compare_sampler(state));
         }
+        // `TEXTURE_BASE_LEVEL`: a view of the levels from it, the last level counted from it too. A base beyond the
+        // texture's levels makes it incomplete, which samples as opaque black.
+        let based;
+        let (texture, state) = match state.base_level {
+            0 => (texture, state),
+            base => {
+                let t = texture.view.texture();
+                if base >= t.mip_level_count() || texture.depth {
+                    let black = self.glsl_black(dim);
+                    return (black.view.clone(), self.glsl_sampler_for(state, false));
+                }
+                let view = t.create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(view_dimension(dim)),
+                    base_mip_level: base,
+                    ..Default::default()
+                });
+                based = GlslSampler {
+                    max_level: state.max_level.map(|m| m.saturating_sub(base)),
+                    ..state.clone()
+                };
+                let uploaded = Uploaded {
+                    view,
+                    mipmapped: texture.mipmapped,
+                    depth: false,
+                    float32: texture.float32,
+                };
+                (Arc::new(uploaded), &based)
+            }
+        };
         // A 32-bit float texture is complete only when it is read `NEAREST`; any other filter makes it
         // incomplete, which samples as opaque black.
         if texture.float32 && !(state.min == "NEAREST" && state.mag == "NEAREST") {
@@ -2580,6 +2865,7 @@ impl Compositor {
                 include_str!("../shaders/glsl_blit.wgsl"),
                 ("vs_glsl", "fs_glsl"),
                 LINEAR_FORMAT,
+                true,
             ));
         }
         let corners = [
@@ -2758,7 +3044,7 @@ impl Compositor {
         blit: &'c GlslBlit,
         size: (u32, u32),
         targets: &mut HashMap<&'c str, Target>,
-        canvas_ds: Option<TargetFormat>,
+        (canvas_ds, resolved): (Option<TargetFormat>, &HashMap<&str, wgpu::TextureView>),
     ) -> Result<Option<Prepared>> {
         if blit.src == blit.target && blit.src_level == blit.level {
             return Err(render_error(
@@ -2766,8 +3052,12 @@ impl Compositor {
                  INVALID_OPERATION)",
             ));
         }
-        let (source, source_size) =
+        let (mut source, source_size) =
             self.glsl_blit_source(content, targets, blit.src.as_deref(), blit.src_level, size)?;
+        // A multisampled source is read resolved (made before the pass).
+        if let Some(view) = blit.src.as_deref().and_then(|id| resolved.get(id)) {
+            source = view.clone();
+        }
         let dst_size = match blit.target.as_deref() {
             Some(id) => self
                 .glsl_target(targets, content, id, canvas_ds)?
@@ -2782,29 +3072,34 @@ impl Compositor {
             ));
         }
         if blit
-            .src
+            .target
             .as_deref()
-            .into_iter()
-            .chain(blit.target.as_deref())
-            .any(|id| targets[id].format != COLOR_FORMAT)
+            .is_some_and(|id| targets[id].samples > 1)
         {
             return Err(render_error(
-                "unsupported: blitFramebuffer to or from a float render target; draw a quad that samples it",
+                "blitFramebuffer into a multisampled framebuffer (WebGL refuses it with INVALID_OPERATION)",
             ));
         }
+        let canvas_format = self.glsl.target.as_ref().expect("made by glsl_draw").format;
+        let format_of = |id: Option<&str>| id.map_or(canvas_format, |id| targets[id].format);
+        let dst_format = format_of(blit.target.as_deref());
+        // A 32-bit float source cannot be filtered: it is read texel for texel, LINEAR or not.
+        let filterable = !is_float32(format_of(blit.src.as_deref()));
         let Some((params, scissor)) = blit_geometry(blit, dst_size, source_size) else {
             return Ok(None);
         };
         let bytes: Vec<u8> = params.iter().flat_map(|v| v.to_le_bytes()).collect();
-        if self.glsl.copy.is_none() {
-            self.glsl.copy = Some(self.glsl_blit(
+        if !self.glsl.copies.contains_key(&(dst_format, filterable)) {
+            let copy = self.glsl_blit(
                 "glsl copy",
                 include_str!("../shaders/glsl_copy.wgsl"),
                 ("vs_copy", "fs_copy"),
-                COLOR_FORMAT,
-            ));
+                dst_format,
+                filterable,
+            );
+            self.glsl.copies.insert((dst_format, filterable), copy);
         }
-        let copy = self.glsl.copy.as_ref().expect("made above");
+        let copy = &self.glsl.copies[&(dst_format, filterable)];
         let params_buffer = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -2872,10 +3167,15 @@ impl Compositor {
             ));
         }
         let dst_size = dst.size;
+        if dst.samples > 1 {
+            return Err(render_error(
+                "blitFramebuffer into a multisampled framebuffer (WebGL refuses it with INVALID_OPERATION)",
+            ));
+        }
         let Some((params, scissor)) = blit_geometry(blit, dst_size, src_size) else {
             return Ok(Vec::new());
         };
-        let copier = self.glsl_ds_copier(format);
+        let copier = self.glsl_ds_copier(format, targets[src_key].samples > 1);
         let src_texture = targets[src_key]._texture.clone();
         let params_with = |bit: u32| -> wgpu::Buffer {
             let mut p = params;
@@ -3057,16 +3357,24 @@ impl Compositor {
     }
 
     /// The pipelines of a depth and stencil blit into a buffer of `format`.
-    fn glsl_ds_copier(&mut self, format: TargetFormat) -> Arc<DsCopy> {
+    fn glsl_ds_copier(&mut self, format: TargetFormat, multisampled: bool) -> Arc<DsCopy> {
         let wgpu_format = ds_format(format);
-        if let Some(c) = self.glsl.ds_copies.get(&wgpu_format) {
+        if let Some(c) = self.glsl.ds_copies.get(&(wgpu_format, multisampled)) {
             return c.clone();
         }
-        let shader = shader_module(
-            &self.device,
-            "glsl ds copy",
-            include_str!("../shaders/glsl_ds_copy.wgsl"),
-        );
+        // From a multisampled source the copy reads the first sample (`textureLoad`'s last argument is the sample
+        // there, the level otherwise), as Metal's depth and stencil resolve does by default.
+        let source = include_str!("../shaders/glsl_ds_copy.wgsl");
+        let source = if multisampled {
+            Cow::Owned(
+                source
+                    .replace("texture_depth_2d", "texture_depth_multisampled_2d")
+                    .replace("texture_2d<u32>", "texture_multisampled_2d<u32>"),
+            )
+        } else {
+            Cow::Borrowed(source)
+        };
+        let shader = shader_module(&self.device, "glsl ds copy", &source);
         let layout_of = |binding: u32, sample_type: wgpu::TextureSampleType| {
             self.device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -3079,7 +3387,7 @@ impl Compositor {
                             ty: wgpu::BindingType::Texture {
                                 sample_type,
                                 view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
+                                multisampled,
                             },
                             count: None,
                         },
@@ -3165,7 +3473,9 @@ impl Compositor {
             depth_layout,
             stencil_layout,
         });
-        self.glsl.ds_copies.insert(wgpu_format, copier.clone());
+        self.glsl
+            .ds_copies
+            .insert((wgpu_format, multisampled), copier.clone());
         copier
     }
 
@@ -3177,6 +3487,7 @@ impl Compositor {
         source: &str,
         (vertex, fragment): (&'static str, &'static str),
         format: wgpu::TextureFormat,
+        filterable: bool,
     ) -> Blit {
         let layout = self
             .device
@@ -3197,7 +3508,7 @@ impl Compositor {
                         binding: 1,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            sample_type: wgpu::TextureSampleType::Float { filterable },
                             view_dimension: wgpu::TextureViewDimension::D2,
                             multisampled: false,
                         },
@@ -3206,7 +3517,11 @@ impl Compositor {
                     wgpu::BindGroupLayoutEntry {
                         binding: 2,
                         visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        ty: wgpu::BindingType::Sampler(if filterable {
+                            wgpu::SamplerBindingType::Filtering
+                        } else {
+                            wgpu::SamplerBindingType::NonFiltering
+                        }),
                         count: None,
                     },
                 ],
@@ -3246,12 +3561,17 @@ impl Compositor {
                 multiview_mask: None,
                 cache: None,
             });
+        let filter = if filterable {
+            wgpu::FilterMode::Linear
+        } else {
+            wgpu::FilterMode::Nearest
+        };
         let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some(label),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
+            mag_filter: filter,
+            min_filter: filter,
             ..Default::default()
         });
         Blit {
@@ -3260,6 +3580,20 @@ impl Compositor {
             sampler,
         }
     }
+}
+
+/// Whether a colour target's levels are complete for a mipmapped filter: they reach 1 x 1, or reach
+/// `TEXTURE_MAX_LEVEL`.
+fn target_mipmapped(target: &Target, max_level: Option<u32>) -> bool {
+    let levels = target.levels.len() as u32;
+    let full = target.size.0.max(target.size.1).ilog2() + 1;
+    levels > 1 && (levels == full || max_level.is_some_and(|m| m < levels))
+}
+
+/// A 32-bit float format, which a sampler reads texel for texel.
+fn is_float32(format: wgpu::TextureFormat) -> bool {
+    use wgpu::TextureFormat as F;
+    matches!(format, F::R32Float | F::Rg32Float | F::Rgba32Float)
 }
 
 /// The most vertices (or indices) one draw may read: a triangle fan is

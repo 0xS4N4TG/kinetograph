@@ -704,8 +704,10 @@ not keep the uniform array strides), and `compositor/glsl.rs` replays the draws 
 uniform block, and Metal packs arrays of floats and `vec2`s tighter than the block's 16 bytes an element, so those
 travel as `vec4`s; bools are not allowed in a block, so they travel as ints; wgpu bounds each vertex by a whole stride
 from the start of its binding, so an interleaved attribute's offset goes in the vertex, not in the binding.
-What a framebuffer draws into is a second kind of target: colour (Rgba8, with mip levels when the texture has storage
-for them; a colour renderbuffer is one too) or a depth, stencil or depth-and-stencil buffer (`Depth32Float`,
+What a framebuffer draws into is a second kind of target: colour (Rgba8, `Rgba8UnormSrgb` for `SRGB8_ALPHA8`, which draws write and blend in linear light and keep encoded as GL
+does, `R8Unorm` and `Rg8Unorm` for `R8` and `RG8`, or a float format, with mip levels when the
+texture has storage for them; a colour renderbuffer is one too; blending into a 32-bit float one, `EXT_float_blend`,
+needs wgpu's `FLOAT32_BLENDABLE`, which the device is asked for and every Apple GPU has) or a depth, stencil or depth-and-stencil buffer (`Depth32Float`,
 `Stencil8`, `Depth24PlusStencil8`, which is 32-bit float depth with 8 bits of stencil on Apple GPUs). An op names its
 colour attachment for each fragment output and its depth-and-stencil target (`GlslDest`), and the replay makes one
 render pass for each run of ops to the same attachments, in the order recorded; a pass has the depth-and-stencil
@@ -721,7 +723,14 @@ target is a function of the frame's own ops. A depth texture a draw samples is c
 texture (`shaders/glsl_depth_colour.wgsl`) so it reads `(d, 0, 0, 1)` as WebGL 2 does in Chrome (Metal would give
 `(d, d, d, 1)` from the depth texture itself), or into an `Rgba32Float` one as `(d, d, d, 1)` for WebGL 1's
 `WEBGL_depth_texture` (Chrome, measured); the copy is made before the pass and reused until something draws into the
-depth target again. A depth and stencil blit (`shaders/glsl_ds_copy.wgsl`) writes `frag_depth` from the source, and
+depth target again. A cube map's faces are 2D textures of their own on the JS side, so `framebufferTexture2D` of a
+face attaches it as a colour target, and a cube that framebuffers drew in is `targets` (the six) in the recording; the
+replay copies the six targets, every level, into the layers of a cube texture before the pass that samples it
+(`Step::CubeCopy`), and again after a pass draws in a face. A `texSubImage2D` of a whole face at level 0 (how three.js
+fills a `texStorage2D` cube map) specifies the face again in its format. `generateMipmap` of a texture a framebuffer drew in (a 2D
+one, or a cube's faces) is recorded as `LINEAR` blits from each level to the next, so it lands in order with the draws;
+a texture without `texStorage2D` levels is given the full chain, as GL does. A sampler's `TEXTURE_BASE_LEVEL` is a view
+of the levels from it (`glsl_sampler`), with `TEXTURE_MAX_LEVEL` counted from it; past the last level it is black. A depth and stencil blit (`shaders/glsl_ds_copy.wgsl`) writes `frag_depth` from the source, and
 the stencil, which a fragment shader cannot write, by one draw that zeroes it and eight that each set one bit with a
 write mask of that bit, discarding where the source lacks it. `texSubImage2D` of a picture file is decoded and written
 like pixels; of a layer, a `copy_texture_to_texture` from the child's picture; over an uploaded texture, the texture
@@ -737,11 +746,19 @@ of the list first), and the vertex shader's wrapper places the quad after `main`
 the viewport, clamped to 1..511, with `gl_PointCoord` as a varying at location 15; a point whose centre is outside
 the clip volume is dropped, as GL does, and culling does not apply. `gl_VertexID` is wgpu's `vertex_index` (which
 counts from the draw's `first`), or the instance index in a draw of points; `gl_InstanceID` is the instance index. An
-attribute with `vertexAttribDivisor(1)` is a vertex buffer of step mode `Instance`. `blitFramebuffer` is an op of its
+attribute with `vertexAttribDivisor(1)` is a vertex buffer of step mode `Instance`; one with a larger divisor `n` is
+gathered into a buffer of one element for each instance (instance `i` reads element `i / n`), as wgpu's step is 1. Lines are wgpu's `LineList` and
+`LineStrip` (a loop is a strip with its first vertex again), which on Metal are Metal's one-pixel lines, the primitive
+ANGLE draws Chrome's with; `ALIASED_LINE_WIDTH_RANGE` is 1 to 1, so `lineWidth` above 1 changes nothing, as in Chrome. `blitFramebuffer` is an op of its
 own, one pass (`shaders/glsl_copy.wgsl`) that stretches the source rectangle over the destination with `textureLoad`
 (NEAREST) or the bilinear sampler (LINEAR), keeping the rows of the drawing buffer (top first) and of a target
-(GL's bottom first) apart; the replay keeps a canvas draw that a blit reads even when a later clear would have
-dropped it. `texSubImage2D` into a target is an `upload` op: a pass of its own that submits what is recorded and
+(GL's bottom first) apart, with a pipeline for each destination format (a 32-bit float source is read through a
+NEAREST sampler, LINEAR or not, as it cannot be filtered); the replay keeps a canvas draw that a blit reads even when a later clear would have
+dropped it. A multisampled renderbuffer (`renderbufferStorageMultisample`, any count of samples being `MAX_SAMPLES`, 4) is
+a target of 4 samples, and a pass into it is multisampled; a colour blit from it reads a texture of one sample it was
+resolved into before the pass (`Step::Resolve`, the GPU's own resolve), and a depth and stencil blit reads its first
+sample (`glsl_ds_copy.wgsl` with multisampled textures). `copyTexImage2D` and `copyTexSubImage2D` are NEAREST blits from the read buffer into the texture, which becomes a target.
+`texSubImage2D` into a target is an `upload` op: a pass of its own that submits what is recorded and
 then `write_texture`s, so it lands between the draws around it. A frame is a function of its own calls: the context
 empties its drawing buffer before each frame, `preserveDrawingBuffer` or not. `renderCanvas` (the addon) keeps one renderer, so a call no longer
 opens the GPU: about 31 ms a small canvas before, 1.1 ms after.
