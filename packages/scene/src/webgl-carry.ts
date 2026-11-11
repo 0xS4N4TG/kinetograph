@@ -346,6 +346,7 @@ export function namedBy(ops: GlslOp[], textures: Textures): { programs: Set<stri
       named.programs.add(op.program);
       for (const a of Object.values(op.attributes)) if (a.constant === undefined) named.buffers.add(a.buffer);
       if (op.indices !== undefined) named.buffers.add(op.indices.buffer);
+      for (const b of Object.values(op.blocks ?? {})) named.buffers.add(b.buffer);
       for (const u of Object.values(op.units)) addTexture(u.texture);
     }
     if (op.op === 'blit' && op.src !== undefined) addTexture(op.src);

@@ -787,6 +787,38 @@ export interface GlslProgram {
   fragment: string;
   /** Attribute name to location. */
   attributes?: Record<string, number>;
+  /** The uniform blocks (WebGL 2) of the two shaders in GL's block order, laid out as std140. */
+  blocks?: GlslBlock[];
+}
+
+/** A uniform block as the shaders declare it: `layout(std140) uniform name { members } instance;`. */
+export interface GlslBlock {
+  name: string;
+  /** The bytes the members take (`UNIFORM_BLOCK_DATA_SIZE`). */
+  size: number;
+  members: GlslBlockMember[];
+}
+
+export interface GlslBlockMember {
+  name: string;
+  /** A GLSL scalar, vector or matrix type, or the name of a struct (then `fields`). */
+  type: string;
+  /** The array length. */
+  length?: number;
+  /** Bytes from the start of the block, or of the struct element that holds it. */
+  offset: number;
+  /** Bytes between the elements of an array. */
+  stride?: number;
+  /** The members of a struct, with their offsets from the start of an element. */
+  fields?: GlslBlockMember[];
+}
+
+/** The bytes a uniform block read at a draw: a range of a buffer of `buffers`. */
+export interface GlslBlockRange {
+  buffer: string;
+  offset: number;
+  /** The bytes the binding holds from `offset`, of which the block reads its own size. */
+  size: number;
 }
 
 export interface GlslTexture {
@@ -956,6 +988,8 @@ export interface GlslDraw {
   indices?: { buffer: string; type: 'u8' | 'u16' | 'u32'; offset: number };
   attributes: Record<string, GlslAttribute>;
   uniforms: Record<string, GlslUniform[]>;
+  /** The bytes of the program's uniform blocks, by block name: what `bindBufferBase` and `bindBufferRange` bound. */
+  blocks?: Record<string, GlslBlockRange>;
   units: Record<string, GlslSampler>;
   /** `x, y, width, height`, y up from the bottom row. */
   viewport: [number, number, number, number];

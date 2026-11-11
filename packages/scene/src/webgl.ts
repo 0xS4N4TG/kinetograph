@@ -11,9 +11,10 @@
 // `WebGLUnsupportedError` whose message starts with "unsupported:" and says what to do instead; a call is never
 // accepted and then ignored where it would change the picture.
 
-import type { CanvasSource, GlslContent, GlslDraw, GlslLayer, GlslOp, GlslOutput, GlslPatch, GlslSampler, GlslStencil, GlslStencilFace, GlslTexture, GlslUniform } from './types.js';
+import type { CanvasSource, GlslContent, GlslDraw, GlslProgram, GlslLayer, GlslOp, GlslOutput, GlslPatch, GlslSampler, GlslStencil, GlslStencilFace, GlslTexture, GlslUniform } from './types.js';
 import { CANVAS_SOURCE, pictureOf, type CanvasPicture } from './canvas.js';
 import { preprocess } from './glsl-cpp.js';
+import { parseBlocks, type BlockInfo, type BlockUniform } from './webgl-blocks.js';
 import { carriedFor, carryOn, dependsOnHistory, emptyCarry, isCanvasOp, MAX_OPS_PER_TARGET, namedBy, pick, readsLastFrame, type Resources } from './webgl-carry.js';
 
 /** The method a picture of another layer answers a texture upload with (`layerPicture`). */
@@ -344,6 +345,31 @@ export const GL2 = {
   SAMPLER_2D_ARRAY: 0x8dc1,
   MAX_ARRAY_TEXTURE_LAYERS: 0x88ff,
   UNIFORM_BUFFER: 0x8a11,
+  UNIFORM_BUFFER_BINDING: 0x8a28,
+  UNIFORM_BUFFER_START: 0x8a29,
+  UNIFORM_BUFFER_SIZE: 0x8a2a,
+  MAX_VERTEX_UNIFORM_BLOCKS: 0x8a2b,
+  MAX_FRAGMENT_UNIFORM_BLOCKS: 0x8a2d,
+  MAX_COMBINED_UNIFORM_BLOCKS: 0x8a2e,
+  MAX_UNIFORM_BUFFER_BINDINGS: 0x8a2f,
+  MAX_UNIFORM_BLOCK_SIZE: 0x8a30,
+  UNIFORM_BUFFER_OFFSET_ALIGNMENT: 0x8a34,
+  ACTIVE_UNIFORM_BLOCKS: 0x8a36,
+  UNIFORM_TYPE: 0x8a37,
+  UNIFORM_SIZE: 0x8a38,
+  UNIFORM_BLOCK_INDEX: 0x8a3a,
+  UNIFORM_OFFSET: 0x8a3b,
+  UNIFORM_ARRAY_STRIDE: 0x8a3c,
+  UNIFORM_MATRIX_STRIDE: 0x8a3d,
+  UNIFORM_IS_ROW_MAJOR: 0x8a3e,
+  UNIFORM_BLOCK_BINDING: 0x8a3f,
+  UNIFORM_BLOCK_DATA_SIZE: 0x8a40,
+  UNIFORM_BLOCK_ACTIVE_UNIFORMS: 0x8a42,
+  UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES: 0x8a43,
+  UNIFORM_BLOCK_REFERENCED_BY_VERTEX_SHADER: 0x8a44,
+  UNIFORM_BLOCK_REFERENCED_BY_FRAGMENT_SHADER: 0x8a46,
+  INVALID_INDEX: 0xffffffff,
+  TRANSFORM_FEEDBACK_BUFFER: 0x8c8e,
   PIXEL_UNPACK_BUFFER: 0x88ec,
   PIXEL_PACK_BUFFER: 0x88eb,
   UNPACK_ROW_LENGTH: 0xcf2,
@@ -422,6 +448,25 @@ const FLOAT_FORMATS: Record<number, { channels: number; format: number; bits: 16
 
 /** `MAX_VERTEX_ATTRIBS`. */
 const MAX_VERTEX_ATTRIBS = 16;
+
+/**
+ * The uniform buffer limits, which are what the replay does: a block is read from a buffer of its own, up to wgpu's
+ * `max_uniform_buffer_binding_size` (64 KiB) at offsets `min_uniform_buffer_offset_alignment` (at most 256) apart, and
+ * a stage reads the most uniform buffers of the device (the ES 3.0 minimums, 12 a stage and 24 in all, with the one the
+ * loose uniforms use besides).
+ */
+const MAX_UNIFORM_BUFFER_BINDINGS = 24;
+const MAX_UNIFORM_BLOCK_SIZE = 65536;
+const UNIFORM_BUFFER_OFFSET_ALIGNMENT = 256;
+const MAX_STAGE_UNIFORM_BLOCKS = 12;
+const UNIFORM_BUFFER_LIMITS: Record<number, number> = {
+  [GL2.MAX_UNIFORM_BUFFER_BINDINGS]: MAX_UNIFORM_BUFFER_BINDINGS,
+  [GL2.MAX_UNIFORM_BLOCK_SIZE]: MAX_UNIFORM_BLOCK_SIZE,
+  [GL2.UNIFORM_BUFFER_OFFSET_ALIGNMENT]: UNIFORM_BUFFER_OFFSET_ALIGNMENT,
+  [GL2.MAX_VERTEX_UNIFORM_BLOCKS]: MAX_STAGE_UNIFORM_BLOCKS,
+  [GL2.MAX_FRAGMENT_UNIFORM_BLOCKS]: MAX_STAGE_UNIFORM_BLOCKS,
+  [GL2.MAX_COMBINED_UNIFORM_BLOCKS]: 2 * MAX_STAGE_UNIFORM_BLOCKS,
+};
 
 /** What a disabled attribute array reads until `vertexAttrib*` sets it. */
 const DEFAULT_ATTRIBUTE: readonly [number, number, number, number] = [0, 0, 0, 1];
@@ -614,6 +659,12 @@ export class WebGLProgram extends WebGLObject {
   attributeDeclarations: Declaration[] = [];
   /** The uniform values set so far, by name. */
   uniforms = new Map<string, UniformCall[]>();
+  /** The uniform blocks of the two shaders in GL's order, with the stages that declare each. */
+  blocks: (BlockInfo & { vertex: boolean; fragment: boolean })[] = [];
+  /** The binding point of each block (`uniformBlockBinding`; 0 after a link). */
+  blockBindings: number[] = [];
+  /** Why the link failed, when it did for a reason other than a missing shader. */
+  linkLog = '';
 }
 
 // ---- reading the source for names ----
@@ -700,6 +751,12 @@ function declarations(source: string, keywords: string[]): Declaration[] {
     }
   }
   return out;
+}
+
+/** The uniform blocks a shader declares (WebGL 2). */
+function blocksOf(source: string): BlockInfo[] {
+  const { code, length } = preprocess(source);
+  return parseBlocks(code, length, structsOf(code, length));
 }
 
 /** The columns (and locations) of a `mat2`, `mat3` or `mat4` attribute, which is read a column at a time; undefined for other types. */
@@ -982,6 +1039,9 @@ export class WebGLContext {
 
   private program: WebGLProgram | null = null;
   private arrayBuffer: WebGLBuffer | null = null;
+  /** `UNIFORM_BUFFER`'s generic binding, and the indexed ones the blocks read (`size` 0 is the whole buffer). */
+  private uniformBuffer: WebGLBuffer | null = null;
+  private readonly uniformBindings: ({ buffer: WebGLBuffer; offset: number; size: number } | null)[] = Array.from({ length: MAX_UNIFORM_BUFFER_BINDINGS }, () => null);
   private defaultVao = new WebGLVertexArrayObject();
   /** What `vertexAttrib*` set: the value each disabled attribute array reads (a context's, not a vertex array object's). */
   private readonly currentAttributes: [number, number, number, number][] = [];
@@ -1022,7 +1082,7 @@ export class WebGLContext {
   private unpackAlignment = 4;
 
   // What the ops refer to, by id.
-  private readonly programs = new Map<string, { vertex: string; fragment: string; attributes: Record<string, number> }>();
+  private readonly programs = new Map<string, GlslProgram>();
   private readonly buffers = new Map<string, string>();
   private readonly textures = new Map<string, GlslTexture>();
 
@@ -1259,6 +1319,18 @@ export class WebGLContext {
         return this.arrayBuffer;
       case GL.ELEMENT_ARRAY_BUFFER_BINDING:
         return this.vao.element;
+      case GL2.UNIFORM_BUFFER_BINDING:
+      case GL2.MAX_UNIFORM_BUFFER_BINDINGS:
+      case GL2.MAX_UNIFORM_BLOCK_SIZE:
+      case GL2.UNIFORM_BUFFER_OFFSET_ALIGNMENT:
+      case GL2.MAX_VERTEX_UNIFORM_BLOCKS:
+      case GL2.MAX_FRAGMENT_UNIFORM_BLOCKS:
+      case GL2.MAX_COMBINED_UNIFORM_BLOCKS:
+        if (this.version !== 2) {
+          this.fail(GL.INVALID_ENUM);
+          return null;
+        }
+        return pname === GL2.UNIFORM_BUFFER_BINDING ? this.uniformBuffer : UNIFORM_BUFFER_LIMITS[pname]!;
       case GL2.VERTEX_ARRAY_BINDING:
         if (this.version === 2) return this.vao === this.defaultVao ? null : this.vao;
         this.fail(GL.INVALID_ENUM);
@@ -1886,6 +1958,9 @@ export class WebGLContext {
     program.linked = vertex !== undefined && fragment !== undefined && vertex.source !== '' && fragment.source !== '';
     program.attributes = new Map();
     program.uniforms.clear();
+    program.blocks = [];
+    program.blockBindings = [];
+    program.linkLog = '';
     if (!program.linked) return;
     program.vertex = vertex!.source;
     program.fragment = fragment!.source;
@@ -1896,6 +1971,7 @@ export class WebGLContext {
       seen.add(d.name);
       return true;
     });
+    this.linkBlocks(program);
     // Explicit locations and `bindAttribLocation` first; the rest take the lowest free locations in order.
     const taken = new Set<number>();
     const take = (at: number, width: number) => {
@@ -1918,6 +1994,21 @@ export class WebGLContext {
       take(next, width);
     }
   }
+  /** The program's uniform blocks, in GL's order: the vertex shader's, then the fragment shader's that it does not declare. */
+  private linkBlocks(program: WebGLProgram): void {
+    if (this.version !== 2) return;
+    for (const [source, stage] of [[program.vertex, 'vertex'], [program.fragment, 'fragment']] as const) {
+      for (const b of blocksOf(source)) {
+        const held = program.blocks.find((h) => h.name === b.name);
+        if (held === undefined) program.blocks.push({ ...b, vertex: stage === 'vertex', fragment: stage === 'fragment' });
+        else if (held.named !== b.named || JSON.stringify(held.members) !== JSON.stringify(b.members)) {
+          program.linked = false;
+          program.linkLog = `uniform block '${b.name}' is declared differently in the vertex and fragment shaders`;
+        } else held[stage] = true;
+      }
+    }
+    program.blockBindings = program.blocks.map(() => 0);
+  }
   validateProgram(): void {}
   getProgramParameter(program: WebGLProgram, pname: number): unknown {
     switch (pname) {
@@ -1932,14 +2023,18 @@ export class WebGLContext {
       case GL.ACTIVE_ATTRIBUTES:
         return program.attributeDeclarations.length;
       case GL.ACTIVE_UNIFORMS:
-        return program.uniformDeclarations.length;
+        return program.uniformDeclarations.length + this.blockUniforms(program).length;
+      case GL2.ACTIVE_UNIFORM_BLOCKS:
+        if (this.version === 2) return program.blocks.length;
+        this.fail(GL.INVALID_ENUM);
+        return null;
       default:
         this.fail(GL.INVALID_ENUM);
         return null;
     }
   }
   getProgramInfoLog(program: WebGLProgram): string {
-    return program.linked ? '' : 'a program needs a vertex shader and a fragment shader, both with source';
+    return program.linked ? '' : program.linkLog || 'a program needs a vertex shader and a fragment shader, both with source';
   }
   deleteProgram(program: WebGLProgram | null): void {
     if (program) program.deleted = true;
@@ -1957,8 +2052,105 @@ export class WebGLContext {
   }
   getActiveUniform(program: WebGLProgram, index: number): WebGLActiveInfo | null {
     const d = program.uniformDeclarations[index];
-    return d === undefined ? null : new WebGLActiveInfo(d.length > 1 ? `${d.name}[0]` : d.name, d.length, TYPE_CODES[d.type] ?? 0);
+    if (d !== undefined) return new WebGLActiveInfo(d.length > 1 ? `${d.name}[0]` : d.name, d.length, TYPE_CODES[d.type] ?? 0);
+    const u = this.blockUniforms(program)[index - program.uniformDeclarations.length];
+    return u === undefined ? null : new WebGLActiveInfo(u.name, u.length, TYPE_CODES[u.type] ?? 0);
   }
+
+  // ---- uniform blocks (WebGL 2) ----
+  //
+  // A uniform is listed after the loose uniforms: the block's uniforms in the order the blocks and their members are
+  // declared. A block is read from the buffer bound at its binding point, laid out as std140 (`webgl-blocks.ts`); every
+  // block a shader declares is active, as in a browser's.
+
+  /** The uniforms the blocks hold, with the index of the block of each. */
+  private blockUniforms(program: WebGLProgram): (BlockUniform & { block: number })[] {
+    return program.blocks.flatMap((b, block) => b.uniforms.map((u) => ({ ...u, block })));
+  }
+  getUniformBlockIndex(program: WebGLProgram, name: string): number {
+    const at = program.blocks.findIndex((b) => b.name === name);
+    return at < 0 ? GL2.INVALID_INDEX : at;
+  }
+  getActiveUniformBlockName(program: WebGLProgram, index: number): string | null {
+    const block = program.blocks[index];
+    if (block === undefined) {
+      this.fail(GL.INVALID_VALUE);
+      return null;
+    }
+    return block.name;
+  }
+  getActiveUniformBlockParameter(program: WebGLProgram, index: number, pname: number): unknown {
+    const block = program.blocks[index];
+    if (block === undefined) {
+      this.fail(GL.INVALID_VALUE);
+      return null;
+    }
+    switch (pname) {
+      case GL2.UNIFORM_BLOCK_BINDING:
+        return program.blockBindings[index];
+      case GL2.UNIFORM_BLOCK_DATA_SIZE:
+        return block.size;
+      case GL2.UNIFORM_BLOCK_ACTIVE_UNIFORMS:
+        return block.uniforms.length;
+      case GL2.UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES: {
+        const first = program.uniformDeclarations.length + program.blocks.slice(0, index).reduce((n, b) => n + b.uniforms.length, 0);
+        return new Uint32Array(block.uniforms.map((_, i) => first + i));
+      }
+      case GL2.UNIFORM_BLOCK_REFERENCED_BY_VERTEX_SHADER:
+        return block.vertex;
+      case GL2.UNIFORM_BLOCK_REFERENCED_BY_FRAGMENT_SHADER:
+        return block.fragment;
+      default:
+        this.fail(GL.INVALID_ENUM);
+        return null;
+    }
+  }
+  uniformBlockBinding(program: WebGLProgram, index: number, binding: number): void {
+    if (!(index >= 0 && index < program.blocks.length) || !(binding >= 0 && binding < MAX_UNIFORM_BUFFER_BINDINGS)) return this.fail(GL.INVALID_VALUE);
+    program.blockBindings[index] = binding;
+  }
+  /** The index of each uniform name, a name or the first element of an array (`Block.member`), or `INVALID_INDEX`. */
+  getUniformIndices(program: WebGLProgram, names: string[]): number[] {
+    const listed = [...program.uniformDeclarations.map((d) => (d.length > 1 ? `${d.name}[0]` : d.name)), ...this.blockUniforms(program).map((u) => u.name)];
+    return names.map((name) => {
+      const at = listed.findIndex((n) => n === name || n === `${name}[0]`);
+      return at < 0 ? GL2.INVALID_INDEX : at;
+    });
+  }
+  getActiveUniforms(program: WebGLProgram, indices: number[], pname: number): number[] | boolean[] | null {
+    const loose = program.uniformDeclarations.length;
+    const blockUniforms = this.blockUniforms(program);
+    const kinds = [GL2.UNIFORM_TYPE, GL2.UNIFORM_SIZE, GL2.UNIFORM_BLOCK_INDEX, GL2.UNIFORM_OFFSET, GL2.UNIFORM_ARRAY_STRIDE, GL2.UNIFORM_MATRIX_STRIDE, GL2.UNIFORM_IS_ROW_MAJOR];
+    if (!(kinds as number[]).includes(pname)) {
+      this.fail(GL.INVALID_ENUM);
+      return null;
+    }
+    const list = Array.from(indices);
+    if (list.some((i) => !(i >= 0 && i < loose + blockUniforms.length))) {
+      this.fail(GL.INVALID_VALUE);
+      return null;
+    }
+    if (pname === GL2.UNIFORM_IS_ROW_MAJOR) return list.map(() => false);
+    return list.map((i) => {
+      const d = program.uniformDeclarations[i];
+      const u = d === undefined ? blockUniforms[i - loose]! : undefined;
+      switch (pname) {
+        case GL2.UNIFORM_TYPE:
+          return TYPE_CODES[(d ?? u!).type] ?? 0;
+        case GL2.UNIFORM_SIZE:
+          return (d ?? u!).length;
+        case GL2.UNIFORM_BLOCK_INDEX:
+          return u?.block ?? -1;
+        case GL2.UNIFORM_OFFSET:
+          return u?.offset ?? -1;
+        case GL2.UNIFORM_ARRAY_STRIDE:
+          return u?.arrayStride ?? -1;
+        default:
+          return u?.matrixStride ?? -1;
+      }
+    });
+  }
+
   getUniformLocation(program: WebGLProgram, name: string): WebGLUniformLocation | null {
     // A struct field is named in full (`lights[1].color`); an array element is the array and an index.
     const whole = program.uniformDeclarations.find((u) => u.name === name);
@@ -2105,7 +2297,12 @@ export class WebGLContext {
     return new WebGLBuffer();
   }
   deleteBuffer(buffer: WebGLBuffer | null): void {
-    if (buffer) buffer.deleted = true;
+    if (buffer === null) return;
+    buffer.deleted = true;
+    if (this.uniformBuffer === buffer) this.uniformBuffer = null;
+    this.uniformBindings.forEach((b, i) => {
+      if (b?.buffer === buffer) this.uniformBindings[i] = null;
+    });
   }
   isBuffer(buffer: unknown): boolean {
     return buffer instanceof WebGLBuffer && !buffer.deleted;
@@ -2113,13 +2310,46 @@ export class WebGLContext {
   bindBuffer(target: number, buffer: WebGLBuffer | null): void {
     if (target === GL.ARRAY_BUFFER) this.arrayBuffer = buffer;
     else if (target === GL.ELEMENT_ARRAY_BUFFER) this.vao.element = buffer;
-    else if (this.version === 2 && (target === GL2.PIXEL_UNPACK_BUFFER || target === GL2.PIXEL_PACK_BUFFER || target === GL2.UNIFORM_BUFFER)) {
-      if (buffer !== null) throw new WebGLUnsupportedError('a pixel or uniform buffer object; set uniforms one by one and upload textures from arrays or images');
+    else if (this.version === 2 && target === GL2.UNIFORM_BUFFER) this.uniformBuffer = buffer;
+    else if (this.version === 2 && (target === GL2.PIXEL_UNPACK_BUFFER || target === GL2.PIXEL_PACK_BUFFER)) {
+      if (buffer !== null) throw new WebGLUnsupportedError('a pixel buffer object; upload textures from arrays or images');
     } else this.fail(GL.INVALID_ENUM);
+  }
+  /** `bindBufferBase`: a uniform buffer (WebGL 2) bound whole at an index, and as the generic binding. */
+  bindBufferBase(target: number, index: number, buffer: WebGLBuffer | null): void {
+    this.bindIndexed(target, index, buffer, 0, 0);
+  }
+  /** `bindBufferRange`: `size` bytes from `offset`, which is a multiple of `UNIFORM_BUFFER_OFFSET_ALIGNMENT`. */
+  bindBufferRange(target: number, index: number, buffer: WebGLBuffer | null, offset: number, size: number): void {
+    if (buffer !== null && this.version === 2 && target === GL2.UNIFORM_BUFFER && (!(size > 0) || !(offset >= 0) || offset % UNIFORM_BUFFER_OFFSET_ALIGNMENT !== 0)) return this.fail(GL.INVALID_VALUE);
+    this.bindIndexed(target, index, buffer, offset, size);
+  }
+  private bindIndexed(target: number, index: number, buffer: WebGLBuffer | null, offset: number, size: number): void {
+    if (this.version === 2 && target === GL2.TRANSFORM_FEEDBACK_BUFFER) throw new WebGLUnsupportedError('transform feedback buffers; compute the values in the vertex shader or in your own code');
+    if (this.version !== 2 || target !== GL2.UNIFORM_BUFFER) return this.fail(GL.INVALID_ENUM);
+    if (!(index >= 0 && index < MAX_UNIFORM_BUFFER_BINDINGS)) return this.fail(GL.INVALID_VALUE);
+    if (buffer?.deleted) return this.fail(GL.INVALID_OPERATION);
+    this.uniformBuffer = buffer;
+    this.uniformBindings[index] = buffer === null ? null : { buffer, offset, size };
+  }
+  /** The buffer and range bound at an index of `UNIFORM_BUFFER` (`getIndexedParameter`). */
+  getIndexedParameter(target: number, index: number): WebGLBuffer | number | null {
+    const bound = this.uniformBindings[index];
+    if (this.version !== 2 || (target !== GL2.UNIFORM_BUFFER_BINDING && target !== GL2.UNIFORM_BUFFER_START && target !== GL2.UNIFORM_BUFFER_SIZE)) {
+      this.fail(GL.INVALID_ENUM);
+      return null;
+    }
+    if (!(index >= 0 && index < MAX_UNIFORM_BUFFER_BINDINGS)) {
+      this.fail(GL.INVALID_VALUE);
+      return null;
+    }
+    if (target === GL2.UNIFORM_BUFFER_BINDING) return bound?.buffer ?? null;
+    return (target === GL2.UNIFORM_BUFFER_START ? bound?.offset : bound?.size) ?? 0;
   }
   private target(target: number): WebGLBuffer | null {
     if (target === GL.ARRAY_BUFFER) return this.arrayBuffer;
     if (target === GL.ELEMENT_ARRAY_BUFFER) return this.vao.element;
+    if (this.version === 2 && target === GL2.UNIFORM_BUFFER) return this.uniformBuffer;
     this.fail(GL.INVALID_ENUM);
     return null;
   }
@@ -3327,7 +3557,10 @@ export class WebGLContext {
     for (const [name, at] of program.attributes) attributes[name] = at;
     const programKey = JSON.stringify([program.vertex, program.fragment, attributes]);
     const programId = `p${hashOf(programKey)}`;
-    if (!this.programs.has(programId)) this.programs.set(programId, { vertex: program.vertex, fragment: program.fragment, attributes });
+    if (!this.programs.has(programId)) {
+      const blocks = program.blocks.map(({ name, size, members }) => ({ name, size, members }));
+      this.programs.set(programId, { vertex: program.vertex, fragment: program.fragment, attributes, ...(blocks.length > 0 ? { blocks } : {}) });
+    }
 
     // Vertex data.
     const draw: GlslDraw = {
@@ -3368,6 +3601,16 @@ export class WebGLContext {
       if (element === null) return this.fail(GL.INVALID_OPERATION);
       draw.indices = { buffer: this.bufferId(element), type: indexed.type, offset: indexed.offset };
       draw.first = 0;
+    }
+
+    // Each uniform block reads the range bound at its binding point as the draw finds it: a draw is refused when a
+    // block has no buffer, or one that holds less than the block does (WebGL 2, as in a browser).
+    for (const [i, block] of program.blocks.entries()) {
+      const bound = this.uniformBindings[program.blockBindings[i]!];
+      // The bytes from its offset, to the end of the buffer or of the range, whichever comes first (a whole-buffer binding has size 0).
+      const available = bound === null || bound === undefined ? 0 : Math.max(0, Math.min(bound.size === 0 ? Infinity : bound.size, bound.buffer.data.length - bound.offset));
+      if (bound === null || bound === undefined || available < block.size) return this.fail(GL.INVALID_OPERATION);
+      (draw.blocks ??= {})[block.name] = { buffer: this.bufferId(bound.buffer), offset: bound.offset, size: available };
     }
 
     // Uniforms and the texture units the samplers name.
