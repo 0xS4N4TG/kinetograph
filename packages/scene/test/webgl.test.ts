@@ -1708,6 +1708,16 @@ describe('the recording WebGL context', () => {
       expect(() => gl.texStorage3D(GL2.TEXTURE_2D_ARRAY, 3, GL2.RGBA8, 4, 4, 2)).toThrow(/^unsupported:.*more than one level/);
     });
 
+    it('gives the layers of an array the size of a 2D texture, not of a 3D one (three.js stores morph targets 3752 wide)', () => {
+      const { gl } = arrayContext();
+      gl.bindTexture(GL2.TEXTURE_2D_ARRAY, gl.createTexture());
+      gl.texStorage3D(GL2.TEXTURE_2D_ARRAY, 1, GL2.RGBA32F, 3752, 1, 2);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      gl.bindTexture(GL2.TEXTURE_3D, gl.createTexture());
+      gl.texStorage3D(GL2.TEXTURE_3D, 1, GL2.RGBA32F, 3752, 1, 2);
+      expect(gl.getError()).toBe(GL.INVALID_VALUE);
+    });
+
     it('checks its sizes and targets as WebGL does', () => {
       const { gl } = arrayContext();
       gl.bindTexture(GL2.TEXTURE_2D_ARRAY, gl.createTexture());

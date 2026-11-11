@@ -501,6 +501,8 @@ const DEFAULT_ATTRIBUTE: readonly [number, number, number, number] = [0, 0, 0, 1
 
 /** `MAX_3D_TEXTURE_SIZE`: the longest side of a 3D texture. */
 const MAX_3D_TEXTURE_SIZE = 2048;
+/** `MAX_TEXTURE_SIZE`: the longest side of a 2D texture, and of a layer of a 2D array texture. */
+const MAX_TEXTURE_SIZE = 8192;
 
 /** The pixel format of each 8-bit internal format a 3D or array texture takes. */
 const FORMATS_8BIT_3D: Record<number, number> = { [GL2.RGBA8]: GL.RGBA, [GL.RGBA]: GL.RGBA, [GL2.RGB8]: GL.RGB, [GL.RGB]: GL.RGB, [GL2.RG8]: GL2.RG, [GL2.R8]: GL2.RED };
@@ -1314,7 +1316,7 @@ export class WebGLContext {
       case GL.SHADING_LANGUAGE_VERSION:
         return this.version === 2 ? 'WebGL GLSL ES 3.00 (Kinetograph)' : 'WebGL GLSL ES 1.0 (Kinetograph)';
       case GL.MAX_TEXTURE_SIZE:
-        return 8192;
+        return MAX_TEXTURE_SIZE;
       case GL.MAX_RENDERBUFFER_SIZE:
         return 8192;
       case GL.SUBPIXEL_BITS:
@@ -2931,7 +2933,8 @@ export class WebGLContext {
   }
 
   /** The bound texture of a `texImage3D`, `texSubImage3D` or `texStorage3D` target, and the most layers it can have; null after the error. */
-  private bound3d(target: number): { texture: WebGLTexture; limit: number } | null {
+  /** The bound texture of a 3D or array target, the most layers or depth it has, and the longest side: an array's width and height are those of a 2D texture. */
+  private bound3d(target: number): { texture: WebGLTexture; limit: number; side: number } | null {
     if (this.version !== 2) {
       this.fail(GL.INVALID_OPERATION);
       return null;
@@ -2941,17 +2944,17 @@ export class WebGLContext {
       return null;
     }
     const texture = this.bound(target);
-    return texture === null ? null : { texture, limit: target === GL2.TEXTURE_3D ? MAX_3D_TEXTURE_SIZE : MAX_ARRAY_TEXTURE_LAYERS };
+    return texture === null ? null : target === GL2.TEXTURE_3D ? { texture, limit: MAX_3D_TEXTURE_SIZE, side: MAX_3D_TEXTURE_SIZE } : { texture, limit: MAX_ARRAY_TEXTURE_LAYERS, side: MAX_TEXTURE_SIZE };
   }
 
   /** WebGL 2's `texImage3D(target, level, internalformat, width, height, depth, border, format, type, pixels, srcOffset)` of a `TEXTURE_3D` or `TEXTURE_2D_ARRAY`. */
   texImage3D(target: number, level: number, internalformat: number, width: number, height: number, depth: number, border: number, format: number, type: number, source?: unknown, srcOffset = 0): void {
     const bound = this.bound3d(target);
     if (bound === null) return;
-    const { texture, limit } = bound;
+    const { texture, limit, side } = bound;
     if (level !== 0) throw new WebGLUnsupportedError('texImage3D above level 0; a 3D or array texture has one level');
     const sides = [width, height, depth];
-    if (border !== 0 || !sides.every((v) => Number.isInteger(v) && v >= 0) || Math.max(width, height) > MAX_3D_TEXTURE_SIZE || depth > limit) return this.fail(GL.INVALID_VALUE);
+    if (border !== 0 || !sides.every((v) => Number.isInteger(v) && v >= 0) || Math.max(width, height) > side || depth > limit) return this.fail(GL.INVALID_VALUE);
     // WebGL refuses the flip and the premultiply for these textures.
     if (this.flipY || this.premultiply) return this.fail(GL.INVALID_OPERATION);
     if (sides.some((v) => v === 0)) throw new WebGLUnsupportedError('a 3D or array texture without texels');
@@ -2987,11 +2990,11 @@ export class WebGLContext {
   texStorage3D(target: number, levels: number, internalformat: number, width: number, height: number, depth: number): void {
     const bound = this.bound3d(target);
     if (bound === null) return;
-    const { texture, limit } = bound;
+    const { texture, limit, side } = bound;
     levels = Math.trunc(levels); // a GLsizei argument is converted to an integer
     if (!(Number.isInteger(levels) && levels >= 1)) return this.fail(GL.INVALID_VALUE);
     const sides = [width, height, depth];
-    if (!sides.every((v) => Number.isInteger(v) && v >= 1) || Math.max(width, height) > MAX_3D_TEXTURE_SIZE || depth > limit) return this.fail(GL.INVALID_VALUE);
+    if (!sides.every((v) => Number.isInteger(v) && v >= 1) || Math.max(width, height) > side || depth > limit) return this.fail(GL.INVALID_VALUE);
     if (levels > 1) throw new WebGLUnsupportedError('texStorage3D of more than one level; a 3D or array texture has one level');
     const float = FLOAT_FORMATS[internalformat];
     const format = float?.format ?? FORMATS_8BIT_3D[internalformat];
