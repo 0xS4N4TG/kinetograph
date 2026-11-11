@@ -52,6 +52,14 @@ describe('Worker sources', () => {
     await collect(without);
     expect(failures[0]).toMatch(/no bundler/);
 
+    // A minified module ends with `export{a as default}`, no space after `export`.
+    writeFileSync(join(dir, 'minified.js'), 'self.postMessage(1);export{self as default};');
+    const minified = new Worker('minified.js', { type: 'module' });
+    const refused: string[] = [];
+    minified.onerror = (event) => refused.push(event.message);
+    await collect(minified);
+    expect(refused[0]).toMatch(/no bundler/);
+
     setWorkerModuleLoader((_file, code) => code.replace(/^import.*?;/, 'const x = 7;'));
     const bundled = new Worker('imports.js', { type: 'module' });
     expect(await collect(bundled)).toEqual([7]);

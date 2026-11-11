@@ -362,7 +362,7 @@ function runIn(scope: object, code: string, file: string): void {
   (new Script(wrapper, { filename: file }).runInThisContext() as (s: object) => void).call(scope, scope);
 }
 
-const MODULE_SYNTAX = /(^|[\n;])\s*(import\s*(?:[\w{*$"']|\()|export\s+(?:default|const|let|var|function|class|async|\{|\*))/;
+const MODULE_SYNTAX = /(^|[\n;])\s*(import\s*(?:[\w{*$"']|\()|export\s*[{*]|export\s+(?:default|const|let|var|function|class|async))/;
 
 let moduleLoader: ((file: string | null, code: string, url: string) => string) | null = null;
 
