@@ -1034,6 +1034,13 @@ const UNSUPPORTED_CAPS = new Map<number, string>([
 /** `MAX_SAMPLES`: what a multisampled renderbuffer has, as the canvas with `antialias` does (Chrome on Apple GPUs). */
 const MAX_SAMPLES = 4;
 
+/**
+ * A uniform value as JSON holds it: an infinity (three.js sets a transmissive material's `attenuationDistance` to one) is
+ * a number past what a 32-bit float holds, which the replay reads back as the infinity, where JSON.stringify would write
+ * null and the scene would not load. A NaN is 0.
+ */
+const jsonNumber = (v: number): number => (Number.isNaN(v) ? 0 : v === Infinity ? 1e39 : v === -Infinity ? -1e39 : v);
+
 /** The largest point drawn (`ALIASED_POINT_SIZE_RANGE`): `gl_PointSize` is clamped to 1 to this (crates/core/src/glsl.rs, `MAX_POINT_SIZE`). */
 const POINT_SIZE_MAX = 511;
 
@@ -3721,7 +3728,7 @@ export class WebGLContext {
 
     // Uniforms and the texture units the samplers name.
     for (const [name, calls] of program.uniforms) {
-      draw.uniforms[name] = calls.map((c): GlslUniform => ({ kind: c.kind, value: [...c.value], ...(c.index === 0 ? {} : { index: c.index }) }));
+      draw.uniforms[name] = calls.map((c): GlslUniform => ({ kind: c.kind, value: c.value.map(jsonNumber), ...(c.index === 0 ? {} : { index: c.index }) }));
     }
     const fb = this.drawFramebuffer;
     const attached = fb === null ? [] : [...fb.colors, fb.depth, fb.stencil].flatMap((a) => (a !== null && a !== undefined && 'texture' in a ? [a.texture] : []));
