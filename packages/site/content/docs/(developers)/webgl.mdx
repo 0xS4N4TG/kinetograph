@@ -83,7 +83,7 @@ If the page lets the error escape, as an uncaught exception, an unhandled reject
 | p5.brush, standalone build | Works (tested) | Draws as in Chrome. A test renders 12 frames at concurrency 1 and 4, and frames 0, 5 and 11 alone, and the frames match. See [`@kinetographdev/p5-brush`](/docs/packages/p5-brush/). |
 | Three.js in an HTML page | Runs through the stand-in (not routinely tested) | Only what it does that the stand-in cannot draw is reported, and `--strict` fails on that. |
 | `@remotion/three` | Not supported yet | The build stops and names the package. |
-| `three` in a React project, `@react-three/fiber` | Not supported yet | Rebuild the scene with the 3D layer. See [Remotion three.js mapping](/docs/reference/remotion-three/). |
+| `three` in a React project, `@react-three/fiber` | Not supported yet | Only `@remotion/three` stops the build. An import of `three` or `@react-three/fiber` is not blocked, and is not supported or tested. To rebuild a scene with the 3D layer, see [Remotion three.js mapping](/docs/reference/remotion-three/). |
 | Mapbox GL JS, MapLibre GL JS | Not supported yet | |
 
 Other libraries run only as far as the calls they make are in the tables above. None are tested.

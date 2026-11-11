@@ -83,7 +83,7 @@ There is no head-to-head benchmark against Remotion or HyperFrames in the reposi
 
 ## What HyperFrames does better
 
-- **A browser draws everything a page can hold.** Three.js, for one, is not drawn by Kinetograph, and a page that loads it is reported on every frame.
+- **A browser draws everything a page can hold.** Three.js, for one, runs through Kinetograph's WebGL stand-in and is not routinely tested. See [WebGL](/docs/webgl/).
 - **Its own tooling and catalog.** HyperFrames has its own CLI and preview. Kinetograph reads its pages, and uses none of that tooling.
 - **GSAP's `ScrollTrigger` and `Draggable`** don't apply to a Kinetograph render.
 

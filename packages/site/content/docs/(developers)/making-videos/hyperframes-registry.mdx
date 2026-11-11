@@ -63,7 +63,7 @@ Both fails stop in `doctor`. Most partial items (156 of 192) are components, who
 What `doctor` reports most often, by items affected:
 
 1. A font the page names but does not ship, such as `system-ui`, `monospace` or `Menlo`, so another one is drawn (29).
-2. Three.js scenes, which are not drawn (22).
+2. Three.js scenes (22). The sweep ran when `doctor` listed every page that loads Three.js as not drawn. It no longer does: Three.js runs through the WebGL stand-in and is not routinely tested. See [WebGL](/docs/webgl/).
 3. A script that uses cube map textures (17).
 4. A gradient that interpolates in a colour space other than sRGB (16).
 5. A backdrop filter other than `blur()` (5).
