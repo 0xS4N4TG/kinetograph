@@ -2757,7 +2757,12 @@ export class WebGLContext {
     const cube = this.bound(GL.TEXTURE_CUBE_MAP);
     const face = cube?.faces?.[faceIndex(target)];
     if (cube === null || face === undefined) return;
-    if (level !== 0) throw new WebGLUnsupportedError('a cube map face above level 0; call generateMipmap');
+    if (level !== 0) {
+      // An empty level is storage a framebuffer can draw in (`specify2d` keeps what a level above 0 may hold); pixels are not drawn.
+      this.specify2d(face, level, internalformat, rest);
+      cube.version += 1;
+      return;
+    }
     // A float face is a render target: empty until a framebuffer draws in it.
     const empty = rest.length >= 6 && (rest[5] === null || rest[5] === undefined);
     if (kindOf(internalformat) !== 'color' || (FLOAT_FORMATS[internalformat] !== undefined && !empty)) throw new WebGLUnsupportedError('a cube map face of a depth format, or of float pixels; use RGBA8 or SRGB8_ALPHA8, or an empty float face to draw in');

@@ -347,6 +347,23 @@ describe('the recording WebGL context', () => {
     });
   });
 
+  it('stores empty levels of the faces of a cube map for a framebuffer to draw in, and refuses pixels there', () => {
+    const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+    const cube = gl.createTexture();
+    gl.bindTexture(GL.TEXTURE_CUBE_MAP, cube);
+    for (let face = 0; face < 6; face += 1) {
+      for (let level = 0; level < 3; level += 1) gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X + face, level, GL.RGBA, 4 >> level, 4 >> level, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+    }
+    expect(gl.getError()).toBe(GL.NO_ERROR);
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(GL.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_CUBE_MAP_NEGATIVE_Y, cube, 1);
+    expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_COMPLETE);
+    expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 1, GL.RGBA, 2, 2, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(16))).toThrow(/levels above 0 with pixels/);
+    // A level of the wrong size is refused as for a 2D texture.
+    expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 1, GL.RGBA, 3, 3, 0, GL.RGBA, GL.UNSIGNED_BYTE, null)).toThrow(/level 1 of 3 x 3/);
+  });
+
   it('says unsupported, naming what to do, for what it does not draw', () => {
     const { gl } = setup();
     const refused = (fn: () => void): string => {
