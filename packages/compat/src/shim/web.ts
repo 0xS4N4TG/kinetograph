@@ -3,6 +3,7 @@
 // the host tree, `getComputedStyle`, the observers. There is no network and no clock: remote URLs fail with a message
 // that says so. `<canvas>` is the native 2D canvas (`./canvas.ts`). Installed in Node only where the globals are missing.
 
+import { MouseEventShim, PointerEventShim, UIEventShim, WheelEventShim } from './events.js';
 import { AnimationEffectShim, AnimationPlaybackEventShim, AnimationShim, AnimationTimelineShim, animationsOf, DocumentTimelineShim, documentTimeline, KeyframeEffectShim } from './animations.js';
 import { readFile } from 'node:fs/promises';
 import { readFileSync, existsSync } from 'node:fs';
@@ -651,6 +652,10 @@ export function installDomGlobals(): void {
   define(g, 'AnimationTimeline', AnimationTimelineShim);
   define(g, 'DocumentTimeline', DocumentTimelineShim);
   define(g, 'AnimationPlaybackEvent', AnimationPlaybackEventShim);
+  define(g, 'UIEvent', UIEventShim);
+  define(g, 'MouseEvent', MouseEventShim);
+  define(g, 'PointerEvent', PointerEventShim);
+  define(g, 'WheelEvent', WheelEventShim);
 
   // `fetch` of project files only. The real one stays reachable for the font downloads, which are explicit and cached.
   if (typeof g.fetch === 'function' && (g.fetch as { kinetograph?: boolean }).kinetograph !== true) {
