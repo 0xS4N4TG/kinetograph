@@ -46,8 +46,7 @@ export function Engine() {
             <p className="max-w-[44ch] font-dm text-[17px] leading-[1.6] tracking-[-0.005em] text-on-field/90">
               Every command takes <code className="font-jb text-[14px]">--json</code>, and{' '}
               <code className="font-jb text-[14px]">kinetograph mcp</code> serves them as tools. An agent writes the TSX or HTML,
-              renders a still, reads the scene graph and fixes what is wrong before you watch. Studio, the local editor, has a
-              coding agent built in.
+              renders a still, reads the scene graph and fixes what is wrong before you watch.
             </p>
             {/* Pinned to the cell's bottom, level with the taste cell's command bar. */}
             <div className="mt-auto">

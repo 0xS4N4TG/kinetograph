@@ -10,6 +10,7 @@ import { labelText, Wordmark } from '@/sections/shared';
 const LINKS = [
   { href: '/catalog/', label: 'Library' },
   { href: '/docs/', label: 'Docs' },
+  { href: '#studio', label: 'Studio' },
 ];
 
 const linkClass = `${labelText} transition-colors hover:text-cobalt`;
