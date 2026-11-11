@@ -20,7 +20,7 @@ export {
   MutationObserverShim,
 } from './observers.js';
 export { deliverMediaEvents } from './media-events.js';
-export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf, setRemoteFiles, setRefusedFetchHandler, whenFetchesSettle, trackPending, pendingImageLoads, pendingFetches } from './web.js';
+export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf, setRemoteFiles, setRefusedFetchHandler, whenFetchesSettle, trackPending, pendingImageLoads, pendingFetches, takeLoadFailures, loadsSettled } from './web.js';
 export { setWorkerHold, setWorkerModuleLoader, whenWorkersIdle, resetWorkers, workersStarted, cloneMessage, WorkerShim, MessageChannelShim, MessagePortShim } from './worker.js';
 export { DEFAULT_SECRET_PARAMS, INDEX_FILE, finishNetRecord, isSecretParam, looksLikeCredential, netFetch, netKey, setNetFrame, setNetStore, type NetConfig } from './net-store.js';
 export { setPathMeasure } from './geometry.js';

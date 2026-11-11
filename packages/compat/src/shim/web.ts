@@ -202,6 +202,22 @@ function imagePicture(src: string): CanvasPicture | null {
 type ImageResult = { size: { width: number; height: number } } | { error: Error };
 
 let pendingImages = 0;
+let loadsDone = 0;
+
+/** How many loads (images, fetches, bitmaps) have finished since the start: a frame that sees it move runs what they set going before it is read. */
+export function loadsSettled(): number {
+  return loadsDone;
+}
+
+/** Loads that failed since the last `takeLoadFailures`: what a page asked for (an image, a fetch) and did not get. */
+const loadFailures = new Set<string>();
+
+/** The loads that failed since the last call, each once, as `message` strings that name the URL: the frame loop reports them. */
+export function takeLoadFailures(): string[] {
+  const out = [...loadFailures];
+  loadFailures.clear();
+  return out;
+}
 
 /** Image loads that have started and not yet fired `load` or `error`: a frame waits for them (`new Image()`, a script's `<img>`). */
 export function pendingImageLoads(): number {
@@ -237,10 +253,12 @@ export function startImageLoad(source: string, who: string, done: (result: Image
   const result = readImage(source, who);
   pendingImages++;
   const settle = (found: ImageResult): void => {
+    if ('error' in found) loadFailures.add(found.error.message);
     try {
       done(found);
     } finally {
       pendingImages--;
+      loadsDone++;
     }
   };
   if (result instanceof Promise) void result.then(settle);
@@ -419,6 +437,7 @@ export function trackPending<T>(work: Promise<T>): Promise<T> {
   inFlight++;
   return work.finally(() => {
     inFlight--;
+    loadsDone++;
   });
 }
 
@@ -430,6 +449,7 @@ function makeFetch(real: typeof fetch): typeof fetch {
       return await answer(input, init);
     } finally {
       inFlight--;
+      loadsDone++;
     }
   }) as typeof fetch;
 }
@@ -451,11 +471,14 @@ function makeAnswer(real: typeof fetch): typeof fetch {
       const recorded = plain ? await netFetch(real, input, init, url, method) : null;
       if (recorded !== null) return recorded;
       onRefused?.(url);
+      loadFailures.add(remoteMessage('fetch', url));
       throw new TypeError(remoteMessage('fetch', url));
     }
     const file = projectFileOf(url);
     if (file === null || !existsSync(file)) {
-      throw new TypeError(`fetch("${url}") failed: no such file in the project (looked beside the entry and in public/)`);
+      const message = `fetch("${url}") failed: no such file in the project (looked beside the entry and in public/)`;
+      loadFailures.add(message);
+      throw new TypeError(message);
     }
     const body = await readFile(file);
     return new Response(body, { status: 200, headers: { 'content-type': MIME[extname(file).toLowerCase()] ?? 'application/octet-stream' } });
@@ -669,7 +692,8 @@ export function installDomGlobals(): void {
   define(g, 'Path2D', Path2D);
   define(g, 'ImageData', ImageData);
   define(g, 'ImageBitmap', ImageBitmapShim);
-  define(g, 'createImageBitmap', createImageBitmapShim);
+  // A frame waits for the bitmap, as it waits for an image (`trackPending`).
+  define(g, 'createImageBitmap', (...args: Parameters<typeof createImageBitmapShim>) => trackPending(createImageBitmapShim(...args)));
   // `XMLHttpRequest` reads through `fetch`, so it follows the same rules (xhr.ts).
   define(g, 'XMLHttpRequest', XMLHttpRequestShim);
   // `Worker` runs its script on this thread and `MessageChannel` delivers on one queue, so a frame can wait for the messages

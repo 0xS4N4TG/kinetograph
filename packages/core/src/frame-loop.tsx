@@ -10,7 +10,7 @@
 //      attach what each sub-frame changes in them.
 
 import type { ReactNode } from 'react';
-import { glDependsOnHistory, glHoldsTargets, pendingFetches, pendingImageLoads, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports } from '@kinetographdev/compat/shim';
+import { glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures } from '@kinetographdev/compat/shim';
 import { setDefaultStylesheet } from '@kinetographdev/compat/dom';
 import { createSceneRoot, finishIslands, TimelineContext, type LayerNames, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
@@ -38,6 +38,7 @@ import { animationFramesQueued, fireHoldTimer, realTimers, resetVirtualClock, ru
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 import { endGsapSamples, gsapIsLoaded, sampleGsapAt, setGsapTime } from './gsap-clock.js';
 import { takePageErrors } from './page-errors.js';
+import { drawSettled } from './canvas-draws.js';
 import { clearReportedUnsupported, reportedUnsupported, reportUnsupported, setReportIsRead } from './unsupported.js';
 
 export interface FrameResult {
@@ -62,8 +63,25 @@ export interface FrameRenderer {
 const tick = () => new Promise<void>((resolve) => realTimers.setImmediate(resolve));
 
 /** Whether something the frame waits for is open: a delayRender handle, a font or an image still loading. */
-const heldOpen = (): boolean => openRenderHandles() > 0 || pendingFontLoads() > 0 || pendingImageLoads() > 0;
+const heldOpen = (): boolean => openRenderHandles() > 0 || pendingFontLoads() > 0 || pendingImageLoads() > 0 || loadsSettled() !== seenLoads;
 setHoldProbe(heldOpen);
+
+/**
+ * The loads the frame has run what they set going for. While a load has finished that has not been (`loadsSettled` is
+ * ahead), the frame is held: a Suspense whose texture or model has arrived reveals after React's throttle, a timeout
+ * made once nothing is loading any more, and it is a hold timer then, fired at once (`runAfterLoads`).
+ */
+let seenLoads = 0;
+
+/** Lets React reveal what the loads that finished since `seenLoads` were for. */
+async function runAfterLoads(): Promise<void> {
+  for (let quiet = 0; quiet < 2; ) {
+    await tick();
+    quiet = pendingFetches() === 0 && pendingImageLoads() === 0 && pendingFontLoads() === 0 ? quiet + 1 : 0;
+    if (quiet >= 2 && fireHoldTimer()) quiet = 0;
+  }
+  seenLoads = loadsSettled();
+}
 
 /**
  * Resolves when no delayRender handle is open; rejects with the recorded failure.
@@ -283,6 +301,7 @@ class Renderer implements FrameRenderer {
     setHistoryMode({ record: false });
     // What components that draw through a canvas left out, as the frame's own render reported it.
     for (const what of takeGlReports()) reportUnsupported('canvas', 'webgl', 'render target', what);
+    for (const what of takeLoadFailures()) reportUnsupported('page', 'load', what, `a load the page started failed; what needed it is drawn without`);
     let reported = reportedUnsupported();
     // The motion-blur sub-frames render the composition again; fonts or data they ask for are awaited too.
     const times = collectMotionTimes(main.layers, frame);
@@ -426,6 +445,7 @@ class Renderer implements FrameRenderer {
       // `cancelRender` is the better explanation when the code after it went on to fail.
       throw renderFailure() ?? error;
     }
+    seenLoads = loadsSettled();
     for (;;) {
       await waitForFonts();
       try {
@@ -436,8 +456,17 @@ class Renderer implements FrameRenderer {
       // Let the state updates that continueRender's callers made reach the reconciler.
       await tick();
       // A script's `<img>` or `new Image()` that has not fired `load` yet holds the frame like a font that is still loading.
-      if (openRenderHandles() > 0 || pendingFontLoads() > 0 || pendingImageLoads() > 0) continue;
-      if (!animationFrames) break;
+      if (openRenderHandles() > 0 || pendingFontLoads() > 0 || pendingImageLoads() > 0 || pendingFetches() > 0) continue;
+      // A load finished in this frame: what it was for (a Suspense of the page's own) reveals before the frame is read.
+      if (loadsSettled() !== seenLoads) {
+        await runAfterLoads();
+        continue;
+      }
+      if (!animationFrames) {
+        // The 3D canvases draw now that the loads are done; what the draw starts is waited for in turn.
+        if (drawSettled()) continue;
+        break;
+      }
       // requestAnimationFrame callbacks run once the frame has rendered, as a browser runs them before it paints:
       // a library that draws in one after being told what to show (Motion's render step) shows this frame, not the one before.
       const made = renderHandlesMade();
@@ -447,7 +476,10 @@ class Renderer implements FrameRenderer {
       await tick();
       // A callback that started work (a map asking its workers for tiles, a fetch) holds the frame as a handle does: wait
       // for it, and run the callbacks its end asked for, until a pass leaves nothing pending.
-      if (renderHandlesMade() === made && pendingFontLoads() === 0 && pendingImageLoads() === 0) break;
+      if (renderHandlesMade() === made && pendingFontLoads() === 0 && pendingImageLoads() === 0 && pendingFetches() === 0) {
+        if (drawSettled()) continue;
+        break;
+      }
     }
     if (!animationFrames && read) {
       // A motion-blur sub-frame: what plays on GSAP's root clock is shown at the sub-frame's time (undone after the

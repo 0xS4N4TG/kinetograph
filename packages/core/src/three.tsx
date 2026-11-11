@@ -9,10 +9,11 @@
 // A `<Sequence>` inside the canvas works (Remotion tells to give it `layout="none"`); it takes its place in the scene as a
 // `THREE.Group`, so it is not recorded in the timeline the way a Sequence of the page is.
 
-import { Suspense, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { Suspense, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Canvas, extend, useThree, type CanvasProps } from '@react-three/fiber';
 import { Group } from 'three';
 import { continueRender, delayRender } from './assets.js';
+import { cancelDraw, drawWhenSettled } from './canvas-draws.js';
 import { useCurrentFrame, useVideoConfig } from './timeline.js';
 
 // The host elements that `<Sequence>` and `<Layer>` render, which R3F looks up by name in its catalogue ("Kg-sequence").
@@ -26,14 +27,18 @@ export type ThreeCanvasProps = Omit<CanvasProps, 'frameloop' | 'style' | 'childr
 };
 
 /**
- * Draws the scene for the current frame: after the children are in place, which is also after a Suspense reveal. It is
- * the last child and draws in a passive effect, as the children's own passive effects run first: drei's `<Environment>`
- * sets `scene.environment` in one, and a draw before it would show the frame without the lighting.
+ * Draws the scene for the current frame, once the frame has settled: the children are in place, every Suspense has revealed
+ * and the loads are done. It is the last child and asks in a passive effect, as the children's own passive effects run first:
+ * drei's `<Environment>` sets `scene.environment` in one, and a draw before it would show the frame without the lighting.
  */
 function Advance({ seconds }: { seconds: number }) {
   const advance = useThree((state) => state.advance);
+  const key = useRef(Symbol('ThreeCanvas'));
   useEffect(() => {
-    advance(seconds);
+    // Not now: the frame loop draws when what the frame loads has settled (canvas-draws.ts), so a texture a loader or a
+    // Suspense of the page's own was still reading is in the frame.
+    drawWhenSettled(key.current, () => advance(seconds));
+    return () => cancelDraw(key.current);
   }, [advance, seconds]);
   return null;
 }
