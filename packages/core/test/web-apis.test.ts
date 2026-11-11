@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { resetStylesheets, setDomEnvironment } from '@kinetographdev/compat/dom';
-import { setWebViewport } from '@kinetographdev/compat/shim';
+import { pendingImageLoads, setWebViewport } from '@kinetographdev/compat/shim';
 import { getFonts } from '../src/font-registry.js';
 import { installDeterminism, resetVirtualClock, setVirtualFrame } from '../src/determinism.js';
 import '../src/web-install.js';
@@ -131,6 +131,55 @@ describe('new Image()', () => {
     viaBlob.src = URL.createObjectURL(blob);
     await viaBlob.decode();
     expect([viaBlob.naturalWidth, viaBlob.naturalHeight]).toEqual([11, 13]);
+  });
+});
+
+describe('a script-made <img>', () => {
+  it('fires load once src is set, with its size, complete and decode(), and holds the frame until then', async () => {
+    const img = g.document.createElement('img');
+    const events: string[] = [];
+    img.addEventListener('load', (e: any) => events.push(`listener:${e.type}:${e.target === img}`));
+    img.onload = () => events.push('onload');
+    expect(img.complete).toBe(true);
+    img.src = staticFile('pic.png');
+    expect(img.complete).toBe(false);
+    expect(pendingImageLoads()).toBe(1);
+    await img.decode();
+    expect(events).toEqual(['onload', 'listener:load:true']);
+    expect([img.naturalWidth, img.naturalHeight, img.complete, pendingImageLoads()]).toEqual([7, 5, true, 0]);
+    // A blob: URL is read asynchronously; the load is still counted until it has fired.
+    const blob = g.document.createElement('img');
+    blob.src = URL.createObjectURL(new Blob([png(11, 13)], { type: 'image/png' }));
+    expect(pendingImageLoads()).toBe(1);
+    await blob.decode();
+    expect([blob.naturalWidth, blob.naturalHeight, pendingImageLoads()]).toEqual([11, 13, 0]);
+  });
+
+  it('fires error for a missing file and a remote URL, and decode() rejects', async () => {
+    const fail = (src: string) =>
+      new Promise<string>((resolve) => {
+        const img = g.document.createElement('img');
+        img.addEventListener('error', () => resolve('error'));
+        img.src = src;
+      });
+    expect(await fail('nothing.png')).toBe('error');
+    expect(await fail('https://example.com/a.png')).toBe('error');
+    const img = g.document.createElement('img');
+    img.src = 'nothing.png';
+    await expect(img.decode()).rejects.toThrow('no such file');
+    expect(img.complete).toBe(true);
+    expect(pendingImageLoads()).toBe(0);
+  });
+
+  it('ignores a load that a newer src has replaced', async () => {
+    const img = g.document.createElement('img');
+    let loads = 0;
+    img.onload = () => loads++;
+    img.src = 'nothing.png';
+    img.src = staticFile('pic.png');
+    await img.decode();
+    expect(loads).toBe(1);
+    expect(img.naturalWidth).toBe(7);
   });
 });
 

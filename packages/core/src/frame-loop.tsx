@@ -10,7 +10,7 @@
 //      attach what each sub-frame changes in them.
 
 import type { ReactNode } from 'react';
-import { glDependsOnHistory, glHoldsTargets, resetCanvasStates, snapshotGlStates, takeGlReports } from '@kinetographdev/compat/shim';
+import { glDependsOnHistory, glHoldsTargets, pendingImageLoads, resetCanvasStates, snapshotGlStates, takeGlReports } from '@kinetographdev/compat/shim';
 import { createSceneRoot, finishIslands, TimelineContext, type LayerNames, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
   attachMotionChanges,
@@ -389,7 +389,8 @@ class Renderer implements FrameRenderer {
       }
       // Let the state updates that continueRender's callers made reach the reconciler.
       await tick();
-      if (openRenderHandles() === 0 && pendingFontLoads() === 0) break;
+      // A script's `<img>` or `new Image()` that has not fired `load` yet holds the frame like a font that is still loading.
+      if (openRenderHandles() === 0 && pendingFontLoads() === 0 && pendingImageLoads() === 0) break;
     }
     // requestAnimationFrame callbacks run once the frame has rendered, as a browser runs them before it paints:
     // a library that draws in one after being told what to show (Motion's render step) shows this frame, not the one before.
