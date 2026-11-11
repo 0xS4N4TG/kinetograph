@@ -11,6 +11,7 @@ import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, WebGLContext, createGpu, GPU_GLOBALS, pictureOf, type CanvasPicture } from '@kinetographdev/scene';
 import { resolveDocumentUrl, resolveProjectFile, resolveCachedRemoteFile, sameOriginPath } from '../environment.js';
+import { netFetch } from './net-store.js';
 import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas.js';
 import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, installDocumentMembers } from './document.js';
 import { AttrShim, NamedNodeMapShim } from './attributes.js';
@@ -399,6 +400,10 @@ function makeAnswer(real: typeof fetch): typeof fetch {
       if (cached != null && existsSync(cached)) {
         return new Response(await readFile(cached), { status: 200, headers: { 'content-type': MIME[extname(new URL(url).pathname).toLowerCase()] ?? 'application/octet-stream' } });
       }
+      // Not a locked file: the recorded network store answers (a record pass reaches the network for its hosts), else it is refused.
+      const plain = (method === 'GET' || method === 'HEAD') && !hasBody;
+      const recorded = plain ? await netFetch(real, input, init, url, method) : null;
+      if (recorded !== null) return recorded;
       onRefused?.(url);
       throw new TypeError(remoteMessage('fetch', url));
     }
