@@ -154,6 +154,7 @@ export const GL = {
   FRAGMENT_SHADER: 0x8b30,
   VERTEX_SHADER: 0x8b31,
   MAX_VERTEX_ATTRIBS: 0x8869,
+  MAX_RENDERBUFFER_SIZE: 0x84e8,
   MAX_VERTEX_UNIFORM_VECTORS: 0x8dfb,
   MAX_VARYING_VECTORS: 0x8dfc,
   MAX_COMBINED_TEXTURE_IMAGE_UNITS: 0x8b4d,
@@ -345,6 +346,16 @@ export const GL2 = {
   SAMPLER_2D_ARRAY: 0x8dc1,
   MAX_ARRAY_TEXTURE_LAYERS: 0x88ff,
   UNIFORM_BUFFER: 0x8a11,
+  MAX_VARYING_COMPONENTS: 0x8b4b,
+  MAX_ELEMENT_INDEX: 0x8d6b,
+  MAX_PROGRAM_TEXEL_OFFSET: 0x8905,
+  MIN_PROGRAM_TEXEL_OFFSET: 0x8904,
+  MAX_VERTEX_UNIFORM_COMPONENTS: 0x8b4a,
+  MAX_FRAGMENT_UNIFORM_COMPONENTS: 0x8b49,
+  MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS: 0x8a31,
+  MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS: 0x8a33,
+  MAX_VERTEX_OUTPUT_COMPONENTS: 0x9122,
+  MAX_FRAGMENT_INPUT_COMPONENTS: 0x9125,
   UNIFORM_BUFFER_BINDING: 0x8a28,
   UNIFORM_BUFFER_START: 0x8a29,
   UNIFORM_BUFFER_SIZE: 0x8a2a,
@@ -459,6 +470,23 @@ const MAX_UNIFORM_BUFFER_BINDINGS = 24;
 const MAX_UNIFORM_BLOCK_SIZE = 65536;
 const UNIFORM_BUFFER_OFFSET_ALIGNMENT = 256;
 const MAX_STAGE_UNIFORM_BLOCKS = 12;
+/**
+ * The fixed limits WebGL 2 adds, as the replay has them: `MAX_*_UNIFORM_VECTORS` are 256 a stage, and a block adds its
+ * 64 KiB, 12 of them, to the components a stage reads; a varying is one of the 15 `vec4`s a stage passes; the texel
+ * offset of `textureOffset` is wgpu's (-8 to 7), and an index of `drawElements` is up to 32 bits.
+ */
+const FIXED_LIMITS: Record<number, number> = {
+  [GL2.MAX_VARYING_COMPONENTS]: 60,
+  [GL2.MAX_VERTEX_OUTPUT_COMPONENTS]: 60,
+  [GL2.MAX_FRAGMENT_INPUT_COMPONENTS]: 60,
+  [GL2.MAX_ELEMENT_INDEX]: 0xffffffff,
+  [GL2.MAX_PROGRAM_TEXEL_OFFSET]: 7,
+  [GL2.MIN_PROGRAM_TEXEL_OFFSET]: -8,
+  [GL2.MAX_VERTEX_UNIFORM_COMPONENTS]: 1024,
+  [GL2.MAX_FRAGMENT_UNIFORM_COMPONENTS]: 1024,
+  [GL2.MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS]: 1024 + (12 * 65536) / 4,
+  [GL2.MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS]: 1024 + (12 * 65536) / 4,
+};
 const UNIFORM_BUFFER_LIMITS: Record<number, number> = {
   [GL2.MAX_UNIFORM_BUFFER_BINDINGS]: MAX_UNIFORM_BUFFER_BINDINGS,
   [GL2.MAX_UNIFORM_BLOCK_SIZE]: MAX_UNIFORM_BLOCK_SIZE,
@@ -1281,6 +1309,10 @@ export class WebGLContext {
         return this.version === 2 ? 'WebGL GLSL ES 3.00 (Kinetograph)' : 'WebGL GLSL ES 1.0 (Kinetograph)';
       case GL.MAX_TEXTURE_SIZE:
         return 8192;
+      case GL.MAX_RENDERBUFFER_SIZE:
+        return 8192;
+      case GL.SUBPIXEL_BITS:
+        return 4;
       case GL.MAX_VIEWPORT_DIMS:
         return new Int32Array([8192, 8192]);
       case GL.MAX_VERTEX_ATTRIBS:
@@ -1443,6 +1475,7 @@ export class WebGLContext {
       case GL.SAMPLE_BUFFERS:
         return this.samplesOf(this.drawFramebuffer) > 0 ? 1 : 0;
       default:
+        if (this.version === 2 && FIXED_LIMITS[pname] !== undefined) return FIXED_LIMITS[pname];
         if (this.version === 2 && pname >= GL2.DRAW_BUFFER0 && pname < GL2.DRAW_BUFFER0 + MAX_DRAW_BUFFERS) {
           const i = pname - GL2.DRAW_BUFFER0;
           if (this.drawFramebuffer === null) return i === 0 ? this.canvasDrawBuffer : GL.NONE;

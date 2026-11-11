@@ -255,6 +255,24 @@ describe('the recording WebGL context', () => {
     expect(draw !== undefined && 'uniforms' in draw && Object.keys(draw.uniforms)).toEqual([]);
   });
 
+  it('answers the limits a page reads at start-up with values the replay has', () => {
+    const gl2 = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+    const { gl } = setup();
+    for (const g of [gl, gl2]) {
+      expect(g.getParameter(GL.MAX_RENDERBUFFER_SIZE)).toBe(8192);
+      expect(g.getParameter(GL.MAX_TEXTURE_SIZE)).toBe(8192);
+      expect(g.getParameter(GL.SUBPIXEL_BITS)).toBe(4);
+    }
+    expect(gl2.getParameter(GL2.MAX_ELEMENT_INDEX)).toBe(0xffffffff);
+    expect(gl2.getParameter(GL2.MAX_VARYING_COMPONENTS)).toBe(60);
+    expect(gl2.getParameter(GL2.MAX_FRAGMENT_UNIFORM_COMPONENTS)).toBe(1024);
+    expect([gl2.getParameter(GL2.MIN_PROGRAM_TEXEL_OFFSET), gl2.getParameter(GL2.MAX_PROGRAM_TEXEL_OFFSET)]).toEqual([-8, 7]);
+    expect(gl2.getError()).toBe(GL.NO_ERROR);
+    // A WebGL 1 context has no such names.
+    expect(gl.getParameter(GL2.MAX_ELEMENT_INDEX)).toBeNull();
+    expect(gl.getError()).toBe(GL.INVALID_ENUM);
+  });
+
   it('says unsupported, naming what to do, for what it does not draw', () => {
     const { gl } = setup();
     const refused = (fn: () => void): string => {
