@@ -161,3 +161,22 @@ export class WheelEventShim extends MouseEventShim {
     this.deltaMode = init.deltaMode ?? 0;
   }
 }
+
+export interface ProgressEventInit extends EventInit {
+  lengthComputable?: boolean;
+  loaded?: number;
+  total?: number;
+}
+
+/** What a loader makes to report how much it has read (three's FileLoader makes one for each chunk). */
+export class ProgressEventShim extends Event {
+  readonly lengthComputable: boolean;
+  readonly loaded: number;
+  readonly total: number;
+  constructor(type: string, init: ProgressEventInit = {}) {
+    super(type, init);
+    this.lengthComputable = init.lengthComputable ?? false;
+    this.loaded = init.loaded ?? 0;
+    this.total = init.total ?? 0;
+  }
+}
