@@ -1237,6 +1237,13 @@ describe('the recording WebGL context', () => {
       expect([...new Float32Array(new Uint8Array(Buffer.from(texture.floats!, 'base64')).buffer)]).toEqual([0, 0, 0, 0, 4, 4, 4, 1, 0.5, 0.5, 0.5, 0.5]);
     });
 
+    it('takes generateMipmap of an empty float texture (a render target three.js makes) as having nothing to compute', () => {
+      const { gl } = floatContext();
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL2.RGBA16F, 64, 32, 0, GL.RGBA, GL.HALF_FLOAT, null);
+      gl.generateMipmap(GL.TEXTURE_2D);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+    });
+
     it('follows WebGL on the errors of a float upload', () => {
       const { gl } = floatContext();
       // The format must go with the internal format, the type with both.

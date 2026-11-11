@@ -2641,7 +2641,13 @@ export class WebGLContext {
     if (!texture.uploaded || kindOf(texture.format) !== 'color') return this.fail(GL.INVALID_OPERATION);
     if (target === GL2.TEXTURE_3D || target === GL2.TEXTURE_2D_ARRAY) throw new WebGLUnsupportedError('generateMipmap of a 3D or array texture; sample it with LINEAR or NEAREST');
     if (texture.drawnAt === texture.version) return this.mipmapDrawn([texture], texture.baseLevel);
-    if (texture.floats !== null) throw new WebGLUnsupportedError('generateMipmap of a float texture; sample it with NEAREST');
+    if (texture.floats !== null) {
+      // The mipmaps of an empty texture are empty: three.js calls generateMipmap on a render target's texture as it makes it,
+      // before anything is drawn in. The chain is storage a framebuffer can draw in; there is nothing to compute.
+      if (!texture.blank) throw new WebGLUnsupportedError('generateMipmap of a float texture; sample it with NEAREST');
+      if (!texture.immutable) texture.levels = Math.floor(Math.log2(Math.max(texture.width, texture.height))) + 1;
+      return;
+    }
     texture.mipmaps = true;
     texture.version += 1;
   }
