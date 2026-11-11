@@ -179,3 +179,9 @@ describe('the frame hold', () => {
     expect(events).toEqual(['hold', 'message', 'release']);
   });
 });
+
+describe('navigator.hardwareConcurrency', () => {
+  it('is 4 whatever the machine has', () => {
+    expect(navigator.hardwareConcurrency).toBe(4);
+  });
+});
