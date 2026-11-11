@@ -3,7 +3,8 @@
 // `getComputedStyle`), `@font-face` rules of imported stylesheets, and SVG measurement.
 
 import { hasAddonFunction, measureSpan, noteStylesheetProblem, resolveProjectFile, setCssFontFaceHandler, setRemoteAssetResolver, type CssFontFace } from '@kinetographdev/compat/dom';
-import { installDomGlobals, setCanvasFonts, setPathMeasure } from '@kinetographdev/compat/shim';
+import { installDomGlobals, setCanvasFonts, setPathMeasure, setWorkerHold } from '@kinetographdev/compat/shim';
+import { continueRender, delayRender } from './assets.js';
 import { addFace, NodeFontFace } from './font-face.js';
 import { getFonts, setFontProblemHandler } from './font-registry.js';
 import { setDomTextMeasure } from './layout-utils.js';
@@ -28,6 +29,11 @@ export function registerCssFontFace(face: CssFontFace): void {
 }
 
 installDomGlobals();
+// A frame waits for the messages a worker or a MessageChannel still has in flight, as for any other `delayRender`.
+setWorkerHold(() => {
+  const handle = delayRender('worker messages');
+  return () => continueRender(handle);
+});
 setCssFontFaceHandler(registerCssFontFace);
 // A font that could not be had is a note in `doctor` and `lint`, like a stylesheet that could not be built.
 setFontProblemHandler(noteStylesheetProblem);
