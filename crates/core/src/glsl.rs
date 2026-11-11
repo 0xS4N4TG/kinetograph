@@ -2017,6 +2017,7 @@ fn declaration(
                     });
                 } else if let Some((_, definition)) = r.structs.iter().find(|(n, _)| *n == ty) {
                     check_uniform_struct(&name, &ty, definition, &r.structs)?;
+                    pad_uniform_struct(&mut r.structs, &ty);
                     r.uniforms.push(UniformDecl {
                         name,
                         ty: ty.clone(),
@@ -2457,6 +2458,84 @@ fn check_uniform_struct(
     Ok(())
 }
 
+/// The (alignment, size) of a GLSL type in a std140 block, or `None` for one this does not know (a macro length).
+fn std140_of(structs: &[(String, String)], ty: &str, array: Option<u32>) -> Option<(u32, u32)> {
+    let (align, size) = if let Some((_, definition)) = structs.iter().find(|(n, _)| n == ty) {
+        let (_, end) = std140_fields(structs, definition)?;
+        (16, end.div_ceil(16) * 16)
+    } else {
+        let base = ty.trim_start_matches(['i', 'u', 'b']);
+        match base {
+            "float" | "int" | "uint" | "bool" => (4, 4),
+            "vec2" => (8, 8),
+            "vec3" => (16, 12),
+            "vec4" => (16, 16),
+            "mat3" | "mat3x3" => (16, 48),
+            "mat4" | "mat4x4" => (16, 64),
+            "mat2x3" | "mat2x4" => (16, 32),
+            "mat3x4" => (16, 48),
+            "mat4x3" => (16, 64),
+            _ => return None,
+        }
+    };
+    Some(match array {
+        None => (align, size),
+        Some(n) => (16, size.div_ceil(16) * 16 * n),
+    })
+}
+
+/// The std140 end of a struct's fields (the offset after the last), and the largest alignment among them.
+fn std140_fields(structs: &[(String, String)], definition: &str) -> Option<(u32, u32)> {
+    let body = definition.split_once('{').and_then(|(_, rest)| rest.rsplit_once('}')).map(|(inside, _)| inside)?;
+    let mut end = 0u32;
+    let mut widest = 4u32;
+    for field in body.split(';').map(str::trim).filter(|f| !f.is_empty()) {
+        let mut words = field.split_whitespace().filter(|w| !matches!(*w, "highp" | "mediump" | "lowp"));
+        let ty = words.next()?;
+        let rest = words.collect::<Vec<_>>().join(" ");
+        for declarator in rest.split(',') {
+            let array = match declarator.split_once('[') {
+                Some((_, n)) => Some(n.trim_end_matches(|c: char| c == ']' || c.is_whitespace()).parse::<u32>().ok()?),
+                None => None,
+            };
+            let (align, size) = std140_of(structs, ty, array)?;
+            end = end.div_ceil(align) * align + size;
+            widest = widest.max(align);
+        }
+    }
+    Some((widest, end))
+}
+
+/// A struct that is a uniform gets trailing `float`s up to the 16 bytes a std140 block rounds it to. naga lays the
+/// block out with the struct as it is declared, and a back end that sizes the struct by its fields (Metal) would put
+/// what follows an array of them, or the next member of the block, where the page's bytes are not.
+fn pad_uniform_struct(structs: &mut [(String, String)], name: &str) {
+    let Some(at) = structs.iter().position(|(n, _)| n == name) else { return };
+    // The structs it holds first: its own size depends on theirs.
+    let nested: Vec<String> = structs[at]
+        .1
+        .split(['{', '}', ';'])
+        .filter_map(|f| f.split_whitespace().find(|w| !matches!(*w, "highp" | "mediump" | "lowp")))
+        .filter(|w| structs.iter().any(|(n, _)| n == w))
+        .map(str::to_string)
+        .collect();
+    for inner in nested {
+        if inner != name {
+            pad_uniform_struct(structs, &inner);
+        }
+    }
+    let Some((_, end)) = std140_fields(structs, &structs[at].1) else { return };
+    let missing = end.div_ceil(16) * 16 - end;
+    if missing == 0 || structs[at].1.contains("_k_pad") {
+        return;
+    }
+    let pads: String = (0..missing / 4).map(|i| format!("float _k_pad{i}; ")).collect();
+    let text = &mut structs[at].1;
+    if let Some(close) = text.rfind('}') {
+        text.insert_str(close, &pads);
+    }
+}
+
 /// The leaves of a struct uniform, or of an array of them, named as WebGL names them
 /// (`lights[1].color`).
 fn struct_leaves(
@@ -2480,6 +2559,9 @@ fn struct_leaves(
         T::Struct { members, .. } => {
             for m in members {
                 let field = m.name.clone().unwrap_or_default();
+                if field.starts_with("_k_pad") {
+                    continue;
+                }
                 struct_leaves(module, &format!("{name}.{field}"), offset + m.offset, m.ty, out)?;
             }
         }
@@ -3158,6 +3240,32 @@ mod tests {
         assert_eq!(find("u_m").columns, 3);
         assert!(find("u_on").is_bool);
         assert_eq!(find("u_n").rows, 2);
+    }
+
+    #[test]
+    fn a_uniform_struct_is_padded_to_the_size_a_std140_block_gives_it() {
+        let t = translate(&program(
+            QUAD_ES1,
+            "precision mediump float;\nvarying vec2 v_uv;\n\
+             struct S { float a; }; struct Shadow { float i; float b; float n; float r; vec2 size; };\n\
+             uniform S u_s[2]; uniform Shadow u_h; uniform bool u_on;\n\
+             void main() { gl_FragColor = vec4(u_on ? 1.0 : 0.0, u_s[1].a, u_h.size.x, u_h.r); }",
+        ))
+        .unwrap();
+        let span_of = |name: &str| {
+            t.fragment
+                .module
+                .types
+                .iter()
+                .find_map(|(_, ty)| match (&ty.name, &ty.inner) {
+                    (Some(n), naga::TypeInner::Struct { span, .. }) if n == name => Some(*span),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("no struct {name}"))
+        };
+        assert_eq!(span_of("S"), 16);
+        assert_eq!(span_of("Shadow"), 32);
+        assert!(t.fragment.uniforms.iter().all(|u| !u.name.contains("_k_pad")));
     }
 
     #[test]
