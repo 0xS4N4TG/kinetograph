@@ -379,6 +379,11 @@ export function setRefusedFetchHandler(handler: ((url: string) => void) | null):
 
 let inFlight = 0;
 
+/** `fetch` calls (and `trackPending` work) that have not answered yet. */
+export function pendingFetches(): number {
+  return inFlight;
+}
+
 /**
  * Resolves when no `fetch` is in flight and none starts for two turns of the event loop: the callbacks of what a page
  * fetched at load (`d3.json(url).then(draw)`) have run, and what they started (another fetch) has finished.
