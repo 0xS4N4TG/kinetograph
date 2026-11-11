@@ -921,6 +921,37 @@ fn instanced_draws_advance_attributes_with_a_divisor_per_instance_and_count_gl_i
     assert_eq!(px(&frame, 12, 12)[..3], [0, 0, 0]);
 }
 
+#[test]
+fn an_attribute_with_a_divisor_of_two_advances_every_second_instance() {
+    // Four instances read two offsets: 0 and 1 the first (lower left), 2 and 3 the second; the later of each pair
+    // is on top.
+    let vertex = "#version 300 es\nin vec2 a_pos; in vec2 a_off; out float v_i; \
+        void main() { v_i = float(gl_InstanceID); \
+        gl_Position = vec4(a_pos * 0.25 + a_off, 0.0, 1.0); }";
+    let fragment = "#version 300 es\nprecision mediump float; in float v_i; out vec4 o; \
+        void main() { o = vec4(v_i / 3.0, 0.0, 0.0, 1.0); }";
+    let offsets = points_buffer(&[[-0.5, -0.5], [0.5, 0.5]]);
+    let draw = format!(
+        r#"{{"op": "draw", "program": "p", "mode": "triangles", "first": 0, "count": 6, "instances": 4,
+            "attributes": {}, "viewport": [0, 0, 16, 16]}}"#,
+        quad_attributes().replacen(
+            "}}",
+            r#"}, "a_off": {"buffer": "off", "size": 2, "type": "f32", "divisor": 2}}"#,
+            1
+        )
+    );
+    let frame = render(&layer_with_vertex(
+        vertex,
+        &[("p", fragment)],
+        &format!(r#", "off": "{offsets}""#),
+        "",
+        &draw,
+    ));
+    near(px(&frame, 4, 12), [85, 0, 0, 255], 2);
+    near(px(&frame, 12, 4), [255, 0, 0, 255], 2);
+    assert_eq!(px(&frame, 4, 4)[..3], [0, 0, 0]);
+}
+
 // ---- the depth test ----
 
 const Z_VERTEX: &str = "attribute vec2 a_pos; uniform float u_z; varying vec2 v_uv; \
@@ -1381,14 +1412,94 @@ fn a_level_of_a_texture_is_a_target_and_sampled_at_that_level() {
 }
 
 #[test]
+fn linear_blits_from_each_level_to_the_next_make_mipmaps_of_what_was_drawn() {
+    // `generateMipmap` of a drawn-into texture is recorded as these blits: level 4 (1 x 1) of a texture red on the
+    // left and blue on the right is their average.
+    let textures =
+        r#", "textures": {"t": {"target": true, "width": 16, "height": 16, "levels": 5}}"#;
+    let mut all = vec![
+        draw_in(
+            "f",
+            [0, 0, 8, 16],
+            &format!(r#"{}, "target": "t""#, z_fill(0.0, [1.0, 0.0, 0.0, 1.0])),
+        ),
+        draw_in(
+            "f",
+            [8, 0, 8, 16],
+            &format!(r#"{}, "target": "t""#, z_fill(0.0, [0.0, 0.0, 1.0, 1.0])),
+        ),
+    ];
+    for level in 0..4 {
+        let (side, half) = (16 >> level, 8 >> level);
+        all.push(format!(
+            r#"{{"op": "blit", "src": "t", "srcLevel": {level}, "target": "t", "level": {}, "from": [0, 0, {side}, {side}], "to": [0, 0, {half}, {half}], "linear": true}}"#,
+            level + 1
+        ));
+    }
+    all.push(
+        show_level("t", [0, 0, 16, 16], 4.0)
+            .replace(r#""min": "NEAREST""#, r#""min": "NEAREST_MIPMAP_NEAREST""#),
+    );
+    let frame = render(&layer_es3(
+        &[("f", FILL_ES3), ("s3", SHOW_ES3)],
+        textures,
+        &ops(&all),
+    ));
+    near(px(&frame, 3, 8), [128, 0, 128, 255], 2);
+    near(px(&frame, 12, 8), [128, 0, 128, 255], 2);
+}
+
+#[test]
+fn texture_base_level_starts_sampling_at_that_level() {
+    // Level 0 red, level 1 green: from a base of 1, level 0 of the sampler (and of NEAREST) is green; a base past
+    // the levels is incomplete, and black.
+    let textures =
+        r#", "textures": {"t": {"target": true, "width": 16, "height": 16, "levels": 5}}"#;
+    let based = |base: u32, viewport: [i32; 4]| {
+        show_level("t", viewport, 0.0).replace(
+            r#""min": "NEAREST""#,
+            &format!(r#""baseLevel": {base}, "min": "NEAREST""#),
+        )
+    };
+    let all = ops(&[
+        draw_in(
+            "f",
+            [0, 0, 16, 16],
+            &format!(r#"{}, "target": "t""#, z_fill(0.0, [1.0, 0.0, 0.0, 1.0])),
+        ),
+        draw_in(
+            "f",
+            [0, 0, 8, 8],
+            &format!(
+                r#"{}, "target": "t", "level": 1"#,
+                z_fill(0.0, [0.0, 1.0, 0.0, 1.0])
+            ),
+        ),
+        based(1, [0, 0, 8, 16]),
+        based(7, [8, 0, 8, 16]),
+    ]);
+    let frame = render(&layer_es3(
+        &[("f", FILL_ES3), ("s3", SHOW_ES3)],
+        textures,
+        &all,
+    ));
+    assert_eq!(px(&frame, 3, 8), [0, 255, 0, 255]);
+    assert_eq!(px(&frame, 12, 8), [0, 0, 0, 255]);
+}
+
+#[test]
 fn a_blit_copies_depth_and_stencil_into_the_drawing_buffer() {
     // A framebuffer's depth-and-stencil buffer gets depth 0.75 and stencil 5 in its left half, and is blitted to
     // the canvas whole. On the canvas a red quad at depth 0.9 is behind the copied depth on the left and in front
-    // of the cleared 1 on the right; a green one at depth 0.5 that tests EQUAL 5 shows only on the left.
-    let textures = r#", "textures": {"c": {"target": true, "width": 16, "height": 16},
-        "ds": {"target": true, "width": 16, "height": 16, "format": "depthStencil"}}"#;
-    let fb = r#""target": "c", "depthStencil": "ds""#;
-    let all = ops(&[
+    // of the cleared 1 on the right; a green one at depth 0.5 that tests EQUAL 5 shows only on the left. The same
+    // from a multisampled framebuffer, whose first sample is copied.
+    for samples in [1, 4] {
+        let textures = format!(
+            r#", "textures": {{"c": {{"target": true, "width": 16, "height": 16, "samples": {samples}}},
+        "ds": {{"target": true, "width": 16, "height": 16, "format": "depthStencil", "samples": {samples}}}}}"#
+        );
+        let fb = r#""target": "c", "depthStencil": "ds""#;
+        let all = ops(&[
         draw_in(
             "f",
             [0, 0, 8, 16],
@@ -1414,13 +1525,43 @@ fn a_blit_copies_depth_and_stencil_into_the_drawing_buffer() {
             ),
         ),
     ]);
+        let frame = render(&layer_es3(
+            &[("f", FILL_ES3)],
+            &format!(r#", "stencil": true{textures}"#),
+            &all,
+        ));
+        assert_eq!(px(&frame, 3, 8), [0, 255, 0, 255]);
+        assert_eq!(px(&frame, 12, 8), [255, 0, 0, 255]);
+    }
+}
+
+#[test]
+fn a_blit_from_a_multisampled_target_resolves_its_samples() {
+    // The quad's first triangle (x + y < 0 in clip space) into a 4-sample target, blitted to the drawing buffer:
+    // a pixel the diagonal halves has two of its four samples covered, and is half red.
+    let textures =
+        r#", "textures": {"ms": {"target": true, "width": 16, "height": 16, "samples": 4}}"#;
+    let triangle = format!(
+        r#"{{"op": "draw", "program": "f", "mode": "triangles", "first": 0, "count": 3,
+            "attributes": {}, "viewport": [0, 0, 16, 16], "target": "ms", {}}}"#,
+        quad_attributes(),
+        z_fill(0.0, [1.0, 0.0, 0.0, 1.0])
+    );
     let frame = render(&layer_es3(
         &[("f", FILL_ES3)],
-        &format!(r#", "stencil": true{textures}"#),
-        &all,
+        textures,
+        &ops(&[
+            triangle,
+            blit_op(Some("ms"), None, [0, 0, 16, 16], [0, 0, 16, 16], false),
+        ]),
     ));
-    assert_eq!(px(&frame, 3, 8), [0, 255, 0, 255]);
-    assert_eq!(px(&frame, 12, 8), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 2, 13), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 13, 2), [0, 0, 0, 255]);
+    let edge = px(&frame, 8, 8);
+    assert!(
+        (64..=192).contains(&edge[0]),
+        "{edge:?} is not partly covered"
+    );
 }
 
 /// A PNG of `w` x `h` pixels of one colour, as a `data:` URL.
@@ -1769,4 +1910,1089 @@ fn a_16_bit_float_texture_filters_and_keeps_values_beyond_one() {
     let texture = float_texture(&[4.0, 0.0, 0.0, 1.0], 1, false);
     let frame = render_floats(&texture, "NEAREST", "texelFetch(u_tex, ivec2(0), 0).r * 0.25");
     assert_eq!(px(&frame, 8, 8), [255, 255, 255, 255]);
+}
+
+// ---- cube maps ----
+
+/// A cube map of six solid 2 x 2 faces, in GL's order: +X red, -X green, +Y blue, -Y yellow, +Z white, -Z
+/// magenta.
+fn solid_cube() -> String {
+    let colors: [[u8; 4]; 6] = [
+        [255, 0, 0, 255],
+        [0, 255, 0, 255],
+        [0, 0, 255, 255],
+        [255, 255, 0, 255],
+        [255, 255, 255, 255],
+        [255, 0, 255, 255],
+    ];
+    cube_of(&colors.map(|c| c.repeat(4)), 2, "")
+}
+
+fn cube_of(faces: &[Vec<u8>; 6], side: u32, extra: &str) -> String {
+    let faces: Vec<String> = faces
+        .iter()
+        .map(|f| format!(r#"{{"pixels": "{}"}}"#, b64(f)))
+        .collect();
+    format!(
+        r#"{{"cube": true, "width": {side}, "height": {side}{extra}, "faces": [{}]}}"#,
+        faces.join(", ")
+    )
+}
+
+const CUBE_FRAGMENT: &str = "precision mediump float; uniform samplerCube u_env; uniform vec3 u_dir; \
+    void main() { gl_FragColor = textureCube(u_env, u_dir); }";
+
+/// The pixel a fragment shader reading `cube` along `dir` draws.
+fn sample_cube(cube: &str, dir: [f64; 3]) -> [u8; 4] {
+    let frame = render(&layer(
+        CUBE_FRAGMENT,
+        &format!(r#", "textures": {{"c": {cube}}}"#),
+        &draw(&format!(
+            r#"{}, "units": {{"0": {{"texture": "c", "min": "NEAREST", "mag": "NEAREST"}}}}"#,
+            uniforms(&[("u_env", "i", &[0.0]), ("u_dir", "f", &dir)])
+        )),
+    ));
+    px(&frame, 8, 8)
+}
+
+#[test]
+fn a_cube_map_is_read_along_each_axis_by_its_face() {
+    let cube = solid_cube();
+    let want = [
+        ([1.0, 0.0, 0.0], [255, 0, 0, 255]),
+        ([-1.0, 0.0, 0.0], [0, 255, 0, 255]),
+        ([0.0, 1.0, 0.0], [0, 0, 255, 255]),
+        ([0.0, -1.0, 0.0], [255, 255, 0, 255]),
+        ([0.0, 0.0, 1.0], [255, 255, 255, 255]),
+        ([0.0, 0.0, -1.0], [255, 0, 255, 255]),
+    ];
+    for (dir, color) in want {
+        // A direction need not be unit length.
+        let got = sample_cube(&cube, dir.map(|c| c * 3.0));
+        near(got, color, 2);
+    }
+}
+
+#[test]
+fn a_cube_face_keeps_the_orientation_gl_gives_it() {
+    // +Z seen from the origin has +x to the right and +y up, its first row at the top: a texel's row 0 is
+    // where y is +1. The other faces are all white so a wrong layer shows.
+    let quarters: Vec<u8> = [
+        [255, 0, 0, 255],
+        [0, 255, 0, 255],
+        [0, 0, 255, 255],
+        [10, 20, 30, 255],
+    ]
+    .concat();
+    let white = [255u8; 16].to_vec();
+    let faces = [
+        white.clone(),
+        white.clone(),
+        white.clone(),
+        white.clone(),
+        quarters,
+        white,
+    ];
+    let cube = cube_of(&faces, 2, "");
+    near(sample_cube(&cube, [-0.5, 0.5, 1.0]), [255, 0, 0, 255], 2);
+    near(sample_cube(&cube, [0.5, 0.5, 1.0]), [0, 255, 0, 255], 2);
+    near(sample_cube(&cube, [-0.5, -0.5, 1.0]), [0, 0, 255, 255], 2);
+    near(sample_cube(&cube, [0.5, -0.5, 1.0]), [10, 20, 30, 255], 2);
+}
+
+#[test]
+fn an_srgb_cube_map_is_read_as_linear() {
+    // 128 encoded is 0.216 linear: 55 on the canvas.
+    let grey = [128, 128, 128, 255].repeat(4);
+    let cube = cube_of(
+        &std::array::from_fn(|_| grey.clone()),
+        2,
+        r#", "srgb": true"#,
+    );
+    near(sample_cube(&cube, [1.0, 0.0, 0.0]), [55, 55, 55, 255], 2);
+}
+
+#[test]
+fn an_incomplete_cube_map_is_opaque_black() {
+    let cube = r#"{"cube": true, "faces": []}"#;
+    assert_eq!(sample_cube(cube, [1.0, 0.0, 0.0]), [0, 0, 0, 255]);
+}
+
+#[test]
+fn a_cube_map_needs_mipmaps_for_a_mipmapped_filter() {
+    let cube = solid_cube();
+    let sample = |cube: &str| {
+        let frame = render(&layer(
+            CUBE_FRAGMENT,
+            &format!(r#", "textures": {{"c": {cube}}}"#),
+            &draw(&format!(
+                r#"{}, "units": {{"0": {{"texture": "c"}}}}"#,
+                uniforms(&[("u_env", "i", &[0.0]), ("u_dir", "f", &[1.0, 0.0, 0.0])])
+            )),
+        ));
+        px(&frame, 8, 8)
+    };
+    // The default minification filter reads mipmaps: without them the cube is incomplete.
+    assert_eq!(sample(&cube), [0, 0, 0, 255]);
+    let mipped = cube.replace(r#""height": 2,"#, r#""height": 2, "mipmaps": true,"#);
+    near(sample(&mipped), [255, 0, 0, 255], 2);
+}
+
+#[test]
+fn a_webgl_two_shader_reads_a_cube_map_with_texture() {
+    let frame = render(&layer_of(
+        &[(
+            "p",
+            "#version 300 es\nprecision highp float; uniform samplerCube u_env; out vec4 o;\n\
+             void main() { o = texture(u_env, vec3(0.0, 1.0, 0.0)); }",
+        )],
+        &format!(r#", "textures": {{"c": {}}}"#, solid_cube()),
+        &draw(&format!(
+            r#"{}, "units": {{"0": {{"texture": "c", "min": "NEAREST", "mag": "NEAREST"}}}}"#,
+            uniforms(&[("u_env", "i", &[0.0])])
+        )),
+    ));
+    near(px(&frame, 8, 8), [0, 0, 255, 255], 2);
+}
+
+#[test]
+fn a_cube_map_in_a_unit_read_as_a_2d_texture_is_an_error() {
+    let layer = layer(
+        "precision mediump float; uniform sampler2D u_tex; void main() { gl_FragColor = texture2D(u_tex, vec2(0.5)); }",
+        &format!(r#", "textures": {{"c": {}}}"#, solid_cube()),
+        &draw(&format!(
+            r#"{}, "units": {{"0": {{"texture": "c"}}}}"#,
+            uniforms(&[("u_tex", "i", &[0.0])])
+        )),
+    );
+    let Err(error) = render_still(scene_of(&layer), 0) else {
+        panic!("the draw should fail");
+    };
+    let error = error.to_string();
+    assert!(error.contains("cube map"), "{error}");
+}
+
+/// A cube map whose six faces are 2 x 2 colour targets `f0` to `f5`, with the ops `ops` that draw in them before
+/// `u_env` reads it along `dir`.
+fn sample_drawn_cube(ops: &[String], dir: [f64; 3]) -> [u8; 4] {
+    let faces: Vec<String> = (0..6)
+        .map(|f| format!(r#""f{f}": {{"target": true, "width": 2, "height": 2}}"#))
+        .collect();
+    let mut all = ops.to_vec();
+    all.push(draw(&format!(
+        r#"{}, "units": {{"0": {{"texture": "c", "min": "NEAREST", "mag": "NEAREST"}}}}"#,
+        uniforms(&[("u_env", "i", &[0.0]), ("u_dir", "f", &dir)])
+    )));
+    let frame = render(&layer_of(
+        &[("p", CUBE_FRAGMENT), ("rows", ROWS_FRAGMENT)],
+        &format!(
+            r#", "textures": {{{}, "c": {{"cube": true, "targets": ["f0", "f1", "f2", "f3", "f4", "f5"]}}}}"#,
+            faces.join(", ")
+        ),
+        &all.join(", "),
+    ));
+    px(&frame, 8, 8)
+}
+
+/// GL's bottom row red, the other blue.
+const ROWS_FRAGMENT: &str = "precision mediump float; void main() { gl_FragColor = gl_FragCoord.y < 1.0 ? vec4(1, 0, 0, 1) : vec4(0, 0, 1, 1); }";
+
+#[test]
+fn a_cube_map_samples_what_framebuffers_drew_in_its_faces() {
+    let colors = [
+        [1, 0, 0, 1],
+        [0, 1, 0, 1],
+        [0, 0, 1, 1],
+        [1, 1, 0, 1],
+        [1, 1, 1, 1],
+        [1, 0, 1, 1],
+    ];
+    let clears: Vec<String> = colors
+        .iter()
+        .enumerate()
+        .map(|(f, c)| format!(r#"{{"op": "clear", "color": {c:?}, "target": "f{f}"}}"#))
+        .collect();
+    let axes = [
+        [1.0, 0.0, 0.0],
+        [-1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, -1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, -1.0],
+    ];
+    for (dir, c) in axes.iter().zip(colors) {
+        near(
+            sample_drawn_cube(&clears, *dir),
+            c.map(|v| v as u8 * 255),
+            2,
+        );
+    }
+    // A drawn face keeps GL's rows, as an uploaded one does: its first row is the bottom one (t = 0), which +Z
+    // shows towards +Y.
+    let rows = vec![draw_with("rows", Some(("f4", 2)), "")];
+    let uploaded = cube_of(
+        &[0, 1, 2, 3, 4, 5].map(|f| {
+            if f == 4 {
+                [
+                    [255, 0, 0, 255],
+                    [255, 0, 0, 255],
+                    [0, 0, 255, 255],
+                    [0, 0, 255, 255],
+                ]
+                .concat()
+            } else {
+                vec![0; 16]
+            }
+        }),
+        2,
+        "",
+    );
+    for dir in [[0.0, 0.5, 1.0], [0.0, -0.5, 1.0]] {
+        near(
+            sample_drawn_cube(&rows, dir),
+            sample_cube(&uploaded, dir),
+            2,
+        );
+    }
+    near(
+        sample_drawn_cube(&rows, [0.0, 0.5, 1.0]),
+        [255, 0, 0, 255],
+        2,
+    );
+}
+
+#[test]
+fn every_level_of_a_drawn_face_reaches_the_cube_map() {
+    let faces: Vec<String> = (0..6)
+        .map(|f| format!(r#""f{f}": {{"target": true, "width": 2, "height": 2, "levels": 2}}"#))
+        .collect();
+    let mut all: Vec<String> = (0..6)
+        .flat_map(|f| {
+            [
+                format!(r#"{{"op": "clear", "color": [1, 0, 0, 1], "target": "f{f}"}}"#),
+                format!(
+                    r#"{{"op": "clear", "color": [0, 1, 0, 1], "target": "f{f}", "level": 1}}"#
+                ),
+            ]
+        })
+        .collect();
+    all.push(draw(&format!(
+        r#"{}, "units": {{"0": {{"texture": "c", "min": "NEAREST_MIPMAP_NEAREST", "mag": "NEAREST"}}}}"#,
+        uniforms(&[("u_env", "i", &[0.0])])
+    )));
+    let frame = render(&layer_of(
+        &[(
+            "p",
+            "#version 300 es\nprecision highp float; uniform samplerCube u_env; out vec4 o;\n\
+             void main() { o = textureLod(u_env, vec3(0.0, 0.0, 1.0), 1.0); }",
+        )],
+        &format!(
+            r#", "textures": {{{}, "c": {{"cube": true, "targets": ["f0", "f1", "f2", "f3", "f4", "f5"]}}}}"#,
+            faces.join(", ")
+        ),
+        &all.join(", "),
+    ));
+    near(px(&frame, 8, 8), [0, 255, 0, 255], 2);
+}
+
+#[test]
+fn a_draw_into_a_face_of_the_cube_map_it_samples_is_an_error() {
+    let faces: Vec<String> = (0..6)
+        .map(|f| format!(r#""f{f}": {{"target": true, "width": 2, "height": 2}}"#))
+        .collect();
+    let layer = layer(
+        CUBE_FRAGMENT,
+        &format!(
+            r#", "textures": {{{}, "c": {{"cube": true, "targets": ["f0", "f1", "f2", "f3", "f4", "f5"]}}}}"#,
+            faces.join(", ")
+        ),
+        &draw_with(
+            "p",
+            Some(("f2", 2)),
+            &format!(
+                r#"{}, "units": {{"0": {{"texture": "c"}}}}"#,
+                uniforms(&[("u_env", "i", &[0.0])])
+            ),
+        ),
+    );
+    let Err(error) = render_still(scene_of(&layer), 0) else {
+        panic!("the draw should fail");
+    };
+    assert!(error.to_string().contains("one of its faces"), "{error}");
+}
+
+// ---- a clear with the scissor test on ----
+
+/// The fragment shader of a scissored clear of the depth or stencil alone: no colour output.
+const NO_OUTPUT_ES3: &str =
+    "#version 300 es\nprecision highp float;\nuniform vec4 u_color;\n\nvoid main() {  }\n";
+
+/// What the recording makes of a clear with the scissor test on: the quad over the box (the viewport), writing the
+/// clear values (the colour, the depth through an ALWAYS test, the stencil by REPLACE).
+fn scissored_clear(extra: &str) -> String {
+    draw_in(
+        "e",
+        [4, 2, 8, 6],
+        &format!(r#""scissor": [4, 2, 8, 6], "colorMask": [false, false, false, false], {extra}"#),
+    )
+}
+
+/// The same with the colour written.
+fn scissored_colour_clear(color: [f64; 4]) -> String {
+    draw_in("f", [4, 2, 8, 6], &format!(r#""scissor": [4, 2, 8, 6], {}"#, z_fill(0.0, color)))
+}
+
+#[test]
+fn a_scissored_clear_changes_the_box_alone() {
+    for antialias in ["", r#", "antialias": true"#] {
+        let all = ops(&[draw_in("f", [0, 0, 16, 16], &z_fill(0.0, RED)), scissored_colour_clear(BLUE)]);
+        let frame = render(&layer_es3(&[("f", FILL_ES3)], antialias, &all));
+        // GL's rows count from the bottom: the box is rows 8 to 13 from the top, columns 4 to 11.
+        assert_eq!(px(&frame, 8, 10), [0, 0, 255, 255], "inside {antialias}");
+        assert_eq!(px(&frame, 4, 8), [0, 0, 255, 255], "corner {antialias}");
+        assert_eq!(px(&frame, 3, 10), [255, 0, 0, 255], "left {antialias}");
+        assert_eq!(px(&frame, 12, 10), [255, 0, 0, 255], "right {antialias}");
+        assert_eq!(px(&frame, 8, 7), [255, 0, 0, 255], "above {antialias}");
+        assert_eq!(px(&frame, 8, 14), [255, 0, 0, 255], "below {antialias}");
+    }
+}
+
+#[test]
+fn a_scissored_depth_clear_changes_the_depth_inside_the_box_alone() {
+    let always = r#""depth": {"func": "ALWAYS", "mask": true, "near": 0, "far": 1}"#;
+    let all = ops(&[
+        r#"{"op": "clear", "color": [0, 0, 0, 1], "depth": 1}"#.to_string(),
+        scissored_clear(&format!("{}, {always}", uniforms(&[("u_z", "f", &[-0.5]), ("u_color", "f", &[0.0; 4])]))),
+        // Red at window depth 0.5, tested LESS: the box now holds 0.25, so it stops there.
+        draw_in("f", [0, 0, 16, 16], &format!("{}, {}", z_fill(0.0, RED), depth("LESS"))),
+    ]);
+    let frame = render(&layer_es3(&[("f", FILL_ES3), ("e", NO_OUTPUT_ES3)], "", &all));
+    assert_eq!(px(&frame, 8, 10), [0, 0, 0, 255]);
+    assert_eq!(px(&frame, 2, 10), [255, 0, 0, 255]);
+}
+
+#[test]
+fn a_scissored_stencil_clear_changes_the_stencil_inside_the_box_alone() {
+    let replace = stencil("ALWAYS", 5, "REPLACE");
+    let all = ops(&[
+        r#"{"op": "clear", "color": [0, 0, 0, 1], "stencil": 0}"#.to_string(),
+        scissored_clear(&format!("{}, {replace}", uniforms(&[("u_z", "f", &[0.0]), ("u_color", "f", &[0.0; 4])]))),
+        draw_in("f", [0, 0, 16, 16], &format!("{}, {}", z_fill(0.0, GREEN), stencil("EQUAL", 5, "KEEP"))),
+    ]);
+    let frame = render(&layer_es3(&[("f", FILL_ES3), ("e", NO_OUTPUT_ES3)], r#", "stencil": true"#, &all));
+    assert_eq!(px(&frame, 8, 10), [0, 255, 0, 255]);
+    assert_eq!(px(&frame, 2, 10), [0, 0, 0, 255]);
+}
+
+// ---- 2D array textures ----
+
+/// A 2 x 2 array of three layers: layer 0 is red, 1 is green, 2 is blue, and the first texel of layer 1 is white.
+fn layers() -> String {
+    let mut texels = Vec::new();
+    for layer in 0..3usize {
+        for texel in 0..4 {
+            let mut c = [0u8, 0, 0, 255];
+            c[layer] = 255;
+            if layer == 1 && texel == 0 {
+                c = [255; 4];
+            }
+            texels.extend(c);
+        }
+    }
+    format!(
+        r#", "textures": {{"a": {{"pixels": "{}", "width": 2, "height": 2, "depth": 3, "array": true}}}}"#,
+        b64(&texels)
+    )
+}
+
+fn layers_unit(filter: &str) -> String {
+    format!(
+        r#""uniforms": {{"u_layers": [{{"kind": "i", "value": [0]}}]}},
+            "units": {{"0": {{"texture": "a", "min": "{filter}", "mag": "{filter}",
+                "wrapS": "CLAMP_TO_EDGE", "wrapT": "CLAMP_TO_EDGE"}}}}"#
+    )
+}
+
+fn layers_fragment(read: &str) -> String {
+    format!(
+        "#version 300 es\nprecision highp float; precision highp sampler2DArray; in vec2 v_uv; \
+         uniform sampler2DArray u_layers; out vec4 o; void main() {{ o = {read}; }}"
+    )
+}
+
+#[test]
+fn a_2d_array_texture_is_fetched_and_sampled_by_layer() {
+    for (read, want) in [
+        ("texelFetch(u_layers, ivec3(0, 0, 0), 0)", [255, 0, 0, 255]),
+        ("texelFetch(u_layers, ivec3(1, 1, 2), 0)", [0, 0, 255, 255]),
+        ("texture(u_layers, vec3(0.25, 0.25, 1.0))", [255, 255, 255, 255]),
+        ("texture(u_layers, vec3(0.75, 0.75, 1.0))", [0, 255, 0, 255]),
+        ("texture(u_layers, vec3(0.75, 0.75, 2.0))", [0, 0, 255, 255]),
+    ] {
+        let fragment = layers_fragment(read);
+        let frame = render(&layer_with_vertex(
+            QUAD_VERTEX_ES1_AS_ES3,
+            &[("p", &fragment)],
+            "",
+            &layers(),
+            &draw(&layers_unit("NEAREST")),
+        ));
+        assert_eq!(px(&frame, 8, 8), want, "{read}");
+    }
+}
+
+#[test]
+fn a_2d_array_layer_index_is_rounded_and_clamped_and_never_blends_layers() {
+    // Layer 1.4 rounds to 1, and 7.0 clamps to the last layer, even with LINEAR filtering.
+    for (read, want) in [
+        ("texture(u_layers, vec3(0.75, 0.75, 1.4))", [0, 255, 0, 255]),
+        ("texture(u_layers, vec3(0.75, 0.75, 7.0))", [0, 0, 255, 255]),
+    ] {
+        let fragment = layers_fragment(read);
+        let frame = render(&layer_with_vertex(
+            QUAD_VERTEX_ES1_AS_ES3,
+            &[("p", &fragment)],
+            "",
+            &layers(),
+            &draw(&layers_unit("LINEAR")),
+        ));
+        assert_eq!(px(&frame, 8, 8), want, "{read}");
+    }
+}
+
+#[test]
+fn a_2d_array_sampler_with_no_texture_reads_black() {
+    let fragment = layers_fragment("texture(u_layers, vec3(0.5, 0.5, 0.0))");
+    let frame = render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", &fragment)],
+        "",
+        "",
+        &draw(r#""uniforms": {"u_layers": [{"kind": "i", "value": [0]}]}"#),
+    ));
+    assert_eq!(px(&frame, 8, 8), [0, 0, 0, 255]);
+}
+
+#[test]
+fn a_2d_array_sampler_on_a_unit_holding_a_3d_texture_is_refused() {
+    let fragment = layers_fragment("texture(u_layers, vec3(0.5))");
+    let e = render_error(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", &fragment)],
+        "",
+        &volume(),
+        &draw(&layers_unit("NEAREST").replace(r#""a""#, r#""v""#)),
+    ));
+    assert!(e.contains("2D array") && e.contains("3D"), "{e}");
+}
+
+#[test]
+fn a_vertex_shader_fetches_from_a_2d_array_texture() {
+    // The vertex shader reads the first texel of layer 1 and hands it to the fragment shader.
+    let vertex = "#version 300 es\nin vec2 a_pos; uniform highp sampler2DArray u_layers; out vec4 v_c; \
+        void main() { v_c = texelFetch(u_layers, ivec3(0, 0, 1), 0); gl_Position = vec4(a_pos, 0.0, 1.0); }";
+    let fragment = "#version 300 es\nprecision highp float; in vec4 v_c; out vec4 o; void main() { o = v_c; }";
+    let frame = render(&layer_with_vertex(
+        vertex,
+        &[("p", fragment)],
+        "",
+        &layers(),
+        &draw(&layers_unit("NEAREST")),
+    ));
+    assert_eq!(px(&frame, 8, 8), [255, 255, 255, 255]);
+}
+
+// ---- array uniforms whose length is a macro ----
+
+#[test]
+fn an_array_uniform_sized_by_a_macro_takes_its_values() {
+    let vertex = "#version 300 es\nin vec2 a_pos; out vec4 v_c;\n#define MORPHTARGETS_COUNT 3\n\
+        uniform float morphTargetInfluences[ MORPHTARGETS_COUNT ];\n\
+        void main() { v_c = vec4(morphTargetInfluences[0], morphTargetInfluences[1], morphTargetInfluences[2], 1.0); \
+        gl_Position = vec4(a_pos, 0.0, 1.0); }";
+    let fragment = "#version 300 es\nprecision highp float; in vec4 v_c; out vec4 o; void main() { o = v_c; }";
+    let frame = render(&layer_with_vertex(
+        vertex,
+        &[("p", fragment)],
+        "",
+        "",
+        &draw(&uniforms(&[("morphTargetInfluences", "f", &[1.0, 0.5, 0.0])])),
+    ));
+    near(px(&frame, 8, 8), [255, 128, 0, 255], 2);
+}
+
+#[test]
+fn an_array_uniform_sized_by_a_macro_that_depends_on_a_condition_fails_when_the_scene_loads() {
+    let vertex = "#version 300 es\nin vec2 a_pos;\n#ifdef FAST\n#define N 3\n#endif\n\
+        uniform float w[N]; void main() { gl_Position = vec4(a_pos, w[0], 1.0); }";
+    let fragment = "#version 300 es\nprecision highp float; out vec4 o; void main() { o = vec4(1.0); }";
+    let json = format!(
+        r##"{{"width": 16, "height": 16, "fps": 30, "durationInFrames": 1, "layers": [{}]}}"##,
+        layer_with_vertex(vertex, &[("p", fragment)], "", "", &draw(""))
+    );
+    let Error::Scene(message) = Scene::from_json(&json, Default::default()).unwrap_err() else {
+        panic!("not a scene error")
+    };
+    assert!(message.contains("macro defined as one"), "{message}");
+}
+
+// ---- constant attributes (vertexAttrib*) ----
+
+/// A draw of the quad whose vertex shader reads a second attribute, `a_color`, given as `extra` in the attributes.
+fn draw_with_color(extra: &str, first_and_count: (u32, u32)) -> String {
+    format!(
+        r#"{{"op": "draw", "program": "p", "mode": "triangles", "first": {}, "count": {},
+            "attributes": {{"a_pos": {{"buffer": "quad", "size": 2, "type": "f32"}}, "a_color": {extra}}},
+            "viewport": [0, 0, 16, 16]}}"#,
+        first_and_count.0, first_and_count.1
+    )
+}
+
+const COLOR_VERTEX: &str = "#version 300 es\nin vec2 a_pos; in vec3 a_color; out vec3 v_c; \
+    void main() { v_c = a_color; gl_Position = vec4(a_pos, 0.0, 1.0); }";
+const COLOR_FRAGMENT: &str =
+    "#version 300 es\nprecision highp float; in vec3 v_c; out vec4 o; void main() { o = vec4(v_c, 1.0); }";
+
+#[test]
+fn a_disabled_attribute_reads_its_current_value_for_every_vertex() {
+    let constant = r#"{"buffer": "constant:1,0.5,0,1", "size": 4, "type": "f32", "constant": [1, 0.5, 0, 1]}"#;
+    let frame = render(&layer_with_vertex(
+        COLOR_VERTEX,
+        &[("p", COLOR_FRAGMENT)],
+        "",
+        "",
+        &draw_with_color(constant, (0, 6)),
+    ));
+    near(px(&frame, 3, 3), [255, 128, 0, 255], 2);
+    near(px(&frame, 12, 12), [255, 128, 0, 255], 2);
+}
+
+#[test]
+fn a_constant_attribute_follows_the_draws_first_vertex_and_the_default_is_0_0_0_1() {
+    // Only vertices 3 to 5 are drawn (the second triangle): a constant has as many copies as the draw reaches.
+    let constant = r#"{"buffer": "constant:0,0,0,1", "size": 4, "type": "f32", "constant": [0, 0, 0, 1]}"#;
+    let frame = render(&layer_with_vertex(
+        COLOR_VERTEX,
+        &[("p", COLOR_FRAGMENT)],
+        "",
+        "",
+        &draw_with_color(constant, (3, 3)),
+    ));
+    assert_eq!(px(&frame, 12, 12), [0, 0, 0, 255]);
+}
+
+#[test]
+fn two_draws_with_one_constant_and_different_lengths_both_draw() {
+    let constant = r#"{"buffer": "constant:0,1,0,1", "size": 4, "type": "f32", "constant": [0, 1, 0, 1]}"#;
+    let all = ops(&[draw_with_color(constant, (0, 3)), draw_with_color(constant, (0, 6))]);
+    let frame = render(&layer_with_vertex(COLOR_VERTEX, &[("p", COLOR_FRAGMENT)], "", "", &all));
+    assert_eq!(px(&frame, 12, 12), [0, 255, 0, 255]);
+    assert_eq!(px(&frame, 3, 3), [0, 255, 0, 255]);
+}
+
+#[test]
+fn a_constant_attribute_that_is_not_four_floats_is_refused() {
+    let constant = r#"{"buffer": "constant:1,1,1,1", "size": 3, "type": "f32", "constant": [1, 1, 1, 1]}"#;
+    let e = render_error(&layer_with_vertex(
+        COLOR_VERTEX,
+        &[("p", COLOR_FRAGMENT)],
+        "",
+        "",
+        &draw_with_color(constant, (0, 6)),
+    ));
+    assert!(e.contains("constant attribute"), "{e}");
+}
+
+#[test]
+fn an_attribute_with_nothing_given_says_so() {
+    let e = render_error(&layer_with_vertex(
+        COLOR_VERTEX,
+        &[("p", COLOR_FRAGMENT)],
+        "",
+        "",
+        &draw("").replace(r#""attributes": {"a_pos""#, r#""attributes": {"unused""#),
+    ));
+    assert!(e.contains("no data"), "{e}");
+}
+
+#[test]
+fn a_constant_attribute_read_for_a_huge_vertex_count_is_refused_not_allocated() {
+    let constant = r#"{"buffer": "constant:0,1,0,1", "size": 4, "type": "f32", "constant": [0, 1, 0, 1]}"#;
+    // A far first vertex: first + count reaches 4 billion, which would be 64 GB of copies.
+    let e = render_error(&layer_with_vertex(
+        "#version 300 es\nin vec3 a_color; in vec2 a_pos; out vec3 v_c; \
+            void main() { v_c = a_color; gl_Position = vec4(a_pos, 0.0, 1.0); }",
+        &[("p", COLOR_FRAGMENT)],
+        "",
+        "",
+        &draw_with_color(constant, (4_000_000_000, 6)),
+    ));
+    assert!(e.contains("constant attribute") && e.contains("at most"), "{e}");
+}
+
+// ---- matrix attributes (instanceMatrix) ----
+
+/// An instanced `mat4` attribute `inst`: its four columns are read at `columns` (the first column's location 1), from
+/// a buffer of 64-byte matrices, the first scaling by 0.5 and the second moving the quad right by 0.5.
+fn instanced_matrix_draw(instances: u32) -> (String, String) {
+    let matrices: [[f32; 16]; 2] = [
+        [0.5, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+        [0.25, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.5, 0.5, 0.0, 1.0],
+    ];
+    let bytes: Vec<u8> = matrices.iter().flatten().flat_map(|f| f.to_le_bytes()).collect();
+    let columns: Vec<String> = (0..4)
+        .map(|c| {
+            format!(
+                r#""inst[{c}]": {{"buffer": "m", "size": 4, "type": "f32", "stride": 64, "offset": {}, "divisor": 1}}"#,
+                c * 16
+            )
+        })
+        .collect();
+    let draw = format!(
+        r#"{{"op": "draw", "program": "p", "mode": "triangles", "first": 0, "count": 6, "instances": {instances},
+            "attributes": {{"a_pos": {{"buffer": "quad", "size": 2, "type": "f32"}}, {}}},
+            "viewport": [0, 0, 16, 16]}}"#,
+        columns.join(", ")
+    );
+    (draw, format!(r#", "m": "{}""#, b64(&bytes)))
+}
+
+const MATRIX_VERTEX: &str = "#version 300 es\nin vec2 a_pos; in mat4 inst;\n\
+    void main() { gl_Position = inst * vec4(a_pos, 0.0, 1.0); }";
+const RED_FRAGMENT: &str = "#version 300 es\nprecision highp float; out vec4 o; void main() { o = vec4(1.0, 0.0, 0.0, 1.0); }";
+
+#[test]
+fn an_instanced_mat4_attribute_is_read_a_column_at_a_time() {
+    let (draw, buffer) = instanced_matrix_draw(2);
+    let frame = render(&layer_with_vertex(
+        MATRIX_VERTEX,
+        &[("p", RED_FRAGMENT)],
+        &buffer,
+        "",
+        &draw,
+    ));
+    // The first instance is the middle half of the picture; the second a quarter-size quad over the upper right
+    // (GL's y counts up, so the picture's upper right is y > 0).
+    assert_eq!(px(&frame, 8, 8), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 2, 2), [0, 0, 0, 255]);
+    assert_eq!(px(&frame, 12, 3), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 14, 14), [0, 0, 0, 255]);
+}
+
+// ---- float render targets ----
+
+/// A square colour target `rt` of `side` and the float format `format`.
+fn float_target(format: &str, side: u32) -> String {
+    format!(
+        r#", "textures": {{"rt": {{"target": true, "width": {side}, "height": {side}, "colorFormat": "{format}"}}}}"#
+    )
+}
+
+/// `u_tex * 0.25` of the drawing buffer's picture, so a target holding 2.0 reads as 0.5.
+const QUARTER: &str = "precision highp float; varying vec2 v_uv; uniform sampler2D u_tex; \
+    void main() { gl_FragColor = vec4(texture2D(u_tex, v_uv).rgb * 0.25, 1.0); }";
+
+fn through_a_float_target(format: &str, filter: &str) -> Frame {
+    let sampling = format!(
+        r#"{}, "units": {{"0": {{"texture": "rt", "min": "{filter}", "mag": "{filter}",
+            "wrapS": "CLAMP_TO_EDGE", "wrapT": "CLAMP_TO_EDGE"}}}}"#,
+        uniforms(&[("u_tex", "i", &[0.0])])
+    );
+    render(&layer_of(
+        &[("f", FILL), ("q", QUARTER)],
+        &float_target(format, 8),
+        &ops(&[
+            // Red of 2.0 (beyond what 8 bits hold) in the lower half of the target, 4.0 green over the rest.
+            draw_with("f", Some(("rt", 8)), &fill([2.0, 4.0, 0.0, 1.0])),
+            draw_with("q", None, &sampling),
+        ]),
+    ))
+}
+
+#[test]
+fn a_half_float_target_keeps_values_beyond_one() {
+    let frame = through_a_float_target("RGBA16F", "LINEAR");
+    // 2.0 and 4.0 times a quarter: 0.5 and 1.0.
+    near(px(&frame, 8, 8), [128, 255, 0, 255], 3);
+}
+
+#[test]
+fn a_single_channel_and_a_two_channel_float_target_are_drawn_into() {
+    for format in ["R16F", "RG16F", "R32F", "RG32F"] {
+        let frame = through_a_float_target(format, "NEAREST");
+        // A single channel reads (r, 0, 0, 1); two read (r, g, 0, 1).
+        let green = if format.starts_with("RG") { 255 } else { 0 };
+        near(px(&frame, 8, 8), [128, green, 0, 255], 3);
+    }
+}
+
+#[test]
+fn an_r8_and_an_rg8_target_hold_their_channels_clamped() {
+    // 2.0 and 4.0 are kept as 1.0; a quarter of that is 64. R8 reads (r, 0, 0, 1), RG8 (r, g, 0, 1).
+    near(
+        px(&through_a_float_target("R8", "LINEAR"), 8, 8),
+        [64, 0, 0, 255],
+        2,
+    );
+    near(
+        px(&through_a_float_target("RG8", "LINEAR"), 8, 8),
+        [64, 64, 0, 255],
+        2,
+    );
+}
+
+#[test]
+fn a_32_bit_float_target_reads_nearest_and_is_black_otherwise() {
+    near(px(&through_a_float_target("RGBA32F", "NEAREST"), 8, 8), [128, 255, 0, 255], 3);
+    // As in a browser without OES_texture_float_linear.
+    assert_eq!(px(&through_a_float_target("RGBA32F", "LINEAR"), 8, 8), [0, 0, 0, 255]);
+}
+
+#[test]
+fn a_32_bit_float_target_is_blended_into_beyond_one() {
+    // `EXT_float_blend`: 2.0 red added over 1.0 is 3.0, which a quarter reads as 0.75.
+    let add = r#""blend": {"srcRgb": "ONE", "dstRgb": "ONE", "srcAlpha": "ONE", "dstAlpha": "ZERO",
+        "eqRgb": "FUNC_ADD", "eqAlpha": "FUNC_ADD"}"#;
+    let sampling = format!(
+        r#"{}, "units": {{"0": {{"texture": "rt", "min": "NEAREST", "mag": "NEAREST"}}}}"#,
+        uniforms(&[("u_tex", "i", &[0.0])])
+    );
+    let frame = render(&layer_of(
+        &[("f", FILL), ("q", QUARTER)],
+        &float_target("RGBA32F", 8),
+        &ops(&[
+            r#"{"op": "clear", "target": "rt", "color": [1, 0, 0, 1]}"#.to_string(),
+            draw_with(
+                "f",
+                Some(("rt", 8)),
+                &format!("{}, {add}", fill([2.0, 0.0, 0.0, 1.0])),
+            ),
+            draw_with("q", None, &sampling),
+        ]),
+    ));
+    near(px(&frame, 8, 8), [191, 0, 0, 255], 3);
+}
+
+#[test]
+fn an_srgb_target_keeps_what_is_drawn_encoded_and_reads_it_as_linear() {
+    // 0.01 is 3 of 255 as linear bytes (0.0118), and 25 of 255 encoded, which reads back as 0.0100: times 25,
+    // 0.25 (64) and not 0.29 (75).
+    let times_25 = "precision highp float; varying vec2 v_uv; uniform sampler2D u_tex; \
+        void main() { gl_FragColor = vec4(texture2D(u_tex, v_uv).rgb * 25.0, 1.0); }";
+    let sampling = format!(
+        r#"{}, "units": {{"0": {{"texture": "rt", "min": "NEAREST", "mag": "NEAREST"}}}}"#,
+        uniforms(&[("u_tex", "i", &[0.0])])
+    );
+    let frame = render(&layer_of(
+        &[("f", FILL), ("q", times_25)],
+        &float_target("SRGB8_ALPHA8", 8),
+        &ops(&[
+            draw_with("f", Some(("rt", 8)), &fill([0.01, 0.0, 0.0, 1.0])),
+            draw_with("q", None, &sampling),
+        ]),
+    ));
+    near(px(&frame, 8, 8), [64, 0, 0, 255], 3);
+}
+
+#[test]
+fn a_clear_of_a_float_target_keeps_values_beyond_one() {
+    let sampling = format!(
+        r#"{}, "units": {{"0": {{"texture": "rt", "min": "NEAREST", "mag": "NEAREST"}}}}"#,
+        uniforms(&[("u_tex", "i", &[0.0])])
+    );
+    let frame = render(&layer_of(
+        &[("q", QUARTER)],
+        &float_target("RGBA16F", 8),
+        &ops(&[
+            r#"{"op": "clear", "target": "rt", "color": [0.5, 0.25, 0, 1]}"#.to_string(),
+            draw_with("q", None, &sampling),
+        ]),
+    ));
+    near(px(&frame, 8, 8), [32, 16, 0, 255], 3);
+}
+
+#[test]
+fn a_blit_copies_between_float_targets_and_the_drawing_buffer() {
+    // The drawing buffer into a half float target, that into a 32-bit one, and it stretched back over the buffer.
+    let textures = r#", "textures": {
+        "rt": {"target": true, "width": 8, "height": 8, "colorFormat": "RGBA16F"},
+        "rt32": {"target": true, "width": 8, "height": 8, "colorFormat": "RGBA32F"}}"#;
+    let frame = render(&layer_of(
+        &[("f", FILL)],
+        textures,
+        &ops(&[
+            draw_in("f", [0, 0, 16, 16], &fill([0.5, 0.25, 0.0, 1.0])),
+            blit_op(None, Some("rt"), [0, 0, 16, 16], [0, 0, 8, 8], true),
+            r#"{"op": "clear", "color": [0, 0, 0, 1]}"#.to_string(),
+            blit_op(Some("rt"), Some("rt32"), [0, 0, 8, 8], [0, 0, 8, 8], false),
+            // LINEAR from a 32-bit float target reads texel for texel.
+            blit_op(Some("rt32"), None, [0, 0, 8, 4], [0, 0, 16, 8], true),
+        ]),
+    ));
+    near(px(&frame, 8, 12), [128, 64, 0, 255], 2);
+    assert_eq!(px(&frame, 8, 3), [0, 0, 0, 255]);
+}
+
+// ---- struct uniforms ----
+
+const LIGHT_FRAGMENT: &str = "#version 300 es\nprecision highp float;\n\
+    struct DirectionalLight {\n  vec3 direction;\n  vec3 color;\n};\n\
+    uniform DirectionalLight directionalLights[ 2 ];\nuniform float opacity;\nout vec4 o;\n\
+    void main() { o = vec4(directionalLights[0].color + directionalLights[1].direction, opacity); }";
+
+#[test]
+fn the_fields_of_a_struct_uniform_array_are_set_one_by_one() {
+    let calls = r#""uniforms": {
+        "directionalLights[0].color": [{"kind": "f", "value": [0.5, 0, 0]}],
+        "directionalLights[1].direction": [{"kind": "f", "value": [0, 0.25, 1]}],
+        "directionalLights[1].color": [{"kind": "f", "value": [1, 1, 1]}],
+        "opacity": [{"kind": "f", "value": [1]}]}"#;
+    let frame = render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", LIGHT_FRAGMENT)],
+        "",
+        "",
+        &draw(calls),
+    ));
+    // Element 0's colour and element 1's direction: (0.5, 0.25, 1).
+    near(px(&frame, 8, 8), [128, 64, 255, 255], 2);
+}
+
+#[test]
+fn half_floats_pack_and_unpack() {
+    let frag = "#version 300 es\nprecision highp float; in vec2 v_uv; out vec4 o; void main() { \
+        uint p = packHalf2x16(vec2(0.5, 0.25)); vec2 back = unpackHalf2x16(p); o = vec4(back, float(p & 0xffffu) / 15360.0, 1.0); }";
+    let frame = render(&layer_with_vertex(QUAD_VERTEX_ES1_AS_ES3, &[("p", frag)], "", "", &draw("")));
+    // 0.5 and 0.25 survive, and 0.5 is 0x3800 in the low half: 14336 / 15360.
+    near(px(&frame, 8, 8), [128, 64, 238, 255], 3);
+}
+
+// ---- sampler parameters, precision qualifiers, modf ----
+
+#[test]
+fn a_sampler_passed_to_a_function_is_sampled() {
+    // The same 2 x 1 texture through one function that takes it, and one that passes it on; the unit is 3.
+    let frag = "#version 300 es\nprecision highp float; in vec2 v_uv; uniform highp sampler2D u_tex; out vec4 o;\n\
+        vec4 pick(in highp sampler2D s, vec2 uv) { return texture(s, vec2(uv.x, 0.5)); }\n\
+        vec4 twice(sampler2D s, vec2 uv) { return pick(s, uv); }\n\
+        void main() { o = twice(u_tex, v_uv); }";
+    let frame = render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", frag)],
+        "",
+        &red_green(),
+        &draw(
+            r#""uniforms": {"u_tex": [{"kind": "i", "value": [3]}]},
+               "units": {"3": {"texture": "t", "min": "NEAREST", "mag": "NEAREST",
+                               "wrapS": "CLAMP_TO_EDGE", "wrapT": "CLAMP_TO_EDGE"}}"#,
+        ),
+    ));
+    assert_eq!(px(&frame, 3, 8), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 12, 8), [0, 255, 0, 255]);
+}
+
+#[test]
+fn modf_and_matrix_comp_mult_compute_what_glsl_says() {
+    let frag = "#version 300 es\nprecision highp float; in vec2 v_uv; out vec4 o; void main() {\n\
+        float whole; float part = modf(2.25, whole); vec2 w2; vec2 p2 = modf(vec2(-1.5, 3.75), w2);\n\
+        mat2 m = matrixCompMult(mat2(2.0, 1.0, 1.0, 2.0), mat2(0.25, 3.0, 5.0, 0.125));\n\
+        o = vec4(part + p2.y, whole / 4.0 + w2.x * -0.25, m[0][0] + m[1][1], m[0][1] + m[1][0]); }";
+    let frame = render(&layer_with_vertex(QUAD_VERTEX_ES1_AS_ES3, &[("p", frag)], "", "", &draw("")));
+    // part 0.25 + 0.75 = 1.0; 2 / 4 + (-1 * -0.25) = 0.75; 0.5 + 0.25 = 0.75; 3 + 5 = 8 (clamped to 1).
+    near(px(&frame, 8, 8), [255, 191, 191, 255], 3);
+}
+
+// ---- lines ----
+
+/// A draw of `mode` over the vertices `points` (clip space, in the buffer "v"), red.
+fn line_draw(mode: &str, count: usize, extra: &str) -> String {
+    format!(
+        r#"{{"op": "draw", "program": "p", "mode": "{mode}", "first": 0, "count": {count},
+            "attributes": {{"a_pos": {{"buffer": "v", "size": 2, "type": "f32"}}}},
+            "viewport": [0, 0, 16, 16] {extra}}}"#
+    )
+}
+
+fn line_layer(points: &[[f32; 2]], draw: &str) -> Frame {
+    let bytes: Vec<u8> = points.iter().flatten().flat_map(|f| f.to_le_bytes()).collect();
+    let frag = "#version 300 es\nprecision highp float; out vec4 o; void main() { o = vec4(1.0, 0.0, 0.0, 1.0); }";
+    render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", frag)],
+        &format!(r#", "v": "{}""#, b64(&bytes)),
+        "",
+        draw,
+    ))
+}
+
+fn red_pixels(frame: &Frame) -> usize {
+    (0..16)
+        .flat_map(|y| (0..16).map(move |x| (x, y)))
+        .filter(|&(x, y)| px(frame, x, y)[0] > 128)
+        .count()
+}
+
+#[test]
+fn lines_are_one_pixel_wide() {
+    // Across the picture a little above its middle: one row of red, 16 pixels, whatever the rows around.
+    let frame = line_layer(&[[-1.0, 0.03], [1.0, 0.03]], &line_draw("lines", 2, ""));
+    assert_eq!(red_pixels(&frame), 16);
+    assert_eq!(px(&frame, 8, 7), [255, 0, 0, 255]);
+    assert_eq!(px(&frame, 8, 6), [0, 0, 0, 255]);
+    assert_eq!(px(&frame, 8, 8), [0, 0, 0, 255]);
+}
+
+#[test]
+fn a_line_list_takes_pairs_and_a_strip_joins_them() {
+    let corners: [[f32; 2]; 4] = [[-0.9, -0.9], [0.9, -0.9], [0.9, 0.9], [-0.9, 0.9]];
+    let list = red_pixels(&line_layer(&corners, &line_draw("lines", 4, "")));
+    let strip = red_pixels(&line_layer(&corners, &line_draw("lineStrip", 4, "")));
+    let looped = red_pixels(&line_layer(&corners, &line_draw("lineLoop", 4, "")));
+    // Two sides; three sides; four.
+    assert!(list > 20 && list < strip, "{list} {strip}");
+    assert!(strip < looped, "{strip} {looped}");
+    // The loop is a closed square: its middle is empty.
+    assert_eq!(px(&line_layer(&corners, &line_draw("lineLoop", 4, "")), 8, 8), [0, 0, 0, 255]);
+}
+
+#[test]
+fn a_line_loop_of_indices_closes_on_its_first_index() {
+    let corners: [[f32; 2]; 4] = [[-0.9, -0.9], [0.9, -0.9], [0.9, 0.9], [-0.9, 0.9]];
+    let indices: Vec<u8> = [0u16, 1, 2, 3].iter().flat_map(|i| i.to_le_bytes()).collect();
+    let extra = r#", "indices": {"buffer": "i", "type": "u16", "offset": 0}"#;
+    let bytes: Vec<u8> = corners.iter().flatten().flat_map(|f| f.to_le_bytes()).collect();
+    let frag = "#version 300 es\nprecision highp float; out vec4 o; void main() { o = vec4(1.0, 0.0, 0.0, 1.0); }";
+    let frame = render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", frag)],
+        &format!(r#", "v": "{}", "i": "{}""#, b64(&bytes), b64(&indices)),
+        "",
+        &line_draw("lineLoop", 4, extra),
+    ));
+    let strip = red_pixels(&line_layer(&corners, &line_draw("lineStrip", 4, "")));
+    assert!(red_pixels(&frame) > strip);
+}
+
+#[test]
+fn lines_are_not_culled_or_offset() {
+    let cull = r#", "cull": {"face": "BACK", "front": "CCW"}"#;
+    let frame = line_layer(&[[-1.0, 0.03], [1.0, 0.03]], &line_draw("lines", 2, cull));
+    assert_eq!(red_pixels(&frame), 16);
+}
+
+// ---- sRGB textures ----
+
+fn grey_texture(srgb: bool) -> String {
+    format!(
+        r#", "textures": {{"t": {{"pixels": "{}", "width": 1, "height": 1{}}}}}"#,
+        b64(&[188, 188, 188, 255]),
+        if srgb { r#", "srgb": true"# } else { "" }
+    )
+}
+
+fn sampled_grey(srgb: bool, mipmaps: bool) -> Frame {
+    let content = grey_texture(srgb).replace(
+        r#""height": 1"#,
+        &format!(r#""height": 1{}"#, if mipmaps { r#", "mipmaps": true"# } else { "" }),
+    );
+    render(&layer(
+        "precision mediump float; varying vec2 v_uv; uniform sampler2D u_tex; \
+         void main() { gl_FragColor = texture2D(u_tex, v_uv); }",
+        &content,
+        &draw(
+            r#""uniforms": {"u_tex": [{"kind": "i", "value": [0]}]},
+               "units": {"0": {"texture": "t", "min": "LINEAR", "mag": "LINEAR",
+                               "wrapS": "CLAMP_TO_EDGE", "wrapT": "CLAMP_TO_EDGE"}}"#,
+        ),
+    ))
+}
+
+#[test]
+fn an_srgb_texture_is_read_as_linear() {
+    // The byte 188 is 0.737 in sRGB, which is 0.5 in linear light.
+    near(px(&sampled_grey(true, false), 8, 8), [128, 128, 128, 255], 3);
+    // The same bytes, not sRGB, are read as they are.
+    near(px(&sampled_grey(false, false), 8, 8), [188, 188, 188, 255], 1);
+    // Mip levels of an sRGB texture are made too.
+    near(px(&sampled_grey(true, true), 8, 8), [128, 128, 128, 255], 3);
+}
+
+// ---- shadow samplers ----
+
+const SHADOW_FRAGMENT: &str = "#version 300 es\nprecision highp float; precision highp sampler2DShadow; in vec2 v_uv; \
+    uniform sampler2DShadow maps[2]; out vec4 o; \
+    void main() { o = vec4(texture(maps[1], vec3(v_uv, 0.5)), texture(maps[0], vec3(v_uv, 0.5)), 0.0, 1.0); }";
+
+fn depth_target() -> &'static str {
+    r#", "textures": {"d": {"target": true, "width": 8, "height": 8, "format": "depth"},
+                    "e": {"target": true, "width": 8, "height": 8, "format": "depth"}}"#
+}
+
+fn shadow_unit(texture: &str, compare: &str) -> String {
+    format!(
+        r#"{{"texture": "{texture}", "min": "NEAREST", "mag": "NEAREST", "wrapS": "CLAMP_TO_EDGE", "wrapT": "CLAMP_TO_EDGE"{compare}}}"#
+    )
+}
+
+#[test]
+fn an_array_of_shadow_samplers_compares_each_map_with_the_reference() {
+    // Map "d" holds depth 0.25 (the unit of element 1), map "e" 0.75 (element 0). A reference of 0.5 passes LEQUAL
+    // against 0.75 and fails against 0.25.
+    let frame = render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", SHADOW_FRAGMENT)],
+        "",
+        depth_target(),
+        &ops(&[
+            r#"{"op": "clear", "depthStencil": "d", "depth": 0.25}"#.to_string(),
+            r#"{"op": "clear", "depthStencil": "e", "depth": 0.75}"#.to_string(),
+            draw(&format!(
+                r#""uniforms": {{"maps": [{{"kind": "i", "value": [4, 3]}}]}}, "units": {{"3": {}, "4": {}}}"#,
+                shadow_unit("d", r#", "compare": "LEQUAL""#),
+                shadow_unit("e", r#", "compare": "LEQUAL""#)
+            )),
+        ]),
+    ));
+    // maps[1] is unit 3 (depth 0.25): shadowed, 0; maps[0] is unit 4 (depth 0.75): lit, 1.
+    assert_eq!(px(&frame, 8, 8), [0, 255, 0, 255]);
+    // GREATER turns it round.
+    let frame = render(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", SHADOW_FRAGMENT)],
+        "",
+        depth_target(),
+        &ops(&[
+            r#"{"op": "clear", "depthStencil": "d", "depth": 0.25}"#.to_string(),
+            r#"{"op": "clear", "depthStencil": "e", "depth": 0.75}"#.to_string(),
+            draw(&format!(
+                r#""uniforms": {{"maps": [{{"kind": "i", "value": [4, 3]}}]}}, "units": {{"3": {}, "4": {}}}"#,
+                shadow_unit("d", r#", "compare": "GREATER""#),
+                shadow_unit("e", r#", "compare": "GREATER""#)
+            )),
+        ]),
+    ));
+    assert_eq!(px(&frame, 8, 8), [255, 0, 0, 255]);
+}
+
+#[test]
+fn a_shadow_sampler_needs_a_depth_texture() {
+    let e = render_error(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", SHADOW_FRAGMENT)],
+        "",
+        &red_green(),
+        &draw(&format!(
+            r#""uniforms": {{"maps": [{{"kind": "i", "value": [3, 3]}}]}}, "units": {{"3": {}}}"#,
+            shadow_unit("t", r#", "compare": "LEQUAL""#)
+        )),
+    ));
+    assert!(e.contains("not a depth texture"), "{e}");
+    let e = render_error(&layer_with_vertex(
+        QUAD_VERTEX_ES1_AS_ES3,
+        &[("p", SHADOW_FRAGMENT)],
+        "",
+        "",
+        &draw(""),
+    ));
+    assert!(e.contains("holds no depth texture"), "{e}");
 }

@@ -33,11 +33,20 @@ beforeAll(() => {
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-const run = (args: string[]) => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8' });
+const run = (args: string[], env: Record<string, string> = {}) => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env: { ...process.env, ...env } });
 
 function framemd5(file: string): string[] {
   const out = spawnSync('ffmpeg', ['-v', 'error', '-i', join(dir, file), '-map', '0:v', '-f', 'framemd5', '-'], { encoding: 'utf8' }).stdout;
   return out.split('\n').filter((l) => l !== '' && !l.startsWith('#')).map((l) => l.split(',').pop()!.trim());
+}
+
+/** The RGB of pixel (`x`, `y`) of each frame of a video `width` wide. */
+function pixels(file: string, width: number, height: number, x: number, y: number): number[][] {
+  const raw = spawnSync('ffmpeg', ['-v', 'error', '-i', join(dir, file), '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { maxBuffer: 1 << 26 }).stdout as Buffer;
+  const frame = width * height * 3;
+  const out: number[][] = [];
+  for (let at = 0; at + frame <= raw.length; at += frame) out.push([...raw.subarray(at + (y * width + x) * 3, at + (y * width + x) * 3 + 3)]);
+  return out;
 }
 
 describe.skipIf(!ready)('rendering a HyperFrames project', () => {
@@ -61,6 +70,30 @@ describe.skipIf(!ready)('rendering a HyperFrames project', () => {
     expect(run(['render', project, '-o', join(dir, 'start.mp4'), '--concurrency', '1', ...flags.map((f) => (f === '148..=151' ? '0..=0' : f))]).status).toBe(0);
     expect(framemd5('start.mp4')[0]).not.toBe(one[2]);
   });
+  it('draws GSAP callbacks (onUpdate, stagger, nested timelines, call()) the same frame by frame and across workers that jump between chunks', () => {
+    const callbacks = join(here, 'fixtures', 'hf-callbacks');
+    const flags = ['--encoder', 'libx264', '--crf', '0', '--pixel-format', 'yuv444p', '--strict'];
+    expect(run(['render', callbacks, '-o', join(dir, 'cb-seq.mp4'), '--concurrency', '1', ...flags]).status).toBe(0);
+    // Chunks of 5 frames over 3 workers: each worker jumps over the frames the others drew.
+    expect(run(['render', callbacks, '-o', join(dir, 'cb-three.mp4'), '--concurrency', '3', ...flags], { KINETOGRAPH_CHUNK: '5' }).status).toBe(0);
+    expect(run(['render', callbacks, '-o', join(dir, 'cb-alone.mp4'), '--concurrency', '1', '--range', '50..=50', ...flags]).status).toBe(0);
+    const seq = framemd5('cb-seq.mp4');
+    expect(seq).toHaveLength(60);
+    expect(framemd5('cb-three.mp4')).toEqual(seq);
+    expect(framemd5('cb-alone.mp4')[0]).toBe(seq[50]);
+    expect(new Set(seq).size).toBeGreaterThan(30);
+  });
+
+  it('draws each of several sub-compositions mounted without a position, as HyperFrames does', () => {
+    const subs = join(here, 'fixtures', 'hf-two-subs');
+    expect(run(['render', subs, '-o', join(dir, 'subs.mp4'), '--concurrency', '1', '--encoder', 'libx264', '--crf', '0', '--pixel-format', 'yuv444p']).status).toBe(0);
+    const seen = pixels('subs.mp4', 64, 36, 32, 18);
+    const near = (rgb: number[], want: number[]) => rgb.every((c, i) => Math.abs(c - want[i]!) <= 8);
+    expect(near(seen[15]!, [255, 0, 0])).toBe(true);
+    // The second one used to be laid out below the first, off the canvas, and the frame was black.
+    expect(near(seen[45]!, [0, 0, 255])).toBe(true);
+  });
+
   it('draws a WebGPU canvas from the time hf-seek gives it, the same alone, in sequence and across workers, with nothing unsupported', () => {
     const webgpu = join(here, 'fixtures', 'hf-webgpu');
     const flags = ['--encoder', 'libx264', '--crf', '0', '--pixel-format', 'yuv444p', '--strict'];

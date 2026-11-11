@@ -10,7 +10,8 @@
 // alone, in a process of its own, all as lossless H.264 (libx264 at crf 0, 4:4:4), so that a decoded frame is a
 // function of the pixels drawn. Every frame of every way must decode to the same bytes. With --whole it also renders
 // the whole project --runs times (default 2) at each of the two concurrencies with the default encoder and compares the
-// decoded frame lists, which is what `ffmpeg -f framemd5` gives.
+// decoded frame lists, which is what `ffmpeg -f framemd5` gives. The span is also drawn with no DOM island carried over
+// from one frame to the next (`KINETOGRAPH_NO_INCREMENTAL=1`).
 //
 //   --comp <id>  --concurrency <n>  --runs <n>  --whole  --chunk <frames>
 // Run `npm run build` first. Needs ffmpeg and a GPU.
@@ -85,6 +86,9 @@ if (frames.length > 0) {
   const sequential = decoded(render('seq.mp4', [...span, '--concurrency', '1']));
   const parallel = decoded(render('par.mp4', [...span, '--concurrency', String(workers)], { KINETOGRAPH_CHUNK: chunk, KINETOGRAPH_MINSPLIT: '2' }));
   same(`frames ${first}..=${last}: concurrency ${workers} (chunks of ${chunk}) against 1`, parallel, sequential, first);
+  // No DOM island carried over from the frame before (each frame's first render builds it).
+  const fresh = decoded(render('fresh.mp4', [...span, '--concurrency', '1'], { KINETOGRAPH_NO_INCREMENTAL: '1' }));
+  same(`frames ${first}..=${last}: islands not carried over (KINETOGRAPH_NO_INCREMENTAL) against carried over`, fresh, sequential, first);
   for (const frame of frames) {
     const alone = decoded(render('one.mp4', ['--range', `${frame}..=${frame}`, ...lossless]));
     same(`frame ${frame} alone against the span at concurrency 1`, alone, [sequential[frame - first]], frame);

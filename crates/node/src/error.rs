@@ -13,6 +13,8 @@ pub enum Code {
     Render,
     Encode,
     InvalidArg,
+    /// Island edits made to a state the addon does not hold: send the whole request.
+    StaleBase,
 }
 
 impl AsRef<str> for Code {
@@ -24,6 +26,7 @@ impl AsRef<str> for Code {
             Code::Render => "RENDER",
             Code::Encode => "ENCODE",
             Code::InvalidArg => "INVALID_ARG",
+            Code::StaleBase => "STALE_BASE",
         }
     }
 }
@@ -87,6 +90,7 @@ mod tests {
             (Code::Render, "RENDER"),
             (Code::Encode, "ENCODE"),
             (Code::InvalidArg, "INVALID_ARG"),
+            (Code::StaleBase, "STALE_BASE"),
         ];
         for (code, text) in all {
             assert_eq!(code.as_ref(), text);

@@ -811,12 +811,18 @@ export interface GlslTexture {
   format?: 'depth' | 'stencil' | 'depthStencil';
   /** The mip levels of a colour target (default 1): an op's `level` draws into one. */
   levels?: number;
+  /** An `SRGB8_ALPHA8` texture: its bytes are sRGB, which a shader reads as linear (`pixels` or `src`, not a layer). */
+  srgb?: boolean;
+  /** A colour target of a float format (default: RGBA8); a 32-bit one is sampled only `NEAREST`, and not blended into. */
+  colorFormat?: 'R16F' | 'RG16F' | 'RGBA16F' | 'R32F' | 'RG32F' | 'RGBA32F' | 'SRGB8_ALPHA8' | 'R8' | 'RG8';
   /** A depth texture of a WebGL 1 context: sampled as (d, d, d, 1), where WebGL 2 samples (d, 0, 0, 1). */
   luminance?: boolean;
   /** `texSubImage2D` of pictures over parts of the texture, in order, after `src`, `pixels` or `layer`. */
   patches?: GlslPatch[];
   /** A 3D texture (`texImage3D`) of `width` by `height` by this many layers, its texels `pixels` (RGBA8) or `floats`; left out for a 2D texture. */
   depth?: number;
+  /** With `depth`: a `TEXTURE_2D_ARRAY` (read by a `sampler2DArray`), not a 3D texture; `depth` is its layer count. */
+  array?: boolean;
   /**
    * A float texture (`R32F`, `RGBA16F` and the like), 2D or 3D: base64 little-endian `f32`s, four for each texel (x
    * fastest, then y, then z; what the format lacks is 0, and alpha 1). Kept as half floats, or as 32-bit ones with `float32`.
@@ -824,6 +830,22 @@ export interface GlslTexture {
   floats?: string;
   /** The floats are `R32F`, `RG32F`, `RGB32F` or `RGBA32F`: kept in full, and sampled only `NEAREST` (a browser has no linear filter for them). */
   float32?: boolean;
+  /**
+   * A cube map (`TEXTURE_CUBE_MAP`): `width` by `width` faces in the order +X, -X, +Y, -Y, +Z, -Z (GL's, and the
+   * engine's). Left out or empty, the cube is incomplete and samples as opaque black, as in a browser.
+   */
+  cube?: boolean;
+  faces?: GlslFace[];
+  /** With `cube`, in place of `faces`: the six colour targets framebuffers drew the faces in, in the same order. */
+  targets?: string[];
+}
+
+/** One face of a cube map: a picture file, a `data:` URL or base64 RGBA8 (straight alpha, `width * width * 4` bytes). */
+export interface GlslFace {
+  src?: string;
+  pixels?: string;
+  flipY?: boolean;
+  premultiply?: boolean;
 }
 
 /** A picture over a rectangle of a texture (`texSubImage2D`): rows counted as the texture's, the first GL's bottom one. */
@@ -872,8 +894,13 @@ export interface GlslAttribute {
   normalized?: boolean;
   stride?: number;
   offset?: number;
-  /** `vertexAttribDivisor`: 1 advances for each instance (default 0, for each vertex). */
+  /** `vertexAttribDivisor`: 1 advances for each instance, `n` for each `n` of them (default 0, for each vertex). */
   divisor?: number;
+  /**
+   * The attribute's array is disabled: it reads the current value (`vertexAttrib4f` and the like, default 0, 0, 0, 1)
+   * for every vertex. `buffer` then only names the value (it is not in `buffers`), and `size` is 4 of `f32`.
+   */
+  constant?: [number, number, number, number];
 }
 
 export interface GlslUniform {
@@ -894,6 +921,10 @@ export interface GlslSampler {
   wrapR?: string;
   /** `TEXTURE_MAX_LEVEL`, when it was set: the last level read, so fewer levels can be complete. */
   maxLevel?: number;
+  /** `TEXTURE_BASE_LEVEL`, when not 0: the first level read (`textureSize` and `texelFetch` count from it). */
+  baseLevel?: number;
+  /** `TEXTURE_COMPARE_MODE` is `COMPARE_REF_TO_TEXTURE`: a shadow sampler compares its reference with the depth by this function (`LEQUAL`, ...). */
+  compare?: string;
 }
 
 export interface GlslBlend {
@@ -917,7 +948,7 @@ export interface GlslDepth {
 
 export interface GlslDraw {
   program: string;
-  mode: 'points' | 'triangles' | 'triangleStrip' | 'triangleFan';
+  mode: 'points' | 'triangles' | 'triangleStrip' | 'triangleFan' | 'lines' | 'lineStrip' | 'lineLoop';
   first: number;
   count: number;
   /** `drawArraysInstanced` and `drawElementsInstanced`: how many instances (default 1). */

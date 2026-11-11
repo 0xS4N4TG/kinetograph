@@ -703,8 +703,9 @@ Mapping onto the engine:
   other style key, a percentage size, an `objectFit` the image layer lacks, or a `className` it is an `img`.
 - `staticFile(name)` is the absolute path of `name` in the public directory, `setPublicDir(dir)` (default
   `<entry directory>/public`, set by the CLI).
-- `delayRender(label?)` returns a handle; `renderFrame` waits until every handle is continued, failing after 30 s
-  (real time, used only for the error) with the labels still open. `cancelRender(err)` fails the frame.
+- `delayRender(label?)` returns a handle; `renderFrame` waits until every handle is continued, failing after 30 s (`--timeout <ms>` on the CLI,
+  or `delayRender(label, { timeoutInMilliseconds })`; real time, used only for the error, code `DELAY_RENDER_TIMEOUT`) with
+  the labels still open. `cancelRender(err)` fails the frame.
   `useDelayRender()` returns the same three functions.
 - Every frame is a render, so the hooks that read the Studio's or the Player's state answer what a render sees:
   `useRemotionEnvironment()` is `getRemotionEnvironment()` (`isRendering` only), `useCurrentScale()` and
@@ -1125,7 +1126,7 @@ without it they write to `out/stills/<comp>-f<frame>.png`, `out/renders/<comp>.<
 | `add <name…> [--overwrite] [--yes] [--dir <folder>]`, `add --list [--type component\|template\|taste]` | installs registry components (`src/components/<name>/`), templates (`src/templates/<name>/`) and tastes (`src/tastes/<name>/`), with their assets in `public/<kind>/<name>/` and the items they depend on; never overwrites a file unless `--overwrite`; installs missing npm packages after `--yes` or a terminal yes (with `--json` it only prints the command); the format is in `docs/registry.md` |
 | `compositions <entry>` | lists compositions |
 | `still <entry> <frame> [-o file.png] [--scale N] [--strict] [--dev-react]` | one PNG, drawn at N times the size; unsupported content is drawn without and warned about on stderr, `--strict` fails instead (the Remotion compatibility docs, `/docs/compat/`) |
-| `render <entry> [-o file.mp4] [--range a..b] [--scale N] [--codec C] [--crf N \| --video-bitrate R] [--concurrency N] [--strict] [--dev-react] …` | video with audio; the export options are below; `--draft` is `--scale 0.5`; `--concurrency N` draws N frames at once (default half the cores, at most 4; below); unsupported content is drawn without and warned about, `--strict` fails on the first frame that has some (the Remotion compatibility docs, `/docs/compat/`); React runs in production mode unless `--dev-react` (below) |
+| `render <entry> [-o file.mp4] [--range a..b] [--scale N] [--codec C] [--crf N \| --video-bitrate R] [--concurrency N] [--strict] [--dev-react] …` | video with audio; the export options are below; `--draft` is `--scale 0.5`; `--concurrency N` draws N frames at once (default half the cores, at most 4, handed back to the main thread when the GPU holds the workers up; below); unsupported content is drawn without and warned about, `--strict` fails on the first frame that has some (the Remotion compatibility docs, `/docs/compat/`); React runs in production mode unless `--dev-react` (below) |
 | `strip <entry> -n 12 [-o file.png] [--scale N] [--strict]` | contact sheet of evenly spaced frames, labelled, built as a scene and rendered by the engine; `--scale` draws the frames and the sheet at N times the size |
 | `onion <entry> <range> -n 6 [-o file.png] [--scale N]` | frames of the range blended over one another, drawn at N times the size |
 | `inspect <entry> [--frame N]` | `InspectResult` |
@@ -1136,6 +1137,7 @@ without it they write to `out/stills/<comp>-f<frame>.png`, `out/renders/<comp>.<
 | `snapshot <entry> [--frames 0,30,60] [--update]` | compares PNGs in `__snapshots__/` next to the entry, max channel difference 2 |
 | `effects` | `effectCatalog` |
 | `track <video> [--point x,y ...] [--detect [--detect-threshold T ...]] [--plane all\|p1,p2,p3,p4 [--plane-corners ...]] [--model M] [--pattern N --search N] [--match keyframe\|previous] [--from F --to F] [--backwards] [-o out.json]` | tracks points (placed, or found by Blender's Detect Features) and plane tracks with Blender's tracker and writes `<video>.track.json` for `useTrack()` and `usePlaneTrack()` (§11.12); takes a video, not an entry |
+| `matte <video> [-o fg.webm] [--base base.webm] [--model modnet\|ben2-base] [--audio keep\|drop] [--quality very-low\|low\|medium\|high\|very-high] [--offline]` | cuts the subject out of a video: a foreground with alpha (`.webm` VP9 or `.mov` ProRes 4444) and with `--base` an opaque base; a model runs in the addon and downloads on first use (§11.13) |
 | `doctor [entry] [--range]` | without an entry, the install report (it lists the renderer; `render` and `still` print `renderer: Skia GPU (Metal)`, `Skia CPU (no GPU found)`, `Skia CPU (GPU unusable)` or `Skia CPU (KINETOGRAPH_SKIA_CPU=1)` as progress; when the GPU was unusable, doctor also gives `rendererReason`, with the device, driver and what is missing); with one, how many frames have nothing unsupported, and every unsupported element or property with its frame ranges (the Remotion compatibility docs, `/docs/compat/`) |
 | `studio <entry>` | the studio (§11.5) |
 | `mcp` | MCP server on stdio |
@@ -1212,7 +1214,10 @@ draws every frame in the main thread as before. Chunks are handed out in order a
 frames past the next frame the encoder needs, which bounds the frames held in memory. Frames are not equally dear (a
 motion-blur stretch costs several times a plain one), so a worker that has no chunk it may take asks the busy worker
 furthest back to stop its chunk early, and draws the rest of it. Each worker is a full renderer, so memory grows with N
-(0.5 to 1 GB a worker on the launch film). `<Artifact>` files are collected from the workers; thumbnails are drawn by the
+(0.5 to 1 GB a worker on the launch film). Without `--concurrency`, once the workers have drawn 8 frames each past their first, a render
+whose workers spent more than half that time waiting for the GPU is GPU-bound: the workers stop after the frames they
+have begun and the main thread draws the rest, as with `--concurrency 1` (they share one GPU, so they are no faster;
+`KINETOGRAPH_GPU_BOUND` sets the share). `<Artifact>` files are collected from the workers; thumbnails are drawn by the
 main thread. `KINETOGRAPH_CHUNK`, `KINETOGRAPH_WINDOW` and `KINETOGRAPH_MINSPLIT` (frames) override the chunk size, the
 window and the smallest chunk that is split, for tuning and tests.
 
@@ -1748,3 +1753,16 @@ defaults, other thresholds, distances and margins, another frame, and inside and
 bit-equal to Blender's on every frame (0 px), over the same frames, for planes made at the first frame, mid-clip and
 tracking backwards, from 4, 5 and 24 tracks. Repeatability: the same inputs give the same bits on a platform
 (`crates/track/tests/golden.rs`, a golden per platform); platforms are not bit-equal with each other.
+
+### 11.13 Video matting (`kinetograph matte`, `@kinetographdev/video-matting`)
+
+Run ahead of time, like tracking: `kinetograph matte public/original.mp4 -o public/foreground.webm` writes the subject
+with alpha (`--base` also writes the opaque original), and a composition plays the files as `<Video>`s: text behind
+the subject is original, text, foreground (foreground `muted`); background blur is `effects={[blur(16)]}` on the
+original under the foreground; background replacement leaves the original out; effects on the foreground alone
+(`glow`, `dropShadow`) change only the subject. A render never runs a model. `modnet` (default, people) and `ben2-base`
+(any subject, heavier) download from Hugging Face on first use, checked by SHA-256, into `$KINETOGRAPH_MODEL_DIR` or
+the OS cache directory; `--offline` refuses to download. `@kinetographdev/video-matting` has the eight functions of
+`@remotion/video-matting` (`separateVideoLayers`, `downloadVideoMattingModel`, ...) and a project's import of that name
+resolves to it; outputs are files (`outputs.foreground.path`). Guide with the four recipes: `/docs/guides/video-matting/`;
+reference: `/docs/reference/video-matting/`. The `matte` MCP tool takes the CLI's options.

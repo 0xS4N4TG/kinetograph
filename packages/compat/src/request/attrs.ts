@@ -115,6 +115,24 @@ export function attributesOf(props: Record<string, unknown>, insideSvg: boolean)
   return attrs;
 }
 
+/**
+ * The attribute `name` of `attributesOf(props, insideSvg())`, without making the others: a selector tests one
+ * attribute of every element of the tree. `insideSvg` is only asked for when the answer depends on it.
+ */
+export function attributeOf(props: Record<string, unknown>, name: string, insideSvg: () => boolean): string | null {
+  let found: string | null = null;
+  let svg: boolean | undefined;
+  for (const prop of Object.keys(props)) {
+    // Outside SVG a prop's name can be lower-cased; inside it keeps its case. Only those two can be the answer.
+    let attribute = attributeName(prop, false);
+    if (attribute !== null && attribute !== prop && (attribute === name || prop === name)) attribute = attributeName(prop, (svg ??= insideSvg()));
+    if (attribute !== name) continue;
+    const value = attributeValue(attribute, props[prop]);
+    if (value !== null) found = value;
+  }
+  return found;
+}
+
 /** The `style` prop as CSS declaration text. */
 export function styleOf(props: Record<string, unknown>): string {
   return styleToCss(props.style);

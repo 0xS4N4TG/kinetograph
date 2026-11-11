@@ -115,6 +115,56 @@ fn webgl2_blit_depth_stencil() {
 }
 
 #[test]
+fn webgl2_cube_rt() {
+    run("webgl2_cube_rt", 1.0);
+}
+
+#[test]
+fn webgl2_mipmap_after_draw() {
+    run("webgl2_mipmap_after_draw", 1.0);
+}
+
+#[test]
+fn webgl2_msaa_resolve() {
+    run("webgl2_msaa_resolve", 1.0);
+}
+
+#[test]
+fn webgl2_copytex() {
+    run("webgl2_copytex", 1.0);
+}
+
+#[test]
+fn webgl2_srgb_target() {
+    run("webgl2_srgb_target", 1.0);
+}
+
+#[test]
+fn webgl2_base_level() {
+    run("webgl2_base_level", 1.0);
+}
+
+#[test]
+fn webgl2_r8_rg8() {
+    run("webgl2_r8_rg8", 1.0);
+}
+
+#[test]
+fn webgl2_divisor2() {
+    run("webgl2_divisor2", 1.0);
+}
+
+#[test]
+fn webgl2_float_blit() {
+    run("webgl2_float_blit", 1.0);
+}
+
+#[test]
+fn webgl2_float_blend() {
+    run("webgl2_float_blend", 1.0);
+}
+
+#[test]
 fn a_canvas_with_a_recording_is_one_glsl_layer_at_its_bitmap_size() {
     let recording = case_file("webgl_gradient", "json");
     let body = format!(
@@ -142,6 +192,16 @@ fn the_committed_recordings_parse_as_the_scene_format_does() {
         "webgl2_mrt",
         "webgl2_depth_texture",
         "webgl2_blit_depth_stencil",
+        "webgl2_cube_rt",
+        "webgl2_mipmap_after_draw",
+        "webgl2_msaa_resolve",
+        "webgl2_copytex",
+        "webgl2_srgb_target",
+        "webgl2_base_level",
+        "webgl2_r8_rg8",
+        "webgl2_divisor2",
+        "webgl2_float_blit",
+        "webgl2_float_blend",
     ] {
         let content: serde_json::Value = serde_json::from_str(&case_file(name, "json")).unwrap();
         let mut layer = serde_json::json!({ "id": "c", "type": "glsl", "width": 10, "height": 10 });

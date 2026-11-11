@@ -4,12 +4,14 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, OnceLock};
 
+use kinetograph_core::fallback_fonts::Face;
+use kinetograph_core::generic_fonts;
 use usvg::fontdb::{self, Database, Language};
 
 /// The font database for a request's fonts (`fontKey` -> file, the key being
 /// `family:weight[i]`, see `fonts::parse_key`), built once per distinct set. Each font is
 /// registered under the family name of its key as well as the one in its own
-/// tables, and the generic families (`sans-serif`, ...) resolve to the first.
+/// tables, and the generic families (`sans-serif`, ...) resolve to the bundled fonts (`kinetograph_core::generic_fonts`).
 /// The bundled symbol fonts come last, as the fallback for characters the others lack.
 pub fn database(fonts: &BTreeMap<String, String>) -> Arc<Database> {
     type Cache = Mutex<HashMap<BTreeMap<String, String>, Arc<Database>>>;
@@ -26,7 +28,6 @@ pub fn database(fonts: &BTreeMap<String, String>) -> Arc<Database> {
 
 fn build(fonts: &BTreeMap<String, String>) -> Database {
     let mut db = Database::new();
-    let mut first: Option<String> = None;
     let mut fixed_pitch: Option<String> = None;
     for (key, path) in fonts {
         let before: Vec<fontdb::ID> = db.faces().map(|f| f.id).collect();
@@ -41,7 +42,6 @@ fn build(fonts: &BTreeMap<String, String>) -> Database {
             .cloned()
             .collect();
         let (family, weight, style) = crate::fonts::parse_key(key);
-        first.get_or_insert_with(|| family.to_string());
         if added.iter().any(|f| f.monospaced) {
             fixed_pitch.get_or_insert_with(|| family.to_string());
         }
@@ -60,33 +60,48 @@ fn build(fonts: &BTreeMap<String, String>) -> Database {
     for face in kinetograph_core::fallback_fonts::faces() {
         db.load_font_data(face.data.to_vec());
     }
-    // `monospace` is the project's first fixed-pitch font, else the bundled JetBrains Mono, as for HTML text
-    // (`fonts::font_context`). The bundled one goes under a private family name and last, so it is no fallback for
-    // a character the others lack.
+    // The generic families are the bundled fonts, as for HTML text (`fonts::font_context`): Inter for the sans ones, EB
+    // Garamond for the serif ones, and for `monospace` the project's first fixed-pitch font, else JetBrains Mono. Each
+    // goes under a private family name and last, so none is a fallback for a character the others lack.
     let monospace = fixed_pitch.unwrap_or_else(|| {
         let face = kinetograph_core::fallback_fonts::monospace_face();
-        let before: Vec<fontdb::ID> = db.faces().map(|f| f.id).collect();
-        db.load_font_data(face.data.to_vec());
-        let added: Vec<fontdb::FaceInfo> = db
-            .faces()
-            .filter(|f| !before.contains(&f.id))
-            .cloned()
-            .collect();
-        for mut info in added {
-            db.remove_face(info.id);
-            info.families = vec![(face.family.to_string(), Language::English_UnitedStates)];
-            db.push_face_info(info);
-        }
+        load_private(&mut db, face, 400);
         face.family.to_string()
     });
     db.set_monospace_family(monospace);
-    if let Some(family) = first {
-        db.set_serif_family(family.clone());
-        db.set_sans_serif_family(family.clone());
-        db.set_cursive_family(family.clone());
-        db.set_fantasy_family(family);
+    for (styled, set) in [
+        (
+            generic_fonts::sans(),
+            Database::set_sans_serif_family as fn(&mut Database, String),
+        ),
+        (generic_fonts::serif(), Database::set_serif_family),
+    ] {
+        for s in styled {
+            load_private(&mut db, &s.face, s.weight as u16);
+        }
+        set(&mut db, styled[0].face.family.to_string());
     }
+    let sans = generic_fonts::sans()[0].face.family.to_string();
+    db.set_cursive_family(sans.clone());
+    db.set_fantasy_family(sans);
     db
+}
+
+/// Loads a bundled face under its private family name, at `weight`.
+fn load_private(db: &mut Database, face: &Face, weight: u16) {
+    let before: Vec<fontdb::ID> = db.faces().map(|f| f.id).collect();
+    db.load_font_data(face.data.to_vec());
+    let added: Vec<fontdb::FaceInfo> = db
+        .faces()
+        .filter(|f| !before.contains(&f.id))
+        .cloned()
+        .collect();
+    for mut info in added {
+        db.remove_face(info.id);
+        info.families = vec![(face.family.to_string(), Language::English_UnitedStates)];
+        info.weight = fontdb::Weight(weight);
+        db.push_face_info(info);
+    }
 }
 
 /// The family a text with no `font-family` is set in.

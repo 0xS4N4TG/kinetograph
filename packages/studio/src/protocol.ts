@@ -161,6 +161,67 @@ export interface RenderJob {
   finishedAt: number | null;
 }
 
+// ---- video matting ("Remove background") ----
+
+/** Remotion's `videoBitrate` presets: how closely the transparent video keeps its edges. */
+export type MattingQuality = 'very-low' | 'low' | 'medium' | 'high' | 'very-high';
+
+/** One model of `GET /api/matting`. */
+export interface MattingModelInfo {
+  /** The name the package takes (`modnet`, `ben2-base`). */
+  name: string;
+  /** The upstream model id. */
+  modelId: string;
+  /** What it separates, in a few words. */
+  purpose: string;
+  /** Bytes to download; null when the package does not say. */
+  size: number | null;
+  /** Whether every file of the model is in the cache. */
+  cached: boolean;
+}
+
+/** `GET /api/matting`. */
+export interface MattingStatus {
+  /** False when this build cannot remove backgrounds: `message` says why, in plain words. */
+  available: boolean;
+  message?: string;
+  models: MattingModelInfo[];
+  /** The latest jobs, oldest first, so that a reloaded window sees one still running. */
+  jobs: MattingJob[];
+}
+
+/** `POST /api/matting/jobs`. */
+export interface MattingRequest {
+  /** The video's file: the `src` the scene gives a video layer (an absolute path). */
+  input: string;
+  /** Where the transparent WebM goes, relative to `public/` (`clip-no-background.webm`). */
+  output: string;
+  /** Default `modnet`. */
+  model?: string;
+  /** `keep` copies the original sound into the new file. Default `keep`. */
+  audio?: 'keep' | 'drop';
+  /** Default `very-high`. */
+  quality?: MattingQuality;
+}
+
+export type MattingJobStatus = 'running' | 'done' | 'failed' | 'cancelled';
+
+/** A model download or a background removal, as the server runs it. */
+export interface MattingJob {
+  id: string;
+  kind: 'download' | 'matte';
+  model: string;
+  status: MattingJobStatus;
+  /** What it is doing now: a matte first downloads a model that is not cached. */
+  stage: 'downloading' | 'processing' | 'finalizing';
+  /** 0 to 1; null while there is nothing to measure (finalizing). */
+  progress: number | null;
+  /** `matte` only: the file written, relative to the project (`public/clip-no-background.webm`) and the `staticFile` name. */
+  output?: string;
+  staticName?: string;
+  error: StudioError | null;
+}
+
 // ---- WebSocket `/ws` ----
 
 /** Client → server, JSON text. */
@@ -196,6 +257,7 @@ export type ServerMessage =
   | { type: 'reload'; buildId: number }
   | { type: 'buildError'; error: StudioError }
   | { type: 'render'; job: RenderJob }
+  | { type: 'matting'; job: MattingJob }
   | { type: 'error'; requestId: number | null; error: StudioError }
   | { type: 'agent'; event: AgentEvent }
   /** Props pushed by `PUT /api/live-props`: the window switches to `comp` and replaces its props with these. */

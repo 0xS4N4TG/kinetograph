@@ -9,6 +9,16 @@
  */
 export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-wasip1'
 
+/**
+ * Stops a `matteVideo` it was passed to: the call rejects with a `Cancelled` error between two frames and leaves no
+ * file. (`signal.addEventListener('abort', () => token.cancel())` is how an `AbortSignal` is wired to it.)
+ */
+export declare class MatteToken {
+  constructor()
+  cancel(): void
+  get cancelled(): boolean
+}
+
 /** One GPU setup, reused for every scene and frame given to it. */
 export declare class Renderer {
   /** Opens the GPU and builds the pipelines, once. */
@@ -40,11 +50,23 @@ export declare class Renderer {
   /** The oldest frame `startFrame` began, as straight-alpha sRGB RGBA8. */
   finishFrame(): RgbaFrame
   /**
+   * The milliseconds `finishFrame` has waited for the GPU to finish frames and read them back since the last call,
+   * emptied: a render worker reports it, to say whether the workers are held up by the GPU they share. It only
+   * times the wait; it changes nothing drawn.
+   */
+  takeGpuWaitMs(): number
+  /**
    * Makes the next frame `startFrame` begins be drawn, whatever the frame
    * before it was: a frame is only taken from a frame started after this.
    * A render worker calls it at the start of each run of frames.
    */
   forgetFrame(): void
+  /**
+   * With `on`, `finishFrame` returns the frames `startFrame` begins after this as yuv420p planes (Y, U, V, rows
+   * packed), converted on the GPU byte for byte as `rgbaToYuv(rgba, w, h, 'yuv420p')` converts their RGBA. The
+   * frames' sides must be even, as the encoder's are. Set it before starting frames, not between.
+   */
+  setYuv420(on: boolean): void
   /** Times one frame or successive frames, as the Rust `bench`. */
   bench(sceneJson: string, options: BenchOptions, baseDir?: string | undefined | null): BenchResult
   /** A whole JSON scene to a video, as the Rust `render`. */
@@ -116,17 +138,30 @@ export declare function decodeAudio(path: string, sampleRate: number, baseDir?: 
 
 /**
  * `getComputedStyle` of the element at `path` in a DOM island: the resolved
- * value of each property (CSS or camelCase names), `""` for an unknown one.
+ * value of each property (CSS or camelCase names), `""` for an unknown one. `pass` as for `domLayoutBoxes`.
  */
-export declare function domComputedStyle(requestJson: string, path: string, properties: Array<string>): Array<string>
+export declare function domComputedStyle(requestJson: string, path: string, properties: Array<string>, pass?: number | undefined | null): Array<string>
+
+/**
+ * The version of the island edits `domLayoutBoxes` and `domComputedStyle` take in place of a request (1): a request
+ * numbered by the caller as `{"stamp":N,"request":REQUEST}`, then the changes since a numbered state as
+ * `{"stamp":M,"base":N,"path","time","set":[{"path","attrs"?,"style"?,"texts"?:[[index,text]]}]}`
+ * (packages/cli/skills/kinetograph-markup/references/ENGINE.md §2). Edits to a state the addon no longer holds fail with
+ * `STALE_BASE`, and the caller sends the whole request.
+ */
+export declare function domIslandEdits(): number
 
 /**
  * The boxes of every element of a DOM island (packages/cli/skills/kinetograph-markup/references/ENGINE.md §2): an
  * `IslandRequest` as JSON in, `{ [path]: { x, y, width, height, rect, client,
  * scroll } }` as JSON out. `x`..`height` are the border box where layout put
  * it, `rect` the transformed bounding box `getBoundingClientRect` gives.
+ *
+ * `pass` is the frame's pass (`renderDomIsland`), when the scripts of the frame being drawn read it: the boxes are
+ * those of the document the frame's render then draws. With `paths`, only the boxes of those elements are given (a
+ * path the island does not have is left out).
  */
-export declare function domLayoutBoxes(requestJson: string): string
+export declare function domLayoutBoxes(requestJson: string, pass?: number | undefined | null, paths?: Array<string> | undefined | null): string
 
 /** `render`'s export options (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9); everything left out takes its default. */
 export interface ExportOptions {
@@ -194,6 +229,75 @@ export declare function layoutDom(requestJson: string): string
  * `fonts` map.
  */
 export declare function layoutText(request: TextLayoutRequest): TextLayout
+
+export interface MatteOptions {
+  /** Any video FFmpeg can decode. */
+  input: string
+  /** The `.onnx` file of `model`. */
+  modelPath: string
+  /**
+   * ONNX Runtime's library (`libonnxruntime.dylib`, `.so` or `onnxruntime.dll`); `ORT_DYLIB_PATH` names it when
+   * this is absent. The addon does not link ONNX Runtime: `@kinetographdev/video-matting` downloads it on first use.
+   */
+  runtimePath?: string
+  /** `modnet` or `ben2-base`. */
+  model: string
+  /** Output: the subject with alpha. `.webm` is VP9 `yuva420p`, `.mov` is ProRes 4444. */
+  foreground: string
+  /** Output: the opaque base layer, the clip itself at the same size and rate (`.webm`, `.mp4` or `.mov`). */
+  base?: string
+  /** Without `audio`: copy the input's audio into the foreground and base files (true), or drop it (false). */
+  keepAudio?: boolean
+  /**
+   * Which files get the input's audio: `both`, `base`, `foreground` or `none`. Takes the place of `keepAudio`;
+   * `base` when neither is given.
+   */
+  audio?: string
+  /** `very-low`, `low`, `medium`, `high` (default) or `very-high`. */
+  quality?: string
+  /** Bits per second for the video of both files, in place of `quality`'s encoder setting (not for ProRes). */
+  videoBitrate?: number
+  /** Bits per second for the audio that is encoded (Opus, AAC). */
+  audioBitrate?: number
+  /** The longest time between keyframes in both files, in seconds (1). */
+  keyframeIntervalInSeconds?: number
+  /** Pieces of the clip matted at once (2). */
+  jobs?: number
+}
+
+export interface MatteResult {
+  foreground: string
+  base?: string
+  frames: number
+  /** What the model ran on: see `MattingSupport.backend`. */
+  backend: string
+}
+
+/**
+ * Mattes every frame of `input` and writes the subject with alpha to `foreground` (and the clip as an opaque `base`).
+ * `onProgress(doneFrames, totalFrames)` is called on the event loop as frames finish. Every failure rejects the
+ * promise: a bad option or a missing input or model file (`InvalidArg`), a file that cannot be read or written
+ * (`GenericFailure`), or `token.cancel()` (`Cancelled`).
+ */
+export declare function matteVideo(options: MatteOptions, onProgress?: ((doneFrames: number, totalFrames: number) => void) | undefined | null, token?: MatteToken | undefined | null): Promise<MatteResult>
+
+export declare function mattingSupport(): MattingSupport
+
+/** Whether `matteVideo` can run here, and on what. */
+export interface MattingSupport {
+  /**
+   * Matting can run here. ONNX Runtime is not linked: it is downloaded on first use, so this does not open it unless
+   * `ORT_DYLIB_PATH` names a library.
+   */
+  available: boolean
+  /**
+   * What `ben2-base` runs on: `coreml` (a Mac), `cuda` or `webgpu` (builds with them), else `cpu`. `modnet` always
+   * runs on the CPU, at video speed (CoreML did not help it).
+   */
+  backend: string
+  /** Why `available` is false, or why the backend is `cpu`. */
+  reason?: string
+}
 
 /** What `probeMedia` reads from a video's or GIF's header (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §11.2). */
 export interface MediaInfo {
@@ -289,8 +393,12 @@ export declare function renderCanvas(requestJson: string): Buffer
  * JSON in, an `IslandOutput` (`layers`, `unsupported`, `camera`) as JSON out.
  * Styled and laid out by Stylo, taffy and Parley through Blitz's DOM, then
  * painted as scene layers. CPU only.
+ *
+ * `pass` numbers the renders of one frame (its motion-blur samples included); `base` is the pass of the layers of
+ * this island the caller kept from an earlier render. When the addon kept the same ones, the layers come back as
+ * changes from them and the output says `"delta": base`.
  */
-export declare function renderDomIsland(requestJson: string, pass?: number | undefined | null): string
+export declare function renderDomIsland(requestJson: string, pass?: number | undefined | null, base?: number | undefined | null): string
 
 export interface RendererOptions {
   /** Default true. */
@@ -332,12 +440,6 @@ export interface RenderSummary {
  */
 export declare function resolveExport(output: string, options?: ExportOptions | undefined | null): ExportPlan
 
-/**
- * Tells the encoder where the separate GPL `ffmpeg` program is (the platform package's `bin/ffmpeg`), which has the
- * encoders the linked LGPL ffmpeg lacks (libx264, libx265). `KINETOGRAPH_FFMPEG` takes precedence. `null` forgets it.
- */
-export declare function setFfmpegPath(path?: string | undefined | null): void
-
 export interface RgbaFrame {
   width: number
   height: number
@@ -369,12 +471,6 @@ export declare function rgbaToYuv(rgba: Buffer, width: number, height: number, p
 export declare function riveFrame(requestJson: string): string
 
 /**
- * The JSON path of each key in a scene file that the format does not read
- * (`layers[0].opacty`): serde skips such a key, so it is said here instead.
- */
-export declare function sceneUnknownKeys(sceneJson: string): Array<string>
-
-/**
  * `{ src, baseDir, assets }` in; the file's artboards (with their animations, state machines and inputs) and assets
  * (in the file, given, or missing) out, as JSON.
  */
@@ -392,11 +488,23 @@ export interface SceneInfo {
 }
 
 /**
+ * The JSON path of each key in a scene file that the format does not read
+ * (`layers[0].opacty`): serde skips such a key, so it is said here instead.
+ */
+export declare function sceneUnknownKeys(sceneJson: string): Array<string>
+
+/**
+ * Tells the encoder where the separate GPL `ffmpeg` program is (the platform package's `bin/ffmpeg`), which has the
+ * encoders the linked LGPL ffmpeg lacks (libx264, libx265). `KINETOGRAPH_FFMPEG` takes precedence. `null` forgets it.
+ */
+export declare function setFfmpegPath(path?: string | undefined | null): void
+
+/**
  * `renderDomIsland` without waiting: queues the render on the calling
  * thread's island thread, after the renders queued before it, and returns a
  * ticket for `finishDomIsland`, which gives its output once it is done.
  */
-export declare function startDomIsland(requestJson: string, pass?: number | undefined | null): number
+export declare function startDomIsland(requestJson: string, pass?: number | undefined | null, base?: number | undefined | null): number
 
 export interface Stats {
   mean: number

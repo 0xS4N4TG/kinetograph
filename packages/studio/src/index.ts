@@ -6,6 +6,7 @@ export { decodeFrameMessage, encodeFrameMessage } from './protocol.js';
 export { startStudio } from './server.js';
 export type { Engine, EngineOptions, CreateEngine, FrameScene, RenderSpec } from './engine.js';
 export { openerCommand } from './open-browser.js';
+export type { MattingLoader, MattingModule } from './matting.js';
 
 export interface StudioOptions {
   /** The project entry (`.tsx`, `.ts`, `.jsx`, `.js`) or a `.json` scene. */
@@ -35,6 +36,8 @@ export interface StudioOptions {
    * (then nothing is fetched). Tests replace `fetch` and `cacheFile`.
    */
   catalog?: { url?: string; cacheFile?: string; offline?: boolean; fetch?: typeof fetch; timeoutMs?: number; bundledFile?: string };
+  /** Loads `@kinetographdev/video-matting` for "Remove background" (default: import it). Tests pass a fake. */
+  matting?: import('./matting.js').MattingLoader;
   /** Receives one line for each build, build failure and warning. */
   log?: (message: string) => void;
 }

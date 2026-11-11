@@ -5,6 +5,8 @@ description: How many worker threads draw frames at once during a render.
 
 `render --concurrency <n>` sets how many frames are drawn at once, in worker threads. The default is half the cores, at most 4. A value of 1 draws every frame in the main thread.
 
+Without `--concurrency`, the workers are checked after their first few frames. If they spent more than half that time waiting for the GPU, the render is GPU-bound: the workers share one GPU and draw no faster than the main thread alone, so they stop and the main thread draws the rest. A count you set is always used.
+
 ```sh
 npx kinetograph render src/index.tsx --concurrency 4
 ```

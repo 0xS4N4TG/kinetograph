@@ -68,6 +68,8 @@ export function resolveSpecifier(specifier: string): Resolution | null {
     const [, pkg, rest] = remotion as unknown as [string, string, string | undefined];
     if (pkg === 'google-fonts' && rest && !rest.includes('/')) return { kind: 'font', family: familyFromModule(rest) };
     if (INSTALLED_REMOTION_PACKAGES.has(pkg)) return null;
+    // Video matting is its own package (the addon runs the model), not a `@kinetographdev/core` subpath.
+    if (pkg === 'video-matting') return { kind: 'path', target: `@kinetographdev/video-matting${rest ? `/${rest}` : ''}` };
     if (REMOTION_PACKAGES.has(pkg)) {
       return { kind: 'path', target: `@kinetographdev/core/${pkg}${rest ? `/${rest}` : ''}` };
     }
@@ -83,7 +85,7 @@ export function resolveSpecifier(specifier: string): Resolution | null {
   if (specifier.startsWith('@shopify/react-native-skia/')) {
     return { kind: 'unsupported', message: `"${specifier}" is an internal of React Native Skia; import from "@shopify/react-native-skia".` };
   }
-  if (/^@kinetographdev\/(core|react|scene|audio|compat)(\/.*)?$/.test(specifier)) return { kind: 'path', target: specifier };
+  if (/^@kinetographdev\/(core|react|scene|audio|compat|video-matting)(\/.*)?$/.test(specifier)) return { kind: 'path', target: specifier };
   // React too: a project with its own copy of React would otherwise bundle two, and the core's hooks would run against
   // a different React from the project's components.
   if (/^react(-reconciler)?(\/.*)?$/.test(specifier)) return { kind: 'path', target: specifier };
@@ -124,7 +126,7 @@ function aliasPlugin(unsupported?: UnsupportedImport[]): Plugin {
   return {
     name: 'kinetograph-aliases',
     setup(b) {
-      b.onResolve({ filter: /^(remotion($|\/)|@remotion\/|@shopify\/react-native-skia($|\/)|react-native-reanimated$|@kinetographdev\/(core|react|scene|audio|compat)($|\/)|react(-reconciler)?($|\/))/ }, async (args) => {
+      b.onResolve({ filter: /^(remotion($|\/)|@remotion\/|@shopify\/react-native-skia($|\/)|react-native-reanimated$|@kinetographdev\/(core|react|scene|audio|compat|video-matting)($|\/)|react(-reconciler)?($|\/))/ }, async (args) => {
         if (args.pluginData?.kinetograph) return undefined;
         const resolution = resolveSpecifier(args.path);
         if (!resolution) return undefined;
@@ -386,6 +388,8 @@ function bundleOptions(absolute: string, unsupported?: UnsupportedImport[], dev 
     // The studio's builds record where each element's JSX is (see `JSX_DEV_SHIM`).
     jsxDev: dev,
     sourcemap: 'inline',
+    // Stack traces only need the mappings; the sources' text (the core's included) would double the bundle's size.
+    sourcesContent: false,
     logLevel: 'silent',
     external: EXTERNAL,
     // An `import './index.css'` registers the stylesheet's text for the DOM engine (packages/cli/skills/kinetograph-markup/references/ENGINE.md §1); Tailwind's

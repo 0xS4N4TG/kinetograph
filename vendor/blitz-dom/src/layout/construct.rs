@@ -528,6 +528,14 @@ fn collect_layout_children_with_wrap(
     {
         let node = &doc.nodes[container_node_id];
         if node.children.is_empty() && node.before().is_none() && node.after().is_none() {
+            // It keeps none of the layout children it had: a pseudo-element
+            // flushed above is freed, and a `display: contents` node reached
+            // from its parent is never given a new list.
+            let mut old_anonymous_blocks = Vec::new();
+            drop_box_children(&mut doc.nodes[container_node_id], &mut old_anonymous_blocks);
+            for anon_id in old_anonymous_blocks {
+                doc.deallocate_anonymous_block(anon_id);
+            }
             return;
         }
     }
@@ -547,6 +555,11 @@ fn collect_layout_children_with_wrap(
             // display:contents is transparent for box generation: hoist the
             // children THEMSELVES (not their layout children) into the
             // parent, recursing only through nested contents nodes.
+            let mut old_anonymous_blocks = Vec::new();
+            drop_box_children(&mut doc.nodes[container_node_id], &mut old_anonymous_blocks);
+            for anon_id in old_anonymous_blocks {
+                doc.deallocate_anonymous_block(anon_id);
+            }
             push_hoisted_children_and_pseudos(doc, container_node_id, out, wrap);
         }
         DisplayInside::Flex | DisplayInside::Grid => {
@@ -727,7 +740,14 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
         let after_node_id = node.after();
 
         // Note: yes these are kinda backwards
-        let style_data = node.try_stylo_element_data().and_then(|s| s.get());
+        // A `display: none` element generates no pseudo-elements. Keeping one while
+        // hidden would keep the layout it had, which a style it was given while
+        // hidden (whose damage nothing acts on) does not rebuild once it shows.
+        let hidden = node.display_style().is_some_and(|d| d.is_none());
+        let style_data = node
+            .try_stylo_element_data()
+            .and_then(|s| s.get())
+            .filter(|_| !hidden);
         let before_style = style_data
             .as_ref()
             .and_then(|d| d.styles.pseudos.as_array()[1].clone());
@@ -829,11 +849,12 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: NodeId) {
                 .try_stylo_element_data_mut()
                 .and_then(|s| s.get_mut());
             let node_styles = &mut node_styles.as_mut().unwrap();
-            node_styles.damage.insert(ALL_DAMAGE);
-            let primary_styles = &mut node_styles.styles.primary;
-
-            if !std::ptr::eq(&**primary_styles.as_ref().unwrap(), &*pe_style) {
-                *primary_styles = Some(pe_style);
+            // A style the traversal already synced (`sync_pseudo_element_styles`) left its
+            // own damage. Damage added here comes after it was propagated, so it would
+            // rebuild the pseudo-element's text while the layout caches above it stay.
+            if !std::ptr::eq(&**node_styles.styles.primary.as_ref().unwrap(), &*pe_style) {
+                node_styles.damage.insert(ALL_DAMAGE);
+                node_styles.styles.primary = Some(pe_style);
                 node_styles.set_restyled();
                 doc.pending_style_image_nodes.push(pe_node_id);
             }
@@ -971,6 +992,17 @@ fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: NodeId) {
     }
 }
 
+/// A node that generates no box of its own (`display: contents` or `none`, or
+/// non-atomic inline content) gives up the layout children, paint children and
+/// anonymous blocks it had as a box before an edit: its children now have
+/// another box as `layout_parent`, or none. The paint tree rebuilds only a
+/// node's paint children that has layout children, so they go too.
+fn drop_box_children(node: &mut Node, old_anonymous_blocks: &mut Vec<NodeId>) {
+    *node.layout_children.borrow_mut() = None;
+    *node.paint_children.borrow_mut() = None;
+    old_anonymous_blocks.extend(std::mem::take(&mut node.anonymous_blocks));
+}
+
 /// Find and return the "layout_children" (inline boxes) for an inline layout
 /// without actually constructing the layout. This allows us to defer the expensive
 /// construction of the Parley layout (which invokes text shaping) to a paralell phase.
@@ -981,19 +1013,24 @@ pub(crate) fn find_inline_layout_embedded_boxes(
 ) {
     flush_inline_pseudos_recursive(doc, inline_context_root_node_id);
 
+    let mut old_anonymous_blocks = Vec::new();
     iter_children_and_pseudos!(doc.nodes[inline_context_root_node_id], |child_id| {
         find_inline_layout_embedded_boxes_recursive(
             &mut doc.nodes,
             inline_context_root_node_id,
             child_id,
             layout_children,
+            &mut old_anonymous_blocks,
         );
     });
+    for anon_id in old_anonymous_blocks {
+        doc.deallocate_anonymous_block(anon_id);
+    }
 
     fn flush_inline_pseudos_recursive(doc: &mut BaseDocument, node_id: NodeId) {
         doc.iter_children_mut(node_id, |child_id, doc| {
             flush_pseudo_elements(doc, child_id);
-            let display = doc.nodes[node_id]
+            let display = doc.nodes[child_id]
                 .display_style()
                 .unwrap_or(Display::inline());
             let do_recurse = match (display.outside(), display.inside()) {
@@ -1012,6 +1049,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
         parent_id: NodeId,
         node_id: NodeId,
         layout_children: &mut ThinVec<NodeId>,
+        old_anonymous_blocks: &mut Vec<NodeId>,
     ) {
         let node = &mut nodes[node_id];
 
@@ -1032,15 +1070,23 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                 match (display.outside(), display.inside()) {
                     (DisplayOutside::None, DisplayInside::None) => {
                         node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                        // No box: drop the formatting context it had as one.
+                        node.flags.reset_construction_flags();
+                        if let Some(element) = node.element_data_mut() {
+                            element.take_inline_layout();
+                        }
+                        drop_box_children(node, old_anonymous_blocks);
                     }
                     (DisplayOutside::None, DisplayInside::Contents) => {
                         node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                        drop_box_children(node, old_anonymous_blocks);
                         iter_children!(nodes[node_id], |child_id| {
                             find_inline_layout_embedded_boxes_recursive(
                                 nodes,
                                 parent_id,
                                 child_id,
                                 layout_children,
+                                old_anonymous_blocks,
                             );
                         });
                     }
@@ -1053,12 +1099,20 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                         } else {
                             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                            // Inline content has no formatting context of its own: drop the
+                            // one it had as a box before an edit made it inline.
+                            node.flags.reset_construction_flags();
+                            if let Some(element) = node.element_data_mut() {
+                                element.take_inline_layout();
+                            }
+                            drop_box_children(node, old_anonymous_blocks);
                             iter_children_and_pseudos!(nodes[node_id], |child_id| {
                                 find_inline_layout_embedded_boxes_recursive(
                                     nodes,
                                     node_id,
                                     child_id,
                                     layout_children,
+                                    old_anonymous_blocks,
                                 );
                             });
                         }

@@ -35,12 +35,13 @@ Use this table to choose a command. The sections below have every argument and o
 
 Without `-o`, `still`, `strip`, `onion` and `render` write under `out/` in the project folder (the folder of the nearest `package.json`): `out/stills/`, `out/sheets/` and `out/renders/`, named after the composition.
 
-Commands that open a project take two more options. These are `still`, `render`, `strip`, `onion`, `inspect`, `lint`, `bench`, `audio analyze`, `snapshot` and `doctor`.
+Commands that open a project take more options. These are `still`, `render`, `strip`, `onion`, `inspect`, `lint`, `bench`, `audio analyze`, `snapshot` and `doctor`.
 
 | Option | Meaning |
 |---|---|
 | `--comp <id>` | The composition to use. The default is the first one. |
 | `--props <json>` | Input props as a JSON object. See [Compositions and props](/docs/making-videos/compositions/#props). |
+| `--timeout <ms>` | How long a `delayRender()` may stay open before its frame fails with `DELAY_RENDER_TIMEOUT`. The default is 30000, as in Remotion. `delayRender(label, { timeoutInMilliseconds })` wins. |
 
 ### Frames and ranges
 
@@ -67,9 +68,13 @@ Installs a component, template or taste from the Kinetograph registry into the p
 ```sh
 npx kinetograph add <name...> [--overwrite] [--yes] [--dir <folder>]
 npx kinetograph add --list [--type component|template|taste]
+npx kinetograph add hyperframes/<name...> [--ref <commit>] [--keep-remote] [--overwrite] [--dir <folder>]
+npx kinetograph add hyperframes (--list | --search <text>) [--type block|component]
 ```
 
 Components go to `src/components/<name>/`, templates to `src/templates/<name>/`, tastes to `src/tastes/<name>/`, and their pictures, fonts and audio to `public/<kind>/<name>/`. Items an item depends on are installed first. A file that already exists is skipped and reported; `--overwrite` replaces it. If the item needs npm packages the project lacks, the command shows them and asks before installing (`--yes` skips the question; with `--json` or no terminal it only prints the install command). Run it inside a project made by `init`. An item that is not published yet says so and installs nothing.
+
+`add hyperframes/<name>` (or `hf/<name>`) installs a block or component from HeyGen's [HyperFrames registry](/docs/making-videos/hyperframes-registry/); `add hyperframes --list` and `--search <text>` list its items, and a file that exists stops the install unless `--overwrite` is given. The Google Fonts, font files and JSON files an item loads from the web are downloaded into `public/fonts` and `public/data` with the install (`--keep-remote` leaves them as written).
 
 ## compositions
 
@@ -130,7 +135,7 @@ npx kinetograph render <entry> [-o <output.mp4>] [options]
 | `--range <a..b>` | The frames to render. The default is all of them. |
 | `--draft` | Half size, for a quick look. Same as `--scale 0.5`. |
 | `--scale <n>` | Size multiplier, above 0 and at most 8. Each side rounds down to an even number. |
-| `--concurrency <n>` | Frames drawn at once. The default is half the cores, at most 4. `1` uses the main thread. |
+| `--concurrency <n>` | Frames drawn at once. The default is half the cores, at most 4, and the main thread takes over if the workers mostly wait for the GPU. `1` uses the main thread. |
 | `--codec <name>` | `h264` (default), `h265`, `prores`, `vp9` or `gif`. A `.webm` path defaults to `vp9`, and a `.gif` path to `gif`. |
 | `--encoder <name>` | An ffmpeg encoder to use in place of the default: libx264 for H.264 and libx265 for H.265 on every platform. See below. |
 | `--crf <n>` | Constant quality, lower is better. 0 to 51 for h264 and h265, 0 to 63 for vp9. Not with `--video-bitrate`. |
@@ -271,6 +276,25 @@ npx kinetograph snapshot <entry> --update
 | `--update` | Writes the current renders as the approved PNGs. |
 
 A frame matches when no colour channel is off by more than 2 levels. A mismatch or a missing approved file exits with 1.
+
+## matte
+
+Separates a video into a foreground with alpha, and optionally an opaque base, with a matting model that runs natively. The model downloads on first use. See [Video matting](/docs/making-videos/video-matting/).
+
+```sh
+npx kinetograph matte public/original.mp4 -o public/foreground.webm --base public/base.webm
+```
+
+| Option | Meaning |
+|---|---|
+| `-o <file>` | The foreground, `.webm` (VP9 with alpha) or `.mov` (ProRes 4444). The default is `<video>.foreground.webm`. |
+| `--base <file>` | Also write the opaque base layer, `.webm` or `.mov`. |
+| `--model <name>` | `modnet` (default; people) or `ben2-base` (any foreground subject; experimental and heavier). |
+| `--audio <keep\|drop>` | `keep` (default) copies the audio into the files written. |
+| `--quality <preset>` | `very-low`, `low`, `medium`, `high` or `very-high` (default). |
+| `--offline` | Never download the model. It must already be cached. |
+
+The `--json` result has `foreground`, `base` (when asked for), `model`, `backend`, `frames`, `width`, `height`, `durationInSeconds`, `audio`, `quality` and `bytes`.
 
 ## effects
 

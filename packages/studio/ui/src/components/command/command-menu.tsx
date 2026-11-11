@@ -23,12 +23,14 @@ import {
   SlidersHorizontalIcon,
   SunIcon,
   DownloadIcon,
+  EraserIcon,
   ZoomInIcon,
 } from 'lucide-react';
 import { memo, useMemo } from 'react';
 
 import type { CompositionInfo } from '@/api';
 import { Launcher, type LauncherAction, type LauncherPage } from '@/components/command/launcher';
+import type { InspectLayer } from '@/lib/inspect';
 import type { Tool } from '@/components/viewer/viewer';
 import type { Zoom } from '@/components/viewer/viewer';
 import type { Player } from '@/lib/player';
@@ -51,6 +53,9 @@ export interface CommandMenuProps {
   onToggleDetails(): void;
   onInspectorTab(tab: 'props' | 'scene' | 'renders'): void;
   onExport(): void;
+  /** Set while exactly one video layer is selected: "Remove background" is offered then and only then. */
+  videoLayer?: InspectLayer | null;
+  onRemoveBackground?(layer: InspectLayer): void;
   onReload(): void;
   onShowShortcuts(): void;
   /** The coding agents found on this computer, and the one in use. */
@@ -67,10 +72,14 @@ export interface CommandMenuProps {
 export const CommandMenu = memo(function CommandMenu(p: CommandMenuProps) {
   const { compositions, comp, player, theme } = p;
   const has = comp !== null;
+  const videoLayer = p.videoLayer ?? null;
   const { actions, pages } = useMemo(() => {
     const last = () => Math.max(0, (player.getState().comp?.durationInFrames ?? 1) - 1);
     const actions: LauncherAction[] = [
       { id: 'export', label: 'Export or render', group: 'File', icon: <DownloadIcon />, keywords: ['render', 'queue'], onSelect: p.onExport },
+      ...(videoLayer && p.onRemoveBackground
+        ? [{ id: 'remove-background', label: 'Remove background from the selected video', group: 'File', icon: <EraserIcon />, keywords: ['matte', 'transparent', 'cutout', 'person', 'matting'], onSelect: () => p.onRemoveBackground!(videoLayer) } satisfies LauncherAction]
+        : []),
       { id: 'reload', label: 'Reload the project', group: 'File', icon: <RefreshCwIcon />, onSelect: p.onReload },
       { id: 'composition', label: 'Go to composition', group: 'Composition', icon: <ClapperboardIcon />, page: 'compositions', keywords: ['switch', 'select'] },
       { id: 'play', label: 'Play or pause', group: 'Playback', icon: <PlayIcon />, shortcut: ['Space'], onSelect: () => player.toggle() },
@@ -125,7 +134,7 @@ export const CommandMenu = memo(function CommandMenu(p: CommandMenuProps) {
     return { actions: has ? actions : actions.filter((a) => ['reload', 'theme', 'shortcuts', 'tab-props', 'tab-scene', 'tab-renders', 'chat', 'inspector', 'composition', 'agent-switch', 'agent-restart'].includes(a.id)), pages };
     // The handlers are stable (or read what they need when run).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [compositions, has, theme, player, p.agents, p.agentCommand, p.onSelectAgent, p.onRestartAgent, p.onTheme, p.onSelectComp, p.onZoom, p.onTool, p.onExport, p.onReload]);
+  }, [compositions, has, theme, player, p.agents, p.agentCommand, p.onSelectAgent, p.onRestartAgent, p.onTheme, p.onSelectComp, p.onZoom, p.onTool, p.onExport, p.onReload, videoLayer, p.onRemoveBackground]);
 
   return <Launcher actions={actions} pages={pages} triggerLabel="Search or run a command" placeholder="Type a command or search" />;
 });

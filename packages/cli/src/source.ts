@@ -69,7 +69,8 @@ export interface Source {
 /** `openSource`'s arguments for a project, with the bundle it built, so a worker thread loads it without bundling. */
 export interface WorkerSpec {
   entry: string;
-  comp: string;
+  /** Undefined: the first composition, as `openSource` opens without `comp`. */
+  comp?: string;
   props?: string;
   bundleFile: string;
 }
@@ -87,6 +88,8 @@ export interface OpenOptions {
   progress?: (message: string) => void;
   /** False in a render worker: the main thread did the pre-download step. */
   prefetch?: boolean;
+  /** Called once the project is bundled, before it is loaded: what a render worker needs to open it (`WorkerPool`). */
+  onBundle?(spec: WorkerSpec): void;
 }
 
 export function isSceneFile(entry: string): boolean {
@@ -155,12 +158,14 @@ async function loadProject(
   bundleFile?: string,
   unsupported?: UnsupportedImport[],
   prefetch: { offline?: boolean; progress?: (message: string) => void } | null = null,
+  onBundle?: (file: string) => void,
 ): Promise<{ mod: ProjectModule; file: string }> {
   // What the project loads from the web is downloaded before it is read, so frame 0 starts offline.
   if (prefetch !== null) await prefetchBeforePlan(entry, prefetch);
   const file = bundleFile ?? (await bundleProject(entry, unsupported ? { unsupported } : {})).file;
   // A Remotion project: the remote pictures and videos its bundle names, before the project runs.
   if (prefetch !== null) await prefetchBundleAssets(entry, file, prefetch);
+  onBundle?.(file);
   process.setSourceMapsEnabled(true);
   // A HyperFrames page's `import()` of a specifier built at run time is answered by the host.
   if (isHyperframesEntry(entry)) installDynamicImport();
@@ -247,7 +252,13 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
   }
 
   const inputProps = parseProps(options.props);
-  const { mod, file: bundleFile } = await loadProject(absolute, options.bundleFile, options.unsupportedImports, options.prefetch === false ? null : options);
+  const { mod, file: bundleFile } = await loadProject(
+    absolute,
+    options.bundleFile,
+    options.unsupportedImports,
+    options.prefetch === false ? null : options,
+    options.onBundle && ((file) => options.onBundle!({ entry: absolute, comp: options.comp, props: options.props, bundleFile: file })),
+  );
   const compositions = mod.getCompositions();
   if (compositions.length === 0) {
     throw new CliError('NO_COMPOSITIONS', `${entry} registered no compositions: call registerRoot() with a root that renders <Composition>`);

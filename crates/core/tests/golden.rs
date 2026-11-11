@@ -218,6 +218,67 @@ fn scene3d_environment_matches_golden() {
 }
 
 #[test]
+fn glsl_cube_map_matches_golden() {
+    // A raymarched sphere reflecting a procedural six-face cube map (mipmapped, sampled LINEAR_MIPMAP_LINEAR)
+    // over the same cube drawn as the sky.
+    let frame = render_still(scene("tests/scenes/glsl-cube-map.json"), 0).unwrap();
+    check("glsl-cube-map", &frame);
+}
+
+#[test]
+fn glsl_scissor_clear_matches_golden() {
+    // A gradient with three scissored clears over it: only the boxes change, and the last box is cut by the buffer's edge.
+    let frame = render_still(scene("tests/scenes/glsl-scissor-clear.json"), 0).unwrap();
+    check("glsl-scissor-clear", &frame);
+}
+
+#[test]
+fn glsl_array_texture_matches_golden() {
+    // A 4 x 4 x 4 `TEXTURE_2D_ARRAY` (texStorage3D, one texSubImage3D) read by a `sampler2DArray`, one layer in each
+    // quarter, filtered LINEAR within its layer.
+    let frame = render_still(scene("tests/scenes/glsl-array-texture.json"), 0).unwrap();
+    check("glsl-array-texture", &frame);
+}
+
+#[test]
+fn glsl_constant_attribute_matches_golden() {
+    // An indexed quad drawn four times with the vertex colour and offset set by vertexAttrib3fv and vertexAttrib2fv
+    // between draws (the arrays are disabled), the last with vertexAttrib4f.
+    let frame = render_still(scene("tests/scenes/glsl-constant-attribute.json"), 0).unwrap();
+    check("glsl-constant-attribute", &frame);
+}
+
+#[test]
+fn glsl_instanced_matrix_matches_golden() {
+    // Six instances of a quad placed by an instanced `mat4` attribute (four column attributes with a divisor of 1),
+    // with the colour a disabled array read as a constant.
+    let frame = render_still(scene("tests/scenes/glsl-instanced-matrix.json"), 0).unwrap();
+    check("glsl-instanced-matrix", &frame);
+}
+
+#[test]
+fn glsl_float_target_matches_golden() {
+    // A light six times brighter than white drawn into an RGBA16F target (texStorage2D), then tone mapped from it.
+    let frame = render_still(scene("tests/scenes/glsl-float-target.json"), 0).unwrap();
+    check("glsl-float-target", &frame);
+}
+
+#[test]
+fn glsl_lines_match_golden() {
+    // A grid of LINES, a LINE_LOOP star and a LINE_STRIP spiral, each one pixel wide.
+    let frame = render_still(scene("tests/scenes/glsl-lines.json"), 0).unwrap();
+    check("glsl-lines", &frame);
+}
+
+#[test]
+fn glsl_shadow_sampler_matches_golden() {
+    // A diamond drawn into a 64 x 64 depth texture (depth only, TEXTURE_COMPARE_MODE on), then a floor that looks up
+    // that map with a `sampler2DShadow` at a depth behind it: the diamond's shadow, with the soft edge of a LINEAR test.
+    let frame = render_still(scene("tests/scenes/glsl-shadow.json"), 0).unwrap();
+    check("glsl-shadow", &frame);
+}
+
+#[test]
 fn scene3d_animation_matches_golden() {
     // Frame 15 of 30, half a second into every clip: a cube turning, moving
     // and growing (with a second cube on a spline), a quad whose top corners
