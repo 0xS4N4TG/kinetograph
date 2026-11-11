@@ -198,4 +198,69 @@ describe('record then replay', () => {
     expect(a).toEqual(urls.map(() => tile.toString('hex')));
     expect(b).toEqual(a);
   });
+
+  describe('redirects in a record pass', () => {
+    let other: Server;
+    let otherBase: string;
+    let otherSeen: { url: string; authorization: string | undefined }[];
+    let bounce: string;
+    beforeEach(async () => {
+      otherSeen = [];
+      other = createServer((req, res) => {
+        otherSeen.push({ url: req.url!, authorization: req.headers.authorization });
+        res.writeHead(200, { 'content-type': 'application/x-protobuf' }).end(tile);
+      });
+      await new Promise<void>((resolve) => other.listen(0, '127.0.0.1', resolve));
+      otherBase = `http://localhost:${(other.address() as AddressInfo).port}`;
+      bounce = otherBase;
+      // The page's server redirects by path: /to-other goes to the second host, /loop to itself.
+      server.removeAllListeners('request');
+      server.on('request', (req, res) => {
+        seen.push(`${req.method} ${req.url} auth=${req.headers.authorization ?? ''}`);
+        if (req.url!.startsWith('/to-other')) res.writeHead(302, { location: `${bounce}/final.pbf?access_token=${TOKEN}&sig=abc` }).end();
+        else if (req.url!.startsWith('/loop')) res.writeHead(302, { location: '/loop' }).end();
+        else res.writeHead(200, { 'content-type': 'application/x-protobuf' }).end(tile);
+      });
+    });
+    afterEach(() => new Promise<void>((resolve) => other.close(() => resolve())));
+
+    it('follows a redirect between allowed hosts, keys the entry by the asked URL, and replays the final answer', async () => {
+      const dir = dirOf();
+      setNetStore({ dir, mode: 'record', allowHosts: ['127.0.0.1', 'localhost'] });
+      const asked = `${base}/to-other?access_token=${TOKEN}`;
+      const response = await fetch(asked, { headers: { Authorization: 'Bearer FAKE' } });
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(tile);
+      const done = finishNetRecord();
+      setNetStore(null);
+      expect(done.entries).toBe(1);
+      expect(seen[0]).toContain('auth=Bearer FAKE');
+      // The second host gets neither the page's token nor its Authorization header (its own `sig` is its own).
+      expect(otherSeen).toEqual([{ url: '/final.pbf?sig=abc', authorization: undefined }]);
+      expect(allText(dir)).not.toContain(TOKEN);
+      setNetStore({ dir, mode: 'replay', indexSha256: done.sha256 });
+      otherSeen.length = 0;
+      expect(Buffer.from(await (await fetch(asked)).arrayBuffer())).toEqual(tile);
+      expect(otherSeen).toEqual([]);
+    });
+
+    it('refuses a redirect to a host that is not allowed, names it without the secret, and stores nothing', async () => {
+      const dir = dirOf();
+      setNetStore({ dir, mode: 'record', allowHosts: ['127.0.0.1'] });
+      const error = await fetch(`${base}/to-other?access_token=${TOKEN}`).then(() => null, (e: Error) => e);
+      expect(error).toBeInstanceOf(TypeError);
+      expect(error!.message).toContain('localhost');
+      expect(error!.message).toContain('--allow-host localhost');
+      expect(error!.message).not.toContain(TOKEN);
+      expect(otherSeen).toEqual([]);
+      expect(finishNetRecord().entries).toBe(0);
+      setNetStore(null);
+      expect(allText(dir)).not.toContain(TOKEN);
+    });
+
+    it('stops after 5 redirects', async () => {
+      setNetStore({ dir: dirOf(), mode: 'record', allowHosts: ['127.0.0.1'] });
+      await expect(fetch(`${base}/loop`)).rejects.toThrow(/redirected more than 5 times/);
+      expect(seen.length).toBe(6);
+    });
+  });
 });

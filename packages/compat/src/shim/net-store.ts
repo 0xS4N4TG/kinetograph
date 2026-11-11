@@ -96,6 +96,45 @@ export function setNetFrame(frame: number | null): void {
   frameNow = frame;
 }
 
+const MAX_HOPS = 5;
+
+/**
+ * The network answer to a record pass: redirects are followed here, one hop at a time, and only to allow-listed hosts. A
+ * secret the page put in its URL (and its Authorization header) goes only to the host it addressed, never to another one.
+ */
+async function recordRequest(
+  state: NetState,
+  real: typeof fetch,
+  input: Parameters<typeof fetch>[0],
+  init: Parameters<typeof fetch>[1],
+  url: string,
+  method: string,
+): Promise<Response> {
+  const { allowHosts = [] } = state.config;
+  const secretNames = [...DEFAULT_SECRET_PARAMS, ...state.secrets].map((n) => n.toLowerCase());
+  const origin = new URL(url);
+  const own = new Set([...origin.searchParams].filter(([name]) => secretNames.includes(name.toLowerCase())).map(([name, value]) => `${name}=${value}`));
+  const headers = new Headers(init?.headers ?? (typeof input === 'object' && 'headers' in input ? input.headers : undefined));
+  let target = origin;
+  for (let hop = 0; ; hop++) {
+    const response = await real(target.href, { method, headers, redirect: 'manual', signal: init?.signal });
+    const location = response.headers.get('location');
+    if (response.status < 300 || response.status >= 400 || location === null) return response;
+    await response.body?.cancel();
+    const next = new URL(location, target);
+    const shown = netKey(method, next.href, null, [...state.secrets]).slice(method.length + 1);
+    if (!allowHosts.includes(next.hostname)) {
+      throw new TypeError(`fetch("${netKey(method, url, null, [...state.secrets]).slice(method.length + 1)}") was redirected to ${next.hostname} ("${shown}"), which is not an allowed host: add it with --allow-host ${next.hostname} if that is intended`);
+    }
+    if (hop >= MAX_HOPS) throw new TypeError(`fetch("${shown}") was redirected more than ${MAX_HOPS} times`);
+    if (next.host !== origin.host) {
+      headers.delete('authorization');
+      for (const [name, value] of [...next.searchParams]) if (own.has(`${name}=${value}`)) next.searchParams.delete(name, value);
+    }
+    target = next;
+  }
+}
+
 const rangeOf = (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]): string | null =>
   new Headers(init?.headers ?? (typeof input === 'object' && 'headers' in input ? input.headers : undefined)).get('range');
 
@@ -127,7 +166,7 @@ export async function netFetch(
       let work = state.pending.get(key);
       if (work === undefined) {
         work = (async () => {
-          const response = await real(input, init);
+          const response = await recordRequest(state, real, input, init, url, method);
           const bytes = new Uint8Array(await response.arrayBuffer());
           const sha = sha256(bytes);
           const file = blobPath(config.dir, sha);
