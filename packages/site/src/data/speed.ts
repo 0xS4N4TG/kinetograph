@@ -25,7 +25,19 @@ export interface Ratio {
 export type Kind = 'port' | 'page' | 'project';
 
 export interface Scene {
+  /** The stable key: the name the benchmark folders use. Shown only as a small reference in the tables. */
   id: string;
+  /** What a newcomer calls it: two to four plain words. */
+  title: string;
+  /** One short line: what the video shows and what makes it hard to draw. */
+  summary: string;
+  /** Length in seconds, rounded to a whole second. */
+  seconds: number;
+  frames: number;
+  /** Width x height in pixels. */
+  size: string;
+  /** A still under `public/speed/`, when there is one. */
+  thumb?: string;
   /** `port`: a HyperFrames page with a Remotion port. `page`: a HyperFrames page only. `project`: a Remotion project both engines run unchanged. */
   kind: Kind;
   kinetograph: Run;
@@ -59,6 +71,12 @@ export const BENCH = {
 export const SCENES: Scene[] = [
   {
     id: 'film',
+    title: '60-second film',
+    summary: '8 parts: a title, charts, maps, a shader orb and a light flare',
+    seconds: 60,
+    frames: 1800,
+    size: '1920x1080',
+    thumb: '/speed/film.webp',
     kind: 'port',
     kinetograph: { s: 10.26, min: 10.17, max: 10.28, fps: 175.4, rssMb: 2708 },
     hyperframes: { s: 23.25, min: 23.08, max: 23.7, fps: 77.4, rssMb: 3810 },
@@ -68,6 +86,12 @@ export const SCENES: Scene[] = [
   },
   {
     id: 'dm4',
+    title: 'US adoption map',
+    summary: 'US states coloured by adoption rate, with animated arcs between cities',
+    seconds: 12,
+    frames: 360,
+    size: '1920x1080',
+    thumb: '/speed/dm4.webp',
     kind: 'port',
     kinetograph: { s: 2.77, min: 2.76, max: 2.81, fps: 130.1, rssMb: 1880 },
     hyperframes: { s: 6.58, min: 6.56, max: 6.87, fps: 54.8, rssMb: 3264 },
@@ -77,6 +101,12 @@ export const SCENES: Scene[] = [
   },
   {
     id: 'mg1',
+    title: 'Terminal that shatters',
+    summary: 'Typing in a terminal, which breaks into 72 shards, then big kinetic text',
+    seconds: 8,
+    frames: 240,
+    size: '1920x1080',
+    thumb: '/speed/mg1.webp',
     kind: 'port',
     kinetograph: { s: 4.07, min: 3.99, max: 4.1, fps: 58.9, rssMb: 2597 },
     hyperframes: { s: 51.51, min: 51.42, max: 51.68, fps: 4.7, rssMb: 5528 },
@@ -86,6 +116,12 @@ export const SCENES: Scene[] = [
   },
   {
     id: 'mg2',
+    title: 'Revenue counter',
+    summary: 'A glowing dollar figure counting up under a label',
+    seconds: 6,
+    frames: 180,
+    size: '1920x1080',
+    thumb: '/speed/mg2.webp',
     kind: 'port',
     kinetograph: { s: 1.19, min: 1.18, max: 1.19, fps: 151.0, rssMb: 1694 },
     hyperframes: { s: 4.14, min: 4.05, max: 4.15, fps: 43.4, rssMb: 3130 },
@@ -95,6 +131,11 @@ export const SCENES: Scene[] = [
   },
   {
     id: 'dm1',
+    title: 'Language bar chart',
+    summary: 'Bars for the most-used programming languages in a survey',
+    seconds: 12,
+    frames: 360,
+    size: '1920x1080',
     kind: 'page',
     kinetograph: { s: 1.58, min: 1.58, max: 1.62, fps: 227.3, rssMb: 1864 },
     hyperframes: { s: 7.57, min: 7.52, max: 7.58, fps: 47.6, rssMb: 2966 },
@@ -102,6 +143,12 @@ export const SCENES: Scene[] = [
   },
   {
     id: 'dm2',
+    title: 'Hand-drawn bar race',
+    summary: 'Wobbly hand-drawn bars swap places as language shares change',
+    seconds: 10,
+    frames: 300,
+    size: '1920x1080',
+    thumb: '/speed/dm2.webp',
     kind: 'page',
     kinetograph: { s: 1.65, min: 1.65, max: 1.69, fps: 181.8, rssMb: 1736 },
     hyperframes: { s: 5.01, min: 4.99, max: 5.04, fps: 59.9, rssMb: 4268 },
@@ -109,6 +156,12 @@ export const SCENES: Scene[] = [
   },
   {
     id: 'dm5',
+    title: 'Flight to Paris',
+    summary: 'A plane flies a glowing arc from New York to Paris across a map',
+    seconds: 6,
+    frames: 180,
+    size: '1920x1080',
+    thumb: '/speed/dm5.webp',
     kind: 'page',
     kinetograph: { s: 1.91, min: 1.89, max: 1.92, fps: 94.0, rssMb: 1654 },
     hyperframes: { s: 6.64, min: 6.63, max: 6.66, fps: 27.1, rssMb: 3956 },
@@ -116,6 +169,12 @@ export const SCENES: Scene[] = [
   },
   {
     id: 'mg4',
+    title: 'Social post card',
+    summary: 'A post card tilting in 3D over a colour gradient (portrait)',
+    seconds: 7,
+    frames: 210,
+    size: '1080x1350',
+    thumb: '/speed/mg4.webp',
     kind: 'page',
     kinetograph: { s: 1.33, min: 1.31, max: 1.34, fps: 157.7, rssMb: 1523 },
     hyperframes: { s: 4.72, min: 4.7, max: 4.82, fps: 44.5, rssMb: 3725 },
@@ -123,6 +182,12 @@ export const SCENES: Scene[] = [
   },
   {
     id: 'mg5',
+    title: 'Map route to Tokyo',
+    summary: 'A glowing route from San Francisco to Tokyo on a world map',
+    seconds: 8,
+    frames: 240,
+    size: '1920x1080',
+    thumb: '/speed/mg5.webp',
     kind: 'page',
     kinetograph: { s: 1.89, min: 1.88, max: 1.89, fps: 127.3, rssMb: 2088 },
     hyperframes: { s: 5.16, min: 5.08, max: 5.29, fps: 46.5, rssMb: 4433 },
@@ -130,6 +195,12 @@ export const SCENES: Scene[] = [
   },
   {
     id: 'pr1',
+    title: 'Code change announcement',
+    summary: 'A code diff, then key points and numbers for a merged change',
+    seconds: 30,
+    frames: 900,
+    size: '1920x1080',
+    thumb: '/speed/pr1.webp',
     kind: 'page',
     kinetograph: { s: 2.7, min: 2.69, max: 2.74, fps: 333.3, rssMb: 1928 },
     hyperframes: { s: 12.51, min: 12.39, max: 12.66, fps: 72.0, rssMb: 3243 },
@@ -137,6 +208,12 @@ export const SCENES: Scene[] = [
   },
   {
     id: 'compat',
+    title: 'Three-card explainer',
+    summary: 'Paper-style cards over a blurred colour background, with a headline',
+    seconds: 5,
+    frames: 150,
+    size: '1200x1000',
+    thumb: '/speed/compat.webp',
     kind: 'project',
     kinetograph: { s: 1.09, min: 1.08, max: 1.09, fps: 138.1, rssMb: 1227 },
     remotion: { s: 4.26, min: 4.24, max: 4.28, fps: 35.2, rssMb: 2470 },
@@ -144,6 +221,11 @@ export const SCENES: Scene[] = [
   },
   {
     id: 'papercut',
+    title: 'Paper cut-out explainer',
+    summary: 'A vertical video in a paper cut-out style, textured and shadowed',
+    seconds: 33,
+    frames: 988,
+    size: '1080x1920',
     kind: 'project',
     kinetograph: { s: 20.46, min: 20.45, max: 20.48, fps: 48.3, rssMb: 3240 },
     remotion: { s: 646.13, min: 644.35, max: 654.4, fps: 1.5, rssMb: 10599 },
@@ -151,11 +233,33 @@ export const SCENES: Scene[] = [
   },
 ];
 
-/** What papercut is, and the cause of its ratio, as the page gave them. */
+/** The groups the chart is divided into, each with the plain line that says what its rows compare. */
+export const GROUPS: { kind: Kind; title: string; blurb: string }[] = [
+  {
+    kind: 'port',
+    title: 'The same video in all three engines',
+    blurb: 'Written for HyperFrames, then redrawn by hand for Remotion, so each engine draws the same animation.',
+  },
+  {
+    kind: 'page',
+    title: 'HyperFrames pages',
+    blurb: 'Written for HyperFrames only, so there is no Remotion bar. Kinetograph and HyperFrames play the same page.',
+  },
+  {
+    kind: 'project',
+    title: 'Remotion projects',
+    blurb: 'Written for Remotion. Kinetograph and Remotion run the same project, untouched. HyperFrames cannot run it.',
+  },
+];
+
+const papercut = SCENES.find((s) => s.id === 'papercut')!;
+
+/** Why the Paper cut-out explainer is so far apart: the plain note, the technical names behind it, and the video it is about. */
 export const PAPERCUT = {
-  note: 'A Remotion project from a private corpus: 988 frames, 1080x1920.',
-  cause:
-    'Remotion ran at 1.5 fps from the first frame and swap stayed flat, so the time is Chrome\u2019s own. The project layers full-frame SVG paper-grain filters (feTurbulence, feDisplacementMap) and drop-shadows, which Chrome works out on the CPU. Not profiled further.',
+  scene: papercut,
+  note: `In every frame the video lays paper-grain texture and soft shadows over the whole picture. Remotion drew it at ${papercut.remotion!.fps} frames per second from the first frame, so the time is Chrome\u2019s own: Chrome works those effects out on the processor. Kinetograph draws them on the graphics card.`,
+  detail:
+    'The texture is full-frame SVG filters (feTurbulence into feDisplacementMap) and the shadows are drop-shadows. Chrome\u2019s cost was not profiled any further than that steady rate.',
 };
 
 /**
@@ -169,7 +273,8 @@ export const WORKERS = {
   status: 'unreleased build, to be re-measured',
   date: '2026-11-11',
   machine: 'Apple M4 (4 fast + 6 slow cores)',
-  scene: 'film',
+  /** The video, as the page calls it. */
+  video: 'the 60-second film',
   frames: 1800,
   size: '1920x1080',
   protocol: 'median of 3 after a warm-up',

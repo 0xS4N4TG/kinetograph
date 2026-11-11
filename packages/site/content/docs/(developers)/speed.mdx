@@ -1,13 +1,13 @@
 ---
 title: Speed
-description: Render times of Kinetograph, HyperFrames and Remotion on the same scenes.
+description: Render times of Kinetograph, HyperFrames and Remotion on the same videos.
 ---
 
 import { Fact, FrameTime, SpeedBars, SpeedMethod, SpeedSummary, WorkerLanes, WorkerScaling, WorkerSection } from '@/components/docs/speed-charts';
 
 <SpeedSummary />
 
-## Render time per scene
+## Render time per video
 
 <SpeedBars />
 
@@ -15,7 +15,7 @@ import { Fact, FrameTime, SpeedBars, SpeedMethod, SpeedSummary, WorkerLanes, Wor
 
 ## Worker scaling
 
-A render splits the film between workers, and they draw different parts at the same time. On this machine, 4 workers are <Fact k="gain" /> faster than 1 worker, not 4× faster.
+A render splits the video between workers, and they draw different parts at the same time. On this machine, 4 workers are <Fact k="gain" /> faster than 1 worker, not 4× faster.
 
 <WorkerScaling />
 

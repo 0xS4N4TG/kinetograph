@@ -4,7 +4,7 @@ import { Fragment, useId, type CSSProperties, type ReactNode } from 'react';
 
 import { BENCH, PAPERCUT, SHOW_WORKER_SCALING, WORKERS, type Ratio, type Scene } from '@/data/speed';
 import { frameChart, lanesChart, ruleDiagram, workersChart, type Chart, type Mark, type Paint } from '@/lib/speed-charts';
-import { FRAME_HEAD, SCENE_HEAD, WORKER_HEAD, fact, frameCells, methodRows, sceneCells, sortedScenes, status, summary, workerCells } from '@/lib/speed-markdown';
+import { FRAME_HEAD, SCENE_HEAD, SCENE_LEFT, WORKER_HEAD, fact, frameCells, cap, groupedScenes, length, methodRows, papercutHead, sceneCells, status, summaryText, workerCells } from '@/lib/speed-markdown';
 
 // Kalam (SIL OFL 1.1), as in the engine diagram: the hand-lettered words.
 const sketch = localFont({
@@ -97,25 +97,30 @@ function Marks({ marks, hatch }: { marks: Mark[]; hatch: string }) {
   );
 }
 
-function DataTable({ children }: { children: ReactNode }) {
+/** A collapsed block under a card, opened by a plain-worded toggle. */
+function Fold({ label, children }: { label: string; children: ReactNode }) {
   return (
     <details className="group mt-2">
       <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-xs font-medium text-fd-muted-foreground hover:text-fd-foreground [&::-webkit-details-marker]:hidden">
         <ChevronRightIcon className="size-3.5 transition-transform group-open:rotate-90" aria-hidden="true" />
-        Data table
+        {label}
       </summary>
       <div className="mt-2 overflow-x-auto rounded-lg border border-[var(--kg-box-border)]">{children}</div>
     </details>
   );
 }
 
-/** A caption and a collapsed table under a card. */
-function Frame({ caption, table, children }: { caption?: ReactNode; table?: ReactNode; children: ReactNode }) {
+/** The toggle's words, on every table of the page. */
+const NUMBERS = 'Boring detailed numbers';
+
+/** A caption, an optional note and a collapsed table under a card. */
+function Frame({ caption, note, table, children }: { caption?: ReactNode; note?: ReactNode; table?: ReactNode; children: ReactNode }) {
   return (
     <div className="not-prose my-6">
       {children}
       {caption ? <p className="mt-2 text-xs leading-relaxed text-fd-muted-foreground">{caption}</p> : null}
-      {table ? <DataTable>{table}</DataTable> : null}
+      {note}
+      {table ? <Fold label={NUMBERS}>{table}</Fold> : null}
     </div>
   );
 }
@@ -170,8 +175,8 @@ function Table({ head, left = 1, children }: { head: string[]; left?: number; ch
   );
 }
 
-/** Rows of cell text; a row whose first cell is set starts a group and gets a rule above it. */
-function Cells({ rows, left = 1 }: { rows: string[][]; left?: number }) {
+/** Rows of cells; a row whose first cell is set starts a group and gets a rule above it. */
+function Cells({ rows, left = 1 }: { rows: ReactNode[][]; left?: number }) {
   return (
     <>
       {rows.map((cells, r) => (
@@ -200,10 +205,13 @@ function Swatch({ kind }: { kind: 'kg' | 'hf' | 'rm' | 'replay' }) {
 
 const Mono = ({ children }: { children: ReactNode }) => <span className="font-jb text-[0.8125rem]">{children}</span>;
 
-/* ------------------------------------------------------------------ render time per scene */
+/* ------------------------------------------------------------------ render time per video */
 
-/** The grid of one row: name, bars, times, then the two factor columns. Below `sm` the name and factors share a line and the bars sit under it. */
-const ROW = 'grid grid-cols-[minmax(0,1fr)_4.25rem_4.25rem] gap-x-3 sm:grid-cols-[6rem_minmax(0,1fr)_5rem_6.25rem_6.25rem]';
+/**
+ * The grid of one row. Below `sm`: the title and the two factors share a line, the summary runs under them, then the
+ * bars and the times. From `sm` up the picture sits in a column of its own and the text and bars start after it.
+ */
+const ROW = 'grid grid-cols-[minmax(0,1fr)_4.25rem_4.25rem] gap-x-3 sm:grid-cols-[6rem_minmax(0,1fr)_5rem_5.5rem_5.5rem]';
 
 const BAR_STYLE: Record<'kg' | 'hf' | 'rm', CSSProperties> = {
   kg: { background: 'var(--cobalt)' },
@@ -221,6 +229,22 @@ function Factor({ r }: { r?: Ratio }) {
   );
 }
 
+const THUMB_BOX = 'hidden h-[3.375rem] w-24 items-center justify-center overflow-hidden rounded-md border border-[color-mix(in_oklab,var(--ink)_16%,transparent)] bg-[color-mix(in_oklab,var(--ink)_5%,transparent)] sm:flex';
+
+/** A still from the video, or an outline of its shape when there is no still. Not shown on a phone. */
+function Thumb({ s }: { s: Scene }) {
+  if (s.thumb) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={s.thumb} alt={`A still from ${s.title}`} width={192} height={108} loading="lazy" decoding="async" className={`${THUMB_BOX} object-contain`} />;
+  }
+  const [w, h] = s.size.split('x').map(Number);
+  return (
+    <span aria-hidden="true" className={THUMB_BOX}>
+      <span className="block rounded-[2px] border border-dashed border-[color-mix(in_oklab,var(--ink)_45%,transparent)]" style={{ aspectRatio: `${w} / ${h}`, height: '70%' }} />
+    </span>
+  );
+}
+
 function BarRow({ s }: { s: Scene }) {
   const runs = [
     { kind: 'kg' as const, name: 'Kinetograph', run: s.kinetograph },
@@ -229,17 +253,23 @@ function BarRow({ s }: { s: Scene }) {
   ];
   // Each row is scaled to its own slowest engine.
   const slowest = Math.max(...runs.map((r) => r.run.s));
+  // The size is said only where it is not the usual landscape frame.
+  const shape = s.size === '1920x1080' ? '' : `, ${s.size}`;
   return (
-    <div className={`${ROW} items-start py-2.5 sm:py-3`}>
-      <span className="col-start-1 row-start-1 text-[1.0625rem] font-bold leading-none sm:self-center">
-        {s.id.split(/(\d+)/).map((part, i) => (/^\d/.test(part) ? <span key={i} className="font-jb text-[0.9375rem]">{part}</span> : part))}
+    <div className={`${ROW} items-start py-3`}>
+      <div className="col-start-1 row-span-3 row-start-1 hidden pt-0.5 sm:block">
+        <Thumb s={s} />
+      </div>
+      <span className="col-start-1 row-start-1 text-[1.0625rem] font-bold leading-tight sm:col-start-2">{s.title}</span>
+      <span className="col-span-3 col-start-1 row-start-2 mt-0.5 text-[0.8125rem] leading-snug text-(--muted) sm:col-span-4 sm:col-start-2">
+        {s.summary}. <span className="font-jb text-xs">{length(s)}{shape}</span>
       </span>
-      <div aria-hidden="true" className="col-start-1 row-start-2 mt-2 flex flex-col gap-1 sm:col-start-2 sm:row-start-1 sm:mt-0">
+      <div aria-hidden="true" className="col-start-1 row-start-3 mt-2.5 flex flex-col gap-1 sm:col-start-2">
         {runs.map((r) => (
           <div key={r.kind} className="box-border h-2.5" style={{ ...BAR_STYLE[r.kind], width: `${Math.max((r.run.s / slowest) * 100, 1.5)}%` }} />
         ))}
       </div>
-      <div className="col-start-2 col-span-2 row-start-2 mt-2 flex flex-col gap-1 text-right font-jb text-xs tabular-nums sm:col-span-1 sm:col-start-3 sm:row-start-1 sm:mt-0">
+      <div className="col-span-2 col-start-2 row-start-3 mt-2.5 flex flex-col gap-1 text-right font-jb text-xs tabular-nums sm:col-span-1 sm:col-start-3">
         {runs.map((r) => (
           <span key={r.kind} className={`flex h-2.5 items-center justify-end ${r.kind === 'kg' ? 'font-bold text-(--cobalt)' : ''}`}>
             <span className="sr-only">{r.name} </span>
@@ -247,11 +277,11 @@ function BarRow({ s }: { s: Scene }) {
           </span>
         ))}
       </div>
-      <span className="col-start-2 row-start-1 text-right leading-none sm:col-start-4 sm:self-center">
+      <span className="col-start-2 row-start-1 text-right leading-none sm:col-start-4 sm:pt-0.5">
         <span className="sr-only">Kinetograph faster than HyperFrames by </span>
         <Factor r={s.vsHyperframes} />
       </span>
-      <span className="col-start-3 row-start-1 text-right leading-none sm:col-start-5 sm:self-center">
+      <span className="col-start-3 row-start-1 text-right leading-none sm:col-start-5 sm:pt-0.5">
         <span className="sr-only">Kinetograph faster than Remotion by </span>
         <Factor r={s.vsRemotion} />
       </span>
@@ -259,15 +289,46 @@ function BarRow({ s }: { s: Scene }) {
   );
 }
 
-/** Render time per scene: one row per scene, the cause of the papercut gap, and the per-scene table. */
+/** The columns the page's table drops from the export's: the id (it rides on the title) and the size (the rows already say it). */
+const DROPPED = [1, 2];
+
+/** The rows of the details table: the title carries the internal id as a small reference. */
+function sceneTableRows(): ReactNode[][] {
+  return groupedScenes()
+    .flatMap((g) => g.scenes)
+    .flatMap(sceneCells)
+    .map(([title, id, , ...rest]) => [
+      title ? (
+        <>
+          {title} <span className="ml-1 font-normal text-fd-muted-foreground opacity-80">{id}</span>
+        </>
+      ) : (
+        ''
+      ),
+      ...rest,
+    ]);
+}
+
+/** Render time per video: the rows in their groups, the reason for the far-off one, and the table behind it. */
 export function SpeedBars() {
+  const groups = groupedScenes();
   return (
     <>
       <Frame
-        caption={`Each row is scaled to its slowest engine; times are written beside it. Median of ${BENCH.n} timed renders. The blue factors say how many times faster Kinetograph is.`}
+        caption={`Each video's bars are scaled to its slowest engine; times are written beside them. Median of ${BENCH.n} timed renders. The blue factors say how many times faster Kinetograph is.`}
+        note={
+          <>
+            <p className="mt-3 text-sm leading-relaxed text-fd-muted-foreground">
+              <b className="font-medium text-fd-foreground">{papercutHead()}</b> {PAPERCUT.note}
+            </p>
+            <Fold label="Boring technical detail">
+              <p className="px-3 py-2.5 text-xs leading-relaxed text-fd-muted-foreground">{PAPERCUT.detail}</p>
+            </Fold>
+          </>
+        }
         table={
-          <Table head={SCENE_HEAD} left={2}>
-            <Cells rows={sortedScenes().flatMap(sceneCells)} left={2} />
+          <Table head={SCENE_HEAD.filter((_, i) => !DROPPED.includes(i))} left={SCENE_LEFT - DROPPED.length}>
+            <Cells rows={sceneTableRows()} left={SCENE_LEFT - DROPPED.length} />
           </Table>
         }
       >
@@ -286,35 +347,37 @@ export function SpeedBars() {
           <div className="mb-1 mt-3">
             <Rule />
           </div>
-          <div role="group" aria-label="Render time per scene">
+          <div role="group" aria-label="Render time per video">
             <div className={`${ROW} items-end pb-1 pt-1 text-[0.8125rem] leading-tight text-(--muted)`}>
               <span className="col-start-2 text-right sm:col-start-4">
                 vs <span className="inline-block">HyperFrames</span>
               </span>
               <span className="col-start-3 text-right sm:col-start-5">vs Remotion</span>
             </div>
-            {sortedScenes().map((s) => (
-              <BarRow key={s.id} s={s} />
+            {groups.map((g, i) => (
+              <section key={g.kind} aria-label={g.title}>
+                <div className={i ? 'pt-4' : 'pt-1'}>
+                  {i ? <Rule /> : null}
+                  <h3 className="mt-2 text-[1.1875rem] font-bold leading-tight">{g.title}</h3>
+                  <p className="mt-0.5 text-[0.8125rem] leading-snug text-(--muted)">{g.blurb}</p>
+                </div>
+                <div className="divide-y divide-[color-mix(in_oklab,var(--ink)_10%,transparent)]">
+                  {g.scenes.map((s) => (
+                    <BarRow key={s.id} s={s} />
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         </figure>
       </Frame>
-      <p className="text-sm text-fd-muted-foreground">
-        <b className="font-medium text-fd-foreground">papercut.</b> {PAPERCUT.note} {PAPERCUT.cause}
-      </p>
     </>
   );
 }
 
 /** The summary line, written from the data. */
 export function SpeedSummary() {
-  const { hf, rm } = summary();
-  return (
-    <p className="text-base leading-relaxed">
-      On one Apple M4, Kinetograph rendered {hf.n} scenes {hf.lo}&times; to {hf.hi}&times; faster than HyperFrames, and {rm.n} scenes {rm.lo}&times; to {rm.hi}&times; faster than Remotion.
-      Each scene is the median of {BENCH.n} timed renders. The factor depends on the scene, so there is no single number.
-    </p>
-  );
+  return <p className="text-base leading-relaxed">{summaryText()}</p>;
 }
 
 /* ------------------------------------------------------------------ worker scaling */
@@ -335,7 +398,7 @@ export function WorkerScaling() {
       chart={workersChart()}
       caption={
         <>
-          {WORKERS.scene} scene, {WORKERS.frames} frames at {WORKERS.size}, {WORKERS.machine}, {WORKERS.protocol}, {WORKERS.date}. Build {WORKERS.branch} {WORKERS.commit}:{' '}
+          {cap(WORKERS.video)}, {WORKERS.frames} frames at {WORKERS.size}, {WORKERS.machine}, {WORKERS.protocol}, {WORKERS.date}. Build {WORKERS.branch} {WORKERS.commit}:{' '}
           <b className="font-medium text-fd-foreground">{WORKERS.status}</b>.
         </>
       }
@@ -371,7 +434,7 @@ export function FrameTime() {
   return (
     <Figure
       chart={frameChart()}
-      caption={`One worker, ${WORKERS.scene} scene, same build. ${status()}.`}
+      caption={`One worker, ${WORKERS.video}, same build. ${status()}.`}
       table={
         <Table head={FRAME_HEAD}>
           <Cells rows={frameCells()} />
@@ -387,7 +450,7 @@ export function SpeedMethod() {
     <details className="group not-prose my-6 rounded-xl border border-[var(--kg-box-border)] bg-[var(--kg-box-bg)] px-4 py-3">
       <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-fd-foreground [&::-webkit-details-marker]:hidden">
         <ChevronRightIcon className="size-4 transition-transform group-open:rotate-90" aria-hidden="true" />
-        Machine, versions and protocol
+        The boring details: machine, versions, settings
       </summary>
       <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
         {methodRows().map(([k, v]) => (

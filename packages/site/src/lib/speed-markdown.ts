@@ -1,4 +1,4 @@
-import { BENCH, PAPERCUT, SCENES, SHOW_WORKER_SCALING, WORKERS, speedUp, type Ratio, type Scene } from '../data/speed.ts';
+import { BENCH, GROUPS, PAPERCUT, SCENES, SHOW_WORKER_SCALING, WORKERS, speedUp, type Ratio, type Scene } from '../data/speed.ts';
 
 /**
  * The Speed page as text. The page's components draw charts, which a Markdown reader cannot see, so this file writes
@@ -13,13 +13,19 @@ export const ratio = (r?: Ratio) => (r ? `${r.x.toFixed(1)}× (${r.lo.toFixed(1)
 export const status = () => WORKERS.status[0].toUpperCase() + WORKERS.status.slice(1);
 
 /**
- * The scenes in page order: the ones compared with HyperFrames first, by how much faster Kinetograph is (largest first,
- * from the printed medians), then the Remotion-only scenes, smallest factor first, so papercut is last.
+ * The videos in page order inside one group: the ones compared with HyperFrames first, by how much faster Kinetograph is
+ * (largest first, from the printed medians), then the Remotion-only ones, smallest factor first.
  */
 export function sortedScenes(): Scene[] {
   const vsHf = (s: Scene) => (s.hyperframes ? s.hyperframes.s / s.kinetograph.s : 0);
   const vsRem = (s: Scene) => (s.remotion ? s.remotion.s / s.kinetograph.s : 0);
   return [...SCENES].sort((a, b) => (vsHf(a) || vsHf(b) ? vsHf(b) - vsHf(a) : vsRem(a) - vsRem(b)));
+}
+
+/** The chart's groups, each with its videos in the order above. */
+export function groupedScenes() {
+  const all = sortedScenes();
+  return GROUPS.map((g) => ({ ...g, scenes: all.filter((s) => s.kind === g.kind) })).filter((g) => g.scenes.length);
 }
 
 /** One row per engine for a scene: Kinetograph first, then the engines it was compared with. */
@@ -31,9 +37,22 @@ export function sceneRows(s: Scene) {
   ];
 }
 
-export const SCENE_HEAD = ['scene', 'engine', 'median s', 'min–max', 'fps', 'peak RSS MB', 'Kinetograph faster by'];
+/** "8 s" for the length of a video, as the rows show it. */
+export const length = (s: Scene) => `${s.seconds} s`;
+
+/** The columns before the engine name hold the video: its title, its internal id, its size and its frames. The page's own table folds the id into the title. */
+export const SCENE_HEAD = ['video', 'id', 'size', 'frames', 'engine', 'median s', 'min–max', 'fps', 'peak RSS MB', 'Kinetograph faster by'];
+export const SCENE_LEFT = 5;
 export const sceneCells = (s: Scene) =>
-  sceneRows(s).map((r, i) => [i ? '' : s.id, r.engine, r.run.s.toFixed(2), range(r.run.min, r.run.max), r.run.fps.toFixed(1), String(r.run.rssMb), ratio(r.ratio)]);
+  sceneRows(s).map((r, i) => [
+    ...(i ? ['', '', '', ''] : [s.title, s.id, s.size, String(s.frames)]),
+    r.engine,
+    r.run.s.toFixed(2),
+    range(r.run.min, r.run.max),
+    r.run.fps.toFixed(1),
+    String(r.run.rssMb),
+    ratio(r.ratio),
+  ]);
 
 export const WORKER_HEAD = ['workers', 'wall s', 'speed-up vs 1 worker'];
 export const workerCells = () => WORKERS.points.map((p) => [String(p.workers), p.s.toFixed(2), `${speedUp(p.s).toFixed(2)}×`]);
@@ -52,11 +71,23 @@ export const summary = () => {
     const xs = SCENES.flatMap((s) => (s[key] ? [s[key].x] : []));
     return { n: xs.length, lo: Math.min(...xs), hi: Math.max(...xs) };
   };
-  return { hf: span('vsHyperframes'), rm: span('vsRemotion') };
+  return { videos: SCENES.length, hf: span('vsHyperframes'), rm: span('vsRemotion') };
 };
 
+/** The summary line, in plain words, from the data. */
+export const summaryText = () => {
+  const { videos, hf, rm } = summary();
+  return `On one Apple M4, Kinetograph rendered ${videos} videos, from short motion graphics to data charts, maps and a 60-second film. HyperFrames and Remotion, two other programs that make video from code, rendered the ones they have a version of. Kinetograph was ${hf.lo}× to ${hf.hi}× faster than HyperFrames on ${hf.n} videos and ${rm.lo}× to ${rm.hi}× faster than Remotion on ${rm.n}. Each time is the median of ${BENCH.n} timed renders. The factor depends on the video, so there is no single number.`;
+};
+
+/** The note under the chart about the video that is far from the rest: its lead-in, then the note. */
+export const papercutHead = () => `Why “${PAPERCUT.scene.title}” is so far apart.`;
+
+/** A sentence that starts with the video's name. */
+export const cap = (t: string) => t[0].toUpperCase() + t.slice(1);
+
 export const workerCaption = () =>
-  `${WORKERS.scene} scene, ${WORKERS.frames} frames at ${WORKERS.size}, ${WORKERS.machine}, ${WORKERS.protocol}, ${WORKERS.date}. Build ${WORKERS.branch} ${WORKERS.commit}: ${WORKERS.status}.`;
+  `${cap(WORKERS.video)}, ${WORKERS.frames} frames at ${WORKERS.size}, ${WORKERS.machine}, ${WORKERS.protocol}, ${WORKERS.date}. Build ${WORKERS.branch} ${WORKERS.commit}: ${WORKERS.status}.`;
 
 export function methodRows(): [string, string][] {
   return [
@@ -73,8 +104,8 @@ export function methodRows(): [string, string][] {
     ['Remotion run', BENCH.settings.remotion],
     ['HyperFrames run', BENCH.settings.hyperframes],
     ['Ratio', `the other engine’s median over Kinetograph’s; the bracket is best over worst and worst over best of the ${BENCH.n} runs`],
-    ['Scenes', 'no version has audio; each Remotion port rewrites the HyperFrames page (GSAP tweens as frame maths); compat and papercut are Remotion projects both engines run unchanged'],
-    ['Not measured', 'any other machine; Remotion on the six pages with no port; HyperFrames on compat and papercut; steady-state fps'],
+    ['Videos', 'none has audio; each Remotion port redraws a HyperFrames page by hand (GSAP tweens as frame maths); the two Remotion projects (compat and papercut) run unchanged in both engines'],
+    ['Not measured', 'any other machine; Remotion on the six HyperFrames pages with no port; HyperFrames on the two Remotion projects; steady-state fps'],
   ];
 }
 
@@ -86,16 +117,19 @@ function table(head: string[], rows: string[][], left = 1): string {
 /** The Markdown for one component tag of the Speed page. */
 export function speedExport(tag: string, props: { k?: string } = {}): string | undefined {
   switch (tag) {
-    case 'SpeedSummary': {
-      const { hf, rm } = summary();
-      return `On one Apple M4, Kinetograph rendered ${hf.n} scenes ${hf.lo}× to ${hf.hi}× faster than HyperFrames, and ${rm.n} scenes ${rm.lo}× to ${rm.hi}× faster than Remotion. Each scene is the median of ${BENCH.n} timed renders. The factor depends on the scene, so there is no single number.`;
+    case 'SpeedSummary':
+      return summaryText();
+    case 'SpeedBars': {
+      const groups = groupedScenes()
+        .map((g) => `**${g.title}.** ${g.blurb}\n\n${g.scenes.map((s) => `- ${s.title} (${s.id}): ${s.summary}. ${length(s)}, ${s.frames} frames, ${s.size}.`).join('\n')}`)
+        .join('\n\n');
+      const rows = groupedScenes().flatMap((g) => g.scenes.flatMap(sceneCells));
+      return `${groups}\n\n${table(SCENE_HEAD, rows, SCENE_LEFT)}\n\n**${papercutHead()}** ${PAPERCUT.note}\n\n${PAPERCUT.detail}`;
     }
-    case 'SpeedBars':
-      return `${table(SCENE_HEAD, sortedScenes().flatMap(sceneCells), 2)}\n\n**papercut.** ${PAPERCUT.note} ${PAPERCUT.cause}`;
     case 'WorkerScaling':
       return `${table(WORKER_HEAD, workerCells())}\n\n${workerCaption()}`;
     case 'FrameTime':
-      return `${table(FRAME_HEAD, frameCells())}\n\nOne worker, ${WORKERS.scene} scene, same build. ${status()}.`;
+      return `${table(FRAME_HEAD, frameCells())}\n\nOne worker, ${WORKERS.video}, same build. ${status()}.`;
     case 'SpeedMethod':
       return methodRows().map(([k, v]) => `- ${k}: ${v}`).join('\n');
     case 'WorkerLanes':
