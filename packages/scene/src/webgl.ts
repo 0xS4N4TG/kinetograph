@@ -3527,6 +3527,22 @@ export class WebGLContext {
     const a = [...framebuffer.colors, framebuffer.depth, framebuffer.stencil].find((a) => a !== null && a !== undefined);
     return a !== undefined && a !== null && 'renderbuffer' in a ? a.renderbuffer.samples : 0;
   }
+  /**
+   * `getInternalformatParameter(RENDERBUFFER, format, SAMPLES)`: the one count `renderbufferStorageMultisample` has (a format it
+   * does not draw multisampled, the 32-bit floats, has none). Formats that cannot be a renderbuffer's are an error, as in GL.
+   */
+  getInternalformatParameter(target: number, internalformat: number, pname: number): Int32Array | null {
+    if (this.version !== 2) {
+      this.fail(GL.INVALID_OPERATION);
+      return null;
+    }
+    const known = (kindOf(internalformat) !== 'color' || COLOR_RENDERBUFFER.has(internalformat)) && internalformat !== GL.DEPTH_COMPONENT;
+    if (target !== GL.RENDERBUFFER || pname !== GL.SAMPLES || !known) {
+      this.fail(GL.INVALID_ENUM);
+      return null;
+    }
+    return new Int32Array(FLOAT_FORMATS[internalformat]?.bits === 32 ? [] : [MAX_SAMPLES]);
+  }
   getRenderbufferParameter(target: number, pname: number): number | null {
     if (target !== GL.RENDERBUFFER) {
       this.fail(GL.INVALID_ENUM);

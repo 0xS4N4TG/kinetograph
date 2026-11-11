@@ -30,7 +30,7 @@ Keep the project's own folder layout; do not move files. Only what the commands 
    property and reason the engine cannot draw, with frame ranges. An import that cannot be bundled stops the command
    before any report, with the package named; fix that first and run `doctor` again. Keep the report; work from it.
 3. **Fix each finding.** Pick by kind:
-   - `@remotion/three` or `three` imports: read `references/three.md`.
+   - `@remotion/three` or `three` imports: `<ThreeCanvas>` works; read `references/three.md` for what it cannot draw.
    - `@remotion/player`, `@remotion/renderer`, `@remotion/bundler`, `@remotion/lambda`, `@remotion/cloudrun`, `@remotion/cli`,
      `remotion.config.ts`, `npm run` scripts, webpack overrides: read `references/tooling.md`.
    - `IFrame`, `@remotion/webcodecs`, `@remotion/media-parser` sample callbacks, `@remotion/rive`, `@remotion/skia`,
@@ -74,7 +74,7 @@ so in step 7. Do not hide it by dropping `--strict` for the final render.
 
 Core `remotion` and these `@remotion/*` packages are mapped: transitions, motion-blur, noise, paths, shapes,
 layout-utils, animation-utils, captions, google-fonts, fonts, lottie, gif, media-utils, media, light-leaks, starburst,
-sfx, zod-types, timeline-utils, media-parser, webcodecs, canvas, rive, skia. Not ported on purpose: three, player,
+sfx, zod-types, timeline-utils, media-parser, webcodecs, canvas, rive, skia, three. Not ported on purpose: player,
 renderer, bundler, cli, lambda, cloudrun, tailwind, tailwind-v4 (Tailwind itself works). The full table is on the docs
 site at `/docs/guides/migrate/`. GSAP (core, the free plugins, Flip) works too: seek a paused timeline to
 `frame / fps` in a layout effect, or let a `gsap.to` in a `useEffect` play by itself (`/docs/compat/#gsap`).

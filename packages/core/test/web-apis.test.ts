@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { resetStylesheets, setDomEnvironment } from '@kinetographdev/compat/dom';
-import { setWebViewport } from '@kinetographdev/compat/shim';
+import { pendingImageLoads, setWebViewport } from '@kinetographdev/compat/shim';
 import { getFonts } from '../src/font-registry.js';
 import { installDeterminism, resetVirtualClock, setVirtualFrame } from '../src/determinism.js';
 import '../src/web-install.js';
@@ -134,10 +134,70 @@ describe('new Image()', () => {
   });
 });
 
+describe('a script-made <img>', () => {
+  it('fires load once src is set, with its size, complete and decode(), and holds the frame until then', async () => {
+    const img = g.document.createElement('img');
+    const events: string[] = [];
+    img.addEventListener('load', (e: any) => events.push(`listener:${e.type}:${e.target === img}`));
+    img.onload = () => events.push('onload');
+    expect(img.complete).toBe(true);
+    img.src = staticFile('pic.png');
+    expect(img.complete).toBe(false);
+    expect(pendingImageLoads()).toBe(1);
+    await img.decode();
+    expect(events).toEqual(['onload', 'listener:load:true']);
+    expect([img.naturalWidth, img.naturalHeight, img.complete, pendingImageLoads()]).toEqual([7, 5, true, 0]);
+    // A blob: URL is read asynchronously; the load is still counted until it has fired.
+    const blob = g.document.createElement('img');
+    blob.src = URL.createObjectURL(new Blob([png(11, 13)], { type: 'image/png' }));
+    expect(pendingImageLoads()).toBe(1);
+    await blob.decode();
+    expect([blob.naturalWidth, blob.naturalHeight, pendingImageLoads()]).toEqual([11, 13, 0]);
+  });
+
+  it('is as wide and high as its file while it is not rendered, unless width and height say otherwise', async () => {
+    const img = g.document.createElement('img');
+    img.src = staticFile('pic.png');
+    await img.decode();
+    expect([img.width, img.height, img.offsetWidth]).toEqual([7, 5, 0]);
+    img.setAttribute('width', '20');
+    expect([img.width, img.height]).toEqual([20, 5]);
+  });
+
+  it('fires error for a missing file and a remote URL, and decode() rejects', async () => {
+    const fail = (src: string) =>
+      new Promise<string>((resolve) => {
+        const img = g.document.createElement('img');
+        img.addEventListener('error', () => resolve('error'));
+        img.src = src;
+      });
+    expect(await fail('nothing.png')).toBe('error');
+    expect(await fail('https://example.com/a.png')).toBe('error');
+    const img = g.document.createElement('img');
+    img.src = 'nothing.png';
+    await expect(img.decode()).rejects.toThrow('no such file');
+    expect(img.complete).toBe(true);
+    expect(pendingImageLoads()).toBe(0);
+  });
+
+  it('ignores a load that a newer src has replaced', async () => {
+    const img = g.document.createElement('img');
+    let loads = 0;
+    img.onload = () => loads++;
+    img.src = 'nothing.png';
+    img.src = staticFile('pic.png');
+    await img.decode();
+    expect(loads).toBe(1);
+    expect(img.naturalWidth).toBe(7);
+  });
+});
+
 describe('fetch', () => {
   it('reads project files, from staticFile(), relative paths and the public folder', async () => {
     expect(await (await fetch(staticFile('data.json'))).json()).toEqual({ a: 1 });
     expect(await (await fetch('data.json')).json()).toEqual({ a: 1 });
+    // The path staticFile() gives, made a URL against the document (a loader's `new Request(url)`), is the same file.
+    expect(await (await fetch(new Request(staticFile('data.json')))).json()).toEqual({ a: 1 });
     expect(await (await fetch('/data.json')).json()).toEqual({ a: 1 });
     // The document's own origin is the project, as a resolved `el.src` names it.
     expect(await (await fetch('http://localhost/data.json')).json()).toEqual({ a: 1 });
@@ -194,6 +254,11 @@ describe('canvas and the clock', () => {
     expect(canvas.getContext('webgl')).toBe(gl);
     expect(canvas.getContext('2d')).toBeNull();
     expect(canvas.getContext('bitmaprenderer')).toBeNull();
+    // `instanceof` tells the versions apart, as three's `context instanceof WebGLRenderingContext` check needs.
+    const gl2 = g.document.createElement('canvas').getContext('webgl2');
+    expect([gl instanceof g.WebGLRenderingContext, gl instanceof g.WebGL2RenderingContext]).toEqual([true, false]);
+    expect([gl2 instanceof g.WebGLRenderingContext, gl2 instanceof g.WebGL2RenderingContext]).toEqual([false, true]);
+    expect([g.WebGLRenderingContext.TEXTURE_2D, g.WebGL2RenderingContext.TEXTURE_3D, g.WebGLRenderingContext.TEXTURE_3D]).toEqual([0x0de1, 0x806f, undefined]);
     const gpuCanvas = g.document.createElement('canvas');
     const gpu = gpuCanvas.getContext('webgpu');
     expect(gpu).not.toBeNull();

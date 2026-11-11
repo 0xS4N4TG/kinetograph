@@ -37,6 +37,7 @@ const REMOTION_PACKAGES = new Set([
   'canvas',
   'rive',
   'skia',
+  'three',
 ]);
 
 /**
@@ -162,6 +163,25 @@ function aliasPlugin(unsupported?: UnsupportedImport[]): Plugin {
         resolveDir: CLI_DIR,
         loader: 'js',
       }));
+    },
+  };
+}
+
+/**
+ * `three` and `@react-three/fiber` are the project's own dependencies: the core's `<ThreeCanvas>` (`@remotion/three`)
+ * imports them, and they resolve from the project, so that it and the project's scene share one copy. A project that
+ * has not installed them gets the package named, not a bare "could not resolve".
+ */
+function projectPeersPlugin(projectDir: string): Plugin {
+  return {
+    name: 'kinetograph-project-peers',
+    setup(b) {
+      b.onResolve({ filter: /^(three|@react-three\/fiber)$/ }, async (args) => {
+        if (args.pluginData?.kinetographPeer || !/[\\/]core[\\/]dist[\\/]three\.js$/.test(args.importer)) return undefined;
+        const found = await b.resolve(args.path, { resolveDir: projectDir, kind: args.kind, importer: args.importer, pluginData: { kinetographPeer: true } });
+        if (found.errors.length === 0) return found;
+        return { errors: [{ text: `<ThreeCanvas> (@remotion/three) needs "${args.path}" in your project: npm install three @react-three/fiber` }] };
+      });
     },
   };
 }
@@ -383,6 +403,11 @@ function bundleOptions(absolute: string, unsupported?: UnsupportedImport[], dev 
     outfile: 'bundle.mjs',
     format: 'esm',
     platform: 'node',
+    // As a browser bundler (the project's webpack) resolves a dependency: the ESM entry (`module`, the `import` condition, which
+    // esbuild also applies to a `require()` call) before the CommonJS `main`, so that one copy of a package such as three
+    // is in the bundle whether it is imported or required.
+    mainFields: ['module', 'main'],
+    conditions: ['import', 'module'],
     target: 'node22',
     jsx: 'automatic',
     // The studio's builds record where each element's JSX is (see `JSX_DEV_SHIM`).
@@ -392,7 +417,7 @@ function bundleOptions(absolute: string, unsupported?: UnsupportedImport[], dev 
     external: EXTERNAL,
     // An `import './index.css'` registers the stylesheet's text for the DOM engine (packages/cli/skills/kinetograph-markup/references/ENGINE.md §1); Tailwind's
     // entry is built by the project's Tailwind, and `*.module.css` files export their scoped class names.
-    plugins: [...(dev ? [jsxDevPlugin()] : []), entryPlugin(absolute), imagePlugin(), hyperframesPlugin(), aliasPlugin(unsupported), gsapPlugin(), browserFieldPlugin(), cssPlugin()],
+    plugins: [...(dev ? [jsxDevPlugin()] : []), entryPlugin(absolute), imagePlugin(), hyperframesPlugin(), aliasPlugin(unsupported), projectPeersPlugin(dirname(absolute)), gsapPlugin(), browserFieldPlugin(), cssPlugin()],
     // Bundled CommonJS packages (react-reconciler) call `require` for Node built-ins.
     banner: { js: `import { createRequire as __kCreateRequire } from 'node:module';\nconst require = __kCreateRequire(import.meta.url);` },
   };

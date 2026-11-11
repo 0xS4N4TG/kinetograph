@@ -69,7 +69,7 @@ Status: **Works** means every export exists and you use the package as usual. **
 
 | Package | Status | Exports present | Use instead |
 |---|---|---|---|
-| `@remotion/three` | Not planned | not counted | The own 3D layer, `Scene3D`. The steps are in the [skill](#the-agent-skill). |
+| `@remotion/three` | Mapped | `ThreeCanvas` | The project's own `three` and `@react-three/fiber` stay installed. `useVideoTexture` and `useOffthreadVideoTexture` are not available; the own 3D layer, `Scene3D`, is the alternative. The steps are in the [skill](#the-agent-skill). |
 | `@remotion/player` | Not planned | 0 of 3 | The studio, with `kinetograph studio`. There is no embeddable player. |
 | `@remotion/renderer` | Not planned | 0 of 22 | `kinetograph render`, `still` and `compositions`. |
 | `@remotion/bundler` | Not planned | 0 of 4 | Nothing to do. `render` bundles for you. |
@@ -126,7 +126,7 @@ npx kinetograph render index.html --strict
 - **Tooling imports** (`player`, `renderer`, `bundler`, `lambda`): remove them and use the CLI.
   - `remotion render` becomes `kinetograph render <entry> --comp <id>`.
   - `remotion studio` becomes `kinetograph studio <entry>`.
-- **`@remotion/three`**: rebuild the scene with `Scene3D`, `Camera3D`, lights, `Mesh` and `Model`. Rotations are in degrees. See [Authoring](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph-markup/references/AUTHORING.md), section 6.6.
+- **`@remotion/three`**: `<ThreeCanvas>` runs as it is. For what it cannot draw (drei `<Environment>` and `<Text>`, skinned models, video textures), rebuild the scene with `Scene3D`, `Camera3D`, lights, `Mesh` and `Model`. Rotations are in degrees. See [Authoring](https://github.com/0xS4N4TG/kinetograph/blob/main/packages/cli/skills/kinetograph-markup/references/AUTHORING.md), section 6.6.
 - **`IFrame`**: rebuild the page as components, or use a screenshot.
 - **A CSS property or element in the report**: change it to one the engine draws, or remove it.
 

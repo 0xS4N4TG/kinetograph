@@ -175,7 +175,10 @@ export function resolveProjectFile(name: string): string | null {
     const candidate = join(root, relative);
     if (existsSync(candidate)) return candidate;
   }
-  return null;
+  // An absolute path made into a URL against the document (`new Request(staticFile('a.hdr'))`, three's FileLoader) has
+  // lost its leading slash by the time it is read back. Only a file inside the project comes back: a URL cannot reach out of it.
+  const absolute = `/${relative}`;
+  return roots.some((root) => absolute.startsWith(root.endsWith('/') ? root : `${root}/`)) && existsSync(absolute) ? absolute : null;
 }
 
 /** Called by the module the bundler makes for an imported `.css` file, when the project loads. */

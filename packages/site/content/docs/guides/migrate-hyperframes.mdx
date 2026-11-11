@@ -57,7 +57,7 @@ Everything a HyperFrames page uses is read as it is. That covers `data-compositi
 
 ## What to check
 
-- **Three.js** is not drawn. A page that loads it is reported on every frame.
+- **Three.js** is drawn through the WebGL stand-in when the page loads a local copy of it (import map to `three.module.js`). What the stand-in cannot draw is reported on the frames it happens.
 - **A tween on GSAP's root clock** renders, with a warning. This is a `gsap.to` that is not on a timeline. HyperFrames seeks only the timelines on `window.__timelines`, so put the tween on one of those to get the same picture in both.
 - **Fonts.** Operating-system fonts are never read. CJK, Arabic, Devanagari and other scripts have no bundled font, so load one that has them.
 - **Variable fonts** that set `font-variation-settings` per element can measure wider than in Chrome. A line fitted by `measureText` may then wrap.

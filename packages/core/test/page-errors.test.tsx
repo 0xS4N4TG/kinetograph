@@ -43,6 +43,24 @@ describe('errors the page raises and survives', () => {
     expect(frames[2]).toEqual([]);
   });
 
+  it('does not report a console.warn, or the warning Node prints for process.emitWarning, as an error', async () => {
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    function Warns() {
+      console.warn('THREE.Clock: This module has been deprecated');
+      console.error('(node:4242) [THREE_CJS_DEPRECATED] DeprecationWarning: `require("three")` is deprecated');
+      return <Rect id="r" width={4} height={4} fill="#fff" />;
+    }
+    registerRoot(() => <Composition id="W" component={Warns} width={8} height={8} fps={30} durationInFrames={1} />);
+    const renderer = createFrameRenderer('W');
+    await renderer.ready();
+    const frame = await renderer.renderFrame(0);
+    spy.mockRestore();
+    warn.mockRestore();
+    renderer.dispose();
+    expect(frame.unsupported).toEqual([]);
+  });
+
   it('reports an unhandled rejection', async () => {
     function Rejects() {
       const frame = useCurrentFrame();
