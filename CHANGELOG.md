@@ -7,7 +7,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Added
 
-- `fetch-deps --record --allow-host <hosts>` runs every frame with the network open for those hosts and keeps what the page `fetch`ed (URLs built at run time) in `.kinetograph/net`; a render answers only from it, and a miss names the URL, the frame and the command to record it. Secret query parameters (`access_token`, `key`, `api_key`, `token`, plus `--secret-param`) never reach the store or the lock; Range requests and gzip bodies replay as recorded.
+- `fetch-deps --record --allow-host <hosts>` runs every frame with the network open for those hosts and keeps what the page `fetch`ed (URLs built at run time) in `.kinetograph/net`; a render answers only from it, and a miss names the URL, the frame and the command to record it. Secret query parameters (`access_token`, `key`, `token`, `sig`, signed-URL `x-amz-*`, plus `--secret-param`) never reach the store or the lock, and a credential-looking value in another one fails the pass unless `--keep-param` names it; Range requests and gzip bodies replay as recorded.
 - WebGL `blitFramebuffer` to and from float render targets.
 - WebGL cube map faces as framebuffer colour attachments (`texStorage2D` of a cube map, RGBA8 or float faces).
 - WebGL `generateMipmap` of a texture or cube map a framebuffer drew in.

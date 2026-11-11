@@ -9,7 +9,26 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, w
 import { join } from 'node:path';
 
 /** Query parameters that never reach a key or a message (user-named ones are added to these). */
-export const DEFAULT_SECRET_PARAMS = ['access_token', 'key', 'api_key', 'apikey', 'token'];
+export const DEFAULT_SECRET_PARAMS = [
+  'access_token', 'token', 'key', 'api_key', 'apikey', 'api-key', 'auth', 'authorization', 'client_secret', 'secret', 'password',
+  'sig', 'signature', 'sv', 'se', 'sp', 'sr',
+];
+/** Signed-URL families (AWS, Google, Azure): every parameter with one of these prefixes. */
+const SECRET_PREFIXES = ['x-amz-', 'x-goog-', 'x-ms-'];
+
+/** Whether a query parameter's name is a secret (any case): a default, a name in `extra`, or a signed-URL prefix. */
+export function isSecretParam(name: string, extra: readonly string[] = []): boolean {
+  const lower = name.toLowerCase();
+  return DEFAULT_SECRET_PARAMS.includes(lower) || extra.some((e) => e.toLowerCase() === lower) || SECRET_PREFIXES.some((p) => lower.startsWith(p));
+}
+
+/** A value that looks like a credential: 24 characters or more and mixed (3 of lower, upper, digit, symbol), or a base64 or hex run of 32. */
+export function looksLikeCredential(value: string): boolean {
+  if (value.length < 24) return false;
+  if (/[A-Za-z0-9+/_-]{32,}={0,2}/.test(value)) return true;
+  const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((re) => re.test(value)).length;
+  return classes >= 3;
+}
 
 /** The headers a replayed response keeps. */
 const KEPT_HEADERS = ['content-type', 'content-encoding', 'content-range', 'accept-ranges', 'etag', 'cache-control'];
@@ -30,6 +49,10 @@ export interface NetConfig {
   allowHosts?: string[];
   /** Names of secret query parameters, on top of `DEFAULT_SECRET_PARAMS`. */
   secretParams?: string[];
+  /** Record: names of parameters whose credential-looking values are meant to be kept in the key. */
+  keepParams?: string[];
+  /** Record: a warning (a path segment that looks like a credential). */
+  onWarn?: (message: string) => void;
   /** Record: written into the index. Replay: a different one is reported through `onStale`. */
   bundleSha?: string;
   /** Replay: the SHA-256 the lock pinned for the index file; a different index is an error. */
@@ -44,6 +67,9 @@ interface NetState {
   secrets: Set<string>;
   entries: Map<string, NetEntry>;
   pending: Map<string, Promise<void>>;
+  /** A credential-looking value found in a request: the pass fails at its end whatever the page did with the error. */
+  fatal: Error | null;
+  warned: Set<string>;
   bundleSha: string | undefined;
 }
 
@@ -56,7 +82,6 @@ const blobPath = (dir: string, sha: string): string => join(dir, sha.slice(0, 2)
 
 /** `METHOD URL`, without the fragment, user info or secret parameters, plus the byte range of a Range request. */
 export function netKey(method: string, url: string, range: string | null, secretParams: readonly string[] = []): string {
-  const secrets = new Set([...DEFAULT_SECRET_PARAMS, ...secretParams].map((s) => s.toLowerCase()));
   const u = new URL(url);
   const kept = u.search.slice(1).split('&').filter((pair) => {
     if (pair === '') return false;
@@ -66,7 +91,7 @@ export function netKey(method: string, url: string, range: string | null, secret
     } catch {
       // an undecodable name is compared as written
     }
-    return !secrets.has(name.toLowerCase());
+    return !isSecretParam(name, secretParams);
   });
   return `${method.toUpperCase()} ${u.origin}${u.pathname}${kept.length > 0 ? `?${kept.join('&')}` : ''}${range ? ` ${range.replace(/\s+/g, '')}` : ''}`;
 }
@@ -75,7 +100,7 @@ export function netKey(method: string, url: string, range: string | null, secret
 export function setNetStore(config: NetConfig | null): void {
   net = null;
   if (config === null) return;
-  const state: NetState = { config, secrets: new Set(config.secretParams ?? []), entries: new Map(), pending: new Map(), bundleSha: config.bundleSha };
+  const state: NetState = { config, secrets: new Set(config.secretParams ?? []), entries: new Map(), pending: new Map(), fatal: null, warned: new Set(), bundleSha: config.bundleSha };
   if (config.mode === 'replay') {
     const file = join(config.dir, INDEX_FILE);
     const bytes = readFileSync(file);
@@ -98,6 +123,28 @@ export function setNetFrame(frame: number | null): void {
 
 const MAX_HOPS = 5;
 
+/** Fails a record pass on a query value that looks like a credential and is neither stripped nor kept by name; warns on a path segment that does. */
+function checkCredentials(state: NetState, url: string): void {
+  const u = new URL(url);
+  const keep = (state.config.keepParams ?? []).map((n) => n.toLowerCase());
+  for (const [name, value] of u.searchParams) {
+    if (isSecretParam(name, [...state.secrets]) || keep.includes(name.toLowerCase()) || !looksLikeCredential(value)) continue;
+    const error = new TypeError(
+      `the query parameter "${name}" of a request to ${u.hostname} has a value that looks like a credential, so it would be written to the recorded store: ` +
+        `use --secret-param ${name} to strip it, or --keep-param ${name} if it is not a secret`,
+    );
+    state.fatal ??= error;
+    throw error;
+  }
+  u.pathname.split('/').forEach((segment, index) => {
+    const message = `a path segment of a request to ${u.hostname} (segment ${index}) looks like a credential; path segments are recorded as they are`;
+    if (index > 0 && looksLikeCredential(segment) && !state.warned.has(message)) {
+      state.warned.add(message);
+      state.config.onWarn?.(message);
+    }
+  });
+}
+
 /**
  * The network answer to a record pass: redirects are followed here, one hop at a time, and only to allow-listed hosts. A
  * secret the page put in its URL (and its Authorization header) goes only to the host it addressed, never to another one.
@@ -111,9 +158,8 @@ async function recordRequest(
   method: string,
 ): Promise<Response> {
   const { allowHosts = [] } = state.config;
-  const secretNames = [...DEFAULT_SECRET_PARAMS, ...state.secrets].map((n) => n.toLowerCase());
   const origin = new URL(url);
-  const own = new Set([...origin.searchParams].filter(([name]) => secretNames.includes(name.toLowerCase())).map(([name, value]) => `${name}=${value}`));
+  const own = new Set([...origin.searchParams].filter(([name]) => isSecretParam(name, [...state.secrets])).map(([name, value]) => `${name}=${value}`));
   const headers = new Headers(init?.headers ?? (typeof input === 'object' && 'headers' in input ? input.headers : undefined));
   let target = origin;
   for (let hop = 0; ; hop++) {
@@ -161,6 +207,7 @@ export async function netFetch(
   const host = new URL(url).hostname;
   if (config.mode === 'record') {
     if (!(config.allowHosts ?? []).includes(host)) return null;
+    checkCredentials(state, url);
     if (!state.entries.has(key)) {
       // The same request made twice at once is one network call.
       let work = state.pending.get(key);
@@ -209,6 +256,7 @@ export async function netFetch(
 export function finishNetRecord(): { sha256: string; size: number; entries: number; hosts: string[] } {
   const state = net;
   if (state === null || state.config.mode !== 'record') throw new Error('no network record is running');
+  if (state.fatal !== null) throw state.fatal;
   const { dir } = state.config;
   mkdirSync(dir, { recursive: true });
   const entries: Record<string, NetEntry> = {};

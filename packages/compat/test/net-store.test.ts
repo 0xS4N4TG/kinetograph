@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { gzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { finishNetRecord, installDomGlobals, netKey, setNetFrame, setNetStore } from '../src/shim/index.js';
+import { finishNetRecord, installDomGlobals, isSecretParam, looksLikeCredential, netKey, setNetFrame, setNetStore } from '../src/shim/index.js';
 
 installDomGlobals();
 
@@ -77,6 +77,24 @@ describe('netKey', () => {
     expect(netKey('GET', 'https://t.example/s.json?Key=abc&API_KEY=1&token=2&apikey=3')).toBe('GET https://t.example/s.json');
     expect(netKey('GET', 'https://t.example/s.json?sig=abc&k=1', null, ['sig'])).toBe('GET https://t.example/s.json?k=1');
     expect(netKey('GET', 'https://u:p@t.example/f.pmtiles', 'bytes=0-9')).toBe('GET https://t.example/f.pmtiles bytes=0-9');
+  });
+});
+
+describe('what counts as a secret', () => {
+  it('matches names in any case: the defaults, signed-URL families and prefixes, and a user list', () => {
+    for (const name of ['access_token', 'TOKEN', 'Key', 'api-key', 'ApiKey', 'auth', 'Authorization', 'client_secret', 'secret', 'password', 'sig', 'Signature', 'sv', 'se', 'sp', 'SR', 'X-Amz-Credential', 'x-goog-signature', 'X-MS-foo']) {
+      expect(isSecretParam(name), name).toBe(true);
+    }
+    for (const name of ['z', 'x', 'y', 'v', 'layer', 'size', 'x-other']) expect(isSecretParam(name), name).toBe(false);
+    expect(isSecretParam('Sess', ['sess'])).toBe(true);
+    expect(netKey('GET', 'https://t.example/a.png?X-Amz-Date=1&X-Amz-Signature=fake&sv=1&Sig=fake&w=2')).toBe('GET https://t.example/a.png?w=2');
+  });
+
+  it('flags long mixed values and long base64 or hex runs, never a coordinate or a short value', () => {
+    expect(looksLikeCredential('Ab3dE6gH9jK2mN5pQ8sT1vX4yZ7')).toBe(true);
+    expect(looksLikeCredential('0123456789abcdef0123456789abcdef')).toBe(true);
+    expect(looksLikeCredential('a'.repeat(40))).toBe(true);
+    for (const value of ['12', '4096', '2026-11-11', 'streets-v2', 'pk.short', 'abcdefghijklmnopqrstuvwx', '1234567890123456789012345']) expect(looksLikeCredential(value), value).toBe(false);
   });
 });
 
@@ -261,6 +279,54 @@ describe('record then replay', () => {
       setNetStore({ dir: dirOf(), mode: 'record', allowHosts: ['127.0.0.1'] });
       await expect(fetch(`${base}/loop`)).rejects.toThrow(/redirected more than 5 times/);
       expect(seen.length).toBe(6);
+    });
+  });
+
+  describe('credential-looking values in a record pass', () => {
+    const fake = 'Ab3dE6gH9jK2mN5pQ8sT1vX4yZ7';
+
+    it('fails the pass before the request, naming the parameter and the two ways out, never the value; tile numbers pass', async () => {
+      const dir = dirOf();
+      setNetStore({ dir, mode: 'record', allowHosts: ['127.0.0.1'] });
+      await fetch(`${base}/tiles/4/1/2.pbf?v=2&layer=streets-v2`);
+      seen.length = 0;
+      const error = await fetch(`${base}/tiles/9.pbf?session=${fake}`).then(() => null, (e: Error) => e);
+      expect(error!.message).toContain('"session"');
+      expect(error!.message).toContain('--secret-param session');
+      expect(error!.message).toContain('--keep-param session');
+      expect(error!.message).not.toContain(fake);
+      expect(seen).toEqual([]);
+      // The page may swallow the error; the pass still fails, and writes no index.
+      expect(() => finishNetRecord()).toThrow(/looks like a credential/);
+      expect(readdirSync(dir).includes('index.json')).toBe(false);
+    });
+
+    it('lets a named parameter through with --keep-param, and strips one named with --secret-param', async () => {
+      const dir = dirOf();
+      setNetStore({ dir, mode: 'record', allowHosts: ['127.0.0.1'], keepParams: ['Session'], secretParams: ['other'] });
+      await fetch(`${base}/a.pbf?session=${fake}`);
+      await fetch(`${base}/b.pbf?other=${fake}`);
+      const done = finishNetRecord();
+      setNetStore(null);
+      expect(done.entries).toBe(2);
+      const text = allText(dir);
+      expect(text).toContain(`a.pbf?session=${fake}`);
+      expect(text).not.toContain('other=');
+    });
+
+    it('warns, without the value, about a path segment that looks like a credential, and still records it', async () => {
+      const warnings: string[] = [];
+      setNetStore({ dir: dirOf(), mode: 'record', allowHosts: ['127.0.0.1'], onWarn: (m) => warnings.push(m) });
+      await fetch(`${base}/${fake}/tiles/4/1.pbf`);
+      await fetch(`${base}/${fake}/tiles/4/2.pbf`);
+      expect(finishNetRecord().entries).toBe(2);
+      expect(warnings).toEqual([expect.stringContaining('127.0.0.1')]);
+      expect(warnings[0]).toContain('segment 1');
+      expect(warnings[0]).not.toContain(fake);
+    });
+
+    it('keeps user info out of the key and the error of a miss', () => {
+      expect(netKey('GET', 'https://user:pass@t.example/a.pbf')).toBe('GET https://t.example/a.pbf');
     });
   });
 });

@@ -22,7 +22,7 @@ export interface NetShim {
 }
 
 let shim: NetShim | null = null;
-let recording: { allowHosts: string[]; secretParams: string[] } | null = null;
+let recording: { allowHosts: string[]; secretParams: string[]; keepParams: string[]; onWarn?: (message: string) => void } | null = null;
 
 /**
  * Called as a project loads: a record pass in progress records, otherwise a store beside the entry is replayed (checked
@@ -51,10 +51,10 @@ export function installNet(entry: string, bundleFile: string, mod: NetShim, warn
 /** Runs every frame of the project with the network open for `allowHosts`, then writes the store and pins its index. */
 export async function recordNet(
   entry: string,
-  options: { allowHosts: string[]; secretParams: string[]; progress?: (message: string) => void },
+  options: { allowHosts: string[]; secretParams: string[]; keepParams: string[]; progress?: (message: string) => void },
 ): Promise<{ dir: string; entries: number; hosts: string[]; frames: number }> {
   const { openSource } = await import('./source.js');
-  recording = { allowHosts: options.allowHosts, secretParams: options.secretParams };
+  recording = { allowHosts: options.allowHosts, secretParams: options.secretParams, keepParams: options.keepParams, onWarn: options.progress };
   try {
     const source = await openSource(entry, { progress: options.progress });
     try {
