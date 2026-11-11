@@ -11,6 +11,8 @@
   --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace;
   --font-serif: 'Newsreader Variable', 'Iowan Old Style', Baskerville, Georgia, serif;
   --font-heading: var(--font-sans);
+  --font-display: 'Sofia Sans Extra Condensed Variable', 'Arial Narrow', ui-sans-serif, system-ui, sans-serif;
+  --font-wordmark: 'Geist Serif', 'Iowan Old Style', Georgia, serif;
   --font-dm: 'DM Sans Variable', ui-sans-serif, system-ui, sans-serif;
   --font-jb: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace;
   --color-ink: var(--ink);
@@ -18,6 +20,8 @@
   --color-flag: var(--flag);
   --color-ground: var(--ground);
   --color-cobalt: var(--cobalt);
+  --color-field: var(--field);
+  --color-on-field: var(--on-field);
   --color-paper: var(--paper);
   --color-night: var(--night);
   --radius-sm: calc(var(--radius) - 4px);
@@ -138,6 +142,9 @@
   --flag: #e0261b;
   --ground: #eceae6;
   --cobalt: #2238c4;
+  /* The accent as a flat field and as picture tint: the same cobalt in both themes, with paper on it (7.8:1). */
+  --field: #2238c4;
+  --on-field: #f7f4ec;
   --paper: #f7f4ec;
   --radius: 0.375rem;
   --background: var(--paper);
@@ -274,15 +281,6 @@
   --color-fd-accent: color-mix(in oklab, var(--cobalt) 9%, var(--paper));
   --color-fd-accent-foreground: var(--cobalt);
   --color-fd-ring: var(--cobalt);
-}
-
-/* Landing: caption words resolve one by one, then the tracking box eases onto the hot word. */
-@keyframes kg-in { from { opacity: 0; transform: translateY(0.12em) scale(1.12); filter: blur(3px); } }
-.kg-in { animation: kg-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
-@keyframes kg-track { from { opacity: 0; transform: scale(1.4); } }
-.kg-track { animation: kg-track 0.7s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
-@media (prefers-reduced-motion: reduce) {
-  .kg-in, .kg-track { animation: none !important; }
 }
 
 /* Catalog showroom motion: transform, opacity and clip-path only, named properties, no ease-in. */
@@ -502,4 +500,193 @@ figure.shiki button[data-checked] {
 #nd-sidebar [data-radix-scroll-area-viewport] p,
 #nd-sidebar [data-radix-collapsible-trigger] {
   margin-top: 18px;
+}
+
+/* ---------------------------------------------------------------------------------------------------------------
+   Home page: retro-modern. Modern layout and components; the retro part is only the condensed display face, one
+   picture treatment (a pre-dithered greyscale file screened over a cobalt field) and film grain.
+   Radius system: pill (buttons, nav, command bars), 2rem cards in a tray with a 6px bezel, and the 26px core inside it.
+   Layers: main 10, frame 30, nav 40, grain 50.
+   --------------------------------------------------------------------------------------------------------------- */
+@font-face {
+  font-family: 'Geist Serif';
+  src: url('/fonts/GeistSerifVF.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  --kg-out: cubic-bezier(0, 0, 0.2, 1);
+  --kg-decel: cubic-bezier(0.16, 1, 0.3, 1);
+  --kg-card: 2rem;
+  --kg-bezel: 6px;
+  --kg-core: calc(var(--kg-card) - var(--kg-bezel));
+}
+
+/* Double bezel: a thin tray around a core with a concentric radius. */
+.kg-tray {
+  padding: var(--kg-bezel);
+  border-radius: var(--kg-card);
+  background: color-mix(in oklab, var(--foreground) 5%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--foreground) 10%, transparent);
+}
+.kg-core {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: var(--kg-core);
+}
+.kg-core-field {
+  background: var(--field);
+  color: var(--on-field);
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / 0.16);
+}
+.kg-core-card {
+  background: var(--card);
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / 0.06);
+}
+
+/* Fitted display line: the box is as tall as the capitals (a hair of room for round letters), so lines sit flush to
+   the content width and to each other. --r is the string's width in em (measured once, with kerning off); the font
+   size is then the container's width over it. */
+.kg-fit {
+  container-type: inline-size;
+}
+.kg-cap {
+  display: flow-root; /* so the child's negative margin moves the text inside the box, not the box */
+  height: 0.705em;
+  overflow: clip;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-kerning: none;
+  line-height: 1;
+  white-space: nowrap;
+  font-size: calc(100cqw / var(--r));
+}
+.kg-cap > .in {
+  display: block;
+  margin-top: -0.12em;
+}
+.kg-wordmark-fit {
+  display: flow-root;
+  height: 0.9em;
+  overflow: clip;
+  font-family: var(--font-wordmark);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  font-size: calc(100cqw / var(--r));
+}
+.kg-wordmark-fit > .in {
+  display: block;
+  margin-top: -0.05em;
+}
+.kg-ch {
+  display: inline-block;
+  animation: kg-rise 760ms var(--kg-decel) backwards;
+  animation-delay: calc(var(--l, 0ms) + var(--n) * var(--step, 24ms));
+}
+@keyframes kg-rise {
+  from {
+    transform: translateY(105%);
+  }
+}
+
+/* Scroll reveal: opacity and an 8px rise, 480ms, 45ms apart. RevealRoot sets data-in with one IntersectionObserver. */
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(8px);
+}
+[data-reveal][data-in] {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 480ms var(--kg-out),
+    transform 480ms var(--kg-out);
+  transition-delay: calc(var(--i, 0) * 45ms);
+}
+
+/* Picture panel: the pre-dithered file screens over the field (black becomes the accent, white stays white). The
+   untreated picture sits on top, fades in slowly on hover and out a little faster. */
+.kg-pic > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.kg-pic > .tint {
+  mix-blend-mode: screen;
+}
+.kg-pic > .orig {
+  opacity: 0;
+  transition: opacity 1300ms var(--kg-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .group\/pic:hover .kg-pic > .orig {
+    opacity: 1;
+    transition-duration: 2300ms;
+  }
+}
+
+/* A thin cobalt frame around the viewport with rounded inner corners, and the film grain above everything. */
+.kg-frame {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  overflow: hidden;
+  pointer-events: none;
+}
+.kg-frame::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border-radius: var(--kg-card);
+  box-shadow: 0 0 0 100vmax var(--field);
+}
+.kg-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0.035;
+  background-size: 220px 220px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+/* The same noise, once, over the footer's field. */
+.kg-noise {
+  background-size: 300px 300px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+}
+
+/* The nav pills swap places after the hero: one slides up and out, the other down and in. */
+.kg-pill {
+  transition:
+    transform 560ms var(--kg-decel),
+    opacity 360ms var(--kg-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] {
+    opacity: 1;
+    transform: none;
+  }
+  [data-reveal][data-in] {
+    transition: none;
+  }
+  .kg-ch {
+    animation: none;
+  }
+  .kg-pic > .orig {
+    transition: none;
+  }
+  .kg-pill {
+    transition: none;
+  }
+}
+@media (scripting: none) {
+  [data-reveal] {
+    opacity: 1;
+    transform: none;
+  }
 }

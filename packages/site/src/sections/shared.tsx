@@ -2,23 +2,24 @@ import type { ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
-/** Wordmark as in the launch film: DM Sans 700, tight tracking, the full stop in red. */
+/** The wordmark: lowercase kinetograph in Geist Serif 600 with no tracking, the full stop in red (its only use of red). */
 export function Wordmark({ className }: { className?: string }) {
   return (
-    <span className={cn('font-dm font-bold tracking-[-0.05em]', className)}>
+    <span className={cn('font-wordmark font-semibold tracking-normal', className)}>
       kinetograph<span className="text-flag">.</span>
     </span>
   );
 }
 
-/** Small uppercase label with the film's wide tracking. */
+/** Small condensed label, uppercase and tracked, for captions, step names and buttons. */
 export function Label({ children, className }: { children: ReactNode; className?: string }) {
-  return <p className={cn('font-jb text-[11px] font-medium tracking-[0.24em] text-mute uppercase', className)}>{children}</p>;
+  return <p className={cn('font-display text-[16px] leading-none font-medium tracking-[0.08em] text-mute uppercase', className)}>{children}</p>;
 }
 
-export const shell = 'mx-auto w-full max-w-[1200px] px-[clamp(20px,5vw,64px)]';
-export const section = 'pb-[clamp(88px,13vw,200px)]';
-export const body = 'font-dm text-[17px] leading-[1.6] font-normal tracking-[-0.01em] text-ink/75';
-export const link = 'text-cobalt underline decoration-cobalt/30 underline-offset-4 transition-colors hover:decoration-cobalt';
-/** Heading size for the hand-written section headings. */
-export const h2Size = 'text-[clamp(38px,4.6vw,64px)]';
+/** The condensed face as a class, for nav links and buttons. */
+export const labelText = 'font-display text-[16px] leading-none font-medium tracking-[0.08em] uppercase';
+
+export const shell = 'mx-auto w-full max-w-[1320px] px-[clamp(20px,4.5vw,64px)]';
+export const section = 'py-[clamp(64px,8.5vw,136px)]';
+export const body = 'font-dm text-[17px] leading-[1.6] font-normal tracking-[-0.005em] text-ink/80';
+export const link = 'text-cobalt underline decoration-cobalt/40 underline-offset-4 transition-colors hover:decoration-cobalt';

@@ -44,7 +44,7 @@ export function Browser({ items, groups }: { items: Item[]; groups: Record<strin
     <>
       <CategoryTabs groups={groups} />
       <header className="pt-6 md:pt-0">
-        <Heading as="h1" lines={['Motion ready to add.']} hot="Motion" animate className="-ml-[0.08em] text-[clamp(36px,5vw,56px)] leading-[1.05]" />
+        <Heading as="h1" size="page">Motion ready to add.</Heading>
         <p className={cn('mt-4 font-dm text-[17px] leading-[1.6] text-ink/75', MEASURE)}>
           Find a template, a component or a taste for your next video. Watch it play, then add it with one command and make it yours.
         </p>

@@ -3,8 +3,7 @@ import type { ReactNode } from 'react';
 
 import '@fontsource-variable/dm-sans/wght.css';
 import '@fontsource-variable/jetbrains-mono/wght.css';
-import '@fontsource-variable/geist'; // the footer's faces
-import '@fontsource-variable/geist-mono';
+import '@fontsource-variable/sofia-sans-extra-condensed/wght.css'; // the display face
 import '@fontsource-variable/newsreader/opsz.css';
 import '@fontsource-variable/newsreader/opsz-italic.css';
 import '@/index.css';
@@ -22,6 +21,9 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        <link rel="preload" href="/fonts/GeistSerifVF.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+      </head>
       <body>{children}</body>
     </html>
   );
