@@ -1,0 +1,11 @@
+<!doctype html>
+<html>
+  <body>
+    <!-- Two sub-compositions one after the other, mounted with no position of their own: HyperFrames positions each
+         timed child of the root absolutely, so the second is drawn where the first was, not below it. -->
+    <div id="root" data-composition-id="main" data-start="0" data-duration="2" data-width="64" data-height="36" data-no-timeline style="position: relative; width: 64px; height: 36px; background: #000">
+      <div data-composition-id="first" data-composition-src="compositions/first.html" data-start="0" data-duration="1" data-width="64" data-height="36"></div>
+      <div data-composition-id="second" data-composition-src="compositions/second.html" data-start="1" data-duration="1" data-width="64" data-height="36"></div>
+    </div>
+  </body>
+</html>

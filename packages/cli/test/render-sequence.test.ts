@@ -17,10 +17,10 @@ import { fakeNative, type Calls } from './helpers.js';
 // Small chunks, so a short range is shared between workers. Read when parallel-render.ts is first imported.
 const chunk = vi.hoisted(() => (process.env.KINETOGRAPH_CHUNK = '4'));
 
-const seam = vi.hoisted(() => ({ override: undefined as undefined | ((entry: string) => unknown), fake: undefined as unknown }));
+const seam = vi.hoisted(() => ({ override: undefined as undefined | ((entry: string, options: object) => unknown), fake: undefined as unknown }));
 vi.mock('../src/source.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/source.js')>();
-  return { ...actual, openSource: (entry: string, options: object) => seam.override?.(entry) ?? actual.openSource(entry, options) };
+  return { ...actual, openSource: (entry: string, options: object) => seam.override?.(entry, options) ?? actual.openSource(entry, options) };
 });
 
 // `Worker` runs render-worker.ts in this process, with a message port of its own and the fake addon.
@@ -29,13 +29,18 @@ vi.mock('node:worker_threads', async () => {
   const { EventEmitter } = await import('node:events');
   class FakeWorker extends EventEmitter {
     private readonly inbox = new EventEmitter();
+    // What is posted before the worker listens waits for it, as on a real port.
+    private readonly waiting: unknown[] = [];
     constructor(_url: unknown, options: { workerData: unknown }) {
       super();
       port.spawned += 1;
       const outbox = this;
       const parentPort = {
         postMessage: (message: unknown) => setImmediate(() => outbox.emit('message', structuredClone(message))),
-        on: (event: string, listener: (message: unknown) => void) => outbox.inbox.on(event, listener),
+        on: (event: string, listener: (message: unknown) => void) => {
+          outbox.inbox.on(event, listener);
+          for (const message of outbox.waiting.splice(0)) setImmediate(() => outbox.inbox.emit('message', message));
+        },
       };
       // One module evaluation at a time: it reads `parentPort` and `workerData` as it is evaluated.
       port.queue = port.queue.then(async () => {
@@ -47,7 +52,8 @@ vi.mock('node:worker_threads', async () => {
       });
     }
     postMessage(message: unknown): void {
-      setImmediate(() => this.inbox.emit('message', structuredClone(message)));
+      const copy = structuredClone(message);
+      setImmediate(() => (this.inbox.listenerCount('message') > 0 ? this.inbox.emit('message', copy) : this.waiting.push(copy)));
     }
     async terminate(): Promise<void> {}
   }
@@ -318,11 +324,36 @@ describe('render (video) --concurrency', () => {
     expect(r.err).toBe('');
     expect(r.code).toBe(0);
     expect(port.spawned).toBe(3);
-    expect(calls.yuv.map((y) => y.index)).toEqual(Array.from({ length: 36 }, (_, i) => i));
-    // The frame the worker drew at each index: frame 10 + index.
+    // Pushed by frame number, as this thread pushes its own frames when it draws the rest.
+    expect(calls.yuv.map((y) => y.index)).toEqual(Array.from({ length: 36 }, (_, i) => 10 + i));
+    // The frame the worker drew at each: frame 10 + its place.
     expect(calls.yuv.map((y) => (y.data[0]! << 8) | y.data[1]!)).toEqual(Array.from({ length: 36 }, (_, i) => 10 + i));
     expect(calls.finished).toEqual([undefined]);
     expect(calls.pushed).toHaveLength(0);
+  });
+
+  // The workers start when the bundle is written (`onBundle`) and are ready before the render takes them.
+  const early = (bundleFile?: string) => async (_entry: string, options: { onBundle?(spec: object): void }) => {
+    const project = fakeProject();
+    options.onBundle?.({ ...project.worker!, comp: undefined, ...(bundleFile ? { bundleFile } : {}) });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    return project;
+  };
+
+  it('takes the workers started while the project opened, and draws the same frames', async () => {
+    seam.override = early();
+    const r = await cli('render', 'index.tsx', '--range', '10..=45', '--concurrency', '3', '-o', join(scratch(), 'p.mp4'), '--json');
+    expect(r.code).toBe(0);
+    expect(port.spawned).toBe(3);
+    expect(calls.yuv.map((y) => (y.data[0]! << 8) | y.data[1]!)).toEqual(Array.from({ length: 36 }, (_, i) => 10 + i));
+  });
+
+  it('starts workers of its own when the early ones were started for another bundle', async () => {
+    seam.override = early('/elsewhere/bundle.js');
+    const r = await cli('render', 'index.tsx', '--range', '10..=45', '--concurrency', '3', '-o', join(scratch(), 'p.mp4'), '--json');
+    expect(r.code).toBe(0);
+    expect(port.spawned).toBe(6);
+    expect(calls.yuv.map((y) => (y.data[0]! << 8) | y.data[1]!)).toEqual(Array.from({ length: 36 }, (_, i) => 10 + i));
   });
 });
 

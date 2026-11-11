@@ -159,6 +159,15 @@ export function renderFailure(): Error | null {
   return failure;
 }
 
+/**
+ * Rejects whoever waits for the handles now (`whenRenderIdle`) with `error`, without recording a failure: the frame that
+ * was waiting fails, a later one is not affected.
+ */
+export function rejectRenderWaits(error: Error): void {
+  for (const waiter of [...waiters]) waiter.reject(error);
+  waiters.clear();
+}
+
 /** Resolves once no handle is open; rejects with the failure if one is recorded or arrives while waiting. */
 export function whenRenderIdle(): Promise<void> {
   if (failure) return Promise.reject(failure);

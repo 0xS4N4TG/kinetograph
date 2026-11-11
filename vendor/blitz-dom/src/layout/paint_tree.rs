@@ -256,6 +256,19 @@ impl BaseDocument {
             return;
         };
 
+        // A `display: none` box is not laid out, so what an earlier layout hoisted
+        // to it is no longer its own (an edited document would draw it).
+        if display.inside() == DisplayInside::None {
+            let hoisted = std::mem::take(&mut *self.nodes[node_id].hoisted_children.borrow_mut());
+            for id in hoisted {
+                if let Some(node) = self.nodes.get(id) {
+                    if node.oof_containing_block.get() == Some(node_id) {
+                        node.oof_containing_block.set(None);
+                    }
+                }
+            }
+        }
+
         // Entries hoisted out of this subtree are collected directly into the
         // storage that will hold them afterwards: the node's own stacking
         // context for a root, otherwise its contribution cache (from which

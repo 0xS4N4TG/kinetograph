@@ -295,7 +295,10 @@ export function createSceneRoot(options: EmitOptions = {}): SceneRoot {
   let error: { value: unknown } | undefined;
   const remember = (value: unknown): void => {
     // The first error is the cause; later ones are usually its fallout.
-    error ??= { value };
+    if (error === undefined) {
+      error = { value };
+      options.onError?.(value);
+    }
   };
   const root = reconciler.createContainer(
     container,

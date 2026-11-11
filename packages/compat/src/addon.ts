@@ -6,15 +6,29 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
 export interface DomAddon {
-  /** `IslandRequest` JSON in, `IslandOutput` JSON out. `pass` numbers the samples of one motion-blurred frame (an older addon ignores it). */
-  renderDomIsland(requestJson: string, pass?: number): string;
+  /**
+   * `IslandRequest` JSON in, `IslandOutput` JSON out. `pass` numbers the renders of one frame, its motion-blur samples
+   * included; `base` is the pass of the island's layers the caller kept (`bases` of dom/index.ts): when the addon kept
+   * the same ones, the layers come back as changes from them, with `delta: base`.
+   */
+  renderDomIsland(requestJson: string, pass?: number, base?: number): string;
   /** `renderDomIsland` queued behind the renders before it: a ticket for `finishDomIsland`, which waits for the output. */
-  startDomIsland?(requestJson: string, pass?: number): number;
+  startDomIsland?(requestJson: string, pass?: number, base?: number): number;
   finishDomIsland?(ticket: number): string;
-  /** `IslandRequest` JSON in, `{ [path]: { x, y, width, height, rect, client, scroll } }` JSON out. */
-  domLayoutBoxes(requestJson: string): string;
-  /** `IslandRequest` JSON, an element path and CSS property names in; the computed value of each, "" when unknown. */
-  domComputedStyle(requestJson: string, path: string, properties: string[]): string[];
+  /**
+   * `IslandRequest` JSON in, `{ [path]: { x, y, width, height, rect, client, scroll } }` JSON out. `pass` is the pass
+   * of the frame whose scripts read it (`currentSamplePass`): the document read is the one the frame's render draws.
+   * With `paths`, only those elements' boxes (an older addon gives them all).
+   */
+  domLayoutBoxes(requestJson: string, pass?: number, paths?: string[]): string;
+  /** `IslandRequest` JSON, an element path and CSS property names in; the computed value of each, "" when unknown. `pass` as above. */
+  domComputedStyle(requestJson: string, path: string, properties: string[], pass?: number): string[];
+  /**
+   * The version of island edits the two readbacks take in place of a request (1; absent: none): a request the caller
+   * numbers, `{"stamp":N,"request":REQUEST}`, then `{"stamp":M,"base":N,"path","time","set":NodeEdit[]}` for what a
+   * script changed since (`islandEdits`). Edits to a state the addon does not hold fail with code `STALE_BASE`.
+   */
+  domIslandEdits?(): number;
   /** A video's or GIF's header (`probeMedia` of the addon), for `<video>` load events and `duration`. */
   probeMedia?(path: string, baseDir?: string): { width: number; height: number; durationInSeconds: number };
   /** The text engine, for the size of native text in an island and of a canvas's `measureText`. */

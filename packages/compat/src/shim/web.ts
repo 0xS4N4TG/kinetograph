@@ -10,7 +10,7 @@ import { resolveObjectURL } from 'node:buffer';
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, WebGLContext, createGpu, GPU_GLOBALS, pictureOf, type CanvasPicture } from '@kinetographdev/scene';
-import { resolveDocumentUrl, resolveProjectFile, sameOriginPath } from '../environment.js';
+import { resolveDocumentUrl, resolveProjectFile, resolveCachedRemoteFile, sameOriginPath } from '../environment.js';
 import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas.js';
 import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, installDocumentMembers } from './document.js';
 import { AttrShim, NamedNodeMapShim } from './attributes.js';
@@ -338,7 +338,9 @@ async function createImageBitmapShim(source: unknown, ...rest: unknown[]): Promi
 const REAL_FETCH = Symbol.for('kinetograph.realFetch');
 
 // Remote URLs a project has downloaded ahead of time (HyperFrames' `fetch-deps`): `fetch(url)` of exactly one of them reads
-// the cached file, so a frame stays a function of the project. Any other remote URL is refused, and `onRefused` hears of it.
+// the cached file, so a frame stays a function of the project. So does an https URL `fetch-deps` downloaded and locked for a
+// Remotion project (never one downloaded during the render). A GET only; any other request, and any other remote URL, is
+// refused, and `onRefused` hears of it.
 let remoteFiles = new Map<string, string>();
 let onRefused: ((url: string) => void) | null = null;
 
@@ -390,8 +392,11 @@ function makeAnswer(real: typeof fetch): typeof fetch {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
     if (/^(data|blob):/i.test(url)) return real(input, init);
     if (REMOTE.test(url)) {
-      const cached = remoteFiles.get(url);
-      if (cached !== undefined && existsSync(cached)) {
+      // Only a GET (or HEAD) without a body is answered, and only from a file `fetch-deps` downloaded and locked.
+      const method = (init?.method ?? (typeof input === 'object' && 'method' in input ? input.method : 'GET')).toUpperCase();
+      const hasBody = init?.body != null || (typeof input === 'object' && 'body' in input && input.body != null);
+      const cached = (method === 'GET' || method === 'HEAD') && !hasBody ? (remoteFiles.get(url) ?? resolveCachedRemoteFile(url)) : null;
+      if (cached != null && existsSync(cached)) {
         return new Response(await readFile(cached), { status: 200, headers: { 'content-type': MIME[extname(new URL(url).pathname).toLowerCase()] ?? 'application/octet-stream' } });
       }
       onRefused?.(url);
@@ -436,15 +441,21 @@ function documentQuery(selector: string, first: boolean): DomElement[] {
     out.push(body);
     if (first) return out;
   }
+  // The roots' trees are under `body` too: each element is listed once (a set, as a page's tree has thousands).
+  const seen = new Set(out);
+  const add = (found: DomElement): void => {
+    if (seen.has(found)) return;
+    seen.add(found);
+    out.push(found);
+  };
   for (const found of first ? [body.querySelector(selector)].filter((e) => e !== null) : body.querySelectorAll(selector)) {
-    if (!out.includes(found as DomElement)) out.push(found as DomElement);
+    add(found as DomElement);
     if (first) return out;
   }
   for (const readback of readbackRoots()) {
     const cx = selectorContextOf(readback);
     for (const host of queryAll(readback.descendants(), selector, cx, first)) {
-      const found = domElementFor(host, readback);
-      if (!out.includes(found)) out.push(found);
+      add(domElementFor(host, readback));
       if (first) return out;
     }
   }

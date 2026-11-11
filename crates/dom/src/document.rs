@@ -19,25 +19,25 @@
 //! A document is built per call and resolved at the request's time, so a frame
 //! is a pure function of its request.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use blitz_dom::net::ResourceLoadResponse;
 use blitz_dom::{
-    Attribute, BaseDocument, DocumentConfig, DocumentMutator, LocalName, NodeId, QualName, ns,
+    Attribute, BaseDocument, DocumentConfig, DocumentMutator, LocalName, NodeId, QualName,
+    local_name, ns,
 };
 use blitz_traits::shell::{ColorScheme, Viewport};
-use style::properties::{ComputedValues, LonghandId};
-use style::servo_arc::Arc as ServoArc;
 
 use crate::clamp;
 use crate::collapse;
+use crate::dirty::{self, Stamp};
 use crate::fonts;
 use crate::inline;
 use crate::net::{self, LocalFiles};
-use crate::paint::{self, Painted};
-use crate::request::{DomNode, IslandOutput, IslandRequest};
+use crate::paint::{self, Fragments};
+use crate::request::{DomNode, IslandEdits, IslandOutput, IslandRequest};
 use crate::ua;
 
 /// The attribute every element of the island carries: its host-tree path.
@@ -62,6 +62,8 @@ pub struct IslandDocument {
     /// Sub-resources that could not be read (a missing image, a network URL),
     /// each with the reason.
     pub missing: Vec<String>,
+    /// The boxes a line clamp changed (`clamp::settle`), put back before the document is edited.
+    clamped: Vec<clamp::Clamped>,
 }
 
 impl IslandDocument {
@@ -82,6 +84,16 @@ impl std::fmt::Display for BuildError {
 }
 
 impl std::error::Error for BuildError {}
+
+/// Why [`IslandCache::resolve_edits`] made no document.
+#[derive(Debug)]
+pub enum EditsError {
+    /// No island of the path is kept for the pass, or the edits do not fit its request: the caller sends the whole
+    /// request instead.
+    Stale(String),
+    /// The request the edits make cannot be built.
+    Build(BuildError),
+}
 
 /// Parses an `IslandRequest`. A tree of elements can be deeper than serde_json's
 /// default limit of 128 levels, so the limit is off; the caller needs a stack
@@ -220,6 +232,7 @@ fn build_root(
                 root: Some(html),
                 starting,
                 missing: Vec::new(),
+                clamped: Vec::new(),
             },
             files,
         ));
@@ -267,6 +280,7 @@ fn build_root(
             root,
             starting,
             missing: Vec::new(),
+            clamped: Vec::new(),
         },
         files,
     ))
@@ -341,7 +355,8 @@ fn resolve_keeping(
 
 /// The passes after styling that mend what Blitz leaves out. True when none
 /// of them changed the document's tree or styles, so the document is still
-/// what building the request's tree gives and [`changes`] can edit it.
+/// what building the request's tree gives and [`changes`] can edit it; a line
+/// clamp's changes are recorded and put back first (`IslandDocument::clamped`).
 #[inline(never)]
 fn settle(island: &mut IslandDocument, request: &IslandRequest) -> bool {
     let mut plain = true;
@@ -361,8 +376,7 @@ fn settle(island: &mut IslandDocument, request: &IslandRequest) -> bool {
     // `-webkit-line-clamp` boxes cut their height at the Nth line, which is
     // only known once the text is laid out.
     if clamp::requested(request) {
-        clamp::settle(&mut island.doc, request.time);
-        plain = false;
+        island.clamped = clamp::settle(&mut island.doc, request.time);
     }
     plain
 }
@@ -371,120 +385,82 @@ fn settle(island: &mut IslandDocument, request: &IslandRequest) -> bool {
 pub struct Resolved {
     pub island: IslandDocument,
     files: Arc<LocalFiles>,
-    /// Whether [`IslandCache`] may keep it.
+    /// Whether [`IslandCache`] may edit it to another request.
     plain: bool,
-    /// The last paint of the document, and the style and box of each node then.
-    painted: Option<(Painted, Vec<Stamp>)>,
-    /// The elements whose transforms alone changed since that paint, when
-    /// nothing else did (`Resolved::paint`).
-    moved: Option<Vec<NodeId>>,
-}
-
-/// A node's computed style and box as a paint saw them. The style is held,
-/// so another one cannot take its place in memory.
-struct Stamp {
-    node: NodeId,
-    style: Option<ServoArc<ComputedValues>>,
-    layout: Option<taffy::Layout>,
-}
-
-/// A node's box; text and comments have none.
-fn layout_of(node: &blitz_dom::Node) -> Option<taffy::Layout> {
-    use blitz_dom::node::NodeData;
-    matches!(
-        node.data,
-        NodeData::Element(_) | NodeData::AnonymousBlock(_) | NodeData::Document(_)
-    )
-    .then(|| *node.final_layout())
-}
-
-fn stamps(doc: &BaseDocument) -> Vec<Stamp> {
-    doc.tree()
-        .iter()
-        .map(|(_, node)| Stamp {
-            node: node.id,
-            style: node.primary_styles().map(|s| (*s).clone()),
-            layout: layout_of(node),
-        })
-        .collect()
+    /// Whether it is kept for the renders after it (a pass's), so its paint keeps what the next paint replays.
+    retains: bool,
+    /// The style and box of each node at the last paint, and the stacking contexts' contents it painted.
+    painted: Option<(Vec<Stamp>, Fragments)>,
+    /// The nodes whose attributes (other than `style`) or text the edits since that paint set; None when the next
+    /// paint has to be whole (a file was read, a line clamp cut another line, a stylesheet or an `id` changed).
+    touched: Option<Vec<NodeId>>,
+    /// How many stacking contexts' contents the last paint replayed and how many it painted.
+    replayed: (u64, u64),
+    /// Whether the last paint of the island (of this document, or of the one it was built in place of) was whole:
+    /// nothing known of what changed, so nothing replayed.
+    whole: bool,
 }
 
 impl Resolved {
-    /// Paints the island. After an edit that only changed transforms, the
-    /// last paint's layers with those groups' transforms worked out again
-    /// (`paint::repaint_transforms`); otherwise a whole paint.
+    /// Paints the island. After edits, the stacking contexts nothing inside
+    /// changed are replayed from the last paint (`paint::paint_retaining`).
     pub fn paint(&mut self, request: &IslandRequest) -> IslandOutput {
         let doc = &self.island.doc;
-        let again = match (self.moved.take(), self.painted.take()) {
-            (Some(moved), Some((painted, _))) => {
-                paint::repaint_transforms(doc, request, painted, &moved)
-            }
-            _ => None,
-        };
-        let (output, painted) = again.unwrap_or_else(|| paint::paint_keeping(doc, request));
-        self.painted = Some((painted, stamps(doc)));
-        output
-    }
-}
-
-/// The properties that only make an element's matrix.
-const TRANSFORM_PROPERTIES: [LonghandId; 4] = [
-    LonghandId::Transform,
-    LonghandId::Translate,
-    LonghandId::Rotate,
-    LonghandId::Scale,
-];
-
-/// The nodes whose `style` `edits` set: None when an edit is anything else
-/// (a text, another attribute).
-fn style_edits(edits: &[Edit]) -> Option<Vec<NodeId>> {
-    edits
-        .iter()
-        .map(|edit| match edit {
-            Edit::Attr(id, name, Some(_)) if name.local == *"style" => Some(*id),
-            _ => None,
-        })
-        .collect()
-}
-
-/// The nodes whose transforms alone changed between `stamps` (the last
-/// paint) and now, if that is all that changed: every box is where it was,
-/// every node has the values it had, and of the nodes in `edited` only the
-/// transform properties differ.
-fn transform_changes(
-    island: &IslandDocument,
-    edited: &[NodeId],
-    stamps: &[Stamp],
-) -> Option<Vec<NodeId>> {
-    let doc = &island.doc;
-    if stamps.len() != doc.tree().len() {
-        return None;
-    }
-    let mut moved = Vec::new();
-    for stamp in stamps {
-        let node = doc.get_node(stamp.node)?;
-        if layout_of(node) != stamp.layout {
-            return None;
+        if !self.retains {
+            return paint::paint(doc, request);
         }
-        let style = node.primary_styles();
-        match (&stamp.style, &style) {
-            (None, None) => {}
-            (Some(was), Some(now)) => {
-                let now: &ServoArc<ComputedValues> = now;
-                if ServoArc::ptr_eq(was, now) || was.same_values_except(now, &[]) {
-                    continue;
-                }
-                if !edited.contains(&stamp.node)
-                    || !was.same_values_except(now, &TRANSFORM_PROPERTIES)
-                {
+        let (kept, changed) = match (self.painted.take(), self.touched.take()) {
+            (Some((stamps, fragments)), Some(touched)) => {
+                (fragments, dirty::since(doc, &stamps, &touched))
+            }
+            _ => (Fragments::default(), None),
+        };
+        // A whole paint after a whole paint is likely followed by one (a page built or restyled every frame): its
+        // contents are not kept, so they are neither copied nor dropped unused.
+        let whole = std::mem::replace(&mut self.whole, changed.is_none());
+        if whole && changed.is_none() {
+            self.painted = Some((dirty::stamps(doc), Fragments::default()));
+            self.touched = Some(Vec::new());
+            self.replayed = (0, 0);
+            return paint::paint(doc, request);
+        }
+        let retained = paint::paint_retaining(doc, request, kept, changed.as_ref());
+        self.painted = Some((dirty::stamps(doc), retained.fragments));
+        self.touched = Some(Vec::new());
+        self.replayed = (retained.replayed, retained.painted);
+        retained.output
+    }
+
+    /// How many stacking contexts' contents the last paint replayed and how many it painted.
+    pub fn replayed(&self) -> (u64, u64) {
+        self.replayed
+    }
+}
+
+/// The nodes `edits` set an attribute (other than `style`) or the text of; None when one sets a stylesheet's text, an
+/// `id` (another element can refer to it) or a path (layer ids are made of them).
+fn touched_by(doc: &BaseDocument, edits: &[Edit]) -> Option<Vec<NodeId>> {
+    let mut touched = Vec::new();
+    for edit in edits {
+        match edit {
+            Edit::Attr(_, name, _) if name.local == *"style" => {}
+            Edit::Attr(_, name, _) if name.local == *"id" || name.local == *PATH_ATTR => {
+                return None;
+            }
+            Edit::Attr(id, _, _) => touched.push(*id),
+            Edit::Text(id, _) => {
+                let parent = doc
+                    .get_node(*id)
+                    .and_then(|n| n.parent)
+                    .and_then(|p| doc.get_node(p));
+                if parent.is_some_and(|p| p.data.is_element_with_tag_name(&local_name!("style"))) {
                     return None;
                 }
-                moved.push(stamp.node);
+                touched.push(*id);
             }
-            _ => return None,
         }
     }
-    Some(moved)
+    Some(touched)
 }
 
 /// The islands of one motion-blurred frame's samples (packages/cli/skills/kinetograph-markup/references/SCENE.md, "Motion
@@ -492,13 +468,11 @@ fn transform_changes(
 /// islands differ in a few styles (a transform, an opacity) while their
 /// structure, text and sheets stay. The document of an earlier sample is
 /// edited to the next one instead of building, styling and shaping all of it
-/// again; the edits restyle and lay out only what they touch. When they
-/// changed nothing but transforms (every box where it was, every other value
-/// the same), the island is painted from its last paint with those groups'
-/// transforms worked out again (`Resolved::paint`). The result is the same as
-/// building and painting the sample afresh. It is not used when a transition
-/// or animation could start from an edit, nor for a tree whose structure
-/// changed.
+/// again; the edits restyle and lay out only what they touch, and the paint
+/// replays the stacking contexts they left as they were (`Resolved::paint`).
+/// The result is the same as building and painting the sample afresh. It is
+/// not used when a transition or animation could start from an edit, nor for
+/// a tree whose structure changed.
 ///
 /// A pass is the renders of one frame, its samples included. The pass that
 /// follows it (its number one more) edits the documents the pass left, from
@@ -573,6 +547,114 @@ impl IslandCache {
         request: &IslandRequest,
         pass: Option<u64>,
     ) -> Result<Resolved, BuildError> {
+        self.enter(pass);
+        let whole = self.kept.get(&request.path).is_some_and(|kept| kept.resolved.whole);
+        let editable = pass.is_some()
+            && self
+                .kept
+                .get(&request.path)
+                .is_some_and(|kept| kept.resolved.plain && !moves(request, &[&kept.request.root]));
+        if editable
+            && let Some(mut kept) = self.kept.remove(&request.path)
+            && same_page(&kept.request, request)
+            && let Some(edits) = changes(
+                &kept.resolved.island,
+                Some(&kept.request.root),
+                &request.root,
+            )
+        {
+            self.edit(&mut kept.resolved, request, &edits);
+            return Ok(kept.resolved);
+        }
+        self.build(request, whole)
+    }
+
+    /// The kept island at `edits.path` changed as `edits` say, with the request it shows: the document is edited as
+    /// [`resolve`](Self::resolve) edits it to the request the edits make, with the same [`Edit`]s, or built from
+    /// that request. Hand both back to [`keep`](Self::keep). [`EditsError::Stale`] when no island of the path is
+    /// kept for `pass`, or the edits name what the kept request does not have.
+    pub fn resolve_edits(
+        &mut self,
+        edits: &IslandEdits,
+        pass: Option<u64>,
+    ) -> Result<(IslandRequest, Resolved), EditsError> {
+        self.enter(pass);
+        let Kept {
+            mut request,
+            mut resolved,
+            ..
+        } = self.kept.remove(&edits.path).ok_or_else(|| {
+            EditsError::Stale(format!("no island {:?} is kept for the pass", edits.path))
+        })?;
+        let was = patch(&mut request, edits).map_err(EditsError::Stale)?;
+        // `moves` of the request and the one before, which differs from it only in the elements edited.
+        let before: Vec<&DomNode> = was.iter().collect();
+        let editable = pass.is_some() && resolved.plain && !moves(&request, &before);
+        if editable && let Some(changed) = edits_of(&resolved.island, &request, edits) {
+            self.edit(&mut resolved, &request, &changed);
+            return Ok((request, resolved));
+        }
+        self.build(&request, resolved.whole)
+            .map(|resolved| (request, resolved))
+            .map_err(EditsError::Build)
+    }
+
+    /// Makes `edits` to the kept `resolved` and brings it to `request`'s time, as building `request` would leave it.
+    fn edit(&mut self, resolved: &mut Resolved, request: &IslandRequest, edits: &[Edit]) {
+        let Resolved {
+            island,
+            files,
+            plain,
+            touched,
+            ..
+        } = resolved;
+        *touched = match (touched.take(), touched_by(&island.doc, edits)) {
+            (Some(mut before), Some(now)) => {
+                before.extend(now);
+                Some(before)
+            }
+            _ => None,
+        };
+        // The document as built, then edited and clamped again.
+        let clamped = std::mem::take(&mut island.clamped);
+        let marks = clamp::marks(&island.doc, &clamped);
+        clamp::undo(&mut island.doc, &clamped);
+        if !edits.is_empty() || !clamped.is_empty() {
+            apply(island, edits);
+            if load(island, files, request.time) {
+                // What a file changes is not in the styles and boxes.
+                *touched = None;
+            }
+        }
+        advance(&mut island.doc, request.time);
+        *plain = settle(island, request);
+        // A clamp that cuts another line moves an ellipsis without a style changing: painted afresh.
+        if clamp::marks(&island.doc, &island.clamped) != marks {
+            *touched = None;
+        }
+        island.missing = files.missing();
+        self.edited += 1;
+    }
+
+    /// A new document of `request`, in place of one whose last paint was `whole`.
+    fn build(&mut self, request: &IslandRequest, whole: bool) -> Result<Resolved, BuildError> {
+        let (mut files, mut plain) = (None, false);
+        let island = resolve_keeping(request, &mut files, &mut plain)?;
+        self.built += 1;
+        Ok(Resolved {
+            island,
+            files: files.expect("a resolved island has its files"),
+            plain,
+            retains: self.pass.is_some(),
+            painted: None,
+            touched: None,
+            replayed: (0, 0),
+            whole,
+        })
+    }
+
+    /// Moves the cache to pass `pass`: the pass after the last keeps the islands the last rendered, any other none.
+    pub fn enter(&mut self, pass: Option<u64>) {
         if self.pass != pass {
             match (self.pass, pass) {
                 // The next frame: the islands the last one rendered stay.
@@ -583,62 +665,12 @@ impl IslandCache {
             }
             self.pass = pass;
         }
-        let editable = pass.is_some()
-            && self
-                .kept
-                .get(&request.path)
-                .is_some_and(|kept| !moves(request, &[&kept.request.root]));
-        if editable
-            && let Some(mut kept) = self.kept.remove(&request.path)
-            && same_page(&kept.request, request)
-            && let Some(edits) = changes(
-                &kept.resolved.island,
-                Some(&kept.request.root),
-                &request.root,
-            )
-        {
-            let Resolved {
-                island,
-                files,
-                plain,
-                painted,
-                moved,
-            } = &mut kept.resolved;
-            // A change to transforms alone can be painted from the last paint.
-            let edited = style_edits(&edits);
-            if !edits.is_empty() {
-                apply(island, &edits);
-                load(island, files, request.time);
-            }
-            advance(&mut island.doc, request.time);
-            *plain = settle(island, request);
-            island.missing = files.missing();
-            *moved = match (edited, painted.as_ref()) {
-                (Some(edited), Some((_, stamps))) if *plain => {
-                    transform_changes(island, &edited, stamps)
-                }
-                _ => None,
-            };
-            self.edited += 1;
-            return Ok(kept.resolved);
-        }
-        let (mut files, mut plain) = (None, false);
-        let island = resolve_keeping(request, &mut files, &mut plain)?;
-        self.built += 1;
-        Ok(Resolved {
-            island,
-            files: files.expect("a resolved island has its files"),
-            plain,
-            painted: None,
-            moved: None,
-        })
     }
 
-    /// Keeps `resolved` for the next sample of the same pass.
+    /// Keeps `resolved` for the renders after it in the pass and the next: they edit it when it is plain, and use it
+    /// as it is for the same request (whoever holds the request knows that, see [`take`](Self::take)).
     pub fn keep(&mut self, request: IslandRequest, resolved: Resolved) {
-        if let Some(pass) = self.pass
-            && resolved.plain
-        {
+        if let Some(pass) = self.pass {
             self.kept.insert(
                 request.path.clone(),
                 Kept {
@@ -653,6 +685,18 @@ impl IslandCache {
     /// The kept document of the island at `path`, if there is one.
     pub fn peek(&self, path: &str) -> Option<&Resolved> {
         self.kept.get(path).map(|k| &k.resolved)
+    }
+
+    /// The request the kept document of the island at `path` shows, if there is one.
+    pub fn request(&self, path: &str) -> Option<&IslandRequest> {
+        self.kept.get(path).map(|k| &k.request)
+    }
+
+    /// The kept document of the island at `path` and the request it shows, taken out of the cache: for a caller that
+    /// knows the request is the one it has, which needs no resolving again. (Call [`enter`](Self::enter) for the pass
+    /// first.)
+    pub fn take(&mut self, path: &str) -> Option<(IslandRequest, Resolved)> {
+        self.kept.remove(path).map(|k| (k.request, k.resolved))
     }
 
     /// How many renders edited a kept document, and how many built one.
@@ -682,22 +726,25 @@ fn start(island: &mut IslandDocument, files: &LocalFiles, time: f64) {
     advance(&mut island.doc, time);
 }
 
-/// Resolves the document at `at` until its sub-resources have arrived.
+/// Resolves the document at `at` until its sub-resources have arrived; true
+/// if any file was asked for.
 ///
 /// Images and `@font-face` files are answered while the tree is built
 /// (`<img>`) and while styles are computed (`background-image`, `@import`),
 /// and enter the document before the next resolve. Resolve until nothing new
 /// arrives; the passes after the first only redo what the new resource touched.
-fn load(island: &mut IslandDocument, files: &LocalFiles, at: f64) {
-    deliver(&mut island.doc, files);
+fn load(island: &mut IslandDocument, files: &LocalFiles, at: f64) -> bool {
+    let mut asked = deliver(&mut island.doc, files) > 0;
     for _ in 0..4 {
-        files.take_served();
+        asked |= files.take_served() > 0;
         island.doc.resolve(at);
         if files.take_served() == 0 {
             break;
         }
+        asked = true;
         deliver(&mut island.doc, files);
     }
+    asked
 }
 
 /// Moves the document's animation clock on to `time`.
@@ -713,6 +760,7 @@ fn advance(doc: &mut BaseDocument, time: f64) {
 }
 
 /// A change to a built document that makes it show another state of the island.
+#[derive(Debug, PartialEq)]
 enum Edit {
     /// Sets (`Some`) or removes (`None`) an attribute.
     Attr(NodeId, QualName, Option<String>),
@@ -862,6 +910,167 @@ fn diff(
     }
 }
 
+/// The place of the element at `path` in the tree under `root`: the index in `children` at each level down. Paths
+/// number the children that are not text. With it, whether the element is inside an `<svg>`, as [`diff`] counts it.
+fn route(root: &DomNode, path: &str) -> Option<(Vec<usize>, bool)> {
+    let DomNode::Element { path: top, .. } = root else {
+        return None;
+    };
+    let rest = path.strip_prefix(top.as_str())?;
+    if !rest.is_empty() && !rest.starts_with('.') {
+        return None;
+    }
+    let (mut node, mut in_svg, mut places) = (root, false, Vec::new());
+    for step in rest.split('.').skip(1) {
+        let DomNode::Element { tag, children, .. } = node else {
+            return None;
+        };
+        let nth: usize = step.parse().ok()?;
+        let (place, child) = children
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| !matches!(c, DomNode::Text { .. }))
+            .nth(nth)?;
+        in_svg = (in_svg || tag == "svg") && tag != "foreignObject";
+        places.push(place);
+        node = child;
+    }
+    matches!(node, DomNode::Element { path: p, .. } if p == path).then_some((places, in_svg))
+}
+
+fn at<'a>(root: &'a DomNode, places: &[usize]) -> &'a DomNode {
+    places.iter().fold(root, |node, &i| match node {
+        DomNode::Element { children, .. } => &children[i],
+        _ => unreachable!("a route goes through elements"),
+    })
+}
+
+fn at_mut<'a>(root: &'a mut DomNode, places: &[usize]) -> &'a mut DomNode {
+    places.iter().fold(root, |node, &i| match node {
+        DomNode::Element { children, .. } => &mut children[i],
+        _ => unreachable!("a route goes through elements"),
+    })
+}
+
+/// Makes `edits` to `request`: the request the island's next state is. Gives each edited element as it was, without
+/// its children (what [`moves`] reads of the state before).
+fn patch(request: &mut IslandRequest, edits: &IslandEdits) -> Result<Vec<DomNode>, String> {
+    let missing = |path: &str| format!("island edits name no element at {path:?}");
+    request.time = edits.time;
+    let mut was = Vec::with_capacity(edits.set.len());
+    let mut seen = HashSet::with_capacity(edits.set.len());
+    for edit in &edits.set {
+        // A second edit of one element would read the first's result as the state before.
+        if !seen.insert(edit.path.as_str()) {
+            let path = &edit.path;
+            return Err(format!("island edits name the element at {path:?} twice"));
+        }
+        let (places, _) = route(&request.root, &edit.path).ok_or_else(|| missing(&edit.path))?;
+        let DomNode::Element {
+            tag,
+            path,
+            attrs,
+            style,
+            children,
+        } = at_mut(&mut request.root, &places)
+        else {
+            return Err(missing(&edit.path));
+        };
+        was.push(DomNode::Element {
+            tag: tag.clone(),
+            path: path.clone(),
+            attrs: attrs.clone(),
+            style: style.clone(),
+            children: Vec::new(),
+        });
+        if let Some(new) = &edit.attrs {
+            attrs.clone_from(new);
+        }
+        if let Some(new) = &edit.style {
+            style.clone_from(new);
+        }
+        for (i, new) in &edit.texts {
+            match children.get_mut(*i) {
+                Some(DomNode::Text { text }) => text.clone_from(new),
+                _ => return Err(format!("island edits name no text at {i} in {path:?}")),
+            }
+        }
+    }
+    Ok(was)
+}
+
+/// The edits that turn the document into `request`, which `edits` made from the request it shows: the [`Edit`]s
+/// [`changes`] gives for the two, in its order, found from the elements edited alone. None when the document does not
+/// have those elements as built (`changes` would say the states differ in structure).
+fn edits_of(
+    island: &IslandDocument,
+    request: &IslandRequest,
+    edits: &IslandEdits,
+) -> Option<Vec<Edit>> {
+    let doc = &island.doc;
+    // Each element's edits, then each of its texts', in tree order: the order `diff` walks in.
+    let mut found: Vec<(Vec<usize>, Vec<Edit>)> = Vec::new();
+    for edit in &edits.set {
+        let (places, in_svg) = route(&request.root, &edit.path)?;
+        let DomNode::Element {
+            tag,
+            path,
+            attrs,
+            style,
+            children,
+        } = at(&request.root, &places)
+        else {
+            return None;
+        };
+        let node = doc.get_node(island.node(path)?)?;
+        let svg = in_svg || tag == "svg";
+        let tag = if svg {
+            tag.clone()
+        } else {
+            tag.to_ascii_lowercase()
+        };
+        if tag == "script"
+            || !node
+                .data
+                .is_element_with_tag_name(&LocalName::from(tag.as_str()))
+        {
+            return None;
+        }
+        if edit.attrs.is_some() || edit.style.is_some() {
+            let mut own = Vec::new();
+            if !diff_attrs(node, element_attributes(path, attrs, style, svg), &mut own) {
+                return None;
+            }
+            found.push((places.clone(), own));
+        }
+        if edit.texts.is_empty() {
+            continue;
+        }
+        // A `<style>`'s text is a sheet; a page's `html` holds a `head` the tree does not.
+        if tag == "style" || tag == "html" {
+            return None;
+        }
+        let not_script =
+            |c: &&DomNode| !matches!(c, DomNode::Element { tag, .. } if tag == "script");
+        for (i, text) in &edit.texts {
+            let child = *node
+                .children
+                .get(children[..*i].iter().filter(not_script).count())?;
+            let data = doc.get_node(child)?.text_data()?;
+            let mut place = places.clone();
+            place.push(*i);
+            let own = if data.content == *text {
+                Vec::new()
+            } else {
+                vec![Edit::Text(child, text.clone())]
+            };
+            found.push((place, own));
+        }
+    }
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    Some(found.into_iter().flat_map(|(_, edits)| edits).collect())
+}
+
 /// Pushes the attribute edits that make `node`'s attributes `want`.
 fn diff_attrs(node: &blitz_dom::Node, want: Vec<Attribute>, edits: &mut Vec<Edit>) -> bool {
     let Some(have) = node.attrs() else {
@@ -885,16 +1094,29 @@ fn apply(island: &mut IslandDocument, edits: &[Edit]) {
     let mut m = island.doc.mutate();
     for edit in edits {
         match edit {
-            Edit::Attr(id, name, Some(value)) => m.set_attribute(*id, name.clone(), value),
+            Edit::Attr(id, name, Some(value)) => {
+                // An element given another path (a sibling before it added or taken away) is found by the new one.
+                if name.local == *PATH_ATTR {
+                    if let Some(old) = island.node_paths.insert(*id, value.clone())
+                        && island.paths.get(&old) == Some(id)
+                    {
+                        island.paths.remove(&old);
+                    }
+                    island.paths.insert(value.clone(), *id);
+                }
+                m.set_attribute(*id, name.clone(), value)
+            }
             Edit::Attr(id, name, None) => m.clear_attribute(*id, name.clone()),
             Edit::Text(id, text) => m.set_node_text(*id, text),
         }
     }
 }
 
-/// Hands the images the net provider has decoded to the document.
-fn deliver(doc: &mut BaseDocument, files: &LocalFiles) {
-    for (url, resource) in files.take_deliveries() {
+/// Hands the images the net provider has decoded to the document; how many.
+fn deliver(doc: &mut BaseDocument, files: &LocalFiles) -> usize {
+    let deliveries = files.take_deliveries();
+    let count = deliveries.len();
+    for (url, resource) in deliveries {
         doc.load_resource(ResourceLoadResponse {
             request_id: 0,
             node_id: None,
@@ -902,6 +1124,7 @@ fn deliver(doc: &mut BaseDocument, files: &LocalFiles) {
             result: Ok(resource),
         });
     }
+    count
 }
 
 /// A bound on the style passes spent catching an animation up to a late time
@@ -1121,5 +1344,176 @@ mod tests {
         // The tree an edit starts from counts too.
         let was = with_sheet("transition").root;
         assert!(moves(&with_sheet("flex"), &[&was]));
+    }
+
+    /// A tree with text beside elements, an `<svg>` with a `foreignObject` and a script, at `$0`; `f` changes it.
+    fn page(f: impl Fn(&mut serde_json::Value)) -> IslandRequest {
+        let e = |tag: &str,
+                 path: &str,
+                 attrs: serde_json::Value,
+                 style: &str,
+                 children: serde_json::Value| {
+            serde_json::json!({ "kind": "element", "tag": tag, "path": path, "attrs": attrs, "style": style, "children": children })
+        };
+        let t = |text: &str| serde_json::json!({ "kind": "text", "text": text });
+        let none = serde_json::json!({});
+        let mut root = e(
+            "div",
+            "$0",
+            serde_json::json!({ "class": "a" }),
+            "width: 100px",
+            serde_json::json!([
+                t("one "),
+                e(
+                    "span",
+                    "$0.0",
+                    none.clone(),
+                    "color: red",
+                    serde_json::json!([t("two")])
+                ),
+                t(" three"),
+                e("script", "$0.1", none.clone(), "", serde_json::json!([])),
+                e(
+                    "svg",
+                    "$0.2",
+                    serde_json::json!({ "viewBox": "0 0 10 10" }),
+                    "",
+                    serde_json::json!([
+                        e(
+                            "rect",
+                            "$0.2.0",
+                            serde_json::json!({ "width": "4" }),
+                            "",
+                            serde_json::json!([])
+                        ),
+                        e(
+                            "foreignObject",
+                            "$0.2.1",
+                            none.clone(),
+                            "",
+                            serde_json::json!([e(
+                                "p",
+                                "$0.2.1.0",
+                                none.clone(),
+                                "",
+                                serde_json::json!([t("four")])
+                            ),])
+                        ),
+                    ])
+                ),
+                t(" five"),
+            ]),
+        );
+        f(&mut root);
+        request(root)
+    }
+
+    fn edits(set: serde_json::Value) -> IslandEdits {
+        serde_json::from_value(
+            serde_json::json!({ "stamp": 2, "base": 1, "path": "$0", "time": 0.5, "set": set }),
+        )
+        .unwrap()
+    }
+
+    /// The edits made to the first `page` give the second, and the document the [`Edit`]s [`changes`] gives for the two.
+    fn same_as_a_diff(set: serde_json::Value, f: impl Fn(&mut serde_json::Value)) {
+        let before = page(|_| {});
+        let after = page(f);
+        let island = resolve(&before).unwrap();
+        let edits = edits(set);
+        let mut patched = before.clone();
+        patch(&mut patched, &edits).unwrap();
+        assert_eq!(format!("{:?}", patched.root), format!("{:?}", after.root));
+        assert_eq!(patched.time, 0.5);
+        let want = changes(&island, Some(&before.root), &after.root).unwrap();
+        assert!(!want.is_empty());
+        assert_eq!(edits_of(&island, &patched, &edits).unwrap(), want);
+    }
+
+    #[test]
+    fn island_edits_give_the_edits_a_diff_does() {
+        // A style set and cleared, an attribute set and removed, a class.
+        same_as_a_diff(
+            serde_json::json!([{ "path": "$0.0", "style": "color: blue; opacity: 0.5" }]),
+            |r| {
+                r["children"][1]["style"] = "color: blue; opacity: 0.5".into();
+            },
+        );
+        same_as_a_diff(serde_json::json!([{ "path": "$0", "style": "" }]), |r| {
+            r["style"] = "".into()
+        });
+        same_as_a_diff(
+            serde_json::json!([{ "path": "$0", "attrs": { "class": "b", "id": "x" } }]),
+            |r| {
+                r["attrs"] = serde_json::json!({ "class": "b", "id": "x" });
+            },
+        );
+        same_as_a_diff(serde_json::json!([{ "path": "$0", "attrs": {} }]), |r| {
+            r["attrs"] = serde_json::json!({})
+        });
+        // SVG attributes keep their case, inside the `svg` and not inside its `foreignObject`.
+        same_as_a_diff(
+            serde_json::json!([{ "path": "$0.2.0", "attrs": { "width": "6", "strokeWidth": "2" } }]),
+            |r| {
+                r["children"][4]["children"][0]["attrs"] =
+                    serde_json::json!({ "width": "6", "strokeWidth": "2" });
+            },
+        );
+        same_as_a_diff(
+            serde_json::json!([{ "path": "$0.2.1.0", "attrs": { "tabIndex": "1" } }]),
+            |r| {
+                r["children"][4]["children"][1]["children"][0]["attrs"] =
+                    serde_json::json!({ "tabIndex": "1" });
+            },
+        );
+        // Texts, past a script, and several elements at once, sent out of order: the edits come in tree order.
+        same_as_a_diff(
+            serde_json::json!([{ "path": "$0", "texts": [[5, " FIVE"]] }]),
+            |r| {
+                r["children"][5]["text"] = " FIVE".into();
+            },
+        );
+        same_as_a_diff(
+            serde_json::json!([
+                { "path": "$0.2.1.0", "texts": [[0, "FOUR"]] },
+                { "path": "$0", "style": "width: 50px", "texts": [[0, "ONE "], [2, " THREE"]] },
+                { "path": "$0.0", "style": "color: green", "texts": [[0, "TWO"]] },
+            ]),
+            |r| {
+                r["style"] = "width: 50px".into();
+                r["children"][0]["text"] = "ONE ".into();
+                r["children"][1]["style"] = "color: green".into();
+                r["children"][1]["children"][0]["text"] = "TWO".into();
+                r["children"][2]["text"] = " THREE".into();
+                r["children"][4]["children"][1]["children"][0]["children"][0]["text"] =
+                    "FOUR".into();
+            },
+        );
+    }
+
+    #[test]
+    fn island_edits_must_name_what_the_request_has() {
+        let mut r = page(|_| {});
+        for set in [
+            serde_json::json!([{ "path": "$0.9", "style": "" }]),
+            serde_json::json!([{ "path": "$01", "style": "" }]),
+            serde_json::json!([{ "path": "$0", "texts": [[1, "x"]] }]),
+            serde_json::json!([{ "path": "$0", "texts": [[9, "x"]] }]),
+        ] {
+            assert!(patch(&mut r, &edits(set)).is_err());
+        }
+        // A `<style>`'s text is a sheet: it is not edited in place (the document is built again).
+        let mut sheet = el(
+            "style",
+            "",
+            serde_json::json!([{ "kind": "text", "text": "a{}" }]),
+        );
+        sheet["path"] = "$0.0".into();
+        let styled = request(el("div", "", serde_json::json!([sheet])));
+        let island = resolve(&styled).unwrap();
+        let mut patched = styled.clone();
+        let set = edits(serde_json::json!([{ "path": "$0.0", "texts": [[0, "b{}"]] }]));
+        patch(&mut patched, &set).unwrap();
+        assert!(edits_of(&island, &patched, &set).is_none());
     }
 }

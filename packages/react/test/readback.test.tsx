@@ -4,7 +4,7 @@
 
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { setDomAddon, resetStylesheets } from '@kinetographdev/compat/dom';
+import { beginSamplePass, endSamplePass, setDomAddon, resetStylesheets } from '@kinetographdev/compat/dom';
 import { installDomGlobals, resetObservers } from '@kinetographdev/compat/shim';
 import { createSceneRoot, TimelineContext } from '../src/index.js';
 import { timeline } from './harness.js';
@@ -17,7 +17,7 @@ interface Req {
 
 beforeAll(() => installDomGlobals());
 
-let calls: { boxes: number; styles: number; requests: Req[] };
+let calls: { boxes: number; styles: number; requests: Req[]; passes: (number | undefined)[] };
 let sizeOf: (node: any) => { width: number; height: number };
 
 /** A box per element: its style's width/height, text 8 px per character wide and 10 high. */
@@ -41,21 +41,23 @@ function boxesOf(req: Req): Record<string, unknown> {
 }
 
 beforeEach(() => {
-  calls = { boxes: 0, styles: 0, requests: [] };
+  calls = { boxes: 0, styles: 0, requests: [], passes: [] };
   sizeOf = (node) => {
     const m = (name: string): number => Number(new RegExp(`${name}: (\\d+(?:\\.\\d+)?)px`).exec(node.style)?.[1] ?? 0);
     return { width: m('width'), height: m('height') };
   };
   setDomAddon({
     renderDomIsland: () => JSON.stringify({ layers: [], unsupported: [], camera: null }),
-    domLayoutBoxes(json: string) {
+    domLayoutBoxes(json: string, pass?: number) {
       calls.boxes++;
+      calls.passes.push(pass);
       const req = JSON.parse(json) as Req;
       calls.requests.push(req);
       return JSON.stringify(boxesOf(req));
     },
-    domComputedStyle(json: string, path: string, props: string[]) {
+    domComputedStyle(json: string, path: string, props: string[], pass?: number) {
       calls.styles++;
+      calls.passes.push(pass);
       return props.map((p) => `${p}@${path}`);
     },
   });
@@ -121,6 +123,26 @@ describe('refs to DOM elements', () => {
     expect(calls.boxes).toBe(1);
     expect(calls.requests[0]!.path).toBe('$0');
     expect(calls.requests[0]!.root.attrs.class).toBe('outer');
+  });
+
+  it('tell the addon the pass of the frame being drawn, so that it reads the document the frame draws', () => {
+    function Probe() {
+      const ref = useRef<any>(null);
+      useLayoutEffect(() => {
+        ref.current.getBoundingClientRect();
+        (globalThis as any).getComputedStyle(ref.current).opacity;
+      }, []);
+      return <div ref={ref} style={{ width: 5, height: 5 }} />;
+    }
+    render(<Probe />).root.unmount();
+    beginSamplePass();
+    render(<Probe />).root.unmount();
+    endSamplePass();
+    const [outside, inside] = [calls.passes.slice(0, 2), calls.passes.slice(2)];
+    expect(outside).toEqual([undefined, undefined]);
+    expect(inside).toHaveLength(2);
+    expect(inside[0]).toBeTypeOf('number');
+    expect(inside[1]).toBe(inside[0]);
   });
 
   it('settle a measure-then-render layout effect within the frame', () => {
