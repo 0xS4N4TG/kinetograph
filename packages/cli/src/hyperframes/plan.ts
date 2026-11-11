@@ -665,8 +665,14 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
   }
 
   // The head's styles, links and scripts come before the body's, in document order.
-  for (const node of head ? childrenOf(head) : []) if (isElement(node)) await builder.element(node, ctx, false);
-  const body = await builder.nodes(bodyEl ? childrenOf(bodyEl) : [], ctx, false);
+  // A data block of the head (a shader's source) stays in the document, ahead of the body's nodes, for `getElementById`.
+  const headBlocks: HfNode[] = [];
+  for (const node of head ? childrenOf(head) : []) {
+    if (!isElement(node)) continue;
+    const kept = await builder.element(node, ctx, false);
+    if (kept !== null) headBlocks.push(kept);
+  }
+  const body = [...headBlocks, ...(await builder.nodes(bodyEl ? childrenOf(bodyEl) : [], ctx, false))];
 
   const composition = rootComposition(body);
   const attr = (name: string): string | null => composition?.attrs.find(([n]) => n === name)?.[1] ?? null;

@@ -143,6 +143,15 @@ describe('scripts that are data blocks', () => {
     expect(find(plan.body, (n) => n.tag === 'script' && attr(n, 'id') !== 'vertexShader')).toBeNull();
     expect(plan.scripts.map((x) => x.code)).toEqual(['window.ran = 1;']);
   });
+
+  it('keeps one in the head as well', async () => {
+    const dir = project({
+      'index.html': `<html><head><script id="fs" type="x-shader/x-fragment">void main() {}</script></head>
+        <body><div data-composition-id="m" data-duration="1" data-width="8" data-height="8"></div></body></html>`,
+    });
+    const { plan } = await buildPlan(join(dir, 'index.html'));
+    expect(attr(find(plan.body, (n) => n.tag === 'script')!, 'id')).toBe('fs');
+  });
 });
 
 describe('a page without the root attributes', () => {
