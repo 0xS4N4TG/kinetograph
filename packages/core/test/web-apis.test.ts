@@ -243,6 +243,11 @@ describe('canvas and the clock', () => {
     expect(canvas.getContext('webgl')).toBe(gl);
     expect(canvas.getContext('2d')).toBeNull();
     expect(canvas.getContext('bitmaprenderer')).toBeNull();
+    // `instanceof` tells the versions apart, as three's `context instanceof WebGLRenderingContext` check needs.
+    const gl2 = g.document.createElement('canvas').getContext('webgl2');
+    expect([gl instanceof g.WebGLRenderingContext, gl instanceof g.WebGL2RenderingContext]).toEqual([true, false]);
+    expect([gl2 instanceof g.WebGLRenderingContext, gl2 instanceof g.WebGL2RenderingContext]).toEqual([false, true]);
+    expect([g.WebGLRenderingContext.TEXTURE_2D, g.WebGL2RenderingContext.TEXTURE_3D, g.WebGLRenderingContext.TEXTURE_3D]).toEqual([0x0de1, 0x806f, undefined]);
     const gpuCanvas = g.document.createElement('canvas');
     const gpu = gpuCanvas.getContext('webgpu');
     expect(gpu).not.toBeNull();

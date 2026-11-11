@@ -10,7 +10,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolveObjectURL } from 'node:buffer';
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, WebGLContext, createGpu, GPU_GLOBALS, pictureOf, type CanvasPicture } from '@kinetographdev/scene';
+import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, GL, GL2, WebGLContext, createGpu, GPU_GLOBALS, pictureOf, type CanvasPicture } from '@kinetographdev/scene';
 import { resolveDocumentUrl, resolveProjectFile, sameOriginPath } from '../environment.js';
 import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas.js';
 import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, installDocumentMembers } from './document.js';
@@ -551,6 +551,17 @@ function defineGetter(target: Record<string, unknown>, name: string, get: () => 
   if (!(name in target)) Object.defineProperty(target, name, { get, configurable: true, enumerable: false });
 }
 
+/** `WebGLRenderingContext` (version 1) or `WebGL2RenderingContext` (2): `instanceof` asks the recorder's version, and the constants are static, as in a browser. */
+function webglGlobal(version: 1 | 2): typeof WebGLContext {
+  const constructor = class extends WebGLContext {
+    static [Symbol.hasInstance](value: unknown): boolean {
+      return value instanceof WebGLContext && value.version === version;
+    }
+  };
+  Object.defineProperty(constructor, 'name', { value: version === 1 ? 'WebGLRenderingContext' : 'WebGL2RenderingContext' });
+  return Object.assign(constructor, GL, version === 2 ? GL2 : {});
+}
+
 /** Puts `window`, `document`, `Image`, `matchMedia`, the observers and a project-files-only `fetch` on the global object. */
 export function installDomGlobals(): void {
   const g = globalThis as Record<string, unknown>;
@@ -608,8 +619,9 @@ export function installDomGlobals(): void {
   define(g, 'HTMLCanvasElement', DomElement);
   define(g, 'OffscreenCanvas', OffscreenCanvasShim);
   define(g, 'CanvasRenderingContext2D', CanvasContext2D);
-  define(g, 'WebGLRenderingContext', WebGLContext);
-  define(g, 'WebGL2RenderingContext', WebGLContext);
+  // One recorder, two constructors: a `getContext('webgl')` context is a WebGLRenderingContext and not a WebGL2RenderingContext, and the reverse.
+  define(g, 'WebGLRenderingContext', webglGlobal(1));
+  define(g, 'WebGL2RenderingContext', webglGlobal(2));
   // `navigator.gpu` records (packages/scene/src/webgpu.ts); the canvas's 'webgpu' context is made by `getContext`.
   for (const [name, value] of Object.entries(GPU_GLOBALS)) define(g, name, value);
   const navigator = (g.navigator ??= {}) as Record<string, unknown>;
