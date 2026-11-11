@@ -1,0 +1,138 @@
+---
+title: WebGL
+description: How a canvas with a WebGL context is drawn without a browser, what works, what is not drawn, and which libraries run.
+---
+
+`getContext('webgl')`, `getContext('webgl2')` and `getContext('experimental-webgl')` on a canvas return Kinetograph's own context. It records your calls and draws nothing itself. No browser is involved.
+
+## How it works
+
+- **Drawing.** The calls of one frame become one layer of that frame's scene. The engine translates your GLSL ES (version 100 or 300 es) with naga and draws the layer with wgpu on its own GPU device, together with the rest of the frame.
+- **One kind of context.** A canvas keeps the first kind it was given. `getContext('2d')` after `getContext('webgl')` returns `null`, and so does the reverse. For `getContext('webgpu')` see [WebGPU](/docs/compat/#webgpu).
+- **Shaders.** `getShaderParameter(shader, gl.COMPILE_STATUS)` is true for any shader that has source. A shader naga cannot translate stops the scene when it loads, and the error names the layer and the program.
+- **A frame starts empty.** Before each frame the engine resets every canvas context. The drawing buffer is empty, also with `preserveDrawingBuffer`. The colour textures of a framebuffer start transparent black, a depth buffer at 1 and a stencil buffer at 0. A frame that draws nothing draws nothing.
+- **A frame is a function of its number.** It comes out the same drawn alone, out of order or by another worker. A pass that reads what an earlier frame left reads black.
+- **Time.** `Date.now()`, `new Date()`, `performance.now()`, `Math.random()`, timers and `requestAnimationFrame` follow the frame number, not the wall clock. A shader has no clock either: compute its time uniform from the frame. A library that reads the wall clock is not frame-pure.
+- **Unsupported calls.** A call the stand-in cannot draw throws a `WebGLUnsupportedError`. Its message starts with `unsupported:` and says what to use instead. A call is never accepted and then ignored where it would change the picture.
+
+```txt
+unsupported: readPixels; the picture is drawn by the renderer, and the context cannot be read back (...)
+```
+
+If the page lets the error escape, as an uncaught exception, an unhandled rejection or a `console.error`, it is listed as a `page script` item in the render warnings and in [`doctor`](/docs/terminology/doctor/), and `--strict` fails on it. A page that catches the error hides it from both.
+
+## What works
+
+| Feature | Status | Note |
+|---|---|---|
+| Fragment shaders | Works | |
+| Framebuffers | Works | |
+| `gl_PointSize` | Works | |
+| `LINES`, `LINE_STRIP`, `LINE_LOOP` | Works | One pixel wide. A `lineWidth` above 1 is ignored, as in Chrome. |
+| Shadow samplers | Works | `sampler2DShadow`, `samplerCubeShadow`, `sampler2DArrayShadow`. |
+| Instancing, `vertexAttribDivisor` | Works | Any divisor. |
+| `blitFramebuffer` | Works | |
+| `copyTexImage2D`, `copyTexSubImage2D` | Works | RGBA. |
+| Depth and stencil tests | Works | |
+| `drawBuffers` | Works | |
+| Multisampled renderbuffers | Works | `renderbufferStorageMultisample`, resolved by `blitFramebuffer`. |
+| `TEXTURE_BASE_LEVEL` | Works | |
+| Depth textures | Works | |
+| Cube maps | Works | Six faces of RGBA8 or SRGB8_ALPHA8, from `texImage2D` or a whole-face `texSubImage2D` into `texStorage2D`. `samplerCube` and `generateMipmap` work. Sampled seamlessly, with GL's face order and orientation. |
+| Cube faces as framebuffer colour attachments | Works | `texStorage2D` of `TEXTURE_CUBE_MAP`, RGBA8 or float. |
+| Float render targets | Works | Blending into 32-bit ones works after `getExtension('EXT_float_blend')`. |
+| Float textures from `texImage2D` | Works | |
+| 3D textures and 2D array textures | Works | |
+
+## What is not drawn
+
+| Feature | Status | Note |
+|---|---|---|
+| Multisampled renderbuffers of 32-bit floats | Not drawn | |
+| `readPixels` | Not drawn | |
+| Instanced points | Not drawn | |
+| Cube faces of float pixels or depth | Not drawn | |
+| `texSubImage2D` of part of a cube face | Not drawn | |
+| A cube map with both uploaded and drawn faces | Not drawn | |
+| Render targets other than RGBA8, SRGB8_ALPHA8, R8, RG8, and R, RG or RGBA of 16 or 32-bit floats | Not drawn | |
+| `texSubImage2D` into a drawn-in R8 or RG8 texture | Not drawn | |
+| Framebuffer attachments of different sizes | Not drawn | |
+| `generateMipmap` on a drawn-into 32-bit float texture | Not drawn | |
+
+## What differs from a browser
+
+| Feature | Status | Note |
+|---|---|---|
+| Depth buffer | Differs | Holds 32-bit floats. |
+| Multisampled renderbuffer | Differs | Has 4 samples whatever count you ask for. `MAX_SAMPLES` is 4. |
+| Depth or stencil blit from a multisampled renderbuffer | Differs | Copies its first sample. |
+| Copy or blit of a rectangle that reaches outside its source | Differs | Repeats the source's edge there. A browser copies 0, and leaves a blit's destination as it was. |
+| `depth: false` | Differs | The depth test always passes. |
+| Depth texture | Differs | Sampled `NEAREST`. |
+| Points | Differs | Squares of at most 511 px. |
+| `gl_VertexID` with `drawElements` | Differs | The position in the index list. |
+| `LINEAR` blit from a 32-bit float target | Differs | Drawn as `NEAREST`. |
+| `generateMipmap` of a drawn-into texture | Differs | Halves each level with a bilinear blit. A texture of odd sides can differ from Chrome's by a level or two. |
+| Mipmaps of an uploaded sRGB texture | Differs | Average its encoded bytes. |
+
+## Libraries
+
+| Library | Status | Note |
+|---|---|---|
+| Raw WebGL and GLSL shaders | Works (tested) | Eight cases are compared with Chrome for Testing in `crates/dom/tests/webgl.rs`. |
+| p5.brush, standalone build | Works (tested) | Draws as in Chrome. A test renders 12 frames at concurrency 1 and 4, and frames 0, 5 and 11 alone, and the frames match. See [`@kinetographdev/p5-brush`](/docs/packages/p5-brush/). |
+| Three.js in an HTML page | Runs through the stand-in (not routinely tested) | Only what it does that the stand-in cannot draw is reported, and `--strict` fails on that. |
+| `@remotion/three` | Not supported yet | The build stops and names the package. |
+| `three` in a React project, `@react-three/fiber` | Not supported yet | Rebuild the scene with the 3D layer. See [Remotion three.js mapping](/docs/reference/remotion-three/). |
+| Mapbox GL JS, MapLibre GL JS | Not supported yet | |
+
+Other libraries run only as far as the calls they make are in the tables above. None are tested.
+
+## Check your own page
+
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
+```sh
+npx kinetograph doctor src/index.tsx --range 0..120
+npx kinetograph render src/index.tsx --strict
+npx kinetograph still src/index.tsx 45
+```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph doctor html/index.html --range 0..120
+npx kinetograph render html/index.html --strict
+npx kinetograph still html/index.html 45
+```
+
+  </Tab>
+</IconTabs>
+
+- `doctor` runs every frame in the range without the GPU and lists what the engine cannot draw, with the frames. See [CLI](/docs/reference/cli/#doctor).
+- `render --strict` stops at the first frame with unsupported content: error code `UNSUPPORTED_CONTENT`, no output file.
+- `still` draws one frame alone. Compare it with the same frame of a render to see that the frame does not depend on the ones before it.
+
+Without `--strict`, `render` and `still` print the problems on stderr and draw the frame anyway. A line for a page error looks like this:
+
+```txt
+warning: 1 kind of unsupported content in 1 frame, drawn without it or approximated (--strict fails instead):
+  page script { uncaught exception: WebGLUnsupportedError: unsupported: readPixels; ... }: the page raised an error and went on; whatever it was drawing may be missing (frame 0)
+```
+
+## Writing for determinism
+
+1. Derive everything from the frame number: `useCurrentFrame()` in React, or the time the engine gives the page. Pass time to a shader as a uniform you compute.
+2. Draw the whole picture in every frame, clear included. Do not rely on the previous frame's buffer or on `preserveDrawingBuffer`.
+3. Do not call `readPixels`, and do not read or draw a WebGL canvas with `toDataURL`, `toBlob` or `drawImage`. Render into a framebuffer texture and sample it.
+4. For a value that must stay the same from frame to frame, use `random('seed')` from `remotion`. `Math.random()` is reseeded from the frame number.
+5. Load images and other assets before the first frame is drawn. Hold the frame with `delayRender()`; it fails with `DELAY_RENDER_TIMEOUT` after 30 seconds unless you set `--timeout`.
+
+## Related topics
+
+- [What works](/docs/compat/)
+- [Canvas and shaders](/docs/making-videos/shaders/)
+- [How Kinetograph works](/docs/internals/engine/)
+- [CLI](/docs/reference/cli/)
