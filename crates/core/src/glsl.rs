@@ -3053,6 +3053,49 @@ pub fn next_level(rgba: &[u8], width: u32, height: u32) -> (Vec<u8>, u32, u32) {
     (out, nw, nh)
 }
 
+/// The next mip level of float texels (`Texels::Rgba16F` or `Rgba32F` bytes): 2 x 2 blocks averaged in 32-bit floats
+/// (a side of one stays one), rounded back to the format of `texels`.
+pub fn next_level_float(texels: &Texels, width: u32, height: u32) -> (Texels, u32, u32) {
+    let (nw, nh) = ((width / 2).max(1), (height / 2).max(1));
+    let (bytes, half) = match texels {
+        Texels::Rgba16F(b) => (b, true),
+        Texels::Rgba32F(b) => (b, false),
+        Texels::Rgba8(_) => unreachable!("next_level_float is for float texels"),
+    };
+    let read = |at: usize, c: usize| -> f32 {
+        if half {
+            let i = (at + c) * 2;
+            half::f16::from_le_bytes([bytes[i], bytes[i + 1]]).to_f32()
+        } else {
+            let i = (at + c) * 4;
+            f32::from_le_bytes([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]])
+        }
+    };
+    let mut out: Vec<u8> = Vec::with_capacity(nw as usize * nh as usize * if half { 8 } else { 16 });
+    for y in 0..nh {
+        for x in 0..nw {
+            let mut sum = [0f32; 4];
+            for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                let sx = (x * 2 + dx).min(width - 1) as usize;
+                let sy = (y * 2 + dy).min(height - 1) as usize;
+                let at = (sy * width as usize + sx) * 4;
+                for (c, total) in sum.iter_mut().enumerate() {
+                    *total += read(at, c);
+                }
+            }
+            for total in sum {
+                let v = total / 4.0;
+                if half {
+                    out.extend(half::f16::from_f32(v).to_le_bytes());
+                } else {
+                    out.extend(v.to_le_bytes());
+                }
+            }
+        }
+    }
+    (if half { Texels::Rgba16F(out) } else { Texels::Rgba32F(out) }, nw, nh)
+}
+
 /// Translates every program of a layer, so that a scene with a shader naga
 /// cannot read fails when it loads.
 pub fn validate(layer_id: &str, content: &GlslContent) -> Result<()> {
@@ -3608,6 +3651,25 @@ mod tests {
         let names: Vec<&str> = t.fragment.samplers.iter().map(|s| s.name.as_str()).collect();
         assert!(!names.iter().any(|n| n.starts_with("none")), "{names:?}");
         assert!(names.contains(&"_k_sa_maps_0") && names.contains(&"_k_sa_maps_1"), "{names:?}");
+    }
+
+    #[test]
+    fn the_next_level_of_float_texels_averages_blocks_in_floats() {
+        let halves: Vec<u8> = [0.0f32, 1.0, 2.0, 4.0]
+            .into_iter()
+            .flat_map(|v| [v, 0.0, 0.0, 1.0])
+            .flat_map(|v| f32_to_f16(v).to_le_bytes())
+            .collect();
+        let (next, w, h) = next_level_float(&Texels::Rgba16F(halves), 2, 2);
+        assert_eq!((w, h), (1, 1));
+        let Texels::Rgba16F(bytes) = next else { panic!("a half-float level") };
+        let value = |i: usize| half::f16::from_le_bytes([bytes[i * 2], bytes[i * 2 + 1]]).to_f32();
+        assert_eq!([value(0), value(3)], [1.75, 1.0]);
+        let full: Vec<u8> = [1.0f32, 3.0].into_iter().flat_map(|v| [v, 0.0, 0.0, 0.0]).flat_map(f32::to_le_bytes).collect();
+        let (next, w, h) = next_level_float(&Texels::Rgba32F(full), 2, 1);
+        assert_eq!((w, h), (1, 1));
+        let Texels::Rgba32F(bytes) = next else { panic!("a 32-bit level") };
+        assert_eq!(f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]), 2.0);
     }
 
     #[test]

@@ -1237,6 +1237,18 @@ describe('the recording WebGL context', () => {
       expect([...new Float32Array(new Uint8Array(Buffer.from(texture.floats!, 'base64')).buffer)]).toEqual([0, 0, 0, 0, 4, 4, 4, 1, 0.5, 0.5, 0.5, 0.5]);
     });
 
+    it('records generateMipmap of a float texture with texels, for the replay to make its chain from', () => {
+      const { gl, program } = floatContext();
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL2.RGBA16F, 4, 2, 0, GL.RGBA, GL.FLOAT, new Float32Array(32).fill(0.5));
+      gl.generateMipmap(GL.TEXTURE_2D);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      gl.uniform1i(gl.getUniformLocation(program, 'curve'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      const content = gl.content();
+      const draw = content.ops.find((op) => op.op === 'draw') as { units: Record<string, { texture: string }> };
+      expect(content.textures[draw.units['0']!.texture]).toMatchObject({ width: 4, height: 2, mipmaps: true });
+    });
+
     it('takes generateMipmap of an empty float texture (a render target three.js makes) as having nothing to compute', () => {
       const { gl } = floatContext();
       gl.texImage2D(GL.TEXTURE_2D, 0, GL2.RGBA16F, 64, 32, 0, GL.RGBA, GL.HALF_FLOAT, null);
@@ -1259,7 +1271,6 @@ describe('the recording WebGL context', () => {
       gl.texImage2D(GL.TEXTURE_2D, 0, GL2.R32F, 1, 1, 0, GL2.RED, GL.FLOAT, new Float32Array(1));
       gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL2.RED, GL.FLOAT, new Float32Array(1));
       expect(gl.getError()).toBe(GL.NO_ERROR);
-      expect(() => gl.generateMipmap(GL.TEXTURE_2D)).toThrow(/float/);
       expect(() => gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, GL.RGBA, GL.FLOAT, new Float32Array(4))).toThrow(WebGLUnsupportedError);
     });
   });

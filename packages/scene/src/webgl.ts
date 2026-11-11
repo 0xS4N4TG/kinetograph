@@ -2644,8 +2644,13 @@ export class WebGLContext {
     if (texture.floats !== null) {
       // The mipmaps of an empty texture are empty: three.js calls generateMipmap on a render target's texture as it makes it,
       // before anything is drawn in. The chain is storage a framebuffer can draw in; there is nothing to compute.
-      if (!texture.blank) throw new WebGLUnsupportedError('generateMipmap of a float texture; sample it with NEAREST');
-      if (!texture.immutable) texture.levels = Math.floor(Math.log2(Math.max(texture.width, texture.height))) + 1;
+      if (texture.blank) {
+        if (!texture.immutable) texture.levels = Math.floor(Math.log2(Math.max(texture.width, texture.height))) + 1;
+        return;
+      }
+      // A float texture with texels: the replay makes its chain (2 x 2 blocks averaged).
+      texture.mipmaps = true;
+      texture.version += 1;
       return;
     }
     texture.mipmaps = true;
@@ -3856,6 +3861,7 @@ export class WebGLContext {
             height: texture.height,
             ...(texture.depth > 0 ? { depth: texture.depth } : {}),
             ...(texture.target === GL2.TEXTURE_2D_ARRAY ? { array: true } : {}),
+            ...(texture.mipmaps ? { mipmaps: true } : {}),
           }
         : {
         ...(texture.layer !== null

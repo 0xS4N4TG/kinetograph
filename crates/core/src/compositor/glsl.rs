@@ -2520,20 +2520,26 @@ impl Compositor {
                 "unsupported: a {width} x {height} x {depth} texture; the device holds {limit} across and {layers} layers"
             )));
         }
-        let (format, bytes, per_texel) = match &texels {
-            gl::Texels::Rgba8(b) => (COLOR_FORMAT, b, 4),
-            gl::Texels::Rgba16F(b) => (wgpu::TextureFormat::Rgba16Float, b, 8),
-            gl::Texels::Rgba32F(b) => (wgpu::TextureFormat::Rgba32Float, b, 16),
+        let (format, per_texel) = match &texels {
+            gl::Texels::Rgba8(_) => (COLOR_FORMAT, 4),
+            gl::Texels::Rgba16F(_) => (wgpu::TextureFormat::Rgba16Float, 8),
+            gl::Texels::Rgba32F(_) => (wgpu::TextureFormat::Rgba32Float, 16),
         };
         let size = wgpu::Extent3d {
             width,
             height,
             depth_or_array_layers: depth,
         };
+        // `generateMipmap` of a float texture: the chain is made here, 2 x 2 blocks averaged (a 3D or array texture has one level).
+        let levels = if texture.mipmaps && !three_d && !texture.array && format != COLOR_FORMAT {
+            width.max(height).ilog2() + 1
+        } else {
+            1
+        };
         let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("glsl texture"),
             size,
-            mip_level_count: 1,
+            mip_level_count: levels,
             sample_count: 1,
             dimension: if three_d {
                 wgpu::TextureDimension::D3
@@ -2544,16 +2550,35 @@ impl Compositor {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        self.queue.write_texture(
-            gpu.as_image_copy(),
-            bytes,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(width * per_texel),
-                rows_per_image: Some(height),
-            },
-            size,
-        );
+        let float32 = matches!(texels, gl::Texels::Rgba32F(_));
+        let (mut w, mut h, mut level) = (width, height, texels);
+        for mip in 0..levels {
+            let bytes = match &level {
+                gl::Texels::Rgba8(b) | gl::Texels::Rgba16F(b) | gl::Texels::Rgba32F(b) => b,
+            };
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &gpu,
+                    mip_level: mip,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                bytes,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(w * per_texel),
+                    rows_per_image: Some(h),
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: depth,
+                },
+            );
+            if mip + 1 < levels {
+                (level, w, h) = gl::next_level_float(&level, w, h);
+            }
+        }
         if self.glsl.textures.len() >= MAX_TEXTURES {
             self.glsl.textures.clear();
         }
@@ -2562,9 +2587,9 @@ impl Compositor {
                 dimension: Some(view_dimension(texture_dim(texture))),
                 ..Default::default()
             }),
-            mipmapped: false,
+            mipmapped: levels > 1,
             depth: false,
-            float32: matches!(texels, gl::Texels::Rgba32F(_)),
+            float32,
         });
         self.glsl.textures.insert(key, uploaded.clone());
         Ok(uploaded)

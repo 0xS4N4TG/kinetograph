@@ -185,6 +185,11 @@ fn webgl2_alpha_to_coverage() {
 }
 
 #[test]
+fn webgl2_float_mipmap() {
+    run("webgl2_float_mipmap", 1.0);
+}
+
+#[test]
 fn webgl2_uniform_struct_tail() {
     run("webgl2_uniform_struct_tail", 1.0);
 }
@@ -257,6 +262,7 @@ fn the_committed_recordings_parse_as_the_scene_format_does() {
         "webgl2_ubo_range",
         "webgl2_array_uniform_name",
         "webgl2_alpha_to_coverage",
+        "webgl2_float_mipmap",
         "webgl2_uniform_struct_tail",
         "webgl2_attr_int_to_float",
         "webgl2_attr_int",
