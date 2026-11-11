@@ -12,7 +12,7 @@ const STEPS = [
 
 export function Start() {
   return (
-    <section id="start" className={`${shell} ${section} scroll-mt-6`}>
+    <section id="start" className={`${shell} ${section} scroll-mt-6 pb-[var(--kg-gap)]`}>
       <div className="grid grid-cols-[minmax(0,1fr)] gap-14 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-20">
         <div data-reveal>
           <Heading className="max-w-[14ch]">Three commands to a film.</Heading>
@@ -30,13 +30,18 @@ export function Start() {
           ))}
         </ol>
       </div>
-      <div id="licence" data-reveal className="mt-[clamp(64px,8vw,112px)] max-w-[50ch] scroll-mt-6">
-        <Label className="mb-3">Licence</Label>
-        <p className={body}>
-          Kinetograph is open source under the Apache License 2.0, free for any use, including commercial.{' '}
-          <a className={link} href={doc('LICENSE.md')}>Read the licence</a>. See{' '}
-          <a className={link} href="/docs/compat/">what works</a>.
-        </p>
+      <div id="licence" data-reveal className="kg-tray mt-[clamp(48px,6vw,88px)] scroll-mt-6">
+        <div className="kg-core kg-core-card grid items-center gap-6 p-[clamp(24px,3.2vw,48px)] md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] md:gap-14">
+          <div>
+            <Label className="mb-4">Licence</Label>
+            <p className="font-display text-[clamp(56px,7vw,104px)] leading-[0.9] text-ink [text-box:trim-both_cap_alphabetic]">Apache 2.0</p>
+          </div>
+          <p className={`${body} max-w-[46ch]`}>
+            Kinetograph is open source under the Apache License 2.0, free for any use, including commercial.{' '}
+            <a className={link} href={doc('LICENSE.md')}>Read the licence</a>. See{' '}
+            <a className={link} href="/docs/compat/">what works</a>.
+          </p>
+        </div>
       </div>
     </section>
   );

@@ -521,6 +521,8 @@ figure.shiki button[data-checked] {
   --kg-card: 2rem;
   --kg-bezel: 6px;
   --kg-core: calc(var(--kg-card) - var(--kg-bezel));
+  /* The one gap between sections; sections add it above themselves and nothing else. */
+  --kg-gap: clamp(72px, 9vw, 136px);
 }
 
 /* Double bezel: a thin tray around a core with a concentric radius. */
@@ -566,6 +568,7 @@ figure.shiki button[data-checked] {
 .kg-cap > .in {
   display: block;
   margin-top: -0.12em;
+  margin-left: calc(var(--lsb, 0) * -1em);
 }
 .kg-wordmark-fit {
   display: flow-root;
@@ -627,6 +630,11 @@ figure.shiki button[data-checked] {
     opacity: 1;
     transition-duration: 2300ms;
   }
+}
+/* No hover on touch: RevealRoot sets data-peek for about two seconds when a picture is fully in view. */
+.kg-pic[data-peek] > .orig {
+  opacity: 1;
+  transition-duration: 900ms;
 }
 
 /* A thin cobalt frame around the viewport with rounded inner corners, and the film grain above everything. */

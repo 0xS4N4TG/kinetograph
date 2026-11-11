@@ -3,6 +3,7 @@ import { RootProvider } from 'fumadocs-ui/provider/next';
 import { RevealRoot } from '@/components/reveal-root';
 import { SmoothScroll } from '@/components/smooth-scroll';
 import { Engine } from '@/sections/engine';
+import { Examples } from '@/sections/examples';
 import { Film } from '@/sections/film';
 import { Footer } from '@/sections/footer';
 import { Hero } from '@/sections/hero';
@@ -32,6 +33,7 @@ export default function Page() {
             <Hero />
             <Film />
             <SpeedSection />
+            <Examples />
             <Engine />
             <Origin />
             <Start />

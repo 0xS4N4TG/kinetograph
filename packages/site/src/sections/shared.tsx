@@ -20,6 +20,6 @@ export function Label({ children, className }: { children: ReactNode; className?
 export const labelText = 'font-display text-[16px] leading-none font-medium tracking-[0.08em] uppercase';
 
 export const shell = 'mx-auto w-full max-w-[1320px] px-[clamp(20px,4.5vw,64px)]';
-export const section = 'py-[clamp(64px,8.5vw,136px)]';
+export const section = 'pt-[var(--kg-gap)]';
 export const body = 'font-dm text-[17px] leading-[1.6] font-normal tracking-[-0.005em] text-ink/80';
 export const link = 'text-cobalt underline decoration-cobalt/40 underline-offset-4 transition-colors hover:decoration-cobalt';

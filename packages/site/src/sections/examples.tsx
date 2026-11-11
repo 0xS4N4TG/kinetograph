@@ -1,8 +1,11 @@
 'use client';
 
+import { ArrowLeftIcon, ArrowRightIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
+import { Heading } from '@/sections/heading';
 import renders from '@/sections/renders.json';
+import { section, shell } from '@/sections/shared';
 
 interface Render {
   name: string;
@@ -68,25 +71,65 @@ function RenderCard({ r }: { r: Render }) {
   );
 }
 
-/** The example renders (renders.json) as a row you scroll sideways: clips keep their own shape, portrait ones are narrow. */
+const PAD = 'max(clamp(20px, 4.5vw, 64px), calc((100% - 1320px) / 2 + clamp(20px, 4.5vw, 64px)))';
+
+const arrow =
+  'grid size-12 place-items-center rounded-full text-ink shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--foreground)_22%,transparent)] transition-[transform,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.96] disabled:opacity-30 disabled:active:scale-100';
+
+/**
+ * The example renders (renders.json) as a row you scroll sideways: clips keep their own shape, portrait ones are narrow.
+ * It bleeds off the right edge of the window, fades there while there is more, and has previous and next buttons.
+ */
 export function Examples() {
+  const rail = useRef<HTMLDivElement>(null);
+  const [edge, setEdge] = useState({ start: true, end: false });
+
+  useEffect(() => {
+    const el = rail.current;
+    if (!el) return;
+    const sync = () => {
+      const start = el.scrollLeft < 8;
+      const end = el.scrollLeft + el.clientWidth >= el.scrollWidth - 8;
+      setEdge((e) => (e.start === start && e.end === end ? e : { start, end }));
+    };
+    sync();
+    el.addEventListener('scroll', sync, { passive: true });
+    return () => el.removeEventListener('scroll', sync);
+  }, []);
+
+  const go = (dir: 1 | -1) => {
+    const el = rail.current;
+    if (!el) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollBy({ left: dir * el.clientWidth * 0.7, behavior: reduce ? 'auto' : 'smooth' });
+  };
+
   return (
-    <div data-reveal className="mt-[clamp(72px,9vw,128px)]">
+    <section id="examples" className={`${section} scroll-mt-6`}>
+      <div data-reveal className={`${shell} flex items-end justify-between gap-6`}>
+        <Heading>Made with Kinetograph.</Heading>
+        <div className="flex shrink-0 gap-2 pb-1">
+          <button type="button" aria-label="Previous renders" disabled={edge.start} onClick={() => go(-1)} className={arrow}>
+            <ArrowLeftIcon className="size-5" strokeWidth={1.75} />
+          </button>
+          <button type="button" aria-label="Next renders" disabled={edge.end} onClick={() => go(1)} className={arrow}>
+            <ArrowRightIcon className="size-5" strokeWidth={1.75} />
+          </button>
+        </div>
+      </div>
       <div
+        ref={rail}
+        data-reveal
+        style={{ '--i': 1, paddingInline: PAD, scrollPaddingInline: PAD, scrollbarWidth: 'none', ...(edge.end ? {} : { maskImage: 'linear-gradient(to right, #000 calc(100% - 72px), transparent)' }) } as React.CSSProperties}
         tabIndex={0}
         role="region"
         aria-label="Example renders"
-        className="flex snap-x snap-mandatory gap-5 overflow-x-auto pb-4 [scrollbar-width:thin]"
-        style={{
-          paddingInline: 'max(clamp(20px, 4.5vw, 64px), calc((100% - 1320px) / 2 + clamp(20px, 4.5vw, 64px)))',
-          scrollPaddingInline: 'max(clamp(20px, 4.5vw, 64px), calc((100% - 1320px) / 2 + clamp(20px, 4.5vw, 64px)))',
-          scrollbarColor: 'color-mix(in oklab, var(--foreground) 30%, transparent) transparent',
-        }}
+        className="mt-[clamp(32px,4vw,56px)] flex snap-x snap-mandatory gap-5 overflow-x-auto"
       >
         {(renders as Render[]).filter((r) => r.name !== 'launch').map((r) => (
           <RenderCard key={r.name} r={r} />
         ))}
       </div>
-    </div>
+    </section>
   );
 }

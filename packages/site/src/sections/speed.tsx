@@ -1,6 +1,5 @@
 import { Pic } from '@/components/pic';
 import { BENCH, SCENES, type Scene } from '@/data/speed';
-import { Examples } from '@/sections/examples';
 import { Heading } from '@/sections/heading';
 import { body, link, section, shell } from '@/sections/shared';
 
@@ -76,17 +75,14 @@ export function Speed() {
   );
 }
 
-/** The speed section: its heading, the numbers, then the example renders in a row. */
+/** The speed section: its heading, then the numbers. */
 export function SpeedSection() {
   return (
-    <section id="why" className={`${section} scroll-mt-6`}>
-      <div className={shell}>
-        <div data-reveal>
-          <Heading className="max-w-[16ch]">The renders, and how long they took.</Heading>
-        </div>
-        <Speed />
+    <section id="why" className={`${shell} ${section} scroll-mt-6`}>
+      <div data-reveal>
+        <Heading className="max-w-[16ch]">The renders, and how long they took.</Heading>
       </div>
-      <Examples />
+      <Speed />
     </section>
   );
 }
