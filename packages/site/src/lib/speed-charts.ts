@@ -3,7 +3,7 @@ import { Sketch, type Diagram } from './sketch.ts';
 
 /**
  * The drawings on the Speed page that are SVG: worker scaling, the lanes of one render and where a frame's time goes
- * (the per-scene bars are HTML, in `components/docs/speed-charts.tsx`). Drawn from `data/speed.ts`.
+ * (the per-video bars are HTML, in `components/docs/speed-charts.tsx`). Drawn from `data/speed.ts`.
  *
  * Only the frame is hand-sketched, with the kit of the engine diagram (`sketch.ts`): the axis lines and the rule
  * under a legend. The data is crisp: square rects, straight polylines, round markers. Words are Kalam, numbers mono.
@@ -86,7 +86,7 @@ export function workersChart(): Chart {
   marks.push({ t: 'line', pts: [[8, BASE + 40], [W - 12, BASE + 40]], stroke: 'muted', sw: 1, opacity: 0.4 });
 
   const desc =
-    `A line chart of render time in seconds against the number of workers on the ${WORKERS.scene} scene, ${WORKERS.frames} frames at ${WORKERS.size}. ` +
+    `A line chart of render time in seconds against the number of workers on ${WORKERS.video}, ${WORKERS.frames} frames at ${WORKERS.size}. ` +
     `Measured: ${pts.map((p) => `${plural(p.workers, 'worker')} ${sec(p.s)}, ${speedUp(p.s).toFixed(2)} times faster than one`).join('; ')}. ` +
     `A dashed line shows the ideal, the time of one worker divided by the workers, which keeps falling.`;
   return done(W, BASE + 80, 'Render time against workers', desc, marks, frame);
@@ -148,7 +148,7 @@ export function lanesChart(): Chart {
 
   const pct = `${Math.round(WORKERS.replayShare * 100)}%`;
   const desc =
-    `Three bars on one time scale from 0 to ${sec(one)} for the ${WORKERS.scene} scene. One worker takes ${sec(one)}. Four workers, in theory, take a quarter of that. ` +
+    `Three bars on one time scale from 0 to ${sec(one)} for ${WORKERS.video}. One worker takes ${sec(one)}. Four workers, in theory, take a quarter of that. ` +
     `Four workers, measured, take ${sec(four)}, and each of their four lanes is ${pct} replaying frames that other workers drew, then drawing its own frames, ` +
     `each ${WORKERS.slowCoreFactor.toFixed(1)} times slower on the slow cores.`;
   return done(W, ys + 36, 'One render, by worker', desc, marks, frame);
