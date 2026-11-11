@@ -37,7 +37,28 @@ Yes: Windows (64-bit), Linux (64-bit Intel or AMD) and Mac with Apple Silicon. O
 
 ## How do I preview and save a video?
 
-`npx kinetograph studio src/index.tsx` opens a preview with a timeline. `npx kinetograph render src/index.tsx` saves an MP4 to `out/renders/`. See [Edit in Studio](/docs/studio/).
+`studio` opens a preview with a timeline. `render` saves an MP4 to `out/renders/`.
+
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
+```sh
+npx kinetograph studio src/index.tsx
+npx kinetograph render src/index.tsx
+```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph studio html/index.html
+npx kinetograph render html/index.html
+```
+
+  </Tab>
+</IconTabs>
+
+See [Edit in Studio](/docs/studio/).
 
 ## How long does a render take?
 

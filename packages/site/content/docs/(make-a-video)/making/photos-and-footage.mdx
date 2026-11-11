@@ -55,7 +55,26 @@ Make a 20 second slideshow of the photos in public/images in the order of their 
 
 ## Present it
 
-Save the MP4 with `npx kinetograph render src/index.tsx`. Add `--draft` first for a half-size look at the timing.
+Save the MP4:
+
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
+```sh
+npx kinetograph render src/index.tsx
+```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph render html/index.html
+```
+
+  </Tab>
+</IconTabs>
+
+Add `--draft` first for a half-size look at the timing.
 
 ## Start from a template
 

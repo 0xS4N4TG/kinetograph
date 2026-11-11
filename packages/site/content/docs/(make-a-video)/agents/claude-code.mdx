@@ -68,15 +68,41 @@ Watch the first version and say what to change, in the same conversation.
 
 To reopen the preview with a timeline and a chat, run this in the project folder:
 
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
 ```sh
 npx kinetograph studio src/index.tsx
 ```
 
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph studio html/index.html
+```
+
+  </Tab>
+</IconTabs>
+
 The preview opens in Studio, where you can also edit the video by hand. To save the MP4 yourself:
+
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```sh
 npx kinetograph render src/index.tsx
 ```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph render html/index.html
+```
+
+  </Tab>
+</IconTabs>
 
 You can also ask your agent to render it.
 
