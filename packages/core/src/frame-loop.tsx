@@ -10,7 +10,7 @@
 //      attach what each sub-frame changes in them.
 
 import type { ReactNode } from 'react';
-import { glDependsOnHistory, glHoldsTargets, resetCanvasStates, snapshotGlStates, takeGlReports } from '@kinetographdev/compat/shim';
+import { glDependsOnHistory, glHoldsTargets, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports } from '@kinetographdev/compat/shim';
 import { setDefaultStylesheet } from '@kinetographdev/compat/dom';
 import { createSceneRoot, finishIslands, TimelineContext, type LayerNames, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
@@ -114,6 +114,7 @@ class Renderer implements FrameRenderer {
   async renderFrame(frame: number): Promise<FrameResult> {
     this.calls += 1;
     this.target = frame;
+    setNetFrame(frame);
     try {
       return await this.drawFrame(frame);
     } finally {
