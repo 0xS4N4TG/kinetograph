@@ -379,6 +379,16 @@ describe('documents a sanitizer needs (DOMPurify finds its document through them
     expect(doc.documentElement.getAttribute('viewBox')).toBe('0 0 2 2');
   });
 
+  it('parses text/xml with namespaced elements, as an UltraHDR image carries its XMP', () => {
+    const xml = '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF><rdf:Description rdf:about="" hdrgm:Version="1.0" hdrgm:GainMapMax="2.5"/></rdf:RDF></x:xmpmeta>';
+    const doc = new g.DOMParser().parseFromString(xml, 'text/xml');
+    const found = doc.getElementsByTagName('rdf:Description');
+    expect(found).toHaveLength(1);
+    expect([found[0].getAttribute('hdrgm:Version'), found[0].getAttribute('hdrgm:GainMapMax'), found[0].getAttribute('hdrgm:Gamma')]).toEqual(['1.0', '2.5', null]);
+    expect(doc.getElementsByTagName('Container:Directory')).toHaveLength(0);
+    expect(doc.documentElement.children).toHaveLength(1);
+  });
+
   it('puts what is inside foreignObject in the HTML namespace', () => {
     const doc = new g.DOMParser().parseFromString('<svg><foreignObject><div><br>x</div></foreignObject></svg>', 'text/html');
     const div = doc.querySelector('div');
