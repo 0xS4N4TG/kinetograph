@@ -11,7 +11,7 @@
   --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace;
   --font-serif: 'Newsreader Variable', 'Iowan Old Style', Baskerville, Georgia, serif;
   --font-heading: var(--font-sans);
-  --font-display: 'Sofia Sans Extra Condensed Variable', 'Arial Narrow', ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--kg-display-face), 'Arial Narrow', ui-sans-serif, system-ui, sans-serif;
   --font-wordmark: 'Geist Serif', 'Iowan Old Style', Georgia, serif;
   --font-dm: 'DM Sans Variable', ui-sans-serif, system-ui, sans-serif;
   --font-jb: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace;

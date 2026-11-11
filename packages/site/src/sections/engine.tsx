@@ -41,7 +41,7 @@ export function Engine() {
         </div>
         <div id="agents" data-reveal style={{ '--i': 2 } as React.CSSProperties} className="kg-tray scroll-mt-6 lg:col-span-5">
           <div className={`kg-core kg-core-field flex h-full flex-col justify-between gap-12 ${pad}`}>
-            <Heading size="cell" className="max-w-[12ch]">An agent can check its own work.</Heading>
+            <Heading size="cell" className="max-w-[12ch] text-on-field">An agent can check its own work.</Heading>
             <div>
               <p className="max-w-[44ch] font-dm text-[17px] leading-[1.6] tracking-[-0.005em] text-on-field/90">
                 Every command takes <code className="font-jb text-[14px]">--json</code>, and{' '}
