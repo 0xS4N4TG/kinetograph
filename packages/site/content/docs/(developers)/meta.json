@@ -9,6 +9,7 @@
     "reference/lint",
     "---What works---",
     "compat",
+    "speed",
     "reference/remotion-coverage",
     "reference/hyperframes-projects",
     "reference/remotion-three",

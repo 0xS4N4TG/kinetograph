@@ -2,9 +2,10 @@ import { ChevronRightIcon } from 'lucide-react';
 import localFont from 'next/font/local';
 import { Fragment, useId, type ReactNode } from 'react';
 
-import { BENCH, PAPERCUT, SCENES, SHOW_WORKER_SCALING, WORKERS, speedUp, type Kind } from '@/data/speed';
+import { BENCH, PAPERCUT, SCENES, SHOW_WORKER_SCALING, WORKERS } from '@/data/speed';
 import { barsChart, frameChart, lanesChart, spreadChart, workersChart, type Chart, type Paint } from '@/lib/speed-charts';
 import type { Diagram } from '@/lib/sketch';
+import { FRAME_HEAD, SCENE_HEAD, SPREAD_HEAD, WORKER_HEAD, fact, frameCells, methodRows, sceneCells, spreadCells, status, summary, workerCells } from '@/lib/speed-markdown';
 
 // Kalam (SIL OFL 1.1), as in the engine diagram: the hand-lettered labels.
 const sketch = localFont({
@@ -117,13 +118,13 @@ function Figure({ chart, caption, table }: { chart: Chart; caption?: ReactNode; 
 const th = 'whitespace-nowrap border-b border-[var(--kg-box-border)] px-3 py-2 text-left font-medium text-fd-muted-foreground';
 const td = 'whitespace-nowrap px-3 py-1.5 tabular-nums';
 
-function Table({ head, children }: { head: string[]; children: ReactNode }) {
+function Table({ head, left = 1, children }: { head: string[]; left?: number; children: ReactNode }) {
   return (
     <table className="w-full border-collapse font-jb text-xs text-fd-foreground">
       <thead>
         <tr>
           {head.map((h, i) => (
-            <th key={h} className={`${th} ${i ? 'text-right' : ''}`}>
+            <th key={h} className={`${th} ${i >= left ? 'text-right' : ''}`}>
               {h}
             </th>
           ))}
@@ -134,30 +135,19 @@ function Table({ head, children }: { head: string[]; children: ReactNode }) {
   );
 }
 
-const range = (a: number, b: number) => `${a}–${b}`;
-const ratio = (r?: { x: number; lo: number; hi: number }) => (r ? `${r.x}× (${r.lo}–${r.hi}×)` : '');
-
-function SceneRows({ kind }: { kind?: Kind }) {
+/** A table of cell text; `lead` marks the first row of a group, which gets a rule above it. */
+function Cells({ rows, left = 1 }: { rows: string[][]; left?: number }) {
   return (
     <>
-      {SCENES.filter((s) => !kind || s.kind === kind).flatMap((s) => {
-        const rows = [
-          { name: 'Kinetograph', run: s.kinetograph, ratio: undefined },
-          ...(s.hyperframes ? [{ name: `HyperFrames ${BENCH.hyperframes}`, run: s.hyperframes, ratio: s.vsHyperframes }] : []),
-          ...(s.remotion ? [{ name: `Remotion ${BENCH.remotion}`, run: s.remotion, ratio: s.vsRemotion }] : []),
-        ];
-        return rows.map((r, i) => (
-          <tr key={`${s.id}${r.name}`} className={i === 0 ? 'border-t border-[var(--kg-box-border)]' : ''}>
-            <td className={`${td} text-left font-medium`}>{i === 0 ? s.id : ''}</td>
-            <td className={`${td} text-left`}>{r.name}</td>
-            <td className={`${td} text-right`}>{r.run.s.toFixed(2)}</td>
-            <td className={`${td} text-right`}>{range(r.run.min, r.run.max)}</td>
-            <td className={`${td} text-right`}>{r.run.fps.toFixed(1)}</td>
-            <td className={`${td} text-right`}>{r.run.rssMb}</td>
-            <td className={`${td} text-right`}>{ratio(r.ratio)}</td>
-          </tr>
-        ));
-      })}
+      {rows.map((cells, r) => (
+        <tr key={r} className={cells[0] ? 'border-t border-[var(--kg-box-border)]' : ''}>
+          {cells.map((c, i) => (
+            <td key={i} className={`${td} ${i >= left ? 'text-right' : 'text-left'} ${i === 0 ? 'font-medium' : ''}`}>
+              {c}
+            </td>
+          ))}
+        </tr>
+      ))}
     </>
   );
 }
@@ -168,10 +158,10 @@ export function SpeedBars() {
     <>
       <Figure
         chart={barsChart()}
-        caption={`Shorter is faster. Each bar is the median of ${BENCH.n} timed renders. Bars are cut at 60 s, with the time written beside them.`}
+        caption={`Shorter is faster. Each bar is the median of ${BENCH.n} timed renders. Bars are cut at 60 s, with the time written beside them. The blue factors are how many times faster Kinetograph is: vs HF is against HyperFrames, vs Rem. against Remotion.`}
         table={
-          <Table head={['scene', 'engine', 'median s', 'min–max', 'fps', 'peak RSS MB', 'Kinetograph faster by']}>
-            <SceneRows />
+          <Table head={SCENE_HEAD} left={2}>
+            <Cells rows={SCENES.flatMap(sceneCells)} left={2} />
           </Table>
         }
       />
@@ -189,14 +179,8 @@ export function SpeedSpread() {
       chart={spreadChart()}
       caption={`One dot per scene, median of ${BENCH.n} renders over median of ${BENCH.n}. Run-to-run ranges are in the table under the bar chart.`}
       table={
-        <Table head={['scene', 'vs HyperFrames', 'vs Remotion']}>
-          {SCENES.map((s) => (
-            <tr key={s.id} className="border-t border-[var(--kg-box-border)]">
-              <td className={`${td} text-left font-medium`}>{s.id}</td>
-              <td className={`${td} text-right`}>{ratio(s.vsHyperframes) || '–'}</td>
-              <td className={`${td} text-right`}>{ratio(s.vsRemotion) || '–'}</td>
-            </tr>
-          ))}
+        <Table head={SPREAD_HEAD}>
+          <Cells rows={SCENES.map(spreadCells)} />
         </Table>
       }
     />
@@ -205,12 +189,7 @@ export function SpeedSpread() {
 
 /** The summary line, written from the data. */
 export function SpeedSummary() {
-  const span = (key: 'vsHyperframes' | 'vsRemotion') => {
-    const xs = SCENES.flatMap((s) => (s[key] ? [s[key].x] : []));
-    return { n: xs.length, lo: Math.min(...xs), hi: Math.max(...xs) };
-  };
-  const hf = span('vsHyperframes');
-  const rm = span('vsRemotion');
+  const { hf, rm } = summary();
   return (
     <p className="text-base leading-relaxed">
       On one Apple M4, Kinetograph rendered {hf.n} scenes {hf.lo}&times; to {hf.hi}&times; faster than HyperFrames, and {rm.n} scenes {rm.lo}&times; to {rm.hi}&times; faster than Remotion.
@@ -221,9 +200,7 @@ export function SpeedSummary() {
 
 /** A worker number for the text, so the prose follows the data. */
 export function Fact({ k }: { k: 'gain' | 'replay' | 'slow' }) {
-  const four = WORKERS.points.find((p) => p.workers === 4)!;
-  const text = { gain: `${speedUp(four.s).toFixed(2)}\u00d7`, replay: `${Math.round(WORKERS.replayShare * 100)}%`, slow: `${WORKERS.slowCoreFactor.toFixed(1)}\u00d7` }[k];
-  return <>{text}</>;
+  return <>{fact(k)}</>;
 }
 
 /** The worker section, hidden when `SHOW_WORKER_SCALING` is false. */
@@ -242,14 +219,8 @@ export function WorkerScaling() {
         </>
       }
       table={
-        <Table head={['workers', 'wall s', 'speed-up vs 1 worker']}>
-          {WORKERS.points.map((p) => (
-            <tr key={p.workers} className="border-t border-[var(--kg-box-border)]">
-              <td className={`${td} text-left font-medium`}>{p.workers}</td>
-              <td className={`${td} text-right`}>{p.s.toFixed(2)}</td>
-              <td className={`${td} text-right`}>{speedUp(p.s).toFixed(2)}&times;</td>
-            </tr>
-          ))}
+        <Table head={WORKER_HEAD}>
+          <Cells rows={workerCells()} />
         </Table>
       }
     />
@@ -264,19 +235,10 @@ export function FrameTime() {
   return (
     <Figure
       chart={frameChart()}
-      caption={`One worker, ${WORKERS.scene} scene, same build. ${WORKERS.status}.`}
+      caption={`One worker, ${WORKERS.scene} scene, same build. ${status()}.`}
       table={
-        <Table head={['part of a frame', 'ms']}>
-          {WORKERS.frameMs.map((s) => (
-            <tr key={s.label} className="border-t border-[var(--kg-box-border)]">
-              <td className={`${td} text-left`}>{s.label}</td>
-              <td className={`${td} text-right`}>{s.ms.toFixed(1)}</td>
-            </tr>
-          ))}
-          <tr className="border-t border-[var(--kg-box-border)] font-medium">
-            <td className={`${td} text-left`}>total</td>
-            <td className={`${td} text-right`}>{WORKERS.frameMsTotal.toFixed(1)}</td>
-          </tr>
+        <Table head={FRAME_HEAD}>
+          <Cells rows={frameCells()} />
         </Table>
       }
     />
@@ -285,23 +247,6 @@ export function FrameTime() {
 
 /** How it was measured, as a collapsed list. */
 export function SpeedMethod() {
-  const rows: [string, string][] = [
-    ['Machine', `${BENCH.machine}, ${BENCH.os}`],
-    ['Node', BENCH.node],
-    ['Date', BENCH.date],
-    ['Kinetograph', `commit ${BENCH.kinetographCommit}`],
-    ['HyperFrames', BENCH.hyperframes],
-    ['Remotion', BENCH.remotion],
-    ['Protocol', `${BENCH.warmups} warm-up render, then ${BENCH.n} timed renders; median and min–max of the ${BENCH.n}`],
-    ['Load', `1-minute load average under ${BENCH.loadUnder.toFixed(1)} before every run, machine otherwise idle`],
-    ['Timed', 'the whole render command, start to finished H.264 file'],
-    ['Kinetograph run', BENCH.settings.kinetograph],
-    ['Remotion run', BENCH.settings.remotion],
-    ['HyperFrames run', BENCH.settings.hyperframes],
-    ['Ratio', `the other engine’s median over Kinetograph’s; the bracket is best over worst and worst over best of the ${BENCH.n} runs`],
-    ['Scenes', 'no version has audio; each Remotion port rewrites the HyperFrames page (GSAP tweens as frame maths); compat and papercut are Remotion projects both engines run unchanged'],
-    ['Not measured', 'any other machine; Remotion on the six pages with no port; HyperFrames on compat and papercut; steady-state fps'],
-  ];
   return (
     <details className="group not-prose my-6 rounded-xl border border-[var(--kg-box-border)] bg-[var(--kg-box-bg)] px-4 py-3">
       <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-fd-foreground [&::-webkit-details-marker]:hidden">
@@ -309,7 +254,7 @@ export function SpeedMethod() {
         Machine, versions and protocol
       </summary>
       <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-        {rows.map(([k, v]) => (
+        {methodRows().map(([k, v]) => (
           <Fragment key={k}>
             <dt className="text-fd-muted-foreground">{k}</dt>
             <dd className="font-jb text-xs leading-relaxed text-fd-foreground sm:text-[0.8125rem]">{v}</dd>

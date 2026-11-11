@@ -68,10 +68,14 @@ function done(width: number, height: number, title: string, desc: string, fills:
 /** Longest bar, in seconds. A longer one is cut with a break mark and keeps its number. */
 const CAP = 60;
 
+/** The right edge of the two factor columns: versus HyperFrames, then versus Remotion. */
+const COL_HF = 436;
+const COL_RM = 508;
+
 export function barsChart(): Chart {
   const W = 520;
   const X0 = 108;
-  const PX = 4.3;
+  const PX = 3.8;
   const BAR = 16;
   const PITCH = 21;
   const GAP = 16;
@@ -90,7 +94,8 @@ export function barsChart(): Chart {
     lx += 32 + textWidth(name, 20) + 22;
   }
   ink.say(14, 52, 'wall seconds, median');
-  ink.say(W - 12, 52, 'faster by', { anchor: 'end' });
+  ink.say(COL_HF, 52, 'vs HF', { anchor: 'end' });
+  ink.say(COL_RM, 52, 'vs Rem.', { anchor: 'end' });
 
   const total = SCENES.reduce((h, s) => h + (s.hyperframes && s.remotion ? 3 : 2) * PITCH - 3, 0) + (SCENES.length - 1) * GAP;
   const bottom = TOP + total;
@@ -127,7 +132,7 @@ export function barsChart(): Chart {
       back(fills, X0 + w + 8, by + 13, sec(row.run.s), 17);
       sk.label({ x: X0 + w + 8, y: by + 13, text: sec(row.run.s), size: 17, weight: row.paint === 'accent' ? 700 : 400, anchor: 'start', tone: 'ink' });
       if ('ratio' in row && row.ratio) {
-        acc.label({ x: W - 12, y: by + 14, text: x1(row.ratio.x), size: 19, weight: 700, anchor: 'end', tone: 'ink' });
+        acc.label({ x: row.paint === 'ink' ? COL_HF : COL_RM, y: by + 14, text: x1(row.ratio.x), size: 19, weight: 700, anchor: 'end', tone: 'ink' });
       }
     });
     y += height + GAP;
