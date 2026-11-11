@@ -1146,7 +1146,9 @@ export class DomElement extends DomNodeBase {
   get width(): number {
     if (this.host.type === 'canvas') return bitmapSide(this.getAttribute('width'), DEFAULT_WIDTH);
     const attr = this.getAttribute('width');
-    return attr !== null && Number.isFinite(parseFloat(attr)) ? parseFloat(attr) : this.offsetWidth;
+    if (attr !== null && Number.isFinite(parseFloat(attr))) return parseFloat(attr);
+    // An image that is not rendered (a script's, never attached) is as wide as its file.
+    return this.host.type === 'img' && this.box() === null ? this.naturalWidth : this.offsetWidth;
   }
   set width(value: number) {
     this.setAttribute('width', String(Math.max(0, Math.floor(Number(value)) || 0)));
@@ -1155,7 +1157,8 @@ export class DomElement extends DomNodeBase {
   get height(): number {
     if (this.host.type === 'canvas') return bitmapSide(this.getAttribute('height'), DEFAULT_HEIGHT);
     const attr = this.getAttribute('height');
-    return attr !== null && Number.isFinite(parseFloat(attr)) ? parseFloat(attr) : this.offsetHeight;
+    if (attr !== null && Number.isFinite(parseFloat(attr))) return parseFloat(attr);
+    return this.host.type === 'img' && this.box() === null ? this.naturalHeight : this.offsetHeight;
   }
   set height(value: number) {
     this.setAttribute('height', String(Math.max(0, Math.floor(Number(value)) || 0)));

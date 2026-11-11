@@ -155,6 +155,15 @@ describe('a script-made <img>', () => {
     expect([blob.naturalWidth, blob.naturalHeight, pendingImageLoads()]).toEqual([11, 13, 0]);
   });
 
+  it('is as wide and high as its file while it is not rendered, unless width and height say otherwise', async () => {
+    const img = g.document.createElement('img');
+    img.src = staticFile('pic.png');
+    await img.decode();
+    expect([img.width, img.height, img.offsetWidth]).toEqual([7, 5, 0]);
+    img.setAttribute('width', '20');
+    expect([img.width, img.height]).toEqual([20, 5]);
+  });
+
   it('fires error for a missing file and a remote URL, and decode() rejects', async () => {
     const fail = (src: string) =>
       new Promise<string>((resolve) => {
