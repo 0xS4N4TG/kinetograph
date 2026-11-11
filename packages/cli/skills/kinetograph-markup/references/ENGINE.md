@@ -685,7 +685,11 @@ flavour naga's GLSL frontend reads, then naga's IR goes to wgpu directly, with n
 not keep the uniform array strides), and `compositor/glsl.rs` replays the draws into an Rgba8 drawing buffer
 (`shaders/glsl_blit.wgsl` then places it on the canvas in linear light). Findings: naga cannot lay out a `matCx2` in a
 uniform block, and Metal packs arrays of floats and `vec2`s tighter than the block's 16 bytes an element, so those
-travel as `vec4`s; bools are not allowed in a block, so they travel as ints; wgpu bounds each vertex by a whole stride
+travel as `vec4`s; bools are not allowed in a block, so they travel as ints; a WebGL 2 uniform block is not given to naga at
+all (`glsl_blocks.rs`): its std140 bytes travel as a `uvec4` array at binding 512 + the block's index, and `main` fills
+private variables of the real types from the words, so the layout is the recorder's (`webgl-blocks.ts`), `instance.member`
+is read as a variable of its own (a struct would hold a `mat2` naga cannot lay out), and the device asks for 16 uniform
+buffers a stage; wgpu bounds each vertex by a whole stride
 from the start of its binding, so an interleaved attribute's offset goes in the vertex, not in the binding.
 What a framebuffer draws into is a second kind of target: colour (Rgba8, `Rgba8UnormSrgb` for `SRGB8_ALPHA8`, which draws write and blend in linear light and keep encoded as GL
 does, `R8Unorm` and `Rg8Unorm` for `R8` and `RG8`, or a float format, with mip levels when the

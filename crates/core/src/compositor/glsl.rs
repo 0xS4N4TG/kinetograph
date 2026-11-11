@@ -1742,6 +1742,35 @@ impl Compositor {
                 contents: &fs_bytes,
                 usage: wgpu::BufferUsages::UNIFORM,
             });
+        // The uniform blocks: the bytes the draw recorded for each, as they were when it was made.
+        let mut block_buffers = Vec::new();
+        for (block, _) in &program.translated.blocks {
+            let mut bytes = vec![0u8; block.size as usize];
+            if let Some(range) = draw.blocks.get(&block.name) {
+                let held = glsl_buffer(content, &range.buffer, buffers)?;
+                let (from, to) = (
+                    range.offset as usize,
+                    range.offset as usize + range.size.min(block.data_size) as usize,
+                );
+                let read = held.get(from..to).ok_or_else(|| {
+                    render_error(format!(
+                        "the uniform block `{}` reads bytes {from} to {to} of the buffer {:?}, which holds {}",
+                        block.name,
+                        range.buffer,
+                        held.len()
+                    ))
+                })?;
+                bytes[..read.len()].copy_from_slice(read);
+            }
+            let buffer = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("glsl uniform block"),
+                    contents: &bytes,
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
+            block_buffers.push((block.binding, buffer));
+        }
         let mut sampler_views = Vec::new();
         for (binding, texture) in sampled {
             let (view, sampler) = match texture {
@@ -1782,6 +1811,12 @@ impl Compositor {
             binding: 1,
             resource: fs_buffer.as_entire_binding(),
         });
+        for (binding, buffer) in &block_buffers {
+            entries.push(wgpu::BindGroupEntry {
+                binding: *binding,
+                resource: buffer.as_entire_binding(),
+            });
+        }
         for (tb, view, sb, sampler) in &sampler_views {
             entries.push(wgpu::BindGroupEntry {
                 binding: *tb,
@@ -1915,6 +1950,9 @@ impl Compositor {
             entries.push(uniform_entry(0, wgpu::ShaderStages::VERTEX));
         }
         entries.push(uniform_entry(1, wgpu::ShaderStages::FRAGMENT));
+        for (b, stages) in &translated.blocks {
+            entries.push(uniform_entry(b.binding, sampler_visibility(*stages)));
+        }
         for (s, stages) in &translated.samplers {
             let visibility = sampler_visibility(*stages);
             entries.push(wgpu::BindGroupLayoutEntry {
@@ -1989,6 +2027,9 @@ impl Compositor {
             entries.push(uniform_entry(0, wgpu::ShaderStages::VERTEX));
         }
         entries.push(uniform_entry(1, wgpu::ShaderStages::FRAGMENT));
+        for (b, stages) in &program.translated.blocks {
+            entries.push(uniform_entry(b.binding, sampler_visibility(*stages)));
+        }
         for ((s, stages), depth) in program.translated.samplers.iter().zip(depths) {
             let visibility = sampler_visibility(*stages);
             entries.push(wgpu::BindGroupLayoutEntry {

@@ -243,6 +243,43 @@ uniform sampler2D s;`;
     expect(Object.keys(content.buffers)).toContain(target!.blocks!.B!.buffer);
   });
 
+  describe('frames', () => {
+    /** A page that writes `values` into its block at the start of each frame, then draws. */
+    function page() {
+      const { gl } = setup('layout(std140) uniform B { vec4 c; };', 'c');
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(GL2.UNIFORM_BUFFER, buffer);
+      gl.bufferData(GL2.UNIFORM_BUFFER, 16, GL.DYNAMIC_DRAW);
+      gl.bindBufferBase(GL2.UNIFORM_BUFFER, 0, buffer);
+      return {
+        gl,
+        frame(value: number | null) {
+          gl.resetState();
+          if (value !== null) gl.bufferSubData(GL2.UNIFORM_BUFFER, 0, new Float32Array([value, value, value, 1]));
+          gl.drawArrays(GL.TRIANGLES, 0, 3);
+          return JSON.stringify(gl.content());
+        },
+      };
+    }
+
+    it('records a frame the same alone as after the frames before it', () => {
+      const sequence = page();
+      sequence.frame(0.25);
+      sequence.frame(0.5);
+      const after = sequence.frame(0.75);
+      const alone = page();
+      expect(alone.frame(0.75)).toBe(after);
+    });
+
+    it('records the bytes a buffer still holds in a frame that does not write it', () => {
+      const p = page();
+      p.frame(0.5);
+      const next = JSON.parse(p.frame(null)) as { ops: { blocks?: Record<string, { buffer: string }> }[]; buffers: Record<string, string> };
+      const id = next.ops.at(-1)!.blocks!.B!.buffer;
+      expect(Array.from(new Float32Array(Uint8Array.from(Buffer.from(next.buffers[id]!, 'base64')).buffer))).toEqual([0.5, 0.5, 0.5, 1]);
+    });
+  });
+
   it('says unsupported, precisely, for the layouts it does not draw', () => {
     const refused = (declarations: string): string => {
       try {

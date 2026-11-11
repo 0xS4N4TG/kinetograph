@@ -27,6 +27,8 @@ use naga::front::glsl::{Frontend, Options};
 use serde::Deserialize;
 
 use crate::error::{Error, Result};
+use crate::glsl_blocks::{self, UsedBlock};
+pub use crate::glsl_blocks::{BLOCK_BINDING, GlslBlock, GlslBlockMember, GlslBlockRange};
 use crate::glsl_cpp::Cpp;
 use crate::glsl_samplers::{expand_sampler_arrays, finish as finish_samplers, lower_sampler_parameters};
 
@@ -101,6 +103,9 @@ pub struct GlslProgram {
     /// shader's attributes.
     #[serde(default)]
     pub attributes: BTreeMap<String, u32>,
+    /// The uniform blocks of the two shaders in GL's block order, laid out as std140 by the recorder.
+    #[serde(default)]
+    pub blocks: Vec<GlslBlock>,
 }
 
 /// A texture's pixels: a picture file, or RGBA bytes. The sampling state is
@@ -645,6 +650,9 @@ pub struct GlslDraw {
     /// the `[i]`).
     #[serde(default)]
     pub uniforms: BTreeMap<String, Vec<GlslUniform>>,
+    /// The bytes of the program's uniform blocks, by block name.
+    #[serde(default)]
+    pub blocks: BTreeMap<String, GlslBlockRange>,
     /// The texture units, by number.
     #[serde(default)]
     pub units: BTreeMap<String, GlslSampler>,
@@ -940,6 +948,8 @@ struct Rewritten {
     outputs: Vec<u32>,
     uses_frag_coord: bool,
     uses_point_coord: bool,
+    /// The uniform blocks this stage declares.
+    blocks: Vec<UsedBlock>,
 }
 
 struct RewriteInput<'a> {
@@ -953,6 +963,8 @@ struct RewriteInput<'a> {
     points: bool,
     /// The program's sampler uniforms by name, in slot order; the first stage to declare one adds it.
     slots: &'a mut Vec<(String, SamplerDim)>,
+    /// The program's uniform blocks, which a declaration in the source finds by name.
+    blocks: &'a [GlslBlock],
 }
 
 /// What a word of code is renamed by: the stage and how the program is drawn.
@@ -1000,6 +1012,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         flip_y,
         points,
         slots,
+        blocks,
     } = input;
     let src = lower_sampler_parameters(&expand_sampler_arrays(&blank_qualifiers(&strip_comments(src))));
     let fragment = stage == ShaderStage::Fragment;
@@ -1022,6 +1035,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         outputs: Vec::new(),
         uses_frag_coord: false,
         uses_point_coord: false,
+        blocks: Vec::new(),
     };
     let mut body = String::new();
     let mut depth = 0i32;
@@ -1065,6 +1079,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
                     uses_point_size: &mut uses_point_size,
                     points,
                     slots,
+                    blocks,
                     defines: &defines,
                 },
             )?;
@@ -1107,6 +1122,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
             uses_point_size: &mut uses_point_size,
             points,
             slots,
+            blocks,
             defines: &defines,
         },
     )?;
@@ -1167,6 +1183,9 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         prelude.push_str(&format!(
             "layout(set=0, binding={binding}) uniform _KU {{ {members}}}; "
         ));
+    }
+    for used in &r.blocks {
+        prelude.push_str(&glsl_blocks::prelude(&blocks[used.slot], used));
     }
     for SamplerDecl { name, dim, slot } in &r.samplers {
         let b = 2 + 2 * slot;
@@ -1272,6 +1291,9 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
             "for (int _k_i = 0; _k_i < {len}; _k_i++) {{ {name}[_k_i] = {from}; }} "
         ));
     }
+    for used in &r.blocks {
+        wrapper.push_str(&glsl_blocks::loader(&blocks[used.slot], used)?);
+    }
     // A matrix attribute is made of its columns, which are the vertex inputs.
     for (name, n, _) in &r.mat_attributes {
         let columns: Vec<String> = (0..*n).map(|c| format!("_k_m_{name}_{c}")).collect();
@@ -1320,6 +1342,7 @@ struct Ctx<'b> {
     uses_point_size: &'b mut bool,
     points: bool,
     slots: &'b mut Vec<(String, SamplerDim)>,
+    blocks: &'b [GlslBlock],
     /// The macros defined so far, for the length of an array.
     defines: &'b Cpp,
 }
@@ -1556,6 +1579,14 @@ fn rewrite_chunk(
             *last = t.end;
             let w = word(text, t);
             let prev = k.checked_sub(1).map(|p| word(text, &toks[p]));
+            if w == "."
+                && let Some(instance) = prev
+                && k.checked_sub(2).map(|p| word(text, &toks[p])) != Some(".")
+                && r.blocks.iter().any(|b| b.instance_prefix(instance).is_some())
+            {
+                k += 1;
+                continue;
+            }
             if t.kind == Kind::Ident {
                 if !fragment
                     && prev != Some(".")
@@ -1578,6 +1609,16 @@ fn rewrite_chunk(
                         continue;
                     }
                     out.push_str(w);
+                    k += 1;
+                    continue;
+                }
+                // `instance.member` of a uniform block is the variable that holds the member: the instance is
+                // renamed and the dot after it dropped (the tokens may come one at a time).
+                if prev != Some(".")
+                    && toks.get(k + 1).map(|t| word(text, t)) == Some(".")
+                    && let Some(name) = r.blocks.iter().find_map(|b| b.instance_prefix(w))
+                {
+                    out.push_str(&name);
                     k += 1;
                     continue;
                 }
@@ -1640,6 +1681,12 @@ fn rewrite_chunk(
         let mut end_kind = None;
         while j < toks.len() {
             match word(text, &toks[j]) {
+                // The qualifier of a block (`layout(std140) uniform B {`) is no function head.
+                "(" if j > start && word(text, &toks[j - 1]) == "layout" => {
+                    while j < toks.len() && word(text, &toks[j]) != ")" {
+                        j += 1;
+                    }
+                }
                 "(" => {
                     paren += 1;
                     has_paren = true;
@@ -1789,6 +1836,9 @@ fn declaration(
     let Some(storage) = storage else {
         return Ok(None);
     };
+    if has_body && storage == "uniform" {
+        return block_declaration(text, &stmt[k..], r, ctx.blocks);
+    }
     if has_body {
         return Err(unsupported(format!(
             "an interface block with `{storage}`; declare the variables one by one"
@@ -2046,6 +2096,39 @@ fn declaration(
     Ok(Some(text_out))
 }
 
+/// A uniform block, `uniform B { .. } instance;` (`stmt` starts at `B`): its members are in the recording, which the
+/// prelude declares again; the declaration itself goes.
+fn block_declaration(
+    text: &str,
+    stmt: &[Tok],
+    r: &mut Rewritten,
+    blocks: &[GlslBlock],
+) -> std::result::Result<Option<String>, String> {
+    let name = word(text, &stmt[0]);
+    let Some(slot) = blocks.iter().position(|b| b.name == name) else {
+        return Err(format!(
+            "the uniform block `{name}` is not among the program's blocks in the recording"
+        ));
+    };
+    let close = stmt
+        .iter()
+        .rposition(|t| word(text, t) == "}")
+        .ok_or_else(|| format!("the uniform block `{name}` has no closing brace"))?;
+    let instance = match &stmt[close + 1..] {
+        [] => None,
+        [t] if t.kind == Kind::Ident => Some(word(text, t).to_string()),
+        _ => {
+            return Err(unsupported(format!(
+                "the uniform block `{name}` declared as an array of instances; declare one block, or several named blocks"
+            )));
+        }
+    };
+    if !r.blocks.iter().any(|b| b.slot == slot) {
+        r.blocks.push(UsedBlock { slot, instance });
+    }
+    Ok(Some(String::new()))
+}
+
 // ---- reflection ----
 
 /// The shape of a uniform block member, with where it sits.
@@ -2130,6 +2213,8 @@ pub struct Stage {
     /// The offset of the viewport's width and height (the vertex stage of a
     /// program that draws points).
     pub vp_offset: Option<u32>,
+    /// The program's uniform blocks (indices of `GlslProgram::blocks`) this stage declares.
+    pub blocks: Vec<usize>,
 }
 
 impl std::fmt::Debug for Stage {
@@ -2150,9 +2235,22 @@ pub struct Translated {
     pub fragment: Stage,
     /// The samplers either stage reads, in binding order, with the stages that read each.
     pub samplers: Vec<(SamplerBinding, SamplerStages)>,
+    /// The uniform blocks either stage declares, in GL's block order, with the stages that declare each.
+    pub blocks: Vec<(BlockBinding, SamplerStages)>,
 }
 
-/// Which stages of a program read a sampler.
+/// A uniform block of a program and where its bytes are bound.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BlockBinding {
+    pub name: String,
+    pub binding: u32,
+    /// The bytes of the buffer bound: the block's size rounded up to 16.
+    pub size: u32,
+    /// The bytes of the block itself (`UNIFORM_BLOCK_DATA_SIZE`).
+    pub data_size: u32,
+}
+
+/// Which stages of a program read a sampler or declare a block.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SamplerStages {
     pub vertex: bool,
@@ -2286,6 +2384,7 @@ fn parse_stage(stage: ShaderStage, r: Rewritten) -> std::result::Result<Stage, S
         uses_frag_coord: r.uses_frag_coord,
         fbh_offset,
         vp_offset,
+        blocks: r.blocks.iter().map(|b| b.slot).collect(),
     })
 }
 
@@ -2424,6 +2523,7 @@ pub fn translate(
         flip_y,
         points,
         slots: &mut slots,
+        blocks: &program.blocks,
     })?;
     let fr = rewrite(RewriteInput {
         src: &program.fragment,
@@ -2432,6 +2532,7 @@ pub fn translate(
         flip_y,
         points,
         slots: &mut slots,
+        blocks: &program.blocks,
     })?;
     let vertex = parse_stage(ShaderStage::Vertex, vr)?;
     let fragment = parse_stage(ShaderStage::Fragment, fr)?;
@@ -2454,10 +2555,33 @@ pub fn translate(
         }
     }
     samplers.sort_by_key(|(b, _)| b.texture);
+    let blocks = program
+        .blocks
+        .iter()
+        .enumerate()
+        .filter_map(|(slot, b)| {
+            let stages = SamplerStages {
+                vertex: vertex.blocks.contains(&slot),
+                fragment: fragment.blocks.contains(&slot),
+            };
+            (stages.vertex || stages.fragment).then(|| {
+                (
+                    BlockBinding {
+                        name: b.name.clone(),
+                        binding: BLOCK_BINDING + slot as u32,
+                        size: b.carrier_size(),
+                        data_size: b.size,
+                    },
+                    stages,
+                )
+            })
+        })
+        .collect();
     Ok(Translated {
         vertex,
         fragment,
         samplers,
+        blocks,
     })
 }
 
@@ -2830,6 +2954,7 @@ mod tests {
             vertex: vertex.into(),
             fragment: fragment.into(),
             attributes: BTreeMap::new(),
+            blocks: Vec::new(),
         }
     }
 
@@ -3448,5 +3573,152 @@ mod tests {
              gl_FragColor = c * f(PI);\n}",
         ))
         .unwrap();
+    }
+
+    // ---- uniform blocks ----
+
+    const QUAD_ES3: &str = "#version 300 es\nin vec2 a_pos;\n";
+    const FRAGMENT_ES3: &str = "#version 300 es\nprecision highp float; out vec4 o; void main() { o = vec4(1.0); }";
+
+    fn member(name: &str, ty: &str, offset: u32) -> GlslBlockMember {
+        GlslBlockMember {
+            name: name.into(),
+            ty: ty.into(),
+            length: None,
+            offset,
+            stride: None,
+            fields: None,
+        }
+    }
+
+    fn array(mut m: GlslBlockMember, length: u32, stride: u32) -> GlslBlockMember {
+        (m.length, m.stride) = (Some(length), Some(stride));
+        m
+    }
+
+    fn block(name: &str, size: u32, members: Vec<GlslBlockMember>) -> GlslBlock {
+        GlslBlock {
+            name: name.into(),
+            size,
+            members,
+        }
+    }
+
+    fn with_blocks(vertex: &str, fragment: &str, blocks: Vec<GlslBlock>) -> GlslProgram {
+        GlslProgram {
+            blocks,
+            ..program(vertex, fragment)
+        }
+    }
+
+    #[test]
+    fn a_block_is_a_carrier_bound_after_the_loose_uniforms() {
+        let t = translate(&with_blocks(
+            &format!(
+                "{QUAD_ES3}layout(std140) uniform B {{ vec4 c; mat2 m; float a[3]; }} b;\n\
+                 void main() {{ gl_Position = b.c + vec4(b.m[1][1] + b.a[2]); }}"
+            ),
+            FRAGMENT_ES3,
+            vec![block(
+                "B",
+                96,
+                vec![
+                    member("c", "vec4", 0),
+                    member("m", "mat2", 16),
+                    array(member("a", "float", 48), 3, 16),
+                ],
+            )],
+        ))
+        .unwrap();
+        assert_eq!(t.blocks.len(), 1);
+        let (b, stages) = &t.blocks[0];
+        assert_eq!((b.name.as_str(), b.binding, b.size, b.data_size), ("B", BLOCK_BINDING, 96, 96));
+        assert_eq!(*stages, SamplerStages { vertex: true, fragment: false });
+        assert_eq!(t.vertex.blocks, vec![0]);
+        assert!(t.fragment.blocks.is_empty());
+    }
+
+    #[test]
+    fn a_block_both_stages_declare_is_one_binding_and_a_block_without_an_instance_name_has_bare_members() {
+        let t = translate(&with_blocks(
+            &format!(
+                "{QUAD_ES3}layout(std140) uniform Plain {{ vec4 c; mat4 mvp; }};\n\
+                 void main() {{ gl_Position = mvp * c; }}"
+            ),
+            "#version 300 es\nprecision highp float; out vec4 o;\n\
+             layout(std140) uniform Plain { vec4 c; mat4 mvp; };\n\
+             void main() { o = c; }",
+            vec![block("Plain", 80, vec![member("c", "vec4", 0), member("mvp", "mat4", 16)])],
+        ))
+        .unwrap();
+        assert_eq!(t.blocks.len(), 1);
+        assert_eq!(t.blocks[0].1, SamplerStages { vertex: true, fragment: true });
+    }
+
+    #[test]
+    fn a_block_has_structs_arrays_of_them_and_every_scalar_kind() {
+        let mut ls = array(member("ls", "L", 0), 2, 16);
+        ls.fields = Some(vec![member("p", "vec3", 0), member("r", "float", 12)]);
+        translate(&with_blocks(
+            &format!(
+                "{QUAD_ES3}struct L {{ vec3 p; float r; }};\n\
+                 layout(std140) uniform S {{ L ls[2]; }} s;\n\
+                 layout(std140) uniform K {{ ivec2 i; uint u; bool f; bvec2 bb; uvec3 w; mat3x2 n; mat2x4 q; }};\n\
+                 void main() {{ gl_Position = vec4(s.ls[1].p, s.ls[0].r + float(i.x) + float(u) \
+                 + float(f) + float(bb.y) + float(w.z) + n[2][1] + q[1][3]); }}"
+            ),
+            FRAGMENT_ES3,
+            vec![
+                block("S", 32, vec![ls]),
+                block(
+                    "K",
+                    160,
+                    vec![
+                        member("i", "ivec2", 0),
+                        member("u", "uint", 8),
+                        member("f", "bool", 12),
+                        member("bb", "bvec2", 16),
+                        member("w", "uvec3", 32),
+                        member("n", "mat3x2", 48),
+                        member("q", "mat2x4", 96),
+                    ],
+                ),
+            ],
+        ))
+        .unwrap();
+    }
+
+    #[test]
+    fn the_loader_reads_std140_words_where_the_layout_says() {
+        let b = block(
+            "B",
+            96,
+            vec![member("c", "vec4", 0), member("m", "mat2", 16), array(member("a", "float", 48), 3, 16)],
+        );
+        let used = UsedBlock { slot: 2, instance: Some("b".into()) };
+        let text = glsl_blocks::loader(&b, &used).unwrap();
+        // The columns of a matrix are 16 bytes apart; an array's elements are a stride apart.
+        assert!(text.contains("_k_bi2_m = mat2(vec2(uintBitsToFloat(_k_w2(((0 + 16) + 0) + 0)), uintBitsToFloat(_k_w2(((0 + 16) + 0) + 4))), vec2(uintBitsToFloat(_k_w2(((0 + 16) + 16) + 0))"), "{text}");
+        assert!(text.contains("for (int _k_i0 = 0; _k_i0 < 3; _k_i0++) { _k_bi2_a[_k_i0] = uintBitsToFloat(_k_w2((0 + 48 + _k_i0 * 16) + 0)); }"), "{text}");
+        let prelude = glsl_blocks::prelude(&b, &used);
+        assert!(prelude.contains("binding=514) uniform _KB2 { uvec4 _k_ub2[6]; };"), "{prelude}");
+        assert!(prelude.contains("vec4 _k_bi2_c; mat2 _k_bi2_m; float _k_bi2_a[3];"), "{prelude}");
+    }
+
+    #[test]
+    fn a_block_the_recording_does_not_have_is_an_error() {
+        let e = translate(&program(
+            &format!("{QUAD_ES3}layout(std140) uniform B {{ vec4 c; }};\nvoid main() {{ gl_Position = c; }}"),
+            FRAGMENT_ES3,
+        ))
+        .unwrap_err();
+        assert!(e.contains("`B` is not among the program's blocks"), "{e}");
+        let e = translate(&with_blocks(
+            &format!("{QUAD_ES3}layout(std140) uniform B {{ vec4 c; }} b[2];\nvoid main() {{ gl_Position = b[1].c; }}"),
+            FRAGMENT_ES3,
+            vec![block("B", 16, vec![member("c", "vec4", 0)])],
+        ))
+        .unwrap_err();
+        assert!(e.starts_with("unsupported:") && e.contains("array of instances"), "{e}");
     }
 }
