@@ -273,6 +273,19 @@ describe('the recording WebGL context', () => {
     expect(gl.getError()).toBe(GL.INVALID_ENUM);
   });
 
+  it('reads the declarations after a prelude that tests GL_ES and defined()', () => {
+    const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }) });
+    const program = gl.createProgram();
+    const prelude = '#ifdef GL_ES\nprecision mediump float;\n#else\n#if !defined(lowp)\n#define lowp\n#endif\nuniform float desktop_only;\n#endif\n#ifdef GL_FRAGMENT_PRECISION_HIGH\nuniform float high;\n#endif\n';
+    for (const [type, source] of [[GL.VERTEX_SHADER, VERTEX], [GL.FRAGMENT_SHADER, `${prelude}uniform float t; void main() { gl_FragColor = vec4(t); }`]] as const) {
+      const shader = gl.createShader(type)!;
+      gl.shaderSource(shader, source);
+      gl.attachShader(program, shader);
+    }
+    gl.linkProgram(program);
+    expect(Array.from({ length: gl.getProgramParameter(program, GL.ACTIVE_UNIFORMS) as number }, (_, i) => gl.getActiveUniform(program, i)!.name)).toEqual(['high', 't']);
+  });
+
   it('says unsupported, naming what to do, for what it does not draw', () => {
     const { gl } = setup();
     const refused = (fn: () => void): string => {
@@ -1733,7 +1746,7 @@ describe('the recording WebGL context', () => {
       expect(gl.getError()).toBe(GL.INVALID_VALUE);
       gl.vertexAttrib3fv(0, [1, 2]);
       expect(gl.getError()).toBe(GL.INVALID_VALUE);
-      expect(() => gl.vertexAttribI4i()).toThrow(/^unsupported:.*integer attributes/);
+      expect(() => gl.vertexAttribI4i()).toThrow(/^unsupported:.*current value of an integer attribute/);
     });
   });
 

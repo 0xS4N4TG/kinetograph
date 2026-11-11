@@ -1085,8 +1085,15 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
             )?;
             let name = directive.trim_start();
             defines.directive(name)?;
-            if name.starts_with("version") || name.starts_with("extension") {
-                // Removed, keeping the lines.
+            let keyword = name.split(|c: char| !c.is_alphanumeric()).next().unwrap_or("");
+            if matches!(
+                keyword,
+                "version" | "extension" | "if" | "ifdef" | "ifndef" | "elif" | "else" | "endif"
+            ) || !defines.active()
+            {
+                // Removed, keeping the lines. The conditionals are decided here, with `defined` and `GL_ES`
+                // as a GLSL ES compiler has them: the lines a branch leaves out are not given on, so naga's own
+                // preprocessor (which reads neither) never sees one, and neither does a `#define` of such a line.
                 body.push_str(&"\n".repeat(extra));
             } else {
                 body.push_str(&rewrite_directive(
@@ -3720,5 +3727,22 @@ mod tests {
         ))
         .unwrap_err();
         assert!(e.starts_with("unsupported:") && e.contains("array of instances"), "{e}");
+    }
+
+    #[test]
+    fn conditionals_are_decided_with_gl_es_and_defined_before_naga_reads_the_source() {
+        // The prelude of a library that runs on desktop GL as well.
+        let t = translate(&program(
+            QUAD_ES1,
+            "#ifdef GL_ES\nprecision mediump float;\n#else\n#if !defined(lowp)\n#define lowp\n#endif\n\
+             #if !defined(mediump)\n#define mediump\n#endif\n#endif\n\
+             #define K 2\n#if defined(K) && K > 1 || defined(NOPE)\n#define SCALE 0.5\n#else\n#define SCALE 2.0\n#endif\n\
+             #ifdef NOPE\n#error not here\n#endif\n\
+             varying vec2 v_uv; void main() { gl_FragColor = vec4(v_uv * SCALE, 0.0, 1.0); }",
+        ))
+        .unwrap();
+        assert!(t.fragment.module.entry_points.len() == 1);
+        // An error in a branch that is left out is not read.
+        translate(&program(QUAD_ES1, "#if 0\nthis is not GLSL\n#endif\nvoid main() { gl_FragColor = vec4(1.0); }")).unwrap();
     }
 }

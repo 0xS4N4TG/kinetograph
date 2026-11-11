@@ -127,7 +127,7 @@ class Calculator {
 
 /** `source` with its comments and directives blanked and the lines its conditionals leave out, and the macros it defines. */
 export function preprocess(source: string): { code: string; length: (text: string) => number | null } {
-  const macros = new Map<string, Macro>([['GL_ES', { functionLike: false, value: '1' }]]);
+  const macros = new Map<string, Macro>([['GL_ES', { functionLike: false, value: '1' }], ['GL_FRAGMENT_PRECISION_HIGH', { functionLike: false, value: '1' }]]);
   const open: { active: boolean; taken: boolean }[] = [];
   const calc = (text: string, strict = false): number => new Calculator(macros, text, 0, strict).run();
   const live = () => open.length === 0 || open[open.length - 1]!.active;
