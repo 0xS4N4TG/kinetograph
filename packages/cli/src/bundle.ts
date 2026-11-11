@@ -341,6 +341,8 @@ export function syntheticEntry(entry: string, dev = false): string {
     `export { setLayoutText } from '@kinetographdev/core/layout-utils';`,
     `export { setAudioDecoder, setMediaProbe } from '@kinetographdev/core/media-utils';`,
     `export { setMediaParserAddon } from '@kinetographdev/core/media-parser';`,
+    // A module worker with imports is bundled by the CLI's own esbuild (worker-module.ts).
+    `export { setWorkerModuleLoader } from '@kinetographdev/compat/shim';`,
     // DOM elements are styled, laid out and painted by the addon too (packages/cli/skills/kinetograph-markup/references/ENGINE.md §2).
     `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetographdev/compat/dom';`,
     '',
