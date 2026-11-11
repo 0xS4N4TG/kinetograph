@@ -39,6 +39,16 @@ const isElement = (node: PNode): node is PElement => 'tagName' in node;
 const isText = (node: PNode): node is DefaultTreeAdapterMap['textNode'] => node.nodeName === '#text';
 const childrenOf = (node: PParent): PNode[] => (node as { childNodes?: PNode[] }).childNodes ?? [];
 const attrOf = (el: PElement, name: string): string | null => el.attrs.find((a) => a.name === name)?.value ?? null;
+/**
+ * A `<script>` of a type that is not JavaScript is a data block (a shader's source, a JSON blob): it never runs, and the
+ * page reads it by `getElementById(...).textContent`, so it stays in the document with its text.
+ */
+function dataBlock(el: PElement): HfNode | null {
+  const type = (attrOf(el, 'type') ?? '').trim().toLowerCase();
+  if (type === '' || type === 'module' || type === 'importmap' || type === 'text/javascript' || type === 'application/javascript') return null;
+  return { t: 'el', tag: 'script', attrs: el.attrs.map((a): [string, string] => [a.name, a.value]), children: [{ t: 'text', text: textOf(el) }] };
+}
+
 const textOf = (el: PElement): string => childrenOf(el).map((n) => (isText(n) ? n.value : '')).join('');
 
 /** Attributes that name a file the engine reads. */
@@ -384,7 +394,7 @@ class Builder {
     switch (tag) {
       case 'script':
         this.script(el, ctx);
-        return null;
+        return dataBlock(el);
       case 'style':
         this.style(el, ctx);
         return null;
