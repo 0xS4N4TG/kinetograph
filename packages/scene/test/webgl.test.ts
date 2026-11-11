@@ -637,6 +637,16 @@ describe('the recording WebGL context', () => {
       expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_COMPLETE);
     });
 
+    it('says a draw WebGL refused, as it is not drawn', () => {
+      const said: string[] = [];
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), report: (what) => said.push(what) });
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+      expect(said).toHaveLength(1);
+      expect(said[0]).toContain('INVALID_OPERATION');
+      expect(gl.content().ops).toHaveLength(0);
+    });
+
     it('refuses a draw that reads the texture it draws into', () => {
       const { gl, program } = setup();
       const { texture } = attach(gl, 4, 2);

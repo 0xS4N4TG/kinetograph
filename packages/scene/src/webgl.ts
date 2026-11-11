@@ -1262,6 +1262,8 @@ export class WebGLContext {
   }
 
   private fail(code: number): void {
+    this.refusals += 1;
+    this.lastRefusal = code;
     if (this.error === GL.NO_ERROR) this.error = code;
   }
 
@@ -3601,7 +3603,22 @@ export class WebGLContext {
     return type === GL.UNSIGNED_BYTE ? 'u8' : type === GL.UNSIGNED_SHORT ? 'u16' : type === GL.UNSIGNED_INT ? 'u32' : null;
   }
 
+  /** How many calls WebGL refused with a GL error: a draw that adds some and records nothing was not drawn. */
+  private refusals = 0;
+  private lastRefusal = 0;
+
+  /** A draw call; one that WebGL refuses (a GL error, silent in a page) is said, as it draws nothing the page shows. */
   private draw(mode: number, first: number, count: number, indexed: { type: 'u8' | 'u16' | 'u32'; offset: number } | null, instances = 1): void {
+    const before = this.refusals;
+    const ops = this.ops.length;
+    this.drawNow(mode, first, count, indexed, instances);
+    if (this.refusals !== before && this.ops.length === ops) {
+      const names: Record<number, string> = { [GL.INVALID_ENUM]: 'INVALID_ENUM', [GL.INVALID_VALUE]: 'INVALID_VALUE', [GL.INVALID_OPERATION]: 'INVALID_OPERATION', [GL.INVALID_FRAMEBUFFER_OPERATION]: 'INVALID_FRAMEBUFFER_OPERATION' };
+      this.options.report?.(`a draw call was refused with a GL error (${names[this.lastRefusal] ?? this.lastRefusal}) and is not drawn, as in a browser, where it shows in the console: a program whose sampler reads a texture of the wrong type or an unfinished framebuffer is a common cause`);
+    }
+  }
+
+  private drawNow(mode: number, first: number, count: number, indexed: { type: 'u8' | 'u16' | 'u32'; offset: number } | null, instances = 1): void {
     const modes: Record<number, GlslDraw['mode']> = { [GL.POINTS]: 'points', [GL.TRIANGLES]: 'triangles', [GL.TRIANGLE_STRIP]: 'triangleStrip', [GL.TRIANGLE_FAN]: 'triangleFan', [GL.LINES]: 'lines', [GL.LINE_STRIP]: 'lineStrip', [GL.LINE_LOOP]: 'lineLoop' };
     if (mode < GL.POINTS || mode > GL.TRIANGLE_FAN) return this.fail(GL.INVALID_ENUM);
     const program = this.program;
