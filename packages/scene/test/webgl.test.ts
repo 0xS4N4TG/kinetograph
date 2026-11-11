@@ -1237,6 +1237,17 @@ describe('the recording WebGL context', () => {
       expect([...new Float32Array(new Uint8Array(Buffer.from(texture.floats!, 'base64')).buffer)]).toEqual([0, 0, 0, 0, 4, 4, 4, 1, 0.5, 0.5, 0.5, 0.5]);
     });
 
+    it('offers OES_texture_float_linear, and records it on the draws made after it is enabled', () => {
+      const { gl, program } = floatContext();
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL2.R32F, 2, 1, 0, GL2.RED, GL.FLOAT, new Float32Array([0, 1]));
+      gl.uniform1i(gl.getUniformLocation(program, 'curve'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getExtension('OES_texture_float_linear')).not.toBeNull();
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      const draws = gl.content().ops.flatMap((op) => (op.op === 'draw' ? [op] : []));
+      expect(draws.map((d) => d.floatLinear)).toEqual([undefined, true]);
+    });
+
     it('records generateMipmap of a float texture with texels, for the replay to make its chain from', () => {
       const { gl, program } = floatContext();
       gl.texImage2D(GL.TEXTURE_2D, 0, GL2.RGBA16F, 4, 2, 0, GL.RGBA, GL.FLOAT, new Float32Array(32).fill(0.5));
@@ -2841,7 +2852,7 @@ describe('what a renderer reads of a WebGL 2 context at start-up', () => {
 
   it('gives null for an extension it does not have, and lists only the ones it answers', () => {
     const gl = v2();
-    for (const name of ['WEBGL_lose_context', 'OES_texture_float_linear', 'EXT_texture_filter_anisotropic', 'KHR_parallel_shader_compile', 'NO_SUCH_EXTENSION']) expect(gl.getExtension(name)).toBeNull();
+    for (const name of ['WEBGL_lose_context', 'EXT_texture_filter_anisotropic', 'KHR_parallel_shader_compile', 'NO_SUCH_EXTENSION']) expect(gl.getExtension(name)).toBeNull();
     for (const name of gl.getSupportedExtensions()) expect(gl.getExtension(name)).not.toBeNull();
     expect(gl.getError()).toBe(GL.NO_ERROR);
   });
