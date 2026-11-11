@@ -12,6 +12,9 @@ type Kind = 'console.error' | 'uncaught exception' | 'unhandled rejection';
 const caught = new Map<string, Unsupported>();
 let installed = false;
 
+/** How Node prefixes a process warning (`(node:4242) [DEP0005] DeprecationWarning: ...`). */
+const NODE_WARNING = /^\(node:\d+\) /;
+
 const REASON = 'the page raised an error and went on; whatever it was drawing may be missing';
 
 /** Records one error, once per kind and message until the frame loop takes it. */
@@ -29,7 +32,9 @@ export function installPageErrors(): void {
   installed = true;
   const original = console.error.bind(console);
   console.error = (...args: unknown[]): void => {
-    recordPageError('console.error', format(...args).split('\n')[0] ?? '');
+    const first = format(...args).split('\n')[0] ?? '';
+    // Node prints its own process warnings (a library's `require('three')` deprecation) through `console.error`: they are warnings.
+    if (!NODE_WARNING.test(first)) recordPageError('console.error', first);
     original(...args);
   };
   if (typeof process !== 'undefined' && typeof process.on === 'function') {
