@@ -1739,6 +1739,12 @@ describe('the recording WebGL context', () => {
     }
     const BODY = 'void main() { gl_Position = vec4(p, morphTargetInfluences[0], 1.0); }';
 
+    it('lists an array of one element as name[0], as a browser does, so a library sets it as an array', () => {
+      const { gl, program } = linked('#version 300 es\nin vec2 p;\nuniform sampler2D maps[1];\nuniform float single;\nvoid main() { gl_Position = vec4(p, single, 1.0); }');
+      expect([0, 1].map((i) => gl.getActiveUniform(program, i)!.name)).toEqual(['maps[0]', 'single']);
+      expect(gl.getUniformLocation(program, 'maps[0]')).not.toBeNull();
+    });
+
     it('reads the length from a #define, as three.js writes morphTargetInfluences', () => {
       const { gl, program } = linked(`#version 300 es\nin vec2 p;\n#define MORPHTARGETS_COUNT 4\n#ifdef USE_MORPHTARGETS\n#endif\nuniform float morphTargetInfluences[ MORPHTARGETS_COUNT ];\n${BODY}`);
       const info = gl.getActiveUniform(program, 0)!;

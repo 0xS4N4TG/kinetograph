@@ -669,6 +669,8 @@ interface Declaration {
   type: string;
   length: number;
   location: number | null;
+  /** Declared with `[n]`, even `[1]`: a browser lists it as `name[0]`, which a library reads to tell an array from a single value. */
+  array?: boolean;
 }
 
 interface UniformCall {
@@ -777,7 +779,7 @@ function declarations(source: string, keywords: string[]): Declaration[] {
         out.push(...uniformLeaves(d[1]!, m[3]!, d[2] === undefined ? null : length, structs));
         continue;
       }
-      out.push({ name: d[1]!, type: m[3]!, length, location: location ? Number(location[1]) : null });
+      out.push({ name: d[1]!, type: m[3]!, length, location: location ? Number(location[1]) : null, ...(d[2] === undefined ? {} : { array: true }) });
     }
   }
   return out;
@@ -2087,7 +2089,7 @@ export class WebGLContext {
   }
   getActiveUniform(program: WebGLProgram, index: number): WebGLActiveInfo | null {
     const d = program.uniformDeclarations[index];
-    if (d !== undefined) return new WebGLActiveInfo(d.length > 1 ? `${d.name}[0]` : d.name, d.length, TYPE_CODES[d.type] ?? 0);
+    if (d !== undefined) return new WebGLActiveInfo(d.length > 1 || d.array ? `${d.name}[0]` : d.name, d.length, TYPE_CODES[d.type] ?? 0);
     const u = this.blockUniforms(program)[index - program.uniformDeclarations.length];
     return u === undefined ? null : new WebGLActiveInfo(u.name, u.length, TYPE_CODES[u.type] ?? 0);
   }
@@ -2146,7 +2148,7 @@ export class WebGLContext {
   }
   /** The index of each uniform name, a name or the first element of an array (`Block.member`), or `INVALID_INDEX`. */
   getUniformIndices(program: WebGLProgram, names: string[]): number[] {
-    const listed = [...program.uniformDeclarations.map((d) => (d.length > 1 ? `${d.name}[0]` : d.name)), ...this.blockUniforms(program).map((u) => u.name)];
+    const listed = [...program.uniformDeclarations.map((d) => (d.length > 1 || d.array ? `${d.name}[0]` : d.name)), ...this.blockUniforms(program).map((u) => u.name)];
     return names.map((name) => {
       const at = listed.findIndex((n) => n === name || n === `${name}[0]`);
       return at < 0 ? GL2.INVALID_INDEX : at;
