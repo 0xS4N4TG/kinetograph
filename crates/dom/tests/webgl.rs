@@ -200,6 +200,11 @@ fn webgl2_matrix_inverse() {
 }
 
 #[test]
+fn webgl2_texture3d_float() {
+    run("webgl2_texture3d_float", 1.0);
+}
+
+#[test]
 fn webgl2_uniform_struct_tail() {
     run("webgl2_uniform_struct_tail", 1.0);
 }
@@ -275,6 +280,7 @@ fn the_committed_recordings_parse_as_the_scene_format_does() {
         "webgl2_float_mipmap",
         "webgl2_uniform_infinity",
         "webgl2_matrix_inverse",
+        "webgl2_texture3d_float",
         "webgl2_uniform_struct_tail",
         "webgl2_attr_int_to_float",
         "webgl2_attr_int",
