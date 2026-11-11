@@ -344,6 +344,13 @@ export const GL2 = {
   SAMPLER_2D_ARRAY: 0x8dc1,
   MAX_ARRAY_TEXTURE_LAYERS: 0x88ff,
   UNIFORM_BUFFER: 0x8a11,
+  UNIFORM_BUFFER_BINDING: 0x8a28,
+  MAX_VERTEX_UNIFORM_BLOCKS: 0x8a2b,
+  MAX_FRAGMENT_UNIFORM_BLOCKS: 0x8a2d,
+  MAX_COMBINED_UNIFORM_BLOCKS: 0x8a2e,
+  MAX_UNIFORM_BUFFER_BINDINGS: 0x8a2f,
+  MAX_UNIFORM_BLOCK_SIZE: 0x8a30,
+  UNIFORM_BUFFER_OFFSET_ALIGNMENT: 0x8a34,
   PIXEL_UNPACK_BUFFER: 0x88ec,
   PIXEL_PACK_BUFFER: 0x88eb,
   UNPACK_ROW_LENGTH: 0xcf2,
@@ -943,6 +950,16 @@ const UNSUPPORTED_CAPS = new Map<number, string>([
 /** `MAX_SAMPLES`: what a multisampled renderbuffer has, as the canvas with `antialias` does (Chrome on Apple GPUs). */
 const MAX_SAMPLES = 4;
 
+// The limits of uniform buffer objects, at the minimum WebGL 2 allows. Uniform buffers are not drawn (`bindBuffer`,
+// `bindBufferBase` and the block calls report it), so these are what a library reads to size its tables, not what is used.
+const MAX_UNIFORM_BUFFER_BINDINGS = 24;
+const MAX_VERTEX_UNIFORM_BLOCKS = 12;
+const MAX_FRAGMENT_UNIFORM_BLOCKS = 12;
+const MAX_COMBINED_UNIFORM_BLOCKS = 24;
+const MAX_UNIFORM_BLOCK_SIZE = 16384;
+const UNIFORM_BUFFER_OFFSET_ALIGNMENT = 256;
+const UNIFORM_BUFFER_UNSUPPORTED = 'a uniform buffer object; set uniforms one by one';
+
 /** The largest point drawn (`ALIASED_POINT_SIZE_RANGE`): `gl_PointSize` is clamped to 1 to this (crates/core/src/glsl.rs, `MAX_POINT_SIZE`). */
 const POINT_SIZE_MAX = 511;
 
@@ -1366,6 +1383,28 @@ export class WebGLContext {
         if (this.version === 2) return MAX_SAMPLES;
         this.fail(GL.INVALID_ENUM);
         return null;
+      case GL2.MAX_UNIFORM_BUFFER_BINDINGS:
+      case GL2.MAX_VERTEX_UNIFORM_BLOCKS:
+      case GL2.MAX_FRAGMENT_UNIFORM_BLOCKS:
+      case GL2.MAX_COMBINED_UNIFORM_BLOCKS:
+      case GL2.MAX_UNIFORM_BLOCK_SIZE:
+      case GL2.UNIFORM_BUFFER_OFFSET_ALIGNMENT:
+      case GL2.UNIFORM_BUFFER_BINDING:
+        if (this.version !== 2) {
+          this.fail(GL.INVALID_ENUM);
+          return null;
+        }
+        return (
+          {
+            [GL2.MAX_UNIFORM_BUFFER_BINDINGS]: MAX_UNIFORM_BUFFER_BINDINGS,
+            [GL2.MAX_VERTEX_UNIFORM_BLOCKS]: MAX_VERTEX_UNIFORM_BLOCKS,
+            [GL2.MAX_FRAGMENT_UNIFORM_BLOCKS]: MAX_FRAGMENT_UNIFORM_BLOCKS,
+            [GL2.MAX_COMBINED_UNIFORM_BLOCKS]: MAX_COMBINED_UNIFORM_BLOCKS,
+            [GL2.MAX_UNIFORM_BLOCK_SIZE]: MAX_UNIFORM_BLOCK_SIZE,
+            [GL2.UNIFORM_BUFFER_OFFSET_ALIGNMENT]: UNIFORM_BUFFER_OFFSET_ALIGNMENT,
+            [GL2.UNIFORM_BUFFER_BINDING]: null,
+          } as Record<number, number | null>
+        )[pname]!;
       case GL.SAMPLES:
         return this.samplesOf(this.drawFramebuffer);
       case GL.SAMPLE_BUFFERS:
@@ -2116,6 +2155,28 @@ export class WebGLContext {
     else if (this.version === 2 && (target === GL2.PIXEL_UNPACK_BUFFER || target === GL2.PIXEL_PACK_BUFFER || target === GL2.UNIFORM_BUFFER)) {
       if (buffer !== null) throw new WebGLUnsupportedError('a pixel or uniform buffer object; set uniforms one by one and upload textures from arrays or images');
     } else this.fail(GL.INVALID_ENUM);
+  }
+  bindBufferBase(target: number, index: number, buffer: WebGLBuffer | null): void {
+    this.bindBufferRange(target, index, buffer);
+  }
+  bindBufferRange(target: number, index: number, buffer: WebGLBuffer | null): void {
+    if (this.version !== 2) return this.fail(GL.INVALID_OPERATION);
+    if (target !== GL2.UNIFORM_BUFFER) throw new WebGLUnsupportedError('indexed buffer bindings other than uniform buffers (transform feedback)');
+    if (!(index >= 0 && index < MAX_UNIFORM_BUFFER_BINDINGS)) return this.fail(GL.INVALID_VALUE);
+    // Unbinding is nothing: nothing is ever bound.
+    if (buffer !== null) throw new WebGLUnsupportedError(UNIFORM_BUFFER_UNSUPPORTED);
+  }
+  getUniformBlockIndex(): never {
+    throw new WebGLUnsupportedError(`uniform blocks (getUniformBlockIndex); ${UNIFORM_BUFFER_UNSUPPORTED}`);
+  }
+  uniformBlockBinding(): never {
+    return this.getUniformBlockIndex();
+  }
+  getActiveUniformBlockParameter(): never {
+    return this.getUniformBlockIndex();
+  }
+  getActiveUniformBlockName(): never {
+    return this.getUniformBlockIndex();
   }
   private target(target: number): WebGLBuffer | null {
     if (target === GL.ARRAY_BUFFER) return this.arrayBuffer;
@@ -3249,6 +3310,22 @@ export class WebGLContext {
     if (framebuffer === null) return this.attributes.antialias ? MAX_SAMPLES : 0;
     const a = [...framebuffer.colors, framebuffer.depth, framebuffer.stencil].find((a) => a !== null && a !== undefined);
     return a !== undefined && a !== null && 'renderbuffer' in a ? a.renderbuffer.samples : 0;
+  }
+  /**
+   * `getInternalformatParameter(RENDERBUFFER, format, SAMPLES)`: the one count `renderbufferStorageMultisample` has (a format it
+   * does not draw multisampled, the 32-bit floats, has none). Formats that cannot be a renderbuffer's are an error, as in GL.
+   */
+  getInternalformatParameter(target: number, internalformat: number, pname: number): Int32Array | null {
+    if (this.version !== 2) {
+      this.fail(GL.INVALID_OPERATION);
+      return null;
+    }
+    const known = (kindOf(internalformat) !== 'color' || COLOR_RENDERBUFFER.has(internalformat)) && internalformat !== GL.DEPTH_COMPONENT;
+    if (target !== GL.RENDERBUFFER || pname !== GL.SAMPLES || !known) {
+      this.fail(GL.INVALID_ENUM);
+      return null;
+    }
+    return new Int32Array(FLOAT_FORMATS[internalformat]?.bits === 32 ? [] : [MAX_SAMPLES]);
   }
   getRenderbufferParameter(target: number, pname: number): number | null {
     if (target !== GL.RENDERBUFFER) {

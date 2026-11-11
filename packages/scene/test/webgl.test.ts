@@ -2611,3 +2611,59 @@ describe('the recording WebGL context', () => {
     });
   });
 });
+
+describe('what a renderer reads of a WebGL 2 context at start-up', () => {
+  const v2 = (): WebGLContext => createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+
+  it('answers the uniform buffer limits at the spec minimums, and an unbound UNIFORM_BUFFER_BINDING', () => {
+    const gl = v2();
+    expect([GL2.MAX_UNIFORM_BUFFER_BINDINGS, GL2.MAX_VERTEX_UNIFORM_BLOCKS, GL2.MAX_FRAGMENT_UNIFORM_BLOCKS, GL2.MAX_COMBINED_UNIFORM_BLOCKS, GL2.MAX_UNIFORM_BLOCK_SIZE, GL2.UNIFORM_BUFFER_OFFSET_ALIGNMENT].map((p) => gl.getParameter(p))).toEqual([24, 12, 12, 24, 16384, 256]);
+    expect(gl.getParameter(GL2.UNIFORM_BUFFER_BINDING)).toBeNull();
+    expect(gl.getError()).toBe(GL.NO_ERROR);
+    // WebGL 1 has none of them.
+    const one = createWebGLContext({ size: () => ({ width: 8, height: 4 }) });
+    expect(one.getParameter(GL2.MAX_UNIFORM_BUFFER_BINDINGS)).toBeNull();
+    expect(one.getError()).toBe(GL.INVALID_ENUM);
+  });
+
+  it('still reports a uniform buffer in use: binding one, and the block calls, are unsupported', () => {
+    const gl = v2();
+    const buffer = gl.createBuffer();
+    gl.bindBufferBase(GL2.UNIFORM_BUFFER, 0, null);
+    expect(gl.getError()).toBe(GL.NO_ERROR);
+    gl.bindBufferBase(GL2.UNIFORM_BUFFER, 24, null);
+    expect(gl.getError()).toBe(GL.INVALID_VALUE);
+    expect(() => gl.bindBufferBase(GL2.UNIFORM_BUFFER, 0, buffer)).toThrow(WebGLUnsupportedError);
+    expect(() => gl.bindBufferRange(GL2.UNIFORM_BUFFER, 0, buffer)).toThrow(/uniform buffer object/);
+    expect(() => gl.bindBuffer(GL2.UNIFORM_BUFFER, buffer)).toThrow(WebGLUnsupportedError);
+    expect(() => (gl as any).getUniformBlockIndex(gl.createProgram(), 'Block')).toThrow(/uniform blocks/);
+    expect(() => (gl as any).uniformBlockBinding()).toThrow(WebGLUnsupportedError);
+  });
+
+  it('lists the sample counts of a renderbuffer format, none for a 32-bit float one, and rejects what is not a renderbuffer format', () => {
+    const gl = v2();
+    const samples = (format: number, pname: number = GL.SAMPLES, target: number = GL.RENDERBUFFER) => gl.getInternalformatParameter(target, format, pname);
+    expect(Array.from(samples(GL2.RGBA8)!)).toEqual([4]);
+    expect(Array.from(samples(GL2.DEPTH24_STENCIL8)!)).toEqual([4]);
+    expect(Array.from(samples(GL2.RGBA16F)!)).toEqual([4]);
+    expect(Array.from(samples(GL2.RGBA32F)!)).toEqual([]);
+    expect(gl.getError()).toBe(GL.NO_ERROR);
+    expect(samples(GL.DEPTH_COMPONENT)).toBeNull();
+    expect(gl.getError()).toBe(GL.INVALID_ENUM);
+    expect(samples(GL2.RGBA8, GL2.MAX_SAMPLES)).toBeNull();
+    expect(gl.getError()).toBe(GL.INVALID_ENUM);
+    expect(samples(GL2.RGBA8, GL.SAMPLES, GL.TEXTURE_2D)).toBeNull();
+    expect(gl.getError()).toBe(GL.INVALID_ENUM);
+  });
+
+  it('gives null for an extension it does not have, and lists only the ones it answers', () => {
+    const gl = v2();
+    for (const name of ['WEBGL_lose_context', 'OES_texture_float_linear', 'EXT_texture_filter_anisotropic', 'KHR_parallel_shader_compile', 'NO_SUCH_EXTENSION']) expect(gl.getExtension(name)).toBeNull();
+    for (const name of gl.getSupportedExtensions()) expect(gl.getExtension(name)).not.toBeNull();
+    expect(gl.getError()).toBe(GL.NO_ERROR);
+  });
+
+  it('reports integer attributes as unsupported', () => {
+    expect(() => v2().vertexAttribIPointer()).toThrow(/integer attributes/);
+  });
+});
