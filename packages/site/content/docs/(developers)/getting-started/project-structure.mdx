@@ -8,7 +8,7 @@ description: The files and folders that npx kinetograph init makes, what each is
 ## The layout
 
 <IconTabs>
-  <Tab label="TSX (Remotion API)" icon="remotion">
+  <Tab label="Remotion" icon="remotion">
 
 ```sh
 npx kinetograph init my-video
@@ -34,7 +34,7 @@ my-video
 └─ .gitignore
 ```
 
-<Media src="illustrations/project-structure.svg" dark="illustrations/project-structure-dark.svg" width={600} height={690} alt={"A project folder with src for your code (index.tsx, scenes/Title.tsx, components, lib), public for images, fonts, audio and video, and out for everything the commands write: stills, sheets and renders. package.json, tsconfig.json and .gitignore sit beside them."} />
+<Media src="illustrations/project-structure.svg" dark="illustrations/project-structure-dark.svg" width={600} height={662} alt={"A project folder with src for your code (index.tsx, scenes/Title.tsx, components, lib), public for images, fonts, audio and video, and out for everything the commands write: stills, sheets and renders. package.json, tsconfig.json and .gitignore sit beside them."} />
 
 The entry is `src/index.tsx`. It is the file you give to every command, and it must call `registerRoot`:
 
@@ -50,7 +50,7 @@ registerRoot(() => (
 `package.json` gets four scripts (`still`, `strip`, `render` and `check`) that run the matching commands on the entry.
 
   </Tab>
-  <Tab label="HTML (HyperFrames)" icon="hyperframes">
+  <Tab label="HyperFrames" icon="hyperframes">
 
 ```sh
 npx kinetograph init my-video --html
@@ -66,6 +66,8 @@ my-video
 └─ .gitignore
 ```
 
+<Media src="illustrations/project-structure-html.svg" dark="illustrations/project-structure-html-dark.svg" width={600} height={568} alt={"A project folder with html for the page (index.html), public for images, fonts, audio and video, and out for everything the commands write: stills, sheets and renders. package.json and .gitignore sit beside them."} />
+
 ```txt title="A HyperFrames project"
 my-video
 ├─ index.html              the main composition
@@ -76,6 +78,8 @@ my-video
 ```
 
 The entry is `html/index.html`, or a HyperFrames project's `index.html`. `hyperframes.json` and the planning files are not read. See [HyperFrames projects](/docs/compat/#hyperframes-projects).
+
+`package.json` gets the same scripts (`still`, `strip` and `render`), with `lint` in place of `check`, which needs TypeScript.
 
   </Tab>
 </IconTabs>

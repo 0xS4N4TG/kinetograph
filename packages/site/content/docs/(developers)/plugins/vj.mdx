@@ -13,7 +13,7 @@ VJ makes a picture look like it came from a screen, a tape or a sensor. Brightne
 
 The looks are layer effects. Tracking runs once, offline, and the components draw the saved result.
 
-```tsx
+```tsx title="src/scenes/Title.tsx"
 import { Layer, Video, staticFile } from '@kinetographdev/core';
 import { Blobs, thermal, type BlobTrack } from '@kinetographdev/vj';
 import track from './track/clip-blobs.json' with { type: 'json' };

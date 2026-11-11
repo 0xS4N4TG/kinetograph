@@ -11,11 +11,24 @@ Studio is the editor that comes with Kinetograph. It shows a live preview of you
 
 In your project folder:
 
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
 ```sh
 npx kinetograph studio src/index.tsx
 ```
 
-For an HTML project, give it the page: `npx kinetograph studio index.html`. Studio opens your browser at `http://127.0.0.1:3000`. It rebuilds the project when a file changes, and runs until you press Ctrl-C.
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph studio html/index.html
+```
+
+  </Tab>
+</IconTabs>
+
+Studio opens your browser at `http://127.0.0.1:3000`. It rebuilds the project when a file changes, and runs until you press Ctrl-C.
 
 You need Kinetograph installed and Node.js 22 or newer. If you have no project yet, [make your first video](/docs/getting-started/first-video/) first.
 

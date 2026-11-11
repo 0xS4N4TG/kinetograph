@@ -13,7 +13,7 @@ npm install @kinetographdev/kinetic-typography
 
 Both take a word list with frames. `wordsFrom` makes one from timestamps in seconds, such as a speech-to-text result.
 
-```tsx
+```tsx title="src/scenes/Title.tsx"
 import { Video, staticFile } from '@kinetographdev/core';
 import { Captions, HandCaptions, wordsFrom } from '@kinetographdev/kinetic-typography';
 
@@ -26,7 +26,7 @@ const footage = { src: staticFile('video/me.mp4') };
 
 Hand captions with key words, hung off a tracked subject:
 
-```tsx
+```tsx title="src/scenes/Title.tsx"
 import { pointAt } from '@kinetographdev/vj';
 
 <HandCaptions words={words} hot={['move']} anchor={(f) => pointAt(track, f, 30)} />

@@ -32,9 +32,22 @@ export const Headline = () => {
 
 `inspect` prints each layer's bounds at a frame, and `lint` reports text that overflows its box or the canvas:
 
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
 ```sh
 npx kinetograph inspect src/index.tsx --frame 30
 ```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph inspect html/index.html --frame 30
+```
+
+  </Tab>
+</IconTabs>
 
 ## What works
 

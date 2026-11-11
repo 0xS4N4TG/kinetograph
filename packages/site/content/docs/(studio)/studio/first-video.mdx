@@ -11,11 +11,22 @@ Studio puts the preview, the timeline and a chat with your coding agent in one w
 
 <Steps>
   <Step title="Make a project and open Studio">
-    ```sh
-    npx kinetograph init
-    npm install
-    npx kinetograph studio src/index.tsx
-    ```
+    <IconTabs>
+      <Tab label="Remotion" icon="remotion">
+        ```sh
+        npx kinetograph init
+        npm install
+        npx kinetograph studio src/index.tsx
+        ```
+      </Tab>
+      <Tab label="HyperFrames" icon="hyperframes">
+        ```sh
+        npx kinetograph init --html
+        npm install
+        npx kinetograph studio html/index.html
+        ```
+      </Tab>
+    </IconTabs>
 
     You need a coding agent signed in on your computer. See [Connect your agent](/docs/studio/connect-your-agent/).
   </Step>

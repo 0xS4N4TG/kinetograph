@@ -429,6 +429,25 @@ figure.shiki button:focus-visible,
 figure.shiki button[data-checked] {
   opacity: 1;
 }
+/* The terminal figure (components/docs/figures.tsx) colours its shell tokens and styles its copy button like a code block. */
+.kg-terminal .line span {
+  color: var(--shiki-light);
+  font-style: var(--shiki-light-font-style);
+}
+.dark .kg-terminal .line span {
+  color: var(--shiki-dark);
+  font-style: var(--shiki-dark-font-style);
+}
+.kg-terminal button {
+  color: var(--color-fd-muted-foreground);
+  opacity: 0.55;
+  transition: opacity 160ms var(--ease-out, ease-out);
+}
+.kg-terminal button:hover,
+.kg-terminal button:focus-visible,
+.kg-terminal button[data-checked] {
+  opacity: 1;
+}
 @property --kg-fade {
   syntax: '<length>';
   inherits: false;

@@ -11,7 +11,7 @@ A project file (TSX) makes a scene for each frame. You can also write a scene by
 
 This scene moves and turns a card:
 
-```json
+```json title="scene.json"
 {
   "width": 640,
   "height": 360,
@@ -98,7 +98,7 @@ A `stroke` can also take `cap` (`butt`, `round` or `square`), `join` (`miter`, `
 
 A text layer names a font from `fonts`:
 
-```json
+```json title="scene.json"
 { "id": "title", "type": "text", "text": "Hello\nworld", "font": "DM Sans",
   "size": 64, "color": "#ffffff", "lineHeight": 1.2, "maxWidth": 600 }
 ```
@@ -122,7 +122,7 @@ A shape's `fill` and a text layer's `color` take a gradient in place of a colour
 
 A group with a `layout` places its children with flexbox. Any layer can take part with `layoutItem`:
 
-```json
+```json title="scene.json"
 { "id": "row", "type": "group",
   "layout": { "flexDirection": "row", "gap": 24, "width": 1080, "height": 400 },
   "children": [

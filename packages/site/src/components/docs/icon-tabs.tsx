@@ -1,8 +1,9 @@
 'use client';
 
-import { Children, isValidElement, useState, type ReactNode } from 'react';
+import { Children, isValidElement, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { siApple, siLinux, siUbuntu } from 'simple-icons';
 
+import { isEngineIcon, pickTab, readEngine, subscribeEngine, writeEngine } from '@/lib/tab-memory';
 import { cn } from '@/lib/utils';
 
 /**
@@ -36,11 +37,17 @@ export function Tab({ children }: { label: string; icon?: TabIcon; children?: Re
  * </IconTabs>
  * ```
  *
- * `icon` is `macos`, `ubuntu`, `linux`, `remotion` or `hyperframes`.
+ * `icon` is `macos`, `ubuntu`, `linux`, `remotion` or `hyperframes`. A group with a `remotion` or `hyperframes` tab opens on the
+ * type the reader picked last, on any page (lib/tab-memory.ts); other groups start on their first tab.
  */
 export function IconTabs({ children }: { children?: ReactNode }) {
   const tabs = Children.toArray(children).filter(isValidElement) as { props: { label: string; icon?: TabIcon; children?: ReactNode } }[];
-  const [active, setActive] = useState(0);
+  const icons = tabs.map((t) => t.props.icon);
+  const isEngine = icons.some(isEngineIcon);
+  const [local, setLocal] = useState(0);
+  const remembered = useSyncExternalStore(subscribeEngine, readEngine, () => null);
+  const active = isEngine ? pickTab(icons, remembered) : local;
+  const select = (i: number) => (isEngine && isEngineIcon(icons[i]) ? writeEngine(icons[i]!) : setLocal(i));
   return (
     <div className="not-prose my-6">
       <div role="tablist" className="flex flex-wrap gap-1 border-b border-[var(--kg-box-border)]">
@@ -52,7 +59,7 @@ export function IconTabs({ children }: { children?: ReactNode }) {
               type="button"
               role="tab"
               aria-selected={active === i}
-              onClick={() => setActive(i)}
+              onClick={() => select(i)}
               className={cn(
                 '-mb-px flex items-center gap-2 border-b-2 px-3 py-2 text-sm transition-colors',
                 active === i ? 'border-fd-primary text-fd-foreground' : 'border-transparent text-fd-muted-foreground hover:text-fd-foreground',

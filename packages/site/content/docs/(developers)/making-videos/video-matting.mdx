@@ -84,7 +84,7 @@ const fill = { position: 'absolute', inset: 0, width: '100%', height: '100%', ob
 
 Three layers: the original, the text, and the foreground on top. The foreground is muted, and the original keeps the audio.
 
-```tsx
+```tsx title="src/scenes/TextBehindVideo.tsx"
 import { AbsoluteFill, Video, interpolate, staticFile, useCurrentFrame } from 'remotion';
 
 export const TextBehindVideo = () => {
@@ -106,7 +106,7 @@ export const TextBehindVideo = () => {
 
 Blur the original and put the sharp foreground on top.
 
-```tsx
+```tsx title="src/scenes/BackgroundBlur.tsx"
 import { Video, staticFile } from 'remotion';
 import { blur } from '@kinetographdev/core';
 
@@ -124,7 +124,7 @@ The blurred original still holds the subject, so a strong blur can leave a halo 
 
 Leave out the original and draw the foreground over something else: a colour, a picture, another video or HTML. Make the foreground with `--audio keep` (the default) so it carries the sound, as here, or add an `<Audio>` layer.
 
-```tsx
+```tsx title="src/scenes/BackgroundReplacement.tsx"
 import { AbsoluteFill, Video, staticFile } from 'remotion';
 
 export const BackgroundReplacement = () => (
@@ -139,7 +139,7 @@ export const BackgroundReplacement = () => (
 
 Give effects to the foreground only. A glow lifts the subject, a drop shadow separates a cutout from a new background, and colour filters match it to a new scene.
 
-```tsx
+```tsx title="src/scenes/ForegroundEffects.tsx"
 import { AbsoluteFill, Video, staticFile } from 'remotion';
 import { dropShadow, glow, saturate, sepia } from '@kinetographdev/core';
 
