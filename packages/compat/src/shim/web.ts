@@ -23,6 +23,7 @@ import { createHostElement, createHostText } from './tree.js';
 import { imageSizeOfBytes } from './image-size.js';
 import { IntersectionObserverShim, MutationObserverShim, readbackRoots, ResizeObserverShim } from './observers.js';
 import { matches, queryAll } from './selector.js';
+import { XMLHttpRequestShim } from './xhr.js';
 import { MessageChannelShim, MessagePortShim, WorkerShim } from './worker.js';
 
 // ---- the window ----
@@ -610,6 +611,8 @@ export function installDomGlobals(): void {
   define(g, 'ImageData', ImageData);
   define(g, 'ImageBitmap', ImageBitmapShim);
   define(g, 'createImageBitmap', createImageBitmapShim);
+  // `XMLHttpRequest` reads through `fetch`, so it follows the same rules (xhr.ts).
+  define(g, 'XMLHttpRequest', XMLHttpRequestShim);
   // `Worker` runs its script on this thread and `MessageChannel` delivers on one queue, so a frame can wait for the messages
   // in flight (worker.ts). Node's own `MessageChannel` is replaced: its messages arrive when the event loop gets to them.
   define(g, 'Worker', WorkerShim);
