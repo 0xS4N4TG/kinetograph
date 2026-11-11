@@ -31,9 +31,9 @@ import {
   setHistoryMode,
   transitionWindowSeconds,
 } from '@kinetographdev/compat/dom';
-import { DELAY_RENDER_TIMEOUT, renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
+import { DELAY_RENDER_TIMEOUT, renderFailure, renderHandlesMade, whenRenderIdle, openRenderHandles } from './assets.js';
 import { resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
-import { realTimers, resetVirtualClock, runAnimationFrames, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
+import { animationFramesQueued, realTimers, resetVirtualClock, runAnimationFrames, setVirtualFrame, stepAnimationFrames, virtualNow, whenAnimationFrameRequested } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 import { endGsapSamples, gsapIsLoaded, sampleGsapAt, setGsapTime } from './gsap-clock.js';
 import { takePageErrors } from './page-errors.js';
@@ -370,6 +370,24 @@ class Renderer implements FrameRenderer {
     return error;
   }
 
+  /**
+   * Waits until no `delayRender` handle is open. While one is, the animation-frame callbacks run as they are asked for,
+   * as in a browser, where a page waiting for its map's `idle` (which a repaint in a frame callback brings) is not stuck.
+   */
+  private async waitForHandles(animationFrames: boolean): Promise<void> {
+    if (!animationFrames || openRenderHandles() === 0) return whenRenderIdle();
+    let over = false;
+    const idle = whenRenderIdle();
+    idle.then(() => (over = true), () => (over = true));
+    while (!over) {
+      if (animationFramesQueued()) {
+        runAnimationFrames();
+        await tick();
+      } else await Promise.race([idle.catch(() => undefined), whenAnimationFrameRequested()]);
+    }
+    return idle;
+  }
+
   /** Renders, then waits until nothing is pending and returns the tree as it stands (`read` false: no tree, a frame that is only played through). */
   private async settle(scene: SceneRoot, render: () => void, animationFrames: boolean, read: false): Promise<null>;
   private async settle(scene: SceneRoot, render: () => void, animationFrames?: boolean): Promise<RenderedTree>;
@@ -383,22 +401,26 @@ class Renderer implements FrameRenderer {
     for (;;) {
       await waitForFonts();
       try {
-        await whenRenderIdle();
+        await this.waitForHandles(animationFrames);
       } catch (error) {
         throw this.withLeftOut(error, scene);
       }
       // Let the state updates that continueRender's callers made reach the reconciler.
       await tick();
-      if (openRenderHandles() === 0 && pendingFontLoads() === 0) break;
-    }
-    // requestAnimationFrame callbacks run once the frame has rendered, as a browser runs them before it paints:
-    // a library that draws in one after being told what to show (Motion's render step) shows this frame, not the one before.
-    if (animationFrames) {
+      if (openRenderHandles() > 0 || pendingFontLoads() > 0) continue;
+      if (!animationFrames) break;
+      // requestAnimationFrame callbacks run once the frame has rendered, as a browser runs them before it paints:
+      // a library that draws in one after being told what to show (Motion's render step) shows this frame, not the one before.
+      const made = renderHandlesMade();
       runAnimationFrames();
       // GSAP renders what the frame's own render made (a `from()` is drawn lazily, on the next tick) at the frame's time.
       setGsapTime(virtualNow() / 1000);
       await tick();
-    } else if (read) {
+      // A callback that started work (a map asking its workers for tiles, a fetch) holds the frame as a handle does: wait
+      // for it, and run the callbacks its end asked for, until a pass leaves nothing pending.
+      if (renderHandlesMade() === made && pendingFontLoads() === 0) break;
+    }
+    if (!animationFrames && read) {
       // A motion-blur sub-frame: what plays on GSAP's root clock is shown at the sub-frame's time (undone after the
       // last one, by `endGsapSamples`).
       sampleGsapAt(virtualNow() / 1000);
