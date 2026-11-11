@@ -18,7 +18,7 @@ The first run downloads the model from Hugging Face, checks it against a pinned 
 
 ONNX Runtime is not bundled in the addon. The first run downloads Microsoft's CPU release (version 1.31.0, 36.5 MB on macOS, 11.4 MB on Linux, 82.9 MB on Windows), checks its SHA-256 and keeps it beside the models. Set `ORT_DYLIB_PATH` to use a library of your own instead, and nothing is downloaded.
 
-`ben2-base` runs on CoreML on macOS. On Windows and Linux it runs on the CPU, which is slower; DirectML is not used, because Microsoft ships it as a separate package. A build with the `cuda` or `webgpu` feature uses that backend when `ORT_DYLIB_PATH` names a library that has it. `modnet` always runs on the CPU. [`canUseVideoMatting()`](/docs/reference/video-matting/#canusevideomatting) reports the backend. [`canUseVideoMatting()`](/docs/reference/video-matting/#canusevideomatting) reports the backend.
+`ben2-base` runs on CoreML on macOS. On Windows and Linux it runs on the CPU, which is slower; DirectML is not used, because Microsoft ships it as a separate package. A build with the `cuda` or `webgpu` feature uses that backend when `ORT_DYLIB_PATH` names a library that has it. `modnet` always runs on the CPU. [`canUseVideoMatting()`](/docs/reference/video-matting/#canusevideomatting) reports the backend.
 
 ### Model licences
 
@@ -49,7 +49,7 @@ With `--json` the result has the files, `model`, `backend`, `frames`, the size a
 
 ## From code
 
-```ts
+```ts title="scripts/matte.ts"
 import { canUseVideoMatting, downloadVideoMattingModel, separateVideoLayers } from '@kinetographdev/video-matting';
 
 const support = await canUseVideoMatting({ model: 'modnet' });
