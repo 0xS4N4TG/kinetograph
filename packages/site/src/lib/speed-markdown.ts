@@ -12,6 +12,16 @@ export const ratio = (r?: Ratio) => (r ? `${r.x.toFixed(1)}× (${r.lo.toFixed(1)
 /** "Unreleased build, to be re-measured" at the start of a sentence. */
 export const status = () => WORKERS.status[0].toUpperCase() + WORKERS.status.slice(1);
 
+/**
+ * The scenes in page order: the ones compared with HyperFrames first, by how much faster Kinetograph is (largest first,
+ * from the printed medians), then the Remotion-only scenes, smallest factor first, so papercut is last.
+ */
+export function sortedScenes(): Scene[] {
+  const vsHf = (s: Scene) => (s.hyperframes ? s.hyperframes.s / s.kinetograph.s : 0);
+  const vsRem = (s: Scene) => (s.remotion ? s.remotion.s / s.kinetograph.s : 0);
+  return [...SCENES].sort((a, b) => (vsHf(a) || vsHf(b) ? vsHf(b) - vsHf(a) : vsRem(a) - vsRem(b)));
+}
+
 /** One row per engine for a scene: Kinetograph first, then the engines it was compared with. */
 export function sceneRows(s: Scene) {
   return [
@@ -24,9 +34,6 @@ export function sceneRows(s: Scene) {
 export const SCENE_HEAD = ['scene', 'engine', 'median s', 'min–max', 'fps', 'peak RSS MB', 'Kinetograph faster by'];
 export const sceneCells = (s: Scene) =>
   sceneRows(s).map((r, i) => [i ? '' : s.id, r.engine, r.run.s.toFixed(2), range(r.run.min, r.run.max), r.run.fps.toFixed(1), String(r.run.rssMb), ratio(r.ratio)]);
-
-export const SPREAD_HEAD = ['scene', 'vs HyperFrames', 'vs Remotion'];
-export const spreadCells = (s: Scene) => [s.id, ratio(s.vsHyperframes) || '–', ratio(s.vsRemotion) || '–'];
 
 export const WORKER_HEAD = ['workers', 'wall s', 'speed-up vs 1 worker'];
 export const workerCells = () => WORKERS.points.map((p) => [String(p.workers), p.s.toFixed(2), `${speedUp(p.s).toFixed(2)}×`]);
@@ -84,9 +91,7 @@ export function speedExport(tag: string, props: { k?: string } = {}): string | u
       return `On one Apple M4, Kinetograph rendered ${hf.n} scenes ${hf.lo}× to ${hf.hi}× faster than HyperFrames, and ${rm.n} scenes ${rm.lo}× to ${rm.hi}× faster than Remotion. Each scene is the median of ${BENCH.n} timed renders. The factor depends on the scene, so there is no single number.`;
     }
     case 'SpeedBars':
-      return `${table(SCENE_HEAD, SCENES.flatMap(sceneCells), 2)}\n\n**papercut.** ${PAPERCUT.note} ${PAPERCUT.cause}`;
-    case 'SpeedSpread':
-      return table(SPREAD_HEAD, SCENES.map(spreadCells));
+      return `${table(SCENE_HEAD, sortedScenes().flatMap(sceneCells), 2)}\n\n**papercut.** ${PAPERCUT.note} ${PAPERCUT.cause}`;
     case 'WorkerScaling':
       return `${table(WORKER_HEAD, workerCells())}\n\n${workerCaption()}`;
     case 'FrameTime':
