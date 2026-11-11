@@ -1,4 +1,3 @@
-import { Pic } from '@/components/pic';
 import { BENCH, SCENES, type Scene } from '@/data/speed';
 import { Heading } from '@/sections/heading';
 import { body, link, section, shell } from '@/sections/shared';
@@ -12,12 +11,59 @@ const scene = (id: string): Scene => {
 const secs = (n: number) => `${n.toFixed(2)} s`;
 const times = (n: number) => `${n.toFixed(1)}×`;
 
+/** Dot screens for the bars, from the same ordered dither as the pictures (a 50% and a 25% tile), screened over the field. */
+const screen = (tile: string): React.CSSProperties => ({
+  backgroundColor: 'var(--field)',
+  backgroundImage: `url(/retro/dither-${tile}.png)`,
+  backgroundBlendMode: 'screen',
+  backgroundSize: '28px 28px',
+});
+const sprockets: React.CSSProperties = {
+  backgroundColor: 'var(--field)',
+  backgroundImage: 'url(/retro/sprocket.png)',
+  backgroundBlendMode: 'screen',
+  backgroundSize: '31.5px 45.5px',
+  backgroundRepeat: 'repeat-y',
+};
+
+/**
+ * The 60-second film's three render times (data/speed.ts) as bars drawn to scale: ours solid, the others in lighter dot
+ * screens, between two columns of film sprocket holes. Labels and values are live text, so the list is its own text alternative.
+ */
+function RenderChart() {
+  const film = scene('film');
+  const rows = [
+    { name: 'Kinetograph', s: film.kinetograph.s, style: { backgroundColor: '#fff' } as React.CSSProperties },
+    { name: 'HyperFrames', s: film.hyperframes!.s, style: screen('half') },
+    { name: 'Remotion', s: film.remotion!.s, style: screen('quarter') },
+  ];
+  const max = Math.max(...rows.map((r) => r.s));
+  return (
+    <div className="kg-core kg-core-field flex h-full min-h-[340px] flex-col justify-between gap-10 px-[68px] py-[clamp(24px,3vw,40px)]">
+      <i aria-hidden className="absolute inset-y-0 left-3 w-[31.5px]" style={sprockets} />
+      <i aria-hidden className="absolute inset-y-0 right-3 w-[31.5px]" style={sprockets} />
+      <p className="font-display text-[clamp(30px,2.6vw,38px)] leading-none">Render time of the {film.seconds}-second film</p>
+      <ul className="flex flex-col gap-[clamp(28px,4vw,56px)]">
+        {rows.map((r) => (
+          <li key={r.name}>
+            <p className="flex items-baseline justify-between gap-4">
+              <span className="font-display text-[20px] leading-none tracking-[0.04em] uppercase">{r.name}</span>
+              <span className="font-jb text-[14px]">{secs(r.s)}</span>
+            </p>
+            <div aria-hidden className="mt-3 h-[clamp(52px,6vw,88px)]" style={{ width: `${(r.s / max) * 100}%`, ...r.style }} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 const numeral = 'font-display font-normal leading-[0.8]';
 
 /**
  * Render speed from the measured scenes in data/speed.ts, one scene per number: the film, the paper cut-out video, the
- * shattering terminal. An asymmetric grid, four cells: the film's time on the cobalt field, a still from the film, two
- * ratios. Each sentence names its video; the run count is in the note under the grid.
+ * shattering terminal. An asymmetric grid, four cells: the film's time on the cobalt field, a chart of the three engines'
+ * times on that film, two ratios. Each sentence names its video; the run count is in the note under the grid.
  */
 export function Speed() {
   const film = scene('film');
@@ -36,19 +82,11 @@ export function Speed() {
               <p className="max-w-[30ch] font-dm text-[clamp(20px,2vw,26px)] leading-snug font-medium tracking-[-0.01em]">
                 to render the {film.seconds}-second film: {film.frames.toLocaleString('en-US')} frames of 1080p.
               </p>
-              <p className="mt-3 font-jb text-[13px] leading-relaxed text-on-field/85">
-                Remotion took {secs(film.remotion!.s)}. HyperFrames took {secs(film.hyperframes!.s)}.
-              </p>
             </div>
           </div>
         </div>
-        <div data-reveal style={{ '--i': 1 } as React.CSSProperties} className="group/pic kg-tray min-h-[300px] lg:col-span-5 lg:row-span-2">
-          <Pic
-            tint="/retro/speed-cubes.webp"
-            orig="/film/m2-40.jpg"
-            alt="Rows of white, black and red cubes on a yellow floor, a frame from the launch film."
-            className="size-full min-h-[300px]"
-          />
+        <div data-reveal style={{ '--i': 1 } as React.CSSProperties} className="kg-tray min-h-[300px] lg:col-span-5 lg:row-span-2">
+          <RenderChart />
         </div>
         <div data-reveal style={{ '--i': 2 } as React.CSSProperties} className="kg-tray lg:col-span-4">
           <div className="kg-core kg-core-card flex h-full flex-col justify-between gap-10 p-[clamp(24px,2.6vw,36px)]">
