@@ -3,7 +3,22 @@ title: Compatibility
 description: What Kinetograph draws from a Remotion or HyperFrames project, and what it approximates or skips.
 ---
 
-<Terminal command="npx kinetograph doctor src/index.tsx" />
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
+```sh
+npx kinetograph doctor src/index.tsx
+```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph doctor html/index.html
+```
+
+  </Tab>
+</IconTabs>
 
 Kinetograph renders Remotion and HyperFrames projects without a browser. Your `remotion` and `@remotion/*` imports run on Kinetograph's own versions of those packages. To move a project, see [Migrate from Remotion](/docs/migrating/remotion/).
 
@@ -17,13 +32,25 @@ The engine never switches to a browser. It skips the item or draws something clo
 
 - `render`, `still` and `strip` print one line per kind of problem (element, property, reason, frames), at most 12 lines. Only frames where the element is on screen count.
 - `--strict` stops the command at the first frame with anything unsupported: error code `UNSUPPORTED_CONTENT`, exit code 1, no output file. Use it in CI and final renders.
-- `kinetograph doctor <entry>` goes through every frame without the GPU and lists what can't be drawn, on which frames, and any scene a render would refuse. Run it before a long render. It takes a HyperFrames `index.html` too.
+- `kinetograph doctor <entry>` goes through every frame without the GPU and lists what can't be drawn, on which frames, and any scene a render would refuse. Run it before a long render. It takes a HyperFrames page too.
 - `--json` puts the full list under `compat.leftOut`. `doctor` is also an MCP tool.
 
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
 ```sh
-npx kinetograph doctor src/index.ts
-npx kinetograph render src/index.ts --strict
+npx kinetograph render src/index.tsx --strict
 ```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph render html/index.html --strict
+```
+
+  </Tab>
+</IconTabs>
 
 ## Text and fonts
 

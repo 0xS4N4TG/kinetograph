@@ -9,7 +9,7 @@ A [plugin](/docs/terminology/plugin/) is an npm package that adds components or 
 
 Add the package to the `dependencies` of your project's `package.json`, then import from it.
 
-```tsx
+```tsx title="src/scenes/Title.tsx"
 import { Hexed } from '@kinetographdev/hexed';
 
 <Hexed seed={42}><Video src={staticFile('video/clip.mp4')} /></Hexed>

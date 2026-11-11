@@ -11,7 +11,7 @@ Paper brings creases, scanned fibres and grain to a video. From them it makes ke
 
 ## Use it
 
-```tsx
+```tsx title="src/scenes/Title.tsx"
 import { MatchCut, flicks } from '@kinetographdev/paper';
 
 // a paper flick on every cut, as a sound track
@@ -23,7 +23,7 @@ flicks({ frames: 150, fps: 30, cutsPerSecond: 10 });
 
 On your own screenshots, give each a rough box round the keyword:
 
-```tsx
+```tsx title="src/scenes/Title.tsx"
 <MatchCut
   keyword="Super Bowl"
   screenshots={[{ src: 'shots/a.png', hint: [212, 1180, 388, 64] }]}
