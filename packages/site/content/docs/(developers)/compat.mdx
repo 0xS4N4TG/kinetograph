@@ -94,12 +94,7 @@ npx kinetograph render html/index.html --strict
 
 ## WebGL
 
-`<canvas>` with a `webgl` or `webgl2` context runs on the GPU. p5.brush's standalone build draws as in Chrome.
-
-- Works: fragment shaders, framebuffers, `gl_PointSize`, `LINES`, `LINE_STRIP` and `LINE_LOOP` (one pixel wide; a `lineWidth` above 1 is ignored, as in Chrome), shadow samplers (`sampler2DShadow`, `samplerCubeShadow`, `sampler2DArrayShadow`), instancing, `blitFramebuffer`, `copyTexImage2D` and `copyTexSubImage2D` (RGBA), depth and stencil tests, `drawBuffers`, multisampled renderbuffers (`renderbufferStorageMultisample`, resolved by `blitFramebuffer`), any `vertexAttribDivisor`, `TEXTURE_BASE_LEVEL`, depth textures, cube maps (six faces of RGBA8 or SRGB8_ALPHA8, from `texImage2D` or a whole-face `texSubImage2D` into `texStorage2D`, `samplerCube`, `generateMipmap`; sampled seamlessly, with GL's face order and orientation), and cube faces as framebuffer colour attachments (`texStorage2D` of `TEXTURE_CUBE_MAP`, RGBA8 or float).
-- Every frame starts with an empty canvas, also with `preserveDrawingBuffer`, because a frame is a function of its own number.
-- Not drawn: multisampled renderbuffers of 32-bit floats, `readPixels`, instanced points, cube faces of float pixels or depth, `texSubImage2D` of part of a cube face, a cube map with both uploaded and drawn faces (float render targets, with blending into 32-bit ones after `getExtension('EXT_float_blend')`, float textures from `texImage2D`, 3D textures and 2D array textures work), render targets that are neither RGBA8, SRGB8_ALPHA8, R8, RG8 nor R, RG or RGBA of 16 or 32-bit floats, `texSubImage2D` into a drawn-in R8 or RG8 texture, mixed-size framebuffer attachments, and `generateMipmap` on a drawn-into 32-bit float texture.
-- Differs from a browser: the depth buffer holds 32-bit floats, a multisampled renderbuffer has 4 samples whatever the count asked for (`MAX_SAMPLES` is 4) a depth or stencil blit from one copies its first sample, a copy or blit of a rectangle that reaches outside its source repeats the source's edge there (a browser copies 0, and leaves a blit's destination as it was), `depth: false` makes the depth test always pass, a depth texture is sampled `NEAREST`, points are squares of at most 511 px, `gl_VertexID` with `drawElements` is the position in the index list, a `LINEAR` blit from a 32-bit float target is `NEAREST`, and `generateMipmap` of a drawn-into texture halves each level with a bilinear blit (a texture of odd sides can differ from Chrome's by a level or two), and the mipmaps of an uploaded sRGB texture average its encoded bytes.
+A `<canvas>` with a `webgl` or `webgl2` context runs on the GPU. What works, what is not drawn and what differs from a browser is on [WebGL](/docs/webgl/).
 
 ## WebGPU
 
@@ -150,7 +145,7 @@ How to write code for GSAP, Motion, anime.js, d3, Chart.js, Recharts and the res
 - **Fonts:** the 18 families HyperFrames embeds come in every weight Google serves, from the cache `fetch-deps` fills. A render never downloads a font. System names map as in HyperFrames: `Arial` to Inter, `Consolas` to JetBrains Mono, `Georgia` to EB Garamond. A page that calls `measureText` before its `@font-face` loads gets fallback widths in Chrome; Kinetograph measures with the registered font, so it can pick a larger size.
 - **Scripts:** `<script type="importmap">` is read (one with a `src` is ignored, as in Chrome), and each module is bundled and runs after the classic scripts. Top-level `await` works, but the runtime doesn't wait for it. CSS and JSON import attributes are not supported.
 - **WebGPU:** pages that use it, such as the `shaders.iife.js` blocks (`aurora`, `blob`, `ripples`, `swirl`), are drawn natively. See WebGPU above.
-- **Three.js** is drawn through the WebGL stand-in (see the WebGL section). Only what it does that the stand-in cannot draw is reported, and `--strict` fails on that.
+- **Three.js** is drawn through the WebGL stand-in (see [WebGL](/docs/webgl/)). Only what it does that the stand-in cannot draw is reported, and `--strict` fails on that.
 
 ### Downloads and the lock file
 
