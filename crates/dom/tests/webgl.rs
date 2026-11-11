@@ -175,6 +175,16 @@ fn webgl2_ubo_two_blocks() {
 }
 
 #[test]
+fn webgl2_array_uniform_name() {
+    run("webgl2_array_uniform_name", 1.0);
+}
+
+#[test]
+fn webgl2_uniform_struct_tail() {
+    run("webgl2_uniform_struct_tail", 1.0);
+}
+
+#[test]
 fn webgl2_ubo_range() {
     run("webgl2_ubo_range", 1.0);
 }
@@ -240,6 +250,8 @@ fn the_committed_recordings_parse_as_the_scene_format_does() {
         "webgl2_ubo_shared",
         "webgl2_ubo_two_blocks",
         "webgl2_ubo_range",
+        "webgl2_array_uniform_name",
+        "webgl2_uniform_struct_tail",
         "webgl2_attr_int_to_float",
         "webgl2_attr_int",
         "webgl2_prelude",
