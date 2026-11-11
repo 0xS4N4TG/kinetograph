@@ -7,6 +7,10 @@ Kinetograph is in beta, so APIs can still change between versions. The same list
 
 ## Unreleased
 
+### Added
+
+- `fetch-deps --record --allow-host <hosts>` runs every frame with the network open for those hosts and keeps what the page `fetch`ed (URLs built at run time) in `.kinetograph/net`; a render answers only from it, and a miss names the URL, the frame and the command to record it. Secret query parameters (`access_token`, `key`, `api_key`, `token`, plus `--secret-param`) never reach the store or the lock; Range requests and gzip bodies replay as recorded.
+
 ### Changed
 
 - DOM islands replay unchanged stacking contexts from the last paint (mg1 island paint 23.8 → 6 ms a frame).

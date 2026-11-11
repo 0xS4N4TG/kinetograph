@@ -135,6 +135,7 @@ kinetograph fetch-deps my-video                   # the download alone; --update
 - This covers scripts, modules, data files a script names, remote `<video>` and `<audio>` (500 MB each, `--max-media-mb`) and pictures (50 MB each).
 - A file that isn't cached stops the command, naming the URL and `fetch-deps`. A picture is drawn without and reported.
 - A module or picture URL built at run time is found by running the first frames in the pre-pass. One seen only in an unsampled frame is downloaded on first use and noted; with `--offline` a module is an error naming the specifier. `doctor` gives the `fetch-deps` command for a picture it can't find.
+- A URL a page builds at run time (map tiles, styles) is recorded: `fetch-deps --record --allow-host <hosts>` runs every frame with the network open for those hosts and keeps each `fetch` response in `.kinetograph/net`, and a render answers only from it. A request that wasn't recorded is an error naming the URL and the frame. Query parameters like `access_token`, `key` and `token` (and any `--secret-param`) are left out of the store and the lock.
 - `kinetograph.lock.json` beside the entry stores each file's SHA-256 and size; commit it. A changed file stops the command until `fetch-deps --update`.
 
 ## Not planned

@@ -343,6 +343,8 @@ export function syntheticEntry(entry: string, dev = false): string {
     `export { setMediaParserAddon } from '@kinetographdev/core/media-parser';`,
     // DOM elements are styled, laid out and painted by the addon too (packages/cli/skills/kinetograph-markup/references/ENGINE.md §2).
     `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetographdev/compat/dom';`,
+    // The recorded network store is the bundle's copy of the shim's, the one the page's `fetch` reads.
+    `export { finishNetRecord, setNetFrame, setNetStore, whenFetchesSettle } from '@kinetographdev/compat/shim';`,
     '',
   ].join('\n');
 }

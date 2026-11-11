@@ -10,6 +10,7 @@ import { bundleProject } from '../bundle.js';
 import { isStylesheetUrl, scanRemoteUrls } from '../prefetch.js';
 import { CliError } from '../errors.js';
 import { isHyperframesEntry, resolveEntry } from '../hyperframes/entry.js';
+import { recordNet } from '../net.js';
 import { cdnCacheDir } from '../hyperframes/deps.js';
 import { prefetchHyperframes } from '../hyperframes/prefetch.js';
 import { ENTRY, type Command, type CommandResult } from './types.js';
@@ -41,11 +42,24 @@ export const fetchDeps: Command = {
     { name: 'allow-host', type: 'string', description: 'Also download from this host (comma-separated for several); by default only cdn.jsdelivr.net, unpkg.com, cdnjs.cloudflare.com and esm.sh' },
     { name: 'url', type: 'string', description: 'Also download this URL (comma-separated for several): a file the page fetches that the scan of its scripts did not find (`doctor` names the ones a render refused)' },
     { name: 'update', type: 'boolean', description: 'Download everything again and rewrite kinetograph.lock.json (the way to accept a file that changed upstream)' },
+    { name: 'record', type: 'boolean', description: 'Run every frame with the network open for the --allow-host hosts and keep each response the page fetched (tiles, styles, sprites built at run time) in .kinetograph/net; a render then answers from it, never from the network' },
+    { name: 'secret-param', type: 'string', description: 'With --record: also remove this query parameter from the recorded keys (comma-separated; access_token, key, api_key, apikey and token always are)' },
     { name: 'max-media-mb', type: 'string', description: 'The most megabytes of one remote video or audio file to download (default 500)' },
   ],
   project: false,
   async run(args, context) {
     const entry = resolveEntry(String(args.positionals.entry));
+    if (args.options.record === true) {
+      const split = (value: unknown): string[] => String(value ?? '').split(',').map((h) => h.trim()).filter(Boolean);
+      const allowHosts = split(args.options['allow-host']);
+      if (allowHosts.length === 0) throw new CliError('USAGE', '--record needs --allow-host: the hosts the page may reach while it is recorded');
+      const done = await recordNet(entry, { allowHosts, secretParams: split(args.options['secret-param']), progress: context.progress });
+      return {
+        data: done,
+        text: `recorded ${done.entries} response(s) from ${done.hosts.join(', ') || 'no host'} over ${done.frames} frame(s) into ${relative(process.cwd(), done.dir) || done.dir}\nlock: ${relative(process.cwd(), lockPathOf(entry))}`,
+        exitCode: 0,
+      };
+    }
     if (!isHyperframesEntry(entry)) return fetchRemotionAssets(entry, args.options.update === true);
     const split = (value: unknown): string[] => String(value ?? '').split(',').map((h) => h.trim()).filter(Boolean);
     const result = await prefetchHyperframes(entry, {
