@@ -431,6 +431,21 @@ describe('bundleProject', () => {
     expect(code).toContain('kinetograph-browser-empty');
   });
 
+  it('resolves a dependency as a browser bundler does: the module field and the import condition, for a require() as well, so one copy is bundled', async () => {
+    const dir = project({
+      'index.ts': `import { who } from 'dual';\nimport { viaRequire } from 'consumer';\nexport const x = [who, viaRequire];`,
+      'node_modules/dual/package.json': JSON.stringify({ name: 'dual', main: 'cjs.js', module: 'esm.js', exports: { '.': { import: './esm.js', require: './cjs.js' } } }),
+      'node_modules/dual/esm.js': `export const who = 'ESM-COPY';`,
+      'node_modules/dual/cjs.js': `exports.who = 'CJS-COPY';`,
+      // Only a `main`: the CommonJS entry is what there is.
+      'node_modules/consumer/package.json': JSON.stringify({ name: 'consumer', main: 'index.js' }),
+      'node_modules/consumer/index.js': `exports.viaRequire = require('dual').who;`,
+    });
+    const code = readFileSync((await bundleProject(join(dir, 'index.ts'))).file, 'utf8');
+    expect(code).toContain('ESM-COPY');
+    expect(code).not.toContain('CJS-COPY');
+  });
+
   it('still fails for an import that is not in the map', async () => {
     const dir = project({
       'index.ts': `import { v } from 'lib';\nexport const x = v;`,

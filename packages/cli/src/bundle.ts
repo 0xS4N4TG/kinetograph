@@ -383,6 +383,11 @@ function bundleOptions(absolute: string, unsupported?: UnsupportedImport[], dev 
     outfile: 'bundle.mjs',
     format: 'esm',
     platform: 'node',
+    // As a browser bundler (the project's webpack) resolves a dependency: the ESM entry (`module`, the `import` condition, which
+    // esbuild also applies to a `require()` call) before the CommonJS `main`, so that one copy of a package such as three
+    // is in the bundle whether it is imported or required.
+    mainFields: ['module', 'main'],
+    conditions: ['import', 'module'],
     target: 'node22',
     jsx: 'automatic',
     // The studio's builds record where each element's JSX is (see `JSX_DEV_SHIM`).
