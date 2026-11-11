@@ -1197,6 +1197,22 @@ describe('the recording WebGL context', () => {
       expect([...new Float32Array(new Uint8Array(Buffer.from(texture.floats!, 'base64')).buffer)]).toEqual([2, 1, 0, 1, 1, 2, 0, 1]);
     });
 
+    it('flips and premultiplies the rows of a texSubImage2D of floats, as the unpack state says', () => {
+      const { gl } = floatContext();
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL2.RGBA32F, 1, 3, 0, GL.RGBA, GL.FLOAT, new Float32Array(12));
+      gl.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, 1);
+      gl.pixelStorei(GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 1);
+      // Two rows at y = 1: the source's last row lands first, and the colour is scaled by its alpha.
+      gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 1, 1, 2, GL.RGBA, GL.FLOAT, new Float32Array([1, 1, 1, 0.5, 4, 4, 4, 1]));
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      const content = gl.content();
+      const draw = content.ops[0]!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      const texture = content.textures[draw.units['0']!.texture]!;
+      expect([...new Float32Array(new Uint8Array(Buffer.from(texture.floats!, 'base64')).buffer)]).toEqual([0, 0, 0, 0, 4, 4, 4, 1, 0.5, 0.5, 0.5, 0.5]);
+    });
+
     it('follows WebGL on the errors of a float upload', () => {
       const { gl } = floatContext();
       // The format must go with the internal format, the type with both.
@@ -1946,8 +1962,6 @@ describe('the recording WebGL context', () => {
       expect(gl.getError()).toBe(GL.INVALID_VALUE);
       gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4));
       expect(gl.getError()).toBe(GL.INVALID_OPERATION);
-      gl.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, 1);
-      expect(() => gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL.RGBA, GL.FLOAT, new Float32Array(4))).toThrow(/^unsupported:.*UNPACK_FLIP_Y/);
     });
 
     it('blends into a 32-bit target once EXT_float_blend is enabled, as a browser does, and refuses RGB16F', () => {
