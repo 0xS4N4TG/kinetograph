@@ -119,7 +119,7 @@ How to write code for GSAP, Motion, anime.js, d3, Chart.js, Recharts and the res
 - **Fonts:** the 18 families HyperFrames embeds come in every weight Google serves, from the cache `fetch-deps` fills. A render never downloads a font. System names map as in HyperFrames: `Arial` to Inter, `Consolas` to JetBrains Mono, `Georgia` to EB Garamond. A page that calls `measureText` before its `@font-face` loads gets fallback widths in Chrome; Kinetograph measures with the registered font, so it can pick a larger size.
 - **Scripts:** `<script type="importmap">` is read (one with a `src` is ignored, as in Chrome), and each module is bundled and runs after the classic scripts. Top-level `await` works, but the runtime doesn't wait for it. CSS and JSON import attributes are not supported.
 - **WebGPU:** pages that use it, such as the `shaders.iife.js` blocks (`aurora`, `blob`, `ripples`, `swirl`), are drawn natively. See WebGPU above.
-- **Three.js** is drawn through the WebGL stand-in (see the WebGL section). Only what it does that the stand-in cannot draw is reported, and `--strict` fails on that.
+- **Three.js** is drawn through the WebGL stand-in (see the WebGL section). Only what it does that the stand-in cannot draw is reported, and `--strict` fails on that. Import it through an import map to a local copy of `three.module.js`.
 
 ### Downloads and the lock file
 
@@ -141,7 +141,7 @@ kinetograph fetch-deps my-video                   # the download alone; --update
 
 - `IFrame` is not drawn, because a real webpage needs a browser (reported).
 - `Internals`, `FolderContext`, `PathInternals` and `AudioForPreview` are internal to Remotion and not exported.
-- `@remotion/three` and `@remotion/player` are replaced by the engine's 3D layer and studio. `renderer`, `bundler`, `cli` and `lambda` are replaced by the Kinetograph CLI.
+- `@remotion/three` is `<ThreeCanvas>` over the project's own `three` and `@react-three/fiber`, drawn through the WebGL stand-in; `useVideoTexture` is not available, and the engine's 3D layer (`Scene3D`) is the alternative. `@remotion/player` is replaced by the studio. `renderer`, `bundler`, `cli` and `lambda` are replaced by the Kinetograph CLI.
 - `tailwind` and `tailwind-v4` only configure webpack, so do nothing. Tailwind itself works.
 
 ## Can differ by a pixel

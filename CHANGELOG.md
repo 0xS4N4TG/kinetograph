@@ -18,6 +18,15 @@ Kinetograph is in beta, so APIs can still change between versions.
 - WebGL multisampled renderbuffers (`renderbufferStorageMultisample`, `MAX_SAMPLES` 4), resolved by `blitFramebuffer`.
 - WebGL `copyTexImage2D` and `copyTexSubImage2D`.
 - WebGL `TEXTURE_BASE_LEVEL`.
+- `@remotion/three`: `<ThreeCanvas>` draws a project's own `three` and `@react-three/fiber` one frame at a time, and holds the frame while textures and models load.
+- A script-made `<img>` fires `load` and `error`; `UIEvent`, `MouseEvent`, `PointerEvent`, `WheelEvent` and `ProgressEvent` exist; `WebGLRenderingContext` and `WebGL2RenderingContext` are different classes.
+- WebGL: uniform buffer limits and `getInternalformatParameter(SAMPLES)`; uniform block calls report as unsupported.
+
+### Changed
+
+- Dependencies are bundled as a browser bundler resolves them (`module` field and `import` condition before `main`), so a package is in the bundle once.
+- A `setTimeout` made while a frame is held open fires when nothing else is moving, so a Suspense reveal does not stall the frame.
+- Node's process warnings printed through `console.error` are no longer reported as page errors.
 
 ### Fixed
 
