@@ -196,6 +196,8 @@ describe('fetch', () => {
   it('reads project files, from staticFile(), relative paths and the public folder', async () => {
     expect(await (await fetch(staticFile('data.json'))).json()).toEqual({ a: 1 });
     expect(await (await fetch('data.json')).json()).toEqual({ a: 1 });
+    // The path staticFile() gives, made a URL against the document (a loader's `new Request(url)`), is the same file.
+    expect(await (await fetch(new Request(staticFile('data.json')))).json()).toEqual({ a: 1 });
     expect(await (await fetch('/data.json')).json()).toEqual({ a: 1 });
     // The document's own origin is the project, as a resolved `el.src` names it.
     expect(await (await fetch('http://localhost/data.json')).json()).toEqual({ a: 1 });
