@@ -1711,9 +1711,11 @@ impl Compositor {
             };
             sampled.push((binding.clone(), texture));
         }
+        // `OES_texture_float_linear`: with it enabled a 32-bit float texture is filtered, where the device can.
+        let float_linear = draw.float_linear && self.device.features().contains(wgpu::Features::FLOAT32_FILTERABLE);
         let depths: Vec<bool> = sampled
             .iter()
-            .map(|(_, t)| t.as_ref().is_some_and(|(_, u)| u.depth || u.float32))
+            .map(|(_, t)| t.as_ref().is_some_and(|(_, u)| u.depth || (u.float32 && !float_linear)))
             .collect();
 
         // Pipeline.
@@ -1797,7 +1799,7 @@ impl Compositor {
         let mut sampler_views = Vec::new();
         for (binding, texture) in sampled {
             let (view, sampler) = match texture {
-                Some((state, uploaded)) => self.glsl_sampler(state, uploaded, binding.dim),
+                Some((state, uploaded)) => self.glsl_sampler(state, uploaded, binding.dim, float_linear),
                 None => {
                     let black = self.glsl_black(binding.dim);
                     if binding.dim.shadow() {
@@ -2794,6 +2796,7 @@ impl Compositor {
         state: &GlslSampler,
         texture: Arc<Uploaded>,
         dim: gl::SamplerDim,
+        float_linear: bool,
     ) -> (wgpu::TextureView, wgpu::Sampler) {
         if dim.shadow() {
             return (texture.view.clone(), self.glsl_compare_sampler(state));
@@ -2827,9 +2830,9 @@ impl Compositor {
                 (Arc::new(uploaded), &based)
             }
         };
-        // A 32-bit float texture is complete only when it is read `NEAREST`; any other filter makes it
-        // incomplete, which samples as opaque black.
-        if texture.float32 && !(state.min == "NEAREST" && state.mag == "NEAREST") {
+        // A 32-bit float texture is complete only when it is read `NEAREST` (without `OES_texture_float_linear`); any
+        // other filter makes it incomplete, which samples as opaque black.
+        if texture.float32 && !float_linear && !(state.min == "NEAREST" && state.mag == "NEAREST") {
             let black = self.glsl_black(dim);
             let nearest = GlslSampler {
                 min: "NEAREST".into(),
@@ -2839,7 +2842,7 @@ impl Compositor {
             return (black.view.clone(), self.glsl_sampler_for(&nearest, false));
         }
         // A depth buffer, or float texture, is read texel for texel.
-        if texture.depth || texture.float32 {
+        if texture.depth || (texture.float32 && !float_linear) {
             let nearest = GlslSampler {
                 min: "NEAREST".into(),
                 mag: "NEAREST".into(),

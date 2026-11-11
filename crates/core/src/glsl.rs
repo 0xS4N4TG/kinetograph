@@ -687,6 +687,9 @@ pub struct GlslDraw {
     /// `SAMPLE_ALPHA_TO_COVERAGE` was on: it takes effect in a multisampled buffer only.
     #[serde(default)]
     pub alpha_to_coverage: bool,
+    /// `OES_texture_float_linear` was enabled: a 32-bit float texture may be read with a linear filter.
+    #[serde(default)]
+    pub float_linear: bool,
     pub blend: Option<GlslBlend>,
     #[serde(default = "all_true")]
     pub color_mask: [bool; 4],

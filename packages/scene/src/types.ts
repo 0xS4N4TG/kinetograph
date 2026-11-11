@@ -1005,6 +1005,8 @@ export interface GlslDraw {
   cull?: { face: string; front: string };
   /** `SAMPLE_ALPHA_TO_COVERAGE` was on: the alpha of the fragment's first output is the share of the samples it covers, when the buffer drawn into is multisampled (it does nothing in one that is not). */
   alphaToCoverage?: true;
+  /** `OES_texture_float_linear` was enabled: a 32-bit float texture may be read with a linear filter (else it is incomplete). */
+  floatLinear?: true;
   /** The depth test, when it was on and the buffer drawn into has a depth buffer (`depthFunc`, `depthMask`, `depthRange`). */
   depth?: GlslDepth;
   /** `polygonOffset(factor, units)` with `POLYGON_OFFSET_FILL` on; only with `depth`. */
