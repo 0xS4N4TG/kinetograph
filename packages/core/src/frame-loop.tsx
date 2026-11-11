@@ -10,7 +10,7 @@
 //      attach what each sub-frame changes in them.
 
 import type { ReactNode } from 'react';
-import { resetCanvasStates } from '@kinetographdev/compat/shim';
+import { pendingFetches, resetCanvasStates } from '@kinetographdev/compat/shim';
 import { setDefaultStylesheet } from '@kinetographdev/compat/dom';
 import { createSceneRoot, finishIslands, TimelineContext, type LayerNames, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
@@ -35,7 +35,7 @@ import {
 } from '@kinetographdev/compat/dom';
 import { DELAY_RENDER_TIMEOUT, rejectRenderWaits, renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
 import { isRemotionPage, resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
-import { realTimers, resetVirtualClock, runAnimationFrames, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
+import { fireHoldTimer, realTimers, resetVirtualClock, runAnimationFrames, setHoldProbe, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 import { endGsapSamples, gsapIsLoaded, sampleGsapAt, setGsapTime } from './gsap-clock.js';
 import { pageAudioNotes, takePageAudioOps } from './page-audio.js';
@@ -66,6 +66,37 @@ export interface FrameRenderer {
 }
 
 const tick = () => new Promise<void>((resolve) => realTimers.setImmediate(resolve));
+
+/** Whether something the frame waits for is open: a delayRender handle, a font still loading. */
+const heldOpen = (): boolean => openRenderHandles() > 0 || pendingFontLoads() > 0;
+setHoldProbe(heldOpen);
+
+/**
+ * Resolves when no delayRender handle is open; rejects with the recorded failure.
+ *
+ * The clock only moves between frames, so a handle whose release waits on a timeout (React holds a revealed Suspense
+ * boundary back for 300 ms with `setTimeout`) would wait for ever. The rule: a `setTimeout` made while the frame is held
+ * open (`heldOpen`) is a hold timer. When the frame is still held and nothing else is moving (no fetch or font is
+ * loading, for two turns of the event loop), the earliest hold timer fires at once, in (due time, creation order), without
+ * the clock moving. Timeouts made while the frame is not held, and every interval, follow the frame clock as before.
+ */
+async function whenReleased(): Promise<void> {
+  let quiet = 0;
+  while (openRenderHandles() > 0) {
+    // A waiter for the release; a new one once that has been released and a handle was opened again.
+    const idle = whenRenderIdle();
+    let released = false;
+    idle.then(() => (released = true), () => (released = true));
+    while (!released && openRenderHandles() > 0) {
+      await Promise.race([idle, tick()]);
+      if (released) break;
+      quiet = pendingFetches() === 0 && pendingFontLoads() === 0 ? quiet + 1 : 0;
+      if (quiet >= 2 && fireHoldTimer()) quiet = 0;
+    }
+    await idle;
+  }
+  await whenRenderIdle();
+}
 
 class Renderer implements FrameRenderer {
   private resolved: ResolvedComposition | null;
@@ -154,7 +185,7 @@ class Renderer implements FrameRenderer {
 
     await waitForFonts();
     // A handle the project opened as it loaded (a WASM module's init) holds the first frame, as it holds every other.
-    if (fresh) await whenRenderIdle();
+    if (fresh) await whenReleased();
     let main!: RenderedTree;
     if (!replays) {
       const scene = this.scene!;
@@ -366,7 +397,7 @@ class Renderer implements FrameRenderer {
     for (;;) {
       await waitForFonts();
       try {
-        await whenRenderIdle();
+        await whenReleased();
       } catch (error) {
         throw this.withLeftOut(error, scene);
       }

@@ -24,7 +24,7 @@ export {
 } from './observers.js';
 export { mediaPending, resetMedia, setMediaClock, takeMediaIssues, tickMedia } from './media.js';
 export { deliverMediaEvents } from './media-events.js';
-export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf, setRemoteFiles, setRefusedFetchHandler, whenFetchesSettle, trackPending } from './web.js';
+export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf, setRemoteFiles, setRefusedFetchHandler, whenFetchesSettle, trackPending, pendingFetches } from './web.js';
 export { setPathMeasure } from './geometry.js';
 export { animationClockMoved, animationsPending, resetAnimations, setAnimationClock, tickAnimations } from './animations.js';
 export { canvasEnvironment, LayerPicturesNotReady, setLayerPictures, type LayerPictures, rasterizeCanvas, webgpuDeviceInfo, canvasCommandsOf, withCanvasCommands, resetCanvasStates, setCanvasFonts, CanvasSurface } from './canvas.js';
