@@ -36,7 +36,7 @@ export function RevealRoot() {
       },
       { threshold: 0.9 },
     );
-    if (touch) document.querySelectorAll<HTMLElement>('.kg-pic').forEach((el) => peek.observe(el));
+    if (touch) document.querySelectorAll<HTMLElement>('.kg-pic:has(> .orig)').forEach((el) => peek.observe(el));
     return () => {
       io.disconnect();
       peek.disconnect();

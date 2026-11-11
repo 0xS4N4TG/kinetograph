@@ -31,10 +31,9 @@ export function Engine() {
             </p>
           </div>
         </div>
-        <div data-reveal style={{ '--i': 1 } as React.CSSProperties} className="group/pic kg-tray min-h-[320px] max-lg:aspect-[4/3] lg:col-span-5">
+        <div data-reveal style={{ '--i': 1 } as React.CSSProperties} className="kg-tray min-h-[320px] max-lg:aspect-[4/3] lg:col-span-5">
           <Pic
             tint="/retro/engine-mark.webp"
-            orig="/retro/engine-mark-orig.webp"
             alt="An engraving of a film camera mechanism: two toothed reels, a strip of film and a lens."
             className="size-full min-h-[320px]"
             containBelowLg
