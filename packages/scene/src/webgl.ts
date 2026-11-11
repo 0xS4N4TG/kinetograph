@@ -2988,6 +2988,7 @@ export class WebGLContext {
     const bound = this.bound3d(target);
     if (bound === null) return;
     const { texture, limit } = bound;
+    levels = Math.trunc(levels); // a GLsizei argument is converted to an integer
     if (!(Number.isInteger(levels) && levels >= 1)) return this.fail(GL.INVALID_VALUE);
     const sides = [width, height, depth];
     if (!sides.every((v) => Number.isInteger(v) && v >= 1) || Math.max(width, height) > MAX_3D_TEXTURE_SIZE || depth > limit) return this.fail(GL.INVALID_VALUE);
@@ -3099,6 +3100,7 @@ export class WebGLContext {
   texStorage2D(target: number, levels: number, internalformat: number, width: number, height: number): void {
     const texture = this.bound(target);
     if (texture === null) return;
+    levels = Math.trunc(levels); // a GLsizei argument is converted to an integer: three passes log2(size) + 1
     if (!(levels >= 1 && levels <= 16)) return this.fail(GL.INVALID_VALUE);
     if (target === GL.TEXTURE_CUBE_MAP) {
       // Each of the six faces is given the storage, as a 2D texture is.

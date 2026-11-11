@@ -786,6 +786,20 @@ describe('the recording WebGL context', () => {
       expect((gl.content().ops.at(-1) as { units: Record<string, object> }).units['0']).toMatchObject({ baseLevel: 2 });
     });
 
+    it('truncates the level count of a texStorage2D to an integer, as a GLsizei is (three passes log2(size) + 1)', () => {
+      const { gl, program } = setup2();
+      const texture = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      gl.texStorage2D(GL.TEXTURE_2D, Math.log2(683) + 1, GL2.RGBA8, 512, 683);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 512, 683, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(512 * 683 * 4));
+      gl.generateMipmap(GL.TEXTURE_2D);
+      gl.uniform1i(gl.getUniformLocation(program, 'tex'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      expect((gl.content().ops.at(-1) as { units: Record<string, object> }).units['0']).toMatchObject({ maxLevel: 9 });
+    });
+
     it('clamps the base and max level of a texStorage2D texture to its levels, so a short chain is complete', () => {
       const { gl, program } = setup2();
       const texture = gl.createTexture();
