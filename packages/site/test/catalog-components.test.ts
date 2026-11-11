@@ -22,9 +22,8 @@ describe('motion components in the catalog', () => {
     for (const c of kinds) expect(KINDS.map((k) => k.id)).toContain(c.category);
   });
 
-  it('keeps the first seven components as the uncategorised scenes', () => {
-    expect(components.slice(0, 7).every((c) => !c.category)).toBe(true);
-    expect(kinds.length).toBe(components.length - 7);
+  it('gives every component a category', () => {
+    expect(kinds.length).toBe(components.length);
   });
 
   it('gives each one props with a description, and its clip and poster on disk', () => {
