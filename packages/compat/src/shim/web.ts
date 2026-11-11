@@ -25,6 +25,7 @@ import { createHostElement, createHostText } from './tree.js';
 import { imageSizeOfBytes } from './image-size.js';
 import { IntersectionObserverShim, MutationObserverShim, readbackRoots, ResizeObserverShim } from './observers.js';
 import { matches, queryAll } from './selector.js';
+import { XMLHttpRequestShim } from './xhr.js';
 
 // ---- the window ----
 
@@ -636,6 +637,8 @@ export function installDomGlobals(): void {
   define(g, 'ImageData', ImageData);
   define(g, 'ImageBitmap', ImageBitmapShim);
   define(g, 'createImageBitmap', createImageBitmapShim);
+  // `XMLHttpRequest` reads through `fetch`, so it follows the same rules (xhr.ts).
+  define(g, 'XMLHttpRequest', XMLHttpRequestShim);
   define(g, 'Element', DomElement);
   define(g, 'HTMLElement', HTMLElementShim);
   define(g, 'SVGElement', SVGElementShim);
