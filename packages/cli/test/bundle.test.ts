@@ -50,9 +50,13 @@ describe('resolveSpecifier', () => {
   });
 
   it('refuses the Remotion packages it has no equivalent for, pointing at doctor', () => {
-    const r = resolveSpecifier('@remotion/three');
+    const r = resolveSpecifier('@remotion/player');
     expect(r?.kind).toBe('unsupported');
     expect((r as { message: string }).message).toContain('doctor');
+  });
+
+  it('maps @remotion/three to the core\'s ThreeCanvas', () => {
+    expect(resolveSpecifier('@remotion/three')).toEqual({ kind: 'path', target: '@kinetographdev/core/three' });
   });
 
   it('re-resolves the @kinetographdev packages from the CLI and leaves everything else alone', () => {
@@ -389,24 +393,44 @@ describe('bundleProject', () => {
   });
 
   it('fails with BUNDLE_FAILED naming the unsupported package', async () => {
-    const dir = project({ 'index.ts': `import '@remotion/three';` });
+    const dir = project({ 'index.ts': `import '@remotion/player';` });
     const error = (await bundleProject(join(dir, 'index.ts')).catch((e: unknown) => e)) as CliError;
     expect(error.code).toBe('BUNDLE_FAILED');
-    expect(error.message).toContain('@remotion/three');
+    expect(error.message).toContain('@remotion/player');
     expect(error.message).toContain('doctor');
+  });
+
+  it('bundles @remotion/three against the project\'s own three and @react-three/fiber, and names the one it lacks', async () => {
+    const files = {
+      'index.tsx': `import { ThreeCanvas } from '@remotion/three';\nconsole.log(ThreeCanvas);`,
+      'node_modules/three/package.json': JSON.stringify({ name: 'three', main: 'index.js' }),
+      'node_modules/three/index.js': `exports.Group = class Group {};`,
+    };
+    const missing = project(files);
+    const error = (await bundleProject(join(missing, 'index.tsx')).catch((e: unknown) => e)) as CliError;
+    expect(error.code).toBe('BUNDLE_FAILED');
+    expect(error.message).toContain('needs "@react-three/fiber" in your project');
+    const dir = project({
+      ...files,
+      'node_modules/@react-three/fiber/package.json': JSON.stringify({ name: '@react-three/fiber', main: 'index.js' }),
+      'node_modules/@react-three/fiber/index.js': `exports.Canvas = () => null; exports.extend = () => {}; exports.useThree = () => () => {};`,
+    });
+    const code = readFileSync((await bundleProject(join(dir, 'index.tsx'))).file, 'utf8');
+    expect(code).toContain('ThreeCanvas: waiting for what the scene loads');
+    expect(code).toContain(join(dir, 'node_modules', '@react-three', 'fiber').split('/').slice(-3).join('/'));
   });
 
   it('lists every unsupported import with its file, and bundles a stub, when asked to', async () => {
     const dir = project({
-      'index.ts': `import { ThreeCanvas } from '@remotion/three';\nimport './other';\nexport const x = ThreeCanvas;`,
-      'other.ts': `import '@remotion/three';\nimport { Player } from '@remotion/player';\nexport const y = Player;`,
+      'index.ts': `import { renderMedia } from '@remotion/renderer';\nimport './other';\nexport const x = renderMedia;`,
+      'other.ts': `import '@remotion/renderer';\nimport { Player } from '@remotion/player';\nexport const y = Player;`,
     });
     const unsupported: UnsupportedImport[] = [];
     const result = await bundleProject(join(dir, 'index.ts'), { unsupported });
     expect(result.file).toMatch(/\.mjs$/);
     expect(unsupported.map((u) => [u.specifier, basename(u.file ?? '')])).toEqual([
-      ['@remotion/three', 'index.ts'],
-      ['@remotion/three', 'other.ts'],
+      ['@remotion/renderer', 'index.ts'],
+      ['@remotion/renderer', 'other.ts'],
       ['@remotion/player', 'other.ts'],
     ]);
   });
