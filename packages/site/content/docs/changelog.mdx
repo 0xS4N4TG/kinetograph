@@ -11,7 +11,8 @@ Kinetograph is in beta, so APIs can still change between versions. The same list
 
 - `@remotion/three`: `<ThreeCanvas>` draws a project's own `three` and `@react-three/fiber` one frame at a time, and holds the frame while textures and models load.
 - A script-made `<img>` fires `load` and `error`; `UIEvent`, `MouseEvent`, `PointerEvent`, `WheelEvent` and `ProgressEvent` exist; `WebGLRenderingContext` and `WebGL2RenderingContext` are different classes.
-- WebGL: uniform buffer limits and `getInternalformatParameter(SAMPLES)`; uniform block calls report as unsupported.
+- WebGL: `getInternalformatParameter(SAMPLES)`.
+- `fetch-deps --record --allow-host <hosts>` runs every frame with the network open for those hosts and keeps what the page `fetch`ed (URLs built at run time) in `.kinetograph/net`; a render answers only from it, and a miss names the URL, the frame and the command to record it. Secret query parameters (`access_token`, `key`, `token`, `sig`, signed-URL `x-amz-*`, plus `--secret-param`) never reach the store or the lock, and a credential-looking value in another one fails the pass unless `--keep-param` names it; Range requests and gzip bodies replay as recorded.
 
 ### Changed
 
@@ -19,11 +20,47 @@ Kinetograph is in beta, so APIs can still change between versions. The same list
 - A `setTimeout` made while a frame is held open fires when nothing else is moving, so a Suspense reveal does not stall the frame.
 - Node's process warnings printed through `console.error` are no longer reported as page errors.
 
+- DOM islands replay unchanged stacking contexts from the last paint (mg1 island paint 23.8 → 6 ms a frame).
+- A frame's layout reads and its render share one island document; a read sends only what scripts changed, and the render draws the state the reads left.
+- An island's layers are sent as changes from the last frame's.
+- A style edit restyles only what it changes; a style change inside an inline `<svg>` no longer parses the whole SVG again.
+- A page with a `-webkit-line-clamp` box is edited from frame to frame instead of built again.
+- Video frames convert to yuv420p on the GPU before the readback (`KINETOGRAPH_CPU_YUV=1` converts on the CPU).
+- A worker that starts a HyperFrames chunk skips the root layout check on the frames it plays through; a running chunk is split only when that ends it sooner.
+- A blurred outer `box-shadow` is drawn through a blur mask filter inside its clip instead of two offscreen layers (papercut slice 16.5 → 15.0 ms a frame).
+- A turned or skewed blurred outer `box-shadow` is blurred in closed form in a runtime shader instead of a mask filter (papercut slice 15.0 → 11.3 ms a frame).
+- Without `--concurrency`, a render whose workers mostly wait for the GPU hands the rest of its frames to the main thread after the first few (papercut 18.92 → 17.56 s; film, dm4, mg1, mg2 and compat within noise).
+- A DOM island's stacking context whose content changes every frame is no longer copied for a replay that never comes (island paint: mg1 8.5 → 4.9 ms a frame, papercut 4.3 → 3.2, film 0.90 → 0.62).
+- A DOM island painted whole twice running (a page built or restyled every frame) no longer keeps its stacking contexts for a replay (papercut island paint 4.7 → 3.3 ms a frame on average).
+- The CLI no longer loads TypeScript and the MCP SDK for commands that do not use them (compat 1.07 → 0.92 s, mg2 1.14 → 1.01 s).
+- Render workers start as soon as the bundle is written and load it while the main thread does (compat 0.92 → 0.80 s, mg2 1.01 → 0.90 s).
+- A project's bundle leaves the sources' text out of its source map, which halves its size; stack traces still point at the sources (compat 0.85 → 0.78 s, mg2 0.93 → 0.88 s).
+
 ### Fixed
 
 - WebGL render targets keep what was drawn into them across frames, so an environment map Three.js prefilters (`PMREMGenerator`) once reflects in every frame, not only in the first.
+- HyperFrames: the root's timed children are taken out of flow, so a second sub-composition no longer draws black below the canvas.
+- HyperFrames: the root is clipped and sized from its `data-width` and `data-height`, so a root with no CSS size is not empty (#112).
+- A page edited from frame to frame draws and reads back as a fresh one does: an edited `::before` in an inline-block, boxes under `display: none`, an inline-block's `scrollWidth`.
+- An element hidden inside inline content no longer draws its old text.
+- The `::before` and `::after` of an inline element nested inside another inline element are drawn.
+- A block inside a `display: contents` element inside inline content breaks the line instead of sitting on it.
+- Text beside a float that changes width re-wraps correctly.
+- A package loaded twice (Studio, dev) no longer mixes up the island state of its two copies.
 - `staticFile()` returns forward slashes on Windows so CSS `url()` paths are not corrupted by backslash escapes (#100).
 - Paint decodes percent-encoded Windows drive paths with spaces in CSS background and border images (#100).
+- A `<Composition>` may leave out `fps` and `durationInFrames` when `calculateMetadata` returns them, as in Remotion (the audiogram, music-visualization and tiktok templates render unedited).
+- `createTikTokStyleCaptions()` breaks a page only before a caption that starts with a space (not a newline or tab), keeps whitespace-only captions in the page text but not as tokens, and ends the last page with the last caption.
+- A weight that was not loaded is measured in the nearest loaded one (CSS font matching) instead of throwing, and a render error after a `delayRender` fails the frame at once instead of at the handle's 30 s timeout (the audiogram template renders unedited, SSIM 0.965).
+- `visualizeAudio()` gives the values of Remotion 4.0.542: 16-bit samples, a plain FFT of 2 x `numberOfSamples`, three smoothing passes, scaled by the file's loudest sample (music-visualization template); samples past full scale wrap as 16-bit audio does.
+- `getVideoMetadata()` reports the container's length, as a browser does, so a sound that runs past the last picture counts (the tiktok template renders 358 frames, as in Remotion, not 357).
+- A remote `@import` of a stylesheet (Google Fonts' `css2?family=...`) in a Remotion project's CSS is downloaded and locked by `fetch-deps` (and before a render), with the font files it names, and loaded as a browser would; https only, from the locked cache only (never during a render), each stylesheet read once, at most 16 and 1 MiB, only its `@font-face` rules are used (nothing of it reaches the page), relative URLs resolved against the stylesheet.
+- A remote file is read at render time (`fetch()`, audio data, video length) only from what `fetch-deps` downloaded and locked, and only for a GET or HEAD without a body.
+- Listing compositions (`kinetograph compositions`, Studio) runs `calculateMetadata` for a composition whose fps or length comes from it, instead of showing placeholders.
+- `useWindowedAudioData()` returns the window of the frame with the one before and after, and `visualizeAudio()` scales by the loudest sample of that slice, as Remotion's does.
+- An `<AbsoluteFill>` that is a `div` has Remotion's own style (top, left, right and bottom 0, width and height 100%), so a style key set to `undefined` (`top: undefined`) takes its default away as in a browser.
+- A Remotion project's DOM elements are `box-sizing: border-box`, as on Remotion's render page, so a `width: 100%` with padding does not overflow (a HyperFrames or plain HTML page keeps the browser's content-box; `registerRoot` starts every entry as a Remotion page, so a Remotion project loaded after a HyperFrames one gets it again).
+- ProRes (every core) and VP9 (a fixed 4 threads) encode on more than one thread instead of one (a 75-frame ProRes 4444 overlay: 4.6 s to 1.6 s a render). The decoded frames were compared for ProRes only (identical); VP9 at a fixed 4 threads is the same on every machine, and OpenH264 stays at 1 thread, since its output would follow the core count.
 
 ## 0.3.0 (2026-11-03)
 

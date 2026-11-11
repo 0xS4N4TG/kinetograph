@@ -9,13 +9,14 @@ import { installDynamicImport, installRemotePictures } from './hyperframes/dynam
 import { isHyperframesEntry, resolveEntry } from './hyperframes/entry.js';
 import { LABEL_FONT_PATH } from './scenes.js';
 import { modelNotes } from './model-notes.js';
+import { installNet, type NetShim } from './net.js';
 import { prefetchBeforePlan, prefetchBundleAssets } from './prefetch.js';
 import { native } from './native.js';
 import { nowMs } from './time.js';
 import { bundleWorkerModule } from './worker-module.js';
 
 /** What the bundle exports: the parts of `@kinetographdev/core` the CLI drives (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §7). */
-interface ProjectModule {
+interface ProjectModule extends NetShim {
   getCompositions(): CompositionInfo[];
   createFrameRenderer(id: string, options?: { inputProps?: Record<string, unknown> }): FrameRenderer;
   setPublicDir(dir: string): void;
@@ -71,7 +72,8 @@ export interface Source {
 /** `openSource`'s arguments for a project, with the bundle it built, so a worker thread loads it without bundling. */
 export interface WorkerSpec {
   entry: string;
-  comp: string;
+  /** Undefined: the first composition, as `openSource` opens without `comp`. */
+  comp?: string;
   props?: string;
   bundleFile: string;
 }
@@ -89,6 +91,8 @@ export interface OpenOptions {
   progress?: (message: string) => void;
   /** False in a render worker: the main thread did the pre-download step. */
   prefetch?: boolean;
+  /** Called once the project is bundled, before it is loaded: what a render worker needs to open it (`WorkerPool`). */
+  onBundle?(spec: WorkerSpec): void;
 }
 
 export function isSceneFile(entry: string): boolean {
@@ -157,12 +161,14 @@ async function loadProject(
   bundleFile?: string,
   unsupported?: UnsupportedImport[],
   prefetch: { offline?: boolean; progress?: (message: string) => void } | null = null,
+  onBundle?: (file: string) => void,
 ): Promise<{ mod: ProjectModule; file: string }> {
   // What the project loads from the web is downloaded before it is read, so frame 0 starts offline.
   if (prefetch !== null) await prefetchBeforePlan(entry, prefetch);
   const file = bundleFile ?? (await bundleProject(entry, unsupported ? { unsupported } : {})).file;
   // A Remotion project: the remote pictures and videos its bundle names, before the project runs.
   if (prefetch !== null) await prefetchBundleAssets(entry, file, prefetch);
+  onBundle?.(file);
   process.setSourceMapsEnabled(true);
   // A HyperFrames page's `import()` of a specifier built at run time is answered by the host.
   if (isHyperframesEntry(entry)) installDynamicImport();
@@ -183,6 +189,8 @@ async function loadProject(
     );
   }
   mod.setPublicDir(publicDir);
+  // The recorded network store, if the project has one, answers the page's remote `fetch` from here on.
+  installNet(entry, file, mod, prefetch === null ? undefined : prefetch.progress);
   mod.setLayoutText(native().layoutText);
   // Text with no font of the project's is set in the font Kinetograph ships (and reported), not left out.
   mod.setFallbackFont(LABEL_FONT_PATH);
@@ -206,7 +214,20 @@ async function loadProject(
 export async function listCompositions(entry: string, options: { bundleFile?: string; offline?: boolean; progress?: (message: string) => void } = {}): Promise<CompositionInfo[]> {
   const absolute = requireEntry(entry);
   if (isSceneFile(absolute)) return [sceneComposition(absolute, readFileSync(absolute, 'utf8'))];
-  return (await loadProject(absolute, options.bundleFile, undefined, options)).mod.getCompositions();
+  const { mod } = await loadProject(absolute, options.bundleFile, undefined, options);
+  // A composition whose fps or length comes from `calculateMetadata` is listed with what that returns, as Remotion's does.
+  return Promise.all(
+    mod.getCompositions().map(async ({ metadataPending, ...info }) => {
+      if (!metadataPending) return info;
+      const renderer = mod.createFrameRenderer(info.id);
+      try {
+        const config = await renderer.ready();
+        return { ...info, width: config.width, height: config.height, fps: config.fps, durationInFrames: config.durationInFrames };
+      } finally {
+        renderer.dispose();
+      }
+    }),
+  );
 }
 
 function sceneComposition(file: string, text: string): CompositionInfo {
@@ -250,7 +271,13 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
   }
 
   const inputProps = parseProps(options.props);
-  const { mod, file: bundleFile } = await loadProject(absolute, options.bundleFile, options.unsupportedImports, options.prefetch === false ? null : options);
+  const { mod, file: bundleFile } = await loadProject(
+    absolute,
+    options.bundleFile,
+    options.unsupportedImports,
+    options.prefetch === false ? null : options,
+    options.onBundle && ((file) => options.onBundle!({ entry: absolute, comp: options.comp, props: options.props, bundleFile: file })),
+  );
   const compositions = mod.getCompositions();
   if (compositions.length === 0) {
     throw new CliError('NO_COMPOSITIONS', `${entry} registered no compositions: call registerRoot() with a root that renders <Composition>`);

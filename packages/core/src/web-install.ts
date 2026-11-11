@@ -2,22 +2,37 @@
 // project commonly touches (`window` sizes, `matchMedia`, `new Image()`, `fetch` of project files, observers,
 // `getComputedStyle`), `@font-face` rules of imported stylesheets, and SVG measurement.
 
-import { hasAddonFunction, measureSpan, noteStylesheetProblem, resolveProjectFile, setCssFontFaceHandler, setRemoteAssetResolver, type CssFontFace } from '@kinetographdev/compat/dom';
+import { hasAddonFunction, measureSpan, noteStylesheetProblem, resolveProjectFile, setCssFontFaceHandler, setRemoteAssetResolver, setRemoteStylesheetResolver, type CssFontFace } from '@kinetographdev/compat/dom';
 import { installDomGlobals, setCanvasFonts, setPathMeasure, setWorkerHold } from '@kinetographdev/compat/shim';
 import { continueRender, delayRender } from './assets.js';
 import { addFace, NodeFontFace } from './font-face.js';
 import { getFonts, setFontProblemHandler } from './font-registry.js';
 import { setDomTextMeasure } from './layout-utils.js';
-import { makeRemoteAssetResolver } from './remote-assets.js';
+import { lockedFontFile, makeRemoteAssetResolver } from './remote-assets.js';
 import { getBoundingBox, getLength, getPointAtLength } from './paths.js';
 
 /** An `@font-face` rule of a stylesheet (a `.css` import, a `<style>` element): its file is registered like a `FontFace`. */
 export function registerCssFontFace(face: CssFontFace): void {
-  // A remote file is downloaded once into the font cache, as for `new FontFace`.
-  const file = /^https?:/i.test(face.url) ? face.url : resolveProjectFile(face.url);
-  if (file === null) {
-    console.warn(`@font-face "${face.family}": ${face.url} was not found beside the entry or in public/`);
+  let file: string | null;
+  if (face.remote) {
+    // A face from a remote stylesheet is only ever read from the cache `fetch-deps` filled and locked: never downloaded
+    // during a render, never a file of the project.
+    file = /^https:\/\//i.test(face.url) ? lockedFontFile(face.url) : null;
+    if (file === null) {
+      console.warn(`@font-face "${face.family}": ${face.url} is not downloaded and locked, so the font is not loaded (run \`kinetograph fetch-deps <entry>\`)`);
+      return;
+    }
+  } else if (/^http:/i.test(face.url)) {
+    // Only https: a font over plain http is not fetched (it could be changed on the way).
+    console.warn(`@font-face "${face.family}": ${face.url} is not https, so the font is not loaded`);
     return;
+  } else {
+    // A remote file is downloaded once into the font cache, as for `new FontFace`.
+    file = /^https?:/i.test(face.url) ? face.url : resolveProjectFile(face.url);
+    if (file === null) {
+      console.warn(`@font-face "${face.family}": ${face.url} was not found beside the entry or in public/`);
+      return;
+    }
   }
   addFace(
     new NodeFontFace(face.family, `url("${file}")`, {
@@ -39,6 +54,8 @@ setCssFontFaceHandler(registerCssFontFace);
 setFontProblemHandler(noteStylesheetProblem);
 // A remote image or video is downloaded once into the asset cache.
 setRemoteAssetResolver(makeRemoteAssetResolver(noteStylesheetProblem));
+// A remote stylesheet an `@import` names is only read from what `fetch-deps` downloaded and locked.
+setRemoteStylesheetResolver(makeRemoteAssetResolver(noteStylesheetProblem, { cachedOnly: true }));
 setPathMeasure({ getLength, getPointAtLength, getBoundingBox });
 // A canvas's `font` is matched against the registered fonts.
 setCanvasFonts(getFonts);

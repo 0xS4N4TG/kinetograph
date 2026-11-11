@@ -9,6 +9,7 @@ import '../src/datamosh.js';
 import { createFrameRenderer } from '../src/frame-loop.js';
 import { Gif, getGifDurationInSeconds } from '../src/gif.js';
 import { getVideoMetadata, setMediaProbe } from '../src/media-utils.js';
+import { setMediaParserAddon } from '../src/media-parser/addon.js';
 import { clearReportedUnsupported, reportedUnsupported } from '../src/unsupported.js';
 import { Freeze, Sequence } from '../src/timeline.js';
 import { renderAt } from './scene-harness.js';
@@ -43,7 +44,10 @@ beforeEach(() => {
   resetRenderState();
   resetVirtualClock();
 });
-afterEach(() => setMediaProbe(null));
+afterEach(() => {
+  setMediaProbe(null);
+  setMediaParserAddon(null);
+});
 
 describe('@kinetographdev/core/media-utils', () => {
   it('getVideoMetadata reads the header through the probe', async () => {
@@ -57,6 +61,18 @@ describe('@kinetographdev/core/media-utils', () => {
       fps: 25,
     });
     expect(calls).toEqual([{ path: '/clips/city.mp4', baseDir: undefined }]);
+  });
+
+  it('getVideoMetadata is as long as the container, as a browser says: a sound longer than its picture counts', async () => {
+    probe({ 'a.mp4': info({ durationInSeconds: 11.93 }) });
+    const container = (durationInSeconds: number | undefined) =>
+      setMediaParserAddon({ probeStreams: () => ({ durationInSeconds }) as never, scanStreams: () => [], decodeAudio: () => null });
+    container(11.97);
+    expect((await getVideoMetadata('a.mp4')).durationInSeconds).toBe(11.97);
+    container(11.5);
+    expect((await getVideoMetadata('a.mp4')).durationInSeconds).toBe(11.93);
+    container(undefined);
+    expect((await getVideoMetadata('a.mp4')).durationInSeconds).toBe(11.93);
   });
 
   it('reports fps as null when the file has no frame rate', async () => {

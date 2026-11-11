@@ -8,6 +8,8 @@ export interface Caption {
   endMs: number;
   timestampMs: number | null;
   confidence: number | null;
+  /** For `createTikTokStyleCaptions`: end the page after this caption. */
+  pageBreakAfter?: boolean;
 }
 
 // ---- SRT ----
@@ -134,6 +136,8 @@ export interface TikTokToken {
   text: string;
   fromMs: number;
   toMs: number;
+  /** Set (true) when the caption it comes from asked for the page to end after it. */
+  pageBreakAfter?: boolean;
 }
 
 export interface TikTokPage {
@@ -144,40 +148,54 @@ export interface TikTokPage {
 }
 
 /**
- * Groups word captions into pages. A page takes words until one ends more than
- * `combineTokensWithinMilliseconds` after the page began; that word is the last
- * of its page. (With no limit, everything is one page.) A page lasts until the
- * next one begins.
+ * Groups word captions into pages (`@remotion/captions`, written from its documentation and checked against the
+ * published package). Spaces are the delimiters: only a caption that starts with a space can begin a new page, and it
+ * does once the page's duration (from its first word to the end of the caption before) exceeds
+ * `combineTokensWithinMilliseconds`, or, with `breakOnSilenceAfterMilliseconds`, when at least that long a gap separates
+ * the caption from the one before. A caption with `pageBreakAfter` ends its page whatever follows. A page opens with its
+ * first word's leading space removed and lasts until the next one begins (the last, until the last caption ends). A caption
+ * without text only counts for timing. With no limit, everything is one page.
  */
 export function createTikTokStyleCaptions({
   captions,
   combineTokensWithinMilliseconds = Infinity,
+  breakOnSilenceAfterMilliseconds,
 }: {
   captions: Caption[];
   combineTokensWithinMilliseconds?: number;
+  breakOnSilenceAfterMilliseconds?: number;
 }): { pages: TikTokPage[] } {
   const pages: TikTokPage[] = [];
-  let current: TikTokPage | null = null;
+  let tokens: TikTokToken[] = [];
+  let text = '';
   let lastEnd = 0;
+  let breakNext = false;
+  const close = (): void => {
+    pages.push({ text, startMs: tokens[0]!.fromMs, durationMs: 0, tokens });
+    tokens = [];
+    text = '';
+  };
   for (const caption of captions) {
-    if (current === null) current = { text: '', startMs: caption.startMs, durationMs: 0, tokens: [] };
-    // A page opens with its first word's leading space removed; a word without text only counts for timing.
-    if (caption.text !== '') {
-      const text = current.tokens.length === 0 ? caption.text.trimStart() : caption.text;
-      current.tokens.push({ text, fromMs: caption.startMs, toMs: caption.endMs });
+    // Only a space (not a newline or a tab) marks the start of a word where a page may break.
+    const opensWithSpace = caption.text.startsWith(' ');
+    if (tokens.length > 0) {
+      const pageMs = lastEnd - tokens[0]!.fromMs;
+      const silent = breakOnSilenceAfterMilliseconds !== undefined && caption.startMs - lastEnd >= breakOnSilenceAfterMilliseconds;
+      if (breakNext || (opensWithSpace && (pageMs > combineTokensWithinMilliseconds || silent))) close();
     }
+    breakNext = caption.pageBreakAfter === true;
     lastEnd = caption.endMs;
-    if (caption.endMs - current.startMs > combineTokensWithinMilliseconds) {
-      pages.push(current);
-      current = null;
+    const shown = tokens.length === 0 ? caption.text.trimStart() : caption.text;
+    text += shown;
+    // A caption of only whitespace is in the page's text but is not a token.
+    if (shown.trim() !== '') {
+      tokens.push({ text: shown, fromMs: caption.startMs, toMs: caption.endMs, ...(caption.pageBreakAfter === true ? { pageBreakAfter: true } : {}) });
     }
   }
-  if (current !== null) pages.push(current);
+  if (tokens.length > 0) close();
   pages.forEach((page, index) => {
-    page.text = page.tokens.map((token) => token.text).join('');
     const next = pages[index + 1];
-    const end = next ? next.startMs : (page.tokens[page.tokens.length - 1]?.toMs ?? lastEnd);
-    page.durationMs = end - page.startMs;
+    page.durationMs = (next ? next.startMs : lastEnd) - page.startMs;
   });
   return { pages };
 }

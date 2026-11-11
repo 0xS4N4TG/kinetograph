@@ -6,8 +6,13 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+mod node_de;
+mod written;
+
+pub use written::{Written, write_output, written};
+
 /// One DOM island at one frame.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct IslandRequest {
     pub root: DomNode,
@@ -37,35 +42,64 @@ pub struct IslandRequest {
     pub history: Vec<Snapshot>,
 }
 
-/// An earlier state of the island: its tree as it was at `time` (seconds).
+/// What a script changed in an island since the state of it the addon holds (`IslandCache::resolve_edits`), instead
+/// of the whole request again. The caller numbers the states it sends (`stamp`); `base` is the one these edits are
+/// made to.
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IslandEdits {
+    pub stamp: u64,
+    pub base: u64,
+    /// The island root's host-tree path.
+    pub path: String,
+    /// The request's `time` in the new state.
+    pub time: f64,
+    /// The elements that changed, in any order.
+    pub set: Vec<NodeEdit>,
+}
+
+/// An element's new attributes and `style` (each left out when it did not change), and the new text of some of its
+/// text children, by index in its `children`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NodeEdit {
+    pub path: String,
+    #[serde(default)]
+    pub attrs: Option<BTreeMap<String, String>>,
+    #[serde(default)]
+    pub style: Option<String>,
+    #[serde(default)]
+    pub texts: Vec<(usize, String)>,
+}
+
+/// An earlier state of the island: its tree as it was at `time` (seconds).
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     pub time: f64,
     pub root: DomNode,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Size {
     pub width: f64,
     pub height: f64,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+/// A node by its `kind` (`element`, `text`, `native`), read by hand (`node_de`); a field said to default to nothing
+/// can be left out.
+#[derive(Clone, Debug, PartialEq)]
 pub enum DomNode {
     Element {
         /// Lower-case HTML or SVG tag.
         tag: String,
         /// The element's host-tree path; layer ids and readback use it.
         path: String,
-        /// Attributes as the DOM would have them: `class`, `id`, `src`, SVG attributes, … (strings).
-        #[serde(default)]
+        /// Attributes as the DOM would have them: `class`, `id`, `src`, SVG attributes, … (strings). Default: none.
         attrs: BTreeMap<String, String>,
-        /// The `style` prop as CSS declarations (React's rules: unitless numbers get `px`).
-        #[serde(default)]
+        /// The `style` prop as CSS declarations (React's rules: unitless numbers get `px`). Default: none.
         style: String,
-        #[serde(default)]
+        /// Default: none.
         children: Vec<DomNode>,
     },
     Text {
@@ -75,14 +109,11 @@ pub enum DomNode {
     /// the `native` placeholder layer comes back.
     Native {
         path: String,
-        #[serde(default)]
         width: Option<f64>,
-        #[serde(default)]
         height: Option<f64>,
         /// The box does not take part in the flow: it is placed at the top left of its containing block, over its
         /// siblings, as `position: absolute; left: 0; top: 0` does (a layer, a shape, a canvas: things that are
-        /// drawn rather than laid out; an image or a text box stays in the flow).
-        #[serde(default)]
+        /// drawn rather than laid out; an image or a text box stays in the flow). Default: false.
         overlay: bool,
     },
 }
@@ -111,44 +142,8 @@ pub struct IslandOutput {
     pub blend_space: &'static str,
 }
 
-/// `layers` written as changes from `base`, an earlier output of the same
-/// island, matched by place: a layer that is the same as the one at index `i`
-/// of `base` is `{"$same": i}`, and a group with the id of the one there
-/// whose children differ is its own fields with `"$base": i` and its children
-/// written as changes from that one's. Anything else is the layer itself.
-pub fn delta(layers: Vec<Value>, base: &[Value]) -> Vec<Value> {
-    layers
-        .into_iter()
-        .enumerate()
-        .map(|(i, layer)| {
-            let Some(was) = base.get(i) else {
-                return layer;
-            };
-            if layer == *was {
-                return serde_json::json!({ "$same": i });
-            }
-            let Some(Value::Array(theirs)) = was.get("children") else {
-                return layer;
-            };
-            match layer {
-                Value::Object(mut fields)
-                    if fields.get("id") == was.get("id")
-                        && matches!(fields.get("children"), Some(Value::Array(_))) =>
-                {
-                    if let Some(Value::Array(kids)) = fields.remove("children") {
-                        fields.insert("children".into(), Value::Array(delta(kids, theirs)));
-                    }
-                    fields.insert("$base".into(), Value::from(i));
-                    Value::Object(fields)
-                }
-                other => other,
-            }
-        })
-        .collect()
-}
-
-/// `delta` undone: the layers it was given, from what it wrote and the same
-/// `base`.
+/// The layers [`write_output`] wrote as changes from `base`, put back
+/// together.
 pub fn undelta(layers: &[Value], base: &[Value]) -> Vec<Value> {
     layers
         .iter()

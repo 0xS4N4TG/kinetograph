@@ -88,6 +88,12 @@ export interface EmitOptions {
    * native element in it, a native element other than a `<Layer>`. Null for a whole tree.
    */
   subFrameLayers?: () => ReadonlySet<string> | null;
+  /**
+   * Called with the first error a render or an effect throws, when it happens. `render`, `update` and `snapshot` throw it
+   * too, but a render that state set later (an effect that awaits a promise) is only thrown at the next `snapshot`, which
+   * a caller that waits for something first (the frame loop, on a `delayRender`) never reaches.
+   */
+  onError?: (error: unknown) => void;
 }
 
 /** The name of an element as a user writes it, for error messages. */
@@ -233,6 +239,23 @@ function holdsDom(nodes: HostNode[]): boolean {
 }
 
 /**
+ * The style Remotion gives an `<AbsoluteFill>` (remotion.dev/docs/absolute-fill). The author's style is laid over it, so a
+ * key set to `undefined` (`top: undefined`) takes the default away, as it does in a browser. (Remotion's page also sets
+ * `box-sizing: border-box`, which the host lays under a Remotion project's styles: `setDefaultStylesheet`.)
+ */
+export const ABSOLUTE_FILL_STYLE = {
+  position: 'absolute',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  width: '100%',
+  height: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+} as const;
+
+/**
  * `<AbsoluteFill>` (and the wrapper of a `<Sequence>` or `<Loop>`, which is one in Remotion) as the `div` it is in
  * Remotion, when what is inside it holds DOM elements or it sits inside DOM already: a column flex box over
  * the whole page with the author's style laid over it, so that `justifyContent`, `alignItems` and the rest place the
@@ -249,7 +272,7 @@ export function domFillOf(element: HostElement, insideDom = false): HostElement 
     type: 'div',
     props: {
       ...(fill.id !== undefined ? { id: fill.id } : {}),
-      style: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', ...fill.style },
+      style: { ...ABSOLUTE_FILL_STYLE, ...fill.style },
     },
     // The layer mapping's own background rectangle is the style's `backgroundColor` here.
     children: fill.background ? element.children.slice(1) : element.children,
@@ -616,7 +639,7 @@ class Emitter {
         this.cameras.push({ perspective: props.perspective, ...pick(props, ['x', 'y']) } as CameraJson);
         return null;
       case 'kg-audio':
-        this.audio.push({ id, ...props.clip });
+        this.audio.push({ id, ...props.clip, ...localSrc(props.clip) });
         return null;
       case 'kg-layer': {
         // A native element met inside an island (`emitNative`) can be an `<AbsoluteFill>` that holds DOM elements.
@@ -765,7 +788,7 @@ class Emitter {
         throw new Error(`<${name}> must be inside a <Scene3D>`);
       case 'kg-video':
         // The sound is not part of the layer: it is an audio clip with the layer's id.
-        this.audio.push({ id, ...props.sound });
+        this.audio.push({ id, ...props.sound, ...localSrc(props.sound) });
         return {
           id,
           type: 'video',

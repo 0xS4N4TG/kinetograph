@@ -41,17 +41,34 @@ calls it lazily and caches by tree generation.
   A `{"type": "native", "path", "x", "y", "width", "height"}` layer marks where a native element's layers go.
 - Layer ids: derived from the node's explicit `id` attribute if it is a valid layer id, else its `path`, with the
   suffixes the painter needs (`.bg`, `.border`, `.text`, …), unique per island.
-- Addon functions: `renderDomIsland(requestJson: string, pass?: number): string` and
-  `domLayoutBoxes(requestJson: string): string` → `{ [path]: { x, y, width, height, rect: {x,y,width,height},
+- Addon functions: `renderDomIsland(requestJson: string, pass?: number, base?: number): string` and
+  `domLayoutBoxes(requestJson: string, pass?: number, paths?: string[]): string` → `{ [path]: { x, y, width, height, rect: {x,y,width,height},
   client: {width,height}, scroll: {width,height} } }` (offset box in island coordinates; `rect` is the transformed
   bounding box, as `getBoundingClientRect` gives).
 - `pass` numbers the renders of one frame (its own and its motion-blur sub-frames'; compat's `beginSamplePass`). In a
-  pass an island's document is edited from its last render instead of built again, and a render after the island's
-  first in the pass answers `"delta": true` with `layers` written against that first one's: `{"$same": i}` is the
-  first's layer `i` at that place, and a group with `"$base": i` has its own fields and its children written against
-  the children of the first's layer `i` (`request::delta`). compat puts the layers back together, sharing the first's.
-  `startDomIsland(requestJson, pass): number` queues a render behind the ones before it and `finishDomIsland(ticket)`
+  pass, and in the pass after it, an island's document is edited from its last render instead of built again. Both
+  sides keep the island's base layers: its first render of a pass, or its last one written in full. `base` names the
+  pass of the ones the caller holds; when the addon holds the same, it answers `"delta": base` with `layers` written
+  against them: `{"$same": i}` is the base's layer `i` at that place, and a group with `"$base": i` has its own fields
+  and its children written against the children of the base's layer `i` (`request::write_output`). compat puts the layers
+  back together, sharing the base's. A pass that does not follow the last drops the bases.
+  `startDomIsland(requestJson, pass, base): number` queues a render behind the ones before it and `finishDomIsland(ticket)`
   waits for its output, so a sub-frame's islands are drawn while the next sub-frame renders.
+- Island edits (`domIslandEdits(): 1`): `domLayoutBoxes` and `domComputedStyle` also take a request the caller numbers,
+  `{"stamp":N,"request":REQUEST}`, and then, in place of the next request, what scripts changed since:
+  `{"stamp":M,"base":N,"path","time","set":[{"path","attrs"?,"style"?,"texts"?:[[index,text]]}]}` (an element's new
+  attributes and style, and the new text of some of its text children). The addon makes them to the request it kept
+  and edits the document with the same edits a diff of the whole request gives (`IslandCache::resolve_edits`). A base
+  it does not hold (another request or a render replaced it, a pass that does not follow), or edits that do not fit it
+  (an element named twice or missing), fail with `STALE_BASE` and the caller sends the whole request. compat's
+  readback sends edits only for writes to an element's own style, attributes and texts; a commit, a change of which
+  nodes the tree holds, a `<style>`, `<link>`, canvas or native element, new fonts or sheets send the whole request. A
+  render whose request is the state a readback of the frame left names it with edits that change nothing (`stamp` =
+  `base`, empty `set`), and sends the request when that fails with `STALE_BASE`.
+- `KINETOGRAPH_DOM_VERIFY=1` (slow, for testing): readback compares the request its edits made with one built afresh
+  from the tree, and the addon builds each edited island afresh and compares its layers and boxes
+  (`crates/node/src/dom_verify.rs`). Either throws on a difference; the addon writes both sides to
+  `KINETOGRAPH_DOM_VERIFY_DIR` (else the system temp directory).
 
 ## 3. Code areas
 
@@ -358,8 +375,8 @@ for a `kg-*` element without padding, and it comes before the empty-box return, 
 **First run** (same placeholder patch): native 988 of 988; mean 4.2 to 28 levels, PSNR 15.8 to
 29.0 dB, 8755 to 384 196 pixels more than 48 apart, 3 559 263 summed.
 
-`domLayoutBoxes` answers `{ [path]: ElementBox }` for every element and native placeholder (`display: none` and
-`display: contents` are all zeros):
+`domLayoutBoxes` answers `{ [path]: ElementBox }` for every element and native placeholder, or for those at `paths`
+(`display: none` and `display: contents` are all zeros):
 
 | Field | Meaning |
 |---|---|
@@ -640,7 +657,7 @@ container stay inside its clip. The canvas takes the root's (or the body's) back
 | `background-size/position/repeat/clip/origin` | `Paint::Image` fill (tiles repeat in the image sampler); one shape per tile for `space` and gradient tiles up to 150; past that one shape whose paint repeats one tile (a gradient's `tile`, a picture's `spaceX`/`spaceY`: a Skia picture shader, as Chrome tiles a gradient) |
 | gradients (linear, radial incl. ellipse, conic, repeating, hints) | scene gradients; an ellipse is a circle with `transform` |
 | `background-clip: text` | the layers get a `matte` whose source is white glyph runs |
-| `box-shadow` outer / inset | a blurred shape of the shadow colour, cut with `clip` to outside the border box / inside the padding box |
+| `box-shadow` outer / inset | a blurred shape of the shadow colour, cut with `clip` to outside the border box / inside the padding box; Skia draws a blurred outer one as Chrome does, the clip and then the rounded rectangle through a blur mask filter, with no layer (a turned one through a runtime shader with the closed-form blur of `shadow_box.wgsl`) |
 | `border` per side, radii (elliptical), `double`, `groove`, `ridge`, `inset`, `outset`, `dashed`, `dotted` | filled ring paths, side shapes cut by mitre polygons, dashes made with kurbo |
 | `border-image` | nine slices as shapes with an image or gradient fill (stretch, repeat, round, space) |
 | `outline`, `outline-offset` | a ring outside the border box |
@@ -1003,7 +1020,7 @@ Goal: stop redoing what did not change between frames. What was found, measured 
   empties the cache; `compat/dom`'s `breakSamplePasses` skips a number when a frame does not follow the one before).
   97% of island renders edit a kept document (`n_built` 1.63 -> 0.12 a frame); the island thread's work falls from
   5.8 to 2.9 ms a frame. `KINETOGRAPH_NO_INCREMENTAL=1` turns it off. This exposed two bugs in the edit path that
-  a fresh build never hits: `repaint_transforms` updated one group of an element painted as two (see below), and
+  a fresh build never hits: the transform-only repaint (since replaced by retained paint, below) updated one group of an element painted as two, and
   layer ids made from Blitz's node id (`n4294967481`) change when a restyle makes a node again; nodes with no
   `data-kg-path` are now named by their place under the nearest ancestor that has one (`$0.0!a0.text`).
 - **Video decode** moved off the render thread: after a frame takes a picture, a thread decodes and converts the next
@@ -1020,7 +1037,21 @@ Goal: stop redoing what did not change between frames. What was found, measured 
   translation rounds differently in f32 (section 11, "Translating a page's draw"). In the blur shot (frames 800-1000)
   the `wall` group (321 children) zooms with 10 motion-blur samples: every sample is a new draw, and 22 islands a frame
   are rendered for the samples (JS 40 ms, `start_frame` 20 ms). Samples of an island often differ only in a transform;
-  `request::delta` (comparing every layer with the first sample's) is about as costly as the island's resolve there.
+  comparing every layer with the first sample's (as the layer deltas of §2 do) is about as costly as the island's
+  resolve there.
+- **Edits restyle what they change.** A `style` edit takes the damage its restyle computes, and construction damage
+  goes one box up, not to every ancestor (vendored Blitz, `vendor/README.md`). `crates/dom/tests/incremental_fuzz.rs`
+  draws random trees under random edit chains against fresh builds (`KG_FUZZ_SEED` repeats one seed).
+- **Retained paint.** A kept document's paint replays each stacking context's content from its last paint when nothing
+  inside it changed (`crates/dom/src/dirty.rs` finds the changed nodes from the last paint's stamps of each node's
+  style, box and lines; `paint/retain.rs` replays). A context may itself have changed in its group (transform, opacity,
+  filter, blend, place) and its parent in its group: only `context_group` runs again. The layer ids, reports and audits
+  a content took are checked as ledgers before a replay, so a replayed paint is the whole paint, layer for layer.
+  Everything is painted again after a file is read, a clamp cuts another line, an `id`, a path or a stylesheet's text
+  changes, or a change to an SVG element an id can name or to what the painter walks up to (text decoration, any custom
+  property that is not inherited, float, position, display). The root's context is retained too. Paint per frame: mg1
+  23.8 -> 6 ms, film 5.3 -> 3.0 ms, dm4 13 -> 10 ms (measured before the root's context was retained; its boxes sit
+  straight in it). Replaces the transform-only repaint. Tests: `crates/dom/tests/retain.rs`.
 
 **A third edit-path bug: baselines lost to taffy's cache** (fixed). Launch film frames 180 and 181 drew the caption word
 `screenshotting` differently when frame 179 had been drawn just before (a document edited) than when the render started

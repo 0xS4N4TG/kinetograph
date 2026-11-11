@@ -339,6 +339,14 @@ impl LayoutPassState<'_> {
                 .downcast_element_mut()
                 .unwrap()
                 .inline_layout_data = Some(inline_layout);
+            // No out-of-flow pass runs for this output (it has no positioning area), so
+            // the boxes an earlier layout hoisted here (since hidden) are given up.
+            if inputs.run_mode == RunMode::PerformLayout {
+                taffy::LayoutContainingBlock::clear_hoisted_children(
+                    self,
+                    crate::taffy_node_id(node_id),
+                );
+            }
             return LayoutOutput::from_outer_size(
                 Size::ZERO.maybe_max(container_pb.sum_axes().map(Some)),
             );
@@ -965,7 +973,11 @@ impl LayoutPassState<'_> {
                 final_size.height - content_box_inset.vertical_axis_sum() - measured_size.height;
             taffy::compute_block_align_content_offset(align_content, free_space)
         };
-        inline_layout.block_offset = block_offset;
+        // Stored by the final layout only: a measurement (free space 0) after it would
+        // leave the offset wrong when the final layout is taken from taffy's cache.
+        if inputs.run_mode == RunMode::PerformLayout {
+            inline_layout.block_offset = block_offset;
+        }
         let line_box_top = container_pb.top + block_offset;
 
         // Store sizes and positions of inline boxes
@@ -1099,7 +1111,9 @@ impl LayoutPassState<'_> {
                         layout.padding = padding; //.map(|p| p / scale);
                         layout.border = border; //.map(|p| p / scale);
                         layout.margin = margin;
-                    } else {
+                    } else if inputs.run_mode == RunMode::PerformLayout {
+                        // A measurement (`ComputeSize`) leaves the box's layout to the final pass:
+                        // its output can come from taffy's size-only cache, with no overflow.
                         // Re-measure the box to get its border-box size (this hits the layout
                         // cache). The size cannot be recovered from `ibox` dimensions as the
                         // space reserved in the line is clamped to be non-negative.

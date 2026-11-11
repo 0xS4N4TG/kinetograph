@@ -158,7 +158,8 @@ export async function buildTailwind(file: string): Promise<{ css: string } | { e
 // ---- reading a stylesheet ----
 
 /** A CSS string/comment-aware scan for `@import` rules at the top level. */
-const IMPORT = /@import\s+(?:url\(\s*)?(['"]?)([^'")\s;]+)\1\s*\)?([^;]*);/g;
+// The target is a quoted string (which may hold a `;`, as Google Fonts' `wght@300;500` does) or an unquoted run.
+const IMPORT = /@import\s+(?:url\(\s*)?(?:"([^"]*)"|'([^']*)'|([^'")\s;]+))\s*\)?([^;]*);/g;
 
 const isRemote = (target: string): boolean => /^([a-z][a-z0-9+.-]*:|\/\/)/i.test(target) || target.startsWith('#');
 
@@ -187,7 +188,8 @@ export function readStylesheet(file: string, seen = new Set<string>()): ReadCss 
   const warnings: string[] = [];
   seen.add(file);
   let css = readFileSync(file, 'utf8');
-  css = css.replace(IMPORT, (match, _quote: string, target: string, tail: string) => {
+  css = css.replace(IMPORT, (match, double: string | undefined, single: string | undefined, bare: string | undefined, tail: string) => {
+    const target = double ?? single ?? bare ?? '';
     if (isRemote(target)) return match;
     // Tailwind's entry is built by Tailwind, not inlined.
     if (/^tailwindcss(\/|$)/.test(target)) return '';

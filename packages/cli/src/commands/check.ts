@@ -5,7 +5,7 @@ import { toErrorObject } from '../errors.js';
 import { lintAudio, lintCompat, lintInspect, lintNotes, lintScene, mergeFindings, sortIssues, textInsideCanvas, type Finding } from '../lint.js';
 import { native, type InspectLayer, type InspectResult } from '../native.js';
 import { checkFrame, evenFrames } from '../source.js';
-import { typeCheck, type TypeDiagnostic } from '../typecheck.js';
+import type { TypeDiagnostic } from '../typecheck.js';
 import { ENTRY, openFromArgs, type Command } from './types.js';
 
 const describeDiagnostic = (d: TypeDiagnostic): string =>
@@ -18,6 +18,8 @@ export const check: Command = {
   positionals: [ENTRY],
   options: [],
   async run(args) {
+    // Loaded here: TypeScript is large, and no other command needs it.
+    const { typeCheck } = await import('../typecheck.js');
     const result = typeCheck(String(args.positionals.entry));
     const errors = result.diagnostics.length;
     const text = !result.checked
@@ -112,7 +114,7 @@ export const lint: Command = {
       }
       // The entry can be a stand-in (tests); a file that is not there has no types to check.
       const entry = String(args.positionals.entry);
-      const types = existsSync(entry) ? typeCheck(entry).diagnostics : [];
+      const types = existsSync(entry) ? (await import('../typecheck.js')).typeCheck(entry).diagnostics : [];
       const typeIssues = types.map((d) => ({
         rule: 'type-error',
         severity: 'error' as const,

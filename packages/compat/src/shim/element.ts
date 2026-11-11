@@ -3,7 +3,7 @@
 // (`Readback`, cached by tree generation). Script changes to `style` and attributes are laid over the props; nothing
 // is ever drawn from this object, only read.
 
-import { attributesOf } from '../request/attrs.js';
+import { attributeOf, attributesOf } from '../request/attrs.js';
 import { cssPropertyName, styleToCss } from '../request/style.js';
 import { resolveDocumentUrl } from '../environment.js';
 import { srcsetCandidate } from '../request/srcset.js';
@@ -120,14 +120,14 @@ function inlineStyle(host: HostElement, readbackOf: () => Readback): CSSStyleDec
     setProperty(property: string, value: string | null): void {
       const old = oldAttribute(host, 'style');
       overlayOf(host, true)!.style.set(kebab(property), value === null ? '' : written(kebab(property), String(value)));
-      readbackOf().touch();
+      readbackOf().touch(host);
       recordAttribute(host, 'style', old);
     },
     removeProperty(property: string): string {
       const old = read(kebab(property));
       const was = oldAttribute(host, 'style');
       overlayOf(host, true)!.style.set(kebab(property), '');
-      readbackOf().touch();
+      readbackOf().touch(host);
       recordAttribute(host, 'style', was);
       return old;
     },
@@ -144,7 +144,7 @@ function inlineStyle(host: HostElement, readbackOf: () => Readback): CSSStyleDec
           overlay.style.set(name, written(name, part.slice(colon + 1).trim()));
         }
       }
-      readbackOf().touch();
+      readbackOf().touch(host);
       recordAttribute(host, 'style', was);
     },
     item: () => '',
@@ -425,8 +425,9 @@ export class DomElement extends DomNodeBase {
 
   get inSvg(): boolean {
     if (isSvgTag(this.host.type)) return true;
-    // `foreignObject` holds HTML: what is inside it is not in the SVG namespace.
-    for (let h: HostElement | null = this.host; h !== null; h = this.readback.parent(h)) {
+    // `foreignObject` holds HTML: what is inside it is not in the SVG namespace. The root is found once, not per step.
+    const readback = this.readback;
+    for (let h: HostElement | null = this.host; h !== null; h = readback.parent(h)) {
       if (h.type === 'svg') return true;
       if (h.type === 'foreignObject' && h !== this.host) return false;
     }
@@ -535,7 +536,17 @@ export class DomElement extends DomNodeBase {
     return null;
   }
   getAttribute(name: string): string | null {
-    return this.attrs()[name] ?? this.attrs()[name.toLowerCase()] ?? null;
+    // `attrs()[name] ?? attrs()[name.toLowerCase()]`, reading only the attribute asked for.
+    const props = propsWithOverlay(this.host);
+    const one = (wanted: string): string | null => {
+      if (wanted === 'style') {
+        const style = styleToCss(props.style);
+        if (style !== '') return style;
+      }
+      return attributeOf(props, wanted, () => this.inSvg);
+    };
+    const lower = name.toLowerCase();
+    return one(name) ?? (lower !== name ? one(lower) : null);
   }
   hasAttribute(name: string): boolean {
     return this.getAttribute(name) !== null;
@@ -546,7 +557,7 @@ export class DomElement extends DomNodeBase {
   setAttribute(name: string, value: unknown): void {
     const old = oldAttribute(this.host, name);
     overlayOf(this.host, true)!.attrs.set(name, String(value));
-    this.readback.touch();
+    this.readback.touch(this.host);
     recordAttribute(this.host, name, old);
     if (name === 'src' && this.host.type === 'img') this.loadImage(String(value));
   }
@@ -554,7 +565,7 @@ export class DomElement extends DomNodeBase {
     const old = oldAttribute(this.host, name);
     if (old === null) return;
     overlayOf(this.host, true)!.attrs.set(name, null);
-    this.readback.touch();
+    this.readback.touch(this.host);
     recordAttribute(this.host, name, old);
   }
   // The namespaced forms keep the qualified name as the attribute's name; `xlink:href` also answers as `href` (what <use> and <image> read).

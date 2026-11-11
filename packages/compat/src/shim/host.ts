@@ -40,8 +40,11 @@ export interface Readback {
   isConnected(host: HostElement): boolean;
   /** The composition's size. */
   viewport(): { width: number; height: number };
-  /** Marks the tree changed after a script wrote a style or attribute. */
-  touch(): void;
+  /**
+   * Marks the tree changed after a script wrote a style or attribute. `host`: the element whose own style, attributes
+   * or text children changed, when that is all that did (a change to which nodes the tree holds names none).
+   */
+  touch(host?: HostElement): void;
   /** The top-level nodes of the root (`<Sequence>`s replaced by what is inside them). */
   roots(): DomNode[];
   /** Every DOM element in the root, in document order, also inside native elements. */

@@ -59,4 +59,9 @@ describe('createTikTokStyleCaptions', () => {
   it('matches the recorded edge cases', () => {
     for (const c of data.other) expect(createTikTokStyleCaptions(c.args), JSON.stringify(c.args)).toEqual(c.result.value);
   });
+
+  it('matches Remotion 4.0.542: a break only before a word that starts with a space, pageBreakAfter, silence', () => {
+    const recorded = fixture('captions-tiktok-4.0.542.json');
+    for (const c of recorded.cases) expect(createTikTokStyleCaptions(c.args), c.name).toEqual(c.result);
+  });
 });

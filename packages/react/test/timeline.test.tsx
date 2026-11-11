@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { setRemoteAssetResolver } from '@kinetographdev/compat/dom';
 import { Audio, Camera, createSceneRoot, Layer, Lottie, Rect, useTimeline } from '../src/index.js';
 import { at, renderAt, timeline } from './harness.js';
 
@@ -145,6 +146,16 @@ describe('<Audio>', () => {
     expect(tree.audio).toEqual([
       { id: 'music', src: '/abs/music.mp3', from: 0, trimBefore: 0, trimAfter: null, playbackRate: 1, volume: 1, loop: false, muted: false },
     ]);
+  });
+
+  it('plays the cached file of a remote src, as a remote picture is drawn from its cache', () => {
+    setRemoteAssetResolver((url) => (url === 'https://cdn.example/track.mp3' ? '/cache/track.mp3' : null));
+    try {
+      expect(renderAt(<Audio id="a" src="https://cdn.example/track.mp3" />).audio[0]).toMatchObject({ src: '/cache/track.mp3' });
+      expect(renderAt(<Audio id="a" src="https://cdn.example/other.mp3" />).audio[0]).toMatchObject({ src: 'https://cdn.example/other.mp3' });
+    } finally {
+      setRemoteAssetResolver(null);
+    }
   });
 
   it("starts the clip at absoluteFrame - frame, i.e. where the enclosing Sequence began", () => {

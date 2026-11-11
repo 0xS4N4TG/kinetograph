@@ -1,0 +1,2149 @@
+{
+ "recordedWith": "@remotion/captions@4.0.542",
+ "how": "A scratch script outside the repo that only calls the published package public function and writes the results to JSON. Remotion is not a dependency of this repo.",
+ "cases": [
+  {
+   "name": "accent 3000",
+   "args": {
+    "captions": [
+     {
+      "text": "Make",
+      "startMs": 0,
+      "endMs": 600,
+      "timestampMs": 300,
+      "confidence": null
+     },
+     {
+      "text": " every",
+      "startMs": 600,
+      "endMs": 1300,
+      "timestampMs": 950,
+      "confidence": null
+     },
+     {
+      "text": " word",
+      "startMs": 1300,
+      "endMs": 2100,
+      "timestampMs": 1700,
+      "confidence": null
+     },
+     {
+      "text": " count.",
+      "startMs": 2100,
+      "endMs": 3000,
+      "timestampMs": 2550,
+      "confidence": null,
+      "pageBreakAfter": true
+     },
+     {
+      "text": "Keep",
+      "startMs": 3000,
+      "endMs": 3600,
+      "timestampMs": 3300,
+      "confidence": null
+     },
+     {
+      "text": " it",
+      "startMs": 3600,
+      "endMs": 4000,
+      "timestampMs": 3800,
+      "confidence": null
+     },
+     {
+      "text": " moving.",
+      "startMs": 4000,
+      "endMs": 5000,
+      "timestampMs": 4500,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 3000
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "Make every word count.",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "Make",
+        "fromMs": 0,
+        "toMs": 600
+       },
+       {
+        "text": " every",
+        "fromMs": 600,
+        "toMs": 1300
+       },
+       {
+        "text": " word",
+        "fromMs": 1300,
+        "toMs": 2100
+       },
+       {
+        "text": " count.",
+        "fromMs": 2100,
+        "toMs": 3000,
+        "pageBreakAfter": true
+       }
+      ],
+      "durationMs": 3000
+     },
+     {
+      "text": "Keep it moving.",
+      "startMs": 3000,
+      "tokens": [
+       {
+        "text": "Keep",
+        "fromMs": 3000,
+        "toMs": 3600
+       },
+       {
+        "text": " it",
+        "fromMs": 3600,
+        "toMs": 4000
+       },
+       {
+        "text": " moving.",
+        "fromMs": 4000,
+        "toMs": 5000
+       }
+      ],
+      "durationMs": 2000
+     }
+    ]
+   }
+  },
+  {
+   "name": "accent 1000",
+   "args": {
+    "captions": [
+     {
+      "text": "Make",
+      "startMs": 0,
+      "endMs": 600,
+      "timestampMs": 300,
+      "confidence": null
+     },
+     {
+      "text": " every",
+      "startMs": 600,
+      "endMs": 1300,
+      "timestampMs": 950,
+      "confidence": null
+     },
+     {
+      "text": " word",
+      "startMs": 1300,
+      "endMs": 2100,
+      "timestampMs": 1700,
+      "confidence": null
+     },
+     {
+      "text": " count.",
+      "startMs": 2100,
+      "endMs": 3000,
+      "timestampMs": 2550,
+      "confidence": null,
+      "pageBreakAfter": true
+     },
+     {
+      "text": "Keep",
+      "startMs": 3000,
+      "endMs": 3600,
+      "timestampMs": 3300,
+      "confidence": null
+     },
+     {
+      "text": " it",
+      "startMs": 3600,
+      "endMs": 4000,
+      "timestampMs": 3800,
+      "confidence": null
+     },
+     {
+      "text": " moving.",
+      "startMs": 4000,
+      "endMs": 5000,
+      "timestampMs": 4500,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 1000
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "Make every",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "Make",
+        "fromMs": 0,
+        "toMs": 600
+       },
+       {
+        "text": " every",
+        "fromMs": 600,
+        "toMs": 1300
+       }
+      ],
+      "durationMs": 1300
+     },
+     {
+      "text": "word count.",
+      "startMs": 1300,
+      "tokens": [
+       {
+        "text": "word",
+        "fromMs": 1300,
+        "toMs": 2100
+       },
+       {
+        "text": " count.",
+        "fromMs": 2100,
+        "toMs": 3000,
+        "pageBreakAfter": true
+       }
+      ],
+      "durationMs": 1700
+     },
+     {
+      "text": "Keep it moving.",
+      "startMs": 3000,
+      "tokens": [
+       {
+        "text": "Keep",
+        "fromMs": 3000,
+        "toMs": 3600
+       },
+       {
+        "text": " it",
+        "fromMs": 3600,
+        "toMs": 4000
+       },
+       {
+        "text": " moving.",
+        "fromMs": 4000,
+        "toMs": 5000
+       }
+      ],
+      "durationMs": 2000
+     }
+    ]
+   }
+  },
+  {
+   "name": "accent inf",
+   "args": {
+    "captions": [
+     {
+      "text": "Make",
+      "startMs": 0,
+      "endMs": 600,
+      "timestampMs": 300,
+      "confidence": null
+     },
+     {
+      "text": " every",
+      "startMs": 600,
+      "endMs": 1300,
+      "timestampMs": 950,
+      "confidence": null
+     },
+     {
+      "text": " word",
+      "startMs": 1300,
+      "endMs": 2100,
+      "timestampMs": 1700,
+      "confidence": null
+     },
+     {
+      "text": " count.",
+      "startMs": 2100,
+      "endMs": 3000,
+      "timestampMs": 2550,
+      "confidence": null,
+      "pageBreakAfter": true
+     },
+     {
+      "text": "Keep",
+      "startMs": 3000,
+      "endMs": 3600,
+      "timestampMs": 3300,
+      "confidence": null
+     },
+     {
+      "text": " it",
+      "startMs": 3600,
+      "endMs": 4000,
+      "timestampMs": 3800,
+      "confidence": null
+     },
+     {
+      "text": " moving.",
+      "startMs": 4000,
+      "endMs": 5000,
+      "timestampMs": 4500,
+      "confidence": null
+     }
+    ]
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "Make every word count.",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "Make",
+        "fromMs": 0,
+        "toMs": 600
+       },
+       {
+        "text": " every",
+        "fromMs": 600,
+        "toMs": 1300
+       },
+       {
+        "text": " word",
+        "fromMs": 1300,
+        "toMs": 2100
+       },
+       {
+        "text": " count.",
+        "fromMs": 2100,
+        "toMs": 3000,
+        "pageBreakAfter": true
+       }
+      ],
+      "durationMs": 3000
+     },
+     {
+      "text": "Keep it moving.",
+      "startMs": 3000,
+      "tokens": [
+       {
+        "text": "Keep",
+        "fromMs": 3000,
+        "toMs": 3600
+       },
+       {
+        "text": " it",
+        "fromMs": 3600,
+        "toMs": 4000
+       },
+       {
+        "text": " moving.",
+        "fromMs": 4000,
+        "toMs": 5000
+       }
+      ],
+      "durationMs": 2000
+     }
+    ]
+   }
+  },
+  {
+   "name": "doc example",
+   "args": {
+    "captions": [
+     {
+      "text": "Using",
+      "startMs": 40,
+      "endMs": 300,
+      "timestampMs": 170,
+      "confidence": null
+     },
+     {
+      "text": " Remotion's",
+      "startMs": 300,
+      "endMs": 900,
+      "timestampMs": 600,
+      "confidence": null
+     },
+     {
+      "text": " TikTok",
+      "startMs": 900,
+      "endMs": 1260,
+      "timestampMs": 1080,
+      "confidence": null
+     },
+     {
+      "text": " template,",
+      "startMs": 1260,
+      "endMs": 1950,
+      "timestampMs": 1605,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 1200
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "Using Remotion's TikTok",
+      "startMs": 40,
+      "tokens": [
+       {
+        "text": "Using",
+        "fromMs": 40,
+        "toMs": 300
+       },
+       {
+        "text": " Remotion's",
+        "fromMs": 300,
+        "toMs": 900
+       },
+       {
+        "text": " TikTok",
+        "fromMs": 900,
+        "toMs": 1260
+       }
+      ],
+      "durationMs": 1220
+     },
+     {
+      "text": "template,",
+      "startMs": 1260,
+      "tokens": [
+       {
+        "text": "template,",
+        "fromMs": 1260,
+        "toMs": 1950
+       }
+      ],
+      "durationMs": 690
+     }
+    ]
+   }
+  },
+  {
+   "name": "no-space words",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 10,
+      "timestampMs": 5,
+      "confidence": null
+     },
+     {
+      "text": "b",
+      "startMs": 10,
+      "endMs": 20,
+      "timestampMs": 15,
+      "confidence": null
+     },
+     {
+      "text": " c",
+      "startMs": 20,
+      "endMs": 30,
+      "timestampMs": 25,
+      "confidence": null
+     },
+     {
+      "text": "d",
+      "startMs": 30,
+      "endMs": 40,
+      "timestampMs": 35,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 15
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "ab",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 10
+       },
+       {
+        "text": "b",
+        "fromMs": 10,
+        "toMs": 20
+       }
+      ],
+      "durationMs": 20
+     },
+     {
+      "text": "cd",
+      "startMs": 20,
+      "tokens": [
+       {
+        "text": "c",
+        "fromMs": 20,
+        "toMs": 30
+       },
+       {
+        "text": "d",
+        "fromMs": 30,
+        "toMs": 40
+       }
+      ],
+      "durationMs": 20
+     }
+    ]
+   }
+  },
+  {
+   "name": "silence 0",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 10,
+      "timestampMs": 5,
+      "confidence": null
+     },
+     {
+      "text": " b",
+      "startMs": 10,
+      "endMs": 20,
+      "timestampMs": 15,
+      "confidence": null
+     },
+     {
+      "text": " c",
+      "startMs": 100,
+      "endMs": 130,
+      "timestampMs": 115,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 10000,
+    "breakOnSilenceAfterMilliseconds": 0
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 10
+       }
+      ],
+      "durationMs": 10
+     },
+     {
+      "text": "b",
+      "startMs": 10,
+      "tokens": [
+       {
+        "text": "b",
+        "fromMs": 10,
+        "toMs": 20
+       }
+      ],
+      "durationMs": 90
+     },
+     {
+      "text": "c",
+      "startMs": 100,
+      "tokens": [
+       {
+        "text": "c",
+        "fromMs": 100,
+        "toMs": 130
+       }
+      ],
+      "durationMs": 30
+     }
+    ]
+   }
+  },
+  {
+   "name": "silence 50",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 10,
+      "timestampMs": 5,
+      "confidence": null
+     },
+     {
+      "text": " b",
+      "startMs": 10,
+      "endMs": 20,
+      "timestampMs": 15,
+      "confidence": null
+     },
+     {
+      "text": " c",
+      "startMs": 100,
+      "endMs": 130,
+      "timestampMs": 115,
+      "confidence": null
+     },
+     {
+      "text": " d",
+      "startMs": 130,
+      "endMs": 140,
+      "timestampMs": 135,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 10000,
+    "breakOnSilenceAfterMilliseconds": 50
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a b",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 10
+       },
+       {
+        "text": " b",
+        "fromMs": 10,
+        "toMs": 20
+       }
+      ],
+      "durationMs": 100
+     },
+     {
+      "text": "c d",
+      "startMs": 100,
+      "tokens": [
+       {
+        "text": "c",
+        "fromMs": 100,
+        "toMs": 130
+       },
+       {
+        "text": " d",
+        "fromMs": 130,
+        "toMs": 140
+       }
+      ],
+      "durationMs": 40
+     }
+    ]
+   }
+  },
+  {
+   "name": "empty text",
+   "args": {
+    "captions": [
+     {
+      "text": "A",
+      "startMs": 0,
+      "endMs": 100,
+      "timestampMs": 50,
+      "confidence": null
+     },
+     {
+      "text": " B",
+      "startMs": 100,
+      "endMs": 200,
+      "timestampMs": 150,
+      "confidence": null
+     },
+     {
+      "text": "",
+      "startMs": 200,
+      "endMs": 300,
+      "timestampMs": 250,
+      "confidence": null
+     },
+     {
+      "text": " C",
+      "startMs": 300,
+      "endMs": 400,
+      "timestampMs": 350,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 250
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "A B",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "A",
+        "fromMs": 0,
+        "toMs": 100
+       },
+       {
+        "text": " B",
+        "fromMs": 100,
+        "toMs": 200
+       }
+      ],
+      "durationMs": 300
+     },
+     {
+      "text": "C",
+      "startMs": 300,
+      "tokens": [
+       {
+        "text": "C",
+        "fromMs": 300,
+        "toMs": 400
+       }
+      ],
+      "durationMs": 100
+     }
+    ]
+   }
+  },
+  {
+   "name": "break+space-less",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 10,
+      "timestampMs": 5,
+      "confidence": null,
+      "pageBreakAfter": true
+     },
+     {
+      "text": "b",
+      "startMs": 10,
+      "endMs": 20,
+      "timestampMs": 15,
+      "confidence": null
+     },
+     {
+      "text": " c",
+      "startMs": 20,
+      "endMs": 30,
+      "timestampMs": 25,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 10000
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 10,
+        "pageBreakAfter": true
+       }
+      ],
+      "durationMs": 10
+     },
+     {
+      "text": "b c",
+      "startMs": 10,
+      "tokens": [
+       {
+        "text": "b",
+        "fromMs": 10,
+        "toMs": 20
+       },
+       {
+        "text": " c",
+        "fromMs": 20,
+        "toMs": 30
+       }
+      ],
+      "durationMs": 20
+     }
+    ]
+   }
+  },
+  {
+   "name": "leading spaces",
+   "args": {
+    "captions": [
+     {
+      "text": "  spaced",
+      "startMs": 0,
+      "endMs": 10,
+      "timestampMs": 5,
+      "confidence": null
+     },
+     {
+      "text": "  more  ",
+      "startMs": 10,
+      "endMs": 20,
+      "timestampMs": 15,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 5
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "spaced",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "spaced",
+        "fromMs": 0,
+        "toMs": 10
+       }
+      ],
+      "durationMs": 10
+     },
+     {
+      "text": "more  ",
+      "startMs": 10,
+      "tokens": [
+       {
+        "text": "more  ",
+        "fromMs": 10,
+        "toMs": 20
+       }
+      ],
+      "durationMs": 10
+     }
+    ]
+   }
+  },
+  {
+   "name": "silence on no-space start",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 10,
+      "timestampMs": 5,
+      "confidence": null
+     },
+     {
+      "text": "b",
+      "startMs": 100,
+      "endMs": 110,
+      "timestampMs": 105,
+      "confidence": null
+     },
+     {
+      "text": " c",
+      "startMs": 110,
+      "endMs": 120,
+      "timestampMs": 115,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 10000,
+    "breakOnSilenceAfterMilliseconds": 50
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "ab c",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 10
+       },
+       {
+        "text": "b",
+        "fromMs": 100,
+        "toMs": 110
+       },
+       {
+        "text": " c",
+        "fromMs": 110,
+        "toMs": 120
+       }
+      ],
+      "durationMs": 120
+     }
+    ]
+   }
+  },
+  {
+   "name": "silence exact",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 10,
+      "timestampMs": 5,
+      "confidence": null
+     },
+     {
+      "text": " b",
+      "startMs": 60,
+      "endMs": 70,
+      "timestampMs": 65,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 10000,
+    "breakOnSilenceAfterMilliseconds": 50
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 10
+       }
+      ],
+      "durationMs": 60
+     },
+     {
+      "text": "b",
+      "startMs": 60,
+      "tokens": [
+       {
+        "text": "b",
+        "fromMs": 60,
+        "toMs": 70
+       }
+      ],
+      "durationMs": 10
+     }
+    ]
+   }
+  },
+  {
+   "name": "silence undefined combine",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 10,
+      "timestampMs": 5,
+      "confidence": null
+     },
+     {
+      "text": " b",
+      "startMs": 100,
+      "endMs": 110,
+      "timestampMs": 105,
+      "confidence": null
+     }
+    ],
+    "breakOnSilenceAfterMilliseconds": 50
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 10
+       }
+      ],
+      "durationMs": 100
+     },
+     {
+      "text": "b",
+      "startMs": 100,
+      "tokens": [
+       {
+        "text": "b",
+        "fromMs": 100,
+        "toMs": 110
+       }
+      ],
+      "durationMs": 10
+     }
+    ]
+   }
+  },
+  {
+   "name": "pageBreakAfter false",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 10,
+      "timestampMs": 5,
+      "confidence": null,
+      "pageBreakAfter": false
+     },
+     {
+      "text": " b",
+      "startMs": 10,
+      "endMs": 20,
+      "timestampMs": 15,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 10000
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a b",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 10
+       },
+       {
+        "text": " b",
+        "fromMs": 10,
+        "toMs": 20
+       }
+      ],
+      "durationMs": 20
+     }
+    ]
+   }
+  },
+  {
+   "name": "break on last",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 10,
+      "timestampMs": 5,
+      "confidence": null
+     },
+     {
+      "text": " b",
+      "startMs": 10,
+      "endMs": 20,
+      "timestampMs": 15,
+      "confidence": null,
+      "pageBreakAfter": true
+     }
+    ],
+    "combineTokensWithinMilliseconds": 10000
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a b",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 10
+       },
+       {
+        "text": " b",
+        "fromMs": 10,
+        "toMs": 20,
+        "pageBreakAfter": true
+       }
+      ],
+      "durationMs": 20
+     }
+    ]
+   }
+  },
+  {
+   "name": "break then exceed",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 10,
+      "timestampMs": 5,
+      "confidence": null,
+      "pageBreakAfter": true
+     },
+     {
+      "text": " b",
+      "startMs": 10,
+      "endMs": 50,
+      "timestampMs": 30,
+      "confidence": null
+     },
+     {
+      "text": " c",
+      "startMs": 50,
+      "endMs": 60,
+      "timestampMs": 55,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 30
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 10,
+        "pageBreakAfter": true
+       }
+      ],
+      "durationMs": 10
+     },
+     {
+      "text": "b",
+      "startMs": 10,
+      "tokens": [
+       {
+        "text": "b",
+        "fromMs": 10,
+        "toMs": 50
+       }
+      ],
+      "durationMs": 40
+     },
+     {
+      "text": "c",
+      "startMs": 50,
+      "tokens": [
+       {
+        "text": "c",
+        "fromMs": 50,
+        "toMs": 60
+       }
+      ],
+      "durationMs": 10
+     }
+    ]
+   }
+  },
+  {
+   "name": "exceed exact",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 10,
+      "timestampMs": 5,
+      "confidence": null
+     },
+     {
+      "text": " b",
+      "startMs": 10,
+      "endMs": 30,
+      "timestampMs": 20,
+      "confidence": null
+     },
+     {
+      "text": " c",
+      "startMs": 30,
+      "endMs": 40,
+      "timestampMs": 35,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 30
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a b c",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 10
+       },
+       {
+        "text": " b",
+        "fromMs": 10,
+        "toMs": 30
+       },
+       {
+        "text": " c",
+        "fromMs": 30,
+        "toMs": 40
+       }
+      ],
+      "durationMs": 40
+     }
+    ]
+   }
+  },
+  {
+   "name": "default combine",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 500,
+      "timestampMs": 250,
+      "confidence": null
+     },
+     {
+      "text": " b",
+      "startMs": 500,
+      "endMs": 900,
+      "timestampMs": 700,
+      "confidence": null
+     },
+     {
+      "text": " c",
+      "startMs": 900,
+      "endMs": 1200,
+      "timestampMs": 1050,
+      "confidence": null
+     },
+     {
+      "text": " d",
+      "startMs": 1200,
+      "endMs": 1400,
+      "timestampMs": 1300,
+      "confidence": null
+     }
+    ]
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a b c d",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 500
+       },
+       {
+        "text": " b",
+        "fromMs": 500,
+        "toMs": 900
+       },
+       {
+        "text": " c",
+        "fromMs": 900,
+        "toMs": 1200
+       },
+       {
+        "text": " d",
+        "fromMs": 1200,
+        "toMs": 1400
+       }
+      ],
+      "durationMs": 1400
+     }
+    ]
+   }
+  },
+  {
+   "name": "overlap",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 100,
+      "timestampMs": 50,
+      "confidence": null
+     },
+     {
+      "text": " b",
+      "startMs": 50,
+      "endMs": 150,
+      "timestampMs": 100,
+      "confidence": null
+     },
+     {
+      "text": " c",
+      "startMs": 120,
+      "endMs": 200,
+      "timestampMs": 160,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 100
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a b",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 100
+       },
+       {
+        "text": " b",
+        "fromMs": 50,
+        "toMs": 150
+       }
+      ],
+      "durationMs": 120
+     },
+     {
+      "text": "c",
+      "startMs": 120,
+      "tokens": [
+       {
+        "text": "c",
+        "fromMs": 120,
+        "toMs": 200
+       }
+      ],
+      "durationMs": 80
+     }
+    ]
+   }
+  },
+  {
+   "name": "empty text first",
+   "args": {
+    "captions": [
+     {
+      "text": "",
+      "startMs": 0,
+      "endMs": 100,
+      "timestampMs": 50,
+      "confidence": null
+     },
+     {
+      "text": " b",
+      "startMs": 100,
+      "endMs": 200,
+      "timestampMs": 150,
+      "confidence": null
+     },
+     {
+      "text": " c",
+      "startMs": 200,
+      "endMs": 300,
+      "timestampMs": 250,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 150
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "b c",
+      "startMs": 100,
+      "tokens": [
+       {
+        "text": "b",
+        "fromMs": 100,
+        "toMs": 200
+       },
+       {
+        "text": " c",
+        "fromMs": 200,
+        "toMs": 300
+       }
+      ],
+      "durationMs": 200
+     }
+    ]
+   }
+  },
+  {
+   "name": "space-only",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 100,
+      "timestampMs": 50,
+      "confidence": null
+     },
+     {
+      "text": " ",
+      "startMs": 100,
+      "endMs": 200,
+      "timestampMs": 150,
+      "confidence": null
+     },
+     {
+      "text": "b",
+      "startMs": 200,
+      "endMs": 300,
+      "timestampMs": 250,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 50
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 100
+       }
+      ],
+      "durationMs": 200
+     },
+     {
+      "text": "b",
+      "startMs": 200,
+      "tokens": [
+       {
+        "text": "b",
+        "fromMs": 200,
+        "toMs": 300
+       }
+      ],
+      "durationMs": 100
+     }
+    ]
+   }
+  },
+  {
+   "name": "empty after break",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 10,
+      "timestampMs": 5,
+      "confidence": null,
+      "pageBreakAfter": true
+     },
+     {
+      "text": "",
+      "startMs": 10,
+      "endMs": 20,
+      "timestampMs": 15,
+      "confidence": null
+     },
+     {
+      "text": " b",
+      "startMs": 20,
+      "endMs": 30,
+      "timestampMs": 25,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 10000
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 10,
+        "pageBreakAfter": true
+       }
+      ],
+      "durationMs": 20
+     },
+     {
+      "text": "b",
+      "startMs": 20,
+      "tokens": [
+       {
+        "text": "b",
+        "fromMs": 20,
+        "toMs": 30
+       }
+      ],
+      "durationMs": 10
+     }
+    ]
+   }
+  },
+  {
+   "name": "empty captions silence",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 10,
+      "timestampMs": 5,
+      "confidence": null
+     },
+     {
+      "text": "",
+      "startMs": 100,
+      "endMs": 110,
+      "timestampMs": 105,
+      "confidence": null
+     },
+     {
+      "text": " b",
+      "startMs": 110,
+      "endMs": 120,
+      "timestampMs": 115,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 10000,
+    "breakOnSilenceAfterMilliseconds": 50
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a b",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 10
+       },
+       {
+        "text": " b",
+        "fromMs": 110,
+        "toMs": 120
+       }
+      ],
+      "durationMs": 120
+     }
+    ]
+   }
+  },
+  {
+   "name": "negative silence/no tokens",
+   "args": {
+    "captions": [
+     {
+      "text": "",
+      "startMs": 0,
+      "endMs": 10,
+      "timestampMs": 5,
+      "confidence": null
+     },
+     {
+      "text": "",
+      "startMs": 10,
+      "endMs": 20,
+      "timestampMs": 15,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 5
+   },
+   "result": {
+    "pages": []
+   }
+  },
+  {
+   "name": "leading newline",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 100,
+      "timestampMs": 50,
+      "confidence": null
+     },
+     {
+      "text": "\nb",
+      "startMs": 100,
+      "endMs": 200,
+      "timestampMs": 150,
+      "confidence": null
+     },
+     {
+      "text": " c",
+      "startMs": 200,
+      "endMs": 300,
+      "timestampMs": 250,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 50
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a\nb",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 100
+       },
+       {
+        "text": "\nb",
+        "fromMs": 100,
+        "toMs": 200
+       }
+      ],
+      "durationMs": 200
+     },
+     {
+      "text": "c",
+      "startMs": 200,
+      "tokens": [
+       {
+        "text": "c",
+        "fromMs": 200,
+        "toMs": 300
+       }
+      ],
+      "durationMs": 100
+     }
+    ]
+   }
+  },
+  {
+   "name": "leading tab",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 100,
+      "timestampMs": 50,
+      "confidence": null
+     },
+     {
+      "text": "\tb",
+      "startMs": 100,
+      "endMs": 200,
+      "timestampMs": 150,
+      "confidence": null
+     },
+     {
+      "text": " c",
+      "startMs": 200,
+      "endMs": 300,
+      "timestampMs": 250,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 50
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a\tb",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 100
+       },
+       {
+        "text": "\tb",
+        "fromMs": 100,
+        "toMs": 200
+       }
+      ],
+      "durationMs": 200
+     },
+     {
+      "text": "c",
+      "startMs": 200,
+      "tokens": [
+       {
+        "text": "c",
+        "fromMs": 200,
+        "toMs": 300
+       }
+      ],
+      "durationMs": 100
+     }
+    ]
+   }
+  },
+  {
+   "name": "space-only mid",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 100,
+      "timestampMs": 50,
+      "confidence": null
+     },
+     {
+      "text": " ",
+      "startMs": 100,
+      "endMs": 200,
+      "timestampMs": 150,
+      "confidence": null
+     },
+     {
+      "text": "b",
+      "startMs": 200,
+      "endMs": 300,
+      "timestampMs": 250,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 10000
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a b",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 100
+       },
+       {
+        "text": "b",
+        "fromMs": 200,
+        "toMs": 300
+       }
+      ],
+      "durationMs": 300
+     }
+    ]
+   }
+  },
+  {
+   "name": "space-only first",
+   "args": {
+    "captions": [
+     {
+      "text": " ",
+      "startMs": 0,
+      "endMs": 100,
+      "timestampMs": 50,
+      "confidence": null
+     },
+     {
+      "text": "b",
+      "startMs": 100,
+      "endMs": 200,
+      "timestampMs": 150,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 10000
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "b",
+      "startMs": 100,
+      "tokens": [
+       {
+        "text": "b",
+        "fromMs": 100,
+        "toMs": 200
+       }
+      ],
+      "durationMs": 100
+     }
+    ]
+   }
+  },
+  {
+   "name": "space-only trailing",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 100,
+      "timestampMs": 50,
+      "confidence": null
+     },
+     {
+      "text": " ",
+      "startMs": 100,
+      "endMs": 200,
+      "timestampMs": 150,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 10000
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a ",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 100
+       }
+      ],
+      "durationMs": 200
+     }
+    ]
+   }
+  },
+  {
+   "name": "trailing newline",
+   "args": {
+    "captions": [
+     {
+      "text": "a\n",
+      "startMs": 0,
+      "endMs": 100,
+      "timestampMs": 50,
+      "confidence": null
+     },
+     {
+      "text": " b",
+      "startMs": 100,
+      "endMs": 200,
+      "timestampMs": 150,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 10000
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a\n b",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a\n",
+        "fromMs": 0,
+        "toMs": 100
+       },
+       {
+        "text": " b",
+        "fromMs": 100,
+        "toMs": 200
+       }
+      ],
+      "durationMs": 200
+     }
+    ]
+   }
+  },
+  {
+   "name": "newline-only",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 100,
+      "timestampMs": 50,
+      "confidence": null
+     },
+     {
+      "text": "\n",
+      "startMs": 100,
+      "endMs": 200,
+      "timestampMs": 150,
+      "confidence": null
+     },
+     {
+      "text": " b",
+      "startMs": 200,
+      "endMs": 300,
+      "timestampMs": 250,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 10000
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a\n b",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 100
+       },
+       {
+        "text": " b",
+        "fromMs": 200,
+        "toMs": 300
+       }
+      ],
+      "durationMs": 300
+     }
+    ]
+   }
+  },
+  {
+   "name": "two spaces start",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 100,
+      "timestampMs": 50,
+      "confidence": null
+     },
+     {
+      "text": "  b",
+      "startMs": 100,
+      "endMs": 200,
+      "timestampMs": 150,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 50
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 100
+       }
+      ],
+      "durationMs": 100
+     },
+     {
+      "text": "b",
+      "startMs": 100,
+      "tokens": [
+       {
+        "text": "b",
+        "fromMs": 100,
+        "toMs": 200
+       }
+      ],
+      "durationMs": 100
+     }
+    ]
+   }
+  },
+  {
+   "name": "space-only breaks",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 100,
+      "timestampMs": 50,
+      "confidence": null
+     },
+     {
+      "text": " ",
+      "startMs": 100,
+      "endMs": 200,
+      "timestampMs": 150,
+      "confidence": null
+     },
+     {
+      "text": " b",
+      "startMs": 200,
+      "endMs": 300,
+      "timestampMs": 250,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 50
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 100
+       }
+      ],
+      "durationMs": 200
+     },
+     {
+      "text": "b",
+      "startMs": 200,
+      "tokens": [
+       {
+        "text": "b",
+        "fromMs": 200,
+        "toMs": 300
+       }
+      ],
+      "durationMs": 100
+     }
+    ]
+   }
+  },
+  {
+   "name": "trailing empty",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 100,
+      "timestampMs": 0,
+      "confidence": null
+     },
+     {
+      "text": "",
+      "startMs": 100,
+      "endMs": 500,
+      "timestampMs": 0,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 10000
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 100
+       }
+      ],
+      "durationMs": 500
+     }
+    ]
+   }
+  },
+  {
+   "name": "trailing empty after break page",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 100,
+      "timestampMs": 0,
+      "confidence": null
+     },
+     {
+      "text": " b",
+      "startMs": 100,
+      "endMs": 200,
+      "timestampMs": 0,
+      "confidence": null
+     },
+     {
+      "text": "",
+      "startMs": 200,
+      "endMs": 900,
+      "timestampMs": 0,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 50
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 100
+       }
+      ],
+      "durationMs": 100
+     },
+     {
+      "text": "b",
+      "startMs": 100,
+      "tokens": [
+       {
+        "text": "b",
+        "fromMs": 100,
+        "toMs": 200
+       }
+      ],
+      "durationMs": 800
+     }
+    ]
+   }
+  },
+  {
+   "name": "trailing ws long",
+   "args": {
+    "captions": [
+     {
+      "text": "a",
+      "startMs": 0,
+      "endMs": 100,
+      "timestampMs": 0,
+      "confidence": null
+     },
+     {
+      "text": " ",
+      "startMs": 100,
+      "endMs": 700,
+      "timestampMs": 0,
+      "confidence": null
+     }
+    ],
+    "combineTokensWithinMilliseconds": 10000
+   },
+   "result": {
+    "pages": [
+     {
+      "text": "a ",
+      "startMs": 0,
+      "tokens": [
+       {
+        "text": "a",
+        "fromMs": 0,
+        "toMs": 100
+       }
+      ],
+      "durationMs": 700
+     }
+    ]
+   }
+  }
+ ]
+}

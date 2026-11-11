@@ -132,7 +132,7 @@ impl<'a> Painter<'a> {
 
     /// The `transform` of an element's group (with `backfaceHidden`), and
     /// whether it is `preserve3d`.
-    pub fn group_transform(
+    fn group_transform(
         &mut self,
         node: &'a Node,
         style: &style::properties::ComputedValues,

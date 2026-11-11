@@ -365,6 +365,8 @@ export function syntheticEntry(entry: string, dev = false): string {
     `export { setWorkerModuleLoader } from '@kinetographdev/compat/shim';`,
     // DOM elements are styled, laid out and painted by the addon too (packages/cli/skills/kinetograph-markup/references/ENGINE.md §2).
     `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetographdev/compat/dom';`,
+    // The recorded network store is the bundle's copy of the shim's, the one the page's `fetch` reads.
+    `export { finishNetRecord, setNetFrame, setNetStore, whenFetchesSettle } from '@kinetographdev/compat/shim';`,
     '',
   ].join('\n');
 }
@@ -415,6 +417,8 @@ function bundleOptions(absolute: string, unsupported?: UnsupportedImport[], dev 
     // The studio's builds record where each element's JSX is (see `JSX_DEV_SHIM`).
     jsxDev: dev,
     sourcemap: 'inline',
+    // Stack traces only need the mappings; the sources' text (the core's included) would double the bundle's size.
+    sourcesContent: false,
     logLevel: 'silent',
     external: EXTERNAL,
     // An `import './index.css'` registers the stylesheet's text for the DOM engine (packages/cli/skills/kinetograph-markup/references/ENGINE.md §1); Tailwind's

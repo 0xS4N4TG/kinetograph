@@ -95,6 +95,7 @@ describe('syntheticEntry', () => {
       `export { setMediaParserAddon } from '@kinetographdev/core/media-parser';`,
       `export { setWorkerModuleLoader } from '@kinetographdev/compat/shim';`,
       `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetographdev/compat/dom';`,
+      `export { finishNetRecord, setNetFrame, setNetStore, whenFetchesSettle } from '@kinetographdev/compat/shim';`,
     ]);
   });
 });

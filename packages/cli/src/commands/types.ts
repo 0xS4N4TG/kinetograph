@@ -80,7 +80,7 @@ export function allOptions(command: Command): OptionSpec[] {
   return command.project ? [...command.options, ...PROJECT_OPTIONS] : command.options;
 }
 
-export function openFromArgs(args: ParsedArgs, extra: Pick<OpenOptions, 'unsupportedImports'> = {}): Promise<Source> {
+export function openFromArgs(args: ParsedArgs, extra: Pick<OpenOptions, 'unsupportedImports' | 'onBundle'> = {}): Promise<Source> {
   const offline = args.options.offline === true;
   setOffline(offline);
   // The default for every delayRender() of the project, read when one is called (so, in the render workers too, which

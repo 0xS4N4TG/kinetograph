@@ -126,12 +126,12 @@ function indexById(layers: LayerJson[], into = new Map<string, LayerJson>()): Ma
 }
 
 /** Whether two JSON values are the same: a key whose value is undefined counts as left out, as in JSON. */
-function same(a: unknown, b: unknown): boolean {
+export function sameJson(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
   if (Array.isArray(a)) {
     if (!Array.isArray(b) || a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i += 1) if (!same(a[i], b[i])) return false;
+    for (let i = 0; i < a.length; i += 1) if (!sameJson(a[i], b[i])) return false;
     return true;
   }
   if (Array.isArray(b)) return false;
@@ -145,7 +145,7 @@ const NOT_BLUR: ReadonlySet<string> = new Set(['motionBlur']);
 
 function sameFields(a: Record<string, unknown>, b: Record<string, unknown>, skip: ReadonlySet<string>): boolean {
   for (const key in a) {
-    if (!skip.has(key) && a[key] !== undefined && !same(a[key], b[key])) return false;
+    if (!skip.has(key) && a[key] !== undefined && !sameJson(a[key], b[key])) return false;
   }
   for (const key in b) {
     if (!skip.has(key) && b[key] !== undefined && a[key] === undefined) return false;

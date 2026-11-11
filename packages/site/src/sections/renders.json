@@ -92,7 +92,7 @@
     "width": 1200,
     "height": 1000,
     "seconds_video": 5.0,
-    "render_median": 1.81,
+    "render_median": 1.09,
     "web": "examples/compat.mp4",
     "poster": "examples/compat.jpg"
   },

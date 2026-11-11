@@ -50,11 +50,23 @@ export declare class Renderer {
   /** The oldest frame `startFrame` began, as straight-alpha sRGB RGBA8. */
   finishFrame(): RgbaFrame
   /**
+   * The milliseconds `finishFrame` has waited for the GPU to finish frames and read them back since the last call,
+   * emptied: a render worker reports it, to say whether the workers are held up by the GPU they share. It only
+   * times the wait; it changes nothing drawn.
+   */
+  takeGpuWaitMs(): number
+  /**
    * Makes the next frame `startFrame` begins be drawn, whatever the frame
    * before it was: a frame is only taken from a frame started after this.
    * A render worker calls it at the start of each run of frames.
    */
   forgetFrame(): void
+  /**
+   * With `on`, `finishFrame` returns the frames `startFrame` begins after this as yuv420p planes (Y, U, V, rows
+   * packed), converted on the GPU byte for byte as `rgbaToYuv(rgba, w, h, 'yuv420p')` converts their RGBA. The
+   * frames' sides must be even, as the encoder's are. Set it before starting frames, not between.
+   */
+  setYuv420(on: boolean): void
   /** Times one frame or successive frames, as the Rust `bench`. */
   bench(sceneJson: string, options: BenchOptions, baseDir?: string | undefined | null): BenchResult
   /** A whole JSON scene to a video, as the Rust `render`. */
@@ -126,17 +138,30 @@ export declare function decodeAudio(path: string, sampleRate: number, baseDir?: 
 
 /**
  * `getComputedStyle` of the element at `path` in a DOM island: the resolved
- * value of each property (CSS or camelCase names), `""` for an unknown one.
+ * value of each property (CSS or camelCase names), `""` for an unknown one. `pass` as for `domLayoutBoxes`.
  */
-export declare function domComputedStyle(requestJson: string, path: string, properties: Array<string>): Array<string>
+export declare function domComputedStyle(requestJson: string, path: string, properties: Array<string>, pass?: number | undefined | null): Array<string>
+
+/**
+ * The version of the island edits `domLayoutBoxes` and `domComputedStyle` take in place of a request (1): a request
+ * numbered by the caller as `{"stamp":N,"request":REQUEST}`, then the changes since a numbered state as
+ * `{"stamp":M,"base":N,"path","time","set":[{"path","attrs"?,"style"?,"texts"?:[[index,text]]}]}`
+ * (packages/cli/skills/kinetograph/references/ENGINE.md §2). Edits to a state the addon no longer holds fail with
+ * `STALE_BASE`, and the caller sends the whole request.
+ */
+export declare function domIslandEdits(): number
 
 /**
  * The boxes of every element of a DOM island (packages/cli/skills/kinetograph-markup/references/ENGINE.md §2): an
  * `IslandRequest` as JSON in, `{ [path]: { x, y, width, height, rect, client,
  * scroll } }` as JSON out. `x`..`height` are the border box where layout put
  * it, `rect` the transformed bounding box `getBoundingClientRect` gives.
+ *
+ * `pass` is the frame's pass (`renderDomIsland`), when the scripts of the frame being drawn read it: the boxes are
+ * those of the document the frame's render then draws. With `paths`, only the boxes of those elements are given (a
+ * path the island does not have is left out).
  */
-export declare function domLayoutBoxes(requestJson: string): string
+export declare function domLayoutBoxes(requestJson: string, pass?: number | undefined | null, paths?: Array<string> | undefined | null): string
 
 /** `render`'s export options (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9); everything left out takes its default. */
 export interface ExportOptions {
@@ -368,8 +393,12 @@ export declare function renderCanvas(requestJson: string): Buffer
  * JSON in, an `IslandOutput` (`layers`, `unsupported`, `camera`) as JSON out.
  * Styled and laid out by Stylo, taffy and Parley through Blitz's DOM, then
  * painted as scene layers. CPU only.
+ *
+ * `pass` numbers the renders of one frame (its motion-blur samples included); `base` is the pass of the layers of
+ * this island the caller kept from an earlier render. When the addon kept the same ones, the layers come back as
+ * changes from them and the output says `"delta": base`.
  */
-export declare function renderDomIsland(requestJson: string, pass?: number | undefined | null): string
+export declare function renderDomIsland(requestJson: string, pass?: number | undefined | null, base?: number | undefined | null): string
 
 export interface RendererOptions {
   /** Default true. */
@@ -475,7 +504,7 @@ export declare function setFfmpegPath(path?: string | undefined | null): void
  * thread's island thread, after the renders queued before it, and returns a
  * ticket for `finishDomIsland`, which gives its output once it is done.
  */
-export declare function startDomIsland(requestJson: string, pass?: number | undefined | null): number
+export declare function startDomIsland(requestJson: string, pass?: number | undefined | null, base?: number | undefined | null): number
 
 export interface Stats {
   mean: number

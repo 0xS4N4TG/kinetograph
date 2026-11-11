@@ -274,14 +274,16 @@ impl DocumentMutator<'_> {
             // restyled by RESTYLE_STYLE_ATTRIBUTE (below), its children when what
             // they inherit changes, and the snapshot invalidates the selectors that
             // read the attribute. Restyling the whole subtree and the parent's would
-            // match every selector of every element there again.
+            // match every selector of every element there again. The restyle also
+            // sets the damage the change does (a transform's is not a new box), so
+            // none is added here.
             let style = name.local == local_name!("style");
             let node = &mut self.doc.nodes[node_id];
             if let Some(mut data) = node.try_stylo_element_data_mut().and_then(|s| s.get_mut()) {
                 if !style {
                     data.hint |= RestyleHint::restyle_subtree();
+                    data.damage.insert(ALL_DAMAGE);
                 }
-                data.damage.insert(ALL_DAMAGE);
             }
             node.mark_damaged();
 
@@ -414,9 +416,13 @@ impl DocumentMutator<'_> {
 
             let node = &mut self.doc.nodes[node_id];
 
+            // As in `set_attribute`: the restyle sets the damage a `style` change does.
+            let style = name.local == local_name!("style");
             if let Some(mut data) = node.try_stylo_element_data_mut().and_then(|s| s.get_mut()) {
                 data.hint |= RestyleHint::restyle_subtree();
-                data.damage.insert(ALL_DAMAGE);
+                if !style {
+                    data.damage.insert(ALL_DAMAGE);
+                }
             }
             node.mark_damaged();
 
