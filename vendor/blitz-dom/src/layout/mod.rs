@@ -777,6 +777,17 @@ impl taffy::CacheTree for LayoutPassState<'_> {
         node_id: NodeId,
         inputs: &taffy::LayoutInput,
     ) -> Option<taffy::LayoutOutput> {
+        // The text of an inline root was broken into lines by the last run. A final layout that is cached describes
+        // the lines of the run that made it, not those of a measurement at another width made since.
+        if inputs.run_mode == RunMode::PerformLayout
+            && self
+                .node_from_id(node_id)
+                .element_data()
+                .and_then(|element| element.inline_layout_data.as_ref())
+                .is_some_and(|layout| layout.broken_for_measure)
+        {
+            return None;
+        }
         self.node_from_id_mut(node_id)
             .try_layout_data_mut()?
             .cache
