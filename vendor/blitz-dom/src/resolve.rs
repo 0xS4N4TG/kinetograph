@@ -562,6 +562,11 @@ pub(crate) fn construct_subtree(doc: &mut BaseDocument, node_id: NodeId) {
         *doc.nodes[node_id].layout_children.borrow_mut() = Some(layout_children.clone());
         // *doc.nodes[node_id].paint_children.borrow_mut() = Some(layout_children);
 
+        // A node built again with no damage of its own (it was inline content) has no paint children either, and the
+        // paint tree skips a node whose damage lacks this.
+        if flags.contains(crate::node::NodeFlags::BOX_DROPPED) {
+            damage.insert(style::selector_parser::RestyleDamage::REBUILD_STACKING_CONTEXT);
+        }
         damage.remove(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
         // damage.insert(RestyleDamage::RELAYOUT | RestyleDamage::REPAINT);
     } else {
