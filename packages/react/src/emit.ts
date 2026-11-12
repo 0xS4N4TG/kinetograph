@@ -14,7 +14,7 @@ import {
   startDomIsland,
   type StartedIsland,
 } from '@kinetographdev/compat/dom';
-import { canvasEnvironment, headHost, propsWithOverlay, withCanvasCommands } from '@kinetographdev/compat/shim';
+import { canvasEnvironment, headHost, propsWithOverlay, takeProbe, withCanvasCommands, type ProbeAnswer } from '@kinetographdev/compat/shim';
 import { gatherShaderInputs } from './shader-groups.js';
 import { layerLabel, sequenceLabel } from './labels.js';
 import { studioBuild, type Origin } from './origin.js';
@@ -88,6 +88,12 @@ export interface EmitOptions {
    * native element in it, a native element other than a `<Layer>`. Null for a whole tree.
    */
   subFrameLayers?: () => ReadonlySet<string> | null;
+  /**
+   * Called with the first error a render or an effect throws, when it happens. `render`, `update` and `snapshot` throw it
+   * too, but a render that state set later (an effect that awaits a promise) is only thrown at the next `snapshot`, which
+   * a caller that waits for something first (the frame loop, on a `delayRender`) never reaches.
+   */
+  onError?: (error: unknown) => void;
 }
 
 /** The name of an element as a user writes it, for error messages. */
@@ -233,6 +239,23 @@ function holdsDom(nodes: HostNode[]): boolean {
 }
 
 /**
+ * The style Remotion gives an `<AbsoluteFill>` (remotion.dev/docs/absolute-fill). The author's style is laid over it, so a
+ * key set to `undefined` (`top: undefined`) takes the default away, as it does in a browser. (Remotion's page also sets
+ * `box-sizing: border-box`, which the host lays under a Remotion project's styles: `setDefaultStylesheet`.)
+ */
+export const ABSOLUTE_FILL_STYLE = {
+  position: 'absolute',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  width: '100%',
+  height: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+} as const;
+
+/**
  * `<AbsoluteFill>` (and the wrapper of a `<Sequence>` or `<Loop>`, which is one in Remotion) as the `div` it is in
  * Remotion, when what is inside it holds DOM elements or it sits inside DOM already: a column flex box over
  * the whole page with the author's style laid over it, so that `justifyContent`, `alignItems` and the rest place the
@@ -249,7 +272,7 @@ export function domFillOf(element: HostElement, insideDom = false): HostElement 
     type: 'div',
     props: {
       ...(fill.id !== undefined ? { id: fill.id } : {}),
-      style: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', ...fill.style },
+      style: { ...ABSOLUTE_FILL_STYLE, ...fill.style },
     },
     // The layer mapping's own background rectangle is the style's `backgroundColor` here.
     children: fill.background ? element.children.slice(1) : element.children,
@@ -262,13 +285,15 @@ export function domFillOf(element: HostElement, insideDom = false): HostElement 
  * recorded there), so a Sequence takes no place in the paths (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §11.4). Native elements are kept as
  * they are: they are emitted on their own.
  */
-export function flattenDomElement(element: HostElement, path: string, sequences: SequenceJson[] | null): HostElement {
+export function flattenDomElement(element: HostElement, path: string, sequences: SequenceJson[] | null, probes: Map<string, ProbeAnswer> | null = null): HostElement {
+  const answer = probes === null ? undefined : takeProbe(element);
+  if (answer !== undefined) probes!.set(path, answer);
   // A script's writes to `style` and attributes (through a ref) are laid over the props.
   // A `<canvas>` carries what its 2D context drew, which the painter makes a canvas layer of.
-  return { ...element, props: withCanvasCommands(element, propsWithOverlay(element)), children: flattenDomChildren(element.children, path, { next: 0 }, sequences) };
+  return { ...element, props: withCanvasCommands(element, propsWithOverlay(element)), children: flattenDomChildren(element.children, path, { next: 0 }, sequences, probes) };
 }
 
-function flattenDomChildren(nodes: HostNode[], parentPath: string, place: { next: number }, sequences: SequenceJson[] | null): HostNode[] {
+function flattenDomChildren(nodes: HostNode[], parentPath: string, place: { next: number }, sequences: SequenceJson[] | null, probes: Map<string, ProbeAnswer> | null): HostNode[] {
   const out: HostNode[] = [];
   for (const child of nodes) {
     if (child.kind === 'text') {
@@ -278,7 +303,7 @@ function flattenDomChildren(nodes: HostNode[], parentPath: string, place: { next
       const record: SequenceJson = { ...sequence, layer: null, ...sequenceNames(sequence.name, child.origin) };
       sequences?.push(record);
       const first = place.next;
-      const inner = flattenDomChildren(child.children, parentPath, place, sequences);
+      const inner = flattenDomChildren(child.children, parentPath, place, sequences, probes);
       out.push(...inner);
       if (wrapped && place.next > first) {
         const head = inner.find((n): n is HostElement => n.kind === 'element');
@@ -288,7 +313,7 @@ function flattenDomChildren(nodes: HostNode[], parentPath: string, place: { next
       const path = `${parentPath}.${place.next++}`;
       // An `<AbsoluteFill>` that holds DOM elements, inside DOM, is part of the same CSS tree: its `div`.
       const node = isDomElement(child.type) ? child : (domFillOf(child, true) ?? child);
-      out.push(isDomElement(node.type) ? flattenDomElement(node, path, sequences) : node);
+      out.push(isDomElement(node.type) ? flattenDomElement(node, path, sequences, probes) : node);
     }
   }
   return out;
@@ -439,6 +464,7 @@ class Emitter {
         `<${root.type}> is a DOM element, which is laid out in the composition's box: create the root with createSceneRoot({ viewport: { width, height } })`,
       );
     }
+    const probes = this.deferred ? null : new Map<string, ProbeAnswer>();
     const context = {
       path,
       viewport,
@@ -453,7 +479,10 @@ class Emitter {
       const started = startDomIsland(flattenDomElement(root, path, this.sequences), context);
       return [{ type: STARTED, id: path, started } as unknown as LayerJson];
     }
-    const result = mapDomIsland(flattenDomElement(root, path, this.sequences), context);
+    const flat = flattenDomElement(root, path, this.sequences, probes);
+    const result = mapDomIsland(flat, probes !== null && probes.size > 0 ? { ...context, probes: [...probes.keys()] } : context);
+    // The checks of the frame's layout asked of this render (`probeOnDraw`) are answered from the layout it drew.
+    for (const [at, answer] of probes ?? []) answer(result.probes?.[at] ?? null);
     this.unsupported.push(...result.unsupported);
     if (result.margin !== undefined) this.margin = Math.max(this.margin, result.margin);
     if (result.blendSpace === 'srgb') this.blendSpace = 'srgb';
@@ -616,7 +645,7 @@ class Emitter {
         this.cameras.push({ perspective: props.perspective, ...pick(props, ['x', 'y']) } as CameraJson);
         return null;
       case 'kg-audio':
-        this.audio.push({ id, ...props.clip });
+        this.audio.push({ id, ...props.clip, ...localSrc(props.clip) });
         return null;
       case 'kg-layer': {
         // A native element met inside an island (`emitNative`) can be an `<AbsoluteFill>` that holds DOM elements.
@@ -765,7 +794,7 @@ class Emitter {
         throw new Error(`<${name}> must be inside a <Scene3D>`);
       case 'kg-video':
         // The sound is not part of the layer: it is an audio clip with the layer's id.
-        this.audio.push({ id, ...props.sound });
+        this.audio.push({ id, ...props.sound, ...localSrc(props.sound) });
         return {
           id,
           type: 'video',

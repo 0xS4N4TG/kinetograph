@@ -131,7 +131,7 @@ pub fn mentions_backdrop(layer: &ResolvedLayer) -> bool {
     layer
         .effects
         .iter()
-        .any(|e| matches!(e, ResolvedEffect::BackdropBlur { .. }))
+        .any(|e| matches!(e, ResolvedEffect::BackdropBlur { .. } | ResolvedEffect::BackdropColor(_)))
         || layer.motion.iter().any(mentions_backdrop)
         || matches!(&layer.kind, ResolvedKind::Group { children, .. } if children.iter().any(mentions_backdrop))
 }

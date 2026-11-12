@@ -798,20 +798,53 @@ fn stroke_outline(path: &usvg::tiny_skia_path::Path, s: &usvg::Stroke, m: Affine
             usvg::LineJoin::Bevel => kurbo::Join::Bevel,
         })
         .with_miter_limit(f64::from(s.miterlimit().get()));
+    let mut path = bez(path);
     if let Some(dash) = s.dasharray() {
-        stroke = stroke.with_dashes(
-            f64::from(s.dashoffset()),
-            dash.iter().map(|d| f64::from(*d)),
-        );
+        let dash: Vec<f64> = dash.iter().map(|d| f64::from(*d)).collect();
+        path = dashed(&path, f64::from(s.dashoffset()), &dash);
     }
     // Fine enough that a pixel is not off, whatever the matrix scales by.
     let scale = m.determinant().abs().sqrt().max(1e-6);
-    kurbo::stroke(
-        bez(path),
-        &stroke,
-        &kurbo::StrokeOpts::default(),
-        0.05 / scale,
-    )
+    kurbo::stroke(path, &stroke, &kurbo::StrokeOpts::default(), 0.05 / scale)
+}
+
+/// `path` cut into the dashes of `pattern` (SVG's `stroke-dasharray`, an odd list already doubled by usvg).
+///
+/// A closed subpath that one dash covers whole is left as it is: kurbo's dashing puts its last segment after the
+/// `ClosePath` then (the segment that reaches the start is emitted after the close that follows it), which strokes
+/// as a chord.
+fn dashed(path: &BezPath, offset: f64, pattern: &[f64]) -> BezPath {
+    let period: f64 = pattern.iter().sum();
+    let offset = offset.rem_euclid(period);
+    // How far the first dash goes: the pattern starts on a dash, and the offset moves into it or past it.
+    let first_dash_left = pattern[0] - offset;
+    let mut out = BezPath::new();
+    let mut sub: Vec<PathEl> = Vec::new();
+    let mut flush = |sub: &mut Vec<PathEl>, out: &mut BezPath| {
+        if sub.is_empty() {
+            return;
+        }
+        let length: f64 = kurbo::segments(sub.iter().copied())
+            .map(|seg| kurbo::ParamCurveArclen::arclen(&seg, 1e-3))
+            .sum();
+        let closed = matches!(sub.last(), Some(PathEl::ClosePath));
+        // A dash as long as the outline is the usual case (the page measured it with `getTotalLength`), and its
+        // length can come out a hair under ours.
+        if closed && first_dash_left >= length - 1e-3 * length.max(1.0) {
+            out.extend(sub.iter().copied());
+        } else {
+            out.extend(kurbo::dash(sub.iter().copied(), offset, pattern));
+        }
+        sub.clear();
+    };
+    for el in path.elements() {
+        if matches!(el, PathEl::MoveTo(_)) {
+            flush(&mut sub, &mut out);
+        }
+        sub.push(*el);
+    }
+    flush(&mut sub, &mut out);
+    out
 }
 
 /// Whether anything under `g` blends with a mode other than normal.

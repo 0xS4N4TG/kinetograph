@@ -16,6 +16,15 @@ describe('the scan of a bundle for remote files', () => {
     ]);
   });
 
+  it('finds a remote stylesheet imported by CSS, whatever its extension', () => {
+    const code = String.raw`registerStylesheet("@import url(\"https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;900\");\n.a { color: red }", "/p/fonts.css");
+      const b = "@import 'https://cdn.example.com/theme.css';";`;
+    expect(scanRemoteUrls(code).sort()).toEqual([
+      'https://cdn.example.com/theme.css',
+      'https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;900',
+    ]);
+  });
+
   it('leaves out pages, scripts, templates with holes and the source map', () => {
     const code = [
       'const docs = "https://reactjs.org/docs/error-decoder.html?invariant=" + x;',

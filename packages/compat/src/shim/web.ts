@@ -10,9 +10,9 @@ import { resolveObjectURL } from 'node:buffer';
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, WebGLContext, createGpu, GPU_GLOBALS, pictureOf, type CanvasPicture } from '@kinetographdev/scene';
-import { resolveDocumentUrl, resolveProjectFile, sameOriginPath } from '../environment.js';
+import { resolveDocumentUrl, resolveProjectFile, resolveCachedRemoteFile, sameOriginPath } from '../environment.js';
 import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas.js';
-import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, installDocumentMembers } from './document.js';
+import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, XMLSerializerShim, installDocumentMembers } from './document.js';
 import { AttrShim, NamedNodeMapShim } from './attributes.js';
 import { DomElement, DomFragment, DomNodeBase, DomText, domElementFor, domTextFor, isDomElementShim, selectorContextOf, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
 import { bodyHost, headHost, htmlHost, pageDocument, setPageViewport } from './host.js';
@@ -121,6 +121,19 @@ class BrowserEventTarget extends EventTarget {
   override removeEventListener(type: string, listener: EventListenerOrEventListenerObject | null, options?: EventListenerOptions | boolean): void {
     if (listener === null || listener === undefined) return;
     super.removeEventListener(type, listener, options);
+  }
+}
+
+/** `new ProgressEvent(type, { lengthComputable, loaded, total })` (XHR spec, Progress Events). Node has no such global. */
+class ProgressEventShim extends Event {
+  readonly lengthComputable: boolean;
+  readonly loaded: number;
+  readonly total: number;
+  constructor(type: string, init: { lengthComputable?: boolean; loaded?: number; total?: number; bubbles?: boolean; cancelable?: boolean } = {}) {
+    super(type, init);
+    this.lengthComputable = Boolean(init.lengthComputable);
+    this.loaded = Number(init.loaded ?? 0);
+    this.total = Number(init.total ?? 0);
   }
 }
 
@@ -338,7 +351,9 @@ async function createImageBitmapShim(source: unknown, ...rest: unknown[]): Promi
 const REAL_FETCH = Symbol.for('kinetograph.realFetch');
 
 // Remote URLs a project has downloaded ahead of time (HyperFrames' `fetch-deps`): `fetch(url)` of exactly one of them reads
-// the cached file, so a frame stays a function of the project. Any other remote URL is refused, and `onRefused` hears of it.
+// the cached file, so a frame stays a function of the project. So does an https URL `fetch-deps` downloaded and locked for a
+// Remotion project (never one downloaded during the render). A GET only; any other request, and any other remote URL, is
+// refused, and `onRefused` hears of it.
 let remoteFiles = new Map<string, string>();
 let onRefused: ((url: string) => void) | null = null;
 
@@ -390,8 +405,11 @@ function makeAnswer(real: typeof fetch): typeof fetch {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
     if (/^(data|blob):/i.test(url)) return real(input, init);
     if (REMOTE.test(url)) {
-      const cached = remoteFiles.get(url);
-      if (cached !== undefined && existsSync(cached)) {
+      // Only a GET (or HEAD) without a body is answered, and only from a file `fetch-deps` downloaded and locked.
+      const method = (init?.method ?? (typeof input === 'object' && 'method' in input ? input.method : 'GET')).toUpperCase();
+      const hasBody = init?.body != null || (typeof input === 'object' && 'body' in input && input.body != null);
+      const cached = (method === 'GET' || method === 'HEAD') && !hasBody ? (remoteFiles.get(url) ?? resolveCachedRemoteFile(url)) : null;
+      if (cached != null && existsSync(cached)) {
         return new Response(await readFile(cached), { status: 200, headers: { 'content-type': MIME[extname(new URL(url).pathname).toLowerCase()] ?? 'application/octet-stream' } });
       }
       onRefused?.(url);
@@ -613,6 +631,7 @@ export function installDomGlobals(): void {
   define(g, 'NodeIterator', NodeIteratorShim);
   define(g, 'TreeWalker', TreeWalkerShim);
   define(g, 'DOMParser', DOMParserShim);
+  define(g, 'XMLSerializer', XMLSerializerShim);
   define(g, 'Document', class DocumentGlobal extends DocumentShim {
     static [Symbol.hasInstance](value: unknown): boolean {
       return value === (globalThis as { document?: unknown }).document || value instanceof DocumentShim;
@@ -632,6 +651,7 @@ export function installDomGlobals(): void {
   define(g, 'AnimationTimeline', AnimationTimelineShim);
   define(g, 'DocumentTimeline', DocumentTimelineShim);
   define(g, 'AnimationPlaybackEvent', AnimationPlaybackEventShim);
+  define(g, 'ProgressEvent', ProgressEventShim);
 
   // `fetch` of project files only. The real one stays reachable for the font downloads, which are explicit and cached.
   if (typeof g.fetch === 'function' && (g.fetch as { kinetograph?: boolean }).kinetograph !== true) {

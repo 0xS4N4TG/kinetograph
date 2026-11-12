@@ -1124,6 +1124,24 @@ pub struct VideoEncoder {
     last: Option<frame::Video>,
 }
 
+/// The `threads` an encoder is opened with (an encoder context starts at 1; FFmpeg's own tool sets `-threads auto`), where
+/// more threads leave the output unchanged. The pixels of a render must not depend on the machine, so only a count that
+/// does not change the bitstream is set:
+/// - `prores_ks`: 0, every core. ProRes is intra-only and a picture's slices are fixed by the encoder's own `slices` option,
+///   not by the thread count: the decoded frames of a render were identical at 1 thread and at all cores.
+/// - `libvpx-vp9`: 4, a fixed count, not 0. Measured on a 1280x720 clip: the bitstream at 1 thread differs from the one at 2,
+///   4, 8 and auto (which are identical), so "auto" could differ between a 1-core and a many-core machine, and a count that
+///   is always 4 is the same everywhere (with row-mt, 4 threads work on rows of the tiles).
+/// - `libopenh264` is left at 1: its slice count follows the thread count, so the pixels would follow the core count.
+/// x264, x265 and VideoToolbox pick their own count.
+fn threads_for(encoder: &str) -> Option<&'static str> {
+    match encoder {
+        "prores_ks" => Some("0"),
+        "libvpx-vp9" => Some("4"),
+        _ => None,
+    }
+}
+
 /// Sets the options of the encoder `settings.encoder` for `quality` etc. `video` is the not yet opened context.
 fn encoder_options(
     video: &mut encoder::video::Video,
@@ -1203,6 +1221,9 @@ fn encoder_options(
                 }
             }
         },
+    }
+    if let Some(threads) = threads_for(&settings.encoder) {
+        options.set("threads", threads);
     }
     if is_videotoolbox(&settings.encoder) {
         // Fall back to Apple's software encoder where the hardware one is missing (a macOS VM, as on CI) or busy;
@@ -3088,6 +3109,26 @@ mod tests {
                 "alpha of the empty corner",
             );
         }
+    }
+
+    /// A new encoder context is at one thread; ProRes is asked for every core and VP9 for a fixed 4 (`threads_for`), OpenH264 stays at 1.
+    #[test]
+    fn prores_and_vp9_encoders_are_not_left_on_one_thread() {
+        if std::thread::available_parallelism().map_or(1, usize::from) < 2 {
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("kinetograph-threads-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for (codec, file, pixel_format, profile, name) in [
+            (Codec::ProRes, "t.mov", "yuva444p10le", Some("4444"), "prores_ks"),
+            (Codec::Vp9, "t.webm", "yuv420p", None, "libvpx-vp9"),
+        ] {
+            let settings = plan_alpha(codec, file, pixel_format, profile, false, Some(name)).unwrap();
+            let encoder = VideoEncoder::create(&dir.join(file), 64, 48, 30.0, &settings).unwrap();
+            // 0 asks for every core, and the encoder that threads by frame reports the count it chose.
+            assert_ne!(encoder.encoder.threading().count, 1, "{name} runs on one thread");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

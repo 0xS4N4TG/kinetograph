@@ -322,9 +322,11 @@ impl<'a> Painter<'a> {
         )
     }
 
-    /// `backdrop-filter`: a see-through shape of the border box whose
-    /// effect blurs what is behind it. Only `blur()` is drawn; the colour
-    /// functions are reported.
+    /// `backdrop-filter`: a see-through shape of the border box whose effects
+    /// change what is behind it: `blur()` is a `backdropBlur`, and the colour
+    /// functions in a row (`saturate()`, `brightness()`, ...) one `backdropFilter`,
+    /// in the order of the list (Filter Effects 2, section 'backdrop-filter').
+    /// `drop-shadow()` and `opacity()` of a backdrop filter are reported.
     fn backdrop_layer(
         &mut self,
         node: &'a Node,
@@ -337,20 +339,40 @@ impl<'a> Painter<'a> {
         if list.is_empty() {
             return None;
         }
-        let mut sigma = 0.0_f64;
+        let current = current_color(style);
+        let mut effects: Vec<Value> = Vec::new();
+        let mut colours: Vec<Value> = Vec::new();
+        let mut flush = |colours: &mut Vec<Value>, effects: &mut Vec<Value>| {
+            if !colours.is_empty() {
+                effects.push(json!({ "type": "backdropFilter", "effects": std::mem::take(colours) }));
+            }
+        };
         for f in list.iter() {
             match f {
-                F::Blur(r) => sigma += f64::from(r.0.px()),
-                other => self.report(
+                F::Blur(r) => {
+                    let sigma = chrome_sigma(f64::from(r.0.px()));
+                    if sigma > 0.0 {
+                        flush(&mut colours, &mut effects);
+                        // Chrome reads the backdrop inside the border box only, mirrored past its edges.
+                        effects.push(json!({ "type": "backdropBlur", "radius": num(sigma), "edgeMode": "mirror" }));
+                    }
+                }
+                F::DropShadow(_) | F::Opacity(_) | F::Url(_) => self.report(
                     node,
                     "backdrop-filter",
-                    format!("{other:?}"),
-                    "only blur() is drawn in a backdrop filter",
+                    format!("{f:?}"),
+                    "only blur() and the colour functions are drawn in a backdrop filter",
                 ),
+                colour => {
+                    let mut one = Vec::new();
+                    let mut opacity = 1.0;
+                    self.filter_effect(node, colour, &current, &mut one, &mut opacity);
+                    colours.extend(one);
+                }
             }
         }
-        let sigma = chrome_sigma(sigma);
-        if sigma <= 0.0 {
+        flush(&mut colours, &mut effects);
+        if effects.is_empty() {
             return None;
         }
         let shape = self.region_shape(
@@ -360,9 +382,7 @@ impl<'a> Painter<'a> {
             json!("#00000000"),
         );
         let mut shape = shape;
-        // Chrome reads the backdrop inside the border box only, mirrored past its edges.
-        shape["effects"] =
-            json!([{ "type": "backdropBlur", "radius": num(sigma), "edgeMode": "mirror" }]);
+        shape["effects"] = Value::Array(effects);
         Some(shape)
     }
 
