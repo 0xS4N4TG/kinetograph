@@ -113,7 +113,8 @@ describe.skipIf(missing !== null)('WebGPU through Dawn, rendered', () => {
     expect(four).toEqual(still);
   });
 
-  it('draws a page that reads occlusion query results back, whose next frame depends on them, the same alone and in a sequence', () => {
+  // Each frame of this page takes about 2.5 s (it waits on the map of the query results), and a frame after a jump replays those before it.
+  it('draws a page that reads occlusion query results back, whose next frame depends on them, the same alone and in a sequence', { timeout: 600_000 }, () => {
     const { still, one, four } = hashes(join(fixtures, 'occlusion.html'), [3, 6, 9, 11], 12);
     // The background turns when the small square comes out from behind the large one: the frames are not all the same.
     expect(new Set(still).size).toBeGreaterThan(1);
