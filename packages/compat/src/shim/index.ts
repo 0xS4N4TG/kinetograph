@@ -1,8 +1,8 @@
 // `@kinetographdev/compat/shim`: the DOM a React ref and a project's browser globals see in compat mode (packages/cli/skills/kinetograph-markup/references/ENGINE.md
 // §1 "Readback", §10). The reconciler implements `Readback`; core installs the globals.
 
-export { gestureListenerElements, DOMRectShim, DomElement, DomText, domElementFor, domNodeFor, hostOf, isDomElementShim, computedStyleOf, selectorContextOf, affineOf } from './element.js';
-export type { CSSStyleDeclarationShim } from './element.js';
+export { gestureListenerElements, setMediaHost, DOMRectShim, DomElement, DomText, domElementFor, domNodeFor, hostOf, isDomElementShim, computedStyleOf, selectorContextOf, affineOf } from './element.js';
+export type { CSSStyleDeclarationShim, MediaHost } from './element.js';
 export type { BoxInfo, HostElement, Overlay, Readback, Rect } from './host.js';
 export { overlayOf, propsWithOverlay, rawParentOf, setRawParent, effectiveParentOf, headHost, bodyHost, setPageDocument, pageDocument } from './host.js';
 export { recordMutation, isRecordingMutations, setMutationSink, insertChild, removeChild } from './tree.js';
