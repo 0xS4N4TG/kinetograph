@@ -2140,3 +2140,30 @@ export function createGpu(options: GpuOptions = {}): GPUShim {
 export function createGpuCanvasContext(options: GPUCanvasContextOptions): GPUCanvasContextShim {
   return new GPUCanvasContextShim(options);
 }
+
+/** What `createRenderBundleEncoder` would make: render bundles are not drawn, so none exists, but a page tests `instanceof GPURenderBundleEncoder`. */
+class GPURenderBundleEncoderShim {}
+
+// The interfaces a page names (`x instanceof GPUTexture`, `GPUDevice.prototype`), under the WebGPU names.
+Object.assign(GPU_GLOBALS, {
+  GPU: GPUShim,
+  GPUAdapter: GPUAdapterShim,
+  GPUDevice: GPUDeviceShim,
+  GPUQueue: GPUQueueShim,
+  GPUBuffer: GPUBufferShim,
+  GPUTexture: GPUTextureShim,
+  GPUTextureView: GPUTextureViewShim,
+  GPUSampler: GPUSamplerShim,
+  GPUShaderModule: GPUShaderModuleShim,
+  GPUBindGroup: GPUBindGroupShim,
+  GPUBindGroupLayout: GPUBindGroupLayoutShim,
+  GPUPipelineLayout: GPUPipelineLayoutShim,
+  GPURenderPipeline: GPURenderPipelineShim,
+  GPUComputePipeline: GPUComputePipelineShim,
+  GPUCommandEncoder: GPUCommandEncoderShim,
+  GPUCommandBuffer: GPUCommandBufferShim,
+  GPURenderPassEncoder: GPURenderPassEncoderShim,
+  GPUComputePassEncoder: GPUComputePassEncoderShim,
+  GPURenderBundleEncoder: GPURenderBundleEncoderShim,
+  GPUCanvasContext: GPUCanvasContextShim,
+});

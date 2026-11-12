@@ -163,3 +163,17 @@ describe('the recording WebGPU context', () => {
     });
   });
 });
+
+describe('the WebGPU interface globals', () => {
+  it('names the interfaces a page tests with instanceof, so that a page can tell what it holds', async () => {
+    const { GPU_GLOBALS } = await import('../src/index.js');
+    const device = await (await createGpu().requestAdapter()).requestDevice();
+    const g = GPU_GLOBALS as Record<string, new () => unknown>;
+    expect(device).toBeInstanceOf(g.GPUDevice);
+    expect(device.createBuffer({ size: 4, usage: 8 })).toBeInstanceOf(g.GPUBuffer);
+    expect(device.queue).toBeInstanceOf(g.GPUQueue);
+    expect(device.createCommandEncoder()).toBeInstanceOf(g.GPUCommandEncoder);
+    // Render bundles are not drawn, so nothing is one, but the name has to exist for `x instanceof GPURenderBundleEncoder`.
+    expect({}).not.toBeInstanceOf(g.GPURenderBundleEncoder);
+  });
+});
