@@ -23,7 +23,7 @@ export function Engine() {
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
         <div data-reveal className="kg-tray lg:col-span-7">
           <div className={`kg-core kg-core-card flex h-full flex-col justify-between gap-12 ${pad}`}>
-            <Heading size="cell" className="max-w-[14ch]">The code you already write, no browser needed.</Heading>
+            <Heading size="cell" className="max-w-[18ch]">A drop-in replacement for Remotion and HyperFrames.</Heading>
             <p className={`${body} max-w-[46ch]`}>
               Write in TypeScript with Remotion's API, CSS, SVG, Canvas 2D, WebGL shaders and Web Audio. Or write an HTML page
               with GSAP: HyperFrames projects render as they are. Node runs the code and a Rust compositor draws every
