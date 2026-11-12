@@ -7,10 +7,11 @@
 // so a spectrum is a function of the frame and the audio alone. What cannot be recorded is said (`pageAudioNotes`),
 // never left as silence.
 
-import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { createHash, randomBytes } from 'node:crypto';
+import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { threadId } from 'node:worker_threads';
 import type { PageAudioOp, PageAudioValue } from '@kinetographdev/scene';
 import { projectFileOf } from '@kinetographdev/compat/shim';
 import { virtualFps, virtualNow } from './determinism.js';
@@ -450,16 +451,38 @@ class RecListener {
 
 // ---- the context ----
 
-const SAVED = join(tmpdir(), 'kinetograph-page-audio');
+/**
+ * Where the bytes a page decodes are kept, as the engine keeps what it downloads: under the user's own cache
+ * (`~/.cache/kinetograph`, as `remote-assets.ts`), in a folder only that user can enter, which is checked to be theirs
+ * and not a link before it is used.
+ */
+function savedDir(): string {
+  const dir = join(homedir(), '.cache', 'kinetograph', 'page-audio');
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const info = lstatSync(dir);
+  if (!info.isDirectory() || (typeof process.getuid === 'function' && info.uid !== process.getuid())) {
+    throw new Error(`${dir} is not a folder of this user's: remove it`);
+  }
+  return dir;
+}
 
-/** The bytes a page decodes, as a file (named by what they hold), so the mix reads the same sound the page decoded. */
+/**
+ * The bytes a page decodes, as a file named by their SHA-256, so the mix reads the sound the page decoded and every worker
+ * and run has the same bytes. A file already there is used only when it hashes to its name (a planted one is replaced);
+ * a new one is written under a name of its own and renamed over the name, so a link at that name is replaced, never written through.
+ */
 function fileOfBytes(bytes: ArrayBuffer): string {
   const data = Buffer.from(bytes);
-  const file = join(SAVED, `${createHash('sha1').update(data).digest('hex')}.bin`);
-  if (!existsSync(file)) {
-    mkdirSync(SAVED, { recursive: true });
-    writeFileSync(file, data);
+  const hash = createHash('sha256').update(data).digest('hex');
+  const file = join(savedDir(), `${hash}.bin`);
+  try {
+    if (lstatSync(file).isFile() && createHash('sha256').update(readFileSync(file)).digest('hex') === hash) return file;
+  } catch {
+    // Not there yet.
   }
+  const own = `${file}.${process.pid}.${threadId}.${randomBytes(6).toString('hex')}`;
+  writeFileSync(own, data, { flag: 'wx', mode: 0o600 });
+  renameSync(own, file);
   return file;
 }
 
