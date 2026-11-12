@@ -110,6 +110,7 @@ pub mod gl {
     pub const COMPILE_STATUS: Enum = 0x8B81;
     pub const LINK_STATUS: Enum = 0x8B82;
     pub const ACTIVE_UNIFORMS: Enum = 0x8B86;
+    pub const ACTIVE_ATTRIBUTES: Enum = 0x8B89;
     pub const FRAMEBUFFER: Enum = 0x8D40;
     pub const READ_FRAMEBUFFER: Enum = 0x8CA8;
     pub const DRAW_FRAMEBUFFER: Enum = 0x8CA9;
@@ -239,11 +240,12 @@ struct RawPtr {
     get_uniform_block_index: unsafe extern "C" fn(u32, *const c_char) -> u32,
     get_active_uniform:
         unsafe extern "C" fn(u32, u32, i32, *mut i32, *mut i32, *mut Enum, *mut c_char),
+    get_active_attrib:
+        unsafe extern "C" fn(u32, u32, i32, *mut i32, *mut i32, *mut Enum, *mut c_char),
     uniform_fv: [unsafe extern "C" fn(i32, i32, *const f32); 4],
     uniform_iv: [unsafe extern "C" fn(i32, i32, *const i32); 4],
     uniform_matrix_fv: [unsafe extern "C" fn(i32, i32, u8, *const f32); 9],
     uniform_uiv: [unsafe extern "C" fn(i32, i32, *const u32); 4],
-    get_uniformiv: unsafe extern "C" fn(u32, i32, *mut i32),
     gen_samplers: unsafe extern "C" fn(i32, *mut u32),
     delete_samplers: unsafe extern "C" fn(i32, *const u32),
     tex_image_3d:
@@ -309,6 +311,7 @@ impl RawPtr {
             get_attrib_location: load!(lookup, "glGetAttribLocation"),
             get_uniform_location: load!(lookup, "glGetUniformLocation"),
             get_uniform_block_index: load!(lookup, "glGetUniformBlockIndex"),
+            get_active_attrib: load!(lookup, "glGetActiveAttrib"),
             get_active_uniform: load!(lookup, "glGetActiveUniform"),
             uniform_fv: [
                 load!(lookup, "glUniform1fv"),
@@ -339,7 +342,6 @@ impl RawPtr {
                 load!(lookup, "glUniform3uiv"),
                 load!(lookup, "glUniform4uiv"),
             ],
-            get_uniformiv: load!(lookup, "glGetUniformiv"),
             gen_samplers: load!(lookup, "glGenSamplers"),
             delete_samplers: load!(lookup, "glDeleteSamplers"),
             tex_image_3d: load!(lookup, "glTexImage3D"),
@@ -369,6 +371,13 @@ impl RawPtr {
 pub struct ActiveUniform {
     pub name: String,
     pub size: i32,
+    pub ty: Enum,
+}
+
+/// An active vertex shader input of a linked program.
+pub struct ActiveAttrib {
+    pub name: String,
+    pub location: i32,
     pub ty: Enum,
 }
 
@@ -628,6 +637,36 @@ impl Gl {
             .collect()
     }
 
+    /// The active attributes of a linked program, with their locations and GL types.
+    pub fn active_attribs(&self, program: u32) -> Vec<ActiveAttrib> {
+        let mut count = 0;
+        // SAFETY: `count` is one `i32`.
+        unsafe { (self.ptr.get_programiv)(program, gl::ACTIVE_ATTRIBUTES, &mut count) };
+        (0..count.max(0) as u32)
+            .filter_map(|i| {
+                let mut name = vec![0u8; 256];
+                let (mut len, mut size, mut ty) = (0, 0, 0);
+                // SAFETY: GL writes at most `name.len()` bytes and the three scalars.
+                unsafe {
+                    (self.ptr.get_active_attrib)(
+                        program,
+                        i,
+                        256,
+                        &mut len,
+                        &mut size,
+                        &mut ty,
+                        name.as_mut_ptr().cast(),
+                    );
+                }
+                name.truncate(len.max(0) as usize);
+                let name = String::from_utf8_lossy(&name).into_owned();
+                // The built-ins (`gl_InstanceID` and the like) have no location.
+                let location = self.attrib_location(program, &name);
+                (location >= 0).then_some(ActiveAttrib { name, location, ty })
+            })
+            .collect()
+    }
+
     /// `glUniform{1..4}fv` of `values.len() / components` elements.
     pub fn uniform_f(&self, location: i32, components: usize, values: &[f32]) {
         let n = (values.len() / components) as i32;
@@ -671,16 +710,6 @@ impl Gl {
             )
         }
         Ok(())
-    }
-    /// The first value of an integer uniform, for diagnosis.
-    pub fn uniform_value(&self, program: u32, location: i32) -> i32 {
-        let mut out = [0i32; 16];
-        // SAFETY: GL writes the uniform's values (at most 16 for the scalar and vector types asked for), into `out`.
-        unsafe { (self.ptr.get_uniformiv)(program, location, out.as_mut_ptr()) };
-        out[0]
-    }
-    pub fn has_debug_log(&self) -> bool {
-        self.ptr.debug_log.is_some()
     }
     pub fn uniform_u(&self, location: i32, components: usize, values: &[u32]) {
         let n = (values.len() / components) as i32;
@@ -811,6 +840,25 @@ thread_local! {
     static CONTEXTS: RefCell<Vec<(Extensions, Context)>> = const { RefCell::new(Vec::new()) };
 }
 
+/// The diagnosis switches, read once. None of them changes a picture.
+pub(crate) struct Settings {
+    /// `KINETOGRAPH_ANGLE_TIME`: report the time of the stages of a replay (the only place the clock is read).
+    pub time: bool,
+    /// `KINETOGRAPH_ANGLE_DUMP=<op>:<path>`: write the colour attachment an op wrote as a PPM.
+    pub dump: Option<(usize, PathBuf)>,
+}
+
+pub(crate) fn settings() -> &'static Settings {
+    static SETTINGS: std::sync::OnceLock<Settings> = std::sync::OnceLock::new();
+    SETTINGS.get_or_init(|| Settings {
+        time: std::env::var_os("KINETOGRAPH_ANGLE_TIME").is_some(),
+        dump: std::env::var("KINETOGRAPH_ANGLE_DUMP").ok().and_then(|v| {
+            let (op, path) = v.split_once(':')?;
+            Some((op.parse().ok()?, PathBuf::from(path)))
+        }),
+    })
+}
+
 /// Whether `KINETOGRAPH_WEBGL=angle` asks for the ANGLE replay.
 pub fn enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -917,6 +965,16 @@ fn addon_dir() -> Option<PathBuf> {
     path.parent().map(PathBuf::from)
 }
 
+/// The file ANGLE ships for `libEGL` or `libGLESv2`: `libEGL.dylib` and `libEGL.so` by the platform's rule, and
+/// `libEGL.dll` on Windows, where ANGLE keeps the `lib` prefix (libloading would give `EGL.dll`).
+fn library_file_name(name: &str, windows: bool) -> std::ffi::OsString {
+    if windows {
+        format!("lib{name}.dll").into()
+    } else {
+        libloading::library_filename(name)
+    }
+}
+
 fn open(dir: &std::path::Path, name: &str) -> Result<Library, String> {
     let path = dir.join(library_file_name(name, cfg!(windows)));
     #[cfg(windows)]
@@ -965,16 +1023,6 @@ mod tests {
         assert!(checked_dir(PathBuf::from("../lib")).is_err());
         let abs = std::env::temp_dir();
         assert_eq!(checked_dir(abs.clone()).unwrap(), abs);
-/// The file ANGLE ships for `libEGL` or `libGLESv2`: `libEGL.dylib` and `libEGL.so` by the platform's rule, and
-/// `libEGL.dll` on Windows, where ANGLE keeps the `lib` prefix (libloading would give `EGL.dll`).
-fn library_file_name(name: &str, windows: bool) -> std::ffi::OsString {
-    if windows {
-        format!("lib{name}.dll").into()
-    } else {
-        libloading::library_filename(name)
-    }
-}
-
     }
 
     #[test]
@@ -992,6 +1040,16 @@ fn library_file_name(name: &str, windows: bool) -> std::ffi::OsString {
         );
         assert_eq!(upload_len(-1, 4, 1, gl::RGBA, gl::UNSIGNED_BYTE), None);
         assert_eq!(upload_len(4, 4, 1, 0x1234, gl::UNSIGNED_BYTE), None);
+    }
+
+    #[test]
+    fn angle_libraries_have_the_names_angle_ships() {
+        assert_eq!(library_file_name("EGL", true), "libEGL.dll");
+        assert_eq!(library_file_name("GLESv2", true), "libGLESv2.dll");
+        let here = library_file_name("EGL", false)
+            .to_string_lossy()
+            .into_owned();
+        assert!(here == "libEGL.dylib" || here == "libEGL.so", "{here}");
     }
 
     #[test]
@@ -1042,16 +1100,6 @@ fn shared() -> Result<&'static Shared, String> {
 
 fn load() -> Result<Shared, String> {
     let dir = library_dir()?;
-    #[test]
-    fn angle_libraries_have_the_names_angle_ships() {
-        assert_eq!(library_file_name("EGL", true), "libEGL.dll");
-        assert_eq!(library_file_name("GLESv2", true), "libGLESv2.dll");
-        let here = library_file_name("EGL", false)
-            .to_string_lossy()
-            .into_owned();
-        assert!(here == "libEGL.dylib" || here == "libEGL.so", "{here}");
-    }
-
     // libGLESv2 first, by full path: libEGL then finds it already loaded instead of searching for it.
     let gles = open(&dir, "GLESv2")?;
     let egl = open(&dir, "EGL")?;

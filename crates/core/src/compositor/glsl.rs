@@ -509,7 +509,7 @@ impl Compositor {
         self.drawing_buffer(size, wgpu::TextureFormat::Rgba8Unorm);
         self.glsl.msaa_on = false;
         let rgba = crate::angle_replay::replay(content, size, base_dir).map_err(render_error)?;
-        let started = std::time::Instant::now();
+        let started = crate::angle::settings().time.then(std::time::Instant::now);
         let target = self.glsl.target.as_ref().expect("made above");
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
@@ -530,8 +530,11 @@ impl Compositor {
                 depth_or_array_layers: 1,
             },
         );
-        if std::env::var_os("KINETOGRAPH_ANGLE_TIME").is_some() {
-            eprintln!("angle-time: wgpu upload (queued) {:.2} ms", started.elapsed().as_secs_f64() * 1e3);
+        if let Some(started) = started {
+            eprintln!(
+                "angle-time: wgpu upload (queued) {:.2} ms",
+                started.elapsed().as_secs_f64() * 1e3
+            );
         }
         Ok(())
     }

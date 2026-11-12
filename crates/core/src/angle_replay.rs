@@ -24,6 +24,8 @@ type R<T> = Result<T, String>;
 struct Program {
     name: u32,
     uniforms: HashMap<String, (i32, Enum)>,
+    /// The active attributes by name: location and GL type.
+    attribs: HashMap<String, (i32, Enum)>,
 }
 
 /// A program belongs to the context it was linked in: the vertex source, the fragment source, the attribute locations
@@ -283,7 +285,9 @@ impl<'a> Replay<'a> {
         let gl_ = self.gl;
         self.make_canvas();
         gl_.bind_vertex_array(self.vao);
-        let started = std::time::Instant::now();
+        let settings = angle::settings();
+        // The clock is read only when the timing variable asks for it: a frame is a function of the recording.
+        let started = settings.time.then(std::time::Instant::now);
         for (i, op) in self.content.ops.iter().enumerate() {
             let what = || match op {
                 GlslOp::Clear { .. } => format!("op {i} (clear)"),
@@ -305,10 +309,8 @@ impl<'a> Replay<'a> {
             }
             // `KINETOGRAPH_ANGLE_DUMP=<op>:<path>`: the colour attachment the op wrote, as a PPM, for finding which
             // op goes wrong.
-            if let Some((n, path)) = std::env::var("KINETOGRAPH_ANGLE_DUMP").ok().and_then(|v| {
-                v.split_once(':')
-                    .map(|(n, p)| (n.parse::<usize>().ok(), p.to_string()))
-            }) && n == Some(i)
+            if let Some((n, path)) = &settings.dump
+                && *n == i
             {
                 let fbo = match op.dest() {
                     Some(d) if d.is_framebuffer() => self.framebuffers.last().copied().unwrap_or(0),
@@ -324,11 +326,10 @@ impl<'a> Replay<'a> {
                 let _ = std::fs::write(path, ppm);
             }
         }
-        let timing = std::env::var_os("KINETOGRAPH_ANGLE_TIME").is_some();
-        if timing {
+        if settings.time {
             gl_.finish();
         }
-        let ops_done = started.elapsed();
+        let ops_done = started.map(|t| t.elapsed());
         // Resolve a multisampled drawing buffer, then read it from the bottom row up and turn it over.
         let (w, h) = (self.size.0 as i32, self.size.1 as i32);
         let read = if self.canvas.samples > 0 {
@@ -345,10 +346,10 @@ impl<'a> Replay<'a> {
         gl_.read_buffer(gl::COLOR_ATTACHMENT0);
         let mut bottom_up = vec![0u8; (w * h * 4) as usize];
         gl_.read_pixels((w, h), &mut bottom_up)?;
-        let read_done = started.elapsed();
+        let read_done = started.map(|t| t.elapsed());
         let row = (w * 4) as usize;
         let flipped = bottom_up.chunks(row).rev().flatten().copied().collect();
-        if timing {
+        if let (Some(started), Some(ops_done), Some(read_done)) = (started, ops_done, read_done) {
             let end = started.elapsed();
             eprintln!(
                 "angle-time: ops+finish {:.2} ms, resolve+readback {:.2} ms, flip {:.2} ms",
@@ -797,7 +798,16 @@ impl<'a> Replay<'a> {
                 )
             })
             .collect();
-        Ok(Program { name, uniforms })
+        let attribs = gl_
+            .active_attribs(name)
+            .into_iter()
+            .map(|a| (a.name, (a.location, a.ty)))
+            .collect();
+        Ok(Program {
+            name,
+            uniforms,
+            attribs,
+        })
     }
 
     // ---- framebuffers ----
@@ -1026,13 +1036,12 @@ impl<'a> Replay<'a> {
                 Some((base, i)) => (base, i.parse::<i32>().unwrap_or(0)),
                 None => (name.as_str(), 0),
             };
-            let loc = gl_.attrib_location(program.name, base);
-            if loc < 0 {
+            // An attribute the shader does not use has no location, which GL allows.
+            let Some(&(loc, _)) = program.attribs.get(base) else {
                 continue;
-            }
+            };
             self.attribute((loc + column) as u32, a)?;
         }
-        self.check("vertex input");
         // Uniforms.
         for (name, calls) in &d.uniforms {
             for call in calls {
@@ -1053,7 +1062,6 @@ impl<'a> Replay<'a> {
                 range.size as isize,
             );
         }
-        self.check("uniforms and blocks");
         // Textures.
         // Every texture is made before any is bound: making one binds it to the active unit, which would take the unit
         // of an earlier texture of this loop (a shadow sampler then met a colour texture).
@@ -1130,7 +1138,6 @@ impl<'a> Replay<'a> {
             );
         }
 
-        self.check("textures");
         // State.
         gl_.viewport(d.viewport[0], d.viewport[1], d.viewport[2], d.viewport[3]);
         match d.scissor {
@@ -1221,7 +1228,6 @@ impl<'a> Replay<'a> {
             None => gl_.disable(gl::STENCIL_TEST),
         }
 
-        self.check("state");
         // Draw.
         let mode = match d.mode {
             GlslMode::Points => gl::POINTS,
@@ -1255,61 +1261,7 @@ impl<'a> Replay<'a> {
             }
             None => gl_.draw_arrays(mode, d.first as i32, d.count as i32),
         }
-        if std::env::var_os("KINETOGRAPH_ANGLE_DEBUG").is_some() {
-            let e = gl_.get_error();
-            if e != 0 {
-                eprintln!(
-                    "angle: GL error 0x{e:x} at the draw of program {}",
-                    d.program
-                );
-                for (name, (size, ty)) in &program.uniforms {
-                    if matches!(ty, 0x8B5E..=0x8B62 | 0x8DC1..=0x8DD7) {
-                        let unit = d
-                            .uniforms
-                            .get(name)
-                            .and_then(|c| c.first())
-                            .map_or(0.0, |c| c.value[0]);
-                        let bound = d.units.get(&(unit as u32).to_string()).map(|u| {
-                            let t = self.content.textures.get(u.texture.as_str());
-                            (
-                                u.texture.as_str(),
-                                t.map(|t| (t.format, t.depth, t.cube)),
-                                u.compare.as_deref(),
-                            )
-                        });
-                        let loc = gl_.uniform_location(program.name, name);
-                        let loc = if loc < 0 {
-                            gl_.uniform_location(program.name, &format!("{name}[0]"))
-                        } else {
-                            loc
-                        };
-                        let actual = if loc >= 0 {
-                            gl_.uniform_value(program.name, loc)
-                        } else {
-                            -1
-                        };
-                        eprintln!(
-                            "angle:   sampler {name} (type 0x{ty:x}, size {size}) -> unit {unit} (GL says {actual}, location {loc}): {bound:?}"
-                        );
-                    }
-                }
-                eprintln!("angle:   debug log available: {}", gl_.has_debug_log());
-                for m in gl_.debug_messages() {
-                    eprintln!("angle:   message: {m}");
-                }
-            }
-        }
         Ok(())
-    }
-
-    /// With `KINETOGRAPH_ANGLE_DEBUG`, reports the GL error a stage of a draw left.
-    fn check(&self, stage: &str) {
-        if std::env::var_os("KINETOGRAPH_ANGLE_DEBUG").is_some() {
-            let e = self.gl.get_error();
-            if e != 0 {
-                eprintln!("angle: GL error 0x{e:x} after {stage}");
-            }
-        }
     }
 
     fn attribute(&mut self, loc: u32, a: &'a GlslAttribute) -> R<()> {
