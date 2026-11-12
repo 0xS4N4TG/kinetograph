@@ -198,7 +198,7 @@ class Renderer implements FrameRenderer {
     if (this.scene === null || frame !== this.lastFrame + 1) breakSamplePasses();
     // Once a transition has been seen, a frame that does not follow the one before is drawn by the replay below,
     // which brings a new scene up to it; drawing it here first would be thrown away.
-    const replays = !sequential && frame > 0 && transitionWindowSeconds() > 0;
+    const replays = !sequential && frame > 0 && transitionWindowSeconds() > 0 && !animationFramesQueued();
     // React state and virtual timers only move forward. Going back means starting the composition over.
     if (!replays && (frame < this.lastFrame || this.scene === null)) this.startScene(config);
     if (!sequential) {
@@ -280,7 +280,9 @@ class Renderer implements FrameRenderer {
       if (!sequential) this.trailFrom = frame;
       this.trailTo = frame;
       const start = Math.max(0, frame - window);
-      if (frame > 0 && this.trailFrom > start) {
+      // A page whose animation-frame callbacks keep state (a rotation they add to) cannot be taken back to the start of the
+      // window: the replay would run them again on top of what they already did, moving the page by the window's frames.
+      if (frame > 0 && this.trailFrom > start && !animationFramesQueued()) {
         this.startScene(config);
         clearHistory();
         const again = this.scene!;

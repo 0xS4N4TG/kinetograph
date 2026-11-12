@@ -179,4 +179,21 @@ describe('loads the page starts', () => {
     // started over, would have run the callbacks twice.
     expect(runs).toBe(4);
   });
+  it('runs the callbacks of a page with a CSS transition once per frame in a still, as in a render of every frame', async () => {
+    let runs = 0;
+    const Page = () => {
+      useEffect(() => {
+        const loop = () => {
+          runs++;
+          requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
+      }, []);
+      // The transition makes the frame look back over a window of frames, which a replay of it would run the callbacks for again.
+      return <div id="r" style={{ position: 'absolute', left: 0, top: 0, width: 4, height: 4, background: '#f00', transition: 'opacity 1s linear' }} />;
+    };
+    root(Page);
+    await createFrameRenderer('T').renderFrame(3);
+    expect(runs).toBe(4);
+  });
 });
