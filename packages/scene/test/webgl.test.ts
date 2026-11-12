@@ -2480,6 +2480,28 @@ describe('the recording WebGL context', () => {
     }
     const kinds = (gl: WebGLContext) => gl.content().ops.map((o) => `${o.op}${o.op !== 'upload' && o.target !== undefined ? ':target' : ''}`);
 
+    it('holds no more than the last frame of a target that each frame clears and draws inside one scissor box', () => {
+      const { gl, program } = setup();
+      const { texture } = attach(gl, 8, 4);
+      const counts: number[] = [];
+      for (let frame = 0; frame < 6; frame += 1) {
+        gl.bindFramebuffer(GL.FRAMEBUFFER, gl.getParameter(GL.FRAMEBUFFER_BINDING) ?? null);
+        gl.enable(GL.SCISSOR_TEST);
+        gl.scissor(0, 0, 4, 4);
+        gl.clearColor(frame / 5, 0, 0, 1);
+        gl.clear(GL.COLOR_BUFFER_BIT);
+        gl.drawArrays(GL.TRIANGLES, 0, 3);
+        gl.disable(GL.SCISSOR_TEST);
+        const target = gl.getParameter(GL.FRAMEBUFFER_BINDING);
+        drawCanvasWith(gl, program, texture);
+        counts.push(gl.content().ops.length);
+        gl.resetState();
+        gl.bindFramebuffer(GL.FRAMEBUFFER, target);
+        gl.viewport(0, 0, 8, 4);
+      }
+      expect(counts[5]).toBe(counts[1]);
+    });
+
     it('keeps what was drawn into a texture for the frames after it (an environment map drawn once, read in every frame)', () => {
       const { gl, program } = setup();
       const { texture } = attach(gl, 4, 2);

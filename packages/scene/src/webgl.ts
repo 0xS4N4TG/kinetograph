@@ -15,7 +15,7 @@ import type { CanvasSource, GlslContent, GlslDraw, GlslProgram, GlslLayer, GlslO
 import { CANVAS_SOURCE, pictureOf, type CanvasPicture } from './canvas.js';
 import { preprocess } from './glsl-cpp.js';
 import { parseBlocks, type BlockInfo, type BlockUniform } from './webgl-blocks.js';
-import { carriedFor, carryOn, dependsOnHistory, emptyCarry, isCanvasOp, MAX_OPS_PER_TARGET, namedBy, pick, readsLastFrame, type Resources } from './webgl-carry.js';
+import { carriedFor, carryOn, dependsOnHistory, emptyCarry, isCanvasOp, MAX_OPS_PER_TARGET, namedBy, noteClearBox, pick, readsLastFrame, type Resources } from './webgl-carry.js';
 
 /** The method a picture of another layer answers a texture upload with (`layerPicture`). */
 export const LAYER_SOURCE: unique symbol = Symbol.for('kinetograph.layerSource');
@@ -1969,7 +1969,9 @@ export class WebGLContext {
       ...(values.depth !== undefined ? { depth: { func: 'ALWAYS', mask: true, near: 0, far: 1 } } : {}),
       ...(values.stencil !== undefined ? { stencil: { ref: values.stencil, valueMask: STENCIL_MAX, writeMask: STENCIL_MAX, front: face, back: face } } : {}),
     };
-    this.ops.push({ op: 'draw', ...draw, ...where });
+    const op: GlslOp = { op: 'draw', ...draw, ...where };
+    noteClearBox(op, box);
+    this.ops.push(op);
   }
 
   /**
