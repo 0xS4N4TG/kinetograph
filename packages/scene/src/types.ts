@@ -1117,12 +1117,25 @@ export interface WebGpuTarget {
   writeMask?: number;
 }
 
+/** A render pipeline's `depthStencil` (depth only: the stencil is left alone, which is its default). */
+export interface WebGpuDepthState {
+  format: string;
+  /** `depthWriteEnabled`; false when left out. */
+  write?: boolean;
+  /** `depthCompare`; `always` when left out. */
+  compare?: string;
+  bias?: number;
+  biasSlopeScale?: number;
+  biasClamp?: number;
+}
+
 export interface WebGpuPipeline {
   /** The ids of the bind group layouts (`WebGpuContent.layouts`); omitted for `layout: 'auto'`. */
   layout?: string[];
   vertex: { module: string; entryPoint?: string; buffers: WebGpuVertexLayout[] };
   fragment?: { module: string; entryPoint?: string; targets: (WebGpuTarget | null)[] };
   primitive: { topology: string; stripIndexFormat?: string; frontFace: string; cullMode: string };
+  depth?: WebGpuDepthState;
   /** `multisample.count`; 1 when left out. */
   samples?: number;
 }
@@ -1138,9 +1151,9 @@ export interface WebGpuBindingLayout {
   /** Of a `storage-texture`: the format the shader declares. */
   format?: string;
   /** Of a `texture`: `float` when left out. */
-  sampleType?: 'float' | 'unfilterable-float' | 'sint' | 'uint';
+  sampleType?: 'float' | 'unfilterable-float' | 'sint' | 'uint' | 'depth';
   /** Of a `sampler`: `filtering` when left out. */
-  samplerType?: 'filtering' | 'non-filtering';
+  samplerType?: 'filtering' | 'non-filtering' | 'comparison';
 }
 
 /** `levels` mip levels of a texture, from `baseMip`. */
@@ -1181,6 +1194,8 @@ export interface WebGpuSampler {
   lodMinClamp?: number;
   lodMaxClamp?: number;
   maxAnisotropy?: number;
+  /** `compare` of a comparison sampler (a shadow map's). */
+  compare?: string;
 }
 
 /** A compute pipeline: `layout` is the ids of the bind group layouts, left out for `layout: 'auto'`. */
@@ -1209,6 +1224,8 @@ export interface WebGpuPass {
   resolve?: { texture: string; mip: number };
   /** The clear colour, or null for `loadOp: 'load'`. */
   clear: [number, number, number, number] | null;
+  /** The depth attachment: a level of a depth texture the same size as the target, cleared to `clear` (null: `loadOp: 'load'`). */
+  depth?: { texture: string; mip: number; clear: number | null; readOnly?: boolean };
   commands: WebGpuCommand[];
 }
 

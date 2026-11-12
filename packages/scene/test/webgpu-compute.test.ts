@@ -345,7 +345,7 @@ describe('storage layouts, textures and bind groups', () => {
     expect(make({ format: 'rgba8unorm-srgb' })).toThrow(/cannot be a storage texture/);
     expect(make({ format: 'bgra8unorm' })).toThrow(/cannot be a storage texture/);
     expect(make({ format: 'r8unorm' })).toThrow(/cannot be a storage texture/);
-    expect(make({ format: 'depth24plus' })).toThrow(/is not one of/);
+    expect(make({ format: 'depth24plus' })).toThrow(/cannot be a storage texture/);
     expect(make({})).toThrow(/is not one of/);
     expect(make({ format: 'rgba8unorm', access: 'sideways' })).toThrow(/access sideways/);
     expect(make({ format: 'rgba8unorm', viewDimension: '2d-array' })).toThrow(WebGpuUnsupportedError);
@@ -376,7 +376,7 @@ describe('storage layouts, textures and bind groups', () => {
     expect(() => storageTexture(device, 'rgba8unorm-srgb')).toThrow(/cannot have GPUTextureUsage.STORAGE_BINDING/);
     expect(() => storageTexture(device, 'r8unorm')).toThrow(/cannot have GPUTextureUsage.STORAGE_BINDING/);
     expect(() => storageTexture(device, 'bgra8unorm')).toThrow(/STORAGE_BINDING/);
-    expect(() => storageTexture(device, 'depth24plus')).toThrow(WebGpuUnsupportedError);
+    expect(() => storageTexture(device, 'depth24plus')).toThrow(/STORAGE_BINDING/);
     // A 4 x 4 rgba32float texture is 16 bytes a texel.
     expect(storageTexture(device, 'rgba32float', { size: [4, 4] })).toMatchObject({ bytes: 256 });
   });

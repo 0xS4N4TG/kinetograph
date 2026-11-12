@@ -29,6 +29,7 @@ import type {
   WebGpuComputeCommand,
   WebGpuComputePipeline,
   WebGpuContent,
+  WebGpuDepthState,
   WebGpuPass,
   WebGpuPipeline,
   WebGpuSampler,
@@ -127,7 +128,7 @@ const LIMITS: Record<string, number> = {
 
 const CANVAS_FORMATS = new Set(['rgba8unorm', 'bgra8unorm', 'rgba16float']);
 
-type Sample = 'float' | 'unfilterable-float' | 'uint' | 'sint';
+type Sample = 'float' | 'unfilterable-float' | 'uint' | 'sint' | 'depth';
 
 interface FormatInfo {
   /** The bytes of a texel. */
@@ -140,7 +141,7 @@ interface FormatInfo {
 
 const format = (bytes: number, sample: Sample, storage: FormatInfo['storage'] = 'none'): FormatInfo => ({ bytes, sample, storage });
 
-/** The texture formats that are drawn (WebGPU's table, without the optional features and the depth, stencil and compressed formats). */
+/** The texture formats that are drawn (WebGPU's table, without the optional features and the stencil and compressed formats). */
 const FORMATS: Record<string, FormatInfo> = {
   r8unorm: format(1, 'float'),
   r8uint: format(1, 'uint'),
@@ -174,7 +175,13 @@ const FORMATS: Record<string, FormatInfo> = {
   rgba32uint: format(16, 'uint', 'write'),
   rgba32sint: format(16, 'sint', 'write'),
   rgba32float: format(16, 'unfilterable-float', 'write'),
+  depth16unorm: format(2, 'depth'),
+  depth24plus: format(4, 'depth'),
+  depth32float: format(4, 'depth'),
 };
+/** The depth formats (without stencil): a render pass's depth attachment, and a texture a shader samples as depth. */
+const DEPTH_FORMATS = new Set(['depth16unorm', 'depth24plus', 'depth32float']);
+const COMPARE_FUNCTIONS = new Set(['never', 'less', 'equal', 'less-equal', 'greater', 'not-equal', 'greater-equal', 'always']);
 const FORMAT_NAMES = Object.keys(FORMATS).join(', ');
 /** The formats a picture may be copied into. */
 const PICTURE_FORMATS = new Set(['rgba8unorm', 'rgba8unorm-srgb', 'bgra8unorm', 'bgra8unorm-srgb']);
@@ -594,7 +601,7 @@ export class GPUTextureShim extends GpuObject {
     const d = descriptor ?? {};
     if (d.format !== undefined && d.format !== this.format) throw this.device.unsupported(`a texture view of format ${d.format} on a ${this.format} texture`);
     if (d.dimension !== undefined && d.dimension !== '2d') throw this.device.unsupported(`a texture view of dimension ${d.dimension}`);
-    if (d.aspect !== undefined && d.aspect !== 'all') throw this.device.unsupported(`a texture view of the aspect ${d.aspect}`);
+    if (d.aspect !== undefined && d.aspect !== 'all' && !(d.aspect === 'depth-only' && DEPTH_FORMATS.has(this.format))) throw this.device.unsupported(`a texture view of the aspect ${d.aspect}`);
     if ((d.baseArrayLayer ?? 0) !== 0 || (d.arrayLayerCount ?? 1) !== 1) throw new RangeError('OperationError: createView: a 2D texture has one layer');
     const base = whole('createView', 'baseMipLevel', d.baseMipLevel ?? 0, 0);
     if (base >= this.mipLevelCount) throw new RangeError(`OperationError: createView: baseMipLevel ${base} of a texture with ${this.mipLevelCount} levels`);
@@ -622,6 +629,8 @@ interface Attachment {
   clear: [number, number, number, number] | null;
   /** The texture a multisampled `texture` resolves into when the pass ends. */
   resolve?: { texture: GPUTextureShim; mip: number };
+  /** The depth attachment: a level of a depth texture, cleared to `clear` (null: loaded). */
+  depth?: { texture: GPUTextureShim; mip: number; clear: number | null; readOnly: boolean };
 }
 
 type PassCommand =
@@ -670,6 +679,12 @@ export class GPURenderPassEncoderShim extends GpuObject {
     if ((pipeline.descriptor.samples ?? 1) !== (texture?.sampleCount ?? 1)) {
       throw new RangeError(`OperationError: setPipeline: the pipeline has ${pipeline.descriptor.samples ?? 1} samples and the pass draws into ${texture?.sampleCount ?? 1}`);
     }
+    const state = pipeline.descriptor.depth;
+    const depth = this.attachment.depth;
+    if ((state?.format ?? null) !== (depth?.texture.format ?? null)) {
+      throw new RangeError(`OperationError: setPipeline: the pipeline has ${state ? `a ${state.format} depth state` : 'no depth state'} and the pass has ${depth ? `a ${depth.texture.format} depth attachment` : 'no depth attachment'}`);
+    }
+    if (state?.write && depth?.readOnly) throw new RangeError('OperationError: setPipeline: the pipeline writes depth and the pass depth attachment is read-only');
     this.add({ c: 'pipeline', pipeline });
   }
   setBindGroup(index: number, group: GPUBindGroupShim | null, offsets?: unknown, start?: number, length?: number): void {
@@ -678,6 +693,10 @@ export class GPURenderPassEncoderShim extends GpuObject {
     for (const entry of group.entries) {
       if ('view' in entry && texture !== null && entry.view.texture === texture && this.attachment.mip >= entry.view.baseMip && this.attachment.mip < entry.view.baseMip + entry.view.mips) {
         throw new RangeError('OperationError: setBindGroup: a pass samples the level of the texture it draws into');
+      }
+      const depth = this.attachment.depth;
+      if ('view' in entry && depth && !depth.readOnly && entry.view.texture === depth.texture && depth.mip >= entry.view.baseMip && depth.mip < entry.view.baseMip + entry.view.mips) {
+        throw new RangeError('OperationError: setBindGroup: a pass samples the level of the depth texture it writes');
       }
     }
     let list: number[] | undefined;
@@ -887,6 +906,7 @@ function regionOf(call: string, what: string, info: { texture: GPUTextureShim; m
   if (texture.canvas !== null) throw texture.device.unsupported(`${call} with the canvas's texture`);
   if (texture.destroyed) throw new Error(`OperationError: ${call}: the ${what} texture was destroyed`);
   if (texture.sampleCount > 1) throw new RangeError(`OperationError: ${call}: the ${what} texture is multisampled; resolve it into a texture first`);
+  if (DEPTH_FORMATS.has(texture.format)) throw texture.device.unsupported(`${call} with the ${texture.format} ${what} texture; a depth texture is written by a render pass`);
   if ((texture.usage & usage) === 0) throw new RangeError(`OperationError: ${call}: the ${what} texture was made without GPUTextureUsage.${usageName}`);
   if (info.aspect !== undefined && info.aspect !== 'all') throw texture.device.unsupported(`${call} of the aspect ${info.aspect}`);
   const mip = whole(call, 'mipLevel', info.mipLevel ?? 0, 0);
@@ -914,14 +934,14 @@ export class GPUCommandEncoderShim extends GpuObject {
   }): GPURenderPassEncoderShim {
     const attachments = (descriptor.colorAttachments ?? []).filter((a) => a !== null && a !== undefined);
     if (attachments.length !== 1) throw this.device.unsupported(`a render pass with ${attachments.length} colour attachments; one, the canvas's texture or a 2D texture, is drawn`);
-    if (descriptor.depthStencilAttachment) throw this.device.unsupported('a depth or stencil attachment');
     if (descriptor.occlusionQuerySet) throw this.device.unsupported('occlusion queries');
     const attachment = attachments[0]!;
     const view = attachment.view;
     if (!(view instanceof GPUTextureViewShim)) throw new TypeError('beginRenderPass: the colour attachment has no view');
     const clear = (attachment.loadOp ?? 'clear') === 'load' ? null : colorOf(attachment.clearValue);
     const texture = view.texture;
-    if (texture.canvas !== null) return new GPURenderPassEncoderShim(this, { context: texture.canvas, texture: null, mip: 0, clear });
+    const depth = this.depthAttachment(descriptor.depthStencilAttachment, texture.canvas !== null ? { width: texture.width, height: texture.height } : texture.extent(view.baseMip), texture.sampleCount);
+    if (texture.canvas !== null) return new GPURenderPassEncoderShim(this, { context: texture.canvas, texture: null, mip: 0, clear, ...(depth ? { depth } : {}) });
     if (texture.destroyed) throw new Error('OperationError: beginRenderPass: the texture was destroyed');
     if ((texture.usage & GPU_TEXTURE_USAGE.RENDER_ATTACHMENT) === 0) throw new RangeError('OperationError: beginRenderPass: the texture was made without GPUTextureUsage.RENDER_ATTACHMENT');
     if (view.mips !== 1) throw new RangeError('OperationError: beginRenderPass: a colour attachment is one mip level');
@@ -940,7 +960,32 @@ export class GPUCommandEncoderShim extends GpuObject {
       if ((to.usage & GPU_TEXTURE_USAGE.RENDER_ATTACHMENT) === 0) throw new RangeError('OperationError: beginRenderPass: the resolve target was made without GPUTextureUsage.RENDER_ATTACHMENT');
       resolve = { texture: to, mip: resolveTarget.baseMip };
     }
-    return new GPURenderPassEncoderShim(this, { context: null, texture, mip: view.baseMip, clear, ...(resolve ? { resolve } : {}) });
+    return new GPURenderPassEncoderShim(this, { context: null, texture, mip: view.baseMip, clear, ...(resolve ? { resolve } : {}), ...(depth ? { depth } : {}) });
+  }
+  /** A pass's `depthStencilAttachment`, checked against the colour attachment it goes with (size and samples). */
+  private depthAttachment(a: unknown, color: { width: number; height: number }, samples: number): Attachment['depth'] {
+    if (a === undefined || a === null) return undefined;
+    const d = a as { view?: unknown; depthClearValue?: number; depthLoadOp?: string; depthStoreOp?: string; depthReadOnly?: boolean; stencilLoadOp?: string; stencilStoreOp?: string; stencilClearValue?: number; stencilReadOnly?: boolean };
+    const view = d.view;
+    if (!(view instanceof GPUTextureViewShim)) throw new TypeError('beginRenderPass: the depth attachment has no view');
+    const texture = view.texture;
+    if (texture.canvas !== null || !DEPTH_FORMATS.has(texture.format)) throw this.device.unsupported(`a depth attachment of ${texture.canvas !== null ? "the canvas's texture" : `format ${texture.format}`}; the depth formats are ${[...DEPTH_FORMATS].join(', ')} (stencil formats are not drawn)`);
+    if (texture.destroyed) throw new Error('OperationError: beginRenderPass: the depth texture was destroyed');
+    if ((texture.usage & GPU_TEXTURE_USAGE.RENDER_ATTACHMENT) === 0) throw new RangeError('OperationError: beginRenderPass: the depth texture was made without GPUTextureUsage.RENDER_ATTACHMENT');
+    if (view.mips !== 1) throw new RangeError('OperationError: beginRenderPass: a depth attachment is one mip level');
+    const size = texture.extent(view.baseMip);
+    if (size.width !== color.width || size.height !== color.height) throw new RangeError(`OperationError: beginRenderPass: the depth attachment is ${size.width} x ${size.height} and the colour attachment ${color.width} x ${color.height}`);
+    if (texture.sampleCount !== samples) throw new RangeError(`OperationError: beginRenderPass: the depth attachment has ${texture.sampleCount} samples and the colour attachment ${samples}`);
+    const readOnly = d.depthReadOnly === true;
+    if (readOnly) return { texture, mip: view.baseMip, clear: null, readOnly };
+    const load = d.depthLoadOp;
+    if ((load !== 'load' && load !== 'clear') || (d.depthStoreOp !== 'store' && d.depthStoreOp !== 'discard')) throw new TypeError('beginRenderPass: a depth attachment that is not read-only needs depthLoadOp and depthStoreOp');
+    if (load === 'clear') {
+      const value = Number(d.depthClearValue);
+      if (!(value >= 0 && value <= 1)) throw new TypeError(`beginRenderPass: depthClearValue ${String(d.depthClearValue)} is not from 0 to 1`);
+      return { texture, mip: view.baseMip, clear: value, readOnly };
+    }
+    return { texture, mip: view.baseMip, clear: null, readOnly };
   }
   beginComputePass(descriptor?: { label?: string; timestampWrites?: unknown }): GPUComputePassEncoderShim {
     if (descriptor?.timestampWrites) throw this.device.unsupported('timestampWrites on a compute pass (query sets)');
@@ -1625,9 +1670,17 @@ export class GPUDeviceShim extends EventTarget {
       ...(target === null ? {} : { target: { texture: target.id, mip: attachment.mip } }),
       ...(attachment.resolve ? { resolve: { texture: attachment.resolve.texture.id, mip: attachment.resolve.mip } } : {}),
       clear: attachment.clear,
+      ...(attachment.depth ? { depth: { texture: attachment.depth.texture.id, mip: attachment.depth.mip, clear: attachment.depth.clear, ...(attachment.depth.readOnly ? { readOnly: true } : {}) } } : {}),
       commands: out,
     };
     const all = [...writes.values()];
+    if (attachment.depth) {
+      const depth = attachment.depth;
+      textures.add(depth.texture);
+      const key = levelKey(depth.texture, depth.mip);
+      if (depth.readOnly) reads.add(key);
+      else all.push({ key, whole: depth.clear !== null, owner: depth.texture });
+    }
     if (target !== null) {
       textures.add(target);
       all.push({ key: levelKey(target, attachment.mip), whole: attachment.clear !== null, owner: target });
@@ -1742,15 +1795,14 @@ export class GPUDeviceShim extends EventTarget {
       }
       if (e.texture) {
         const sampleType = e.texture.sampleType ?? 'float';
-        if (!['float', 'unfilterable-float', 'sint', 'uint'].includes(sampleType)) throw this.unsupported(`a texture binding of the sample type ${sampleType}`);
+        if (!['float', 'unfilterable-float', 'sint', 'uint', 'depth'].includes(sampleType)) throw this.unsupported(`a texture binding of the sample type ${sampleType}`);
         if ((e.texture.viewDimension ?? '2d') !== '2d') throw this.unsupported(`a texture binding of the view dimension ${e.texture.viewDimension}`);
         if (e.texture.multisampled) throw this.unsupported('a multisampled texture binding');
-        entries.push({ binding: e.binding, visibility, type: 'texture', ...(sampleType === 'float' ? {} : { sampleType: sampleType as 'unfilterable-float' | 'sint' | 'uint' }) });
+        entries.push({ binding: e.binding, visibility, type: 'texture', ...(sampleType === 'float' ? {} : { sampleType: sampleType as 'unfilterable-float' | 'sint' | 'uint' | 'depth' }) });
       } else if (e.sampler) {
         const type = e.sampler.type ?? 'filtering';
-        if (type === 'comparison') throw this.unsupported('a comparison sampler');
-        if (type !== 'filtering' && type !== 'non-filtering') throw new TypeError(`createBindGroupLayout: sampler type ${type}`);
-        entries.push({ binding: e.binding, visibility, type: 'sampler', ...(type === 'filtering' ? {} : { samplerType: 'non-filtering' as const }) });
+        if (type !== 'filtering' && type !== 'non-filtering' && type !== 'comparison') throw new TypeError(`createBindGroupLayout: sampler type ${type}`);
+        entries.push({ binding: e.binding, visibility, type: 'sampler', ...(type === 'filtering' ? {} : { samplerType: type }) });
       } else {
         const type = e.buffer!.type ?? 'uniform';
         if (!SHADER_BINDING_TYPES.has(type)) throw new TypeError(`createBindGroupLayout: buffer type ${type}`);
@@ -1776,6 +1828,29 @@ export class GPUDeviceShim extends EventTarget {
   createPipelineLayout(descriptor: { bindGroupLayouts: GPUBindGroupLayoutShim[]; label?: string }): GPUPipelineLayoutShim {
     return new GPUPipelineLayoutShim([...(descriptor.bindGroupLayouts ?? [])]);
   }
+  /** A pipeline's `depthStencil` as the depth state; the stencil must be left at its defaults (it is not drawn). */
+  private depthState(value: unknown): WebGpuDepthState | undefined {
+    if (value === undefined || value === null) return undefined;
+    const d = value as { format?: string; depthWriteEnabled?: boolean; depthCompare?: string; stencilFront?: Record<string, string>; stencilBack?: Record<string, string>; stencilReadMask?: number; stencilWriteMask?: number; depthBias?: number; depthBiasSlopeScale?: number; depthBiasClamp?: number };
+    const format = d.format as string;
+    if (!DEPTH_FORMATS.has(format)) throw this.unsupported(`a depthStencil format ${String(format)}; the depth formats are ${[...DEPTH_FORMATS].join(', ')} (stencil formats are not drawn)`);
+    for (const face of [d.stencilFront, d.stencilBack]) {
+      for (const key of ['compare', 'failOp', 'depthFailOp', 'passOp']) {
+        const op = face?.[key];
+        if (op !== undefined && op !== (key === 'compare' ? 'always' : 'keep')) throw this.unsupported(`a stencil state (${key} ${op})`);
+      }
+    }
+    if (d.depthWriteEnabled === undefined) throw new TypeError('createRenderPipeline: depthStencil.depthWriteEnabled is required for a depth format');
+    if (d.depthCompare !== undefined && !COMPARE_FUNCTIONS.has(d.depthCompare)) throw new TypeError(`createRenderPipeline: depthCompare ${String(d.depthCompare)}`);
+    if (d.depthCompare === undefined && d.depthWriteEnabled === true) throw new TypeError('createRenderPipeline: depthStencil.depthCompare is required when depth is written');
+    const state: WebGpuDepthState = { format };
+    if (d.depthWriteEnabled) state.write = true;
+    if (d.depthCompare !== undefined && d.depthCompare !== 'always') state.compare = d.depthCompare;
+    if (d.depthBias) state.bias = Number(d.depthBias);
+    if (d.depthBiasSlopeScale) state.biasSlopeScale = Number(d.depthBiasSlopeScale);
+    if (d.depthBiasClamp) state.biasClamp = Number(d.depthBiasClamp);
+    return state;
+  }
   createRenderPipeline(descriptor: {
     layout: 'auto' | GPUPipelineLayoutShim;
     vertex: { module: GPUShaderModuleShim; entryPoint?: string; buffers?: ({ arrayStride: number; stepMode?: string; attributes: { format: string; offset: number; shaderLocation: number }[] } | null)[]; constants?: object };
@@ -1785,7 +1860,7 @@ export class GPUDeviceShim extends EventTarget {
     multisample?: { count?: number; alphaToCoverageEnabled?: boolean };
     label?: string;
   }): GPURenderPipelineShim {
-    if (descriptor.depthStencil) throw this.unsupported('a depth or stencil state in a render pipeline');
+    const depthState = this.depthState(descriptor.depthStencil);
     const samples = descriptor.multisample?.count ?? 1;
     if (samples !== 1 && samples !== 4) throw new RangeError(`OperationError: createRenderPipeline: multisample.count ${samples}; it is 1 or 4`);
     if (descriptor.multisample?.alphaToCoverageEnabled) throw this.unsupported('alphaToCoverage');
@@ -1810,6 +1885,7 @@ export class GPUDeviceShim extends EventTarget {
         frontFace: descriptor.primitive?.frontFace ?? 'ccw',
         cullMode: descriptor.primitive?.cullMode ?? 'none',
       },
+      ...(depthState ? { depth: depthState } : {}),
       ...(samples === 1 ? {} : { samples }),
     };
     if (descriptor.vertex.entryPoint !== undefined) pipeline.vertex.entryPoint = descriptor.vertex.entryPoint;
@@ -1860,7 +1936,7 @@ export class GPUDeviceShim extends EventTarget {
         } else if (layoutEntry?.type === 'texture') {
           const sample = FORMATS[resource.texture.format]!.sample;
           const wanted = layoutEntry.sampleType ?? 'float';
-          const fits = wanted === 'float' ? sample === 'float' || (sample === 'unfilterable-float' && this.features.has('float32-filterable')) : wanted === 'unfilterable-float' ? sample === 'float' || sample === 'unfilterable-float' : sample === wanted;
+          const fits = wanted === 'depth' ? sample === 'depth' : sample === 'depth' ? wanted === 'unfilterable-float' : wanted === 'float' ? sample === 'float' || (sample === 'unfilterable-float' && this.features.has('float32-filterable')) : wanted === 'unfilterable-float' ? sample === 'float' || sample === 'unfilterable-float' : sample === wanted;
           if (!fits) {
             throw new TypeError(
               `createBindGroup: binding ${e.binding} samples a ${resource.texture.format} texture as ${wanted}${sample === 'unfilterable-float' ? ' (a 32-bit float texture is read as unfilterable-float with a non-filtering sampler, unless the device has float32-filterable)' : ''}`,
@@ -1869,6 +1945,9 @@ export class GPUDeviceShim extends EventTarget {
         }
         entries.push({ binding: e.binding, view: resource });
       } else if (resource instanceof GPUSamplerShim) {
+        if (layoutEntry?.type === 'sampler' && (layoutEntry.samplerType === 'comparison') !== (resource.descriptor.compare !== undefined)) {
+          throw new TypeError(`createBindGroup: binding ${e.binding} is a ${layoutEntry.samplerType ?? 'filtering'} sampler in the layout and the sampler ${resource.descriptor.compare !== undefined ? 'compares' : 'does not compare'}`);
+        }
         entries.push({ binding: e.binding, sampler: resource });
       } else {
         const buffer = (resource as { buffer?: unknown })?.buffer;
@@ -1936,8 +2015,11 @@ export class GPUDeviceShim extends EventTarget {
   }
   createSampler(descriptor: SamplerDescriptor = {}): GPUSamplerShim {
     const d = descriptor ?? {};
-    if (d.compare !== undefined) throw this.unsupported('a comparison sampler');
     const out: WebGpuSampler = {};
+    if (d.compare !== undefined) {
+      if (!COMPARE_FUNCTIONS.has(d.compare)) throw new TypeError(`createSampler: compare ${String(d.compare)}`);
+      out.compare = d.compare;
+    }
     for (const key of ['addressModeU', 'addressModeV', 'addressModeW'] as const) {
       const mode = d[key];
       if (mode === undefined) continue;

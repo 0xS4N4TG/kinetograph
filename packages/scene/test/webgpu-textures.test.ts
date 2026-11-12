@@ -75,7 +75,7 @@ describe('createTexture, createView and createSampler', () => {
 
   it('says what is not drawn: formats, dimensions, layers, multisampling', async () => {
     const { device, context } = await setup();
-    expect(() => texture(device, { format: 'depth24plus' })).toThrow(WebGpuUnsupportedError);
+    expect(() => texture(device, { format: 'depth24plus-stencil8' })).toThrow(WebGpuUnsupportedError);
     expect(() => texture(device, { format: 'bc1-rgba-unorm' })).toThrow(/^unsupported: a texture of format bc1-rgba-unorm/);
     expect(() => texture(device, { format: 'rgba32float' })).not.toThrow();
     expect(() => texture(device, { dimension: '3d' })).toThrow(/3d texture/);
@@ -133,7 +133,7 @@ describe('createTexture, createView and createSampler', () => {
     expect(() => device.createSampler({ maxAnisotropy: 17, magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear' })).toThrow(/more than 16/);
     expect(() => device.createSampler({ maxAnisotropy: 4 })).toThrow(/linear/);
     expect(() => device.createSampler({ maxAnisotropy: 4, magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear' })).not.toThrow();
-    expect(() => device.createSampler({ compare: 'less' })).toThrow(/comparison sampler/);
+    expect(() => device.createSampler({ compare: 'sometimes' } as never)).toThrow(/compare/);
   });
 });
 
@@ -559,8 +559,6 @@ describe('render passes into textures and sampling them', () => {
     expect(layout({ externalTexture: {} })).toThrow(WebGpuUnsupportedError);
     expect(layout({ texture: { viewDimension: '2d-array' } })).toThrow(/view dimension/);
     expect(layout({ texture: { multisampled: true } })).toThrow(/multisampled/);
-    expect(layout({ texture: { sampleType: 'depth' } })).toThrow(/sample type depth/);
-    expect(layout({ sampler: { type: 'comparison' } })).toThrow(/comparison/);
     expect(layout({ texture: {}, sampler: {} })).toThrow(/exactly one/);
     expect(layout({})).toThrow(/exactly one/);
     expect(layout({ texture: { sampleType: 'unfilterable-float' } })).not.toThrow();
