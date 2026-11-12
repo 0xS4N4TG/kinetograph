@@ -1571,6 +1571,49 @@ describe('the recording WebGL context', () => {
       expect(content.textures[clears[0]!]).toEqual({ target: true, width: 4, height: 4 });
     });
 
+    it('draws the depth of each face of a depth cube and samples the six depth targets with samplerCubeShadow', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const program = gl.createProgram();
+      for (const [type, source] of [[GL.VERTEX_SHADER, '#version 300 es\nin vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }'], [GL.FRAGMENT_SHADER, '#version 300 es\nprecision highp float; uniform highp samplerCubeShadow sm; out vec4 o; void main() { o = vec4(texture(sm, vec4(0.0, 0.0, 1.0, 0.5))); }']] as const) {
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source);
+        gl.attachShader(program, shader);
+      }
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(GL.ARRAY_BUFFER, buffer);
+      gl.bufferData(GL.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1]), GL.STATIC_DRAW);
+      gl.enableVertexAttribArray(gl.getAttribLocation(program, 'p'));
+      gl.vertexAttribPointer(gl.getAttribLocation(program, 'p'), 2, GL.FLOAT, false, 0, 0);
+      const cube = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_CUBE_MAP, cube);
+      gl.texStorage2D(GL.TEXTURE_CUBE_MAP, 1, GL2.DEPTH_COMPONENT24, 4, 4);
+      gl.texParameteri(GL.TEXTURE_CUBE_MAP, GL2.TEXTURE_COMPARE_MODE, GL2.COMPARE_REF_TO_TEXTURE);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, fb);
+      gl.drawBuffers([GL.NONE]);
+      for (let f = 0; f < 6; f += 1) {
+        gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.TEXTURE_CUBE_MAP_POSITIVE_X + f, cube, 0);
+        expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_COMPLETE);
+        gl.clearDepth(1);
+        gl.clear(GL.DEPTH_BUFFER_BIT);
+      }
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      gl.uniform1i(gl.getUniformLocation(program, 'sm'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const content = gl.content();
+      const clears = content.ops.filter((o) => o.op === 'clear').map((o) => (o as { depthStencil?: string }).depthStencil);
+      const draw = content.ops.at(-1)!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      expect(content.textures[draw.units['0']!.texture]).toEqual({ cube: true, targets: clears });
+      expect(new Set(clears).size).toBe(6);
+      expect(content.textures[clears[0]!]).toEqual({ target: true, width: 4, height: 4, format: 'depth' });
+      expect(draw.units['0']!.compare).toBe('LEQUAL');
+    });
+
     it('takes empty float faces from texImage2D as render targets', () => {
       const { gl, cube } = setup();
       const floats = gl.createTexture();

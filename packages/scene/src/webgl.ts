@@ -3179,7 +3179,7 @@ export class WebGLContext {
     if (target === GL.TEXTURE_CUBE_MAP) {
       // Each of the six faces is given the storage, as a 2D texture is.
       if (width !== height) return this.fail(GL.INVALID_VALUE);
-      if (kindOf(internalformat) !== 'color') throw new WebGLUnsupportedError('a cube map of a depth format; use RGBA8, SRGB8_ALPHA8 or a float format');
+      // A depth cube (three.js's point light shadow map) has six depth faces, each a target a framebuffer draws in.
       for (const face of texture.faces!) this.storage2d(face, levels, internalformat, width, height);
       texture.mipmaps = false;
       texture.version += 1;
@@ -3794,7 +3794,8 @@ export class WebGLContext {
         if (attached.includes(texture) || texture.faces?.some((f) => attached.includes(f))) return this.fail(GL.INVALID_OPERATION);
         // A shadow sampler reads a depth texture that compares; any other sampler does not read one that does.
         const compares = texture.compareMode === GL2.COMPARE_REF_TO_TEXTURE;
-        if (shadow ? !compares || kindOf(texture.format) === 'color' : compares && kindOf(texture.format) !== 'color') return this.fail(GL.INVALID_OPERATION);
+        const kind = kindOf((texture.faces?.[0] ?? texture).format); // a cube map's format is its faces'
+        if (shadow ? !compares || kind === 'color' : compares && kind !== 'color') return this.fail(GL.INVALID_OPERATION);
         if (draw.units[String(unit)] === undefined) draw.units[String(unit)] = this.samplerOf(texture);
       }
     }
@@ -3871,9 +3872,9 @@ export class WebGLContext {
     };
   }
 
-  /** Whether a framebuffer drew in a face of the cube map: its faces are render targets from then on. */
+  /** Whether a framebuffer drew in a face of the cube map: its faces are render targets from then on (a depth cube's from the start). */
   private static drawnCube(cube: WebGLTexture): boolean {
-    return cube.faces!.some((f) => f.drawnAt === f.version);
+    return cube.faces!.some((f) => f.drawnAt === f.version || kindOf(f.format) !== 'color');
   }
 
   /**

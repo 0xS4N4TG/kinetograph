@@ -821,10 +821,11 @@ impl Compositor {
             resolved.retain(|id, _| !colors.iter().flatten().any(|(c, _)| *c == Some(*id)));
             cube_copies.retain(|id, _| {
                 !content.textures[*id].targets.iter().any(|face| {
-                    colors
-                        .iter()
-                        .flatten()
-                        .any(|(c, _)| *c == Some(face.as_str()))
+                    ds == Some(face.as_str())
+                        || colors
+                            .iter()
+                            .flatten()
+                            .any(|(c, _)| *c == Some(face.as_str()))
                 })
             });
             if !joins {
@@ -1221,11 +1222,12 @@ impl Compositor {
                 format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                     | wgpu::TextureUsages::TEXTURE_BINDING
-                    | if ds.is_some() || samples > 1 {
-                        wgpu::TextureUsages::empty()
-                    } else {
-                        // A cube map's faces are copied from their targets.
-                        wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC
+                    | match ds {
+                        // A cube map's faces are copied from their targets (a depth cube's too: depth alone, one sample).
+                        Some(TargetFormat::Depth) if samples == 1 => wgpu::TextureUsages::COPY_SRC,
+                        Some(_) => wgpu::TextureUsages::empty(),
+                        None if samples > 1 => wgpu::TextureUsages::empty(),
+                        None => wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC,
                     },
                 view_formats: &[],
             });
@@ -1279,10 +1281,16 @@ impl Compositor {
         let mut shape = None;
         for face in faces {
             let t = self.glsl_target(targets, content, face, None)?;
-            let this = (t.size, t.format, t.levels.len(), t.ds.is_none());
-            if this.0.0 != this.0.1 || !this.3 || shape.is_some_and(|s| s != this) {
+            // Colour, or depth alone (Depth32Float: the one depth format a copy reads); not stencil, nor multisampled.
+            let kind = match t.ds {
+                None => Some(false),
+                Some(TargetFormat::Depth) => Some(true),
+                Some(_) => None,
+            };
+            let this = (t.size, t.format, t.levels.len(), kind);
+            if this.0.0 != this.0.1 || kind.is_none() || t.samples > 1 || shape.is_some_and(|s| s != this) {
                 return Err(render_error(
-                    "a cube map's face targets are not six square colour targets of one size, format and \
+                    "a cube map's face targets are not six square colour (or depth) targets of one size, format and \
                      level count (WebGL samples such a cube map as incomplete)",
                 ));
             }
@@ -1631,8 +1639,13 @@ impl Compositor {
                             dim_name(held),
                         )));
                     }
+                    // A cube map of depth targets is a depth texture too.
+                    let depth_cube = texture.cube
+                        && texture.targets.first().is_some_and(|face| {
+                            content.textures.get(face).is_some_and(|f| f.format.is_some_and(TargetFormat::has_depth))
+                        });
                     if binding.dim.shadow()
-                        && !(texture.target && texture.format.is_some_and(TargetFormat::has_depth))
+                        && !(texture.target && texture.format.is_some_and(TargetFormat::has_depth) || depth_cube)
                     {
                         return Err(render_error(format!(
                             "the shadow sampler `{}` reads {:?}, which is not a depth texture (WebGL refuses \
@@ -1641,11 +1654,19 @@ impl Compositor {
                         )));
                     }
                     let uploaded = if texture.cube && !texture.targets.is_empty() {
+                        if depth_cube && !binding.dim.shadow() {
+                            return Err(render_error(format!(
+                                "the sampler `{}` reads the depth cube map {:?} without comparing; read it with \
+                                 samplerCubeShadow",
+                                binding.name, state.texture
+                            )));
+                        }
                         let drawn_into = texture.targets.iter().any(|face| {
                             colors
                                 .iter()
                                 .flatten()
                                 .any(|(id, _)| *id == Some(face.as_str()))
+                                || dest.depth_stencil == Some(face.as_str())
                         });
                         if drawn_into {
                             return Err(render_error(format!(
@@ -1658,7 +1679,7 @@ impl Compositor {
                         Arc::new(Uploaded {
                             view: cube_copies[state.texture.as_str()].clone(),
                             mipmapped: target_mipmapped(face, state.max_level),
-                            depth: false,
+                            depth: depth_cube,
                             float32: is_float32(face.format),
                         })
                     } else if texture.cube {

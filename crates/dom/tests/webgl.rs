@@ -210,6 +210,11 @@ fn webgl2_float_linear() {
 }
 
 #[test]
+fn webgl2_cube_depth() {
+    run("webgl2_cube_depth", 1.0);
+}
+
+#[test]
 fn webgl2_cube_float16() {
     run("webgl2_cube_float16", 1.0);
 }
@@ -309,6 +314,7 @@ fn the_committed_recordings_parse_as_the_scene_format_does() {
         "webgl2_cube_mip_rt",
         "webgl2_cube_float16",
         "webgl2_cube_float32",
+        "webgl2_cube_depth",
     ] {
         let content: serde_json::Value = serde_json::from_str(&case_file(name, "json")).unwrap();
         let mut layer = serde_json::json!({ "id": "c", "type": "glsl", "width": 10, "height": 10 });
