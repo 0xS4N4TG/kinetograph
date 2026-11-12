@@ -540,13 +540,10 @@ impl<'a> Replay<'a> {
             if t.samples > 1 || t.format == Some(TargetFormat::Stencil) {
                 let name = gl_.gen_renderbuffer();
                 gl_.bind_renderbuffer(gl::RENDERBUFFER, name);
-                gl_.renderbuffer_storage_multisample(
-                    gl::RENDERBUFFER,
-                    t.samples.max(1) as i32,
-                    internal,
-                    w,
-                    h,
-                );
+                // One sample is asked for as 0: GL gives a request for 1 the smallest multisample count it has, which
+                // is not a single-sample buffer and makes the framebuffer incomplete.
+                let samples = if t.samples > 1 { t.samples as i32 } else { 0 };
+                gl_.renderbuffer_storage_multisample(gl::RENDERBUFFER, samples, internal, w, h);
                 return Ok(Handle {
                     renderbuffer: true,
                     ..whole(name, gl::TEXTURE_2D, t.format)

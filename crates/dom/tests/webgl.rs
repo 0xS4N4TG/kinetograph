@@ -181,6 +181,11 @@ fn webgl2_front_face() {
 }
 
 #[test]
+fn webgl2_stencil_renderbuffer() {
+    run("webgl2_stencil_renderbuffer", 1.0);
+}
+
+#[test]
 fn webgl2_matrix_varying() {
     angle_only("webgl2_matrix_varying");
 }
