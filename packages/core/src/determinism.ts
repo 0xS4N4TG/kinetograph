@@ -13,7 +13,7 @@
 // real timer functions are kept here for the shim's own use: the delayRender
 // timeout needs real time to fail, and nothing else may.
 
-import { animationClockMoved, animationsPending, resetAnimations, setAnimationClock, tickAnimations } from '@kinetographdev/compat/shim';
+import { animationClockMoved, animationsPending, mediaPending, resetAnimations, resetMedia, setAnimationClock, setMediaClock, tickAnimations, tickMedia } from '@kinetographdev/compat/shim';
 import { setGsapTime } from './gsap-clock.js';
 
 /**
@@ -265,6 +265,8 @@ export function setVirtualFrame(frame: number, fps: number, options: VirtualFram
   // The Web Animations update and send their events, as a browser does before the animation-frame callbacks.
   animationClockMoved();
   tickAnimations();
+  // Video and audio elements: playback that ended, `timeupdate`, and the video frame callbacks, before the animation frames.
+  tickMedia();
   if (options.deferAnimationFrames !== true) runAnimationFrames();
 }
 
@@ -294,7 +296,7 @@ export function runAnimationFrames(): void {
  * those frames too. Nothing is rendered; with no callbacks queued and no Web Animation left to move it does nothing.
  */
 export function stepAnimationFrames(from: number, to: number, fps: number): void {
-  for (let frame = from; frame < to && (animationQueue.length > 0 || animationsPending()); frame++) {
+  for (let frame = from; frame < to && (animationQueue.length > 0 || animationsPending() || mediaPending()); frame++) {
     setVirtualFrame(frame, fps, { deferAnimationFrames: true });
     runAnimationFrames();
   }
@@ -314,6 +316,7 @@ export function resetVirtualClock(options: { keepAnimationFrames?: boolean } = {
     animationQueue = [];
     // A new render: no Web Animation is left from the last (a scene started over keeps them, as it keeps the callbacks).
     resetAnimations();
+    resetMedia();
   }
 }
 
@@ -324,6 +327,8 @@ export function virtualNow(): number {
 
 // `document.timeline` reads the virtual clock, the one `performance.now()` and animation-frame callbacks get.
 setAnimationClock(virtualNow);
+// Media elements play on the same clock.
+setMediaClock(virtualNow);
 
 /** The frames per second of the last `setVirtualFrame`. */
 export function virtualFps(): number {

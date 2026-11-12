@@ -2348,10 +2348,17 @@ impl Compositor {
                 .map(|s| file_stamp(&base_dir.join(s)))
                 .unwrap_or_default()
         };
+        let video_stamp = |v: &Option<gl::GlslVideo>| {
+            v.as_ref()
+                .map(|v| format!("{}@{}", file_stamp(&base_dir.join(&v.src)), v.time))
+                .unwrap_or_default()
+        };
         let mut stamp = stamp_of(texture.src.as_deref());
+        stamp.push_str(&video_stamp(&texture.video));
         for patch in &texture.patches {
             stamp.push('|');
             stamp.push_str(&stamp_of(patch.src.as_deref()));
+            stamp.push_str(&video_stamp(&patch.video));
         }
         let key = format!(
             "{id}|{}|{}|{}|{}|{stamp}",
@@ -2365,12 +2372,15 @@ impl Compositor {
         gl::unpack(&mut rgba, width, texture.flip_y, texture.premultiply);
         // `texSubImage2D` of pictures over it, in order.
         for patch in &texture.patches {
-            let (mut part, w, h) = gl::decode_picture(
-                patch.src.as_deref(),
-                patch.pixels.as_deref(),
-                (patch.width, patch.height),
-                base_dir,
-            )
+            let (mut part, w, h) = match &patch.video {
+                Some(video) => gl::decode_video(video, base_dir),
+                None => gl::decode_picture(
+                    patch.src.as_deref(),
+                    patch.pixels.as_deref(),
+                    (patch.width, patch.height),
+                    base_dir,
+                ),
+            }
             .map_err(render_error)?;
             if (w, h) != (patch.width, patch.height)
                 || patch.x.checked_add(w).is_none_or(|r| r > width)
@@ -2784,14 +2794,18 @@ impl Compositor {
                     layer: Option<&str>,
                     src: Option<&str>,
                     pixels: Option<&str>,
+                    video: Option<&gl::GlslVideo>,
                     (flip_y, premultiply): (bool, bool),
                     size: (u32, u32)|
          -> Result<wgpu::Texture> {
             if let Some(layer) = layer {
                 return Ok(input(layer, flip_y, premultiply)?.1.clone());
             }
-            let (mut rgba, w, h) =
-                gl::decode_picture(src, pixels, size, base_dir).map_err(render_error)?;
+            let (mut rgba, w, h) = match video {
+                Some(video) => gl::decode_video(video, base_dir),
+                None => gl::decode_picture(src, pixels, size, base_dir),
+            }
+            .map_err(render_error)?;
             gl::unpack(&mut rgba, w, flip_y, premultiply);
             Ok(this.device.create_texture_with_data(
                 &this.queue,
@@ -2818,6 +2832,7 @@ impl Compositor {
             texture.layer.as_deref(),
             texture.src.as_deref(),
             texture.pixels.as_deref(),
+            texture.video.as_ref(),
             (texture.flip_y, texture.premultiply),
             (texture.width, texture.height),
         )?;
@@ -2843,6 +2858,7 @@ impl Compositor {
                 p.layer.as_deref(),
                 p.src.as_deref(),
                 p.pixels.as_deref(),
+                p.video.as_ref(),
                 (p.flip_y, p.premultiply),
                 (p.width, p.height),
             )?;

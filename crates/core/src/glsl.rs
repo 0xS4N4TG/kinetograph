@@ -108,6 +108,17 @@ pub struct GlslProgram {
     pub blocks: Vec<GlslBlock>,
 }
 
+/// The picture of a video file at a time: what a `<video>` shows (`texImage2D` of one). The renderer decodes it with
+/// the video decoder, so a frame is a function of the file and the time alone.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GlslVideo {
+    /// The video file relative to the scene.
+    pub src: String,
+    /// Seconds after the file's first picture.
+    pub time: f64,
+}
+
 /// A texture's pixels: a picture file, or RGBA bytes. The sampling state is
 /// the draw's (`GlslSampler`).
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -116,6 +127,9 @@ pub struct GlslTexture {
     /// A picture file relative to the scene, or a `data:` URL; its pixels are
     /// straight RGBA8 as the decoder gives them.
     pub src: Option<String>,
+    /// Instead of `src` or `pixels`: a video's picture at a time.
+    #[serde(default)]
+    pub video: Option<GlslVideo>,
     /// Base64 RGBA8, straight alpha, `width * height * 4` bytes.
     pub pixels: Option<String>,
     /// The `id` of a child of the group this recording belongs to
@@ -276,6 +290,9 @@ pub struct GlslPatch {
     pub src: Option<String>,
     pub pixels: Option<String>,
     pub layer: Option<String>,
+    /// Or a video's picture at a time.
+    #[serde(default)]
+    pub video: Option<GlslVideo>,
     #[serde(default)]
     pub flip_y: bool,
     #[serde(default)]
@@ -3108,8 +3125,11 @@ pub fn decode_texture(
     texture: &GlslTexture,
     base_dir: &std::path::Path,
 ) -> std::result::Result<(Vec<u8>, u32, u32), String> {
+    if let Some(video) = &texture.video {
+        return decode_video(video, base_dir);
+    }
     if texture.src.is_none() && texture.pixels.is_none() {
-        return Err("a texture has either a src or pixels (or, in a group, a layer)".into());
+        return Err("a texture has either a src, pixels or a video (or, in a group, a layer)".into());
     }
     decode_picture(
         texture.src.as_deref(),
@@ -3117,6 +3137,14 @@ pub fn decode_texture(
         (texture.width, texture.height),
         base_dir,
     )
+}
+
+/// The straight RGBA8 pixels and size of a video's picture at a time, from the video decoder.
+pub fn decode_video(
+    video: &GlslVideo,
+    base_dir: &std::path::Path,
+) -> std::result::Result<(Vec<u8>, u32, u32), String> {
+    crate::picture_read::video_picture(base_dir, &video.src, video.time)
 }
 
 /// The straight RGBA8 pixels and size of a picture file (or `data:` URL)
@@ -4205,6 +4233,7 @@ mod tests {
         let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
         let texture = |pixels: Option<String>, floats: Option<String>| GlslTexture {
             src: None,
+            video: None,
             pixels,
             layer: None,
             width: 2,

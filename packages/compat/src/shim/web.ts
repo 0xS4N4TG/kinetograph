@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, GL, GL2, WebGLContext, createGpu, GPU_GLOBALS, pictureOf, type CanvasPicture } from '@kinetographdev/scene';
 import { resolveDocumentUrl, resolveProjectFile, resolveCachedRemoteFile, sameOriginPath } from '../environment.js';
 import { netFetch } from './net-store.js';
+import { mediaLoadsSettled, pendingMediaLoads, reportMediaIssue, takeMediaIssues } from './media.js';
 import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas.js';
 import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, XMLSerializerShim, installDocumentMembers } from './document.js';
 import { AttrShim, NamedNodeMapShim } from './attributes.js';
@@ -206,7 +207,7 @@ let loadsDone = 0;
 
 /** How many loads (images, fetches, bitmaps) have finished since the start: a frame that sees it move runs what they set going before it is read. */
 export function loadsSettled(): number {
-  return loadsDone;
+  return loadsDone + mediaLoadsSettled();
 }
 
 /** Loads that failed since the last `takeLoadFailures`: what a page asked for (an image, a fetch) and did not get. */
@@ -214,14 +215,14 @@ const loadFailures = new Set<string>();
 
 /** The loads that failed since the last call, each once, as `message` strings that name the URL: the frame loop reports them. */
 export function takeLoadFailures(): string[] {
-  const out = [...loadFailures];
+  const out = [...loadFailures, ...takeMediaIssues()];
   loadFailures.clear();
   return out;
 }
 
 /** Image loads that have started and not yet fired `load` or `error`: a frame waits for them (`new Image()`, a script's `<img>`). */
 export function pendingImageLoads(): number {
-  return pendingImages;
+  return pendingImages + pendingMediaLoads();
 }
 
 /** Reads the image at `source`: a project file or `data:` URL at once, a `blob:` URL once its bytes are read. `who` names the API in the messages. */
@@ -428,7 +429,7 @@ export function pendingFetches(): number {
 export async function whenFetchesSettle(): Promise<void> {
   for (let quiet = 0; quiet < 2; ) {
     await new Promise<void>((resolve) => setImmediate(resolve));
-    quiet = inFlight === 0 && pendingImages === 0 ? quiet + 1 : 0;
+    quiet = inFlight === 0 && pendingImages === 0 && pendingMediaLoads() === 0 ? quiet + 1 : 0;
   }
 }
 
@@ -686,6 +687,22 @@ export function installDomGlobals(): void {
   for (const [name, value] of Object.entries(GPU_GLOBALS)) define(g, name, value);
   const navigator = (g.navigator ??= {}) as Record<string, unknown>;
   Object.defineProperty(navigator, 'hardwareConcurrency', { value: HARDWARE_CONCURRENCY, configurable: true, enumerable: true });
+  // A camera, a microphone or a screen is not there to capture: the request is refused at once (a page that waits for the
+  // stream would hold the frame for ever) and the page is told why, as a browser with no device does.
+  if (!('mediaDevices' in navigator)) {
+    const refuse = (what: string) => async (): Promise<never> => {
+      const message = `navigator.mediaDevices.${what}: capturing a camera, microphone or screen is not supported; the page draws without it`;
+      reportMediaIssue(message);
+      const error = new Error(message);
+      error.name = 'NotSupportedError';
+      throw error;
+    };
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: Object.assign(new EventTarget(), { getUserMedia: refuse('getUserMedia'), getDisplayMedia: refuse('getDisplayMedia'), enumerateDevices: async () => [], getSupportedConstraints: () => ({}) }),
+      configurable: true,
+      enumerable: false,
+    });
+  }
   if (!('gpu' in navigator)) Object.defineProperty(navigator, 'gpu', { value: createGpu({ rasterize: rasterizeCanvas, info: webgpuDeviceInfo }), configurable: true, enumerable: false });
   define(g, 'CanvasGradient', CanvasGradient);
   define(g, 'CanvasPattern', CanvasPattern);

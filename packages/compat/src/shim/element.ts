@@ -10,6 +10,7 @@ import { srcsetCandidate } from '../request/srcset.js';
 import { isDomElement, isSvgTag } from '../request/tags.js';
 import type { DomNode } from '../types.js';
 import { addonFunction, hasAddonFunction } from '../addon.js';
+import { MediaPlayer, canPlayType } from './media.js';
 import { CANVAS_SOURCE, VIDEO_FRAME, fontKey, type CanvasContext2D, type CanvasPicture, type VideoFrameSource, type WebGLContext } from '@kinetographdev/scene';
 import type { GlRecorder } from './canvas.js';
 import {
@@ -229,6 +230,7 @@ export function computedStyleOf(host: HostElement, readback: Readback): CSSStyle
 type Listener = ((event: any) => void) | { handleEvent(event: any): void };
 
 const elements = new WeakMap<HostElement, DomElement>();
+const players = new WeakMap<HostElement, MediaPlayer>();
 const childLists = new WeakMap<HostElement, NodeList<DomElement | DomText>>();
 /** A `<template>`'s content: a fragment of its own. */
 const templateContents = new WeakMap<HostElement, HostElement>();
@@ -569,6 +571,7 @@ export class DomElement extends DomNodeBase {
     this.readback.touch(this.host);
     recordAttribute(this.host, name, old);
     if (name === 'src' && this.host.type === 'img') this.loadImage(String(value));
+    else if (name === 'src' && this.isMedia) this.player!.load();
   }
   removeAttribute(name: string): void {
     const old = oldAttribute(this.host, name);
@@ -806,13 +809,20 @@ export class DomElement extends DomNodeBase {
   }
   appendChild<T>(child: T): T {
     for (const host of expandFragments([DomElement.required(child, 'appendChild')])) insertChild(this.host, host, null);
+    this.sourceAdded();
     return child;
   }
   insertBefore<T>(child: T, before: unknown): T {
     const hosts = expandFragments([DomElement.required(child, 'insertBefore')]);
     const anchor = before === null || before === undefined ? null : DomElement.required(before, 'insertBefore');
     for (const host of hosts) insertChild(this.host, host, anchor);
+    this.sourceAdded();
     return child;
+  }
+  /** A `<source>` put into a media element with nothing loaded starts the load (HTML: the resource selection algorithm). */
+  private sourceAdded(): void {
+    const player = this.player;
+    if (player !== null && (player.networkState === 0 || player.networkState === 3)) player.load();
   }
   removeChild<T>(child: T): T {
     const host = DomElement.required(child, 'removeChild');
@@ -1311,36 +1321,169 @@ export class DomElement extends DomNodeBase {
       this.dispatchEvent(event);
     });
   }
-  // `<video>` and `<audio>`: what the file's header says, and a player that is always ready and never plays.
-  private media(): { width: number; height: number; durationInSeconds: number } | null {
-    if (this.host.type !== 'video' && this.host.type !== 'audio') return null;
-    const file = projectFileOf(this.rawSrc);
-    if (file === null || !hasAddonFunction('probeMedia')) return null;
+  // `<video>` and `<audio>`: a player on the virtual clock (media.ts); the file's header gives the size and duration.
+  private get isMedia(): boolean {
+    return this.host.type === 'video' || this.host.type === 'audio';
+  }
+  /** This element's player (made on first use), or null for any other element. */
+  get player(): MediaPlayer | null {
+    if (!this.isMedia) return null;
+    let player = players.get(this.host);
+    if (player === undefined) {
+      player = new MediaPlayer({
+        kind: this.host.type as 'video' | 'audio',
+        dispatch: (type) => {
+          const event = new Event(type);
+          Object.defineProperties(event, { target: { value: this }, currentTarget: { value: this } });
+          const handler = (this as unknown as Record<string, unknown>)[`on${type}`];
+          if (typeof handler === 'function') handler.call(this, event);
+          this.dispatchEvent(event);
+        },
+        candidates: () => this.mediaCandidates(),
+        resolve: (src) => (/^(https?|wss?|ftp):\/\//i.test(src) ? null : projectFileOf(src)),
+        probe: (file) => this.probeFile(file),
+        attribute: (name) => this.hasAttribute(name),
+      });
+      players.set(this.host, player);
+    }
+    return player;
+  }
+  private mediaCandidates(): { src: string; type: string }[] {
+    const src = this.getAttribute('src');
+    if (src !== null && src !== '') return [{ src, type: '' }];
+    const out: { src: string; type: string }[] = [];
+    for (const child of this.childHosts()) {
+      if (child.kind !== 'element' || child.type !== 'source') continue;
+      const el = domElementFor(child);
+      const s = el.getAttribute('src');
+      if (s !== null && s !== '') out.push({ src: s, type: el.getAttribute('type') ?? '' });
+    }
+    return out;
+  }
+  private probeFile(file: string): { width: number; height: number; durationInSeconds: number } | null {
+    if (!hasAddonFunction('probeMedia')) return null;
     try {
       return addonFunction('probeMedia')(file);
     } catch {
       return null;
     }
   }
+  /** The file and size a frame is read from, also before the player's metadata event (a project that draws at once). */
+  private mediaFile(): { file: string; width: number; height: number } | null {
+    if (!this.isMedia) return null;
+    const known = this.player!.source;
+    if (known !== null) return known;
+    for (const c of this.mediaCandidates()) {
+      const file = projectFileOf(c.src);
+      const info = file === null ? null : this.probeFile(file);
+      if (file !== null && info !== null) return { file, width: info.width, height: info.height };
+    }
+    return null;
+  }
+  private mediaProp<T>(read: (p: MediaPlayer) => T, otherwise: T): T {
+    const p = this.player;
+    return p === null ? otherwise : read(p);
+  }
+  /** On an element that is not media a name is an ordinary property. */
+  private plain(name: string, value: unknown): void {
+    Object.defineProperty(this, name, { value, writable: true, enumerable: true, configurable: true });
+  }
   get duration(): number {
-    return this.media()?.durationInSeconds ?? NaN;
+    return this.mediaProp((p) => p.duration, NaN);
   }
   get videoWidth(): number {
-    return this.media()?.width ?? 0;
+    return this.mediaProp((p) => p.videoWidth, 0);
   }
   get videoHeight(): number {
-    return this.media()?.height ?? 0;
+    return this.mediaProp((p) => p.videoHeight, 0);
   }
   get readyState(): number {
-    return 4;
+    return this.mediaProp((p) => p.readyState, 4);
+  }
+  get networkState(): number {
+    return this.mediaProp((p) => p.networkState, 0);
+  }
+  get error(): unknown {
+    return this.mediaProp((p) => p.error, null);
   }
   get paused(): boolean {
-    return true;
+    return this.mediaProp((p) => p.paused, true);
   }
-  currentTime = 0;
-  async play(): Promise<void> {}
-  pause(): void {}
-  load(): void {}
+  get ended(): boolean {
+    return this.mediaProp((p) => p.ended, false);
+  }
+  get seeking(): boolean {
+    return this.mediaProp((p) => p.seeking, false);
+  }
+  get loop(): boolean {
+    return this.mediaProp((p) => p.loop, false);
+  }
+  set loop(value: boolean) {
+    if (this.player === null) this.plain('loop', value);
+    else this.player.loop = value;
+  }
+  get autoplay(): boolean {
+    return this.mediaProp((p) => p.autoplay, false);
+  }
+  set autoplay(value: boolean) {
+    if (this.player === null) this.plain('autoplay', value);
+    else this.player.autoplay = value;
+  }
+  get muted(): boolean {
+    return this.mediaProp((p) => p.muted, false);
+  }
+  set muted(value: boolean) {
+    if (this.player === null) this.plain('muted', value);
+    else this.player.muted = value;
+  }
+  get volume(): number {
+    return this.mediaProp((p) => p.volume, 1);
+  }
+  set volume(value: number) {
+    if (this.player === null) this.plain('volume', value);
+    else this.player.volume = value;
+  }
+  get playbackRate(): number {
+    return this.mediaProp((p) => p.playbackRate, 1);
+  }
+  set playbackRate(value: number) {
+    if (this.player === null) this.plain('playbackRate', value);
+    else this.player.playbackRate = value;
+  }
+  get defaultPlaybackRate(): number {
+    return this.mediaProp((p) => p.defaultPlaybackRate, 1);
+  }
+  set defaultPlaybackRate(value: number) {
+    if (this.player === null) this.plain('defaultPlaybackRate', value);
+    else this.player.defaultPlaybackRate = value;
+  }
+  get currentTime(): number {
+    return this.mediaProp((p) => p.currentTime, this.plainTime);
+  }
+  set currentTime(value: number) {
+    if (this.player === null) this.plainTime = value;
+    else this.player.currentTime = value;
+  }
+  private plainTime = 0;
+  async play(): Promise<void> {
+    if (this.player !== null) await this.player.play();
+  }
+  pause(): void {
+    this.player?.pause();
+  }
+  load(): void {
+    this.player?.load();
+  }
+  canPlayType(type: string): string {
+    return canPlayType(String(type));
+  }
+  requestVideoFrameCallback(callback: (now: number, metadata: Record<string, number>) => void): number {
+    if (this.host.type !== 'video') throw new TypeError('requestVideoFrameCallback is not a function');
+    return this.player!.requestVideoFrameCallback(callback);
+  }
+  cancelVideoFrameCallback(id: number): void {
+    this.player?.cancelVideoFrameCallback(id);
+  }
   async decode(): Promise<void> {
     const load = imageLoads.get(this.host);
     if (load === undefined) return;
@@ -1366,10 +1509,9 @@ export class DomElement extends DomNodeBase {
    */
   [VIDEO_FRAME](): VideoFrameSource | null {
     if (this.host.type !== 'video') return null;
-    const file = projectFileOf(this.rawSrc);
-    const size = this.media();
-    if (file === null || size === null) return null;
-    return { src: file, time: Number.isFinite(this.currentTime) && this.currentTime > 0 ? this.currentTime : 0, width: size.width, height: size.height };
+    const media = this.mediaFile();
+    if (media === null) return null;
+    return { src: media.file, time: Number.isFinite(this.currentTime) && this.currentTime > 0 ? this.currentTime : 0, width: media.width, height: media.height };
   }
   /** What `drawImage` reads of this element: a canvas's commands, an image's file, a video's frame. */
   [CANVAS_SOURCE](): CanvasPicture | null {

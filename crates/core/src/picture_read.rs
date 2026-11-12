@@ -225,6 +225,27 @@ impl PictureReader {
     }
 }
 
+/// The decoders a WebGL texture made from a `<video>` reads its frames with, kept from one frame to the next.
+static VIDEO_PICTURES: std::sync::Mutex<Option<PictureReader>> = std::sync::Mutex::new(None);
+
+/// The straight RGBA8 pixels and size of the picture of the video file `src` at `time` seconds after its first picture
+/// (the same decoder and frame lookup a `<Video>` and `drawImage(video)` use).
+pub fn video_picture(base_dir: &Path, src: &str, time: f64) -> Result<(Vec<u8>, u32, u32), String> {
+    let mut held = VIDEO_PICTURES.lock().unwrap_or_else(|e| e.into_inner());
+    let picture = held
+        .get_or_insert_with(PictureReader::default)
+        .picture(
+            base_dir,
+            &CanvasSource::Video {
+                src: src.to_string(),
+                time,
+                end: None,
+            },
+        )?
+        .ok_or_else(|| format!("video {src:?} cannot be read"))?;
+    Ok((picture.rgba.data().to_vec(), picture.width, picture.height))
+}
+
 /// The one picture draw in `ops` if there is nothing else that leaves a mark: no shadow, filter, alpha, composite
 /// operation or clip. A `clearRect` before the draw changes nothing (the canvas starts empty).
 fn plain_draw(ops: &[CanvasOp]) -> Option<&ImageOp> {
@@ -559,6 +580,33 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(a, c);
+    }
+
+    /// A WebGL texture made from a `<video>` names the file and the time; the frame is the decoder's, the same twice,
+    /// and the same as the one a canvas `drawImage` of it reads at its own size.
+    #[test]
+    fn a_video_texture_is_the_decoders_frame_at_the_time() {
+        let base = media("");
+        let (a, w, h) = video_picture(&base, "clip.mp4", 0.5).unwrap();
+        let (b, ..) = video_picture(&base, "clip.mp4", 0.5).unwrap();
+        let (other, ..) = video_picture(&base, "clip.mp4", 0.0).unwrap();
+        assert_eq!(a.len(), (w * h * 4) as usize);
+        assert_eq!(a, b);
+        assert_ne!(a, other, "another time is another frame");
+        let commands = ops(&format!(
+            r#"[{{"op":"image","source":{{"kind":"video","src":"clip.mp4","time":0.5}},"dx":0,"dy":0,"dw":{w},"dh":{h}}}]"#
+        ));
+        let rect = ReadRect {
+            x: 0,
+            y: 0,
+            width: w,
+            height: h,
+        };
+        let drawn = PictureReader::default()
+            .read(&base, &commands, (w, h), rect)
+            .unwrap()
+            .unwrap();
+        assert_eq!(a, drawn);
     }
 
     /// The alpha of a matte video (`matte-4444.mkv`: ProRes 4444, a disc of radius 10 whose centre is at x = 8 + 4n on

@@ -238,7 +238,7 @@ describe('the recording WebGL context', () => {
     expect(second).not.toHaveProperty('layer');
   });
 
-  it('uploads a video frame (onVideoFrame) with texImage2D as the pixels the addon reads of it', () => {
+  it('records a video frame (onVideoFrame) uploaded with texImage2D as the file and the time, not pixels', () => {
     const asked: unknown[] = [];
     const gl = createWebGLContext({
       size: () => ({ width: 8, height: 4 }),
@@ -260,12 +260,34 @@ describe('the recording WebGL context', () => {
     gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, GL.RGBA, GL.UNSIGNED_BYTE, new VideoFramePicture('/p/clip.mp4', 0.5, 4, 2));
     gl.uniform1i(gl.getUniformLocation(program, 'tex'), 0);
     gl.drawArrays(GL.TRIANGLES, 0, 3);
-    // The frame was asked for as a canvas of its own size that draws it 1:1.
-    expect(asked).toEqual([
-      { kind: 'canvas', width: 4, height: 2, commands: [{ op: 'image', source: { kind: 'video', src: '/p/clip.mp4', time: 0.5 }, dx: 0, dy: 0, dw: 4, dh: 2 }] },
-    ]);
+    // The renderer decodes the frame; nothing was read here.
+    expect(asked).toEqual([]);
     const content = gl.content();
-    expect(Object.values(content.textures)).toMatchObject([{ width: 4, height: 2 }]);
+    expect(Object.values(content.textures)).toMatchObject([{ video: { src: '/p/clip.mp4', time: 0.5 } }]);
+    expect(Object.values(content.textures)[0]).not.toHaveProperty('pixels');
+    // The next frame of the video, uploaded again, is another texture in the recording (the two frames are not one).
+    gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, GL.RGBA, GL.UNSIGNED_BYTE, new VideoFramePicture('/p/clip.mp4', 0.75, 4, 2));
+    gl.drawArrays(GL.TRIANGLES, 0, 3);
+    expect(Object.values(gl.content().textures).map((t) => (t as { video?: { time: number } }).video?.time)).toEqual([0.5, 0.75]);
+  });
+
+  it('records a video frame given to texSubImage2D as a patch that names the file and the time', () => {
+    const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }) });
+    const program = gl.createProgram();
+    for (const [type, source] of [[GL.VERTEX_SHADER, VERTEX], [GL.FRAGMENT_SHADER, FRAGMENT]] as const) {
+      const shader = gl.createShader(type)!;
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      gl.attachShader(program, shader);
+    }
+    gl.linkProgram(program);
+    gl.useProgram(program);
+    gl.bindTexture(GL.TEXTURE_2D, gl.createTexture());
+    gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 4, 2, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4 * 2 * 4));
+    gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, GL.RGBA, GL.UNSIGNED_BYTE, new VideoFramePicture('/p/clip.mp4', 1.25, 4, 2));
+    gl.uniform1i(gl.getUniformLocation(program, 'tex'), 0);
+    gl.drawArrays(GL.TRIANGLES, 0, 3);
+    expect(Object.values(gl.content().textures)).toMatchObject([{ patches: [{ x: 0, y: 0, width: 4, height: 2, video: { src: '/p/clip.mp4', time: 1.25 } }] }]);
   });
 
   it('uploads an element image with texElementImage2D as it does with texImage2D', () => {
