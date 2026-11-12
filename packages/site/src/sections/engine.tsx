@@ -42,15 +42,17 @@ export function Engine() {
         <div id="agents" data-reveal style={{ '--i': 2 } as React.CSSProperties} className="kg-tray scroll-mt-6 lg:col-span-5">
           <div className={`kg-core kg-core-field flex h-full flex-col gap-10 ${pad}`}>
             <Heading size="cell" className="max-w-[12ch] text-on-field">An agent can check its own work.</Heading>
-            <p className="max-w-[44ch] font-dm text-[17px] leading-[1.6] tracking-[-0.005em] text-on-field/90">
-              Every command takes <code className="font-jb text-[14px]">--json</code>, and{' '}
-              <code className="font-jb text-[14px]">kinetograph mcp</code> serves them as tools. An agent writes the TSX or HTML,
-              renders a still, reads the scene graph and fixes what is wrong before you watch.
-            </p>
-            {/* Pinned to the cell's bottom, level with the taste cell's command bar. */}
-            <div className="mt-auto">
-              <p className="font-dm text-[17px] text-on-field/90">Teach your agent Kinetograph:</p>
-              <CommandBar command="npx kinetograph skills update" tone="ink" className={`${commandBar} mt-4 border-on-field/30 bg-on-field/10 text-on-field`} />
+            {/* Heading on top, text and command pinned to the bottom, as in the other cells; the command bar sits level with the taste cell's. */}
+            <div className="mt-auto flex flex-col gap-10">
+              <p className="max-w-[44ch] font-dm text-[17px] leading-[1.6] tracking-[-0.005em] text-on-field/90">
+                Every command takes <code className="font-jb text-[14px]">--json</code>, and{' '}
+                <code className="font-jb text-[14px]">kinetograph mcp</code> serves them as tools. An agent writes the TSX or HTML,
+                renders a still, reads the scene graph and fixes what is wrong before you watch.
+              </p>
+              <div>
+                <p className="font-dm text-[17px] text-on-field/90">Teach your agent Kinetograph:</p>
+                <CommandBar command="npx kinetograph skills update" tone="ink" className={`${commandBar} mt-4 border-on-field/30 bg-on-field/10 text-on-field`} />
+              </div>
             </div>
           </div>
         </div>
