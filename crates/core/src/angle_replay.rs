@@ -228,6 +228,8 @@ struct Replay<'a> {
 struct Canvas {
     fbo: u32,
     resolve: u32,
+    /// A single-sample framebuffer the picture is blitted into upside down, so its rows read back top first.
+    flip: u32,
     renderbuffers: Vec<u32>,
     samples: i32,
 }
@@ -338,6 +340,7 @@ fn run(
         canvas: Canvas {
             fbo: 0,
             resolve: 0,
+            flip: 0,
             renderbuffers: Vec::new(),
             samples: 0,
         },
@@ -397,35 +400,39 @@ impl<'a> Replay<'a> {
             gl_.finish();
         }
         let ops_done = started.map(|t| t.elapsed());
-        // Resolve a multisampled drawing buffer, then read it from the bottom row up and turn it over.
+        // Resolve a multisampled drawing buffer, blit the picture into the flip buffer with its rows reversed (GL's first row
+        // is the bottom one; the compositor's is the top), and read that.
         let (w, h) = (self.size.0 as i32, self.size.1 as i32);
+        gl_.disable(gl::SCISSOR_TEST);
+        gl_.color_mask(1, 1, 1, 1);
         let read = if self.canvas.samples > 0 {
             gl_.bind_framebuffer(gl::READ_FRAMEBUFFER, self.canvas.fbo);
             gl_.bind_framebuffer(gl::DRAW_FRAMEBUFFER, self.canvas.resolve);
-            gl_.disable(gl::SCISSOR_TEST);
-            gl_.color_mask(1, 1, 1, 1);
             gl_.blit_framebuffer(0, 0, w, h, 0, 0, w, h, gl::COLOR_BUFFER_BIT, gl::NEAREST);
             self.canvas.resolve
         } else {
             self.canvas.fbo
         };
         gl_.bind_framebuffer(gl::READ_FRAMEBUFFER, read);
+        gl_.bind_framebuffer(gl::DRAW_FRAMEBUFFER, self.canvas.flip);
+        gl_.blit_framebuffer(0, 0, w, h, 0, h, w, 0, gl::COLOR_BUFFER_BIT, gl::NEAREST);
+        let errors = self.drain_errors();
+        if !errors.is_empty() {
+            return Err(format!("the read-back: {errors}"));
+        }
+        gl_.bind_framebuffer(gl::READ_FRAMEBUFFER, self.canvas.flip);
         gl_.read_buffer(gl::COLOR_ATTACHMENT0);
-        let mut bottom_up = vec![0u8; (w * h * 4) as usize];
-        gl_.read_pixels((w, h), &mut bottom_up)?;
-        let read_done = started.map(|t| t.elapsed());
-        let row = (w * 4) as usize;
-        let flipped = bottom_up.chunks(row).rev().flatten().copied().collect();
-        if let (Some(started), Some(ops_done), Some(read_done)) = (started, ops_done, read_done) {
+        let mut rows = vec![0u8; (w * h * 4) as usize];
+        gl_.read_pixels((w, h), &mut rows)?;
+        if let (Some(started), Some(ops_done)) = (started, ops_done) {
             let end = started.elapsed();
             eprintln!(
-                "angle-time: ops+finish {:.2} ms, resolve+readback {:.2} ms, flip {:.2} ms",
+                "angle-time: ops+finish {:.2} ms, resolve+flip+readback {:.2} ms",
                 ops_done.as_secs_f64() * 1e3,
-                (read_done - ops_done).as_secs_f64() * 1e3,
-                (end - read_done).as_secs_f64() * 1e3
+                (end - ops_done).as_secs_f64() * 1e3
             );
         }
-        Ok(flipped)
+        Ok(rows)
     }
 
     /// Every GL error pending, as text with the messages ANGLE logged for them (empty when there is none).
@@ -498,9 +505,12 @@ impl<'a> Replay<'a> {
             resolve = gl_.gen_framebuffer();
             colour(resolve, 0, &mut renderbuffers);
         }
+        let flip = gl_.gen_framebuffer();
+        colour(flip, 0, &mut renderbuffers);
         self.canvas = Canvas {
             fbo,
             resolve,
+            flip,
             renderbuffers,
             samples,
         };
@@ -542,6 +552,7 @@ impl<'a> Replay<'a> {
             gl_.delete_renderbuffer(*r);
         }
         gl_.delete_framebuffer(self.canvas.fbo);
+        gl_.delete_framebuffer(self.canvas.flip);
         if self.canvas.resolve != 0 {
             gl_.delete_framebuffer(self.canvas.resolve);
         }
