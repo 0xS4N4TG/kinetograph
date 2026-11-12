@@ -35,7 +35,8 @@ use style::values::generics::transform::{Scale, Translate};
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_dom::ElementState;
 use style_traits::values::ToCss;
-use taffy::{Cache, prelude::Layout};
+use crate::layout::cache::Cache;
+use taffy::prelude::Layout;
 use thin_vec::ThinVec;
 
 use super::stylo_data::{ComputedStyleRef, StyloData};

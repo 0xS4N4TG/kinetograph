@@ -678,3 +678,21 @@ fn a_node_that_was_inline_content_is_built_as_a_box_when_it_stops_being_inline_c
     ]);
     assert_eq!(got, want);
 }
+
+/// Seed 1051916 (gaps in blocks), cut down: a flex item's font size goes from 16 to 30px and its child (a block with a
+/// flex box and a text in it) goes from block to inline-block in one edit. The line round the inline-block took its
+/// baseline from a measurement of the flex box that the cache answered with the final layout's baselines; a measurement
+/// that is not cached gives a flex box none (taffy's measure of one is its size only), so the line was taller than in
+/// the document built afresh.
+#[test]
+fn an_inline_block_sits_on_the_line_the_same_whether_its_flex_child_was_measured_before_or_not() {
+    let tree = |item: &str, inline: &str| {
+        let flex = el_attrs("div", "$0.0.0.0.0.0", json!({ "class": "flex" }), "", vec![text("gamma")]);
+        let b = common::el("b", "$0.0.0.0.0", &format!("font-size: 22px; {inline}"), vec![flex, text("1234")]);
+        let item = common::el("div", "$0.0.0.0", item, vec![b]);
+        let p = common::el("p", "$0.0.0", "display: flex", vec![item]);
+        fuzz_page(common::el("div", "$0.0", "", vec![p]))
+    };
+    let (got, want) = chain_and_fresh(vec![tree("", ""), tree("font-size: 30px", "display: inline-block")]);
+    assert_eq!(got, want);
+}
