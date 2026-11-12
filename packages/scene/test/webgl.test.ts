@@ -58,6 +58,27 @@ describe('the recording WebGL context', () => {
     expect(gl.content().ops).toHaveLength(1);
   });
 
+  it('records a NaN uniform as null (the replay reads it as NaN) and an infinity as a number past a float', () => {
+    const { gl, program } = setup();
+    gl.uniform1f(gl.getUniformLocation(program, 't'), NaN);
+    gl.uniform2fv(gl.getUniformLocation(program, 'r[0]'), [Infinity, 1]);
+    gl.drawArrays(GL.TRIANGLES, 0, 3);
+    const draw = gl.content().ops[0]!;
+    if (draw.op !== 'draw') throw new Error('not a draw');
+    expect(draw.uniforms.t![0]!.value).toEqual([null]);
+    expect(JSON.parse(JSON.stringify(draw.uniforms.t))[0].value).toEqual([null]);
+    expect(draw.uniforms.r![0]!.value).toEqual([1e39, 1]);
+  });
+
+  it('exposes OES_standard_derivatives to WebGL 1 only: WebGL 2 has the derivatives in the language', () => {
+    const one = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 1 });
+    const two = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+    expect(one.getSupportedExtensions()).toContain('OES_standard_derivatives');
+    expect(one.getExtension('OES_standard_derivatives')).not.toBeNull();
+    expect(two.getSupportedExtensions()).not.toContain('OES_standard_derivatives');
+    expect(two.getExtension('OES_standard_derivatives')).toBeNull();
+  });
+
   it('works out a program\'s recorded id once, at the link, not at every draw', () => {
     const { gl } = setup();
     const spy = vi.spyOn(JSON, 'stringify');

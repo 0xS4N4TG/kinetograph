@@ -535,10 +535,17 @@ pub struct GlslIndices {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GlslUniform {
     pub kind: GlslUniformKind,
+    /// The values; a `null` is a NaN (JSON has none).
+    #[serde(deserialize_with = "numbers_or_nan")]
     pub value: Vec<f64>,
     /// The array element the first value goes to, for `name[i]`.
     #[serde(default)]
     pub index: u32,
+}
+
+fn numbers_or_nan<'de, D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<Vec<f64>, D::Error> {
+    let values = Vec::<Option<f64>>::deserialize(deserializer)?;
+    Ok(values.into_iter().map(|v| v.unwrap_or(f64::NAN)).collect())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]

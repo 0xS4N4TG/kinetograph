@@ -1039,9 +1039,9 @@ const MAX_SAMPLES = 4;
 /**
  * A uniform value as JSON holds it: an infinity (three.js sets a transmissive material's `attenuationDistance` to one) is
  * a number past what a 32-bit float holds, which the replay reads back as the infinity, where JSON.stringify would write
- * null and the scene would not load. A NaN is 0.
+ * null and the scene would not load. A NaN is the one value written as `null`, which the replay reads back as NaN.
  */
-const jsonNumber = (v: number): number => (Number.isNaN(v) ? 0 : v === Infinity ? 1e39 : v === -Infinity ? -1e39 : v);
+const jsonNumber = (v: number): number | null => (Number.isNaN(v) ? null : v === Infinity ? 1e39 : v === -Infinity ? -1e39 : v);
 
 /** The largest point drawn (`ALIASED_POINT_SIZE_RANGE`): `gl_PointSize` is clamped to 1 to this (crates/core/src/glsl.rs, `MAX_POINT_SIZE`). */
 const POINT_SIZE_MAX = 511;
@@ -1326,11 +1326,12 @@ export class WebGLContext {
     return e;
   }
   getSupportedExtensions(): string[] {
-    return this.version === 1 ? ['OES_standard_derivatives', 'WEBGL_depth_texture'] : ['OES_standard_derivatives', 'OES_texture_float_linear', 'EXT_color_buffer_float', 'EXT_color_buffer_half_float', 'EXT_float_blend'];
+    return this.version === 1 ? ['OES_standard_derivatives', 'WEBGL_depth_texture'] : ['OES_texture_float_linear', 'EXT_color_buffer_float', 'EXT_color_buffer_half_float', 'EXT_float_blend'];
   }
   getExtension(name: string): object | null {
     // Derivatives are always available in the translated shaders, and depth textures (core in WebGL 2) in the replay.
-    if (name === 'OES_standard_derivatives') return { FRAGMENT_SHADER_DERIVATIVE_HINT_OES: 0x8b8b };
+    // WebGL 2 has the derivatives in the language and exposes no extension for them, as browsers do not.
+    if (name === 'OES_standard_derivatives' && this.version === 1) return { FRAGMENT_SHADER_DERIVATIVE_HINT_OES: 0x8b8b };
     if (name === 'EXT_color_buffer_float' && this.version === 2) return {};
     // WebGL 2 draws into 16-bit floats with either extension; blending into 32-bit ones needs EXT_float_blend enabled.
     if (name === 'EXT_color_buffer_half_float' && this.version === 2) return { RGBA16F_EXT: 0x881a, RGB16F_EXT: 0x881b, FRAMEBUFFER_ATTACHMENT_COMPONENT_TYPE_EXT: 0x8211, UNSIGNED_NORMALIZED_EXT: 0x8c17 };
