@@ -7,8 +7,8 @@
 //!
 //! A second test makes the trees mostly inline content (spans in spans, with blocks among them).
 //!
-//! Seeded, so a failure repeats: `KG_FUZZ_SEEDS` sets how many seeds each test runs (default 48), `KG_FUZZ_SEED`
-//! runs one.
+//! Seeded, so a failure repeats: `KG_FUZZ_SEEDS` sets how many seeds each test runs (default `DEFAULT_SEEDS`; a deep
+//! run is `KG_FUZZ_SEEDS=20000`), `KG_FUZZ_SEED` runs one.
 
 mod common;
 
@@ -24,6 +24,11 @@ use serde_json::{Value, json};
 struct Rng(u64, bool);
 
 const INLINE_SEEDS: u64 = 1 << 20;
+
+/// How many seeds each test runs when `KG_FUZZ_SEEDS` does not say (a deep run is `KG_FUZZ_SEEDS=20000`). The first
+/// seed that found the stale containing block of an out-of-flow box (`a_box_back_in_flow_...` below) was
+/// `INLINE_SEEDS` + 686: 48 seeds found nothing.
+const DEFAULT_SEEDS: u64 = 700;
 
 impl Rng {
     fn new(seed: u64) -> Self {
@@ -546,7 +551,7 @@ fn check(first: u64) {
             let n = std::env::var("KG_FUZZ_SEEDS")
                 .ok()
                 .and_then(|n| n.parse().ok())
-                .unwrap_or(48);
+                .unwrap_or(DEFAULT_SEEDS);
             (first..first + n).collect()
         }
     };
@@ -565,4 +570,50 @@ fn check(first: u64) {
         seeds.len(),
         failures.join("\n")
     );
+}
+
+/// The island of `to` drawn by a document edited from `from` in the next frame, beside a fresh build of it.
+fn edited_and_fresh(from: Value, to: Value) -> (Value, Value) {
+    let mut cache = IslandCache::default();
+    drawn(&mut cache, &request(from), Some(1));
+    let to = request(to);
+    let got = drawn(&mut cache, &to, Some(2));
+    assert_eq!(cache.counts(), (1, 1), "the second frame edits the first's document");
+    (got, drawn(&mut IslandCache::default(), &to, None))
+}
+
+/// Seed 1092 of the gap tests, cut down: a transformed box holds an absolutely positioned one (it is its containing
+/// block), then is `display: contents` in the frame that puts the box inside back in flow. Nothing lays the outer one
+/// out again, and the inner one must not keep it as its containing block: its box would be moved by the outer's
+/// transform, and its text not drawn at all.
+#[test]
+fn a_box_back_in_flow_leaves_a_containing_block_that_became_display_contents() {
+    let tree = |outer: &str, inner: &str| {
+        let inner = common::el("div", "$0.0.0.0.0", inner, vec![text("kinet")]);
+        let outer = common::el("div", "$0.0.0.0", outer, vec![inner]);
+        common::el("div", "$0", "", vec![common::el("div", "$0.0", "", vec![common::el("div", "$0.0.0", "", vec![outer])])])
+    };
+    let (got, want) = edited_and_fresh(
+        tree("transform: translate(-14px, -5px)", "position: absolute"),
+        tree("transform: translate(-14px, -5px); display: contents", ""),
+    );
+    assert_eq!(got, want);
+}
+
+/// Seed 1049262, cut down: the containing block is an absolutely positioned `<span>` that is an inline again (a span
+/// of its parent's text, with no box) in the frame that puts the box inside back in flow.
+#[test]
+fn a_box_back_in_flow_leaves_a_containing_block_that_became_an_inline() {
+    let tree = |outer: &str, inner: &str| {
+        let inner = common::el("p", "$0.0.0", &format!("display: inline-block; width: 309px; height: 12px; {inner}"), vec![]);
+        common::el("div", "$0", "", vec![common::el("span", "$0.0", outer, vec![inner])])
+    };
+    let (got, want) = edited_and_fresh(
+        tree(
+            "position: absolute; left: 46px; top: 165px; transform: translate(-21px, -6px)",
+            "position: absolute; left: 232px; top: 79px",
+        ),
+        tree("", ""),
+    );
+    assert_eq!(got, want);
 }

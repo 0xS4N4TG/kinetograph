@@ -997,10 +997,24 @@ fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: NodeId) {
 /// anonymous blocks it had as a box before an edit: its children now have
 /// another box as `layout_parent`, or none. The paint tree rebuilds only a
 /// node's paint children that has layout children, so they go too.
+///
+/// Nor is it the containing block of the out-of-flow boxes its layout hoisted
+/// to it. Only a node's own layout takes those back (`clear_hoisted_children`),
+/// and it is laid out no more: one of them that is back in flow would keep it
+/// as its containing block, be placed from where it was, and not be painted
+/// (its layout parent leaves a box another node owns to that node).
 fn drop_box_children(node: &mut Node, old_anonymous_blocks: &mut Vec<NodeId>) {
     *node.layout_children.borrow_mut() = None;
     *node.paint_children.borrow_mut() = None;
     old_anonymous_blocks.extend(std::mem::take(&mut node.anonymous_blocks));
+    let hoisted = std::mem::take(&mut *node.hoisted_children.borrow_mut());
+    for id in hoisted {
+        if let Some(hoisted) = node.tree().get(id) {
+            if hoisted.oof_containing_block.get() == Some(node.id) {
+                hoisted.oof_containing_block.set(None);
+            }
+        }
+    }
 }
 
 /// Find and return the "layout_children" (inline boxes) for an inline layout
