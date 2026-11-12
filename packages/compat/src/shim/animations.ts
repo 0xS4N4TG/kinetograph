@@ -950,6 +950,7 @@ export function animatedStyleOf(host: HostElement, upTo?: AnimationShim): Map<st
     const timing = effect.computed(animation.currentTime, animation.playbackRate);
     if (timing.progress === null) continue;
     for (const property of effect.properties()) {
+      if (importantInline(host, property)) continue;
       const under = out?.get(property) ?? baseValue(host, property);
       const value = effect.valueOf(property, timing.progress, timing.currentIteration ?? 0, under);
       (out ??= new Map()).set(property, value);
@@ -966,8 +967,8 @@ const INITIAL: Record<string, string> = {
   'border-radius': '0px', 'letter-spacing': '0px', 'stroke-dashoffset': '0px', 'fill-opacity': '1', 'stroke-opacity': '1',
 };
 
-/** The value under the animations: the inline style (a script's included), else the property's initial value. */
-function baseValue(host: HostElement, property: string): string {
+/** What the inline style (a script's included) holds for `property`, with its `!important` if it has one, or null. */
+function inlineValue(host: HostElement, property: string): string | null {
   const overlay = overlayOf(host, false)?.style.get(property);
   if (overlay !== undefined && overlay !== '') return overlay;
   const style = host.props.style;
@@ -978,6 +979,16 @@ function baseValue(host: HostElement, property: string): string {
       }
     }
   }
+  return null;
+}
+
+/** An important inline declaration beats an animation (CSS Cascade 4, 6.1: important author declarations are above the animation origin). */
+const importantInline = (host: HostElement, property: string): boolean => /!\s*important\s*$/i.test(inlineValue(host, property) ?? '');
+
+/** The value under the animations: the inline style (a script's included) without its priority, else the property's initial value. */
+function baseValue(host: HostElement, property: string): string {
+  const inline = inlineValue(host, property);
+  if (inline !== null) return inline.replace(/\s*!\s*important\s*$/i, '');
   return INITIAL[property] ?? (/(width|height|top|left|right|bottom|margin|padding|gap|size|radius|spacing|offset)$/.test(property) ? '0px' : '');
 }
 

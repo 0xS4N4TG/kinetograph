@@ -7,7 +7,7 @@ export type { TimelineState, VideoConfig } from './timeline.js';
 
 export { createSceneRoot, emitLayerOf } from './root.js';
 export type { EmittedLayer } from './root.js';
-export { finishIslands } from './emit.js';
+export { ABSOLUTE_FILL_STYLE, finishIslands } from './emit.js';
 export type { RenderedTree, SceneRoot } from './root.js';
 export type { LayerNames } from './emit.js';
 export { JSX_SOURCES_KEY } from './origin.js';

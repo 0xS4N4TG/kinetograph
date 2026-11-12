@@ -7,6 +7,7 @@ import { addonFunction, hasAddonFunction } from '../addon.js';
 import { fontFacesRegistered, getDomEnvironment, importedStylesheets, noteStylesheet, readLocalStylesheet } from '../environment.js';
 import { buildIslandRequest, type IslandRequestJson } from '../request/build.js';
 import { isDomElement } from '../request/tags.js';
+import type { LayoutProbe } from '../shim/probes.js';
 import type { DomNode, IslandContext, IslandResult } from '../types.js';
 import { fillNatives, nativeSize, overlaysSiblings } from './native.js';
 import { historyFor, isWarming, noteTransitions, recordIsland } from './history.js';
@@ -23,11 +24,16 @@ export {
   noteStylesheet,
   noteStylesheetProblem,
   importedStylesheets,
+  setDefaultStylesheet,
   stylesheetNotes,
   resetStylesheets,
   setCssFontFaceHandler,
   setRemoteAssetResolver,
   resolveRemoteAsset,
+  setRemoteStylesheetResolver,
+  resolveCachedRemoteFile,
+  parseRemoteSheet,
+  MAX_REMOTE_IMPORTS,
   parseFontFaces,
   resolveProjectFile,
 } from '../environment.js';
@@ -55,6 +61,8 @@ interface IslandOutputJson {
   camera?: CameraJson | null;
   margin?: number | null;
   blendSpace?: 'linear' | 'srgb';
+  /** The probes asked for (`IslandContext.probes`), by path. */
+  probes?: Record<string, LayoutProbe>;
   /** In a pass: `layers` are written as changes from the island's kept layers of that pass (`bases`, `expand`). */
   delta?: number;
 }
@@ -202,8 +210,13 @@ export function mapDomIsland(root: DomNode, context: IslandContext): IslandResul
   t = lap('dom_prep', t);
   if (prepared === null) return { layers: [], unsupported: [], camera: null };
   const { request, natives } = prepared;
+  const probes = context.probes !== undefined && context.probes.length > 0 ? [...context.probes] : undefined;
   const render = (json: string): string =>
-    samplePass === null ? addonFunction('renderDomIsland')(json) : addonFunction('renderDomIsland')(json, samplePass, bases.get(request.path)?.pass);
+    probes !== undefined
+      ? addonFunction('renderDomIsland')(json, samplePass ?? undefined, samplePass === null ? undefined : bases.get(request.path)?.pass, probes)
+      : samplePass === null
+        ? addonFunction('renderDomIsland')(json)
+        : addonFunction('renderDomIsland')(json, samplePass, bases.get(request.path)?.pass);
   // The frame draws the tree its scripts read last: when the request is the state a readback left, it is named, not sent.
   const state = samplePass === null ? undefined : readStates.get(request.path);
   let text: string | null = null;
@@ -263,6 +276,7 @@ function assemble(output: IslandOutputJson, path: string, emitNative: (path: str
     camera: output.camera ?? null,
     ...(typeof output.margin === 'number' && output.margin > 0 ? { margin: output.margin } : {}),
     ...(output.blendSpace === 'srgb' ? { blendSpace: 'srgb' as const } : {}),
+    ...(output.probes !== undefined ? { probes: output.probes } : {}),
   };
 }
 

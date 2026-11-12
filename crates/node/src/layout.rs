@@ -112,7 +112,8 @@ pub fn layout_text(request: &TextLayoutRequest) -> Result<TextLayout> {
     };
     // A ranged face's key may carry the weight a text asks for (`Wave:300-1000@700`).
     let key = request.font.rsplit_once('@').map_or(request.font.as_str(), |(key, _)| key);
-    if !request.fonts.contains_key(key) {
+    // A key that names no loaded font but a generic or system family is set in the bundled font of that kind.
+    if !request.fonts.contains_key(key) && kinetograph_core::text::generic_key(&request.font).is_none() {
         return Err(invalid(format!(
             "font {:?} is not one of the fonts given: {:?}",
             request.font,
@@ -226,6 +227,21 @@ mod tests {
         assert!(t.glyphs[..5].windows(2).all(|w| w[1].x > w[0].x));
         assert!(t.glyphs[5].y > t.glyphs[0].y);
         assert!(t.width > 0.0 && t.height > t.lines[0].bottom);
+    }
+
+    /// CSS Fonts 4, generic families: a font list that names nothing loaded but a generic keyword is measured in the
+    /// font that keyword stands for, which the text is drawn in, instead of being refused.
+    #[test]
+    fn a_font_list_with_a_generic_family_is_measured_in_its_bundled_font() {
+        let mut r = request("iiii WWWW");
+        r.font = "Fira Code, monospace".into();
+        let t = layout_text(&r).unwrap();
+        // Monospace: every glyph, a space included, advances as far as another.
+        let advances: Vec<f64> = t.glyphs.windows(2).map(|w| w[1].x - w[0].x).collect();
+        assert!(advances[..advances.len() - 1].iter().all(|a| (a - advances[0]).abs() < 0.01), "{advances:?}");
+        // A name that is neither loaded nor generic is still refused.
+        r.font = "Fira Code".into();
+        assert!(layout_text(&r).is_err());
     }
 
     #[test]

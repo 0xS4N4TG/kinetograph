@@ -1346,7 +1346,20 @@ impl Node {
             return true;
         }
 
-        // TODO: mix-blend-mode
+        // A blend mode, a perspective, `transform-style: preserve-3d` and a backdrop filter make a stacking context, too.
+        {
+            use style::computed_values::mix_blend_mode::T as Blend;
+            use style::computed_values::transform_style::T as Style3d;
+            use style::values::computed::Perspective;
+            if style.get_effects().mix_blend_mode != Blend::Normal
+                || !matches!(box_style.perspective, Perspective::None)
+                || box_style.transform_style == Style3d::Preserve3d
+                || !style.get_effects().backdrop_filter.0.is_empty()
+            {
+                return true;
+            }
+        }
+
         // TODO: contain
 
         false

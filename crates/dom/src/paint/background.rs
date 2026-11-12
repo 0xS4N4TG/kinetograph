@@ -114,7 +114,7 @@ impl<'a> Painter<'a> {
         let mut add_mask = |p: &mut Self, layers: &mut Vec<Value>| {
             if !mask_source_added {
                 mask_source_added = true;
-                let sources = p.text_mask_layers(node, &mask_id);
+                let sources = p.text_mask_layers(node, geom, &mask_id);
                 layers.push(super::util::group(&mask_id, sources).build());
             }
         };

@@ -34,7 +34,8 @@ use style::properties::{LonghandId, PropertyDeclarationId};
 use style_traits::ToCss;
 
 use super::css_filter::{self, FilterItem};
-use super::{color, css};
+use super::{color, css, mask_layers};
+use crate::paint::shim;
 
 /// A reason something is not drawn as Chrome would.
 #[derive(Clone, Debug)]
@@ -139,7 +140,7 @@ const DECLARED: [&str; 2] = ["clip-path", "mask"];
 
 /// The presentation properties read from the cascade: CSS name, Stylo's id,
 /// whether the property inherits, and its initial value as Stylo prints it.
-const CASCADED: [(&str, LonghandId, bool, &str); 35] = [
+const CASCADED: [(&str, LonghandId, bool, &str); 36] = [
     ("fill", LonghandId::Fill, true, "rgb(0, 0, 0)"),
     ("fill-opacity", LonghandId::FillOpacity, true, "1"),
     ("fill-rule", LonghandId::FillRule, true, "nonzero"),
@@ -195,6 +196,7 @@ const CASCADED: [(&str, LonghandId, bool, &str); 35] = [
     ("filter", LonghandId::Filter, false, "none"),
     ("clip-path", LonghandId::ClipPath, false, "none"),
     ("mask", LonghandId::MaskImage, false, "none"),
+    ("mask-type", LonghandId::MaskType, false, "luminance"),
 ];
 
 pub fn canonical_tag(tag: &str) -> String {
@@ -353,7 +355,7 @@ pub fn serialize(doc: &BaseDocument, node: NodeId, size: [f64; 2]) -> Serialized
 }
 
 /// An attribute by its name in any letter case.
-fn attr_ci<'a>(node: &'a blitz_dom::Node, name: &str) -> Option<&'a str> {
+pub(super) fn attr_ci<'a>(node: &'a blitz_dom::Node, name: &str) -> Option<&'a str> {
     node.attrs()?
         .iter()
         .find(|a| (*a.name.local).eq_ignore_ascii_case(name))
@@ -511,7 +513,7 @@ fn cascaded(doc: &BaseDocument, id: NodeId, root: bool) -> Vec<(String, String, 
 /// `url()` in a computed `filter`, `clip-path` or `mask-image`, so these are
 /// read from the matched rules instead: the winning declaration, by the rule
 /// tree's order (most specific and last first, `!important` where it sits).
-fn declared(
+pub(super) fn declared(
     doc: &BaseDocument,
     style: &style::properties::ComputedValues,
     longhand: LonghandId,
@@ -569,7 +571,7 @@ fn rgba(c: [f32; 4]) -> String {
     }
 }
 
-type Attrs = Vec<(String, String)>;
+pub(super) type Attrs = Vec<(String, String)>;
 
 /// Removes `name` from the declarations and the attributes, the declaration
 /// winning as CSS has it.
@@ -625,7 +627,13 @@ impl Writer<'_> {
             let name = canonical_attr(&a.name.local);
             let value = a.value.to_string();
             match &*name {
-                "style" => decls = css::declarations(&value),
+                // A custom property styles nothing by itself, and usvg's CSS reader drops a style it cannot read from the
+                // first one it does not know, as it does one that still holds `var()` (`stroke-dashoffset: var(--d)`):
+                // the cascade supplies what they stand for, once they are not here to be kept as written.
+                "style" => {
+                    decls = css::declarations(&value);
+                    decls.retain(|(n, v)| !n.starts_with("--") && !v.contains("var("));
+                }
                 "xmlns" => {}
                 n if n.starts_with("xmlns:") || n.starts_with("data-") => {}
                 _ => attrs.push((name.into_owned(), value)),
@@ -688,6 +696,25 @@ impl Writer<'_> {
             }
             scan_refs(&v, &mut self.refs);
             decls.push((n, v));
+        }
+        // What this Stylo drops, which `shim` carried in custom properties: a rule's `stop-color` on a `<stop>`.
+        for name in ["stop-color", "stop-opacity"] {
+            let value = self.doc.resolved_style_value(id, &shim::kg_name(name));
+            let value = value.trim();
+            if value.is_empty() || value == "initial" || decls.iter().any(|(d, _)| d == name) {
+                continue;
+            }
+            let mut value = value.to_string();
+            if color::COLOR_PROPERTIES.contains(&name) {
+                let tag = self
+                    .doc
+                    .get_node(id)
+                    .and_then(|x| x.element_data())
+                    .map(|e| e.name.local.to_string())
+                    .unwrap_or_default();
+                self.resolve_color(id, &tag, name, &mut value);
+            }
+            decls.push((name.to_string(), value));
         }
     }
 
@@ -899,6 +926,59 @@ impl Writer<'_> {
             attrs.retain(|(n, _)| n != "transform");
             attrs.push(("transform".into(), t));
         }
+        // A `mask-image` list, or one with a gradient, is written as masks usvg reads (`mask_layers`).
+        let layers = mask_layers::plan(
+            self.doc,
+            id,
+            &tag,
+            &attrs,
+            &decls,
+            self.reference,
+            &mut self.counter,
+        );
+        let mut around = Vec::new();
+        if let Some(plan) = layers {
+            take(&mut attrs, &mut decls, "mask");
+            self.out.push_str(&plan.defs);
+            self.refs.extend(plan.refs);
+            self.notes.extend(plan.notes);
+            let mut masks = plan.masks.into_iter();
+            if let Some(first) = masks.next() {
+                attrs.push(("mask".into(), format!("url(#{first})")));
+            }
+            around = masks.collect();
+        }
+        // The other layers' groups turn with the element, and so hold its transform.
+        let moved = if around.is_empty() {
+            None
+        } else {
+            attrs
+                .iter()
+                .position(|(n, _)| n == "transform")
+                .map(|i| attrs.remove(i))
+        };
+        for (i, mask) in around.iter().enumerate() {
+            let mut group = vec![("mask".to_string(), format!("url(#{mask})"))];
+            if i == 0 {
+                group.extend(moved.clone());
+            }
+            self.open("g", &group);
+        }
+        self.element_body(id, tag, attrs, decls, filter);
+        for _ in &around {
+            self.out.push_str("</g>");
+        }
+    }
+
+    /// The element with its `filter`, wrapped as the filter needs, and what it holds.
+    fn element_body(
+        &mut self,
+        id: NodeId,
+        tag: String,
+        mut attrs: Attrs,
+        decls: Attrs,
+        filter: Option<String>,
+    ) {
         if !decls.is_empty() {
             attrs.push(("style".into(), css::to_style(&decls)));
         }

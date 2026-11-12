@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { lockPathOf } from '@kinetographdev/core/lock';
-import { prefetchRemoteAssets } from '@kinetographdev/core/remote-assets';
+import { prefetchRemoteAssets, prefetchStylesheetFonts } from '@kinetographdev/core/remote-assets';
 import { CliError } from './errors.js';
 import { isHyperframesEntry } from './hyperframes/entry.js';
 import type { FetchOptions } from './hyperframes/deps.js';
@@ -88,10 +88,16 @@ export async function prefetchBeforePlan(entry: string, options: PrefetchEntryOp
 /** File extensions of the remote files a project draws (`<Img src>`, `<Video>`, CSS `url()`). */
 const MEDIA_EXT = /\.(?:png|jpe?g|gif|webp|avif|svg|bmp|ico|tiff?|mp4|webm|mov|m4v|mkv|mp3|wav|ogg|m4a|aac|flac)$/i;
 
+/** An `@import` of an https stylesheet in a string of the bundle's code (Google Fonts' `css2?family=...` has no extension). */
+const IMPORT_URL = /@import\s+(?:url\(\s*)?\\?["']?(https:\/\/[^\s'"`<>()\\{}$]+)/g;
+
+/** Whether `url`, found by `scanRemoteUrls`, is a stylesheet and not a picture, video or audio file. */
+export const isStylesheetUrl = (url: string): boolean => !MEDIA_EXT.test(new URL(url).pathname);
+
 /**
- * The https URLs in a bundle's code that name a picture, video or audio file: string literals and CSS `url()`s. A URL built
- * at run time (a template with a hole, a URL with no extension) is not found here; it is downloaded when a frame first
- * asks for it, and said so.
+ * The https URLs in a bundle's code that name a picture, video or audio file (string literals and CSS `url()`s) or are
+ * imported as a stylesheet (`@import url(...)`). A URL built at run time (a template with a hole, a URL with no
+ * extension) is not found here; it is downloaded when a frame first asks for it, and said so.
  */
 export function scanRemoteUrls(code: string): string[] {
   const end = code.lastIndexOf('//# sourceMappingURL=');
@@ -107,6 +113,7 @@ export function scanRemoteUrls(code: string): string[] {
     }
     if (MEDIA_EXT.test(pathname)) found.add(url);
   }
+  for (const m of text.matchAll(IMPORT_URL)) found.add(m[1]!.replace(/[.,;]+$/, ''));
   return [...found];
 }
 
@@ -133,6 +140,10 @@ export async function prefetchBundleAssets(entry: string, bundleFile: string, op
     const say = options.progress ?? (() => {});
     if (result.fetched.length > 0) say(`downloaded ${result.fetched.length} remote file(s) into the asset cache (locked in ${lockFile})`);
     for (const f of result.failed) say(`could not download ${f.url}: ${f.error}`);
+    // The fonts a downloaded stylesheet names, so the render finds them in the cache.
+    const fonts = await prefetchStylesheetFonts(urls.filter(isStylesheetUrl), { lockFile });
+    if (fonts.fetched > 0) say(`${fonts.fetched} font file(s) of the imported stylesheets are in the font cache`);
+    for (const f of fonts.failed) say(`could not download ${f.url}: ${f.error}`);
   }
   scanned.add(key);
 }

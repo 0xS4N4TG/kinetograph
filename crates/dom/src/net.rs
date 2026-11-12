@@ -94,6 +94,17 @@ impl LocalFiles {
         }
     }
 
+    /// A `url(#id)`, which Stylo resolves against the document's address: the fragment of the document itself, an
+    /// element of it (CSS Values 4, "local URLs"), never a file to fetch.
+    fn is_local_reference(&self, url: &Url) -> bool {
+        url.fragment().is_some()
+            && Url::from_directory_path(&self.base_dir).is_ok_and(|base| {
+                let mut bare = url.clone();
+                bare.set_fragment(None);
+                bare == base
+            })
+    }
+
     /// The file a `file:` URL names: the path itself if it exists, else the
     /// same path read as relative to `publicDir`, else to `baseDir`.
     fn find(&self, path: PathBuf) -> Option<PathBuf> {
@@ -162,6 +173,9 @@ impl LocalFiles {
 
 impl NetProvider for LocalFiles {
     fn fetch(&self, _doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
+        if self.is_local_reference(&request.url) {
+            return;
+        }
         let url = request.url.to_string();
         let source = match self.source(&request.url) {
             Ok(source) => source,

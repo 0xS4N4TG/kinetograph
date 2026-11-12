@@ -1,3 +1,6 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { useEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Audio, Layer, Rect, Text } from '@kinetographdev/react';
@@ -8,14 +11,19 @@ import {
   Folder,
   getCompositions,
   getInputProps,
+  isRemotionPage,
   registerRoot,
   resetCompositions,
+  setRemotionPage,
   setInputProps,
   Still,
 } from '../src/compositions.js';
+import { importedStylesheets, setDomAddon } from '@kinetographdev/compat/dom';
 import { installDeterminism, resetVirtualClock, uninstallDeterminism } from '../src/determinism.js';
 import { clearFonts, getFonts, registerFont, trackFontLoad } from '../src/font-registry.js';
 import { createFrameRenderer } from '../src/frame-loop.js';
+import { makeGoogleFont } from '../src/google-fonts.js';
+import { measureText, setLayoutText } from '../src/layout-utils.js';
 import { AbsoluteFill } from '../src/fill.js';
 import { interpolate } from '../src/interpolate.js';
 import { Sequence, useCurrentFrame, useVideoConfig } from '../src/timeline.js';
@@ -344,6 +352,149 @@ describe('the frame loop', () => {
     expect(await async_.ready()).toMatchObject({ width: 64, fps: 60, durationInFrames: 5 });
     const { scene } = await async_.renderFrame(2);
     expect(scene).toMatchObject({ width: 64, height: 10, fps: 60 });
+  });
+
+  it('lets calculateMetadata supply fps and durationInFrames', async () => {
+    registerRoot(() => (
+      <>
+        <Composition
+          id="Late"
+          component={Hello}
+          width={10}
+          height={10}
+          calculateMetadata={async () => ({ fps: 25, durationInFrames: 50 })}
+        />
+        <Composition id="Half" component={Hello} width={10} height={10} fps={24} calculateMetadata={() => ({ durationInFrames: 8 })} />
+        <Composition id="None" component={Hello} width={10} height={10} calculateMetadata={() => ({ fps: 30 })} />
+      </>
+    ));
+    expect(await createFrameRenderer('Late').ready()).toMatchObject({ fps: 25, durationInFrames: 50 });
+    expect(await createFrameRenderer('Half').ready()).toMatchObject({ fps: 24, durationInFrames: 8 });
+    expect(() => createFrameRenderer('None')).toThrow(/"durationInFrames" of composition "None".*calculateMetadata/);
+  });
+
+  it('marks a composition whose fps or length is left to calculateMetadata as pending', () => {
+    registerRoot(() => (
+      <>
+        <Composition id="Late" component={Hello} width={10} height={10} calculateMetadata={() => ({ fps: 25, durationInFrames: 50 })} />
+        <Composition id="Plain" component={Hello} width={10} height={10} fps={30} durationInFrames={5} />
+      </>
+    ));
+    const [late, plain] = getCompositions();
+    expect(late!.metadataPending).toBe(true);
+    expect(plain).not.toHaveProperty('metadataPending');
+  });
+
+  it('still rejects a missing fps or durationInFrames when nothing calculates them', () => {
+    registerRoot(() => <Composition id="NoFps" component={Hello} width={10} height={10} durationInFrames={5} />);
+    expect(() => getCompositions()).toThrow(/"fps" of composition "NoFps"/);
+    registerRoot(() => <Composition id="NoDur" component={Hello} width={10} height={10} fps={30} />);
+    expect(() => getCompositions()).toThrow(/"durationInFrames" of composition "NoDur"/);
+  });
+
+  it('holds the frame for loadFont().waitUntilDone() in a delayRender, then measures a weight that was not loaded', async () => {
+    const faces = (weights: number[]) =>
+      weights
+        .map((w) => `@font-face { font-family: 'IBM Plex Sans'; font-style: normal; font-weight: ${w}; src: url(https://fonts.gstatic.com/plex-${w}.ttf) format('truetype'); }`)
+        .join('\n');
+    const fetch = async (url: string) => ({
+      ok: true,
+      status: 200,
+      text: async () => faces([500, 600]),
+      arrayBuffer: async () => new Uint8Array([1, 2, 3, url.length]).buffer,
+    });
+    const font = makeGoogleFont('IBMPlexSans', { fetch, cacheDir: mkdtempSync(join(tmpdir(), 'kg-plex-')) });
+    setLayoutText((request) => ({ width: request.text.length * request.size, height: request.size, lines: [], glyphs: [] }));
+    function WaitForFonts({ children }: { children: React.ReactNode }) {
+      const [ready, setReady] = useState(false);
+      const [handle] = useState(() => delayRender('fonts'));
+      useEffect(() => {
+        font.loadFont('normal', { weights: ['500', '600'] }).waitUntilDone().then(() => setReady(true), cancelRender);
+      }, []);
+      useEffect(() => {
+        if (ready) continueRender(handle);
+      }, [ready, handle]);
+      return ready ? <>{children}</> : null;
+    }
+    const Measured = () => <Rect id="m" width={measureText({ text: 'abcd', fontFamily: 'IBM Plex Sans', fontWeight: 400, fontSize: 10 }).width} height={1} fill="#fff" />;
+    registerRoot(() => (
+      <Composition id="Gate" width={100} height={20} fps={30} durationInFrames={2} component={() => <WaitForFonts><Measured /></WaitForFonts>} />
+    ));
+    try {
+      const { scene } = await createFrameRenderer('Gate').renderFrame(0);
+      expect(scene.layers).toHaveLength(1);
+      expect(JSON.stringify(scene.layers[0])).toContain('"width":40');
+    } finally {
+      setLayoutText(null);
+    }
+  });
+
+  it('fails the frame at once when a component throws after the delayRender it holds, instead of waiting for its timeout', async () => {
+    function Late() {
+      const [ready, setReady] = useState(false);
+      const [handle] = useState(() => delayRender('late'));
+      useEffect(() => {
+        void Promise.resolve().then(() => setReady(true));
+      }, []);
+      if (ready) throw new Error('boom after the effect');
+      return <Rect id="r" width={1} height={1} fill="#fff" />;
+    }
+    registerRoot(() => <Composition id="Late" width={10} height={10} fps={30} durationInFrames={2} component={Late} />);
+    await expect(createFrameRenderer('Late').renderFrame(0)).rejects.toThrow(/boom after the effect/);
+  });
+
+  it('lays Remotion\'s default CSS (box-sizing: border-box on every element) under a project\'s styles', async () => {
+    registerOne();
+    await createFrameRenderer('Main').renderFrame(0);
+    expect(importedStylesheets()[0]).toBe('* { box-sizing: border-box; }');
+  });
+
+  it('sends the default CSS whether a render starts at frame 0 or part way, so a range and a full render agree', async () => {
+    const sent: { stylesheets: string[]; path: string }[] = [];
+    setDomAddon({
+      renderDomIsland(json: string) {
+        const request = JSON.parse(json);
+        sent.push({ stylesheets: request.stylesheets, path: request.path });
+        return JSON.stringify({ layers: [{ id: request.path, type: 'group', children: [] }], unsupported: [], camera: null });
+      },
+    });
+    try {
+      registerRoot(() => (
+        <Composition id="Box" width={100} height={50} fps={30} durationInFrames={20} component={() => <div style={{ width: '100%', padding: 8 }}>box</div>} />
+      ));
+      const lastSheets = async (frames: number[]) => {
+        sent.length = 0;
+        const renderer = createFrameRenderer('Box');
+        for (const frame of frames) await renderer.renderFrame(frame);
+        renderer.dispose();
+        return sent.map((request) => request.stylesheets);
+      };
+      const full = await lastSheets([0, 1, 2, 3, 4, 5]);
+      const part = await lastSheets([5]);
+      const defaultCss = '* { box-sizing: border-box; }';
+      expect(full.length).toBeGreaterThan(0);
+      expect(part.length).toBeGreaterThan(0);
+      for (const sheets of [...full, ...part]) expect(sheets).toEqual([defaultCss]);
+    } finally {
+      setDomAddon(null);
+    }
+  });
+
+  it('leaves a page that is not a Remotion composition (HyperFrames, plain HTML) in the browser\'s content-box', async () => {
+    registerOne();
+    setRemotionPage(false);
+    try {
+      await createFrameRenderer('Main').renderFrame(0);
+      expect(importedStylesheets()).not.toContain('* { box-sizing: border-box; }');
+    } finally {
+      setRemotionPage(true);
+    }
+  });
+
+  it('starts every entry as a Remotion page, so a Remotion project loaded after a HyperFrames one gets border-box again', () => {
+    setRemotionPage(false);
+    registerRoot(() => <Composition id="A" component={Hello} width={10} height={10} fps={30} durationInFrames={5} />);
+    expect(isRemotionPage()).toBe(true);
   });
 
   it('shows Sequence timing in the scene', async () => {

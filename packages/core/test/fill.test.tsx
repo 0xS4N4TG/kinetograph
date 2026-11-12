@@ -168,9 +168,17 @@ describe('as DOM elements', () => {
       tag: 'div',
       path: '$0',
       style:
-        'position: absolute; inset: 0; display: flex; flex-direction: column; background-color: #112233; z-index: 3; background-image: linear-gradient(red, blue)',
+        'position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; display: flex; flex-direction: column; background-color: #112233; z-index: 3; background-image: linear-gradient(red, blue)',
     });
     expect((tree.layers[0] as any).id).toBe('$0');
+  });
+
+  it('takes Remotion\'s defaults (top, left, right, bottom 0, width and height 100%), which a style key set to undefined removes', () => {
+    renderDom(<AbsoluteFill style={{ height: 'auto', width: '100%', backgroundColor: 'white', padding: 30, top: undefined, fontSize: 50 }} />);
+    // No `top` and `height: auto`: the box is as tall as its content and sits at the bottom, as in a browser.
+    expect(sent[0].root.style).toBe(
+      'position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: auto; display: flex; flex-direction: column; background-color: white; padding: 30px; font-size: 50px',
+    );
   });
 
   it('lays its children out in a column unless the author says otherwise (CSS does, not the layer mapping)', () => {
@@ -206,7 +214,7 @@ describe('as DOM elements', () => {
         <p>centred</p>
       </AbsoluteFill>,
     );
-    expect(sent[0].root.style).toBe('position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center');
+    expect(sent[0].root.style).toBe('position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center');
     expect(sent[0].root.children[0]).toMatchObject({ tag: 'p', path: '$0.0' });
   });
 
@@ -214,7 +222,7 @@ describe('as DOM elements', () => {
     renderDom(<AbsoluteFill style={{ background: 'linear-gradient(red, blue)', display: 'grid', gap: '2em' }} />);
     expect(warn).not.toHaveBeenCalled();
     expect(sent[0].root.style).toBe(
-      'position: absolute; inset: 0; display: grid; flex-direction: column; background: linear-gradient(red, blue); gap: 2em',
+      'position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; display: grid; flex-direction: column; background: linear-gradient(red, blue); gap: 2em',
     );
   });
 
@@ -248,7 +256,7 @@ describe('as DOM elements', () => {
     expect(sent).toHaveLength(1);
     const [rect, inner] = sent[0].root.children;
     expect(rect).toMatchObject({ kind: 'native', path: '$0.0', width: 300, height: 200 });
-    expect(inner).toMatchObject({ tag: 'div', path: '$0.1', style: expect.stringContaining('position: absolute; inset: 0') });
+    expect(inner).toMatchObject({ tag: 'div', path: '$0.1', style: expect.stringContaining('position: absolute; top: 0; left: 0; right: 0; bottom: 0') });
     expect(inner.children[0]).toMatchObject({ tag: 'div', path: '$0.1.0' });
   });
 });

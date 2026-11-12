@@ -3,9 +3,10 @@
 // and margin. The addon is a stand-in that answers as the Rust painter does: a group per island root, a placeholder
 // for each native element, and whatever the request's attributes ask it to report.
 
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { setDomAddon } from '@kinetographdev/compat/dom';
+import { hostOf, probeOnDraw, type LayoutProbe } from '@kinetographdev/compat/shim';
 import type { LayerJson } from '@kinetographdev/scene';
 import { Camera, createSceneRoot, GlslShader, Image, Layer, Rect, SequenceHost, Text, TimelineContext, Video } from '../src/index.js';
 import { timeline } from './harness.js';
@@ -22,6 +23,8 @@ interface Node {
 }
 
 const requests: { root: Node; path: string; viewport: { width: number; height: number } }[] = [];
+/** The `probes` each render was asked for. */
+const probesAsked: (string[] | undefined)[] = [];
 
 /** One group per element, children in order, natives as placeholders at 100 px steps; `data-*` attributes script it. */
 function paint(node: Node, y: number): { layer: unknown; used: number } | null {
@@ -43,9 +46,10 @@ function paint(node: Node, y: number): { layer: unknown; used: number } | null {
 
 beforeAll(() => {
   setDomAddon({
-    renderDomIsland(json: string) {
+    renderDomIsland(json: string, _pass?: number, _base?: number, probes?: string[]) {
       const request = JSON.parse(json);
       requests.push(request);
+      probesAsked.push(probes);
       const root = request.root as Node;
       const out: { layers: unknown[]; unsupported: unknown[]; camera: unknown } = {
         layers: [paint(root, 0)!.layer],
@@ -62,13 +66,16 @@ beforeAll(() => {
         n.children?.forEach(visit);
       };
       visit(root);
-      return JSON.stringify(out);
+      // A probe is a box of 100 x 20 for each path asked for, and `overflow: hidden`.
+      const probed = Object.fromEntries((probes ?? []).map((at) => [at, { width: 100, height: 20, overflowX: 'hidden', overflowY: 'hidden' }]));
+      return JSON.stringify(probes === undefined ? out : { ...out, probes: probed });
     },
   });
 });
 afterAll(() => setDomAddon(null));
 beforeEach(() => {
   requests.length = 0;
+  probesAsked.length = 0;
 });
 
 /** Renders in a 1000 x 800 composition. */
@@ -221,6 +228,34 @@ describe('islands', () => {
     );
     expect(tree.unsupported.map((u) => `${u.path}:${u.property}`)).toEqual(['$0.0 <div>:float', '$0.1 <canvas>:canvas']);
     expect(tree.camera).toEqual({ perspective: 600, x: 5, y: 5 });
+  });
+
+  it('answer a check of an element asked for with probeOnDraw from the render that draws the island, with no readback', () => {
+    const answers: (LayoutProbe | null)[] = [];
+    function Page() {
+      const ref = useRef<any>(null);
+      return (
+        <div style={sq}>
+          <section
+            ref={(el: any) => {
+              ref.current = el;
+              if (el !== null) probeOnDraw(hostOf(el)!, (probe) => answers.push(probe));
+            }}
+          >
+            <i />
+          </section>
+        </div>
+      );
+    }
+    render(<Page />);
+    // The island is asked for the element's path in its one render, and the answer is the island's own.
+    expect(probesAsked).toEqual([['$0.0']]);
+    expect(answers).toEqual([{ width: 100, height: 20, overflowX: 'hidden', overflowY: 'hidden' }]);
+    // Asked once: the next frame's render asks again, and an element nobody asked after is not probed.
+    answers.length = 0;
+    render(<div style={sq} />);
+    expect(probesAsked.at(-1)).toBeUndefined();
+    expect(answers).toEqual([]);
   });
 
   it('give the tree one camera, and refuse a second one', () => {
