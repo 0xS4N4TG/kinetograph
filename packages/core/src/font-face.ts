@@ -11,6 +11,7 @@
 // `latin` and `latin-ext`) keeps the one that covers basic Latin.
 
 import { fetchFileCached, fetchFileCachedSync, FontDownloadError, type FontDownloadOptions } from './font-files.js';
+import { verifyLocked } from './remote-assets.js';
 import { noteFontProblem, registerFont } from './font-registry.js';
 
 interface FaceDescriptors {
@@ -84,6 +85,7 @@ export class NodeFontFace {
       this.status = 'loading';
       try {
         this.path = await fetchFileCached(this.remote, this.download);
+        verifyLocked(this.remote, this.path);
       } catch (error) {
         this.status = 'error';
         throw error;
@@ -98,6 +100,7 @@ export class NodeFontFace {
     if (this.remote === null || this.path !== '') return true;
     try {
       this.path = fetchFileCachedSync(this.remote, this.download);
+      verifyLocked(this.remote, this.path);
       this.status = 'loaded';
       return true;
     } catch (error) {

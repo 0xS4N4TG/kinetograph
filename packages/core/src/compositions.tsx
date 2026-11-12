@@ -16,6 +16,11 @@ export interface CompositionInfo {
   fps: number;
   durationInFrames: number;
   defaultProps: Record<string, unknown>;
+  /**
+   * True when `fps` or `durationInFrames` is left to `calculateMetadata`: they are placeholders (30 fps, 1 frame) until a
+   * caller that lists compositions has run it (the CLI's `compositions` and Studio do).
+   */
+  metadataPending?: boolean;
   /** JSON Schema of the composition's zod (v4) `schema`; absent when there is none or it can't be converted. */
   propsSchema?: Record<string, unknown>;
 }
@@ -26,8 +31,10 @@ export interface CompositionProps<P extends Record<string, unknown> = Record<str
   id: string;
   component?: ComponentType<P>;
   lazyComponent?: () => Promise<{ default: ComponentType<P> }>;
-  durationInFrames: number;
-  fps: number;
+  /** Optional only when `calculateMetadata` returns it. */
+  durationInFrames?: number;
+  /** Optional only when `calculateMetadata` returns it. */
+  fps?: number;
   width: number;
   height: number;
   defaultProps?: P;
@@ -63,8 +70,13 @@ export type StillProps<P extends Record<string, unknown> = Record<string, unknow
   'durationInFrames' | 'fps'
 > & { fps?: number };
 
-/** A registered composition, with what is needed to render it. */
-export interface CompositionEntry extends CompositionInfo {
+/**
+ * A registered composition, with what is needed to render it. `fps` and `durationInFrames` are left out when only
+ * `calculateMetadata` supplies them.
+ */
+export interface CompositionEntry extends Omit<CompositionInfo, 'fps' | 'durationInFrames'> {
+  fps?: number;
+  durationInFrames?: number;
   margin?: number;
   blendSpace?: 'srgb' | 'linear';
   background?: string;
@@ -96,9 +108,9 @@ function checkId(id: unknown): string {
   return id;
 }
 
-function checkPositiveInteger(id: string, name: string, value: unknown): number {
+function checkPositiveInteger(id: string, name: string, value: unknown, hint = ''): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || !Number.isInteger(value)) {
-    throw new TypeError(`The "${name}" of composition "${id}" must be a positive integer, but got ${JSON.stringify(value)}`);
+    throw new TypeError(`The "${name}" of composition "${id}" must be a positive integer, but got ${JSON.stringify(value)}${hint}`);
   }
   return value;
 }
@@ -124,11 +136,16 @@ function checkBackground(id: string, value: unknown): string {
   return value;
 }
 
-function checkFps(id: string, value: unknown): number {
+function checkFps(id: string, value: unknown, hint = ''): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-    throw new TypeError(`The "fps" of composition "${id}" must be a positive number, but got ${JSON.stringify(value)}`);
+    throw new TypeError(`The "fps" of composition "${id}" must be a positive number, but got ${JSON.stringify(value)}${hint}`);
   }
   return value;
+}
+
+// Remotion lets `calculateMetadata` supply `fps` and `durationInFrames`, so a composition that has one may leave them out.
+function leftToMetadata(props: CompositionProps<any>, value: unknown): boolean {
+  return value === undefined && props.calculateMetadata !== undefined;
 }
 
 function entryFrom(props: CompositionProps<any>, folder: string[], isStill: boolean): CompositionEntry {
@@ -140,8 +157,12 @@ function entryFrom(props: CompositionProps<any>, folder: string[], isStill: bool
     id,
     width: checkPositiveInteger(id, 'width', props.width),
     height: checkPositiveInteger(id, 'height', props.height),
-    fps: checkFps(id, isStill ? (props.fps ?? 30) : props.fps),
-    durationInFrames: isStill ? 1 : checkPositiveInteger(id, 'durationInFrames', props.durationInFrames),
+    fps: isStill ? checkFps(id, props.fps ?? 30) : leftToMetadata(props, props.fps) ? undefined : checkFps(id, props.fps),
+    durationInFrames: isStill
+      ? 1
+      : leftToMetadata(props, props.durationInFrames)
+        ? undefined
+        : checkPositiveInteger(id, 'durationInFrames', props.durationInFrames),
     defaultProps: (props.defaultProps as Record<string, unknown> | undefined) ?? {},
     margin: props.margin === undefined ? undefined : checkMargin(id, props.margin),
     blendSpace: props.blendSpace === undefined ? undefined : checkBlendSpace(id, props.blendSpace),
@@ -186,12 +207,29 @@ export function Folder({ name, children }: { name: string; children?: ReactNode 
 let root: ComponentType | null = null;
 let discovered: CompositionEntry[] | null = null;
 
+let remotionPage = true;
+
+/**
+ * Whether the pages this process draws are Remotion compositions, whose render page has `* { box-sizing: border-box }`.
+ * `registerRoot` sets it (a Remotion project calls it); a HyperFrames or plain HTML page is a browser's own, content-box,
+ * and `defineHyperframes` turns it off after its own `registerRoot`.
+ */
+export function setRemotionPage(on: boolean): void {
+  remotionPage = on;
+}
+
+export function isRemotionPage(): boolean {
+  return remotionPage;
+}
+
 export function registerRoot(component: ComponentType): void {
   if (typeof component !== 'function' && typeof component !== 'object') {
     throw new TypeError('registerRoot() takes a React component');
   }
   root = component;
   discovered = null;
+  // Every entry starts as a Remotion project; a HyperFrames one says otherwise right after (`setRemotionPage(false)`).
+  remotionPage = true;
 }
 
 function discover(): CompositionEntry[] {
@@ -258,7 +296,8 @@ export function propsSchemaOf(schema: unknown): Record<string, unknown> | undefi
 /** The compositions of the registered Root, with their declared (not yet `calculateMetadata`-adjusted) settings. */
 export function getCompositions(): CompositionInfo[] {
   return discover().map(({ id, width, height, fps, durationInFrames, defaultProps, schema }) => {
-    const info: CompositionInfo = { id, width, height, fps, durationInFrames, defaultProps };
+    const info: CompositionInfo = { id, width, height, fps: fps ?? 30, durationInFrames: durationInFrames ?? 1, defaultProps };
+    if (fps === undefined || durationInFrames === undefined) info.metadataPending = true;
     const propsSchema = propsSchemaOf(schema);
     if (propsSchema !== undefined) info.propsSchema = propsSchema;
     return info;
@@ -312,11 +351,13 @@ function applyMetadata(entry: CompositionEntry, props: Record<string, unknown>, 
     id: entry.id,
     width: result.width === undefined ? entry.width : checkPositiveInteger(entry.id, 'width', result.width),
     height: result.height === undefined ? entry.height : checkPositiveInteger(entry.id, 'height', result.height),
-    fps: result.fps === undefined ? entry.fps : checkFps(entry.id, result.fps),
-    durationInFrames:
-      result.durationInFrames === undefined
-        ? entry.durationInFrames
-        : checkPositiveInteger(entry.id, 'durationInFrames', result.durationInFrames),
+    fps: checkFps(entry.id, result.fps ?? entry.fps, ' (declare it, or return it from calculateMetadata)'),
+    durationInFrames: checkPositiveInteger(
+      entry.id,
+      'durationInFrames',
+      result.durationInFrames ?? entry.durationInFrames,
+      ' (declare it, or return it from calculateMetadata)',
+    ),
     defaultProps: entry.defaultProps,
     props: (result.props as Record<string, unknown> | undefined) ?? props,
   };

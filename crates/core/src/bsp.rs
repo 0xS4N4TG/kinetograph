@@ -23,6 +23,9 @@ const ON_PLANE: f64 = 1e-3;
 /// space to 3D (homogeneous, before the camera), and `corners` are the
 /// corners of its box in the flat space, which decide what it crosses.
 pub struct Plane {
+    /// Where the layer is in painting order: planes in one plane are painted in this order, whatever order
+    /// they are listed in.
+    pub order: usize,
     pub to_world: DMat4,
     pub corners: [[f64; 2]; 4],
 }
@@ -67,6 +70,7 @@ pub fn paint_order(planes: &[Plane], eye: DVec4) -> Vec<Piece> {
                 splitters.push(Some(s));
                 polys.push(Poly {
                     item,
+                    order: plane.order,
                     points,
                     cuts: Vec::new(),
                 });
@@ -143,13 +147,14 @@ fn splitter(points: &[DVec3]) -> Option<Splitter> {
 /// `> 0` when strict).
 struct Poly {
     item: usize,
+    order: usize,
     points: Vec<DVec3>,
     cuts: Vec<(DVec4, bool)>,
 }
 
 struct Node {
     splitter: Splitter,
-    /// The polygons in the node's plane, in the order given.
+    /// The polygons in the node's plane, in painting order.
     on: Vec<Poly>,
     front: Option<Box<Node>>,
     back: Option<Box<Node>>,
@@ -177,6 +182,8 @@ fn build(mut polys: Vec<Poly>, splitters: &[Option<Splitter>]) -> Option<Box<Nod
             }
         }
     }
+    // Boxes at one depth are painted in painting order (CSS Transforms 2 §6), not in the order they were sorted in.
+    on.sort_by_key(|p| p.order);
     Some(Box::new(Node {
         splitter: s,
         on,
@@ -213,6 +220,7 @@ fn split(poly: Poly, dist: &[f64], s: Splitter) -> (Option<Poly>, Option<Poly>) 
             cuts.push((plane * side, side < 0.0));
             Poly {
                 item: poly.item,
+                order: poly.order,
                 points,
                 cuts,
             }
@@ -265,6 +273,7 @@ mod tests {
     /// A 100 x 100 plane moved by `m`.
     fn plane(m: DMat4) -> Plane {
         Plane {
+            order: 0,
             to_world: m,
             corners: [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]],
         }
@@ -304,6 +313,19 @@ mod tests {
             plane(turned(30.0, 0.0) * DMat4::from_translation(DVec3::new(-20.0, 5.0, 0.0))),
         ];
         assert_eq!(items(&paint_order(&planes, ORTHO)), [0, 1, 2]);
+    }
+
+    #[test]
+    fn planes_in_one_plane_are_painted_in_their_order_whatever_order_they_are_listed_in() {
+        let mut planes = [
+            plane(turned(30.0, 0.0)),
+            plane(turned(30.0, 0.0) * DMat4::from_translation(DVec3::new(20.0, 10.0, 0.0))),
+            plane(turned(30.0, 0.0) * DMat4::from_translation(DVec3::new(-20.0, 5.0, 0.0))),
+        ];
+        for (plane, order) in planes.iter_mut().zip([2, 0, 1]) {
+            plane.order = order;
+        }
+        assert_eq!(items(&paint_order(&planes, ORTHO)), [1, 2, 0]);
     }
 
     #[test]

@@ -1376,6 +1376,8 @@ impl Compositor {
                     }
                 }
                 ResolvedEffect::BackdropBlur { .. } => {}
+                // Skia draws a layer with one (`needs_fallback`), so this path never sees it.
+                ResolvedEffect::BackdropColor(_) => {}
                 ResolvedEffect::Glow(glow) => src = self.glow(src, &glow),
                 ResolvedEffect::ChromaticAberration { amount, angle } if amount != 0.0 => {
                     src = self.chromatic_aberration(src, aberration_offset(amount, angle));

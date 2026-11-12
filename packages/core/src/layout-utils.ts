@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import type { TextLayout, TextLayoutRequest } from '@kinetographdev/native';
 import { fontKey } from '@kinetographdev/scene';
-import { finishFontLoadsSync, fontGeneration, getFonts, pendingFontLoads } from './font-registry.js';
+import { finishFontLoadsSync, fontGeneration, getFonts, matchFontKey, pendingFontLoads } from './font-registry.js';
 
 type LayoutText = (request: TextLayoutRequest) => TextLayout;
 
@@ -98,7 +98,9 @@ function checkedFont(options: MeasureTextOptions, text: string): string {
     );
   }
   const fonts = getFonts();
-  if (!(key in fonts)) {
+  // A weight or style that was not loaded is set in the nearest one that was, as a browser does.
+  const matched = key in fonts ? key : matchFontKey(Object.keys(fonts), key);
+  if (matched === null) {
     const known = Object.keys(fonts);
     throw new Error(
       `Cannot measure text in the font "${key}": it is not registered. Register it with registerFont(), loadFont() or a Google Fonts module first.${
@@ -106,7 +108,7 @@ function checkedFont(options: MeasureTextOptions, text: string): string {
       }`,
     );
   }
-  return key;
+  return matched;
 }
 
 function layoutOf(options: MeasureTextOptions, text: string, maxWidth?: number): TextLayout {

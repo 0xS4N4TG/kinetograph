@@ -84,11 +84,16 @@ describe('mounting compositions', () => {
     const { plan } = await buildPlan(join(dir, 'index.html'), { probeDuration: () => 4 });
     const a = find(plan.body, (n) => attr(n, 'id') === 'a')!;
     expect(find(a.children, (n) => n.tag === 'h1')).not.toBeNull();
-    // The root element of the file is not a node of its own: the host takes its place.
+    // The root element of the file is a child of the host, as in HyperFrames: it has no id (kept as `data-hf-authored-id`)
+    // and none of the timing attributes, and it is as large as its `data-width` and `data-height`.
     expect(find(a.children, (n) => attr(n, 'id') === 'inner')).toBeNull();
+    const root = find(a.children, (n) => attr(n, 'data-hf-authored-id') === 'inner')!;
+    expect(attr(root, 'data-hf-inner-root')).toBe('true');
+    expect(attr(root, 'data-composition-id')).toBeUndefined();
+    expect(attr(root, 'style')).toBe('width: 640px; height: 360px');
     const card1 = plan.stylesheets.find((s) => s.file.endsWith('card.html'))!;
     expect(card1.css).toContain('[data-composition-id="card"] .title');
-    expect(card1.css).toMatch(/\[data-composition-id="card"\]\s*\{\s*margin:1px/);
+    expect(card1.css).toMatch(/\[data-composition-id="card"\] \[data-hf-authored-id="inner"\]\s*\{\s*margin:1px/);
     expect(plan.scripts.find((s) => s.scope === 'card')!.sourceFile).toMatch(/card\.html$/);
     expect(plan.variables.card).toEqual({ title: 'Pro' });
     expect(plan.variables.card2).toEqual({ title: 'Fallback' });
@@ -97,16 +102,29 @@ describe('mounting compositions', () => {
     expect(plan.mediaDurations[join(dir, 'assets', 'clip.mp4')]).toBe(4);
   });
 
-  it("keeps the file root's id on the host as data-hf-root-id, beside the host's own id (#109)", async () => {
-    const dir = project({ 'index.html': index.replace(' id="a"', ''), 'compositions/card.html': card, 'assets/clip.mp4': 'x' });
+  it("keeps the file root's id as data-hf-authored-id on the root, which is a child of the host (#109)", async () => {
+    const dir = project({ 'index.html': index, 'compositions/card.html': card, 'assets/clip.mp4': 'x' });
     const { plan } = await buildPlan(join(dir, 'index.html'), { probeDuration: () => 4 });
-    const withoutId = find(plan.body, (n) => attr(n, 'data-composition-id') === 'card')!;
-    expect(attr(withoutId, 'id')).toBeUndefined();
-    expect(attr(withoutId, 'data-hf-root-id')).toBe('inner');
-    const withId = project({ 'index.html': index, 'compositions/card.html': card, 'assets/clip.mp4': 'x' });
-    const planned = (await buildPlan(join(withId, 'index.html'), { probeDuration: () => 4 })).plan;
-    const a = find(planned.body, (n) => attr(n, 'id') === 'a')!;
-    expect(attr(a, 'data-hf-root-id')).toBe('inner');
+    const a = find(plan.body, (n) => attr(n, 'id') === 'a')!;
+    const root = find(a.children, (n) => attr(n, 'data-hf-inner-root') === 'true')!;
+    expect(attr(root, 'data-hf-authored-id')).toBe('inner');
+    expect(attr(a, 'data-hf-authored-id')).toBeUndefined();
+    // A root with a size gives it to the host too.
+    expect([attr(a, 'data-width'), attr(a, 'data-height'), attr(a, 'style')]).toEqual(['640', '360', 'width: 640px; height: 360px']);
+  });
+
+  it("a host with another id than its file's root: the file's rules for its own id are the host's, and the plan says what the ids are", async () => {
+    const dir = project({
+      'index.html': index.replace('data-composition-id="card" data-composition-src', 'data-composition-id="card-host" data-composition-src'),
+      'compositions/card.html': card.replace('<style>', '<style>[data-composition-id="card"]{background:#123} [data-composition-id="card"] .title{x:y}'),
+      'assets/clip.mp4': 'x',
+    });
+    const { plan } = await buildPlan(join(dir, 'index.html'), { probeDuration: () => 4 });
+    expect(plan.authoredIds).toEqual({ 'card-host': 'card', card2: 'card' });
+    const css = plan.stylesheets.find((s) => s.file.endsWith('card.html'))!.css;
+    expect(css).toContain('[data-composition-id="card-host"]{background:#123}');
+    expect(css).toContain('[data-composition-id="card-host"] .title{x:y}');
+    expect(css).not.toContain('[data-composition-id="card"]');
   });
 
   it('a missing composition file is a note, not a failure', async () => {
@@ -125,6 +143,22 @@ describe('mounting compositions', () => {
     expect(plan.usesThree).toBe(true);
     expect(plan.notes.join('\n')).not.toContain('import maps');
     expect(plan.notes.join('\n')).not.toContain('Three.js');
+  });
+});
+
+describe('the root composition\'s variables', () => {
+  it('are the defaults every element of the page declares, outside the compositions it mounts, under the values given', async () => {
+    const dir = project({
+      'index.html': `<!doctype html><html data-composition-variables='[{"id":"a","type":"string","default":"html"}]'><body>
+        <div id="root" data-composition-id="main" data-start="0" data-duration="2" data-width="640" data-height="360" data-composition-variables='[{"id":"b","type":"number","default":2}]'>
+          <div class="part" data-composition-variables='[{"id":"words","type":"string","default":"Staggered fade up"}]'></div>
+          <div data-composition-id="card" data-composition-src="compositions/card.html" data-start="0" data-duration="2"></div>
+        </div></body></html>`,
+      'compositions/card.html': `<template><div id="inner" data-composition-id="card" data-composition-variables='[{"id":"title","type":"string","default":"Card"}]'></div></template>`,
+    });
+    const { plan } = await buildPlan(join(dir, 'index.html'));
+    expect(plan.variables.main).toEqual({ a: 'html', b: 2, words: 'Staggered fade up' });
+    expect(plan.variables.card).toEqual({ title: 'Card' });
   });
 });
 
@@ -232,6 +266,18 @@ describe('fonts HyperFrames embeds', () => {
     expect(byFamily.Inter).toMatchObject({ variants: ['100', '200', '300', '400', '500', '600', '700', '800', '900'], as: ['Arial'], cacheOnly: true });
     expect(byFamily['JetBrains Mono']).toMatchObject({ as: ['Consolas'], cacheOnly: true });
     expect(byFamily['EB Garamond']).toMatchObject({ as: ['Georgia'] });
+  });
+
+  it('sets Impact, which HyperFrames reads from the machine, in the heavy bundled Archivo Black, and says so once', async () => {
+    const dir = project({
+      'index.html': page(`<style>.a { font-family: Impact, "Arial Black", Arial, sans-serif } .b { font-family: Impact, sans-serif }</style>`),
+    });
+    const { plan } = await buildPlan(join(dir, 'index.html'));
+    const byFamily = Object.fromEntries(plan.googleFonts.map((f) => [f.family, f]));
+    expect(byFamily['Archivo Black']).toMatchObject({ variants: ['400'], as: ['Impact'], cacheOnly: true });
+    // Arial Black is HyperFrames' own alias (Montserrat), unchanged.
+    expect(byFamily.Montserrat).toMatchObject({ as: ['Arial Black'] });
+    expect(plan.notes.filter((n) => n.includes('Impact'))).toEqual([expect.stringContaining('Archivo Black')]);
   });
 
   it('leaves a family the page loads or declares itself', async () => {

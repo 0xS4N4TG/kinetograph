@@ -676,8 +676,9 @@ impl BaseDocument {
                 let transform = &styles.get_box().transform;
                 if !transform.0.is_empty() {
                     // Used value: the transform list resolved to a matrix, with
-                    // percentages resolved against the border box
-                    let layout = node.final_layout();
+                    // percentages resolved against the border box (its layout size, not the pixel-snapped one:
+                    // a browser's `-50%` of a 200.6px box is -100.3px, which scripts compare with `offsetHeight`)
+                    let layout = node.unrounded_layout();
                     let reference_box = euclid::Rect::new(
                         euclid::Point2D::new(CSSPixelLength::new(0.0), CSSPixelLength::new(0.0)),
                         euclid::Size2D::new(

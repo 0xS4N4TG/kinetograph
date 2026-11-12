@@ -79,9 +79,27 @@ describe('measureText', () => {
     expect(measureText({ text: 'abcd', fontFamily: 'Inter', fontSize: 10, letterSpacing: '0.1em' }).width).toBe(20 + 4);
   });
 
+  it('measures a weight that was not loaded in the nearest loaded one, as CSS font matching does', () => {
+    const fontOf = (fontWeight: number, fontStyle?: 'italic') => {
+      measureText({ text: 'x', fontFamily: 'Inter', fontSize: 10, fontWeight, fontStyle });
+      return requests.at(-1)!.font;
+    };
+    expect(fontOf(500)).toBe('Inter'); // 400..500: up to 500, then down: 400
+    expect(fontOf(600)).toBe('Inter:700'); // above 500: up first
+    expect(fontOf(300)).toBe('Inter'); // below 400: down first, then up
+    expect(fontOf(900)).toBe('Inter:700'); // nothing above: down
+    expect(fontOf(400, 'italic')).toBe('Inter'); // no italic loaded: the normal face
+    registerFont({ family: 'Plex', path: '/f/Plex500.ttf', weight: 500 });
+    registerFont({ family: 'Plex', path: '/f/Plex600.ttf', weight: 600 });
+    measureText({ text: 'x', fontFamily: 'Plex', fontSize: 10, fontWeight: 400 });
+    expect(requests.at(-1)!.font).toBe('Plex:500'); // 400 itself is not loaded: up to 500 first
+    registerFont({ family: 'Var', path: '/f/Var.ttf', weight: 100, weightMax: 900 });
+    measureText({ text: 'x', fontFamily: 'Var', fontSize: 10, fontWeight: 650 });
+    expect(requests.at(-1)!.font).toBe('Var:100-900');
+  });
+
   it('never measures with a font that is not registered', () => {
     expect(() => measureText({ text: 'x', fontFamily: 'Nope', fontSize: 10 })).toThrow(/"Nope": it is not registered.*Registered: "Inter", "Inter:700"/);
-    expect(() => measureText({ text: 'x', fontFamily: 'Inter', fontSize: 10, fontWeight: 300 })).toThrow(/"Inter:300"/);
     expect(requests).toHaveLength(0);
   });
 

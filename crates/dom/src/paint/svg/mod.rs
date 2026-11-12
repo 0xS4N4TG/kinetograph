@@ -19,6 +19,7 @@ mod css_filter;
 mod emit;
 mod filter;
 mod fonts;
+mod mask_layers;
 mod serialize;
 
 use std::sync::Arc;

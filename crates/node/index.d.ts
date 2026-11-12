@@ -397,8 +397,11 @@ export declare function renderCanvas(requestJson: string): Buffer
  * `pass` numbers the renders of one frame (its motion-blur samples included); `base` is the pass of the layers of
  * this island the caller kept from an earlier render. When the addon kept the same ones, the layers come back as
  * changes from them and the output says `"delta": base`.
+ *
+ * With `probes` (host-tree paths), the output's `probes` has, for each, the size `getBoundingClientRect` gives and the
+ * computed `overflow-x` and `overflow-y` of the element, from the layout the render draws.
  */
-export declare function renderDomIsland(requestJson: string, pass?: number | undefined | null, base?: number | undefined | null): string
+export declare function renderDomIsland(requestJson: string, pass?: number | undefined | null, base?: number | undefined | null, probes?: Array<string> | undefined | null): string
 
 export interface RendererOptions {
   /** Default true. */
