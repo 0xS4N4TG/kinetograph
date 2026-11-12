@@ -918,7 +918,7 @@ fn addon_dir() -> Option<PathBuf> {
 }
 
 fn open(dir: &std::path::Path, name: &str) -> Result<Library, String> {
-    let path = dir.join(libloading::library_filename(name));
+    let path = dir.join(library_file_name(name, cfg!(windows)));
     #[cfg(windows)]
     {
         use libloading::os::windows::{
@@ -954,7 +954,7 @@ fn open(dir: &std::path::Path, name: &str) -> Result<Library, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Texels, check_upload, checked_dir, gl, upload_len};
+    use super::{Texels, check_upload, checked_dir, gl, library_file_name, upload_len};
     use std::path::PathBuf;
 
     #[test]
@@ -965,6 +965,16 @@ mod tests {
         assert!(checked_dir(PathBuf::from("../lib")).is_err());
         let abs = std::env::temp_dir();
         assert_eq!(checked_dir(abs.clone()).unwrap(), abs);
+/// The file ANGLE ships for `libEGL` or `libGLESv2`: `libEGL.dylib` and `libEGL.so` by the platform's rule, and
+/// `libEGL.dll` on Windows, where ANGLE keeps the `lib` prefix (libloading would give `EGL.dll`).
+fn library_file_name(name: &str, windows: bool) -> std::ffi::OsString {
+    if windows {
+        format!("lib{name}.dll").into()
+    } else {
+        libloading::library_filename(name)
+    }
+}
+
     }
 
     #[test]
@@ -1032,6 +1042,16 @@ fn shared() -> Result<&'static Shared, String> {
 
 fn load() -> Result<Shared, String> {
     let dir = library_dir()?;
+    #[test]
+    fn angle_libraries_have_the_names_angle_ships() {
+        assert_eq!(library_file_name("EGL", true), "libEGL.dll");
+        assert_eq!(library_file_name("GLESv2", true), "libGLESv2.dll");
+        let here = library_file_name("EGL", false)
+            .to_string_lossy()
+            .into_owned();
+        assert!(here == "libEGL.dylib" || here == "libEGL.so", "{here}");
+    }
+
     // libGLESv2 first, by full path: libEGL then finds it already loaded instead of searching for it.
     let gles = open(&dir, "GLESv2")?;
     let egl = open(&dir, "EGL")?;
