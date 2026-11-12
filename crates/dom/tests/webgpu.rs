@@ -64,6 +64,26 @@ fn run(name: &str, mean_limit: f64) -> Option<(f64, u8)> {
     diff.map(|d| (d.mean, d.max))
 }
 
+/// The recording of a case with `errors` added to its `webgpu` part, as a page that caught an invalid call would make it.
+fn with_errors(name: &str, errors: &[&str]) -> Vec<kinetograph_dom::request::Unsupported> {
+    let mut recording: serde_json::Value = serde_json::from_str(&case_file(name, "json")).unwrap();
+    recording["webgpu"]["errors"] = serde_json::json!(errors);
+    let escaped = recording.to_string().replace('\'', "&#39;");
+    let body = format!("<canvas id=\"c\" width=\"64\" height=\"64\" data-kg-webgl='{escaped}' style=\"display:block\"></canvas>");
+    paintkit::render_body(&body, 64, 64).0.unsupported
+}
+
+#[test]
+fn webgpu_an_invalid_call_the_page_caught_is_reported_as_unsupported() {
+    let none = with_errors("webgpu_triangle", &[]);
+    assert!(none.is_empty(), "{none:?}");
+    let reported = with_errors("webgpu_triangle", &["OperationError: writeBuffer is out of range", "TypeError: setBindGroup: 'bindGroup' is not a GPUBindGroup"]);
+    assert_eq!(reported.len(), 2, "{reported:?}");
+    assert!(reported.iter().all(|u| u.property.as_deref() == Some("webgpu") && u.reason.contains("invalid and threw in the page")));
+    assert!(reported.iter().any(|u| u.value.as_deref() == Some("OperationError: writeBuffer is out of range")));
+    assert!(reported.iter().any(|u| u.value.as_deref().is_some_and(|v| v.contains("'bindGroup'"))));
+}
+
 #[test]
 fn webgpu_triangle() {
     run("webgpu_triangle", 1.0);

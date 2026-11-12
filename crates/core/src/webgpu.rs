@@ -51,6 +51,9 @@ pub struct WebGpuContent {
     /// Calls the page made that are not drawn.
     #[serde(default)]
     pub notes: Vec<String>,
+    /// Calls the page made that were invalid: each threw in the page, which may have caught the error and gone on.
+    #[serde(default)]
+    pub errors: Vec<String>,
     /// What the frame reads that earlier frames made (state a page carries): the frame is drawn, but it is not the same
     /// drawn alone, or by another worker, as in a sequence.
     #[serde(default)]

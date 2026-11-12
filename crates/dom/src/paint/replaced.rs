@@ -207,6 +207,9 @@ impl<'a> Painter<'a> {
         for note in &recording.notes {
             self.report(node, "webgpu", note, "WebGPU call that is not drawn (the canvas is drawn without it)");
         }
+        for error in &recording.errors {
+            self.report(node, "webgpu", error, "WebGPU call that was invalid and threw in the page (a page that caught the error carries on, and the canvas is drawn without the call)");
+        }
         for state in &recording.impure {
             self.report(node, "webgpu", state, "WebGPU state a page carries from frame to frame (the frame is drawn from the passes that made it)");
         }

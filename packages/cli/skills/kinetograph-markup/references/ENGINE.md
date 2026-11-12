@@ -832,6 +832,12 @@ Query sets (`webgpu-queries.ts`) are accepted and measure nothing: `createQueryS
 `writeTimestamp` record no step, and `resolveQuerySet` writes zeros into its destination (a `clearBuffer` step), because a
 timestamp is never the clock and a frame is a function of its calls. `timestamp-query` is offered whatever the device has:
 three.js's Inspector sets `trackTimestamp` on the backend directly, so hiding the feature would not make it skip the path.
+An invalid call throws in the page, and every method of the device, queue, encoders, texture and buffer records the error on the
+device before it throws on (`webgpu-errors.ts`): the frame lists them in `WebGpuContent.errors` (32 different at most), which the
+painter reports as unsupported `webgpu` items (a warning, an error under `--strict`) even when the page caught the exception and
+carried on. `pushErrorScope` and `popErrorScope` keep a stack: the innermost `validation` scope keeps the first error raised
+inside it and `popErrorScope` resolves with it as a `GPUValidationError`, or null; the call still throws in a scope, and there
+is no `uncapturederror` event.
 `device.limits` and `adapter.limits` are `webgpu::device_info` of the engine's device (the `webgpuDeviceInfo` function of
 the addon opens the GPU once), `float32-filterable` is requested of the adapter so that 32-bit float textures can be
 filtered where the hardware does, and a `requestDevice` for better limits is refused. A texture is made with

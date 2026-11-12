@@ -1346,6 +1346,8 @@ export interface WebGpuContent {
   passes: WebGpuStep[];
   /** Calls the engine does not draw; the frame reports each. */
   notes?: string[];
+  /** The invalid calls the page made, which threw in it: reported, though a page that caught the error may carry on. */
+  errors?: string[];
   /** What the frame reads that earlier frames made (state a page carries), so that the frame is not the same alone as in a sequence. */
   impure?: string[];
   /** The canvas's `format` when it is `rgba16float` (drawn at half-float precision); 8-bit otherwise. */

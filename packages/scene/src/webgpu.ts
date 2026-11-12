@@ -39,6 +39,7 @@ import type {
   WebGpuTexture,
 } from './types.js';
 import { pictureOf } from './canvas.js';
+import { ErrorScopes, GPUErrorShim, GPUValidationErrorShim, MAX_ERRORS, reporting } from './webgpu-errors.js';
 import { checkTimestampWrites, GPUQuerySetShim, OcclusionQueries, queryIn, type QuerySetDescriptor } from './webgpu-queries.js';
 import { hashOf, LAYER_SOURCE, toBase64 } from './webgl.js';
 
@@ -1270,6 +1271,7 @@ export class GPUCanvasContextShim {
   content(): GlslContent {
     const device = this.drawnBy;
     const notes = device === null ? [] : [...device.notes];
+    const errors = device === null ? [] : [...device.errors];
     const steps = device === null ? [] : device.liveStepsFor(this);
     const impure = device === null ? [] : device.carried(steps);
     const merged = newTables();
@@ -1297,6 +1299,7 @@ export class GPUCanvasContextShim {
     if (merged.samplers.size > 0) webgpu.samplers = Object.fromEntries(merged.samplers);
     if (merged.blobs.size > 0) webgpu.blobs = Object.fromEntries(merged.blobs);
     if (notes.length > 0) webgpu.notes = notes;
+    if (errors.length > 0) webgpu.errors = errors;
     if (this.format === 'rgba16float') webgpu.canvasFormat = 'rgba16float';
     if (this.colorSpace === 'display-p3') webgpu.colorSpace = 'display-p3';
     return {
@@ -1312,7 +1315,7 @@ export class GPUCanvasContextShim {
 
   /** Whether anything was drawn, or something was left out. */
   get drawn(): boolean {
-    return (this.drawnBy?.hasPassFor(this) ?? false) || (this.drawnBy?.notes.size ?? 0) > 0;
+    return (this.drawnBy?.hasPassFor(this) ?? false) || (this.drawnBy?.notes.size ?? 0) > 0 || (this.drawnBy?.errors.size ?? 0) > 0;
   }
 
   /** The frame loop calls this before each frame: the next submit starts a new drawing; a frame that draws nothing keeps the picture. */
@@ -1494,6 +1497,9 @@ export class GPUDeviceShim extends EventTarget {
   readonly contexts = new Set<GPUCanvasContextShim>();
   /** What the page did that is not drawn. Kept for the life of the device: the picture is affected from then on. */
   readonly notes = new Set<string>();
+  /** The invalid calls the page made (each threw), and a page may have caught: a frame reports them (`webgpu-errors.ts`). */
+  readonly errors = new Set<string>();
+  private readonly scopes = new ErrorScopes();
   private total = 0;
   private textureTotal = 0;
   private textureCount = 0;
@@ -1511,6 +1517,12 @@ export class GPUDeviceShim extends EventTarget {
   }
   note(what: string): void {
     this.notes.add(what);
+  }
+  /** An error one of the device's checks is about to throw: kept for the frame's report and for the open error scope. */
+  invalid(error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    if (this.errors.size < MAX_ERRORS) this.errors.add(message);
+    this.scopes.capture(message);
   }
   unsupported(what: string): WebGpuUnsupportedError {
     this.note(what);
@@ -2213,9 +2225,11 @@ export class GPUDeviceShim extends EventTarget {
   importExternalTexture(): never {
     throw this.unsupported('device.importExternalTexture (video textures); copy the frame with queue.copyExternalImageToTexture');
   }
-  pushErrorScope(): void {}
-  popErrorScope(): Promise<null> {
-    return Promise.resolve(null);
+  pushErrorScope(filter: string): void {
+    this.scopes.push(filter);
+  }
+  popErrorScope(): Promise<GPUErrorShim | null> {
+    return this.scopes.pop();
   }
   destroy(): void {}
 }
@@ -2275,6 +2289,19 @@ export function createGpuCanvasContext(options: GPUCanvasContextOptions): GPUCan
 /** What `createRenderBundleEncoder` would make: render bundles are not drawn, so none exists, but a page tests `instanceof GPURenderBundleEncoder`. */
 class GPURenderBundleEncoderShim {}
 
+// An error a check throws is recorded on the device before it reaches the page (`webgpu-errors.ts`).
+for (const [cls, deviceOf] of [
+  [GPUDeviceShim, (self: GPUDeviceShim) => self],
+  [GPUQueueShim, (self: GPUQueueShim) => (self as unknown as { device: GPUDeviceShim }).device],
+  [GPUCommandEncoderShim, (self: GPUCommandEncoderShim) => self.device],
+  [GPURenderPassEncoderShim, (self: GPURenderPassEncoderShim) => (self as unknown as { encoder: GPUCommandEncoderShim }).encoder.device],
+  [GPUComputePassEncoderShim, (self: GPUComputePassEncoderShim) => (self as unknown as { encoder: GPUCommandEncoderShim }).encoder.device],
+  [GPUTextureShim, (self: GPUTextureShim) => self.device],
+  [GPUBufferShim, (self: GPUBufferShim) => (self as unknown as { device: GPUDeviceShim }).device],
+] as const) {
+  reporting(cls as { prototype: object }, deviceOf as never, (error) => error instanceof WebGpuUnsupportedError);
+}
+
 // The interfaces a page names (`x instanceof GPUTexture`, `GPUDevice.prototype`), under the WebGPU names.
 Object.assign(GPU_GLOBALS, {
   GPU: GPUShim,
@@ -2282,6 +2309,8 @@ Object.assign(GPU_GLOBALS, {
   GPUDevice: GPUDeviceShim,
   GPUQueue: GPUQueueShim,
   GPUBuffer: GPUBufferShim,
+  GPUError: GPUErrorShim,
+  GPUValidationError: GPUValidationErrorShim,
   GPUQuerySet: GPUQuerySetShim,
   GPUTexture: GPUTextureShim,
   GPUTextureView: GPUTextureViewShim,
