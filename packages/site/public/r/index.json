@@ -58,6 +58,13 @@
       "access": "free"
     },
     {
+      "name": "blueprint",
+      "type": "taste",
+      "title": "Blueprint",
+      "description": "White line art draws itself on a Prussian-blue cyanotype sheet, with dimension lines, hatching, typed labels and one red stamp.",
+      "access": "free"
+    },
+    {
       "name": "build-out",
       "type": "template",
       "title": "Send button zoom-out",

@@ -1,41 +1,12 @@
-import rough from 'roughjs';
-import type { Drawable } from 'roughjs/bin/core';
+import { Sketch, type Diagram, type Pt } from './sketch.ts';
+
+export type { Diagram, DiagramLabel, DiagramPath } from './sketch.ts';
 
 /**
  * The engine diagram: one data set, drawn by two renderers. `components/engine-diagram.tsx` draws it on the docs site
- * (interactive), and `scripts/engine-diagram.mjs` writes the static SVGs for the README. Every shape comes from
- * roughjs with a fixed seed, so the strokes are the same on the server, in the browser and in the SVG files.
+ * (interactive), and `scripts/engine-diagram.mjs` writes the static SVGs for the README. The drawing kit is shared
+ * with the docs illustrations (`sketch.ts`).
  */
-
-export interface DiagramPath {
-  d: string;
-  /** Stroke width. */
-  w: number;
-  /** Stroke dash array, for the dashed group boxes and the loop arrow. */
-  dash?: string;
-}
-
-export interface DiagramLabel {
-  x: number;
-  y: number;
-  text: string;
-  size: number;
-  weight: 300 | 400 | 700;
-  anchor: 'start' | 'middle';
-  /** `ink` is the main colour, `muted` the secondary text. */
-  tone: 'ink' | 'muted';
-  /** Degrees; each label sits a little off the baseline, like handwriting. */
-  rot: number;
-}
-
-export interface Diagram {
-  width: number;
-  height: number;
-  /** Boxes, group boxes and arrows, in drawing order. */
-  ink: DiagramPath[];
-  labels: DiagramLabel[];
-  alt: string;
-}
 
 export const ALT =
   'Diagram of how Kinetograph makes a frame. A Remotion project (TSX) and a HyperFrames page (HTML) go into a bundle step with esbuild. ' +
@@ -56,27 +27,25 @@ interface Box {
 }
 
 const W = 1080;
-const H = 690;
+const H = 606;
 
 const BOXES: Box[] = [
-  { id: 'remotion', x: 30, y: 128, w: 200, h: 62, label: 'Remotion project', sub: 'TSX' },
-  { id: 'hyperframes', x: 30, y: 214, w: 200, h: 62, label: 'HyperFrames page', sub: 'HTML' },
-  { id: 'bundle', x: 290, y: 162, w: 130, h: 80, label: 'Bundle', sub: 'esbuild', step: 1 },
-  { id: 'run', x: 502, y: 162, w: 220, h: 80, label: 'Run frame N', sub: 'React, GSAP', step: 2 },
-  { id: 'layers', x: 778, y: 162, w: 250, h: 80, label: 'Layers + DOM islands', sub: 'Rect, Text, HTML, SVG', step: 3 },
-  { id: 'layout', x: 793, y: 442, w: 220, h: 80, label: 'Lay out + paint', sub: 'Stylo, Taffy, Parley', step: 4 },
-  { id: 'composite', x: 502, y: 442, w: 240, h: 80, label: 'Composite on the GPU', sub: 'wgpu, Skia', step: 5 },
-  { id: 'encode', x: 290, y: 442, w: 130, h: 80, label: 'Encode', sub: 'FFmpeg', step: 6 },
-  { id: 'mp4', x: 50, y: 442, w: 120, h: 80, label: 'MP4', icon: 'play' },
-  { id: 'audio', x: 245, y: 588, w: 220, h: 70, label: 'Web Audio', sub: 'rendered offline' },
+  { id: 'remotion', x: 30, y: 44, w: 200, h: 62, label: 'Remotion project', sub: 'TSX' },
+  { id: 'hyperframes', x: 30, y: 130, w: 200, h: 62, label: 'HyperFrames page', sub: 'HTML' },
+  { id: 'bundle', x: 290, y: 78, w: 130, h: 80, label: 'Bundle', sub: 'esbuild', step: 1 },
+  { id: 'run', x: 502, y: 78, w: 220, h: 80, label: 'Run frame N', sub: 'React, GSAP', step: 2 },
+  { id: 'layers', x: 778, y: 78, w: 250, h: 80, label: 'Layers + DOM islands', sub: 'Rect, Text, HTML, SVG', step: 3 },
+  { id: 'layout', x: 793, y: 358, w: 220, h: 80, label: 'Lay out + paint', sub: 'Stylo, Taffy, Parley', step: 4 },
+  { id: 'composite', x: 502, y: 358, w: 240, h: 80, label: 'Composite on the GPU', sub: 'wgpu, Skia', step: 5 },
+  { id: 'encode', x: 290, y: 358, w: 130, h: 80, label: 'Encode', sub: 'FFmpeg', step: 6 },
+  { id: 'mp4', x: 50, y: 358, w: 120, h: 80, label: 'MP4', icon: 'play' },
+  { id: 'audio', x: 245, y: 504, w: 220, h: 70, label: 'Web Audio', sub: 'rendered offline' },
 ];
 
 const GROUPS = [
-  { id: 'node', x: 480, y: 112, w: 570, h: 180, label: 'In Node' },
-  { id: 'rust', x: 480, y: 392, w: 570, h: 180, label: 'In the Rust addon' },
+  { id: 'node', x: 480, y: 28, w: 570, h: 180, label: 'In Node' },
+  { id: 'rust', x: 480, y: 308, w: 570, h: 180, label: 'In the Rust addon' },
 ];
-
-type Pt = [number, number];
 
 interface Arrow {
   pts: Pt[];
@@ -86,127 +55,55 @@ interface Arrow {
 }
 
 const ARROWS: Arrow[] = [
-  { pts: [[236, 168], [284, 196]] },
-  { pts: [[236, 252], [284, 214]] },
-  { pts: [[426, 202], [496, 202]] },
-  { pts: [[728, 202], [772, 202]] },
-  { pts: [[903, 250], [903, 436]] },
-  { pts: [[787, 482], [748, 482]] },
-  { pts: [[496, 482], [426, 482]] },
-  { pts: [[284, 482], [176, 482]] },
-  { pts: [[355, 582], [355, 528]] },
-  { pts: [[355, 434], [355, 342], [612, 342], [612, 250]], dashed: true, r: 18 },
+  { pts: [[236, 84], [284, 112]] },
+  { pts: [[236, 168], [284, 130]] },
+  { pts: [[426, 118], [496, 118]] },
+  { pts: [[728, 118], [772, 118]] },
+  { pts: [[903, 166], [903, 352]] },
+  { pts: [[787, 398], [748, 398]] },
+  { pts: [[496, 398], [426, 398]] },
+  { pts: [[284, 398], [176, 398]] },
+  { pts: [[355, 498], [355, 444]] },
+  { pts: [[355, 350], [355, 258], [612, 258], [612, 166]], dashed: true, r: 18 },
 ];
 
 const ARROW_LABELS: { text: string; x: number; y: number; anchor: 'start' | 'middle' }[] = [
-  { text: 'JSON', x: 922, y: 352, anchor: 'start' },
-  { text: 'next frame', x: 483, y: 328, anchor: 'middle' },
+  { text: 'JSON', x: 922, y: 268, anchor: 'start' },
+  { text: 'next frame', x: 483, y: 244, anchor: 'middle' },
 ];
-
-const gen = rough.generator();
-
-/** One decimal is plenty at this size, and keeps the paths short and the same everywhere. */
-function round(d: string): string {
-  return d.replace(/-?\d+\.\d+/g, (m) => String(Math.round(Number(m) * 10) / 10));
-}
-
-function toPaths(drawable: Drawable, dash?: string): DiagramPath[] {
-  return gen.toPaths(drawable).map((p) => ({ d: round(p.d), w: p.strokeWidth, ...(dash ? { dash } : {}) }));
-}
-
-function rounded(pts: Pt[], r: number): string {
-  if (!r || pts.length < 3) return pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' ');
-  let d = `M${pts[0][0]} ${pts[0][1]}`;
-  for (let i = 1; i < pts.length - 1; i++) {
-    const [px, py] = pts[i - 1];
-    const [cx, cy] = pts[i];
-    const [nx, ny] = pts[i + 1];
-    const a = Math.min(r, Math.hypot(cx - px, cy - py) / 2);
-    const b = Math.min(r, Math.hypot(nx - cx, ny - cy) / 2);
-    const ax = cx + ((px - cx) / Math.hypot(px - cx, py - cy)) * a;
-    const ay = cy + ((py - cy) / Math.hypot(px - cx, py - cy)) * a;
-    const bx = cx + ((nx - cx) / Math.hypot(nx - cx, ny - cy)) * b;
-    const by = cy + ((ny - cy) / Math.hypot(nx - cx, ny - cy)) * b;
-    d += ` L${ax} ${ay} Q${cx} ${cy} ${bx} ${by}`;
-  }
-  const [lx, ly] = pts[pts.length - 1];
-  return `${d} L${lx} ${ly}`;
-}
-
-function roundedRect(x: number, y: number, w: number, h: number, r: number): string {
-  return (
-    `M${x + r} ${y} L${x + w - r} ${y} Q${x + w} ${y} ${x + w} ${y + r} L${x + w} ${y + h - r} Q${x + w} ${y + h} ${x + w - r} ${y + h} ` +
-    `L${x + r} ${y + h} Q${x} ${y + h} ${x} ${y + h - r} L${x} ${y + r} Q${x} ${y} ${x + r} ${y} Z`
-  );
-}
-
-const SKETCH = { roughness: 1.5, bowing: 1.3, strokeWidth: 2.2, stroke: '#000', fill: undefined as string | undefined };
 
 let cached: Diagram | undefined;
 
 export function buildDiagram(): Diagram {
   if (cached) return cached;
-  let seed = 11;
-  const next = () => (seed += 17);
-  const ink: DiagramPath[] = [];
-  const labels: DiagramLabel[] = [];
-  let n = 0;
-  const label = (l: Omit<DiagramLabel, 'rot'>) => labels.push({ ...l, rot: ((n++ * 7) % 5) * 0.45 - 0.9 });
-
-  // Title and subtitle.
-  label({ x: 30, y: 54, text: 'How Kinetograph makes a frame', size: 40, weight: 700, anchor: 'start', tone: 'ink' });
-  label({ x: 30, y: 88, text: 'One pass per frame. No browser.', size: 23, weight: 300, anchor: 'start', tone: 'muted' });
+  const sk = new Sketch();
 
   for (const g of GROUPS) {
-    ink.push(
-      ...toPaths(
-        gen.path(roundedRect(g.x, g.y, g.w, g.h, 22), { ...SKETCH, seed: next(), roughness: 1.3, strokeWidth: 1.8 }),
-        '10 9',
-      ),
-    );
-    label({ x: g.x + 22, y: g.y + 34, text: g.label, size: 22, weight: 700, anchor: 'start', tone: 'ink' });
+    sk.group(g.x, g.y, g.w, g.h);
+    sk.label({ x: g.x + 22, y: g.y + 34, text: g.label, size: 22, weight: 700, anchor: 'start', tone: 'ink' });
   }
 
   for (const b of BOXES) {
-    ink.push(...toPaths(gen.rectangle(b.x, b.y, b.w, b.h, { ...SKETCH, seed: next() })));
+    sk.rect(b.x, b.y, b.w, b.h);
     const cx = b.x + b.w / 2;
     const tall = b.h > 70;
     if (b.icon === 'play') {
-      ink.push(
-        ...toPaths(
-          gen.polygon(
-            [
-              [cx - 9, b.y + 14],
-              [cx - 9, b.y + 38],
-              [cx + 12, b.y + 26],
-            ],
-            { ...SKETCH, seed: next(), strokeWidth: 1.8, roughness: 1.1 },
-          ),
-        ),
-      );
+      sk.poly([
+        [cx - 9, b.y + 14],
+        [cx - 9, b.y + 38],
+        [cx + 12, b.y + 26],
+      ]);
     }
     const y1 = b.icon ? b.y + 66 : b.sub ? (tall ? b.y + 38 : b.y + 28) : b.y + b.h / 2 + 8;
-    label({ x: cx, y: y1, text: b.label, size: 22, weight: 400, anchor: 'middle', tone: 'ink' });
-    if (b.sub) label({ x: cx, y: y1 + (tall ? 24 : 22), text: b.sub, size: 18, weight: 400, anchor: 'middle', tone: 'muted' });
-    if (b.step) label({ x: b.x + 10, y: b.y + b.h - 9, text: String(b.step), size: 16, weight: 700, anchor: 'start', tone: 'muted' });
+    sk.label({ x: cx, y: y1, text: b.label, size: 22, weight: 400, anchor: 'middle', tone: 'ink' });
+    if (b.sub) sk.label({ x: cx, y: y1 + (tall ? 24 : 22), text: b.sub, size: 18, weight: 400, anchor: 'middle', tone: 'muted' });
+    if (b.step) sk.label({ x: b.x + 10, y: b.y + b.h - 9, text: String(b.step), size: 16, weight: 700, anchor: 'start', tone: 'muted' });
   }
 
-  for (const a of ARROWS) {
-    const dash = a.dashed ? '11 9' : undefined;
-    ink.push(...toPaths(gen.path(rounded(a.pts, a.r ?? 0), { ...SKETCH, seed: next(), strokeWidth: 2, roughness: 1.2 }), dash));
-    // Open arrowhead: two short strokes back from the tip.
-    const [tx, ty] = a.pts[a.pts.length - 1];
-    const [fx, fy] = a.pts[a.pts.length - 2];
-    const ang = Math.atan2(ty - fy, tx - fx);
-    for (const off of [-0.5, 0.5]) {
-      const hx = tx - 14 * Math.cos(ang + off);
-      const hy = ty - 14 * Math.sin(ang + off);
-      ink.push(...toPaths(gen.line(hx, hy, tx, ty, { ...SKETCH, seed: next(), strokeWidth: 2, roughness: 0.8, bowing: 0.6 })));
-    }
-  }
+  for (const a of ARROWS) sk.arrow(a.pts, { dashed: a.dashed, r: a.r });
 
-  for (const t of ARROW_LABELS) label({ ...t, size: 20, weight: 400, tone: 'muted' });
+  for (const t of ARROW_LABELS) sk.label({ ...t, size: 20, weight: 400, tone: 'muted' });
 
-  cached = { width: W, height: H, ink, labels, alt: ALT };
+  cached = sk.build(W, H, ALT);
   return cached;
 }

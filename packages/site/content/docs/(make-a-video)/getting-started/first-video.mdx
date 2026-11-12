@@ -1,0 +1,79 @@
+---
+title: Install and make your first video
+description: "Install Kinetograph (setup takes one command) and make your first video with your own coding agent."
+---
+
+<Video name="first-video" label="A first video: one request, a short wait, the finished title card" silent />
+
+Kinetograph turns one sentence into a video you can keep editing. If you already work with a coding agent, install the skills and ask it.
+
+<InstallCard title="Install Kinetograph" command="npx kinetograph skills update" href="/docs/check-your-setup/" link="Check your setup">
+  One command installs Kinetograph's skills for your coding agent.
+</InstallCard>
+
+## With your agent
+
+For Claude Code, Codex, Cursor or any agent that works in a folder on your computer.
+
+### The short way
+
+With the skills installed (above), open or restart your coding agent in your project folder. Paste this into the agent. It makes the video and opens the preview. You only change the URL.
+
+```text title="Install prompt"
+Set this folder up for Kinetograph and make me a video.
+
+1. If the Kinetograph skills are missing, stop and tell me: I install them with npx kinetograph skills update
+2. Then, using /kinetograph, make a 10-second product intro for https://example.com
+3. Open the local preview when it is done and tell me the project folder.
+```
+
+### Step by step
+
+<Steps>
+  <Step title="Install the skills">
+    Step-by-step pages: [Claude Code](/docs/agents/claude-code/), [Codex](/docs/agents/codex/), [Cursor](/docs/agents/cursor/).
+
+    Run this in your project folder, then open or restart your agent there:
+
+    ```sh
+    npx kinetograph skills update
+    ```
+  </Step>
+  <Step title="Ask for the video">
+    ```text title="Suggested prompt"
+    Using /kinetograph, make a 10-second product intro for https://example.com.
+    ```
+
+    Replace `https://example.com` with the page you want the video to show.
+  </Step>
+  <Step title="Continue from the first version">
+    The agent leaves you with a project folder and a preview. All three ways below work on the same project.
+
+    <CardGroup cols={3}>
+      <Card title="Ask the agent" icon="route" href="/docs/tips/editing/">
+        Say what to change, in the same conversation.
+      </Card>
+      <Card title="Open Studio" icon="play" href="/docs/studio/">
+        Run `npx kinetograph studio src/index.tsx` for a timeline and a chat.
+      </Card>
+      <Card title="Use the CLI" icon="download" href="/docs/reference/cli/#render">
+        Run `npx kinetograph render src/index.tsx -o video.mp4`.
+      </Card>
+    </CardGroup>
+  </Step>
+</Steps>
+
+No agent? [Write your first video in code](/docs/making-videos/first-video-in-code/) with `npx kinetograph init`.
+
+<Note>You need Node.js 22 or newer for either route.</Note>
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="Choose what to make" icon="route" href="/docs/making/">
+    Title cards, photos, captions, paper-cut looks, glitch effects and more.
+  </Card>
+  <Card title="Open Studio" icon="play" href="/docs/studio/">
+    Change the video with a live preview, a timeline and a chat.
+  </Card>
+</CardGroup>

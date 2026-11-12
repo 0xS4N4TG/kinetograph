@@ -12,7 +12,7 @@
 //   template   templates/<id>/        index.tsx stays, every other source file goes to scenes/ (what it imports from outside, to scenes/shared/), public/ becomes public/<kind>/<id>/.
 //              A showcase piece (components/showcase/<piece>.tsx) is a template too; its index.tsx is cut from the folder's own.
 //   component  one composition of components/<kind>/: the file that exports its schema becomes index.tsx, with the files it imports.
-//   taste      tastes/<dir>/          sources keep their paths, textures and sounds go to public/, README.md becomes TASTE.md.
+//   taste      tastes/<dir>/          sources keep their paths, textures and sounds go to public/, TASTE.md (or README.md) becomes the item's TASTE.md.
 // Whatever an item imports from outside its folder (kit/, another taste) is copied under shared/ (scenes/shared/ in a template) and the imports are
 // rewritten. A staticFile path that names a file of the item's public/ is rewritten to where the file installs.
 // Files over 10 MB, links, and kinds the registry has no place for (python, shell) are left out and listed at the end.
@@ -372,7 +372,7 @@ function stageTaste(id, meta, dir) {
       skipped.push({ item: id, file: old, why: 'a link' });
       continue;
     }
-    if (rel === 'README.md' || rel.startsWith('public/')) continue; // README.md becomes TASTE.md; public/ is staged below
+    if (rel === 'README.md' || rel === 'TASTE.md' || rel.startsWith('public/')) continue; // README.md or TASTE.md becomes the item's TASTE.md; public/ is staged below
     if (CODE.has(extname(rel)) || TEXT.has(extname(rel))) {
       sources.add(old);
       moved.set(old, rel);
@@ -387,8 +387,8 @@ function stageTaste(id, meta, dir) {
       const [, kind, ...rest] = p.split('/');
       return `public/${kind}/${id}/${rest.join('/')}`;
     });
-  // The note: README.md, else TASTES.md, else SKILL.md, with where the installed files are.
-  const noteSource = ['README.md', 'TASTES.md', 'SKILL.md'].map((n) => `${root}/${n}`).find((p) => tracked.has(p));
+  // The note: TASTE.md, else README.md, else TASTES.md, else SKILL.md, with where the installed files are.
+  const noteSource = ['TASTE.md', 'README.md', 'TASTES.md', 'SKILL.md'].map((n) => `${root}/${n}`).find((p) => tracked.has(p));
   // A taste with no note of its own gets the catalog's sentence and its row of tastes/README.md.
   const row = readFileSync(abs('tastes/README.md'), 'utf8').split('\n').find((l) => l.startsWith(`| [\`${dir}/\`]`));
   const [, , look = '', use = ''] = row ? row.split('|').map((c) => c.trim()) : [];

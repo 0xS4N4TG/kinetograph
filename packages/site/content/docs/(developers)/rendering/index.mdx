@@ -1,0 +1,120 @@
+---
+title: Rendering
+description: Look at single frames while you work, check the project, and render it to an MP4 or a sequence of images.
+---
+
+Look at frames with `still` and `strip`, check them with `lint` and `doctor`, then `render` the video. Every command takes the entry file, and an HTML page works the same way.
+
+## Pick a page
+
+| Topic | Where |
+| --- | --- |
+| Look at frames, then check the project | [Open](#look-at-frames) |
+| Render the video | [Open](#render) |
+| Transparent video | [Open](#transparent-video) |
+| Export options | [Open](#export-options) |
+| 4K | [Open](/docs/rendering/4k/) |
+| HDR | [Open](/docs/rendering/hdr/) |
+| A slow render or preview | [Open](/docs/rendering/slow-renders/) |
+
+```sh
+npx kinetograph strip src/index.tsx -n 12
+npx kinetograph render src/index.tsx
+```
+
+The video goes to `out/renders/<composition id>.mp4`. Pass `-o` to choose another path.
+
+## Look at frames
+
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
+<Media src="illustrations/render-options.svg" dark="illustrations/render-options-dark.svg" width={600} height={524} alt={"A grid of commands against four stages: bundle, run, draw and encode. doctor stops after run and never uses the GPU. still, strip and onion go through draw for a chosen frame, frames or range. render with sequence stops after draw and writes an image per frame. render goes through all four to an MP4."} />
+
+```sh
+npx kinetograph still src/index.tsx 15
+npx kinetograph strip src/index.tsx -n 12
+npx kinetograph onion src/index.tsx 0..60 -n 6
+```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph still html/index.html 15
+npx kinetograph strip html/index.html -n 12
+npx kinetograph onion html/index.html 0..60 -n 6
+```
+
+  </Tab>
+</IconTabs>
+
+- `still` writes one frame as a PNG.
+- `strip` writes evenly spaced frames on one sheet, labelled with the frame and the time. Start here: it shows the whole animation.
+- `onion` blends the frames of a range over one another, to show a motion path.
+
+A frame is a whole number from 0. A range `10..40` is frames 10 to 39.
+
+## Check the project
+
+```sh
+npx kinetograph inspect src/index.tsx --frame 30
+npx kinetograph lint src/index.tsx
+npx kinetograph check src/index.tsx
+npx kinetograph doctor src/index.tsx
+```
+
+- `lint` reports overflowing text, layers off the canvas, and missing fonts and assets.
+- `check` finds type errors, such as a misspelled prop.
+- `doctor` lists what the engine cannot draw, and on which frames. Run it before a long render. See [What works](/docs/compat/#when-the-engine-cant-draw-something).
+
+## Render
+
+```sh
+npx kinetograph render src/index.tsx --draft
+npx kinetograph render src/index.tsx --range 0..90 --strict
+```
+
+- `--draft` renders at half size, for a quick look.
+- `--range a..b` renders only those frames, and the audio for them.
+- `--strict` stops at the first frame with something the engine cannot draw, and leaves no file. Use it for final renders and in CI.
+- `--comp <id>` and `--props '{"title":"Hello"}'` pick the composition and its props.
+
+## Check the render
+
+The command prints a summary: size, codec, encoder, pixel format, frames, how many were `repeated` (identical to the one before, so not drawn again), and a `renderer:` line. `Skia GPU` is fast. `Skia CPU` means the GPU was not used and the render will be slow; `doctor` says why. With `--json`, `output` is the file and `compat` lists what was left out.
+
+For a long film, `strip` a range or render with `--draft --range` first. Check the sound with `audio analyze`, and check transparency by opening a `--sequence` PNG.
+
+## Transparent video
+
+A video keeps transparency only with an alpha pixel format, and only where the frame has no opaque background. A composition with no `background` is transparent.
+
+- ProRes: `--codec prores --prores-profile 4444 --pixel-format yuva444p10le`, to a `.mov`. The 4444 profiles drop alpha unless the pixel format asks for it.
+- VP9: `--codec vp9 --pixel-format yuva420p`, to a `.webm`.
+
+Alpha is written straight, not premultiplied. Players handle alpha, 4:2:2, 4:4:4 and 10-bit unevenly, and 8-bit 4:2:0 plays everywhere.
+
+## Export options
+
+`--codec h264|h265|prores|vp9|gif` and the extension (`.mp4`, `.mov`, `.webm` or `.gif`) set the format. The other flags are in the [CLI reference](/docs/reference/cli/#render).
+
+`--sequence` writes one image per frame into the `-o` folder instead of a video, as `png` (with alpha) or `jpeg`. A sequence has no audio.
+
+## Suggested prompt
+
+```txt title="Suggested prompt"
+/kinetograph-markup Render a half-size draft with --strict, show me the strip, and fix anything doctor reports.
+```
+
+## What works
+
+- Drawn natively: everything listed under [Making videos](/docs/making-videos/compositions/), on the GPU with no browser.
+- Approximated or left out: a frame with content the engine cannot draw is drawn without it, or close, and the command prints one warning line for each kind of problem. `--strict` makes it an error.
+- Not supported: a render in a cloud function. There is no cloud renderer, so run `render` on a machine with a GPU.
+- See [What works](/docs/compat/) for the full list.
+
+## Related topics
+
+- [Fix a slow render or preview](/docs/rendering/slow-renders/)
+- [CLI](/docs/reference/cli/)

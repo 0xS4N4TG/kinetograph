@@ -1,0 +1,59 @@
+---
+title: Contributing to the registry
+description: How to add a component, template or taste to kinetograph-ui, how it becomes an installable item, and what a good one looks like.
+---
+
+Components, templates and tastes live in the public [kinetograph-ui](https://github.com/0xS4N4TG/kinetograph-ui) repo, which is MIT licensed. Anyone installs them with `npx kinetograph add <name>`. Send items there, not to the engine repo.
+
+## Where an item goes
+
+| Kind | Folder in kinetograph-ui | What it is |
+|---|---|---|
+| Component | `components/<kind>/` | One motion component with zod props, grouped by kind such as `grids`, `charts`, `backgrounds` or `effects` |
+| Template | `templates/<name>/` | A whole ready-made reel: an `index.tsx` that calls `registerRoot`, its scenes, its own `public/` |
+| Taste | `tastes/<name>/` | A whole style, with a `README.md` that becomes its `TASTE.md`, and a demo reel |
+
+Blocks that several items share (camera, ink, timing, film looks) are in `kit/`. A component folder has an `index.tsx` that registers a demo `<Composition>` for each component, and a `README.md` with its props.
+
+## How an item becomes installable
+
+The site builds the registry from a kinetograph-ui checkout. `packages/site/scripts/registry.mjs` takes the items that `packages/site/content/catalog.json` lists, copies each with the files it imports, and writes `kinetograph.dev/r/<name>.json` plus `index.json`. What an item imports from outside its folder, such as `kit/`, is copied under `shared/` and the imports are rewritten, and a `staticFile` path is rewritten to where the file installs. Only files git tracks are used, and files over 10 MB are left out.
+
+On install, a component goes to `src/components/<name>/`, a template to `src/templates/<name>/` and a taste to `src/tastes/<name>/`. Media goes to `public/<kind>/<name>/`. The item format and its rules are in [docs/registry.md](https://github.com/0xS4N4TG/kinetograph/blob/main/docs/registry.md).
+
+To list a new item in the catalog, run `node packages/site/scripts/catalog.mjs` against your checkout and review the change to `catalog.json`.
+
+## Test it
+
+Render it from the kinetograph-ui root with a Kinetograph checkout next to it:
+
+```sh
+node ../kinetograph/packages/cli/dist/cli.js render components/<kind>/index.tsx --comp <Id> -o out/test.mp4
+```
+
+Then build the registry and install the item into a fresh project:
+
+```sh
+node packages/site/scripts/registry.mjs ../kinetograph-ui --out /tmp/registry
+KINETOGRAPH_REGISTRY=/tmp/registry npx kinetograph add <name>
+npx kinetograph check src/index.tsx
+npx kinetograph still src/index.tsx 30
+```
+
+`KINETOGRAPH_REGISTRY` points the CLI at a local folder instead of kinetograph.dev, so nothing is published.
+
+## What a good item looks like
+
+- **Renders the same every time.** No `Date.now()`, no `Math.random()` (use `random(seed)`), no network. A frame depends only on its number.
+- **Props are described.** Every prop is in a zod schema with `.describe()` and a default, so Studio and agents can edit it.
+- **Self-contained.** Imports are relative or bare packages, and fonts come from `@remotion/google-fonts` or a file you ship.
+- **Your own or licensed assets.** Ship only footage, pictures, fonts and music that you made or may redistribute, and note the source and licence in a `CREDITS.md` or `SOURCES.md` next to the files.
+- **A preview.** A demo composition, and a still or short clip so people can see it before installing.
+
+By contributing to kinetograph-ui, you agree that your work is licensed under MIT, like the rest of the repo.
+
+## Related topics
+
+- [Contributing to Kinetograph](/docs/contributing/)
+- [Build from source](/docs/contributing/build-from-source/)
+- [How Kinetograph works](/docs/internals/engine/)

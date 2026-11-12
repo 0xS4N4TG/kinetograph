@@ -1,0 +1,61 @@
+---
+title: Noise
+description: Smooth, repeatable random values for organic motion, from noise2D, noise3D and noise4D, and a Noise layer for a picture.
+---
+
+`noise3D(seed, x, y, z)` returns a smooth value between -1 and 1 that changes gradually as its inputs do. The same inputs always give the same value, so a frame is the same in every render.
+
+```tsx title="src/Drift.tsx"
+import { Ellipse, useCurrentFrame } from '@kinetographdev/core';
+import { noise3D } from '@kinetographdev/core/noise';
+
+export const Drift = () => {
+  const frame = useCurrentFrame();
+  const dots = Array.from({ length: 30 }, (_, i) => {
+    const x = 640 + noise3D('x', i * 0.3, 0, frame / 60) * 500;
+    const y = 360 + noise3D('y', i * 0.3, 0, frame / 60) * 280;
+    return <Ellipse key={i} x={x} y={y} width={14} height={14} fill="#ffffff" />;
+  });
+  return <>{dots}</>;
+};
+```
+
+<Media src="making-videos/noise-drift.mp4" poster="making-videos/noise-drift.webp" width={1280} height={720} alt={"The dots drift smoothly as the noise changes with the frame."} />
+
+## The functions
+
+`noise2D`, `noise3D` and `noise4D` take a string or number seed. Use `frame / 60` or similar for the axis that stands for time. For plain random values, use `random(seed)`: see [Animation and timing](/docs/making-videos/animation/#randomness).
+
+## A noise picture
+
+`Noise` is a native layer that draws noise itself, with `width`, `height`, `turbulence` (`{ type, baseFrequency, numOctaves, seed }`) and `channels` (`'rgba'` or `'gray'`):
+
+```tsx title="src/Clouds.tsx"
+import { Noise } from '@kinetographdev/core';
+
+export const Clouds = () => (
+  <Noise
+    width={1280}
+    height={720}
+    channels="gray"
+    turbulence={{ type: 'fractalNoise', baseFrequency: [0.004, 0.008], numOctaves: 4, seed: 7 }}
+  />
+);
+```
+
+<Media src="making-videos/noise-clouds.webp" width={1280} height={720} alt={"A grey cloud pattern drawn by the Noise layer."} />
+
+`grain` and `dither` in [Effects](/docs/making-videos/effects/) add film grain to a layer.
+
+## What works
+
+- Drawn natively: `noise2D`, `noise3D` and `noise4D` from `@remotion/noise` (3 of 3 exports), and the `Noise` layer.
+- Approximated: nothing is listed.
+- Not supported: nothing is listed.
+- See [What works](/docs/compat/#remotion-packages).
+
+## Related topics
+
+- [Compositions and props](/docs/making-videos/compositions/)
+- [Layers](/docs/making-videos/layers/)
+- [What works](/docs/compat/)

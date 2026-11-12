@@ -1,0 +1,57 @@
+---
+title: Captions
+description: Parse SRT and WebVTT files, group word timings into pages, and show each page with the frame.
+---
+
+Show subtitles on a video from a subtitle file. Give your agent the file and say how the words should look and where they sit.
+
+```text title="Suggested prompt"
+Caption the video with public/captions/line.srt, white text in the lower third, one caption at a time. Run lint and fix anything it reports.
+```
+
+## In code
+
+`parseSrt` turns a subtitle file into captions with start and end times in milliseconds. Show the one that matches the current time.
+
+```tsx title="src/Subtitles.tsx"
+import { readFileSync } from 'node:fs';
+import { AbsoluteFill, Text, staticFile, useCurrentFrame, useVideoConfig } from '@kinetographdev/core';
+import { parseSrt } from '@kinetographdev/core/captions';
+
+const { captions } = parseSrt({ input: readFileSync(staticFile('captions/line.srt'), 'utf8') });
+
+export const Subtitles = () => {
+  const ms = (useCurrentFrame() / useVideoConfig().fps) * 1000;
+  const caption = captions.find((c) => ms >= c.startMs && ms < c.endMs);
+  return (
+    <AbsoluteFill>
+      {caption ? (
+        <Text font="DM Sans" size={56} color="#ffffff" x={120} y={600}>
+          {caption.text}
+        </Text>
+      ) : null}
+    </AbsoluteFill>
+  );
+};
+```
+
+<Media src="making-videos/captions-example.mp4" poster="making-videos/captions-example.webp" width={1280} height={720} alt={"Words of a caption light up in turn over the film."} />
+
+## The functions
+
+`parseSrt` and `parseVtt` return `{ captions }`. `createTikTokStyleCaptions` groups word captions into pages, so you can highlight the word being said.
+
+Read the file at the top of the module, once. Kinetograph does not make the timings. Bring them from your own speech-to-text tool.
+
+## What works
+
+- Drawn natively: `parseSrt`, `parseVtt`, `serializeSrt` and `createTikTokStyleCaptions` from `@remotion/captions` (4 of 5 exports).
+- Approximated: nothing is listed.
+- Not supported: `CaptionsInternals`, which is internal to Remotion.
+- See [What works](/docs/compat/#remotion-packages).
+
+## Related topics
+
+- [Add voice, music and captions](/docs/making/voice-music-captions/)
+- [Audio](/docs/making-videos/audio/)
+- [Text, captions and code](/docs/tips/text-captions-code/)

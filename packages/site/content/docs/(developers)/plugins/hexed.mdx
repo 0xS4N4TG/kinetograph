@@ -1,0 +1,71 @@
+---
+title: Hexed
+description: Roll a look onto a picture or clip from a number, lock the parts you like and reroll the rest.
+---
+
+```sh
+npm install @kinetographdev/hexed
+```
+
+Hexed picks a look for a picture or clip. A look is eleven slots, each holding one named effect: crop, shake, fps, time, mirror, isolate, grade, screen, optics, damage and grunge. Roll a number and every slot fills. The same number always gives the same look, so a render comes out the same every time.
+
+## Use it
+
+Wrap any picture or clip in `<Hexed>`.
+
+```tsx
+import { Image, Video, staticFile } from '@kinetographdev/core';
+import { Hexed } from '@kinetographdev/hexed';
+
+<Hexed seed={42}><Video src={staticFile('video/clip.mp4')} /></Hexed>
+
+// hold a slot, switch one off
+<Hexed seed={42} lock={{ grade: 'sepia-print' }} off={['mirror']}>
+  <Image src={staticFile('images/photo.jpg')} />
+</Hexed>
+
+// a saved look, at 70% strength
+<Hexed preset="moss-impact" amount={0.7} adjust={{ contrast: 20 }}>
+  <Image src={staticFile('images/photo.jpg')} />
+</Hexed>
+```
+
+## Main exports
+
+| Export | What it does |
+|---|---|
+| `<Hexed>` | Wraps children and rolls a look onto them. It fills the composition unless you give a width and height. |
+| `<Grunge>` | Lays a texture, procedural or a scan, over the finished picture. |
+| `roll`, `rollGenome` | Roll a genome from a seed. Locked slots keep what the lock says. |
+| `describe` | A one-line name for a genome. |
+| `genesOf` | Every gene id a slot can roll, "none" first. |
+
+Props of `<Hexed>`:
+
+| Prop | What it does |
+|---|---|
+| `seed` | The roll. Ignored when `genome` is given. |
+| `lock` | Slots to hold while the seed changes. |
+| `genome` | A saved look. It wins over `seed` and `lock`. |
+| `preset` | A saved look by name. It wins over `seed` and `lock`. |
+| `off` | Slots switched off. |
+| `amount`, `amounts` | Strength, 0 to 1, over the whole look or per slot. |
+| `adjust` | Global controls over the whole look. |
+
+The catalog has a [Hexed page](/catalog/plugin-hexed/) with a preview and the steps to add it.
+
+## In Studio and with an agent
+
+Studio gets a Hexed panel: a card for each slot with its effect, a strength slider, a lock and a shuffle button. Shuffle rerolls everything except the locked slots, and a menu holds your presets.
+
+The plugin ships MCP tools. An agent can roll a look (`hexed_roll`), list what each slot accepts (`hexed_genes`) and read your presets (`hexed_presets`). It then writes the look it settles on into your code or saves it as a preset.
+
+## Limits
+
+- A look found in Studio lasts only if it is saved as a preset or written into the code.
+
+## Related topics
+
+- [Plugins](/docs/plugins/)
+- [Use a library item](/docs/library/use-an-item/)
+- [Packages](/docs/packages/)

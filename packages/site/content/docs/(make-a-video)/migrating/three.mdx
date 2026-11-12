@@ -1,0 +1,59 @@
+---
+title: Move a three.js scene to Kinetograph
+description: What to say to rebuild a three.js or React Three Fiber scene with Kinetograph's own 3D layer, and what to expect your agent to flag.
+---
+
+<Terminal command="npx kinetograph strip src/Scene.tsx -n 12 -o out/strip.png" />
+
+Rebuild a scene from `@remotion/three` with Kinetograph's own 3D layer, then use everything else here on it: effects, captions and export.
+
+## What this makes
+
+Not the same code, a **rebuild**. Kinetograph has no `@remotion/three`, `three` or `@react-three/fiber`. An import of any of them stops the build and names the package. The `kinetograph-migrate` skill rebuilds the scene with the 3D layer and checks it frame by frame.
+
+## Base prompt
+
+```text title="Suggested prompt"
+Rebuild the three.js scene in src/Scene.tsx with Kinetograph's 3D layer, using the kinetograph-migrate skill. Keep the camera, the lights and the motion. Draw a strip of 12 frames and tell me what differs.
+```
+
+Name the file with the scene.
+
+## What won't move as it is, and why that's correct
+
+- **Custom shaders and post-processing passes** have no match. The agent reports each and approximates it with the 3D layer's effects (glow, blur, grain, chromatic aberration), or leaves it out.
+- **Loaded models and textures** must be local files in `public/`. A remote address is an error.
+- **Physics** has no match. Motion is written from the frame number instead, or left out.
+
+The agent stops and explains rather than approximating in silence.
+
+## Validation is not optional
+
+```text title="Suggested prompt"
+Render the old scene and the rebuilt one at frames 0, 30 and 60 and show them side by side. List every difference.
+```
+
+## The knobs that matter
+
+| What to say | Why it matters |
+| --- | --- |
+| **The file with the scene** | A project may have several canvases. |
+| **"Keep the camera, lights and motion"** | They carry the look. |
+| **"Use local files"** | A render reads files on your computer only. |
+| **"List every difference"** | Approximations are recorded. |
+
+## Common failure modes
+
+**Expecting every three.js feature to exist.**
+- **Avoid:** "port it exactly"
+- **Instead:** "rebuild it with the 3D layer and list what differs"
+
+**Skipping the side-by-side.**
+- **Avoid:** accepting the first render
+- **Instead:** "compare frames 0, 30 and 60"
+
+## Related topics
+
+- [Remotion three.js mapping](/docs/reference/remotion-three/)
+- [Move from Remotion](/docs/migrating/remotion/)
+- [Colour, effects and 3D](/docs/tips/colour-effects-3d/)

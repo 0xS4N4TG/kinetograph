@@ -8,8 +8,7 @@ import { MobileMenu } from '@/sections/mobile-menu';
 import { Label, shell, Wordmark } from '@/sections/shared';
 
 const LINKS = [
-  { href: '/plugins/', label: 'Plugins' },
-  { href: '/plugins/#components', label: 'Components' },
+  { href: '/catalog/', label: 'Library' },
   { href: '/docs/', label: 'Docs' },
 ];
 

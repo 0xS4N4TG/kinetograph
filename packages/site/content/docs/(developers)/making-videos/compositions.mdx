@@ -1,0 +1,76 @@
+---
+title: Compositions and props
+description: Declare the videos a project can render with registerRoot and Composition, and give them props.
+---
+
+A composition is one video: an id, a size, a frame rate, a length and the component that draws each frame. You list them in the entry file, inside `registerRoot`.
+
+```tsx title="src/index.tsx"
+import { Composition, Still, registerRoot } from '@kinetographdev/core';
+import { Card } from './scenes/Card';
+
+registerRoot(() => (
+  <>
+    <Composition
+      id="Card"
+      component={Card}
+      durationInFrames={60}
+      fps={30}
+      width={640}
+      height={360}
+      defaultProps={{ title: 'Hello' }}
+    />
+    <Still id="Cover" component={Card} width={1280} height={720} />
+  </>
+));
+```
+
+The entry must call `registerRoot`.
+
+## Composition props
+
+| Prop | Meaning |
+|---|---|
+| `id` | The name that `--comp` picks. Without `--comp`, the first composition is used. |
+| `component` | The component that draws a frame. |
+| `durationInFrames`, `fps`, `width`, `height` | The length, frame rate and size. |
+| `defaultProps` | The props the component gets when `--props` does not set them. |
+| `schema` | A zod 4 schema. [Studio](/docs/studio/find-your-way/#props) draws a form from it. |
+| `background` | The background colour of every frame. The default is transparent. |
+| `margin` | Pixels of room around the canvas, for effects that draw past its edge. |
+
+`Still` declares a one-frame composition.
+
+## Props
+
+Props are the values a composition receives, such as a title. Set them from the command line with a JSON object or the path of a JSON file:
+
+```sh
+npx kinetograph render src/index.tsx --comp Card --props '{"title":"Goodbye"}'
+```
+
+Props saved as a preset in Studio are a JSON file in `presets/`, and `--props` renders it too.
+
+`npx kinetograph compositions src/index.tsx` lists each composition's id, size, frame rate and length.
+
+## HTML pages
+
+A page declares its composition on the root element: `data-composition-id`, `data-width`, `data-height` and `data-duration` in seconds. See [HyperFrames projects](/docs/compat/#hyperframes-projects).
+
+## Suggested prompt
+
+```txt title="Suggested prompt"
+/kinetograph-markup Add a 1080 by 1920 composition called Story with a title prop, and render a still of frame 30.
+```
+
+## What works
+
+- Drawn natively: compositions, `Still`, `Folder`, `defaultProps`, `--props`, `background` and `margin`.
+- Approximated: `schema` draws a Studio form, but a render does not check props against it.
+- Not supported: Remotion's `Config.*` calls do nothing, and say so once, because there is no `remotion.config.ts`.
+- See [What works](/docs/compat/).
+
+## Related topics
+
+- [Layers](/docs/making-videos/layers/)
+- [What works](/docs/compat/)

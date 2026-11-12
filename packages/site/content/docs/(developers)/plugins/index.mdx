@@ -1,0 +1,61 @@
+---
+title: Plugins
+description: What a plugin is, how to use one in a project and in Studio, and the plugins Kinetograph makes.
+---
+
+A [plugin](/docs/terminology/plugin/) is an npm package that adds components or effects to a project. It also tells Studio and coding agents how to use them. Studio shows its props as form fields, and an agent reads its skill.
+
+## Pick a plugin
+
+| Topic | Where |
+| --- | --- |
+| Hexed | [Open](/docs/plugins/hexed/) |
+| Kinetic typography | [Open](/docs/plugins/kinetic-typography/) |
+| Paper | [Open](/docs/plugins/paper/) |
+| VJ | [Open](/docs/plugins/vj/) |
+| Library adapters for GSAP, Motion, anime.js and p5.brush | [Open](/docs/plugins/library-adapters/) |
+| Write your own | [Open](/docs/plugins/writing-a-plugin/) |
+
+## Use a plugin
+
+Add the package to the `dependencies` of your project's `package.json`, then import from it.
+
+```tsx
+import { Hexed } from '@kinetographdev/hexed';
+
+<Hexed seed={42}><Video src={staticFile('video/clip.mp4')} /></Hexed>
+```
+
+`npx kinetograph plugins` lists a project's plugins with the path of each plugin's `SKILL.md`. Plugins are React components, so they belong in Remotion-shaped projects, not [HyperFrames](/docs/terminology/hyperframes-page/) pages.
+
+## Kinetograph plugins
+
+Install one with `npm install @kinetographdev/<name>`.
+
+- [Hexed](/docs/plugins/hexed/): rolls a look onto a picture or clip from a number.
+- [Kinetic typography](/docs/plugins/kinetic-typography/): captions that move with the voice.
+- [Paper](/docs/plugins/paper/): match cuts, cut-outs and hand-drawn lines on paper.
+- [VJ](/docs/plugins/vj/): screen and sensor looks, tracking marks and pop art.
+
+The [library adapters](/docs/plugins/library-adapters/) for GSAP, Motion, anime.js and p5.brush are published. To make your own, see [Writing a plugin](/docs/plugins/writing-a-plugin/).
+
+## Presets
+
+A preset is a named set of props for one composition. In the Props tab of [Studio](/docs/studio/), the **Presets** menu loads a saved preset, and **Save preset** saves the props you are previewing under a name.
+
+A preset is a JSON file at `presets/<composition id>/<name>.json`, next to the project's entry file. You can commit it or edit it by hand.
+
+`--props` takes the path of a JSON file as well as a JSON object.
+
+```sh
+npx kinetograph still src/index.tsx --comp Hero --props presets/Hero/warm.json
+```
+
+## Studio's agent
+
+The coding agent in Studio's chat panel gets a Kinetograph MCP server with every `kinetograph` tool, your plugins' tools, and four tools for the open window. It can read and set the props the preview shows, and ask you for a decision in a panel. See [Agent tools (MCP)](/docs/mcp/).
+
+## Related topics
+
+- [Use a library item](/docs/library/use-an-item/)
+- [Packages](/docs/packages/)

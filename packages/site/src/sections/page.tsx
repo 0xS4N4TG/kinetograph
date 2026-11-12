@@ -154,7 +154,7 @@ export function About() {
             coding agent built in.
           </p>
           <p className={`${body} mt-6 max-w-[44ch]`}>Teach your agent Kinetograph:</p>
-          <CommandBar command="npx skills add 0xS4N4TG/kinetograph" className={`mt-4 ${commandBar}`} />
+          <CommandBar command="npx kinetograph skills update" className={`mt-4 ${commandBar}`} />
         </div>
       </div>
     </section>
@@ -177,7 +177,7 @@ export function Taste() {
             Works with Kinetograph, Remotion or any frame-based renderer.{' '}
             <a className={link} href="/docs/guides/taste/">How it works</a>.
           </p>
-          <CommandBar command="npx skills add 0xS4N4TG/kinetograph-ui" className={`mt-6 ${commandBar}`} />
+          <CommandBar command="npx kinetograph skills update" className={`mt-6 ${commandBar}`} />
         </div>
       </div>
     </section>

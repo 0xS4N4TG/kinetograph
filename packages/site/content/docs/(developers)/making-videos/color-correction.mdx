@@ -1,0 +1,77 @@
+---
+title: Color correction
+description: Grade a picture or clip with colorCorrection(), levels(), curves() and lut(), or with the engine's own colorGrade and lut effects.
+---
+
+Pass `colorCorrection()`, `levels()`, `curves()` or `lut()` from `@remotion/effects` in the `effects` array of a picture or clip. The engine draws them on the GPU.
+
+```tsx title="src/Graded.tsx"
+import { Img, staticFile } from '@kinetographdev/core';
+import { colorCorrection } from '@remotion/effects/color-correction';
+
+export const Graded = () => (
+  <Img
+    src={staticFile('images/photo.jpg')}
+    style={{ width: 1280 }}
+    effects={[colorCorrection({ exposure: 0.3, contrast: 1.2, saturation: 1.3, temperature: 0.2 })]}
+  />
+);
+```
+
+<Media src="making-videos/color-correction-before.webp" width={1280} height={720} alt={"A woodblock print of a night market, ungraded."} />
+
+Install `@remotion/effects` at the same version as `remotion`. See [Remotion effects](/docs/making-videos/remotion-effects/).
+
+`colorCorrection()` is the all-in-one adjustment, `levels()` sets black point, white point and gamma, `curves()` bends the tone with points from `[0, 0]` to `[1, 1]`, and `lut()` grades through a `.cube` lookup table. Effects run in the order of the array, so correct the colour first, then apply the look:
+
+```tsx title="src/Combined.tsx"
+const effects = [colorCorrection({ exposure: 0.2, temperature: 0.1 }), lut({ content: look })];
+```
+
+## The engine's own grade
+
+Kinetograph also has two native effects that work on any layer, with no extra package:
+
+```tsx title="src/Native.tsx"
+import { Image, colorGrade, lut, staticFile } from '@kinetographdev/core';
+
+export const Native = () => (
+  <Image
+    src={staticFile('images/photo.jpg')}
+    width={1280}
+    height={720}
+    effects={[
+      colorGrade({ adjust: { exposure: 0.2, contrast: 0.1 }, curves: { master: [[0, 0], [0.5, 0.4], [1, 1]] } }),
+      lut({ src: staticFile('luts/warm.cube'), amount: 0.8 }),
+    ]}
+  />
+);
+```
+
+<Media src="making-videos/color-correction-after.webp" width={1280} height={720} alt={"The same print after colorGrade and a teal-orange lut: warmer lights, cooler shadows, more contrast."} />
+
+- `lut({ src, amount })` reads a `.cube` file. `amount` (0 to 1) cross-fades from the original.
+- `colorGrade` takes `adjust` (`exposure`, `contrast`, `temperature`, `saturation` and more), colour `wheels`, `curves`, a `lut`, a `vignette` and `grain`.
+- `gradientMap` colours a layer by brightness, as in a thermal camera.
+
+## Studio
+
+Studio has no sliders, histogram, curve editor or LUT drop for these yet. Set them in code, or ask the agent.
+
+```txt title="Suggested prompt"
+/kinetograph-markup Grade the photo warmer with a little more contrast, then apply luts/warm.cube at 80%. Show frame 0 before and after.
+```
+
+## What works
+
+- Drawn natively: `colorCorrection`, `levels`, `curves` and `lut` from `@remotion/effects` (all supported, measured against Remotion in Chrome), and the engine's `lut`, `colorGrade` and `gradientMap`.
+- HyperFrames: `data-color-grading` on `<video>`, `<img>` and `<canvas>` runs the whole HyperFrames grade. A missing `.cube` drops the `lut` and says so.
+- Approximated: a video with no named colour space is read with a different matrix from Chrome's.
+- Not supported: grading in Studio, as above.
+- See [What works](/docs/compat/#hyperframes-projects) and [Remotion effects](/docs/making-videos/remotion-effects/).
+
+## Related topics
+
+- [Compositions and props](/docs/making-videos/compositions/)
+- [Layers](/docs/making-videos/layers/)
+- [What works](/docs/compat/)

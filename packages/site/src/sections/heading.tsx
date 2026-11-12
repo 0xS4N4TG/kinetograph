@@ -49,7 +49,7 @@ export function Heading({
                   {word}
                 </span>
                 <span
-                  className={cn('pointer-events-none absolute inset-0 border border-cobalt', animate && 'kg-box')}
+                  className={cn('pointer-events-none absolute inset-0 border border-cobalt', animate && 'kg-track')}
                   style={animate ? { animationDelay: `${wi * 90 + 350}ms` } : undefined}
                 >
                   {['-left-[3px] -top-[3px]', '-right-[3px] -top-[3px]', '-bottom-[3px] -left-[3px]', '-right-[3px] -bottom-[3px]'].map((p) => (

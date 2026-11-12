@@ -1,0 +1,34 @@
+---
+title: Continue from Claude Code
+description: Open a project that Claude Code, Codex or another agent made in Studio, and hand it back.
+---
+
+<Video name="studio-continue" label="Opening a project an agent made in Studio, then going back to the agent" silent />
+
+Your agent made a project in a folder. Open that same folder in Studio to see it, change it by hand and keep working with the agent in the chat.
+
+## From the project folder
+
+Run Studio on the project's entry file. For a project made with `kinetograph init` that is `src/index.tsx`; for an HTML project it is the page:
+
+```sh
+npx kinetograph studio src/index.tsx
+```
+
+If you are not sure what the entry is, ask your agent. It is the file that calls `registerRoot`, or the project's `index.html`.
+
+```text title="Suggested prompt"
+Open this project in Studio for me. Run kinetograph studio on the entry file and tell me the address.
+```
+
+Studio and your agent work on the same files. A change in one shows up in the other, because Studio rebuilds the project when a file changes.
+
+## Back to your agent
+
+To carry on in your terminal instead, close Studio with Ctrl-C and go back to your agent in the same folder. It sees every edit you made, because the edits are in the files.
+
+## Related topics
+
+- [Connect your agent](/docs/studio/connect-your-agent/)
+- [Edit with the agent](/docs/agents/studio-agent/)
+- [Make videos with Claude Code](/docs/agents/claude-code/)

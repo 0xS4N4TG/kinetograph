@@ -1,0 +1,57 @@
+---
+title: Keep your editor, render with Kinetograph
+description: What to say to keep editing in Remotion Studio or HyperFrames and render the same project with Kinetograph.
+---
+
+<Terminal command="npx kinetograph doctor src/index.ts\nnpx kinetograph render src/index.ts --comp Main -o out.mp4" />
+
+Keep editing in the tool you know, then render the same files with Kinetograph.
+
+## What this makes
+
+Not a new project, a **render**. Nothing is converted: both tools read the same files, so you edit as before and Kinetograph renders the result without a browser.
+
+## Base prompt
+
+```text title="Suggested prompt"
+Render this project with Kinetograph and keep my editor as it is. The entry is src/index.ts and the composition is Main. Run kinetograph doctor first and tell me what the engine cannot draw, then save it to out/video.mp4.
+```
+
+For a Remotion project the entry is the file that calls `registerRoot`. For a HyperFrames project it is the page or its folder.
+
+## What won't render as it is, and why that's correct
+
+`doctor` lists what the engine cannot draw and the frames where it happens. Unsupported content is drawn without, or approximated, and a warning names it. Nothing falls back to a browser. The agent reports each finding and does not hide it.
+
+## Validation is not optional
+
+```text title="Suggested prompt"
+Render a strip of 12 frames and compare it with the preview in my editor. Then render with --strict so it stops on the first frame with something missing.
+```
+
+Where the two renders can differ, and the commands for each project type, are on [Render from your editor](/docs/reference/render-from-your-editor/).
+
+## The knobs that matter
+
+| What to say | Why it matters |
+| --- | --- |
+| **The entry and the composition** | A project can register several. |
+| **"Keep my editor as it is"** | Nothing is rewritten or converted. |
+| **"Run doctor first"** | You see what is missing before a long render. |
+| **"Render with --strict"** | Stops at the first frame with something unsupported. |
+
+## Common failure modes
+
+**Giving it the wrong file.** A file that only exports a component, such as `Root.tsx`, is not an entry.
+- **Avoid:** "render src/Root.tsx"
+- **Instead:** "render src/index.ts"
+
+**Expecting identical pixels everywhere.**
+- **Avoid:** "it must match the editor exactly"
+- **Instead:** "compare a strip of frames and list what differs"
+
+## Related topics
+
+- [Render from your editor](/docs/reference/render-from-your-editor/)
+- [Bring a project](/docs/making/bring-a-project/)
+- [What works](/docs/compat/)

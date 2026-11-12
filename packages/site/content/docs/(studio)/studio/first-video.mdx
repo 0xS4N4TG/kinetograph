@@ -1,0 +1,43 @@
+---
+title: Make your first video in Studio
+description: Make a title card by asking the agent in Studio's chat, then change it with a click and save it as an MP4.
+---
+
+<Video name="studio-first-video" label="One request in the chat, the title card appearing in the preview, then Export" silent />
+
+Studio puts the preview, the timeline and a chat with your coding agent in one window. You ask for a video in the chat and watch it appear.
+
+## What happens
+
+<Steps>
+  <Step title="Make a project and open Studio">
+    ```sh
+    npx kinetograph init
+    npm install
+    npx kinetograph studio src/index.tsx
+    ```
+
+    You need a coding agent signed in on your computer. See [Connect your agent](/docs/studio/connect-your-agent/).
+  </Step>
+  <Step title="Ask for the video">
+    Type your request in the **Agent** chat on the left:
+
+    ```text title="Suggested prompt"
+    Make a 5 second title card that says "Hello" in white on dark blue. Look at the frames before you stop.
+    ```
+
+    The agent writes the video and the preview updates. It looks at the frames and fixes what is off.
+  </Step>
+  <Step title="Change it">
+    Click the title in the preview to select it, then change a setting in the **Props** tab. Or press `M`, mark what you want changed on the preview, write a note and send it. [Edit with the agent](/docs/agents/studio-agent/) covers both.
+  </Step>
+  <Step title="Save the MP4">
+    Choose **Export** in the top bar, then **Start export**. [Export](/docs/studio/export/) has the options.
+  </Step>
+</Steps>
+
+## Related topics
+
+- [Find your way around Studio](/docs/studio/find-your-way/)
+- [Edit with the agent](/docs/agents/studio-agent/)
+- [Export](/docs/studio/export/)
