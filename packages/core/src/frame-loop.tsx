@@ -92,16 +92,8 @@ async function runAfterLoads(): Promise<void> {
  * loading, for two turns of the event loop), the earliest hold timer fires at once, in (due time, creation order), without
  * the clock moving. Timeouts made while the frame is not held, and every interval, follow the frame clock as before.
  */
-/** Real milliseconds a page-load hold may sit still before the page's callbacks run in it. */
-const PAGE_LOAD_STUCK_MS = 2000;
-
-/** Real time (the project's clocks are the frame's). */
-const realMs = (): number => Number(process.hrtime.bigint() / 1_000_000n);
-
 async function whenReleased(animationFrames = false): Promise<void> {
   let quiet = 0;
-  let quietSince = 0;
-  const stuck = (): boolean => quiet >= 2 && realMs() - quietSince >= PAGE_LOAD_STUCK_MS;
   while (openRenderHandles() > 0) {
     // A waiter for the release; a new one once that has been released and a handle was opened again.
     const idle = whenRenderIdle();
@@ -113,8 +105,8 @@ async function whenReleased(animationFrames = false): Promise<void> {
       // While only the page's scripts are loading, the callbacks wait: how many turns of the event loop a read of a file
       // takes is not the page's clock, and a callback that ran in each of them would move a page that counts them (an
       // animation that adds to a rotation) by that many frames. A script that waits for a frame itself gets one once
-      // nothing has moved for a while (`PAGE_LOAD_STUCK_MS`), or it would never finish.
-      if (animationFrames && animationFramesQueued() && (!onlyPageLoadOpen() || stuck())) {
+      // nothing is loading any more (no fetch, image or font, for two turns: the state, not a time), or it would never finish.
+      if (animationFrames && animationFramesQueued() && (!onlyPageLoadOpen() || quiet >= 2)) {
         runAnimationFrames();
         await tick();
         quiet = 0;
@@ -123,7 +115,6 @@ async function whenReleased(animationFrames = false): Promise<void> {
       await Promise.race([idle, tick()]);
       if (released) break;
       quiet = pendingFetches() === 0 && pendingImageLoads() === 0 && pendingFontLoads() === 0 ? quiet + 1 : 0;
-      if (quiet === 1) quietSince = realMs();
       if (quiet >= 2 && fireHoldTimer()) quiet = 0;
     }
     await idle;

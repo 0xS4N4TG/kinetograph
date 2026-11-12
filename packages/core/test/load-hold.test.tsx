@@ -5,6 +5,7 @@
 import { Suspense, useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Rect } from '@kinetographdev/react';
+import { trackPending } from '@kinetographdev/compat/shim';
 import { PAGE_LOAD_LABEL, continueRender, delayRender, resetRenderState } from '../src/assets.js';
 import { drawWhenSettled } from '../src/canvas-draws.js';
 import { Composition, registerRoot, resetCompositions } from '../src/compositions.js';
@@ -98,13 +99,31 @@ describe('loads the page starts', () => {
         };
         requestAnimationFrame(loop);
         // A read of a file that takes some turns of the event loop: the number of turns is not the page's clock.
-        realTimers.setTimeout(() => continueRender(handle), 60);
+        void trackPending(new Promise<void>((resolve) => realTimers.setTimeout(resolve, 60))).then(() => continueRender(handle));
       }, []);
       return <Rect id="r" width={4} height={4} fill="#fff" />;
     };
     root(Page);
     await ids();
     expect(runs).toBe(1);
+  });
+
+  it('runs the callbacks when the page scripts wait for a frame and nothing is loading', async () => {
+    let finished = false;
+    const Page = () => {
+      useEffect(() => {
+        const handle = delayRender(PAGE_LOAD_LABEL);
+        // A script that awaits a frame before it finishes loading: only a callback can release the hold.
+        requestAnimationFrame(() => {
+          finished = true;
+          continueRender(handle);
+        });
+      }, []);
+      return <Rect id="r" width={4} height={4} fill="#fff" />;
+    };
+    root(Page);
+    await ids();
+    expect(finished).toBe(true);
   });
 
   it('runs a page that animates and keeps render targets once per frame in a still, as in a render of every frame', async () => {
