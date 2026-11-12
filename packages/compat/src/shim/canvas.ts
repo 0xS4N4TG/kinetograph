@@ -23,7 +23,7 @@ import {
 import { addonFunction, hasAddonFunction } from '../addon.js';
 import { getDomEnvironment } from '../environment.js';
 import type { HostElement } from './host.js';
-import { DawnCanvasContext, dawnCommandsOf, dawnRequested, takeDawnReports } from './webgpu-dawn.js';
+import { DawnCanvasContext, dawnCommandsOf, dawnDependsOnHistory, dawnRequested, takeDawnReports } from './webgpu-dawn.js';
 
 export { CANVAS_SOURCE, CanvasContext2D, WebGLContext };
 
@@ -229,7 +229,8 @@ export function glDependsOnHistory(): boolean {
     const context = ref.deref();
     if (context instanceof WebGLContext && context.dependsOnHistory) return true;
   }
-  return false;
+  // A Dawn page whose frame read what an earlier frame wrote (webgpu-dawn-carry.ts) is the same for the frame loop.
+  return dawnDependsOnHistory();
 }
 
 /** The 2D contexts of canvases in the tree (`contextOfHost`), the ones a frame's render draws on. */

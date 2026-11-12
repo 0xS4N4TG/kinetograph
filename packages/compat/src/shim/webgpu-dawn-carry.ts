@@ -8,6 +8,8 @@
 // The rule is conservative: when in doubt the page is called history dependent, which costs speed and never correctness.
 // Each texture and buffer has the epoch (the frame's virtual time) of its last write. A frame history-depends when
 //   - it reads a resource that nothing wrote yet but that something can write (a feedback texture's first read), or
+//   - it writes a resource that an earlier frame read while nothing had written it (the other texture of a ping-pong: a
+//     frame jumped to reads the one the frame before wrote and writes the one an earlier frame read empty), or
 //   - it reads a resource written in an earlier frame and the resource is written again after that read (a ping-pong,
 //     an accumulation, a particle buffer). A resource that is written once and read for ever (a mip chain, a baked
 //     texture, a vertex buffer) is not, and neither is one written in the frame before every read of it (a uniform
@@ -22,6 +24,8 @@ interface State {
   written: number;
   /** Read in an epoch after the one it was written in. */
   stale: boolean;
+  /** The first epoch it was read in while nothing had written it, Infinity when it was not. */
+  readEmpty: number;
   /** The epoch it was made in: what a resource holds in the frame that made it is zero, whichever frames came before. */
   born: number;
 }
@@ -52,7 +56,7 @@ const writable = (resource: Any): boolean => {
 function stateOf(resource: Any): State {
   let state = states.get(resource);
   if (state === undefined) {
-    state = { written: -Infinity, stale: false, born: -Infinity };
+    state = { written: -Infinity, stale: false, readEmpty: Infinity, born: -Infinity };
     states.set(resource, state);
   }
   return state;
@@ -62,7 +66,10 @@ function read(resource: Any): void {
   if (paused > 0 || resource == null || typeof resource !== 'object') return;
   const state = stateOf(resource);
   if (state.written === -Infinity) {
-    if (state.born < now() && writable(resource)) flagged = true;
+    if (writable(resource)) {
+      if (state.born < now()) flagged = true;
+      state.readEmpty = Math.min(state.readEmpty, now());
+    }
   } else if (state.written < now()) {
     state.stale = true;
   }
@@ -71,7 +78,7 @@ function read(resource: Any): void {
 function write(resource: Any): void {
   if (paused > 0 || resource == null || typeof resource !== 'object') return;
   const state = stateOf(resource);
-  if (state.stale) flagged = true;
+  if (state.stale || state.readEmpty < now()) flagged = true;
   state.written = now();
 }
 
