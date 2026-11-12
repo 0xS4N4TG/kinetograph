@@ -2,7 +2,7 @@
 
 This package holds two separate works under different licences.
 
-1. **The addon** (`kinetograph.*.node`) is licensed under the PolyForm Small Business License 1.0.0 (`LICENSE.md`). It
+1. **The addon** (`kinetograph.*.node`) is licensed under the Apache License 2.0 (`LICENSE.md`). It
    links an FFmpeg that is built as **LGPL 2.1 or later**, without libx264 or libx265. See `THIRD-PARTY-NOTICES.md` and
    `COPYING.LGPLv2.1`.
 2. **The program** `bin/ffmpeg` (`bin/ffmpeg.exe` on Windows) is a stand-alone FFmpeg executable built with
@@ -11,7 +11,7 @@ This package holds two separate works under different licences.
 
 The two do not form one program. The addon never links the executable or any GPL code: when a render asks for an
 encoder the linked FFmpeg lacks (H.264 by libx264, H.265 by libx265), the addon starts `bin/ffmpeg` as a child process
-and sends it raw pictures on a pipe. The PolyForm licence therefore does not apply to `bin/ffmpeg`, and the GPL does
+and sends it raw pictures on a pipe. The Apache licence therefore does not apply to `bin/ffmpeg`, and the GPL does
 not apply to the addon.
 
 ## Source and rebuilding

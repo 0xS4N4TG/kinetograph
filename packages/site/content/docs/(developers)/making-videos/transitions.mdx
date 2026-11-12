@@ -1,0 +1,70 @@
+---
+title: Transitions
+description: Cut from one scene to the next with fades, slides, wipes, flips and shader transitions.
+---
+
+`TransitionSeries` plays scenes one after another and puts a transition between them. Each transition is a presentation, such as `fade()`, with a timing that sets its length.
+
+```tsx title="src/Show.tsx"
+import { TransitionSeries, linearTiming } from '@kinetographdev/core/transitions';
+import { fade } from '@kinetographdev/core/transitions/fade';
+import { slide } from '@kinetographdev/core/transitions/slide';
+import { SceneA, SceneB, SceneC } from './scenes';
+
+export const Show = () => (
+  <TransitionSeries>
+    <TransitionSeries.Sequence durationInFrames={60}>
+      <SceneA />
+    </TransitionSeries.Sequence>
+    <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 20 })} />
+    <TransitionSeries.Sequence durationInFrames={60}>
+      <SceneB />
+    </TransitionSeries.Sequence>
+    <TransitionSeries.Transition presentation={slide({ direction: 'from-right' })} timing={linearTiming({ durationInFrames: 15 })} />
+    <TransitionSeries.Sequence durationInFrames={60}>
+      <SceneC />
+    </TransitionSeries.Sequence>
+  </TransitionSeries>
+);
+```
+
+<Media src="making-videos/transitions-example.mp4" poster="making-videos/transitions-example.webp" width={1280} height={720} alt={"Four scenes joined by a fade, a spring slide and a wipe."} />
+
+A transition overlaps the two scenes around it for its length, so the video is shorter than the sum of the scenes by the sum of the transitions.
+
+## Presentations
+
+Import each presentation from `@kinetographdev/core/transitions/<name>`.
+
+- `fade`, `none`, `slide`, `wipe`, `flip`, `iris` and `clockWipe` take a few options, such as `direction`.
+- Shader transitions: `blurSlide`, `bookFlip`, `crossZoom`, `crosswarp`, `dissolve`, `dreamyZoom`, `filmBurn`, `linearBlur`, `pushCut`, `ripple`, `swap`, `zoomBlur` and `zoomInOut`.
+
+Timing is `linearTiming({ durationInFrames, easing })` or `springTiming({ config })`, which lasts until the spring settles.
+
+## Moving things with a transition
+
+`useTransitionProgress()` runs inside a scene and returns `entering` and `exiting`, each from 0 to 1 as the scene comes in and goes out.
+
+## Rules
+
+- A `Sequence` takes `offset` to leave a gap (positive) or overlap the scene before it (negative).
+- `TransitionSeries.Overlay` puts a layer over a cut, such as a light leak.
+
+## Suggested prompt
+
+```txt title="Suggested prompt"
+/kinetograph-markup Join my three scenes with a 15 frame slide and then a dissolve, and check the overlap with a strip.
+```
+
+## What works
+
+- Drawn natively: every presentation above, linear and spring timing, `Overlay` and `useTransitionProgress`.
+- Approximated: nothing is listed as approximated. A transition is a shader, or layers with opacity, transforms and clips.
+- Not supported: nothing. Every export of `@remotion/transitions` exists.
+- See [What works](/docs/compat/#remotion-packages) and [Migrate from Remotion](/docs/migrating/remotion/).
+
+## Related topics
+
+- [Compositions and props](/docs/making-videos/compositions/)
+- [Layers](/docs/making-videos/layers/)
+- [What works](/docs/compat/)

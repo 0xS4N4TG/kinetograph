@@ -280,13 +280,22 @@ pub fn layout_dom(request_json: String) -> Result<String> {
 /// `pass` numbers the renders of one frame (its motion-blur samples included); `base` is the pass of the layers of
 /// this island the caller kept from an earlier render. When the addon kept the same ones, the layers come back as
 /// changes from them and the output says `"delta": base`.
+///
+/// With `probes` (host-tree paths), the output's `probes` has, for each, the size `getBoundingClientRect` gives and the
+/// computed `overflow-x` and `overflow-y` of the element, from the layout the render draws.
 #[napi]
 pub fn render_dom_island(
     request_json: String,
     pass: Option<u32>,
     base: Option<u32>,
+    probes: Option<Vec<String>>,
 ) -> Result<String> {
-    dom::render_dom_island(&request_json, pass.map(u64::from), base.map(u64::from))
+    dom::render_dom_island(
+        &request_json,
+        pass.map(u64::from),
+        base.map(u64::from),
+        probes.unwrap_or_default(),
+    )
 }
 
 /// `renderDomIsland` without waiting: queues the render on the calling
@@ -324,7 +333,7 @@ pub fn dom_layout_boxes(
 /// The version of the island edits `domLayoutBoxes` and `domComputedStyle` take in place of a request (1): a request
 /// numbered by the caller as `{"stamp":N,"request":REQUEST}`, then the changes since a numbered state as
 /// `{"stamp":M,"base":N,"path","time","set":[{"path","attrs"?,"style"?,"texts"?:[[index,text]]}]}`
-/// (packages/cli/skills/kinetograph/references/ENGINE.md §2). Edits to a state the addon no longer holds fail with
+/// (packages/cli/skills/kinetograph-markup/references/ENGINE.md §2). Edits to a state the addon no longer holds fail with
 /// `STALE_BASE`, and the caller sends the whole request.
 #[napi]
 pub fn dom_island_edits() -> u32 {

@@ -1,0 +1,66 @@
+---
+title: Light leaks and starbursts
+description: Lay a warm light leak or a burst of rays over a cut, as a component or as an effect on a layer.
+---
+
+`LightLeak` draws a light leak that grows and then retracts over its duration. Put it in a `Sequence` above your scenes.
+
+```tsx title="src/Leak.tsx"
+import { Sequence } from '@kinetographdev/core';
+import { LightLeak } from '@kinetographdev/core/light-leaks';
+import { SceneA, SceneB } from './scenes';
+
+export const Leak = () => (
+  <>
+    <Sequence durationInFrames={90}><SceneA /></Sequence>
+    <Sequence from={90} durationInFrames={90}><SceneB /></Sequence>
+    <Sequence from={60} durationInFrames={60}>
+      <LightLeak seed={3} hueShift={30} />
+    </Sequence>
+  </>
+);
+```
+
+<Media src="making-videos/light-leaks-example.mp4" poster="making-videos/light-leaks-example.webp" width={1280} height={720} alt={"A light leak grows over the first scene, covers the cut and fades off the second."} />
+
+`seed` picks another leak, and `hueShift` turns its colour by 0 to 360 degrees.
+
+## Starburst
+
+`Starburst` draws rays from a point:
+
+```tsx title="src/Burst.tsx"
+import { Starburst } from '@kinetographdev/core/starburst';
+
+export const Burst = () => <Starburst rays={12} colors={['#f6c177', '#eb6f92']} smoothness={0.3} />;
+```
+
+<Media src="making-videos/light-leaks-starburst.webp" width={1280} height={720} alt={"Twelve gold and rose rays from the centre of the frame."} />
+
+## As an effect
+
+`lightLeak()` and `starburst()` are effects, so they can go on any layer:
+
+```tsx title="src/Poster.tsx"
+import { Image, staticFile } from '@kinetographdev/core';
+import { lightLeak } from '@kinetographdev/core/light-leaks';
+
+export const Poster = () => (
+  <Image src={staticFile('images/poster.jpg')} width={1280} height={720} effects={[lightLeak({ seed: 2, progress: 0.5 })]} />
+);
+```
+
+`progress` runs from 0 to 1 over the leak. Compute it from the frame with `interpolate`. See [Effects](/docs/making-videos/effects/).
+
+## What works
+
+- Drawn natively: `LightLeak`, `Starburst`, `lightLeak()` and `starburst()`, as recorded WebGL shaders and native shader effects.
+- Approximated: nothing is listed.
+- Not supported: of the `style` of these components, only `opacity` and `mixBlendMode` apply.
+- See [What works](/docs/compat/#remotion-packages).
+
+## Related topics
+
+- [Compositions and props](/docs/making-videos/compositions/)
+- [Layers](/docs/making-videos/layers/)
+- [What works](/docs/compat/)

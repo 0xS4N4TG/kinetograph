@@ -1,0 +1,36 @@
+---
+title: Doctor
+description: A command that lists what a project holds that the engine cannot draw, before you render.
+---
+
+<Terminal command="npx kinetograph doctor src/index.tsx" />
+
+`doctor` goes through every frame of a project without the GPU. It reports each element and property the engine cannot draw, and the frames where it happens.
+
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
+```sh
+npx kinetograph doctor src/index.tsx --range 0..120
+```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph doctor my-video
+```
+
+  </Tab>
+</IconTabs>
+
+Unsupported content is drawn without, or approximated, and a warning names it. Nothing falls back to a browser. This is decided frame by frame.
+
+To make it an error, add `--strict` to `render`, `still` or `strip`. The first frame with unsupported content stops the command with `UNSUPPORTED_CONTENT`, and no output file is left behind.
+
+Run `doctor` with no entry to see the Node version, the platform, whether the addon loaded and which renderer is in use.
+
+## Related topics
+
+- [What works](/docs/compat/#when-the-engine-cant-draw-something)
+- [CLI reference](/docs/reference/cli/#doctor)

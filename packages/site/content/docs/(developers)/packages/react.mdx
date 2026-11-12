@@ -1,0 +1,23 @@
+---
+title: "@kinetographdev/react"
+description: "The React renderer that turns components into scene JSON."
+---
+
+A React reconciler that emits scene JSON instead of DOM, plus the native elements and the timeline context every component reads time from. You install it directly only to build tools on top of the engine.
+
+```sh
+npm install @kinetographdev/react react
+```
+
+Current version: 0.3.0.
+
+## Exports
+
+- `createSceneRoot` and `emitLayerOf`: render a React tree to scene JSON.
+- `TimelineContext` and `useTimeline`: the current frame and video config.
+- The native elements (`Layer`, `Rect`, `Text`, `Image` and the rest).
+
+## Related topics
+
+- [Layers](/docs/making-videos/layers/)
+- [How the engine works](/docs/internals/engine/)

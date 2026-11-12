@@ -4,9 +4,10 @@ import { basename, dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, context, type BuildOptions, type Message, type Plugin } from 'esbuild';
 import { familyFromModuleName } from '@kinetographdev/core/google-fonts';
+import { Watched, cachedBundle, recipeOf, recordBundle } from './bundle-cache.js';
 import { cssPlugin } from './css.js';
 import { CliError } from './errors.js';
-import { HYPERFRAMES_PREFIX, hyperframesPlugin, isHyperframesEntry, resolveEntry } from './hyperframes/entry.js';
+import { HYPERFRAMES_PREFIX, forgetHyperframes, hyperframesPlugin, isHyperframesEntry, prepareHyperframes, resolveEntry } from './hyperframes/entry.js';
 
 /** The package directory of the CLI: the bundle's `@kinetographdev/*` imports resolve from here, so one copy of each. */
 const CLI_DIR = fileURLToPath(new URL('..', import.meta.url));
@@ -393,7 +394,8 @@ export interface BundleResult {
 }
 
 /** The esbuild options that bundle the project at `absolute` (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9). */
-function bundleOptions(absolute: string, unsupported?: UnsupportedImport[], dev = false): BuildOptions {
+function bundleOptions(absolute: string, unsupported?: UnsupportedImport[], dev = false, watched?: Watched): BuildOptions {
+  const plugins = [...(dev ? [jsxDevPlugin()] : []), entryPlugin(absolute), imagePlugin(), hyperframesPlugin(), aliasPlugin(unsupported), projectPeersPlugin(dirname(absolute)), gsapPlugin(), browserFieldPlugin(), cssPlugin()];
   return {
     stdin: {
       contents: syntheticEntry(absolute, dev),
@@ -423,7 +425,7 @@ function bundleOptions(absolute: string, unsupported?: UnsupportedImport[], dev 
     external: EXTERNAL,
     // An `import './index.css'` registers the stylesheet's text for the DOM engine (packages/cli/skills/kinetograph-markup/references/ENGINE.md §1); Tailwind's
     // entry is built by the project's Tailwind, and `*.module.css` files export their scoped class names.
-    plugins: [...(dev ? [jsxDevPlugin()] : []), entryPlugin(absolute), imagePlugin(), hyperframesPlugin(), aliasPlugin(unsupported), projectPeersPlugin(dirname(absolute)), gsapPlugin(), browserFieldPlugin(), cssPlugin()],
+    plugins: watched === undefined ? plugins : plugins.map((plugin) => watched.record(plugin)),
     // Bundled CommonJS packages (react-reconciler) call `require` for Node built-ins.
     banner: { js: `import { createRequire as __kCreateRequire } from 'node:module';\nconst require = __kCreateRequire(import.meta.url);` },
   };
@@ -447,25 +449,45 @@ function bundleFailure(errors: Message[], fallback: unknown): CliError {
  */
 export async function bundleProject(entry: string, options: { unsupported?: UnsupportedImport[] } = {}): Promise<BundleResult> {
   const absolute = resolveEntry(entry);
+  const dir = cacheDir(absolute);
+  const entryHash = createHash('sha256').update(absolute).digest('hex').slice(0, 10);
+  const prefix = `${basename(absolute, extname(absolute))}-${entryHash}-`;
+  // A build that lists unsupported imports is `doctor`'s: it is made every time.
+  const reuse = options.unsupported === undefined;
+  const keyFile = join(dir, `${basename(absolute, extname(absolute))}-${entryHash}.key.json`);
+  // Taken before anything is read: an input modified after this may have been read before or after the change.
+  const startedAt = Date.now();
+  const watched = new Watched();
+  const buildOptions = bundleOptions(absolute, options.unsupported, false, reuse ? watched : undefined);
+  let recipe = '';
+  if (reuse) {
+    // A HyperFrames project's plan reads files and caches that no list of files names: its module is part of the recipe.
+    const module = isHyperframesEntry(absolute) ? await prepareHyperframes(absolute) : null;
+    recipe = recipeOf(buildOptions, module?.contents ?? null);
+    const kept = cachedBundle(keyFile, recipe, dir);
+    if (kept !== null) {
+      forgetHyperframes(absolute);
+      return { file: join(dir, kept.file), warnings: kept.warnings };
+    }
+  }
   let result;
   try {
-    result = await build(bundleOptions(absolute, options.unsupported));
+    result = await build({ ...buildOptions, ...(reuse ? { metafile: true } : {}) });
   } catch (error) {
     throw bundleFailure((error as { errors?: Message[] }).errors ?? [], error);
   }
 
   const code = result.outputFiles![0]!.text;
-  const dir = cacheDir(absolute);
   mkdirSync(dir, { recursive: true });
-  const entryHash = createHash('sha256').update(absolute).digest('hex').slice(0, 10);
   const codeHash = createHash('sha256').update(code).digest('hex').slice(0, 10);
-  const prefix = `${basename(absolute, extname(absolute))}-${entryHash}-`;
   const file = join(dir, `${prefix}${codeHash}.mjs`);
   for (const old of readdirSync(dir)) {
     if (old.startsWith(prefix) && old !== basename(file)) rmSync(join(dir, old), { force: true });
   }
   writeFileSync(file, code);
-  return { file, warnings: result.warnings.map((w) => w.text) };
+  const warnings = result.warnings.map((w) => w.text);
+  if (reuse) recordBundle(keyFile, recipe, basename(file), warnings, { metafile: result.metafile!, workingDir: dirname(absolute), watched, startedAt });
+  return { file, warnings };
 }
 
 /** One build of a watched project: the bundle's code, or why it failed. */

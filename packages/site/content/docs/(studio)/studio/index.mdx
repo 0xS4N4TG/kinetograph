@@ -1,0 +1,44 @@
+---
+title: Open Studio
+description: Open Studio, the local editor for a project, with one command.
+---
+
+<Video name="studio-open" label="Running one command opens Studio in the browser with a project loaded" silent />
+
+Studio is the editor that comes with Kinetograph. It shows a live preview of your project with a timeline, a form for its settings and a chat with your coding agent. It runs on your computer and needs no account.
+
+## Open it
+
+In your project folder:
+
+```sh
+npx kinetograph studio src/index.tsx
+```
+
+For an HTML project, give it the page: `npx kinetograph studio index.html`. Studio opens your browser at `http://127.0.0.1:3000`. It rebuilds the project when a file changes, and runs until you press Ctrl-C.
+
+You need Kinetograph installed and Node.js 22 or newer. If you have no project yet, [make your first video](/docs/getting-started/first-video/) first.
+
+<Media src="studio/window-light.webp" dark="studio/window-dark.webp" width={1600} height={1160} alt={"The whole Studio window with a project open: the agent chat on the left, the preview in the middle with the timeline under it, and the inspector on the right."} />
+
+## Options
+
+| Option | What it does |
+| --- | --- |
+| `--port <n>` | Port to listen on. The default is 3000. `0` picks a free one. |
+| `--no-open` | Do not open the browser. |
+| `--agent <command>` | The command that starts your coding agent for the chat. See [Connect your agent](/docs/studio/connect-your-agent/). |
+| `--props <json>` | Settings to start with, merged over the composition's defaults. |
+| `--offline` | Never download what a HyperFrames project loads from the web. It must already be cached. |
+
+The [CLI reference](/docs/reference/cli/#studio) has the full list.
+
+## Where your work is kept
+
+Everything stays in your project folder. Edits go into your project's files. Saved presets go to `presets/<composition id>/<name>.json`. Answers to a panel are saved under `plan/` beside the entry file. Exports go where you choose, by default under `out/`. Your edits to the settings form are kept in the browser until you save a preset.
+
+## Related topics
+
+- [Make your first video in Studio](/docs/studio/first-video/)
+- [Find your way around Studio](/docs/studio/find-your-way/)
+- [Connect your agent](/docs/studio/connect-your-agent/)

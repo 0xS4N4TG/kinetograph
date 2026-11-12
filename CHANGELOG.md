@@ -28,12 +28,9 @@ Kinetograph is in beta, so APIs can still change between versions.
 - Dependencies are bundled as a browser bundler resolves them (`module` field and `import` condition before `main`), so a package is in the bundle once.
 - A `setTimeout` made while a frame is held open fires when nothing else is moving, so a Suspense reveal does not stall the frame.
 - Node's process warnings printed through `console.error` are no longer reported as page errors.
-
-### Fixed
-
-- WebGL render targets keep what was drawn into them across frames, so an environment map Three.js prefilters (`PMREMGenerator`) once reflects in every frame, not only in the first.
-### Changed
-
+- A frame a HyperFrames worker plays through to reach its chunk is not rendered: only the clips, the timelines, `hf-seek` and the videos' `currentTime` are done (film 9.41 → 8.50 s, mg1 3.39 → 3.21 s).
+- A bundle whose inputs have not changed is used again instead of built again, and Node's compile cache (`~/.cache/kinetograph/compile-cache`) serves the CLI and the render workers (compat 0.78 → 0.64 s, mg2 0.86 → 0.71 s).
+- A HyperFrames page's collapsed-root check is answered by the render that draws the frame (its size and overflow come back in the island's output) instead of a layout readback of its own (film 9.98 → 8.90 s, steady JS 11.7 → 9.2 ms a frame).
 - DOM islands replay unchanged stacking contexts from the last paint (mg1 island paint 23.8 → 6 ms a frame).
 - A frame's layout reads and its render share one island document; a read sends only what scripts changed, and the render draws the state the reads left.
 - An island's layers are sent as changes from the last frame's.
@@ -49,9 +46,20 @@ Kinetograph is in beta, so APIs can still change between versions.
 - The CLI no longer loads TypeScript and the MCP SDK for commands that do not use them (compat 1.07 → 0.92 s, mg2 1.14 → 1.01 s).
 - Render workers start as soon as the bundle is written and load it while the main thread does (compat 0.92 → 0.80 s, mg2 1.01 → 0.90 s).
 - A project's bundle leaves the sources' text out of its source map, which halves its size; stack traces still point at the sources (compat 0.85 → 0.78 s, mg2 0.93 → 0.88 s).
+- Kinetograph is now open source under the Apache License 2.0. Earlier versions stay under PolyForm Small Business 1.0.0.
 
 ### Fixed
 
+- WebGL render targets keep what was drawn into them across frames, so an environment map Three.js prefilters (`PMREMGenerator`) once reflects in every frame, not only in the first.
+- HyperFrames: `template.content` is the DOM shim's own fragment, so `content.getElementById(...)` works (a runtime stand-in `div` had none), as do the fragment's other methods.
+- HyperFrames: `Impact`, which HyperFrames reads from the machine that renders, is set in the bundled Archivo Black (a heavy face) instead of the regular weight of the next family, and the page is told once.
+- A canvas reads `color(srgb ...)` for `fillStyle`, `strokeStyle`, gradient stops and shadows, which is how `getComputedStyle` gives a `color-mix()` (ink-bleed-reveal drew black).
+- The DOM shim's inline `style` has `getPropertyPriority()`, and `setProperty(name, value, "important")` keeps the priority (a script that reads and restores a hidden clip's `display` threw on it).
+- The DOM shim has `svg.viewBox`, `createSVGPoint()` and `SVGPoint.matrixTransform` (also on `getPointAtLength()`), and `getCTM()` / `getScreenCTM()` give matrices with `inverse()` and `multiply()`; `getScreenCTM()` now includes the viewBox and the svg's place on the page.
+- The DOM shim has `XMLSerializer`: `serializeToString` writes an element, fragment, text node or document as XML with its namespaces.
+- HyperFrames: `document.currentScript` is the script that is running (a component finds its root with `document.currentScript.closest("#root")`), where it was always null.
+- Boxes at one depth in a `preserve-3d` element are painted in painting order, not by how far their middles are from the viewer, so a `::after` or a border on a tilted box is no longer hidden under its parent's background.
+- A `::before` or `::after` box paints its own background, border and shadow, as the box CSS 2.1 §12.1 says it is, in a line of text too.
 - HyperFrames: the root's timed children are taken out of flow, so a second sub-composition no longer draws black below the canvas.
 - HyperFrames: the root is clipped and sized from its `data-width` and `data-height`, so a root with no CSS size is not empty (#112).
 - A page edited from frame to frame draws and reads back as a fresh one does: an edited `::before` in an inline-block, boxes under `display: none`, an inline-block's `scrollWidth`.
@@ -62,6 +70,13 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A package loaded twice (Studio, dev) no longer mixes up the island state of its two copies.
 - `staticFile()` returns forward slashes on Windows so CSS `url()` paths are not corrupted by backslash escapes (#100).
 - Paint decodes percent-encoded Windows drive paths with spaces in CSS background and border images (#100).
+- A font whose URL has a long name (Google Fonts' variable-axis files) is cached under a shortened file name instead of failing with ENAMETOOLONG.
+- A file named by an absolute path inside the project (the path a composition's `assetUrl()` returns) is read by `fetch` and `new Image` instead of being looked for under the project folder.
+- HyperFrames: a mounted file's root stays a child of its host, as in HyperFrames, so a host's own position and size are kept (77 catalog components drew at the top-left).
+- HyperFrames: the page's `getVariables()` returns the defaults declared on any element outside the compositions it mounts, not only on the root (staggered-fade-up, typewriter).
+- HyperFrames: a block whose root says `data-composition-id="main"` but is mounted by a host with another id runs its own timeline and takes its rules for `main` (13 shader blocks and 9 transition reels).
+- HyperFrames: the page's scripts run before the scripts of the compositions it mounts, so a page script can still edit a `<template>` a component clones from.
+- `getComputedStyle(el).transform` resolves percentages against the box's layout size, not its pixel-snapped size.
 - A `<Composition>` may leave out `fps` and `durationInFrames` when `calculateMetadata` returns them, as in Remotion (the audiogram, music-visualization and tiktok templates render unedited).
 - `createTikTokStyleCaptions()` breaks a page only before a caption that starts with a space (not a newline or tab), keeps whitespace-only captions in the page text but not as tokens, and ends the last page with the last caption.
 - A weight that was not loaded is measured in the nearest loaded one (CSS font matching) instead of throwing, and a render error after a `delayRender` fails the frame at once instead of at the handle's 30 s timeout (the audiogram template renders unedited, SSIM 0.965).
@@ -74,6 +89,24 @@ Kinetograph is in beta, so APIs can still change between versions.
 - An `<AbsoluteFill>` that is a `div` has Remotion's own style (top, left, right and bottom 0, width and height 100%), so a style key set to `undefined` (`top: undefined`) takes its default away as in a browser.
 - A Remotion project's DOM elements are `box-sizing: border-box`, as on Remotion's render page, so a `width: 100%` with padding does not overflow (a HyperFrames or plain HTML page keeps the browser's content-box; `registerRoot` starts every entry as a Remotion page, so a Remotion project loaded after a HyperFrames one gets it again).
 - ProRes (every core) and VP9 (a fixed 4 threads) encode on more than one thread instead of one (a 75-frame ProRes 4444 overlay: 4.6 s to 1.6 s a render). The decoded frames were compared for ProRes only (identical); VP9 at a fixed 4 threads is the same on every machine, and OpenH264 stays at 1 thread, since its output would follow the core count.
+- A gradient-stroked ellipse or circle whose one dash covers the whole outline (a dash as long as the outline, as Remotion's hello-world arc has at the end of its draw-on) is a whole ring again, not an arc closed by a chord.
+- A closed SVG outline stroked with a gradient or pattern and a dash as long as the outline (a dash measured by `getTotalLength`) is a whole ring even when the two lengths differ in the last digits.
+- A transformed or non-opaque element with `z-index: auto` is painted above an earlier positioned sibling (Remotion's electron template), as CSS paints a stacking context at z-index 0 in tree order with the positioned boxes.
+- A stylesheet rule that sets `mask-type` (Tailwind's `[mask-type:alpha]`) reaches an SVG `<mask>`: it masks by alpha, not luminance.
+- `background-clip: text` on an inline element (a gradient on a `<span>`) is cut to the element's glyphs; it was not drawn at all.
+- `mask-composite` `subtract`, `intersect` and `exclude` are drawn for alpha masks (two mask layers with `exclude` leave a ring); only `add` was.
+- Canvas text in `font = '700 24px "JetBrains Mono", monospace'` (no family of the list loaded, a generic keyword in it) is set in the bundled font of that generic family, not the default proportional one.
+- A custom property in the `style` attribute of an SVG shape (`style="--hf-dash: 0"`, which GSAP sets) no longer drops the stylesheet's `fill`, `stroke` and dashes: the shape was drawn as a black fill.
+- A layer moved in 3D (`translate3d` under a `perspective`) whose box starts left of or above its parent's origin (a negative margin, as 3D carousels centre their cards with) is drawn whole; the part at negative coordinates was cut off before it was placed.
+- `backdrop-filter` draws its colour functions (`saturate()`, `brightness()`, `contrast()`, `grayscale()`, `sepia()`, `invert()`, `hue-rotate()`) in the order of the list, not only `blur()`; `drop-shadow()` and `opacity()` are still reported.
+- Canvas `measureText` measures a font list that ends in a generic family (`"Fira Code", monospace`) in the font it is drawn in, and counts the white space at the ends of the text; before, it returned half an em a character, so tokens drawn one after another overlapped.
+- A `z-index: -1` descendant of a box that is a stacking context by its `mix-blend-mode`, `perspective`, `transform-style: preserve-3d` or `backdrop-filter` stays inside it; the paint order and the hoisting of z-indexed boxes now use the same rule.
+- A `var()` in the `style` attribute of an SVG shape (`stroke-dashoffset: var(--d)`) no longer drops the declarations after it.
+- A `backdrop-filter` with a colour function before `blur()` still reads only the backdrop inside the element's box.
+- `ProgressEvent` exists in page scripts, so three.js file loaders (the 3D devices of the liquid-glass pages, extruded-logo) no longer stop at "ProgressEvent is not defined".
+- A `url(#id)` in `mask-image` or another property names an element of the page, so it is no longer reported as a missing file.
+- A stylesheet rule that sets `stop-color` or `stop-opacity` on an SVG `<stop>` (`.a { stop-color: var(--brand, #f73) }`) colours the gradient; the stops were black.
+- `mask-image` on an SVG element is a list of layers: a `url(#mask)` and a gradient (`mask-composite: intersect`) mask it, as one `url(#mask)` already did (HyperFrames svg-mask-reveal).
 
 ## 0.3.0 (2026-11-03)
 

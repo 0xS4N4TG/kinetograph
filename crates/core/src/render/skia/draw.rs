@@ -497,7 +497,7 @@ impl Translator {
     fn draw_with_extras(&mut self, canvas: &Canvas, layer: &ResolvedLayer, siblings: &[ResolvedLayer], comp: Comp, scale: f64) {
         // Graphite filters the whole device behind a layer with a backdrop filter, whatever the layer's bounds: a clip keeps it
         // to the bounds.
-        let backdrop_box = layer.effects.iter().any(|e| matches!(e, ResolvedEffect::BackdropBlur { .. })).then(|| self.layer_bounds(layer, scale)).flatten();
+        let backdrop_box = layer.effects.iter().any(|e| matches!(e, ResolvedEffect::BackdropBlur { .. } | ResolvedEffect::BackdropColor(_))).then(|| self.layer_bounds(layer, scale)).flatten();
         if let Some(b) = backdrop_box {
             canvas.save();
             canvas.clip_rect(b, ClipOp::Intersect, false);
@@ -792,7 +792,7 @@ impl Translator {
                         r = Rect::new(r.left.min(reg.x0 as f32), r.top.min(reg.y0 as f32), r.right.max(reg.x1 as f32), r.bottom.max(reg.y1 as f32));
                     }
                 }
-                ResolvedEffect::InsetShadow(_) | ResolvedEffect::ColorMatrix(_) | ResolvedEffect::GradientMap(_) | ResolvedEffect::Grain(_) | ResolvedEffect::BackdropBlur { .. } => {}
+                ResolvedEffect::InsetShadow(_) | ResolvedEffect::ColorMatrix(_) | ResolvedEffect::GradientMap(_) | ResolvedEffect::Grain(_) | ResolvedEffect::BackdropBlur { .. } | ResolvedEffect::BackdropColor(_) => {}
                 _ => return None,
             }
         }
@@ -893,11 +893,18 @@ impl Translator {
         let s = scale.max(1e-6) as f32;
         let mut filter: Option<ImageFilter> = None;
         let mut backdrop: Option<ImageFilter> = None;
+        // A mirrored backdrop blur reads only the backdrop inside the layer's box, mirrored past its edges: that crop is the
+        // input of the first stage of the backdrop filter, whichever stage (a colour function may come before the blur).
+        let mut backdrop_crop = if layer.effects.iter().any(|e| matches!(e, ResolvedEffect::BackdropBlur { mirror: true, .. })) {
+            self.layer_box(layer).and_then(|b| image_filters::crop(b, TileMode::Mirror, None))
+        } else {
+            None
+        };
         // Colour filters in a run combine into one.
         for e in &layer.effects {
             let class = match e {
                 ResolvedEffect::Blur { .. } => "blur",
-                ResolvedEffect::BackdropBlur { .. } => "backdrop",
+                ResolvedEffect::BackdropBlur { .. } | ResolvedEffect::BackdropColor(_) => "backdrop",
                 ResolvedEffect::DropShadow(_) => "shadow",
                 ResolvedEffect::InsetShadow(_) => "inset",
                 ResolvedEffect::ColorMatrix(_) => "color",
@@ -919,10 +926,20 @@ impl Translator {
                 }
                 ResolvedEffect::BackdropBlur { radius, mirror } => {
                     let sg = radius / s;
-                    // Mirrored: only the backdrop inside the layer's box, mirrored past its edges.
-                    let input = if *mirror { self.layer_box(layer).and_then(|b| image_filters::crop(b, TileMode::Mirror, None)) } else { None };
+                    let input = backdrop.take().or_else(|| backdrop_crop.take());
                     let tile = if *mirror { TileMode::Decal } else { TileMode::Clamp };
                     backdrop = image_filters::blur((sg, sg), tile, input, None);
+                }
+                ResolvedEffect::BackdropColor(cm) => {
+                    let m = &cm.0;
+                    let f = color_filters::matrix_row_major(&[
+                        m[0][0] as f32, m[0][1] as f32, m[0][2] as f32, m[0][3] as f32, m[0][4] as f32,
+                        m[1][0] as f32, m[1][1] as f32, m[1][2] as f32, m[1][3] as f32, m[1][4] as f32,
+                        m[2][0] as f32, m[2][1] as f32, m[2][2] as f32, m[2][3] as f32, m[2][4] as f32,
+                        m[3][0] as f32, m[3][1] as f32, m[3][2] as f32, m[3][3] as f32, m[3][4] as f32,
+                    ], None);
+                    let input = backdrop.take().or_else(|| backdrop_crop.take());
+                    backdrop = image_filters::color_filter(self.in_srgb(f), input, None);
                 }
                 ResolvedEffect::DropShadow(sh) => {
                     let sg = sh.blur / s;
@@ -1941,6 +1958,7 @@ fn effect_name(e: &ResolvedEffect) -> &'static str {
     match e {
         ResolvedEffect::Blur { .. } => "blur",
         ResolvedEffect::BackdropBlur { .. } => "backdropBlur",
+        ResolvedEffect::BackdropColor(_) => "backdropFilter",
         ResolvedEffect::Glow(_) => "glow",
         ResolvedEffect::ChromaticAberration { .. } => "chromaticAberration",
         ResolvedEffect::DropShadow(_) => "dropShadow",
@@ -2102,6 +2120,7 @@ fn own_gaps(layer: &ResolvedLayer, siblings: &[ResolvedLayer]) -> Option<&'stati
         match e {
             ResolvedEffect::Blur { .. }
             | ResolvedEffect::BackdropBlur { .. }
+            | ResolvedEffect::BackdropColor(_)
             | ResolvedEffect::Glow(_)
             | ResolvedEffect::DropShadow(_)
             | ResolvedEffect::InsetShadow(_)

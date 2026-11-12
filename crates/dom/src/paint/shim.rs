@@ -4,7 +4,7 @@
 //! This Stylo is built without Gecko's property set: `filter: url(#id)`,
 //! `background-clip: text`, `-webkit-text-stroke`, `-webkit-text-fill-color`,
 //! `paint-order`, `text-decoration-skip-ink`, `-webkit-line-clamp`,
-//! `-webkit-box-orient` and `display: -webkit-box` are dropped as invalid. The
+//! `-webkit-box-orient`, `stop-color`, `stop-opacity` and `display: -webkit-box` are dropped as invalid. The
 //! front half runs every stylesheet and every `style` attribute through
 //! [`shim_css`] before it reaches the document, which writes the same value
 //! into a custom property (`--kg-filter: url(#id) blur(2px)`) next to the
@@ -28,6 +28,9 @@ const MIRRORED: &[&str] = &[
     "text-decoration-skip-ink",
     "-webkit-line-clamp",
     "-webkit-box-orient",
+    // SVG gradient stops (`svg/serialize.rs` reads them back).
+    "stop-color",
+    "stop-opacity",
     // Only the legacy `-webkit-box` values (see `is_mirrored`).
     "display",
 ];

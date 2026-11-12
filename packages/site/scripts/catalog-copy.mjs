@@ -537,6 +537,7 @@ export const KIND_COPY = {
  */
 export const TASTE_COPY = {
   archive: { dir: 'archive', title: 'Archive', description: 'Period photographs drift in layers under film flicker and dust, with typed dates and captions.', src: 'tastes/archive/demo/out/hold-still.mp4', at: 1, len: 4 },
+  blueprint: { dir: 'blueprint', title: 'Blueprint', description: 'White line art draws itself on a Prussian-blue cyanotype sheet, with dimension lines, hatching, typed labels and one red stamp.', src: 'tastes/blueprint/demo/out/camera-obscura.mp4', at: 7.2, len: 4 },
   collage: { dir: 'collage', title: 'Collage', description: 'Paper cut-outs and torn labels sit over an old newspaper page and move in stop motion.', src: 'tastes/collage/demo/out/collage-intro.mp4', at: 1.6, len: 1.5 },
   explainer: { dir: 'explainer', title: 'Explainer', description: 'Cut-out objects on textured paper under big type, with one colour for the key word and quick wipes between beats.', src: 'tastes/explainer/demo-tastes/out/all-tastes.mp4', at: 2, len: 4 },
   papercut: { dir: 'papercut', title: 'Papercut', description: 'A toy-like paper diorama of cut-paper characters and props, with the camera circling the set.', src: 'tastes/papercut/demo/out/papercut-reel.mp4', at: 2, len: 4 },

@@ -163,13 +163,18 @@ const IMPORT = /@import\s+(?:url\(\s*)?(?:"([^"]*)"|'([^']*)'|([^'")\s;]+))\s*\)
 
 const isRemote = (target: string): boolean => /^([a-z][a-z0-9+.-]*:|\/\/)/i.test(target) || target.startsWith('#');
 
-/** Rewrites `url(relative)` to `url("<absolute>")` when the file exists next to `base`. */
-export function absolutizeUrls(css: string, base: string): string {
+/**
+ * Rewrites `url(relative)` to `url("<absolute>")` when the file exists next to `base`. Each path it looked for, found or
+ * not, is added to `looked`: a file that appears later changes the result.
+ */
+export function absolutizeUrls(css: string, base: string, looked: string[] = []): string {
   return css.replace(/url\(\s*(['"]?)([^'")]*)\1\s*\)/g, (match, _quote: string, target: string) => {
     const t = target.trim();
     if (t === '' || isRemote(t)) return match;
     const absolute = isAbsolute(t) ? t : resolve(base, t.split(/[?#]/)[0]!);
-    if (!existsSync(absolute.split(/[?#]/)[0]!)) return match;
+    const file = absolute.split(/[?#]/)[0]!;
+    looked.push(file);
+    if (!existsSync(file)) return match;
     const suffix = /[?#].*$/.exec(t)?.[0] ?? '';
     return `url("${absolute + suffix}")`;
   });
@@ -179,12 +184,15 @@ export interface ReadCss {
   css: string;
   /** Every file read, for the bundler to watch. */
   files: string[];
+  /** Every other path it looked for, found or not (an `@import` or `url()` target): one that appears or goes changes the result. */
+  looked: string[];
   warnings: string[];
 }
 
 /** The stylesheet at `file` with its local `@import`s inlined (media queries on an import wrap the inlined text). */
 export function readStylesheet(file: string, seen = new Set<string>()): ReadCss {
   const files = [file];
+  const looked: string[] = [];
   const warnings: string[] = [];
   seen.add(file);
   let css = readFileSync(file, 'utf8');
@@ -201,10 +209,12 @@ export function readStylesheet(file: string, seen = new Set<string>()): ReadCss 
         path = createRequire(file).resolve(target);
       } catch {
         const beside = resolve(dirname(file), target);
+        looked.push(beside);
         path = existsSync(beside) ? beside : null;
       }
     }
     if (path !== null && !/\.css$/i.test(path)) path = null;
+    if (path !== null) looked.push(path);
     if (path === null || !existsSync(path)) {
       warnings.push(`${file}: @import "${target}" was not found`);
       return '';
@@ -212,11 +222,12 @@ export function readStylesheet(file: string, seen = new Set<string>()): ReadCss 
     if (seen.has(path)) return '';
     const inner = readStylesheet(path, seen);
     files.push(...inner.files);
+    looked.push(...inner.looked);
     warnings.push(...inner.warnings);
     const media = tail.trim();
     return media === '' ? inner.css : `@media ${media} {\n${inner.css}\n}`;
   });
-  return { css: absolutizeUrls(css, dirname(file)), files, warnings };
+  return { css: absolutizeUrls(css, dirname(file), looked), files, looked, warnings };
 }
 
 // ---- CSS modules ----
@@ -253,6 +264,9 @@ export function scopeModule(css: string, file: string): { css: string; exports: 
 
 // ---- the esbuild plugin ----
 
+/** A `pluginData` key that says a bundle with this file cannot be reused (`bundle-cache.ts`). */
+export const UNCACHEABLE = 'kinetographUncacheable';
+
 /** Turns each imported `.css` into a module that registers its text. */
 export function cssPlugin(): Plugin {
   return {
@@ -263,15 +277,16 @@ export function cssPlugin(): Plugin {
         const read = readStylesheet(args.path);
         for (const text of read.warnings) warnings.push({ text });
         let css = read.css;
-        const files = [...read.files];
-        if (usesTailwind(readFileSync(args.path, 'utf8'))) {
+        const files = [...read.files, ...read.looked];
+        const tailwind = usesTailwind(readFileSync(args.path, 'utf8'));
+        if (tailwind) {
           const built = await buildTailwind(args.path);
           if ('css' in built) {
             css = absolutizeUrls(built.css, dirname(args.path));
           } else {
             warnings.push({ text: built.error });
             const note = `noteStylesheetProblem(${JSON.stringify(built.error)});`;
-            return finish(args.path, css, {}, files, warnings, note);
+            return finish(args.path, css, {}, files, warnings, note, tailwind);
           }
         }
         let exports: Record<string, string> = {};
@@ -280,7 +295,7 @@ export function cssPlugin(): Plugin {
           css = scoped.css;
           exports = scoped.exports;
         }
-        return finish(args.path, css, exports, files, warnings, '');
+        return finish(args.path, css, exports, files, warnings, '', tailwind);
       });
     },
   };
@@ -293,6 +308,7 @@ function finish(
   files: string[],
   warnings: { text: string }[],
   extra: string,
+  tailwind: boolean,
 ) {
   const text = JSON.stringify(css);
   const lines: string[] = [];
@@ -310,5 +326,8 @@ function finish(
     resolveDir: dirname(file),
     watchFiles: files,
     warnings,
+    // Tailwind makes its CSS from the class names in every source file under the project, which a bundle's inputs do
+    // not list: a bundle that has it is made again (`bundle-cache.ts`).
+    ...(tailwind ? { pluginData: { [UNCACHEABLE]: true } } : {}),
   };
 }

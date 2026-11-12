@@ -1,0 +1,72 @@
+---
+title: Move from Remotion to Kinetograph
+description: What to say to move an existing Remotion project onto Kinetograph, and what to expect your agent to flag.
+---
+
+<Terminal command="npx kinetograph doctor src/index.ts\nnpx kinetograph render src/index.ts --comp Main --strict -o out.mp4" />
+
+Bring an existing Remotion project onto Kinetograph, then use everything else here on it: Studio, the library, captions and export.
+
+## What this makes
+
+Not a new video, a **move**. The `kinetograph-migrate` skill reads your Remotion project, runs the check that lists what the engine cannot draw, fixes each finding, and renders the same video without a browser. Your `remotion` and `@remotion/*` imports stay as they are.
+
+This is a move, not a creation workflow. It starts when you ask to move, port or migrate a Remotion project. If you only want something like your Remotion video, ask for a new video instead.
+
+## Base prompt
+
+```text title="Suggested prompt"
+Move the Remotion project in this folder onto Kinetograph with the kinetograph-migrate skill. The entry is src/index.ts and the composition is Main. Keep the same duration, fps and size. Write down anything that changes, and render with --strict.
+```
+
+Name the entry file and the composition. A project can register several compositions, so say which one.
+
+## What won't move as it is, and why that's correct
+
+The skill checks the project first and tells you, rather than guessing, when it finds something the engine does not draw:
+
+- **Tooling packages.** `@remotion/player`, `renderer`, `bundler`, `lambda`, `cloudrun` and `cli` have no equivalent in a render. They are replaced by the `kinetograph` commands. There is no cloud renderer.
+- **`@remotion/three`.** `<ThreeCanvas>` runs as it is; what it cannot draw is rebuilt with Kinetograph's own 3D layer. See [Remotion three.js mapping](/docs/reference/remotion-three/).
+- **`IFrame`.** A web page needs a browser, so it is not drawn. Expect a screenshot or a labelled box in its place, and a note saying so.
+- **Encoding and decoding with `@remotion/webcodecs`.** Play clips with the video and audio components instead.
+
+If the project hits one of these, expect the agent to stop and say what it plans, not to push through. Don't ask it to "just approximate". It lists every omission and approximation in its report.
+
+## Validation is not optional
+
+Ask for the check by name. It lists each element and property the engine cannot draw, and the frames where it happens:
+
+```text title="Suggested prompt"
+After moving it, run kinetograph doctor on the entry and fix every finding. Then render with --strict, draw a strip of 12 frames, and compare it with the Remotion render.
+```
+
+A move that looks right in preview can still be missing a title in a font that was never loaded. `--strict` stops on the first frame with something unsupported, so nothing leaves silently incomplete.
+
+## The knobs that matter
+
+| What to say | Why it matters |
+| --- | --- |
+| **"The entry is `src/index.ts`, the composition is Main"** | A Remotion project can register several compositions. Name the one you mean. |
+| **"Keep the same duration, fps and size"** | It is the default. State it so nothing is rounded or resized. |
+| **"Write down anything that changes"** | Dropped features, approximations and replaced packages get recorded, not absorbed. |
+| **"Render with --strict"** | Makes the check part of the result. |
+
+## Common failure modes
+
+**Asking for a move when you have no Remotion source.**
+- **Avoid:** "move my Remotion intro" (with no project in the folder)
+- **Instead:** "make an intro like this: ..." and describe it
+
+**Asking it to push past a finding.**
+- **Avoid:** "just render it, ignore the warnings"
+- **Instead:** "show me the doctor report, then fix it or tell me why you can't"
+
+**Skipping the check on a real project.**
+- **Avoid:** accepting the first preview that looks right
+- **Instead:** "render with --strict and compare a strip with the Remotion render"
+
+## Related topics
+
+- [Remotion package coverage](/docs/reference/remotion-coverage/)
+- [Kinetograph vs Remotion and HyperFrames](/docs/compare/)
+- [Agent skills](/docs/agents/skills/)

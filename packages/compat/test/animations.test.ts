@@ -84,6 +84,40 @@ describe('values, against Chrome', () => {
   }
 });
 
+describe('an important inline declaration', () => {
+  it('beats the animated value (CSS Cascade 4, 6.1), and the animation applies again once it is not important', () => {
+    now = 0;
+    const { host, el } = element();
+    el.style.setProperty('opacity', '0.5', 'important');
+    el.style.setProperty('width', '100px');
+    el.animate({ opacity: [0, 1], width: ['100px', '200px'] }, 1000);
+    now = 500;
+    tickAnimations();
+    now = 750;
+    tickAnimations();
+    const animated = animatedStyleOf(host);
+    // The important opacity is not animated; the width is.
+    expect(animated?.has('opacity')).toBe(false);
+    expect(animated?.get('width')).toBe('175px');
+    // A value written without priority gives the animation back its say.
+    el.style.setProperty('opacity', '0.5');
+    expect(Number(valueOf(host, 'opacity'))).toBeCloseTo(0.75, 9);
+  });
+
+  it('does not put its priority into the value an implicit keyframe animates from', () => {
+    now = 0;
+    const { host, el } = element();
+    el.style.setProperty('width', '100px', 'important');
+    el.animate({ width: '300px' }, 1000);
+    now = 500;
+    tickAnimations();
+    // Important: the animation does not show, and no value with "!important" leaks out of the animated style.
+    expect(animatedStyleOf(host)?.get('width') ?? '').not.toContain('important');
+    el.style.setProperty('width', '100px');
+    expect(valueOf(host, 'width')).toBe('200px');
+  });
+});
+
 describe('the timing model', () => {
   it('starts a played animation when it was played, ready at the next tick', async () => {
     now = 1000;

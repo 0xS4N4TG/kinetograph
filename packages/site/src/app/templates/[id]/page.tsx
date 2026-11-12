@@ -1,27 +1,21 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
 
-import { templates } from '@/lib/catalog';
-import { ItemPage } from '@/sections/item';
+import { Redirect } from '@/components/redirect';
+import { items, movedTo } from '@/lib/library';
 
 type Params = { id: string };
 
 export const dynamicParams = false;
 
 export function generateStaticParams(): Params[] {
-  return templates.map((t) => ({ id: t.id }));
+  return items.filter((i) => i.type === 'template').map((i) => ({ id: i.name }));
 }
 
 export async function generateMetadata(props: { params: Promise<Params> }): Promise<Metadata> {
-  const { id } = await props.params;
-  const t = templates.find((x) => x.id === id);
-  if (!t) return {};
-  return { title: `${t.title} template | Kinetograph`, description: t.description };
+  return movedTo(`/catalog/${(await props.params).id}/`);
 }
 
-export default async function TemplatePage(props: { params: Promise<Params> }) {
-  const { id } = await props.params;
-  const t = templates.find((x) => x.id === id);
-  if (!t) notFound();
-  return <ItemPage kind="template" item={t} items={templates} />;
+/** The old /templates/<id>/ page: the item's page in the catalog. */
+export default async function Page(props: { params: Promise<Params> }) {
+  return <Redirect to={`/catalog/${(await props.params).id}/`} />;
 }

@@ -42,10 +42,12 @@ function rewriteRules(css: string, selector: (selector: string) => string): stri
 /**
  * The rules of a mounted composition scoped to it. A selector that already names the composition's root stays; `html`,
  * `body` and `:root` alone are the composition's own box; any other gets the composition's selector in front. Rules
- * written for the root's id (`#root { … }`) apply to the host, which takes the root's place.
+ * written for the root's id (`#root { … }`) apply to the file's root, which is a child of the host (`data-hf-authored-id`).
  */
-export function scopeToComposition(css: string, compositionId: string, rootId?: string | null): string {
+export function scopeToComposition(css: string, compositionId: string, rootId?: string | null, authoredId?: string | null): string {
   const scope = compositionSelector(compositionId);
+  // A host named otherwise than its file's root: the rules written for the root's id are the host's (HyperFrames scopes them so).
+  const authored = authoredId ? new RegExp(`\\[\\s*data-composition-id\\s*=\\s*(["'])${escapeRegExp(authoredId)}\\1\\s*\\]`, 'g') : null;
   const own = new RegExp(`\\[\\s*data-composition-id\\s*=\\s*(["'])${escapeRegExp(compositionId)}\\1\\s*\\]`, 'g');
   // The timing attributes a root selector may carry (`[data-composition-id="x"][data-start="0"]`) are the host's too.
   const timing = /\[\s*data-(?:start|duration)\s*=\s*(?:"[^"]*"|'[^']*')\s*\]/g;
@@ -54,8 +56,8 @@ export function scopeToComposition(css: string, compositionId: string, rootId?: 
     const text = selector.trim();
     if (text === '' || text === '*') return selector;
     if (/^(html|body|:root)$/i.test(text)) return scope;
-    let rewritten = text;
-    if (rootIdToken !== null) rewritten = rewritten.replace(rootIdToken, scope);
+    let rewritten = authored === null ? text : text.replace(authored, scope);
+    if (rootIdToken !== null) rewritten = rewritten.replace(rootIdToken, `[data-hf-authored-id="${escapeAttr(rootId!)}"]`);
     own.lastIndex = 0;
     if (own.test(rewritten)) return rewritten.replace(timing, '');
     return `${scope} ${rewritten}`;

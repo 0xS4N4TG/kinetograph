@@ -14,7 +14,7 @@ import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageDat
 import { resolveDocumentUrl, resolveProjectFile, resolveCachedRemoteFile, sameOriginPath } from '../environment.js';
 import { netFetch } from './net-store.js';
 import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas.js';
-import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, installDocumentMembers } from './document.js';
+import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, XMLSerializerShim, installDocumentMembers } from './document.js';
 import { AttrShim, NamedNodeMapShim } from './attributes.js';
 import { DomElement, DomFragment, DomNodeBase, DomText, domElementFor, domTextFor, isDomElementShim, selectorContextOf, setImageLoader, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
 import { bodyHost, headHost, htmlHost, pageDocument, setPageViewport } from './host.js';
@@ -714,6 +714,7 @@ export function installDomGlobals(): void {
   define(g, 'NodeIterator', NodeIteratorShim);
   define(g, 'TreeWalker', TreeWalkerShim);
   define(g, 'DOMParser', DOMParserShim);
+  define(g, 'XMLSerializer', XMLSerializerShim);
   define(g, 'Document', class DocumentGlobal extends DocumentShim {
     static [Symbol.hasInstance](value: unknown): boolean {
       return value === (globalThis as { document?: unknown }).document || value instanceof DocumentShim;

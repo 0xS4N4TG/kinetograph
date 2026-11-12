@@ -1,0 +1,23 @@
+---
+title: "@kinetographdev/compat"
+description: "Remotion compat mode: draws DOM elements and CSS natively, and reports what it cannot draw."
+---
+
+Compat mode for Remotion projects: it hands `<div>`, CSS and SVG to the Rust CSS engine, and provides the DOM shim that refs and browser globals need. It also builds the report behind `doctor`. It is used by `kinetograph`, and you rarely install it yourself.
+
+```sh
+npm install @kinetographdev/compat react react-dom
+```
+
+Current version: 0.3.0.
+
+## Exports
+
+- `/dom`: the DOM islands handed to the CSS engine.
+- `/shim`: the DOM shim for refs and browser globals.
+- `/doctor`: the report of what the engine cannot draw.
+
+## Related topics
+
+- [What works](/docs/compat/)
+- [Lint rules](/docs/reference/lint/)

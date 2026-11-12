@@ -1,0 +1,137 @@
+---
+title: Find your way around Studio
+description: "A tour of Studio: the chat, the preview, the timeline, the inspector tabs, the mixer and the library."
+---
+
+<Video name="studio-tour" label="A tour of the Studio window: chat, preview, timeline and inspector" />
+
+This page tells you what each part of Studio is for, so you can find the control you want.
+
+Studio has three columns. The **Agent** chat is on the left. The preview is in the middle, with the timeline under it. The inspector is on the right. The top bar holds the composition switcher, the command menu and the **Export** button.
+
+<Media src="studio/window-light.webp" dark="studio/window-dark.webp" width={1600} height={1160} alt={"The whole Studio window with a project open: the agent chat on the left, the preview in the middle with the timeline under it, and the inspector on the right."} />
+
+## Where to start
+
+| You want to change | Start with |
+| --- | --- |
+| Something you can see in this frame | Click it in the preview, then the **Props** or **Edit** tab |
+| When something appears or how long it stays | The timeline |
+| A colour, a word or a font | The **Edit** tab, or **Props** |
+| How loud a sound is | The **Mixer** tab |
+| The story, or several scenes | The chat. Mark up the preview and send your notes |
+| The final file | **Export** |
+
+## The agent chat
+
+<Video name="studio-tour-chat" label="Typing a request in the Agent chat and watching the preview change" />
+
+The chat on the left talks to the coding agent already on your computer. Each message carries your selection: the composition, the frame or span, and the layers you picked. Keep the picture switch on to send a picture of the selected area. Drop an image onto the chat, paste one, or use the attach button to give the agent a picture to use.
+
+You can send a message while the agent is working. It waits in the **Up next** tray. See [Edit with the agent](/docs/agents/studio-agent/).
+
+## The preview
+
+<Video name="studio-tour-preview" label="The preview tools: select, hand, zoom and markup" />
+
+Click a layer to select it, or drag a box round several. Type a time into the timecode box (`2.4`, `mm:ss` or `mm:ss.ff`) to jump there. If the composition has sound, the preview plays it. The engine draws every preview frame, so it matches a render.
+
+### The preview tools
+
+| Key | Tool | What it does |
+| --- | --- | --- |
+| V | Selection | Click a layer in the viewer to select it |
+| H | Hand | Drag to pan the viewer |
+| Z | Zoom | Click to zoom in, Alt-click to zoom out |
+| M | Markup | Pin, box or draw on the preview and comment. Esc leaves |
+| 0 | Fit | Fit the frame to the viewer |
+| 1 | 100% | Show the frame at 100% |
+
+In markup mode you can drop a **pin**, drag a **box**, draw with the **pen**, or drag a **range** on the ruler. Type a comment, press Enter, and send the notes when you are done. The agent sees each note with its frame, the layers under your mark and a picture with your marks on it.
+
+<Media src="studio/markup-dark.webp" width={1600} height={1160} alt={"Markup mode with a pin on the lanterns, a box round the title and a pen stroke under the caption, each with a note."} />
+
+## The timeline
+
+<Video name="studio-tour-timeline" label="Dragging a clip to move it and an edge to trim it" />
+
+The arrow at the left of the timeline opens one row per layer. Click or drag in the ruler or any row to move the playhead. Ctrl or Cmd with the wheel zooms the time axis. Drag across the ruler to pick a span, or click a clip to pick its span. The span goes to the agent with your next message, with a contact sheet of its frames.
+
+To move a clip, drag it. To trim it, drag an edge. You can also use the arrow keys: Left and Right move a clip one frame, Alt trims its tail and Shift takes ten frames. Only clips whose timing is a plain number can be dragged. In an HTML project the change is written into `index.html`.
+
+<Media src="studio/timeline-dark.webp" width={1600} height={1160} alt={"The timeline expanded, with a film strip of frames, one row for each Sequence and the narration clips under it, and the playhead on the print shot."} />
+
+## The inspector tabs
+
+<Video name="studio-tour-inspector" label="Switching between the Props, Scene, Edit, Mixer and Renders tabs" />
+
+The inspector has these tabs: **Props**, **Scene**, **Edit**, **Mixer**, **Renders**, and **Library** for a HyperFrames project. A plugin can add a tab of its own.
+
+### Props
+
+The **Props** tab draws a form from the composition's schema: a slider for a number, a switch for a boolean, a colour input for a colour. With no schema, each field comes from its default. **Reset** returns every prop to its default. **Save preset** in the Presets menu saves the props you see as `presets/<composition id>/<name>.json`, which you can commit and render with `--props`.
+
+<Media src="studio/props-dark.webp" width={1600} height={1160} alt={"The Props tab with a form drawn from the composition schema: text fields, a colour input, a slider, a switch and a select."} />
+
+### Scene
+
+**Scene** is the tree of layers at the playhead, with each layer's resolved fields.
+
+### Edit
+
+<Video name="studio-tour-edit" label="Changing a colour, an effect and a font in the Edit tab" />
+
+The **Edit** tab changes the selected element. It has four tools: **Colour**, **Effects**, **Keyframes** and **Text**. **Colour** grades the element, with a look-up table and a **Strength** control. **Effects** lists what is on it, and each can be moved up or down or removed. **Keyframes** sets values over time, with an **Easing** choice. **Text** sets the font, weight, size and shadow, with the fonts of the project and the HyperFrames fonts listed. The Keyframes tool shows only once the preview is ready.
+
+Edit changes are written into a HyperFrames project's `index.html`. Undo and redo are at the top of the panel.
+
+### Mixer
+
+<Video name="studio-tour-mixer" label="Moving a fader, muting a strip and ducking music under a voice in the Mixer" />
+
+The **Mixer** shows one strip for each sound in the composition, the group buses, and a **Master**. Each strip has **M** (mute) and **S** (solo) keys, a fader in dB (double-click it for 0 dB) and a meter that follows the playhead. The master shows the loudness of the whole mix: **Integrated** in LUFS and **True peak**.
+
+Select a strip to open its effects rack and its **Volume automation**. **Add lane** puts a volume lane on the timeline: click it to add a point, drag to move one, double-click to remove one. **Duck under voice** lowers a strip while another strip speaks: pick the voice under **Choose a strip**.
+
+In an HTML project every change is written into `index.html`, and mute and solo only change what you hear in Studio. In a project written in code, the faders only change what you hear; set the level in `<Audio volume>`.
+
+### Renders
+
+**Renders** is the queue of exports, with progress and the output file. See [Export](/docs/studio/export/).
+
+<Media src="studio/renders-dark.webp" width={1600} height={1160} alt={"The Renders tab: the queue of exports with progress and the output file."} />
+
+### Library
+
+<Video name="studio-tour-library" label="Searching the library and adding an item to the project" />
+
+The **Library** tab lists the blocks and components of the HyperFrames registry. Search by name, tag or description, and switch between **Blocks** and **Components**. Each item says how well it draws: **Draws fully**, **Partly drawn** or **Does not render**, with the reason. **Add to project** writes the item's files, the same way `kinetograph add` does. Only an HTML (HyperFrames) project can take them. For a project written in code, ask your agent to rebuild the item instead.
+
+## Remove background
+
+Select a video layer, then pick **Remove background** in the Scene tab or in Cmd+K. The dialog sets the file in `public/` (default `<name>-no-background.webm`), the model, whether to keep the audio, and the video quality. Its **Models** tab downloads and removes the models. When the file is written, Studio asks the agent to change that video's `src` to `staticFile('<name>-no-background.webm')`. Studio does not edit your code itself, so the agent makes that one-line edit after you allow it.
+
+## Undo and redo
+
+Press Cmd+Z to undo the last edit of any editing tool, and Shift+Cmd+Z to redo it. The Edit and Mixer panels also have **Undo** and **Redo** buttons. They share one history for the project.
+
+## Keyboard shortcuts
+
+Press `?` to see the full list. The keys do nothing while a field or a menu has focus. Cmd+K (Ctrl+K elsewhere) opens the command menu, which lists every action.
+
+| Key | What it does |
+| --- | --- |
+| Space | Play or pause |
+| Left and Right | Previous or next frame (Shift: 10 frames) |
+| Home and End | First or last frame |
+| L | Loop on or off |
+| Shift + M | Mute the sound |
+| Cmd + Z, Shift + Cmd + Z | Undo, redo |
+
+<Media src="studio/command-menu-dark.webp" width={1600} height={1160} alt={"The command menu open over the window, listing the actions of Studio."} />
+
+## Related topics
+
+- [Edit with the agent](/docs/agents/studio-agent/)
+- [Export](/docs/studio/export/)
+- [Connect your agent](/docs/studio/connect-your-agent/)

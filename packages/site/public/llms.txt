@@ -17,7 +17,7 @@
 2. Run `npx kinetograph doctor` and show the user the output. `addon: loaded` means it works.
 3. For a new project, run `npx kinetograph init` (`--html` for an HTML page) in an empty folder and keep its layout.
 4. Ask the user whether to install the agent skills and the MCP server, then read the skills before writing a video:
-   - Skills: `npx skills add 0xS4N4TG/kinetograph`
+   - Skills: `npx kinetograph skills update`
      - `kinetograph`: the entry point; the loop and which skill to read next.
      - `kinetograph-create`: `init`, `--html`, and `add` for components, templates and tastes.
      - `kinetograph-markup`: writing a composition: elements, effects, sound, fonts, what the engine draws. Its
@@ -29,7 +29,7 @@
      - `kinetograph-migrate`: moves an existing Remotion project onto Kinetograph (`doctor`, fixes, `--strict`).
    - MCP server (each CLI command is a tool): `npx -y kinetograph mcp` over stdio. Claude Code:
      `claude mcp add kinetograph -- npx -y kinetograph mcp`. Other clients: /docs/guides/agents/.
-   - Optional, from https://github.com/0xS4N4TG/kinetograph-ui (`npx skills add 0xS4N4TG/kinetograph-ui`):
+   - Optional, from https://github.com/0xS4N4TG/kinetograph-ui (installed by `npx kinetograph skills update`):
      `kinetograph-taste-clone` turns a reference reel into a measured spec and a reusable taste (TASTE.md and
      taste.json). /docs/guides/taste/
 5. If a Kinetograph command says the CLI or the skills are out of date, tell the user and ask before updating.
@@ -42,7 +42,7 @@ The same steps are in AGENTS.md in the repository: https://github.com/0xS4N4TG/k
   (`index.html`, or the directory that holds it).
 - The native elements and effects: `import { ... } from '@kinetographdev/core'`
 - Source and issues: https://github.com/0xS4N4TG/kinetograph
-- Licence: PolyForm Small Business 1.0.0 (free for individuals and companies under 100 people and $1M revenue a year)
+- Licence: Apache-2.0, open source and free for any use, including commercial
 
 ## HTML pages and HyperFrames projects
 

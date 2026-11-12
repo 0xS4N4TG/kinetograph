@@ -1,11 +1,21 @@
 import { DocsPre, PromptBox } from '@/components/docs/mdx';
+import { Media } from '@/components/docs/media';
+import { Card, CardGroup, Note, Step, Tip, Warning } from '@/components/docs/blocks';
+import { FilmGrid } from '@/components/docs/film-grid';
+import { InstallCard } from '@/components/docs/install-card';
+import { IconTabs, Tab } from '@/components/docs/icon-tabs';
+import { Terminal, TwoUp } from '@/components/docs/figures';
+import { RouteGrid } from '@/components/docs/route-grid';
+import { LinkCard } from '@/components/docs/link-card';
+import { Video } from '@/components/docs/video';
 import { PageActions } from '@/components/docs/page-actions';
+import { TasteGallery } from '@/components/docs/taste-gallery';
 import { EngineDiagram } from '@/components/engine-diagram';
 import { SITE_URL } from '@/lib/catalog-feed';
 import { source } from '@/lib/source';
 import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/layouts/docs/page';
 import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
-import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Steps } from 'fumadocs-ui/components/steps';
 import defaultMdxComponents from 'fumadocs-ui/mdx';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
@@ -31,17 +41,41 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
             after two spaces is a comment. It copies as plain text. Add title="..." for a header.
           - ```txt title="Suggested prompt"  a prompt box when the text starts with /skill-name; or write
             <Prompt skill="kinetograph-markup">Add motion blur to my text</Prompt>.
+          - <Media src="studio/window-light.webp" dark="studio/window-dark.webp" width={1600} height={1160} alt="..." />
+            a picture from public/docs-media, or a looping clip for an .mp4 (components/docs/media.tsx).
+          - <Video name="first-video" label="..." caption="..." silent />  a hosted clip with a poster (components/docs/video.tsx;
+            base URL in sections/links.ts).
+          - <FilmGrid /> / <LinkCard title icon href> / <Card> / <CardGroup cols> / <Steps><Step title> / <Tip> / <Note>:
+            the HyperFrames-style blocks (components/docs/film-grid.tsx, link-card.tsx, blocks.tsx).
+          - <TasteGallery />  every taste of the catalog as a looping clip with its name (components/docs/taste-gallery.tsx).
         */}
         <MDX
           components={{
             ...defaultMdxComponents,
             pre: DocsPre,
+            Media,
+            Video,
+            FilmGrid,
+            IconTabs,
+            InstallCard,
+            Terminal,
+            TwoUp,
+            RouteGrid,
+            LinkCard,
+            Card,
+            CardGroup,
+            Steps,
+            Step,
+            Tip,
+            Note,
+            TasteGallery,
             Prompt: PromptBox,
             Accordion,
             Accordions,
+            AccordionGroup: Accordions,
+            Warning,
             EngineDiagram,
             Tab,
-            Tabs,
           }}
         />
       </DocsBody>

@@ -1,0 +1,64 @@
+---
+title: Bring a Remotion or HyperFrames project
+description: Render a Remotion or HyperFrames project you already have, as it is, and keep editing it in your own tools.
+---
+
+<Video name="bring-a-project" label="A project rendered in Remotion Studio and again with Kinetograph, side by side" />
+
+Point Kinetograph at your project and it renders it as it is. Nothing is converted. You can keep editing in Remotion Studio or HyperFrames and render with Kinetograph.
+
+## Make it
+
+Ask your agent. It checks the project first and tells you what will not draw.
+
+```text title="Suggested prompt"
+Render my project with Kinetograph. First run kinetograph doctor on it and tell me what the engine cannot draw, then render it to out/video.mp4.
+```
+
+## How should the agent work with you?
+
+- **Render only.** Keep your editor. The agent runs the commands below and reports what is missing.
+- **Move over.** The agent rewrites the project for Kinetograph, using the migrate skill, and checks each change.
+
+Both work on the same files.
+
+## By hand
+
+For a Remotion project, give Kinetograph the file that calls `registerRoot`, usually `src/index.ts`:
+
+```sh
+npx kinetograph doctor src/index.ts
+npx kinetograph render src/index.ts --comp Main -o out.mp4
+```
+
+For a HyperFrames project, give it the page or its folder:
+
+```sh
+npx kinetograph doctor index.html
+npx kinetograph render index.html -o out.mp4
+```
+
+`doctor` lists what the engine cannot draw and on which frames. Add `--strict` to a render to stop at the first frame with something missing.
+
+## Common mistakes
+
+**Giving it the wrong file.** A file that only exports a component, such as `Root.tsx`, is not an entry.
+- **Avoid:** `render src/Root.tsx`
+- **Instead:** `render src/index.ts`
+
+## Keep feedback useful
+
+Run `doctor` first and read what it names. Then tell your agent which findings matter, for example "the blur on the title is fine, the missing font is not".
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="Keep your editor, render with Kinetograph" icon="route" href="/docs/keep-your-editor/">
+    Edit as before and render here.
+  </Card>
+  <Card title="Migrate from Remotion" icon="learn" href="/docs/migrating/remotion/">
+    Move a project over, package by package.
+  </Card>
+</CardGroup>
+
+Also: [Migrate from HyperFrames](/docs/migrating/hyperframes/), [Move from @remotion/three](/docs/migrating/three/), [Kinetograph vs Remotion and HyperFrames](/docs/compare/) and [What works](/docs/compat/).

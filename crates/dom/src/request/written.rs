@@ -9,7 +9,9 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use super::{IslandOutput, Unsupported};
+use std::collections::BTreeMap;
+
+use super::{IslandOutput, Probe, Unsupported};
 
 /// A layer written as JSON: a group by its own fields and its children, anything else whole. A group's fields keep
 /// their place around `children`, so the layer reads back with its keys in the order a whole one has.
@@ -179,6 +181,8 @@ pub fn write_output(
         margin: Option<u32>,
         #[serde(rename = "blendSpace")]
         blend_space: &'static str,
+        #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+        probes: &'a BTreeMap<String, Probe>,
         #[serde(skip_serializing_if = "Option::is_none")]
         delta: Option<u64>,
     }
@@ -187,6 +191,7 @@ pub fn write_output(
         camera: &output.camera,
         margin: output.margin,
         blend_space: output.blend_space,
+        probes: &output.probes,
         delta: base.map(|(_, pass)| pass),
     })?;
     let mut out = String::with_capacity(rest.len() + 64 * layers.len());

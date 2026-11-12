@@ -76,9 +76,13 @@ export function canvasEnvironment(fonts: () => Record<string, string> = () => fo
     measure(text, font, size) {
       if (text === '' || !hasAddonFunction('layoutText')) return text === '' ? { width: 0, ascent: size * 0.8, descent: size * 0.2 } : null;
       try {
-        const laid = addonFunction('layoutText')({ text, font, size, fonts: fonts() });
+        const layout = (t: string) => addonFunction('layoutText')({ text: t, font, size, fonts: fonts() });
+        const laid = layout(text);
         const line = laid.lines?.[0];
-        return { width: laid.width, ascent: line ? line.baseline - line.top : size * 0.8, descent: line ? line.bottom - line.baseline : size * 0.2 };
+        // A line's width leaves the white space at its end out, and the advance of `measureText` counts it (HTML, 'text
+        // metrics': the width of the text as drawn, spaces included): measure between two bars and take their width off.
+        const width = /^\s|\s$/.test(text) ? layout(`|${text}|`).width - layout('||').width : laid.width;
+        return { width, ascent: line ? line.baseline - line.top : size * 0.8, descent: line ? line.bottom - line.baseline : size * 0.2 };
       } catch {
         return null;
       }
