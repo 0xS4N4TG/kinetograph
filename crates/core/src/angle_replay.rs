@@ -26,7 +26,9 @@ struct Program {
     uniforms: HashMap<String, (i32, Enum)>,
 }
 
-type ProgramKey = (String, String, Vec<(String, u32)>);
+/// A program belongs to the context it was linked in: the vertex source, the fragment source, the attribute locations
+/// and whether the context has float-linear on.
+type ProgramKey = (String, String, Vec<(String, u32)>, bool);
 
 thread_local! {
     static PROGRAMS: std::cell::RefCell<HashMap<ProgramKey, Program>> = std::cell::RefCell::new(HashMap::new());
@@ -157,6 +159,7 @@ struct Replay<'a> {
     content: &'a GlslContent,
     base_dir: &'a Path,
     size: (u32, u32),
+    float_linear: bool,
     buffers: HashMap<&'a str, u32>,
     textures: HashMap<&'a str, Handle>,
     /// The targets a framebuffer draws a cube face or an array or 3D layer into, as the recorder lists them under
@@ -190,18 +193,22 @@ pub fn replay(content: &GlslContent, size: (u32, u32), base_dir: &Path) -> R<Vec
     if content.webgpu.is_some() {
         return Err("unsupported: a WebGPU recording is not replayed by ANGLE".into());
     }
-    angle::with(|gl| run(gl, content, size, base_dir))?
+    let float_linear = content
+        .ops
+        .iter()
+        .any(|op| matches!(op, GlslOp::Draw(d) if d.float_linear));
+    angle::with(float_linear, |gl| {
+        run(gl, content, size, base_dir, float_linear)
+    })?
 }
 
-fn run(gl_: &Gl, content: &GlslContent, size: (u32, u32), base_dir: &Path) -> R<Vec<u8>> {
-    // A context made with WebGL compatibility keeps its extensions off until asked.
-    for ext in [
-        "GL_EXT_color_buffer_float",
-        "GL_EXT_float_blend",
-        "GL_OES_texture_float_linear",
-    ] {
-        gl_.request_extension(ext);
-    }
+fn run(
+    gl_: &Gl,
+    content: &GlslContent,
+    size: (u32, u32),
+    base_dir: &Path,
+    float_linear: bool,
+) -> R<Vec<u8>> {
     gl_.pixel_storei(0xCF5, 1); // UNPACK_ALIGNMENT
     if std::env::var_os("KINETOGRAPH_ANGLE_DEBUG").is_some() {
         gl_.enable(0x92E0); // DEBUG_OUTPUT
@@ -211,6 +218,7 @@ fn run(gl_: &Gl, content: &GlslContent, size: (u32, u32), base_dir: &Path) -> R<
         content,
         base_dir,
         size,
+        float_linear,
         buffers: HashMap::new(),
         textures: HashMap::new(),
         parts: content
@@ -674,7 +682,12 @@ impl<'a> Replay<'a> {
             .map(|(k, v)| (k.clone(), *v))
             .collect();
         attrs.sort();
-        let key = (spec.vertex.clone(), spec.fragment.clone(), attrs.clone());
+        let key = (
+            spec.vertex.clone(),
+            spec.fragment.clone(),
+            attrs.clone(),
+            self.float_linear,
+        );
         if let Some(p) = PROGRAMS.with(|p| p.borrow().get(&key).cloned()) {
             return Ok(p);
         }

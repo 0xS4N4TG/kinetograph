@@ -739,14 +739,19 @@ impl Gl {
 /// `Gl` holds both groups of entry points; `Raw` is built by `entry_points!` and `ptr` by hand.
 struct Context {
     gl: Gl,
+    display: *mut c_void,
+    surface: *mut c_void,
+    context: *mut c_void,
+    make_current: unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> u32,
     // The libraries stay loaded as long as the context.
     _egl: Library,
     _gles: Library,
 }
 
 thread_local! {
-    /// One context for each thread that paints: ANGLE contexts are current on one thread at a time.
-    static CONTEXT: RefCell<Option<Context>> = const { RefCell::new(None) };
+    /// The contexts of this thread, one for each set of extensions a page can have enabled: an extension a page asks
+    /// for stays on in an ANGLE context, so a page that did not ask must not draw in a context another page asked in.
+    static CONTEXTS: RefCell<Vec<(bool, Context)>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Whether `KINETOGRAPH_WEBGL=angle` asks for the ANGLE replay.
@@ -755,14 +760,25 @@ pub fn enabled() -> bool {
     *ON.get_or_init(|| std::env::var("KINETOGRAPH_WEBGL").is_ok_and(|v| v == "angle"))
 }
 
-/// Runs `f` with this thread's context, made on first use.
-pub fn with<T>(f: impl FnOnce(&Gl) -> T) -> Result<T, String> {
-    CONTEXT.with(|cell| {
-        let mut slot = cell.borrow_mut();
-        if slot.is_none() {
-            *slot = Some(create()?);
+/// Runs `f` with this thread's context for `float_linear` (`OES_texture_float_linear` enabled or not), made on first
+/// use and made current.
+pub fn with<T>(float_linear: bool, f: impl FnOnce(&Gl) -> T) -> Result<T, String> {
+    CONTEXTS.with(|cell| {
+        let mut contexts = cell.borrow_mut();
+        let at = match contexts.iter().position(|(k, _)| *k == float_linear) {
+            Some(at) => at,
+            None => {
+                contexts.push((float_linear, create(float_linear)?));
+                contexts.len() - 1
+            }
+        };
+        let c = &contexts[at].1;
+        // SAFETY: the handles are the ones `create` made this context and surface from, on this thread; making a context
+        // current on the thread that owns it is allowed whichever other context was current.
+        if unsafe { (c.make_current)(c.display, c.surface, c.surface, c.context) } == 0 {
+            return Err("eglMakeCurrent failed".into());
         }
-        Ok(f(&slot.as_ref().expect("made above").gl))
+        Ok(f(&c.gl))
     })
 }
 
@@ -885,7 +901,7 @@ mod tests {
 
 type GetProc = unsafe extern "C" fn(*const c_char) -> *const c_void;
 
-fn create() -> Result<Context, String> {
+fn create(float_linear: bool) -> Result<Context, String> {
     let dir = library_dir()?;
     // libGLESv2 first, by full path: libEGL then finds it already loaded instead of searching for it.
     let gles = open(&dir, "GLESv2")?;
@@ -948,10 +964,11 @@ fn create() -> Result<Context, String> {
         device[1],
         EGL_NONE as isize,
     ];
+    let (display, surface, context);
     // SAFETY: each call below passes pointers to locals that outlive it and attribute lists ended by EGL_NONE; the
     // handles are the ones the previous calls returned and are checked before use.
     unsafe {
-        let display = get_platform_display(
+        display = get_platform_display(
             EGL_PLATFORM_ANGLE_ANGLE,
             std::ptr::null_mut(),
             display_attribs.as_ptr(),
@@ -973,13 +990,13 @@ fn create() -> Result<Context, String> {
             return Err("no ES 3 pbuffer config".into());
         }
         let pbuffer_attribs = [0x3057, 1, 0x3056, 1, EGL_NONE];
-        let surface = create_pbuffer(display, config, pbuffer_attribs.as_ptr());
+        surface = create_pbuffer(display, config, pbuffer_attribs.as_ptr());
         // ES 3.0; EGL_CONTEXT_WEBGL_COMPATIBILITY_ANGLE; EGL_CONTEXT_OPENGL_ROBUST_ACCESS-free; extensions off until
         // requested (EGL_EXTENSIONS_ENABLED_ANGLE); EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE.
         let context_attribs = [
             0x3098, 3, 0x30FB, 0, 0x33AC, 1, 0x3459, 0, 0x3453, 1, EGL_NONE,
         ];
-        let context = create_context(
+        context = create_context(
             display,
             config,
             std::ptr::null_mut(),
@@ -1003,8 +1020,23 @@ fn create() -> Result<Context, String> {
         raw: Raw::load(&lookup)?,
         ptr: RawPtr::load(&lookup)?,
     };
+    // A context made with WebGL compatibility keeps its extensions off until asked.
+    for ext in [
+        "GL_EXT_color_buffer_float",
+        "GL_EXT_float_blend",
+        "GL_KHR_debug",
+    ] {
+        gl.request_extension(ext);
+    }
+    if float_linear {
+        gl.request_extension("GL_OES_texture_float_linear");
+    }
     Ok(Context {
         gl,
+        display,
+        surface,
+        context,
+        make_current,
         _egl: egl,
         _gles: gles,
     })

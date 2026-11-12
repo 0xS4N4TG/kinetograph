@@ -377,3 +377,30 @@ fn a_frame_does_not_depend_on_what_the_thread_drew_before() {
         assert_eq!(ab[1].1, ba[0].1, "{b}: order of the thread's frames matters");
     }
 }
+
+/// A page that never enabled `OES_texture_float_linear` reads a 32-bit float texture with a linear filter as an
+/// incomplete one, even when the page drawn just before it on the same thread enabled the extension.
+#[test]
+fn an_extension_a_page_enabled_does_not_reach_the_next_page() {
+    let (with, w, h) = body_of("webgl2_float_linear");
+    let without = with
+        .replace("gl.getExtension('OES_texture_float_linear');", "")
+        .replace("\"floatLinear\":true", "\"floatLinear\":false");
+    assert_ne!(with, without, "the case has no extension line to strip");
+    let render = |bodies: Vec<String>| {
+        std::thread::spawn(move || {
+            bodies
+                .iter()
+                .map(|b| paintkit::render_body(b, w, h).1.rgba)
+                .collect::<Vec<_>>()
+        })
+        .join()
+        .unwrap()
+    };
+    let after = render(vec![with.clone(), without.clone()]);
+    let alone = render(vec![without.clone(), with.clone()]);
+    assert_eq!(after[1], alone[0], "the page without the extension drew differently after one with it");
+    assert_eq!(after[0], alone[1]);
+    // The extension makes a difference to this case, or the test proves nothing.
+    assert_ne!(after[0], after[1], "the case draws the same with and without the extension");
+}
