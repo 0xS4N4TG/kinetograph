@@ -43,13 +43,13 @@ function RenderCard({ r }: { r: Render }) {
     else el.pause();
   }, [hover, inView]);
   return (
-    <figure className="shrink-0 snap-start" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+    <figure className="shrink-0 snap-start [--clip-h:clamp(220px,26vw,340px)]" style={{ width: `calc(var(--clip-h) * ${r.width / r.height} + 2 * var(--kg-bezel))` }} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <div className="kg-tray">
-        <div className="kg-core bg-ink" style={{ aspectRatio: `${r.width} / ${r.height}` }}>
+        <div className="kg-core bg-ink">
           <video
             ref={video}
-            className="block h-[clamp(220px,26vw,340px)] w-auto bg-ink object-cover"
-            style={{ aspectRatio: `${r.width} / ${r.height}` }}
+            className="block h-(--clip-h) bg-ink object-cover"
+            style={{ width: `calc(var(--clip-h) * ${r.width / r.height})` }}
             src={`/${r.web}`}
             poster={`/${r.poster}`}
             muted
