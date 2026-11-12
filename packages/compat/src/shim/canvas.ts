@@ -23,7 +23,7 @@ import {
 import { addonFunction, hasAddonFunction } from '../addon.js';
 import { getDomEnvironment } from '../environment.js';
 import type { HostElement } from './host.js';
-import { DawnCanvasContext, dawnCommandsOf, dawnDependsOnHistory, dawnPictureSource, dawnReadCommands, dawnRequested, takeDawnReports } from './webgpu-dawn.js';
+import { DawnCanvasContext, dawnCommandsOf, dawnDependsOnHistory, dawnPictureSource, dawnReadCommands, dawnRequested } from './webgpu-dawn.js';
 
 export { CANVAS_SOURCE, CanvasContext2D, WebGLContext };
 
@@ -193,7 +193,7 @@ const glReports = new Set<string>();
 
 /** What the WebGL recordings made since the last call left out where they are not drawn right, each once. */
 export function takeGlReports(): string[] {
-  const out = [...glReports, ...takeDawnReports()];
+  const out = [...glReports];
   glReports.clear();
   return out;
 }

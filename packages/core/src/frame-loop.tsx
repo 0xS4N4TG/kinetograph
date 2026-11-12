@@ -10,7 +10,7 @@
 //      attach what each sub-frame changes in them.
 
 import type { ReactNode } from 'react';
-import { flushDawnCanvases, noteDawnRewind, releaseDawn, glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures } from '@kinetographdev/compat/shim';
+import { flushDawnCanvases, noteDawnRewind, releaseDawn, takeDawnReports, glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures } from '@kinetographdev/compat/shim';
 import { setDefaultStylesheet } from '@kinetographdev/compat/dom';
 import { createSceneRoot, finishIslands, TimelineContext, type LayerNames, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
@@ -316,6 +316,7 @@ class Renderer implements FrameRenderer {
     setHistoryMode({ record: false });
     // What components that draw through a canvas left out, as the frame's own render reported it.
     for (const what of takeGlReports()) reportUnsupported('canvas', 'webgl', 'render target', what);
+    for (const what of takeDawnReports()) reportUnsupported('canvas', 'webgpu', 'device', what);
     for (const what of takeLoadFailures()) reportUnsupported('page', 'load', what, `a load the page started failed; what needed it is drawn without`);
     let reported = reportedUnsupported();
     // The motion-blur sub-frames render the composition again; fonts or data they ask for are awaited too.

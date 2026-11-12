@@ -148,6 +148,8 @@ describe.skipIf(missing !== null)('WebGPU through Dawn, rendered', () => {
     const warned = run(['still', page, '0', '-o', join(dir, 'err.png')]);
     expect(warned.status).toBe(0);
     expect(warned.stderr).toMatch(/WebGPU \(Dawn\): GPUValidationError/);
+    // It is a WebGPU device's report, not a WebGL render target's.
+    expect(warned.stderr).not.toMatch(/webgl|render target/i);
     const strict = run(['still', page, '0', '-o', join(dir, 'err2.png'), '--strict']);
     expect(strict.status).not.toBe(0);
     expect(strict.stderr).toMatch(/frame 0/);
