@@ -635,76 +635,26 @@ impl Default for Limits {
     }
 }
 
-/// The limits of `device`, which the recording is checked against and the page side reports as `device.limits`.
-pub fn device_limits(device: &wgpu::Device) -> Limits {
-    let l = device.limits();
-    Limits {
-        max_texture_dimension_2d: l.max_texture_dimension_2d,
-        max_texture_array_layers: l.max_texture_array_layers,
-        max_color_attachments: l.max_color_attachments,
-        max_bind_groups: l.max_bind_groups,
-        max_buffer_size: l.max_buffer_size,
-        max_uniform_buffer_binding_size: l.max_uniform_buffer_binding_size,
-        max_storage_buffer_binding_size: l.max_storage_buffer_binding_size,
-        min_uniform_buffer_offset_alignment: u64::from(l.min_uniform_buffer_offset_alignment),
-        min_storage_buffer_offset_alignment: u64::from(l.min_storage_buffer_offset_alignment),
-        max_storage_buffers_per_shader_stage: l.max_storage_buffers_per_shader_stage,
-        max_storage_textures_per_shader_stage: l.max_storage_textures_per_shader_stage,
-        max_compute_workgroup_storage_size: l.max_compute_workgroup_storage_size,
-        max_compute_invocations_per_workgroup: l.max_compute_invocations_per_workgroup,
-        max_compute_workgroup_size_x: l.max_compute_workgroup_size_x,
-        max_compute_workgroup_size_y: l.max_compute_workgroup_size_y,
-        max_compute_workgroup_size_z: l.max_compute_workgroup_size_z,
-        max_compute_workgroups_per_dimension: l.max_compute_workgroups_per_dimension,
-        float32_filterable: device.features().contains(wgpu::Features::FLOAT32_FILTERABLE),
+impl Limits {
+    /// What `navigator.gpu` offers a page on every machine (`GPUAdapterShim`): the WebGPU defaults, and the
+    /// `float32-filterable` feature. The recording is checked against these, whatever device replays it, so a project
+    /// takes the same paths everywhere.
+    pub fn advertised() -> Self {
+        Limits { float32_filterable: true, ..Limits::default() }
     }
 }
 
-/// What `navigator.gpu` reports: the limits of the engine's device by their WebGPU names, and the WebGPU features it has
-/// that the recorder draws.
-pub fn device_info(device: &wgpu::Device) -> serde_json::Value {
-    let l = device_limits(device);
-    let w = device.limits();
-    let mut features = Vec::new();
-    if l.float32_filterable {
-        features.push("float32-filterable");
+/// What the device that replays lacks of what a page is told it has, one message each: a limit below the WebGPU
+/// default, and `float32-filterable`. The replay warns about them once.
+pub fn shortfalls(limits: &wgpu::Limits, features: wgpu::Features) -> Vec<String> {
+    let mut lacking = Vec::new();
+    wgpu::Limits::default().check_limits_with_fail_fn(limits, false, |name, advertised, host| {
+        lacking.push(format!("the device's {name} is {host}, below the WebGPU default {advertised} that a page is told it has"));
+    });
+    if !features.contains(wgpu::Features::FLOAT32_FILTERABLE) {
+        lacking.push("the device lacks float32-filterable, which a page is told it has: a 32-bit float texture bound as float will not be accepted".to_string());
     }
-    serde_json::json!({
-        "features": features,
-        "limits": {
-            "maxTextureDimension1D": w.max_texture_dimension_1d,
-            "maxTextureDimension2D": w.max_texture_dimension_2d,
-            "maxTextureDimension3D": w.max_texture_dimension_3d,
-            "maxTextureArrayLayers": w.max_texture_array_layers,
-            "maxBindGroups": w.max_bind_groups,
-            "maxBindingsPerBindGroup": w.max_bindings_per_bind_group,
-            "maxDynamicUniformBuffersPerPipelineLayout": w.max_dynamic_uniform_buffers_per_pipeline_layout,
-            "maxDynamicStorageBuffersPerPipelineLayout": w.max_dynamic_storage_buffers_per_pipeline_layout,
-            "maxSampledTexturesPerShaderStage": w.max_sampled_textures_per_shader_stage,
-            "maxSamplersPerShaderStage": w.max_samplers_per_shader_stage,
-            "maxStorageBuffersPerShaderStage": w.max_storage_buffers_per_shader_stage,
-            "maxStorageTexturesPerShaderStage": w.max_storage_textures_per_shader_stage,
-            "maxUniformBuffersPerShaderStage": w.max_uniform_buffers_per_shader_stage,
-            "maxUniformBufferBindingSize": w.max_uniform_buffer_binding_size,
-            "maxStorageBufferBindingSize": w.max_storage_buffer_binding_size,
-            "minUniformBufferOffsetAlignment": w.min_uniform_buffer_offset_alignment,
-            "minStorageBufferOffsetAlignment": w.min_storage_buffer_offset_alignment,
-            // The device may allow more (a `glsl` draw gives each attribute a vertex buffer); a page is told the
-            // default, so that it sees the same limit on every machine.
-            "maxVertexBuffers": wgpu::Limits::default().max_vertex_buffers,
-            "maxBufferSize": w.max_buffer_size,
-            "maxVertexAttributes": w.max_vertex_attributes,
-            "maxVertexBufferArrayStride": w.max_vertex_buffer_array_stride,
-            "maxColorAttachments": w.max_color_attachments,
-            "maxColorAttachmentBytesPerSample": w.max_color_attachment_bytes_per_sample,
-            "maxComputeWorkgroupStorageSize": w.max_compute_workgroup_storage_size,
-            "maxComputeInvocationsPerWorkgroup": w.max_compute_invocations_per_workgroup,
-            "maxComputeWorkgroupSizeX": w.max_compute_workgroup_size_x,
-            "maxComputeWorkgroupSizeY": w.max_compute_workgroup_size_y,
-            "maxComputeWorkgroupSizeZ": w.max_compute_workgroup_size_z,
-            "maxComputeWorkgroupsPerDimension": w.max_compute_workgroups_per_dimension,
-        },
-    })
+    lacking
 }
 
 /// Reads every module of the recording with naga. Returns what is wrong with each, as `module id: message`, for the
@@ -1506,6 +1456,40 @@ mod tests {
     const TRIANGLE: &str = "@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f { \
         let p = array<vec2f, 3>(vec2f(-1, -1), vec2f(3, -1), vec2f(-1, 3)); return vec4f(p[i], 0, 1); } \
         @fragment fn fs() -> @location(0) vec4f { return vec4f(1, 0, 0, 1); }";
+
+    #[test]
+    fn the_advertised_limits_are_wgpus_webgpu_defaults_and_a_device_below_them_is_named() {
+        let w = wgpu::Limits::default();
+        let l = Limits::advertised();
+        assert!(l.float32_filterable);
+        assert_eq!(
+            (l.max_texture_dimension_2d, l.max_texture_array_layers, l.max_color_attachments, l.max_bind_groups, l.max_buffer_size),
+            (w.max_texture_dimension_2d, w.max_texture_array_layers, w.max_color_attachments, w.max_bind_groups, w.max_buffer_size)
+        );
+        assert_eq!(
+            (l.max_uniform_buffer_binding_size, l.max_storage_buffer_binding_size, l.min_uniform_buffer_offset_alignment, l.min_storage_buffer_offset_alignment),
+            (w.max_uniform_buffer_binding_size, w.max_storage_buffer_binding_size, u64::from(w.min_uniform_buffer_offset_alignment), u64::from(w.min_storage_buffer_offset_alignment))
+        );
+        assert_eq!(
+            (l.max_storage_buffers_per_shader_stage, l.max_storage_textures_per_shader_stage, l.max_compute_workgroup_storage_size, l.max_compute_invocations_per_workgroup),
+            (w.max_storage_buffers_per_shader_stage, w.max_storage_textures_per_shader_stage, w.max_compute_workgroup_storage_size, w.max_compute_invocations_per_workgroup)
+        );
+        assert_eq!(
+            (l.max_compute_workgroup_size_x, l.max_compute_workgroup_size_y, l.max_compute_workgroup_size_z, l.max_compute_workgroups_per_dimension),
+            (w.max_compute_workgroup_size_x, w.max_compute_workgroup_size_y, w.max_compute_workgroup_size_z, w.max_compute_workgroups_per_dimension)
+        );
+        let float = wgpu::Features::FLOAT32_FILTERABLE;
+        assert!(shortfalls(&w, float).is_empty());
+        // A device that has more is fine; one that has less, or a larger minimum alignment, is named; so is a missing feature.
+        assert!(shortfalls(&wgpu::Limits { max_texture_dimension_2d: 16384, ..w.clone() }, float).is_empty());
+        let lacking = shortfalls(&wgpu::Limits { max_texture_dimension_2d: 4096, max_bind_groups: 2, ..w.clone() }, float);
+        assert_eq!(lacking.len(), 2, "{lacking:?}");
+        assert!(lacking.iter().any(|m| m.contains("max_texture_dimension_2d is 4096") && m.contains("default 8192")), "{lacking:?}");
+        assert_eq!(shortfalls(&wgpu::Limits { min_uniform_buffer_offset_alignment: 512, ..w.clone() }, float).len(), 1);
+        let no_feature = shortfalls(&w, wgpu::Features::empty());
+        assert_eq!(no_feature.len(), 1);
+        assert!(no_feature[0].contains("float32-filterable"));
+    }
 
     #[test]
     fn a_valid_module_passes_and_a_broken_one_is_named() {

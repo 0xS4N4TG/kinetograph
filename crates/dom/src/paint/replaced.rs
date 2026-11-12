@@ -213,12 +213,8 @@ impl<'a> Painter<'a> {
         for state in &recording.impure {
             self.report(node, "webgpu", state, "WebGPU state a page carries from frame to frame (the frame is drawn from the passes that made it)");
         }
-        // The painter has no device: the limits are the WebGPU defaults (the renderer checks again with the device's own),
-        // and a 32-bit float texture may be bound as filterable, which only the device can say.
-        let limits = kinetograph_core::webgpu::Limits {
-            float32_filterable: true,
-            ..Default::default()
-        };
+        // The limits and features a page is told it has, the same on every machine (the renderer warns when its device lacks one).
+        let limits = kinetograph_core::webgpu::Limits::advertised();
         let problems = kinetograph_core::webgpu::check_with(&recording, &limits);
         for problem in &problems {
             self.report(node, "webgpu", problem, "a WGSL module that is not valid; the canvas draws nothing");

@@ -1337,29 +1337,17 @@ export class GPUCanvasContextShim {
 export interface GpuOptions {
   /** The pixels of a 2D canvas, as `copyExternalImageToTexture` of a canvas needs them: straight RGBA8, or null when they cannot be had. */
   rasterize?: (source: Extract<CanvasSource, { kind: 'canvas' }>) => Uint8Array | null;
-  /** The engine's own device, as the addon reports it: its limits and the WebGPU features it has. The WebGPU defaults when left out or null. */
-  info?: () => DeviceInfo | null;
 }
 
-/** What `navigator.gpu` reports: the limits of the engine's wgpu device and the features it has that the recorder draws. */
-export interface DeviceInfo {
-  features: string[];
-  limits: Record<string, number>;
-}
-
-/** The features of the device that the recorder draws. */
-const DRAWN_FEATURES = new Set(['float32-filterable']);
-/** The features the recorder offers whatever the device has: query sets are accepted and measure nothing (`webgpu-queries.ts`). */
-const OFFERED_FEATURES = ['timestamp-query'];
+/**
+ * The features every adapter and device offers, whatever machine renders: those the replay implements. A project takes
+ * the same code paths everywhere. `float32-filterable` needs the host's wgpu device to have it too (the renderer warns
+ * once when it does not); query sets are accepted and measure nothing, so `timestamp-query` needs nothing of the host.
+ */
+const FEATURES = ['float32-filterable', 'timestamp-query'];
 
 /** Limits where better means a smaller number. */
 const ALIGNMENTS = new Set(['minUniformBufferOffsetAlignment', 'minStorageBufferOffsetAlignment']);
-
-function deviceInfo(options: GpuOptions): DeviceInfo {
-  const real = options.info?.() ?? null;
-  if (real === null) return { features: ['float32-filterable', ...OFFERED_FEATURES], limits: { ...LIMITS } };
-  return { features: [...real.features.filter((f) => DRAWN_FEATURES.has(f)), ...OFFERED_FEATURES], limits: { ...LIMITS, ...real.limits } };
-}
 
 /** What `copyExternalImageToTexture` reads a source as: where its pixels come from, and how big it is. */
 function externalSource(device: GPUDeviceShim, source: unknown, tables: Tables): { source: WebGpuSource; width: number; height: number } {
@@ -1512,7 +1500,7 @@ export class GPUDeviceShim extends EventTarget {
 
   constructor(readonly options: GpuOptions = {}, limits?: Record<string, number>) {
     super();
-    this.limits = { ...(limits ?? deviceInfo(options).limits) };
+    this.limits = { ...(limits ?? LIMITS) };
     this.queue = new GPUQueueShim(this);
   }
   note(what: string): void {
@@ -2235,20 +2223,15 @@ export class GPUDeviceShim extends EventTarget {
 }
 
 /**
- * The adapter is the engine's own device: its features and limits are the real ones (`GpuOptions.info`), and a device a
- * page asks for cannot be better than that one, because it is the one that draws.
+ * The adapter has the WebGPU default limits and a fixed list of features (`FEATURES`), on every machine: the page cannot
+ * ask for a better device, and the same project takes the same code paths wherever it is rendered.
  */
 export class GPUAdapterShim {
-  /** The features of the engine's device that the recorder draws. */
-  readonly features: Set<string>;
-  readonly limits: Record<string, number>;
+  readonly features = new Set(FEATURES);
+  readonly limits: Record<string, number> = { ...LIMITS };
   readonly info = { vendor: 'kinetograph', architecture: 'wgpu', device: '', description: 'Kinetograph' };
   readonly isFallbackAdapter = false;
-  constructor(private readonly options: GpuOptions = {}) {
-    const info = deviceInfo(options);
-    this.features = new Set(info.features);
-    this.limits = info.limits;
-  }
+  constructor(private readonly options: GpuOptions = {}) {}
   requestDevice(descriptor?: { requiredFeatures?: Iterable<string>; requiredLimits?: Record<string, number | undefined> }): Promise<GPUDeviceShim> {
     for (const feature of descriptor?.requiredFeatures ?? []) {
       if (!this.features.has(feature)) return Promise.reject(new TypeError(`requestDevice: the feature ${feature} is not supported`));
@@ -2258,7 +2241,7 @@ export class GPUAdapterShim {
       const have = this.limits[name];
       if (have === undefined) return Promise.reject(new TypeError(`requestDevice: ${name} is not a limit`));
       const better = ALIGNMENTS.has(name) ? wanted < have : wanted > have;
-      if (!Number.isFinite(Number(wanted)) || better) return Promise.reject(new RangeError(`OperationError: requestDevice: the limit ${name} ${String(wanted)} is better than the engine's device has (${have})`));
+      if (!Number.isFinite(Number(wanted)) || better) return Promise.reject(new RangeError(`OperationError: requestDevice: the limit ${name} ${String(wanted)} is better than the WebGPU default (${have}), which every device here has`));
     }
     const device = new GPUDeviceShim(this.options, this.limits);
     for (const feature of descriptor?.requiredFeatures ?? []) device.features.add(feature);

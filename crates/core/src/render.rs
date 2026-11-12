@@ -2250,17 +2250,6 @@ async fn new_gpu() -> Option<(wgpu::Instance, wgpu::Device, wgpu::Queue)> {
     None
 }
 
-/// The limits and WebGPU features of the device a render opens, as `navigator.gpu` reports them (`webgpu::device_info`),
-/// as JSON; none when there is no GPU. The device is opened once to read them and dropped.
-pub fn webgpu_device_info() -> Option<String> {
-    static INFO: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-    INFO.get_or_init(|| {
-        let (_instance, device, _queue) = pollster::block_on(new_gpu())?;
-        Some(crate::webgpu::device_info(&device).to_string())
-    })
-    .clone()
-}
-
 /// The GPU device: the default adapter, default limits (but up to 16 vertex buffers, as a `glsl` draw gives each
 /// attribute one and a shader may have ten), `CLEAR_TEXTURE` and `PIPELINE_CACHE` when there, plus
 /// `TIMESTAMP_QUERY` when there, for `set_pass_timing`, `FLOAT32_FILTERABLE` when there, so that a WebGPU page may

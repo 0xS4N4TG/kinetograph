@@ -127,7 +127,12 @@ impl Compositor {
         base_dir: &Path,
         layers: &HashMap<String, wgpu::Texture>,
     ) -> Fail<()> {
-        let limits = wg::device_limits(&self.device);
+        // What the device lacks of what a page is told it has: warned once. The recording is checked against what the page
+        // was told, not against this machine.
+        for lacking in wg::shortfalls(&self.device.limits(), self.device.features()) {
+            self.webgpu_warn(&lacking);
+        }
+        let limits = wg::Limits::advertised();
         let problems = wg::check_with(recording, &limits);
         if let Some(first) = problems.first() {
             return Err(first.clone());
@@ -189,7 +194,7 @@ impl Compositor {
         };
         // Buffers, from the bytes of the recording.
         for (id, base64) in &recording.buffers {
-            let mut bytes = decode_blob(base64, max_blob_bytes(&self.device))
+            let mut bytes = decode_blob(base64, max_blob_bytes())
                 .map_err(|e| format!("buffer {id}: {e}"))?;
             while bytes.len() < 4 || bytes.len() % 4 != 0 {
                 bytes.push(0);
@@ -365,7 +370,7 @@ impl Compositor {
                             .blobs
                             .get(&w.data)
                             .ok_or("data that is not in the recording")?,
-                        max_blob_bytes(&device),
+                        max_blob_bytes(),
                     )?;
                     if !bytes.is_empty() {
                         let staging =
@@ -735,7 +740,7 @@ impl Compositor {
                         .blobs
                         .get(id)
                         .ok_or("data that is not in the recording")?,
-                    max_blob_bytes(&self.device),
+                    max_blob_bytes(),
                 )?;
                 let want = wg::packed_len(u.width, u.height, texel)?;
                 if bytes.len() != want {
@@ -754,7 +759,7 @@ impl Compositor {
                         .blobs
                         .get(id)
                         .ok_or("pixels that are not in the recording")?,
-                    max_blob_bytes(&self.device),
+                    max_blob_bytes(),
                 )?;
                 let want = wg::packed_len(*width, *height, 4)?;
                 if all.len() != want {
@@ -813,7 +818,7 @@ impl Compositor {
             return Ok(p.clone());
         }
         let (rgba, width, height) = gl::decode_picture(Some(src), None, (0, 0), base_dir)?;
-        let limit = self.device.limits().max_texture_dimension_2d;
+        let limit = wg::Limits::default().max_texture_dimension_2d;
         if width > limit || height > limit {
             return Err(format!(
                 "a {width} x {height} picture; the device holds {limit} across"
@@ -1503,10 +1508,10 @@ fn canvas_format(recording: &WebGpuContent) -> wgpu::TextureFormat {
     }
 }
 
-/// The most data one upload or buffer write may hold: one level of the biggest texture the device allows
+/// The most data one upload or buffer write may hold: one level of the biggest texture a page is told the device allows
 /// (`rgba32float`), which is more than its biggest buffer.
-fn max_blob_bytes(device: &wgpu::Device) -> u64 {
-    let side = u64::from(device.limits().max_texture_dimension_2d);
+fn max_blob_bytes() -> u64 {
+    let side = u64::from(wg::Limits::default().max_texture_dimension_2d);
     side * side * 16
 }
 

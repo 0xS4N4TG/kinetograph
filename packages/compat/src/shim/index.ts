@@ -25,7 +25,7 @@ export { setWorkerHold, setWorkerModuleLoader, whenWorkersIdle, resetWorkers, wo
 export { DEFAULT_SECRET_PARAMS, INDEX_FILE, finishNetRecord, isSecretParam, looksLikeCredential, netFetch, netKey, setNetFrame, setNetStore, type NetConfig } from './net-store.js';
 export { setPathMeasure } from './geometry.js';
 export { animationClockMoved, animationsPending, resetAnimations, setAnimationClock, tickAnimations } from './animations.js';
-export { canvasEnvironment, LayerPicturesNotReady, setLayerPictures, type LayerPictures, rasterizeCanvas, webgpuDeviceInfo, canvasCommandsOf, withCanvasCommands, resetCanvasStates, takeGlReports, glDependsOnHistory, glHoldsTargets, snapshotGlStates, setCanvasFonts, CanvasSurface } from './canvas.js';
+export { canvasEnvironment, LayerPicturesNotReady, setLayerPictures, type LayerPictures, rasterizeCanvas, canvasCommandsOf, withCanvasCommands, resetCanvasStates, takeGlReports, glDependsOnHistory, glHoldsTargets, snapshotGlStates, setCanvasFonts, CanvasSurface } from './canvas.js';
 export type { PathMeasure } from './geometry.js';
 export { imageSizeOfBytes } from './image-size.js';
 export { matches, queryAll, parseSelectorList } from './selector.js';

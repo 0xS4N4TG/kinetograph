@@ -838,9 +838,11 @@ painter reports as unsupported `webgpu` items (a warning, an error under `--stri
 carried on. `pushErrorScope` and `popErrorScope` keep a stack: the innermost `validation` scope keeps the first error raised
 inside it and `popErrorScope` resolves with it as a `GPUValidationError`, or null; the call still throws in a scope, and there
 is no `uncapturederror` event.
-`device.limits` and `adapter.limits` are `webgpu::device_info` of the engine's device (the `webgpuDeviceInfo` function of
-the addon opens the GPU once), `float32-filterable` is requested of the adapter so that 32-bit float textures can be
-filtered where the hardware does, and a `requestDevice` for better limits is refused. A texture is made with
+`device.limits` and `adapter.limits` are the WebGPU default limits and the adapter's features the fixed list `float32-filterable`
+and `timestamp-query`, on every machine (the device the page sees does not depend on the GPU that renders), and a
+`requestDevice` for better limits or other features is refused. `webgpu::validate_with` checks against `Limits::advertised()`
+too, not against the host's device; the replay warns once for a host limit below the default or a host without
+`float32-filterable` (`webgpu::shortfalls`). A texture is made with
 `STORAGE_BINDING` only when the recording has a compute pipeline, a storage texture layout or a `texture_storage_` module,
 and only the usages its format allows. Atomics whose result depends on the order invocations run in are not made
 deterministic by the engine. HyperFrames' runtime

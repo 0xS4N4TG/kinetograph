@@ -51,5 +51,5 @@ pub mod webgpu;
 mod tests;
 
 pub use error::{Error, Result};
-pub use render::{Frame, PendingFrame, Renderer, Timings, render_still, webgpu_device_info};
+pub use render::{Frame, PendingFrame, Renderer, Timings, render_still};
 pub use scene::Scene;
