@@ -58,14 +58,24 @@ describe('the recording WebGL context', () => {
     expect(gl.content().ops).toHaveLength(1);
   });
 
-  it('starts a fresh drawing buffer after resetState, so a frame that draws nothing draws nothing', () => {
+  it('shows its last picture again in a frame that issues no draw or clear, and the frame that draws replaces it', () => {
     const { gl } = setup();
+    expect(gl.drawn).toBe(false);
     gl.drawArrays(GL.TRIANGLES, 0, 3);
     gl.resetState();
-    expect(gl.drawn).toBe(false);
+    // Nothing issued to the canvas: the picture stays, as in a browser.
+    expect(gl.drawn).toBe(true);
+    expect(gl.content().ops).toHaveLength(1);
+    gl.resetState();
+    expect(gl.content().ops).toHaveLength(1);
+    // A draw starts a new drawing buffer.
     gl.drawArrays(GL.TRIANGLES, 0, 3);
     gl.drawArrays(GL.TRIANGLES, 0, 3);
     expect(gl.content().ops).toHaveLength(2);
+    // A resize empties it.
+    gl.resetState();
+    gl.reset();
+    expect(gl.drawn).toBe(false);
   });
 
   it('getParameter(VERTEX_ARRAY_BINDING) is the bound vertex array or null', () => {
@@ -2796,7 +2806,6 @@ describe('the recording WebGL context', () => {
       gl.viewport(0, 0, 8, 4);
       gl.drawArrays(GL.TRIANGLES, 0, 3);
       gl.resetState();
-      expect(gl.drawn).toBe(false);
       drawCanvasWith(gl, program, texture);
       expect(kinds(gl)).toEqual(['draw:target', 'draw']);
     });

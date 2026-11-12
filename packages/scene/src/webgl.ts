@@ -1076,6 +1076,12 @@ export class WebGLContext {
   private carry = emptyCarry();
   /** The next draw or clear starts a fresh drawing buffer. */
   private stale = false;
+  /**
+   * What the canvas shows after the last frame that drew on it: those frame's canvas ops with the resources they name. A frame
+   * in which the page code issues no draw or clear to the canvas shows it again, as a browser does (a page that draws when
+   * its controls change, once at load).
+   */
+  private presented: ({ ops: GlslOp[] } & Resources) | null = null;
   private error: number = GL.NO_ERROR;
 
   private program: WebGLProgram | null = null;
@@ -1150,8 +1156,10 @@ export class WebGLContext {
 
   /** The recording: what the `glsl` layer holds. */
   content(): GlslContent {
-    const known = this.known();
-    const { ops: carried, incomplete } = carriedFor(this.carry.ops, this.carry.lost, this.ops, known);
+    const held = this.held();
+    const frame = held === null ? this.ops : [...held.ops, ...this.ops];
+    const known = this.known(held);
+    const { ops: carried, incomplete } = carriedFor(this.carry.ops, this.carry.lost, frame, known);
     for (const id of incomplete) {
       this.options.report?.(`a render target is drawn into by more than ${MAX_OPS_PER_TARGET} ops that each read what the frames before left (feedback), so its oldest are dropped and it is not what the page drew (${id})`);
     }
@@ -1162,20 +1170,25 @@ export class WebGLContext {
       ...(this.attributes.depth ? {} : { depth: false }),
       ...(this.attributes.stencil ? { stencil: true } : {}),
       ...(this.attributes.antialias ? { antialias: true } : {}),
-      programs: Object.fromEntries(new Map([...pick(named.programs, this.carry.programs), ...this.programs])),
-      buffers: Object.fromEntries(new Map([...pick(named.buffers, this.carry.buffers), ...this.buffers])),
-      textures: Object.fromEntries(new Map([...pick(named.textures, this.carry.textures), ...this.textures])),
-      ops: carried.length === 0 ? this.ops : [...carried, ...this.ops],
+      programs: Object.fromEntries(new Map([...pick(named.programs, this.carry.programs), ...(held?.programs ?? []), ...this.programs])),
+      buffers: Object.fromEntries(new Map([...pick(named.buffers, this.carry.buffers), ...(held?.buffers ?? []), ...this.buffers])),
+      textures: Object.fromEntries(new Map([...pick(named.textures, this.carry.textures), ...(held?.textures ?? []), ...this.textures])),
+      ops: carried.length === 0 ? frame : [...carried, ...frame],
     };
   }
 
   /** What the carried ops and this frame's name, the frame's own entries over the carried ones. */
-  private known(): Resources {
+  private known(held: WebGLContext['presented'] = null): Resources {
     return {
-      programs: new Map([...this.carry.programs, ...this.programs]),
-      buffers: new Map([...this.carry.buffers, ...this.buffers]),
-      textures: new Map([...this.carry.textures, ...this.textures]),
+      programs: new Map([...this.carry.programs, ...(held?.programs ?? []), ...this.programs]),
+      buffers: new Map([...this.carry.buffers, ...(held?.buffers ?? []), ...this.buffers]),
+      textures: new Map([...this.carry.textures, ...(held?.textures ?? []), ...this.textures]),
     };
+  }
+
+  /** The picture the canvas keeps showing: the last one presented, when this frame has issued nothing to the canvas. */
+  private held(): WebGLContext['presented'] {
+    return this.presented !== null && !this.ops.some(isCanvasOp) ? this.presented : null;
   }
 
   /**
@@ -1198,12 +1211,13 @@ export class WebGLContext {
    * and the frame after the frame is the same whether or not the sub-frames were rendered.
    */
   snapshot(): () => void {
-    const { carry, ops, stale } = this;
+    const { carry, ops, stale, presented } = this;
     const [programs, buffers, textures] = [new Map(this.programs), new Map(this.buffers), new Map(this.textures)];
     return () => {
       this.carry = carry;
       this.ops = ops;
       this.stale = stale;
+      this.presented = presented;
       for (const [held, kept] of [[this.programs, programs], [this.buffers, buffers], [this.textures, textures]] as const) {
         held.clear();
         for (const [id, value] of kept as Map<string, unknown>) (held as Map<string, unknown>).set(id, value);
@@ -1213,7 +1227,7 @@ export class WebGLContext {
 
   /** Whether anything was drawn or cleared. */
   get drawn(): boolean {
-    return this.ops.length > 0;
+    return this.ops.length > 0 || this.held() !== null;
   }
 
   /**
@@ -1225,9 +1239,19 @@ export class WebGLContext {
    * frame reads before it overwrites it then depends on the frames before that one (`webgl-carry.ts`).
    */
   resetState(): void {
+    this.keepPicture();
     this.keepTargets();
     this.stale = true;
     this.ops = [];
+  }
+
+  /** Keeps the canvas ops of the frame that ends, if it had any, as the picture the canvas shows from now on. */
+  private keepPicture(): void {
+    const ops = this.ops.filter(isCanvasOp);
+    if (ops.length === 0) return;
+    const known = this.known();
+    const named = namedBy(ops, known.textures);
+    this.presented = { ops, programs: pick(named.programs, known.programs), buffers: pick(named.buffers, known.buffers), textures: pick(named.textures, known.textures) };
   }
 
   /** Carries the render-target ops of the frame that ends, with the programs, buffers and textures they name. */
@@ -1253,6 +1277,7 @@ export class WebGLContext {
   reset(): void {
     // Framebuffer objects, and what was drawn into their textures, outlive a resize.
     this.keepTargets();
+    this.presented = null;
     this.ops = [];
     this.programs.clear();
     this.buffers.clear();
