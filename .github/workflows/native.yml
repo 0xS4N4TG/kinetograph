@@ -191,7 +191,7 @@ jobs:
             Windows) f=onnxruntime-win-x64-$v.zip; sha=3958d8a44984160692c1b4ffd0de3cb48f8c39f9d34bb31e433db06e30b82195; lib=onnxruntime.dll ;;
           esac
           mkdir -p "$RUNNER_TEMP/ort"
-          curl -fsSL -o "$RUNNER_TEMP/$f" "https://github.com/microsoft/onnxruntime/releases/download/v$v/$f"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 20 -o "$RUNNER_TEMP/$f" "https://github.com/microsoft/onnxruntime/releases/download/v$v/$f"
           echo "$sha  $RUNNER_TEMP/$f" | (sha256sum -c - || shasum -a 256 -c -)
           if [ "$RUNNER_OS" = Windows ]; then
             # Windows's own bsdtar reads zip; Git's GNU tar does not, nor a drive-letter path.
@@ -210,7 +210,7 @@ jobs:
         env:
           PKG_CONFIG_PATH: ${{ runner.temp }}/ffmpeg/lib/pkgconfig
         run: |
-          curl -fsSL -o "$RUNNER_TEMP/ben2.onnx" https://huggingface.co/onnx-community/BEN2-ONNX/resolve/c552aa82688edce09f0ac9d2e31ad53d9d629010/onnx/model_fp16.onnx
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 20 -o "$RUNNER_TEMP/ben2.onnx" https://huggingface.co/onnx-community/BEN2-ONNX/resolve/c552aa82688edce09f0ac9d2e31ad53d9d629010/onnx/model_fp16.onnx
           echo "dfdc25f421f32a0d1268e0f2ff2153d340e8f1d52d3dd16f5dc33c1ce85cedf1  $RUNNER_TEMP/ben2.onnx" | (sha256sum -c - || shasum -a 256 -c -)
           KINETOGRAPH_BEN2="$RUNNER_TEMP/ben2.onnx" cargo test --release --target ${{ matrix.target }} -p kinetograph-matte --features kinetograph-matte/ffmpeg-static --test person ben2_holds_the_man -- --nocapture
 
@@ -222,7 +222,7 @@ jobs:
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
         run: |
           $model = Join-Path $env:RUNNER_TEMP 'ben2.onnx'
-          curl.exe -fsSL -o $model https://huggingface.co/onnx-community/BEN2-ONNX/resolve/c552aa82688edce09f0ac9d2e31ad53d9d629010/onnx/model_fp16.onnx
+          curl.exe -fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 20 -o $model https://huggingface.co/onnx-community/BEN2-ONNX/resolve/c552aa82688edce09f0ac9d2e31ad53d9d629010/onnx/model_fp16.onnx
           if ((Get-FileHash $model -Algorithm SHA256).Hash.ToLower() -ne 'dfdc25f421f32a0d1268e0f2ff2153d340e8f1d52d3dd16f5dc33c1ce85cedf1') { throw 'BEN2 SHA-256 mismatch' }
           $env:KINETOGRAPH_BEN2 = $model
           cargo test --release --target ${{ matrix.target }} -p kinetograph-matte --features kinetograph-matte/ffmpeg-static --test person ben2_holds_the_man -- --nocapture

@@ -65,7 +65,7 @@ npx kinetograph render html/index.html --strict
 ## Video and audio
 
 - `<Audio>` and `<Video>` from `@remotion/media` work. `toneFrequency` (0.01 to 2) changes pitch, not length.
-- `@remotion/media-utils` works. `visualizeAudio` follows Remotion's documented behaviour, but its numbers are not identical.
+- `@remotion/media-utils` works. `visualizeAudio`, `useWindowedAudioData` and `getVideoMetadata` give the values of Remotion 4.0.542.
 - `onVideoFrame` on `<Video>`, `<OffthreadVideo>` and `<Html5Video>` hands you the frame as a canvas image source: `ctx.drawImage(frame, ...)` and `getImageData`. The frame is not a WebCodecs `VideoFrame`: it has `width`, `height`, `timestamp` and `close()` only. A canvas you draw on starts each frame empty. A video with no named colour space converts differently from Chrome.
 - `<Video datamosh>` is Kinetograph's own prop: see [Datamosh](/docs/making-videos/datamosh/).
 - `@remotion/media-parser` and `@remotion/webcodecs` work in part: the `@remotion/webcodecs` encode and decode functions, and the box tree and sample callbacks of `@remotion/media-parser`, throw `UnsupportedApiError`. Normal `<Video>` and `<Audio>` are not affected.
@@ -73,7 +73,7 @@ npx kinetograph render html/index.html --strict
 
 ## CSS and SVG
 
-- `import './index.css'`, local `@import`s, Tailwind (built with your project's setup) and `*.module.css` work. `staticFile` reads `public/` next to the entry, else next to the nearest `package.json`.
+- `import './index.css'`, local `@import`s, a remote `@import` of a stylesheet (Google Fonts) that `fetch-deps` downloaded, Tailwind (built with your project's setup) and `*.module.css` work. `staticFile` reads `public/` next to the entry, else next to the nearest `package.json`.
 - Linear, radial and conic gradients (repeating too) interpolate in any colour space: `in oklch`, `oklab`, `srgb-linear`, `hsl`, `hwb`, `lch`, `lab`, `xyz`, `display-p3`, with `shorter`, `longer`, `increasing` and `decreasing hue`. Each span is drawn as 64 sRGB stops; against Chrome the mean error is about 0.3 ΔE and the worst pixel under 3.5. A white or grey stop in a polar space takes its neighbour's hue (CSS Color 4), where Chrome picks an arbitrary hue.
 - `filter: blur()`, `drop-shadow()` and `backdrop-filter` take any radius; past 532 px they are drawn 532 px wide, as in Chrome. `backdrop-filter: blur()` reads only the backdrop inside the element's border box. The same filter functions work inside `<svg>`, next to `filter: url(#id)`.
 - `transform-style: preserve-3d` planes that cross intersect, and are flattened where a browser flattens them (`opacity` below 1, `filter`, `clip-path`, `mask-image`, `mix-blend-mode`, non-visible `overflow`).

@@ -7,7 +7,8 @@ import { dirname, relative } from 'node:path';
 import type { UnsupportedImport } from '../bundle.js';
 import { effectsReport } from '../effects.js';
 import { CliError } from '../errors.js';
-import { native } from '../native.js';
+import { describeFailure, hintFor, probeInstall, relevantEnv, type ProbeResult } from '../doctor-probe.js';
+import { native, nativeEntry, nativeIsStub } from '../native.js';
 import { formatUpdateReport, updateReport } from '../update-notice.js';
 import { frameRange, type Source } from '../source.js';
 import { cliVersion } from '../version.js';
@@ -102,9 +103,9 @@ export function formatImports(imports: readonly UnsupportedImport[]): string {
   return lines.join('\n');
 }
 
-/** `doctor` with no entry: what this install can do. */
-async function installReport(): Promise<{ data: object; text: string }> {
-  let addon: { loaded: true; version: string } | { loaded: false; error: string };
+/** The addon and the renderer, in this process (a test's stand-in addon cannot be loaded by another one). */
+function probeHere(): ProbeResult {
+  let addon: ProbeResult['addon'];
   try {
     addon = { loaded: true, version: native().version() };
   } catch (error) {
@@ -122,17 +123,45 @@ async function installReport(): Promise<{ data: object; text: string }> {
       // No renderer could start (no GPU and no CPU fallback): said below.
     }
   }
+  return { addon, renderer, rendererReason };
+}
+
+/**
+ * The addon and the renderer, in a child process: a driver that kills the process while the GPU opens leaves an exit
+ * code to report instead of a silent death. Each stage is announced before it starts.
+ */
+async function probeApart(progress: Context['progress']): Promise<ProbeResult> {
+  let entry: string;
+  try {
+    entry = nativeEntry();
+  } catch (error) {
+    return { addon: { loaded: false, error: `cannot load @kinetographdev/native: ${error instanceof Error ? error.message : String(error)}` }, renderer: null, rendererReason: null };
+  }
+  return await probeInstall(entry, (stage) =>
+    progress(stage === 'addon' ? 'checking: loading the native addon ...' : 'checking: starting the renderer (opens the GPU, can take a few seconds) ...'),
+  );
+}
+
+/** `doctor` with no entry: what this install can do. */
+async function installReport(context: Context): Promise<{ data: object; text: string; exitCode?: number }> {
+  const { addon, renderer, rendererReason, failure } = nativeIsStub() ? probeHere() : await probeApart(context.progress);
   const updates = await updateReport(cliVersion());
-  const data = { node: process.version, platform: `${process.platform}-${process.arch}`, addon, renderer, rendererReason, ...updates };
+  const env = relevantEnv();
+  const data = {
+    node: process.version, platform: `${process.platform}-${process.arch}`, addon, renderer, rendererReason,
+    ...(failure ? { failure: failure.kind === 'error' ? failure : { ...failure, hint: hintFor(failure) } } : {}), ...(env.length > 0 ? { env } : {}), ...updates,
+  };
   const text = [
     `node ${data.node} on ${data.platform}`,
+    ...(env.length > 0 ? [`environment: ${env.join(' ')}`] : []),
     addon.loaded ? `addon: loaded, version ${addon.version}` : `addon: NOT loaded: ${addon.error}`,
     addon.loaded ? `renderer: ${renderer ?? 'could not start'}` : 'renderer: unknown (no addon)',
     ...(rendererReason === null ? [] : [`why not the GPU: ${rendererReason}`]),
+    ...(failure === undefined ? [] : describeFailure(failure)),
     ...formatUpdateReport(updates),
     'kinetograph doctor <entry> reports what a project holds that the engine cannot draw',
   ].join('\n');
-  return { data, text };
+  return { data, text, ...(failure && failure.kind !== 'error' ? { exitCode: 1 } : {}) };
 }
 
 export const doctor: Command = {
@@ -146,7 +175,7 @@ export const doctor: Command = {
       for (const name of ['comp', 'props', 'range']) {
         if (args.options[name] !== undefined) throw new CliError('INVALID_ARG', `--${name} needs an <entry>`);
       }
-      return await installReport();
+      return await installReport(context);
     }
 
     // An import of an unsupported package would fail the bundle: it is listed instead, and the rest is checked.
