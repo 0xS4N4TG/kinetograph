@@ -36,8 +36,8 @@ fn size_of(script: &str) -> (u32, u32) {
     (numbers.next().unwrap(), numbers.next().unwrap())
 }
 
-/// The mean and largest difference from Chrome (`None` without Chrome).
-fn run(name: &str, mean_limit: f64) -> Option<(f64, u8)> {
+/// The page of a case: its canvas with the recording, and the calls that made it.
+fn body_of(name: &str) -> (String, u32, u32) {
     let script = case_file(name, "js");
     let recording = case_file(name, "json");
     let (w, h) = size_of(&script);
@@ -60,6 +60,12 @@ fn run(name: &str, mean_limit: f64) -> Option<(f64, u8)> {
          </script>",
         recording.trim()
     );
+    (body, w, h)
+}
+
+/// The mean and largest difference from Chrome (`None` without Chrome).
+fn run(name: &str, mean_limit: f64) -> Option<(f64, u8)> {
+    let (body, w, h) = body_of(name);
     let (out, frame, diff) = compare(name, &body, w, h);
     assert!(
         out.unsupported.is_empty(),
@@ -336,5 +342,38 @@ fn the_committed_recordings_parse_as_the_scene_format_does() {
         });
         kinetograph_core::Scene::from_json(&scene.to_string(), Default::default())
             .unwrap_or_else(|e| panic!("{name}: {e}"));
+    }
+}
+
+/// A frame is a pure function of its recording, whatever this thread drew before it: pairs of cases, one after the other
+/// in a thread and the other way round in another, give the same bytes (the ANGLE context is one for each thread and keeps
+/// its programs and enabled extensions).
+#[test]
+fn a_frame_does_not_depend_on_what_the_thread_drew_before() {
+    let render = |names: Vec<&'static str>| {
+        std::thread::spawn(move || {
+            names
+                .into_iter()
+                .map(|n| {
+                    let (body, w, h) = body_of(n);
+                    (n, paintkit::render_body(&body, w, h).1.rgba)
+                })
+                .collect::<Vec<_>>()
+        })
+        .join()
+        .unwrap()
+    };
+    for (a, b) in [
+        ("webgl2_float_linear", "webgl_texture"),
+        ("webgl2_float_blend", "webgl2_msaa_resolve"),
+        ("webgl2_float_mipmap", "webgl_gradient"),
+        ("webgl2_depth_texture", "webgl2_float_linear"),
+    ] {
+        let ab = render(vec![a, b, a]);
+        let ba = render(vec![b, a, b]);
+        assert_eq!(ab[0].1, ab[2].1, "{a} after {b} differs from {a} first");
+        assert_eq!(ba[0].1, ba[2].1, "{b} after {a} differs from {b} first");
+        assert_eq!(ab[0].1, ba[1].1, "{a}: order of the thread's frames matters");
+        assert_eq!(ab[1].1, ba[0].1, "{b}: order of the thread's frames matters");
     }
 }
