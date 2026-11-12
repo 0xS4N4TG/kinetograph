@@ -37,8 +37,31 @@ const MAX_PROGRAMS: usize = 256;
 
 thread_local! {
     /// A program that failed to compile or link is kept as its error, so it is not tried again on every frame.
+    static CACHES: std::cell::RefCell<HashMap<angle::Extensions, Cache>> = std::cell::RefCell::new(HashMap::new());
     static PROGRAMS: std::cell::RefCell<HashMap<ProgramKey, R<Program>>> = std::cell::RefCell::new(HashMap::new());
 }
+
+/// What a context keeps from frame to frame: the buffers and the uploaded textures by what they are made from (the same key
+/// the hand-written replay uses: the recording's id, the upload flags, and the stamp of the picture files), with an
+/// estimate of the bytes of each, and the textures whose green and blue read red. Objects the frame makes (targets,
+/// framebuffers, samplers) are not kept.
+#[derive(Default)]
+struct Cache {
+    buffers: HashMap<String, (u32, usize)>,
+    textures: HashMap<String, (Handle, usize)>,
+    swizzled: std::collections::HashSet<u32>,
+}
+
+impl Cache {
+    fn bytes(&self) -> usize {
+        self.buffers.values().map(|b| b.1).sum::<usize>()
+            + self.textures.values().map(|t| t.1).sum::<usize>()
+    }
+}
+
+/// The most a context keeps (bytes, as estimated) before it starts over, and the most objects.
+const MAX_CACHE_BYTES: usize = 512 << 20;
+const MAX_CACHE_OBJECTS: usize = 512;
 
 /// A texture or renderbuffer of the recording, or one face or layer of one: the GL name, whether it is a
 /// renderbuffer, the depth or stencil format of a target, the texture target, and the face or layer.
@@ -176,8 +199,8 @@ struct Replay<'a> {
     zeroed: std::collections::HashSet<u32>,
     /// The generic attributes a draw gave a current value, to put back before the next draw.
     const_attrs: u32,
-    /// The textures whose green and blue read red (`luminance`).
-    swizzled: std::collections::HashSet<u32>,
+    /// The GL names of the textures and buffers of the context's cache this frame uses: they are not deleted with the frame.
+    kept: std::collections::HashSet<u32>,
     framebuffers: Vec<u32>,
     vao: u32,
     canvas: Canvas,
@@ -240,6 +263,27 @@ fn run(
             });
         }
     });
+    // The kept buffers and textures start over when they have grown past their bound.
+    CACHES.with(|caches| {
+        let mut caches = caches.borrow_mut();
+        let Some(cache) = caches.get_mut(&ext) else {
+            return;
+        };
+        if cache.bytes() > MAX_CACHE_BYTES
+            || cache.buffers.len() + cache.textures.len() > MAX_CACHE_OBJECTS
+        {
+            for (name, _) in cache.buffers.values() {
+                gl_.delete_buffer(*name);
+            }
+            let mut names: Vec<u32> = cache.textures.values().map(|(h, _)| h.name).collect();
+            names.sort_unstable();
+            names.dedup();
+            for name in names {
+                gl_.delete_texture(name);
+            }
+            *cache = Cache::default();
+        }
+    });
     gl_.pixel_storei(0xCF5, 1); // UNPACK_ALIGNMENT
     gl_.enable(0x92E0); // DEBUG_OUTPUT: the log names the rule a failed call broke
     let mut replay = Replay {
@@ -265,7 +309,7 @@ fn run(
         zeroed: std::collections::HashSet::new(),
         // A frame starts with every current attribute value at the default, as a context just made has them.
         const_attrs: u32::MAX,
-        swizzled: std::collections::HashSet::new(),
+        kept: std::collections::HashSet::new(),
         framebuffers: Vec::new(),
         vao: gl_.gen_vertex_array(),
         canvas: Canvas {
@@ -452,15 +496,13 @@ impl<'a> Replay<'a> {
     fn release(&mut self) {
         let gl_ = self.gl;
         gl_.bind_framebuffer(gl::FRAMEBUFFER, 0);
-        for b in self.buffers.values() {
-            gl_.delete_buffer(*b);
-        }
         // A face or a layer shares its texture's name: each name once.
         let mut names: Vec<(u32, bool)> = self
             .textures
             .values()
             .map(|t| (t.name, t.renderbuffer))
             .collect();
+        names.retain(|(name, renderbuffer)| *renderbuffer || !self.kept.contains(name));
         names.sort_unstable();
         names.dedup();
         for (name, renderbuffer) in names {
@@ -497,12 +539,32 @@ impl<'a> Replay<'a> {
             .buffers
             .get(id)
             .ok_or_else(|| format!("no buffer {id}"))?;
+        // The id is a hash of the bytes; the length of the text guards against a recording that reuses one.
+        let key = format!("{id}|{}", b64.len());
+        let ext = self.ext;
+        if let Some((name, _)) = CACHES.with(|c| {
+            c.borrow()
+                .get(&ext)
+                .and_then(|c| c.buffers.get(&key).copied())
+        }) {
+            self.kept.insert(name);
+            self.buffers.insert(id, name);
+            return Ok(name);
+        }
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(b64)
             .map_err(|e| format!("buffer {id}: {e}"))?;
         let name = self.gl.gen_buffer();
         self.gl.bind_buffer(gl::ARRAY_BUFFER, name);
         self.gl.buffer_data(gl::ARRAY_BUFFER, &bytes);
+        CACHES.with(|c| {
+            c.borrow_mut()
+                .entry(ext)
+                .or_default()
+                .buffers
+                .insert(key, (name, bytes.len()));
+        });
+        self.kept.insert(name);
         self.buffers.insert(id, name);
         Ok(name)
     }
@@ -530,10 +592,67 @@ impl<'a> Replay<'a> {
                 .textures
                 .get(id)
                 .ok_or_else(|| format!("no texture {id}"))?;
-            self.make_texture(spec)?
+            // A texture uploaded from the recording is kept by what it is made from; a render target is the frame's.
+            let key = (!spec.target && spec.targets.is_empty() && spec.layer.is_none())
+                .then(|| self.texture_key(id, spec));
+            let ext = self.ext;
+            let cached = key.as_ref().and_then(|k| {
+                CACHES.with(|c| {
+                    c.borrow()
+                        .get(&ext)
+                        .and_then(|c| c.textures.get(k).map(|t| t.0))
+                })
+            });
+            match (cached, key) {
+                (Some(handle), _) => {
+                    self.kept.insert(handle.name);
+                    handle
+                }
+                (None, Some(key)) => {
+                    let handle = self.make_texture(spec)?;
+                    let bytes = (spec.width as usize
+                        * spec.height as usize
+                        * (spec.depth as usize).max(1)
+                        * 16)
+                        .max(4);
+                    CACHES.with(|c| {
+                        c.borrow_mut()
+                            .entry(ext)
+                            .or_default()
+                            .textures
+                            .insert(key, (handle, bytes))
+                    });
+                    self.kept.insert(handle.name);
+                    handle
+                }
+                (None, None) => self.make_texture(spec)?,
+            }
         };
         self.textures.insert(id, handle);
         Ok(handle)
+    }
+
+    /// The key a kept texture goes by: its id, the flags it was uploaded with, and the stamp of each picture file (a
+    /// file that changes on disk is a new texture), as the hand-written replay keys it.
+    fn texture_key(&self, id: &str, t: &GlslTexture) -> String {
+        let stamp = |src: Option<&str>| {
+            src.filter(|s| !s.starts_with("data:"))
+                .map(|s| file_stamp(&self.base_dir.join(s)))
+                .unwrap_or_default()
+        };
+        let mut stamps = stamp(t.src.as_deref());
+        for patch in &t.patches {
+            stamps.push('|');
+            stamps.push_str(&stamp(patch.src.as_deref()));
+        }
+        for face in &t.faces {
+            stamps.push('|');
+            stamps.push_str(&stamp(face.src.as_deref()));
+        }
+        format!(
+            "{id}|{}|{}|{}|{}|{stamps}",
+            t.flip_y, t.premultiply, t.mipmaps, t.srgb
+        )
     }
 
     /// The internal format of a render target's spec.
@@ -1116,7 +1235,12 @@ impl<'a> Replay<'a> {
                 .textures
                 .get(s.texture.as_str())
                 .is_some_and(|t| t.luminance);
-            if luminance != self.swizzled.contains(&h.name) {
+            let was = CACHES.with(|c| {
+                c.borrow()
+                    .get(&self.ext)
+                    .is_some_and(|c| c.swizzled.contains(&h.name))
+            });
+            if luminance != was {
                 let (green, blue) = if luminance {
                     (gl::RED, gl::RED)
                 } else {
@@ -1124,11 +1248,15 @@ impl<'a> Replay<'a> {
                 };
                 gl_.tex_parameteri(h.target, gl::TEXTURE_SWIZZLE_G, green as i32);
                 gl_.tex_parameteri(h.target, gl::TEXTURE_SWIZZLE_B, blue as i32);
-                if luminance {
-                    self.swizzled.insert(h.name);
-                } else {
-                    self.swizzled.remove(&h.name);
-                }
+                CACHES.with(|c| {
+                    let mut caches = c.borrow_mut();
+                    let swizzled = &mut caches.entry(self.ext).or_default().swizzled;
+                    if luminance {
+                        swizzled.insert(h.name);
+                    } else {
+                        swizzled.remove(&h.name);
+                    }
+                });
             }
             // The texture keeps what an earlier draw set: no `maxLevel` is the GL default, 1000.
             gl_.tex_parameteri(
@@ -1584,4 +1712,18 @@ mod tests {
         assert_eq!(uniform_kind(0x8DC2), None);
         assert_eq!(uniform_kind(0x1400), None);
     }
+}
+
+/// The size and modification time of a file, for the key of a texture made from it; empty when it cannot be read.
+fn file_stamp(path: &Path) -> String {
+    std::fs::metadata(path)
+        .map(|m| {
+            let t = m
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_nanos());
+            format!("{}:{t}", m.len())
+        })
+        .unwrap_or_default()
 }

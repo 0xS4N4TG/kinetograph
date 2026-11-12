@@ -31,6 +31,11 @@ fn attributes_of(script: &str) -> String {
 /// driver or ANGLE update that moves a rounding.
 const ANGLE_GOLDEN_TOLERANCE: u8 = 3;
 
+/// `ANGLE_GOLDEN_TOLERANCE=0` asks for the same bytes, to show a change leaves the pictures as they were.
+fn golden_tolerance() -> u8 {
+    std::env::var("ANGLE_GOLDEN_TOLERANCE").ok().and_then(|v| v.parse().ok()).unwrap_or(ANGLE_GOLDEN_TOLERANCE)
+}
+
 fn check_angle_golden(name: &str, frame: &kinetograph_core::Frame) {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join(format!("tests/golden/angle/{name}.png"));
@@ -59,9 +64,10 @@ fn check_angle_golden(name: &str, frame: &kinetograph_core::Frame) {
         .max()
         .unwrap_or(0);
     assert!(
-        worst <= ANGLE_GOLDEN_TOLERANCE,
-        "{name}: a channel differs from {} by {worst} (the tolerance is {ANGLE_GOLDEN_TOLERANCE})",
-        path.display()
+        worst <= golden_tolerance(),
+        "{name}: a channel differs from {} by {worst} (the tolerance is {})",
+        path.display(),
+        golden_tolerance()
     );
 }
 
