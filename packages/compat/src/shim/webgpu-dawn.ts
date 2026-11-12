@@ -301,6 +301,11 @@ export class DawnCanvasContext {
     return this.picture !== null;
   }
 
+  /** The page drew this frame and the read-back that makes its pixels has not run yet. */
+  get readPending(): boolean {
+    return this.drawnThisFrame && this.picture === null;
+  }
+
   configure(configuration: Any): void {
     const { device } = configuration ?? {};
     if (!devices.has(device)) throw new TypeError("configure: 'device' is not a GPUDevice");
@@ -438,6 +443,31 @@ export async function flushDawnCanvases(): Promise<void> {
     if (context === undefined) contexts.delete(ref);
     else await context.flush();
   }
+}
+
+/**
+ * What `drawImage` of a Dawn canvas names: its read-back, which is made after the page's scripts of the frame ran, so the source is
+ * written when the tree is read (`toJSON`), with the picture the read-back left.
+ */
+export function dawnPictureSource(context: DawnCanvasContext, width: number, height: number): CanvasSource {
+  return {
+    kind: 'stored', key: '', version: 0,
+    toJSON: () => {
+      if (context.picture !== null) return context.picture.source;
+      if (context.readPending) throw new Error(READ_PENDING);
+      return { kind: 'canvas', width, height, commands: [] };
+    },
+  } as CanvasSource;
+}
+
+const READ_PENDING = "a WebGPU canvas is read back after the scripts of a frame ran, so its pixels cannot be read in the frame they are drawn in (toDataURL, toBlob, getImageData of a canvas it was drawn on); drawImage of it is drawn from the read-back, and its pixels can be read in a later callback of the frame";
+
+/** The commands that make a Dawn canvas's pixels, for `toDataURL` and `toBlob`: what the frame's read-back left. */
+export function dawnReadCommands(context: DawnCanvasContext): CanvasCommand[] {
+  const commands = dawnCommandsOf(context);
+  if (commands !== null) return commands;
+  if (context.readPending) throw new Error(READ_PENDING);
+  return [];
 }
 
 /** The canvas's picture as the one command the painter draws a 2D canvas's pixels with, or null when it drew nothing. */

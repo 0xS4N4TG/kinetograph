@@ -1,0 +1,17 @@
+<!doctype html><html><head><style>body{margin:0;background:#000}canvas{position:absolute;top:0}</style></head>
+<body><div id="kg-root" data-composition-id="main" data-width="64" data-height="32" data-duration="3" style="position:relative;width:64px;height:32px;overflow:hidden">
+<canvas id="gpu" width="16" height="16" style="left:0;width:16px;height:16px"></canvas>
+<canvas id="flat" width="16" height="16" style="left:32px;width:16px;height:16px"></canvas>
+<script type="module">
+// A WebGPU canvas drawn orange, then drawn into a 2D canvas with drawImage: the 2D canvas shows the WebGPU canvas's pixels.
+const adapter = await navigator.gpu.requestAdapter();
+const device = await adapter.requestDevice();
+const context = document.getElementById('gpu').getContext('webgpu');
+context.configure({ device, format: 'bgra8unorm', alphaMode: 'opaque' });
+const encoder = device.createCommandEncoder();
+encoder.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 1, g: 0.5, b: 0, a: 1 } }] }).end();
+device.queue.submit([encoder.finish()]);
+document.getElementById('flat').getContext('2d').drawImage(document.getElementById('gpu'), 0, 0);
+// The pixels of the canvas the page is still drawing cannot be read yet: said so, not an empty picture.
+try { document.getElementById('gpu').toDataURL(); } catch (e) { window.refused = String(e.message); }
+</script></div></body></html>

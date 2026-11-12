@@ -23,7 +23,7 @@ import {
 import { addonFunction, hasAddonFunction } from '../addon.js';
 import { getDomEnvironment } from '../environment.js';
 import type { HostElement } from './host.js';
-import { DawnCanvasContext, dawnCommandsOf, dawnDependsOnHistory, dawnRequested, takeDawnReports } from './webgpu-dawn.js';
+import { DawnCanvasContext, dawnCommandsOf, dawnDependsOnHistory, dawnPictureSource, dawnReadCommands, dawnRequested, takeDawnReports } from './webgpu-dawn.js';
 
 export { CANVAS_SOURCE, CanvasContext2D, WebGLContext };
 
@@ -336,15 +336,17 @@ export function withCanvasCommands(host: HostElement, props: Record<string, any>
 
 /** What `drawImage` and `createPattern` read from the canvas on `host`: the commands so far, in its bitmap's size. */
 export function canvasPictureOf(host: object, size: { width: number; height: number }): CanvasPicture | null {
+  const dawn = glContexts.get(host);
+  if (dawn instanceof DawnCanvasContext) return size.width > 0 && size.height > 0 ? { source: dawnPictureSource(dawn, size.width, size.height), ...size } : null;
   if (glContexts.has(host)) throw new WebGLUnsupportedError('drawing or sampling a WebGL canvas as a picture; draw into the shader\'s own canvas');
   if (!(size.width > 0 && size.height > 0)) return null;
   const context = contexts.get(host);
   return { source: context?.pictureSource(size.width, size.height) ?? { kind: 'canvas', width: size.width, height: size.height, commands: [] }, width: size.width, height: size.height };
 }
 
-/** Throws when the canvas on `host` has a WebGL context: its pixels are the GPU's, so it cannot be read back or drawn as a picture. */
+/** Throws when the canvas on `host` has a WebGL context (a WebGPU one of Dawn's is read back): its pixels are the GPU's, so it cannot be read back or drawn as a picture. */
 export function refuseGlPicture(host: object): void {
-  if (glContexts.has(host)) throw new WebGLUnsupportedError('reading or drawing a WebGL canvas as a picture (toDataURL, toBlob, drawImage)');
+  if (glContexts.has(host) && !(glContexts.get(host) instanceof DawnCanvasContext)) throw new WebGLUnsupportedError('reading or drawing a WebGL canvas as a picture (toDataURL, toBlob, drawImage)');
 }
 
 /** Resets the context of the canvas on `host` (its `width` or `height` was set), which empties it. */
@@ -354,6 +356,12 @@ export function resetCanvasOf(host: object): void {
 }
 
 // ---- canvases outside the tree ----
+
+/** The commands that make the pixels of the canvas on `host`: its own, or the read-back of a Dawn canvas. */
+export function canvasReadCommandsOf(host: object): CanvasCommand[] {
+  const dawn = glContexts.get(host);
+  return dawn instanceof DawnCanvasContext ? dawnReadCommands(dawn) : canvasCommandsOf(host) ?? [];
+}
 
 /** The PNG of the commands, as a `data:` URL. */
 function pngDataUrl(commands: CanvasCommand[], size: { width: number; height: number }): string {
@@ -403,20 +411,26 @@ export class CanvasSurface {
     return contextFor(this.store, this.glStore, this, type, () => ({ width: this.widthValue, height: this.heightValue }), this, attributes);
   }
   private refuseGl(): void {
-    if (this.glStore.has(this)) throw new WebGLUnsupportedError('reading or drawing a WebGL canvas as a picture (toDataURL, toBlob, drawImage)');
+    if (this.glStore.has(this) && !(this.glStore.get(this) instanceof DawnCanvasContext)) throw new WebGLUnsupportedError('reading or drawing a WebGL canvas as a picture (toDataURL, toBlob, drawImage)');
+  }
+  private readCommands(): CanvasCommand[] {
+    const dawn = this.glStore.get(this);
+    return dawn instanceof DawnCanvasContext ? dawnReadCommands(dawn) : this.context?.commands ?? [];
   }
   toDataURL(): string {
     this.refuseGl();
-    return canvasToDataUrl(this.context?.commands ?? [], { width: this.widthValue, height: this.heightValue });
+    return canvasToDataUrl(this.readCommands(), { width: this.widthValue, height: this.heightValue });
   }
   toBlob(callback: (blob: Blob | null) => void): void {
     this.refuseGl();
-    callback(canvasToBlob(this.context?.commands ?? [], { width: this.widthValue, height: this.heightValue }));
+    callback(canvasToBlob(this.readCommands(), { width: this.widthValue, height: this.heightValue }));
   }
   [CANVAS_SOURCE](): CanvasPicture | null {
     this.refuseGl();
     const size = { width: this.widthValue, height: this.heightValue };
     if (!(size.width > 0 && size.height > 0)) return null;
+    const dawn = this.glStore.get(this);
+    if (dawn instanceof DawnCanvasContext) return { source: dawnPictureSource(dawn, size.width, size.height), ...size };
     return { source: this.context?.pictureSource(size.width, size.height) ?? { kind: 'canvas', ...size, commands: [] }, ...size };
   }
 }
