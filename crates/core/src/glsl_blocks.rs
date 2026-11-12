@@ -7,6 +7,10 @@
 //! has no struct of its own, which naga could not hold for a `mat2`: `b.member` is read as the global
 //! `_k_bi<n>_member` (`instance_member`). The carrier is bound at
 //! `BLOCK_BINDING + slot`, the slot being the block's index in the program (GL's block index).
+//!
+//! A block whose members all lay out alike in std140 and in naga (`native`: floats, ints, vectors, matrices of 16-byte
+//! columns, and arrays of 16-byte elements) is handed to naga as it is, with no copy: the loader's per-invocation copy
+//! of a 64 KB block is 4096 `vec4` loads in each vertex and fragment invocation.
 
 use serde::Deserialize;
 
@@ -70,7 +74,38 @@ impl UsedBlock {
     }
 }
 
+/// Whether a type has the same layout in a std140 block and in the uniform buffer naga lays out: its scalars and
+/// vectors align alike, and a matrix is columns of 16 bytes (`mat2`, `mat3x2` and `mat4x2` have columns of 8 in WGSL;
+/// a boolean is not host-shareable).
+fn same_layout(ty: &str) -> bool {
+    let vector = ["", "i", "u"].iter().any(|prefix| {
+        ty.strip_prefix(prefix)
+            .and_then(|t| t.strip_prefix("vec"))
+            .is_some_and(|n| matches!(n, "2" | "3" | "4"))
+    });
+    let scalar = matches!(ty, "float" | "int" | "uint");
+    let matrix = ty.strip_prefix("mat").is_some_and(|shape| {
+        matches!(shape, "3" | "4" | "2x3" | "2x4" | "3x3" | "3x4" | "4x3" | "4x4")
+    });
+    vector || scalar || matrix
+}
+
+/// An array's elements are 16 bytes apart in std140; in naga they are as far apart as the element is wide.
+fn element_is_16_aligned(ty: &str) -> bool {
+    !matches!(ty, "float" | "int" | "uint" | "vec2" | "ivec2" | "uvec2")
+}
+
 impl GlslBlock {
+    /// Whether naga can hold the block as declared (see the module comment): no struct, no `bool`, no `mat2`, and
+    /// arrays only of elements that are 16 bytes apart in both.
+    pub fn native(&self) -> bool {
+        self.members.iter().all(|m| {
+            m.fields.is_none()
+                && same_layout(&m.ty)
+                && (m.length.is_none() || element_is_16_aligned(&m.ty))
+        })
+    }
+
     /// The bytes of the carrier: the block's size rounded up to a `uvec4`.
     pub fn carrier_size(&self) -> u32 {
         self.size.div_ceil(16).max(1) * 16
@@ -80,6 +115,20 @@ impl GlslBlock {
 /// The declarations that stand for `block`: its carrier and the private variables of the members.
 pub fn prelude(block: &GlslBlock, used: &UsedBlock) -> String {
     let slot = used.slot;
+    if block.native() {
+        let members: String = block
+            .members
+            .iter()
+            .map(|m| {
+                let array = m.length.map(|n| format!("[{n}]")).unwrap_or_default();
+                format!("{} {}{array}; ", m.ty, used.global(&m.name))
+            })
+            .collect();
+        return format!(
+            "layout(set=0, binding={}) uniform _KB{slot} {{ {members}}}; ",
+            BLOCK_BINDING + slot as u32
+        );
+    }
     let mut text = format!(
         "layout(set=0, binding={}) uniform _KB{slot} {{ uvec4 _k_ub{slot}[{}]; }}; \
          uint _k_w{slot}(int o) {{ return _k_ub{slot}[o / 16][(o % 16) / 4]; }} ",
@@ -96,6 +145,9 @@ pub fn prelude(block: &GlslBlock, used: &UsedBlock) -> String {
 /// The statements of `main` that fill the block's variables from the carrier.
 pub fn loader(block: &GlslBlock, used: &UsedBlock) -> std::result::Result<String, String> {
     let mut out = String::new();
+    if block.native() {
+        return Ok(out);
+    }
     for m in &block.members {
         assign(used.slot, m, &used.global(&m.name), "0", 0, &mut out)
             .map_err(|e| format!("the uniform block `{}`: {e}", block.name))?;

@@ -4344,6 +4344,48 @@ mod tests {
     }
 
     #[test]
+    fn a_block_of_types_that_lay_out_alike_is_held_by_naga_and_not_copied_in_every_invocation() {
+        let mut lights = array(member("lights", "vec4", 16), 4096, 16);
+        lights.stride = Some(16);
+        let b = block("B", 16 + 4096 * 16, vec![member("count", "float", 0), lights]);
+        assert!(b.native());
+        let used = UsedBlock { slot: 0, instance: None };
+        assert_eq!(glsl_blocks::loader(&b, &used).unwrap(), "");
+        let prelude = glsl_blocks::prelude(&b, &used);
+        assert!(prelude.contains("uniform _KB0 { float count; vec4 lights[4096]; };") && !prelude.contains("_k_ub0"), "{prelude}");
+        // A shader that reads it translates, with the block in the fragment shader's module and no loop over the block.
+        let t = translate(&with_blocks(
+            &format!("{QUAD_ES3}void main() {{ gl_Position = vec4(a_pos, 0.0, 1.0); }}"),
+            "#version 300 es\nprecision highp float; out vec4 o;\nlayout(std140) uniform B { float count; vec4 lights[4096]; };\n\
+             void main() { o = lights[int(count)]; }",
+            vec![b.clone()],
+        ))
+        .unwrap();
+        let module = &t.fragment.module;
+        let held = module
+            .global_variables
+            .iter()
+            .find(|(_, gv)| gv.binding.as_ref().is_some_and(|b| b.binding == BLOCK_BINDING))
+            .map(|(_, gv)| &module.types[gv.ty].inner);
+        let Some(naga::TypeInner::Struct { span, members }) = held else { panic!("no block at the block binding: {held:?}") };
+        assert_eq!(*span, 16 + 4096 * 16);
+        assert_eq!(members.iter().filter_map(|m| m.name.as_deref()).collect::<Vec<_>>(), ["count", "lights"]);
+        // Each of these makes a block carry, as does a struct member: naga and std140 lay them out apart.
+        for (ty, length) in [("mat2", None), ("bool", None), ("mat3x2", None), ("float", Some(3)), ("vec2", Some(2)), ("mat4x2", Some(2))] {
+            let mut m = member("m", ty, 0);
+            m.length = length;
+            m.stride = length.map(|_| 16);
+            assert!(!block("B", 64, vec![m]).native(), "{ty} {length:?}");
+        }
+        for (ty, length) in [("mat4", Some(8)), ("mat3", None), ("ivec3", Some(2)), ("uvec4", None), ("vec2", None), ("mat3x4", Some(2))] {
+            let mut m = member("m", ty, 0);
+            m.length = length;
+            m.stride = length.map(|_| 64);
+            assert!(block("B", 64, vec![m]).native(), "{ty} {length:?}");
+        }
+    }
+
+    #[test]
     fn a_block_the_recording_does_not_have_is_an_error() {
         let e = translate(&program(
             &format!("{QUAD_ES3}layout(std140) uniform B {{ vec4 c; }};\nvoid main() {{ gl_Position = c; }}"),
