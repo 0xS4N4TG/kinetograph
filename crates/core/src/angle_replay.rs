@@ -296,7 +296,7 @@ impl<'a> Replay<'a> {
                 gl_.bind_framebuffer(gl::READ_FRAMEBUFFER, fbo);
                 gl_.read_buffer(gl::COLOR_ATTACHMENT0);
                 let mut px = vec![0u8; (w * h * 4) as usize];
-                gl_.read_pixels((w, h), &mut px);
+                gl_.read_pixels((w, h), &mut px)?;
                 let mut ppm = format!("P6\n{w} {h}\n255\n").into_bytes();
                 ppm.extend(px.chunks(4).flat_map(|p| [p[0], p[1], p[2]]));
                 let _ = std::fs::write(path, ppm);
@@ -322,7 +322,7 @@ impl<'a> Replay<'a> {
         gl_.bind_framebuffer(gl::READ_FRAMEBUFFER, read);
         gl_.read_buffer(gl::COLOR_ATTACHMENT0);
         let mut bottom_up = vec![0u8; (w * h * 4) as usize];
-        gl_.read_pixels((w, h), &mut bottom_up);
+        gl_.read_pixels((w, h), &mut bottom_up)?;
         let read_done = started.elapsed();
         let row = (w * 4) as usize;
         let flipped = bottom_up.chunks(row).rev().flatten().copied().collect();
@@ -591,7 +591,7 @@ impl<'a> Replay<'a> {
                             ty,
                             bytes,
                         }),
-                    );
+                    )?;
                 }
             } else if let Some((faces, side)) = rec::decode_cube(t, self.base_dir)? {
                 for (i, rgba) in faces.iter().enumerate() {
@@ -605,7 +605,7 @@ impl<'a> Replay<'a> {
                             ty: gl::UNSIGNED_BYTE,
                             bytes: rgba,
                         }),
-                    );
+                    )?;
                 }
             }
             if t.mipmaps {
@@ -649,7 +649,7 @@ impl<'a> Replay<'a> {
                     ty,
                     bytes: &bytes,
                 },
-            );
+            )?;
             if t.mipmaps {
                 gl_.generate_mipmap(target);
             }
@@ -670,7 +670,7 @@ impl<'a> Replay<'a> {
                     ty,
                     bytes,
                 }),
-            );
+            )?;
         } else {
             let (mut rgba, w, h) = rec::decode_texture(t, self.base_dir)?;
             rec::unpack(&mut rgba, w, t.flip_y, t.premultiply);
@@ -684,7 +684,7 @@ impl<'a> Replay<'a> {
                     ty: gl::UNSIGNED_BYTE,
                     bytes: &rgba,
                 }),
-            );
+            )?;
             for p in &t.patches {
                 if p.layer.is_some() {
                     return Err("unsupported: a group layer patch".into());
@@ -704,7 +704,7 @@ impl<'a> Replay<'a> {
                         ty: gl::UNSIGNED_BYTE,
                         bytes: &px,
                     },
-                );
+                )?;
             }
         }
         if t.mipmaps {
@@ -893,7 +893,7 @@ impl<'a> Replay<'a> {
                 ty: gl::UNSIGNED_BYTE,
                 bytes: &px,
             },
-        );
+        )?;
         Ok(())
     }
 

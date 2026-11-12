@@ -22,13 +22,20 @@ const EGL_PLATFORM_ANGLE_TYPE_METAL: isize = 0x3489;
 const EGL_PLATFORM_ANGLE_TYPE_VULKAN: isize = 0x3450;
 const EGL_PLATFORM_ANGLE_TYPE_D3D11: isize = 0x3208;
 const EGL_NONE: i32 = 0x3038;
+// Context attributes, with the values in the ANGLE extension specs (EGL_ANGLE_create_context_webgl_compatibility,
+// _client_arrays, _extensions_enabled, EGL_ANGLE_robust_resource_initialization) and the EGL 1.5 headers.
+const EGL_CONTEXT_MAJOR_VERSION: i32 = 0x3098;
+const EGL_CONTEXT_MINOR_VERSION: i32 = 0x30FB;
+const EGL_CONTEXT_WEBGL_COMPATIBILITY_ANGLE: i32 = 0x33AC;
+const EGL_CONTEXT_CLIENT_ARRAYS_ENABLED_ANGLE: i32 = 0x3452;
+const EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE: i32 = 0x3453;
+const EGL_EXTENSIONS_ENABLED_ANGLE: i32 = 0x345F;
 const EGL_OPENGL_ES_API: Enum = 0x30A0;
 
 // GL, the ones the replay names.
 pub mod gl {
     use super::Enum;
     pub const FALSE: u8 = 0;
-    pub const TRUE: u8 = 1;
     pub const DEPTH_BUFFER_BIT: Enum = 0x100;
     pub const STENCIL_BUFFER_BIT: Enum = 0x400;
     pub const COLOR_BUFFER_BIT: Enum = 0x4000;
@@ -212,7 +219,6 @@ entry_points! {
 
 /// Entry points whose arguments are pointers: the `Raw` fields are loaded by hand.
 struct RawPtr {
-    get_string: unsafe extern "C" fn(Enum) -> *const u8,
     gen_buffers: unsafe extern "C" fn(i32, *mut u32),
     delete_buffers: unsafe extern "C" fn(i32, *const u32),
     buffer_data: unsafe extern "C" fn(Enum, isize, *const c_void, Enum),
@@ -285,7 +291,6 @@ macro_rules! load {
 impl RawPtr {
     fn load(lookup: &dyn Fn(&str) -> *const c_void) -> Result<RawPtr, String> {
         Ok(RawPtr {
-            get_string: load!(lookup, "glGetString"),
             gen_buffers: load!(lookup, "glGenBuffers"),
             delete_buffers: load!(lookup, "glDeleteBuffers"),
             buffer_data: load!(lookup, "glBufferData"),
@@ -372,6 +377,52 @@ pub struct Texels<'a> {
     pub bytes: &'a [u8],
 }
 
+/// The bytes one texel of `format` and `ty` takes with UNPACK_ALIGNMENT 1 (the replay sets it), for the pairs the replay
+/// uploads.
+fn texel_bytes(format: Enum, ty: Enum) -> Option<usize> {
+    let components = match format {
+        gl::RGBA => 4,
+        0x1907 => 3, // RGB
+        gl::RG => 2,
+        gl::RED | gl::DEPTH_COMPONENT | gl::DEPTH_STENCIL => 1,
+        _ => return None,
+    };
+    match ty {
+        gl::UNSIGNED_BYTE => Some(components),
+        gl::HALF_FLOAT => Some(components * 2),
+        gl::FLOAT => Some(components * 4),
+        gl::UNSIGNED_INT_24_8 if format == gl::DEPTH_STENCIL => Some(4),
+        _ => None,
+    }
+}
+
+/// The bytes a `w x h x d` upload of `format` and `ty` reads; `None` for a negative size, a pair the replay does not
+/// upload, or a product that does not fit.
+fn upload_len(w: i32, h: i32, d: i32, format: Enum, ty: Enum) -> Option<usize> {
+    let side = |n: i32| usize::try_from(n).ok();
+    side(w)?
+        .checked_mul(side(h)?)?
+        .checked_mul(side(d)?)?
+        .checked_mul(texel_bytes(format, ty)?)
+}
+
+/// An error unless `texels` holds what a `w x h x d` upload reads.
+fn check_upload(texels: &Texels, (w, h, d): (i32, i32, i32)) -> Result<(), String> {
+    let need = upload_len(w, h, d, texels.format, texels.ty).ok_or_else(|| {
+        format!(
+            "an upload of {w} x {h} x {d} texels of format 0x{:x}, type 0x{:x} is not sized",
+            texels.format, texels.ty
+        )
+    })?;
+    if texels.bytes.len() < need {
+        return Err(format!(
+            "an upload of {w} x {h} x {d} texels needs {need} bytes and has {}",
+            texels.bytes.len()
+        ));
+    }
+    Ok(())
+}
+
 impl Gl {
     fn names(&self, make: unsafe extern "C" fn(i32, *mut u32), n: usize) -> Vec<u32> {
         let mut v = vec![0u32; n];
@@ -423,20 +474,6 @@ impl Gl {
     pub fn delete_framebuffer(&self, n: u32) {
         // SAFETY: as `delete_buffer`.
         unsafe { (self.ptr.delete_framebuffers)(1, &n) }
-    }
-
-    pub fn string(&self, name: Enum) -> String {
-        // SAFETY: `glGetString` returns a NUL-terminated string owned by the context, or null.
-        unsafe {
-            let p = (self.ptr.get_string)(name);
-            if p.is_null() {
-                String::new()
-            } else {
-                std::ffi::CStr::from_ptr(p.cast())
-                    .to_string_lossy()
-                    .into_owned()
-            }
-        }
     }
 
     pub fn buffer_data(&self, target: Enum, bytes: &[u8]) {
@@ -614,8 +651,9 @@ impl Gl {
         internal: Enum,
         (w, h, d): (i32, i32, i32),
         texels: Texels,
-    ) {
-        // SAFETY: GL reads `w * h * d` texels of the format from the slice (the caller sizes it so).
+    ) -> Result<(), String> {
+        check_upload(&texels, (w, h, d))?;
+        // SAFETY: `check_upload` found the slice holds the `w * h * d` texels GL reads.
         unsafe {
             (self.ptr.tex_image_3d)(
                 target,
@@ -630,6 +668,7 @@ impl Gl {
                 texels.bytes.as_ptr().cast(),
             )
         }
+        Ok(())
     }
     /// The first value of an integer uniform, for diagnosis.
     pub fn uniform_value(&self, program: u32, location: i32) -> i32 {
@@ -653,17 +692,27 @@ impl Gl {
         internal: Enum,
         (w, h): (i32, i32),
         texels: Option<Texels>,
-    ) {
+    ) -> Result<(), String> {
         let (format, ty, data) = match &texels {
-            Some(t) => (t.format, t.ty, t.bytes.as_ptr().cast()),
+            Some(t) => {
+                check_upload(t, (w, h, 1))?;
+                (t.format, t.ty, t.bytes.as_ptr().cast())
+            }
             None => (gl::RGBA, gl::UNSIGNED_BYTE, std::ptr::null()),
         };
-        // SAFETY: GL reads `w * h` texels of `format` and `ty` from the slice (the caller sizes it so), or none.
+        // SAFETY: `check_upload` found the slice holds the `w * h` texels GL reads, or there is no data.
         unsafe {
             (self.ptr.tex_image_2d)(target, level, internal as i32, w, h, 0, format, ty, data)
         }
+        Ok(())
     }
-    pub fn tex_sub_image_2d(&self, level: i32, (x, y, w, h): (i32, i32, i32, i32), texels: Texels) {
+    pub fn tex_sub_image_2d(
+        &self,
+        level: i32,
+        (x, y, w, h): (i32, i32, i32, i32),
+        texels: Texels,
+    ) -> Result<(), String> {
+        check_upload(&texels, (w, h, 1))?;
         // SAFETY: as `tex_image_2d`.
         unsafe {
             (self.ptr.tex_sub_image_2d)(
@@ -678,15 +727,23 @@ impl Gl {
                 texels.bytes.as_ptr().cast(),
             )
         }
+        Ok(())
     }
     pub fn draw_buffers(&self, buffers: &[Enum]) {
         // SAFETY: GL reads `buffers.len()` enums.
         unsafe { (self.ptr.draw_buffers)(buffers.len() as i32, buffers.as_ptr()) }
     }
     /// RGBA8 rows from the bottom of the read framebuffer.
-    pub fn read_pixels(&self, (w, h): (i32, i32), out: &mut [u8]) {
-        assert!(out.len() >= (w * h * 4) as usize, "a read buffer too small");
-        // SAFETY: the assert above: GL writes `w * h * 4` bytes into `out`.
+    pub fn read_pixels(&self, (w, h): (i32, i32), out: &mut [u8]) -> Result<(), String> {
+        let need = upload_len(w, h, 1, gl::RGBA, gl::UNSIGNED_BYTE)
+            .ok_or_else(|| format!("a read of {w} x {h} pixels is not sized"))?;
+        if out.len() < need {
+            return Err(format!(
+                "a read of {w} x {h} pixels needs {need} bytes and the buffer has {}",
+                out.len()
+            ));
+        }
+        // SAFETY: the check above: GL writes `w * h * 4` bytes into `out`.
         unsafe {
             (self.ptr.read_pixels)(
                 0,
@@ -698,6 +755,7 @@ impl Gl {
                 out.as_mut_ptr().cast(),
             )
         }
+        Ok(())
     }
     /// The messages ANGLE logged since the last call (`GL_KHR_debug`), each with the rule it names.
     pub fn debug_messages(&self) -> Vec<String> {
@@ -893,7 +951,7 @@ fn open(dir: &std::path::Path, name: &str) -> Result<Library, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::checked_dir;
+    use super::{Texels, check_upload, checked_dir, gl, upload_len};
     use std::path::PathBuf;
 
     #[test]
@@ -904,6 +962,41 @@ mod tests {
         assert!(checked_dir(PathBuf::from("../lib")).is_err());
         let abs = std::env::temp_dir();
         assert_eq!(checked_dir(abs.clone()).unwrap(), abs);
+    }
+
+    #[test]
+    fn an_upload_is_sized_without_wrapping() {
+        assert_eq!(upload_len(4, 4, 1, gl::RGBA, gl::UNSIGNED_BYTE), Some(64));
+        assert_eq!(upload_len(2, 2, 3, gl::RGBA, gl::FLOAT), Some(192));
+        // 32768 x 32768 x 4 wraps an i32 product to 0; as a usize it is 4 GiB, which a slice then fails to hold.
+        assert_eq!(
+            upload_len(32768, 32768, 1, gl::RGBA, gl::UNSIGNED_BYTE),
+            Some(32768usize * 32768 * 4)
+        );
+        assert_eq!(
+            upload_len(i32::MAX, i32::MAX, i32::MAX, gl::RGBA, gl::FLOAT),
+            None
+        );
+        assert_eq!(upload_len(-1, 4, 1, gl::RGBA, gl::UNSIGNED_BYTE), None);
+        assert_eq!(upload_len(4, 4, 1, 0x1234, gl::UNSIGNED_BYTE), None);
+    }
+
+    #[test]
+    fn a_short_slice_is_refused() {
+        let bytes = [0u8; 63];
+        let short = Texels {
+            format: gl::RGBA,
+            ty: gl::UNSIGNED_BYTE,
+            bytes: &bytes,
+        };
+        assert!(check_upload(&short, (4, 4, 1)).is_err());
+        let exact = [0u8; 64];
+        let ok = Texels {
+            format: gl::RGBA,
+            ty: gl::UNSIGNED_BYTE,
+            bytes: &exact,
+        };
+        assert!(check_upload(&ok, (4, 4, 1)).is_ok());
     }
 }
 
@@ -1002,7 +1095,19 @@ fn create(ext: Extensions) -> Result<Context, String> {
         // ES 3.0; EGL_CONTEXT_WEBGL_COMPATIBILITY_ANGLE; EGL_CONTEXT_OPENGL_ROBUST_ACCESS-free; extensions off until
         // requested (EGL_EXTENSIONS_ENABLED_ANGLE); EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE.
         let context_attribs = [
-            0x3098, 3, 0x30FB, 0, 0x33AC, 1, 0x3459, 0, 0x3453, 1, EGL_NONE,
+            EGL_CONTEXT_MAJOR_VERSION,
+            3,
+            EGL_CONTEXT_MINOR_VERSION,
+            0,
+            EGL_CONTEXT_WEBGL_COMPATIBILITY_ANGLE,
+            1,
+            EGL_CONTEXT_CLIENT_ARRAYS_ENABLED_ANGLE,
+            0,
+            EGL_EXTENSIONS_ENABLED_ANGLE,
+            0,
+            EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE,
+            1,
+            EGL_NONE,
         ];
         context = create_context(
             display,

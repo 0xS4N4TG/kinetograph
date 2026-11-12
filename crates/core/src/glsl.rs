@@ -3262,7 +3262,13 @@ fn texels_of(
     if w == 0 || h == 0 {
         return Err(format!("a texture of {w} x {h} x {d} has no texels"));
     }
-    let texels = w * h * d;
+    // The sizes come from a recording: a product that does not fit is an error, not a wrapped length.
+    let too_big = || format!("a texture of {w} x {h} x {d} is too large");
+    let texels = w
+        .checked_mul(h)
+        .and_then(|n| n.checked_mul(d))
+        .filter(|n| n.checked_mul(16).is_some())
+        .ok_or_else(too_big)?;
     let decode = |data: &str| {
         base64::engine::general_purpose::STANDARD
             .decode(data)

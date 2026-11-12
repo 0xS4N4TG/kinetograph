@@ -1,6 +1,6 @@
 //! Scene graph and GPU compositor for Kinetograph.
 
-pub mod angle;
+mod angle;
 mod angle_replay;
 pub mod anim;
 pub mod blur;
