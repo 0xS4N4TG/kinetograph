@@ -1015,6 +1015,10 @@ export interface GlslDraw {
   alphaToCoverage?: true;
   /** `OES_texture_float_linear` was enabled: a 32-bit float texture may be read with a linear filter (else it is incomplete). */
   floatLinear?: true;
+  /** `EXT_float_blend` was enabled: a draw may blend into a 32-bit float target. */
+  floatBlend?: true;
+  /** `frontFace(CW)` was in effect: `gl_FrontFacing` is true for a clockwise triangle, culling or not (absent: counter-clockwise). */
+  frontFace?: 'CW';
   /** The depth test, when it was on and the buffer drawn into has a depth buffer (`depthFunc`, `depthMask`, `depthRange`). */
   depth?: GlslDepth;
   /** `polygonOffset(factor, units)` with `POLYGON_OFFSET_FILL` on; only with `depth`. */

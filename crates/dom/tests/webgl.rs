@@ -172,6 +172,11 @@ fn angle_only(name: &str) {
 }
 
 #[test]
+fn webgl2_front_face() {
+    angle_only("webgl2_front_face");
+}
+
+#[test]
 fn webgl2_front_face_reset() {
     angle_only("webgl2_front_face_reset");
 }

@@ -704,6 +704,11 @@ pub struct GlslDraw {
     /// `OES_texture_float_linear` was enabled: a 32-bit float texture may be read with a linear filter.
     #[serde(default)]
     pub float_linear: bool,
+    /// `EXT_float_blend` was enabled (the hand-written replay does not read it).
+    #[serde(default)]
+    pub float_blend: bool,
+    /// `frontFace(CW)` was in effect, which `gl_FrontFacing` follows even with no culling (`cull` has it too when culling).
+    pub front_face: Option<String>,
     pub blend: Option<GlslBlend>,
     #[serde(default = "all_true")]
     pub color_mask: [bool; 4],

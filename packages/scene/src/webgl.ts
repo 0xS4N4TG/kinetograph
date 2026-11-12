@@ -3849,6 +3849,9 @@ export class WebGLContext {
     if (this.caps.scissor) draw.scissor = this.scissorNow();
     if (this.caps.alphaToCoverage) draw.alphaToCoverage = true;
     if (this.floatLinear) draw.floatLinear = true;
+    if (this.floatBlend) draw.floatBlend = true;
+    // `gl_FrontFacing` follows `frontFace` whether or not anything is culled.
+    if (this.frontFaceMode === GL.CW) draw.frontFace = 'CW';
     if (this.caps.blend) {
       const into32 = this.drawFramebuffer !== null && this.outputsOf(this.drawFramebuffer).some((a) => a !== null && FLOAT_FORMATS[('texture' in a ? a.texture.format : a.renderbuffer.format) ?? 0]?.bits === 32);
       // As in a browser, without EXT_float_blend enabled such a draw is refused.

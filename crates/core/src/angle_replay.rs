@@ -28,7 +28,7 @@ struct Program {
 
 /// A program belongs to the context it was linked in: the vertex source, the fragment source, the attribute locations
 /// and whether the context has float-linear on.
-type ProgramKey = (String, String, Vec<(String, u32)>, bool);
+type ProgramKey = (String, String, Vec<(String, u32)>, angle::Extensions);
 
 thread_local! {
     static PROGRAMS: std::cell::RefCell<HashMap<ProgramKey, Program>> = std::cell::RefCell::new(HashMap::new());
@@ -159,7 +159,7 @@ struct Replay<'a> {
     content: &'a GlslContent,
     base_dir: &'a Path,
     size: (u32, u32),
-    float_linear: bool,
+    ext: angle::Extensions,
     buffers: HashMap<&'a str, u32>,
     textures: HashMap<&'a str, Handle>,
     /// The targets a framebuffer draws a cube face or an array or 3D layer into, as the recorder lists them under
@@ -193,13 +193,17 @@ pub fn replay(content: &GlslContent, size: (u32, u32), base_dir: &Path) -> R<Vec
     if content.webgpu.is_some() {
         return Err("unsupported: a WebGPU recording is not replayed by ANGLE".into());
     }
-    let float_linear = content
-        .ops
-        .iter()
-        .any(|op| matches!(op, GlslOp::Draw(d) if d.float_linear));
-    angle::with(float_linear, |gl| {
-        run(gl, content, size, base_dir, float_linear)
-    })?
+    let draws = || {
+        content.ops.iter().filter_map(|op| match op {
+            GlslOp::Draw(d) => Some(d),
+            _ => None,
+        })
+    };
+    let ext = angle::Extensions {
+        float_linear: draws().any(|d| d.float_linear),
+        float_blend: draws().any(|d| d.float_blend),
+    };
+    angle::with(ext, |gl| run(gl, content, size, base_dir, ext))?
 }
 
 fn run(
@@ -207,7 +211,7 @@ fn run(
     content: &GlslContent,
     size: (u32, u32),
     base_dir: &Path,
-    float_linear: bool,
+    ext: angle::Extensions,
 ) -> R<Vec<u8>> {
     gl_.pixel_storei(0xCF5, 1); // UNPACK_ALIGNMENT
     if std::env::var_os("KINETOGRAPH_ANGLE_DEBUG").is_some() {
@@ -218,7 +222,7 @@ fn run(
         content,
         base_dir,
         size,
-        float_linear,
+        ext,
         buffers: HashMap::new(),
         textures: HashMap::new(),
         parts: content
@@ -686,7 +690,7 @@ impl<'a> Replay<'a> {
             spec.vertex.clone(),
             spec.fragment.clone(),
             attrs.clone(),
-            self.float_linear,
+            self.ext,
         );
         if let Some(p) = PROGRAMS.with(|p| p.borrow().get(&key).cloned()) {
             return Ok(p);
@@ -1061,8 +1065,12 @@ impl<'a> Replay<'a> {
             }
             None => {
                 gl_.disable(gl::CULL_FACE);
-                // `gl_FrontFacing` follows the winding even when nothing is culled, and the context outlives the draw.
-                gl_.front_face(0x901);
+                // `gl_FrontFacing` follows the winding even when nothing is culled.
+                gl_.front_face(if d.front_face.as_deref() == Some("CW") {
+                    0x900
+                } else {
+                    0x901
+                });
             }
         }
         match &d.depth {

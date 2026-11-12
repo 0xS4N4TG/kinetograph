@@ -751,7 +751,7 @@ struct Context {
 thread_local! {
     /// The contexts of this thread, one for each set of extensions a page can have enabled: an extension a page asks
     /// for stays on in an ANGLE context, so a page that did not ask must not draw in a context another page asked in.
-    static CONTEXTS: RefCell<Vec<(bool, Context)>> = const { RefCell::new(Vec::new()) };
+    static CONTEXTS: RefCell<Vec<(Extensions, Context)>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Whether `KINETOGRAPH_WEBGL=angle` asks for the ANGLE replay.
@@ -760,15 +760,23 @@ pub fn enabled() -> bool {
     *ON.get_or_init(|| std::env::var("KINETOGRAPH_WEBGL").is_ok_and(|v| v == "angle"))
 }
 
-/// Runs `f` with this thread's context for `float_linear` (`OES_texture_float_linear` enabled or not), made on first
-/// use and made current.
-pub fn with<T>(float_linear: bool, f: impl FnOnce(&Gl) -> T) -> Result<T, String> {
+/// The extensions a page can enable that a context keeps on once asked for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Extensions {
+    /// `OES_texture_float_linear`.
+    pub float_linear: bool,
+    /// `EXT_float_blend`.
+    pub float_blend: bool,
+}
+
+/// Runs `f` with this thread's context for `ext`, made on first use and made current.
+pub fn with<T>(ext: Extensions, f: impl FnOnce(&Gl) -> T) -> Result<T, String> {
     CONTEXTS.with(|cell| {
         let mut contexts = cell.borrow_mut();
-        let at = match contexts.iter().position(|(k, _)| *k == float_linear) {
+        let at = match contexts.iter().position(|(k, _)| *k == ext) {
             Some(at) => at,
             None => {
-                contexts.push((float_linear, create(float_linear)?));
+                contexts.push((ext, create(ext)?));
                 contexts.len() - 1
             }
         };
@@ -901,7 +909,7 @@ mod tests {
 
 type GetProc = unsafe extern "C" fn(*const c_char) -> *const c_void;
 
-fn create(float_linear: bool) -> Result<Context, String> {
+fn create(ext: Extensions) -> Result<Context, String> {
     let dir = library_dir()?;
     // libGLESv2 first, by full path: libEGL then finds it already loaded instead of searching for it.
     let gles = open(&dir, "GLESv2")?;
@@ -1021,14 +1029,13 @@ fn create(float_linear: bool) -> Result<Context, String> {
         ptr: RawPtr::load(&lookup)?,
     };
     // A context made with WebGL compatibility keeps its extensions off until asked.
-    for ext in [
-        "GL_EXT_color_buffer_float",
-        "GL_EXT_float_blend",
-        "GL_KHR_debug",
-    ] {
-        gl.request_extension(ext);
+    for name in ["GL_EXT_color_buffer_float", "GL_KHR_debug"] {
+        gl.request_extension(name);
     }
-    if float_linear {
+    if ext.float_blend {
+        gl.request_extension("GL_EXT_float_blend");
+    }
+    if ext.float_linear {
         gl.request_extension("GL_OES_texture_float_linear");
     }
     Ok(Context {
