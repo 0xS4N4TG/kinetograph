@@ -249,6 +249,26 @@ impl<'a> Replay<'a> {
                 GlslOp::Blit(b) => self.blit(b)?,
                 GlslOp::Upload(u) => self.upload(u)?,
             }
+            // `KINETOGRAPH_ANGLE_DUMP=<op>:<path>`: the colour attachment the op wrote, as a PPM, for finding which
+            // op goes wrong.
+            if let Some((n, path)) = std::env::var("KINETOGRAPH_ANGLE_DUMP").ok().and_then(|v| {
+                v.split_once(':')
+                    .map(|(n, p)| (n.parse::<usize>().ok(), p.to_string()))
+            }) && n == Some(i)
+            {
+                let fbo = match op.dest() {
+                    Some(d) if d.is_framebuffer() => self.framebuffers.last().copied().unwrap_or(0),
+                    _ => self.canvas.fbo,
+                };
+                let (w, h) = (self.size.0 as i32, self.size.1 as i32);
+                gl_.bind_framebuffer(gl::READ_FRAMEBUFFER, fbo);
+                gl_.read_buffer(gl::COLOR_ATTACHMENT0);
+                let mut px = vec![0u8; (w * h * 4) as usize];
+                gl_.read_pixels((w, h), &mut px);
+                let mut ppm = format!("P6\n{w} {h}\n255\n").into_bytes();
+                ppm.extend(px.chunks(4).flat_map(|p| [p[0], p[1], p[2]]));
+                let _ = std::fs::write(path, ppm);
+            }
             if debug {
                 let e = gl_.get_error();
                 if e != 0 {
@@ -507,7 +527,7 @@ impl<'a> Replay<'a> {
                     gl_.tex_image_2d(
                         gl::TEXTURE_CUBE_MAP_POSITIVE_X + i as u32,
                         0,
-                        gl::RGBA8,
+                        if t.srgb { gl::SRGB8_ALPHA8 } else { gl::RGBA8 },
                         (side as i32, side as i32),
                         Some(Texels {
                             format: gl::RGBA,
@@ -586,7 +606,7 @@ impl<'a> Replay<'a> {
             gl_.tex_image_2d(
                 gl::TEXTURE_2D,
                 0,
-                gl::RGBA8,
+                if t.srgb { gl::SRGB8_ALPHA8 } else { gl::RGBA8 },
                 (w as i32, h as i32),
                 Some(Texels {
                     format: gl::RGBA,
@@ -878,12 +898,19 @@ impl<'a> Replay<'a> {
             gl_.vertex_attrib_divisor(i, 0);
         }
         for (name, a) in &d.attributes {
-            let loc = gl_.attrib_location(program.name, name);
+            // The recorder names the columns of a `mat2`, `mat3` or `mat4` attribute `name[0]`, `name[1]`, ...; GL
+            // gives the matrix one name and as many consecutive locations.
+            let (base, column) = match name.strip_suffix(']').and_then(|n| n.split_once('[')) {
+                Some((base, i)) => (base, i.parse::<i32>().unwrap_or(0)),
+                None => (name.as_str(), 0),
+            };
+            let loc = gl_.attrib_location(program.name, base);
             if loc < 0 {
                 continue;
             }
-            self.attribute(loc as u32, a)?;
+            self.attribute((loc + column) as u32, a)?;
         }
+        self.check("vertex input");
         // Uniforms.
         for (name, calls) in &d.uniforms {
             for call in calls {
@@ -904,6 +931,7 @@ impl<'a> Replay<'a> {
                 range.size as isize,
             );
         }
+        self.check("uniforms and blocks");
         // Textures.
         let mut units: Vec<(u32, &'a rec::GlslSampler)> = Vec::new();
         for (unit, s) in &d.units {
@@ -941,6 +969,7 @@ impl<'a> Replay<'a> {
             }
         }
 
+        self.check("textures");
         // State.
         gl_.viewport(d.viewport[0], d.viewport[1], d.viewport[2], d.viewport[3]);
         match d.scissor {
@@ -1021,6 +1050,7 @@ impl<'a> Replay<'a> {
             None => gl_.disable(gl::STENCIL_TEST),
         }
 
+        self.check("state");
         // Draw.
         let mode = match d.mode {
             GlslMode::Points => gl::POINTS,
@@ -1055,6 +1085,16 @@ impl<'a> Replay<'a> {
             None => gl_.draw_arrays(mode, d.first as i32, d.count as i32),
         }
         Ok(())
+    }
+
+    /// With `KINETOGRAPH_ANGLE_DEBUG`, reports the GL error a stage of a draw left.
+    fn check(&self, stage: &str) {
+        if std::env::var_os("KINETOGRAPH_ANGLE_DEBUG").is_some() {
+            let e = self.gl.get_error();
+            if e != 0 {
+                eprintln!("angle: GL error 0x{e:x} after {stage}");
+            }
+        }
     }
 
     fn attribute(&mut self, loc: u32, a: &'a GlslAttribute) -> R<()> {
