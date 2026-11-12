@@ -350,6 +350,9 @@ const PAGE_ONLY = [
   'window', 'document', 'parent', 'top', 'frames', 'opener', 'localStorage', 'sessionStorage', 'history', 'screen', 'innerWidth',
   'innerHeight', 'outerWidth', 'outerHeight', 'devicePixelRatio', 'matchMedia', 'getComputedStyle', 'visualViewport', 'customElements',
   'requestAnimationFrame', 'cancelAnimationFrame', 'HTMLElement', 'Element', 'Node', 'Image',
+  // Node's own globals: a browser worker has none, and a script that looks for them to learn where it runs (an Emscripten
+  // module's `typeof process`) would take the Node path and `require('fs')`.
+  'process', 'Buffer', 'require', 'module', 'exports', '__dirname', '__filename', 'global',
 ] as const;
 
 const UNSCOPABLE = Object.fromEntries(
