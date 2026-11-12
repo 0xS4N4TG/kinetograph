@@ -11,7 +11,7 @@
 // `WebGLUnsupportedError` whose message starts with "unsupported:" and says what to do instead; a call is never
 // accepted and then ignored where it would change the picture.
 
-import type { CanvasSource, GlslContent, GlslDraw, GlslProgram, GlslLayer, GlslOp, GlslOutput, GlslPatch, GlslSampler, GlslStencil, GlslStencilFace, GlslTexture, GlslUniform } from './types.js';
+import type { CanvasSource, GlslContent, GlslDraw, GlslProgram, GlslLayer, GlslOp, GlslOutput, GlslPatch, GlslSampler, GlslStencil, GlslStencilFace, GlslTexture, GlslUniform, GlslVideo } from './types.js';
 import { CANVAS_SOURCE, pictureOf, type CanvasPicture } from './canvas.js';
 import { preprocess } from './glsl-cpp.js';
 import { parseBlocks, type BlockInfo, type BlockUniform } from './webgl-blocks.js';
@@ -558,6 +558,8 @@ export class WebGLTexture extends WebGLObject {
   /** RGBA8, straight alpha, as uploaded. */
   pixels: Uint8Array | null = null;
   src: string | null = null;
+  /** A video's picture at a time (`texImage2D` of a `<video>`): the renderer decodes it. */
+  video: GlslVideo | null = null;
   /** A child of a shader group, drawn (`layerPicture`). */
   layer: string | null = null;
   flipY = false;
@@ -2381,6 +2383,7 @@ export class WebGLContext {
   /** Makes `texture` (bound) an image file of the scene. */
   textureFromSource(texture: WebGLTexture, src: string): void {
     texture.src = src;
+    texture.video = null;
     texture.pixels = null;
     texture.layer = null;
     texture.levels = 1;
@@ -2793,7 +2796,7 @@ export class WebGLContext {
   /** Makes `texture` an empty depth (or depth and stencil) texture of this size: a framebuffer draws in it, and draws sample its depth. */
   private specifyDepth(texture: WebGLTexture, internalformat: number, width: number, height: number, source: unknown): void {
     if (source !== null && source !== undefined) throw new WebGLUnsupportedError('a depth texture with pixels; give it null and draw its depth');
-    Object.assign(texture, { width, height, floats: null, float32: false, pixels: null, src: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: false, format: internalformat, blank: true, levels: 1, patches: [] });
+    Object.assign(texture, { width, height, floats: null, float32: false, pixels: null, src: null, video: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: false, format: internalformat, blank: true, levels: 1, patches: [] });
     texture.version += 1;
   }
 
@@ -2822,7 +2825,7 @@ export class WebGLContext {
     const empty = source === null || source === undefined;
     // What a format has no alpha for reads as 1, in a texture with nothing in it as in one with pixels.
     if (empty && float.channels < 4) for (let i = 0; i < width * height; i += 1) floats[i * 4 + 3] = 1;
-    Object.assign(texture, { width, height, depth: 0, floats, float32: float.bits === 32, pixels: null, src: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: false, format: internalformat, blank: empty, levels: 1, patches: [], drawnAt: -1 });
+    Object.assign(texture, { width, height, depth: 0, floats, float32: float.bits === 32, pixels: null, src: null, video: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: false, format: internalformat, blank: empty, levels: 1, patches: [], drawnAt: -1 });
     texture.version += 1;
   }
 
@@ -2930,6 +2933,7 @@ export class WebGLContext {
     texture.patches = [];
     if (rest.length >= 6) {
       texture.src = null;
+      texture.video = null;
       texture.width = width;
       texture.height = height;
       if (source === null || source === undefined) {
@@ -3045,7 +3049,7 @@ export class WebGLContext {
     if (sides.some((v) => v === 0)) throw new WebGLUnsupportedError('a 3D or array texture without texels');
     const texels = this.texels3d(internalformat, format, type, [width, height, depth], source, srcOffset);
     if (texels === null) return;
-    Object.assign(texture, { width, height, depth, pixels: 'pixels' in texels ? texels.pixels : null, floats: 'floats' in texels ? texels.floats : null, float32: FLOAT_FORMATS[internalformat]?.bits === 32, src: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: false, format: internalformat, blank: false, levels: 1, patches: [], drawnAt: -1 });
+    Object.assign(texture, { width, height, depth, pixels: 'pixels' in texels ? texels.pixels : null, floats: 'floats' in texels ? texels.floats : null, float32: FLOAT_FORMATS[internalformat]?.bits === 32, src: null, video: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: false, format: internalformat, blank: false, levels: 1, patches: [], drawnAt: -1 });
     texture.version += 1;
   }
 
@@ -3087,7 +3091,7 @@ export class WebGLContext {
     if (format === undefined) throw new WebGLUnsupportedError(`the internal format 0x${internalformat.toString(16)} of a 3D or array texture; use RGBA8 or a float format`);
     const texels = this.texels3d(internalformat, format, float === undefined ? GL.UNSIGNED_BYTE : GL.FLOAT, [width, height, depth], null, 0);
     if (texels === null) return;
-    Object.assign(texture, { width, height, depth, pixels: 'pixels' in texels ? texels.pixels : null, floats: 'floats' in texels ? texels.floats : null, float32: float?.bits === 32, src: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: false, format: internalformat, blank: false, levels: 1, patches: [], drawnAt: -1 });
+    Object.assign(texture, { width, height, depth, pixels: 'pixels' in texels ? texels.pixels : null, floats: 'floats' in texels ? texels.floats : null, float32: float?.bits === 32, src: null, video: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: false, format: internalformat, blank: false, levels: 1, patches: [], drawnAt: -1 });
     texture.version += 1;
   }
 
@@ -3128,7 +3132,7 @@ export class WebGLContext {
     if (texture.floats !== null) return this.subFloats(texture, xoffset, yoffset, rest);
     let width: number;
     let height: number;
-    let part: { pixels: Uint8Array } | { src: string } | { layer: string };
+    let part: { pixels: Uint8Array } | { src: string } | { video: GlslVideo } | { layer: string };
     if (rest.length >= 5) {
       let format: number;
       let type: number;
@@ -3148,7 +3152,9 @@ export class WebGLContext {
         const s = picture.source;
         if (s.kind === 'pixels') {
           part = { pixels: new Uint8Array(Buffer.from(s.data, 'base64')) };
-        } else if (s.kind === 'canvas' || s.kind === 'video') {
+        } else if (s.kind === 'video') {
+          part = { video: { src: s.src, time: s.time } };
+        } else if (s.kind === 'canvas') {
           const drawn = this.rasterized(s, picture.width, picture.height);
           if (drawn === null) throw new WebGLUnsupportedError(`texSubImage2D from a ${s.kind} here (its pixels need the addon)`);
           part = { pixels: drawn };
@@ -3219,7 +3225,7 @@ export class WebGLContext {
     }
     this.checkTextureType(GL.UNSIGNED_BYTE, internalformat);
     // Its upper levels are mipmaps of the empty level 0 until a framebuffer draws in them.
-    Object.assign(texture, { width, height, floats: null, float32: false, pixels: new Uint8Array(width * height * 4), src: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: levels > 1, format: internalformat, blank: true, levels, immutable: true, patches: [] });
+    Object.assign(texture, { width, height, floats: null, float32: false, pixels: new Uint8Array(width * height * 4), src: null, video: null, layer: null, uploaded: true, flipY: false, premultiply: false, mipmaps: levels > 1, format: internalformat, blank: true, levels, immutable: true, patches: [] });
     texture.version += 1;
   }
 
@@ -3244,9 +3250,15 @@ export class WebGLContext {
     texture.width = picture.width;
     texture.height = picture.height;
     const s = picture.source;
+    texture.video = null;
     if (s.kind === 'src') {
       texture.src = s.src;
       texture.pixels = null;
+    } else if (s.kind === 'video') {
+      // The frame is read by the renderer at this time (a few bytes here, not the picture).
+      texture.src = null;
+      texture.pixels = null;
+      texture.video = { src: s.src, time: s.time };
     } else if (s.kind === 'pixels') {
       texture.src = null;
       texture.pixels = new Uint8Array(Buffer.from(s.data, 'base64'));
@@ -3960,11 +3972,19 @@ export class WebGLContext {
     const faces = cube.faces!.map((f) => ({
       ...(f.floats !== null
         ? { floats: toBase64(new Uint8Array(f.floats.buffer, f.floats.byteOffset, f.floats.byteLength)), ...(f.float32 ? { float32: true } : {}) }
+        : f.video !== null ? { pixels: toBase64(this.videoFace(f)) }
         : f.src !== null ? { src: f.src } : { pixels: toBase64(f.pixels ?? new Uint8Array(0)) }),
       ...(f.flipY ? { flipY: true } : {}),
       ...(f.premultiply ? { premultiply: true } : {}),
     }));
     return { cube: true, width: cube.faces![0]!.width, height: cube.faces![0]!.width, faces, ...(cube.mipmaps ? { mipmaps: true } : {}), ...(cube.faces![0]!.format === GL2.SRGB8_ALPHA8 ? { srgb: true } : {}) };
+  }
+
+  /** A cube face made from a video frame: its pixels (a face is a picture the renderer reads as pixels, not by file). */
+  private videoFace(face: WebGLTexture): Uint8Array {
+    const pixels = this.rasterized({ kind: 'video', ...face.video! }, face.width, face.height);
+    if (pixels === null) throw new WebGLUnsupportedError('a cube map face from a video here (its pixels need the addon)');
+    return pixels;
   }
 
   /** An uploaded texture in the recording: its pixels, once, by an id of what they are. */
@@ -3982,9 +4002,11 @@ export class WebGLContext {
         : {
         ...(texture.layer !== null
           ? { layer: texture.layer }
-          : texture.src !== null
-            ? { src: texture.src }
-            : { pixels: toBase64(texture.pixels ?? new Uint8Array(0)) }),
+          : texture.video !== null
+            ? { video: texture.video }
+            : texture.src !== null
+              ? { src: texture.src }
+              : { pixels: toBase64(texture.pixels ?? new Uint8Array(0)) }),
         ...(texture.pixels !== null ? { width: texture.width, height: texture.height } : {}),
         ...(texture.flipY ? { flipY: true } : {}),
         ...(texture.premultiply ? { premultiply: true } : {}),

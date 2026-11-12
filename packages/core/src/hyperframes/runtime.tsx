@@ -14,7 +14,8 @@
 import { type ReactNode } from 'react';
 import { Audio, createSceneRoot } from '@kinetographdev/react';
 import { noteStylesheetProblem, registerStylesheet, setRemoteAssetResolver } from '@kinetographdev/compat/dom';
-import { hostOf, probeOnDraw, setPageDocument, setRefusedFetchHandler, setRemoteFiles, whenFetchesSettle, withCurrentScript } from '@kinetographdev/compat/shim';
+import { armPageInput, dispatchPageInput, gestureListenerElements, hostOf, pageInputCount, probeOnDraw, setPageDocument, setRefusedFetchHandler, setRemoteFiles, whenFetchesSettle, withCurrentScript } from '@kinetographdev/compat/shim';
+import { animationFramesQueued } from '../determinism.js';
 import { PAGE_LOAD_LABEL, continueRender, delayRender } from '../assets.js';
 import { Composition, registerRoot, setRemotionPage } from '../compositions.js';
 import { Sequence, useCurrentFrame, useVideoConfig } from '../timeline.js';
@@ -210,6 +211,8 @@ class Runtime {
     setPageDocument(hostOf(this.html), hostOf(body));
     this.mount();
     this.bindVariables();
+    // Media in the markup starts loading as the parser meets it, before the page's scripts run.
+    for (const el of Array.from(doc().querySelectorAll('video, audio')) as AnyRecord[]) el.player?.start();
 
     for (const script of inRunOrder(plan.scripts)) {
       if (script.scope === null) {
@@ -250,6 +253,7 @@ class Runtime {
       }
     }
     this.afterScripts();
+    armPageInput();
     // A page that draws from what it fetched (`d3.json(url).then(...)`) is not done when its scripts return.
     this.settling = whenFetchesSettle().then(() => this.afterScripts());
   }
@@ -450,6 +454,8 @@ class Runtime {
       const clock = this.videoClock(el, time, fps);
       // The clock the DOM painter draws the video from.
       el.setAttribute('data-kg-video', JSON.stringify(clock.attribute));
+      // A page that plays the element itself (`video.play()`) owns its clock: the virtual clock moves it, not this seek.
+      if (el.player?.paused === false) continue;
       el.currentTime = clock.currentTime;
     }
     this.applyGrading(time);
@@ -466,7 +472,10 @@ class Runtime {
     this.setup();
     this.mount();
     this.seekPage(time, total);
-    for (const el of Array.from(doc().querySelectorAll('video')) as AnyRecord[]) el.currentTime = this.videoClock(el, time, fps).currentTime;
+    for (const el of Array.from(doc().querySelectorAll('video')) as AnyRecord[]) {
+      if (el.player?.paused === false) continue;
+      el.currentTime = this.videoClock(el, time, fps).currentTime;
+    }
   }
 
   /** The clips, the timelines and the page's own drawing at `time`: what a script can see of a frame. */
@@ -688,8 +697,34 @@ class Runtime {
     return out;
   }
 
+  /** Sends the frame's scripted input (`--input`); what the page's handlers throw is reported with the frame. */
+  sendInput(frame: number): void {
+    dispatchPageInput(frame, (message) => {
+      if (!this.scriptFailures.includes(message)) this.scriptFailures.push(message);
+    });
+  }
+
+  /**
+   * A page that waits for a click (an overlay's "Play") and was given no input draws nothing, which looks like a broken
+   * render: an element with a click listener, while no canvas exists and no animation frame is asked for.
+   */
+  private reportWaitingForGesture(): void {
+    if (pageInputCount() > 0 || animationFramesQueued() || doc().querySelector('canvas') !== null) return;
+    const waiting = gestureListenerElements().find((el) => el.isConnected);
+    if (waiting === undefined) return;
+    const name = waiting.id ? `#${waiting.id}` : `<${String(waiting.tagName).toLowerCase()}>`;
+    reportUnsupported(
+      'HyperFrames',
+      null,
+      null,
+      `the page waits for a user gesture: ${name} has a click listener and nothing is drawn (no canvas, no animation frame asked for). ` +
+        `Kinetograph does not click for you; list the input with --input '[{"frame":0,"type":"click","selector":"${name.startsWith('#') ? name : 'button'}"}]'`,
+    );
+  }
+
   /** What the page needs that the engine cannot do, once per frame. */
   reportUnsupported(): void {
+    this.reportWaitingForGesture();
     for (const note of this.plan.notes) reportUnsupported('HyperFrames', null, null, note);
     for (const failure of this.failures) reportUnsupported('HyperFrames', 'script', failure, 'a script that draws by itself failed, so its canvas is not drawn');
     for (const note of this.gradingNotes) reportUnsupported('data-color-grading', null, null, note);
@@ -797,6 +832,8 @@ export function defineHyperframes(plan: HfPlan): void {
     runtime.setup();
     runtime.holdForPage();
     runtime.mount();
+    // The page is built on its first frame, after the clock moved to it: this frame's scripted input goes out now.
+    runtime.sendInput(frame);
     // `frame / fps` is exact for a whole frame; a motion-blur sub-frame is fractional.
     runtime.seek(frame / fps, durationInFrames / fps, fps);
     // The report costs a layout readback; the renders on the way to a frame are not read.

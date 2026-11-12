@@ -143,7 +143,7 @@ export const doctor: Command = {
   options: [{ name: 'range', type: 'string', description: 'Frames to check: 10..40 (10 to 39) or 10..=40 (10 to 40); default all' }],
   async run(args, context) {
     if (args.positionals.entry === undefined) {
-      for (const name of ['comp', 'props', 'range']) {
+      for (const name of ['comp', 'props', 'range', 'input']) {
         if (args.options[name] !== undefined) throw new CliError('INVALID_ARG', `--${name} needs an <entry>`);
       }
       return await installReport();

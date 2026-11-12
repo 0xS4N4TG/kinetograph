@@ -3,7 +3,7 @@
 // the host tree, `getComputedStyle`, the observers. There is no network and no clock: remote URLs fail with a message
 // that says so. `<canvas>` is the native 2D canvas (`./canvas.ts`). Installed in Node only where the globals are missing.
 
-import { MouseEventShim, PointerEventShim, ProgressEventShim, UIEventShim, WheelEventShim } from './events.js';
+import { KeyboardEventShim, MouseEventShim, PointerEventShim, ProgressEventShim, UIEventShim, WheelEventShim } from './events.js';
 import { AnimationEffectShim, AnimationPlaybackEventShim, AnimationShim, AnimationTimelineShim, animationsOf, DocumentTimelineShim, documentTimeline, KeyframeEffectShim } from './animations.js';
 import { readFile } from 'node:fs/promises';
 import { readFileSync, existsSync } from 'node:fs';
@@ -13,8 +13,10 @@ import { fileURLToPath } from 'node:url';
 import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, GL, GL2, WebGLContext, createGpu, GPU_GLOBALS, pictureOf, type CanvasPicture } from '@kinetographdev/scene';
 import { resolveDocumentUrl, resolveProjectFile, resolveCachedRemoteFile, sameOriginPath } from '../environment.js';
 import { netFetch } from './net-store.js';
+import { mediaLoadsSettled, pendingMediaLoads, reportMediaIssue, takeMediaIssues } from './media.js';
 import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas.js';
 import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, XMLSerializerShim, installDocumentMembers } from './document.js';
+import { XmlElement } from './xml.js';
 import { AttrShim, NamedNodeMapShim } from './attributes.js';
 import { DomElement, DomFragment, DomNodeBase, DomText, domElementFor, domTextFor, isDomElementShim, selectorContextOf, setImageLoader, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
 import { bodyHost, headHost, htmlHost, pageDocument, setPageViewport } from './host.js';
@@ -156,7 +158,7 @@ class MediaQueryListShim extends BrowserEventTarget {
 
 const MIME: Record<string, string> = {
   '.json': 'application/json', '.txt': 'text/plain', '.csv': 'text/csv', '.html': 'text/html', '.css': 'text/css',
-  '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.js': 'text/javascript', '.svg': 'image/svg+xml', '.xml': 'application/xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.gif': 'image/gif', '.webp': 'image/webp', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.mp4': 'video/mp4',
   '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf',
 };
@@ -206,7 +208,7 @@ let loadsDone = 0;
 
 /** How many loads (images, fetches, bitmaps) have finished since the start: a frame that sees it move runs what they set going before it is read. */
 export function loadsSettled(): number {
-  return loadsDone;
+  return loadsDone + mediaLoadsSettled();
 }
 
 /** Loads that failed since the last `takeLoadFailures`: what a page asked for (an image, a fetch) and did not get. */
@@ -214,14 +216,14 @@ const loadFailures = new Set<string>();
 
 /** The loads that failed since the last call, each once, as `message` strings that name the URL: the frame loop reports them. */
 export function takeLoadFailures(): string[] {
-  const out = [...loadFailures];
+  const out = [...loadFailures, ...takeMediaIssues()];
   loadFailures.clear();
   return out;
 }
 
 /** Image loads that have started and not yet fired `load` or `error`: a frame waits for them (`new Image()`, a script's `<img>`). */
 export function pendingImageLoads(): number {
-  return pendingImages;
+  return pendingImages + pendingMediaLoads();
 }
 
 /** Reads the image at `source`: a project file or `data:` URL at once, a `blob:` URL once its bytes are read. `who` names the API in the messages. */
@@ -428,7 +430,7 @@ export function pendingFetches(): number {
 export async function whenFetchesSettle(): Promise<void> {
   for (let quiet = 0; quiet < 2; ) {
     await new Promise<void>((resolve) => setImmediate(resolve));
-    quiet = inFlight === 0 && pendingImages === 0 ? quiet + 1 : 0;
+    quiet = inFlight === 0 && pendingImages === 0 && pendingMediaLoads() === 0 ? quiet + 1 : 0;
   }
 }
 
@@ -568,9 +570,19 @@ class HTMLElementShim extends DomElement {
 }
 class SVGElementShim extends DomElement {
   static [Symbol.hasInstance](value: unknown): boolean {
-    return this === SVGElementShim ? value instanceof DomElement && value.inSvg : Function.prototype[Symbol.hasInstance].call(this, value);
+    if (this !== SVGElementShim) return Function.prototype[Symbol.hasInstance].call(this, value);
+    return value instanceof DomElement ? value.inSvg : value instanceof XmlElement && value.namespaceURI === 'http://www.w3.org/2000/svg';
   }
 }
+
+/**
+ * `el instanceof Element`: a document made by `DOMParser` (xml.ts) has its own element class, which is not a `DomElement`
+ * (that one wraps a host element of the page's tree). So `Element` is a function whose `prototype` is the DomElement
+ * prototype (`Element.prototype.x = ...` still reaches every page element) and whose `instanceof` accepts both.
+ */
+function ElementGlobal(): void {}
+Object.defineProperty(ElementGlobal, 'prototype', { value: DomElement.prototype, writable: false });
+Object.defineProperty(ElementGlobal, Symbol.hasInstance, { value: (value: unknown): boolean => value instanceof DomElement || value instanceof XmlElement });
 
 
 /**
@@ -686,6 +698,22 @@ export function installDomGlobals(): void {
   for (const [name, value] of Object.entries(GPU_GLOBALS)) define(g, name, value);
   const navigator = (g.navigator ??= {}) as Record<string, unknown>;
   Object.defineProperty(navigator, 'hardwareConcurrency', { value: HARDWARE_CONCURRENCY, configurable: true, enumerable: true });
+  // A camera, a microphone or a screen is not there to capture: the request is refused at once (a page that waits for the
+  // stream would hold the frame for ever) and the page is told why, as a browser with no device does.
+  if (!('mediaDevices' in navigator)) {
+    const refuse = (what: string) => async (): Promise<never> => {
+      const message = `navigator.mediaDevices.${what}: capturing a camera, microphone or screen is not supported; the page draws without it`;
+      reportMediaIssue(message);
+      const error = new Error(message);
+      error.name = 'NotSupportedError';
+      throw error;
+    };
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: Object.assign(new EventTarget(), { getUserMedia: refuse('getUserMedia'), getDisplayMedia: refuse('getDisplayMedia'), enumerateDevices: async () => [], getSupportedConstraints: () => ({}) }),
+      configurable: true,
+      enumerable: false,
+    });
+  }
   if (!('gpu' in navigator)) Object.defineProperty(navigator, 'gpu', { value: createGpu({ rasterize: rasterizeCanvas, info: webgpuDeviceInfo }), configurable: true, enumerable: false });
   define(g, 'CanvasGradient', CanvasGradient);
   define(g, 'CanvasPattern', CanvasPattern);
@@ -701,7 +729,7 @@ export function installDomGlobals(): void {
   define(g, 'Worker', WorkerShim);
   define(g, 'MessageChannel', MessageChannelShim, true);
   define(g, 'MessagePort', MessagePortShim, true);
-  define(g, 'Element', DomElement);
+  define(g, 'Element', ElementGlobal);
   define(g, 'HTMLElement', HTMLElementShim);
   define(g, 'SVGElement', SVGElementShim);
   define(g, 'Node', DomNodeBase);
@@ -738,6 +766,7 @@ export function installDomGlobals(): void {
   define(g, 'MouseEvent', MouseEventShim);
   define(g, 'PointerEvent', PointerEventShim);
   define(g, 'WheelEvent', WheelEventShim);
+  define(g, 'KeyboardEvent', KeyboardEventShim);
   define(g, 'ProgressEvent', ProgressEventShim);
 
   // `fetch` of project files only. The real one stays reachable for the font downloads, which are explicit and cached.

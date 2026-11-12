@@ -380,7 +380,7 @@ describe('documents a sanitizer needs (DOMPurify finds its document through them
   });
 
   it('parses text/xml with namespaced elements, as an UltraHDR image carries its XMP', () => {
-    const xml = '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF><rdf:Description rdf:about="" hdrgm:Version="1.0" hdrgm:GainMapMax="2.5"/></rdf:RDF></x:xmpmeta>';
+    const xml = '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" rdf:about="" hdrgm:Version="1.0" hdrgm:GainMapMax="2.5"/></rdf:RDF></x:xmpmeta>';
     const doc = new g.DOMParser().parseFromString(xml, 'text/xml');
     const found = doc.getElementsByTagName('rdf:Description');
     expect(found).toHaveLength(1);
