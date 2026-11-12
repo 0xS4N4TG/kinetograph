@@ -381,6 +381,17 @@ export declare function probeStreams(path: string, baseDir?: string | undefined 
 export declare function readCanvasPicture(requestJson: string): Buffer | null
 
 /**
+ * Keeps the read-back of a GPU canvas as bytes, not text: `bytes` (rows of `rowBytes`, RGBA8 or, with `bgra`, BGRA8) as version `version`
+ * of the canvas `key`, with `alpha` `opaque`, `premultiplied` or `straight`. A canvas layer's commands name it as the source
+ * `{ "kind": "stored", "key", "version" }` and the painter takes the bytes as they are. Returns false, keeping nothing, when the
+ * newest version of `key` is the same picture: the caller keeps using that version.
+ */
+export declare function putCanvasPixels(key: string, version: number, width: number, height: number, rowBytes: number, bgra: boolean, alpha: string, bytes: Buffer): boolean
+
+/** Forgets every version of the canvas `key` that `putCanvasPixels` kept. */
+export declare function releaseCanvasPixels(key: string): void
+
+/**
  * A Canvas 2D context's commands drawn on a transparent canvas (packages/cli/skills/kinetograph-markup/references/SCENE.md,
  * "canvas"): `{ width, height, commands, fonts, baseDir, format }` as JSON in,
  * straight-alpha RGBA (`format: "rgba"`, the default) or a PNG out. For

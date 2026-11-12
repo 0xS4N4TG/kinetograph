@@ -411,13 +411,44 @@ impl Translator {
         self.video_image(src, at.ts)
     }
 
+    /// The picture a host put in `stored_pixels` (the read-back of a GPU canvas), as an image with the alpha and the byte order it
+    /// was put with, so the bytes are taken as they are. Made once for each version of a key.
+    fn stored_image(&mut self, key: &Arc<str>, version: u64, held: &crate::stored_pixels::Held) -> Option<Image> {
+        if let Some((v, img)) = self.stored_last.get(key)
+            && *v == version
+        {
+            return img.clone();
+        }
+        let timer = crate::profile::start();
+        let img = held.0.as_ref().and_then(|p| {
+            use crate::stored_pixels::StoredAlpha;
+            let color = if p.bgra { skia_safe::ColorType::BGRA8888 } else { skia_safe::ColorType::RGBA8888 };
+            let alpha = match p.alpha {
+                StoredAlpha::Opaque => skia_safe::AlphaType::Opaque,
+                StoredAlpha::Premul => skia_safe::AlphaType::Premul,
+                StoredAlpha::Unpremul => skia_safe::AlphaType::Unpremul,
+            };
+            let info = skia_safe::ImageInfo::new((p.width as i32, p.height as i32), color, alpha, None);
+            images::raster_from_data(&info, Data::new_copy(&p.bytes), p.row_bytes)
+        });
+        let img = match (&self.upload, img) {
+            (Some(up), Some(i)) => up(&i),
+            (_, i) => i,
+        };
+        crate::profile::add_since("cv_stored", timer);
+        self.stored_last.insert(key.clone(), (version, img.clone()));
+        img
+    }
+
     /// The pixels behind a picture source (a canvas is drawn, not sampled).
     fn canvas_picture(&mut self, source: &CanvasSource) -> Option<Image> {
         match source {
             CanvasSource::Src { src } => self.image(src),
             CanvasSource::Video { src, time, end } => self.canvas_video(src, *time, *end),
+            CanvasSource::Stored { key, version, held } => self.stored_image(key, *version, held),
             CanvasSource::Pixels { width, height, data } => {
                 use std::hash::{Hash, Hasher};
+                let timer = crate::profile::start();
                 let at = Arc::as_ptr(data) as *const u8 as usize;
                 let key = match self.pixel_keys.get(&at) {
                     Some((_, key)) => key.clone(),
@@ -446,6 +477,7 @@ impl Translator {
                     (_, i) => i,
                 };
                 self.images.insert(key, img.clone());
+                crate::profile::add_since("cv_pixels", timer);
                 img
             }
             // A canvas is drawn, not sampled, and a canvas pass's child is drawn through `draw_layer_picture` (a pattern
@@ -489,7 +521,7 @@ impl Translator {
                     return None;
                 }
             },
-            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } | CanvasSource::Video { .. } | CanvasSource::Ref { .. } => return None,
+            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } | CanvasSource::Stored { .. } | CanvasSource::Video { .. } | CanvasSource::Ref { .. } => return None,
         };
         if !(width > 0.0 && height > 0.0 && width.is_finite() && height.is_finite()) {
             return None;
@@ -507,7 +539,7 @@ impl Translator {
                 let sampling = SamplingOptions::new(skia_safe::FilterMode::Linear, skia_safe::MipmapMode::None);
                 self.draw_layer_picture(tile, id, bounds, &Paint::default(), sampling);
             }
-            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } | CanvasSource::Video { .. } | CanvasSource::Ref { .. } => {}
+            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } | CanvasSource::Stored { .. } | CanvasSource::Video { .. } | CanvasSource::Ref { .. } => {}
         }
         let picture = recorder.finish_recording_as_picture(Some(&bounds))?;
         // Outside a pattern that does not repeat the canvas draws nothing.
@@ -525,7 +557,7 @@ impl Translator {
                 }
             },
             CanvasSource::Ref { .. } => return,
-            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } | CanvasSource::Video { .. } => match self.canvas_picture(&op.source) {
+            CanvasSource::Src { .. } | CanvasSource::Pixels { .. } | CanvasSource::Stored { .. } | CanvasSource::Video { .. } => match self.canvas_picture(&op.source) {
                 Some(i) => (i.width() as f64, i.height() as f64),
                 None => {
                     self.stats.no(if matches!(op.source, CanvasSource::Video { .. }) { "canvas video picture (decode failed)" } else { "canvas image (file)" });

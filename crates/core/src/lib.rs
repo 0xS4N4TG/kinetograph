@@ -39,6 +39,7 @@ pub mod scene;
 pub mod scene_keys;
 pub mod scene3d;
 pub mod shader;
+pub mod stored_pixels;
 pub mod svg_picture;
 pub mod text;
 pub mod turbulence;

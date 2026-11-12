@@ -20,6 +20,7 @@ mod matte;
 mod media;
 mod preview;
 mod rive;
+mod stored;
 pub mod streams;
 pub mod track;
 
@@ -55,6 +56,15 @@ fn resolve_base(base_dir: Option<String>) -> PathBuf {
 
 fn parse_scene(scene_json: &str, base_dir: &Path) -> Result<Scene> {
     Scene::from_json(scene_json, base_dir.to_path_buf()).map_err(from_core)
+}
+
+/// `parse_scene` for the threads that draw frames in the order the host made them: the pictures stored from before the ones the scene
+/// names are let go (`kinetograph_core::stored_pixels`).
+fn parse_frame_scene(scene_json: &str, base_dir: &Path) -> Result<Scene> {
+    kinetograph_core::stored_pixels::begin_scene();
+    let scene = parse_scene(scene_json, base_dir);
+    kinetograph_core::stored_pixels::end_scene();
+    scene
 }
 
 // ---- CPU only ----
@@ -369,6 +379,31 @@ pub fn rive_info(request_json: String) -> Result<String> {
 #[napi]
 pub fn render_canvas(request_json: String) -> Result<Buffer> {
     canvas::render_canvas(&request_json)
+}
+
+/// Keeps the read-back of a GPU canvas as bytes, not text: `bytes` (rows of `rowBytes`, RGBA8 or, with `bgra`, BGRA8) as version `version`
+/// of the canvas `key`, with `alpha` `opaque`, `premultiplied` or `straight`. A canvas layer's commands name it as the source
+/// `{ "kind": "stored", "key", "version" }` and the painter takes the bytes as they are. Returns false, keeping nothing, when the
+/// newest version of `key` is the same picture: the caller keeps using that version.
+#[napi]
+#[allow(clippy::too_many_arguments)]
+pub fn put_canvas_pixels(
+    key: String,
+    version: f64,
+    width: u32,
+    height: u32,
+    row_bytes: u32,
+    bgra: bool,
+    alpha: String,
+    bytes: Buffer,
+) -> Result<bool> {
+    stored::put(&key, version, width, height, row_bytes, bgra, &alpha, &bytes)
+}
+
+/// Forgets every version of the canvas `key` that `putCanvasPixels` kept.
+#[napi]
+pub fn release_canvas_pixels(key: String) {
+    stored::release(&key);
 }
 
 /// The pixels of part of a canvas that holds one decoded picture, read on the CPU
@@ -759,7 +794,7 @@ fn spawn_starter(shared: Arc<Shared>) -> std::sync::mpsc::Sender<StartJob> {
                     } => {
                         let started = (|| {
                             let timer = kinetograph_core::profile::start();
-                            let scene = parse_scene(&scene_json, &base_dir)?;
+                            let scene = parse_frame_scene(&scene_json, &base_dir)?;
                             kinetograph_core::profile::add_since("parse", timer);
                             let mut gpu = shared.idle()?;
                             let timer = kinetograph_core::profile::start();
@@ -1104,7 +1139,7 @@ fn spawn_pusher(
                         }
                         let pushed = (|| {
                             let timer = kinetograph_core::profile::start();
-                            let scene = parse_scene(&scene_json, &base_dir)?;
+                            let scene = parse_frame_scene(&scene_json, &base_dir)?;
                             kinetograph_core::profile::add_since("parse", timer);
                             let mut writer = writer.lock().unwrap_or_else(|e| e.into_inner());
                             let writer = writer.as_mut().ok_or_else(|| {

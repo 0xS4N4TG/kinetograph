@@ -1517,6 +1517,7 @@ function externalSource(device: GPUDeviceShim, source: unknown, tables: Tables):
   if (s.kind === 'video') return { source: { video: { src: s.src, time: s.time } }, width: picture.width, height: picture.height };
   if (s.kind === 'layer') throw new WebGpuUnsupportedError('copyExternalImageToTexture from a layer picture outside layerPicture()');
   if (s.kind === 'ref') throw new WebGpuUnsupportedError('copyExternalImageToTexture from a sources table entry (only a written scene holds one)');
+  if (s.kind === 'stored') throw new WebGpuUnsupportedError('copyExternalImageToTexture from the read-back of a Dawn canvas on the recording provider');
   const pixels = device.options.rasterize?.(s) ?? null;
   if (pixels === null) throw new WebGpuUnsupportedError('copyExternalImageToTexture from a canvas here (the pixels of a canvas need the addon)');
   return { source: { pixels: { id: blobOf(tables, pixels), width: s.width, height: s.height } }, width: s.width, height: s.height };

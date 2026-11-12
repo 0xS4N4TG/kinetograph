@@ -3,7 +3,8 @@
 // The page gets Dawn's real GPUAdapter, GPUDevice, GPUBuffer, GPUTexture, ... objects. This file adds what dawn.node has no
 // notion of (it has no canvas) and what the engine's rules ask of it:
 //   - a canvas context: `configure`, `getCurrentTexture` (an offscreen texture of the canvas's size), and the pixels of
-//     that texture read back at the end of a frame that is read (`flushDawnCanvases`);
+//     that texture read back at the end of a frame that is read (`flushDawnCanvases`) and handed to the addon as bytes
+//     (`putCanvasPixels`), which the painter takes as they are;
 //   - a fixed adapter: the WebGPU default limits and a fixed feature list on every machine, no `timestamp-query`;
 //   - errors: an uncaptured error or a lost device becomes a frame warning (`takeDawnReports`), so `--strict` fails;
 //   - the frame waits for the library's own promises (`requestDevice`, `mapAsync`, ...), which settle in real time;
@@ -13,7 +14,10 @@
 // Nothing here reads the wall clock for a picture. Devices are destroyed by `releaseDawn` (a new scene, a disposed renderer).
 
 import { createRequire } from 'node:module';
-import { CANVAS_SOURCE, type CanvasCommand } from '@kinetographdev/scene';
+import { threadId } from 'node:worker_threads';
+import { CANVAS_SOURCE, type CanvasCommand, type CanvasSource } from '@kinetographdev/scene';
+import { addonFunction, hasAddonFunction } from '../addon.js';
+import { lap, stamp } from '../profile.js';
 import { trackCarry, carryDepends, startsCleared, untracked } from './webgpu-dawn-carry.js';
 
 type Any = any; // Dawn's objects are native classes with no TypeScript surface here.
@@ -216,7 +220,10 @@ export function releaseDawn(): void {
     }
   }
   devices.clear();
+  for (const ref of contexts) ref.deref()?.release();
   contexts.clear();
+  if (hasAddonFunction('releaseCanvasPixels')) for (const key of keys) addonFunction('releaseCanvasPixels')(key);
+  keys.clear();
 }
 
 /**
@@ -244,24 +251,36 @@ export interface DawnCanvasOptions {
   canvas?: unknown;
 }
 
-/** Colour space of the straight-alpha pixels the painter takes: sRGB. A display-p3 canvas is converted, its values clipped. */
+/** The keys of the pictures the addon holds for this thread's canvases, which `releaseDawn` lets go (a frame is drawn some frames after it is made: not before). */
+const keys = new Set<string>();
+let canvasCount = 0;
+
+/**
+ * The canvas of a Dawn page. The painter takes its read-back as the bytes the texture holds (`putCanvasPixels`): an opaque or
+ * premultiplied canvas of `rgba8unorm` or `bgra8unorm` is taken as it is, with that alpha and byte order, and no pass over
+ * the pixels is made here. A display-p3 canvas and `rgba16float` are converted to straight-alpha sRGB RGBA8 first.
+ */
 export class DawnCanvasContext {
   readonly canvas: unknown;
   private config: { device: Any; format: string; usage: number; alphaMode: string; colorSpace: string; viewFormats: Any } | null = null;
   private texture: Any = null;
   private drawnThisFrame = false;
-  /** The canvas as the last flush read it: straight-alpha sRGB RGBA8, null when nothing was drawn this frame. */
-  pixels: Uint8Array | null = null;
-  pixelsWidth = 0;
-  pixelsHeight = 0;
+  /** The buffer the texture is copied to: kept from frame to frame while the size is the same. */
+  private readback: { buffer: Any; size: number } | null = null;
+  /** What the addon holds for this canvas: the key (this thread's, this canvas's) and the newest version put. */
+  private readonly key = `dawn:${threadId}:${canvasCount++}`;
+  private version = 0;
+  /** The canvas as the last flush read it, null when nothing was drawn this frame. */
+  picture: { width: number; height: number; source: CanvasSource } | null = null;
 
   constructor(private readonly options: DawnCanvasOptions) {
     this.canvas = options.canvas;
     contexts.add(new WeakRef(this));
+    keys.add(this.key);
   }
 
   get drawn(): boolean {
-    return this.pixels !== null;
+    return this.picture !== null;
   }
 
   configure(configuration: Any): void {
@@ -313,7 +332,7 @@ export class DawnCanvasContext {
   resetState(): void {
     this.dropTexture();
     this.drawnThisFrame = false;
-    this.pixels = null;
+    this.picture = null;
   }
 
   private dropTexture(): void {
@@ -325,7 +344,23 @@ export class DawnCanvasContext {
     this.texture = null;
   }
 
-  /** Reads the texture the page drew this frame back to `pixels`. */
+  private dropReadback(): void {
+    try {
+      this.readback?.buffer.destroy();
+    } catch {
+      // the device is already destroyed
+    }
+    this.readback = null;
+  }
+
+  /** The device is gone (`releaseDawn`): the texture and the buffer went with it. */
+  release(): void {
+    this.dropTexture();
+    this.readback = null;
+    this.picture = null;
+  }
+
+  /** Reads the texture the page drew this frame back, and hands it to the addon. */
   async flush(): Promise<void> {
     const config = this.config;
     if (config === null || !this.drawnThisFrame || this.texture === null) return;
@@ -335,7 +370,12 @@ export class DawnCanvasContext {
     const wide = format === 'rgba16float';
     const rowBytes = width * (wide ? 8 : 4);
     const stride = Math.ceil(rowBytes / 256) * 256;
-    const buffer = device.createBuffer({ size: stride * height, usage: 0x01 | 0x08 /* MAP_READ | COPY_DST */ });
+    if (this.readback === null || this.readback.size !== stride * height || !devices.has(device)) {
+      this.dropReadback();
+      this.readback = { buffer: device.createBuffer({ label: 'canvas readback', size: stride * height, usage: 0x01 | 0x08 /* MAP_READ | COPY_DST */ }), size: stride * height };
+    }
+    const { buffer } = this.readback;
+    let t = stamp();
     try {
       untracked(() => {
         const encoder = device.createCommandEncoder();
@@ -343,14 +383,33 @@ export class DawnCanvasContext {
         device.queue.submit([encoder.finish()]);
       });
       await nativeMapAsync.call(buffer, 0x01);
-      const mapped = new Uint8Array(buffer.getMappedRange());
-      this.pixels = toStraightSrgb(mapped, width, height, stride, format, config.alphaMode, config.colorSpace);
-      this.pixelsWidth = width;
-      this.pixelsHeight = height;
+      t = lap('dawn_map', t);
+      this.keep(new Uint8Array(buffer.getMappedRange()), width, height, stride, format, config.alphaMode, config.colorSpace);
+      lap('dawn_keep', t);
       buffer.unmap();
-    } finally {
-      buffer.destroy();
+    } catch (error) {
+      this.dropReadback();
+      throw error;
     }
+  }
+
+  /** Hands the mapped rows to the addon as they are, or converted to straight sRGB when the addon cannot take them so. */
+  private keep(mapped: Uint8Array, width: number, height: number, stride: number, format: string, alphaMode: string, colorSpace: string): void {
+    const direct = format !== 'rgba16float' && colorSpace === 'srgb';
+    const rows = direct ? mapped : toStraightSrgb(mapped, width, height, stride, format, alphaMode, colorSpace);
+    if (!hasAddonFunction('putCanvasPixels')) {
+      // An addon without the call takes the straight-alpha pixels as text (the same pixels source an `ImageData` put on a 2D canvas has).
+      const straight = direct ? toStraightSrgb(mapped, width, height, stride, format, alphaMode, colorSpace) : rows;
+      const data = Buffer.from(straight.buffer, straight.byteOffset, straight.byteLength).toString('base64');
+      this.picture = { width, height, source: { kind: 'pixels', width, height, data } };
+      return;
+    }
+    const bytes = Buffer.from(rows.buffer, rows.byteOffset, rows.byteLength);
+    const alpha = !direct ? 'straight' : alphaMode === 'premultiplied' ? 'premultiplied' : 'opaque';
+    const changed = addonFunction('putCanvasPixels')(this.key, this.version + 1, width, height, direct ? stride : width * 4, direct && format === 'bgra8unorm', alpha, bytes);
+    // The same picture as the last one put: that version is still the one to draw (its image is made already).
+    if (changed) this.version += 1;
+    this.picture = { width, height, source: { kind: 'stored', key: this.key, version: this.version } };
   }
 }
 
@@ -365,10 +424,9 @@ export async function flushDawnCanvases(): Promise<void> {
 
 /** The canvas's picture as the one command the painter draws a 2D canvas's pixels with, or null when it drew nothing. */
 export function dawnCommandsOf(context: DawnCanvasContext): CanvasCommand[] | null {
-  if (context.pixels === null) return null;
-  const { pixelsWidth: width, pixelsHeight: height } = context;
-  const data = Buffer.from(context.pixels.buffer, context.pixels.byteOffset, context.pixels.byteLength).toString('base64');
-  return [{ op: 'image', source: { kind: 'pixels', width, height, data }, sx: 0, sy: 0, sw: width, sh: height, dx: 0, dy: 0, dw: width, dh: height, smooth: false } as CanvasCommand];
+  if (context.picture === null) return null;
+  const { width, height, source } = context.picture;
+  return [{ op: 'image', source, sx: 0, sy: 0, sw: width, sh: height, dx: 0, dy: 0, dw: width, dh: height, smooth: false } as CanvasCommand];
 }
 
 // ----------------------------------------------------------------------------------------------------------------------
