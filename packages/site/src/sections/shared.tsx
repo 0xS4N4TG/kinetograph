@@ -4,12 +4,12 @@ import { cn } from '@/lib/utils';
 
 /**
  * The lockup: the pixel mark (a cobalt rounded square with the mechanism in white dots, drawn on a 24-dot grid so each dot is a
- * whole pixel) to the left of the wordmark, which is lowercase kinetograph in Geist Serif 600 with no tracking, the full stop
+ * whole pixel) to the left of the wordmark, which is lowercase kinetograph in DM Sans 700 at -0.05em, the full stop
  * in red (its only use of red).
  */
 export function Wordmark({ className, mark = true }: { className?: string; mark?: boolean }) {
   return (
-    <span className={cn('inline-flex items-center gap-[0.4em] font-wordmark font-semibold tracking-normal', className)}>
+    <span className={cn('inline-flex items-center gap-[0.4em] font-wordmark font-bold tracking-[-0.05em]', className)}>
       {mark && <img src="/retro/mark-28.png" width={28} height={28} alt="" className="size-7 shrink-0 [image-rendering:pixelated]" />}
       <span>
         kinetograph<span className="text-flag">.</span>

@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
-import { preload } from 'react-dom';
 import type { ReactNode } from 'react';
 
 import '@fontsource-variable/dm-sans/wght.css';
@@ -29,8 +28,6 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
-  // The wordmark's face (declared in index.css).
-  preload('/fonts/GeistSerifVF.woff2', { as: 'font', type: 'font/woff2', crossOrigin: 'anonymous' });
   return (
     <html lang="en" className={display.variable}>
       <body>{children}</body>

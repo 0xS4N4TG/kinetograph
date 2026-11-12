@@ -12,7 +12,7 @@
   --font-serif: 'Newsreader Variable', 'Iowan Old Style', Baskerville, Georgia, serif;
   --font-heading: var(--font-sans);
   --font-display: var(--kg-display-face), 'Arial Narrow', ui-sans-serif, system-ui, sans-serif;
-  --font-wordmark: 'Geist Serif', 'Iowan Old Style', Georgia, serif;
+  --font-wordmark: 'DM Sans Variable', ui-sans-serif, system-ui, sans-serif;
   --font-dm: 'DM Sans Variable', ui-sans-serif, system-ui, sans-serif;
   --font-jb: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace;
   --color-ink: var(--ink);
@@ -513,13 +513,6 @@ figure.shiki button[data-checked] {
    Radius system: pill (buttons, nav, command bars), 2rem cards in a tray with a 6px bezel, and the 26px core inside it.
    Layers: main 10, frame 30, nav 40, grain 50.
    --------------------------------------------------------------------------------------------------------------- */
-@font-face {
-  font-family: 'Geist Serif';
-  src: url('/fonts/GeistSerifVF.woff2') format('woff2');
-  font-weight: 100 900;
-  font-display: swap;
-}
-
 :root {
   --kg-out: cubic-bezier(0, 0, 0.2, 1);
   --kg-decel: cubic-bezier(0.16, 1, 0.3, 1);
@@ -577,17 +570,19 @@ figure.shiki button[data-checked] {
 }
 .kg-wordmark-fit {
   display: flow-root;
-  height: 0.9em;
+  height: 1em;
   overflow: clip;
   font-family: var(--font-wordmark);
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: -0.05em;
   line-height: 1;
   white-space: nowrap;
   font-size: calc(100cqw / var(--r));
 }
 .kg-wordmark-fit > .in {
   display: block;
-  margin-top: -0.05em;
+  margin-top: -0.085em;
+  margin-left: -0.066em; /* the k's left side bearing, so the ink starts on the content edge */
 }
 .kg-ch {
   display: inline-block;
