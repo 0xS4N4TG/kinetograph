@@ -181,6 +181,11 @@ fn webgl2_front_face() {
 }
 
 #[test]
+fn webgl_depth_luminance() {
+    run("webgl_depth_luminance", 1.0);
+}
+
+#[test]
 fn webgl2_stencil_renderbuffer() {
     run("webgl2_stencil_renderbuffer", 1.0);
 }

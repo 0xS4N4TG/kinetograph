@@ -95,6 +95,8 @@ pub mod gl {
     pub const TEXTURE_WRAP_S: Enum = 0x2802;
     pub const TEXTURE_WRAP_T: Enum = 0x2803;
     pub const TEXTURE_BASE_LEVEL: Enum = 0x813C;
+    pub const TEXTURE_SWIZZLE_G: Enum = 0x8E43;
+    pub const TEXTURE_SWIZZLE_B: Enum = 0x8E44;
     pub const TEXTURE_MAX_LEVEL: Enum = 0x813D;
     pub const TEXTURE_COMPARE_MODE: Enum = 0x884C;
     pub const TEXTURE_COMPARE_FUNC: Enum = 0x884D;

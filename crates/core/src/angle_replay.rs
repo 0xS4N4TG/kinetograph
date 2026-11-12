@@ -170,6 +170,8 @@ struct Replay<'a> {
     zeroed: std::collections::HashSet<u32>,
     /// The generic attributes a draw gave a current value, to put back before the next draw.
     const_attrs: u32,
+    /// The textures whose green and blue read red (`luminance`).
+    swizzled: std::collections::HashSet<u32>,
     framebuffers: Vec<u32>,
     vao: u32,
     canvas: Canvas,
@@ -242,6 +244,7 @@ fn run(
         zeroed: std::collections::HashSet::new(),
         // A frame starts with every current attribute value at the default, as a context just made has them.
         const_attrs: u32::MAX,
+        swizzled: std::collections::HashSet::new(),
         framebuffers: Vec::new(),
         vao: gl_.gen_vertex_array(),
         canvas: Canvas {
@@ -1065,6 +1068,28 @@ impl<'a> Replay<'a> {
                 None => gl_.tex_parameteri(h.target, gl::TEXTURE_COMPARE_MODE, 0),
             }
             gl_.tex_parameteri(h.target, gl::TEXTURE_BASE_LEVEL, s.base_level as i32);
+            // A WebGL 1 depth texture reads as (d, d, d, 1), a WebGL 2 one as (d, 0, 0, 1): for the first, green and blue
+            // read the red channel. Set only when it is wanted or has to be undone: ANGLE's Metal backend reads a depth
+            // texture differently once any swizzle is set, even the identity.
+            let luminance = self
+                .content
+                .textures
+                .get(s.texture.as_str())
+                .is_some_and(|t| t.luminance);
+            if luminance != self.swizzled.contains(&h.name) {
+                let (green, blue) = if luminance {
+                    (gl::RED, gl::RED)
+                } else {
+                    (0x1904, 0x1905)
+                };
+                gl_.tex_parameteri(h.target, gl::TEXTURE_SWIZZLE_G, green as i32);
+                gl_.tex_parameteri(h.target, gl::TEXTURE_SWIZZLE_B, blue as i32);
+                if luminance {
+                    self.swizzled.insert(h.name);
+                } else {
+                    self.swizzled.remove(&h.name);
+                }
+            }
             // The texture keeps what an earlier draw set: no `maxLevel` is the GL default, 1000.
             gl_.tex_parameteri(
                 h.target,
