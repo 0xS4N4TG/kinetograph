@@ -787,6 +787,38 @@ export interface GlslProgram {
   fragment: string;
   /** Attribute name to location. */
   attributes?: Record<string, number>;
+  /** The uniform blocks (WebGL 2) of the two shaders in GL's block order, laid out as std140. */
+  blocks?: GlslBlock[];
+}
+
+/** A uniform block as the shaders declare it: `layout(std140) uniform name { members } instance;`. */
+export interface GlslBlock {
+  name: string;
+  /** The bytes the members take (`UNIFORM_BLOCK_DATA_SIZE`). */
+  size: number;
+  members: GlslBlockMember[];
+}
+
+export interface GlslBlockMember {
+  name: string;
+  /** A GLSL scalar, vector or matrix type, or the name of a struct (then `fields`). */
+  type: string;
+  /** The array length. */
+  length?: number;
+  /** Bytes from the start of the block, or of the struct element that holds it. */
+  offset: number;
+  /** Bytes between the elements of an array. */
+  stride?: number;
+  /** The members of a struct, with their offsets from the start of an element. */
+  fields?: GlslBlockMember[];
+}
+
+/** The bytes a uniform block read at a draw: a range of a buffer of `buffers`. */
+export interface GlslBlockRange {
+  buffer: string;
+  offset: number;
+  /** The bytes the binding holds from `offset`, of which the block reads its own size. */
+  size: number;
 }
 
 export interface GlslTexture {
@@ -836,14 +868,21 @@ export interface GlslTexture {
    */
   cube?: boolean;
   faces?: GlslFace[];
-  /** With `cube`, in place of `faces`: the six colour targets framebuffers drew the faces in, in the same order. */
+  /**
+   * With `cube`, in place of `faces`: the six targets framebuffers drew the faces in, in the same order (colour, or a
+   * depth cube a shadow sampler reads). With `depth` (a 3D or array texture), in place of pixels: one colour target per
+   * layer, in order (`framebufferTextureLayer`).
+   */
   targets?: string[];
 }
 
-/** One face of a cube map: a picture file, a `data:` URL or base64 RGBA8 (straight alpha, `width * width * 4` bytes). */
+/** One face of a cube map: a picture file, a `data:` URL, base64 RGBA8 (straight alpha, `width * width * 4` bytes) or floats. */
 export interface GlslFace {
   src?: string;
   pixels?: string;
+  /** Instead of a picture or pixels: float texels (`RGBA16F`, `RGBA32F`, ...), base64 little-endian `f32`s, four for each, kept as half floats or in full with `float32`. */
+  floats?: string;
+  float32?: boolean;
   flipY?: boolean;
   premultiply?: boolean;
 }
@@ -890,8 +929,14 @@ export interface GlslStencil {
 export interface GlslAttribute {
   buffer: string;
   size: number;
-  type: 'f32' | 'u8' | 'i8' | 'u16' | 'i16' | 'u32';
+  type: 'f32' | 'u8' | 'i8' | 'u16' | 'i16' | 'u32' | 'i32';
   normalized?: boolean;
+  /**
+   * `vertexAttribIPointer`: the shader reads the values as integers (`ivecN`, `uvecN`, `int`, `uint`), unconverted.
+   * Without it the shader reads floats: an integer `type` is converted to float, or with `normalized` scaled to 0..1
+   * (-1..1 for a signed type).
+   */
+  integer?: boolean;
   stride?: number;
   offset?: number;
   /** `vertexAttribDivisor`: 1 advances for each instance, `n` for each `n` of them (default 0, for each vertex). */
@@ -906,7 +951,8 @@ export interface GlslAttribute {
 export interface GlslUniform {
   /** `f` for `uniform*f`, `i` for `uniform*i`, `m` for `uniformMatrix*` (column-major). */
   kind: 'f' | 'i' | 'm';
-  value: number[];
+  /** The values; a NaN is `null`, which JSON can carry. */
+  value: (number | null)[];
   /** The array element the first value goes to. */
   index?: number;
 }
@@ -956,6 +1002,8 @@ export interface GlslDraw {
   indices?: { buffer: string; type: 'u8' | 'u16' | 'u32'; offset: number };
   attributes: Record<string, GlslAttribute>;
   uniforms: Record<string, GlslUniform[]>;
+  /** The bytes of the program's uniform blocks, by block name: what `bindBufferBase` and `bindBufferRange` bound. */
+  blocks?: Record<string, GlslBlockRange>;
   units: Record<string, GlslSampler>;
   /** `x, y, width, height`, y up from the bottom row. */
   viewport: [number, number, number, number];
@@ -963,6 +1011,10 @@ export interface GlslDraw {
   blend?: GlslBlend;
   colorMask?: [boolean, boolean, boolean, boolean];
   cull?: { face: string; front: string };
+  /** `SAMPLE_ALPHA_TO_COVERAGE` was on: the alpha of the fragment's first output is the share of the samples it covers, when the buffer drawn into is multisampled (it does nothing in one that is not). */
+  alphaToCoverage?: true;
+  /** `OES_texture_float_linear` was enabled: a 32-bit float texture may be read with a linear filter (else it is incomplete). */
+  floatLinear?: true;
   /** The depth test, when it was on and the buffer drawn into has a depth buffer (`depthFunc`, `depthMask`, `depthRange`). */
   depth?: GlslDepth;
   /** `polygonOffset(factor, units)` with `POLYGON_OFFSET_FILL` on; only with `depth`. */

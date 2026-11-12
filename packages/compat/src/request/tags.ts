@@ -23,12 +23,12 @@ const SVG_TAGS = new Set([
   'feOffset', 'fePointLight', 'feSpecularLighting', 'feSpotLight', 'feTile', 'feTurbulence',
 ]);
 
-/** Whether the reconciler accepts `type` as a DOM host element: HTML, SVG and custom elements, never a `kg-*` one. */
+/** Whether the reconciler accepts `type` as a DOM host element: HTML, SVG, custom and namespaced (`rdf:Description`, which a parsed XML document has) elements, never a `kg-*` one. */
 export function isDomElement(type: string): boolean {
   if (type.startsWith('kg-')) return false;
   if (HTML_TAGS.has(type) || SVG_TAGS.has(type)) return true;
-  // A custom element has a hyphen in its name.
-  return /^[a-z][a-z0-9._]*-[a-z0-9._-]*$/.test(type);
+  // A custom element has a hyphen in its name; an XML element may carry a namespace prefix.
+  return /^[a-z][a-z0-9._]*-[a-z0-9._-]*$/.test(type) || /^[a-z][a-z0-9._-]*:[a-z][a-z0-9._-]*$/.test(type);
 }
 
 /** Whether `type` is an SVG element's name (and no HTML element's). */

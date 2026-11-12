@@ -146,6 +146,32 @@ describe('mounting compositions', () => {
   });
 });
 
+describe('scripts that are data blocks', () => {
+  it('keeps a script of another type in the document with its text, so the page reads it by id; a JavaScript one is not a node', async () => {
+    const dir = project({
+      'index.html': `<html><body><div data-composition-id="m" data-duration="1" data-width="8" data-height="8">
+        <script type="x-shader/x-vertex" id="vertexShader">void main() { gl_Position = vec4(0.0); }</script>
+        <script>window.ran = 1;</script></div></body></html>`,
+    });
+    const { plan } = await buildPlan(join(dir, 'index.html'));
+    const block = find(plan.body, (n) => n.tag === 'script');
+    expect(block).not.toBeNull();
+    expect(attr(block!, 'id')).toBe('vertexShader');
+    expect(block!.children).toEqual([{ t: 'text', text: 'void main() { gl_Position = vec4(0.0); }' }]);
+    expect(find(plan.body, (n) => n.tag === 'script' && attr(n, 'id') !== 'vertexShader')).toBeNull();
+    expect(plan.scripts.map((x) => x.code)).toEqual(['window.ran = 1;']);
+  });
+
+  it('keeps one in the head as well', async () => {
+    const dir = project({
+      'index.html': `<html><head><script id="fs" type="x-shader/x-fragment">void main() {}</script></head>
+        <body><div data-composition-id="m" data-duration="1" data-width="8" data-height="8"></div></body></html>`,
+    });
+    const { plan } = await buildPlan(join(dir, 'index.html'));
+    expect(attr(find(plan.body, (n) => n.tag === 'script')!, 'id')).toBe('fs');
+  });
+});
+
 describe('the root composition\'s variables', () => {
   it('are the defaults every element of the page declares, outside the compositions it mounts, under the values given', async () => {
     const dir = project({

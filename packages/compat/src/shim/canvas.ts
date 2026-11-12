@@ -206,9 +206,54 @@ function newGlContext(type: string, size: () => { width: number; height: number 
     version: type.endsWith('2') ? 2 : 1,
     attributes: typeof attributes === "object" && attributes !== null ? (attributes as Record<string, unknown>) : undefined,
     rasterize: rasterizeCanvas,
+    report: (what) => glReports.add(what),
   });
   live.add(new WeakRef(context));
   return context;
+}
+
+/** What the WebGL recordings of the frame being rendered left out where they are not drawn right (`takeGlReports`). */
+const glReports = new Set<string>();
+
+/** What the WebGL recordings made since the last call left out where they are not drawn right, each once. */
+export function takeGlReports(): string[] {
+  const out = [...glReports];
+  glReports.clear();
+  return out;
+}
+
+/** Whether a WebGL canvas holds render targets that were drawn into (`WebGLContext.holdsTargets`). */
+export function glHoldsTargets(): boolean {
+  for (const ref of live) {
+    const context = ref.deref();
+    if (context instanceof WebGLContext && context.holdsTargets) return true;
+  }
+  return false;
+}
+
+/**
+ * The WebGL recordings' state as it is now, to put back with the function this returns (`WebGLContext.snapshot`). The
+ * frame loop puts it back after the sub-frames of a motion blur, so what they draw does not reach the next frame.
+ */
+export function snapshotGlStates(): () => void {
+  const undo: (() => void)[] = [];
+  for (const ref of live) {
+    const context = ref.deref();
+    if (context instanceof WebGLContext) undo.push(context.snapshot());
+  }
+  return () => undo.forEach((restore) => restore());
+}
+
+/**
+ * Whether the frame just rendered depends on the frames before it (`WebGLContext.dependsOnHistory`: it makes a render
+ * target of a WebGL canvas from what it held, or reads what the frame before wrote), which the frame loop renders when a render skipped them.
+ */
+export function glDependsOnHistory(): boolean {
+  for (const ref of live) {
+    const context = ref.deref();
+    if (context instanceof WebGLContext && context.dependsOnHistory) return true;
+  }
+  return false;
 }
 
 /** The 2D contexts of canvases in the tree (`contextOfHost`), the ones a frame's render draws on. */
@@ -222,6 +267,7 @@ const hosted = new WeakSet<CanvasContext2D>();
  * frame, and one outside the tree, keeps what is drawn (`resetState`).
  */
 export function resetCanvasStates(): void {
+  glReports.clear();
   for (const ref of live) {
     const context = ref.deref();
     if (context === undefined) live.delete(ref);

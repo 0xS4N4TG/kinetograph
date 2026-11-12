@@ -149,6 +149,19 @@ export function useDelayRender(): typeof delayRenderHook {
   return delayRenderHook;
 }
 
+/** How many handles `delayRender` has made so far: a pass that made one started work, however soon it ended. */
+export function renderHandlesMade(): number {
+  return nextHandle;
+}
+
+/** The label of the handle that holds a frame while a page's scripts load (not the page's own: a library's callbacks must not run in it on the clock of the event loop). */
+export const PAGE_LOAD_LABEL = 'HyperFrames page scripts';
+
+/** Whether every open handle is the page-load hold. */
+export function onlyPageLoadOpen(): boolean {
+  return open.size > 0 && [...open.values()].every((handle) => handle.label === PAGE_LOAD_LABEL);
+}
+
 /** Handles currently open (for the frame loop and tests). */
 export function openRenderHandles(): number {
   return open.size;

@@ -3,18 +3,20 @@
 // the host tree, `getComputedStyle`, the observers. There is no network and no clock: remote URLs fail with a message
 // that says so. `<canvas>` is the native 2D canvas (`./canvas.ts`). Installed in Node only where the globals are missing.
 
+import { MouseEventShim, PointerEventShim, ProgressEventShim, UIEventShim, WheelEventShim } from './events.js';
 import { AnimationEffectShim, AnimationPlaybackEventShim, AnimationShim, AnimationTimelineShim, animationsOf, DocumentTimelineShim, documentTimeline, KeyframeEffectShim } from './animations.js';
 import { readFile } from 'node:fs/promises';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolveObjectURL } from 'node:buffer';
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, WebGLContext, createGpu, GPU_GLOBALS, pictureOf, type CanvasPicture } from '@kinetographdev/scene';
+import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, GL, GL2, WebGLContext, createGpu, GPU_GLOBALS, pictureOf, type CanvasPicture } from '@kinetographdev/scene';
 import { resolveDocumentUrl, resolveProjectFile, resolveCachedRemoteFile, sameOriginPath } from '../environment.js';
+import { netFetch } from './net-store.js';
 import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas.js';
 import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, XMLSerializerShim, installDocumentMembers } from './document.js';
 import { AttrShim, NamedNodeMapShim } from './attributes.js';
-import { DomElement, DomFragment, DomNodeBase, DomText, domElementFor, domTextFor, isDomElementShim, selectorContextOf, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
+import { DomElement, DomFragment, DomNodeBase, DomText, domElementFor, domTextFor, isDomElementShim, selectorContextOf, setImageLoader, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
 import { bodyHost, headHost, htmlHost, pageDocument, setPageViewport } from './host.js';
 import { collectionOf, HTMLCollection, NodeList, nodeListOf } from './lists.js';
 import { RangeShim } from './range.js';
@@ -23,10 +25,20 @@ import { createHostElement, createHostText } from './tree.js';
 import { imageSizeOfBytes } from './image-size.js';
 import { IntersectionObserverShim, MutationObserverShim, readbackRoots, ResizeObserverShim } from './observers.js';
 import { matches, queryAll } from './selector.js';
+import { XMLHttpRequestShim } from './xhr.js';
+import { MessageChannelShim, MessagePortShim, WorkerShim } from './worker.js';
 
 // ---- the window ----
 
 let viewport = { width: 1920, height: 1080 };
+
+/**
+ * What `navigator.hardwareConcurrency` says, whatever the machine has, so a library that sizes its workers by it (MapLibre
+ * makes that many; Basis and Draco transcoders the same) does the same work on every machine. 4 is what such libraries
+ * assume when the property is missing, and a worker here runs on the page's own thread, so more would only be more
+ * workers taking turns.
+ */
+export const HARDWARE_CONCURRENCY = 4;
 
 /** The composition's size, which `window.innerWidth`, `matchMedia` and `document.documentElement` report. */
 export function setWebViewport(size: { width: number; height: number }): void {
@@ -124,19 +136,6 @@ class BrowserEventTarget extends EventTarget {
   }
 }
 
-/** `new ProgressEvent(type, { lengthComputable, loaded, total })` (XHR spec, Progress Events). Node has no such global. */
-class ProgressEventShim extends Event {
-  readonly lengthComputable: boolean;
-  readonly loaded: number;
-  readonly total: number;
-  constructor(type: string, init: { lengthComputable?: boolean; loaded?: number; total?: number; bubbles?: boolean; cancelable?: boolean } = {}) {
-    super(type, init);
-    this.lengthComputable = Boolean(init.lengthComputable);
-    this.loaded = Number(init.loaded ?? 0);
-    this.total = Number(init.total ?? 0);
-  }
-}
-
 class MediaQueryListShim extends BrowserEventTarget {
   onchange: ((event: unknown) => void) | null = null;
   constructor(readonly media: string) {
@@ -198,6 +197,74 @@ function imagePicture(src: string): CanvasPicture | null {
   return file === null ? null : { source: { kind: 'src', src: file }, ...size };
 }
 
+// ---- image loads ----
+
+type ImageResult = { size: { width: number; height: number } } | { error: Error };
+
+let pendingImages = 0;
+let loadsDone = 0;
+
+/** How many loads (images, fetches, bitmaps) have finished since the start: a frame that sees it move runs what they set going before it is read. */
+export function loadsSettled(): number {
+  return loadsDone;
+}
+
+/** Loads that failed since the last `takeLoadFailures`: what a page asked for (an image, a fetch) and did not get. */
+const loadFailures = new Set<string>();
+
+/** The loads that failed since the last call, each once, as `message` strings that name the URL: the frame loop reports them. */
+export function takeLoadFailures(): string[] {
+  const out = [...loadFailures];
+  loadFailures.clear();
+  return out;
+}
+
+/** Image loads that have started and not yet fired `load` or `error`: a frame waits for them (`new Image()`, a script's `<img>`). */
+export function pendingImageLoads(): number {
+  return pendingImages;
+}
+
+/** Reads the image at `source`: a project file or `data:` URL at once, a `blob:` URL once its bytes are read. `who` names the API in the messages. */
+function readImage(source: string, who: string): ImageResult | Promise<ImageResult> {
+  if (REMOTE.test(source)) return { error: new Error(remoteMessage(who, source)) };
+  if (source.startsWith('blob:')) {
+    const blob = resolveObjectURL(source);
+    if (blob === undefined) return { error: new Error(`${who} = "${source}": that blob URL is not known (it was revoked, or made in another process)`) };
+    // `Blob.arrayBuffer()` is asynchronous: the size is known after it.
+    return blob.arrayBuffer().then((buffer): ImageResult => {
+      const size = imageSizeOfBytes(new Uint8Array(buffer));
+      return size === null ? { error: new Error(`${who}: the blob is not an image Kinetograph can read`) } : { size };
+    });
+  }
+  const size = imageSizeAt(source);
+  if (size !== null) return { size };
+  const file = source.startsWith('data:') ? null : projectFileOf(source);
+  return {
+    error: new Error(
+      file === null && !source.startsWith('data:')
+        ? `${who} = "${source}": no such file in the project (looked beside the entry and in public/)`
+        : `${who} = "${source}": not an image Kinetograph can read (PNG, JPEG, GIF, WebP, BMP and SVG are)`,
+    ),
+  };
+}
+
+/** Starts reading the image at `source` and calls `done` with the outcome after the current task; until then it counts in `pendingImageLoads`. */
+export function startImageLoad(source: string, who: string, done: (result: ImageResult) => void): void {
+  const result = readImage(source, who);
+  pendingImages++;
+  const settle = (found: ImageResult): void => {
+    if ('error' in found) loadFailures.add(found.error.message);
+    try {
+      done(found);
+    } finally {
+      pendingImages--;
+      loadsDone++;
+    }
+  };
+  if (result instanceof Promise) void result.then(settle);
+  else queueMicrotask(() => settle(result));
+}
+
 // ---- Image ----
 
 class ImageShim extends BrowserEventTarget {
@@ -244,39 +311,13 @@ class ImageShim extends BrowserEventTarget {
     this.failure = null;
     this.naturalWidth = 0;
     this.naturalHeight = 0;
-    // The file is read now; the event comes after the current task, as a load does.
-    let size: { width: number; height: number } | null = null;
-    if (REMOTE.test(this.source)) this.failure = new Error(remoteMessage('new Image().src', this.source));
-    else if (this.source.startsWith('blob:')) {
-      const blob = resolveObjectURL(this.source);
-      if (blob === undefined) this.failure = new Error(`new Image().src = "${this.source}": that blob URL is not known (it was revoked, or made in another process)`);
-      else {
-        // `Blob.arrayBuffer()` is asynchronous: the size is known after it.
-        void blob.arrayBuffer().then((buffer) => {
-          const found = imageSizeOfBytes(new Uint8Array(buffer));
-          if (found === null) this.fail(new Error(`new Image(): the blob is not an image Kinetograph can read`));
-          else this.succeed(found);
-        });
-        return;
-      }
-    } else {
-      size = imageSizeAt(this.source);
-      if (size === null) {
-        const file = this.source.startsWith('data:') ? null : projectFileOf(this.source);
-        this.failure = new Error(
-          file === null && !this.source.startsWith('data:')
-            ? `new Image().src = "${this.source}": no such file in the project (looked beside the entry and in public/)`
-            : `new Image().src = "${this.source}": not an image Kinetograph can read (PNG, JPEG, GIF, WebP, BMP and SVG are)`,
-        );
-      }
-    }
-    if (this.failure) {
-      const error = this.failure;
-      queueMicrotask(() => this.fail(error));
-    } else if (size) {
-      const found = size;
-      queueMicrotask(() => this.succeed(found));
-    }
+    const source = this.source;
+    // The event comes after the current task, as a load does.
+    startImageLoad(source, 'new Image().src', (result) => {
+      if (this.source !== source) return;
+      if ('error' in result) this.fail(result.error);
+      else this.succeed(result.size);
+    });
   }
   private succeed(size: { width: number; height: number }): void {
     this.naturalWidth = size.width;
@@ -326,6 +367,12 @@ class ImageBitmapShim {
   [CANVAS_SOURCE](): CanvasPicture | null {
     return this.closed ? null : this.picture;
   }
+  /** `postMessage` of a bitmap: the picture is fixed, so the copy shares it; a transferred bitmap is closed on the sender's side. */
+  [Symbol.for('kinetograph.structuredClone')](transferred: boolean): ImageBitmapShim {
+    const copy = new ImageBitmapShim(this.picture);
+    if (transferred) this.closed = true;
+    return copy;
+  }
 }
 
 /** `createImageBitmap(source)` for an image, a canvas, `ImageData`, another bitmap or a `Blob` that holds an image file. */
@@ -369,6 +416,11 @@ export function setRefusedFetchHandler(handler: ((url: string) => void) | null):
 
 let inFlight = 0;
 
+/** `fetch` calls (and `trackPending` work) that have not answered yet. */
+export function pendingFetches(): number {
+  return inFlight;
+}
+
 /**
  * Resolves when no `fetch` is in flight and none starts for two turns of the event loop: the callbacks of what a page
  * fetched at load (`d3.json(url).then(draw)`) have run, and what they started (another fetch) has finished.
@@ -376,7 +428,7 @@ let inFlight = 0;
 export async function whenFetchesSettle(): Promise<void> {
   for (let quiet = 0; quiet < 2; ) {
     await new Promise<void>((resolve) => setImmediate(resolve));
-    quiet = inFlight === 0 ? quiet + 1 : 0;
+    quiet = inFlight === 0 && pendingImages === 0 ? quiet + 1 : 0;
   }
 }
 
@@ -385,6 +437,7 @@ export function trackPending<T>(work: Promise<T>): Promise<T> {
   inFlight++;
   return work.finally(() => {
     inFlight--;
+    loadsDone++;
   });
 }
 
@@ -396,6 +449,7 @@ function makeFetch(real: typeof fetch): typeof fetch {
       return await answer(input, init);
     } finally {
       inFlight--;
+      loadsDone++;
     }
   }) as typeof fetch;
 }
@@ -412,12 +466,19 @@ function makeAnswer(real: typeof fetch): typeof fetch {
       if (cached != null && existsSync(cached)) {
         return new Response(await readFile(cached), { status: 200, headers: { 'content-type': MIME[extname(new URL(url).pathname).toLowerCase()] ?? 'application/octet-stream' } });
       }
+      // Not a locked file: the recorded network store answers (a record pass reaches the network for its hosts), else it is refused.
+      const plain = (method === 'GET' || method === 'HEAD') && !hasBody;
+      const recorded = plain ? await netFetch(real, input, init, url, method) : null;
+      if (recorded !== null) return recorded;
       onRefused?.(url);
+      loadFailures.add(remoteMessage('fetch', url));
       throw new TypeError(remoteMessage('fetch', url));
     }
     const file = projectFileOf(url);
     if (file === null || !existsSync(file)) {
-      throw new TypeError(`fetch("${url}") failed: no such file in the project (looked beside the entry and in public/)`);
+      const message = `fetch("${url}") failed: no such file in the project (looked beside the entry and in public/)`;
+      loadFailures.add(message);
+      throw new TypeError(message);
     }
     const body = await readFile(file);
     return new Response(body, { status: 200, headers: { 'content-type': MIME[extname(file).toLowerCase()] ?? 'application/octet-stream' } });
@@ -550,10 +611,22 @@ function defineGetter(target: Record<string, unknown>, name: string, get: () => 
   if (!(name in target)) Object.defineProperty(target, name, { get, configurable: true, enumerable: false });
 }
 
+/** `WebGLRenderingContext` (version 1) or `WebGL2RenderingContext` (2): `instanceof` asks the recorder's version, and the constants are static, as in a browser. */
+function webglGlobal(version: 1 | 2): typeof WebGLContext {
+  const constructor = class extends WebGLContext {
+    static [Symbol.hasInstance](value: unknown): boolean {
+      return value instanceof WebGLContext && value.version === version;
+    }
+  };
+  Object.defineProperty(constructor, 'name', { value: version === 1 ? 'WebGLRenderingContext' : 'WebGL2RenderingContext' });
+  return Object.assign(constructor, GL, version === 2 ? GL2 : {});
+}
+
 /** Puts `window`, `document`, `Image`, `matchMedia`, the observers and a project-files-only `fetch` on the global object. */
 export function installDomGlobals(): void {
   const g = globalThis as Record<string, unknown>;
   setImageSizeReader(imageSizeAt);
+  setImageLoader(startImageLoad);
   setImagePictureReader(imagePicture);
   setProjectFileResolver(projectFileOf);
 
@@ -606,18 +679,28 @@ export function installDomGlobals(): void {
   define(g, 'HTMLCanvasElement', DomElement);
   define(g, 'OffscreenCanvas', OffscreenCanvasShim);
   define(g, 'CanvasRenderingContext2D', CanvasContext2D);
-  define(g, 'WebGLRenderingContext', WebGLContext);
-  define(g, 'WebGL2RenderingContext', WebGLContext);
+  // One recorder, two constructors: a `getContext('webgl')` context is a WebGLRenderingContext and not a WebGL2RenderingContext, and the reverse.
+  define(g, 'WebGLRenderingContext', webglGlobal(1));
+  define(g, 'WebGL2RenderingContext', webglGlobal(2));
   // `navigator.gpu` records (packages/scene/src/webgpu.ts); the canvas's 'webgpu' context is made by `getContext`.
   for (const [name, value] of Object.entries(GPU_GLOBALS)) define(g, name, value);
   const navigator = (g.navigator ??= {}) as Record<string, unknown>;
+  Object.defineProperty(navigator, 'hardwareConcurrency', { value: HARDWARE_CONCURRENCY, configurable: true, enumerable: true });
   if (!('gpu' in navigator)) Object.defineProperty(navigator, 'gpu', { value: createGpu({ rasterize: rasterizeCanvas, info: webgpuDeviceInfo }), configurable: true, enumerable: false });
   define(g, 'CanvasGradient', CanvasGradient);
   define(g, 'CanvasPattern', CanvasPattern);
   define(g, 'Path2D', Path2D);
   define(g, 'ImageData', ImageData);
   define(g, 'ImageBitmap', ImageBitmapShim);
-  define(g, 'createImageBitmap', createImageBitmapShim);
+  // A frame waits for the bitmap, as it waits for an image (`trackPending`).
+  define(g, 'createImageBitmap', (...args: Parameters<typeof createImageBitmapShim>) => trackPending(createImageBitmapShim(...args)));
+  // `XMLHttpRequest` reads through `fetch`, so it follows the same rules (xhr.ts).
+  define(g, 'XMLHttpRequest', XMLHttpRequestShim);
+  // `Worker` runs its script on this thread and `MessageChannel` delivers on one queue, so a frame can wait for the messages
+  // in flight (worker.ts). Node's own `MessageChannel` is replaced: its messages arrive when the event loop gets to them.
+  define(g, 'Worker', WorkerShim);
+  define(g, 'MessageChannel', MessageChannelShim, true);
+  define(g, 'MessagePort', MessagePortShim, true);
   define(g, 'Element', DomElement);
   define(g, 'HTMLElement', HTMLElementShim);
   define(g, 'SVGElement', SVGElementShim);
@@ -651,6 +734,10 @@ export function installDomGlobals(): void {
   define(g, 'AnimationTimeline', AnimationTimelineShim);
   define(g, 'DocumentTimeline', DocumentTimelineShim);
   define(g, 'AnimationPlaybackEvent', AnimationPlaybackEventShim);
+  define(g, 'UIEvent', UIEventShim);
+  define(g, 'MouseEvent', MouseEventShim);
+  define(g, 'PointerEvent', PointerEventShim);
+  define(g, 'WheelEvent', WheelEventShim);
   define(g, 'ProgressEvent', ProgressEventShim);
 
   // `fetch` of project files only. The real one stays reachable for the font downloads, which are explicit and cached.

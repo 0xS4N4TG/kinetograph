@@ -7,7 +7,18 @@ Kinetograph is in beta, so APIs can still change between versions. The same list
 
 ## Unreleased
 
+### Added
+
+- `@remotion/three`: `<ThreeCanvas>` draws a project's own `three` and `@react-three/fiber` one frame at a time, and holds the frame while textures and models load.
+- A script-made `<img>` fires `load` and `error`; `UIEvent`, `MouseEvent`, `PointerEvent`, `WheelEvent` and `ProgressEvent` exist; `WebGLRenderingContext` and `WebGL2RenderingContext` are different classes.
+- WebGL: `getInternalformatParameter(SAMPLES)`.
+- `fetch-deps --record --allow-host <hosts>` runs every frame with the network open for those hosts and keeps what the page `fetch`ed (URLs built at run time) in `.kinetograph/net`; a render answers only from it, and a miss names the URL, the frame and the command to record it. Secret query parameters (`access_token`, `key`, `token`, `sig`, signed-URL `x-amz-*`, plus `--secret-param`) never reach the store or the lock, and a credential-looking value in another one fails the pass unless `--keep-param` names it; Range requests and gzip bodies replay as recorded.
+
 ### Changed
+
+- Dependencies are bundled as a browser bundler resolves them (`module` field and `import` condition before `main`), so a package is in the bundle once.
+- A `setTimeout` made while a frame is held open fires when nothing else is moving, so a Suspense reveal does not stall the frame.
+- Node's process warnings printed through `console.error` are no longer reported as page errors.
 
 - A frame a HyperFrames worker plays through to reach its chunk is not rendered: only the clips, the timelines, `hf-seek` and the videos' `currentTime` are done (film 9.41 → 8.50 s, mg1 3.39 → 3.21 s).
 - A bundle whose inputs have not changed is used again instead of built again, and Node's compile cache (`~/.cache/kinetograph/compile-cache`) serves the CLI and the render workers (compat 0.78 → 0.64 s, mg2 0.86 → 0.71 s).
@@ -31,6 +42,7 @@ Kinetograph is now open source under the Apache License 2.0. Earlier versions st
 
 ### Fixed
 
+- WebGL render targets keep what was drawn into them across frames, so an environment map Three.js prefilters (`PMREMGenerator`) once reflects in every frame, not only in the first.
 - HyperFrames: `template.content` is the DOM shim's own fragment, so `content.getElementById(...)` works (a runtime stand-in `div` had none), as do the fragment's other methods.
 - HyperFrames: `Impact`, which HyperFrames reads from the machine that renders, is set in the bundled Archivo Black (a heavy face) instead of the regular weight of the next family, and the page is told once.
 - A canvas reads `color(srgb ...)` for `fillStyle`, `strokeStyle`, gradient stops and shadows, which is how `getComputedStyle` gives a `color-mix()` (ink-bleed-reveal drew black).

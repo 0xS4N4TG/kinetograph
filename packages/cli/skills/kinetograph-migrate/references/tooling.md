@@ -33,7 +33,7 @@ the compositions. The video entry (the file with `registerRoot`) stays.
    the old ones out; two ways to render confuse the next reader.
 2. Add `kinetograph` as a dev dependency (`npm install -D kinetograph`). Remove `@remotion/cli`, `@remotion/renderer`, `@remotion/bundler`,
    `@remotion/lambda`, `@remotion/player` and tailwind config packages from `package.json` once nothing imports them.
-   Remove `@remotion/three`, `three` and `@react-three/fiber` once the 3D is ported. Keep `remotion` and the video's `@remotion/*` packages if the project's own type checking needs their types; the
+   Keep `three` and `@react-three/fiber` while `<ThreeCanvas>` renders the 3D; remove them once it is ported to `<Scene3D>`. Keep `remotion` and the video's `@remotion/*` packages if the project's own type checking needs their types; the
    CLI does not read them at render time.
 3. A render script such as `scripts/render.ts` that calls `renderMedia` becomes a `package.json` script or a shell
    script. If it loops over many compositions or props, loop over `kinetograph render --comp ... --props ...` calls.

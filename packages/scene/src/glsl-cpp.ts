@@ -11,6 +11,27 @@ interface Macro {
 
 const MAX_DEPTH = 16;
 
+/** The source without its comments, each replaced by spaces (a block keeps its newlines), so a position in it is a
+ * position in the original. The text is read from the start, so a `/*` inside a `//` comment (or a `//` inside a
+ * block) is part of that comment and nothing more. */
+export function withoutComments(source: string): string {
+  let out = '';
+  for (let i = 0; i < source.length; ) {
+    if (source.startsWith('//', i)) {
+      const end = source.indexOf('\n', i);
+      const stop = end === -1 ? source.length : end;
+      out += ' '.repeat(stop - i);
+      i = stop;
+    } else if (source.startsWith('/*', i)) {
+      const end = source.indexOf('*/', i + 2);
+      const stop = end === -1 ? source.length : end + 2;
+      out += source.slice(i, stop).replace(/[^\n]/g, ' ');
+      i = stop;
+    } else out += source[i++];
+  }
+  return out;
+}
+
 class Calculator {
   private tokens: string[];
   private at = 0;
@@ -127,12 +148,12 @@ class Calculator {
 
 /** `source` with its comments and directives blanked and the lines its conditionals leave out, and the macros it defines. */
 export function preprocess(source: string): { code: string; length: (text: string) => number | null } {
-  const macros = new Map<string, Macro>([['GL_ES', { functionLike: false, value: '1' }]]);
+  const macros = new Map<string, Macro>([['GL_ES', { functionLike: false, value: '1' }], ['GL_FRAGMENT_PRECISION_HIGH', { functionLike: false, value: '1' }], ['__VERSION__', { functionLike: false, value: '100' }]]);
   const open: { active: boolean; taken: boolean }[] = [];
   const calc = (text: string, strict = false): number => new Calculator(macros, text, 0, strict).run();
   const live = () => open.length === 0 || open[open.length - 1]!.active;
   const out: string[] = [];
-  const stripped = source.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' ')).replace(/\/\/[^\n]*/g, '');
+  const stripped = withoutComments(source);
   for (const line of stripped.split('\n')) {
     const m = /^[ \t]*#[ \t]*(\w*)(.*)$/.exec(line);
     if (m === null) {
@@ -162,6 +183,8 @@ export function preprocess(source: string): { code: string; length: (text: strin
           const after = rest.slice(name.length);
           macros.set(name, { functionLike: after.startsWith('('), value: after.trim() });
         }
+      } else if (keyword === 'version' && parentLive) {
+        macros.set('__VERSION__', { functionLike: false, value: /^\d+/.exec(rest)?.[0] ?? '100' });
       } else if (keyword === 'undef' && parentLive) {
         macros.delete(/^\w*/.exec(rest)![0]);
       }

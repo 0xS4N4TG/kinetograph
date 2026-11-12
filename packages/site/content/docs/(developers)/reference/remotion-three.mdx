@@ -3,7 +3,7 @@ title: Remotion three.js mapping
 description: Rebuild a three.js or React Three Fiber scene with Kinetograph's own 3D layer.
 ---
 
-Kinetograph has no `@remotion/three`, `three` or `@react-three/fiber`. A `<ThreeCanvas>` import stops the build with `"@remotion/three" is not supported by Kinetograph yet`. Rebuild the scene with the 3D layer from `@kinetographdev/core`. The GPU compositor draws it with the rest of the frame, so it needs no WebGL. See [3D scenes](/docs/making-videos/transforms/#3d-scenes).
+`<ThreeCanvas>` from `@remotion/three` runs as it is: the project's own `three` and `@react-three/fiber` stay installed. `useVideoTexture` and `useOffthreadVideoTexture` are not available. For what it cannot draw (drei `<Environment>` and `<Text>`, skinned models, video textures), rebuild the scene with the 3D layer from `@kinetographdev/core`. The GPU compositor draws it with the rest of the frame, so it needs no WebGL. See [3D scenes](/docs/making-videos/transforms/#3d-scenes).
 
 ## Mapping
 

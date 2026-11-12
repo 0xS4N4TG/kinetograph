@@ -65,6 +65,15 @@ interface Timer {
   /** Milliseconds between firings, for `setInterval`. */
   interval: number | null;
   handle: VirtualTimeout;
+  /** A `setTimeout` made while the frame was held open (`setHoldProbe`): `fireHoldTimer` may fire it before its due time. */
+  hold: boolean;
+}
+
+let holdProbe: () => boolean = () => false;
+
+/** Says whether the frame being rendered is held open (a `delayRender` handle, a font or an image still loading). */
+export function setHoldProbe(probe: () => boolean): void {
+  holdProbe = probe;
 }
 
 let nextTimerId = 1;
@@ -134,6 +143,7 @@ function addTimer(callback: unknown, delay: unknown, args: unknown[], repeat: bo
     args,
     interval: repeat ? ms : null,
     handle,
+    hold: !repeat && holdProbe(),
   });
   return handle;
 }
@@ -155,6 +165,9 @@ function virtualRequestAnimationFrame(callback: (time: number) => void): number 
   }
   const id = nextAnimationId++;
   animationQueue.push({ id, callback });
+  const waiting = animationFrameWaiters;
+  animationFrameWaiters = [];
+  for (const wake of waiting) wake();
   return id;
 }
 function virtualCancelAnimationFrame(id: number): void {
@@ -197,6 +210,23 @@ function fireTimersUpTo(target: number): void {
   }
 }
 
+/**
+ * Fires the earliest timeout that was set while the frame was held open, in (due time, creation order), at the frame's own
+ * time: the clock does not move. A frame held on something that waits for a timeout (React's 300 ms throttle of a Suspense
+ * reveal) would otherwise wait for ever, since the clock only moves between frames. Returns false when there is none.
+ */
+export function fireHoldTimer(): boolean {
+  let best: Timer | null = null;
+  for (const timer of timers.values()) {
+    if (!timer.hold) continue;
+    if (best === null || timer.due < best.due || (timer.due === best.due && timer.seq < best.seq)) best = timer;
+  }
+  if (best === null) return false;
+  timers.delete(best.id);
+  best.callback(...best.args);
+  return true;
+}
+
 export interface VirtualFrameOptions {
   /** Seed `Math.random()` from this frame instead of from `frame`. A motion-blur sub-frame keeps its frame's randomness. */
   seedFrame?: number;
@@ -236,6 +266,18 @@ export function setVirtualFrame(frame: number, fps: number, options: VirtualFram
   animationClockMoved();
   tickAnimations();
   if (options.deferAnimationFrames !== true) runAnimationFrames();
+}
+
+let animationFrameWaiters: (() => void)[] = [];
+
+/** Resolves when an animation frame is next requested (the frame loop wakes to run it while a handle is open). */
+export function whenAnimationFrameRequested(): Promise<void> {
+  return new Promise<void>((resolve) => animationFrameWaiters.push(resolve));
+}
+
+/** Whether animation-frame callbacks are waiting to run. */
+export function animationFramesQueued(): boolean {
+  return animationQueue.length > 0;
 }
 
 /** Runs the animation-frame callbacks queued so far, once, with the virtual `performance.now()`; what they ask for waits for the next call. */

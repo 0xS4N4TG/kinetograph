@@ -169,8 +169,9 @@ enum Step<'c> {
     DepthCopy(&'c str, wgpu::Texture),
     /// A multisampled colour target resolved into a texture of one sample, for a blit to read.
     Resolve(&'c str, wgpu::Texture),
-    /// The six face targets of a cube map, every level, copied into the layers of a cube texture for draws to sample.
-    CubeCopy(&'c [String], wgpu::Texture),
+    /// The targets of a cube map's faces, or of the layers of an array or 3D texture, every level, copied into the layers
+    /// of one texture for draws to sample.
+    LayerCopy(&'c [String], wgpu::Texture),
 }
 
 struct Blit {
@@ -612,7 +613,7 @@ impl Compositor {
         // The copies of depth targets draws sample, while what they hold is the target's.
         let mut depth_copies: HashMap<&str, wgpu::TextureView> = HashMap::new();
         // The same for cube maps whose faces are targets, and for multisampled colour targets a blit reads.
-        let mut cube_copies: HashMap<&str, wgpu::TextureView> = HashMap::new();
+        let mut layer_copies: HashMap<&str, wgpu::TextureView> = HashMap::new();
         let mut resolved: HashMap<&str, wgpu::TextureView> = HashMap::new();
         let mut started: HashSet<(Option<&str>, u32)> = HashSet::new();
         for (i, op) in content.ops.iter().enumerate() {
@@ -755,31 +756,37 @@ impl Compositor {
                     steps.insert(at, Step::DepthCopy(id, copy));
                 }
             }
-            // A cube map whose faces are targets is copied from them before the pass, in the same way.
+            // A cube map, or an array or 3D texture, whose faces or layers are targets is copied from them before the pass, in
+            // the same way.
             if let GlslOp::Draw(draw) = op {
                 for unit in draw.units.values() {
                     let id = unit.texture.as_str();
                     let Some(texture) = content
                         .textures
                         .get(id)
-                        .filter(|t| t.cube && !t.targets.is_empty())
+                        .filter(|t| !t.targets.is_empty())
                     else {
                         continue;
                     };
-                    if cube_copies.contains_key(id) {
+                    if layer_copies.contains_key(id) {
                         continue;
                     }
-                    let copy =
-                        self.glsl_cube_of_targets(&mut targets, content, &texture.targets)?;
-                    cube_copies.insert(
+                    let copy = self.glsl_layers_of_targets(&mut targets, content, texture)?;
+                    layer_copies.insert(
                         id,
                         copy.create_view(&wgpu::TextureViewDescriptor {
-                            dimension: Some(wgpu::TextureViewDimension::Cube),
+                            dimension: Some(if texture.cube {
+                                wgpu::TextureViewDimension::Cube
+                            } else if texture.array {
+                                wgpu::TextureViewDimension::D2Array
+                            } else {
+                                wgpu::TextureViewDimension::D3
+                            }),
                             ..Default::default()
                         }),
                     );
                     let at = if joins { steps.len() - 1 } else { steps.len() };
-                    steps.insert(at, Step::CubeCopy(&texture.targets, copy));
+                    steps.insert(at, Step::LayerCopy(&texture.targets, copy));
                 }
             }
             // A multisampled colour target a blit reads is resolved into a texture of one sample before the pass.
@@ -819,12 +826,13 @@ impl Compositor {
                 depth_copies.remove(key);
             }
             resolved.retain(|id, _| !colors.iter().flatten().any(|(c, _)| *c == Some(*id)));
-            cube_copies.retain(|id, _| {
+            layer_copies.retain(|id, _| {
                 !content.textures[*id].targets.iter().any(|face| {
-                    colors
-                        .iter()
-                        .flatten()
-                        .any(|(c, _)| *c == Some(face.as_str()))
+                    ds == Some(face.as_str())
+                        || colors
+                            .iter()
+                            .flatten()
+                            .any(|(c, _)| *c == Some(face.as_str()))
                 })
             });
             if !joins {
@@ -873,7 +881,7 @@ impl Compositor {
                         content,
                         draw,
                         size,
-                        (base_dir, inputs, &depth_copies, &cube_copies),
+                        (base_dir, inputs, &depth_copies, &layer_copies),
                         &mut buffers,
                         &mut targets,
                         (&shape, ds_format, samples),
@@ -930,6 +938,9 @@ impl Compositor {
 
         let canvas = self.glsl.target.as_ref().expect("made above");
         for step in &steps {
+            // A recording of thousands of passes (a cube camera drawn again each frame) is sent in pieces: one
+            // command buffer of that size is not accepted by the driver (`submit_if_large`).
+            self.submit_if_large();
             let pass = match step {
                 Step::Write(id, [x, y, w, h], bytes) => {
                     // The passes before it run first: a queue write lands before whatever is
@@ -996,9 +1007,9 @@ impl Compositor {
                     drop(pass);
                     continue;
                 }
-                Step::CubeCopy(faces, cube) => {
+                Step::LayerCopy(sources, layers) => {
                     let mut encoder = self.encoder();
-                    for (layer, face) in faces.iter().enumerate() {
+                    for (layer, face) in sources.iter().enumerate() {
                         let t = &targets[face.as_str()];
                         for level in 0..t.levels.len() as u32 {
                             let (width, height) = t.level_size(level);
@@ -1010,7 +1021,7 @@ impl Compositor {
                                     aspect: wgpu::TextureAspect::All,
                                 },
                                 wgpu::TexelCopyTextureInfo {
-                                    texture: cube,
+                                    texture: layers,
                                     mip_level: level,
                                     origin: wgpu::Origin3d {
                                         x: 0,
@@ -1218,11 +1229,12 @@ impl Compositor {
                 format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                     | wgpu::TextureUsages::TEXTURE_BINDING
-                    | if ds.is_some() || samples > 1 {
-                        wgpu::TextureUsages::empty()
-                    } else {
-                        // A cube map's faces are copied from their targets.
-                        wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC
+                    | match ds {
+                        // A cube map's faces are copied from their targets (a depth cube's too: depth alone, one sample).
+                        Some(TargetFormat::Depth) if samples == 1 => wgpu::TextureUsages::COPY_SRC,
+                        Some(_) => wgpu::TextureUsages::empty(),
+                        None if samples > 1 => wgpu::TextureUsages::empty(),
+                        None => wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC,
                     },
                 view_formats: &[],
             });
@@ -1259,43 +1271,62 @@ impl Compositor {
         Ok(&targets[id])
     }
 
-    /// The cube texture a cube map whose faces are the targets `faces` is copied into (`Step::CubeCopy`): the
-    /// faces' side, format and levels, which must be one for all six, as GL's cube completeness asks.
-    fn glsl_cube_of_targets<'c>(
+    /// The texture whose faces (a cube map) or layers (a 2D array or 3D texture) are the targets `texture.targets`, which
+    /// `Step::LayerCopy` copies them into: one size, format and level count for all of them, as GL's completeness asks (a
+    /// cube's faces are square, a 3D texture has one level).
+    fn glsl_layers_of_targets<'c>(
         &self,
         targets: &mut HashMap<&'c str, Target>,
         content: &'c GlslContent,
-        faces: &'c [String],
+        texture: &'c GlslTexture,
     ) -> Result<wgpu::Texture> {
-        if faces.len() != 6 {
+        let count = if texture.cube { 6 } else { texture.depth as usize };
+        let what = if texture.cube { "cube map" } else if texture.array { "array texture" } else { "3D texture" };
+        if texture.targets.len() != count {
             return Err(render_error(format!(
-                "a cube map names {} face targets; it has 6",
-                faces.len()
+                "a {what} names {} targets; it has {count}",
+                texture.targets.len()
             )));
         }
         let mut shape = None;
-        for face in faces {
-            let t = self.glsl_target(targets, content, face, None)?;
-            let this = (t.size, t.format, t.levels.len(), t.ds.is_none());
-            if this.0.0 != this.0.1 || !this.3 || shape.is_some_and(|s| s != this) {
-                return Err(render_error(
-                    "a cube map's face targets are not six square colour targets of one size, format and \
-                     level count (WebGL samples such a cube map as incomplete)",
-                ));
+        for id in &texture.targets {
+            let t = self.glsl_target(targets, content, id, None)?;
+            // Colour, or depth alone (Depth32Float: the one depth format a copy reads); not stencil, nor multisampled.
+            let kind = match t.ds {
+                None => Some(false),
+                Some(TargetFormat::Depth) => Some(true),
+                Some(_) => None,
+            };
+            let this = (t.size, t.format, t.levels.len(), kind);
+            let size_ok = if texture.cube {
+                this.0.0 == this.0.1
+            } else {
+                this.0 == (texture.width, texture.height) && (texture.array || this.2 == 1)
+            };
+            if !size_ok || kind.is_none() || t.samples > 1 || shape.is_some_and(|s| s != this) {
+                return Err(render_error(format!(
+                    "a {what}'s targets are not {count} colour (or depth) targets of one size, format and level count{} \
+                     (WebGL samples such a texture as incomplete)",
+                    if texture.cube { ", square" } else { " that are the texture's width and height" },
+                )));
             }
             shape = Some(this);
         }
-        let ((side, _), format, levels, _) = shape.expect("six faces");
+        let ((width, height), format, levels, _) = shape.expect("a layer");
         Ok(self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("glsl cube of targets"),
+            label: Some("glsl layers of targets"),
             size: wgpu::Extent3d {
-                width: side,
-                height: side,
-                depth_or_array_layers: 6,
+                width,
+                height,
+                depth_or_array_layers: count as u32,
             },
             mip_level_count: levels as u32,
             sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
+            dimension: if texture.cube || texture.array {
+                wgpu::TextureDimension::D2
+            } else {
+                wgpu::TextureDimension::D3
+            },
             format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
@@ -1344,7 +1375,7 @@ impl Compositor {
         content: &'c GlslContent,
         draw: &'c GlslDraw,
         size: (u32, u32),
-        (base_dir, inputs, depth_copies, cube_copies): (
+        (base_dir, inputs, depth_copies, layer_copies): (
             &Path,
             &Inputs,
             &HashMap<&str, wgpu::TextureView>,
@@ -1373,7 +1404,7 @@ impl Compositor {
         }
         let size = self.glsl_dest_size(targets, &colors, ds_key, size)?;
         let points = draw.mode == GlslMode::Points;
-        let program = self.glsl_program(program_spec, flip, points)?;
+        let program = self.glsl_program(&draw.program, program_spec, flip, points)?;
 
         // State.
         let (viewport, scissor) = draw_rects(draw.viewport, draw.scissor, size, flip)?;
@@ -1406,6 +1437,8 @@ impl Compositor {
         let mut shapes: Vec<(&str, u64, u64, u64)> = Vec::new();
         // The attributes with a divisor above 1, by their place in `sources`, and the divisor.
         let mut divided: Vec<(usize, u32)> = Vec::new();
+        // The attributes whose values are converted on the CPU (`widen`), by their place in `sources`.
+        let mut widens: Vec<Option<Widen>> = Vec::new();
         let last = match &draw.indices {
             Some(indices) => {
                 let max = self.glsl_max_index(content, indices, draw, buffers)?;
@@ -1413,7 +1446,7 @@ impl Compositor {
             }
             None => u64::from(draw.first) + u64::from(draw.count),
         };
-        for (name, location, components) in &vertex.attributes {
+        for (name, location, kind) in &vertex.attributes {
             let a = draw.attributes.get(name).ok_or_else(|| {
                 render_error(format!(
                     "the attribute `{name}` has no data (an enabled array with no buffer, which WebGL \
@@ -1423,13 +1456,13 @@ impl Compositor {
             // An attribute with a divisor advances for each instance (or each `divisor` of them); a
             // point's attributes all do, as it is an instance itself.
             let per_instance = a.divisor >= 1 && !points;
-            let (format, element) = vertex_format(a, name, *components)?;
+            let (format, element, widen) = vertex_format(a, name, *kind)?;
             let stride = if a.stride == 0 {
                 element
             } else {
                 u64::from(a.stride)
             };
-            if stride % 4 != 0 || a.offset % 4 != 0 {
+            if widen.is_none() && (stride % 4 != 0 || a.offset % 4 != 0) {
                 return Err(render_error(format!(
                     "unsupported: the attribute `{name}` has a stride of {stride} bytes and an \
                      offset of {}; both must be multiples of 4",
@@ -1507,6 +1540,7 @@ impl Compositor {
             layouts.push((*location, format, stride, in_vertex, step));
             sources.push((&a.buffer, bound_at, stride));
             shapes.push((&a.buffer, stride, offset, element));
+            widens.push(widen.map(|w| Widen { count: reads, ..w }));
         }
 
         // The index list, expanded to triangles when the mode needs it.
@@ -1549,6 +1583,22 @@ impl Compositor {
                 sources[k].1 = 0;
             }
             instances = (0, list.len() as u32);
+        }
+        // Values the GPU cannot read as they are (a non-normalised short for a float input, any integer array)
+        // are converted to 32-bit ones, exactly: one pass over what the draw reads, after the gathering above.
+        for (k, widen) in widens.iter().enumerate() {
+            let Some(widen) = widen else { continue };
+            let (buffer, stride, offset, element) = shapes[k];
+            let out = match gathered[k].take() {
+                Some(raw) => widen_values(&raw, (0, element, raw.len() as u64 / element), widen)?,
+                None => {
+                    let bytes = glsl_buffer(content, buffer, buffers)?;
+                    widen_values(bytes, (offset, stride, widen.count), widen)?
+                }
+            };
+            gathered[k] = Some(out);
+            layouts[k] = (layouts[k].0, widen.format, widen.format.size(), 0, layouts[k].4);
+            sources[k].1 = 0;
         }
         if draw.mode == GlslMode::TriangleFan {
             let list = index_list
@@ -1609,8 +1659,13 @@ impl Compositor {
                             dim_name(held),
                         )));
                     }
+                    // A cube map of depth targets is a depth texture too.
+                    let depth_cube = texture.cube
+                        && texture.targets.first().is_some_and(|face| {
+                            content.textures.get(face).is_some_and(|f| f.format.is_some_and(TargetFormat::has_depth))
+                        });
                     if binding.dim.shadow()
-                        && !(texture.target && texture.format.is_some_and(TargetFormat::has_depth))
+                        && !(texture.target && texture.format.is_some_and(TargetFormat::has_depth) || depth_cube)
                     {
                         return Err(render_error(format!(
                             "the shadow sampler `{}` reads {:?}, which is not a depth texture (WebGL refuses \
@@ -1618,12 +1673,20 @@ impl Compositor {
                             binding.name, state.texture
                         )));
                     }
-                    let uploaded = if texture.cube && !texture.targets.is_empty() {
+                    let uploaded = if !texture.targets.is_empty() {
+                        if depth_cube && !binding.dim.shadow() {
+                            return Err(render_error(format!(
+                                "the sampler `{}` reads the depth cube map {:?} without comparing; read it with \
+                                 samplerCubeShadow",
+                                binding.name, state.texture
+                            )));
+                        }
                         let drawn_into = texture.targets.iter().any(|face| {
                             colors
                                 .iter()
                                 .flatten()
                                 .any(|(id, _)| *id == Some(face.as_str()))
+                                || dest.depth_stencil == Some(face.as_str())
                         });
                         if drawn_into {
                             return Err(render_error(format!(
@@ -1634,9 +1697,9 @@ impl Compositor {
                         }
                         let face = &targets[texture.targets[0].as_str()];
                         Arc::new(Uploaded {
-                            view: cube_copies[state.texture.as_str()].clone(),
+                            view: layer_copies[state.texture.as_str()].clone(),
                             mipmapped: target_mipmapped(face, state.max_level),
-                            depth: false,
+                            depth: depth_cube,
                             float32: is_float32(face.format),
                         })
                     } else if texture.cube {
@@ -1689,14 +1752,31 @@ impl Compositor {
             };
             sampled.push((binding.clone(), texture));
         }
+        // `OES_texture_float_linear` is always offered, so a page may enable it; a GPU that cannot filter 32-bit floats
+        // (FLOAT32_FILTERABLE) cannot draw what the page then asks for: that is said, not drawn as black.
+        let float_linear = draw.float_linear && self.device.features().contains(wgpu::Features::FLOAT32_FILTERABLE);
+        if draw.float_linear && !float_linear {
+            for (binding, texture) in &sampled {
+                if let Some((state, uploaded)) = texture {
+                    if uploaded.float32 && !nearest_family(state) {
+                        return Err(render_error(format!(
+                            "unsupported: the sampler `{}` reads a 32-bit float texture with a linear filter \
+                             (OES_texture_float_linear), which this GPU cannot do (it lacks FLOAT32_FILTERABLE); \
+                             use NEAREST or a 16-bit float texture",
+                            binding.name
+                        )));
+                    }
+                }
+            }
+        }
         let depths: Vec<bool> = sampled
             .iter()
-            .map(|(_, t)| t.as_ref().is_some_and(|(_, u)| u.depth || u.float32))
+            .map(|(_, t)| t.as_ref().is_some_and(|(_, u)| u.depth || (u.float32 && !float_linear)))
             .collect();
 
         // Pipeline.
         let key = format!(
-            "{:p}|{layouts:?}|{topology:?}|{}|{:?}|{:?}|{:?}|{:?}|{:?}|{shape:?}|{ds:?}|{samples}|{:?}|{depths:?}",
+            "{:p}|{layouts:?}|{topology:?}|{}|{:?}|{:?}|{:?}|{:?}|{:?}|{shape:?}|{ds:?}|{samples}|{:?}|{depths:?}|{}",
             Arc::as_ptr(&program),
             index_list.is_some() && topology.is_strip(),
             draw.blend.as_ref().map(blend_key),
@@ -1708,6 +1788,7 @@ impl Compositor {
             draw.stencil
                 .as_ref()
                 .map(|s| (s.value_mask, s.write_mask, &s.front, &s.back)),
+            draw.alpha_to_coverage && samples > 1,
         );
         let (bind_group_layout, pipeline_layout) = self.glsl_layout(&program, &depths);
         let pipeline = match self.glsl.pipelines.get(&key) {
@@ -1742,10 +1823,39 @@ impl Compositor {
                 contents: &fs_bytes,
                 usage: wgpu::BufferUsages::UNIFORM,
             });
+        // The uniform blocks: the bytes the draw recorded for each, as they were when it was made.
+        let mut block_buffers = Vec::new();
+        for (block, _) in &program.translated.blocks {
+            let mut bytes = vec![0u8; block.size as usize];
+            if let Some(range) = draw.blocks.get(&block.name) {
+                let held = glsl_buffer(content, &range.buffer, buffers)?;
+                let (from, to) = (
+                    range.offset as usize,
+                    range.offset as usize + range.size.min(block.data_size) as usize,
+                );
+                let read = held.get(from..to).ok_or_else(|| {
+                    render_error(format!(
+                        "the uniform block `{}` reads bytes {from} to {to} of the buffer {:?}, which holds {}",
+                        block.name,
+                        range.buffer,
+                        held.len()
+                    ))
+                })?;
+                bytes[..read.len()].copy_from_slice(read);
+            }
+            let buffer = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("glsl uniform block"),
+                    contents: &bytes,
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
+            block_buffers.push((block.binding, buffer));
+        }
         let mut sampler_views = Vec::new();
         for (binding, texture) in sampled {
             let (view, sampler) = match texture {
-                Some((state, uploaded)) => self.glsl_sampler(state, uploaded, binding.dim),
+                Some((state, uploaded)) => self.glsl_sampler(state, uploaded, binding.dim, float_linear),
                 None => {
                     let black = self.glsl_black(binding.dim);
                     if binding.dim.shadow() {
@@ -1782,6 +1892,12 @@ impl Compositor {
             binding: 1,
             resource: fs_buffer.as_entire_binding(),
         });
+        for (binding, buffer) in &block_buffers {
+            entries.push(wgpu::BindGroupEntry {
+                binding: *binding,
+                resource: buffer.as_entire_binding(),
+            });
+        }
         for (tb, view, sb, sampler) in &sampler_views {
             entries.push(wgpu::BindGroupEntry {
                 binding: *tb,
@@ -1888,14 +2004,12 @@ impl Compositor {
     /// The program, translated and compiled the first time it is drawn.
     fn glsl_program(
         &mut self,
+        id: &str,
         spec: &gl::GlslProgram,
         flip_y: bool,
         points: bool,
     ) -> Result<Arc<Program>> {
-        let key = format!(
-            "{}\u{0}{}\u{0}{:?}\u{0}{flip_y}\u{0}{points}",
-            spec.vertex, spec.fragment, spec.attributes
-        );
+        let key = program_key(id, spec, flip_y, points);
         if let Some(p) = self.glsl.programs.get(&key) {
             return Ok(p.clone());
         }
@@ -1915,6 +2029,9 @@ impl Compositor {
             entries.push(uniform_entry(0, wgpu::ShaderStages::VERTEX));
         }
         entries.push(uniform_entry(1, wgpu::ShaderStages::FRAGMENT));
+        for (b, stages) in &translated.blocks {
+            entries.push(uniform_entry(b.binding, sampler_visibility(*stages)));
+        }
         for (s, stages) in &translated.samplers {
             let visibility = sampler_visibility(*stages);
             entries.push(wgpu::BindGroupLayoutEntry {
@@ -1989,6 +2106,9 @@ impl Compositor {
             entries.push(uniform_entry(0, wgpu::ShaderStages::VERTEX));
         }
         entries.push(uniform_entry(1, wgpu::ShaderStages::FRAGMENT));
+        for (b, stages) in &program.translated.blocks {
+            entries.push(uniform_entry(b.binding, sampler_visibility(*stages)));
+        }
         for ((s, stages), depth) in program.translated.samplers.iter().zip(depths) {
             let visibility = sampler_visibility(*stages);
             entries.push(wgpu::BindGroupLayoutEntry {
@@ -2202,6 +2322,8 @@ impl Compositor {
                 depth_stencil,
                 multisample: wgpu::MultisampleState {
                     count: samples,
+                    // WebGL: SAMPLE_ALPHA_TO_COVERAGE does nothing in a buffer of one sample.
+                    alpha_to_coverage_enabled: draw.alpha_to_coverage && samples > 1,
                     ..Default::default()
                 },
                 multiview_mask: None,
@@ -2353,6 +2475,9 @@ impl Compositor {
         if let Some(t) = self.glsl.textures.get(&key) {
             return Ok(t.clone());
         }
+        if let Some((faces, side)) = gl::decode_cube_floats(texture).map_err(render_error)? {
+            return self.glsl_cube_floats(key, texture, faces, side);
+        }
         let Some((faces, side)) = gl::decode_cube(texture, base_dir).map_err(render_error)? else {
             return Ok(self.glsl_black(gl::SamplerDim::Cube));
         };
@@ -2428,6 +2553,92 @@ impl Compositor {
         Ok(uploaded)
     }
 
+    /// A cube map of floats (`RGBA16F`, `RGBA32F`): the faces in layers, with the mip chain of `generateMipmap`
+    /// made here, as a float 2D texture's is.
+    fn glsl_cube_floats(
+        &mut self,
+        key: String,
+        texture: &GlslTexture,
+        faces: Vec<gl::Texels>,
+        side: u32,
+    ) -> Result<Arc<Uploaded>> {
+        let limit = self.device.limits().max_texture_dimension_2d;
+        if side > limit {
+            return Err(render_error(format!(
+                "unsupported: a cube map face of {side} x {side}; the device holds {limit} across"
+            )));
+        }
+        let float32 = matches!(faces[0], gl::Texels::Rgba32F(_));
+        let (format, per_texel) = if float32 {
+            (wgpu::TextureFormat::Rgba32Float, 16)
+        } else {
+            (wgpu::TextureFormat::Rgba16Float, 8)
+        };
+        let levels = if texture.mipmaps { side.ilog2() + 1 } else { 1 };
+        let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("glsl cube map of floats"),
+            size: wgpu::Extent3d {
+                width: side,
+                height: side,
+                depth_or_array_layers: 6,
+            },
+            mip_level_count: levels,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        for (layer, face) in faces.into_iter().enumerate() {
+            let (mut level, mut w, mut h) = (face, side, side);
+            for mip in 0..levels {
+                let bytes = match &level {
+                    gl::Texels::Rgba8(b) | gl::Texels::Rgba16F(b) | gl::Texels::Rgba32F(b) => b,
+                };
+                self.queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &gpu,
+                        mip_level: mip,
+                        origin: wgpu::Origin3d {
+                            x: 0,
+                            y: 0,
+                            z: layer as u32,
+                        },
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    bytes,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(w * per_texel),
+                        rows_per_image: Some(h),
+                    },
+                    wgpu::Extent3d {
+                        width: w,
+                        height: h,
+                        depth_or_array_layers: 1,
+                    },
+                );
+                if mip + 1 < levels {
+                    (level, w, h) = gl::next_level_float(&level, w, h);
+                }
+            }
+        }
+        if self.glsl.textures.len() >= MAX_TEXTURES {
+            self.glsl.textures.clear();
+        }
+        let uploaded = Arc::new(Uploaded {
+            view: gpu.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::Cube),
+                ..Default::default()
+            }),
+            mipmapped: levels > 1,
+            depth: false,
+            float32,
+        });
+        self.glsl.textures.insert(key, uploaded.clone());
+        Ok(uploaded)
+    }
+
     /// A 3D texture (`texImage3D`) or a float one (`R32F`, `RGBA16F`, ...), uploaded the first time and kept by
     /// what it is made from.
     fn glsl_texture_texels(&mut self, id: &str, texture: &GlslTexture) -> Result<Arc<Uploaded>> {
@@ -2454,20 +2665,26 @@ impl Compositor {
                 "unsupported: a {width} x {height} x {depth} texture; the device holds {limit} across and {layers} layers"
             )));
         }
-        let (format, bytes, per_texel) = match &texels {
-            gl::Texels::Rgba8(b) => (COLOR_FORMAT, b, 4),
-            gl::Texels::Rgba16F(b) => (wgpu::TextureFormat::Rgba16Float, b, 8),
-            gl::Texels::Rgba32F(b) => (wgpu::TextureFormat::Rgba32Float, b, 16),
+        let (format, per_texel) = match &texels {
+            gl::Texels::Rgba8(_) => (COLOR_FORMAT, 4),
+            gl::Texels::Rgba16F(_) => (wgpu::TextureFormat::Rgba16Float, 8),
+            gl::Texels::Rgba32F(_) => (wgpu::TextureFormat::Rgba32Float, 16),
         };
         let size = wgpu::Extent3d {
             width,
             height,
             depth_or_array_layers: depth,
         };
+        // `generateMipmap` of a float texture: the chain is made here, 2 x 2 blocks averaged (a 3D or array texture has one level).
+        let levels = if texture.mipmaps && !three_d && !texture.array && format != COLOR_FORMAT {
+            width.max(height).ilog2() + 1
+        } else {
+            1
+        };
         let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("glsl texture"),
             size,
-            mip_level_count: 1,
+            mip_level_count: levels,
             sample_count: 1,
             dimension: if three_d {
                 wgpu::TextureDimension::D3
@@ -2478,16 +2695,35 @@ impl Compositor {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        self.queue.write_texture(
-            gpu.as_image_copy(),
-            bytes,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(width * per_texel),
-                rows_per_image: Some(height),
-            },
-            size,
-        );
+        let float32 = matches!(texels, gl::Texels::Rgba32F(_));
+        let (mut w, mut h, mut level) = (width, height, texels);
+        for mip in 0..levels {
+            let bytes = match &level {
+                gl::Texels::Rgba8(b) | gl::Texels::Rgba16F(b) | gl::Texels::Rgba32F(b) => b,
+            };
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &gpu,
+                    mip_level: mip,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                bytes,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(w * per_texel),
+                    rows_per_image: Some(h),
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: depth,
+                },
+            );
+            if mip + 1 < levels {
+                (level, w, h) = gl::next_level_float(&level, w, h);
+            }
+        }
         if self.glsl.textures.len() >= MAX_TEXTURES {
             self.glsl.textures.clear();
         }
@@ -2496,9 +2732,9 @@ impl Compositor {
                 dimension: Some(view_dimension(texture_dim(texture))),
                 ..Default::default()
             }),
-            mipmapped: false,
+            mipmapped: levels > 1,
             depth: false,
-            float32: matches!(texels, gl::Texels::Rgba32F(_)),
+            float32,
         });
         self.glsl.textures.insert(key, uploaded.clone());
         Ok(uploaded)
@@ -2703,6 +2939,7 @@ impl Compositor {
         state: &GlslSampler,
         texture: Arc<Uploaded>,
         dim: gl::SamplerDim,
+        float_linear: bool,
     ) -> (wgpu::TextureView, wgpu::Sampler) {
         if dim.shadow() {
             return (texture.view.clone(), self.glsl_compare_sampler(state));
@@ -2736,9 +2973,9 @@ impl Compositor {
                 (Arc::new(uploaded), &based)
             }
         };
-        // A 32-bit float texture is complete only when it is read `NEAREST`; any other filter makes it
-        // incomplete, which samples as opaque black.
-        if texture.float32 && !(state.min == "NEAREST" && state.mag == "NEAREST") {
+        // A 32-bit float texture is complete only when it is read `NEAREST` or `NEAREST_MIPMAP_NEAREST` (without
+        // `OES_texture_float_linear`); any other filter makes it incomplete, which samples as opaque black.
+        if texture.float32 && !float_linear && !nearest_family(state) {
             let black = self.glsl_black(dim);
             let nearest = GlslSampler {
                 min: "NEAREST".into(),
@@ -2747,8 +2984,8 @@ impl Compositor {
             };
             return (black.view.clone(), self.glsl_sampler_for(&nearest, false));
         }
-        // A depth buffer, or float texture, is read texel for texel.
-        if texture.depth || texture.float32 {
+        // A depth buffer is read texel for texel.
+        if texture.depth {
             let nearest = GlslSampler {
                 min: "NEAREST".into(),
                 mag: "NEAREST".into(),
@@ -3804,6 +4041,17 @@ fn dim_name(dim: gl::SamplerDim) -> &'static str {
     }
 }
 
+/// What a compiled program is cached under: the recorder's content-hashed id (the source text is up to 100 KB per
+/// shader, too much to format and hash for every draw), the two source lengths as a guard against a recording that
+/// reuses an id, and the two flags the translation depends on.
+fn program_key(id: &str, spec: &gl::GlslProgram, flip_y: bool, points: bool) -> String {
+    format!(
+        "{id}\u{0}{}\u{0}{}\u{0}{flip_y}\u{0}{points}",
+        spec.vertex.len(),
+        spec.fragment.len()
+    )
+}
+
 fn uniform_entry(binding: u32, visibility: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
@@ -3865,42 +4113,172 @@ fn read_indices(bytes: &[u8], ty: GlslType, offset: u32, count: u32) -> Result<V
         .collect())
 }
 
-/// The wgpu format of an attribute's data and its size in bytes, if the
-/// shader reads floats of this many components.
+/// Values converted to what the shader reads, on the CPU: the type and size the page gave, and what the shader's
+/// input is.
+#[derive(Clone, Copy)]
+struct Widen {
+    ty: GlslType,
+    normalized: bool,
+    size: u32,
+    kind: gl::AttrKind,
+    /// The elements the draw reads.
+    count: u64,
+    /// The format of the converted values: 32-bit floats, signed or unsigned integers, as many as the input has.
+    format: wgpu::VertexFormat,
+}
+
+/// The format a vertex attribute is read in, the bytes of one element in the buffer, and, when the GPU cannot read
+/// the buffer's values as they are, how to convert them. wgpu reads floats and the normalised 8- and 16-bit types
+/// of 2 or 4 components directly; every integer array, a non-normalised 8- or 16-bit one for a float input (GLES 3.0
+/// section 2.9 converts the value to float) and an array of 1 or 3 components are widened to 32-bit values on the CPU,
+/// which is exact for every value of the types and needs no shader of its own for each way a page binds the buffer.
 fn vertex_format(
     a: &GlslAttribute,
     name: &str,
-    components: Option<u32>,
-) -> Result<(wgpu::VertexFormat, u64)> {
+    kind: Option<gl::AttrKind>,
+) -> Result<(wgpu::VertexFormat, u64, Option<Widen>)> {
+    use gl::AttrKind as K;
     use wgpu::VertexFormat as F;
-    if components.is_none() {
+    let Some(kind) = kind else {
         return Err(render_error(format!(
-            "unsupported: the attribute `{name}` is not a float or a float vector"
+            "unsupported: the attribute `{name}` is not a float, an integer or a vector of them"
         )));
-    }
+    };
     let n = a.size;
-    let format = match (a.ty, a.normalized, n) {
-        (GlslType::F32, _, 1) => F::Float32,
-        (GlslType::F32, _, 2) => F::Float32x2,
-        (GlslType::F32, _, 3) => F::Float32x3,
-        (GlslType::F32, _, 4) => F::Float32x4,
-        (GlslType::U8, true, 2) => F::Unorm8x2,
-        (GlslType::U8, true, 4) => F::Unorm8x4,
-        (GlslType::I8, true, 2) => F::Snorm8x2,
-        (GlslType::I8, true, 4) => F::Snorm8x4,
-        (GlslType::U16, true, 2) => F::Unorm16x2,
-        (GlslType::U16, true, 4) => F::Unorm16x4,
-        (GlslType::I16, true, 2) => F::Snorm16x2,
-        (GlslType::I16, true, 4) => F::Snorm16x4,
-        _ => {
+    let raw = u64::from(n) * a.ty.size();
+    let widen = |format: F| {
+        (
+            format,
+            raw,
+            Some(Widen {
+                ty: a.ty,
+                normalized: a.normalized,
+                size: n,
+                kind,
+                count: 0,
+                format,
+            }),
+        )
+    };
+    // As many components as the input reads (the rest are GL's 0, 0, 0, 1) and the values give.
+    let width = n.max(match kind {
+        K::Float(c) | K::Int(c) | K::Uint(c) => c,
+    });
+    if a.integer {
+        if a.ty == GlslType::F32 || a.constant.is_some() {
             return Err(render_error(format!(
-                "unsupported: the attribute `{name}` is {n} {:?} value(s), normalized: {}; use FLOAT, \
-                 or a normalized byte or short with 2 or 4 components",
-                a.ty, a.normalized
+                "unsupported: the attribute `{name}` is an integer array of floats or a disabled one"
             )));
         }
+        let format = match (kind, width) {
+            (K::Int(_), 1) => F::Sint32,
+            (K::Int(_), 2) => F::Sint32x2,
+            (K::Int(_), 3) => F::Sint32x3,
+            (K::Int(_), _) => F::Sint32x4,
+            (K::Uint(_), 1) => F::Uint32,
+            (K::Uint(_), 2) => F::Uint32x2,
+            (K::Uint(_), 3) => F::Uint32x3,
+            (K::Uint(_), _) => F::Uint32x4,
+            (K::Float(_), _) => {
+                return Err(render_error(format!(
+                    "unsupported: the attribute `{name}` is a float input but its array is of integers \
+                     (vertexAttribIPointer); declare it ivecN or uvecN, or use vertexAttribPointer"
+                )));
+            }
+        };
+        return Ok(widen(format));
+    }
+    let K::Float(_) = kind else {
+        return Err(render_error(format!(
+            "unsupported: the attribute `{name}` is an integer input but its array is not (vertexAttribPointer); \
+             use vertexAttribIPointer"
+        )));
     };
-    Ok((format, format.size()))
+    let direct = match (a.ty, a.normalized, n) {
+        (GlslType::F32, _, 1) => Some(F::Float32),
+        (GlslType::F32, _, 2) => Some(F::Float32x2),
+        (GlslType::F32, _, 3) => Some(F::Float32x3),
+        (GlslType::F32, _, 4) => Some(F::Float32x4),
+        (GlslType::U8, true, 2) => Some(F::Unorm8x2),
+        (GlslType::U8, true, 4) => Some(F::Unorm8x4),
+        (GlslType::I8, true, 2) => Some(F::Snorm8x2),
+        (GlslType::I8, true, 4) => Some(F::Snorm8x4),
+        (GlslType::U16, true, 2) => Some(F::Unorm16x2),
+        (GlslType::U16, true, 4) => Some(F::Unorm16x4),
+        (GlslType::I16, true, 2) => Some(F::Snorm16x2),
+        (GlslType::I16, true, 4) => Some(F::Snorm16x4),
+        _ => None,
+    };
+    if let Some(format) = direct {
+        return Ok((format, format.size(), None));
+    }
+    Ok(widen(match width {
+        1 => F::Float32,
+        2 => F::Float32x2,
+        3 => F::Float32x3,
+        _ => F::Float32x4,
+    }))
+}
+
+/// `count` elements of `size` values of `widen.ty`, read at `(start, stride, count)` of `bytes`, as 32-bit floats
+/// (scaled to 0..1 or -1..1 when normalised), signed or unsigned integers, each element padded to the format's width
+/// with GL's 0, 0, 0, 1.
+fn widen_values(bytes: &[u8], (start, stride, count): (u64, u64, u64), widen: &Widen) -> Result<Vec<u8>> {
+    let width = widen.format.size() as usize / 4;
+    let size = widen.size as usize;
+    let tsz = widen.ty.size() as usize;
+    let mut out = Vec::with_capacity(count as usize * width * 4);
+    for i in 0..count {
+        let at = (start + i * stride) as usize;
+        for c in 0..width {
+            let default = if c == 3 { 1 } else { 0 };
+            let value: i64 = if c < size {
+                let from = at + c * tsz;
+                let b = bytes.get(from..from + tsz).ok_or_else(|| {
+                    render_error("the draw reads past the end of an attribute's buffer")
+                })?;
+                match widen.ty {
+                    GlslType::U8 => i64::from(b[0]),
+                    GlslType::I8 => i64::from(b[0] as i8),
+                    GlslType::U16 => i64::from(u16::from_le_bytes([b[0], b[1]])),
+                    GlslType::I16 => i64::from(i16::from_le_bytes([b[0], b[1]])),
+                    GlslType::U32 => i64::from(u32::from_le_bytes([b[0], b[1], b[2], b[3]])),
+                    GlslType::I32 | GlslType::F32 => {
+                        i64::from(i32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                    }
+                }
+            } else {
+                default
+            };
+            match widen.kind {
+                gl::AttrKind::Float(_) => {
+                    let v = value as f64;
+                    let scaled = if widen.normalized && c < size {
+                        match widen.ty {
+                            GlslType::U8 => v / 255.0,
+                            GlslType::U16 => v / 65535.0,
+                            GlslType::U32 => v / 4_294_967_295.0,
+                            GlslType::I8 => (v / 127.0).max(-1.0),
+                            GlslType::I16 => (v / 32767.0).max(-1.0),
+                            GlslType::I32 | GlslType::F32 => (v / 2_147_483_647.0).max(-1.0),
+                        }
+                    } else {
+                        v
+                    };
+                    out.extend_from_slice(&(scaled as f32).to_le_bytes());
+                }
+                gl::AttrKind::Int(_) => out.extend_from_slice(&(value as i32).to_le_bytes()),
+                gl::AttrKind::Uint(_) => out.extend_from_slice(&(value as u32).to_le_bytes()),
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Filters that take one texel and no blend of two (`NEAREST` magnified, `NEAREST` or `NEAREST_MIPMAP_NEAREST`
+/// minified): the only ones a 32-bit float texture may be read with where it cannot be filtered.
+fn nearest_family(state: &GlslSampler) -> bool {
+    state.mag == "NEAREST" && matches!(state.min.as_str(), "NEAREST" | "NEAREST_MIPMAP_NEAREST")
 }
 
 fn min_filter(name: &str) -> (wgpu::FilterMode, wgpu::MipmapFilterMode, bool) {
@@ -4068,6 +4446,43 @@ fn file_stamp(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_float32_texture_is_complete_with_either_nearest_filter_and_not_with_a_linear_one() {
+        let state = |min: &str, mag: &str| GlslSampler {
+            texture: "t".into(),
+            min: min.into(),
+            mag: mag.into(),
+            wrap_s: "REPEAT".into(),
+            wrap_t: "REPEAT".into(),
+            wrap_r: "REPEAT".into(),
+            max_level: None,
+            base_level: 0,
+            compare: None,
+        };
+        assert!(nearest_family(&state("NEAREST", "NEAREST")));
+        assert!(nearest_family(&state("NEAREST_MIPMAP_NEAREST", "NEAREST")));
+        assert!(!nearest_family(&state("NEAREST_MIPMAP_LINEAR", "NEAREST")));
+        assert!(!nearest_family(&state("LINEAR_MIPMAP_NEAREST", "NEAREST")));
+        assert!(!nearest_family(&state("NEAREST", "LINEAR")));
+    }
+
+    #[test]
+    fn a_program_is_cached_under_its_id_not_its_source() {
+        let big = "x".repeat(100_000);
+        let spec = |v: &str| gl::GlslProgram {
+            vertex: v.to_string(),
+            fragment: big.clone(),
+            attributes: Default::default(),
+            blocks: Vec::new(),
+        };
+        let key = program_key("p0123456789abcdef", &spec(&big), false, false);
+        assert!(key.len() < 100, "the key holds the source: {} bytes", key.len());
+        assert_ne!(key, program_key("p0123456789abcdef", &spec(&big), true, false));
+        assert_ne!(key, program_key("p0123456789abcdef", &spec(&big), false, true));
+        assert_ne!(key, program_key("pfedcba9876543210", &spec(&big), false, false));
+        assert_ne!(key, program_key("p0123456789abcdef", &spec("short"), false, false));
+    }
 
     #[test]
     fn rectangles_are_checked_without_overflow() {

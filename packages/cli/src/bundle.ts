@@ -38,6 +38,7 @@ const REMOTION_PACKAGES = new Set([
   'canvas',
   'rive',
   'skia',
+  'three',
 ]);
 
 /**
@@ -163,6 +164,25 @@ function aliasPlugin(unsupported?: UnsupportedImport[]): Plugin {
         resolveDir: CLI_DIR,
         loader: 'js',
       }));
+    },
+  };
+}
+
+/**
+ * `three` and `@react-three/fiber` are the project's own dependencies: the core's `<ThreeCanvas>` (`@remotion/three`)
+ * imports them, and they resolve from the project, so that it and the project's scene share one copy. A project that
+ * has not installed them gets the package named, not a bare "could not resolve".
+ */
+function projectPeersPlugin(projectDir: string): Plugin {
+  return {
+    name: 'kinetograph-project-peers',
+    setup(b) {
+      b.onResolve({ filter: /^(three|@react-three\/fiber)$/ }, async (args) => {
+        if (args.pluginData?.kinetographPeer || !/[\\/]core[\\/]dist[\\/]three\.js$/.test(args.importer)) return undefined;
+        const found = await b.resolve(args.path, { resolveDir: projectDir, kind: args.kind, importer: args.importer, pluginData: { kinetographPeer: true } });
+        if (found.errors.length === 0) return found;
+        return { errors: [{ text: `<ThreeCanvas> (@remotion/three) needs "${args.path}" in your project: npm install three @react-three/fiber` }] };
+      });
     },
   };
 }
@@ -342,8 +362,12 @@ export function syntheticEntry(entry: string, dev = false): string {
     `export { setLayoutText } from '@kinetographdev/core/layout-utils';`,
     `export { setAudioDecoder, setMediaProbe } from '@kinetographdev/core/media-utils';`,
     `export { setMediaParserAddon } from '@kinetographdev/core/media-parser';`,
+    // A module worker with imports is bundled by the CLI's own esbuild (worker-module.ts).
+    `export { setWorkerModuleLoader } from '@kinetographdev/compat/shim';`,
     // DOM elements are styled, laid out and painted by the addon too (packages/cli/skills/kinetograph-markup/references/ENGINE.md §2).
     `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetographdev/compat/dom';`,
+    // The recorded network store is the bundle's copy of the shim's, the one the page's `fetch` reads.
+    `export { finishNetRecord, setNetFrame, setNetStore, whenFetchesSettle } from '@kinetographdev/compat/shim';`,
     '',
   ].join('\n');
 }
@@ -371,7 +395,7 @@ export interface BundleResult {
 
 /** The esbuild options that bundle the project at `absolute` (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9). */
 function bundleOptions(absolute: string, unsupported?: UnsupportedImport[], dev = false, watched?: Watched): BuildOptions {
-  const plugins = [...(dev ? [jsxDevPlugin()] : []), entryPlugin(absolute), imagePlugin(), hyperframesPlugin(), aliasPlugin(unsupported), gsapPlugin(), browserFieldPlugin(), cssPlugin()];
+  const plugins = [...(dev ? [jsxDevPlugin()] : []), entryPlugin(absolute), imagePlugin(), hyperframesPlugin(), aliasPlugin(unsupported), projectPeersPlugin(dirname(absolute)), gsapPlugin(), browserFieldPlugin(), cssPlugin()];
   return {
     stdin: {
       contents: syntheticEntry(absolute, dev),
@@ -385,6 +409,11 @@ function bundleOptions(absolute: string, unsupported?: UnsupportedImport[], dev 
     outfile: 'bundle.mjs',
     format: 'esm',
     platform: 'node',
+    // As a browser bundler (the project's webpack) resolves a dependency: the ESM entry (`module`, the `import` condition, which
+    // esbuild also applies to a `require()` call) before the CommonJS `main`, so that one copy of a package such as three
+    // is in the bundle whether it is imported or required.
+    mainFields: ['module', 'main'],
+    conditions: ['import', 'module'],
     target: 'node22',
     jsx: 'automatic',
     // The studio's builds record where each element's JSX is (see `JSX_DEV_SHIM`).

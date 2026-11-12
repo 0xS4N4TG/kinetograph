@@ -9,12 +9,14 @@ import { installDynamicImport, installRemotePictures } from './hyperframes/dynam
 import { isHyperframesEntry, resolveEntry } from './hyperframes/entry.js';
 import { LABEL_FONT_PATH } from './scenes.js';
 import { modelNotes } from './model-notes.js';
+import { installNet, type NetShim } from './net.js';
 import { prefetchBeforePlan, prefetchBundleAssets } from './prefetch.js';
 import { native } from './native.js';
 import { nowMs } from './time.js';
+import { bundleWorkerModule } from './worker-module.js';
 
 /** What the bundle exports: the parts of `@kinetographdev/core` the CLI drives (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §7). */
-interface ProjectModule {
+interface ProjectModule extends NetShim {
   getCompositions(): CompositionInfo[];
   createFrameRenderer(id: string, options?: { inputProps?: Record<string, unknown> }): FrameRenderer;
   setPublicDir(dir: string): void;
@@ -25,6 +27,7 @@ interface ProjectModule {
   setDomAddon(addon: object | null): void;
   setFallbackFont(path: string | null): void;
   setDomEnvironment(environment: { baseDir: string; publicDir?: string }): void;
+  setWorkerModuleLoader(loader: ((file: string | null, code: string, url: string) => string) | null): void;
   /** Problems with the project's stylesheets (Tailwind that could not be built, a remote font). */
   stylesheetNotes(): string[];
   /** The files `<Artifact>`s asked the render to write (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9). */
@@ -186,12 +189,15 @@ async function loadProject(
     );
   }
   mod.setPublicDir(publicDir);
+  // The recorded network store, if the project has one, answers the page's remote `fetch` from here on.
+  installNet(entry, file, mod, prefetch === null ? undefined : prefetch.progress);
   mod.setLayoutText(native().layoutText);
   // Text with no font of the project's is set in the font Kinetograph ships (and reported), not left out.
   mod.setFallbackFont(LABEL_FONT_PATH);
   // The DOM engine: islands are styled, laid out and painted by the addon, relative paths resolve from the entry.
   mod.setDomAddon(native());
   mod.setDomEnvironment({ baseDir: dirname(entry), publicDir });
+  mod.setWorkerModuleLoader(bundleWorkerModule);
   // A relative `src` is read from where the scenes' assets are (the entry's directory), not the working directory.
   mod.setMediaProbe((path, baseDir) => native().probeMedia(path, baseDir ?? dirname(entry)));
   mod.setAudioDecoder((path, sampleRate) => native().decodeAudio(path, sampleRate, dirname(entry)));

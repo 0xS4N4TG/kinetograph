@@ -165,6 +165,106 @@ fn webgl2_float_blend() {
 }
 
 #[test]
+fn webgl2_ubo_shared() {
+    run("webgl2_ubo_shared", 1.0);
+}
+
+#[test]
+fn webgl2_ubo_two_blocks() {
+    run("webgl2_ubo_two_blocks", 1.0);
+}
+
+#[test]
+fn webgl2_array_uniform_name() {
+    run("webgl2_array_uniform_name", 1.0);
+}
+
+#[test]
+fn webgl2_alpha_to_coverage() {
+    run("webgl2_alpha_to_coverage", 6.0);
+}
+
+#[test]
+fn webgl2_float_mipmap() {
+    run("webgl2_float_mipmap", 1.0);
+}
+
+#[test]
+fn webgl2_uniform_infinity() {
+    run("webgl2_uniform_infinity", 1.0);
+}
+
+#[test]
+fn webgl2_matrix_inverse() {
+    run("webgl2_matrix_inverse", 1.0);
+}
+
+#[test]
+fn webgl2_texture3d_float() {
+    run("webgl2_texture3d_float", 1.0);
+}
+
+#[test]
+fn webgl2_float_linear() {
+    run("webgl2_float_linear", 1.0);
+}
+
+#[test]
+fn webgl2_cube_depth() {
+    run("webgl2_cube_depth", 1.0);
+}
+
+#[test]
+fn webgl2_texture_layers() {
+    run("webgl2_texture_layers", 1.0);
+}
+
+#[test]
+fn webgl2_cube_float16() {
+    run("webgl2_cube_float16", 1.0);
+}
+
+#[test]
+fn webgl2_cube_float32() {
+    run("webgl2_cube_float32", 1.0);
+}
+
+#[test]
+fn webgl2_uniform_struct_tail() {
+    run("webgl2_uniform_struct_tail", 1.0);
+}
+
+#[test]
+fn webgl2_uniform_struct_types() {
+    run("webgl2_uniform_struct_types", 1.0);
+}
+
+#[test]
+fn webgl2_ubo_range() {
+    run("webgl2_ubo_range", 1.0);
+}
+
+#[test]
+fn webgl2_attr_int_to_float() {
+    run("webgl2_attr_int_to_float", 1.0);
+}
+
+#[test]
+fn webgl2_attr_int() {
+    run("webgl2_attr_int", 1.0);
+}
+
+#[test]
+fn webgl2_prelude() {
+    run("webgl2_prelude", 1.0);
+}
+
+#[test]
+fn webgl2_cube_mip_rt() {
+    run("webgl2_cube_mip_rt", 1.0);
+}
+
+#[test]
 fn a_canvas_with_a_recording_is_one_glsl_layer_at_its_bitmap_size() {
     let recording = case_file("webgl_gradient", "json");
     let body = format!(
@@ -202,6 +302,25 @@ fn the_committed_recordings_parse_as_the_scene_format_does() {
         "webgl2_divisor2",
         "webgl2_float_blit",
         "webgl2_float_blend",
+        "webgl2_ubo_shared",
+        "webgl2_ubo_two_blocks",
+        "webgl2_ubo_range",
+        "webgl2_array_uniform_name",
+        "webgl2_alpha_to_coverage",
+        "webgl2_float_mipmap",
+        "webgl2_uniform_infinity",
+        "webgl2_matrix_inverse",
+        "webgl2_texture3d_float",
+        "webgl2_float_linear",
+        "webgl2_uniform_struct_tail",
+        "webgl2_attr_int_to_float",
+        "webgl2_attr_int",
+        "webgl2_prelude",
+        "webgl2_cube_mip_rt",
+        "webgl2_cube_float16",
+        "webgl2_cube_float32",
+        "webgl2_cube_depth",
+        "webgl2_texture_layers",
     ] {
         let content: serde_json::Value = serde_json::from_str(&case_file(name, "json")).unwrap();
         let mut layer = serde_json::json!({ "id": "c", "type": "glsl", "width": 10, "height": 10 });

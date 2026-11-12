@@ -1,7 +1,8 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { useEffect, useState } from 'react';
+import { createRequire } from 'node:module';
+import { useEffect, useRef, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Audio, Layer, Rect, Text } from '@kinetographdev/react';
 import { motionSubFrames, type GroupLayer, type ShapeLayer, type TextLayer } from '@kinetographdev/scene';
@@ -22,6 +23,7 @@ import { importedStylesheets, setDomAddon } from '@kinetographdev/compat/dom';
 import { installDeterminism, resetVirtualClock, uninstallDeterminism } from '../src/determinism.js';
 import { clearFonts, getFonts, registerFont, trackFontLoad } from '../src/font-registry.js';
 import { createFrameRenderer } from '../src/frame-loop.js';
+import { GSAP_REGISTRY } from '../src/gsap-clock.js';
 import { makeGoogleFont } from '../src/google-fonts.js';
 import { measureText, setLayoutText } from '../src/layout-utils.js';
 import { AbsoluteFill } from '../src/fill.js';
@@ -788,4 +790,364 @@ describe('motion blur', () => {
     expect(sub).toHaveLength(2);
     expect(sub).toEqual([main, main]);
   });
+});
+
+// A WebGL canvas that holds render targets: a target a frame reads before it overwrites is what the frames before it
+// drew (packages/scene/src/webgl-carry.ts), so frame N has to be the same alone, after the frames before it, and as the
+// first of a chunk that starts after frame 0.
+const VERT = 'attribute vec2 p; varying vec2 v; uniform vec4 box; void main() { v = p * 0.5 + 0.5; gl_Position = vec4(box.xy + p * box.zw, 0.0, 1.0); }';
+const FRAG = 'precision mediump float; varying vec2 v; uniform float t; uniform sampler2D tex; void main() { gl_FragColor = texture2D(tex, v) * 0.5 + vec4(t * 0.1, v, 1.0) * 0.5; }';
+
+/** A program, a quad, and a 4 by 4 texture with a framebuffer, made once for a canvas. */
+function glSetup(gl: any) {
+  const program = gl.createProgram();
+  for (const [type, source] of [[gl.VERTEX_SHADER, VERT], [gl.FRAGMENT_SHADER, FRAG]] as const) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    gl.attachShader(program, shader);
+  }
+  gl.linkProgram(program);
+  gl.useProgram(program);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const at = gl.getAttribLocation(program, 'p');
+  gl.enableVertexAttribArray(at);
+  gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0);
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 4, 4, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+  const framebuffer = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  const set = (name: string, ...v: number[]) => (v.length === 1 ? gl.uniform1f(gl.getUniformLocation(program, name), v[0]) : gl.uniform4f(gl.getUniformLocation(program, name), v[0], v[1], v[2], v[3]));
+  return { framebuffer, texture, set };
+}
+
+/** Adds a sprite to the target (blended over what it holds), at a place that moves with `t`. */
+function glSprite(gl: any, g: ReturnType<typeof glSetup>, t: number) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, g.framebuffer);
+  gl.viewport(0, 0, 4, 4);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  g.set('t', t);
+  g.set('box', -0.5 + (t % 4) * 0.25, 0, 0.25, 0.25);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.disable(gl.BLEND);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+
+/** Draws the target over the canvas. */
+function glShow(gl: any, g: ReturnType<typeof glSetup>) {
+  gl.viewport(0, 0, 64, 64);
+  gl.bindTexture(gl.TEXTURE_2D, g.texture);
+  g.set('t', 0);
+  g.set('box', 0, 0, 1, 1);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+}
+
+/** The frames the components below rendered (a frame is added when its component renders). */
+const rendered = new Set<number>();
+
+/** A target that every frame adds a sprite to (a trail), and shows. */
+function GlTrail() {
+  const frame = useCurrentFrame();
+  rendered.add(frame);
+  const ref = useRef<any>(null);
+  const state = useRef<ReturnType<typeof glSetup> | null>(null);
+  useEffect(() => {
+    const gl = ref.current.getContext('webgl');
+    state.current ??= glSetup(gl);
+    glSprite(gl, state.current, frame);
+    glShow(gl, state.current);
+  }, [frame]);
+  return <canvas ref={ref} width={64} height={64} />;
+}
+
+/** A trail on a page with a CSS transition, whose frames that do not follow the one before are drawn from a replay of the transition window. */
+function GlTrailFade() {
+  return (
+    <>
+      <div style={{ position: 'absolute', left: 0, top: 0, width: 4, height: 4, background: '#f00', transition: 'opacity 1s linear' }} />
+      <GlTrail />
+    </>
+  );
+}
+
+const VERT_FULL = 'attribute vec2 p; varying vec2 v; void main() { v = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }';
+
+/** Two targets, and a program that draws over the clip square (a pass that covers its target). */
+function glPair(gl: any) {
+  const program = gl.createProgram();
+  for (const [type, source] of [[gl.VERTEX_SHADER, VERT_FULL], [gl.FRAGMENT_SHADER, FRAG]] as const) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    gl.attachShader(program, shader);
+  }
+  gl.linkProgram(program);
+  gl.useProgram(program);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const at = gl.getAttribLocation(program, 'p');
+  gl.enableVertexAttribArray(at);
+  gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0);
+  const target = () => {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 4, 4, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { texture, framebuffer };
+  };
+  return { program, targets: [target(), target()] };
+}
+
+/** A pair of targets that swap roles each frame (a ping-pong, as GPUComputationRenderer does): the frame draws one from the other, and shows it. */
+function GlParity() {
+  const frame = useCurrentFrame();
+  rendered.add(frame);
+  const ref = useRef<any>(null);
+  const state = useRef<ReturnType<typeof glPair> | null>(null);
+  useEffect(() => {
+    const gl = ref.current.getContext('webgl');
+    state.current ??= glPair(gl);
+    const { program, targets } = state.current;
+    const [from, to] = frame % 2 === 0 ? [targets[0]!, targets[1]!] : [targets[1]!, targets[0]!];
+    gl.useProgram(program);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, to.framebuffer);
+    gl.viewport(0, 0, 4, 4);
+    gl.bindTexture(gl.TEXTURE_2D, from.texture);
+    gl.uniform1f(gl.getUniformLocation(program, 't'), frame);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, 64, 64);
+    gl.bindTexture(gl.TEXTURE_2D, to.texture);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+  }, [frame]);
+  return <canvas ref={ref} width={64} height={64} />;
+}
+
+/** The trail, in a layer that is motion blurred: its sub-frames render the canvas again at their own times. */
+function GlTrailBlurred() {
+  return (
+    <Layer id="blurred" motionBlur={{ samples: 2, shutter: 1 }}>
+      <GlTrail />
+    </Layer>
+  );
+}
+
+/** A target that the first frame adds more sprites to than a target keeps draws for, and every frame shows. */
+function GlHeavy() {
+  const frame = useCurrentFrame();
+  const ref = useRef<any>(null);
+  const state = useRef<ReturnType<typeof glSetup> | null>(null);
+  useEffect(() => {
+    const gl = ref.current.getContext('webgl');
+    state.current ??= glSetup(gl);
+    if (frame === 0) for (let i = 0; i < 1100; i++) glSprite(gl, state.current, i);
+    glShow(gl, state.current);
+  }, [frame]);
+  return <canvas ref={ref} width={64} height={64} />;
+}
+
+/** A target drawn once when the component mounts, and shown by every frame. */
+function GlMounted() {
+  const frame = useCurrentFrame();
+  rendered.add(frame);
+  const ref = useRef<any>(null);
+  const state = useRef<ReturnType<typeof glSetup> | null>(null);
+  useEffect(() => {
+    const gl = ref.current.getContext('webgl');
+    state.current = glSetup(gl);
+    glSprite(gl, state.current, 3);
+  }, []);
+  useEffect(() => {
+    glShow(ref.current.getContext('webgl'), state.current!);
+  }, [frame]);
+  return <canvas ref={ref} width={64} height={64} />;
+}
+
+/** A canvas drawn once when the component mounts and left alone (a page that draws when its controls change). */
+function GlOnce() {
+  const ref = useRef<any>(null);
+  useEffect(() => {
+    const gl = ref.current.getContext('webgl');
+    const g = glSetup(gl);
+    glSprite(gl, g, 3);
+    glShow(gl, g);
+  }, []);
+  return <canvas ref={ref} width={64} height={64} />;
+}
+
+/** The glsl layers of a frame, as JSON with the ids a context numbers its textures with counted from 0. */
+function glsl(layers: unknown): { json: string; ops: number } {
+  const found: any[] = [];
+  const walk = (value: any): void => {
+    if (Array.isArray(value)) value.forEach(walk);
+    else if (value !== null && typeof value === 'object') {
+      if (value.type === 'glsl') found.push(value);
+      Object.values(value).forEach(walk);
+    }
+  };
+  walk(layers);
+  const ids = new Map<string, number>();
+  const json = JSON.stringify(found).replace(/\bf(\d+)\.(\d+)\b/g, (m) => `f${ids.get(m) ?? ids.set(m, ids.size).get(m)}`);
+  return { json, ops: found.reduce((n, l) => n + l.ops.length, 0) };
+}
+
+describe('a WebGL canvas that holds render targets', () => {
+  const gsapModule = createRequire(import.meta.url)('gsap') as { gsap?: unknown; default?: unknown };
+  const registry = globalThis as { [GSAP_REGISTRY]?: unknown };
+
+  beforeEach(() => {
+    installDeterminism();
+    registerRoot(() => (
+      <>
+        <Composition id="Trail" component={GlTrail} width={64} height={64} fps={30} durationInFrames={20} />
+        <Composition id="TrailFade" component={GlTrailFade} width={64} height={64} fps={30} durationInFrames={90} />
+        <Composition id="Parity" component={GlParity} width={64} height={64} fps={30} durationInFrames={20} />
+        <Composition id="Blurred" component={GlTrailBlurred} width={64} height={64} fps={30} durationInFrames={20} />
+        <Composition id="Heavy" component={GlHeavy} width={64} height={64} fps={30} durationInFrames={20} />
+        <Composition id="Mounted" component={GlMounted} width={64} height={64} fps={30} durationInFrames={20} />
+        <Composition id="Once" component={GlOnce} width={64} height={64} fps={30} durationInFrames={20} />
+      </>
+    ));
+  });
+  afterEach(() => {
+    delete registry[GSAP_REGISTRY];
+  });
+
+  /** Frame `at` after the frames `before` on one renderer, each list on its own renderer. */
+  async function frameAfter(id: string, at: number, ...runs: number[][]): Promise<ReturnType<typeof glsl> & { seen: number[] }> {
+    let out!: ReturnType<typeof glsl> & { seen: number[] };
+    for (const run of runs) {
+      resetVirtualClock();
+      rendered.clear();
+      const renderer = createFrameRenderer(id);
+      for (const frame of run) {
+        const result = await renderer.renderFrame(frame);
+        if (frame === at) out = { ...glsl(result.scene.layers), seen: [] };
+      }
+      // The frames whose component rendered in the last run, the ones that were asked for and the ones skipped and rendered.
+      if (run.includes(at)) out.seen = [...rendered].sort((a, b) => a - b);
+      renderer.dispose();
+    }
+    return out;
+  }
+  const sequential = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+  it('draws frame 9 of a trail the same in a render of every frame, a jump, a frame alone, and the second chunk of two', async () => {
+    const whole = await frameAfter('Trail', 9, sequential);
+    // The trail holds the nine sprites before the frame's own, so the paths are told apart by it.
+    expect(whole.ops).toBeGreaterThanOrEqual(10);
+    expect((await frameAfter('Trail', 9, [0, 4, 9])).json).toBe(whole.json);
+    expect((await frameAfter('Trail', 9, [9])).json).toBe(whole.json);
+    expect((await frameAfter('Trail', 9, [0, 1, 2, 3, 4], [5, 6, 7, 8, 9])).json).toBe(whole.json);
+    // Frame 9 shows what it does to the trail, so a render that began there starts over and renders the frames before it.
+    expect((await frameAfter('Trail', 9, [9])).seen).toEqual(sequential);
+  });
+
+  it('shows a canvas drawn once and left alone in every later frame, the same on every path', async () => {
+    const first = await frameAfter('Once', 0, [0]);
+    expect(first.ops).toBeGreaterThanOrEqual(1);
+    const whole = await frameAfter('Once', 9, sequential);
+    expect(whole.ops).toBe(first.ops);
+    expect((await frameAfter('Once', 9, [9])).json).toBe(whole.json);
+    expect((await frameAfter('Once', 9, [0, 4, 9])).json).toBe(whole.json);
+    expect((await frameAfter('Once', 9, [0, 1, 2, 3, 4], [5, 6, 7, 8, 9])).json).toBe(whole.json);
+  });
+
+  it('draws frame 8 of a ping-pong that swaps its targets each frame the same on every path', async () => {
+    // Frame 0 wrote one target and frame 8 reads the other, which frame 7 wrote.
+    const upTo8 = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+    const whole = await frameAfter('Parity', 8, upTo8);
+    // The frame draws from what the frame before it drew: nine frames of draws.
+    expect(whole.ops).toBeGreaterThanOrEqual(9);
+    expect((await frameAfter('Parity', 8, [8])).json).toBe(whole.json);
+    expect((await frameAfter('Parity', 8, [0, 1, 2, 3], [4, 5, 6, 7, 8])).json).toBe(whole.json);
+    expect((await frameAfter('Parity', 8, [0, 4, 8])).json).toBe(whole.json);
+    // Frame 7 is rendered, shows that frame 8 reads what it wrote, and the frames before it are then rendered too.
+    expect((await frameAfter('Parity', 8, [8])).seen).toEqual(upTo8);
+  });
+
+  it('draws frame 9 of a motion-blurred trail the same in a render of every frame, a frame alone, and a chunk', async () => {
+    const whole = await frameAfter('Blurred', 9, sequential);
+    expect(whole.ops).toBeGreaterThanOrEqual(10);
+    expect((await frameAfter('Blurred', 9, [9])).json).toBe(whole.json);
+    expect((await frameAfter('Blurred', 9, [0, 1, 2, 3, 4], [5, 6, 7, 8, 9])).json).toBe(whole.json);
+  });
+
+  it('draws frame 9 of a trail the same with GSAP loaded (the frames a jump skips are rendered there too)', async () => {
+    registry[GSAP_REGISTRY] = gsapModule.gsap ?? gsapModule.default ?? gsapModule;
+    const whole = await frameAfter('Trail', 9, sequential);
+    expect(whole.ops).toBeGreaterThanOrEqual(10);
+    expect((await frameAfter('Trail', 9, [9])).json).toBe(whole.json);
+    expect((await frameAfter('Trail', 9, [0, 1, 2, 3, 4], [5, 6, 7, 8, 9])).json).toBe(whole.json);
+  });
+
+  it('draws frame 9 of a target drawn at mount the same on every path, rendering of the frames it skips only the one before the frame asked for', async () => {
+    const whole = await frameAfter('Mounted', 9, sequential);
+    expect(whole.ops).toBeGreaterThanOrEqual(2);
+    // A fresh start renders frame 0 (the mount), the frame before the frame asked for (a target the frame reads may be
+    // what that frame wrote), and the frame asked for.
+    const alone = await frameAfter('Mounted', 9, [9]);
+    expect(alone.json).toBe(whole.json);
+    expect(alone.seen).toEqual([0, 8, 9]);
+    const chunk = await frameAfter('Mounted', 9, [0, 1, 2, 3, 4], [5, 6, 7, 8, 9]);
+    expect(chunk.json).toBe(whole.json);
+    expect(chunk.seen).toEqual([0, 4, 5, 6, 7, 8, 9]);
+    const jump = await frameAfter('Mounted', 9, [0, 4, 9]);
+    expect(jump.json).toBe(whole.json);
+    expect(jump.seen).toEqual([0, 3, 4, 8, 9]);
+  });
+
+  it('reports a target that lost draws to its cap as not drawn right, in every frame that reads it', async () => {
+    resetVirtualClock();
+    const renderer = createFrameRenderer('Heavy');
+    const said = async (frame: number) => (await renderer.renderFrame(frame)).unsupported.filter((u) => u.property === 'webgl');
+    expect(await said(0)).toEqual([]);
+    for (const frame of [1, 2]) {
+      const items = await said(frame);
+      expect(items).toHaveLength(1);
+      expect(items[0]!.reason).toMatch(/render target .*feedback/);
+    }
+    renderer.dispose();
+  }, 30_000);
+
+  const native = (() => {
+    try {
+      return createRequire(import.meta.url)('@kinetographdev/native') as { renderDomIsland?: unknown };
+    } catch {
+      return null;
+    }
+  })();
+
+  (native?.renderDomIsland ? it : it.skip)('reports a trail on a page with CSS transitions as not drawn right where the frames before the window were not rendered', async () => {
+    setDomAddon(native);
+    try {
+      const said = async (...frames: number[]) => {
+        resetVirtualClock();
+        const renderer = createFrameRenderer('TrailFade');
+        let last: Awaited<ReturnType<typeof renderer.renderFrame>>['unsupported'] = [];
+        for (const frame of frames) last = (await renderer.renderFrame(frame)).unsupported;
+        renderer.dispose();
+        return last.filter((u) => u.property === 'webgl');
+      };
+      // The transition lasts a second, so the window is 60 frames: frame 80 alone replays 20 to 80, and 1 to 19 are not rendered.
+      expect(await said(80)).toHaveLength(1);
+      // Every frame rendered, or the window starting at frame 1 or earlier: drawn right.
+      expect(await said(0, 1, 2, 3)).toEqual([]);
+      expect(await said(45)).toEqual([]);
+    } finally {
+      setDomAddon(null);
+    }
+  }, 60_000);
 });

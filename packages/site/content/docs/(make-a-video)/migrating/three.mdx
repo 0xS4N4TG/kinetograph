@@ -9,7 +9,7 @@ Rebuild a scene from `@remotion/three` with Kinetograph's own 3D layer, then use
 
 ## What this makes
 
-Not the same code, a **rebuild**. Kinetograph has no `@remotion/three`, `three` or `@react-three/fiber`. An import of any of them stops the build and names the package. The `kinetograph-migrate` skill rebuilds the scene with the 3D layer and checks it frame by frame.
+`<ThreeCanvas>` from `@remotion/three` runs as it is, with the project's own `three` and `@react-three/fiber` installed. What it cannot draw (drei `<Environment>` and `<Text>`, skinned models, video textures) is a **rebuild**. The `kinetograph-migrate` skill rebuilds the scene with the 3D layer and checks it frame by frame.
 
 ## Base prompt
 

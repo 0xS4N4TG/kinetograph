@@ -2292,6 +2292,11 @@ async fn new_device(instance: &wgpu::Instance) -> Option<(wgpu::Device, wgpu::Qu
             required_features: adapter.features() & wanted,
             required_limits: wgpu::Limits {
                 max_vertex_buffers: adapter.limits().max_vertex_buffers.min(16),
+                // WebGL 2 blocks, each its own uniform buffer: 12 a stage, and the loose uniforms' one besides.
+                max_uniform_buffers_per_shader_stage: adapter
+                    .limits()
+                    .max_uniform_buffers_per_shader_stage
+                    .min(16),
                 ..wgpu::Limits::default()
             },
             ..Default::default()
