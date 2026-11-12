@@ -163,6 +163,19 @@ fn webgl2_divisor2() {
     run("webgl2_divisor2", 1.0);
 }
 
+/// The cases of what `gl_FrontFacing` does (the hand-written replay does not follow `frontFace` with culling off, so these
+/// run with `KINETOGRAPH_WEBGL=angle` only).
+fn angle_only(name: &str) {
+    if std::env::var("KINETOGRAPH_WEBGL").as_deref() == Ok("angle") {
+        run(name, 1.0);
+    }
+}
+
+#[test]
+fn webgl2_front_face_reset() {
+    angle_only("webgl2_front_face_reset");
+}
+
 #[test]
 fn webgl2_float_blit() {
     run("webgl2_float_blit", 1.0);

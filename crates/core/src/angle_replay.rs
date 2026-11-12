@@ -1059,7 +1059,11 @@ impl<'a> Replay<'a> {
                 gl_.cull_face(named(&c.face)?);
                 gl_.front_face(named(&c.front)?);
             }
-            None => gl_.disable(gl::CULL_FACE),
+            None => {
+                gl_.disable(gl::CULL_FACE);
+                // `gl_FrontFacing` follows the winding even when nothing is culled, and the context outlives the draw.
+                gl_.front_face(0x901);
+            }
         }
         match &d.depth {
             Some(z) => {
