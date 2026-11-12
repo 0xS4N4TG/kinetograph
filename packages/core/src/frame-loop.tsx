@@ -143,6 +143,8 @@ class Renderer implements FrameRenderer {
   private historyDependent = false;
   /** The frame a jump landed on without the frames before it drawn, until a frame says the page's GPU state carries (a Dawn page, `dawnDependsOnHistory`): -1 when none. */
   private unreplayedJump = -1;
+  /** A jump skipped frames in this run (replayed or stepped, never with their motion-blur sub-frames). */
+  private jumped = false;
   private disposed = false;
   /** What this renderer's WebGPU pages made (devices, canvases, pictures) and what their frames read of each other: its own on a thread that holds several renderers. */
   private readonly dawn = createDawnScope();
@@ -302,6 +304,7 @@ class Renderer implements FrameRenderer {
       }
       if (this.historyDependent || gsapIsLoaded()) this.unreplayedJump = -1;
       else if (frame - was > 1 && this.unreplayedJump < 0) this.unreplayedJump = frame;
+      if (frame - was > 1) this.jumped = true;
     }
     // CSS transitions need the states of the islands before this frame (packages/cli/skills/kinetograph-markup/references/ENGINE.md §7.12). A frame has the
     // same history whichever frames were rendered before it: a sequential render keeps what it has seen, anything
@@ -370,6 +373,11 @@ class Renderer implements FrameRenderer {
         treesAt.set(time, tree.layers);
       }
       this.subFrameLayers = null;
+      // A sub-frame draws what the page's effects draw at its time, which moves the GPU state the page keeps from frame to frame (a Dawn feedback
+      // texture) on by steps that the frames a jump skipped were not given: those were not rendered with their sub-frames.
+      if (this.jumped && dawnDependsOnHistory()) {
+        reportUnsupported('canvas', 'webgpu', 'device', "the motion-blur sub-frames of this frame draw into GPU state the page keeps from frame to frame (a feedback texture, a buffer a pass advances), and the frames a jump skipped were drawn without theirs: this frame and the ones after it are not what a render of every frame draws; render forward from frame 0, or leave out the motion blur, for these frames");
+      }
       // What the sub-frames' recordings left out is said too, each once.
       for (const what of takeGlReports()) reportUnsupported('canvas', 'webgl', 'render target', what);
       // A sub-frame runs the page's GPU calls again: what they got wrong is this frame's, not the next one's.
