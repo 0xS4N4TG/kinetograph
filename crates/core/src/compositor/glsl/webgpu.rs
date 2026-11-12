@@ -482,6 +482,34 @@ impl Compositor {
             Some(c) => wgpu::LoadOp::Clear(color(c)),
             None => wgpu::LoadOp::Load,
         };
+        let depth_view = match &pass.depth {
+            None => None,
+            Some(d) => {
+                let texture = res
+                    .textures
+                    .get(d.texture.as_str())
+                    .ok_or("a pass with a depth texture that was not made")?;
+                let described = recording
+                    .textures
+                    .get(&d.texture)
+                    .ok_or("a pass with a depth texture that is not in the recording")?;
+                if wg::mip_extent(described, d.mip) != bounds {
+                    return Err(format!("the depth texture {} is not the size of the pass's target", d.texture));
+                }
+                Some(texture.create_view(&wgpu::TextureViewDescriptor {
+                    base_mip_level: d.mip,
+                    mip_level_count: Some(1),
+                    ..Default::default()
+                }))
+            }
+        };
+        let depth_ops = pass.depth.as_ref().map(|d| wgpu::Operations {
+            load: match d.clear {
+                Some(v) => wgpu::LoadOp::Clear(v as f32),
+                None => wgpu::LoadOp::Load,
+            },
+            store: wgpu::StoreOp::Store,
+        });
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("webgpu"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -493,6 +521,17 @@ impl Compositor {
                     store: wgpu::StoreOp::Store,
                 },
             })],
+            depth_stencil_attachment: depth_view.as_ref().map(|view| {
+                wgpu::RenderPassDepthStencilAttachment {
+                    view,
+                    depth_ops: if pass.depth.as_ref().is_some_and(|d| d.read_only) {
+                        None
+                    } else {
+                        depth_ops
+                    },
+                    stencil_ops: None,
+                }
+            }),
             ..Default::default()
         });
         let mut has_pipeline = false;
@@ -834,6 +873,7 @@ impl Compositor {
             lod_min_clamp: s.lod_min_clamp.unwrap_or(0.0) as f32,
             lod_max_clamp: s.lod_max_clamp.unwrap_or(32.0) as f32,
             anisotropy_clamp: s.max_anisotropy.unwrap_or(1).clamp(1, 16) as u16,
+            compare: s.compare.as_deref().map(compare_function),
             ..Default::default()
         });
         self.glsl
@@ -920,6 +960,7 @@ impl Compositor {
                         }
                         "sint" => wgpu::TextureSampleType::Sint,
                         "uint" => wgpu::TextureSampleType::Uint,
+                        "depth" => wgpu::TextureSampleType::Depth,
                         other => return Err(format!("texture sample type {other}")),
                     },
                     view_dimension: wgpu::TextureViewDimension::D2,
@@ -929,6 +970,7 @@ impl Compositor {
                     match e.sampler_type.as_deref().unwrap_or("filtering") {
                         "filtering" => wgpu::SamplerBindingType::Filtering,
                         "non-filtering" => wgpu::SamplerBindingType::NonFiltering,
+                        "comparison" => wgpu::SamplerBindingType::Comparison,
                         other => return Err(format!("sampler binding type {other}")),
                     },
                 ),
@@ -1099,7 +1141,7 @@ impl Compositor {
                     },
                     ..Default::default()
                 },
-                depth_stencil: None,
+                depth_stencil: spec.depth.as_ref().map(depth_stencil).transpose()?,
                 multisample: wgpu::MultisampleState {
                     count: spec.samples,
                     ..Default::default()
@@ -1364,7 +1406,39 @@ fn texture_format(name: &str) -> Fail<wgpu::TextureFormat> {
         "rgba32uint" => F::Rgba32Uint,
         "rgba32sint" => F::Rgba32Sint,
         "rgba32float" => F::Rgba32Float,
+        "depth16unorm" => F::Depth16Unorm,
+        "depth24plus" => F::Depth24Plus,
+        "depth32float" => F::Depth32Float,
         other => return Err(format!("a texture of format {other}")),
+    })
+}
+
+fn compare_function(name: &str) -> wgpu::CompareFunction {
+    use wgpu::CompareFunction as C;
+    match name {
+        "never" => C::Never,
+        "less" => C::Less,
+        "equal" => C::Equal,
+        "less-equal" => C::LessEqual,
+        "greater" => C::Greater,
+        "not-equal" => C::NotEqual,
+        "greater-equal" => C::GreaterEqual,
+        _ => C::Always,
+    }
+}
+
+/// The depth state of a pipeline; the stencil is left at its defaults (always, keep), which is not drawn.
+fn depth_stencil(d: &wg::DepthState) -> Fail<wgpu::DepthStencilState> {
+    Ok(wgpu::DepthStencilState {
+        format: texture_format(&d.format)?,
+        depth_write_enabled: Some(d.write),
+        depth_compare: Some(compare_function(d.compare.as_deref().unwrap_or("always"))),
+        stencil: wgpu::StencilState::default(),
+        bias: wgpu::DepthBiasState {
+            constant: d.bias.unwrap_or(0.0) as i32,
+            slope_scale: d.bias_slope_scale.unwrap_or(0.0) as f32,
+            clamp: d.bias_clamp.unwrap_or(0.0) as f32,
+        },
     })
 }
 

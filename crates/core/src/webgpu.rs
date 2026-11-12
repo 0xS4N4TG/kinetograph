@@ -187,6 +187,24 @@ pub struct Primitive {
     pub cull_mode: String,
 }
 
+/// A pipeline's depth state (the stencil is not drawn).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DepthState {
+    pub format: String,
+    #[serde(default)]
+    pub write: bool,
+    /// A `GPUCompareFunction`; `always` when left out.
+    #[serde(default)]
+    pub compare: Option<String>,
+    #[serde(default)]
+    pub bias: Option<f64>,
+    #[serde(default)]
+    pub bias_slope_scale: Option<f64>,
+    #[serde(default)]
+    pub bias_clamp: Option<f64>,
+}
+
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Pipeline {
@@ -195,6 +213,8 @@ pub struct Pipeline {
     pub vertex: VertexState,
     pub fragment: Option<FragmentState>,
     pub primitive: Primitive,
+    #[serde(default)]
+    pub depth: Option<DepthState>,
     /// `multisample.count`.
     #[serde(default = "one")]
     pub samples: u32,
@@ -247,7 +267,7 @@ pub struct Texture {
     pub samples: u32,
 }
 
-/// A `GPUSamplerDescriptor` without the comparison (depth textures are not drawn).
+/// A `GPUSamplerDescriptor`.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SamplerDesc {
@@ -269,6 +289,9 @@ pub struct SamplerDesc {
     pub lod_max_clamp: Option<f64>,
     #[serde(default)]
     pub max_anisotropy: Option<u32>,
+    /// A `GPUCompareFunction` of a comparison sampler.
+    #[serde(default)]
+    pub compare: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -350,6 +373,19 @@ pub struct PassTarget {
     pub mip: u32,
 }
 
+/// The depth attachment of a pass: a level of a depth texture of the target's size.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PassDepth {
+    pub texture: String,
+    #[serde(default)]
+    pub mip: u32,
+    /// The clear value; none loads what the texture holds.
+    pub clear: Option<f64>,
+    #[serde(default)]
+    pub read_only: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Pass {
@@ -361,6 +397,8 @@ pub struct Pass {
     pub resolve: Option<PassTarget>,
     /// The clear colour; none loads what the canvas (or the texture) holds.
     pub clear: Option<[f64; 4]>,
+    #[serde(default)]
+    pub depth: Option<PassDepth>,
     #[serde(default)]
     pub commands: Vec<Command>,
 }
@@ -712,6 +750,8 @@ pub enum Sample {
     Unfilterable,
     Uint,
     Sint,
+    /// A depth format: sampled as `depth` (with a comparison sampler) or as unfilterable float.
+    Depth,
 }
 
 /// What a storage binding of a format may do (without optional features).
@@ -732,7 +772,7 @@ pub struct FormatInfo {
 /// The texture formats that are drawn: the bytes of a texel, how a shader samples it, and the storage access it allows
 /// (WebGPU's table; the optional formats and features are not offered).
 pub fn format_info(format: &str) -> Option<FormatInfo> {
-    use Sample::{Float, Sint, Uint, Unfilterable};
+    use Sample::{Depth, Float, Sint, Uint, Unfilterable};
     use Storage::{No, ReadWrite, Write};
     let (bytes, sample, storage) = match format {
         "r8unorm" => (1, Float, No),
@@ -766,13 +806,15 @@ pub fn format_info(format: &str) -> Option<FormatInfo> {
         "rgba32uint" => (16, Uint, Write),
         "rgba32sint" => (16, Sint, Write),
         "rgba32float" => (16, Unfilterable, Write),
+        "depth16unorm" => (2, Depth, No),
+        "depth24plus" | "depth32float" => (4, Depth, No),
         _ => return None,
     };
     Some(FormatInfo { bytes, sample, storage })
 }
 
 /// The formats a texture may have, for the error that names them.
-pub const TEXTURE_FORMATS: &str = "r8unorm, r8uint, r8sint, rg8unorm, rg8uint, rg8sint, rgba8unorm, rgba8unorm-srgb, rgba8snorm, rgba8uint, rgba8sint, bgra8unorm, bgra8unorm-srgb, rgb10a2unorm, r16uint, r16sint, r16float, rg16uint, rg16sint, rg16float, rgba16uint, rgba16sint, rgba16float, r32uint, r32sint, r32float, rg32uint, rg32sint, rg32float, rgba32uint, rgba32sint and rgba32float";
+pub const TEXTURE_FORMATS: &str = "r8unorm, r8uint, r8sint, rg8unorm, rg8uint, rg8sint, rgba8unorm, rgba8unorm-srgb, rgba8snorm, rgba8uint, rgba8sint, bgra8unorm, bgra8unorm-srgb, rgb10a2unorm, r16uint, r16sint, r16float, rg16uint, rg16sint, rg16float, rgba16uint, rgba16sint, rgba16float, r32uint, r32sint, r32float, rg32uint, rg32sint, rg32float, rgba32uint, rgba32sint, rgba32float, depth16unorm, depth24plus and depth32float";
 
 /// The bytes of a texel of `format`, for the formats that are drawn.
 pub fn texel_bytes(format: &str) -> Option<u64> {
@@ -782,6 +824,11 @@ pub fn texel_bytes(format: &str) -> Option<u64> {
 /// The formats a picture is uploaded into: 8-bit with four channels, which a picture's RGBA converts to directly.
 pub fn is_picture_format(format: &str) -> bool {
     matches!(format, "rgba8unorm" | "rgba8unorm-srgb" | "bgra8unorm" | "bgra8unorm-srgb")
+}
+
+/// The depth formats: a pass's depth attachment, and textures that only passes write.
+pub fn is_depth_format(format: &str) -> bool {
+    matches!(format_info(format), Some(FormatInfo { sample: Sample::Depth, .. }))
 }
 
 /// A format without `-srgb`: formats that differ only in that can be copied between.
@@ -872,6 +919,11 @@ fn view_of(content: &WebGpuContent, view: &TextureView) -> Result<(), String> {
     Ok(())
 }
 
+/// A `GPUCompareFunction`.
+pub fn is_compare(name: &str) -> bool {
+    matches!(name, "never" | "less" | "equal" | "less-equal" | "greater" | "not-equal" | "greater-equal" | "always")
+}
+
 fn sampler_checks(id: &str, s: &SamplerDesc) -> Result<(), String> {
     for (what, mode) in [("addressModeU", &s.address_mode_u), ("addressModeV", &s.address_mode_v), ("addressModeW", &s.address_mode_w)] {
         if let Some(m) = mode
@@ -890,6 +942,11 @@ fn sampler_checks(id: &str, s: &SamplerDesc) -> Result<(), String> {
     let (min, max) = (s.lod_min_clamp.unwrap_or(0.0), s.lod_max_clamp.unwrap_or(32.0));
     if !(min.is_finite() && max.is_finite() && min >= 0.0 && min <= max) {
         return Err(format!("sampler {id}: lodMinClamp {min} and lodMaxClamp {max} are not a range from 0 up"));
+    }
+    if let Some(c) = &s.compare
+        && !is_compare(c)
+    {
+        return Err(format!("sampler {id}: compare {c}"));
     }
     let anisotropy = s.max_anisotropy.unwrap_or(1);
     if !(1..=16).contains(&anisotropy) {
@@ -1088,9 +1145,10 @@ fn group_checks(content: &WebGpuContent, id: &str, group: &BindGroup, limits: &L
                     let wanted = l.sample_type.as_deref().unwrap_or("float");
                     let ok = match wanted {
                         "float" => info.sample == Sample::Float || (info.sample == Sample::Unfilterable && limits.float32_filterable),
-                        "unfilterable-float" => matches!(info.sample, Sample::Float | Sample::Unfilterable),
+                        "unfilterable-float" => matches!(info.sample, Sample::Float | Sample::Unfilterable | Sample::Depth),
                         "uint" => info.sample == Sample::Uint,
                         "sint" => info.sample == Sample::Sint,
+                        "depth" => info.sample == Sample::Depth,
                         other => return Err(format!("bind group {id}: texture sample type {other}")),
                     };
                     if !ok {
@@ -1150,6 +1208,30 @@ fn validate_step(content: &WebGpuContent, step: &Step, limits: &Limits, dispatch
                 && !clear.iter().all(|c| c.is_finite())
             {
                 return Err("the clear colour is not finite".into());
+            }
+            if let Some(depth) = &pass.depth {
+                let texture = texture_of(content, &depth.texture)?;
+                let level = level_of(texture, &depth.texture, depth.mip)?;
+                if !is_depth_format(&texture.format) {
+                    return Err(format!("the depth attachment {} is a {} texture", depth.texture, texture.format));
+                }
+                let target = match &pass.target {
+                    Some(t) => {
+                        let color = texture_of(content, &t.texture)?;
+                        Some((mip_extent(color, t.mip), color.samples))
+                    }
+                    None => None,
+                };
+                if let Some((extent, samples)) = target
+                    && (extent != level || samples != texture.samples)
+                {
+                    return Err(format!("the depth attachment {} is not of the size and samples of the target {}", depth.texture, pass.target.as_ref().map_or("", |t| t.texture.as_str())));
+                }
+                if let Some(clear) = depth.clear
+                    && !(0.0..=1.0).contains(&clear)
+                {
+                    return Err(format!("the depth clear value {clear} is not from 0 to 1"));
+                }
             }
             for command in &pass.commands {
                 if let Command::Bind { index, group, .. } = command {
@@ -1225,6 +1307,9 @@ fn validate_step(content: &WebGpuContent, step: &Step, limits: &Limits, dispatch
         }
         Step::Upload(u) => {
             let texture = texture_of(content, &u.texture)?;
+            if is_depth_format(&texture.format) {
+                return Err(format!("an upload into the depth texture {}; a render pass writes it", u.texture));
+            }
             let extent = level_of(texture, &u.texture, u.mip)?;
             rect_in("an upload", extent, u.x, u.y, u.width, u.height)?;
             let texel = texel_bytes(&texture.format).ok_or_else(|| format!("a texture of format {}", texture.format))?;
