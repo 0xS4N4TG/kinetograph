@@ -118,3 +118,8 @@ fn webgpu_array() {
 fn webgpu_mrt() {
     run("webgpu_mrt", 1.0);
 }
+
+#[test]
+fn webgpu_bundle() {
+    run("webgpu_bundle", 1.0);
+}

@@ -56,9 +56,9 @@ describe('invalid calls are reported even when the page catches them', () => {
     const { device, context } = await setup();
     expect(context.content().webgpu!.errors).toBeUndefined();
     expect(context.drawn).toBe(false);
-    swallowed(() => device.createRenderBundleEncoder());
+    swallowed(() => device.importExternalTexture());
     const webgpu = context.content().webgpu!;
-    expect(webgpu.notes).toEqual(['render bundles']);
+    expect(webgpu.notes).toEqual([expect.stringContaining('importExternalTexture')]);
     expect(webgpu.errors).toBeUndefined();
   });
 

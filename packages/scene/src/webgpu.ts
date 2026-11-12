@@ -8,7 +8,7 @@
 // or into a 2D texture and compute passes (`dispatchWorkgroups`), `draw` and `drawIndexed`, `writeBuffer`, and textures:
 // `createTexture` (storage textures included), `createView`, `createSampler`, `writeTexture`, `copyExternalImageToTexture`,
 // `copyBufferToTexture`, `copyTextureToTexture`; a depth attachment (`depth16unorm`, `depth24plus`, `depth32float`) with depth
-// state and comparison samplers; multisampled passes. Bundles, indirect calls, the stencil, several colour
+// state and comparison samplers; multisampled passes; render bundles (their commands run in the pass that executes them). Indirect calls, the stencil, several colour
 // attachments and reading anything back are not recorded: the call throws `WebGpuUnsupportedError` and the frame reports it
 // (`WebGpuContent.notes`). Query sets are accepted and measure nothing (`webgpu-queries.ts`).
 //
@@ -695,15 +695,81 @@ type EncodedItem =
   | { kind: 'bufferToTexture'; buffer: GPUBufferShim; offset: number; bytesPerRow: number; rowsPerImage: number; to: TextureRegion; width: number; height: number; layers: number }
   | { kind: 'textureToTexture'; from: TextureRegion; to: TextureRegion; width: number; height: number; layers: number };
 
-export class GPURenderPassEncoderShim extends GpuObject {
-  private readonly commands: PassCommand[] = [];
-  private ended = false;
-  constructor(private readonly encoder: GPUCommandEncoderShim, private readonly attachment: Attachment, private readonly occlusion: OcclusionQueries) {
+/** What a render pass or bundle has bound, so that a draw is checked as the spec does. A bundle starts with nothing; `executeBundles` leaves a pass with nothing. */
+class RenderState {
+  pipeline: GPURenderPipelineShim | null = null;
+  readonly groups = new Set<number>();
+  readonly vertex = new Set<number>();
+  index = false;
+  clear(): void {
+    this.pipeline = null;
+    this.groups.clear();
+    this.vertex.clear();
+    this.index = false;
+  }
+  check(call: string, indexed: boolean): void {
+    const pipeline = this.pipeline;
+    if (pipeline === null) throw new Error(`OperationError: ${call}: no pipeline is set`);
+    (pipeline.layouts ?? []).forEach((_, index) => {
+      if (!this.groups.has(index)) throw new Error(`OperationError: ${call}: bind group ${index} is not set`);
+    });
+    pipeline.descriptor.vertex.buffers?.forEach((buffer, slot) => {
+      if (buffer.attributes.length > 0 && !this.vertex.has(slot)) throw new Error(`OperationError: ${call}: the vertex buffer in slot ${slot} is not set`);
+    });
+    if (indexed && !this.index) throw new Error(`OperationError: ${call}: no index buffer is set`);
+  }
+}
+
+/** What a render pass and a render bundle encoder share: the commands that bind state and draw, recorded in order. */
+abstract class RenderCommands extends GpuObject {
+  protected readonly commands: PassCommand[] = [];
+  protected readonly state = new RenderState();
+  protected ended = false;
+  constructor(protected readonly kind: string, readonly device: GPUDeviceShim) {
     super('');
   }
-  private add(command: PassCommand): void {
-    if (this.ended) throw new Error('InvalidStateError: the render pass has ended');
+  protected add(command: PassCommand): void {
+    if (this.ended) throw new Error(`InvalidStateError: the ${this.kind} has ended`);
     this.commands.push(command);
+  }
+  /** Checks of a bind group against what the pass draws into. */
+  protected checkGroup(_group: GPUBindGroupShim): void {}
+  setBindGroup(index: number, group: GPUBindGroupShim | null, offsets?: unknown, start?: number, length?: number): void {
+    if (group === null) return;
+    this.checkGroup(group);
+    let list: number[] | undefined;
+    if (Array.isArray(offsets)) list = offsets.map(Number);
+    else if (offsets !== undefined && offsets !== null) list = Array.from((offsets as Uint32Array).subarray(start ?? 0, (start ?? 0) + (length ?? (offsets as Uint32Array).length)));
+    this.state.groups.add(index);
+    this.add(list === undefined || list.length === 0 ? { c: 'bind', index, group } : { c: 'bind', index, group, offsets: list });
+  }
+  setVertexBuffer(slot: number, buffer: GPUBufferShim | null, offset = 0, size?: number): void {
+    if (buffer === null) return;
+    boundRange('setVertexBuffer', buffer.size, offset, size, 4);
+    this.state.vertex.add(slot);
+    this.add(size === undefined ? { c: 'vertex', slot, buffer, offset } : { c: 'vertex', slot, buffer, offset, size });
+  }
+  setIndexBuffer(buffer: GPUBufferShim, format: string, offset = 0, size?: number): void {
+    boundRange('setIndexBuffer', buffer.size, offset, size, format === 'uint16' ? 2 : 4);
+    this.state.index = true;
+    this.add(size === undefined ? { c: 'index', buffer, format, offset } : { c: 'index', buffer, format, offset, size });
+  }
+  draw(vertices: number, instances = 1, first = 0, firstInstance = 0): void {
+    this.state.check('draw', false);
+    this.add({ c: 'draw', vertices, instances, first, firstInstance });
+  }
+  drawIndexed(indices: number, instances = 1, first = 0, base = 0, firstInstance = 0): void {
+    this.state.check('drawIndexed', true);
+    this.add({ c: 'drawIndexed', indices, instances, first, base, firstInstance });
+  }
+  pushDebugGroup(): void {}
+  popDebugGroup(): void {}
+  insertDebugMarker(): void {}
+}
+
+export class GPURenderPassEncoderShim extends RenderCommands {
+  constructor(private readonly encoder: GPUCommandEncoderShim, private readonly attachment: Attachment, private readonly occlusion: OcclusionQueries) {
+    super('render pass', encoder.device);
   }
   setPipeline(pipeline: GPURenderPipelineShim): void {
     const texture = this.attachment.texture;
@@ -733,10 +799,10 @@ export class GPURenderPassEncoderShim extends GpuObject {
       throw new RangeError(`OperationError: setPipeline: the pipeline has ${state ? `a ${state.format} depth state` : 'no depth state'} and the pass has ${depth ? `a ${depth.texture.format} depth attachment` : 'no depth attachment'}`);
     }
     if (state?.write && depth?.readOnly) throw new RangeError('OperationError: setPipeline: the pipeline writes depth and the pass depth attachment is read-only');
+    this.state.pipeline = pipeline;
     this.add({ c: 'pipeline', pipeline });
   }
-  setBindGroup(index: number, group: GPUBindGroupShim | null, offsets?: unknown, start?: number, length?: number): void {
-    if (group === null) return;
+  protected override checkGroup(group: GPUBindGroupShim): void {
     const texture = this.attachment.texture;
     const written = texture === null ? [] : [this.attachment, ...(this.attachment.more ?? [])];
     for (const entry of group.entries) {
@@ -748,25 +814,6 @@ export class GPURenderPassEncoderShim extends GpuObject {
         throw new RangeError('OperationError: setBindGroup: a pass samples the level of the depth texture it writes');
       }
     }
-    let list: number[] | undefined;
-    if (Array.isArray(offsets)) list = offsets.map(Number);
-    else if (offsets !== undefined && offsets !== null) list = Array.from((offsets as Uint32Array).subarray(start ?? 0, (start ?? 0) + (length ?? (offsets as Uint32Array).length)));
-    this.add(list === undefined || list.length === 0 ? { c: 'bind', index, group } : { c: 'bind', index, group, offsets: list });
-  }
-  setVertexBuffer(slot: number, buffer: GPUBufferShim | null, offset = 0, size?: number): void {
-    if (buffer === null) return;
-    boundRange('setVertexBuffer', buffer.size, offset, size, 4);
-    this.add(size === undefined ? { c: 'vertex', slot, buffer, offset } : { c: 'vertex', slot, buffer, offset, size });
-  }
-  setIndexBuffer(buffer: GPUBufferShim, format: string, offset = 0, size?: number): void {
-    boundRange('setIndexBuffer', buffer.size, offset, size, format === 'uint16' ? 2 : 4);
-    this.add(size === undefined ? { c: 'index', buffer, format, offset } : { c: 'index', buffer, format, offset, size });
-  }
-  draw(vertices: number, instances = 1, first = 0, firstInstance = 0): void {
-    this.add({ c: 'draw', vertices, instances, first, firstInstance });
-  }
-  drawIndexed(indices: number, instances = 1, first = 0, base = 0, firstInstance = 0): void {
-    this.add({ c: 'drawIndexed', indices, instances, first, base, firstInstance });
   }
   setViewport(x: number, y: number, width: number, height: number, minDepth = 0, maxDepth = 1): void {
     this.add({ c: 'viewport', x, y, width, height, minDepth, maxDepth });
@@ -782,17 +829,31 @@ export class GPURenderPassEncoderShim extends GpuObject {
     this.add({ c: 'blend', color: [r, g, b, a] });
   }
   setStencilReference(): void {}
-  pushDebugGroup(): void {}
-  popDebugGroup(): void {}
-  insertDebugMarker(): void {}
   drawIndirect(): never {
     throw this.encoder.device.unsupported('renderPass.drawIndirect');
   }
   drawIndexedIndirect(): never {
     throw this.encoder.device.unsupported('renderPass.drawIndexedIndirect');
   }
-  executeBundles(): never {
-    throw this.encoder.device.unsupported('renderPass.executeBundles');
+  /**
+   * Runs the bundles' commands here, in order, as if the pass had recorded them; then, as the spec says, the pipeline, bind
+   * groups and vertex and index buffers are unset (the viewport, scissor and blend constant are not).
+   */
+  executeBundles(bundles: Iterable<GPURenderBundleShim>): void {
+    const list = [...bundles];
+    const { context, texture, depth, more } = this.attachment;
+    const formats = context !== null ? [context.getConfiguration()!.format] : texture === null ? [] : [texture, ...(more ?? []).map((m) => m.texture!)].map((t) => t.format);
+    const samples = texture?.sampleCount ?? depth?.texture.sampleCount ?? 1;
+    for (const bundle of list) {
+      if (!(bundle instanceof GPURenderBundleShim)) throw new TypeError("executeBundles: a bundle is not a GPURenderBundle");
+      const made = bundle.descriptor;
+      if (made.colorFormats.join() !== formats.join()) throw new RangeError(`OperationError: executeBundles: the bundle draws ${made.colorFormats.join(', ') || 'no colour'} and the pass draws ${formats.join(', ') || 'no colour'}`);
+      if ((made.depthStencilFormat ?? null) !== (depth?.texture.format ?? null)) throw new RangeError(`OperationError: executeBundles: the bundle has ${made.depthStencilFormat ?? 'no'} depth format and the pass has ${depth?.texture.format ?? 'no depth attachment'}`);
+      if (made.sampleCount !== samples) throw new RangeError(`OperationError: executeBundles: the bundle has ${made.sampleCount} samples and the pass draws into ${samples}`);
+      if (depth?.readOnly && !made.depthReadOnly) throw new RangeError('OperationError: executeBundles: the pass depth attachment is read-only and the bundle is not');
+    }
+    for (const bundle of list) this.commands.push(...bundle.commands);
+    this.state.clear();
   }
   beginOcclusionQuery(index: number): void {
     this.occlusion.begin(index);
@@ -805,6 +866,51 @@ export class GPURenderPassEncoderShim extends GpuObject {
     this.ended = true;
     this.occlusion.finish();
     this.encoder.finishPass({ kind: 'pass', attachment: this.attachment, commands: this.commands });
+  }
+}
+
+/** What `createRenderBundleEncoder` takes, with the defaults: the formats and samples a pass must have to run the bundle. */
+interface BundleDescriptor {
+  colorFormats: string[];
+  depthStencilFormat: string | null;
+  sampleCount: number;
+  depthReadOnly: boolean;
+}
+
+/** A render bundle: the commands of an encoder that finished. `executeBundles` runs them in a pass; nothing of it is drawn alone. */
+export class GPURenderBundleShim extends GpuObject {
+  constructor(readonly commands: PassCommand[], readonly descriptor: BundleDescriptor, label: unknown) {
+    super(label);
+  }
+}
+
+/** Records the commands of a bundle, checked against the formats and samples it was made for. */
+export class GPURenderBundleEncoderShim extends RenderCommands {
+  constructor(device: GPUDeviceShim, private readonly descriptor: BundleDescriptor, private readonly bundleLabel: unknown) {
+    super('render bundle encoder', device);
+  }
+  setPipeline(pipeline: GPURenderPipelineShim): void {
+    if (!(pipeline instanceof GPURenderPipelineShim)) throw new TypeError("setPipeline: 'pipeline' is not a GPURenderPipeline");
+    const made = this.descriptor;
+    const targets = (pipeline.descriptor.fragment?.targets ?? []).filter((t) => t !== null).map((t) => t!.format);
+    if (targets.join() !== made.colorFormats.join()) throw new RangeError(`OperationError: setPipeline: the pipeline draws ${targets.join(', ') || 'no colour'} and the bundle draws ${made.colorFormats.join(', ') || 'no colour'}`);
+    if ((pipeline.descriptor.samples ?? 1) !== made.sampleCount) throw new RangeError(`OperationError: setPipeline: the pipeline has ${pipeline.descriptor.samples ?? 1} samples and the bundle has ${made.sampleCount}`);
+    const depth = pipeline.descriptor.depth;
+    if ((depth?.format ?? null) !== made.depthStencilFormat) throw new RangeError(`OperationError: setPipeline: the pipeline has ${depth ? `a ${depth.format} depth state` : 'no depth state'} and the bundle has ${made.depthStencilFormat ?? 'no depth format'}`);
+    if (depth?.write && made.depthReadOnly) throw new RangeError('OperationError: setPipeline: the pipeline writes depth and the bundle depth is read-only');
+    this.state.pipeline = pipeline;
+    this.add({ c: 'pipeline', pipeline });
+  }
+  drawIndirect(): never {
+    throw this.device.unsupported('renderBundle.drawIndirect');
+  }
+  drawIndexedIndirect(): never {
+    throw this.device.unsupported('renderBundle.drawIndexedIndirect');
+  }
+  finish(descriptor?: { label?: string }): GPURenderBundleShim {
+    if (this.ended) throw new Error('InvalidStateError: the render bundle encoder has finished');
+    this.ended = true;
+    return new GPURenderBundleShim(this.commands, this.descriptor, descriptor?.label ?? this.bundleLabel);
   }
 }
 
@@ -2207,8 +2313,19 @@ export class GPUDeviceShim extends EventTarget {
   createQuerySet(descriptor: QuerySetDescriptor): GPUQuerySetShim {
     return new GPUQuerySetShim(descriptor, this.features.has('timestamp-query'));
   }
-  createRenderBundleEncoder(): never {
-    throw this.unsupported('render bundles');
+  createRenderBundleEncoder(descriptor: { colorFormats?: (string | null)[]; depthStencilFormat?: string; sampleCount?: number; depthReadOnly?: boolean; stencilReadOnly?: boolean; label?: string }): GPURenderBundleEncoderShim {
+    const call = 'createRenderBundleEncoder';
+    const colorFormats = (descriptor?.colorFormats ?? []).filter((f) => f !== null && f !== undefined) as string[];
+    for (const format of colorFormats) {
+      if (FORMATS[format] === undefined || DEPTH_FORMATS.has(format)) throw new TypeError(`${call}: ${String(format)} is not a colour format that is drawn (${FORMAT_NAMES})`);
+    }
+    if (colorFormats.length > this.limits.maxColorAttachments!) throw new RangeError(`OperationError: ${call}: ${colorFormats.length} colour formats; the device allows ${this.limits.maxColorAttachments}`);
+    const depthStencilFormat = descriptor?.depthStencilFormat ?? null;
+    if (depthStencilFormat !== null && !DEPTH_FORMATS.has(depthStencilFormat)) throw this.unsupported(`a bundle depthStencilFormat ${depthStencilFormat}; the depth formats are ${[...DEPTH_FORMATS].join(', ')} (stencil formats are not drawn)`);
+    if (colorFormats.length === 0 && depthStencilFormat === null) throw new TypeError(`${call}: a bundle needs a colour format or a depth format`);
+    const sampleCount = descriptor?.sampleCount ?? 1;
+    if (sampleCount !== 1 && sampleCount !== 4) throw new RangeError(`OperationError: ${call}: sampleCount ${String(sampleCount)}; it is 1 or 4`);
+    return new GPURenderBundleEncoderShim(this, { colorFormats, depthStencilFormat, sampleCount, depthReadOnly: descriptor?.depthReadOnly === true }, descriptor?.label);
   }
   importExternalTexture(): never {
     throw this.unsupported('device.importExternalTexture (video textures); copy the frame with queue.copyExternalImageToTexture');
@@ -2269,15 +2386,14 @@ export function createGpuCanvasContext(options: GPUCanvasContextOptions): GPUCan
   return new GPUCanvasContextShim(options);
 }
 
-/** What `createRenderBundleEncoder` would make: render bundles are not drawn, so none exists, but a page tests `instanceof GPURenderBundleEncoder`. */
-class GPURenderBundleEncoderShim {}
-
 // An error a check throws is recorded on the device before it reaches the page (`webgpu-errors.ts`).
 for (const [cls, deviceOf] of [
   [GPUDeviceShim, (self: GPUDeviceShim) => self],
   [GPUQueueShim, (self: GPUQueueShim) => (self as unknown as { device: GPUDeviceShim }).device],
   [GPUCommandEncoderShim, (self: GPUCommandEncoderShim) => self.device],
   [GPURenderPassEncoderShim, (self: GPURenderPassEncoderShim) => (self as unknown as { encoder: GPUCommandEncoderShim }).encoder.device],
+  [RenderCommands, (self: RenderCommands) => self.device],
+  [GPURenderBundleEncoderShim, (self: GPURenderBundleEncoderShim) => self.device],
   [GPUComputePassEncoderShim, (self: GPUComputePassEncoderShim) => (self as unknown as { encoder: GPUCommandEncoderShim }).encoder.device],
   [GPUTextureShim, (self: GPUTextureShim) => self.device],
   [GPUBufferShim, (self: GPUBufferShim) => (self as unknown as { device: GPUDeviceShim }).device],
@@ -2309,5 +2425,6 @@ Object.assign(GPU_GLOBALS, {
   GPURenderPassEncoder: GPURenderPassEncoderShim,
   GPUComputePassEncoder: GPUComputePassEncoderShim,
   GPURenderBundleEncoder: GPURenderBundleEncoderShim,
+  GPURenderBundle: GPURenderBundleShim,
   GPUCanvasContext: GPUCanvasContextShim,
 });
