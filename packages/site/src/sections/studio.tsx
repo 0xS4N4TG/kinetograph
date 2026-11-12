@@ -37,7 +37,7 @@ export function Studio() {
       </div>
 
       <div data-reveal className="kg-tray mt-[clamp(40px,6vw,88px)]">
-        <div className="kg-core bg-card">
+        <div className="kg-core bg-card aspect-[3200/2320]">
           <img src="/docs-media/studio/window-light.webp" width={3200} height={2320} alt={WINDOW_ALT} loading="lazy" decoding="async" className="block h-auto w-full dark:hidden" />
           <img src="/docs-media/studio/window-dark.webp" width={3200} height={2320} alt={WINDOW_ALT} loading="lazy" decoding="async" className="hidden h-auto w-full dark:block" />
         </div>

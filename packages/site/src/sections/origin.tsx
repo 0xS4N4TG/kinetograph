@@ -1,11 +1,14 @@
 import { FitLine } from '@/components/fit-line';
 import { Pic } from '@/components/pic';
-import { section, shell } from '@/sections/shared';
+import { shell } from '@/sections/shared';
 
 /** Where the name comes from: the Black Maria, on the cobalt field. */
 export function Origin() {
   return (
-    <section id="origin" className={`${shell} ${section} scroll-mt-6`}>
+    <section id="origin" className={`${shell} pt-[clamp(48px,6vw,88px)] scroll-mt-6`}>
+      <p data-reveal className="mb-6 max-w-[60ch] font-dm text-[clamp(18px,1.6vw,22px)] leading-snug font-medium tracking-[-0.01em] text-ink">
+        The first film studio turned on a track to follow the sun. This one runs on your computer.
+      </p>
       <div data-reveal className="group/pic kg-tray">
         <div className="kg-core kg-core-field grid lg:grid-cols-[5fr_7fr]">
           <div className="flex flex-col justify-between gap-12 p-[clamp(24px,3.4vw,52px)] max-lg:order-2">
