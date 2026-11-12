@@ -19,7 +19,7 @@ const linkClass = `${labelText} transition-colors hover:text-cobalt`;
 export async function Nav() {
   const counts = await repoCounts();
   const full = (
-    <div className="flex h-14 items-center gap-8 pr-2 pl-7">
+    <div className="flex h-16 items-center gap-8 pr-2.5 pl-6">
       <a href="#" aria-label="Kinetograph">
         <Wordmark className="text-[24px] text-ink" />
       </a>
@@ -35,7 +35,7 @@ export async function Nav() {
     </div>
   );
   const compact = (
-    <div className="flex h-12 items-center gap-5 pr-1.5 pl-5">
+    <div className="flex h-14 items-center gap-4 pr-2 pl-[18px]">
       <a href="#" aria-label="Kinetograph">
         <Wordmark className="text-[20px] text-ink" />
       </a>
