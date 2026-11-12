@@ -401,6 +401,12 @@ pub fn put_canvas_pixels(
     stored::put(&key, version, width, height, row_bytes, bgra, &alpha, &bytes)
 }
 
+/// The rows of version `version` of the canvas `key` as `putCanvasPixels` was given them, or `null` when that version is gone.
+#[napi]
+pub fn get_canvas_pixels(key: String, version: f64) -> Option<Buffer> {
+    stored::pixels(&key, version)
+}
+
 /// Forgets every version of the canvas `key` that `putCanvasPixels` kept.
 #[napi]
 pub fn release_canvas_pixels(key: String) {

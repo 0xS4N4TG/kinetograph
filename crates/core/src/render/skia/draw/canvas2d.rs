@@ -436,7 +436,7 @@ impl Translator {
             (_, i) => i,
         };
         crate::profile::add_since("cv_stored", timer);
-        self.stored_last.insert(key.clone(), (version, img.clone()));
+        insert_bounded(&mut self.stored_last, STORED_IMAGES_KEPT, key.clone(), (version, img.clone()));
         img
     }
 
@@ -712,5 +712,36 @@ mod tests {
         let tiled = |source: &str| format!(r##"[{{"op": "fill", "path": "M0 0H4V4H0Z", "paint": {{"type": "pattern", "source": {source}}}}}]"##);
         assert!(replayable(&ops(&tiled(&inner(plain)))));
         assert!(!replayable(&ops(&tiled(&inner(shadowed)))));
+    }
+}
+
+/// The images of stored pictures a translator keeps, one per canvas key: a cache of what is cheap to make again, so it is emptied
+/// when a long-lived renderer has seen more canvases than any scene draws at once (a Studio that opens project after project).
+const STORED_IMAGES_KEPT: usize = 256;
+
+/// `map.insert`, after emptying `map` when it holds `cap` entries and `key` is not one of them.
+fn insert_bounded<K: std::hash::Hash + Eq, V>(map: &mut HashMap<K, V>, cap: usize, key: K, value: V) {
+    if map.len() >= cap && !map.contains_key(&key) {
+        map.clear();
+    }
+    map.insert(key, value);
+}
+
+#[cfg(test)]
+mod bounded_tests {
+    use super::*;
+
+    #[test]
+    fn a_cache_keyed_by_canvas_does_not_grow_without_bound() {
+        let mut map = HashMap::new();
+        for key in 0..10_000u32 {
+            insert_bounded(&mut map, 256, key, key);
+            assert!(map.len() <= 256);
+        }
+        // A key that is already there is replaced, not a reason to empty the map.
+        let before = map.len();
+        let key = *map.keys().next().unwrap();
+        insert_bounded(&mut map, 256, key, 0);
+        assert_eq!(map.len(), before);
     }
 }

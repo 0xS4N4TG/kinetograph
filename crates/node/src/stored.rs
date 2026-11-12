@@ -29,6 +29,11 @@ pub fn put(
     stored_pixels::put(key, version as u64, picture).map_err(|e| invalid(format!("putCanvasPixels: {e}")))
 }
 
+/// The rows of version `version` of the canvas `key` as they were put, or none when that version is gone.
+pub fn pixels(key: &str, version: f64) -> Option<Buffer> {
+    stored_pixels::get(key, version as u64).map(|p| Buffer::from(p.bytes.clone()))
+}
+
 pub fn release(key: &str) {
     stored_pixels::release(key);
 }
@@ -72,5 +77,17 @@ mod tests {
         // The pictures were drawn (each frame holds its own version), not dropped before they were.
         assert!(seen.windows(2).all(|pair| pair[0] != pair[1]));
         stored_pixels::release(key);
+    }
+
+    /// The host reads a picture it put back: the bytes as they were put (what a canvas drawn into another reads).
+    #[test]
+    fn a_picture_put_can_be_read_back_as_put() {
+        let key = "node-test-read-back";
+        let bytes: Vec<u8> = (0..8 * 8 * 4).map(|i| (i % 251) as u8).collect();
+        assert!(stored_pixels::put(key, 1, StoredPicture { width: 8, height: 8, row_bytes: 32, bgra: false, alpha: StoredAlpha::Premul, bytes: bytes.clone() }).unwrap());
+        assert_eq!(pixels(key, 1.0).unwrap().to_vec(), bytes);
+        assert!(pixels(key, 2.0).is_none());
+        stored_pixels::release(key);
+        assert!(pixels(key, 1.0).is_none());
     }
 }

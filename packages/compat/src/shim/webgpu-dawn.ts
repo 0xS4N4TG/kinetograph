@@ -33,6 +33,9 @@ interface Hooks {
   rasterize(source: { width: number; height: number; commands: CanvasCommand[] }): Uint8Array | null;
 }
 
+/** What every adapter and device says about itself: not this machine's GPU. */
+const FIXED_INFO = Object.freeze({ vendor: 'kinetograph', architecture: 'dawn', device: '', description: 'Kinetograph (Dawn)', subgroupMinSize: 0, subgroupMaxSize: 0 });
+
 /** The limits of every adapter and device: the WebGPU defaults. A page cannot ask for better. */
 export const DAWN_LIMITS: Record<string, number> = {
   maxTextureDimension1D: 8192, maxTextureDimension2D: 8192, maxTextureDimension3D: 2048, maxTextureArrayLayers: 256,
@@ -202,6 +205,7 @@ function patchDawn(g: Record<string, Any>): void {
   }
   wrap(g.GPUCommandEncoder.prototype, 'resolveQuerySet', function (original, [set, first, count, buffer, offset]) {
     if (!fakeQuerySets.has(set)) return original.call(this, set, first, count, buffer, offset);
+    report(scope, 'a timestamp query is a stand-in here: its results are zeros (a real timestamp is real time, which a picture must not depend on)');
     // A buffer that only query results go to (QUERY_RESOLVE, COPY_SRC) is zero and nothing else writes it; one that can be copied to is cleared.
     if (((buffer.usage ?? 0) & 0x08 /* COPY_DST */) !== 0) this.clearBuffer(buffer, offset, count * 8);
   });
@@ -216,7 +220,6 @@ function fixedAdapter(real: Any): Any {
     if (real.features.has(feature)) features.add(feature);
     else report(adapterOwner, `this machine's adapter lacks ${feature}, which every adapter offers here; a page that needs it fails to get a device`);
   }
-  const info = Object.freeze({ vendor: 'kinetograph', architecture: 'dawn', device: '', description: 'Kinetograph (Dawn)', subgroupMinSize: 0, subgroupMaxSize: 0 });
   const requestDevice = async (descriptor: Any = {}): Promise<Any> => {
     // The scope of the frame that asks: an adapter may be got in one frame and a device asked of it in another.
     const owner = scope;
@@ -234,13 +237,19 @@ function fixedAdapter(real: Any): Any {
     }
     const device = await real.requestDevice({ label: descriptor?.label, requiredFeatures: [...(descriptor?.requiredFeatures ?? [])].filter((f) => f !== TIMESTAMP), requiredLimits: limits, defaultQueue: descriptor?.defaultQueue });
     watch(device, owner);
+    // `device.adapterInfo` is the real adapter's, which names this machine's GPU: the fixed one instead.
+    try {
+      Object.defineProperty(device, 'adapterInfo', { value: FIXED_INFO, configurable: true });
+    } catch {
+      // a library whose device cannot be given a property keeps its own
+    }
     return device;
   };
   return new Proxy(real, {
     get(target, key) {
       if (key === 'features') return features;
       if (key === 'limits') return { ...DAWN_LIMITS };
-      if (key === 'info') return info;
+      if (key === 'info') return FIXED_INFO;
       if (key === 'isFallbackAdapter') return false;
       if (key === 'requestDevice') return (descriptor?: Any) => hooks!.track(requestDevice(descriptor));
       const value = Reflect.get(target, key, target);
@@ -344,6 +353,8 @@ export class DawnCanvasContext {
   private version = 0;
   /** The canvas as the last flush read it, null when nothing was drawn this frame. */
   picture: { width: number; height: number; source: CanvasSource } | null = null;
+  /** How the rows of that picture were handed over, for `pixels`. */
+  private kept: { stride: number; format: string; alphaMode: string; colorSpace: string; direct: boolean } | null = null;
 
   /** The renderer's scope this canvas was made in: its device, its pictures, its reports. */
   private readonly scope = scope;
@@ -473,6 +484,26 @@ export class DawnCanvasContext {
     }
   }
 
+  /**
+   * The pixels the page can read of this canvas now, straight-alpha sRGB RGBA8: what the last read-back left. A canvas drawn in this
+   * frame has none yet (it is read back after the frame's scripts ran), which is said; one that was not drawn is transparent.
+   */
+  pixels(): { rgba: Uint8Array; width: number; height: number } {
+    const picture = this.picture;
+    if (picture === null) {
+      if (this.readPending) throw new Error(READ_PENDING);
+      const { width, height } = this.options.size();
+      return { rgba: new Uint8Array(Math.max(1, width) * Math.max(1, height) * 4), width: Math.max(1, width), height: Math.max(1, height) };
+    }
+    const { width, height, source } = picture;
+    if (source.kind === 'pixels') return { rgba: new Uint8Array(Buffer.from(source.data, 'base64')), width, height };
+    const rows = hasAddonFunction('getCanvasPixels') && this.kept !== null ? addonFunction('getCanvasPixels')(this.key, this.version) : null;
+    if (rows === null || rows === undefined) throw new Error('copyExternalImageToTexture: the pixels of this WebGPU canvas are gone (its read-back was released)');
+    const { stride, format, alphaMode, colorSpace, direct } = this.kept!;
+    const bytes = new Uint8Array(rows.buffer, rows.byteOffset, rows.byteLength);
+    return { rgba: direct ? toStraightSrgb(bytes, width, height, stride, format, alphaMode, colorSpace) : bytes, width, height };
+  }
+
   /** Hands the mapped rows to the addon as they are, or converted to straight sRGB when the addon cannot take them so. */
   private keep(mapped: Uint8Array, width: number, height: number, stride: number, format: string, alphaMode: string, colorSpace: string): void {
     const direct = format !== 'rgba16float' && colorSpace === 'srgb';
@@ -486,6 +517,7 @@ export class DawnCanvasContext {
     }
     const bytes = Buffer.from(rows.buffer, rows.byteOffset, rows.byteLength);
     const alpha = !direct ? 'straight' : alphaMode === 'premultiplied' ? 'premultiplied' : 'opaque';
+    this.kept = { stride, format, alphaMode, colorSpace, direct };
     const changed = addonFunction('putCanvasPixels')(this.key, this.version + 1, width, height, direct ? stride : width * 4, direct && format === 'bgra8unorm', alpha, bytes);
     // The same picture as the last one put: that version is still the one to draw (its image is made already).
     if (changed) this.version += 1;
@@ -502,13 +534,16 @@ export async function flushDawnCanvases(): Promise<void> {
   }
 }
 
+/** On the source a Dawn canvas names: the canvas, so that `copyExternalImageToTexture` can read its pixels. */
+const DAWN_CANVAS = Symbol('kinetograph.dawnCanvas');
+
 /**
  * What `drawImage` of a Dawn canvas names: its read-back, which is made after the page's scripts of the frame ran, so the source is
  * written when the tree is read (`toJSON`), with the picture the read-back left.
  */
 export function dawnPictureSource(context: DawnCanvasContext, width: number, height: number): CanvasSource {
   return {
-    kind: 'stored', key: '', version: 0,
+    kind: 'stored', key: '', version: 0, [DAWN_CANVAS]: context,
     toJSON: () => {
       if (context.picture !== null) return context.picture.source;
       if (context.readPending) throw new Error(READ_PENDING);
@@ -517,7 +552,7 @@ export function dawnPictureSource(context: DawnCanvasContext, width: number, hei
   } as CanvasSource;
 }
 
-const READ_PENDING = "a WebGPU canvas is read back after the scripts of a frame ran, so its pixels cannot be read in the frame they are drawn in (toDataURL, toBlob, getImageData of a canvas it was drawn on); drawImage of it is drawn from the read-back, and its pixels can be read in a later callback of the frame";
+const READ_PENDING = "a WebGPU canvas is read back after the scripts of a frame ran, so its pixels cannot be read in the frame they are drawn in (toDataURL, toBlob, getImageData, copyExternalImageToTexture of a canvas it was drawn on); drawImage of it is drawn from the read-back, and its pixels can be read in a later callback of the frame";
 
 /** The commands that make a Dawn canvas's pixels, for `toDataURL` and `toBlob`: what the frame's read-back left. */
 export function dawnReadCommands(context: DawnCanvasContext): CanvasCommand[] {
@@ -623,36 +658,112 @@ function pictureBytes(source: Any): { rgba: Uint8Array; width: number; height: n
   const picture = (source as { [key: symbol]: () => Any } | null)?.[CANVAS_SOURCE as symbol]?.();
   if (!picture) throw new Error(`copyExternalImageToTexture from ${source?.constructor?.name ?? typeof source} is not available here; use an image, an ImageBitmap, ImageData, a canvas or a video`);
   const { source: s, width, height } = picture;
+  // A WebGPU canvas of this provider: what its read-back left, from the addon's store.
+  const dawnCanvas = (s as { [key: symbol]: DawnCanvasContext | undefined })[DAWN_CANVAS];
+  if (dawnCanvas !== undefined) return dawnCanvas.pixels();
   if (s.kind === 'pixels') return { rgba: new Uint8Array(Buffer.from(s.data, 'base64')), width: s.width, height: s.height };
   const rgba = hooks!.rasterize({ width, height, commands: [{ op: 'image', source: s, sx: 0, sy: 0, sw: width, sh: height, dx: 0, dy: 0, dw: width, dh: height, smooth: false } as CanvasCommand] });
   if (rgba === null) throw new Error('copyExternalImageToTexture: the pixels of this picture need the native addon');
   return { rgba, width, height };
 }
 
+const operationError = (message: string): Error => Object.assign(new Error(message), { name: 'OperationError' });
+
+/** The half-float bits of each byte value / 255 (what a float16 destination holds of a channel). */
+const HALF_BITS = ((): Uint16Array => {
+  const out = new Uint16Array(256);
+  const f32 = new Float32Array(1);
+  const u32 = new Uint32Array(f32.buffer);
+  for (let i = 0; i < 256; i++) {
+    f32[0] = i / 255;
+    const x = u32[0]!;
+    const exp = ((x >> 23) & 0xff) - 127;
+    if (x === 0) out[i] = 0;
+    else if (exp < -14) out[i] = Math.round((i / 255) / 2 ** -24); // a half subnormal
+    else out[i] = (((exp + 15) << 10) | (x & 0x7fffff) >> 13) + (((x & 0x1fff) > 0x1000 || ((x & 0x1fff) === 0x1000 && (x >> 13) & 1)) ? 1 : 0);
+  }
+  return out;
+})();
+
+/** How a copy of RGBA8 pixels is written into each destination format: the channels it has and its bytes per pixel. */
+const COPY_FORMATS: Record<string, { bytes: number; encode(rect: Uint8Array, pixels: number): Uint8Array }> = {
+  rgba8unorm: { bytes: 4, encode: (rect) => rect },
+  'rgba8unorm-srgb': { bytes: 4, encode: (rect) => rect },
+  bgra8unorm: { bytes: 4, encode: swapped },
+  'bgra8unorm-srgb': { bytes: 4, encode: swapped },
+  r8unorm: { bytes: 1, encode: (rect, n) => Uint8Array.from({ length: n }, (_, i) => rect[i * 4]!) },
+  rg8unorm: { bytes: 2, encode: (rect, n) => Uint8Array.from({ length: n * 2 }, (_, i) => rect[(i >> 1) * 4 + (i & 1)]!) },
+  r16float: { bytes: 2, encode: (rect, n) => halves(rect, n, 1) },
+  rg16float: { bytes: 4, encode: (rect, n) => halves(rect, n, 2) },
+  rgba16float: { bytes: 8, encode: (rect, n) => halves(rect, n, 4) },
+  r32float: { bytes: 4, encode: (rect, n) => floats(rect, n, 1) },
+  rg32float: { bytes: 8, encode: (rect, n) => floats(rect, n, 2) },
+  rgba32float: { bytes: 16, encode: (rect, n) => floats(rect, n, 4) },
+  rgb10a2unorm: {
+    bytes: 4,
+    encode: (rect, n) => {
+      const out = new Uint32Array(n);
+      for (let i = 0; i < n; i++) out[i] = (Math.round((rect[i * 4]! / 255) * 1023) | (Math.round((rect[i * 4 + 1]! / 255) * 1023) << 10) | (Math.round((rect[i * 4 + 2]! / 255) * 1023) << 20) | (Math.round((rect[i * 4 + 3]! / 255) * 3) << 30)) >>> 0;
+      return new Uint8Array(out.buffer);
+    },
+  },
+};
+
+function swapped(rect: Uint8Array): Uint8Array {
+  const out = new Uint8Array(rect.length);
+  for (let i = 0; i < rect.length; i += 4) {
+    out[i] = rect[i + 2]!;
+    out[i + 1] = rect[i + 1]!;
+    out[i + 2] = rect[i]!;
+    out[i + 3] = rect[i + 3]!;
+  }
+  return out;
+}
+
+function halves(rect: Uint8Array, pixels: number, channels: number): Uint8Array {
+  const out = new Uint16Array(pixels * channels);
+  for (let i = 0; i < pixels; i++) for (let c = 0; c < channels; c++) out[i * channels + c] = HALF_BITS[rect[i * 4 + c]!]!;
+  return new Uint8Array(out.buffer);
+}
+
+function floats(rect: Uint8Array, pixels: number, channels: number): Uint8Array {
+  const out = new Float32Array(pixels * channels);
+  for (let i = 0; i < pixels; i++) for (let c = 0; c < channels; c++) out[i * channels + c] = rect[i * 4 + c]! / 255;
+  return new Uint8Array(out.buffer);
+}
+
+/** An unsigned integer the WebGPU way (a negative or fractional number is a TypeError, as the IDL's [EnforceRange] makes it). */
+function unsigned(name: string, value: unknown): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 0xffffffff) throw new TypeError(`copyExternalImageToTexture: ${name} is not an unsigned integer (${String(value)})`);
+  return value;
+}
+
 function copyExternalImage(queue: Any, source: Any, destination: Any, size: Any): void {
-  const { rgba, width, height } = pictureBytes(source.source);
   const origin = source.origin ?? [0, 0];
-  const ox = Array.isArray(origin) ? origin[0] ?? 0 : origin.x ?? 0;
-  const oy = Array.isArray(origin) ? origin[1] ?? 0 : origin.y ?? 0;
+  const ox = unsigned('origin.x', Array.isArray(origin) ? origin[0] ?? 0 : origin.x ?? 0);
+  const oy = unsigned('origin.y', Array.isArray(origin) ? origin[1] ?? 0 : origin.y ?? 0);
   const copy = Array.isArray(size) ? size : [size.width, size.height ?? 1, size.depthOrArrayLayers ?? 1];
-  const [w, h] = [copy[0] as number, (copy[1] ?? 1) as number];
-  const bytes = new Uint8Array(w * h * 4);
+  const [w, h, layers] = [unsigned('copySize.width', copy[0]), unsigned('copySize.height', copy[1] ?? 1), unsigned('copySize.depthOrArrayLayers', copy[2] ?? 1)];
+  const format: string = destination.texture.format;
+  const encoding = COPY_FORMATS[format];
+  if (encoding === undefined) throw new TypeError(`copyExternalImageToTexture: the destination format ${format} is not supported here (${Object.keys(COPY_FORMATS).join(', ')} are)`);
+  const { rgba, width, height } = pictureBytes(source.source);
+  // The source rectangle must lie inside the source, and a source is one image: the spec's OperationError, not a rectangle of zeros.
+  if (ox + w > width || oy + h > height) throw operationError(`copyExternalImageToTexture: the source rectangle (${ox}, ${oy}) ${w}x${h} is outside the ${width}x${height} source`);
+  if (layers > 1) throw operationError('copyExternalImageToTexture: copySize.depthOrArrayLayers is more than 1 (a source is one image)');
+  const rect = new Uint8Array(w * h * 4);
   const premultiply = destination.premultipliedAlpha === true;
   for (let y = 0; y < h; y++) {
     const sy = source.flipY ? oy + h - 1 - y : oy + y;
     for (let x = 0; x < w; x++) {
       const si = ((sy * width) + ox + x) * 4;
       const di = (y * w + x) * 4;
-      if (sy < 0 || sy >= height || ox + x >= width) continue;
       const a = rgba[si + 3]!;
-      bytes[di] = premultiply ? Math.round((rgba[si]! * a) / 255) : rgba[si]!;
-      bytes[di + 1] = premultiply ? Math.round((rgba[si + 1]! * a) / 255) : rgba[si + 1]!;
-      bytes[di + 2] = premultiply ? Math.round((rgba[si + 2]! * a) / 255) : rgba[si + 2]!;
-      bytes[di + 3] = a;
+      rect[di] = premultiply ? Math.round((rgba[si]! * a) / 255) : rgba[si]!;
+      rect[di + 1] = premultiply ? Math.round((rgba[si + 1]! * a) / 255) : rgba[si + 1]!;
+      rect[di + 2] = premultiply ? Math.round((rgba[si + 2]! * a) / 255) : rgba[si + 2]!;
+      rect[di + 3] = a;
     }
   }
-  const format: string = destination.texture.format;
-  const swap = format.startsWith('bgra');
-  if (swap) for (let i = 0; i < bytes.length; i += 4) [bytes[i], bytes[i + 2]] = [bytes[i + 2]!, bytes[i]!];
-  queue.writeTexture({ texture: destination.texture, mipLevel: destination.mipLevel ?? 0, origin: destination.origin ?? [0, 0, 0], aspect: destination.aspect }, bytes, { bytesPerRow: w * 4, rowsPerImage: h }, [w, h, copy[2] ?? 1]);
+  queue.writeTexture({ texture: destination.texture, mipLevel: destination.mipLevel ?? 0, origin: destination.origin ?? [0, 0, 0], aspect: destination.aspect }, encoding.encode(rect, w * h), { bytesPerRow: w * encoding.bytes, rowsPerImage: h }, [w, h, 1]);
 }

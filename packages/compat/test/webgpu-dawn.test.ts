@@ -5,9 +5,10 @@
 
 import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
+import { CANVAS_SOURCE } from '@kinetographdev/scene';
 import { carryDepends, carryNeedsReplay, resetCarry } from '../src/shim/webgpu-dawn-carry.js';
 import { hasAddonFunction } from '../src/addon.js';
-import { DAWN_FEATURES, DAWN_LIMITS, DawnCanvasContext, createDawnScope, dawnCommandsOf, dawnGlobals, dawnReadCommands, duringAnimationFrames, enterDawnScope, flushDawnCanvases, installDawn, noteDawnRewind, releaseDawn, setDawnClock, takeDawnReports } from '../src/shim/webgpu-dawn.js';
+import { DAWN_FEATURES, DAWN_LIMITS, DawnCanvasContext, createDawnScope, dawnCommandsOf, dawnGlobals, dawnPictureSource, dawnReadCommands, duringAnimationFrames, enterDawnScope, flushDawnCanvases, installDawn, noteDawnRewind, releaseDawn, setDawnClock, takeDawnReports } from '../src/shim/webgpu-dawn.js';
 
 const missing = ((): string | null => {
   const spec = process.env.KINETOGRAPH_DAWN_MODULE;
@@ -65,9 +66,12 @@ describe.skipIf(missing !== null)('WebGPU through Dawn', () => {
       expect([...new BigUint64Array(read.getMappedRange().slice(0))]).toEqual([0n, 0n]);
       read.unmap();
     }
-    // The resolve buffer has no COPY_DST, as a page's usually has not: the stand-in must not be a validation error.
+    // The resolve buffer has no COPY_DST, as a page's usually has not: the stand-in must not be a validation error. It is said, once, that the
+    // results are zeros (both rounds resolved one).
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(takeDawnReports()).toEqual([]);
+    const said = takeDawnReports();
+    expect(said).toHaveLength(1);
+    expect(said[0]).toMatch(/a timestamp query is a stand-in here: its results are zeros/);
     device.destroy();
   });
 
@@ -265,6 +269,127 @@ describe.skipIf(missing !== null)('WebGPU through Dawn', () => {
     clock.mockRestore();
     leave();
     releaseDawn(scope);
+  });
+
+  it('says a device is the fixed adapter\'s, not this machine\'s', async () => {
+    const adapter = await gpu.requestAdapter();
+    const device = await adapter.requestDevice();
+    expect(device.adapterInfo.vendor).toBe('kinetograph');
+    expect(device.adapterInfo.description).toBe('Kinetograph (Dawn)');
+    expect(adapter.info.vendor).toBe('kinetograph');
+    device.destroy();
+  });
+
+  describe('copyExternalImageToTexture', () => {
+    const picture = (width: number, height: number, rgba: number[]) => ({
+      [CANVAS_SOURCE as symbol]: () => ({ source: { kind: 'pixels', width, height, data: Buffer.from(rgba).toString('base64') }, width, height }),
+    });
+    /** The bytes of a texture of `bytes` per pixel, read back row by row. */
+    const readTexture = async (device: any, texture: any, width: number, height: number, bytes: number): Promise<Uint8Array> => {
+      const buffer = device.createBuffer({ size: 256 * height, usage: g.GPUBufferUsage.MAP_READ | g.GPUBufferUsage.COPY_DST });
+      const encoder = device.createCommandEncoder();
+      encoder.copyTextureToBuffer({ texture }, { buffer, bytesPerRow: 256 }, [width, height, 1]);
+      device.queue.submit([encoder.finish()]);
+      await buffer.mapAsync(g.GPUMapMode.READ);
+      const all = new Uint8Array(buffer.getMappedRange().slice(0));
+      buffer.unmap();
+      const out = new Uint8Array(width * height * bytes);
+      for (let y = 0; y < height; y++) out.set(all.subarray(y * 256, y * 256 + width * bytes), y * width * bytes);
+      return out;
+    };
+    const setup = async (format: string, width = 2, height = 1) => {
+      const device = await (await gpu.requestAdapter()).requestDevice();
+      const texture = device.createTexture({ size: [width, height], format, usage: g.GPUTextureUsage.COPY_DST | g.GPUTextureUsage.COPY_SRC | g.GPUTextureUsage.RENDER_ATTACHMENT | g.GPUTextureUsage.TEXTURE_BINDING });
+      return { device, texture, copy: (source: any, size: any = [width, height], extra: any = {}) => device.queue.copyExternalImageToTexture(source, { texture, ...extra }, size) };
+    };
+    // red, then half-transparent blue
+    const two = picture(2, 1, [255, 0, 0, 255, 0, 0, 255, 128]);
+
+    it('writes each destination format its own bytes', async () => {
+      const cases: [string, number, number[]][] = [
+        ['rgba8unorm', 4, [255, 0, 0, 255, 0, 0, 255, 128]],
+        ['rgba8unorm-srgb', 4, [255, 0, 0, 255, 0, 0, 255, 128]],
+        ['bgra8unorm', 4, [0, 0, 255, 255, 255, 0, 0, 128]],
+        ['r8unorm', 1, [255, 0]],
+        ['rg8unorm', 2, [255, 0, 0, 0]],
+        // 1.0 is 0x3c00 in half floats and 0 is 0 (the last two bytes, 128/255, are not compared)
+        ['rgba16float', 8, [0x00, 0x3c, 0, 0, 0, 0, 0x00, 0x3c, 0, 0, 0, 0, 0x00, 0x3c, 0x01, 0x38]],
+        ['r32float', 4, [0, 0, 0x80, 0x3f, 0, 0, 0, 0]],
+        ['rgb10a2unorm', 4, [0xff, 0x03, 0, 0xc0, 0, 0, 0xf0, 0xbf]],
+      ];
+      for (const [format, bytes, expected] of cases) {
+        const { device, texture, copy } = await setup(format);
+        copy({ source: two });
+        const got = [...(await readTexture(device, texture, 2, 1, bytes))];
+        if (format === 'rgba16float') expect(got.slice(0, 14)).toEqual(expected.slice(0, 14));
+        else expect(got, format).toEqual(expected);
+        device.destroy();
+      }
+    });
+
+    it('premultiplies and flips as asked, and copies the rectangle at the origin', async () => {
+      const four = picture(2, 2, [10, 20, 30, 255, 40, 50, 60, 255, 70, 80, 90, 255, 100, 110, 120, 128]);
+      const { device, texture, copy } = await setup('rgba8unorm', 2, 1);
+      copy({ source: four, origin: [0, 1] }, [2, 1]);
+      expect([...(await readTexture(device, texture, 2, 1, 4))]).toEqual([70, 80, 90, 255, 100, 110, 120, 128]);
+      device.queue.copyExternalImageToTexture({ source: four, origin: [0, 1] }, { texture, premultipliedAlpha: true }, [2, 1]);
+      expect([...(await readTexture(device, texture, 2, 1, 4))]).toEqual([70, 80, 90, 255, 50, 55, 60, 128]);
+      device.destroy();
+      // flipY turns the rectangle upside down
+      const flipped = await setup('rgba8unorm', 2, 2);
+      flipped.copy({ source: four, flipY: true });
+      expect([...(await readTexture(flipped.device, flipped.texture, 2, 2, 4))]).toEqual([70, 80, 90, 255, 100, 110, 120, 128, 10, 20, 30, 255, 40, 50, 60, 255]);
+      flipped.device.destroy();
+    });
+
+    it('refuses a negative origin, a rectangle outside the source and a destination format it cannot write, as the spec does', async () => {
+      const { device, copy } = await setup('rgba8unorm');
+      expect(() => copy({ source: two, origin: [-1, 0] }, [1, 1])).toThrow(TypeError);
+      expect(() => copy({ source: two, origin: { x: 0, y: -2 } }, [1, 1])).toThrow(/origin.y/);
+      for (const [origin, size] of [[[1, 0], [2, 1]], [[0, 0], [3, 1]], [[0, 1], [1, 1]]] as const) {
+        let error: any;
+        try { copy({ source: two, origin }, size); } catch (e) { error = e; }
+        expect(error?.name, `${origin} ${size}`).toBe('OperationError');
+        expect(error.message).toMatch(/outside the 2x1 source/);
+      }
+      expect(() => copy({ source: two }, [1, 1, 2])).toThrow(/more than 1/);
+      device.destroy();
+      const rg11 = await setup('rg32float');
+      expect(() => rg11.copy({ source: two })).not.toThrow();
+      rg11.device.destroy();
+      const depth = await (await gpu.requestAdapter()).requestDevice();
+      const texture = depth.createTexture({ size: [2, 1], format: 'rg11b10ufloat', usage: g.GPUTextureUsage.COPY_DST | g.GPUTextureUsage.TEXTURE_BINDING });
+      expect(() => depth.queue.copyExternalImageToTexture({ source: two }, { texture }, [2, 1])).toThrow(/destination format rg11b10ufloat is not supported/);
+      depth.destroy();
+    });
+
+    it.skipIf(!hasAddonFunction('getCanvasPixels'))('takes a WebGPU canvas of this provider as the source, from what its read-back left', async () => {
+      const { device, texture, copy } = await setup('rgba8unorm', 4, 4);
+      const scope = createDawnScope();
+      const leave = enterDawnScope(scope);
+      const canvasDevice = await (await gpu.requestAdapter()).requestDevice();
+      const context = new DawnCanvasContext({ size: () => ({ width: 4, height: 4 }) });
+      context.configure({ device: canvasDevice, format: 'bgra8unorm', alphaMode: 'opaque' });
+      const host = { [CANVAS_SOURCE as symbol]: () => ({ source: dawnPictureSource(context, 4, 4), width: 4, height: 4 }) };
+      context.resetState();
+      const encoder = canvasDevice.createCommandEncoder();
+      encoder.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 1, g: 0.5, b: 0, a: 1 } }] }).end();
+      canvasDevice.queue.submit([encoder.finish()]);
+      // Drawn in this frame, not read back yet: said, not a copy of an empty picture.
+      expect(() => copy({ source: host })).toThrow(/read back after the scripts of a frame ran/);
+      await flushDawnCanvases();
+      copy({ source: host });
+      const got = await readTexture(device, texture, 4, 4, 4);
+      expect([...got.subarray(0, 4)]).toEqual([255, 128, 0, 255]);
+      expect([...got.subarray(60, 64)]).toEqual([255, 128, 0, 255]);
+      // A canvas that was not drawn this frame is transparent.
+      context.resetState();
+      copy({ source: host });
+      expect([...(await readTexture(device, texture, 4, 4, 4)).subarray(0, 4)]).toEqual([0, 0, 0, 0]);
+      leave();
+      releaseDawn(scope);
+      device.destroy();
+    });
   });
 
   it('reads a canvas back as the same bytes each time, and a frame that is not drawn has no picture', async () => {

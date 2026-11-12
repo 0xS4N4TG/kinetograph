@@ -130,6 +130,11 @@ pub fn versions(key: &str) -> usize {
     table().keys().filter(|(k, _)| k == key).count()
 }
 
+/// Version `version` of `key`, as put (not noted for `end_scene`: this is the host reading it back).
+pub fn get(key: &str, version: u64) -> Option<Arc<StoredPicture>> {
+    table().get(&(key.to_string(), version)).cloned()
+}
+
 /// Forgets every version of `key` (a canvas that is gone).
 pub fn release(key: &str) {
     table().retain(|(k, _), _| k != key);

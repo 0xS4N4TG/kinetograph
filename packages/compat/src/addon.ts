@@ -47,6 +47,8 @@ export interface DomAddon {
    * False, with nothing kept, when the newest version of `key` is the same picture: the caller keeps using that version.
    */
   putCanvasPixels?(key: string, version: number, width: number, height: number, rowBytes: number, bgra: boolean, alpha: 'opaque' | 'premultiplied' | 'straight', bytes: Uint8Array): boolean;
+  /** The rows of version `version` of the canvas `key` as `putCanvasPixels` was given them, or null when that version is gone. */
+  getCanvasPixels?(key: string, version: number): Uint8Array | null;
   /** Forgets every version of the canvas `key` that `putCanvasPixels` kept. */
   releaseCanvasPixels?(key: string): void;
   /** A Rive file played to a time, as a canvas's commands: `{ src, baseDir, artboard, animation, stateMachine, time, width, height, fit, alignment }` as JSON in, the commands as a JSON array out. */
