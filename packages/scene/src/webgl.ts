@@ -699,6 +699,8 @@ export class WebGLProgram extends WebGLObject {
   blockBindings: number[] = [];
   /** Why the link failed, when it did for a reason other than a missing shader. */
   linkLog = '';
+  /** What a draw records of the program, made once at the link: its content-hashed id and the entry of the recording. */
+  recorded: { id: string; entry: GlslProgram } | null = null;
 }
 
 // ---- reading the source for names ----
@@ -2046,6 +2048,7 @@ export class WebGLContext {
     program.blocks = [];
     program.blockBindings = [];
     program.linkLog = '';
+    program.recorded = null;
     if (!program.linked) return;
     program.vertex = vertex!.source;
     program.fragment = fragment!.source;
@@ -2078,6 +2081,14 @@ export class WebGLContext {
       program.attributes.set(d.name, next);
       take(next, width);
     }
+    if (!program.linked) return;
+    const attributes: Record<string, number> = {};
+    for (const [name, at] of program.attributes) attributes[name] = at;
+    const blocks = program.blocks.map(({ name, size, members }) => ({ name, size, members }));
+    program.recorded = {
+      id: `p${hashOf(JSON.stringify([program.vertex, program.fragment, attributes]))}`,
+      entry: { vertex: program.vertex, fragment: program.fragment, attributes, ...(blocks.length > 0 ? { blocks } : {}) },
+    };
   }
   /** The program's uniform blocks, in GL's order: the vertex shader's, then the fragment shader's that it does not declare. */
   private linkBlocks(program: WebGLProgram): void {
@@ -3698,14 +3709,8 @@ export class WebGLContext {
     this.begin();
 
     // The program, by what it is made of.
-    const attributes: Record<string, number> = {};
-    for (const [name, at] of program.attributes) attributes[name] = at;
-    const programKey = JSON.stringify([program.vertex, program.fragment, attributes]);
-    const programId = `p${hashOf(programKey)}`;
-    if (!this.programs.has(programId)) {
-      const blocks = program.blocks.map(({ name, size, members }) => ({ name, size, members }));
-      this.programs.set(programId, { vertex: program.vertex, fragment: program.fragment, attributes, ...(blocks.length > 0 ? { blocks } : {}) });
-    }
+    const { id: programId, entry } = program.recorded!;
+    if (!this.programs.has(programId)) this.programs.set(programId, entry);
 
     // Vertex data.
     const draw: GlslDraw = {

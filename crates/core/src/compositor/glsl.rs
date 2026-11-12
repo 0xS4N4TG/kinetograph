@@ -1376,7 +1376,7 @@ impl Compositor {
         }
         let size = self.glsl_dest_size(targets, &colors, ds_key, size)?;
         let points = draw.mode == GlslMode::Points;
-        let program = self.glsl_program(program_spec, flip, points)?;
+        let program = self.glsl_program(&draw.program, program_spec, flip, points)?;
 
         // State.
         let (viewport, scissor) = draw_rects(draw.viewport, draw.scissor, size, flip)?;
@@ -1948,14 +1948,12 @@ impl Compositor {
     /// The program, translated and compiled the first time it is drawn.
     fn glsl_program(
         &mut self,
+        id: &str,
         spec: &gl::GlslProgram,
         flip_y: bool,
         points: bool,
     ) -> Result<Arc<Program>> {
-        let key = format!(
-            "{}\u{0}{}\u{0}{:?}\u{0}{flip_y}\u{0}{points}",
-            spec.vertex, spec.fragment, spec.attributes
-        );
+        let key = program_key(id, spec, flip_y, points);
         if let Some(p) = self.glsl.programs.get(&key) {
             return Ok(p.clone());
         }
@@ -3898,6 +3896,17 @@ fn dim_name(dim: gl::SamplerDim) -> &'static str {
     }
 }
 
+/// What a compiled program is cached under: the recorder's content-hashed id (the source text is up to 100 KB per
+/// shader, too much to format and hash for every draw), the two source lengths as a guard against a recording that
+/// reuses an id, and the two flags the translation depends on.
+fn program_key(id: &str, spec: &gl::GlslProgram, flip_y: bool, points: bool) -> String {
+    format!(
+        "{id}\u{0}{}\u{0}{}\u{0}{flip_y}\u{0}{points}",
+        spec.vertex.len(),
+        spec.fragment.len()
+    )
+}
+
 fn uniform_entry(binding: u32, visibility: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
@@ -4286,6 +4295,23 @@ fn file_stamp(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_program_is_cached_under_its_id_not_its_source() {
+        let big = "x".repeat(100_000);
+        let spec = |v: &str| gl::GlslProgram {
+            vertex: v.to_string(),
+            fragment: big.clone(),
+            attributes: Default::default(),
+            blocks: Vec::new(),
+        };
+        let key = program_key("p0123456789abcdef", &spec(&big), false, false);
+        assert!(key.len() < 100, "the key holds the source: {} bytes", key.len());
+        assert_ne!(key, program_key("p0123456789abcdef", &spec(&big), true, false));
+        assert_ne!(key, program_key("p0123456789abcdef", &spec(&big), false, true));
+        assert_ne!(key, program_key("pfedcba9876543210", &spec(&big), false, false));
+        assert_ne!(key, program_key("p0123456789abcdef", &spec("short"), false, false));
+    }
 
     #[test]
     fn rectangles_are_checked_without_overflow() {

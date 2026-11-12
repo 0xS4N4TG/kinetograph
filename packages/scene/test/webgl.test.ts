@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MAX_OPS_PER_TARGET } from '../src/webgl-carry.js';
 import { createWebGLContext, glslShader, GL, GL2, layerPicture, VideoFramePicture, WebGLUnsupportedError, type WebGLContext } from '../src/index.js';
 
@@ -56,6 +56,20 @@ describe('the recording WebGL context', () => {
     expect(Object.keys(gl.content().buffers)).toHaveLength(1);
     gl.clear(GL.COLOR_BUFFER_BIT);
     expect(gl.content().ops).toHaveLength(1);
+  });
+
+  it('works out a program\'s recorded id once, at the link, not at every draw', () => {
+    const { gl } = setup();
+    const spy = vi.spyOn(JSON, 'stringify');
+    try {
+      for (let i = 0; i < 20; i++) gl.drawArrays(GL.TRIANGLES, 0, 3);
+      // Hashing the program (its sources and attributes) per draw would stringify the shader text 20 times.
+      const ofSources = spy.mock.calls.filter(([v]) => Array.isArray(v) && typeof v[0] === 'string' && v[0].includes('gl_Position'));
+      expect(ofSources).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(Object.keys(gl.content().programs)).toHaveLength(1);
   });
 
   it('shows its last picture again in a frame that issues no draw or clear, and the frame that draws replaces it', () => {
