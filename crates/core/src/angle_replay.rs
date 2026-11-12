@@ -60,6 +60,9 @@ struct Cache {
     buffers: HashMap<String, (u32, usize)>,
     textures: HashMap<String, (Handle, usize)>,
     swizzled: std::collections::HashSet<u32>,
+    /// Sampler objects by their parameters (min, mag, wrap s, t and r, compare mode and function): a few, shared by every
+    /// draw.
+    samplers: HashMap<[u32; 7], u32>,
 }
 
 impl Cache {
@@ -204,13 +207,14 @@ struct Replay<'a> {
     /// The targets a framebuffer draws a cube face or an array or 3D layer into, as the recorder lists them under
     /// the cube or array texture (`targets`): the target's id, to the texture's id and the face or layer.
     parts: HashMap<&'a str, (&'a str, u32)>,
-    samplers: Vec<u32>,
     /// The programs of the recording this frame has looked up, by id.
     frame_programs: std::cell::RefCell<HashMap<String, R<std::rc::Rc<Program>>>>,
     /// The programs whose uniforms went back to 0 for this frame.
     zeroed: std::collections::HashSet<u32>,
     /// The generic attributes a draw gave a current value, to put back before the next draw.
     const_attrs: u32,
+    /// The generic attributes with an array enabled or a divisor set by an earlier draw of this frame.
+    arrays_on: u32,
     /// The GL names of the textures and buffers of the context's cache this frame uses: they are not deleted with the frame.
     kept: std::collections::HashSet<u32>,
     framebuffers: Vec<u32>,
@@ -295,6 +299,9 @@ fn run(
             for name in names {
                 gl_.delete_texture(name);
             }
+            for sampler in cache.samplers.values() {
+                gl_.delete_sampler(*sampler);
+            }
             *cache = Cache::default();
         }
     });
@@ -319,11 +326,11 @@ fn run(
                     .map(move |(i, f)| (f.as_str(), (id.as_str(), i as u32)))
             })
             .collect(),
-        samplers: Vec::new(),
         frame_programs: std::cell::RefCell::new(HashMap::new()),
         zeroed: std::collections::HashSet::new(),
         // A frame starts with every current attribute value at the default, as a context just made has them.
         const_attrs: u32::MAX,
+        arrays_on: 0,
         kept: std::collections::HashSet::new(),
         framebuffers: Vec::new(),
         by_attachments: HashMap::new(),
@@ -527,9 +534,6 @@ impl<'a> Replay<'a> {
             } else {
                 gl_.delete_texture(name);
             }
-        }
-        for s in &self.samplers {
-            gl_.delete_sampler(*s);
         }
         for f in &self.framebuffers {
             gl_.delete_framebuffer(*f);
@@ -1215,15 +1219,20 @@ impl<'a> Replay<'a> {
         }
 
         // Vertex input.
-        for i in 0..16 {
-            gl_.disable_vertex_attrib_array(i);
-            gl_.vertex_attrib_divisor(i, 0);
+        // Only what an earlier draw set is undone: the frame's vertex array starts with every array off, divisor 0 and the
+        // default current values.
+        for i in 0..16u32 {
+            if self.arrays_on & (1 << i) != 0 {
+                gl_.disable_vertex_attrib_array(i);
+                gl_.vertex_attrib_divisor(i, 0);
+            }
             // The current value of an attribute without an array is context state: back to the default before a draw
             // that does not set it.
             if self.const_attrs & (1 << i) != 0 {
                 gl_.vertex_attrib4f(i, 0.0, 0.0, 0.0, 1.0);
             }
         }
+        self.arrays_on = 0;
         self.const_attrs = 0;
         for (name, a) in &d.attributes {
             // The recorder names the columns of a `mat2`, `mat3` or `mat4` attribute `name[0]`, `name[1]`, ...; GL
@@ -1274,25 +1283,56 @@ impl<'a> Replay<'a> {
         for (unit, s, h) in units {
             // The recording keeps the sampling state with the unit, not the texture (one texture, bound twice with
             // two filters, is one id), which is what a GL sampler object holds.
-            let sampler = gl_.gen_sampler();
-            self.samplers.push(sampler);
-            for (name, v) in [
-                (gl::TEXTURE_MIN_FILTER, named(&s.min)?),
-                (gl::TEXTURE_MAG_FILTER, named(&s.mag)?),
-                (gl::TEXTURE_WRAP_S, named(&s.wrap_s)?),
-                (gl::TEXTURE_WRAP_T, named(&s.wrap_t)?),
-                (gl::TEXTURE_WRAP_R, named(&s.wrap_r)?),
-            ] {
-                gl_.sampler_parameteri(sampler, name, v as i32);
-            }
-            if let Some(f) = &s.compare {
-                gl_.sampler_parameteri(
-                    sampler,
-                    gl::TEXTURE_COMPARE_MODE,
-                    gl::COMPARE_REF_TO_TEXTURE,
-                );
-                gl_.sampler_parameteri(sampler, gl::TEXTURE_COMPARE_FUNC, named(f)? as i32);
-            }
+            let compare = match &s.compare {
+                Some(f) => Some(named(f)?),
+                None => None,
+            };
+            let key = [
+                named(&s.min)?,
+                named(&s.mag)?,
+                named(&s.wrap_s)?,
+                named(&s.wrap_t)?,
+                named(&s.wrap_r)?,
+                u32::from(compare.is_some()),
+                compare.unwrap_or(0),
+            ];
+            let ext = self.ext;
+            let kept = CACHES.with(|c| {
+                c.borrow()
+                    .get(&ext)
+                    .and_then(|c| c.samplers.get(&key).copied())
+            });
+            let sampler = match kept {
+                Some(sampler) => sampler,
+                None => {
+                    let sampler = gl_.gen_sampler();
+                    for (name, v) in [
+                        (gl::TEXTURE_MIN_FILTER, key[0]),
+                        (gl::TEXTURE_MAG_FILTER, key[1]),
+                        (gl::TEXTURE_WRAP_S, key[2]),
+                        (gl::TEXTURE_WRAP_T, key[3]),
+                        (gl::TEXTURE_WRAP_R, key[4]),
+                    ] {
+                        gl_.sampler_parameteri(sampler, name, v as i32);
+                    }
+                    if let Some(f) = compare {
+                        gl_.sampler_parameteri(
+                            sampler,
+                            gl::TEXTURE_COMPARE_MODE,
+                            gl::COMPARE_REF_TO_TEXTURE,
+                        );
+                        gl_.sampler_parameteri(sampler, gl::TEXTURE_COMPARE_FUNC, f as i32);
+                    }
+                    CACHES.with(|c| {
+                        c.borrow_mut()
+                            .entry(ext)
+                            .or_default()
+                            .samplers
+                            .insert(key, sampler)
+                    });
+                    sampler
+                }
+            };
             gl_.active_texture(gl::TEXTURE0 + unit);
             gl_.bind_texture(h.target, h.name);
             gl_.bind_sampler(unit, sampler);
@@ -1484,6 +1524,7 @@ impl<'a> Replay<'a> {
         let buffer = self.buffer(&a.buffer)?;
         gl_.bind_buffer(gl::ARRAY_BUFFER, buffer);
         gl_.enable_vertex_attrib_array(loc);
+        self.arrays_on |= 1 << loc;
         let ty = type_enum(a.ty);
         if a.integer {
             gl_.vertex_attrib_ipointer(loc, a.size as i32, ty, a.stride as i32, a.offset as usize);
