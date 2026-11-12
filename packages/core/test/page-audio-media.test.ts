@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { setDomAddon, setDomEnvironment } from '@kinetographdev/compat/dom';
-import { installDeterminism, resetVirtualClock, setVirtualFrame, uninstallDeterminism } from '../src/determinism.js';
+import { armPageInput, setPageInput } from '@kinetographdev/compat/shim';
+import { installDeterminism, resetVirtualClock, setVirtualFrame, stepAnimationFrames, uninstallDeterminism } from '../src/determinism.js';
 import { setAudioDecoder } from '../src/media-utils.js';
 import { resetPageAudio, takePageAudioOps } from '../src/page-audio.js';
 import '../src/web-install.js';
@@ -88,5 +89,38 @@ describe('an <audio> element the page plays', () => {
     expect(ended).toBe(1);
     expect(audio.paused).toBe(true);
     expect(audio.currentTime).toBeCloseTo(2, 6);
+  });
+});
+
+describe('the order inside a frame', () => {
+  it('is the scripted input, then the video frame callbacks, then the animation frames, also when a jump steps through frames', async () => {
+    const video = g.document.createElement('video');
+    video.src = 'beep.wav';
+    const button = g.document.createElement('button');
+    button.id = 'go';
+    g.document.body.appendChild(button);
+    const log: string[] = [];
+    const again = (): void => {
+      video.requestVideoFrameCallback(() => {
+        log.push('video');
+        again();
+      });
+      g.requestAnimationFrame(() => log.push('raf'));
+    };
+    button.addEventListener('click', () => {
+      log.push('input');
+      video.play();
+      again();
+    });
+    setPageInput([{ frame: 3, type: 'click', selector: '#go' }]);
+    armPageInput();
+    await flush();
+    // A jump from frame 0 to 6 plays the frames between: the click comes due at 3, though nothing else is pending before it.
+    setVirtualFrame(0, 30);
+    stepAnimationFrames(1, 6, 30);
+    setVirtualFrame(6, 30);
+    await flush();
+    expect(log.slice(0, 3)).toEqual(['input', 'video', 'raf']);
+    button.remove();
   });
 });
