@@ -1,3 +1,4 @@
+import { HostedVideo } from '@/components/docs/hosted-video';
 import { VIDEO_BASE } from '@/sections/links';
 
 const PLACEHOLDER = '/docs-media/video-placeholder.svg';
@@ -18,18 +19,7 @@ export function Video({ name, label, silent = false, poster }: { name: string; l
   return (
     <figure className="not-prose my-6">
       {VIDEO_BASE ? (
-        <video
-          className={frame}
-          src={`${VIDEO_BASE}${name}.mp4`}
-          poster={poster ?? `${VIDEO_BASE}${name}.jpg`}
-          aria-label={label}
-          playsInline
-          preload="metadata"
-          controls={!silent}
-          muted={silent}
-          loop={silent}
-          autoPlay={silent}
-        />
+        <HostedVideo className={frame} src={`${VIDEO_BASE}${name}.mp4`} poster={poster ?? `${VIDEO_BASE}${name}.jpg`} label={label} silent={silent} />
       ) : (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={poster ?? PLACEHOLDER} alt={`${label} (clip not published yet)`} width={1280} height={720} loading="lazy" className={frame} />
