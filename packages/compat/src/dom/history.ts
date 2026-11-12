@@ -3,6 +3,8 @@
 // loop makes that history a function of the frame alone: it renders the frames of the window before the one asked
 // for, with recording on, and `mapDomIsland` keeps each island's request root whenever it differs from the last.
 
+import { createHash } from 'node:crypto';
+
 import type { IslandSnapshotJson, RequestNode } from '../request/build.js';
 
 /** The longest `delay + duration` of any transition seen, in seconds (never more than twice the longest time). */
@@ -77,9 +79,33 @@ export function historyFor(path: string, time: number): IslandSnapshotJson[] {
   return (trail.get(path) ?? []).filter((s) => s.time < time);
 }
 
+/** A canvas's recording (`data-kg-webgl`, `data-kg-canvas`) is the picture, not a style: it never transitions. */
+const RECORDING_ATTRS = ['data-kg-webgl', 'data-kg-canvas'] as const;
+
+/** The tree with each canvas recording replaced by its hash (the same tree when it has none), so a state kept for the
+ * history costs the tree, not a copy of every recording of the window. */
+function withoutRecordings(node: RequestNode): RequestNode {
+  if (node.kind !== 'element') return node;
+  let attrs = node.attrs;
+  for (const name of RECORDING_ATTRS) {
+    const value = attrs[name];
+    if (value !== undefined) attrs = { ...attrs, [name]: createHash('sha1').update(value).digest('hex') };
+  }
+  let children = node.children;
+  for (let i = 0; i < node.children.length; i++) {
+    const child = withoutRecordings(node.children[i]!);
+    if (child !== node.children[i]) {
+      if (children === node.children) children = node.children.slice();
+      children[i] = child;
+    }
+  }
+  return attrs === node.attrs && children === node.children ? node : { ...node, attrs, children };
+}
+
 /** Keeps the island's state at `time` if it is not the one before it. */
-export function recordIsland(path: string, time: number, root: RequestNode): void {
+export function recordIsland(path: string, time: number, full: RequestNode): void {
   if (!recording || windowSeconds === 0) return;
+  const root = withoutRecordings(full);
   const json = JSON.stringify(root);
   if (lastJson.get(path) === json) return;
   lastJson.set(path, json);
