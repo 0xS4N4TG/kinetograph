@@ -176,6 +176,27 @@ describe.skipIf(missing !== null)('WebGPU through Dawn, rendered', () => {
     expect(drawInOrder(join(fixtures, 'stateless.html'), [7, 2]).leftOut).not.toMatch(/jump back/);
   });
 
+  it('does not carry what one composition read of its earlier frames into the next one of the same process', () => {
+    // One bundle, two renderers one after the other (a Studio that opens another composition): the stateful one flags its frames as history
+    // dependent, which is nothing of the stateless one's. Wrongly carried, the stateless one is replayed from frame 0 for a jump to frame 7.
+    const script = `
+      import { pathToFileURL } from 'node:url';
+      const dist = ${JSON.stringify(join(here, '..', 'dist'))} + '/';
+      const { openSource } = await import(pathToFileURL(dist + 'source.js'));
+      const entry = process.argv[1];
+      const first = await openSource(entry, { offline: true, comp: 'Stateful' });
+      for (let frame = 0; frame < 4; frame++) await first.frame(frame);
+      first.dispose();
+      const second = await openSource(entry, { offline: true, comp: 'Stateless', bundleFile: first.worker.bundleFile });
+      await second.frame(7);
+      console.log(JSON.stringify(globalThis.__kgDraws));
+      process.exit(0);`;
+    const r = spawnSync(process.execPath, ['--input-type=module', '-e', script, join(fixtures, 'react-two.tsx')], { encoding: 'utf8', env });
+    expect(r.status, r.stderr).toBe(0);
+    // The mount draws frame 0 and then the frame jumped to: nothing replays the frames between.
+    expect(JSON.parse(r.stdout.trim().split('\n').pop()!)).toEqual([0, 7]);
+  });
+
   it('says an error the page did not catch with its frame, and --strict fails on it', () => {
     const page = join(fixtures, 'validation-error.html');
     const warned = run(['still', page, '0', '-o', join(dir, 'err.png')]);

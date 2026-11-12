@@ -10,7 +10,7 @@
 //      attach what each sub-frame changes in them.
 
 import type { ReactNode } from 'react';
-import { dawnDependsOnHistory, flushDawnCanvases, noteDawnRewind, releaseDawn, takeDawnReports, glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures } from '@kinetographdev/compat/shim';
+import { dawnDependsOnHistory, flushDawnCanvases, noteDawnRewind, releaseDawn, startDawnComposition, takeDawnReports, glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures } from '@kinetographdev/compat/shim';
 import { setDefaultStylesheet } from '@kinetographdev/compat/dom';
 import { createSceneRoot, finishIslands, TimelineContext, type LayerNames, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
@@ -157,6 +157,7 @@ class Renderer implements FrameRenderer {
     // Components that call getInputProps() see the props this render was given.
     if (inputProps) setInputProps(inputProps);
     resetTransitionWindow();
+    startDawnComposition();
     const { sync, ready } = resolveComposition(compositionId, { inputProps });
     this.resolved = sync;
     this.readyPromise = ready.then((value) => (this.resolved = value));

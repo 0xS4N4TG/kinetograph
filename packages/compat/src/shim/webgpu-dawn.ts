@@ -18,7 +18,7 @@ import { threadId } from 'node:worker_threads';
 import { CANVAS_SOURCE, type CanvasCommand, type CanvasSource } from '@kinetographdev/scene';
 import { addonFunction, hasAddonFunction } from '../addon.js';
 import { lap, stamp } from '../profile.js';
-import { trackCarry, carryDepends, carryNeedsReplay, startsCleared, untracked } from './webgpu-dawn-carry.js';
+import { trackCarry, carryDepends, carryNeedsReplay, resetCarry, startsCleared, untracked } from './webgpu-dawn-carry.js';
 
 export { duringAnimationFrames } from './webgpu-dawn-carry.js';
 
@@ -219,8 +219,13 @@ function watch(device: Any): void {
   });
 }
 
-/** Destroys every device made, so a long render does not hold them (a scene that is replaced, a renderer that is disposed). */
+/**
+ * Destroys every device made, so a long render does not hold them (a scene that is replaced, a renderer that is disposed). What a
+ * frame read of an earlier frame's (`webgpu-dawn-carry.ts`) belongs to the devices that are gone, so the next composition on this
+ * thread starts without it: it is a fact of one composition, not of the thread.
+ */
 export function releaseDawn(): void {
+  resetCarry();
   for (const device of devices) {
     try {
       device.destroy();
@@ -255,6 +260,11 @@ function settleRewind(): void {
   if (carryDepends() && deviceCount === was) {
     report('a jump back to an earlier frame on a page whose GPU state carries from frame to frame (a feedback texture, a storage buffer a pass advances) and whose script does not run again (an HTML page) shows the state of the frames already drawn; render forward, or start a new process, for that frame');
   }
+}
+
+/** A new composition on this thread: nothing of the last one's carried state is its own (`resetCarry`). */
+export function startDawnComposition(): void {
+  resetCarry();
 }
 
 /** Whether a frame read what an earlier frame wrote that only a replay of the frames before it makes (`carryNeedsReplay`). */

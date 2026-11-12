@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
 import { carryDepends, carryNeedsReplay, resetCarry } from '../src/shim/webgpu-dawn-carry.js';
 import { hasAddonFunction } from '../src/addon.js';
-import { DAWN_FEATURES, DAWN_LIMITS, DawnCanvasContext, dawnCommandsOf, dawnGlobals, dawnReadCommands, duringAnimationFrames, flushDawnCanvases, installDawn, releaseDawn, takeDawnReports } from '../src/shim/webgpu-dawn.js';
+import { DAWN_FEATURES, DAWN_LIMITS, DawnCanvasContext, dawnCommandsOf, dawnGlobals, dawnReadCommands, duringAnimationFrames, flushDawnCanvases, installDawn, releaseDawn, startDawnComposition, takeDawnReports } from '../src/shim/webgpu-dawn.js';
 
 const missing = ((): string | null => {
   const spec = process.env.KINETOGRAPH_DAWN_MODULE;
@@ -86,6 +86,39 @@ describe.skipIf(missing !== null)('WebGPU through Dawn', () => {
     releaseDawn();
     expect((await lost).reason).toBe('destroyed');
     expect(takeDawnReports()).toEqual([]);
+  });
+
+  it('forgets what the frames of a composition read of each other when its devices are released, and when a new composition starts', async () => {
+    const adapter = await gpu.requestAdapter();
+    const device = await adapter.requestDevice();
+    const clock = vi.spyOn(performance, 'now');
+    const buffer = device.createBuffer({ size: 16, usage: g.GPUBufferUsage.STORAGE | g.GPUBufferUsage.COPY_DST });
+    const module = device.createShaderModule({ code: '@group(0) @binding(0) var<storage, read_write> b: array<f32>; @compute @workgroup_size(1) fn main() { b[0] = b[0] + 1.0; }' });
+    const pipeline = device.createComputePipeline({ layout: 'auto', compute: { module, entryPoint: 'main' } });
+    const step = (at: number): void => {
+      clock.mockReturnValue(at);
+      const encoder = device.createCommandEncoder();
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer } }] }));
+      pass.dispatchWorkgroups(1);
+      pass.end();
+      device.queue.submit([encoder.finish()]);
+    };
+    resetCarry();
+    step(0);
+    step(33);
+    expect(carryDepends()).toBe(true);
+    releaseDawn();
+    expect(carryDepends()).toBe(false);
+    expect(carryNeedsReplay()).toBe(false);
+    step(0);
+    step(33);
+    expect(carryDepends()).toBe(true);
+    startDawnComposition();
+    expect(carryDepends()).toBe(false);
+    clock.mockRestore();
+    device.destroy();
   });
 
   it('reads a canvas back as the same bytes each time, and a frame that is not drawn has no picture', async () => {
