@@ -144,7 +144,9 @@ function addTimer(callback: unknown, delay: unknown, args: unknown[], repeat: bo
     args,
     interval: repeat ? ms : null,
     handle,
-    hold: !repeat && holdProbe(),
+    // A timer that a hold timer's callback makes follows the frame clock: a page that re-arms a timeout from its own callback
+    // (a tween restarting itself) would otherwise be fired at once for ever while the frame is held.
+    hold: !repeat && !firingHold && holdProbe(),
   });
   return handle;
 }
@@ -213,6 +215,7 @@ function fireTimersUpTo(target: number): void {
  * time: the clock does not move. A frame held on something that waits for a timeout (React's 300 ms throttle of a Suspense
  * reveal) would otherwise wait for ever, since the clock only moves between frames. Returns false when there is none.
  */
+let firingHold = false;
 export function fireHoldTimer(): boolean {
   let best: Timer | null = null;
   for (const timer of timers.values()) {
@@ -221,7 +224,12 @@ export function fireHoldTimer(): boolean {
   }
   if (best === null) return false;
   timers.delete(best.id);
-  best.callback(...best.args);
+  firingHold = true;
+  try {
+    best.callback(...best.args);
+  } finally {
+    firingHold = false;
+  }
   return true;
 }
 
