@@ -30,8 +30,12 @@ struct Program {
 /// and whether the context has float-linear on.
 type ProgramKey = (String, String, Vec<(String, u32)>, angle::Extensions);
 
+/// How many programs a thread keeps for one context before the cache starts over.
+const MAX_PROGRAMS: usize = 256;
+
 thread_local! {
-    static PROGRAMS: std::cell::RefCell<HashMap<ProgramKey, Program>> = std::cell::RefCell::new(HashMap::new());
+    /// A program that failed to compile or link is kept as its error, so it is not tried again on every frame.
+    static PROGRAMS: std::cell::RefCell<HashMap<ProgramKey, R<Program>>> = std::cell::RefCell::new(HashMap::new());
 }
 
 /// A texture or renderbuffer of the recording, or one face or layer of one: the GL name, whether it is a
@@ -219,6 +223,21 @@ fn run(
     base_dir: &Path,
     ext: angle::Extensions,
 ) -> R<Vec<u8>> {
+    // The program cache of this context starts over when it has grown past its bound.
+    PROGRAMS.with(|programs| {
+        let mut programs = programs.borrow_mut();
+        if programs.keys().filter(|k| k.3 == ext).count() > MAX_PROGRAMS {
+            programs.retain(|key, program| {
+                if key.3 != ext {
+                    return true;
+                }
+                if let Ok(program) = program {
+                    gl_.delete_program(program.name);
+                }
+                false
+            });
+        }
+    });
     gl_.pixel_storei(0xCF5, 1); // UNPACK_ALIGNMENT
     gl_.enable(0x92E0); // DEBUG_OUTPUT: the log names the rule a failed call broke
     let mut replay = Replay {
@@ -735,24 +754,39 @@ impl<'a> Replay<'a> {
             self.ext,
         );
         if let Some(p) = PROGRAMS.with(|p| p.borrow().get(&key).cloned()) {
-            return Ok(p);
+            return p;
         }
+        let built = self.link_program(spec, &attrs);
+        PROGRAMS.with(|p| p.borrow_mut().insert(key, built.clone()));
+        built
+    }
+
+    /// Compiles and links a program, deleting what it made when a step fails.
+    fn link_program(&self, spec: &rec::GlslProgram, attrs: &[(String, u32)]) -> R<Program> {
         let gl_ = self.gl;
         let vs = gl_
             .compile(gl::VERTEX_SHADER, &spec.vertex)
             .map_err(|e| format!("vertex shader: {e}"))?;
-        let fs = gl_
-            .compile(gl::FRAGMENT_SHADER, &spec.fragment)
-            .map_err(|e| format!("fragment shader: {e}"))?;
+        let fs = match gl_.compile(gl::FRAGMENT_SHADER, &spec.fragment) {
+            Ok(fs) => fs,
+            Err(e) => {
+                gl_.delete_shader(vs);
+                return Err(format!("fragment shader: {e}"));
+            }
+        };
         let name = gl_.create_program();
         gl_.attach_shader(name, vs);
         gl_.attach_shader(name, fs);
-        for (attr, index) in &attrs {
+        for (attr, index) in attrs {
             gl_.bind_attrib_location(name, *index, attr);
         }
-        gl_.link(name).map_err(|e| format!("link: {e}"))?;
+        let linked = gl_.link(name);
         gl_.delete_shader(vs);
         gl_.delete_shader(fs);
+        if let Err(e) = linked {
+            gl_.delete_program(name);
+            return Err(format!("link: {e}"));
+        }
         let uniforms = gl_
             .active_uniforms(name)
             .into_iter()
@@ -763,9 +797,7 @@ impl<'a> Replay<'a> {
                 )
             })
             .collect();
-        let program = Program { name, uniforms };
-        PROGRAMS.with(|p| p.borrow_mut().insert(key, program.clone()));
-        Ok(program)
+        Ok(Program { name, uniforms })
     }
 
     // ---- framebuffers ----

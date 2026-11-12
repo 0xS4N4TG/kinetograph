@@ -475,3 +475,45 @@ fn a_draw_angle_rejects_is_an_error_naming_the_op() {
         .unwrap_or_default();
     assert!(text.contains("draw, program") && text.contains("GL error"), "{text}");
 }
+
+/// A program that does not compile is an error naming the shader, on every frame, and the cache keeps no half-made program.
+#[test]
+fn a_program_that_does_not_compile_is_an_error() {
+    if !angle_mode() {
+        return;
+    }
+    let (body, w, h) = body_of("webgl_gradient");
+    let bad = body.replace("void main", "void mian");
+    assert_ne!(bad, body, "the case has no main to break");
+    for frame in 0..2 {
+        let failure = std::panic::catch_unwind(|| paintkit::render_body(&bad, w, h)).err();
+        let failure = failure.unwrap_or_else(|| panic!("frame {frame}: a shader that does not compile drew"));
+        let text = failure
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| failure.downcast_ref::<&str>().map(|s| (*s).to_string()))
+            .unwrap_or_default();
+        assert!(text.contains("shader") || text.contains("link"), "frame {frame}: {text}");
+    }
+}
+
+/// Four threads painting at once give the bytes one thread does (ANGLE is entered one thread at a time).
+#[test]
+fn threads_painting_at_once_give_the_same_bytes() {
+    if !angle_mode() {
+        return;
+    }
+    let (body, w, h) = body_of("webgl2_mrt");
+    let alone = paintkit::render_body(&body, w, h).1.rgba;
+    let threads: Vec<_> = (0..4)
+        .map(|_| {
+            let body = body.clone();
+            std::thread::spawn(move || (0..6).map(|_| paintkit::render_body(&body, w, h).1.rgba).collect::<Vec<_>>())
+        })
+        .collect();
+    for thread in threads {
+        for frame in thread.join().unwrap() {
+            assert!(frame == alone, "a frame painted beside other threads differs from one painted alone");
+        }
+    }
+}
