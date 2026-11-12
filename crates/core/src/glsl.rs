@@ -193,6 +193,11 @@ pub struct GlslTexture {
 pub struct GlslFace {
     pub src: Option<String>,
     pub pixels: Option<String>,
+    /// Instead of `src` or `pixels`: float texels (`RGBA16F`, `RGBA32F`, ...), as `GlslTexture::floats`. Every
+    /// face of a cube map has them, or none does.
+    pub floats: Option<String>,
+    #[serde(default)]
+    pub float32: bool,
     #[serde(default)]
     pub flip_y: bool,
     #[serde(default)]
@@ -3061,6 +3066,9 @@ pub fn decode_cube(
         ));
     }
     let side = texture.width;
+    if texture.faces.iter().any(|f| f.floats.is_some()) {
+        return Err("decode_cube_floats reads a cube map of floats".into());
+    }
     let mut faces = Vec::with_capacity(6);
     for (i, face) in texture.faces.iter().enumerate() {
         let (mut rgba, w, h) = decode_picture(
@@ -3081,6 +3089,28 @@ pub fn decode_cube(
     Ok(Some((faces, side)))
 }
 
+/// The six faces of a cube map of floats, as the device holds them (all half floats, or all 32-bit), and the side they
+/// share; `None` for a cube map of pictures or pixels (`decode_cube`).
+#[allow(clippy::type_complexity)]
+pub fn decode_cube_floats(
+    texture: &GlslTexture,
+) -> std::result::Result<Option<(Vec<Texels>, u32)>, String> {
+    if texture.faces.len() != 6 || texture.faces.iter().all(|f| f.floats.is_none()) {
+        return Ok(None);
+    }
+    let side = texture.width;
+    if texture.faces.iter().any(|f| f.floats.is_none() || f.float32 != texture.faces[0].float32) {
+        return Err("the faces of a cube map are all floats of one precision, or none".into());
+    }
+    let mut faces = Vec::with_capacity(6);
+    for (i, face) in texture.faces.iter().enumerate() {
+        let texels = texels_of(side as usize, side as usize, 1, None, face.floats.as_deref(), face.float32)
+            .map_err(|e| format!("cube map face {i}: {e}"))?;
+        faces.push(texels);
+    }
+    Ok(Some((faces, side)))
+}
+
 /// The texels of a float or 3D texture, as the device holds them.
 #[derive(Debug, PartialEq)]
 pub enum Texels {
@@ -3095,12 +3125,26 @@ pub enum Texels {
 /// The texels of a texture with `floats` or a 3D texture: its `pixels`, or its `floats` rounded to half
 /// floats (kept in full with `float32`), as `texImage2D` and `texImage3D` of a float format do.
 pub fn decode_texels(texture: &GlslTexture) -> std::result::Result<Texels, String> {
-    use base64::Engine as _;
-    let (w, h, d) = (
+    texels_of(
         texture.width as usize,
         texture.height as usize,
         (texture.depth as usize).max(1),
-    );
+        texture.pixels.as_deref(),
+        texture.floats.as_deref(),
+        texture.float32,
+    )
+}
+
+/// `decode_texels` of `w` x `h` x `d` texels given as base64 `pixels` or `floats`.
+fn texels_of(
+    w: usize,
+    h: usize,
+    d: usize,
+    pixels: Option<&str>,
+    floats: Option<&str>,
+    float32: bool,
+) -> std::result::Result<Texels, String> {
+    use base64::Engine as _;
     if w == 0 || h == 0 {
         return Err(format!("a texture of {w} x {h} x {d} has no texels"));
     }
@@ -3110,7 +3154,7 @@ pub fn decode_texels(texture: &GlslTexture) -> std::result::Result<Texels, Strin
             .decode(data)
             .map_err(|e| format!("a 3D texture's texels are not base64: {e}"))
     };
-    match (&texture.pixels, &texture.floats) {
+    match (pixels, floats) {
         (Some(pixels), None) => {
             let bytes = decode(pixels)?;
             if bytes.len() != texels * 4 {
@@ -3131,7 +3175,7 @@ pub fn decode_texels(texture: &GlslTexture) -> std::result::Result<Texels, Strin
                     bytes.len()
                 ));
             }
-            if texture.float32 {
+            if float32 {
                 return Ok(Texels::Rgba32F(bytes));
             }
             let halves = bytes

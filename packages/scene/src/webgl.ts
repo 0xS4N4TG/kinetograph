@@ -2615,7 +2615,9 @@ export class WebGLContext {
     if (faces === null) return false;
     const side = faces[0]!.width;
     const srgb = faces[0]!.format === GL2.SRGB8_ALPHA8;
-    return side > 0 && faces.every((f) => f.uploaded && f.width === side && f.height === side && f.floats === null && f.layer === null && (f.format === GL2.SRGB8_ALPHA8) === srgb);
+    // Faces of float pixels are one format and one precision: a cube map of mixed faces is incomplete.
+    const bits = faces[0]!.floats === null ? 0 : faces[0]!.float32 ? 32 : 16;
+    return side > 0 && faces.every((f) => f.uploaded && f.width === side && f.height === side && (f.floats === null ? 0 : f.float32 ? 32 : 16) === bits && f.layer === null && (f.format === GL2.SRGB8_ALPHA8) === srgb);
   }
   texParameteri(target: number, pname: number, param: number): void {
     const texture = this.bound(target);
@@ -2829,7 +2831,7 @@ export class WebGLContext {
     }
     // A float face is a render target: empty until a framebuffer draws in it.
     const empty = rest.length >= 6 && (rest[5] === null || rest[5] === undefined);
-    if (kindOf(internalformat) !== 'color' || (FLOAT_FORMATS[internalformat] !== undefined && !empty)) throw new WebGLUnsupportedError('a cube map face of a depth format, or of float pixels; use RGBA8 or SRGB8_ALPHA8, or an empty float face to draw in');
+    if (kindOf(internalformat) !== 'color') throw new WebGLUnsupportedError('a cube map face of a depth format; use RGBA8, SRGB8_ALPHA8 or a float format');
     if (rest.length >= 6) {
       const [width, height] = rest as [number, number];
       if (!(Number.isInteger(width) && width >= 0 && width <= MAX_CUBE_MAP_TEXTURE_SIZE && Number.isInteger(height) && height >= 0 && height <= MAX_CUBE_MAP_TEXTURE_SIZE)) return this.fail(GL.INVALID_VALUE);
@@ -3884,7 +3886,9 @@ export class WebGLContext {
   private cubeJson(cube: WebGLTexture): GlslTexture {
     if (!this.cubeComplete(cube)) return { cube: true, faces: [] };
     const faces = cube.faces!.map((f) => ({
-      ...(f.src !== null ? { src: f.src } : { pixels: toBase64(f.pixels ?? new Uint8Array(0)) }),
+      ...(f.floats !== null
+        ? { floats: toBase64(new Uint8Array(f.floats.buffer, f.floats.byteOffset, f.floats.byteLength)), ...(f.float32 ? { float32: true } : {}) }
+        : f.src !== null ? { src: f.src } : { pixels: toBase64(f.pixels ?? new Uint8Array(0)) }),
       ...(f.flipY ? { flipY: true } : {}),
       ...(f.premultiply ? { premultiply: true } : {}),
     }));

@@ -2421,6 +2421,9 @@ impl Compositor {
         if let Some(t) = self.glsl.textures.get(&key) {
             return Ok(t.clone());
         }
+        if let Some((faces, side)) = gl::decode_cube_floats(texture).map_err(render_error)? {
+            return self.glsl_cube_floats(key, texture, faces, side);
+        }
         let Some((faces, side)) = gl::decode_cube(texture, base_dir).map_err(render_error)? else {
             return Ok(self.glsl_black(gl::SamplerDim::Cube));
         };
@@ -2491,6 +2494,92 @@ impl Compositor {
             mipmapped: levels > 1,
             depth: false,
             float32: false,
+        });
+        self.glsl.textures.insert(key, uploaded.clone());
+        Ok(uploaded)
+    }
+
+    /// A cube map of floats (`RGBA16F`, `RGBA32F`): the faces in layers, with the mip chain of `generateMipmap`
+    /// made here, as a float 2D texture's is.
+    fn glsl_cube_floats(
+        &mut self,
+        key: String,
+        texture: &GlslTexture,
+        faces: Vec<gl::Texels>,
+        side: u32,
+    ) -> Result<Arc<Uploaded>> {
+        let limit = self.device.limits().max_texture_dimension_2d;
+        if side > limit {
+            return Err(render_error(format!(
+                "unsupported: a cube map face of {side} x {side}; the device holds {limit} across"
+            )));
+        }
+        let float32 = matches!(faces[0], gl::Texels::Rgba32F(_));
+        let (format, per_texel) = if float32 {
+            (wgpu::TextureFormat::Rgba32Float, 16)
+        } else {
+            (wgpu::TextureFormat::Rgba16Float, 8)
+        };
+        let levels = if texture.mipmaps { side.ilog2() + 1 } else { 1 };
+        let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("glsl cube map of floats"),
+            size: wgpu::Extent3d {
+                width: side,
+                height: side,
+                depth_or_array_layers: 6,
+            },
+            mip_level_count: levels,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        for (layer, face) in faces.into_iter().enumerate() {
+            let (mut level, mut w, mut h) = (face, side, side);
+            for mip in 0..levels {
+                let bytes = match &level {
+                    gl::Texels::Rgba8(b) | gl::Texels::Rgba16F(b) | gl::Texels::Rgba32F(b) => b,
+                };
+                self.queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &gpu,
+                        mip_level: mip,
+                        origin: wgpu::Origin3d {
+                            x: 0,
+                            y: 0,
+                            z: layer as u32,
+                        },
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    bytes,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(w * per_texel),
+                        rows_per_image: Some(h),
+                    },
+                    wgpu::Extent3d {
+                        width: w,
+                        height: h,
+                        depth_or_array_layers: 1,
+                    },
+                );
+                if mip + 1 < levels {
+                    (level, w, h) = gl::next_level_float(&level, w, h);
+                }
+            }
+        }
+        if self.glsl.textures.len() >= MAX_TEXTURES {
+            self.glsl.textures.clear();
+        }
+        let uploaded = Arc::new(Uploaded {
+            view: gpu.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::Cube),
+                ..Default::default()
+            }),
+            mipmapped: levels > 1,
+            depth: false,
+            float32,
         });
         self.glsl.textures.insert(key, uploaded.clone());
         Ok(uploaded)
