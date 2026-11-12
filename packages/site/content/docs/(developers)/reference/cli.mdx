@@ -3,7 +3,22 @@ title: CLI
 description: Every kinetograph command, with its arguments, options, output and exit codes.
 ---
 
-<Terminal command="npx kinetograph render src/index.tsx -o out/title.mp4" />
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
+```sh
+npx kinetograph render src/index.tsx -o out/title.mp4
+```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph render html/index.html -o out/title.mp4
+```
+
+  </Tab>
+</IconTabs>
 
 ```sh
 npx kinetograph <command> [entry] [options]
@@ -39,8 +54,8 @@ Commands that open a project take more options. These are `still`, `render`, `st
 
 | Option | Meaning |
 |---|---|
-| `--comp <id>` | The composition to use. The default is the first one. |
-| `--props <json>` | Input props as a JSON object. See [Compositions and props](/docs/making-videos/compositions/#props). |
+| `--comp <id>` | The composition to use. The default is the first one. A HyperFrames page is one composition, so it needs none. |
+| `--props <json>` | Input props as a JSON object, for a Remotion project. See [Compositions and props](/docs/making-videos/compositions/#props). |
 | `--timeout <ms>` | How long a `delayRender()` may stay open before its frame fails with `DELAY_RENDER_TIMEOUT`. The default is 30000, as in Remotion. `delayRender(label, { timeoutInMilliseconds })` wins. |
 
 ### Frames and ranges
@@ -312,14 +327,14 @@ Runs every frame in the range without the GPU and reports what the engine cannot
   <Tab label="Remotion" icon="remotion">
 
 ```sh
-npx kinetograph doctor src/index.ts --range 0..120
+npx kinetograph doctor src/index.tsx --range 0..120
 ```
 
   </Tab>
   <Tab label="HyperFrames" icon="hyperframes">
 
 ```sh
-npx kinetograph doctor index.html --range 0..120
+npx kinetograph doctor html/index.html --range 0..120
 ```
 
   </Tab>
@@ -371,14 +386,14 @@ Downloads what a project loads from the web (CDN scripts, ES modules, remote pic
   <Tab label="Remotion" icon="remotion">
 
 ```sh
-npx kinetograph fetch-deps src/index.ts --update
+npx kinetograph fetch-deps src/index.tsx --update
 ```
 
   </Tab>
   <Tab label="HyperFrames" icon="hyperframes">
 
 ```sh
-npx kinetograph fetch-deps index.html --allow-host www.example.com --update
+npx kinetograph fetch-deps html/index.html --update
 ```
 
   </Tab>

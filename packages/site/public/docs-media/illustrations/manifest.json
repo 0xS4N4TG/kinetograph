@@ -37,10 +37,20 @@
       "file": "project-structure.svg",
       "fileDark": "project-structure-dark.svg",
       "width": 600,
-      "height": 690,
+      "height": 662,
       "page": "getting-started/project-structure",
       "heading": "A TSX project",
       "alt": "A project folder with src for your code (index.tsx, scenes/Title.tsx, components, lib), public for images, fonts, audio and video, and out for everything the commands write: stills, sheets and renders. package.json, tsconfig.json and .gitignore sit beside them."
+    },
+    {
+      "name": "project-structure-html",
+      "file": "project-structure-html.svg",
+      "fileDark": "project-structure-html-dark.svg",
+      "width": 600,
+      "height": 568,
+      "page": "getting-started/project-structure",
+      "heading": "An HTML project",
+      "alt": "A project folder with html for the page (index.html), public for images, fonts, audio and video, and out for everything the commands write: stills, sheets and renders. package.json and .gitignore sit beside them."
     },
     {
       "name": "studio-loop",

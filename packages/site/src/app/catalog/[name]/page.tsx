@@ -1,14 +1,19 @@
-import { DocsPage } from 'fumadocs-ui/layouts/docs/page';
+import { DocsBody, DocsPage } from 'fumadocs-ui/layouts/docs/page';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { CodeBlock, CommandBar } from '@/components/code';
+import { PageActions } from '@/components/docs/page-actions';
 import { ItemCard, TypeBadge } from '@/components/library/card';
+import { pluginMdxComponents } from '@/components/library/plugin-detail';
 import { Preview } from '@/components/library/preview';
+import { SITE_URL } from '@/lib/catalog-feed';
 import { agentPrompt, items, pluginSlug, related } from '@/lib/library';
 import { manualSteps } from '@/lib/library-files';
 import { plugins } from '@/lib/catalog';
+import { sourceUrl } from '@/lib/plugin-markdown';
+import { pluginPages } from '@/lib/source';
 import { cn } from '@/lib/utils';
 
 type Params = { name: string };
@@ -38,9 +43,12 @@ export default async function ItemPage(props: { params: Promise<Params> }) {
   const item = items.find((i) => i.name === name);
   if (!item) notFound();
   const plugin = item.type === 'plugin' ? plugins.find((p) => p.slug === pluginSlug(item)) : undefined;
-  const steps = manualSteps(item);
+  const steps = plugin ? [] : manualSteps(item);
   const portrait = item.ratio < 1;
   const command = installCommand(item.name, item.type, plugin?.name);
+  const page = plugin ? pluginPages.getPage([item.name]) : undefined;
+  const MDX = page?.data.body;
+  const markdownUrl = `/llms.mdx/catalog/${item.name}.md`;
 
   return (
     <DocsPage toc={[]} breadcrumb={{ enabled: false }} footer={{ enabled: false }}>
@@ -53,9 +61,12 @@ export default async function ItemPage(props: { params: Promise<Params> }) {
           {item.title}
         </span>
       </nav>
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="font-dm text-[clamp(32px,4.2vw,48px)] leading-[1.05] font-bold tracking-[-0.045em] text-ink">{item.title}</h1>
-        <TypeBadge type={item.type} />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="font-dm text-[clamp(32px,4.2vw,48px)] leading-[1.05] font-bold tracking-[-0.045em] text-ink">{item.title}</h1>
+          <TypeBadge type={item.type} />
+        </div>
+        {plugin && <PageActions markdownUrl={markdownUrl} absoluteMarkdownUrl={`${SITE_URL}${markdownUrl}`} />}
       </div>
       <p className="mt-4 max-w-[62ch] font-dm text-[17px] leading-[1.6] text-ink/75">{item.description}</p>
 
@@ -69,7 +80,11 @@ export default async function ItemPage(props: { params: Promise<Params> }) {
             Adds {plugin.components.map((c) => `<${c}>`).join(' ')}
             {plugin.hasPanel && ', a Studio panel'}
             {plugin.hasTools && ', agent tools'}
-            {plugin.hasSkill && ' and a skill'}.
+            {plugin.hasSkill && ' and a skill'}. Plugins are React components, so they belong in Remotion-shaped projects, not HyperFrames pages.{' '}
+            <Link href="/docs/plugins/" className={linkCls}>
+              How plugins work
+            </Link>
+            .
           </p>
         )}
       </section>
@@ -77,6 +92,12 @@ export default async function ItemPage(props: { params: Promise<Params> }) {
       <div className={cn('mt-8 overflow-hidden rounded-2xl border border-[var(--kg-box-border)] bg-night', portrait ? 'aspect-[9/16] max-w-[360px]' : 'aspect-video')}>
         <Preview name={item.name} poster={item.poster} ratio={item.ratio} />
       </div>
+
+      {MDX && plugin && (
+        <DocsBody className="mt-12">
+          <MDX components={pluginMdxComponents(plugin)} />
+        </DocsBody>
+      )}
 
       <section aria-labelledby="ask" className="mt-12">
         <h2 id="ask" className={h2}>
@@ -86,39 +107,56 @@ export default async function ItemPage(props: { params: Promise<Params> }) {
         <CodeBlock code={agentPrompt(item)} title="Prompt" wrap className="mt-4 rounded-xl" />
       </section>
 
-      <section aria-labelledby="by-hand" className="mt-12">
-        <h2 id="by-hand" className={h2}>
-          Do it by hand
-        </h2>
-        <ol className="mt-4 space-y-6">
-          {steps.map((s, n) => (
-            <li key={s.text} className="flex gap-4">
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-fd-accent font-jb text-[13px] text-fd-accent-foreground" aria-hidden>
-                {n + 1}
-              </span>
-              <div className="min-w-0 flex-1 pt-0.5">
-                <p className="text-[15px] leading-relaxed text-ink/80">{s.text.split(/(`[^`]+`)/).map((part, k) => (part.startsWith('`') ? <code key={k} className="rounded bg-fd-muted px-1 py-0.5 font-jb text-[13px] text-ink">{part.slice(1, -1)}</code> : part))}</p>
-                {s.code && (s.code.includes('\n') ? <CodeBlock code={s.code} wrap className="mt-3 rounded-xl" /> : <CommandBar command={s.code} className="mt-3 rounded-xl" />)}
-              </div>
+      {plugin ? (
+        <section aria-labelledby="links" className="mt-12">
+          <h2 id="links" className={h2}>
+            Links
+          </h2>
+          <ul className="mt-4 space-y-2 text-[15px]">
+            <li>
+              <a href={`https://www.npmjs.com/package/${plugin.name}`} className={linkCls}>
+                {plugin.name} on npm
+              </a>
             </li>
-          ))}
-        </ol>
-        <p className="mt-6 text-[14px] text-mute">
-          The files are plain source in your project, yours to change.{' '}
-          <a href={`https://github.com/0xS4N4TG/kinetograph-ui/tree/main/${item.folder}`} className={linkCls}>
-            See it on GitHub
-          </a>
-          .{plugin && (
-            <>
-              {' '}
-              <Link href={`/docs/plugins/${plugin.slug}/`} className={linkCls}>
-                Read the {item.title} docs
+            <li>
+              <a href={sourceUrl(plugin)} className={linkCls}>
+                Source on GitHub
+              </a>
+            </li>
+            <li>
+              <Link href="/docs/plugins/" className={linkCls}>
+                Using a plugin in a project, and writing one
               </Link>
-              .
-            </>
-          )}
-        </p>
-      </section>
+            </li>
+          </ul>
+        </section>
+      ) : (
+        <section aria-labelledby="by-hand" className="mt-12">
+          <h2 id="by-hand" className={h2}>
+            Do it by hand
+          </h2>
+          <ol className="mt-4 space-y-6">
+            {steps.map((s, n) => (
+              <li key={s.text} className="flex gap-4">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-fd-accent font-jb text-[13px] text-fd-accent-foreground" aria-hidden>
+                  {n + 1}
+                </span>
+                <div className="min-w-0 flex-1 pt-0.5">
+                  <p className="text-[15px] leading-relaxed text-ink/80">{s.text.split(/(`[^`]+`)/).map((part, k) => (part.startsWith('`') ? <code key={k} className="rounded bg-fd-muted px-1 py-0.5 font-jb text-[13px] text-ink">{part.slice(1, -1)}</code> : part))}</p>
+                  {s.code && (s.code.includes('\n') ? <CodeBlock code={s.code} wrap className="mt-3 rounded-xl" /> : <CommandBar command={s.code} className="mt-3 rounded-xl" />)}
+                </div>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-6 text-[14px] text-mute">
+            The files are plain source in your project, yours to change.{' '}
+            <a href={`https://github.com/0xS4N4TG/kinetograph-ui/tree/main/${item.folder}`} className={linkCls}>
+              See it on GitHub
+            </a>
+            .
+          </p>
+        </section>
+      )}
 
       <section aria-labelledby="related" className="mt-16">
         <h2 id="related" className={h2}>
@@ -126,7 +164,7 @@ export default async function ItemPage(props: { params: Promise<Params> }) {
         </h2>
         <ul className="mt-6 grid grid-cols-1 gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
           {related(items, item).map((i) => (
-            <ItemCard key={i.name} item={i} />
+            <ItemCard key={i.name} item={i} meta />
           ))}
         </ul>
       </section>

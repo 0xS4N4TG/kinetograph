@@ -5,31 +5,33 @@ description: Look at single frames while you work, check the project, and render
 
 Look at frames with `still` and `strip`, check them with `lint` and `doctor`, then `render` the video. Every command takes the entry file, and an HTML page works the same way.
 
-## Pick a page
-
-| Topic | Where |
-| --- | --- |
-| Look at frames, then check the project | [Open](#look-at-frames) |
-| Render the video | [Open](#render) |
-| Transparent video | [Open](#transparent-video) |
-| Export options | [Open](#export-options) |
-| 4K | [Open](/docs/rendering/4k/) |
-| HDR | [Open](/docs/rendering/hdr/) |
-| A slow render or preview | [Open](/docs/rendering/slow-renders/) |
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```sh
 npx kinetograph strip src/index.tsx -n 12
 npx kinetograph render src/index.tsx
 ```
 
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph strip html/index.html -n 12
+npx kinetograph render html/index.html
+```
+
+  </Tab>
+</IconTabs>
+
 The video goes to `out/renders/<composition id>.mp4`. Pass `-o` to choose another path.
 
 ## Look at frames
 
+<Media src="illustrations/render-options.svg" dark="illustrations/render-options-dark.svg" width={600} height={524} alt={"A grid of commands against four stages: bundle, run, draw and encode. doctor stops after run and never uses the GPU. still, strip and onion go through draw for a chosen frame, frames or range. render with sequence stops after draw and writes an image per frame. render goes through all four to an MP4."} />
+
 <IconTabs>
   <Tab label="Remotion" icon="remotion">
-
-<Media src="illustrations/render-options.svg" dark="illustrations/render-options-dark.svg" width={600} height={524} alt={"A grid of commands against four stages: bundle, run, draw and encode. doctor stops after run and never uses the GPU. still, strip and onion go through draw for a chosen frame, frames or range. render with sequence stops after draw and writes an image per frame. render goes through all four to an MP4."} />
 
 ```sh
 npx kinetograph still src/index.tsx 15
@@ -57,6 +59,9 @@ A frame is a whole number from 0. A range `10..40` is frames 10 to 39.
 
 ## Check the project
 
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
 ```sh
 npx kinetograph inspect src/index.tsx --frame 30
 npx kinetograph lint src/index.tsx
@@ -64,21 +69,47 @@ npx kinetograph check src/index.tsx
 npx kinetograph doctor src/index.tsx
 ```
 
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph inspect html/index.html --frame 30
+npx kinetograph lint html/index.html
+npx kinetograph doctor html/index.html
+```
+
+  </Tab>
+</IconTabs>
+
 - `lint` reports overflowing text, layers off the canvas, and missing fonts and assets.
-- `check` finds type errors, such as a misspelled prop.
+- `check` finds type errors, such as a misspelled prop. It needs a TypeScript project, so an HTML page has none.
 - `doctor` lists what the engine cannot draw, and on which frames. Run it before a long render. See [What works](/docs/compat/#when-the-engine-cant-draw-something).
 
 ## Render
+
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```sh
 npx kinetograph render src/index.tsx --draft
 npx kinetograph render src/index.tsx --range 0..90 --strict
 ```
 
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph render html/index.html --draft
+npx kinetograph render html/index.html --range 0..90 --strict
+```
+
+  </Tab>
+</IconTabs>
+
 - `--draft` renders at half size, for a quick look.
 - `--range a..b` renders only those frames, and the audio for them.
 - `--strict` stops at the first frame with something the engine cannot draw, and leaves no file. Use it for final renders and in CI.
-- `--comp <id>` and `--props '{"title":"Hello"}'` pick the composition and its props.
+- `--comp <id>` and `--props '{"title":"Hello"}'` pick the composition and its props in a Remotion project. An HTML page is one composition, with no props from the command line.
 
 ## Check the render
 

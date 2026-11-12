@@ -29,7 +29,7 @@ export function CommandBar({ command, className, tone = 'paper' }: { command: st
       )}
     >
       <span className={tone === 'ink' ? 'text-paper/60' : 'text-muted-foreground'}>$</span>
-      <code className="min-w-0 flex-1 truncate text-left">{command}</code>
+      <code className="min-w-0 flex-1 overflow-x-auto text-left whitespace-nowrap [scrollbar-width:none]">{command}</code>
       <Button
         size="icon-sm"
         variant={tone === 'ink' ? 'ghost' : 'outline'}

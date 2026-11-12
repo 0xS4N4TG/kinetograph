@@ -1,122 +1,39 @@
 ---
 title: Speed
-description: Render times for Kinetograph, HyperFrames and Remotion on the same scenes, per scene.
+description: Render times of Kinetograph, HyperFrames and Remotion on the same videos.
 ---
+
+import { Fact, FrameTime, SpeedBars, SpeedMethod, SpeedSummary, WorkerLanes, WorkerScaling, WorkerSection } from '@/components/docs/speed-charts';
+
+<SpeedSummary />
+
+## Render time per video
+
+<SpeedBars />
+
+<WorkerSection>
+
+## Worker scaling
+
+A render splits the video between workers, and they draw different parts at the same time. On this machine, 4 workers are <Fact k="gain" /> faster than 1 worker, not 4× faster.
+
+<WorkerScaling />
+
+Two things hold it back today:
+
+- **Replay.** A worker has to play the animation through the frames other workers drew before it can draw its own. That is <Fact k="replay" /> of a worker's time.
+- **Slow cores.** One worker already keeps most of the four fast cores busy. Extra workers land on slow cores, and each frame takes <Fact k="slow" /> longer there.
+
+<WorkerLanes />
+
+Machines with more equal cores have more room to scale. This is being worked on.
+
+### Where a frame's time goes
+
+<FrameTime />
+
+</WorkerSection>
 
 ## How it was measured
 
-One Apple M4 (10 cores), macOS 26.5.2, Node v26.7.0, on 2026-11-09. Kinetograph at commit `3eb93eaa`, HyperFrames 0.9.26 and Remotion 4.0.542. Each cell is one warm-up render and then 3 timed renders; the tables show the median and the min–max of the 3. Before every run the 1-minute load average was under 3.0 and the machine was otherwise idle. The time is the whole `render` command, start to finished H.264 file. Kinetograph uses its default 4 workers, Remotion `--concurrency 5` with its headless shell, and HyperFrames the defaults of `hyperframes render` with its headless Chrome shell. fps is frames per second of wall time.
-
-A ratio is the other engine's median divided by Kinetograph's. The range in brackets is best against worst and worst against best of the 3 runs each. Ratios are per scene; there is no single number for the engine.
-
-## HyperFrames pages with a Remotion port
-
-Each scene is a HyperFrames page. Kinetograph runs that same page through its HyperFrames runtime. The Remotion version is a port.
-
-### film
-
-The Remotion port rewrites the GSAP tweens as frame maths and bakes the geometry; the cosmic orb is the same WebGL shader. No version has audio.
-
-| engine | wall s (median) | min–max | fps | peak RSS MB |
-|---|---|---|---|---|
-| Kinetograph | 10.26 | 10.17–10.28 | 175.4 | 2708 |
-| HyperFrames 0.9.26 | 23.25 | 23.08–23.70 | 77.4 | 3810 |
-| Remotion 4.0.542 | 35.94 | 35.89–36.24 | 50.1 | 3946 |
-
-Kinetograph: 2.3× (2.2–2.3×) vs HyperFrames 0.9.26; 3.5× (3.5–3.6×) vs Remotion 4.0.542.
-
-### dm4
-
-The Remotion port bakes the US map geometry and rewrites the GSAP tweens.
-
-| engine | wall s (median) | min–max | fps | peak RSS MB |
-|---|---|---|---|---|
-| Kinetograph | 2.77 | 2.76–2.81 | 130.1 | 1880 |
-| HyperFrames 0.9.26 | 6.58 | 6.56–6.87 | 54.8 | 3264 |
-| Remotion 4.0.542 | 5.87 | 5.87–5.91 | 61.3 | 3122 |
-
-Kinetograph: 2.4× (2.3–2.5×) vs HyperFrames 0.9.26; 2.1× (2.1–2.1×) vs Remotion 4.0.542.
-
-### mg1
-
-The Remotion port makes the 72 shards with the same seeded random numbers.
-
-| engine | wall s (median) | min–max | fps | peak RSS MB |
-|---|---|---|---|---|
-| Kinetograph | 4.07 | 3.99–4.10 | 58.9 | 2597 |
-| HyperFrames 0.9.26 | 51.51 | 51.42–51.68 | 4.7 | 5528 |
-| Remotion 4.0.542 | 5.39 | 5.38–5.41 | 44.6 | 3083 |
-
-Kinetograph: 12.6× (12.5–12.9×) vs HyperFrames 0.9.26; 1.3× (1.3–1.4×) vs Remotion 4.0.542.
-
-### mg2
-
-The Remotion port uses the system font stack, as the page does.
-
-| engine | wall s (median) | min–max | fps | peak RSS MB |
-|---|---|---|---|---|
-| Kinetograph | 1.19 | 1.18–1.19 | 151.0 | 1694 |
-| HyperFrames 0.9.26 | 4.14 | 4.05–4.15 | 43.4 | 3130 |
-| Remotion 4.0.542 | 3.72 | 3.71–3.72 | 48.4 | 2601 |
-
-Kinetograph: 3.5× (3.4–3.5×) vs HyperFrames 0.9.26; 3.1× (3.1–3.2×) vs Remotion 4.0.542.
-
-## HyperFrames pages without a Remotion port
-
-Kinetograph runs the same HyperFrames page. These have no Remotion version.
-
-| scene | engine | wall s (median) | min–max | fps | peak RSS MB |
-|---|---|---|---|---|---|
-| dm1 | Kinetograph | 1.58 | 1.58–1.62 | 227.3 | 1864 |
-| dm1 | HyperFrames 0.9.26 | 7.57 | 7.52–7.58 | 47.6 | 2966 |
-| dm2 | Kinetograph | 1.65 | 1.65–1.69 | 181.8 | 1736 |
-| dm2 | HyperFrames 0.9.26 | 5.01 | 4.99–5.04 | 59.9 | 4268 |
-| dm5 | Kinetograph | 1.91 | 1.89–1.92 | 94.0 | 1654 |
-| dm5 | HyperFrames 0.9.26 | 6.64 | 6.63–6.66 | 27.1 | 3956 |
-| mg4 | Kinetograph | 1.33 | 1.31–1.34 | 157.7 | 1523 |
-| mg4 | HyperFrames 0.9.26 | 4.72 | 4.70–4.82 | 44.5 | 3725 |
-| mg5 | Kinetograph | 1.89 | 1.88–1.89 | 127.3 | 2088 |
-| mg5 | HyperFrames 0.9.26 | 5.16 | 5.08–5.29 | 46.5 | 4433 |
-| pr1 | Kinetograph | 2.70 | 2.69–2.74 | 333.3 | 1928 |
-| pr1 | HyperFrames 0.9.26 | 12.51 | 12.39–12.66 | 72.0 | 3243 |
-
-Kinetograph vs HyperFrames 0.9.26: dm1 4.8× (4.6–4.8×); dm2 3.0× (3.0–3.1×); dm5 3.5× (3.5–3.5×); mg4 3.5× (3.5–3.7×); mg5 2.7× (2.7–2.8×); pr1 4.6× (4.5–4.7×).
-
-## Remotion projects
-
-Both engines run the same Remotion project, unchanged.
-
-### compat
-
-The `examples/compat` project in this repo.
-
-| engine | wall s (median) | min–max | fps | peak RSS MB |
-|---|---|---|---|---|
-| Kinetograph | 1.09 | 1.08–1.09 | 138.1 | 1227 |
-| Remotion 4.0.542 | 4.26 | 4.24–4.28 | 35.2 | 2470 |
-
-Kinetograph: 3.9× (3.9–4.0×) vs Remotion 4.0.542.
-
-### papercut
-
-A Remotion project from a private corpus (988 frames, 1080x1920).
-
-| engine | wall s (median) | min–max | fps | peak RSS MB |
-|---|---|---|---|---|
-| Kinetograph | 20.46 | 20.45–20.48 | 48.3 | 3240 |
-| Remotion 4.0.542 | 646.13 | 644.35–654.40 | 1.5 | 10599 |
-
-Kinetograph: 31.6× (31.5–32.0×) vs Remotion 4.0.542.
-
-Read this ratio with its cause. Remotion held a steady 1.5 fps from the first frame, and swap stayed flat, so the time is Chrome's own. The project layers full-frame SVG paper-grain filters (`feTurbulence`, `feDisplacementMap`) and drop-shadows, which Chrome works out on the CPU. The gap was not profiled further than that.
-
-## Not measured
-
-- Remotion versions of dm1, dm2, dm5, mg4, mg5 and pr1: there is no port.
-- HyperFrames on compat and papercut: they are Remotion projects.
-- Steady-state fps of HyperFrames and Remotion. These tables give wall time only, which is what you wait for.
-- Any machine other than this M4.
-
-## Reproduce
-
-The harness (the runner, the load gate and the copied scenes) is in a working folder for now. The raw CSVs and the script that makes these tables will be published with the benchmark folder.
+<SpeedMethod />

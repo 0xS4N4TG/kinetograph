@@ -3,7 +3,22 @@ title: Audio
 description: Play sound files with the Audio element, synthesise sound with onFrame, and measure the loudness of the mix.
 ---
 
-<Terminal command="npx kinetograph audio analyze src/index.tsx" />
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
+```sh
+npx kinetograph audio analyze src/index.tsx
+```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph audio analyze html/index.html
+```
+
+  </Tab>
+</IconTabs>
 
 Add a voice, a music track or sound effects to a video, and check how loud it is. Tell your agent where the files are and how loud each should sit.
 
@@ -17,7 +32,7 @@ Put public/audio/bed.mp3 under the whole video at 30% volume, fading in over the
 
 ## Play a file
 
-```tsx
+```tsx title="src/scenes/Title.tsx"
 import { Audio, Sequence, staticFile } from 'remotion';
 
 <Sequence from={30} durationInFrames={60}>
@@ -35,7 +50,7 @@ The sounds in `@remotion/sfx` (`whip`, `ding` and others) play with `<Audio src=
 
 `onFrame` runs a function at a frame. The function gets a Web Audio context and the time to play at:
 
-```tsx
+```ts title="src/sfx.ts"
 import { onFrame } from '@kinetographdev/audio';
 
 onFrame(4, (ctx, t) => {
@@ -61,9 +76,22 @@ onFrame(4, (ctx, t) => {
 
 ## Check the loudness
 
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
 ```sh
 npx kinetograph audio analyze examples/rajz-cards/index.tsx --scenes 0..60,60..125
 ```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph audio analyze html/index.html --scenes 0..60,60..125
+```
+
+  </Tab>
+</IconTabs>
 
 It prints the integrated loudness (LUFS), the true peak, the number of clipped samples and the silences. `--scenes` also measures each frame range on its own, and `--json` prints an object. For gaps, see [What works](/docs/compat/#video-and-audio).
 

@@ -18,7 +18,7 @@ The first run downloads the model from Hugging Face, checks it against a pinned 
 
 ONNX Runtime is not bundled in the addon. The first run downloads Microsoft's CPU release (version 1.31.0, 36.5 MB on macOS, 11.4 MB on Linux, 82.9 MB on Windows), checks its SHA-256 and keeps it beside the models. Set `ORT_DYLIB_PATH` to use a library of your own instead, and nothing is downloaded.
 
-`ben2-base` runs on CoreML on macOS. On Windows and Linux it runs on the CPU, which is slower; DirectML is not used, because Microsoft ships it as a separate package. A build with the `cuda` or `webgpu` feature uses that backend when `ORT_DYLIB_PATH` names a library that has it. `modnet` always runs on the CPU. [`canUseVideoMatting()`](/docs/reference/video-matting/#canusevideomatting) reports the backend. [`canUseVideoMatting()`](/docs/reference/video-matting/#canusevideomatting) reports the backend.
+`ben2-base` runs on CoreML on macOS. On Windows and Linux it runs on the CPU, which is slower; DirectML is not used, because Microsoft ships it as a separate package. A build with the `cuda` or `webgpu` feature uses that backend when `ORT_DYLIB_PATH` names a library that has it. `modnet` always runs on the CPU. [`canUseVideoMatting()`](/docs/reference/video-matting/#canusevideomatting) reports the backend.
 
 ### Model licences
 
@@ -49,7 +49,7 @@ With `--json` the result has the files, `model`, `backend`, `frames`, the size a
 
 ## From code
 
-```ts
+```ts title="scripts/matte.ts"
 import { canUseVideoMatting, downloadVideoMattingModel, separateVideoLayers } from '@kinetographdev/video-matting';
 
 const support = await canUseVideoMatting({ model: 'modnet' });
@@ -68,7 +68,7 @@ In a Kinetograph project, `import ... from '@remotion/video-matting'` resolves t
 
 ## With an agent
 
-The `matte` tool of the [MCP server](/docs/agents/#the-mcp-server) takes the CLI's options, and the Kinetograph skill points to this guide for the recipes below. You can ask:
+The `matte` tool of the [MCP server](/docs/mcp/#the-command-tools) takes the CLI's options, and the Kinetograph skill points to this guide for the recipes below. You can ask:
 
 > Put animated text reading "BEHIND THE SCENES" behind the subject in public/original.mp4 using video matting. Keep the original background and audio.
 
@@ -84,7 +84,7 @@ const fill = { position: 'absolute', inset: 0, width: '100%', height: '100%', ob
 
 Three layers: the original, the text, and the foreground on top. The foreground is muted, and the original keeps the audio.
 
-```tsx
+```tsx title="src/scenes/TextBehindVideo.tsx"
 import { AbsoluteFill, Video, interpolate, staticFile, useCurrentFrame } from 'remotion';
 
 export const TextBehindVideo = () => {
@@ -106,7 +106,7 @@ export const TextBehindVideo = () => {
 
 Blur the original and put the sharp foreground on top.
 
-```tsx
+```tsx title="src/scenes/BackgroundBlur.tsx"
 import { Video, staticFile } from 'remotion';
 import { blur } from '@kinetographdev/core';
 
@@ -124,7 +124,7 @@ The blurred original still holds the subject, so a strong blur can leave a halo 
 
 Leave out the original and draw the foreground over something else: a colour, a picture, another video or HTML. Make the foreground with `--audio keep` (the default) so it carries the sound, as here, or add an `<Audio>` layer.
 
-```tsx
+```tsx title="src/scenes/BackgroundReplacement.tsx"
 import { AbsoluteFill, Video, staticFile } from 'remotion';
 
 export const BackgroundReplacement = () => (
@@ -139,7 +139,7 @@ export const BackgroundReplacement = () => (
 
 Give effects to the foreground only. A glow lifts the subject, a drop shadow separates a cutout from a new background, and colour filters match it to a new scene.
 
-```tsx
+```tsx title="src/scenes/ForegroundEffects.tsx"
 import { AbsoluteFill, Video, staticFile } from 'remotion';
 import { dropShadow, glow, saturate, sepia } from '@kinetographdev/core';
 

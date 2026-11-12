@@ -1,0 +1,207 @@
+---
+title: WebGL
+description: How a canvas with a WebGL context is drawn without a browser, what works, what is not drawn, and how three.js, React Three Fiber and MapLibre GL run.
+---
+
+`getContext('webgl')`, `getContext('webgl2')` and `getContext('experimental-webgl')` on a canvas return Kinetograph's own context. It records your calls and draws nothing itself. No browser is involved.
+
+> This page describes the next release, not 0.3.0. The three.js, React Three Fiber and MapLibre sections, the Chrome comparison and the lists of what is drawn are not in a published version yet.
+
+## How it works
+
+- **Drawing.** The calls of one frame become one layer of that frame's scene. The engine translates your GLSL ES (version 100 or 300 es) with naga and draws the layer with wgpu on its own GPU device, together with the rest of the frame.
+- **One kind of context.** A canvas keeps the first kind it was given. `getContext('2d')` after `getContext('webgl')` returns `null`, and so does the reverse. For `getContext('webgpu')` see [WebGPU](/docs/compat/#webgpu).
+- **Shaders.** `getShaderParameter(shader, gl.COMPILE_STATUS)` is true for any shader that has source. A shader naga cannot translate stops the scene when it loads, and the error names the layer and the program.
+- **A frame starts empty.** Before each frame the engine resets every canvas context. The drawing buffer is empty, also with `preserveDrawingBuffer`. The colour textures of a framebuffer start transparent black, a depth buffer at 1 and a stencil buffer at 0. A frame that draws nothing draws nothing.
+- **A frame is a function of its number.** It comes out the same drawn alone, out of order or by another worker. A pass that reads what an earlier frame left reads black.
+- **Time.** `Date.now()`, `new Date()`, `performance.now()`, `Math.random()`, timers and `requestAnimationFrame` follow the frame number, not the wall clock. A shader has no clock either: compute its time uniform from the frame. A library that reads the wall clock is not frame-pure.
+- **Unsupported calls.** A call the stand-in cannot draw throws a `WebGLUnsupportedError`. Its message starts with `unsupported:` and says what to use instead. A call is never accepted and then ignored where it would change the picture.
+- **Refused draws and failed loads.** A draw that WebGL refuses with a GL error draws nothing in a browser and says nothing. Here it is a warning with the frame it happened in. A texture, model or other file the page starts loading and that fails (a missing file, a URL that is not allowed) is a warning naming the URL. Under `--strict` both are errors.
+
+```txt
+unsupported: readPixels; the picture is drawn by the renderer, and the context cannot be read back (...)
+```
+
+If the page lets the error escape, as an uncaught exception, an unhandled rejection or a `console.error`, it is listed as a `page script` item in the render warnings and in [`doctor`](/docs/terminology/doctor/), and `--strict` fails on it. A page that catches the error hides it from both.
+
+## What works
+
+| Feature | Status | Note |
+|---|---|---|
+| Fragment shaders | Works | |
+| Framebuffers | Works | |
+| `gl_PointSize` | Works | |
+| `LINES`, `LINE_STRIP`, `LINE_LOOP` | Works | One pixel wide. A `lineWidth` above 1 is ignored, as in Chrome. |
+| Shadow samplers | Works | `sampler2DShadow`, `samplerCubeShadow`, `sampler2DArrayShadow`. |
+| Instancing, `vertexAttribDivisor` | Works | Any divisor. |
+| `blitFramebuffer` | Works | |
+| `copyTexImage2D`, `copyTexSubImage2D` | Works | RGBA. |
+| Depth and stencil tests | Works | |
+| `drawBuffers` | Works | |
+| Multisampled renderbuffers | Works | `renderbufferStorageMultisample`, resolved by `blitFramebuffer`. |
+| `TEXTURE_BASE_LEVEL` | Works | |
+| Depth textures | Works | |
+| Uniform buffer objects | Works | Blocks laid out as std140, with `bindBufferRange` and `bufferSubData` between draws. |
+| Cube maps | Works | Six faces of RGBA8, SRGB8_ALPHA8 or, once all six are, float pixels (RGBA16F, RGBA32F), from `texImage2D` or a whole-face `texSubImage2D` into `texStorage2D`. `samplerCube` and `generateMipmap` work. Sampled seamlessly, with GL's face order and orientation. |
+| Cube faces as framebuffer colour attachments | Works | `texStorage2D` of `TEXTURE_CUBE_MAP`, RGBA8 or float. |
+| Float render targets | Works | Blending into 32-bit ones works after `getExtension('EXT_float_blend')`. |
+| Float textures from `texImage2D` | Works | |
+| 3D textures and 2D array textures | Works | |
+
+## What is not drawn
+
+| Feature | Status | Note |
+|---|---|---|
+| Multisampled renderbuffers of 32-bit floats | Not drawn | |
+| `readPixels` | Not drawn | |
+| Instanced points | Not drawn | |
+| Cube faces of depth pixels | Not drawn | Point-light shadows need this. |
+| `texSubImage2D` of part of a cube face | Not drawn | |
+| A cube map with both uploaded and drawn faces | Not drawn | |
+| Render targets other than RGBA8, SRGB8_ALPHA8, R8, RG8, and R, RG or RGBA of 16 or 32-bit floats | Not drawn | |
+| `texSubImage2D` into a drawn-in R8 or RG8 texture | Not drawn | |
+| Framebuffer attachments of different sizes | Not drawn | |
+| `generateMipmap` on a drawn-into 32-bit float texture | Not drawn | |
+
+## What differs from a browser
+
+| Feature | Status | Note |
+|---|---|---|
+| Depth buffer | Differs | Holds 32-bit floats. |
+| Multisampled renderbuffer | Differs | Has 4 samples whatever count you ask for. `MAX_SAMPLES` is 4. |
+| Depth or stencil blit from a multisampled renderbuffer | Differs | Copies its first sample. |
+| Copy or blit of a rectangle that reaches outside its source | Differs | Repeats the source's edge there. A browser copies 0, and leaves a blit's destination as it was. |
+| `depth: false` | Differs | The depth test always passes. |
+| Depth texture | Differs | Sampled `NEAREST`. |
+| Points | Differs | Squares of at most 511 px. |
+| `gl_VertexID` with `drawElements` | Differs | The position in the index list. |
+| `LINEAR` blit from a 32-bit float target | Differs | Drawn as `NEAREST`. |
+| `generateMipmap` of a drawn-into texture | Differs | Halves each level with a bilinear blit. A texture of odd sides can differ from Chrome's by a level or two. |
+| Mipmaps of an uploaded sRGB texture | Differs | Average its encoded bytes. |
+
+## Libraries
+
+| Library | Status | Note |
+|---|---|---|
+| Raw WebGL and GLSL shaders | Works (tested) | Cases are compared with Chrome for Testing in `crates/dom/tests/webgl.rs`. |
+| p5.brush, standalone build | Works (tested) | Draws as in Chrome. A test renders 12 frames at concurrency 1 and 4, and frames 0, 5 and 11 alone, and the frames match. See [`@kinetographdev/p5-brush`](/docs/packages/p5-brush/). |
+| Three.js in an HTML page | Works in part | See [Tested against Chrome](#tested-against-chrome). |
+| `three` and `@react-three/fiber` in a React project | Works in part | Through `ThreeCanvas`. See [Three.js and React Three Fiber](#threejs-and-react-three-fiber). |
+| MapLibre GL JS | Runs | With recorded tiles. See [Maps](#maps). Not part of the Chrome comparison. |
+
+Other libraries run only as far as the calls they make are in the tables above. None are tested.
+
+## Three.js and React Three Fiber
+
+`three` and `@react-three/fiber` stay your project's own dependencies. A project without them gets a build error naming the missing one.
+
+```tsx
+import { ThreeCanvas } from '@kinetographdev/core/three';
+// or: import { ThreeCanvas } from '@remotion/three';
+
+export const Scene = () => (
+  <ThreeCanvas width={1280} height={720}>
+    <ambientLight />
+    <mesh><boxGeometry /><meshStandardMaterial color="orange" /></mesh>
+  </ThreeCanvas>
+);
+```
+
+- `ThreeCanvas` takes `width`, `height` and the props of React Three Fiber's `<Canvas>`. It draws once per frame, with no render loop of its own. `useFrame` runs once per frame drawn, so derive motion from `useCurrentFrame()`.
+- `useCurrentFrame()`, `useVideoConfig()` and `<Sequence layout="none">` work inside it.
+- `useTexture`, `useGLTF` and other loads that suspend hold the frame until they settle. A failed load is a warning (an error under `--strict`).
+- Shadow maps are drawn. Spot-light and VSM shadows match Chrome; see the table below for the rest. Point-light shadows do not yet work.
+- Workers run in the same thread, so a library that starts a `Worker` still works. A worker module that imports other files is bundled into one script first. This is how MapLibre's worker runs. A decoder that needs WebAssembly in a worker (Draco) is not covered.
+- `useVideoTexture` and `useOffthreadVideoTexture` are not available.
+
+## Maps
+
+MapLibre GL JS builds tile and style URLs while it runs, so `fetch-deps` cannot see them in advance. Record them once:
+
+```sh
+npx kinetograph fetch-deps src/index.tsx --record --allow-host demotiles.maplibre.org
+```
+
+The pass runs every frame with the network open for the hosts you name, and keeps each response in `.kinetograph/net`. `render`, `still` and `doctor` answer only from that store. A request that was not recorded is an error naming the URL and the frame.
+
+- Pass `--allow-host` for every host the map uses. A redirect to a host not on the list is refused.
+- Secret query parameters (`access_token`, `key`, `token`, `sig`, signed-URL `x-amz-*` and any `--secret-param`) are left out of the store and the lock. A value in any other parameter that looks like a credential fails the pass unless you name it with `--keep-param`.
+
+## Tested against Chrome
+
+A sample of 61 `webgl_*` pages from the three.js 0.187.0 examples (MIT), each drawn at 640x360 by Chrome for Testing and by Kinetograph with a frozen clock and compared at frame 12 (frame 0 for pages that draw once). The number is the mean, over all pixels, of the largest channel difference (0 to 255): under 1.5 is a match, under 6 a small difference.
+
+Result of the 61 pages: 13 match, 12 small difference, 4 small difference on pages that draw with `Math.random`, 24 differ (13 of them draw with `Math.random`), 7 blank, 1 error. A page that draws with `Math.random` after its files load puts things in other places in the two engines, so its number says little and it was judged by eye. The sweep was run before the latest fixes (float cube faces among them) and has not been repeated.
+
+| Area | Status | What the pages showed |
+|---|---|---|
+| Clipping, stencil | Works | Three pages: two match, one draws with `Math.random`. |
+| Texture arrays, 3D textures | Works | Both match. |
+| Spot-light and VSM shadows | Works | Both match. |
+| Other shadow maps (PCF, PCSS, CSM, contact) | Partly | Pages cannot be compared, or the meshes are in another animation phase. |
+| Point-light shadows | Not yet | Blank: needs depth cube textures. |
+| Lights and materials | Partly | Physical transmission matches; hemisphere light, dispersion and blending differ a little; clearcoat, iridescence and alpha transmission differ. |
+| Post-processing | Partly | Bloom and pixel match; depth of field, SSAO and afterimage differ a little; GTAO needs Draco and SAO draws nothing (cause not found). |
+| glTF models | Partly | Sheen matches. Pages that load models from a remote list or with Draco differ or are blank. |
+| Render targets | Partly | Multiple render targets match; render-to-texture differs a little; multisampled feedback differs; drawing into a layer of an array texture is an error. |
+| Lines, points, instancing | Partly | Dashed lines match; fat lines and wave points differ a little; the instancing pages draw with `Math.random`. |
+| Cube maps, environments | Partly | PMREM test matches; cube-map material differs a little. HDR cube-map pages were blank in the sweep, before float cube faces were added. |
+| Morph targets, skinning | Partly | Both differ a little; the keyframe page needs Draco. |
+
+## Not supported yet
+
+- Point-light shadows (depth cube textures).
+- Drawing into one layer of an array texture (`framebufferTextureLayer`).
+- Loaders that need WebAssembly: Draco, KTX2, Basis.
+- `readPixels`, and reading a WebGL canvas with `toDataURL`, `toBlob` or `drawImage`.
+- The SAO post-processing pass, which draws nothing, and multisampled render targets that feed back over more than 1024 draws.
+- `useVideoTexture` and `useOffthreadVideoTexture`.
+
+## Check your own page
+
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
+```sh
+npx kinetograph doctor src/index.tsx --range 0..120
+npx kinetograph render src/index.tsx --strict
+npx kinetograph still src/index.tsx 45
+```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph doctor html/index.html --range 0..120
+npx kinetograph render html/index.html --strict
+npx kinetograph still html/index.html 45
+```
+
+  </Tab>
+</IconTabs>
+
+- `doctor` runs every frame in the range without the GPU and lists what the engine cannot draw, with the frames. See [CLI](/docs/reference/cli/#doctor).
+- `render --strict` stops at the first frame with unsupported content: error code `UNSUPPORTED_CONTENT`, no output file.
+- `still` draws one frame alone. Compare it with the same frame of a render to see that the frame does not depend on the ones before it.
+
+Without `--strict`, `render` and `still` print the problems on stderr and draw the frame anyway. A line for a page error looks like this:
+
+```txt
+warning: 1 kind of unsupported content in 1 frame, drawn without it or approximated (--strict fails instead):
+  page script { uncaught exception: WebGLUnsupportedError: unsupported: readPixels; ... }: the page raised an error and went on; whatever it was drawing may be missing (frame 0)
+```
+
+## Writing for determinism
+
+1. Derive everything from the frame number: `useCurrentFrame()` in React, or the time the engine gives the page. Pass time to a shader as a uniform you compute.
+2. Draw the whole picture in every frame, clear included. Do not rely on the previous frame's buffer or on `preserveDrawingBuffer`.
+3. Do not call `readPixels`, and do not read or draw a WebGL canvas with `toDataURL`, `toBlob` or `drawImage`. Render into a framebuffer texture and sample it.
+4. For a value that must stay the same from frame to frame, use `random('seed')` from `remotion`. `Math.random()` is reseeded from the frame number.
+5. Load images and other assets before the first frame is drawn. Hold the frame with `delayRender()`; it fails with `DELAY_RENDER_TIMEOUT` after 30 seconds unless you set `--timeout`.
+
+## Related topics
+
+- [What works](/docs/compat/)
+- [Canvas and shaders](/docs/making-videos/shaders/)
+- [How Kinetograph works](/docs/internals/engine/)
+- [CLI](/docs/reference/cli/)

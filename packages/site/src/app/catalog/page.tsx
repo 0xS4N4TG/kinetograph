@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function CatalogIndex() {
   return (
-    <DocsPage toc={[]} footer={{ enabled: false }}>
+    <DocsPage toc={[]} footer={{ enabled: false }} className="max-w-[1480px]">
       <Suspense fallback={null}>
         <Browser items={items} groups={groups} />
       </Suspense>
