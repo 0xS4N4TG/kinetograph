@@ -181,8 +181,10 @@ pub struct GlslTexture {
     pub cube: bool,
     #[serde(default)]
     pub faces: Vec<GlslFace>,
-    /// With `cube`, in place of `faces`: the six colour targets framebuffers drew the faces in, in GL's order
-    /// (`framebufferTexture2D` of `TEXTURE_CUBE_MAP_POSITIVE_X` and the others). Square, of one format and level count.
+    /// With `cube`, in place of `faces`: the six targets (colour, or depth for a shadow sampler) framebuffers drew the
+    /// faces in, in GL's order (`framebufferTexture2D` of `TEXTURE_CUBE_MAP_POSITIVE_X` and the others). Square, of one
+    /// format and level count. With `depth` (an array or 3D texture), in place of texels: one colour target of `width` x
+    /// `height` per layer, in order (`framebufferTextureLayer`).
     #[serde(default)]
     pub targets: Vec<String>,
 }

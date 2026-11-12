@@ -868,7 +868,11 @@ export interface GlslTexture {
    */
   cube?: boolean;
   faces?: GlslFace[];
-  /** With `cube`, in place of `faces`: the six colour targets framebuffers drew the faces in, in the same order. */
+  /**
+   * With `cube`, in place of `faces`: the six targets framebuffers drew the faces in, in the same order (colour, or a
+   * depth cube a shadow sampler reads). With `depth` (a 3D or array texture), in place of pixels: one colour target per
+   * layer, in order (`framebufferTextureLayer`).
+   */
   targets?: string[];
 }
 

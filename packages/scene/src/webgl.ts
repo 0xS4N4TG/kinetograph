@@ -592,9 +592,11 @@ export class WebGLTexture extends WebGLObject {
   snapshot: { version: number; id: string; json: GlslTexture } | null = null;
   /** The six faces of a cube map (+X, -X, +Y, -Y, +Z, -Z), each a 2D texture of its own; null for any other texture. */
   faces: WebGLTexture[] | null = null;
+  /** The layers of a 3D or array texture that `framebufferTextureLayer` drew in: a 2D texture each, made for this `version` of it. */
+  layers: { version: number; textures: WebGLTexture[] } | null = null;
 }
-/** What an attachment point of a framebuffer holds: a level of a texture (of a face of `cube`), or a renderbuffer. */
-export type WebGLAttachment = { texture: WebGLTexture; level: number; cube?: WebGLTexture } | { renderbuffer: WebGLRenderbuffer };
+/** What an attachment point of a framebuffer holds: a level of a texture (of a face or layer of `parent`), or a renderbuffer. */
+export type WebGLAttachment = { texture: WebGLTexture; level: number; parent?: WebGLTexture } | { renderbuffer: WebGLRenderbuffer };
 
 export class WebGLFramebuffer extends WebGLObject {
   /** What COLOR_ATTACHMENT0 and up hold. */
@@ -3053,6 +3055,7 @@ export class WebGLContext {
         const from = ((z * height + y) * width) * 4;
         held.set(part.subarray(from, from + width * 4), (((zoffset + z) * texture.height + yoffset + y) * texture.width + xoffset) * 4);
       }
+    if (WebGLContext.drawnLayers(texture)) throw new WebGLUnsupportedError('texSubImage3D into a texture a framebuffer drew a layer of; draw into it, or upload the whole texture again');
     }
     texture.version += 1;
   }
@@ -3325,7 +3328,36 @@ export class WebGLContext {
       if (face >= 0 ? texture.faces === null : textarget !== GL.TEXTURE_2D || texture.faces !== null) return this.fail(GL.INVALID_OPERATION);
       if (!(level >= 0) || (this.version === 1 && level !== 0)) return this.fail(GL.INVALID_VALUE);
     }
-    this.attach(framebuffer, attachment, texture === null ? null : face >= 0 ? { texture: texture.faces![face]!, level: Math.trunc(level), cube: texture } : { texture, level: Math.trunc(level) });
+    this.attach(framebuffer, attachment, texture === null ? null : face >= 0 ? { texture: texture.faces![face]!, level: Math.trunc(level), parent: texture } : { texture, level: Math.trunc(level) });
+  }
+
+  /**
+   * WebGL 2's `framebufferTextureLayer`: one layer of a 3D or array texture as an attachment. Each layer is a 2D target
+   * of its own, as a cube map's faces are, and the texture is those targets when a draw samples it.
+   */
+  framebufferTextureLayer(target: number, attachment: number, texture: WebGLTexture | null, level: number, layer: number): void {
+    if (this.version !== 2) return this.fail(GL.INVALID_OPERATION);
+    const framebuffer = this.attachingTo(target);
+    if (framebuffer === null) return;
+    if (texture !== null) {
+      if (texture.target !== GL2.TEXTURE_3D && texture.target !== GL2.TEXTURE_2D_ARRAY) return this.fail(GL.INVALID_OPERATION);
+      if (!(Number.isInteger(level) && level >= 0 && Number.isInteger(layer) && layer >= 0 && layer < texture.depth)) return this.fail(GL.INVALID_VALUE);
+      if (level !== 0) throw new WebGLUnsupportedError('framebufferTextureLayer above level 0; a 3D or array texture has one level');
+      if (!(attachment >= GL.COLOR_ATTACHMENT0 && attachment < GL.COLOR_ATTACHMENT0 + MAX_DRAW_BUFFERS)) throw new WebGLUnsupportedError('framebufferTextureLayer of a depth or stencil attachment; attach a colour layer');
+    }
+    this.attach(framebuffer, attachment, texture === null ? null : { texture: this.layerOf(texture, layer), level: 0, parent: texture });
+  }
+
+  /** The 2D texture that is layer `layer` of `parent` for a framebuffer, made empty when the first one is asked for (a layer starts as zeros). */
+  private layerOf(parent: WebGLTexture, layer: number): WebGLTexture {
+    if (parent.layers?.version !== parent.version) {
+      if ((parent.floats ?? parent.pixels)?.some((v) => v !== 0)) {
+        throw new WebGLUnsupportedError('framebufferTextureLayer of a 3D or array texture that holds uploaded texels; allocate it empty (texStorage3D, or texImage3D with null) and draw in its layers');
+      }
+      const textures = Array.from({ length: parent.depth }, () => Object.assign(new WebGLTexture(), { target: GL.TEXTURE_2D, width: parent.width, height: parent.height, format: parent.format, uploaded: true, blank: true }));
+      parent.layers = { version: parent.version, textures };
+    }
+    return parent.layers.textures[layer]!;
   }
 
   checkFramebufferStatus(target: number): number {
@@ -3540,7 +3572,7 @@ export class WebGLContext {
       case GL.FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE:
         return a === null ? GL.NONE : 'texture' in a ? GL.TEXTURE : GL.RENDERBUFFER;
       case GL.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME:
-        return a === null ? null : 'texture' in a ? (a.cube ?? a.texture) : a.renderbuffer;
+        return a === null ? null : 'texture' in a ? (a.parent ?? a.texture) : a.renderbuffer;
       case GL.FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL:
         if (a !== null && 'texture' in a) return a.level;
         this.fail(GL.INVALID_ENUM);
@@ -3791,7 +3823,7 @@ export class WebGLContext {
         const texture = this.unitMap(samplerTarget)?.get(unit);
         if (texture === undefined) continue;
         // Reading what the draw writes is undefined; WebGL refuses it.
-        if (attached.includes(texture) || texture.faces?.some((f) => attached.includes(f))) return this.fail(GL.INVALID_OPERATION);
+        if (attached.includes(texture) || texture.faces?.some((f) => attached.includes(f)) || texture.layers?.textures.some((t) => attached.includes(t))) return this.fail(GL.INVALID_OPERATION);
         // A shadow sampler reads a depth texture that compares; any other sampler does not read one that does.
         const compares = texture.compareMode === GL2.COMPARE_REF_TO_TEXTURE;
         const kind = kindOf((texture.faces?.[0] ?? texture).format); // a cube map's format is its faces'
@@ -3853,7 +3885,7 @@ export class WebGLContext {
     // A depth texture is a render target from the start: its depth is drawn, never uploaded.
     const cube = texture.faces !== null;
     const target = !cube && (texture.drawnAt === texture.version || kindOf(texture.format) !== 'color');
-    const id = target ? this.registerTarget(texture) : cube && WebGLContext.drawnCube(texture) ? this.drawnCubeId(texture) : this.uploadedId(texture);
+    const id = target ? this.registerTarget(texture) : cube && WebGLContext.drawnCube(texture) ? this.drawnCubeId(texture) : WebGLContext.drawnLayers(texture) ? this.layersId(texture) : this.uploadedId(texture);
     // A texStorage2D texture's levels clamp its base and max level (ES 3.0 §3.8.10), so it is complete without
     // TEXTURE_MAX_LEVEL; a cube map keeps its storage on its faces.
     const storage = cube ? texture.faces![0]! : texture;
@@ -3901,6 +3933,24 @@ export class WebGLContext {
       ...(f.flipY ? { flipY: true } : {}),
       ...(f.premultiply ? { premultiply: true } : {}),
     }));
+    return id;
+  }
+
+  /** Whether a framebuffer drew in a layer of the 3D or array texture: its layers are render targets from then on. */
+  private static drawnLayers(texture: WebGLTexture): boolean {
+    return texture.layers?.version === texture.version && texture.layers.textures.some((t) => t.drawnAt === t.version);
+  }
+
+  /** A 3D or array texture a framebuffer drew in, in the recording: the targets of its layers, in order (the ones not drawn in are zeros). */
+  private layersId(texture: WebGLTexture): string {
+    const id = `l${texture.id}.${texture.version}`;
+    this.textures.set(id, {
+      width: texture.width,
+      height: texture.height,
+      depth: texture.depth,
+      ...(texture.target === GL2.TEXTURE_2D_ARRAY ? { array: true } : {}),
+      targets: texture.layers!.textures.map((t) => this.registerTarget(t)),
+    });
     return { cube: true, width: cube.faces![0]!.width, height: cube.faces![0]!.width, faces, ...(cube.mipmaps ? { mipmaps: true } : {}), ...(cube.faces![0]!.format === GL2.SRGB8_ALPHA8 ? { srgb: true } : {}) };
   }
 

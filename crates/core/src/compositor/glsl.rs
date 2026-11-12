@@ -169,8 +169,9 @@ enum Step<'c> {
     DepthCopy(&'c str, wgpu::Texture),
     /// A multisampled colour target resolved into a texture of one sample, for a blit to read.
     Resolve(&'c str, wgpu::Texture),
-    /// The six face targets of a cube map, every level, copied into the layers of a cube texture for draws to sample.
-    CubeCopy(&'c [String], wgpu::Texture),
+    /// The targets of a cube map's faces, or of the layers of an array or 3D texture, every level, copied into the layers
+    /// of one texture for draws to sample.
+    LayerCopy(&'c [String], wgpu::Texture),
 }
 
 struct Blit {
@@ -612,7 +613,7 @@ impl Compositor {
         // The copies of depth targets draws sample, while what they hold is the target's.
         let mut depth_copies: HashMap<&str, wgpu::TextureView> = HashMap::new();
         // The same for cube maps whose faces are targets, and for multisampled colour targets a blit reads.
-        let mut cube_copies: HashMap<&str, wgpu::TextureView> = HashMap::new();
+        let mut layer_copies: HashMap<&str, wgpu::TextureView> = HashMap::new();
         let mut resolved: HashMap<&str, wgpu::TextureView> = HashMap::new();
         let mut started: HashSet<(Option<&str>, u32)> = HashSet::new();
         for (i, op) in content.ops.iter().enumerate() {
@@ -755,31 +756,37 @@ impl Compositor {
                     steps.insert(at, Step::DepthCopy(id, copy));
                 }
             }
-            // A cube map whose faces are targets is copied from them before the pass, in the same way.
+            // A cube map, or an array or 3D texture, whose faces or layers are targets is copied from them before the pass, in
+            // the same way.
             if let GlslOp::Draw(draw) = op {
                 for unit in draw.units.values() {
                     let id = unit.texture.as_str();
                     let Some(texture) = content
                         .textures
                         .get(id)
-                        .filter(|t| t.cube && !t.targets.is_empty())
+                        .filter(|t| !t.targets.is_empty())
                     else {
                         continue;
                     };
-                    if cube_copies.contains_key(id) {
+                    if layer_copies.contains_key(id) {
                         continue;
                     }
-                    let copy =
-                        self.glsl_cube_of_targets(&mut targets, content, &texture.targets)?;
-                    cube_copies.insert(
+                    let copy = self.glsl_layers_of_targets(&mut targets, content, texture)?;
+                    layer_copies.insert(
                         id,
                         copy.create_view(&wgpu::TextureViewDescriptor {
-                            dimension: Some(wgpu::TextureViewDimension::Cube),
+                            dimension: Some(if texture.cube {
+                                wgpu::TextureViewDimension::Cube
+                            } else if texture.array {
+                                wgpu::TextureViewDimension::D2Array
+                            } else {
+                                wgpu::TextureViewDimension::D3
+                            }),
                             ..Default::default()
                         }),
                     );
                     let at = if joins { steps.len() - 1 } else { steps.len() };
-                    steps.insert(at, Step::CubeCopy(&texture.targets, copy));
+                    steps.insert(at, Step::LayerCopy(&texture.targets, copy));
                 }
             }
             // A multisampled colour target a blit reads is resolved into a texture of one sample before the pass.
@@ -819,7 +826,7 @@ impl Compositor {
                 depth_copies.remove(key);
             }
             resolved.retain(|id, _| !colors.iter().flatten().any(|(c, _)| *c == Some(*id)));
-            cube_copies.retain(|id, _| {
+            layer_copies.retain(|id, _| {
                 !content.textures[*id].targets.iter().any(|face| {
                     ds == Some(face.as_str())
                         || colors
@@ -874,7 +881,7 @@ impl Compositor {
                         content,
                         draw,
                         size,
-                        (base_dir, inputs, &depth_copies, &cube_copies),
+                        (base_dir, inputs, &depth_copies, &layer_copies),
                         &mut buffers,
                         &mut targets,
                         (&shape, ds_format, samples),
@@ -1000,9 +1007,9 @@ impl Compositor {
                     drop(pass);
                     continue;
                 }
-                Step::CubeCopy(faces, cube) => {
+                Step::LayerCopy(sources, layers) => {
                     let mut encoder = self.encoder();
-                    for (layer, face) in faces.iter().enumerate() {
+                    for (layer, face) in sources.iter().enumerate() {
                         let t = &targets[face.as_str()];
                         for level in 0..t.levels.len() as u32 {
                             let (width, height) = t.level_size(level);
@@ -1014,7 +1021,7 @@ impl Compositor {
                                     aspect: wgpu::TextureAspect::All,
                                 },
                                 wgpu::TexelCopyTextureInfo {
-                                    texture: cube,
+                                    texture: layers,
                                     mip_level: level,
                                     origin: wgpu::Origin3d {
                                         x: 0,
@@ -1264,23 +1271,26 @@ impl Compositor {
         Ok(&targets[id])
     }
 
-    /// The cube texture a cube map whose faces are the targets `faces` is copied into (`Step::CubeCopy`): the
-    /// faces' side, format and levels, which must be one for all six, as GL's cube completeness asks.
-    fn glsl_cube_of_targets<'c>(
+    /// The texture whose faces (a cube map) or layers (a 2D array or 3D texture) are the targets `texture.targets`, which
+    /// `Step::LayerCopy` copies them into: one size, format and level count for all of them, as GL's completeness asks (a
+    /// cube's faces are square, a 3D texture has one level).
+    fn glsl_layers_of_targets<'c>(
         &self,
         targets: &mut HashMap<&'c str, Target>,
         content: &'c GlslContent,
-        faces: &'c [String],
+        texture: &'c GlslTexture,
     ) -> Result<wgpu::Texture> {
-        if faces.len() != 6 {
+        let count = if texture.cube { 6 } else { texture.depth as usize };
+        let what = if texture.cube { "cube map" } else if texture.array { "array texture" } else { "3D texture" };
+        if texture.targets.len() != count {
             return Err(render_error(format!(
-                "a cube map names {} face targets; it has 6",
-                faces.len()
+                "a {what} names {} targets; it has {count}",
+                texture.targets.len()
             )));
         }
         let mut shape = None;
-        for face in faces {
-            let t = self.glsl_target(targets, content, face, None)?;
+        for id in &texture.targets {
+            let t = self.glsl_target(targets, content, id, None)?;
             // Colour, or depth alone (Depth32Float: the one depth format a copy reads); not stencil, nor multisampled.
             let kind = match t.ds {
                 None => Some(false),
@@ -1288,25 +1298,35 @@ impl Compositor {
                 Some(_) => None,
             };
             let this = (t.size, t.format, t.levels.len(), kind);
-            if this.0.0 != this.0.1 || kind.is_none() || t.samples > 1 || shape.is_some_and(|s| s != this) {
-                return Err(render_error(
-                    "a cube map's face targets are not six square colour (or depth) targets of one size, format and \
-                     level count (WebGL samples such a cube map as incomplete)",
-                ));
+            let size_ok = if texture.cube {
+                this.0.0 == this.0.1
+            } else {
+                this.0 == (texture.width, texture.height) && (texture.array || this.2 == 1)
+            };
+            if !size_ok || kind.is_none() || t.samples > 1 || shape.is_some_and(|s| s != this) {
+                return Err(render_error(format!(
+                    "a {what}'s targets are not {count} colour (or depth) targets of one size, format and level count{} \
+                     (WebGL samples such a texture as incomplete)",
+                    if texture.cube { ", square" } else { " that are the texture's width and height" },
+                )));
             }
             shape = Some(this);
         }
-        let ((side, _), format, levels, _) = shape.expect("six faces");
+        let ((width, height), format, levels, _) = shape.expect("a layer");
         Ok(self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("glsl cube of targets"),
+            label: Some("glsl layers of targets"),
             size: wgpu::Extent3d {
-                width: side,
-                height: side,
-                depth_or_array_layers: 6,
+                width,
+                height,
+                depth_or_array_layers: count as u32,
             },
             mip_level_count: levels as u32,
             sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
+            dimension: if texture.cube || texture.array {
+                wgpu::TextureDimension::D2
+            } else {
+                wgpu::TextureDimension::D3
+            },
             format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
@@ -1355,7 +1375,7 @@ impl Compositor {
         content: &'c GlslContent,
         draw: &'c GlslDraw,
         size: (u32, u32),
-        (base_dir, inputs, depth_copies, cube_copies): (
+        (base_dir, inputs, depth_copies, layer_copies): (
             &Path,
             &Inputs,
             &HashMap<&str, wgpu::TextureView>,
@@ -1653,7 +1673,7 @@ impl Compositor {
                             binding.name, state.texture
                         )));
                     }
-                    let uploaded = if texture.cube && !texture.targets.is_empty() {
+                    let uploaded = if !texture.targets.is_empty() {
                         if depth_cube && !binding.dim.shadow() {
                             return Err(render_error(format!(
                                 "the sampler `{}` reads the depth cube map {:?} without comparing; read it with \
@@ -1677,7 +1697,7 @@ impl Compositor {
                         }
                         let face = &targets[texture.targets[0].as_str()];
                         Arc::new(Uploaded {
-                            view: cube_copies[state.texture.as_str()].clone(),
+                            view: layer_copies[state.texture.as_str()].clone(),
                             mipmapped: target_mipmapped(face, state.max_level),
                             depth: depth_cube,
                             float32: is_float32(face.format),

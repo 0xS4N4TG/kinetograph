@@ -1614,6 +1614,76 @@ describe('the recording WebGL context', () => {
       expect(draw.units['0']!.compare).toBe('LEQUAL');
     });
 
+    it('draws into each layer of an array or 3D texture and samples the layer targets as one texture', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const program = gl.createProgram();
+      for (const [type, source] of [[GL.VERTEX_SHADER, '#version 300 es\nin vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }'], [GL.FRAGMENT_SHADER, '#version 300 es\nprecision highp float; precision highp sampler2DArray; precision highp sampler3D; uniform sampler2DArray a; uniform sampler3D v; out vec4 o; void main() { o = texture(a, vec3(0.5, 0.5, 1.0)) + texture(v, vec3(0.5)); }']] as const) {
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source);
+        gl.attachShader(program, shader);
+      }
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(GL.ARRAY_BUFFER, buffer);
+      gl.bufferData(GL.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1]), GL.STATIC_DRAW);
+      gl.enableVertexAttribArray(gl.getAttribLocation(program, 'p'));
+      gl.vertexAttribPointer(gl.getAttribLocation(program, 'p'), 2, GL.FLOAT, false, 0, 0);
+      const make = (target: number, unit: number) => {
+        const texture = gl.createTexture();
+        gl.activeTexture(GL.TEXTURE0 + unit);
+        gl.bindTexture(target, texture);
+        gl.texStorage3D(target, 1, GL2.RGBA8, 4, 4, 3);
+        gl.texParameteri(target, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
+        return texture;
+      };
+      const array = make(GL2.TEXTURE_2D_ARRAY, 0);
+      const volume = make(GL2.TEXTURE_3D, 1);
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, fb);
+      for (const texture of [array, volume]) {
+        for (let layer = 0; layer < 3; layer += 1) {
+          gl.framebufferTextureLayer(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, texture, 0, layer);
+          expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_COMPLETE);
+          gl.clearColor(layer / 2, 0, 0, 1);
+          gl.clear(GL.COLOR_BUFFER_BIT);
+        }
+      }
+      expect(gl.getFramebufferAttachmentParameter(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME)).toBe(volume);
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      gl.uniform1i(gl.getUniformLocation(program, 'a'), 0);
+      gl.uniform1i(gl.getUniformLocation(program, 'v'), 1);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const content = gl.content();
+      const clears = content.ops.filter((o) => o.op === 'clear').map((o) => (o as { target?: string }).target);
+      const draw = content.ops.at(-1)!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      expect(content.textures[draw.units['0']!.texture]).toEqual({ width: 4, height: 4, depth: 3, array: true, targets: clears.slice(0, 3) });
+      expect(content.textures[draw.units['1']!.texture]).toEqual({ width: 4, height: 4, depth: 3, targets: clears.slice(3) });
+      expect(new Set(clears).size).toBe(6);
+      expect(content.textures[clears[0]!]).toEqual({ target: true, width: 4, height: 4 });
+    });
+
+    it('checks framebufferTextureLayer as WebGL does, and refuses a texture that holds texels', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, fb);
+      const flat = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, flat);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 4, 4, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+      gl.framebufferTextureLayer(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, flat, 0, 0);
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+      const array = gl.createTexture();
+      gl.bindTexture(GL2.TEXTURE_2D_ARRAY, array);
+      gl.texImage3D(GL2.TEXTURE_2D_ARRAY, 0, GL2.RGBA8, 4, 4, 2, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4 * 4 * 2 * 4).fill(9));
+      gl.framebufferTextureLayer(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, array, 0, 2);
+      expect(gl.getError()).toBe(GL.INVALID_VALUE);
+      expect(() => gl.framebufferTextureLayer(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, array, 0, 1)).toThrow(/uploaded texels/);
+      expect(() => gl.framebufferTextureLayer(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, array, 0, 0)).toThrow(/depth or stencil/);
+      expect(() => gl.framebufferTextureLayer(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, array, 1, 0)).toThrow(/above level 0/);
+    });
+
     it('takes empty float faces from texImage2D as render targets', () => {
       const { gl, cube } = setup();
       const floats = gl.createTexture();
