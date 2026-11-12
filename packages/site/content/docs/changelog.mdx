@@ -13,7 +13,7 @@ Kinetograph is in beta, so APIs can still change between versions. The same list
 - A script-made `<img>` fires `load` and `error`; `UIEvent`, `MouseEvent`, `PointerEvent`, `WheelEvent` and `ProgressEvent` exist; `WebGLRenderingContext` and `WebGL2RenderingContext` are different classes.
 - WebGL: `getInternalformatParameter(SAMPLES)`.
 - `fetch-deps --record --allow-host <hosts>` runs every frame with the network open for those hosts and keeps what the page `fetch`ed (URLs built at run time) in `.kinetograph/net`; a render answers only from it, and a miss names the URL, the frame and the command to record it. Secret query parameters (`access_token`, `key`, `token`, `sig`, signed-URL `x-amz-*`, plus `--secret-param`) never reach the store or the lock, and a credential-looking value in another one fails the pass unless `--keep-param` names it; Range requests and gzip bodies replay as recorded.
-- WebGPU: depth-only passes, whole-level copies of depth textures, 2d texture arrays (layer views, `2d-array` bindings, render into one layer), passes with several colour attachments, render bundles (their commands run in the pass that executes them), cube and cube-array views, and query sets (accepted; `resolveQuerySet` writes zeros).
+- WebGPU: depth-only passes, whole-level copies of depth textures, 2d texture arrays (layer views, `2d-array` bindings, render into one layer), passes with several colour attachments, render bundles (their commands run in the pass that executes them), cube and cube-array views, 3d textures (slices, `3d` views and bindings, render into a `depthSlice`), and query sets (accepted; `resolveQuerySet` writes zeros).
 
 ### Changed
 

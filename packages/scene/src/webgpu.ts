@@ -492,7 +492,7 @@ export class GPUTextureViewShim extends GpuObject {
     readonly baseLayer = 0,
     readonly layers = 1,
     /** `2d-array` is a view of an array (of one layer or more); `2d` is one layer; `cube` is six layers (a multiple of six for `cube-array`). */
-    readonly dimension: '2d' | '2d-array' | 'cube' | 'cube-array' = '2d',
+    readonly dimension: '2d' | '2d-array' | 'cube' | 'cube-array' | '3d' = '2d',
   ) {
     super('');
   }
@@ -500,13 +500,17 @@ export class GPUTextureViewShim extends GpuObject {
   keys(): string[] {
     const keys: string[] = [];
     for (let level = this.baseMip; level < this.baseMip + this.mips; level += 1) {
-      for (let layer = this.baseLayer; layer < this.baseLayer + this.layers; layer += 1) keys.push(levelKey(this.texture, level, layer));
+      // A 3d view holds every slice of its levels.
+      const first = this.dimension === '3d' ? 0 : this.baseLayer;
+      const end = this.dimension === '3d' ? this.texture.depthAt(level) : this.baseLayer + this.layers;
+      for (let layer = first; layer < end; layer += 1) keys.push(levelKey(this.texture, level, layer));
     }
     return keys;
   }
   /** Whether the view holds this level and layer of its texture. */
   holds(texture: GPUTextureShim, mip: number, layer: number): boolean {
-    return this.texture === texture && mip >= this.baseMip && mip < this.baseMip + this.mips && layer >= this.baseLayer && layer < this.baseLayer + this.layers;
+    if (this.texture !== texture || mip < this.baseMip || mip >= this.baseMip + this.mips) return false;
+    return this.dimension === '3d' ? layer < texture.depthAt(mip) : layer >= this.baseLayer && layer < this.baseLayer + this.layers;
   }
 }
 
@@ -570,8 +574,8 @@ function originOf(call: string, value: unknown): { x: number; y: number; z: numb
 }
 
 /** `1 + floor(log2(max side))`: the most levels a texture of this size has. */
-function mostMips(width: number, height: number): number {
-  return 32 - Math.clz32(Math.max(width, height, 1));
+function mostMips(width: number, height: number, depth = 1): number {
+  return 32 - Math.clz32(Math.max(width, height, depth, 1));
 }
 
 /**
@@ -579,7 +583,6 @@ function mostMips(width: number, height: number): number {
  * canvas's may only be drawn into by a render pass; the others are what the steps that wrote them make.
  */
 export class GPUTextureShim extends GpuObject {
-  readonly dimension = '2d';
   readonly uid: number;
   readonly bytes: number;
   destroyed = false;
@@ -595,19 +598,26 @@ export class GPUTextureShim extends GpuObject {
     /** 1, or 4 for a multisampled texture: one a pass draws into and resolves into another. */
     readonly sampleCount = 1,
     readonly depthOrArrayLayers = 1,
+    /** `3d`: `depthOrArrayLayers` is the depth, which halves with each level, and a layer is a slice. */
+    readonly dimension: '2d' | '3d' = '2d',
   ) {
     super(label);
     this.uid = canvas === null ? device.nextTextureId() : 0;
     this.bytes = 0;
     if (canvas === null) {
-      let total = 0;
-      for (let level = 0; level < mipLevelCount; level += 1) total += Math.max(1, width >> level) * Math.max(1, height >> level) * (FORMATS[format]?.bytes ?? 4);
-      this.bytes = total * sampleCount * depthOrArrayLayers;
-      device.reserveTexture(total * depthOrArrayLayers);
+      let texels = 0;
+      for (let level = 0; level < mipLevelCount; level += 1) texels += Math.max(1, width >> level) * Math.max(1, height >> level) * this.depthAt(level);
+      const total = texels * (FORMATS[format]?.bytes ?? 4);
+      this.bytes = total * sampleCount;
+      device.reserveTexture(total);
     }
   }
   get id(): string {
     return `t${this.uid}`;
+  }
+  /** The layers (slices of a 3d texture) level `level` has. */
+  depthAt(level: number): number {
+    return this.dimension === '3d' ? Math.max(1, this.depthOrArrayLayers >> level) : this.depthOrArrayLayers;
   }
   /** The size of level `level`. */
   extent(level: number): { width: number; height: number } {
@@ -619,14 +629,16 @@ export class GPUTextureShim extends GpuObject {
   createView(descriptor: { format?: string; dimension?: string; aspect?: string; baseMipLevel?: number; mipLevelCount?: number; baseArrayLayer?: number; arrayLayerCount?: number } = {}): GPUTextureViewShim {
     const d = descriptor ?? {};
     if (d.format !== undefined && d.format !== this.format) throw this.device.unsupported(`a texture view of format ${d.format} on a ${this.format} texture`);
-    const dimension = d.dimension ?? (this.depthOrArrayLayers > 1 ? '2d-array' : '2d');
-    if (dimension !== '2d' && dimension !== '2d-array' && dimension !== 'cube' && dimension !== 'cube-array') throw this.device.unsupported(`a texture view of dimension ${dimension}`);
+    const dimension = d.dimension ?? (this.dimension === '3d' ? '3d' : this.depthOrArrayLayers > 1 ? '2d-array' : '2d');
+    if (this.dimension === '3d' ? dimension !== '3d' : dimension === '3d') throw new TypeError(`createView: a ${dimension} view of a ${this.dimension} texture; a 3d texture has 3d views and the others do not`);
+    if (dimension !== '2d' && dimension !== '2d-array' && dimension !== 'cube' && dimension !== 'cube-array' && dimension !== '3d') throw this.device.unsupported(`a texture view of dimension ${dimension}`);
     const isCube = dimension === 'cube' || dimension === 'cube-array';
     if (isCube && this.width !== this.height) throw new TypeError(`createView: a ${dimension} view needs a square texture, this one is ${this.width} x ${this.height}`);
     if (d.aspect !== undefined && d.aspect !== 'all' && !(d.aspect === 'depth-only' && DEPTH_FORMATS.has(this.format))) throw this.device.unsupported(`a texture view of the aspect ${d.aspect}`);
+    if (dimension === '3d' && ((d.baseArrayLayer ?? 0) !== 0 || (d.arrayLayerCount ?? 1) !== 1)) throw new RangeError('OperationError: createView: a 3d view has baseArrayLayer 0 and one array layer');
     const baseLayer = whole('createView', 'baseArrayLayer', d.baseArrayLayer ?? 0, 0);
     if (baseLayer >= this.depthOrArrayLayers) throw new RangeError(`OperationError: createView: baseArrayLayer ${baseLayer} of a texture with ${this.depthOrArrayLayers} layers`);
-    const layers = d.arrayLayerCount === undefined ? (dimension === '2d' ? 1 : dimension === 'cube' ? 6 : this.depthOrArrayLayers - baseLayer) : whole('createView', 'arrayLayerCount', d.arrayLayerCount, 1);
+    const layers = d.arrayLayerCount === undefined ? (dimension === '2d' || dimension === '3d' ? 1 : dimension === 'cube' ? 6 : this.depthOrArrayLayers - baseLayer) : whole('createView', 'arrayLayerCount', d.arrayLayerCount, 1);
     if (baseLayer + layers > this.depthOrArrayLayers) throw new RangeError(`OperationError: createView: layers ${baseLayer}..${baseLayer + layers} of a texture with ${this.depthOrArrayLayers}`);
     if (dimension === '2d' && layers !== 1) throw new RangeError('OperationError: createView: a 2d view has one layer; use dimension 2d-array for more');
     if (dimension === 'cube' && layers !== 6) throw new RangeError(`OperationError: createView: a cube view has six layers, not ${layers}`);
@@ -1087,7 +1099,8 @@ function regionOf(call: string, what: string, info: { texture: GPUTextureShim; m
   const mip = whole(call, 'mipLevel', info.mipLevel ?? 0, 0);
   if (mip >= texture.mipLevelCount) throw new RangeError(`OperationError: ${call}: mip level ${mip} of a texture with ${texture.mipLevelCount}`);
   const origin = originOf(call, info.origin);
-  if (origin.z + depth > texture.depthOrArrayLayers) throw new RangeError(`OperationError: ${call}: the layers ${origin.z}..${origin.z + depth} are outside the ${texture.depthOrArrayLayers} layers of the ${what} texture`);
+  const layersHere = texture.depthAt(mip);
+  if (origin.z + depth > layersHere) throw new RangeError(`OperationError: ${call}: the layers ${origin.z}..${origin.z + depth} are outside the ${layersHere} ${texture.dimension === '3d' ? 'slices' : 'layers'} of the ${what} texture`);
   const extent = texture.extent(mip);
   rectIn(call, `${what} rectangle`, extent, origin.x, origin.y, width, height);
   if (isDepth && (origin.x !== 0 || origin.y !== 0 || width !== extent.width || height !== extent.height)) {
@@ -1106,7 +1119,7 @@ export class GPUCommandEncoderShim extends GpuObject {
     this.items.push(item);
   }
   beginRenderPass(descriptor: {
-    colorAttachments: ({ view: GPUTextureViewShim; loadOp?: string; storeOp?: string; clearValue?: unknown; resolveTarget?: unknown } | null)[];
+    colorAttachments: ({ view: GPUTextureViewShim; depthSlice?: number; loadOp?: string; storeOp?: string; clearValue?: unknown; resolveTarget?: unknown } | null)[];
     depthStencilAttachment?: unknown;
     occlusionQuerySet?: unknown;
     timestampWrites?: unknown;
@@ -1140,7 +1153,7 @@ export class GPUCommandEncoderShim extends GpuObject {
     return new GPURenderPassEncoderShim(this, { ...target, ...(more.length > 0 ? { more } : {}), ...(depth ? { depth } : {}) } as Attachment, occlusion);
   }
   /** One colour attachment of a pass, checked: the canvas's texture (`context`), or a level and layer of a texture. */
-  private colorAttachment(attachment: { view: GPUTextureViewShim; loadOp?: string; clearValue?: unknown; resolveTarget?: unknown }): ColorAttachment & { context: GPUCanvasContextShim | null } {
+  private colorAttachment(attachment: { view: GPUTextureViewShim; depthSlice?: number; loadOp?: string; clearValue?: unknown; resolveTarget?: unknown }): ColorAttachment & { context: GPUCanvasContextShim | null } {
     const view = attachment.view;
     if (!(view instanceof GPUTextureViewShim)) throw new TypeError('beginRenderPass: the colour attachment has no view');
     const clear = (attachment.loadOp ?? 'clear') === 'load' ? null : colorOf(attachment.clearValue);
@@ -1150,6 +1163,13 @@ export class GPUCommandEncoderShim extends GpuObject {
     if ((texture.usage & GPU_TEXTURE_USAGE.RENDER_ATTACHMENT) === 0) throw new RangeError('OperationError: beginRenderPass: the texture was made without GPUTextureUsage.RENDER_ATTACHMENT');
     if (view.mips !== 1) throw new RangeError('OperationError: beginRenderPass: a colour attachment is one mip level');
     if (view.layers !== 1) throw new RangeError('OperationError: beginRenderPass: a colour attachment is one array layer');
+    // A 3d texture is drawn into one slice of the level, named by depthSlice (the pass's layer).
+    const slice = attachment.depthSlice;
+    if (texture.dimension === '3d') {
+      if (!Number.isInteger(slice) || slice! < 0 || slice! >= texture.depthAt(view.baseMip)) throw new RangeError(`OperationError: beginRenderPass: depthSlice ${String(slice)} of a 3d texture with ${texture.depthAt(view.baseMip)} slices at this level`);
+    } else if (slice !== undefined) {
+      throw new TypeError('OperationError: beginRenderPass: depthSlice is for the view of a 3d texture');
+    }
     const resolveTarget = attachment.resolveTarget;
     let resolve: ColorAttachment['resolve'];
     if (resolveTarget) {
@@ -1157,6 +1177,7 @@ export class GPUCommandEncoderShim extends GpuObject {
       const to = resolveTarget.texture;
       if (texture.sampleCount === 1) throw new TypeError('OperationError: beginRenderPass: a resolve target needs a multisampled colour attachment');
       if (to.canvas !== null) throw this.device.unsupported("a resolve target that is the canvas's texture; resolve into a texture of your own");
+      if (to.dimension === '3d') throw this.device.unsupported('a resolve target that is a 3d texture');
       if (to.destroyed) throw new Error('OperationError: beginRenderPass: the resolve target was destroyed');
       if (to.sampleCount !== 1 || resolveTarget.mips !== 1 || resolveTarget.layers !== 1) throw new TypeError('OperationError: beginRenderPass: the resolve target is one level of a texture of one sample');
       if (to.format !== texture.format || to.extent(resolveTarget.baseMip).width !== texture.width || to.extent(resolveTarget.baseMip).height !== texture.height) {
@@ -1165,7 +1186,7 @@ export class GPUCommandEncoderShim extends GpuObject {
       if ((to.usage & GPU_TEXTURE_USAGE.RENDER_ATTACHMENT) === 0) throw new RangeError('OperationError: beginRenderPass: the resolve target was made without GPUTextureUsage.RENDER_ATTACHMENT');
       resolve = { texture: to, mip: resolveTarget.baseMip, layer: resolveTarget.baseLayer };
     }
-    return { context: null, texture, mip: view.baseMip, layer: view.baseLayer, clear, ...(resolve ? { resolve } : {}) };
+    return { context: null, texture, mip: view.baseMip, layer: texture.dimension === '3d' ? slice! : view.baseLayer, clear, ...(resolve ? { resolve } : {}) };
   }
   /** A pass's `depthStencilAttachment`, checked against the colour attachment it goes with (size and samples). */
   private depthAttachment(a: unknown, color: { width: number; height: number } | null, samples: number | null): Attachment['depth'] {
@@ -1391,7 +1412,7 @@ export class GPUCanvasContextShim {
         for (const [id, value] of s.tables[key] as Map<string, never>) (merged[key] as Map<string, unknown>).set(id, value);
       }
       for (const texture of s.textures) {
-        if (!textures.has(texture)) textures.set(texture, { width: texture.width, height: texture.height, ...(texture.depthOrArrayLayers > 1 ? { layers: texture.depthOrArrayLayers } : {}), mips: texture.mipLevelCount, format: texture.format, ...(texture.sampleCount > 1 ? { samples: texture.sampleCount } : {}) });
+        if (!textures.has(texture)) textures.set(texture, { width: texture.width, height: texture.height, ...(texture.depthOrArrayLayers > 1 ? { layers: texture.depthOrArrayLayers } : {}), ...(texture.dimension === '3d' ? { dimension: '3d' as const } : {}), mips: texture.mipLevelCount, format: texture.format, ...(texture.sampleCount > 1 ? { samples: texture.sampleCount } : {}) });
       }
     }
     const webgpu: WebGpuContent = {
@@ -2023,16 +2044,17 @@ export class GPUDeviceShim extends EventTarget {
         if (info === undefined) throw new TypeError(`createBindGroupLayout: the storage texture format ${String(format)} is not one of ${FORMAT_NAMES}`);
         if (info.storage === 'none') throw new TypeError(`createBindGroupLayout: ${format} cannot be a storage texture (it needs an optional feature)`);
         if (access !== 'write-only' && info.storage !== 'readwrite') throw new TypeError(`createBindGroupLayout: a ${access} storage texture of ${format} needs an optional feature (r32float, r32uint and r32sint have it)`);
-        if ((e.storageTexture.viewDimension ?? '2d') !== '2d') throw this.unsupported(`a storage texture of the view dimension ${e.storageTexture.viewDimension}`);
+        const storageDimension = e.storageTexture.viewDimension ?? '2d';
+        if (storageDimension !== '2d' && storageDimension !== '3d') throw this.unsupported(`a storage texture of the view dimension ${storageDimension}`);
         if (visibility & GPU_SHADER_STAGE.VERTEX) throw new TypeError('createBindGroupLayout: a storage texture is not visible to the vertex stage');
-        entries.push({ binding: e.binding, visibility, type: 'storage-texture', ...(access === 'write-only' ? {} : { access: access as 'read-only' | 'read-write' }), format: format! });
+        entries.push({ binding: e.binding, visibility, type: 'storage-texture', ...(access === 'write-only' ? {} : { access: access as 'read-only' | 'read-write' }), format: format!, ...(storageDimension === '3d' ? { viewDimension: '3d' as const } : {}) });
         continue;
       }
       if (e.texture) {
         const sampleType = e.texture.sampleType ?? 'float';
         if (!['float', 'unfilterable-float', 'sint', 'uint', 'depth'].includes(sampleType)) throw this.unsupported(`a texture binding of the sample type ${sampleType}`);
         const viewDimension = e.texture.viewDimension ?? '2d';
-        if (!['2d', '2d-array', 'cube', 'cube-array'].includes(viewDimension)) throw this.unsupported(`a texture binding of the view dimension ${viewDimension}`);
+        if (!['2d', '2d-array', 'cube', 'cube-array', '3d'].includes(viewDimension)) throw this.unsupported(`a texture binding of the view dimension ${viewDimension}`);
         if (e.texture.multisampled) throw this.unsupported('a multisampled texture binding');
         entries.push({ binding: e.binding, visibility, type: 'texture', ...(sampleType === 'float' ? {} : { sampleType: sampleType as 'unfilterable-float' | 'sint' | 'uint' | 'depth' }), ...(viewDimension === '2d' ? {} : { viewDimension: viewDimension as 'cube' }) });
       } else if (e.sampler) {
@@ -2168,7 +2190,7 @@ export class GPUDeviceShim extends EventTarget {
         }
         if (storage) {
           if (resource.mips !== 1) throw new RangeError(`OperationError: createBindGroup: binding ${e.binding} is a storage texture and its view has ${resource.mips} levels; it takes one`);
-          if (resource.dimension !== '2d') throw new RangeError(`OperationError: createBindGroup: binding ${e.binding} is a storage texture and its view is a ${resource.dimension} view; it takes a 2d one`);
+          if (resource.dimension !== (layoutEntry.viewDimension ?? '2d')) throw new RangeError(`OperationError: createBindGroup: binding ${e.binding} is a storage texture of ${layoutEntry.viewDimension ?? '2d'} view dimension in the layout and its view is a ${resource.dimension} view; it takes a ${layoutEntry.viewDimension ?? '2d'} one`);
           if (layoutEntry.format !== resource.texture.format) throw new TypeError(`createBindGroup: binding ${e.binding} is a storage texture of ${layoutEntry.format} and the view is of a ${resource.texture.format} texture`);
         } else if (layoutEntry?.type === 'texture') {
           if ((layoutEntry.viewDimension ?? '2d') !== resource.dimension) {
@@ -2228,18 +2250,24 @@ export class GPUDeviceShim extends EventTarget {
   }
   createTexture(descriptor: { size: unknown; format: string; usage: number; dimension?: string; mipLevelCount?: number; sampleCount?: number; viewFormats?: Iterable<string>; label?: string }): GPUTextureShim {
     const call = 'createTexture';
-    if ((descriptor.dimension ?? '2d') !== '2d') throw this.unsupported(`a ${descriptor.dimension} texture; only 2D textures are drawn`);
+    const dimension = descriptor.dimension ?? '2d';
+    if (dimension !== '2d' && dimension !== '3d') throw this.unsupported(`a ${dimension} texture; only 2D and 3D textures are drawn`);
     const samples = descriptor.sampleCount ?? 1;
     if (samples !== 1 && samples !== 4) throw new RangeError(`OperationError: createTexture: sampleCount ${samples}; it is 1 or 4`);
     if (descriptor.viewFormats !== undefined && [...descriptor.viewFormats].length > 0) throw this.unsupported('viewFormats on a texture');
     const size = sizeOf(call, descriptor.size);
-    if (size.depth < 1 || size.depth > this.limits.maxTextureArrayLayers!) throw new RangeError(`OperationError: ${call}: ${size.depth} array layers; a texture has 1 to ${this.limits.maxTextureArrayLayers}`);
+    const volume = dimension === '3d';
+    const maxDepth = volume ? this.limits.maxTextureDimension3D! : this.limits.maxTextureArrayLayers!;
+    if (size.depth < 1 || size.depth > maxDepth) throw new RangeError(`OperationError: ${call}: ${size.depth} ${volume ? 'slices' : 'array layers'}; a texture has 1 to ${maxDepth}`);
     const format = descriptor.format;
     if (FORMATS[format] === undefined) throw this.unsupported(`a texture of format ${String(format)}; the formats drawn are ${FORMAT_NAMES}`);
-    const max = this.limits.maxTextureDimension2D!;
+    if (volume && DEPTH_FORMATS.has(format)) throw new TypeError(`OperationError: ${call}: a 3d texture cannot have the depth format ${format}`);
+    if (volume && samples !== 1) throw new RangeError(`OperationError: ${call}: a 3d texture has one sample`);
+    const max = volume ? this.limits.maxTextureDimension3D! : this.limits.maxTextureDimension2D!;
     if (size.width < 1 || size.height < 1 || size.width > max || size.height > max) throw new RangeError(`OperationError: ${call}: ${size.width} x ${size.height}; the sides run from 1 to ${max}`);
     const mips = whole(call, 'mipLevelCount', descriptor.mipLevelCount ?? 1, 1);
-    if (mips > mostMips(size.width, size.height)) throw new RangeError(`OperationError: ${call}: ${mips} mip levels for a ${size.width} x ${size.height} texture (at most ${mostMips(size.width, size.height)})`);
+    const most = mostMips(size.width, size.height, volume ? size.depth : 1);
+    if (mips > most) throw new RangeError(`OperationError: ${call}: ${mips} mip levels for a ${size.width} x ${size.height}${volume ? ` x ${size.depth}` : ''} texture (at most ${most})`);
     const usage = whole(call, 'usage', descriptor.usage, 0);
     if (usage === 0 || usage > 31) throw new RangeError(`OperationError: ${call}: usage ${usage} is not a combination of GPUTextureUsage flags drawn here`);
     if (usage & GPU_TEXTURE_USAGE.STORAGE_BINDING && FORMATS[format]!.storage === 'none') {
@@ -2252,7 +2280,7 @@ export class GPUDeviceShim extends EventTarget {
         throw new TypeError(`OperationError: ${call}: a multisampled texture is a render attachment and has no STORAGE_BINDING`);
       }
     }
-    return new GPUTextureShim(this, null, size.width, size.height, format, usage, mips, descriptor.label, samples, size.depth);
+    return new GPUTextureShim(this, null, size.width, size.height, format, usage, mips, descriptor.label, samples, size.depth, dimension);
   }
   createSampler(descriptor: SamplerDescriptor = {}): GPUSamplerShim {
     const d = descriptor ?? {};

@@ -1152,8 +1152,8 @@ export interface WebGpuBindingLayout {
   format?: string;
   /** Of a `texture`: `float` when left out. */
   sampleType?: 'float' | 'unfilterable-float' | 'sint' | 'uint' | 'depth';
-  /** Of a `texture`: `2d-array`, `cube` or `cube-array` for those bindings; `2d` when left out. */
-  viewDimension?: '2d-array' | 'cube' | 'cube-array';
+  /** Of a `texture`: `2d-array`, `cube`, `cube-array` or `3d` for those bindings; `2d` when left out. Of a `storage-texture`: `3d` or `2d`. */
+  viewDimension?: '2d-array' | 'cube' | 'cube-array' | '3d';
   /** Of a `sampler`: `filtering` when left out. */
   samplerType?: 'filtering' | 'non-filtering' | 'comparison';
 }
@@ -1168,7 +1168,7 @@ export interface WebGpuTextureView {
   /** The array layers of a `2d-array`, `cube` (six) or `cube-array` view; 1 when left out. */
   layers?: number;
   /** `2d-array` for a view of an array, `cube` or `cube-array` for a cube map's six layers; `2d` (one layer) when left out. */
-  dimension?: '2d-array' | 'cube' | 'cube-array';
+  dimension?: '2d-array' | 'cube' | 'cube-array' | '3d';
 }
 
 export type WebGpuBindEntry =
@@ -1186,8 +1186,10 @@ export interface WebGpuBindGroup {
 export interface WebGpuTexture {
   width: number;
   height: number;
-  /** The array layers (`depthOrArrayLayers`); 1 when left out. */
+  /** The array layers (`depthOrArrayLayers`), or the depth of a 3d texture; 1 when left out. */
   layers?: number;
+  /** `3d` for a 3d texture (its layers are slices, halving with each level); a 2d texture when left out. */
+  dimension?: '3d';
   mips: number;
   format: string;
   /** 4 for a multisampled texture (a pass draws into it and resolves it into another); 1 when left out. */

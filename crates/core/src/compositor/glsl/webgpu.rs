@@ -269,7 +269,11 @@ impl Compositor {
                     },
                     mip_level_count: t.mips,
                     sample_count: t.samples,
-                    dimension: wgpu::TextureDimension::D2,
+                    dimension: if t.dimension.is_some() {
+                        wgpu::TextureDimension::D3
+                    } else {
+                        wgpu::TextureDimension::D2
+                    },
                     format,
                     usage,
                     view_formats: &[],
@@ -516,7 +520,12 @@ impl Compositor {
         // The colour attachments: the first, then the others of a pass with several, each with its own clear and resolve.
         let mut colors = Vec::new();
         if let Some(view) = view {
-            colors.push((view, resolve_view, load));
+            let slice = pass.target.as_ref().and_then(|t| {
+                res.textures
+                    .get(t.texture.as_str())
+                    .and_then(|texture| slice_of(texture, t.layer))
+            });
+            colors.push((view, resolve_view, load, slice));
         }
         for m in &pass.more {
             let texture = res
@@ -537,16 +546,16 @@ impl Compositor {
                 Some(c) => wgpu::LoadOp::Clear(color(c)),
                 None => wgpu::LoadOp::Load,
             };
-            colors.push((layer_view(texture, m.mip, m.layer), resolve, load));
+            colors.push((layer_view(texture, m.mip, m.layer), resolve, load, slice_of(texture, m.layer)));
         }
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("webgpu"),
             color_attachments: &colors
                 .iter()
-                .map(|(view, resolve, load)| {
+                .map(|(view, resolve, load, slice)| {
                     Some(wgpu::RenderPassColorAttachment {
                         view,
-                        depth_slice: None,
+                        depth_slice: *slice,
                         resolve_target: resolve.as_ref(),
                         ops: wgpu::Operations {
                             load: *load,
@@ -984,7 +993,7 @@ impl Compositor {
                             .as_deref()
                             .ok_or("a storage texture without a format")?,
                     )?,
-                    view_dimension: wgpu::TextureViewDimension::D2,
+                    view_dimension: view_dimension(e.view_dimension.as_deref())?,
                 },
                 "texture" => wgpu::BindingType::Texture {
                     sample_type: match e.sample_type.as_deref().unwrap_or("float") {
@@ -1408,7 +1417,6 @@ fn texel_info(
     }
 }
 
-/// A 2d view of one level and one array layer of `texture`, which a pass draws into.
 /// A recorded view dimension (none is `2d`).
 fn view_dimension(name: Option<&str>) -> Fail<wgpu::TextureViewDimension> {
     use wgpu::TextureViewDimension as D;
@@ -1417,19 +1425,32 @@ fn view_dimension(name: Option<&str>) -> Fail<wgpu::TextureViewDimension> {
         Some("2d-array") => D::D2Array,
         Some("cube") => D::Cube,
         Some("cube-array") => D::CubeArray,
+        Some("3d") => D::D3,
         Some(other) => return Err(format!("a view of dimension {other}")),
     })
 }
 
+/// A 2d view of one level and one array layer of `texture`, which a pass draws into; of a 3d texture, the view of the
+/// level (the slice is the attachment's `depth_slice`, `slice_of`).
 fn layer_view(texture: &wgpu::Texture, mip: u32, layer: u32) -> wgpu::TextureView {
+    let volume = texture.dimension() == wgpu::TextureDimension::D3;
     texture.create_view(&wgpu::TextureViewDescriptor {
         base_mip_level: mip,
         mip_level_count: Some(1),
-        base_array_layer: layer,
+        base_array_layer: if volume { 0 } else { layer },
         array_layer_count: Some(1),
-        dimension: Some(wgpu::TextureViewDimension::D2),
+        dimension: Some(if volume {
+            wgpu::TextureViewDimension::D3
+        } else {
+            wgpu::TextureViewDimension::D2
+        }),
         ..Default::default()
     })
+}
+
+/// The slice of a 3d texture that a colour attachment draws into (`layer`); none for a 2d texture.
+fn slice_of(texture: &wgpu::Texture, layer: u32) -> Option<u32> {
+    (texture.dimension() == wgpu::TextureDimension::D3).then_some(layer)
 }
 
 fn texture_format(name: &str) -> Fail<wgpu::TextureFormat> {
@@ -1886,6 +1907,7 @@ mod tests {
             width: 4,
             height: 4,
             layers: 1,
+            dimension: None,
             mips: 1,
             format: format.into(),
             samples: 1,

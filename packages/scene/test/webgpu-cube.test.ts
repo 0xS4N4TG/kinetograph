@@ -24,7 +24,7 @@ describe('cube texture views', () => {
     expect(() => faces(device, 12).createView({ dimension: 'cube', arrayLayerCount: 5 })).toThrow(/six layers/);
     expect(() => faces(device, 8).createView({ dimension: 'cube-array' })).toThrow(/multiple of six/);
     expect(() => faces(device, 6, 4, 8).createView({ dimension: 'cube' })).toThrow(/square/);
-    expect(() => faces(device).createView({ dimension: '3d' })).toThrow(WebGpuUnsupportedError);
+    expect(() => faces(device).createView({ dimension: '1d' })).toThrow(WebGpuUnsupportedError);
   });
 
   it('binds a cube view to a cube layout entry and to nothing else, and says so in the recording', async () => {

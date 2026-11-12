@@ -128,3 +128,8 @@ fn webgpu_bundle() {
 fn webgpu_cube() {
     run("webgpu_cube", 1.0);
 }
+
+#[test]
+fn webgpu_volume() {
+    run("webgpu_volume", 1.0);
+}

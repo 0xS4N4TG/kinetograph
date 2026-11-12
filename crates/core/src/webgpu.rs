@@ -272,9 +272,12 @@ fn one() -> u32 {
 pub struct Texture {
     pub width: u32,
     pub height: u32,
-    /// The array layers (`depthOrArrayLayers`).
+    /// The array layers (`depthOrArrayLayers`), or the depth of a `3d` texture.
     #[serde(default = "one")]
     pub layers: u32,
+    /// `3d` for a 3d texture, whose layers are slices that halve with each level; none is a 2d texture.
+    #[serde(default)]
+    pub dimension: Option<String>,
     #[serde(default = "one")]
     pub mips: u32,
     pub format: String,
@@ -848,17 +851,38 @@ pub fn mip_extent(texture: &Texture, level: u32) -> (u32, u32) {
     ((texture.width >> shift).max(1), (texture.height >> shift).max(1))
 }
 
+/// Whether the texture is a 3d one.
+fn is_3d(texture: &Texture) -> bool {
+    texture.dimension.as_deref() == Some("3d")
+}
+
+/// The layers of level `level`: a 3d texture's depth halves with each level, an array's layers stay.
+pub fn mip_layers(texture: &Texture, level: u32) -> u32 {
+    if is_3d(texture) { (texture.layers >> level.min(31)).max(1) } else { texture.layers }
+}
+
+/// The most a side of a 3d texture may be (the WebGPU default limit, which every device here has).
+const MAX_DIMENSION_3D: u32 = 2048;
+
 /// What a texture holds with all its levels and layers, if it is a texture the device makes: a known format, sides from 1
 /// to `max_dim`, at least one layer, and a level count the size allows. Overflow is an error, not a wrap.
 pub fn texture_bytes(texture: &Texture, max_dim: u32) -> Result<u64, String> {
     let bytes = texel_bytes(&texture.format).ok_or_else(|| format!("a texture of format {}; the formats drawn are {TEXTURE_FORMATS}", texture.format))?;
+    let volume = is_3d(texture);
+    if texture.dimension.is_some() && !volume {
+        return Err(format!("a texture of dimension {}; the dimensions drawn are 2d and 3d", texture.dimension.as_deref().unwrap_or("")));
+    }
+    let max_dim = if volume { MAX_DIMENSION_3D } else { max_dim };
     if texture.width == 0 || texture.height == 0 || texture.width > max_dim || texture.height > max_dim {
         return Err(format!("a {} x {} texture; the sides run from 1 to {max_dim}", texture.width, texture.height));
     }
     if texture.layers == 0 {
         return Err("a texture with no array layers".into());
     }
-    let most = max_mips(texture.width, texture.height);
+    if volume && (texture.layers > MAX_DIMENSION_3D || texture.samples != 1 || format_info(&texture.format).is_some_and(|f| f.sample == Sample::Depth)) {
+        return Err(format!("a 3d texture of depth {}, {} samples and format {}; it has up to {MAX_DIMENSION_3D} slices, one sample and a colour format", texture.layers, texture.samples, texture.format));
+    }
+    let most = max_mips(texture.width, texture.height).max(if volume { max_mips(texture.layers, 1) } else { 0 });
     if texture.mips == 0 || texture.mips > most {
         return Err(format!("{} mip levels for a {} x {} texture (at most {most})", texture.mips, texture.width, texture.height));
     }
@@ -868,10 +892,11 @@ pub fn texture_bytes(texture: &Texture, max_dim: u32) -> Result<u64, String> {
         let level_bytes = u64::from(w)
             .checked_mul(u64::from(h))
             .and_then(|n| n.checked_mul(bytes))
+            .and_then(|n| n.checked_mul(u64::from(if volume { mip_layers(texture, level) } else { 1 })))
             .ok_or("a texture's size overflows")?;
         total = total.checked_add(level_bytes).ok_or("a texture's size overflows")?;
     }
-    total.checked_mul(u64::from(texture.layers)).ok_or_else(|| "a texture's size overflows".into())
+    if volume { Ok(total) } else { total.checked_mul(u64::from(texture.layers)).ok_or_else(|| "a texture's size overflows".into()) }
 }
 
 /// Whether the rectangle `x`, `y`, `width` x `height` lies inside a picture of `bounds`, without overflow.
@@ -912,10 +937,12 @@ fn level_of(texture: &Texture, id: &str, level: u32) -> Result<(u32, u32), Strin
 
 /// A level and a layer of the texture: the extent of the level.
 fn subresource_of(texture: &Texture, id: &str, level: u32, layer: u32) -> Result<(u32, u32), String> {
-    if layer >= texture.layers {
-        return Err(format!("array layer {layer} of the texture {id}, which has {}", texture.layers));
+    let extent = level_of(texture, id, level)?;
+    let layers = mip_layers(texture, level);
+    if layer >= layers {
+        return Err(format!("array layer {layer} of the texture {id}, which has {layers} at this level"));
     }
-    level_of(texture, id, level)
+    Ok(extent)
 }
 
 /// A view of the texture: its levels are the texture's.
@@ -932,7 +959,12 @@ fn view_of(content: &WebGpuContent, view: &TextureView) -> Result<(), String> {
     if view.layers == 0 || layer_end > texture.layers {
         return Err(format!("a view of the layers {}..{layer_end} of the texture {}, which has {}", view.base_layer, view.id, texture.layers));
     }
+    if is_3d(texture) != (view.dimension.as_deref() == Some("3d")) {
+        return Err(format!("a {} view of the {} texture {}", view.dimension.as_deref().unwrap_or("2d"), if is_3d(texture) { "3d" } else { "2d" }, view.id));
+    }
     match view.dimension.as_deref() {
+        Some("3d") if view.base_layer != 0 || view.layers != 1 => Err(format!("a 3d view of the texture {} at layer {} of {}; it has baseLayer 0 and one layer", view.id, view.base_layer, view.layers)),
+        Some("3d") => Ok(()),
         None if view.layers != 1 => Err(format!("a 2d view of {} layers of the texture {}; a 2d view has one", view.layers, view.id)),
         None | Some("2d-array") => Ok(()),
         Some("cube") if view.layers != 6 => Err(format!("a cube view of {} layers of the texture {}; a cube has six", view.layers, view.id)),
@@ -1010,7 +1042,7 @@ pub fn validate_with(content: &WebGpuContent, limits: &Limits) -> Result<(), Str
         if texture.samples != 1 && (texture.samples != 4 || texture.mips != 1) {
             return Err(format!("texture {id}: {} samples and {} levels; a texture has 1 sample, or 4 and one level", texture.samples, texture.mips));
         }
-        if texture.layers > limits.max_texture_array_layers {
+        if !is_3d(texture) && texture.layers > limits.max_texture_array_layers {
             return Err(format!("texture {id}: {} array layers; the device allows {}", texture.layers, limits.max_texture_array_layers));
         }
         if texture.samples != 1 && texture.layers != 1 {
@@ -1083,9 +1115,12 @@ fn layout_checks(id: &str, layout: &[BindingLayout], limits: &Limits) -> Result<
         match e.ty.as_str() {
             "uniform" | "read-only-storage" | "sampler" => {}
             "texture" => {
-                if !matches!(e.view_dimension.as_deref(), None | Some("2d" | "2d-array" | "cube" | "cube-array")) {
+                if !matches!(e.view_dimension.as_deref(), None | Some("2d" | "2d-array" | "cube" | "cube-array" | "3d")) {
                     return Err(format!("layout {id}: binding {} is a texture of view dimension {}", e.binding, e.view_dimension.as_deref().unwrap_or("")));
                 }
+            }
+            "storage-texture" if !matches!(e.view_dimension.as_deref(), None | Some("2d" | "3d")) => {
+                return Err(format!("layout {id}: binding {} is a storage texture of view dimension {}", e.binding, e.view_dimension.as_deref().unwrap_or("")));
             }
             "storage" => {
                 if e.visibility & 1 != 0 {
@@ -1203,8 +1238,9 @@ fn group_checks(content: &WebGpuContent, id: &str, group: &BindGroup, limits: &L
                     if view.mips != 1 {
                         return Err(format!("bind group {id}: binding {} is a storage texture and its view has {} levels; it takes one", entry.binding, view.mips));
                     }
-                    if view.dimension.is_some() {
-                        return Err(format!("bind group {id}: binding {} is a storage texture and its view is a 2d-array view; it takes a 2d one", entry.binding));
+                    let (want, have) = (l.view_dimension.as_deref().unwrap_or("2d"), view.dimension.as_deref().unwrap_or("2d"));
+                    if want != have {
+                        return Err(format!("bind group {id}: binding {} is a {want} storage texture in the layout and the view is a {have} view", entry.binding));
                     }
                     if l.format.as_deref() != Some(texture.format.as_str()) {
                         return Err(format!("bind group {id}: binding {} is a storage texture of {} in the layout and the view is of a {} texture", entry.binding, l.format.as_deref().unwrap_or("?"), texture.format));
@@ -1528,6 +1564,7 @@ mod tests {
             width,
             height,
             layers: 1,
+            dimension: None,
             mips,
             format: format.into(),
             samples: 1,
