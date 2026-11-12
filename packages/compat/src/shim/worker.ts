@@ -355,6 +355,18 @@ const PAGE_ONLY = [
   'process', 'Buffer', 'require', 'module', 'exports', '__dirname', '__filename', 'global',
 ] as const;
 
+/** The language's own globals: a script that tests `globalThis.Math == Math` to find the global object (Closure's `$jscomp.getGlobal`) reads them off the scope. */
+const LANGUAGE_GLOBALS = [
+  'Object', 'Function', 'Array', 'Number', 'parseFloat', 'parseInt', 'Infinity', 'NaN', 'undefined', 'Boolean', 'String', 'Symbol', 'Date', 'Promise', 'RegExp',
+  'Error', 'AggregateError', 'EvalError', 'RangeError', 'ReferenceError', 'SyntaxError', 'TypeError', 'URIError', 'JSON', 'Math', 'Intl', 'ArrayBuffer',
+  'Atomics', 'Uint8Array', 'Int8Array', 'Uint16Array', 'Int16Array', 'Uint32Array', 'Int32Array', 'Float32Array', 'Float64Array', 'Uint8ClampedArray',
+  'BigUint64Array', 'BigInt64Array', 'DataView', 'Map', 'BigInt', 'Set', 'WeakMap', 'WeakSet', 'Proxy', 'Reflect', 'FinalizationRegistry', 'WeakRef',
+  'decodeURI', 'decodeURIComponent', 'encodeURI', 'encodeURIComponent', 'escape', 'unescape', 'eval', 'isFinite', 'isNaN', 'console', 'SharedArrayBuffer',
+  'WebAssembly', 'TextEncoder', 'TextDecoder', 'URL', 'URLSearchParams', 'AbortController', 'AbortSignal', 'Blob', 'structuredClone', 'queueMicrotask',
+  'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'atob', 'btoa', 'performance', 'crypto', 'Event', 'EventTarget', 'MessageChannel', 'MessagePort',
+  'MessageEvent', 'ErrorEvent', 'DOMException', 'Headers', 'Request', 'Response', 'FormData', 'ImageData', 'OffscreenCanvas',
+] as const;
+
 const UNSCOPABLE = Object.fromEntries(
   ['constructor', 'toString', 'toLocaleString', 'valueOf', 'hasOwnProperty', 'isPrototypeOf', 'propertyIsEnumerable', '__proto__', '__defineGetter__', '__defineSetter__', '__lookupGetter__', '__lookupSetter__'].map((n) => [n, true]),
 );
@@ -501,6 +513,8 @@ export class WorkerShim extends Target {
       scope.dispatchEvent(own);
       if (!own.defaultPrevented) this.fail(error);
     };
+    // What a global object has as properties (a free name falls through to the real global anyway).
+    for (const key of LANGUAGE_GLOBALS) if (key in globalThis) define(key, (globalThis as unknown as Record<string, unknown>)[key]);
     for (const key of PAGE_ONLY) define(key, undefined);
     define(Symbol.unscopables, UNSCOPABLE);
     define('self', scope);
