@@ -18,6 +18,7 @@ import {
   collectMotionLayers,
   collectMotionTimes,
   type AudioClipJson,
+  type PageAudioOp,
   type LayerJson,
   type SceneJson,
   type SequenceJson,
@@ -37,13 +38,17 @@ import { isRemotionPage, resolveComposition, setInputProps, type ResolvedComposi
 import { realTimers, resetVirtualClock, runAnimationFrames, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 import { endGsapSamples, gsapIsLoaded, sampleGsapAt, setGsapTime } from './gsap-clock.js';
+import { pageAudioNotes, takePageAudioOps } from './page-audio.js';
 import { takePageErrors } from './page-errors.js';
 import { frameReplay, type FrameReplay } from './frame-replay.js';
-import { clearReportedUnsupported, reportedUnsupported, setReportIsRead } from './unsupported.js';
+import { clearReportedUnsupported, reportedUnsupported, reportUnsupported, setReportIsRead } from './unsupported.js';
+import { takeMediaIssues } from '@kinetographdev/compat/shim';
 
 export interface FrameResult {
   scene: SceneJson;
   audio: AudioClipJson[];
+  /** What the page did with its `AudioContext` since the last frame returned (the calls of the frames it played on the way too). */
+  pageAudio: PageAudioOp[];
   /** Every `<Sequence>` in the frame's tree, showing or not (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §11.4). */
   sequences: SequenceJson[];
   /** Layer id to name and source; studio builds only. */
@@ -210,6 +215,10 @@ class Renderer implements FrameRenderer {
     }
     setHistoryMode({ record: false });
     // What components that draw through a canvas left out, as the frame's own render reported it.
+    // A video or audio element the engine cannot play as asked (an unreadable file, a rate below 0) or a capture it refuses.
+    for (const what of takeMediaIssues()) reportUnsupported('page', 'media', what, 'the page asked for something media elements cannot do here; it is drawn without');
+    // What the page's audio used that the mix cannot do (page-audio.ts), said on every frame.
+    for (const item of pageAudioNotes()) reportUnsupported('audio', item.property, item.value, item.reason);
     const reported = reportedUnsupported();
     // The motion-blur sub-frames render the composition again; fonts or data they ask for are awaited too.
     const times = collectMotionTimes(main.layers, frame);
@@ -258,7 +267,7 @@ class Renderer implements FrameRenderer {
     // The scene's margin is the largest of the composition's and what the DOM islands' blurs need.
     const needed = Math.max(margin ?? 0, main.margin ?? 0);
     if (margin !== undefined || needed > 0) sceneJson.margin = needed;
-    return { scene: sceneJson, audio: main.audio, sequences: main.sequences, ...(main.names !== undefined ? { names: main.names } : {}), unsupported: [...main.unsupported, ...reported, ...takePageErrors()] };
+    return { scene: sceneJson, audio: main.audio, pageAudio: takePageAudioOps(), sequences: main.sequences, ...(main.names !== undefined ? { names: main.names } : {}), unsupported: [...main.unsupported, ...reported, ...takePageErrors()] };
   }
 
   /** Renders `element`; a canvas redrawn by it starts from a new canvas's state (see `resetCanvasStates`). */
