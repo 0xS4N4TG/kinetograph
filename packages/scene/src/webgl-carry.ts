@@ -60,6 +60,32 @@ interface Write {
   key: string;
   /** Every texel of it is written, whatever it held. */
   whole: boolean;
+  /** The rectangle (x, y, width, height) of the level that every texel of is written, when `whole` is not shown but a scissored clear does it. */
+  box?: Rect;
+  /** The rectangle the op may write inside (its scissor and viewport); not set when that is not known, which is the whole level. */
+  extent?: Rect;
+}
+
+type Rect = [number, number, number, number];
+
+/** The rectangles of the clears a context made with the scissor test on (a draw of a quad over the scissor box), by the op. */
+const clearBoxes = new WeakMap<GlslOp, Rect>();
+
+/** Notes that `op` is a clear of `box` (colour with every channel written, depth or stencil), which overwrites all of it. */
+export function noteClearBox(op: GlslOp, box: Rect): void {
+  clearBoxes.set(op, box);
+}
+
+const insideRect = (a: Rect, b: Rect): boolean => a[0] >= b[0] && a[1] >= b[1] && a[0] + a[2] <= b[0] + b[2] && a[1] + a[3] <= b[1] + b[3];
+
+/** The rectangle a draw writes inside: the part of its viewport that its scissor box leaves. */
+function extentOf(op: GlslOp): Rect | undefined {
+  if (op.op !== 'draw' || op.scissor === undefined) return undefined;
+  const [vx, vy, vw, vh] = op.viewport;
+  const [sx, sy, sw, sh] = op.scissor;
+  const x0 = Math.max(vx, sx), y0 = Math.max(vy, sy);
+  const x1 = Math.min(vx + vw, sx + sw), y1 = Math.min(vy + vh, sy + sh);
+  return x1 > x0 && y1 > y0 ? [x0, y0, x1 - x0, y1 - y0] : [0, 0, 0, 0];
 }
 
 
@@ -237,13 +263,16 @@ function writesOf(op: GlslOp, res: Resources): Write[] {
       whole = op.aspect === undefined && op.scissor === undefined && size !== null && Math.min(x0, x1) <= 0 && Math.min(y0, y1) <= 0 && Math.max(x0, x1) >= size[0] && Math.max(y0, y1) >= size[1];
     } else if (op.op === 'upload') whole = size !== null && op.x <= 0 && op.y <= 0 && op.x + op.width >= size[0] && op.y + op.height >= size[1];
     else whole = size !== null && overwrites(op, size, res);
-    out.push({ id: target, key: `${target}@${level}`, whole });
+    const box = clearBoxes.get(op);
+    out.push({ id: target, key: `${target}@${level}`, whole, ...(box !== undefined && op.op === 'draw' && (op.colorMask ?? [true]).every(Boolean) ? { box } : {}), ...(extentOf(op) !== undefined ? { extent: extentOf(op)! } : {}) });
   }
   const buffer = depthStencilOf(op);
   if (buffer !== undefined) {
     const kind = res.textures.get(buffer)?.format;
     const whole = op.op === 'clear' && (kind === 'depth' ? op.depth !== undefined : kind === 'stencil' ? op.stencil !== undefined : op.depth !== undefined && op.stencil !== undefined);
-    out.push({ id: buffer, key: `${buffer}@ds`, whole });
+    const box = clearBoxes.get(op);
+    const boxed = op.op === 'draw' && (kind === 'depth' ? op.depth !== undefined : kind === 'stencil' ? op.stencil !== undefined : op.depth !== undefined && op.stencil !== undefined);
+    out.push({ id: buffer, key: `${buffer}@ds`, whole, ...(box !== undefined && boxed ? { box } : {}), ...(extentOf(op) !== undefined ? { extent: extentOf(op)! } : {}) });
   }
   return out;
 }
@@ -291,13 +320,16 @@ export function carryOn(carried: GlslOp[], done: GlslOp[], res: Resources): { op
   const ops = [...carried, ...fresh];
   // Walking back: a part is dead from the op that overwrites all of it until an op that reads it.
   const dead = new Set<string>();
+  // The rectangles a scissored clear overwrote, which kill an older op that wrote only inside one of them (a page that clears and
+  // draws inside the same scissor box each frame holds no more than the last frame's ops).
+  const deadBoxes = new Map<string, Rect[]>();
   const counts = new Map<string, number>();
   const lost = new Set<string>();
   const keep: GlslOp[] = [];
   for (let i = ops.length - 1; i >= 0; i--) {
     const op = ops[i]!;
     const writes = writesOf(op, res);
-    if (writes.length > 0 && writes.every((w) => dead.has(w.key))) continue;
+    if (writes.length > 0 && writes.every((w) => dead.has(w.key) || (w.extent !== undefined && (deadBoxes.get(w.key) ?? []).some((box) => insideRect(w.extent!, box))))) continue;
     const owners = [...new Set(writes.map((w) => w.id))];
     if (owners.some((id) => (counts.get(id) ?? 0) >= MAX_OPS_PER_TARGET)) {
       for (const id of owners) lost.add(id);
@@ -305,8 +337,14 @@ export function carryOn(carried: GlslOp[], done: GlslOp[], res: Resources): { op
     }
     for (const id of owners) counts.set(id, (counts.get(id) ?? 0) + 1);
     keep.push(op);
-    for (const w of writes) if (w.whole) dead.add(w.key);
-    for (const read of readsOf(op, res.textures)) for (const key of [...dead]) if (takes(read, key)) dead.delete(key);
+    for (const w of writes) {
+      if (w.whole) dead.add(w.key);
+      else if (w.box !== undefined) deadBoxes.set(w.key, [...(deadBoxes.get(w.key) ?? []), w.box]);
+    }
+    for (const read of readsOf(op, res.textures)) {
+      for (const key of [...dead]) if (takes(read, key)) dead.delete(key);
+      for (const key of [...deadBoxes.keys()]) if (takes(read, key)) deadBoxes.delete(key);
+    }
   }
   const kept = new Set(keep);
   return { ops: keep.reverse(), lost: [...lost], last: new Set(fresh.filter((op) => kept.has(op))) };

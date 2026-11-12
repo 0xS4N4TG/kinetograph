@@ -117,6 +117,12 @@ describe('the worker scope', () => {
     expect(second).toEqual(['timer', 'function', 'function', 'function']);
   });
 
+  it('looks like a browser worker to a script that asks where it runs: no Node globals, and a global object that holds the language', async () => {
+    writeFileSync(join(dir, 'where.js'), 'postMessage({ node: typeof process, load: typeof require, buffer: typeof Buffer, math: globalThis.Math === Math, self: self === globalThis });');
+    const worker = new Worker('where.js');
+    expect(await collect(worker)).toEqual([{ node: 'undefined', load: 'undefined', buffer: 'undefined', math: true, self: true }]);
+  });
+
   it('importScripts runs a project file in the same scope', async () => {
     writeFileSync(join(dir, 'lib.js'), 'self.answer = 41;');
     const worker = new Worker(URL.createObjectURL(new Blob(['importScripts("lib.js"); postMessage(self.answer + 1);'])));

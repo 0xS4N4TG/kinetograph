@@ -359,6 +359,9 @@ const PAGE_ONLY = [
   'window', 'document', 'parent', 'top', 'frames', 'opener', 'localStorage', 'sessionStorage', 'history', 'screen', 'innerWidth',
   'innerHeight', 'outerWidth', 'outerHeight', 'devicePixelRatio', 'matchMedia', 'getComputedStyle', 'visualViewport', 'customElements',
   'requestAnimationFrame', 'cancelAnimationFrame', 'HTMLElement', 'Element', 'Node', 'Image',
+  // Node's own globals: a browser worker has none, and a script that looks for them to learn where it runs (an Emscripten
+  // module's `typeof process`) would take the Node path and `require('fs')`.
+  'process', 'Buffer', 'require', 'module', 'exports', '__dirname', '__filename', 'global',
 ] as const;
 
 /**
@@ -532,7 +535,7 @@ export class WorkerShim extends Target {
     };
     for (const key of PAGE_ONLY) define(key, undefined);
     define('self', scope);
-    define('globalThis', scope);
+    // `globalThis` is the context's own global, which holds the language's globals and stands for the scope.
     define('name', name);
     define('postMessage', (message: unknown, options?: unknown): void => {
       const { value, ports } = cloneMessage(message, transferOf(options));

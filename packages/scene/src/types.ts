@@ -872,10 +872,13 @@ export interface GlslTexture {
   targets?: string[];
 }
 
-/** One face of a cube map: a picture file, a `data:` URL or base64 RGBA8 (straight alpha, `width * width * 4` bytes). */
+/** One face of a cube map: a picture file, a `data:` URL, base64 RGBA8 (straight alpha, `width * width * 4` bytes) or floats. */
 export interface GlslFace {
   src?: string;
   pixels?: string;
+  /** Instead of a picture or pixels: float texels (`RGBA16F`, `RGBA32F`, ...), base64 little-endian `f32`s, four for each, kept as half floats or in full with `float32`. */
+  floats?: string;
+  float32?: boolean;
   flipY?: boolean;
   premultiply?: boolean;
 }
