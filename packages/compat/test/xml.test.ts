@@ -3,7 +3,7 @@ import { installDomGlobals } from '../src/shim/index.js';
 
 installDomGlobals();
 
-const parse = (text: string, type = 'application/xml'): any => new DOMParser().parseFromString(text, type);
+const parse = (text: string, type = 'application/xml'): any => new DOMParser().parseFromString(text, type as DOMParserSupportedType);
 
 const COLLADA =
   '<?xml version="1.0" encoding="utf-8"?><COLLADA version="1.4.1"><asset><up_axis>Z_UP</up_axis></asset>' +
