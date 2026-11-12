@@ -214,6 +214,8 @@ struct Replay<'a> {
     /// The GL names of the textures and buffers of the context's cache this frame uses: they are not deleted with the frame.
     kept: std::collections::HashSet<u32>,
     framebuffers: Vec<u32>,
+    /// The framebuffers this frame made, by the attachments they hold, so a run of draws into one set of targets binds one.
+    by_attachments: HashMap<String, u32>,
     vao: u32,
     canvas: Canvas,
 }
@@ -324,6 +326,7 @@ fn run(
         const_attrs: u32::MAX,
         kept: std::collections::HashSet::new(),
         framebuffers: Vec::new(),
+        by_attachments: HashMap::new(),
         vao: gl_.gen_vertex_array(),
         canvas: Canvas {
             fbo: 0,
@@ -968,6 +971,11 @@ impl<'a> Replay<'a> {
             gl_.draw_buffers(&[gl::COLOR_ATTACHMENT0]);
             return Ok(());
         }
+        let key = format!("{:?}|{:?}", dest.colors(), dest.depth_stencil);
+        if let Some(&fbo) = self.by_attachments.get(&key) {
+            gl_.bind_framebuffer(gl::FRAMEBUFFER, fbo);
+            return Ok(());
+        }
         let fbo = gl_.gen_framebuffer();
         self.framebuffers.push(fbo);
         gl_.bind_framebuffer(gl::FRAMEBUFFER, fbo);
@@ -990,7 +998,9 @@ impl<'a> Replay<'a> {
             self.attach(ds_attachment(ds), h, 0);
         }
         gl_.draw_buffers(&draw);
-        self.complete(gl::FRAMEBUFFER, "the destination")
+        self.complete(gl::FRAMEBUFFER, "the destination")?;
+        self.by_attachments.insert(key, fbo);
+        Ok(())
     }
 
     fn attach(&self, point: Enum, h: Handle, level: u32) {
@@ -1103,6 +1113,11 @@ impl<'a> Replay<'a> {
         .enumerate()
         {
             let Some(id) = id else { continue };
+            let key = format!("blit|{id}|{level}|{aspect:?}");
+            if let Some(&fbo) = self.by_attachments.get(&key) {
+                sides[side] = fbo;
+                continue;
+            }
             let fbo = gl_.gen_framebuffer();
             self.framebuffers.push(fbo);
             gl_.bind_framebuffer(gl::FRAMEBUFFER, fbo);
@@ -1119,6 +1134,7 @@ impl<'a> Replay<'a> {
                     gl_.draw_buffers(&[gl::NONE]);
                 }
             }
+            self.by_attachments.insert(key, fbo);
             sides[side] = fbo;
         }
         gl_.bind_framebuffer(gl::READ_FRAMEBUFFER, sides[0]);
