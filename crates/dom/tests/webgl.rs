@@ -66,7 +66,10 @@ fn run(name: &str, mean_limit: f64) -> Option<(f64, u8)> {
         "{name}: unsupported {:?}",
         out.unsupported
     );
-    paintkit::check_golden(name, &frame);
+    // The goldens are the hand-written replay's bytes; ANGLE is held to Chrome's picture only.
+    if std::env::var("KINETOGRAPH_WEBGL").as_deref() != Ok("angle") {
+        paintkit::check_golden(name, &frame);
+    }
     println!("{name}: {diff:?}");
     if let Some(d) = diff {
         assert!(d.mean < mean_limit, "{name}: {d:?}");

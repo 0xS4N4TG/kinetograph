@@ -1861,6 +1861,7 @@ dependencies = [
  "half",
  "image",
  "kurbo",
+ "libloading 0.8.9",
  "lyon_tessellation",
  "naga",
  "objc2",

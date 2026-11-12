@@ -348,6 +348,8 @@ impl Compositor {
                 })
                 .collect();
             self.webgpu_draw(content, webgpu, size, base_dir, &textures);
+        } else if crate::angle::enabled() {
+            self.glsl_draw_angle(content, size, base_dir, &inputs)?;
         } else {
             self.glsl_draw(content, size, base_dir, &inputs)?;
         }
@@ -484,11 +486,50 @@ impl Compositor {
                 dimension: wgpu::TextureDimension::D2,
                 format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });
             self.glsl.target = Some(Target::colour(texture, size, format));
         }
+    }
+
+    /// `glsl_draw` with ANGLE drawing (`KINETOGRAPH_WEBGL=angle`): the recording is replayed into an ANGLE context, and
+    /// its RGBA8 rows are written into the drawing buffer the rest of the compositor places on the canvas.
+    fn glsl_draw_angle(
+        &mut self,
+        content: &GlslContent,
+        size: (u32, u32),
+        base_dir: &Path,
+        inputs: &Inputs,
+    ) -> Result<()> {
+        if !inputs.is_empty() {
+            return Err(render_error("unsupported: ANGLE does not replay group layers yet"));
+        }
+        self.drawing_buffer(size, wgpu::TextureFormat::Rgba8Unorm);
+        self.glsl.msaa_on = false;
+        let rgba = crate::angle_replay::replay(content, size, base_dir).map_err(render_error)?;
+        let target = self.glsl.target.as_ref().expect("made above");
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &target._texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(size.0 * 4),
+                rows_per_image: Some(size.1),
+            },
+            wgpu::Extent3d {
+                width: size.0,
+                height: size.1,
+                depth_or_array_layers: 1,
+            },
+        );
+        Ok(())
     }
 
     /// Whether the drawing buffer is multisampled: the context asked for `antialias` and no blit writes the drawing
