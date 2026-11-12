@@ -428,6 +428,7 @@ export class GPURenderPipelineShim extends GpuObject {
     readonly descriptor: WebGpuPipeline,
     readonly modules: GPUShaderModuleShim[],
     readonly layouts: GPUBindGroupLayoutShim[] | null,
+    readonly device: GPUDeviceShim,
   ) {
     super('');
     this.id = `p${hashOf(JSON.stringify(descriptor))}`;
@@ -462,6 +463,7 @@ export class GPUComputePipelineShim extends GpuObject {
     readonly module: GPUShaderModuleShim,
     readonly layouts: GPUBindGroupLayoutShim[] | null,
     readonly workgroupSize: [number, number, number] | null,
+    readonly device: GPUDeviceShim,
   ) {
     super('');
     this.id = `c${hashOf(JSON.stringify(descriptor))}`;
@@ -1376,6 +1378,8 @@ export class GPUCanvasContextShim {
   configure(configuration: { device: GPUDeviceShim; format?: string; alphaMode?: string; colorSpace?: string; toneMapping?: unknown; usage?: number; viewFormats?: unknown }): void {
     const { device } = configuration;
     if (!(device instanceof GPUDeviceShim)) throw new TypeError("configure: 'device' is not a GPUDevice");
+    // From here the device holds the frame's errors, so that a configuration it refuses is reported with the frame.
+    this.drawnBy = device;
     const format = configuration.format;
     if (typeof format !== 'string' || !CANVAS_FORMATS.has(format)) throw new TypeError(`configure: the format ${String(format)} is not a canvas format`);
     const colorSpace = configuration.colorSpace ?? 'srgb';
@@ -1384,7 +1388,6 @@ export class GPUCanvasContextShim {
     const toneMapping = (configuration.toneMapping as { mode?: string } | undefined)?.mode ?? 'standard';
     if (toneMapping === 'extended' && format === 'rgba16float') device.note('canvas toneMapping extended (drawn as standard: values above 1 are clipped, the video being SDR)');
     this.device = device;
-    this.drawnBy = device;
     this.format = format;
     this.colorSpace = colorSpace;
     this.alphaMode = configuration.alphaMode ?? 'opaque';
@@ -1652,10 +1655,10 @@ export class GPUDeviceShim extends EventTarget {
     this.notes.add(what);
   }
   /** An error one of the device's checks is about to throw: kept for the frame's report and for the open error scope. */
-  invalid(error: unknown): void {
+  invalid(error: unknown): boolean {
     const message = error instanceof Error ? error.message : String(error);
     if (this.errors.size < MAX_ERRORS) this.errors.add(message);
-    this.scopes.capture(message);
+    return this.scopes.capture(message);
   }
   unsupported(what: string): WebGpuUnsupportedError {
     this.note(what);
@@ -2210,7 +2213,7 @@ export class GPUDeviceShim extends EventTarget {
       };
       if (descriptor.fragment.entryPoint !== undefined) pipeline.fragment.entryPoint = descriptor.fragment.entryPoint;
     }
-    return new GPURenderPipelineShim(pipeline, modules, layouts);
+    return new GPURenderPipelineShim(pipeline, modules, layouts, this);
   }
   createRenderPipelineAsync(descriptor: Parameters<GPUDeviceShim['createRenderPipeline']>[0]): Promise<GPURenderPipelineShim> {
     try {
@@ -2378,7 +2381,7 @@ export class GPUDeviceShim extends EventTarget {
     const pipeline: WebGpuComputePipeline = { module: stage.module.id };
     if (stage.entryPoint !== undefined) pipeline.entryPoint = stage.entryPoint;
     if (layout !== null) pipeline.layout = layout.layouts.map((x) => x.id);
-    return new GPUComputePipelineShim(pipeline, stage.module, layout === null ? null : layout.layouts, size);
+    return new GPUComputePipelineShim(pipeline, stage.module, layout === null ? null : layout.layouts, size, this);
   }
   createComputePipelineAsync(descriptor: Parameters<GPUDeviceShim['createComputePipeline']>[0]): Promise<GPUComputePipelineShim> {
     try {
@@ -2471,11 +2474,15 @@ for (const [cls, deviceOf] of [
   [GPURenderPassEncoderShim, (self: GPURenderPassEncoderShim) => (self as unknown as { encoder: GPUCommandEncoderShim }).encoder.device],
   [RenderCommands, (self: RenderCommands) => self.device],
   [GPURenderBundleEncoderShim, (self: GPURenderBundleEncoderShim) => self.device],
+  [GPURenderPipelineShim, (self: GPURenderPipelineShim) => self.device],
+  [GPUComputePipelineShim, (self: GPUComputePipelineShim) => self.device],
+  [GPUCanvasContextShim, (self: GPUCanvasContextShim, args: unknown[]) => self.getConfiguration()?.device ?? ((args[0] as { device?: unknown } | undefined)?.device instanceof GPUDeviceShim ? (args[0] as { device: GPUDeviceShim }).device : null)],
   [GPUComputePassEncoderShim, (self: GPUComputePassEncoderShim) => (self as unknown as { encoder: GPUCommandEncoderShim }).encoder.device],
   [GPUTextureShim, (self: GPUTextureShim) => self.device],
   [GPUBufferShim, (self: GPUBufferShim) => (self as unknown as { device: GPUDeviceShim }).device],
 ] as const) {
-  reporting(cls as { prototype: object }, deviceOf as never, (error) => error instanceof WebGpuUnsupportedError);
+  // The canvas context's other methods are the renderer's, not the page's: only these two are the page's calls.
+  reporting(cls as { prototype: object }, deviceOf as never, (error) => error instanceof WebGpuUnsupportedError, cls === GPUCanvasContextShim ? ['configure', 'getCurrentTexture'] : undefined);
 }
 
 // The interfaces a page names (`x instanceof GPUTexture`, `GPUDevice.prototype`), under the WebGPU names.
