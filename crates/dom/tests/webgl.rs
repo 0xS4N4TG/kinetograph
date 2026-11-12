@@ -166,9 +166,13 @@ fn webgl2_divisor2() {
 /// The cases of what `gl_FrontFacing` does (the hand-written replay does not follow `frontFace` with culling off, so these
 /// run with `KINETOGRAPH_WEBGL=angle` only).
 fn angle_only(name: &str) {
-    if std::env::var("KINETOGRAPH_WEBGL").as_deref() == Ok("angle") {
+    if angle_mode() {
         run(name, 1.0);
     }
+}
+
+fn angle_mode() -> bool {
+    std::env::var("KINETOGRAPH_WEBGL").as_deref() == Ok("angle")
 }
 
 #[test]
@@ -421,4 +425,24 @@ fn an_extension_a_page_enabled_does_not_reach_the_next_page() {
     assert_eq!(after[0], alone[1]);
     // The extension makes a difference to this case, or the test proves nothing.
     assert_ne!(after[0], after[1], "the case draws the same with and without the extension");
+}
+
+/// A draw ANGLE rejects fails the frame with an error that names the op and its program, instead of drawing nothing.
+#[test]
+fn a_draw_angle_rejects_is_an_error_naming_the_op() {
+    if !angle_mode() {
+        return;
+    }
+    let (body, w, h) = body_of("webgl_gradient");
+    // Far more vertices than the buffers hold: WebGL validation refuses the draw.
+    let bad = body.replace("\"count\":6,", "\"count\":6000,");
+    assert_ne!(bad, body, "the case has no draw of 6 vertices");
+    let failure = std::panic::catch_unwind(|| paintkit::render_body(&bad, w, h)).err();
+    let failure = failure.expect("a rejected draw must fail the frame");
+    let text = failure
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| failure.downcast_ref::<&str>().map(|s| (*s).to_string()))
+        .unwrap_or_default();
+    assert!(text.contains("draw, program") && text.contains("GL error"), "{text}");
 }

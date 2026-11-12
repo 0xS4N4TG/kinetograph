@@ -1038,6 +1038,13 @@ fn create(ext: Extensions) -> Result<Context, String> {
     if ext.float_linear {
         gl.request_extension("GL_OES_texture_float_linear");
     }
+    // Asking for an extension this context cannot give leaves an error pending, which would be taken for the first
+    // draw's: the context starts with none.
+    for _ in 0..8 {
+        if gl.get_error() == 0 {
+            break;
+        }
+    }
     Ok(Context {
         gl,
         display,

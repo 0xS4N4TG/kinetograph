@@ -214,9 +214,7 @@ fn run(
     ext: angle::Extensions,
 ) -> R<Vec<u8>> {
     gl_.pixel_storei(0xCF5, 1); // UNPACK_ALIGNMENT
-    if std::env::var_os("KINETOGRAPH_ANGLE_DEBUG").is_some() {
-        gl_.enable(0x92E0); // DEBUG_OUTPUT
-    }
+    gl_.enable(0x92E0); // DEBUG_OUTPUT: the log names the rule a failed call broke
     let mut replay = Replay {
         gl: gl_,
         content,
@@ -256,14 +254,25 @@ impl<'a> Replay<'a> {
         let gl_ = self.gl;
         self.make_canvas();
         gl_.bind_vertex_array(self.vao);
-        let debug = std::env::var_os("KINETOGRAPH_ANGLE_DEBUG").is_some();
         let started = std::time::Instant::now();
         for (i, op) in self.content.ops.iter().enumerate() {
+            let what = || match op {
+                GlslOp::Clear { .. } => format!("op {i} (clear)"),
+                GlslOp::Draw(d) => format!("op {i} (draw, program {})", d.program),
+                GlslOp::Blit(_) => format!("op {i} (blit)"),
+                GlslOp::Upload(_) => format!("op {i} (texSubImage2D)"),
+            };
             match op {
-                GlslOp::Clear { .. } => self.clear(op)?,
-                GlslOp::Draw(d) => self.draw(d)?,
-                GlslOp::Blit(b) => self.blit(b)?,
-                GlslOp::Upload(u) => self.upload(u)?,
+                GlslOp::Clear { .. } => self.clear(op),
+                GlslOp::Draw(d) => self.draw(d),
+                GlslOp::Blit(b) => self.blit(b),
+                GlslOp::Upload(u) => self.upload(u),
+            }
+            .map_err(|e| format!("{}: {e}", what()))?;
+            // A call ANGLE rejects draws nothing: say so, with the op, instead of leaving a picture that is quietly wrong.
+            let errors = self.drain_errors();
+            if !errors.is_empty() {
+                return Err(format!("{}: {errors}", what()));
             }
             // `KINETOGRAPH_ANGLE_DUMP=<op>:<path>`: the colour attachment the op wrote, as a PPM, for finding which
             // op goes wrong.
@@ -284,12 +293,6 @@ impl<'a> Replay<'a> {
                 let mut ppm = format!("P6\n{w} {h}\n255\n").into_bytes();
                 ppm.extend(px.chunks(4).flat_map(|p| [p[0], p[1], p[2]]));
                 let _ = std::fs::write(path, ppm);
-            }
-            if debug {
-                let e = gl_.get_error();
-                if e != 0 {
-                    eprintln!("angle: op {i}: GL error 0x{e:x}");
-                }
             }
         }
         let timing = std::env::var_os("KINETOGRAPH_ANGLE_TIME").is_some();
@@ -326,6 +329,38 @@ impl<'a> Replay<'a> {
             );
         }
         Ok(flipped)
+    }
+
+    /// Every GL error pending, as text with the messages ANGLE logged for them (empty when there is none).
+    fn drain_errors(&self) -> String {
+        let mut codes = Vec::new();
+        loop {
+            let e = self.gl.get_error();
+            if e == 0 || codes.len() >= 8 {
+                break;
+            }
+            codes.push(format!("0x{e:x}"));
+        }
+        if codes.is_empty() {
+            return String::new();
+        }
+        let mut text = format!("GL error {}", codes.join(", "));
+        for m in self.gl.debug_messages() {
+            text.push_str(&format!("; {m}"));
+        }
+        text
+    }
+
+    /// An error when the framebuffer bound to `binding` cannot be drawn into or read.
+    fn complete(&self, binding: Enum, what: &str) -> R<()> {
+        let status = self.gl.check_framebuffer_status(binding);
+        if status == gl::FRAMEBUFFER_COMPLETE {
+            Ok(())
+        } else {
+            Err(format!(
+                "{what} framebuffer is incomplete (status 0x{status:x})"
+            ))
+        }
     }
 
     fn make_canvas(&mut self) {
@@ -758,7 +793,7 @@ impl<'a> Replay<'a> {
             self.attach(ds_attachment(ds), h, 0);
         }
         gl_.draw_buffers(&draw);
-        Ok(())
+        self.complete(gl::FRAMEBUFFER, "the destination")
     }
 
     fn attach(&self, point: Enum, h: Handle, level: u32) {
@@ -918,6 +953,8 @@ impl<'a> Replay<'a> {
         let filter = if b.linear { 0x2601 } else { gl::NEAREST };
         let [x0, y0, x1, y1] = b.from;
         let [u0, v0, u1, v1] = b.to;
+        self.complete(gl::READ_FRAMEBUFFER, "the blit's read")?;
+        self.complete(gl::DRAW_FRAMEBUFFER, "the blit's draw")?;
         gl_.blit_framebuffer(x0, y0, x1, y1, u0, v0, u1, v1, mask, filter);
         Ok(())
     }
@@ -951,7 +988,7 @@ impl<'a> Replay<'a> {
         // Uniforms.
         for (name, calls) in &d.uniforms {
             for call in calls {
-                set_uniform(gl_, &program, name, call);
+                set_uniform(gl_, &program, name, call)?;
             }
         }
         for (slot, (block, range)) in d.blocks.iter().enumerate() {
@@ -1236,9 +1273,10 @@ fn toggle(gl_: &Gl, cap: Enum, on: bool) {
 }
 
 /// One `uniform*` call: the GL type of the uniform says how many components and which function.
-fn set_uniform(gl_: &Gl, program: &Program, name: &str, call: &rec::GlslUniform) {
+fn set_uniform(gl_: &Gl, program: &Program, name: &str, call: &rec::GlslUniform) -> R<()> {
     let Some(&(_, ty)) = program.uniforms.get(name) else {
-        return;
+        // Not active: the shader does not use it (a driver drops it), which GL allows.
+        return Ok(());
     };
     let location = {
         let indexed = format!("{name}[{}]", call.index);
@@ -1251,7 +1289,7 @@ fn set_uniform(gl_: &Gl, program: &Program, name: &str, call: &rec::GlslUniform)
         }
     };
     if location < 0 {
-        return;
+        return Ok(());
     }
     let f: Vec<f32> = call.value.iter().map(|v| *v as f32).collect();
     let i: Vec<i32> = call.value.iter().map(|v| *v as i32).collect();
@@ -1280,6 +1318,7 @@ fn set_uniform(gl_: &Gl, program: &Program, name: &str, call: &rec::GlslUniform)
         0x8B6A => gl_.uniform_matrix(location, 8, 12, &f),
         // Samplers: the texture unit.
         0x8B5E..=0x8B62 | 0x8DC1..=0x8DD7 => gl_.uniform_i(location, 1, &i),
-        _ => {}
+        _ => return Err(format!("unsupported: uniform {name} of GL type 0x{ty:x}")),
     }
+    Ok(())
 }
