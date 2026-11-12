@@ -69,6 +69,10 @@ let hooks: Hooks | null = null;
 let gpu: Any = null;
 let patched = false;
 const devices = new Set<Any>();
+/** The order devices were made in, and the number of the last (a rewind is exact when the page makes a new one: `noteDawnRewind`). */
+const deviceOrder = new WeakMap<object, number>();
+let deviceCount = 0;
+let rewindAt: number | null = null;
 const reports = new Set<string>();
 
 function report(what: string): void {
@@ -77,6 +81,7 @@ function report(what: string): void {
 
 /** What the library's devices and the canvases made since the last call report, each once (read with the WebGL reports). */
 export function takeDawnReports(): string[] {
+  settleRewind();
   const out = [...reports];
   reports.clear();
   return out;
@@ -200,6 +205,7 @@ function fixedAdapter(real: Any): Any {
 /** An uncaptured error and a lost device are the frame's warnings. */
 function watch(device: Any): void {
   devices.add(device);
+  deviceOrder.set(device, ++deviceCount);
   device.addEventListener('uncapturederror', (event: Any) => {
     const error = event.error;
     report(`${error?.constructor?.name ?? 'GPUError'}: ${String(error?.message ?? error).split('\n')[0]!.slice(0, 300)}`);
@@ -227,13 +233,25 @@ export function releaseDawn(): void {
 }
 
 /**
- * The frame loop goes back to an earlier frame. A page's own state (its script's variables, its devices) cannot be
- * rewound in this process, so a page whose GPU state carries from frame to frame (`webgpu-dawn-carry.ts`) shows the
- * state of the frames it already drew: said with the frame. Rendering forward (a sequence, a worker's chunk, a jump
- * ahead, in which the page's callbacks run for every skipped frame) is exact.
+ * The frame loop goes back to an earlier frame: it starts the composition over (a new React tree, which runs its effects and so
+ * makes its devices again) and replays the frames before it. That is exact when the page makes a new device after the restart:
+ * its GPU state starts from nothing, as a render from frame 0 does, and the devices before it are kept until `releaseDawn`. A page whose script
+ * ran once (an HTML page's module script) keeps its device and its variables, which cannot be rewound in this process: when its
+ * GPU state carries from frame to frame (`webgpu-dawn-carry.ts`) the frame shows the state of the frames already drawn, said
+ * with the frame (an error under `--strict`). A page whose state does not carry (most) is exact either way.
  */
 export function noteDawnRewind(): void {
-  if (carryDepends()) report('a jump back to an earlier frame on a page whose GPU state carries from frame to frame (a feedback texture, a storage buffer a pass advances) shows the state of the frames already drawn; render forward, or start a new process, for that frame');
+  rewindAt = deviceCount;
+}
+
+/** The end of a frame: a rewind is settled by whether the page made a new device since it (the devices before it are kept to `releaseDawn`: a page may still use one). */
+function settleRewind(): void {
+  if (rewindAt === null) return;
+  const was = rewindAt;
+  rewindAt = null;
+  if (carryDepends() && deviceCount === was) {
+    report('a jump back to an earlier frame on a page whose GPU state carries from frame to frame (a feedback texture, a storage buffer a pass advances) and whose script does not run again (an HTML page) shows the state of the frames already drawn; render forward, or start a new process, for that frame');
+  }
 }
 
 /** Whether a frame read what an earlier frame wrote (a feedback texture, a storage buffer a pass advances). */
