@@ -1387,9 +1387,17 @@ export class DomElement extends DomNodeBase {
     return out;
   }
   private probeFile(file: string): { width: number; height: number; durationInSeconds: number } | null {
-    if (!hasAddonFunction('probeMedia')) return null;
+    if (hasAddonFunction('probeMedia')) {
+      try {
+        return addonFunction('probeMedia')(file);
+      } catch {
+        // No picture to read: an `<audio>` plays a sound file, whose length the container's header gives.
+      }
+    }
+    if (this.host.type !== 'audio' || !hasAddonFunction('probeStreams')) return null;
     try {
-      return addonFunction('probeMedia')(file);
+      const seconds = addonFunction('probeStreams')(file).durationInSeconds;
+      return typeof seconds === 'number' && seconds > 0 ? { width: 0, height: 0, durationInSeconds: seconds } : null;
     } catch {
       return null;
     }

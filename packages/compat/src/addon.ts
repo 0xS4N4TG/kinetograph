@@ -32,6 +32,8 @@ export interface DomAddon {
   domIslandEdits?(): number;
   /** A video's or GIF's header (`probeMedia` of the addon), for `<video>` load events and `duration`. */
   probeMedia?(path: string, baseDir?: string): { width: number; height: number; durationInSeconds: number };
+  /** Any container's header (`probeStreams` of the addon): an audio file's duration, which `probeMedia` (a picture's size) refuses. */
+  probeStreams?(path: string, baseDir?: string): { durationInSeconds?: number | null };
   /** The text engine, for the size of native text in an island and of a canvas's `measureText`. */
   layoutText?(request: unknown): { width: number; height: number; lines?: { top: number; bottom: number; baseline: number }[] };
   /** A canvas's commands drawn on a transparent canvas: `{ width, height, commands, fonts, baseDir, format }` as JSON in, straight-alpha RGBA (`format: "rgba"`) or a PNG out. Needs the GPU. */
