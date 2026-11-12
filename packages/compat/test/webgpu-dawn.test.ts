@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
 import { carryDepends, carryNeedsReplay, resetCarry } from '../src/shim/webgpu-dawn-carry.js';
 import { hasAddonFunction } from '../src/addon.js';
-import { DAWN_FEATURES, DAWN_LIMITS, DawnCanvasContext, createDawnScope, dawnCommandsOf, dawnGlobals, dawnReadCommands, duringAnimationFrames, enterDawnScope, flushDawnCanvases, installDawn, releaseDawn, setDawnClock, takeDawnReports } from '../src/shim/webgpu-dawn.js';
+import { DAWN_FEATURES, DAWN_LIMITS, DawnCanvasContext, createDawnScope, dawnCommandsOf, dawnGlobals, dawnReadCommands, duringAnimationFrames, enterDawnScope, flushDawnCanvases, installDawn, noteDawnRewind, releaseDawn, setDawnClock, takeDawnReports } from '../src/shim/webgpu-dawn.js';
 
 const missing = ((): string | null => {
   const spec = process.env.KINETOGRAPH_DAWN_MODULE;
@@ -205,6 +205,66 @@ describe.skipIf(missing !== null)('WebGPU through Dawn', () => {
       clock.mockRestore();
       device.destroy();
     }
+  });
+
+  it('says a jump back shows old state unless every device that carried state was made again', async () => {
+    const scope = createDawnScope();
+    const leave = enterDawnScope(scope);
+    const clock = engineClock();
+    const open = async () => (await gpu.requestAdapter()).requestDevice();
+    const module = (device: any) => device.createShaderModule({ code: '@group(0) @binding(0) var<storage, read_write> b: array<f32>; @compute @workgroup_size(1) fn main() { b[0] = b[0] + 1.0; }' });
+    /** A compute device with a particle buffer a pass advances in place: its state carries. */
+    const particles = async () => {
+      const device = await open();
+      const buffer = device.createBuffer({ size: 16, usage: g.GPUBufferUsage.STORAGE | g.GPUBufferUsage.COPY_DST });
+      const pipeline = device.createComputePipeline({ layout: 'auto', compute: { module: module(device), entryPoint: 'main' } });
+      const group = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer } }] });
+      return (at: number): void => {
+        clock.mockReturnValue(at);
+        const encoder = device.createCommandEncoder();
+        const pass = encoder.beginComputePass();
+        pass.setPipeline(pipeline); pass.setBindGroup(0, group); pass.dispatchWorkgroups(1); pass.end();
+        device.queue.submit([encoder.finish()]);
+      };
+    };
+    /** A render device the page makes at each mount: it writes a texture every frame and carries nothing. */
+    const render = async () => {
+      const device = await open();
+      const target = device.createTexture({ size: [4, 4], format: 'rgba8unorm', usage: g.GPUTextureUsage.RENDER_ATTACHMENT });
+      return (at: number): void => {
+        clock.mockReturnValue(at);
+        const encoder = device.createCommandEncoder();
+        encoder.beginRenderPass({ colorAttachments: [{ view: target.createView(), loadOp: 'clear', storeOp: 'store' }] }).end();
+        device.queue.submit([encoder.finish()]);
+      };
+    };
+    takeDawnReports();
+    // A compute device made once (module scope) and a render device made per mount: the frames before the rewind carry state in the first.
+    resetCarry();
+    const computeOnce = await particles();
+    const renderFirst = await render();
+    for (const at of [0, 33, 66]) { computeOnce(at); renderFirst(at); }
+    expect(carryDepends()).toBe(true);
+    // The rewind starts the composition over: the render device is made again, the compute device is the same one, which holds frame 66's particles.
+    noteDawnRewind();
+    const renderAgain = await render();
+    clock.mockReturnValue(0);
+    renderAgain(0);
+    computeOnce(10);
+    expect(takeDawnReports().join('\n')).toMatch(/a jump back to an earlier frame on a page whose GPU state carries/);
+    // Every device that carried made again: nothing to say.
+    noteDawnRewind();
+    const computeAgain = await particles();
+    const renderThird = await render();
+    for (const at of [0, 33]) { computeAgain(at); renderThird(at); }
+    expect(takeDawnReports()).toEqual([]);
+    // A device that carried and is not used after the rewind (the page dropped it) is not either.
+    noteDawnRewind();
+    (await render())(0);
+    expect(takeDawnReports()).toEqual([]);
+    clock.mockRestore();
+    leave();
+    releaseDawn(scope);
   });
 
   it('reads a canvas back as the same bytes each time, and a frame that is not drawn has no picture', async () => {

@@ -47,6 +47,8 @@ interface State {
 }
 
 const states = new WeakMap<object, State>();
+/** The device that made a texture or a buffer. */
+const owners = new WeakMap<object, object>();
 const views = new WeakMap<object, Any>();
 const groups = new WeakMap<object, { buffers: Any[]; textures: Any[] }>();
 const computePasses = new WeakSet<object>();
@@ -67,9 +69,17 @@ export interface Carry {
   /** The last rule above: a frame read what an earlier frame wrote and wrote a resource that held something. Not part of `flagged`: a static page with a shadow map is one. */
   predicted: boolean;
   predictedOutside: boolean;
+  /** The devices whose resources carried state (a rule above flagged one). */
+  carriers: Set<object>;
+  /** After a rewind (`beginRewind`): the devices that carried before it, and the devices any resource used since it belongs to; null when none is open. */
+  rewindCarriers: Set<object> | null;
+  used: Set<object>;
 }
 
-export const newCarry = (): Carry => ({ flagged: false, flaggedOutside: false, staleReadAt: -Infinity, carryWriteAt: -Infinity, predicted: false, predictedOutside: false });
+export const newCarry = (): Carry => ({
+  flagged: false, flaggedOutside: false, staleReadAt: -Infinity, carryWriteAt: -Infinity, predicted: false, predictedOutside: false,
+  carriers: new Set(), rewindCarriers: null, used: new Set(),
+});
 
 /** The carry state of the renderer whose frame is being rendered. */
 let c: Carry = newCarry();
@@ -112,10 +122,11 @@ function stateOf(resource: Any): State {
 
 function read(resource: Any): void {
   if (paused > 0 || resource == null || typeof resource !== 'object') return;
+  if (c.rewindCarriers !== null) noteUse(resource);
   const state = stateOf(resource);
   if (state.written === -Infinity) {
     if (writable(resource)) {
-      if (state.born < now()) flag();
+      if (state.born < now()) flag(resource);
       state.readEmpty = Math.min(state.readEmpty, now());
     }
   } else if (state.written < now()) {
@@ -130,8 +141,9 @@ function read(resource: Any): void {
  */
 function write(resource: Any, gpu = false, exempt = false): void {
   if (paused > 0 || resource == null || typeof resource !== 'object') return;
+  if (c.rewindCarriers !== null) noteUse(resource);
   const state = stateOf(resource);
-  if (state.stale || state.readEmpty < now()) flag();
+  if (state.stale || state.readEmpty < now()) flag(resource);
   if (gpu && !exempt && ((state.written < now() && state.written !== -Infinity) || (state.written === -Infinity && state.born === now()))) noteCarryWrite();
   state.written = now();
   state.fromCpu = !gpu;
@@ -161,12 +173,38 @@ export function startsCleared(resource: Any): void {
   stateOf(resource).written = now();
 }
 
-function flag(): void {
+function flag(resource: Any): void {
   c.flagged = true;
   if (inCallbacks === 0) c.flaggedOutside = true;
+  const device = owners.get(resource);
+  if (device !== undefined) c.carriers.add(device);
 }
 
-/** Whether a frame read what an earlier frame wrote (by any page code: a jump back cannot rewind it, `noteDawnRewind`). */
+function noteUse(resource: Any): void {
+  const device = owners.get(resource);
+  if (device !== undefined) c.used.add(device);
+}
+
+/** The frame loop goes back to an earlier frame: what uses a device that carried state from here on is seen (`stillCarries`). */
+export function beginRewind(): void {
+  c.rewindCarriers = new Set(c.carriers);
+  c.used = new Set();
+}
+
+/**
+ * Whether, since `beginRewind`, the page used a device that carried state before it. Starting the composition over is exact for a device
+ * the page made again (its state starts from nothing, as a render from frame 0 does), not for one it kept (a device made once, at module
+ * scope) whichever other devices it made: that one still holds what the frames before the rewind left.
+ */
+export function stillCarries(): boolean {
+  const before = c.rewindCarriers;
+  c.rewindCarriers = null;
+  if (before === null) return false;
+  for (const device of before) if (c.used.has(device)) return true;
+  return false;
+}
+
+/** Whether a frame read what an earlier frame wrote (by any page code: a jump back cannot rewind it, `beginRewind`). */
 export function carryDepends(): boolean {
   return c.flagged;
 }
@@ -219,7 +257,8 @@ export function trackCarry(g: Record<string, Any>, clock: () => number): void {
     const original = proto[name];
     Object.defineProperty(proto, name, { value: function (this: Any, ...args: Any[]) { const result = original.apply(this, args); after.call(this, result, args); return result; }, writable: true, configurable: true });
   };
-  wrapResult(g.GPUDevice.prototype, 'createTexture', (texture) => {
+  wrapResult(g.GPUDevice.prototype, 'createTexture', function (texture) {
+    owners.set(texture, this);
     stateOf(texture).born = now();
   });
   wrapResult(g.GPUTexture.prototype, 'createView', function (view) { views.set(view, this); });
@@ -234,7 +273,8 @@ export function trackCarry(g: Record<string, Any>, clock: () => number): void {
     }
     groups.set(group, { buffers, textures });
   });
-  wrapResult(g.GPUDevice.prototype, 'createBuffer', (buffer, [descriptor]) => {
+  wrapResult(g.GPUDevice.prototype, 'createBuffer', function (buffer, [descriptor]) {
+    owners.set(buffer, this);
     stateOf(buffer).born = now();
     if (descriptor?.mappedAtCreation) write(buffer);
   });
@@ -244,6 +284,8 @@ export function trackCarry(g: Record<string, Any>, clock: () => number): void {
     if (occlusionResults.has(this) && paused === 0) {
       c.flagged = true;
       c.flaggedOutside = true;
+      const device = owners.get(this);
+      if (device !== undefined) c.carriers.add(device);
     }
   });
   const noteDepthTest = (pipeline: Any, descriptor: Any): void => {

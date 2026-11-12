@@ -18,7 +18,7 @@ import { threadId } from 'node:worker_threads';
 import { CANVAS_SOURCE, type CanvasCommand, type CanvasSource } from '@kinetographdev/scene';
 import { addonFunction, hasAddonFunction } from '../addon.js';
 import { lap, stamp } from '../profile.js';
-import { newCarry, trackCarry, carryDepends, carryNeedsReplay, startsCleared, untracked, useCarry, type Carry } from './webgpu-dawn-carry.js';
+import { beginRewind, newCarry, trackCarry, carryNeedsReplay, startsCleared, stillCarries, untracked, useCarry, type Carry } from './webgpu-dawn-carry.js';
 
 export { duringAnimationFrames } from './webgpu-dawn-carry.js';
 
@@ -79,9 +79,8 @@ let patched = false;
  */
 export class DawnScope {
   readonly devices = new Set<Any>();
-  /** The number of devices made, and what a rewind started at (a rewind is exact when the page makes a new one: `noteDawnRewind`). */
-  deviceCount = 0;
-  rewindAt: number | null = null;
+  /** A rewind (`noteDawnRewind`) has not been settled yet. */
+  rewinding = false;
   readonly reports = new Set<string>();
   readonly contexts = new Set<WeakRef<DawnCanvasContext>>();
   /** The keys of the pictures the addon holds for these canvases, which `releaseDawn` lets go (a frame is drawn some frames after it is made: not before). */
@@ -253,7 +252,6 @@ function fixedAdapter(real: Any): Any {
 /** An uncaptured error and a lost device are the frame's warnings. */
 function watch(device: Any, owner: DawnScope): void {
   owner.devices.add(device);
-  owner.deviceCount++;
   device.addEventListener('uncapturederror', (event: Any) => {
     const error = event.error;
     report(owner, `${error?.constructor?.name ?? 'GPUError'}: ${String(error?.message ?? error).split('\n')[0]!.slice(0, 300)}`);
@@ -283,29 +281,29 @@ export function releaseDawn(owner: DawnScope = scope): void {
   if (hasAddonFunction('releaseCanvasPixels')) for (const key of owner.keys) addonFunction('releaseCanvasPixels')(key);
   owner.keys.clear();
   owner.reports.clear();
-  owner.rewindAt = null;
+  owner.rewinding = false;
   Object.assign(owner.carry, newCarry());
 }
 
 /**
  * The frame loop goes back to an earlier frame: it starts the composition over (a new React tree, which runs its effects and so
- * makes its devices again) and replays the frames before it. That is exact when the page makes a new device after the restart:
- * its GPU state starts from nothing, as a render from frame 0 does, and the devices before it are kept until `releaseDawn`. A page whose script
- * ran once (an HTML page's module script) keeps its device and its variables, which cannot be rewound in this process: when its
- * GPU state carries from frame to frame (`webgpu-dawn-carry.ts`) the frame shows the state of the frames already drawn, said
+ * makes the devices of a mount again) and replays the frames before it. That is exact for a device the page made again: its GPU state
+ * starts from nothing, as a render from frame 0 does. A device the page kept (an HTML page's module script ran once, or a project made
+ * a device at module scope) keeps what the frames already drawn left in it, and a rewind cannot undo that: when the frame uses
+ * such a device whose state carried from frame to frame (`webgpu-dawn-carry.ts`) it shows the state of the frames already drawn, said
  * with the frame (an error under `--strict`). A page whose state does not carry (most) is exact either way.
  */
 export function noteDawnRewind(): void {
-  scope.rewindAt = scope.deviceCount;
+  scope.rewinding = true;
+  beginRewind();
 }
 
-/** The end of a frame: a rewind is settled by whether the page made a new device since it (the devices before it are kept to `releaseDawn`: a page may still use one). */
+/** The end of a frame: a rewind is settled by whether the frame used a device that had carried state before it (the devices before it are kept to `releaseDawn`: a page may still use one). */
 function settleRewind(): void {
-  if (scope.rewindAt === null) return;
-  const was = scope.rewindAt;
-  scope.rewindAt = null;
-  if (carryDepends() && scope.deviceCount === was) {
-    report(scope, 'a jump back to an earlier frame on a page whose GPU state carries from frame to frame (a feedback texture, a storage buffer a pass advances) and whose script does not run again (an HTML page) shows the state of the frames already drawn; render forward, or start a new process, for that frame');
+  if (!scope.rewinding) return;
+  scope.rewinding = false;
+  if (stillCarries()) {
+    report(scope, 'a jump back to an earlier frame on a page whose GPU state carries from frame to frame (a feedback texture, a storage buffer a pass advances) in a device the page keeps when its script runs again (an HTML page, or a device made at module scope) shows the state of the frames already drawn; render forward, or start a new process, for that frame');
   }
 }
 
