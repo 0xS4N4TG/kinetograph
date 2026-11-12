@@ -1226,6 +1226,8 @@ export interface WebGpuPass {
   clear: [number, number, number, number] | null;
   /** The depth attachment: a level of a depth texture the same size as the target, cleared to `clear` (null: `loadOp: 'load'`). */
   depth?: { texture: string; mip: number; clear: number | null; readOnly?: boolean };
+  /** A pass with no colour attachment (no `target`, and not the canvas): it only writes `depth`. */
+  depthOnly?: true;
   commands: WebGpuCommand[];
 }
 

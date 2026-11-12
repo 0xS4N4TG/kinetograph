@@ -816,6 +816,9 @@ page carries from frame to frame; the frame is then drawn from the replayed hist
 format against the layout's `sampleType` or storage format, one level for a storage texture), layout (storage formats and
 access, stages, counts against the limits) and dispatch (each dimension; at most 4096 dispatches and 2^26 workgroups in a
 frame), and `check_with` reads the workgroup size of each compute entry point with naga; the page side throws for the same.
+A render pass with no colour attachment is a `render` step with `depthOnly: true` and no `target` (without the flag a pass with no
+target is the canvas's), and a depth texture may be the whole-level source and destination of `copyTextureToTexture`, so a
+shadow map is made by a depth-only pass, copied, and read by a comparison sampler.
 Query sets (`webgpu-queries.ts`) are accepted and measure nothing: `createQuerySet`, `timestampWrites`, occlusion queries and
 `writeTimestamp` record no step, and `resolveQuerySet` writes zeros into its destination (a `clearBuffer` step), because a
 timestamp is never the clock and a frame is a function of its calls. `timestamp-query` is offered whatever the device has:

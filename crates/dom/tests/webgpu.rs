@@ -83,3 +83,8 @@ fn webgpu_offscreen() {
 fn webgpu_queries() {
     run("webgpu_queries", 1.0);
 }
+
+#[test]
+fn webgpu_shadow() {
+    run("webgpu_shadow", 1.5);
+}

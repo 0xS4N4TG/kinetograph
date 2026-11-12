@@ -633,6 +633,8 @@ interface Attachment {
   resolve?: { texture: GPUTextureShim; mip: number };
   /** The depth attachment: a level of a depth texture, cleared to `clear` (null: loaded). */
   depth?: { texture: GPUTextureShim; mip: number; clear: number | null; readOnly: boolean };
+  /** A pass with no colour attachment: only `depth` is drawn into. */
+  depthOnly?: true;
 }
 
 type PassCommand =
@@ -674,15 +676,19 @@ export class GPURenderPassEncoderShim extends GpuObject {
   }
   setPipeline(pipeline: GPURenderPipelineShim): void {
     const texture = this.attachment.texture;
+    const depth = this.attachment.depth;
     const target = pipeline.descriptor.fragment?.targets[0];
+    if (this.attachment.depthOnly && pipeline.descriptor.fragment?.targets.some((t) => t !== null)) {
+      throw new RangeError('OperationError: setPipeline: the pipeline draws colour and the pass has no colour attachment');
+    }
     if (texture !== null && target && target.format !== texture.format) {
       throw new RangeError(`OperationError: setPipeline: the pipeline draws ${target.format} and the pass draws into a ${texture.format} texture`);
     }
-    if ((pipeline.descriptor.samples ?? 1) !== (texture?.sampleCount ?? 1)) {
-      throw new RangeError(`OperationError: setPipeline: the pipeline has ${pipeline.descriptor.samples ?? 1} samples and the pass draws into ${texture?.sampleCount ?? 1}`);
+    const samples = texture?.sampleCount ?? depth?.texture.sampleCount ?? 1;
+    if ((pipeline.descriptor.samples ?? 1) !== samples) {
+      throw new RangeError(`OperationError: setPipeline: the pipeline has ${pipeline.descriptor.samples ?? 1} samples and the pass draws into ${samples}`);
     }
     const state = pipeline.descriptor.depth;
-    const depth = this.attachment.depth;
     if ((state?.format ?? null) !== (depth?.texture.format ?? null)) {
       throw new RangeError(`OperationError: setPipeline: the pipeline has ${state ? `a ${state.format} depth state` : 'no depth state'} and the pass has ${depth ? `a ${depth.texture.format} depth attachment` : 'no depth attachment'}`);
     }
@@ -725,7 +731,8 @@ export class GPURenderPassEncoderShim extends GpuObject {
     this.add({ c: 'viewport', x, y, width, height, minDepth, maxDepth });
   }
   setScissorRect(x: number, y: number, width: number, height: number): void {
-    const bounds = this.attachment.texture === null ? null : this.attachment.texture.extent(this.attachment.mip);
+    const { texture, depth, depthOnly } = this.attachment;
+    const bounds = depthOnly ? depth!.texture.extent(depth!.mip) : texture === null ? null : texture.extent(this.attachment.mip);
     if (bounds !== null) rectIn('setScissorRect', 'rectangle', bounds, whole('setScissorRect', 'x', x), whole('setScissorRect', 'y', y), whole('setScissorRect', 'width', width), whole('setScissorRect', 'height', height));
     this.add({ c: 'scissor', x, y, width, height });
   }
@@ -906,20 +913,25 @@ function colorOf(value: unknown): [number, number, number, number] {
 }
 
 /** `{ texture, mipLevel, origin }` of a copy, checked against the texture. */
-function regionOf(call: string, what: string, info: { texture: GPUTextureShim; mipLevel?: number; origin?: unknown; aspect?: string }, width: number, height: number, depth: number, usage: number, usageName: string): TextureRegion {
+function regionOf(call: string, what: string, info: { texture: GPUTextureShim; mipLevel?: number; origin?: unknown; aspect?: string }, width: number, height: number, depth: number, usage: number, usageName: string, depthFormat = false): TextureRegion {
   const texture = info?.texture;
   if (!(texture instanceof GPUTextureShim)) throw new TypeError(`${call}: ${what} texture is not a GPUTexture`);
   if (texture.canvas !== null) throw texture.device.unsupported(`${call} with the canvas's texture`);
   if (texture.destroyed) throw new Error(`OperationError: ${call}: the ${what} texture was destroyed`);
   if (texture.sampleCount > 1) throw new RangeError(`OperationError: ${call}: the ${what} texture is multisampled; resolve it into a texture first`);
-  if (DEPTH_FORMATS.has(texture.format)) throw texture.device.unsupported(`${call} with the ${texture.format} ${what} texture; a depth texture is written by a render pass`);
+  const isDepth = DEPTH_FORMATS.has(texture.format);
+  if (isDepth && !depthFormat) throw texture.device.unsupported(`${call} with the ${texture.format} ${what} texture; a depth texture is written by a render pass or copied from another`);
   if ((texture.usage & usage) === 0) throw new RangeError(`OperationError: ${call}: the ${what} texture was made without GPUTextureUsage.${usageName}`);
-  if (info.aspect !== undefined && info.aspect !== 'all') throw texture.device.unsupported(`${call} of the aspect ${info.aspect}`);
+  if (info.aspect !== undefined && info.aspect !== 'all' && !(isDepth && info.aspect === 'depth-only')) throw texture.device.unsupported(`${call} of the aspect ${info.aspect}`);
   const mip = whole(call, 'mipLevel', info.mipLevel ?? 0, 0);
   if (mip >= texture.mipLevelCount) throw new RangeError(`OperationError: ${call}: mip level ${mip} of a texture with ${texture.mipLevelCount}`);
   const origin = originOf(call, info.origin);
   if (origin.z + depth > 1) throw new RangeError(`OperationError: ${call}: a 2D texture has one layer`);
-  rectIn(call, `${what} rectangle`, texture.extent(mip), origin.x, origin.y, width, height);
+  const extent = texture.extent(mip);
+  rectIn(call, `${what} rectangle`, extent, origin.x, origin.y, width, height);
+  if (isDepth && (origin.x !== 0 || origin.y !== 0 || width !== extent.width || height !== extent.height)) {
+    throw new RangeError(`OperationError: ${call}: a copy of a depth texture covers the whole of the level (${extent.width} x ${extent.height} from 0, 0)`);
+  }
   return { texture, mip, x: origin.x, y: origin.y };
 }
 
@@ -939,10 +951,15 @@ export class GPUCommandEncoderShim extends GpuObject {
     timestampWrites?: unknown;
   }): GPURenderPassEncoderShim {
     const attachments = (descriptor.colorAttachments ?? []).filter((a) => a !== null && a !== undefined);
-    if (attachments.length !== 1) throw this.device.unsupported(`a render pass with ${attachments.length} colour attachments; one, the canvas's texture or a 2D texture, is drawn`);
+    if (attachments.length > 1) throw this.device.unsupported(`a render pass with ${attachments.length} colour attachments; one, the canvas's texture or a 2D texture, is drawn`);
     if (descriptor.occlusionQuerySet) queryIn('beginRenderPass', descriptor.occlusionQuerySet, 'occlusion', 0);
     checkTimestampWrites('beginRenderPass', descriptor.timestampWrites);
     const occlusion = new OcclusionQueries((descriptor.occlusionQuerySet as GPUQuerySetShim | undefined) ?? null);
+    if (attachments.length === 0) {
+      if (!descriptor.depthStencilAttachment) throw new TypeError('beginRenderPass: a pass needs a colour attachment or a depth attachment');
+      const depth = this.depthAttachment(descriptor.depthStencilAttachment, null, null)!;
+      return new GPURenderPassEncoderShim(this, { context: null, texture: null, mip: 0, clear: null, depth, depthOnly: true }, occlusion);
+    }
     const attachment = attachments[0]!;
     const view = attachment.view;
     if (!(view instanceof GPUTextureViewShim)) throw new TypeError('beginRenderPass: the colour attachment has no view');
@@ -971,7 +988,7 @@ export class GPUCommandEncoderShim extends GpuObject {
     return new GPURenderPassEncoderShim(this, { context: null, texture, mip: view.baseMip, clear, ...(resolve ? { resolve } : {}), ...(depth ? { depth } : {}) }, occlusion);
   }
   /** A pass's `depthStencilAttachment`, checked against the colour attachment it goes with (size and samples). */
-  private depthAttachment(a: unknown, color: { width: number; height: number }, samples: number): Attachment['depth'] {
+  private depthAttachment(a: unknown, color: { width: number; height: number } | null, samples: number | null): Attachment['depth'] {
     if (a === undefined || a === null) return undefined;
     const d = a as { view?: unknown; depthClearValue?: number; depthLoadOp?: string; depthStoreOp?: string; depthReadOnly?: boolean; stencilLoadOp?: string; stencilStoreOp?: string; stencilClearValue?: number; stencilReadOnly?: boolean };
     const view = d.view;
@@ -982,8 +999,8 @@ export class GPUCommandEncoderShim extends GpuObject {
     if ((texture.usage & GPU_TEXTURE_USAGE.RENDER_ATTACHMENT) === 0) throw new RangeError('OperationError: beginRenderPass: the depth texture was made without GPUTextureUsage.RENDER_ATTACHMENT');
     if (view.mips !== 1) throw new RangeError('OperationError: beginRenderPass: a depth attachment is one mip level');
     const size = texture.extent(view.baseMip);
-    if (size.width !== color.width || size.height !== color.height) throw new RangeError(`OperationError: beginRenderPass: the depth attachment is ${size.width} x ${size.height} and the colour attachment ${color.width} x ${color.height}`);
-    if (texture.sampleCount !== samples) throw new RangeError(`OperationError: beginRenderPass: the depth attachment has ${texture.sampleCount} samples and the colour attachment ${samples}`);
+    if (color !== null && (size.width !== color.width || size.height !== color.height)) throw new RangeError(`OperationError: beginRenderPass: the depth attachment is ${size.width} x ${size.height} and the colour attachment ${color.width} x ${color.height}`);
+    if (samples !== null && texture.sampleCount !== samples) throw new RangeError(`OperationError: beginRenderPass: the depth attachment has ${texture.sampleCount} samples and the colour attachment ${samples}`);
     const readOnly = d.depthReadOnly === true;
     if (readOnly) return { texture, mip: view.baseMip, clear: null, readOnly };
     const load = d.depthLoadOp;
@@ -1040,8 +1057,8 @@ export class GPUCommandEncoderShim extends GpuObject {
   ): void {
     const call = 'copyTextureToTexture';
     const size = sizeOf(call, copySize);
-    const from = regionOf(call, 'source', source, size.width, size.height, size.depth, GPU_TEXTURE_USAGE.COPY_SRC, 'COPY_SRC');
-    const to = regionOf(call, 'destination', destination, size.width, size.height, size.depth, GPU_TEXTURE_USAGE.COPY_DST, 'COPY_DST');
+    const from = regionOf(call, 'source', source, size.width, size.height, size.depth, GPU_TEXTURE_USAGE.COPY_SRC, 'COPY_SRC', true);
+    const to = regionOf(call, 'destination', destination, size.width, size.height, size.depth, GPU_TEXTURE_USAGE.COPY_DST, 'COPY_DST', true);
     const linear = (format: string): string => format.replace(/-srgb$/, '');
     if (linear(from.texture.format) !== linear(to.texture.format)) {
       throw new TypeError(`${call}: the formats ${from.texture.format} and ${to.texture.format} differ by more than -srgb`);
@@ -1694,6 +1711,7 @@ export class GPUDeviceShim extends EventTarget {
     const pass: WebGpuPass = {
       k: 'render',
       ...(target === null ? {} : { target: { texture: target.id, mip: attachment.mip } }),
+      ...(attachment.depthOnly ? { depthOnly: true as const } : {}),
       ...(attachment.resolve ? { resolve: { texture: attachment.resolve.texture.id, mip: attachment.resolve.mip } } : {}),
       clear: attachment.clear,
       ...(attachment.depth ? { depth: { texture: attachment.depth.texture.id, mip: attachment.depth.mip, clear: attachment.depth.clear, ...(attachment.depth.readOnly ? { readOnly: true } : {}) } } : {}),

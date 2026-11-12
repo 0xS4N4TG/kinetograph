@@ -399,6 +399,9 @@ pub struct Pass {
     pub clear: Option<[f64; 4]>,
     #[serde(default)]
     pub depth: Option<PassDepth>,
+    /// A pass with no colour attachment (no `target`, and not the canvas's): it only writes `depth`.
+    #[serde(default)]
+    pub depth_only: bool,
     #[serde(default)]
     pub commands: Vec<Command>,
 }
@@ -1201,8 +1204,15 @@ fn validate_step(content: &WebGpuContent, step: &Step, limits: &Limits, dispatch
                         return Err(format!("a pass resolves {} into {}: the first is multisampled and the second is not, of its size and format", target.texture, resolve.texture));
                     }
                 }
+            } else if pass.depth_only {
+                if pass.resolve.is_some() || pass.clear.is_some() || pass.depth.is_none() {
+                    return Err("a pass with no colour attachment has a depth attachment, and no colour to clear or resolve".into());
+                }
             } else if pass.resolve.is_some() {
                 return Err("a pass resolves the canvas".into());
+            }
+            if pass.depth_only && pass.target.is_some() {
+                return Err("a depth-only pass has a colour attachment".into());
             }
             if let Some(clear) = pass.clear
                 && !clear.iter().all(|c| c.is_finite())
@@ -1348,6 +1358,12 @@ fn validate_step(content: &WebGpuContent, step: &Step, limits: &Limits, dispatch
             let to_extent = level_of(to, &c.to.texture, c.to.mip)?;
             rect_in("a copy's source", from_extent, c.from.x, c.from.y, c.width, c.height)?;
             rect_in("a copy's destination", to_extent, c.to.x, c.to.y, c.width, c.height)?;
+            // A depth texture is copied whole, a level at a time.
+            for (texture, corner, extent) in [(from, &c.from, from_extent), (to, &c.to, to_extent)] {
+                if is_depth_format(&texture.format) && ((corner.x, corner.y, c.width, c.height) != (0, 0, extent.0, extent.1)) {
+                    return Err(format!("a copy of part of the depth texture {}; a depth texture is copied whole, a level at a time", corner.texture));
+                }
+            }
             if linear_name(&from.format) != linear_name(&to.format) {
                 return Err(format!("a copy from {} to {}; the formats must be the same, or differ only in -srgb", from.format, to.format));
             }
@@ -1585,7 +1601,7 @@ mod tests {
     #[test]
     fn a_multisampled_pass_resolves_into_a_texture_of_its_size_and_format() {
         let pass = |target: &str, resolve: Option<&str>| {
-            Step::Render(Pass { depth: None,
+            Step::Render(Pass { depth: None, depth_only: false,
                 target: Some(PassTarget { texture: target.into(), mip: 0 }),
                 resolve: resolve.map(|r| PassTarget { texture: r.into(), mip: 0 }),
                 clear: None,
@@ -1607,7 +1623,7 @@ mod tests {
         for step in [pass("r", Some("m")), pass("m", Some("small")), pass("m", Some("srgb")), pass("r", Some("r"))] {
             assert!(refuse(step).contains("resolves"));
         }
-        let canvas = Step::Render(Pass { depth: None, target: None, resolve: Some(PassTarget { texture: "r".into(), mip: 0 }), clear: None, commands: Vec::new() });
+        let canvas = Step::Render(Pass { depth: None, depth_only: false, target: None, resolve: Some(PassTarget { texture: "r".into(), mip: 0 }), clear: None, commands: Vec::new() });
         assert!(refuse(canvas).contains("resolves the canvas"));
         c.textures.insert("odd".into(), Texture { samples: 3, ..texture(8, 4, 1, "rgba8unorm") });
         assert!(validate(&c, 8192).unwrap_err().contains("3 samples"));
@@ -1616,14 +1632,14 @@ mod tests {
     #[test]
     fn a_pass_target_and_a_bound_view_name_levels_that_exist() {
         let mut c = recording();
-        c.passes.push(Step::Render(Pass { depth: None, resolve: None,
+        c.passes.push(Step::Render(Pass { depth: None, depth_only: false, resolve: None,
             target: Some(PassTarget { texture: "t".into(), mip: 2 }),
             clear: Some([0.0; 4]),
             commands: Vec::new(),
         }));
         assert!(validate(&c, 8192).is_ok());
         refused(
-            Step::Render(Pass { depth: None, resolve: None,
+            Step::Render(Pass { depth: None, depth_only: false, resolve: None,
                 target: Some(PassTarget { texture: "t".into(), mip: 3 }),
                 clear: None,
                 commands: Vec::new(),
@@ -1631,7 +1647,7 @@ mod tests {
             "mip level 3",
         );
         refused(
-            Step::Render(Pass { depth: None, resolve: None,
+            Step::Render(Pass { depth: None, depth_only: false, resolve: None,
                 target: Some(PassTarget { texture: "gone".into(), mip: 0 }),
                 clear: None,
                 commands: Vec::new(),
@@ -1639,7 +1655,7 @@ mod tests {
             "texture gone",
         );
         refused(
-            Step::Render(Pass { depth: None, resolve: None,
+            Step::Render(Pass { depth: None, depth_only: false, resolve: None,
                 target: None,
                 clear: Some([f64::NAN, 0.0, 0.0, 0.0]),
                 commands: Vec::new(),
@@ -1712,7 +1728,7 @@ mod tests {
     fn too_many_steps_are_refused() {
         let mut c = recording();
         for _ in 0..=MAX_STEPS {
-            c.passes.push(Step::Render(Pass { depth: None, resolve: None, target: None, clear: None, commands: Vec::new() }));
+            c.passes.push(Step::Render(Pass { depth: None, depth_only: false, resolve: None, target: None, clear: None, commands: Vec::new() }));
         }
         assert!(validate(&c, 8192).unwrap_err().contains("steps in a frame"));
     }
@@ -2200,7 +2216,7 @@ mod tests {
     fn a_render_pass_binds_groups_the_recording_holds() {
         let mut c = compute_recording();
         let bind = |index: u32, group: &str| {
-            Step::Render(Pass { depth: None, resolve: None,
+            Step::Render(Pass { depth: None, depth_only: false, resolve: None,
                 target: None,
                 clear: None,
                 commands: vec![Command::Bind { index, group: group.into(), offsets: vec![] }],

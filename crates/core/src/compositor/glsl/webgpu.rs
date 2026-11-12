@@ -445,7 +445,16 @@ impl Compositor {
         canvas_size: (u32, u32),
     ) -> Fail<()> {
         let (view, bounds) = match &pass.target {
-            None => (canvas_view.clone(), canvas_size),
+            // No colour attachment: the depth level is all the pass has to take its size from.
+            None if pass.depth_only => {
+                let d = pass.depth.as_ref().ok_or("a pass with no colour attachment has no depth attachment")?;
+                let described = recording
+                    .textures
+                    .get(&d.texture)
+                    .ok_or("a pass with a depth texture that is not in the recording")?;
+                (None, wg::mip_extent(described, d.mip))
+            }
+            None => (Some(canvas_view.clone()), canvas_size),
             Some(target) => {
                 let texture = res
                     .textures
@@ -460,7 +469,7 @@ impl Compositor {
                     mip_level_count: Some(1),
                     ..Default::default()
                 });
-                (view, wg::mip_extent(described, target.mip))
+                (Some(view), wg::mip_extent(described, target.mip))
             }
         };
         let canvas = pass.target.is_none();
@@ -512,15 +521,20 @@ impl Compositor {
         });
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("webgpu"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                depth_slice: None,
-                resolve_target: resolve_view.as_ref(),
-                ops: wgpu::Operations {
-                    load,
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
+            color_attachments: &view
+                .iter()
+                .map(|view| {
+                    Some(wgpu::RenderPassColorAttachment {
+                        view,
+                        depth_slice: None,
+                        resolve_target: resolve_view.as_ref(),
+                        ops: wgpu::Operations {
+                            load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })
+                })
+                .collect::<Vec<_>>(),
             depth_stencil_attachment: depth_view.as_ref().map(|view| {
                 wgpu::RenderPassDepthStencilAttachment {
                     view,

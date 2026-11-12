@@ -116,6 +116,12 @@ const SHADOW: &str = "
     }";
 
 fn shadow(compare: Option<&str>) -> Frame {
+    shadow_of(compare, None)
+}
+
+/// `shadow` with the passes that run before the canvas pass, and the depth texture it samples, given (`replace`): by
+/// default a colour pass that draws depth 0.3 over the left half of `d`, and `d`.
+fn shadow_of(compare: Option<&str>, replace: Option<(Vec<Value>, &str)>) -> Frame {
     let target = |fragment: &str, depth: Option<Value>| {
         let mut p = pipeline(depth);
         p["vertex"]["module"] = json!("m");
@@ -126,31 +132,52 @@ fn shadow(compare: Option<&str>) -> Frame {
     if let Some(c) = compare {
         sampler["compare"] = json!(c);
     }
+    let (passes, sampled) = replace.unwrap_or_else(|| {
+        (
+            vec![json!({"k": "render", "target": {"texture": "c", "mip": 0}, "clear": [0, 0, 0, 1], "depth": {"texture": "d", "mip": 0, "clear": 1.0},
+                "commands": [{"c": "pipeline", "id": "pd"}, {"c": "scissor", "x": 0, "y": 0, "width": 8, "height": 16},
+                             {"c": "draw", "vertices": 3, "instances": 1, "first": 0, "firstInstance": 0}]})],
+            "d",
+        )
+    });
+    let mut all = passes;
+    all.push(json!({"k": "render", "clear": [0, 0, 0, 1], "commands": [
+        {"c": "pipeline", "id": "pc"}, {"c": "bind", "index": 0, "group": "g"},
+        {"c": "draw", "vertices": 3, "instances": 1, "first": 0, "firstInstance": 0}]}));
+    let mut depth_pipeline = target("fs0", Some(json!({"format": "depth32float", "write": true, "compare": "less"})));
+    depth_pipeline.as_object_mut().unwrap().remove("fragment");
     render(json!({
         "modules": {"m": SHADOW},
         // The first pass writes depth 0.3 over the left half of the texture (a scissor), the rest stays at the clear, 1.0.
         "pipelines": {
             "pd": target("fs0", Some(json!({"format": "depth32float", "write": true, "compare": "less"}))),
+            "pdo": depth_pipeline,
             "pc": target("fs1", None),
         },
         "layouts": {"l": [
             {"binding": 0, "visibility": 2, "type": "texture", "sampleType": "depth"},
             {"binding": 1, "visibility": 2, "type": "sampler", "samplerType": "comparison"}]},
         "bindGroups": {"g": {"layout": "auto:pc:0", "entries": [
-            {"binding": 0, "texture": {"id": "d", "baseMip": 0, "mips": 1}},
+            {"binding": 0, "texture": {"id": sampled, "baseMip": 0, "mips": 1}},
             {"binding": 1, "sampler": "s"}]}},
         "textures": {
             "d": {"width": 16, "height": 16, "mips": 1, "format": "depth32float"},
+            "e": {"width": 16, "height": 16, "mips": 1, "format": "depth32float"},
             "c": {"width": 16, "height": 16, "mips": 1, "format": "rgba8unorm"}},
         "samplers": {"s": sampler},
-        "passes": [
-            {"k": "render", "target": {"texture": "c", "mip": 0}, "clear": [0, 0, 0, 1], "depth": {"texture": "d", "mip": 0, "clear": 1.0},
-             "commands": [{"c": "pipeline", "id": "pd"}, {"c": "scissor", "x": 0, "y": 0, "width": 8, "height": 16},
-                          {"c": "draw", "vertices": 3, "instances": 1, "first": 0, "firstInstance": 0}]},
-            {"k": "render", "clear": [0, 0, 0, 1], "commands": [
-                {"c": "pipeline", "id": "pc"}, {"c": "bind", "index": 0, "group": "g"},
-                {"c": "draw", "vertices": 3, "instances": 1, "first": 0, "firstInstance": 0}]}]
+        "passes": all
     }))
+}
+
+/// A pass with no colour attachment that writes 0.3 over the left half of `d` (a scissor), the rest at the clear, 1.0.
+fn depth_only() -> Value {
+    json!({"k": "render", "depthOnly": true, "clear": null, "depth": {"texture": "d", "mip": 0, "clear": 1.0},
+        "commands": [{"c": "pipeline", "id": "pdo"}, {"c": "scissor", "x": 0, "y": 0, "width": 8, "height": 16},
+                     {"c": "draw", "vertices": 3, "instances": 1, "first": 0, "firstInstance": 0}]})
+}
+
+fn copy_depth(width: u32, height: u32) -> Value {
+    json!({"k": "copy", "from": {"texture": "d", "mip": 0, "x": 0, "y": 0}, "to": {"texture": "e", "mip": 0, "x": 0, "y": 0}, "width": width, "height": height})
 }
 
 #[test]
@@ -174,4 +201,45 @@ fn a_depth_attachment_the_wrong_size_or_format_draws_nothing_and_does_not_panic(
     assert_eq!(px(&colour_format, 8, 8)[3], 0);
     let good = two_depths(pipeline(less()), depth_pass(), "depth24plus", 16);
     assert_eq!(px(&good, 8, 8)[3], 255);
+}
+
+#[test]
+fn a_pass_with_no_colour_attachment_writes_the_depth_a_later_pass_samples() {
+    let frame = shadow_of(Some("less"), Some((vec![depth_only()], "d")));
+    assert_eq!(px(&frame, 12, 8), [255, 255, 255, 255], "stored depth 1.0 is above 0.5");
+    assert_eq!(px(&frame, 4, 8), [0, 0, 0, 255], "stored depth 0.3 is below 0.5");
+}
+
+#[test]
+fn a_copied_depth_texture_is_what_the_source_held_when_it_was_copied() {
+    let frame = shadow_of(Some("less"), Some((vec![depth_only(), copy_depth(16, 16)], "e")));
+    assert_eq!(px(&frame, 12, 8), [255, 255, 255, 255]);
+    assert_eq!(px(&frame, 4, 8), [0, 0, 0, 255]);
+    // Without the copy, `e` is still empty (zero depth, below the reference everywhere).
+    let without = shadow_of(Some("less"), Some((vec![depth_only()], "e")));
+    assert_eq!(px(&without, 12, 8), [0, 0, 0, 255]);
+}
+
+/// The default first pass of `shadow_of` (colour and depth), for the cases that are about something else than the pass.
+fn colour_and_depth() -> Value {
+    json!({"k": "render", "target": {"texture": "c", "mip": 0}, "clear": [0, 0, 0, 1], "depth": {"texture": "d", "mip": 0, "clear": 1.0},
+        "commands": [{"c": "pipeline", "id": "pd"}, {"c": "draw", "vertices": 3, "instances": 1, "first": 0, "firstInstance": 0}]})
+}
+
+#[test]
+fn a_part_copy_of_a_depth_texture_draws_nothing_and_a_whole_one_does() {
+    let drawn = shadow_of(Some("less"), Some((vec![colour_and_depth(), copy_depth(16, 16)], "e")));
+    assert_eq!(px(&drawn, 8, 8)[3], 255);
+    let part = shadow_of(Some("less"), Some((vec![colour_and_depth(), copy_depth(8, 16)], "e")));
+    assert_eq!(px(&part, 8, 8)[3], 0);
+}
+
+#[test]
+fn a_depth_only_pass_without_a_depth_attachment_or_with_a_colour_target_draws_nothing_and_does_not_panic() {
+    let mut no_depth = depth_only();
+    no_depth.as_object_mut().unwrap().remove("depth");
+    assert_eq!(px(&shadow_of(Some("less"), Some((vec![no_depth], "d"))), 8, 8)[3], 0);
+    let mut with_colour = depth_only();
+    with_colour["target"] = json!({"texture": "c", "mip": 0});
+    assert_eq!(px(&shadow_of(Some("less"), Some((vec![with_colour], "d"))), 8, 8)[3], 0);
 }
