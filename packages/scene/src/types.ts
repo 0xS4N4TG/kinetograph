@@ -1152,6 +1152,8 @@ export interface WebGpuBindingLayout {
   format?: string;
   /** Of a `texture`: `float` when left out. */
   sampleType?: 'float' | 'unfilterable-float' | 'sint' | 'uint' | 'depth';
+  /** Of a `texture`: `2d-array` for a texture array binding; `2d` when left out. */
+  viewDimension?: '2d-array';
   /** Of a `sampler`: `filtering` when left out. */
   samplerType?: 'filtering' | 'non-filtering' | 'comparison';
 }
@@ -1161,6 +1163,12 @@ export interface WebGpuTextureView {
   id: string;
   baseMip: number;
   mips: number;
+  /** The first array layer of the view; 0 when left out. */
+  baseLayer?: number;
+  /** The array layers of a `2d-array` view; 1 when left out. */
+  layers?: number;
+  /** `2d-array` for a view of an array; `2d` (one layer) when left out. */
+  dimension?: '2d-array';
 }
 
 export type WebGpuBindEntry =
@@ -1174,10 +1182,12 @@ export interface WebGpuBindGroup {
   entries: WebGpuBindEntry[];
 }
 
-/** A 2D texture. The recording never holds its contents: the steps that wrote it do. */
+/** A 2D texture, or an array of them. The recording never holds its contents: the steps that wrote it do. */
 export interface WebGpuTexture {
   width: number;
   height: number;
+  /** The array layers (`depthOrArrayLayers`); 1 when left out. */
+  layers?: number;
   mips: number;
   format: string;
   /** 4 for a multisampled texture (a pass draws into it and resolves it into another); 1 when left out. */
@@ -1218,14 +1228,14 @@ export type WebGpuCommand =
 
 export interface WebGpuPass {
   k: 'render';
-  /** A level of the texture drawn into; the canvas when left out. */
-  target?: { texture: string; mip: number };
+  /** A level (and array layer, 0 when left out) of the texture drawn into; the canvas when left out. */
+  target?: { texture: string; mip: number; layer?: number };
   /** A multisampled `target` resolves into this level of another texture when the pass ends. */
-  resolve?: { texture: string; mip: number };
+  resolve?: { texture: string; mip: number; layer?: number };
   /** The clear colour, or null for `loadOp: 'load'`. */
   clear: [number, number, number, number] | null;
   /** The depth attachment: a level of a depth texture the same size as the target, cleared to `clear` (null: `loadOp: 'load'`). */
-  depth?: { texture: string; mip: number; clear: number | null; readOnly?: boolean };
+  depth?: { texture: string; mip: number; layer?: number; clear: number | null; readOnly?: boolean };
   /** A pass with no colour attachment (no `target`, and not the canvas): it only writes `depth`. */
   depthOnly?: true;
   commands: WebGpuCommand[];
@@ -1285,6 +1295,8 @@ export interface WebGpuUpload {
   k: 'upload';
   texture: string;
   mip?: number;
+  /** The array layer written; 0 when left out. */
+  layer?: number;
   x: number;
   y: number;
   width: number;
@@ -1298,8 +1310,8 @@ export interface WebGpuUpload {
 
 export interface WebGpuCopy {
   k: 'copy';
-  from: { texture: string; mip?: number; x: number; y: number };
-  to: { texture: string; mip?: number; x: number; y: number };
+  from: { texture: string; mip?: number; layer?: number; x: number; y: number };
+  to: { texture: string; mip?: number; layer?: number; x: number; y: number };
   width: number;
   height: number;
 }

@@ -819,6 +819,11 @@ frame), and `check_with` reads the workgroup size of each compute entry point wi
 A render pass with no colour attachment is a `render` step with `depthOnly: true` and no `target` (without the flag a pass with no
 target is the canvas's), and a depth texture may be the whole-level source and destination of `copyTextureToTexture`, so a
 shadow map is made by a depth-only pass, copied, and read by a comparison sampler.
+A texture may have array layers (`Texture.layers`, up to `maxTextureArrayLayers`, not multisampled). A view is a `2d` view of one
+layer or a `2d-array` view of a range (`baseLayer`, `layers`, `dimension`), a layout's `viewDimension` says which a binding
+takes, and a pass's target, resolve target and depth attachment, an upload and each corner of a copy name their `layer`. The
+log keys a level and layer (`<texture>:<mip>:<layer>`), so a layer nothing reads is not replayed; writes and copies of several
+layers are recorded one step a layer, and a storage texture binding takes a `2d` view of one layer.
 Query sets (`webgpu-queries.ts`) are accepted and measure nothing: `createQuerySet`, `timestampWrites`, occlusion queries and
 `writeTimestamp` record no step, and `resolveQuerySet` writes zeros into its destination (a `clearBuffer` step), because a
 timestamp is never the clock and a frame is a function of its calls. `timestamp-query` is offered whatever the device has:

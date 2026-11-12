@@ -99,6 +99,9 @@ pub struct BindingLayout {
     /// Of a `storage-texture`: the format the shader declares.
     #[serde(default)]
     pub format: Option<String>,
+    /// Of a `texture`: `2d-array` for a texture array binding; none is `2d`.
+    #[serde(default)]
+    pub view_dimension: Option<String>,
 }
 
 /// A buffer the GPU writes: `size` bytes, zeroed until a step writes them.
@@ -238,7 +241,7 @@ pub struct BindEntry {
     pub sampler: Option<String>,
 }
 
-/// A view of a texture: `mips` levels from `base_mip`.
+/// A view of a texture: `mips` levels from `base_mip`, and `layers` array layers from `base_layer`.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextureView {
@@ -247,18 +250,28 @@ pub struct TextureView {
     pub base_mip: u32,
     #[serde(default = "one")]
     pub mips: u32,
+    #[serde(default)]
+    pub base_layer: u32,
+    #[serde(default = "one")]
+    pub layers: u32,
+    /// `2d-array` for a view of an array; none is a `2d` view of one layer.
+    #[serde(default)]
+    pub dimension: Option<String>,
 }
 
 fn one() -> u32 {
     1
 }
 
-/// A 2D texture. The recording never holds its contents: the steps that wrote it do.
+/// A 2D texture, or an array of them. The recording never holds its contents: the steps that wrote it do.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Texture {
     pub width: u32,
     pub height: u32,
+    /// The array layers (`depthOrArrayLayers`).
+    #[serde(default = "one")]
+    pub layers: u32,
     #[serde(default = "one")]
     pub mips: u32,
     pub format: String,
@@ -364,13 +377,15 @@ pub enum Command {
     },
 }
 
-/// One mip level of a texture a render pass draws into.
+/// One mip level and array layer of a texture a render pass draws into.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PassTarget {
     pub texture: String,
     #[serde(default)]
     pub mip: u32,
+    #[serde(default)]
+    pub layer: u32,
 }
 
 /// The depth attachment of a pass: a level of a depth texture of the target's size.
@@ -380,6 +395,8 @@ pub struct PassDepth {
     pub texture: String,
     #[serde(default)]
     pub mip: u32,
+    #[serde(default)]
+    pub layer: u32,
     /// The clear value; none loads what the texture holds.
     pub clear: Option<f64>,
     #[serde(default)]
@@ -430,6 +447,8 @@ pub struct Upload {
     pub texture: String,
     #[serde(default)]
     pub mip: u32,
+    #[serde(default)]
+    pub layer: u32,
     pub x: u32,
     pub y: u32,
     pub width: u32,
@@ -454,6 +473,8 @@ pub struct Corner {
     pub texture: String,
     #[serde(default)]
     pub mip: u32,
+    #[serde(default)]
+    pub layer: u32,
     pub x: u32,
     pub y: u32,
 }
@@ -547,6 +568,7 @@ pub enum Step {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Limits {
     pub max_texture_dimension_2d: u32,
+    pub max_texture_array_layers: u32,
     pub max_bind_groups: u32,
     pub max_buffer_size: u64,
     pub max_uniform_buffer_binding_size: u64,
@@ -570,6 +592,7 @@ impl Default for Limits {
     fn default() -> Self {
         Limits {
             max_texture_dimension_2d: 8192,
+            max_texture_array_layers: 256,
             max_bind_groups: 4,
             max_buffer_size: 256 << 20,
             max_uniform_buffer_binding_size: 65536,
@@ -594,6 +617,7 @@ pub fn device_limits(device: &wgpu::Device) -> Limits {
     let l = device.limits();
     Limits {
         max_texture_dimension_2d: l.max_texture_dimension_2d,
+        max_texture_array_layers: l.max_texture_array_layers,
         max_bind_groups: l.max_bind_groups,
         max_buffer_size: l.max_buffer_size,
         max_uniform_buffer_binding_size: l.max_uniform_buffer_binding_size,
@@ -850,12 +874,15 @@ pub fn mip_extent(texture: &Texture, level: u32) -> (u32, u32) {
     ((texture.width >> shift).max(1), (texture.height >> shift).max(1))
 }
 
-/// What a texture holds with all its levels, if it is a texture the device makes: a known format, sides from 1 to
-/// `max_dim`, and a level count the size allows. Overflow is an error, not a wrap.
+/// What a texture holds with all its levels and layers, if it is a texture the device makes: a known format, sides from 1
+/// to `max_dim`, at least one layer, and a level count the size allows. Overflow is an error, not a wrap.
 pub fn texture_bytes(texture: &Texture, max_dim: u32) -> Result<u64, String> {
     let bytes = texel_bytes(&texture.format).ok_or_else(|| format!("a texture of format {}; the formats drawn are {TEXTURE_FORMATS}", texture.format))?;
     if texture.width == 0 || texture.height == 0 || texture.width > max_dim || texture.height > max_dim {
         return Err(format!("a {} x {} texture; the sides run from 1 to {max_dim}", texture.width, texture.height));
+    }
+    if texture.layers == 0 {
+        return Err("a texture with no array layers".into());
     }
     let most = max_mips(texture.width, texture.height);
     if texture.mips == 0 || texture.mips > most {
@@ -870,7 +897,7 @@ pub fn texture_bytes(texture: &Texture, max_dim: u32) -> Result<u64, String> {
             .ok_or("a texture's size overflows")?;
         total = total.checked_add(level_bytes).ok_or("a texture's size overflows")?;
     }
-    Ok(total)
+    total.checked_mul(u64::from(texture.layers)).ok_or_else(|| "a texture's size overflows".into())
 }
 
 /// Whether the rectangle `x`, `y`, `width` x `height` lies inside a picture of `bounds`, without overflow.
@@ -909,6 +936,14 @@ fn level_of(texture: &Texture, id: &str, level: u32) -> Result<(u32, u32), Strin
     Ok(mip_extent(texture, level))
 }
 
+/// A level and a layer of the texture: the extent of the level.
+fn subresource_of(texture: &Texture, id: &str, level: u32, layer: u32) -> Result<(u32, u32), String> {
+    if layer >= texture.layers {
+        return Err(format!("array layer {layer} of the texture {id}, which has {}", texture.layers));
+    }
+    level_of(texture, id, level)
+}
+
 /// A view of the texture: its levels are the texture's.
 fn view_of(content: &WebGpuContent, view: &TextureView) -> Result<(), String> {
     let texture = texture_of(content, &view.id)?;
@@ -919,7 +954,15 @@ fn view_of(content: &WebGpuContent, view: &TextureView) -> Result<(), String> {
     if view.mips == 0 || end > texture.mips {
         return Err(format!("a view of the levels {}..{end} of the texture {}, which has {}", view.base_mip, view.id, texture.mips));
     }
-    Ok(())
+    let layer_end = view.base_layer.checked_add(view.layers).ok_or("a view's layer range overflows")?;
+    if view.layers == 0 || layer_end > texture.layers {
+        return Err(format!("a view of the layers {}..{layer_end} of the texture {}, which has {}", view.base_layer, view.id, texture.layers));
+    }
+    match view.dimension.as_deref() {
+        None if view.layers != 1 => Err(format!("a 2d view of {} layers of the texture {}; a 2d view has one", view.layers, view.id)),
+        None | Some("2d-array") => Ok(()),
+        Some(other) => Err(format!("a view of the texture {} of dimension {other}", view.id)),
+    }
 }
 
 /// A `GPUCompareFunction`.
@@ -989,6 +1032,12 @@ pub fn validate_with(content: &WebGpuContent, limits: &Limits) -> Result<(), Str
         if texture.samples != 1 && (texture.samples != 4 || texture.mips != 1) {
             return Err(format!("texture {id}: {} samples and {} levels; a texture has 1 sample, or 4 and one level", texture.samples, texture.mips));
         }
+        if texture.layers > limits.max_texture_array_layers {
+            return Err(format!("texture {id}: {} array layers; the device allows {}", texture.layers, limits.max_texture_array_layers));
+        }
+        if texture.samples != 1 && texture.layers != 1 {
+            return Err(format!("texture {id}: a multisampled texture has one array layer, not {}", texture.layers));
+        }
         let bytes = texture_bytes(texture, max_dim)
             .map_err(|e| format!("texture {id}: {e}"))?
             .saturating_mul(u64::from(texture.samples));
@@ -1054,7 +1103,12 @@ fn layout_checks(id: &str, layout: &[BindingLayout], limits: &Limits) -> Result<
             return Err(format!("layout {id}: binding {} is visible to stages {} (the bits are 1, 2 and 4)", e.binding, e.visibility));
         }
         match e.ty.as_str() {
-            "uniform" | "read-only-storage" | "sampler" | "texture" => {}
+            "uniform" | "read-only-storage" | "sampler" => {}
+            "texture" => {
+                if !matches!(e.view_dimension.as_deref(), None | Some("2d") | Some("2d-array")) {
+                    return Err(format!("layout {id}: binding {} is a texture of view dimension {}", e.binding, e.view_dimension.as_deref().unwrap_or("")));
+                }
+            }
             "storage" => {
                 if e.visibility & 1 != 0 {
                     return Err(format!("layout {id}: binding {} is a read-write storage buffer visible to the vertex stage", e.binding));
@@ -1145,6 +1199,10 @@ fn group_checks(content: &WebGpuContent, id: &str, group: &BindGroup, limits: &L
             let info = format_info(&texture.format).ok_or_else(|| format!("bind group {id}: a texture of format {}", texture.format))?;
             match l.ty.as_str() {
                 "texture" => {
+                    let (want, have) = (l.view_dimension.as_deref().unwrap_or("2d"), view.dimension.as_deref().unwrap_or("2d"));
+                    if want != have {
+                        return Err(format!("bind group {id}: binding {} is a {want} texture in the layout and the view is a {have} view", entry.binding));
+                    }
                     let wanted = l.sample_type.as_deref().unwrap_or("float");
                     let ok = match wanted {
                         "float" => info.sample == Sample::Float || (info.sample == Sample::Unfilterable && limits.float32_filterable),
@@ -1166,6 +1224,9 @@ fn group_checks(content: &WebGpuContent, id: &str, group: &BindGroup, limits: &L
                 "storage-texture" => {
                     if view.mips != 1 {
                         return Err(format!("bind group {id}: binding {} is a storage texture and its view has {} levels; it takes one", entry.binding, view.mips));
+                    }
+                    if view.dimension.is_some() {
+                        return Err(format!("bind group {id}: binding {} is a storage texture and its view is a 2d-array view; it takes a 2d one", entry.binding));
                     }
                     if l.format.as_deref() != Some(texture.format.as_str()) {
                         return Err(format!("bind group {id}: binding {} is a storage texture of {} in the layout and the view is of a {} texture", entry.binding, l.format.as_deref().unwrap_or("?"), texture.format));
@@ -1196,10 +1257,10 @@ fn validate_step(content: &WebGpuContent, step: &Step, limits: &Limits, dispatch
         Step::Render(pass) => {
             if let Some(target) = &pass.target {
                 let texture = texture_of(content, &target.texture)?;
-                let (width, height) = level_of(texture, &target.texture, target.mip)?;
+                let (width, height) = subresource_of(texture, &target.texture, target.mip, target.layer)?;
                 if let Some(resolve) = &pass.resolve {
                     let to = texture_of(content, &resolve.texture)?;
-                    let (w, h) = level_of(to, &resolve.texture, resolve.mip)?;
+                    let (w, h) = subresource_of(to, &resolve.texture, resolve.mip, resolve.layer)?;
                     if texture.samples == 1 || to.samples != 1 || to.format != texture.format || (w, h) != (width, height) {
                         return Err(format!("a pass resolves {} into {}: the first is multisampled and the second is not, of its size and format", target.texture, resolve.texture));
                     }
@@ -1221,7 +1282,7 @@ fn validate_step(content: &WebGpuContent, step: &Step, limits: &Limits, dispatch
             }
             if let Some(depth) = &pass.depth {
                 let texture = texture_of(content, &depth.texture)?;
-                let level = level_of(texture, &depth.texture, depth.mip)?;
+                let level = subresource_of(texture, &depth.texture, depth.mip, depth.layer)?;
                 if !is_depth_format(&texture.format) {
                     return Err(format!("the depth attachment {} is a {} texture", depth.texture, texture.format));
                 }
@@ -1320,7 +1381,7 @@ fn validate_step(content: &WebGpuContent, step: &Step, limits: &Limits, dispatch
             if is_depth_format(&texture.format) {
                 return Err(format!("an upload into the depth texture {}; a render pass writes it", u.texture));
             }
-            let extent = level_of(texture, &u.texture, u.mip)?;
+            let extent = subresource_of(texture, &u.texture, u.mip, u.layer)?;
             rect_in("an upload", extent, u.x, u.y, u.width, u.height)?;
             let texel = texel_bytes(&texture.format).ok_or_else(|| format!("a texture of format {}", texture.format))?;
             match &u.source {
@@ -1354,8 +1415,8 @@ fn validate_step(content: &WebGpuContent, step: &Step, limits: &Limits, dispatch
         Step::Copy(c) => {
             let from = texture_of(content, &c.from.texture)?;
             let to = texture_of(content, &c.to.texture)?;
-            let from_extent = level_of(from, &c.from.texture, c.from.mip)?;
-            let to_extent = level_of(to, &c.to.texture, c.to.mip)?;
+            let from_extent = subresource_of(from, &c.from.texture, c.from.mip, c.from.layer)?;
+            let to_extent = subresource_of(to, &c.to.texture, c.to.mip, c.to.layer)?;
             rect_in("a copy's source", from_extent, c.from.x, c.from.y, c.width, c.height)?;
             rect_in("a copy's destination", to_extent, c.to.x, c.to.y, c.width, c.height)?;
             // A depth texture is copied whole, a level at a time.
@@ -1367,8 +1428,8 @@ fn validate_step(content: &WebGpuContent, step: &Step, limits: &Limits, dispatch
             if linear_name(&from.format) != linear_name(&to.format) {
                 return Err(format!("a copy from {} to {}; the formats must be the same, or differ only in -srgb", from.format, to.format));
             }
-            if c.from.texture == c.to.texture && c.from.mip == c.to.mip {
-                return Err("a copy within one level of one texture".into());
+            if c.from.texture == c.to.texture && c.from.mip == c.to.mip && c.from.layer == c.to.layer {
+                return Err("a copy within one level and layer of one texture".into());
             }
         }
     }
@@ -1426,6 +1487,7 @@ mod tests {
         Texture {
             width,
             height,
+            layers: 1,
             mips,
             format: format.into(),
             samples: 1,
@@ -1445,6 +1507,7 @@ mod tests {
         Step::Upload(Upload {
             texture: texture.into(),
             mip,
+            layer: 0,
             x,
             y,
             width: w,
@@ -1564,6 +1627,7 @@ mod tests {
         let corner = |c: (&str, u32, u32, u32)| Corner {
             texture: c.0.into(),
             mip: c.1,
+            layer: 0,
             x: c.2,
             y: c.3,
         };
@@ -1602,8 +1666,8 @@ mod tests {
     fn a_multisampled_pass_resolves_into_a_texture_of_its_size_and_format() {
         let pass = |target: &str, resolve: Option<&str>| {
             Step::Render(Pass { depth: None, depth_only: false,
-                target: Some(PassTarget { texture: target.into(), mip: 0 }),
-                resolve: resolve.map(|r| PassTarget { texture: r.into(), mip: 0 }),
+                target: Some(PassTarget { texture: target.into(), mip: 0, layer: 0 }),
+                resolve: resolve.map(|r| PassTarget { texture: r.into(), mip: 0, layer: 0 }),
                 clear: None,
                 commands: Vec::new(),
             })
@@ -1623,7 +1687,7 @@ mod tests {
         for step in [pass("r", Some("m")), pass("m", Some("small")), pass("m", Some("srgb")), pass("r", Some("r"))] {
             assert!(refuse(step).contains("resolves"));
         }
-        let canvas = Step::Render(Pass { depth: None, depth_only: false, target: None, resolve: Some(PassTarget { texture: "r".into(), mip: 0 }), clear: None, commands: Vec::new() });
+        let canvas = Step::Render(Pass { depth: None, depth_only: false, target: None, resolve: Some(PassTarget { texture: "r".into(), mip: 0, layer: 0 }), clear: None, commands: Vec::new() });
         assert!(refuse(canvas).contains("resolves the canvas"));
         c.textures.insert("odd".into(), Texture { samples: 3, ..texture(8, 4, 1, "rgba8unorm") });
         assert!(validate(&c, 8192).unwrap_err().contains("3 samples"));
@@ -1633,14 +1697,14 @@ mod tests {
     fn a_pass_target_and_a_bound_view_name_levels_that_exist() {
         let mut c = recording();
         c.passes.push(Step::Render(Pass { depth: None, depth_only: false, resolve: None,
-            target: Some(PassTarget { texture: "t".into(), mip: 2 }),
+            target: Some(PassTarget { texture: "t".into(), mip: 2, layer: 0 }),
             clear: Some([0.0; 4]),
             commands: Vec::new(),
         }));
         assert!(validate(&c, 8192).is_ok());
         refused(
             Step::Render(Pass { depth: None, depth_only: false, resolve: None,
-                target: Some(PassTarget { texture: "t".into(), mip: 3 }),
+                target: Some(PassTarget { texture: "t".into(), mip: 3, layer: 0 }),
                 clear: None,
                 commands: Vec::new(),
             }),
@@ -1648,7 +1712,7 @@ mod tests {
         );
         refused(
             Step::Render(Pass { depth: None, depth_only: false, resolve: None,
-                target: Some(PassTarget { texture: "gone".into(), mip: 0 }),
+                target: Some(PassTarget { texture: "gone".into(), mip: 0, layer: 0 }),
                 clear: None,
                 commands: Vec::new(),
             }),
@@ -1673,7 +1737,7 @@ mod tests {
                 sampler: sampler.map(String::from),
             }],
         };
-        let view = |base_mip, mips| Some(TextureView { id: "t".into(), base_mip, mips });
+        let view = |base_mip, mips| Some(TextureView { id: "t".into(), base_mip, mips, base_layer: 0, layers: 1, dimension: None });
         let mut ok = recording();
         ok.samplers.insert("s".into(), SamplerDesc::default());
         ok.bind_groups.insert("g".into(), group(view(1, 2), None, None));
@@ -1686,7 +1750,7 @@ mod tests {
             (group(None, Some("nope"), None), "sampler nope"),
             (group(None, None, None), "one of a buffer"),
             (group(view(0, 1), Some("s"), None), "one of a buffer"),
-            (group(Some(TextureView { id: "gone".into(), base_mip: 0, mips: 1 }), None, None), "texture gone"),
+            (group(Some(TextureView { id: "gone".into(), base_mip: 0, mips: 1, base_layer: 0, layers: 1, dimension: None }), None, None), "texture gone"),
         ] {
             let mut bad = ok.clone();
             bad.bind_groups.insert("x".into(), g);
@@ -1776,6 +1840,7 @@ mod tests {
                 sampler_type: None,
                 access: None,
                 format: Some("rgba8unorm".into()),
+                view_dimension: None,
             }],
         );
         c.compute_pipelines.insert(
@@ -1795,7 +1860,7 @@ mod tests {
                     buffer: None,
                     offset: 0,
                     size: 0,
-                    texture: Some(TextureView { id: "t".into(), base_mip: 0, mips: 1 }),
+                    texture: Some(TextureView { id: "t".into(), base_mip: 0, mips: 1, base_layer: 0, layers: 1, dimension: None }),
                     sampler: None,
                 }],
             },
@@ -1920,6 +1985,7 @@ mod tests {
             sampler_type: None,
             access: access.map(String::from),
             format: format.map(String::from),
+            view_dimension: None,
         };
         let layout_err = |entries: Vec<BindingLayout>| {
             let mut c = WebGpuContent::default();
@@ -1983,6 +2049,7 @@ mod tests {
             sampler_type: None,
             access: None,
             format: None,
+            view_dimension: None,
         }
     }
 
@@ -1992,7 +2059,7 @@ mod tests {
             buffer: None,
             offset: 0,
             size: 0,
-            texture: Some(TextureView { id: id.into(), base_mip: 0, mips }),
+            texture: Some(TextureView { id: id.into(), base_mip: 0, mips, base_layer: 0, layers: 1, dimension: None }),
             sampler: None,
         }
     }
@@ -2026,6 +2093,7 @@ mod tests {
             sampler_type: None,
             access: None,
             format: Some(format.into()),
+            view_dimension: None,
         };
         assert!(validate(&group_with(layout("rgba8unorm"), view("t1", 1)), 8192).is_ok());
         assert!(validate(&group_with(layout("rgba32float"), view("f", 1)), 8192).is_ok());
@@ -2048,6 +2116,7 @@ mod tests {
             sampler_type: None,
             access: None,
             format: None,
+            view_dimension: None,
         };
         let bind = |buffer: &str, offset: u64, size: u64| BindEntry {
             binding: 0,

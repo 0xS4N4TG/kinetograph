@@ -88,3 +88,8 @@ fn webgpu_queries() {
 fn webgpu_shadow() {
     run("webgpu_shadow", 1.5);
 }
+
+#[test]
+fn webgpu_array() {
+    run("webgpu_array", 1.0);
+}

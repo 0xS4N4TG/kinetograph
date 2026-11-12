@@ -260,7 +260,7 @@ impl Compositor {
                     size: wgpu::Extent3d {
                         width: t.width,
                         height: t.height,
-                        depth_or_array_layers: 1,
+                        depth_or_array_layers: t.layers,
                     },
                     mip_level_count: t.mips,
                     sample_count: t.samples,
@@ -424,8 +424,8 @@ impl Compositor {
                         .get(copy.to.texture.as_str())
                         .ok_or("a copy to a texture that was not made")?;
                     encoder.copy_texture_to_texture(
-                        texel_info(from, copy.from.mip, copy.from.x, copy.from.y),
-                        texel_info(to, copy.to.mip, copy.to.x, copy.to.y),
+                        texel_info(from, copy.from.mip, copy.from.layer, copy.from.x, copy.from.y),
+                        texel_info(to, copy.to.mip, copy.to.layer, copy.to.x, copy.to.y),
                         extent(copy.width, copy.height),
                     );
                 }
@@ -464,11 +464,7 @@ impl Compositor {
                     .textures
                     .get(&target.texture)
                     .ok_or("a pass into a texture that is not in the recording")?;
-                let view = texture.create_view(&wgpu::TextureViewDescriptor {
-                    base_mip_level: target.mip,
-                    mip_level_count: Some(1),
-                    ..Default::default()
-                });
+                let view = layer_view(texture, target.mip, target.layer);
                 (Some(view), wg::mip_extent(described, target.mip))
             }
         };
@@ -476,16 +472,13 @@ impl Compositor {
         // A multisampled target resolves into its texture's level.
         let resolve_view = match &pass.resolve {
             None => None,
-            Some(r) => Some(
-                res.textures
+            Some(r) => {
+                let texture = res
+                    .textures
                     .get(r.texture.as_str())
-                    .ok_or("a pass resolves into a texture that was not made")?
-                    .create_view(&wgpu::TextureViewDescriptor {
-                        base_mip_level: r.mip,
-                        mip_level_count: Some(1),
-                        ..Default::default()
-                    }),
-            ),
+                    .ok_or("a pass resolves into a texture that was not made")?;
+                Some(layer_view(texture, r.mip, r.layer))
+            }
         };
         let load = match pass.clear {
             Some(c) => wgpu::LoadOp::Clear(color(c)),
@@ -505,11 +498,7 @@ impl Compositor {
                 if wg::mip_extent(described, d.mip) != bounds {
                     return Err(format!("the depth texture {} is not the size of the pass's target", d.texture));
                 }
-                Some(texture.create_view(&wgpu::TextureViewDescriptor {
-                    base_mip_level: d.mip,
-                    mip_level_count: Some(1),
-                    ..Default::default()
-                }))
+                Some(layer_view(texture, d.mip, d.layer))
             }
         };
         let depth_ops = pass.depth.as_ref().map(|d| wgpu::Operations {
@@ -708,8 +697,8 @@ impl Compositor {
                 };
                 wg::rect_in("an upload from a layer", size, u.sx, sy, u.width, u.height)?;
                 encoder.copy_texture_to_texture(
-                    texel_info(from, 0, u.sx, sy),
-                    texel_info(texture, u.mip, u.x, u.y),
+                    texel_info(from, 0, 0, u.sx, sy),
+                    texel_info(texture, u.mip, u.layer, u.x, u.y),
                     extent(u.width, u.height),
                 );
                 return Ok(());
@@ -780,7 +769,7 @@ impl Compositor {
                     rows_per_image: Some(u.height),
                 },
             },
-            texel_info(texture, u.mip, u.x, u.y),
+            texel_info(texture, u.mip, u.layer, u.x, u.y),
             extent(u.width, u.height),
         );
         Ok(())
@@ -977,7 +966,11 @@ impl Compositor {
                         "depth" => wgpu::TextureSampleType::Depth,
                         other => return Err(format!("texture sample type {other}")),
                     },
-                    view_dimension: wgpu::TextureViewDimension::D2,
+                    view_dimension: if e.view_dimension.is_some() {
+                        wgpu::TextureViewDimension::D2Array
+                    } else {
+                        wgpu::TextureViewDimension::D2
+                    },
                     multisampled: false,
                 },
                 "sampler" => wgpu::BindingType::Sampler(
@@ -1261,7 +1254,13 @@ impl Compositor {
                     Some(texture.create_view(&wgpu::TextureViewDescriptor {
                         base_mip_level: v.base_mip,
                         mip_level_count: Some(v.mips),
-                        dimension: Some(wgpu::TextureViewDimension::D2),
+                        base_array_layer: v.base_layer,
+                        array_layer_count: Some(v.layers),
+                        dimension: Some(if v.dimension.is_some() {
+                            wgpu::TextureViewDimension::D2Array
+                        } else {
+                            wgpu::TextureViewDimension::D2
+                        }),
                         ..Default::default()
                     }))
                 }
@@ -1374,15 +1373,28 @@ fn extent(width: u32, height: u32) -> wgpu::Extent3d {
 fn texel_info(
     texture: &wgpu::Texture,
     mip_level: u32,
+    layer: u32,
     x: u32,
     y: u32,
 ) -> wgpu::TexelCopyTextureInfo<'_> {
     wgpu::TexelCopyTextureInfo {
         texture,
         mip_level,
-        origin: wgpu::Origin3d { x, y, z: 0 },
+        origin: wgpu::Origin3d { x, y, z: layer },
         aspect: wgpu::TextureAspect::All,
     }
+}
+
+/// A 2d view of one level and one array layer of `texture`, which a pass draws into.
+fn layer_view(texture: &wgpu::Texture, mip: u32, layer: u32) -> wgpu::TextureView {
+    texture.create_view(&wgpu::TextureViewDescriptor {
+        base_mip_level: mip,
+        mip_level_count: Some(1),
+        base_array_layer: layer,
+        array_layer_count: Some(1),
+        dimension: Some(wgpu::TextureViewDimension::D2),
+        ..Default::default()
+    })
 }
 
 fn texture_format(name: &str) -> Fail<wgpu::TextureFormat> {
@@ -1838,6 +1850,7 @@ mod tests {
         let texture = |format: &str| wg::Texture {
             width: 4,
             height: 4,
+            layers: 1,
             mips: 1,
             format: format.into(),
             samples: 1,
@@ -1845,6 +1858,7 @@ mod tests {
         let upload = |x, y, w, h, flip_y, premultiply| wg::Upload {
             texture: "t".into(),
             mip: 0,
+            layer: 0,
             x: 0,
             y: 0,
             width: w,
