@@ -789,8 +789,16 @@ export interface GlslProgram {
   attributes?: Record<string, number>;
 }
 
+/** A video file's picture at `time` seconds after its first picture. */
+export interface GlslVideo {
+  src: string;
+  time: number;
+}
+
 export interface GlslTexture {
   /** A picture file relative to the scene, or a `data:` URL. */
+  /** Instead of `src` or `pixels`: the frame of a video file at a time, which the renderer decodes with the video decoder (`texImage2D` of a `<video>`). */
+  video?: GlslVideo;
   src?: string;
   /** Base64 RGBA8, straight alpha. */
   pixels?: string;
@@ -855,6 +863,7 @@ export interface GlslPatch {
   width: number;
   height: number;
   /** One of: a picture file, base64 RGBA8 (straight alpha), or a child of the shader group. */
+  video?: GlslVideo;
   src?: string;
   pixels?: string;
   layer?: string;
