@@ -13,7 +13,7 @@
 // real timer functions are kept here for the shim's own use: the delayRender
 // timeout needs real time to fail, and nothing else may.
 
-import { animationClockMoved, animationsPending, resetAnimations, setAnimationClock, tickAnimations } from '@kinetographdev/compat/shim';
+import { animationClockMoved, animationsPending, duringAnimationFrames, resetAnimations, setAnimationClock, tickAnimations } from '@kinetographdev/compat/shim';
 import { setGsapTime } from './gsap-clock.js';
 
 /**
@@ -284,7 +284,10 @@ export function animationFramesQueued(): boolean {
 export function runAnimationFrames(): void {
   const due = animationQueue;
   animationQueue = [];
-  for (const entry of due) entry.callback(virtualMs);
+  // What a Dawn page's callbacks do is not for a replay of the skipped frames to repeat (webgpu-dawn-carry.ts).
+  duringAnimationFrames(() => {
+    for (const entry of due) entry.callback(virtualMs);
+  });
 }
 
 /**

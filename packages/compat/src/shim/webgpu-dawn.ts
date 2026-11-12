@@ -18,7 +18,9 @@ import { threadId } from 'node:worker_threads';
 import { CANVAS_SOURCE, type CanvasCommand, type CanvasSource } from '@kinetographdev/scene';
 import { addonFunction, hasAddonFunction } from '../addon.js';
 import { lap, stamp } from '../profile.js';
-import { trackCarry, carryDepends, startsCleared, untracked } from './webgpu-dawn-carry.js';
+import { trackCarry, carryDepends, carryNeedsReplay, startsCleared, untracked } from './webgpu-dawn-carry.js';
+
+export { duringAnimationFrames } from './webgpu-dawn-carry.js';
 
 type Any = any; // Dawn's objects are native classes with no TypeScript surface here.
 
@@ -254,9 +256,9 @@ function settleRewind(): void {
   }
 }
 
-/** Whether a frame read what an earlier frame wrote (a feedback texture, a storage buffer a pass advances). */
+/** Whether a frame read what an earlier frame wrote that only a replay of the frames before it makes (`carryNeedsReplay`). */
 export function dawnDependsOnHistory(): boolean {
-  return carryDepends();
+  return carryNeedsReplay();
 }
 
 // ----------------------------------------------------------------------------------------------------------------------

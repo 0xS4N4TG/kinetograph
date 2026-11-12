@@ -35,6 +35,9 @@ const views = new WeakMap<object, Any>();
 const groups = new WeakMap<object, { buffers: Any[]; textures: Any[] }>();
 const computePasses = new WeakSet<object>();
 let flagged = false;
+/** Flagged by something done outside an animation-frame callback (an effect, a render): what a replay of the skipped frames repeats. */
+let flaggedOutside = false;
+let inCallbacks = 0;
 let paused = 0;
 let now: () => number = () => 0;
 
@@ -67,7 +70,7 @@ function read(resource: Any): void {
   const state = stateOf(resource);
   if (state.written === -Infinity) {
     if (writable(resource)) {
-      if (state.born < now()) flagged = true;
+      if (state.born < now()) flag();
       state.readEmpty = Math.min(state.readEmpty, now());
     }
   } else if (state.written < now()) {
@@ -78,7 +81,7 @@ function read(resource: Any): void {
 function write(resource: Any): void {
   if (paused > 0 || resource == null || typeof resource !== 'object') return;
   const state = stateOf(resource);
-  if (state.stale || state.readEmpty < now()) flagged = true;
+  if (state.stale || state.readEmpty < now()) flag();
   state.written = now();
 }
 
@@ -87,8 +90,33 @@ export function startsCleared(resource: Any): void {
   stateOf(resource).written = now();
 }
 
+function flag(): void {
+  flagged = true;
+  if (inCallbacks === 0) flaggedOutside = true;
+}
+
+/** Whether a frame read what an earlier frame wrote (by any page code: a jump back cannot rewind it, `noteDawnRewind`). */
 export function carryDepends(): boolean {
   return flagged;
+}
+
+/**
+ * Whether what carries was done outside the animation-frame callbacks. A jump runs those for the frames it skips
+ * (`stepAnimationFrames`), so a page that draws from them has its state without a replay, and a replay would draw its frames twice;
+ * a page that draws from effects (a React project) has its effects run only when a frame is rendered, so it is replayed.
+ */
+export function carryNeedsReplay(): boolean {
+  return flaggedOutside;
+}
+
+/** Runs the animation-frame callbacks of a frame: what they do is not for a replay to repeat. */
+export function duringAnimationFrames(work: () => void): void {
+  inCallbacks++;
+  try {
+    work();
+  } finally {
+    inCallbacks--;
+  }
 }
 
 /** Runs the engine's own use of a resource (the canvas's readback), which is not the page's. */
@@ -103,6 +131,7 @@ export function untracked<T>(work: () => T): T {
 
 export function resetCarry(): void {
   flagged = false;
+  flaggedOutside = false;
 }
 
 function wrap(proto: Any, name: string, before: (this: Any, args: Any[]) => void): void {
