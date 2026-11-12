@@ -470,10 +470,13 @@ export class DawnCanvasContext {
     this.picture = null;
   }
 
-  /** Reads the texture the page drew this frame back, and hands it to the addon. */
-  async flush(): Promise<void> {
+  /**
+   * Starts reading the texture the page drew this frame back: submits the copy to the read-back buffer and starts mapping it, and returns what
+   * finishes the read-back (waits for the map, hands the rows to the addon), or null when there is nothing to read.
+   */
+  begin(): (() => Promise<void>) | null {
     const config = this.config;
-    if (config === null || !this.drawnThisFrame || this.texture === null) return;
+    if (config === null || !this.drawnThisFrame || this.texture === null) return null;
     const { device, format } = config;
     const width: number = this.texture.width;
     const height: number = this.texture.height;
@@ -486,21 +489,35 @@ export class DawnCanvasContext {
     }
     const { buffer } = this.readback;
     let t = stamp();
+    let mapped: Promise<void>;
     try {
       untracked(() => {
         const encoder = device.createCommandEncoder();
         encoder.copyTextureToBuffer({ texture: this.texture }, { buffer, bytesPerRow: stride, rowsPerImage: height }, [width, height, 1]);
         device.queue.submit([encoder.finish()]);
       });
-      await nativeMapAsync.call(buffer, 0x01);
-      t = lap('dawn_map', t);
-      this.keep(new Uint8Array(buffer.getMappedRange()), width, height, stride, format, config.alphaMode, config.colorSpace);
-      lap('dawn_keep', t);
-      buffer.unmap();
+      mapped = nativeMapAsync.call(buffer, 0x01);
     } catch (error) {
       this.dropReadback();
       throw error;
     }
+    return async () => {
+      try {
+        await mapped;
+        t = lap('dawn_map', t);
+        this.keep(new Uint8Array(buffer.getMappedRange()), width, height, stride, format, config.alphaMode, config.colorSpace);
+        lap('dawn_keep', t);
+        buffer.unmap();
+      } catch (error) {
+        this.dropReadback();
+        throw error;
+      }
+    };
+  }
+
+  /** Reads the texture the page drew this frame back, and hands it to the addon. */
+  async flush(): Promise<void> {
+    await this.begin()?.();
   }
 
   /**
@@ -544,13 +561,30 @@ export class DawnCanvasContext {
   }
 }
 
-/** Reads back every canvas drawn this frame: the frame loop awaits it before it reads the tree. */
+/**
+ * Reads back every canvas drawn this frame: the frame loop awaits it before it reads the tree. The copies of all the canvases are
+ * submitted before the first read-back is waited for, so the GPU works on them together; their rows are handed over in the order the
+ * canvases were made.
+ */
 export async function flushDawnCanvases(): Promise<void> {
-  for (const ref of scope.contexts) {
-    const context = ref.deref();
-    if (context === undefined) scope.contexts.delete(ref);
-    else await context.flush();
+  const finishing: (() => Promise<void>)[] = [];
+  let failure: unknown;
+  try {
+    for (const ref of scope.contexts) {
+      const context = ref.deref();
+      if (context === undefined) scope.contexts.delete(ref);
+      else {
+        const finish = context.begin();
+        if (finish !== null) finishing.push(finish);
+      }
+    }
+  } catch (error) {
+    failure = error;
   }
+  // Every started read-back is finished (or its map awaited), also after a failure: a map nobody waits for is a rejection nobody handles.
+  const results = await Promise.allSettled(finishing.map((finish) => finish()));
+  if (failure !== undefined) throw failure;
+  for (const result of results) if (result.status === 'rejected') throw result.reason;
 }
 
 /** On the source a Dawn canvas names: the canvas, so that `copyExternalImageToTexture` can read its pixels. */

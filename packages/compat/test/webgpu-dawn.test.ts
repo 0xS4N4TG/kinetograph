@@ -486,6 +486,33 @@ describe.skipIf(missing !== null)('WebGPU through Dawn', () => {
     device.destroy();
   });
 
+  it('submits the read-back copies of every canvas before it waits for the first, and hands each canvas its own rows', async () => {
+    const adapter = await gpu.requestAdapter();
+    const device = await adapter.requestDevice();
+    const submits = vi.spyOn(device.queue, 'submit');
+    const contexts = [0.25, 0.5, 0.75].map((red) => {
+      const context = new DawnCanvasContext({ size: () => ({ width: 8, height: 4 }) });
+      context.configure({ device, format: 'rgba8unorm', alphaMode: 'opaque' });
+      context.resetState();
+      const encoder = device.createCommandEncoder();
+      encoder.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: red, g: 0, b: 0, a: 1 } }] }).end();
+      device.queue.submit([encoder.finish()]);
+      return context;
+    });
+    submits.mockClear();
+    const flushing = flushDawnCanvases();
+    // Before anything is awaited: the three copies are submitted already, not one at a time as each read-back finishes.
+    expect(submits).toHaveBeenCalledTimes(3);
+    await flushing;
+    expect(contexts.every((c) => c.drawn)).toBe(true);
+    if (hasAddonFunction('getCanvasPixels')) {
+      expect(contexts.map((c) => c.pixels().rgba[0])).toEqual([64, 128, 191]);
+    }
+    submits.mockRestore();
+    for (const context of contexts) context.release();
+    device.destroy();
+  });
+
   it('refuses to read a canvas the frame is still drawing, and reads it once the frame has been read back', async () => {
     const adapter = await gpu.requestAdapter();
     const device = await adapter.requestDevice();
