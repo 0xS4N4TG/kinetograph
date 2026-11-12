@@ -617,3 +617,64 @@ fn a_box_back_in_flow_leaves_a_containing_block_that_became_an_inline() {
     );
     assert_eq!(got, want);
 }
+
+/// Frames drawn one after the other through one cache (each the next pass), and the last frame's island built afresh.
+fn chain_and_fresh(frames: Vec<Value>) -> (Value, Value) {
+    let mut cache = IslandCache::default();
+    let mut got = Value::Null;
+    for (i, frame) in frames.iter().enumerate() {
+        got = drawn(&mut cache, frame, Some(1 + i as u64));
+    }
+    assert_eq!(cache.counts().0, frames.len() as u64 - 1, "every frame after the first edits the document before");
+    (got, drawn(&mut IslandCache::default(), frames.last().unwrap(), None))
+}
+
+/// The request of a frame whose tree is `root` (path `$0.0`), as the fuzz makes it: the page's root, and the sheet.
+fn fuzz_page(root: Value) -> Value {
+    let mut r = request(el_attrs(
+        "div",
+        "$0",
+        json!({}),
+        "position: absolute; inset: 0; font-family: 'DM Sans'; font-size: 16px",
+        vec![root],
+    ));
+    r["stylesheets"] = json!([SHEET]);
+    r
+}
+
+/// Seed 1051095 (inline-heavy gaps in blocks), cut down: a block with a `::before` becomes `display: contents` inside
+/// inline content (where its pseudo-element is not built into the text) in the frame that gives it a bigger font, then
+/// a block again. The pseudo-element took the font size in the style system while no box held it, and its text was
+/// not shaped again when the block had a box again: the block was as tall as before. (The fuzz's own sheet gives
+/// the pseudo-element padding, which makes the edited document be built again in the middle frame, so that the seed
+/// no longer reaches the edit; this sheet does not.)
+#[test]
+fn a_pseudo_element_that_had_no_box_while_its_owner_was_display_contents_is_shaped_again() {
+    let tree = |style: &str| {
+        let owner = el_attrs("p", "$0.0.0", json!({ "class": "star" }), style, vec![]);
+        let mut page = fuzz_page(common::el("div", "$0.0", "", vec![text("alpha"), owner]));
+        page["stylesheets"] = json!([".star::before { content: '*' }"]);
+        page
+    };
+    let (got, want) = chain_and_fresh(vec![tree(""), tree("display: contents; font-size: 30px"), tree("font-size: 30px")]);
+    assert_eq!(got, want);
+}
+
+/// Seed 1052885 (by edits, a jump back), cut down: a `<span>` inside a `display: contents` element inside inline
+/// content has no box, then the contents element is a block again, which makes the `<span>` one that holds a block.
+/// Nothing built the `<span>`'s layout children again, and the block inside kept the layout parent it had as inline
+/// content: it was never laid out at its place (a width of 0).
+#[test]
+fn a_node_that_was_inline_content_is_built_as_a_box_when_it_stops_being_inline_content() {
+    let tree = |contents: &str, inner: &str| {
+        let inner = common::el("div", "$0.0.0.0.0", inner, vec![]);
+        let span = common::el("span", "$0.0.0.0", "", vec![inner]);
+        let contents = el_attrs("div", "$0.0.0", json!({}), contents, vec![span]);
+        fuzz_page(common::el("div", "$0.0", "", vec![common::el("span", "$0.0.0", "", vec![contents])]))
+    };
+    let (got, want) = chain_and_fresh(vec![
+        tree("display: contents; position: absolute", "transform: translate(-39px, 12px)"),
+        tree("", ""),
+    ]);
+    assert_eq!(got, want);
+}

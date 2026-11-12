@@ -1017,6 +1017,16 @@ fn drop_box_children(node: &mut Node, old_anonymous_blocks: &mut Vec<NodeId>) {
     }
 }
 
+/// [`drop_box_children`] for a node that is inline content or the pseudo-element of one, and marks it
+/// ([`NodeFlags::BOX_DROPPED`]): nothing else says that it has to be built when it is a box again. Damage is
+/// cleared whether or not a box is built from it, and the style system keeps restyling the node, so a node that
+/// went back to being a layout child (an edit changed the box that holds it, not the node) would keep no layout
+/// children, a layout parent that is another's, and an inline layout shaped from a style it no longer has.
+fn give_up_box(node: &mut Node, old_anonymous_blocks: &mut Vec<NodeId>) {
+    drop_box_children(node, old_anonymous_blocks);
+    node.flags.insert(NodeFlags::BOX_DROPPED);
+}
+
 /// Find and return the "layout_children" (inline boxes) for an inline layout
 /// without actually constructing the layout. This allows us to defer the expensive
 /// construction of the Parley layout (which invokes text shaping) to a paralell phase.
@@ -1089,11 +1099,21 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                         if let Some(element) = node.element_data_mut() {
                             element.take_inline_layout();
                         }
-                        drop_box_children(node, old_anonymous_blocks);
+                        give_up_box(node, old_anonymous_blocks);
                     }
                     (DisplayOutside::None, DisplayInside::Contents) => {
                         node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                         drop_box_children(node, old_anonymous_blocks);
+                        // The pseudo-elements of the element are not built into the text (below: only its children
+                        // are), so they have no box either.
+                        for pseudo in [node.before(), node.after()].into_iter().flatten() {
+                            let pseudo = &mut nodes[pseudo];
+                            pseudo.flags.reset_construction_flags();
+                            if let Some(element) = pseudo.element_data_mut() {
+                                element.take_inline_layout();
+                            }
+                            give_up_box(pseudo, old_anonymous_blocks);
+                        }
                         iter_children!(nodes[node_id], |child_id| {
                             find_inline_layout_embedded_boxes_recursive(
                                 nodes,
@@ -1119,7 +1139,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                             if let Some(element) = node.element_data_mut() {
                                 element.take_inline_layout();
                             }
-                            drop_box_children(node, old_anonymous_blocks);
+                            give_up_box(node, old_anonymous_blocks);
                             iter_children_and_pseudos!(nodes[node_id], |child_id| {
                                 find_inline_layout_embedded_boxes_recursive(
                                     nodes,

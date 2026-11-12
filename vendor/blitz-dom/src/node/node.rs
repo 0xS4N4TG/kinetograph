@@ -57,6 +57,11 @@ bitflags! {
         const IS_TABLE_ROOT = 0b00000010;
         /// Whether the node is "in the document" (~= has a parent and isn't a template node)
         const IS_IN_DOCUMENT = 0b00000100;
+        /// Whether construction took the node's box state (layout children, inline layout, anonymous
+        /// blocks) because the node was not a box (inline content, or the pseudo-element of a
+        /// `display: contents` element in inline content). It must be built again if it becomes a box
+        /// (a layout child) without damage of its own to say so.
+        const BOX_DROPPED = 0b00001000;
     }
 }
 
@@ -80,6 +85,7 @@ impl NodeFlags {
     pub fn reset_construction_flags(&mut self) {
         self.remove(Self::IS_INLINE_ROOT);
         self.remove(Self::IS_TABLE_ROOT);
+        self.remove(Self::BOX_DROPPED);
     }
 }
 

@@ -521,9 +521,10 @@ pub(crate) fn construct_subtree(doc: &mut BaseDocument, node_id: NodeId) {
     }
 
     let mut damage = doc.nodes[node_id].damage().unwrap_or(ALL_DAMAGE);
-    let _flags = doc.nodes[node_id].flags;
+    let flags = doc.nodes[node_id].flags;
 
-    if damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) {
+    // A node that was inline content (no box) is built when it is a layout child, damaged or not.
+    if damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) || flags.contains(crate::node::NodeFlags::BOX_DROPPED) {
         //} || flags.contains(NodeFlags::IS_INLINE_ROOT) {
 
         // Deallocate the anonymous blocks created for this node in the
