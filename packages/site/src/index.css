@@ -462,6 +462,11 @@ figure.shiki button[data-checked] {
 .kg-tree code {
   line-height: 1.34;
 }
+/* A long API name in a heading (isVideoMattingModelCached()) breaks instead of pushing the page wider than a phone. */
+.prose :is(h1, h2, h3, h4) {
+  overflow-wrap: anywhere;
+}
+
 /* Fumadocs colours code spans from --shiki-light and --shiki-dark, so set those, not color. */
 .kg-tree-branch {
   --shiki-light: color-mix(in oklab, var(--color-fd-muted-foreground) 55%, transparent);
