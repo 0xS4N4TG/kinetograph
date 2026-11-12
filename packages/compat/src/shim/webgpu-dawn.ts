@@ -161,7 +161,8 @@ function patchDawn(g: Record<string, Any>): void {
   }
   wrap(g.GPUCommandEncoder.prototype, 'resolveQuerySet', function (original, [set, first, count, buffer, offset]) {
     if (!fakeQuerySets.has(set)) return original.call(this, set, first, count, buffer, offset);
-    this.clearBuffer(buffer, offset, count * 8);
+    // A buffer that only query results go to (QUERY_RESOLVE, COPY_SRC) is zero and nothing else writes it; one that can be copied to is cleared.
+    if (((buffer.usage ?? 0) & 0x08 /* COPY_DST */) !== 0) this.clearBuffer(buffer, offset, count * 8);
   });
   trackCarry(g, () => performance.now());
 }
