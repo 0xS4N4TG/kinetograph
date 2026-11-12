@@ -42,7 +42,7 @@ function RenderChart() {
     <div className="kg-core kg-core-field flex h-full min-h-[340px] flex-col justify-between gap-10 px-[68px] py-[clamp(24px,3vw,40px)]">
       <i aria-hidden className="absolute inset-y-0 left-3 w-[31.5px]" style={sprockets} />
       <i aria-hidden className="absolute inset-y-0 right-3 w-[31.5px]" style={sprockets} />
-      <p className="font-display text-[clamp(30px,2.6vw,38px)] leading-none">Render time of the {film.seconds}-second film</p>
+      <p className="font-display text-[clamp(30px,2.6vw,38px)] leading-none text-balance">Render time of the <span className="whitespace-nowrap">{film.seconds}-second</span> film</p>
       <ul className="flex flex-col gap-[clamp(28px,4vw,56px)]">
         {rows.map((r) => (
           <li key={r.name}>
