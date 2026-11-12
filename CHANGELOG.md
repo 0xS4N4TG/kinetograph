@@ -22,9 +22,12 @@ Kinetograph is in beta, so APIs can still change between versions.
 - `@remotion/three`: `<ThreeCanvas>` draws a project's own `three` and `@react-three/fiber` one frame at a time, and holds the frame while textures and models load.
 - A script-made `<img>` fires `load` and `error`; `UIEvent`, `MouseEvent`, `PointerEvent`, `WheelEvent` and `ProgressEvent` exist; `WebGLRenderingContext` and `WebGL2RenderingContext` are different classes.
 - WebGL: uniform buffer limits and `getInternalformatParameter(SAMPLES)`; uniform block calls report as unsupported.
+- WebGPU: depth-only passes, whole-level copies of depth textures, 2d texture arrays (layer views, `2d-array` bindings, render into one layer), passes with several colour attachments, and query sets (accepted; `resolveQuerySet` writes zeros).
 
 ### Changed
 
+- `navigator.gpu` has the WebGPU default limits and the features `float32-filterable` and `timestamp-query` on every machine, not the host GPU's.
+- A WebGPU call that is invalid is reported every frame (an error under `--strict`) even when the page catches it; `popErrorScope` resolves with the error.
 - Dependencies are bundled as a browser bundler resolves them (`module` field and `import` condition before `main`), so a package is in the bundle once.
 - A `setTimeout` made while a frame is held open fires when nothing else is moving, so a Suspense reveal does not stall the frame.
 - Node's process warnings printed through `console.error` are no longer reported as page errors.

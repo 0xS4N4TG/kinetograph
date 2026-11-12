@@ -80,6 +80,8 @@ A canvas's `getContext('webgpu')` records its calls, and the passes it submits a
 - Works: 2d texture arrays (layer views, `2d-array` bindings, render into one layer, per-layer writes and copies).
 - Works, drawing nothing: query sets (occlusion and timestamp). `resolveQuerySet` writes zeros, never a clock.
 - Not drawn, reported every frame: render bundles, indirect draws, stencil, cube, 1D and 3D textures, `viewFormats`, `importExternalTexture` (use `copyExternalImageToTexture`), readback (`mapAsync`, `copyTextureToBuffer`), the canvas's own texture as a source, overridable constants, and depth, compressed and optional-feature formats.
+- `navigator.gpu` has the WebGPU default limits and the features `float32-filterable` and `timestamp-query` on every machine, whatever the GPU.
+- An invalid call throws in the page as before and is also reported every frame (an error under `--strict`), so a page that catches it is not silently blank. `popErrorScope` resolves with the first validation error.
 - An `rgba16float` or `display-p3` canvas is clipped to SDR sRGB, and `toneMapping: { mode: 'extended' }` is drawn as standard (reported).
 - A refused WGSL module, or a frame over 4 GiB of textures, 4096 steps or 4096 dispatches, gives a warning and a transparent canvas.
 - State from earlier frames (a simulation with `loadOp: 'load'`) is replayed, so it is right in a sequence. A frame drawn alone, or by another worker, can't have it; it is reported and `doctor` lists it. To avoid that, clear or rewrite what a compute pass writes before using it, and bind only what a pass uses. `atomic` operations that depend on invocation order are not deterministic on a GPU.
