@@ -69,6 +69,7 @@ describe('an XML document is a tree', () => {
     expect(el.getAttributeNames()).toEqual(['Target', 'id', 'data-n']);
     expect(el.attributes).toHaveLength(3);
     expect([el.attributes[0].name, el.attributes[0].value, el.attributes.getNamedItem('id').value]).toEqual(['Target', 'x', 'a']);
+    expect([el.attributes.id.value, el.attributes.Target.textContent, el.attributes.target, 'id' in el.attributes]).toEqual(['a', 'x', undefined, true]);
     expect(el.hasAttributes()).toBe(true);
     el.setAttribute('Target', 'y');
     el.removeAttribute('id');
