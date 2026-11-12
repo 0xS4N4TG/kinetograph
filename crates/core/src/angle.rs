@@ -803,9 +803,6 @@ struct Context {
     surface: *mut c_void,
     context: *mut c_void,
     make_current: unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> u32,
-    // The libraries stay loaded as long as the context.
-    _egl: Library,
-    _gles: Library,
 }
 
 thread_local! {
@@ -831,6 +828,10 @@ pub struct Extensions {
 
 /// Runs `f` with this thread's context for `ext`, made on first use and made current.
 pub fn with<T>(ext: Extensions, f: impl FnOnce(&Gl) -> T) -> Result<T, String> {
+    // One thread at a time in ANGLE. Without this, a run of the cases on four threads failed in different cases each time
+    // (a wrong picture, a failed draw): contexts of one Metal display used from several threads at once are not safe here.
+    static BUSY: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _one_at_a_time = BUSY.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     CONTEXTS.with(|cell| {
         let mut contexts = cell.borrow_mut();
         let at = match contexts.iter().position(|(k, _)| *k == ext) {
@@ -1004,7 +1005,32 @@ mod tests {
 
 type GetProc = unsafe extern "C" fn(*const c_char) -> *const c_void;
 
-fn create(ext: Extensions) -> Result<Context, String> {
+type MakeCurrent = unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> u32;
+type CreateContext =
+    unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *const i32) -> *mut c_void;
+type CreatePbuffer = unsafe extern "C" fn(*mut c_void, *mut c_void, *const i32) -> *mut c_void;
+
+/// ANGLE as the process has it: the two libraries (loaded once and never unloaded, so a thread that ends cannot take
+/// them from the contexts of the others), the EGL entry points, and the initialised display and config (as addresses, so
+/// the struct is `Sync`).
+struct Shared {
+    _egl: Library,
+    _gles: Library,
+    get_proc: GetProc,
+    create_pbuffer: CreatePbuffer,
+    create_context: CreateContext,
+    make_current: MakeCurrent,
+    display: usize,
+    config: usize,
+}
+
+/// The process's ANGLE, made on first use; a failure to find it is kept, so a missing ANGLE is looked for once.
+fn shared() -> Result<&'static Shared, String> {
+    static SHARED: std::sync::OnceLock<Result<Shared, String>> = std::sync::OnceLock::new();
+    SHARED.get_or_init(load).as_ref().map_err(Clone::clone)
+}
+
+fn load() -> Result<Shared, String> {
     let dir = library_dir()?;
     // libGLESv2 first, by full path: libEGL then finds it already loaded instead of searching for it.
     let gles = open(&dir, "GLESv2")?;
@@ -1028,18 +1054,9 @@ fn create(ext: Extensions) -> Result<Context, String> {
         b"eglChooseConfig\0",
         unsafe extern "C" fn(*mut c_void, *const i32, *mut *mut c_void, i32, *mut i32) -> u32
     );
-    let create_pbuffer = sym!(
-        b"eglCreatePbufferSurface\0",
-        unsafe extern "C" fn(*mut c_void, *mut c_void, *const i32) -> *mut c_void
-    );
-    let create_context = sym!(
-        b"eglCreateContext\0",
-        unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *const i32) -> *mut c_void
-    );
-    let make_current = sym!(
-        b"eglMakeCurrent\0",
-        unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> u32
-    );
+    let create_pbuffer: CreatePbuffer = sym!(b"eglCreatePbufferSurface\0", CreatePbuffer);
+    let create_context: CreateContext = sym!(b"eglCreateContext\0", CreateContext);
+    let make_current: MakeCurrent = sym!(b"eglMakeCurrent\0", MakeCurrent);
     let get_proc: GetProc = sym!(b"eglGetProcAddress\0", GetProc);
 
     // `KINETOGRAPH_ANGLE_BACKEND=swiftshader` asks for ANGLE's Vulkan backend on SwiftShader, the CPU rasteriser Chrome's
@@ -1067,11 +1084,10 @@ fn create(ext: Extensions) -> Result<Context, String> {
         device[1],
         EGL_NONE as isize,
     ];
-    let (display, surface, context);
     // SAFETY: each call below passes pointers to locals that outlive it and attribute lists ended by EGL_NONE; the
     // handles are the ones the previous calls returned and are checked before use.
-    unsafe {
-        display = get_platform_display(
+    let (display, config) = unsafe {
+        let display = get_platform_display(
             EGL_PLATFORM_ANGLE_ANGLE,
             std::ptr::null_mut(),
             display_attribs.as_ptr(),
@@ -1092,10 +1108,33 @@ fn create(ext: Extensions) -> Result<Context, String> {
         if choose_config(display, config_attribs.as_ptr(), &mut config, 1, &mut n) == 0 || n == 0 {
             return Err("no ES 3 pbuffer config".into());
         }
+        (display as usize, config as usize)
+    };
+    Ok(Shared {
+        _egl: egl,
+        _gles: gles,
+        get_proc,
+        create_pbuffer,
+        create_context,
+        make_current,
+        display,
+        config,
+    })
+}
+
+/// A context for `ext` on this thread, made current.
+fn create(ext: Extensions) -> Result<Context, String> {
+    let shared = shared()?;
+    let (display, config) = (shared.display as *mut c_void, shared.config as *mut c_void);
+    let get_proc = shared.get_proc;
+    let make_current = shared.make_current;
+    let (surface, context);
+    // SAFETY: the display and config are the initialised ones of `load`; the attribute lists end with EGL_NONE and
+    // outlive the calls; the handles are checked before use.
+    unsafe {
         let pbuffer_attribs = [0x3057, 1, 0x3056, 1, EGL_NONE];
-        surface = create_pbuffer(display, config, pbuffer_attribs.as_ptr());
-        // ES 3.0; EGL_CONTEXT_WEBGL_COMPATIBILITY_ANGLE; EGL_CONTEXT_OPENGL_ROBUST_ACCESS-free; extensions off until
-        // requested (EGL_EXTENSIONS_ENABLED_ANGLE); EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE.
+        surface = (shared.create_pbuffer)(display, config, pbuffer_attribs.as_ptr());
+        // ES 3.0 with WebGL compatibility, client arrays and extensions off until requested, robust resource init.
         let context_attribs = [
             EGL_CONTEXT_MAJOR_VERSION,
             3,
@@ -1111,7 +1150,7 @@ fn create(ext: Extensions) -> Result<Context, String> {
             1,
             EGL_NONE,
         ];
-        context = create_context(
+        context = (shared.create_context)(
             display,
             config,
             std::ptr::null_mut(),
@@ -1158,7 +1197,5 @@ fn create(ext: Extensions) -> Result<Context, String> {
         surface,
         context,
         make_current,
-        _egl: egl,
-        _gles: gles,
     })
 }
