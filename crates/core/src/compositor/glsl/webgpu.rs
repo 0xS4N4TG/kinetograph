@@ -508,17 +508,43 @@ impl Compositor {
             },
             store: wgpu::StoreOp::Store,
         });
+        // The colour attachments: the first, then the others of a pass with several, each with its own clear and resolve.
+        let mut colors = Vec::new();
+        if let Some(view) = view {
+            colors.push((view, resolve_view, load));
+        }
+        for m in &pass.more {
+            let texture = res
+                .textures
+                .get(m.texture.as_str())
+                .ok_or("a pass into a texture that was not made")?;
+            let resolve = match &m.resolve {
+                None => None,
+                Some(r) => {
+                    let to = res
+                        .textures
+                        .get(r.texture.as_str())
+                        .ok_or("a pass resolves into a texture that was not made")?;
+                    Some(layer_view(to, r.mip, r.layer))
+                }
+            };
+            let load = match m.clear {
+                Some(c) => wgpu::LoadOp::Clear(color(c)),
+                None => wgpu::LoadOp::Load,
+            };
+            colors.push((layer_view(texture, m.mip, m.layer), resolve, load));
+        }
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("webgpu"),
-            color_attachments: &view
+            color_attachments: &colors
                 .iter()
-                .map(|view| {
+                .map(|(view, resolve, load)| {
                     Some(wgpu::RenderPassColorAttachment {
                         view,
                         depth_slice: None,
-                        resolve_target: resolve_view.as_ref(),
+                        resolve_target: resolve.as_ref(),
                         ops: wgpu::Operations {
-                            load,
+                            load: *load,
                             store: wgpu::StoreOp::Store,
                         },
                     })

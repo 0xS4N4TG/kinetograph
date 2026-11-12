@@ -388,6 +388,21 @@ pub struct PassTarget {
     pub layer: u32,
 }
 
+/// A colour attachment of a pass after the first: a level and layer of a texture, with its own clear and resolve target.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColorTarget {
+    pub texture: String,
+    #[serde(default)]
+    pub mip: u32,
+    #[serde(default)]
+    pub layer: u32,
+    /// The clear colour; none loads what the texture holds.
+    pub clear: Option<[f64; 4]>,
+    #[serde(default)]
+    pub resolve: Option<PassTarget>,
+}
+
 /// The depth attachment of a pass: a level of a depth texture of the target's size.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -414,6 +429,9 @@ pub struct Pass {
     pub resolve: Option<PassTarget>,
     /// The clear colour; none loads what the canvas (or the texture) holds.
     pub clear: Option<[f64; 4]>,
+    /// The colour attachments after the first (several colour attachments), each a texture of the first one's size.
+    #[serde(default)]
+    pub more: Vec<ColorTarget>,
     #[serde(default)]
     pub depth: Option<PassDepth>,
     /// A pass with no colour attachment (no `target`, and not the canvas's): it only writes `depth`.
@@ -569,6 +587,7 @@ pub enum Step {
 pub struct Limits {
     pub max_texture_dimension_2d: u32,
     pub max_texture_array_layers: u32,
+    pub max_color_attachments: u32,
     pub max_bind_groups: u32,
     pub max_buffer_size: u64,
     pub max_uniform_buffer_binding_size: u64,
@@ -593,6 +612,7 @@ impl Default for Limits {
         Limits {
             max_texture_dimension_2d: 8192,
             max_texture_array_layers: 256,
+            max_color_attachments: 8,
             max_bind_groups: 4,
             max_buffer_size: 256 << 20,
             max_uniform_buffer_binding_size: 65536,
@@ -618,6 +638,7 @@ pub fn device_limits(device: &wgpu::Device) -> Limits {
     Limits {
         max_texture_dimension_2d: l.max_texture_dimension_2d,
         max_texture_array_layers: l.max_texture_array_layers,
+        max_color_attachments: l.max_color_attachments,
         max_bind_groups: l.max_bind_groups,
         max_buffer_size: l.max_buffer_size,
         max_uniform_buffer_binding_size: l.max_uniform_buffer_binding_size,
@@ -1256,15 +1277,28 @@ fn validate_step(content: &WebGpuContent, step: &Step, limits: &Limits, dispatch
     match step {
         Step::Render(pass) => {
             if let Some(target) = &pass.target {
-                let texture = texture_of(content, &target.texture)?;
-                let (width, height) = subresource_of(texture, &target.texture, target.mip, target.layer)?;
-                if let Some(resolve) = &pass.resolve {
-                    let to = texture_of(content, &resolve.texture)?;
-                    let (w, h) = subresource_of(to, &resolve.texture, resolve.mip, resolve.layer)?;
-                    if texture.samples == 1 || to.samples != 1 || to.format != texture.format || (w, h) != (width, height) {
-                        return Err(format!("a pass resolves {} into {}: the first is multisampled and the second is not, of its size and format", target.texture, resolve.texture));
+                let (size, samples) = color_checks(content, target, pass.resolve.as_ref())?;
+                if !pass.more.is_empty() {
+                    if pass.more.len() + 1 > limits.max_color_attachments as usize {
+                        return Err(format!("a pass with {} colour attachments; the device allows {}", pass.more.len() + 1, limits.max_color_attachments));
+                    }
+                    let mut drawn = vec![(target.texture.as_str(), target.mip, target.layer)];
+                    for m in &pass.more {
+                        let level = PassTarget { texture: m.texture.clone(), mip: m.mip, layer: m.layer };
+                        if color_checks(content, &level, m.resolve.as_ref())? != (size, samples) {
+                            return Err(format!("the colour attachment {} is not of the size and samples of the first, {}", m.texture, target.texture));
+                        }
+                        if m.clear.is_some_and(|c| !c.iter().all(|v| v.is_finite())) {
+                            return Err("a clear colour is not finite".into());
+                        }
+                        if drawn.contains(&(m.texture.as_str(), m.mip, m.layer)) {
+                            return Err(format!("the level and layer of {} are drawn into by two colour attachments", m.texture));
+                        }
+                        drawn.push((m.texture.as_str(), m.mip, m.layer));
                     }
                 }
+            } else if !pass.more.is_empty() {
+                return Err("a pass with several colour attachments draws into textures, not the canvas".into());
             } else if pass.depth_only {
                 if pass.resolve.is_some() || pass.clear.is_some() || pass.depth.is_none() {
                     return Err("a pass with no colour attachment has a depth attachment, and no colour to clear or resolve".into());
@@ -1434,6 +1468,21 @@ fn validate_step(content: &WebGpuContent, step: &Step, limits: &Limits, dispatch
         }
     }
     Ok(())
+}
+
+/// A colour attachment `target` (and the texture it resolves into): both exist, in range, and a resolve is from a
+/// multisampled level into a single-sampled one of its size and format. The size of the level, and its samples.
+fn color_checks(content: &WebGpuContent, target: &PassTarget, resolve: Option<&PassTarget>) -> Result<((u32, u32), u32), String> {
+    let texture = texture_of(content, &target.texture)?;
+    let size = subresource_of(texture, &target.texture, target.mip, target.layer)?;
+    if let Some(resolve) = resolve {
+        let to = texture_of(content, &resolve.texture)?;
+        let resolved = subresource_of(to, &resolve.texture, resolve.mip, resolve.layer)?;
+        if texture.samples == 1 || to.samples != 1 || to.format != texture.format || resolved != size {
+            return Err(format!("a pass resolves {} into {}: the first is multisampled and the second is not, of its size and format", target.texture, resolve.texture));
+        }
+    }
+    Ok((size, texture.samples))
 }
 
 /// A `setBindGroup`: a slot the device has, and a group the recording holds.
@@ -1665,7 +1714,7 @@ mod tests {
     #[test]
     fn a_multisampled_pass_resolves_into_a_texture_of_its_size_and_format() {
         let pass = |target: &str, resolve: Option<&str>| {
-            Step::Render(Pass { depth: None, depth_only: false,
+            Step::Render(Pass { depth: None, depth_only: false, more: Vec::new(),
                 target: Some(PassTarget { texture: target.into(), mip: 0, layer: 0 }),
                 resolve: resolve.map(|r| PassTarget { texture: r.into(), mip: 0, layer: 0 }),
                 clear: None,
@@ -1687,7 +1736,7 @@ mod tests {
         for step in [pass("r", Some("m")), pass("m", Some("small")), pass("m", Some("srgb")), pass("r", Some("r"))] {
             assert!(refuse(step).contains("resolves"));
         }
-        let canvas = Step::Render(Pass { depth: None, depth_only: false, target: None, resolve: Some(PassTarget { texture: "r".into(), mip: 0, layer: 0 }), clear: None, commands: Vec::new() });
+        let canvas = Step::Render(Pass { depth: None, depth_only: false, more: Vec::new(), target: None, resolve: Some(PassTarget { texture: "r".into(), mip: 0, layer: 0 }), clear: None, commands: Vec::new() });
         assert!(refuse(canvas).contains("resolves the canvas"));
         c.textures.insert("odd".into(), Texture { samples: 3, ..texture(8, 4, 1, "rgba8unorm") });
         assert!(validate(&c, 8192).unwrap_err().contains("3 samples"));
@@ -1696,14 +1745,14 @@ mod tests {
     #[test]
     fn a_pass_target_and_a_bound_view_name_levels_that_exist() {
         let mut c = recording();
-        c.passes.push(Step::Render(Pass { depth: None, depth_only: false, resolve: None,
+        c.passes.push(Step::Render(Pass { depth: None, depth_only: false, more: Vec::new(), resolve: None,
             target: Some(PassTarget { texture: "t".into(), mip: 2, layer: 0 }),
             clear: Some([0.0; 4]),
             commands: Vec::new(),
         }));
         assert!(validate(&c, 8192).is_ok());
         refused(
-            Step::Render(Pass { depth: None, depth_only: false, resolve: None,
+            Step::Render(Pass { depth: None, depth_only: false, more: Vec::new(), resolve: None,
                 target: Some(PassTarget { texture: "t".into(), mip: 3, layer: 0 }),
                 clear: None,
                 commands: Vec::new(),
@@ -1711,7 +1760,7 @@ mod tests {
             "mip level 3",
         );
         refused(
-            Step::Render(Pass { depth: None, depth_only: false, resolve: None,
+            Step::Render(Pass { depth: None, depth_only: false, more: Vec::new(), resolve: None,
                 target: Some(PassTarget { texture: "gone".into(), mip: 0, layer: 0 }),
                 clear: None,
                 commands: Vec::new(),
@@ -1719,7 +1768,7 @@ mod tests {
             "texture gone",
         );
         refused(
-            Step::Render(Pass { depth: None, depth_only: false, resolve: None,
+            Step::Render(Pass { depth: None, depth_only: false, more: Vec::new(), resolve: None,
                 target: None,
                 clear: Some([f64::NAN, 0.0, 0.0, 0.0]),
                 commands: Vec::new(),
@@ -1792,7 +1841,7 @@ mod tests {
     fn too_many_steps_are_refused() {
         let mut c = recording();
         for _ in 0..=MAX_STEPS {
-            c.passes.push(Step::Render(Pass { depth: None, depth_only: false, resolve: None, target: None, clear: None, commands: Vec::new() }));
+            c.passes.push(Step::Render(Pass { depth: None, depth_only: false, more: Vec::new(), resolve: None, target: None, clear: None, commands: Vec::new() }));
         }
         assert!(validate(&c, 8192).unwrap_err().contains("steps in a frame"));
     }
@@ -2285,7 +2334,7 @@ mod tests {
     fn a_render_pass_binds_groups_the_recording_holds() {
         let mut c = compute_recording();
         let bind = |index: u32, group: &str| {
-            Step::Render(Pass { depth: None, depth_only: false, resolve: None,
+            Step::Render(Pass { depth: None, depth_only: false, more: Vec::new(), resolve: None,
                 target: None,
                 clear: None,
                 commands: vec![Command::Bind { index, group: group.into(), offsets: vec![] }],

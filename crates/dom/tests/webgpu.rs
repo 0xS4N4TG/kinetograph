@@ -93,3 +93,8 @@ fn webgpu_shadow() {
 fn webgpu_array() {
     run("webgpu_array", 1.0);
 }
+
+#[test]
+fn webgpu_mrt() {
+    run("webgpu_mrt", 1.0);
+}

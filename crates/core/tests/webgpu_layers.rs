@@ -193,3 +193,109 @@ fn a_binding_and_its_view_must_have_the_same_dimension_and_a_multisampled_array_
 fn present_nothing() -> Value {
     json!({"k": "render", "clear": [0, 0, 0, 1], "commands": draw("p")})
 }
+
+// ---- several colour attachments ----
+
+const TWO_OUTPUTS: &str = "
+    struct Out { @location(0) a: vec4f, @location(1) b: vec4f }
+    @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+        let p = array<vec2f, 3>(vec2f(-1, -1), vec2f(3, -1), vec2f(-1, 3));
+        return vec4f(p[i], 0, 1);
+    }
+    @fragment fn fs() -> Out { var o: Out; o.a = vec4f(1, 0, 0, 1); o.b = vec4f(0, 1, 0, 1); return o; }";
+
+fn two_targets(samples: u32) -> Value {
+    let mut p = json!({"vertex": {"module": "m", "entryPoint": "vs", "buffers": []},
+        "fragment": {"module": "m", "entryPoint": "fs", "targets": [{"format": "rgba8unorm"}, {"format": "rgba8unorm"}]},
+        "primitive": {"topology": "triangle-list", "frontFace": "ccw", "cullMode": "none"}});
+    if samples > 1 {
+        p["samples"] = json!(samples);
+    }
+    p
+}
+
+fn texture(width: u32, samples: u32) -> Value {
+    let mut t = json!({"width": width, "height": 16, "mips": 1, "format": "rgba8unorm"});
+    if samples > 1 {
+        t["samples"] = json!(samples);
+    }
+    t
+}
+
+/// A pass with the textures `first` and `second` as colour attachments (`more` as given), drawing `commands`; then the canvas
+/// samples the texture `read` (a 2d view of its level 0).
+fn mrt(pass: Value, textures: Value, samples: u32, read: &str) -> Frame {
+    render(json!({
+        "modules": {"m": TWO_OUTPUTS, "s": SAMPLE_2D},
+        "pipelines": {"two": two_targets(samples), "ps": pipeline("s", "vs", "fs")},
+        "bindGroups": {"g": {"layout": "auto:ps:0", "entries": [{"binding": 0, "texture": {"id": read, "baseMip": 0, "mips": 1}}]}},
+        "textures": textures,
+        "passes": [pass, present()]
+    }))
+}
+
+fn mrt_pass(more: Value, commands: Value) -> Value {
+    json!({"k": "render", "target": {"texture": "a", "mip": 0}, "clear": [0, 0, 0, 1], "more": more, "commands": commands})
+}
+
+#[test]
+fn a_pass_draws_into_every_colour_attachment_it_has() {
+    let textures = || json!({"a": texture(16, 1), "b": texture(16, 1)});
+    let more = || json!([{"texture": "b", "mip": 0, "clear": [0, 0, 0, 1]}]);
+    let with = |read: &str| mrt(mrt_pass(more(), draw("two")), textures(), 1, read);
+    assert_eq!(px(&with("a"), 8, 8), RED);
+    assert_eq!(px(&with("b"), 8, 8), GREEN);
+    // Without the second attachment `b` is not touched (the pipeline's second target is then wgpu's to refuse: nothing drawn).
+    let without = mrt(mrt_pass(json!([]), draw("two")), textures(), 1, "b");
+    assert_eq!(px(&without, 8, 8)[3], 0);
+}
+
+#[test]
+fn each_colour_attachment_is_cleared_to_its_own_colour_or_loaded() {
+    let textures = || json!({"a": texture(16, 1), "b": texture(16, 1)});
+    let cleared = |clear: Value| mrt(mrt_pass(json!([{"texture": "b", "mip": 0, "clear": clear}]), json!([])), textures(), 1, "b");
+    assert_eq!(px(&cleared(json!([0, 0, 1, 1])), 8, 8), [0, 0, 255, 255]);
+    assert_eq!(px(&cleared(json!([0, 1, 0, 1])), 8, 8), GREEN);
+    // A load keeps what an earlier pass left: the first pass clears `b` to blue, the second loads it.
+    let earlier = json!({"k": "render", "target": {"texture": "b", "mip": 0}, "clear": [0, 0, 1, 1], "commands": []});
+    let kept = render(json!({
+        "modules": {"s": SAMPLE_2D},
+        "pipelines": {"ps": pipeline("s", "vs", "fs")},
+        "bindGroups": {"g": {"layout": "auto:ps:0", "entries": [{"binding": 0, "texture": {"id": "b", "baseMip": 0, "mips": 1}}]}},
+        "textures": textures(),
+        "passes": [earlier, mrt_pass(json!([{"texture": "b", "mip": 0, "clear": null}]), json!([])), present()]
+    }));
+    assert_eq!(px(&kept, 8, 8), [0, 0, 255, 255]);
+}
+
+#[test]
+fn a_multisampled_attachment_resolves_into_its_own_target() {
+    let textures = || json!({"a": texture(16, 4), "b": texture(16, 4), "ra": texture(16, 1), "rb": texture(16, 1)});
+    let mut pass = mrt_pass(json!([{"texture": "b", "mip": 0, "clear": [0, 0, 0, 1], "resolve": {"texture": "rb", "mip": 0}}]), draw("two"));
+    pass["resolve"] = json!({"texture": "ra", "mip": 0});
+    assert_eq!(px(&mrt(pass.clone(), textures(), 4, "ra"), 8, 8), RED);
+    assert_eq!(px(&mrt(pass, textures(), 4, "rb"), 8, 8), GREEN);
+}
+
+#[test]
+fn attachments_that_do_not_fit_together_draw_nothing_and_do_not_panic() {
+    let more = || json!([{"texture": "b", "mip": 0, "clear": [0, 0, 0, 1]}]);
+    let good = || mrt(mrt_pass(more(), draw("two")), json!({"a": texture(16, 1), "b": texture(16, 1)}), 1, "a");
+    assert_eq!(px(&good(), 8, 8), RED);
+    // A second attachment of another size, the same level twice, a missing texture, nine attachments, the canvas with more.
+    assert_eq!(px(&mrt(mrt_pass(more(), draw("two")), json!({"a": texture(16, 1), "b": texture(8, 1)}), 1, "a"), 8, 8)[3], 0);
+    let twice = json!([{"texture": "a", "mip": 0, "clear": null}]);
+    assert_eq!(px(&mrt(mrt_pass(twice, draw("two")), json!({"a": texture(16, 1), "b": texture(16, 1)}), 1, "a"), 8, 8)[3], 0);
+    let missing = json!([{"texture": "nope", "mip": 0, "clear": null}]);
+    assert_eq!(px(&mrt(mrt_pass(missing, draw("two")), json!({"a": texture(16, 1), "b": texture(16, 1)}), 1, "a"), 8, 8)[3], 0);
+    let mut textures = json!({"a": texture(16, 1)});
+    let nine: Vec<Value> = (0..8)
+        .map(|n| {
+            textures[format!("x{n}")] = texture(16, 1);
+            json!({"texture": format!("x{n}"), "mip": 0, "clear": null})
+        })
+        .collect();
+    assert_eq!(px(&mrt(mrt_pass(json!(nine), json!([])), textures, 1, "a"), 8, 8)[3], 0);
+    let canvas = json!({"k": "render", "clear": [0, 0, 0, 1], "more": more(), "commands": []});
+    assert_eq!(px(&mrt(canvas, json!({"a": texture(16, 1), "b": texture(16, 1)}), 1, "a"), 8, 8)[3], 0);
+}

@@ -644,9 +644,8 @@ export class GPUTextureShim extends GpuObject {
 
 // ---- encoding ----
 
-/** What a render pass draws into: the canvas, or one level of a texture. */
-interface Attachment {
-  context: GPUCanvasContextShim | null;
+/** A level and layer of a texture a render pass draws into, with the colour it is cleared to (null: loaded). */
+interface ColorAttachment {
   texture: GPUTextureShim | null;
   mip: number;
   /** The array layer of `texture` that is drawn into. */
@@ -654,6 +653,13 @@ interface Attachment {
   clear: [number, number, number, number] | null;
   /** The texture a multisampled `texture` resolves into when the pass ends. */
   resolve?: { texture: GPUTextureShim; mip: number; layer: number };
+}
+
+/** What a render pass draws into: the canvas, or one level of a texture (and, for several colour attachments, `more`). */
+interface Attachment extends ColorAttachment {
+  context: GPUCanvasContextShim | null;
+  /** The colour attachments after the first, which are always textures of the first one's size. */
+  more?: ColorAttachment[];
   /** The depth attachment: a level of a depth texture, cleared to `clear` (null: loaded). */
   depth?: { texture: GPUTextureShim; mip: number; layer: number; clear: number | null; readOnly: boolean };
   /** A pass with no colour attachment: only `depth` is drawn into. */
@@ -708,6 +714,15 @@ export class GPURenderPassEncoderShim extends GpuObject {
     if (texture !== null && target && target.format !== texture.format) {
       throw new RangeError(`OperationError: setPipeline: the pipeline draws ${target.format} and the pass draws into a ${texture.format} texture`);
     }
+    // With several colour attachments the pipeline's targets are the pass's formats, slot for slot.
+    const more = this.attachment.more;
+    if (more !== undefined) {
+      const formats = [texture!, ...more.map((m) => m.texture!)].map((t) => t.format);
+      const targets = pipeline.descriptor.fragment?.targets ?? [];
+      if (targets.length !== formats.length || targets.some((t, i) => (t?.format ?? null) !== formats[i])) {
+        throw new RangeError(`OperationError: setPipeline: the pipeline draws ${targets.map((t) => t?.format ?? 'nothing').join(', ') || 'no colour'} and the pass draws into ${formats.join(', ')}`);
+      }
+    }
     const samples = texture?.sampleCount ?? depth?.texture.sampleCount ?? 1;
     if ((pipeline.descriptor.samples ?? 1) !== samples) {
       throw new RangeError(`OperationError: setPipeline: the pipeline has ${pipeline.descriptor.samples ?? 1} samples and the pass draws into ${samples}`);
@@ -722,8 +737,9 @@ export class GPURenderPassEncoderShim extends GpuObject {
   setBindGroup(index: number, group: GPUBindGroupShim | null, offsets?: unknown, start?: number, length?: number): void {
     if (group === null) return;
     const texture = this.attachment.texture;
+    const written = texture === null ? [] : [this.attachment, ...(this.attachment.more ?? [])];
     for (const entry of group.entries) {
-      if ('view' in entry && texture !== null && entry.view.holds(texture, this.attachment.mip, this.attachment.layer)) {
+      if ('view' in entry && written.some((a) => entry.view.holds(a.texture!, a.mip, a.layer))) {
         throw new RangeError('OperationError: setBindGroup: a pass samples the level of the texture it draws into');
       }
       const depth = this.attachment.depth;
@@ -985,7 +1001,6 @@ export class GPUCommandEncoderShim extends GpuObject {
     timestampWrites?: unknown;
   }): GPURenderPassEncoderShim {
     const attachments = (descriptor.colorAttachments ?? []).filter((a) => a !== null && a !== undefined);
-    if (attachments.length > 1) throw this.device.unsupported(`a render pass with ${attachments.length} colour attachments; one, the canvas's texture or a 2D texture, is drawn`);
     if (descriptor.occlusionQuerySet) queryIn('beginRenderPass', descriptor.occlusionQuerySet, 'occlusion', 0);
     checkTimestampWrites('beginRenderPass', descriptor.timestampWrites);
     const occlusion = new OcclusionQueries((descriptor.occlusionQuerySet as GPUQuerySetShim | undefined) ?? null);
@@ -994,19 +1009,38 @@ export class GPUCommandEncoderShim extends GpuObject {
       const depth = this.depthAttachment(descriptor.depthStencilAttachment, null, null)!;
       return new GPURenderPassEncoderShim(this, { context: null, texture: null, mip: 0, layer: 0, clear: null, depth, depthOnly: true }, occlusion);
     }
-    const attachment = attachments[0]!;
+    const max = this.device.limits.maxColorAttachments!;
+    if (attachments.length > max) throw new RangeError(`OperationError: beginRenderPass: ${attachments.length} colour attachments; the device allows ${max}`);
+    const [first, ...rest] = attachments.map((a) => this.colorAttachment(a));
+    if (rest.length > 0) {
+      if (first!.context !== null || rest.some((c) => c.context !== null)) throw this.device.unsupported("the canvas's texture among several colour attachments; draw into textures of your own");
+      for (const [n, c] of rest.entries()) {
+        const same = (x: typeof c): boolean => x.texture!.width === first!.texture!.width && x.texture!.height === first!.texture!.height && x.texture!.sampleCount === first!.texture!.sampleCount;
+        if (!same(c)) throw new RangeError(`OperationError: beginRenderPass: colour attachment ${n + 1} has another size or sample count than attachment 0`);
+        for (const other of [first!, ...rest.slice(0, n)]) {
+          if (other.texture === c.texture && other.mip === c.mip && other.layer === c.layer) throw new RangeError(`OperationError: beginRenderPass: colour attachment ${n + 1} is the level and layer that another attachment draws into`);
+        }
+      }
+    }
+    const { context, texture, mip, layer, clear, resolve } = first!;
+    const depth = this.depthAttachment(descriptor.depthStencilAttachment, context !== null ? { width: texture!.width, height: texture!.height } : texture!.extent(mip), texture!.sampleCount);
+    const more = rest.map(({ context: _context, ...attachment }) => attachment as ColorAttachment);
+    const target = context !== null ? { context, texture: null, mip: 0, layer: 0, clear } : { context: null, texture, mip, layer, clear, ...(resolve ? { resolve } : {}) };
+    return new GPURenderPassEncoderShim(this, { ...target, ...(more.length > 0 ? { more } : {}), ...(depth ? { depth } : {}) } as Attachment, occlusion);
+  }
+  /** One colour attachment of a pass, checked: the canvas's texture (`context`), or a level and layer of a texture. */
+  private colorAttachment(attachment: { view: GPUTextureViewShim; loadOp?: string; clearValue?: unknown; resolveTarget?: unknown }): ColorAttachment & { context: GPUCanvasContextShim | null } {
     const view = attachment.view;
     if (!(view instanceof GPUTextureViewShim)) throw new TypeError('beginRenderPass: the colour attachment has no view');
     const clear = (attachment.loadOp ?? 'clear') === 'load' ? null : colorOf(attachment.clearValue);
     const texture = view.texture;
-    const depth = this.depthAttachment(descriptor.depthStencilAttachment, texture.canvas !== null ? { width: texture.width, height: texture.height } : texture.extent(view.baseMip), texture.sampleCount);
-    if (texture.canvas !== null) return new GPURenderPassEncoderShim(this, { context: texture.canvas, texture: null, mip: 0, layer: 0, clear, ...(depth ? { depth } : {}) }, occlusion);
+    if (texture.canvas !== null) return { context: texture.canvas, texture, mip: 0, layer: 0, clear };
     if (texture.destroyed) throw new Error('OperationError: beginRenderPass: the texture was destroyed');
     if ((texture.usage & GPU_TEXTURE_USAGE.RENDER_ATTACHMENT) === 0) throw new RangeError('OperationError: beginRenderPass: the texture was made without GPUTextureUsage.RENDER_ATTACHMENT');
     if (view.mips !== 1) throw new RangeError('OperationError: beginRenderPass: a colour attachment is one mip level');
     if (view.layers !== 1) throw new RangeError('OperationError: beginRenderPass: a colour attachment is one array layer');
     const resolveTarget = attachment.resolveTarget;
-    let resolve: Attachment['resolve'];
+    let resolve: ColorAttachment['resolve'];
     if (resolveTarget) {
       if (!(resolveTarget instanceof GPUTextureViewShim)) throw new TypeError('beginRenderPass: the resolve target has no view');
       const to = resolveTarget.texture;
@@ -1020,7 +1054,7 @@ export class GPUCommandEncoderShim extends GpuObject {
       if ((to.usage & GPU_TEXTURE_USAGE.RENDER_ATTACHMENT) === 0) throw new RangeError('OperationError: beginRenderPass: the resolve target was made without GPUTextureUsage.RENDER_ATTACHMENT');
       resolve = { texture: to, mip: resolveTarget.baseMip, layer: resolveTarget.baseLayer };
     }
-    return new GPURenderPassEncoderShim(this, { context: null, texture, mip: view.baseMip, layer: view.baseLayer, clear, ...(resolve ? { resolve } : {}), ...(depth ? { depth } : {}) }, occlusion);
+    return { context: null, texture, mip: view.baseMip, layer: view.baseLayer, clear, ...(resolve ? { resolve } : {}) };
   }
   /** A pass's `depthStencilAttachment`, checked against the colour attachment it goes with (size and samples). */
   private depthAttachment(a: unknown, color: { width: number; height: number } | null, samples: number | null): Attachment['depth'] {
@@ -1760,6 +1794,7 @@ export class GPUDeviceShim extends EventTarget {
       ...(attachment.depthOnly ? { depthOnly: true as const } : {}),
       ...(attachment.resolve ? { resolve: { texture: attachment.resolve.texture.id, mip: attachment.resolve.mip, ...layerOf(attachment.resolve.layer) } } : {}),
       clear: attachment.clear,
+      ...(attachment.more ? { more: attachment.more.map((m) => ({ texture: m.texture!.id, mip: m.mip, ...layerOf(m.layer), clear: m.clear, ...(m.resolve ? { resolve: { texture: m.resolve.texture.id, mip: m.resolve.mip, ...layerOf(m.resolve.layer) } } : {}) })) } : {}),
       ...(attachment.depth ? { depth: { texture: attachment.depth.texture.id, mip: attachment.depth.mip, ...layerOf(attachment.depth.layer), clear: attachment.depth.clear, ...(attachment.depth.readOnly ? { readOnly: true } : {}) } } : {}),
       commands: out,
     };
@@ -1771,14 +1806,14 @@ export class GPUDeviceShim extends EventTarget {
       if (depth.readOnly) reads.add(key);
       else all.push({ key, whole: depth.clear !== null, owner: depth.texture });
     }
-    if (target !== null) {
-      textures.add(target);
-      all.push({ key: levelKey(target, attachment.mip, attachment.layer), whole: attachment.clear !== null, owner: target });
-    }
-    // What the pass resolves into is replaced whole.
-    if (attachment.resolve) {
-      textures.add(attachment.resolve.texture);
-      all.push({ key: levelKey(attachment.resolve.texture, attachment.resolve.mip, attachment.resolve.layer), whole: true, owner: attachment.resolve.texture });
+    for (const a of target === null ? [] : [attachment, ...(attachment.more ?? [])]) {
+      textures.add(a.texture!);
+      all.push({ key: levelKey(a.texture!, a.mip, a.layer), whole: a.clear !== null, owner: a.texture! });
+      // What the pass resolves into is replaced whole.
+      if (a.resolve) {
+        textures.add(a.resolve.texture);
+        all.push({ key: levelKey(a.resolve.texture, a.resolve.mip, a.resolve.layer), whole: true, owner: a.resolve.texture });
+      }
     }
     this.append({ step: pass, canvas, tables, textures, gpuBuffers, reads, writes: all });
   }

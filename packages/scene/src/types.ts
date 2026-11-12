@@ -1234,6 +1234,8 @@ export interface WebGpuPass {
   resolve?: { texture: string; mip: number; layer?: number };
   /** The clear colour, or null for `loadOp: 'load'`. */
   clear: [number, number, number, number] | null;
+  /** The colour attachments after the first (several colour attachments), each of the first one's size, with its own clear and resolve target. */
+  more?: { texture: string; mip: number; layer?: number; clear: [number, number, number, number] | null; resolve?: { texture: string; mip: number; layer?: number } }[];
   /** The depth attachment: a level of a depth texture the same size as the target, cleared to `clear` (null: `loadOp: 'load'`). */
   depth?: { texture: string; mip: number; layer?: number; clear: number | null; readOnly?: boolean };
   /** A pass with no colour attachment (no `target`, and not the canvas): it only writes `depth`. */

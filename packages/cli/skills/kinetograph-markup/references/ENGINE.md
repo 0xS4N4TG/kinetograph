@@ -794,7 +794,7 @@ or Rgba16Float for an `rgba16float` canvas, whose half floats reach the linear c
 and turned into sRGB primaries there (values clipped to 0..1 first, as the standard tone mapping does, and colours outside
 sRGB clipped at the video's encode, the output being SDR). The buffer is flushed first because earlier glsl layers' place
 passes read it. The dom painter reads every module with naga
-(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (bundles, stencil, several colour attachments, a multisampled texture that is sampled or copied, readback, `extended` tone mapping), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
+(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (bundles, stencil, a multisampled texture that is sampled or copied, readback, `extended` tone mapping), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
 A module wgpu then refuses is a warning on stderr and a transparent canvas, never a panic.
 
 WebGPU compute. `createComputePipeline` and `createComputePipelineAsync` record a `computePipelines` entry (module, entry point,
@@ -819,6 +819,10 @@ frame), and `check_with` reads the workgroup size of each compute entry point wi
 A render pass with no colour attachment is a `render` step with `depthOnly: true` and no `target` (without the flag a pass with no
 target is the canvas's), and a depth texture may be the whole-level source and destination of `copyTextureToTexture`, so a
 shadow map is made by a depth-only pass, copied, and read by a comparison sampler.
+A render pass with several colour attachments is a `render` step whose `target`, `resolve` and `clear` are the first and `more` the
+rest (each a level and layer with its own `clear` and `resolve`), all textures of one size and sample count, as many as
+`maxColorAttachments`; the canvas's texture cannot be one of several. `webgpu::validate` checks the sizes, samples, distinct
+levels and the count, and wgpu refuses a pass over `maxColorAttachmentBytesPerSample` (a warning and a transparent canvas).
 A texture may have array layers (`Texture.layers`, up to `maxTextureArrayLayers`, not multisampled). A view is a `2d` view of one
 layer or a `2d-array` view of a range (`baseLayer`, `layers`, `dimension`), a layout's `viewDimension` says which a binding
 takes, and a pass's target, resolve target and depth attachment, an upload and each corner of a copy name their `layer`. The
