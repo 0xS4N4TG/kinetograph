@@ -2,6 +2,8 @@
 // `blob:` URLs, the downloaded remote files) and refuses what `fetch` refuses, with the same message in the `error`
 // event's `message`. Asynchronous only: a synchronous request would have to block this thread.
 
+import { parseXmlDocument, type XmlDocument } from './xml.js';
+
 type Handler = ((event: Event) => void) | null;
 const EVENTS = ['readystatechange', 'loadstart', 'progress', 'load', 'error', 'abort', 'timeout', 'loadend'] as const;
 
@@ -37,6 +39,19 @@ export class XMLHttpRequestShim extends EventTarget {
   get responseText(): string {
     if (this.responseType !== '' && this.responseType !== 'text') throw new DOMException(`Failed to read the 'responseText' property: the value is only accessible if the object's 'responseType' is '' or 'text' (was '${this.responseType}').`, 'InvalidStateError');
     return typeof this.response === 'string' ? this.response : '';
+  }
+
+  /** The reply as an XML document when it is one (`responseType` '' or 'document' and an XML media type), else null. */
+  get responseXML(): XmlDocument | null {
+    if (this.responseType !== '' && this.responseType !== 'document') throw new DOMException(`Failed to read the 'responseXML' property: the value is only accessible if the object's 'responseType' is '' or 'document' (was '${this.responseType}').`, 'InvalidStateError');
+    if (this.readyState !== 4) return null;
+    if (this.response instanceof Object && 'documentElement' in this.response) return this.response as XmlDocument;
+    return this.xml ??= this.xmlReply(typeof this.response === 'string' ? this.response : null);
+  }
+  private xml: XmlDocument | null = null;
+  private xmlReply(text: string | null): XmlDocument | null {
+    const type = (this.reply?.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+    return text !== null && /^(text|application)\/xml$|\+xml$/.test(type) ? parseXmlDocument(text, type) : null;
   }
 
   open(method: string, url: string | URL, async = true): void {
@@ -109,6 +124,7 @@ export class XMLHttpRequestShim extends EventTarget {
           return null;
         }
       }
+      case 'document': return this.xmlReply(await reply.text());
       default: return reply.text();
     }
   }
