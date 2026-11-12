@@ -16,6 +16,7 @@ import { netFetch } from './net-store.js';
 import { mediaLoadsSettled, pendingMediaLoads, reportMediaIssue, takeMediaIssues } from './media.js';
 import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas.js';
 import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, XMLSerializerShim, installDocumentMembers } from './document.js';
+import { XmlElement } from './xml.js';
 import { AttrShim, NamedNodeMapShim } from './attributes.js';
 import { DomElement, DomFragment, DomNodeBase, DomText, domElementFor, domTextFor, isDomElementShim, selectorContextOf, setImageLoader, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
 import { bodyHost, headHost, htmlHost, pageDocument, setPageViewport } from './host.js';
@@ -569,9 +570,19 @@ class HTMLElementShim extends DomElement {
 }
 class SVGElementShim extends DomElement {
   static [Symbol.hasInstance](value: unknown): boolean {
-    return this === SVGElementShim ? value instanceof DomElement && value.inSvg : Function.prototype[Symbol.hasInstance].call(this, value);
+    if (this !== SVGElementShim) return Function.prototype[Symbol.hasInstance].call(this, value);
+    return value instanceof DomElement ? value.inSvg : value instanceof XmlElement && value.namespaceURI === 'http://www.w3.org/2000/svg';
   }
 }
+
+/**
+ * `el instanceof Element`: a document made by `DOMParser` (xml.ts) has its own element class, which is not a `DomElement`
+ * (that one wraps a host element of the page's tree). So `Element` is a function whose `prototype` is the DomElement
+ * prototype (`Element.prototype.x = ...` still reaches every page element) and whose `instanceof` accepts both.
+ */
+function ElementGlobal(): void {}
+Object.defineProperty(ElementGlobal, 'prototype', { value: DomElement.prototype, writable: false });
+Object.defineProperty(ElementGlobal, Symbol.hasInstance, { value: (value: unknown): boolean => value instanceof DomElement || value instanceof XmlElement });
 
 
 /**
@@ -718,7 +729,7 @@ export function installDomGlobals(): void {
   define(g, 'Worker', WorkerShim);
   define(g, 'MessageChannel', MessageChannelShim, true);
   define(g, 'MessagePort', MessagePortShim, true);
-  define(g, 'Element', DomElement);
+  define(g, 'Element', ElementGlobal);
   define(g, 'HTMLElement', HTMLElementShim);
   define(g, 'SVGElement', SVGElementShim);
   define(g, 'Node', DomNodeBase);

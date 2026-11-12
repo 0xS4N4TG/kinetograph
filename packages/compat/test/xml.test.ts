@@ -23,6 +23,24 @@ describe('an XML document is a tree', () => {
     }
   });
 
+  it('is an Element, and an SVG one is an SVGElement, to a page that checks with instanceof', () => {
+    const doc = parse('<svg xmlns="http://www.w3.org/2000/svg"><g/></svg>', 'image/svg+xml');
+    const root = doc.documentElement;
+    expect(root instanceof Element).toBe(true);
+    expect(root instanceof SVGElement).toBe(true);
+    expect(root instanceof HTMLElement).toBe(false);
+    expect(root.firstChild instanceof Element).toBe(true);
+    const plain = parse(COLLADA).documentElement;
+    expect(plain instanceof Element).toBe(true);
+    expect(plain instanceof SVGElement).toBe(false);
+    expect(plain.firstChild.firstChild instanceof Node).toBe(true);
+    expect(document.body instanceof Element).toBe(true);
+    expect(document.createElementNS('http://www.w3.org/2000/svg', 'g') instanceof SVGElement).toBe(true);
+    expect(document.createTextNode('x') instanceof Element).toBe(false);
+    // The Element prototype is the one every page element has.
+    expect(Element.prototype).toBe(Object.getPrototypeOf(document.body));
+  });
+
   it('is case sensitive', () => {
     const doc = parse('<Root><Item/><item/></Root>');
     expect(doc.getElementsByTagName('Item')).toHaveLength(1);
