@@ -794,7 +794,7 @@ or Rgba16Float for an `rgba16float` canvas, whose half floats reach the linear c
 and turned into sRGB primaries there (values clipped to 0..1 first, as the standard tone mapping does, and colours outside
 sRGB clipped at the video's encode, the output being SDR). The buffer is flushed first because earlier glsl layers' place
 passes read it. The dom painter reads every module with naga
-(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (query sets, bundles, stencil, several colour attachments, a multisampled texture that is sampled or copied, readback, `extended` tone mapping), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
+(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (bundles, stencil, several colour attachments, a multisampled texture that is sampled or copied, readback, `extended` tone mapping), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
 A module wgpu then refuses is a warning on stderr and a transparent canvas, never a panic.
 
 WebGPU compute. `createComputePipeline` and `createComputePipelineAsync` record a `computePipelines` entry (module, entry point,
@@ -816,6 +816,10 @@ page carries from frame to frame; the frame is then drawn from the replayed hist
 format against the layout's `sampleType` or storage format, one level for a storage texture), layout (storage formats and
 access, stages, counts against the limits) and dispatch (each dimension; at most 4096 dispatches and 2^26 workgroups in a
 frame), and `check_with` reads the workgroup size of each compute entry point with naga; the page side throws for the same.
+Query sets (`webgpu-queries.ts`) are accepted and measure nothing: `createQuerySet`, `timestampWrites`, occlusion queries and
+`writeTimestamp` record no step, and `resolveQuerySet` writes zeros into its destination (a `clearBuffer` step), because a
+timestamp is never the clock and a frame is a function of its calls. `timestamp-query` is offered whatever the device has:
+three.js's Inspector sets `trackTimestamp` on the backend directly, so hiding the feature would not make it skip the path.
 `device.limits` and `adapter.limits` are `webgpu::device_info` of the engine's device (the `webgpuDeviceInfo` function of
 the addon opens the GPU once), `float32-filterable` is requested of the adapter so that 32-bit float textures can be
 filtered where the hardware does, and a `requestDevice` for better limits is refused. A texture is made with

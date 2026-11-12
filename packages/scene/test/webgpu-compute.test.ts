@@ -180,12 +180,10 @@ describe('compute pipelines and passes', () => {
     expect(computeSteps(context.content().webgpu!)).toHaveLength(0);
   });
 
-  it('says what is not drawn: indirect dispatches, timestamp writes', async () => {
+  it('says what is not drawn: indirect dispatches', async () => {
     const { device } = await setup();
     const pass = device.createCommandEncoder().beginComputePass();
     expect(() => pass.dispatchWorkgroupsIndirect()).toThrow(WebGpuUnsupportedError);
-    expect(() => device.createCommandEncoder().beginComputePass({ timestampWrites: {} })).toThrow(/query sets/);
-    expect(() => device.createQuerySet()).toThrow(WebGpuUnsupportedError);
   });
 });
 
@@ -410,9 +408,9 @@ describe('storage layouts, textures and bind groups', () => {
     const gpu = createGpu({ info: () => ({ features: ['float32-filterable', 'timestamp-query', 'shader-f16'], limits: {} }) });
     const adapter = await gpu.requestAdapter();
     // Only what the recorder draws is offered, whatever the device has.
-    expect([...adapter.features]).toEqual(['float32-filterable']);
+    expect([...adapter.features]).toEqual(['float32-filterable', 'timestamp-query']);
     const without = await createGpu({ info: () => ({ features: [], limits: {} }) }).requestAdapter();
-    expect([...without.features]).toEqual([]);
+    expect([...without.features]).toEqual(['timestamp-query']);
     const device = await adapter.requestDevice({ requiredFeatures: ['float32-filterable'] });
     const layout = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: FRAGMENT, texture: {} }] });
     expect(() => device.createBindGroup({ layout, entries: [{ binding: 0, resource: storageTexture(device, 'rgba32float').createView() }] })).not.toThrow();

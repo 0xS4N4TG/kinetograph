@@ -8,9 +8,9 @@
 // or into a 2D texture and compute passes (`dispatchWorkgroups`), `draw` and `drawIndexed`, `writeBuffer`, and textures:
 // `createTexture` (storage textures included), `createView`, `createSampler`, `writeTexture`, `copyExternalImageToTexture`,
 // `copyBufferToTexture`, `copyTextureToTexture`; a depth attachment (`depth16unorm`, `depth24plus`, `depth32float`) with depth
-// state and comparison samplers; multisampled passes. Queries, bundles, indirect calls, the stencil, several colour
+// state and comparison samplers; multisampled passes. Bundles, indirect calls, the stencil, several colour
 // attachments and reading anything back are not recorded: the call throws `WebGpuUnsupportedError` and the frame reports it
-// (`WebGpuContent.notes`).
+// (`WebGpuContent.notes`). Query sets are accepted and measure nothing (`webgpu-queries.ts`).
 //
 // A buffer's bytes are shadowed here, and a submit snapshots the ones its passes only read, so a frame's recording holds
 // everything it needs and is the same whichever frames were drawn before it. A buffer a pass writes (a read-write storage
@@ -39,6 +39,7 @@ import type {
   WebGpuTexture,
 } from './types.js';
 import { pictureOf } from './canvas.js';
+import { checkTimestampWrites, GPUQuerySetShim, OcclusionQueries, queryIn, type QuerySetDescriptor } from './webgpu-queries.js';
 import { hashOf, LAYER_SOURCE, toBase64 } from './webgl.js';
 
 /** Thrown by a call the engine does not draw. The message starts with "unsupported:". */
@@ -664,7 +665,7 @@ type EncodedItem =
 export class GPURenderPassEncoderShim extends GpuObject {
   private readonly commands: PassCommand[] = [];
   private ended = false;
-  constructor(private readonly encoder: GPUCommandEncoderShim, private readonly attachment: Attachment) {
+  constructor(private readonly encoder: GPUCommandEncoderShim, private readonly attachment: Attachment, private readonly occlusion: OcclusionQueries) {
     super('');
   }
   private add(command: PassCommand): void {
@@ -745,12 +746,16 @@ export class GPURenderPassEncoderShim extends GpuObject {
   executeBundles(): never {
     throw this.encoder.device.unsupported('renderPass.executeBundles');
   }
-  beginOcclusionQuery(): never {
-    throw this.encoder.device.unsupported('renderPass.beginOcclusionQuery');
+  beginOcclusionQuery(index: number): void {
+    this.occlusion.begin(index);
+  }
+  endOcclusionQuery(): void {
+    this.occlusion.end();
   }
   end(): void {
     if (this.ended) return;
     this.ended = true;
+    this.occlusion.finish();
     this.encoder.finishPass({ kind: 'pass', attachment: this.attachment, commands: this.commands });
   }
 }
@@ -935,14 +940,16 @@ export class GPUCommandEncoderShim extends GpuObject {
   }): GPURenderPassEncoderShim {
     const attachments = (descriptor.colorAttachments ?? []).filter((a) => a !== null && a !== undefined);
     if (attachments.length !== 1) throw this.device.unsupported(`a render pass with ${attachments.length} colour attachments; one, the canvas's texture or a 2D texture, is drawn`);
-    if (descriptor.occlusionQuerySet) throw this.device.unsupported('occlusion queries');
+    if (descriptor.occlusionQuerySet) queryIn('beginRenderPass', descriptor.occlusionQuerySet, 'occlusion', 0);
+    checkTimestampWrites('beginRenderPass', descriptor.timestampWrites);
+    const occlusion = new OcclusionQueries((descriptor.occlusionQuerySet as GPUQuerySetShim | undefined) ?? null);
     const attachment = attachments[0]!;
     const view = attachment.view;
     if (!(view instanceof GPUTextureViewShim)) throw new TypeError('beginRenderPass: the colour attachment has no view');
     const clear = (attachment.loadOp ?? 'clear') === 'load' ? null : colorOf(attachment.clearValue);
     const texture = view.texture;
     const depth = this.depthAttachment(descriptor.depthStencilAttachment, texture.canvas !== null ? { width: texture.width, height: texture.height } : texture.extent(view.baseMip), texture.sampleCount);
-    if (texture.canvas !== null) return new GPURenderPassEncoderShim(this, { context: texture.canvas, texture: null, mip: 0, clear, ...(depth ? { depth } : {}) });
+    if (texture.canvas !== null) return new GPURenderPassEncoderShim(this, { context: texture.canvas, texture: null, mip: 0, clear, ...(depth ? { depth } : {}) }, occlusion);
     if (texture.destroyed) throw new Error('OperationError: beginRenderPass: the texture was destroyed');
     if ((texture.usage & GPU_TEXTURE_USAGE.RENDER_ATTACHMENT) === 0) throw new RangeError('OperationError: beginRenderPass: the texture was made without GPUTextureUsage.RENDER_ATTACHMENT');
     if (view.mips !== 1) throw new RangeError('OperationError: beginRenderPass: a colour attachment is one mip level');
@@ -961,7 +968,7 @@ export class GPUCommandEncoderShim extends GpuObject {
       if ((to.usage & GPU_TEXTURE_USAGE.RENDER_ATTACHMENT) === 0) throw new RangeError('OperationError: beginRenderPass: the resolve target was made without GPUTextureUsage.RENDER_ATTACHMENT');
       resolve = { texture: to, mip: resolveTarget.baseMip };
     }
-    return new GPURenderPassEncoderShim(this, { context: null, texture, mip: view.baseMip, clear, ...(resolve ? { resolve } : {}), ...(depth ? { depth } : {}) });
+    return new GPURenderPassEncoderShim(this, { context: null, texture, mip: view.baseMip, clear, ...(resolve ? { resolve } : {}), ...(depth ? { depth } : {}) }, occlusion);
   }
   /** A pass's `depthStencilAttachment`, checked against the colour attachment it goes with (size and samples). */
   private depthAttachment(a: unknown, color: { width: number; height: number }, samples: number): Attachment['depth'] {
@@ -989,7 +996,7 @@ export class GPUCommandEncoderShim extends GpuObject {
     return { texture, mip: view.baseMip, clear: null, readOnly };
   }
   beginComputePass(descriptor?: { label?: string; timestampWrites?: unknown }): GPUComputePassEncoderShim {
-    if (descriptor?.timestampWrites) throw this.device.unsupported('timestampWrites on a compute pass (query sets)');
+    checkTimestampWrites('beginComputePass', descriptor?.timestampWrites);
     return new GPUComputePassEncoderShim(this);
   }
   copyBufferToBuffer(source: GPUBufferShim, sourceOffset: number, target: GPUBufferShim, targetOffset: number, size: number): void {
@@ -1042,8 +1049,24 @@ export class GPUCommandEncoderShim extends GpuObject {
     if (from.texture === to.texture && from.mip === to.mip) throw new RangeError(`OperationError: ${call}: the source and the destination are one level of one texture`);
     this.items.push({ kind: 'textureToTexture', from, to, width: size.width, height: size.height });
   }
-  resolveQuerySet(): never {
-    throw this.device.unsupported('query sets');
+  /** The results are zeros, written where a resolve would put them (a clear, in the queue's order, so a later read sees them). */
+  resolveQuerySet(querySet: GPUQuerySetShim, firstQuery: number, queryCount: number, destination: GPUBufferShim, destinationOffset: number): void {
+    const call = 'resolveQuerySet';
+    if (!(querySet instanceof GPUQuerySetShim)) throw new TypeError(`${call}: the query set is not a GPUQuerySet`);
+    if (!(destination instanceof GPUBufferShim)) throw new TypeError(`${call}: the destination is not a GPUBuffer`);
+    const first = whole(call, 'firstQuery', firstQuery, 0);
+    const count = whole(call, 'queryCount', queryCount, 0);
+    const offset = whole(call, 'destinationOffset', destinationOffset, 0);
+    if (querySet.destroyed) throw new Error(`OperationError: ${call}: the query set was destroyed`);
+    if (first + count > querySet.count) throw new RangeError(`OperationError: ${call}: the query range ${first}..${first + count} is outside a set of ${querySet.count}`);
+    if ((destination.usage & GPU_BUFFER_USAGE.QUERY_RESOLVE) === 0) throw new RangeError(`OperationError: ${call}: the destination was made without GPUBufferUsage.QUERY_RESOLVE`);
+    if (offset % 256 !== 0) throw new RangeError(`OperationError: ${call}: destinationOffset ${offset} is not a multiple of 256`);
+    if (offset + count * 8 > destination.size) throw new RangeError(`OperationError: ${call}: the ${count * 8} bytes of results run past the end of the ${destination.size} byte destination`);
+    if (count > 0) this.items.push({ kind: 'clear', buffer: destination, offset, size: count * 8 });
+  }
+  /** `writeTimestamp` (the chromium-experimental call): accepted, and nothing is written. */
+  writeTimestamp(querySet: GPUQuerySetShim, queryIndex: number): void {
+    queryIn('writeTimestamp', querySet, 'timestamp', queryIndex);
   }
   pushDebugGroup(): void {}
   popDebugGroup(): void {}
@@ -1230,16 +1253,18 @@ export interface DeviceInfo {
   limits: Record<string, number>;
 }
 
-/** The features the recorder draws, whatever the device has. */
+/** The features of the device that the recorder draws. */
 const DRAWN_FEATURES = new Set(['float32-filterable']);
+/** The features the recorder offers whatever the device has: query sets are accepted and measure nothing (`webgpu-queries.ts`). */
+const OFFERED_FEATURES = ['timestamp-query'];
 
 /** Limits where better means a smaller number. */
 const ALIGNMENTS = new Set(['minUniformBufferOffsetAlignment', 'minStorageBufferOffsetAlignment']);
 
 function deviceInfo(options: GpuOptions): DeviceInfo {
   const real = options.info?.() ?? null;
-  if (real === null) return { features: ['float32-filterable'], limits: { ...LIMITS } };
-  return { features: real.features.filter((f) => DRAWN_FEATURES.has(f)), limits: { ...LIMITS, ...real.limits } };
+  if (real === null) return { features: ['float32-filterable', ...OFFERED_FEATURES], limits: { ...LIMITS } };
+  return { features: [...real.features.filter((f) => DRAWN_FEATURES.has(f)), ...OFFERED_FEATURES], limits: { ...LIMITS, ...real.limits } };
 }
 
 /** What `copyExternalImageToTexture` reads a source as: where its pixels come from, and how big it is. */
@@ -2074,8 +2099,8 @@ export class GPUDeviceShim extends EventTarget {
       return Promise.reject(error);
     }
   }
-  createQuerySet(): never {
-    throw this.unsupported('query sets');
+  createQuerySet(descriptor: QuerySetDescriptor): GPUQuerySetShim {
+    return new GPUQuerySetShim(descriptor, this.features.has('timestamp-query'));
   }
   createRenderBundleEncoder(): never {
     throw this.unsupported('render bundles');
@@ -2152,6 +2177,7 @@ Object.assign(GPU_GLOBALS, {
   GPUDevice: GPUDeviceShim,
   GPUQueue: GPUQueueShim,
   GPUBuffer: GPUBufferShim,
+  GPUQuerySet: GPUQuerySetShim,
   GPUTexture: GPUTextureShim,
   GPUTextureView: GPUTextureViewShim,
   GPUSampler: GPUSamplerShim,

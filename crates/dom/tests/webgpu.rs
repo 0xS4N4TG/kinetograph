@@ -78,3 +78,8 @@ fn webgpu_mesh() {
 fn webgpu_offscreen() {
     run("webgpu_offscreen", 1.0);
 }
+
+#[test]
+fn webgpu_queries() {
+    run("webgpu_queries", 1.0);
+}
