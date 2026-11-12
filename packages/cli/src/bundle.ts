@@ -367,6 +367,8 @@ export function syntheticEntry(entry: string, dev = false): string {
     `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetographdev/compat/dom';`,
     // The recorded network store is the bundle's copy of the shim's, the one the page's `fetch` reads.
     `export { finishNetRecord, setNetFrame, setNetStore, whenFetchesSettle } from '@kinetographdev/compat/shim';`,
+    // `--input`: the scripted input of a page, held in the bundle's copy of the shim, which dispatches it.
+    `export { parsePageInput, setPageInput } from '@kinetographdev/compat/shim';`,
     '',
   ].join('\n');
 }

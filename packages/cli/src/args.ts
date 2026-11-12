@@ -32,6 +32,7 @@ export const PROJECT_OPTIONS: OptionSpec[] = [
   { name: 'comp', type: 'string', description: 'Composition id (default: the first composition)' },
   { name: 'props', type: 'string', description: 'Input props: a JSON object, or the path of a JSON file' },
   { name: 'offline', type: 'boolean', description: 'Never download: remote scripts, modules, pictures and media must already be cached (a missing one is an error, as before the pre-download step)' },
+  { name: 'input', type: 'string', description: 'Scripted input for an HTML page that waits for a click or a key: a JSON list of { frame, type, selector?, x?, y?, key? } (type click, pointerdown, keydown, ...), or the path of a JSON file; sent on the virtual clock before that frame\'s animation-frame callbacks' },
   { name: 'timeout', type: 'number', description: 'Milliseconds a delayRender() may stay open before its frame fails (default 30000, as Remotion); delayRender(label, { timeoutInMilliseconds }) wins' },
 ];
 

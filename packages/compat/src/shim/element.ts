@@ -408,6 +408,13 @@ export class DomNodeBase {
   }
 }
 
+/** The events a page that waits for a user gesture listens for, and the elements that have such a listener (`doctor`). */
+const GESTURE_EVENTS = new Set(['click', 'pointerdown', 'mousedown', 'touchstart']);
+const gestureListeners = new Set<DomElement>();
+export function gestureListenerElements(): DomElement[] {
+  return [...gestureListeners];
+}
+
 export class DomElement extends DomNodeBase {
   private listeners = new Map<string, Set<Listener>>();
   private styleObject: CSSStyleDeclarationShim | null = null;
@@ -1601,6 +1608,7 @@ export class DomElement extends DomNodeBase {
     let set = this.listeners.get(type);
     if (set === undefined) this.listeners.set(type, (set = new Set()));
     set.add(listener);
+    if (GESTURE_EVENTS.has(type)) gestureListeners.add(this);
   }
   removeEventListener(type: string, listener: Listener | null): void {
     if (listener !== null) this.listeners.get(type)?.delete(listener);
