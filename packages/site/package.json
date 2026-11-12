@@ -7,7 +7,8 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "videos": "node scripts/fetch-videos.mjs",
+    "build": "node scripts/fetch-videos.mjs && next build",
     "start": "npx serve out",
     "preview": "npx serve out",
     "catalog": "node scripts/catalog.mjs",
