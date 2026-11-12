@@ -327,6 +327,20 @@ describe.skipIf(missing !== null)('WebGPU through Dawn', () => {
       }
     });
 
+    it('writes a whole picture as it is and a part of it the same pixels', async () => {
+      // The whole picture takes the direct path (no flip, no premultiplication, no origin); a rectangle of a larger one the copying path.
+      const rgba = Array.from({ length: 4 * 3 * 4 }, (_, i) => (i * 7) % 256);
+      const whole = await setup('rgba8unorm', 4, 3);
+      whole.copy({ source: picture(4, 3, rgba) }, [4, 3]);
+      expect([...(await readTexture(whole.device, whole.texture, 4, 3, 4))]).toEqual(rgba);
+      const part = await setup('rgba8unorm', 2, 3);
+      part.copy({ source: picture(4, 3, rgba), origin: [0, 0] }, [2, 3]);
+      const left = [0, 1, 2].flatMap((y) => rgba.slice(y * 16, y * 16 + 8));
+      expect([...(await readTexture(part.device, part.texture, 2, 3, 4))]).toEqual(left);
+      whole.device.destroy();
+      part.device.destroy();
+    });
+
     it('premultiplies and flips as asked, and copies the rectangle at the origin', async () => {
       const four = picture(2, 2, [10, 20, 30, 255, 40, 50, 60, 255, 70, 80, 90, 255, 100, 110, 120, 128]);
       const { device, texture, copy } = await setup('rgba8unorm', 2, 1);

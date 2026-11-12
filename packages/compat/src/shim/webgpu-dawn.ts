@@ -770,9 +770,10 @@ function copyExternalImage(queue: Any, source: Any, destination: Any, size: Any)
   // The source rectangle must lie inside the source, and a source is one image: the spec's OperationError, not a rectangle of zeros.
   if (ox + w > width || oy + h > height) throw operationError(`copyExternalImageToTexture: the source rectangle (${ox}, ${oy}) ${w}x${h} is outside the ${width}x${height} source`);
   if (layers > 1) throw operationError('copyExternalImageToTexture: copySize.depthOrArrayLayers is more than 1 (a source is one image)');
-  const rect = new Uint8Array(w * h * 4);
   const premultiply = destination.premultipliedAlpha === true;
-  for (let y = 0; y < h; y++) {
+  // The whole picture, as it is (no flip, no premultiplication, no origin): the pixels written are the pixels rasterised, not a copy of them.
+  const rect = !source.flipY && !premultiply && ox === 0 && oy === 0 && w === width && h === height && rgba.length === w * h * 4 ? rgba : new Uint8Array(w * h * 4);
+  for (let y = 0; y < h && rect !== rgba; y++) {
     const sy = source.flipY ? oy + h - 1 - y : oy + y;
     for (let x = 0; x < w; x++) {
       const si = ((sy * width) + ox + x) * 4;
