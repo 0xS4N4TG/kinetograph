@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ArtifactRecord, CompositionInfo, FrameRenderer } from '@kinetographdev/core';
-import type { AudioClipJson, LayerName, SequenceJson, Unsupported } from '@kinetographdev/scene';
+import type { AudioClipJson, LayerName, PageAudioOp, SequenceJson, Unsupported } from '@kinetographdev/scene';
 import { bundleProject, type UnsupportedImport } from './bundle.js';
 import { CliError } from './errors.js';
 import { installDynamicImport, installRemotePictures } from './hyperframes/dynamic.js';
@@ -41,6 +41,8 @@ export interface FrameOutput {
   /** The frame's scene as the addon takes it. */
   sceneJson: string;
   audio: AudioClipJson[];
+  /** What the page did with its `AudioContext` since the last frame (a scene file has none). */
+  pageAudio: PageAudioOp[];
   /** Every `<Sequence>` in the frame's tree (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §11.4); none for a scene file. */
   sequences?: SequenceJson[];
   /** Layer id to name and source; only in the studio's builds. */
@@ -270,7 +272,7 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
       entry: absolute,
       baseDir,
       composition,
-      frame: async () => ({ sceneJson: text, audio: [], sequences: [], unsupported: [...notes(text), ...unknown], jsMs: 0, stringifyMs: 0 }),
+      frame: async () => ({ sceneJson: text, audio: [], pageAudio: [], sequences: [], unsupported: [...notes(text), ...unknown], jsMs: 0, stringifyMs: 0 }),
       dispose: () => {},
     };
   }
@@ -323,7 +325,7 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
       const rendered = nowMs();
       const sceneJson = JSON.stringify(result.scene);
       const unsupported = [...result.unsupported, ...notes(sceneJson)];
-      return { sceneJson, audio: result.audio, sequences: result.sequences, ...(result.names !== undefined ? { names: result.names } : {}), unsupported, jsMs: rendered - started, stringifyMs: nowMs() - rendered };
+      return { sceneJson, audio: result.audio, pageAudio: result.pageAudio, sequences: result.sequences, ...(result.names !== undefined ? { names: result.names } : {}), unsupported, jsMs: rendered - started, stringifyMs: nowMs() - rendered };
     },
     worker: { entry: absolute, comp: composition.id, props: options.props, input: options.input, bundleFile },
     notes: () => mod.stylesheetNotes(),
