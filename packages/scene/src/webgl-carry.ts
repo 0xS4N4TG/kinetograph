@@ -79,6 +79,54 @@ function colourOutputs(op: GlslOp): { target: string; level: number }[] {
 /** Decodes base64 to bytes. */
 const bytesOf = (base64: string): Uint8Array => new Uint8Array(Buffer.from(base64, 'base64'));
 
+/** The source without its comments, each replaced by spaces so a position in it is a position in the original. */
+function withoutComments(source: string): string {
+  let out = '';
+  for (let i = 0; i < source.length; ) {
+    if (source.startsWith('//', i)) {
+      const end = source.indexOf('\n', i);
+      const stop = end === -1 ? source.length : end;
+      out += ' '.repeat(stop - i);
+      i = stop;
+    } else if (source.startsWith('/*', i)) {
+      const end = source.indexOf('*/', i + 2);
+      const stop = end === -1 ? source.length : end + 2;
+      out += source.slice(i, stop).replace(/[^\n]/g, ' ');
+      i = stop;
+    } else out += source[i++];
+  }
+  return out;
+}
+
+/**
+ * The attribute and the literal z in the one `gl_Position = vec4(a, ..., 1.0);` of a vertex shader, when that statement
+ * is certain to run and reads the attribute the page declared: it stands at the top level of `main`, with no `return`
+ * before it, and nothing else in the shader declares the attribute's name again (a local or a parameter that shadows
+ * it, which the statement would read instead). Null otherwise.
+ */
+function positionFromAttribute(vertex: string): { attribute: string; literal: string | undefined } | null {
+  const code = withoutComments(vertex);
+  const found = code.match(/gl_Position\s*=\s*vec4\(\s*([A-Za-z_]\w*)(?:\.xyz?)?\s*(?:,\s*([-\d.]+)\s*)?,\s*1(?:\.0*)?\s*\)\s*;/);
+  if (found === null || code.split('gl_Position').length !== 2) return null;
+  const name = found[1]!;
+  // Declarations of the name: the attribute's own is the one allowed. A word before the name is a type, unless it is a
+  // keyword that precedes an expression.
+  const declarations = [...code.matchAll(new RegExp(`(?<![.\\w])([A-Za-z_]\\w*)\\s+${name}\\b`, 'g'))].filter((m) => !EXPRESSION_KEYWORDS.has(m[1]!));
+  if (declarations.length !== 1 || new RegExp(`#\\s*define\\s+${name}\\b`).test(code)) return null;
+  // The statement stands at the top level of `main`, and nothing in `main` returns before it.
+  const main = /\bvoid\s+main\s*\(\s*(?:void)?\s*\)\s*\{/.exec(code);
+  if (main === null || found.index! < main.index + main[0].length) return null;
+  const before = code.slice(main.index + main[0].length, found.index);
+  let depth = 0;
+  for (const c of before) depth += c === '{' ? 1 : c === '}' ? -1 : 0;
+  if (depth !== 0 || /\breturn\b/.test(before)) return null;
+  // And it begins a statement: an `if (..)` or `else` before it would make it conditional.
+  if (!/(?:^|[;{}])\s*$/.test(before)) return null;
+  return { attribute: name, literal: found[2] };
+}
+
+const EXPRESSION_KEYWORDS = new Set(['return', 'else', 'case', 'discard', 'break', 'continue', 'do']);
+
 /**
  * The clip-space xy of the vertices a draw reads, when they can be known: the vertex shader assigns `gl_Position` once,
  * as `vec4(a, 1.0)`, `vec4(a.xy, z, 1.0)` or the like, with `a` a float attribute that advances per vertex and a z that
@@ -86,11 +134,11 @@ const bytesOf = (base64: string): Uint8Array => new Uint8Array(Buffer.from(base6
  */
 function clipPositions(draw: GlslDraw, res: Resources): [number, number][] | null {
   const vertex = res.programs.get(draw.program)?.vertex;
-  const found = vertex?.match(/gl_Position\s*=\s*vec4\(\s*([A-Za-z_]\w*)(?:\.xyz?)?\s*(?:,\s*([-\d.]+)\s*)?,\s*1(?:\.0*)?\s*\)\s*;/);
-  if (vertex === undefined || found === null || found === undefined || vertex.split('gl_Position').length !== 2) return null;
-  const literal = found[2] === undefined ? undefined : Number(found[2]);
+  const found = vertex === undefined ? null : positionFromAttribute(vertex);
+  if (vertex === undefined || found === null) return null;
+  const literal = found.literal === undefined ? undefined : Number(found.literal);
   if (literal !== undefined && !(Math.abs(literal) <= 1)) return null;
-  const attribute = draw.attributes[found[1]!];
+  const attribute = draw.attributes[found.attribute];
   const data = attribute === undefined ? undefined : res.buffers.get(attribute.buffer);
   if (attribute === undefined || data === undefined || attribute.type !== 'f32' || attribute.size < 2 || (attribute.divisor ?? 0) !== 0) return null;
   const bytes = bytesOf(data);

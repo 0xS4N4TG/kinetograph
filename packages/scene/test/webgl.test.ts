@@ -2560,30 +2560,32 @@ describe('the recording WebGL context', () => {
       expect(kinds(gl)).toEqual(['draw:target', 'draw']);
     });
 
-    it('keeps the draws under one that may not cover the texture: a sprite, a discard, a cull', () => {
-      const carriedAfter = (draw: (gl: WebGLContext, program: ReturnType<WebGLContext['createProgram']>) => void, shaded?: string, vertex = VERTEX) => {
-        const { gl, program } = setup();
-        const { texture } = attach(gl, 4, 2);
-        let program2 = program;
-        if (shaded !== undefined) {
-          program2 = gl.createProgram();
-          for (const [type, source] of [[GL.VERTEX_SHADER, vertex], [GL.FRAGMENT_SHADER, shaded]] as const) {
-            const shader = gl.createShader(type)!;
-            gl.shaderSource(shader, source);
-            gl.compileShader(shader);
-            gl.attachShader(program2, shader);
-          }
-          gl.linkProgram(program2);
-          gl.useProgram(program2);
+    /** How many draws into the target are carried after three frames of `draw`, optionally with another shader. */
+    const carriedAfter = (draw: (gl: WebGLContext, program: ReturnType<WebGLContext['createProgram']>) => void, shaded?: string, vertex = VERTEX) => {
+      const { gl, program } = setup();
+      const { texture } = attach(gl, 4, 2);
+      let program2 = program;
+      if (shaded !== undefined) {
+        program2 = gl.createProgram();
+        for (const [type, source] of [[GL.VERTEX_SHADER, vertex], [GL.FRAGMENT_SHADER, shaded]] as const) {
+          const shader = gl.createShader(type)!;
+          gl.shaderSource(shader, source);
+          gl.compileShader(shader);
+          gl.attachShader(program2, shader);
         }
-        for (let frame = 0; frame < 3; frame++) {
-          draw(gl, program2);
-          nextFrame(gl, texture);
-        }
+        gl.linkProgram(program2);
+        gl.useProgram(program2);
+      }
+      for (let frame = 0; frame < 3; frame++) {
         draw(gl, program2);
-        drawCanvasWith(gl, program2, texture);
-        return kinds(gl).filter((k) => k === 'draw:target').length;
-      };
+        nextFrame(gl, texture);
+      }
+      draw(gl, program2);
+      drawCanvasWith(gl, program2, texture);
+      return kinds(gl).filter((k) => k === 'draw:target').length;
+    };
+
+    it('keeps the draws under one that may not cover the texture: a sprite, a discard, a cull', () => {
       // Three vertices over half of the square.
       expect(carriedAfter((gl) => gl.drawArrays(GL.TRIANGLES, 0, 3))).toBe(4);
       // The whole square, but the fragment shader may discard.
@@ -2599,6 +2601,24 @@ describe('the recording WebGL context', () => {
           fullscreen(gl, program);
         }),
       ).toBe(4);
+    });
+
+    it('does not take a draw for a full cover when its position is not the attribute as the page declared it', () => {
+      const FRAGMENT_OPEN = 'precision mediump float; varying vec2 v; uniform sampler2D tex; void main() { gl_FragColor = texture2D(tex, v); }';
+      const fullCover = 'attribute vec2 p; varying vec2 v; void main() { v = p; gl_Position = vec4(p, 0.0, 1.0); }';
+      // The control: the plain shader is a full cover, so only the last draw is kept.
+      expect(carriedAfter(fullscreen, FRAGMENT_OPEN, fullCover)).toBe(1);
+      // A local that shadows the attribute: `p` is half the attribute where the position reads it.
+      expect(carriedAfter(fullscreen, FRAGMENT_OPEN, 'attribute vec2 p; varying vec2 v; void main() { v = p; vec2 p = p * 0.5; gl_Position = vec4(p, 0.0, 1.0); }')).toBe(4);
+      // A parameter does too.
+      expect(carriedAfter(fullscreen, FRAGMENT_OPEN, 'attribute vec2 p; varying vec2 v; vec4 at(vec2 p) { return vec4(p * 0.5, 0.0, 1.0); } void main() { v = p; gl_Position = at(p); }')).toBe(4);
+      // The assignment is made on some paths only.
+      expect(carriedAfter(fullscreen, FRAGMENT_OPEN, 'attribute vec2 p; varying vec2 v; uniform float t; void main() { v = p; gl_Position = vec4(2.0); if (t > 0.5) gl_Position = vec4(p, 0.0, 1.0); }')).toBe(4);
+      expect(carriedAfter(fullscreen, FRAGMENT_OPEN, 'attribute vec2 p; varying vec2 v; uniform float t; void main() { v = p; if (t > 0.5) gl_Position = vec4(p, 0.0, 1.0); }')).toBe(4);
+      expect(carriedAfter(fullscreen, FRAGMENT_OPEN, 'attribute vec2 p; varying vec2 v; uniform float t; void main() { v = p; if (t > 0.5) { gl_Position = vec4(p, 0.0, 1.0); } }')).toBe(4);
+      expect(carriedAfter(fullscreen, FRAGMENT_OPEN, 'attribute vec2 p; varying vec2 v; uniform float t; void main() { v = p; if (t > 0.5) return; gl_Position = vec4(p, 0.0, 1.0); }')).toBe(4);
+      // A comment that mentions the statement is not one.
+      expect(carriedAfter(fullscreen, FRAGMENT_OPEN, `attribute vec2 p; varying vec2 v; void main() { v = p; /* a shadow: vec2 p */ // vec2 p = p;\n gl_Position = vec4(p, 0.0, 1.0); }`)).toBe(1);
     });
 
     it('drops the draws under a texSubImage2D that covers the texture', () => {
