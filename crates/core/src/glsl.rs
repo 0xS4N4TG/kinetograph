@@ -1517,8 +1517,10 @@ fn top_level_items(body: &str) -> Vec<Item> {
 }
 
 /// `body` with its function definitions in an order naga reads: a function after the functions it calls. GLSL lets a
-/// shader declare a function first and define it after its caller; naga needs the callee defined first. The functions
-/// change places among the positions the definitions have; nothing else moves, and a body already in order is left as it is.
+/// shader declare a function first and define it after its caller; naga needs the callee defined first. A caller that
+/// would come before a callee waits, and is written right after the callee's definition: it moves later, never earlier,
+/// so everything it refers to (a `const`, a global, a `#define`) is still above it. Nothing else moves, and a body
+/// already in order is left as it is.
 fn order_functions(body: &str) -> String {
     let items = top_level_items(body);
     let slots: Vec<usize> = (0..items.len()).filter(|&i| items[i].function.is_some()).collect();
@@ -1528,40 +1530,28 @@ fn order_functions(body: &str) -> String {
     if !forward {
         return body.to_string();
     }
-    let mut order: Vec<usize> = Vec::new();
-    let mut state = vec![0u8; items.len()];
-    fn visit(i: usize, items: &[Item], by_name: &dyn Fn(&str) -> Vec<usize>, state: &mut [u8], order: &mut Vec<usize>) -> bool {
-        match state[i] {
-            2 => return true,
-            1 => return false,
-            _ => {}
-        }
-        state[i] = 1;
-        for call in &items[i].calls {
-            for j in by_name(call) {
-                if j != i && !visit(j, items, by_name, state, order) {
-                    return false;
-                }
-            }
-        }
-        state[i] = 2;
-        order.push(i);
-        true
-    }
-    for &i in &slots {
-        if !visit(i, &items, &by_name, &mut state, &mut order) {
-            // A cycle is recursion, which GLSL does not have: leave it for naga to report.
-            return body.to_string();
-        }
-    }
-    let mut next = order.into_iter();
+    let mut emitted = vec![false; items.len()];
+    let ready = |i: usize, emitted: &[bool]| items[i].calls.iter().all(|c| by_name(c).iter().all(|&j| j == i || emitted[j]));
+    let mut pending: Vec<usize> = Vec::new();
     let mut out = String::with_capacity(body.len());
     for (i, item) in items.iter().enumerate() {
-        if slots.contains(&i) {
-            out.push_str(&items[next.next().expect("one function for each slot")].text);
-        } else if !is_prototype(&item.text) {
-            out.push_str(&item.text);
+        if item.function.is_none() {
+            if !is_prototype(&item.text) {
+                out.push_str(&item.text);
+            }
+            continue;
         }
+        pending.push(i);
+        // Each function whose callees are all written goes out, which may let another go.
+        while let Some(at) = pending.iter().position(|&p| ready(p, &emitted)) {
+            let p = pending.remove(at);
+            out.push_str(&items[p].text);
+            emitted[p] = true;
+        }
+    }
+    if !pending.is_empty() {
+        // A cycle is recursion, which GLSL does not have: leave it for naga to report.
+        return body.to_string();
     }
     out
 }
@@ -4016,6 +4006,42 @@ mod tests {
         let names: Vec<&str> = t.fragment.samplers.iter().map(|s| s.name.as_str()).collect();
         assert!(!names.iter().any(|n| n.starts_with("none")), "{names:?}");
         assert!(names.contains(&"_k_sa_maps_0") && names.contains(&"_k_sa_maps_1"), "{names:?}");
+    }
+
+    #[test]
+    fn a_sampler_array_has_a_constant_expression_for_its_length_and_its_indices() {
+        let names = |t: &Translated| -> Vec<String> { t.fragment.samplers.iter().map(|s| s.name.clone()).collect() };
+        let t = es3_fragment(
+            "#define N 2\nconst int I = 1; const int J = I - 1;\nuniform sampler2D m[N * 1]; uniform sampler2D k[I + 1];\n\
+             void main() { o = texture(m[I], v_uv) + texture(k[J + N - 2], v_uv) + texture(m[N - 2], v_uv); }",
+        )
+        .unwrap();
+        let got = names(&t);
+        for want in ["_k_sa_m_0", "_k_sa_m_1", "_k_sa_k_0", "_k_sa_k_1"] {
+            assert!(got.iter().any(|n| n == want), "{want} in {got:?}");
+        }
+        // A loop index is not a constant here: said so, naming the array and the index.
+        let e = es3_fragment(
+            "uniform sampler2D m[2];\n\
+             void main() { vec4 c = vec4(0.0); for (int i = 0; i < 2; i++) { c += texture(m[i], v_uv); } o = c; }",
+        )
+        .unwrap_err();
+        assert!(e.contains("unsupported") && e.contains("`m`") && e.contains("[i]") && e.contains("constant"), "{e}");
+        let e = es3_fragment("uniform sampler2D m[2];\nvoid main() { o = texture(m[2], v_uv); }").unwrap_err();
+        assert!(e.contains("unsupported") && e.contains("past"), "{e}");
+    }
+
+    #[test]
+    fn a_function_defined_after_its_caller_keeps_what_it_reads_above_it() {
+        // `b` reads a macro defined between `a` and `b`: the caller moves after `b`, `b` does not move above the macro.
+        let t = es3_fragment(
+            "float b();\nfloat a() { return b(); }\n#define K 2.0\nconst float C = 3.0;\nfloat b() { return K + C; }\n\
+             void main() { o = vec4(a()); }",
+        );
+        assert!(t.is_ok(), "{:?}", t.err());
+        let ordered = order_functions("float b();\nfloat a() { return b(); }\n#define K 2.0\nfloat b() { return K; }\n");
+        let at = |needle: &str| ordered.find(needle).unwrap_or_else(|| panic!("{needle} in {ordered}"));
+        assert!(at("#define K") < at("float b() {") && at("float b() {") < at("float a()"), "{ordered}");
     }
 
     #[test]
