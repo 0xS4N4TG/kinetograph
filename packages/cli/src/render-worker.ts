@@ -109,8 +109,14 @@ try {
   const handle = async (message: Exclude<ToWorker, { type: 'split' } | { type: 'start' }>): Promise<void> => {
     if (message.type === 'finish') {
       log?.flush();
-      post({ type: 'done', artifacts: source.artifacts?.() ?? [] });
-      source.dispose();
+      const artifacts = source.artifacts?.() ?? [];
+      // Disposed before `done` is posted: the main thread terminates the worker when it hears it, and a worker stopped in the middle of
+      // `dispose` (which destroys the page's WebGPU devices) aborts the process inside the library.
+      try {
+        source.dispose();
+      } finally {
+        post({ type: 'done', artifacts });
+      }
       return;
     }
     const { scale, convertFormat, sequence, origin, step } = init!;
