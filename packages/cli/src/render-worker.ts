@@ -73,7 +73,7 @@ setPreferredEffectBackend(preferredEffectBackend);
 process.env.NODE_ENV = devReact ? 'development' : 'production';
 
 try {
-  const source = await openSource(spec.entry, { comp: spec.comp, props: spec.props, bundleFile: spec.bundleFile, prefetch: false });
+  const source = await openSource(spec.entry, { comp: spec.comp, props: spec.props, input: spec.input, bundleFile: spec.bundleFile, prefetch: false });
   source.clearArtifacts?.();
   const renderer = new (native().Renderer)();
   let init: WorkerInit | undefined;

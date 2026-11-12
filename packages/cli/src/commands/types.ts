@@ -96,6 +96,7 @@ export function openFromArgs(args: ParsedArgs, extra: Pick<OpenOptions, 'unsuppo
     ...(args.options.json === true ? {} : { progress: (message: string) => process.stderr.write(`${message}\n`) }),
     comp: args.options.comp as string | undefined,
     props: args.options.props as string | undefined,
+    input: args.options.input as string | undefined,
     ...extra,
   });
 }

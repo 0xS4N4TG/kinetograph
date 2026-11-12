@@ -89,6 +89,7 @@ const sameStart = (a: WorkerStart, b: WorkerStart): boolean =>
   a.spec.entry === b.spec.entry &&
   a.spec.bundleFile === b.spec.bundleFile &&
   a.spec.props === b.spec.props &&
+  a.spec.input === b.spec.input &&
   (a.spec.comp === undefined || a.spec.comp === b.spec.comp) &&
   a.devReact === b.devReact &&
   a.preferredEffectBackend === b.preferredEffectBackend;
