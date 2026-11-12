@@ -309,6 +309,11 @@ function settleRewind(): void {
   }
 }
 
+/** Whether a page of the renderer in the scope that is current has a Dawn device (its animation-frame loop may be drawing from the tree). */
+export function dawnInUse(): boolean {
+  return scope.devices.size > 0;
+}
+
 /** Whether a frame read what an earlier frame wrote that only a replay of the frames before it makes (`carryNeedsReplay`). */
 export function dawnDependsOnHistory(): boolean {
   return carryNeedsReplay();

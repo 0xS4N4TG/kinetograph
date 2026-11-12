@@ -48,7 +48,8 @@ beforeAll(() => {
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 const env = { ...process.env, KINETOGRAPH_WEBGPU: 'dawn' };
-const run = (args: string[]) => spawnSync(process.execPath, [cli, ...args, '--offline'], { encoding: 'utf8', env });
+// KINETOGRAPH_CHUNK=3: a worker takes 3 frames at a time, so four workers over 12 frames each start at a frame of their own (a jump).
+const run = (args: string[]) => spawnSync(process.execPath, [cli, ...args, '--offline'], { encoding: 'utf8', env: { ...env, KINETOGRAPH_CHUNK: '3' } });
 /** Draws `frames` in the order given in one process (a jump back among them), as the PNG md5 of each and what the frames left out. */
 function drawInOrder(entry: string, frames: number[], strict = false): { md5: Record<number, string>; errors: Record<number, string>; leftOut: string } {
   const script = `
@@ -116,6 +117,14 @@ describe.skipIf(missing !== null)('WebGPU through Dawn, rendered', () => {
     const { still, one, four } = hashes(join(fixtures, 'occlusion.html'), [3, 6, 9, 11], 12);
     // The background turns when the small square comes out from behind the large one: the frames are not all the same.
     expect(new Set(still).size).toBeGreaterThan(1);
+    expect(one).toEqual(still);
+    expect(four).toEqual(still);
+  });
+
+  it('draws a react-three-fiber style loop, whose animation-frame callbacks draw what the tree shows, the same alone, in a sequence and in four workers', () => {
+    // A jump must run each skipped frame's callbacks with that frame's props, not those of the frame before the jump.
+    const { still, one, four } = hashes(join(fixtures, 'react-raf-trail.tsx'), [0, 1, 5, 9], 12);
+    expect(new Set(still).size).toBe(4);
     expect(one).toEqual(still);
     expect(four).toEqual(still);
   });

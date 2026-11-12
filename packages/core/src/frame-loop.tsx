@@ -10,7 +10,7 @@
 //      attach what each sub-frame changes in them.
 
 import type { ReactNode } from 'react';
-import { createDawnScope, dawnDependsOnHistory, enterDawnScope, flushDawnCanvases, noteDawnRewind, releaseDawn, takeDawnReports, glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures } from '@kinetographdev/compat/shim';
+import { createDawnScope, dawnDependsOnHistory, dawnInUse, enterDawnScope, flushDawnCanvases, noteDawnRewind, releaseDawn, takeDawnReports, glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures } from '@kinetographdev/compat/shim';
 import { setDefaultStylesheet } from '@kinetographdev/compat/dom';
 import { createSceneRoot, finishIslands, TimelineContext, type LayerNames, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
@@ -256,6 +256,14 @@ class Renderer implements FrameRenderer {
         stepAnimationFrames(was + 1, frame - 1, config.fps);
         setVirtualFrame(frame - 1, config.fps, { deferAnimationFrames: true });
         await this.settle(scene, () => this.update(scene, this.element(component, config, frame - 1)), true, false);
+      } else if (frame - was > 1 && dawnInUse() && animationFramesQueued()) {
+        // A Dawn page's loop draws what the tree shows (a react-three-fiber `useFrame`: positions from `useCurrentFrame` through a ref the
+        // render sets), and stepping its callbacks alone would run each skipped frame's with the props of the frame before the jump. So each
+        // skipped frame is rendered, and its callbacks run with its own props, as in a render of every frame (nothing is read from it).
+        for (let at = was + 1; at < frame; at++) {
+          setVirtualFrame(at, config.fps, { deferAnimationFrames: true });
+          await this.settle(scene, () => this.update(scene, this.element(component, config, at)), true, false);
+        }
       } else {
         // A jump forward gives the animation-frame callbacks the frames it skipped (not rendered), so what is advanced
         // by their time (Motion) shows the same as in a render of every frame.
