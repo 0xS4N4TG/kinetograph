@@ -22,6 +22,8 @@ interface State {
   written: number;
   /** Read in an epoch after the one it was written in. */
   stale: boolean;
+  /** The epoch it was made in: what a resource holds in the frame that made it is zero, whichever frames came before. */
+  born: number;
 }
 
 const states = new WeakMap<object, State>();
@@ -50,7 +52,7 @@ const writable = (resource: Any): boolean => {
 function stateOf(resource: Any): State {
   let state = states.get(resource);
   if (state === undefined) {
-    state = { written: -Infinity, stale: false };
+    state = { written: -Infinity, stale: false, born: -Infinity };
     states.set(resource, state);
   }
   return state;
@@ -60,7 +62,7 @@ function read(resource: Any): void {
   if (paused > 0 || resource == null || typeof resource !== 'object') return;
   const state = stateOf(resource);
   if (state.written === -Infinity) {
-    if (writable(resource)) flagged = true;
+    if (state.born < now() && writable(resource)) flagged = true;
   } else if (state.written < now()) {
     state.stale = true;
   }
@@ -71,6 +73,11 @@ function write(resource: Any): void {
   const state = stateOf(resource);
   if (state.stale) flagged = true;
   state.written = now();
+}
+
+/** A resource that starts the frame cleared (the canvas's texture): what it holds is not from an earlier frame. */
+export function startsCleared(resource: Any): void {
+  stateOf(resource).written = now();
 }
 
 export function carryDepends(): boolean {
@@ -106,6 +113,9 @@ export function trackCarry(g: Record<string, Any>, clock: () => number): void {
     const original = proto[name];
     Object.defineProperty(proto, name, { value: function (this: Any, ...args: Any[]) { const result = original.apply(this, args); after.call(this, result, args); return result; }, writable: true, configurable: true });
   };
+  wrapResult(g.GPUDevice.prototype, 'createTexture', (texture) => {
+    stateOf(texture).born = now();
+  });
   wrapResult(g.GPUTexture.prototype, 'createView', function (view) { views.set(view, this); });
   wrapResult(g.GPUDevice.prototype, 'createBindGroup', (group, [descriptor]) => {
     const buffers: Any[] = [];
@@ -119,6 +129,7 @@ export function trackCarry(g: Record<string, Any>, clock: () => number): void {
     groups.set(group, { buffers, textures });
   });
   wrapResult(g.GPUDevice.prototype, 'createBuffer', (buffer, [descriptor]) => {
+    stateOf(buffer).born = now();
     if (descriptor?.mappedAtCreation) write(buffer);
   });
   wrap(g.GPUBuffer.prototype, 'mapAsync', function ([mode]) {

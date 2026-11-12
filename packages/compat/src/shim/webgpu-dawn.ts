@@ -14,7 +14,7 @@
 
 import { createRequire } from 'node:module';
 import { CANVAS_SOURCE, type CanvasCommand } from '@kinetographdev/scene';
-import { trackCarry, carryDepends, untracked } from './webgpu-dawn-carry.js';
+import { trackCarry, carryDepends, startsCleared, untracked } from './webgpu-dawn-carry.js';
 
 type Any = any; // Dawn's objects are native classes with no TypeScript surface here.
 
@@ -270,6 +270,7 @@ export class DawnCanvasContext {
       // A new texture is transparent black, as a canvas's is at the start of a frame.
       this.texture = config.device.createTexture({ label: 'canvas', size: [Math.max(1, width), Math.max(1, height)], format: config.format, usage: config.usage | COPY_SRC, viewFormats: config.viewFormats });
     }
+    startsCleared(this.texture);
     this.drawnThisFrame = true;
     return this.texture;
   }
@@ -355,6 +356,7 @@ const HALF = (() => {
   return table;
 })();
 
+const RECIPROCAL = Float32Array.from({ length: 256 }, (_, a) => (a === 0 ? 0 : 255 / a));
 const srgbToLinear = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 const linearToSrgb = (c: number): number => (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055);
 const DECODE = Float32Array.from({ length: 256 }, (_, i) => srgbToLinear(i / 255));
@@ -394,32 +396,27 @@ export function toStraightSrgb(src: Uint8Array, width: number, height: number, s
     }
   } else {
     const swap = format === 'bgra8unorm';
-    const [R, B] = swap ? [2, 0] : [0, 2];
     const src32 = new Uint32Array(src.buffer, src.byteOffset, src.byteLength >> 2);
     const out32 = new Uint32Array(out.buffer);
     for (let y = 0; y < height; y++) {
       const row = (y * stride) >> 2;
       const o32 = y * width;
-      if (!swap && !premultiplied) {
-        for (let x = 0; x < width; x++) out32[o32 + x] = src32[row + x]! | 0xff000000;
-        continue;
-      }
-      let s = y * stride;
-      let o = y * width * 4;
-      for (let x = 0; x < width; x++, s += 4, o += 4) {
-        const a = premultiplied ? src[s + 3]! : 255;
-        if (premultiplied && a !== 255) {
-          if (a === 0) continue;
-          const k = 255 / a;
-          out[o] = Math.min(255, Math.round(src[s + R]! * k));
-          out[o + 1] = Math.min(255, Math.round(src[s + 1]! * k));
-          out[o + 2] = Math.min(255, Math.round(src[s + B]! * k));
-        } else {
-          out[o] = src[s + R]!;
-          out[o + 1] = src[s + 1]!;
-          out[o + 2] = src[s + B]!;
+      for (let x = 0; x < width; x++) {
+        let w = src32[row + x]!;
+        if (!premultiplied) w |= 0xff000000;
+        else {
+          const a = w >>> 24;
+          if (a !== 255) {
+            if (a === 0) { out32[o32 + x] = 0; continue; }
+            const k = RECIPROCAL[a]!;
+            const c0 = Math.min(255, ((w & 255) * k + 0.5) | 0);
+            const c1 = Math.min(255, (((w >>> 8) & 255) * k + 0.5) | 0);
+            const c2 = Math.min(255, (((w >>> 16) & 255) * k + 0.5) | 0);
+            w = (c0 | (c1 << 8) | (c2 << 16) | (a << 24)) >>> 0;
+          }
         }
-        out[o + 3] = a;
+        // bgra8unorm holds blue first: swap the two ends so the bytes are r, g, b, a.
+        out32[o32 + x] = swap ? ((w & 0xff00ff00) | ((w & 255) << 16) | ((w >>> 16) & 255)) >>> 0 : w;
       }
     }
   }
