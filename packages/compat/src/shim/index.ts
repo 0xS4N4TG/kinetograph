@@ -19,6 +19,7 @@ export {
   IntersectionObserverShim,
   MutationObserverShim,
 } from './observers.js';
+export { mediaPending, resetMedia, setMediaClock, tickMedia } from './media.js';
 export { deliverMediaEvents } from './media-events.js';
 export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf, setRemoteFiles, setRefusedFetchHandler, whenFetchesSettle, trackPending, pendingImageLoads, pendingFetches, takeLoadFailures, loadsSettled } from './web.js';
 export { setWorkerHold, setWorkerModuleLoader, whenWorkersIdle, resetWorkers, workersStarted, cloneMessage, WorkerShim, MessageChannelShim, MessagePortShim } from './worker.js';

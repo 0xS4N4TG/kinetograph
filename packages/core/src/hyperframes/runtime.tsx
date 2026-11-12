@@ -221,6 +221,8 @@ class Runtime {
     setPageDocument(hostOf(this.html), hostOf(body));
     this.mount();
     this.bindVariables();
+    // Media in the markup starts loading as the parser meets it, before the page's scripts run.
+    for (const el of Array.from(doc().querySelectorAll('video, audio')) as AnyRecord[]) el.player?.start();
 
     for (const script of plan.scripts) {
       if (script.scope === null) {
