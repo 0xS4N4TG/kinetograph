@@ -7,8 +7,9 @@
 // group layouts, render and compute pipelines, bind groups, command encoders with render passes into the canvas's texture
 // or into a 2D texture and compute passes (`dispatchWorkgroups`), `draw` and `drawIndexed`, `writeBuffer`, and textures:
 // `createTexture` (storage textures included), `createView`, `createSampler`, `writeTexture`, `copyExternalImageToTexture`,
-// `copyBufferToTexture`, `copyTextureToTexture`. Queries, bundles, indirect calls, depth, multisampling and reading
-// anything back are not recorded: the call throws `WebGpuUnsupportedError` and the frame reports it
+// `copyBufferToTexture`, `copyTextureToTexture`; a depth attachment (`depth16unorm`, `depth24plus`, `depth32float`) with depth
+// state and comparison samplers; multisampled passes. Queries, bundles, indirect calls, the stencil, several colour
+// attachments and reading anything back are not recorded: the call throws `WebGpuUnsupportedError` and the frame reports it
 // (`WebGpuContent.notes`).
 //
 // A buffer's bytes are shadowed here, and a submit snapshots the ones its passes only read, so a frame's recording holds
