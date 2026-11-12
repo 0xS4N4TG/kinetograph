@@ -88,6 +88,35 @@ describe('the worker scope', () => {
     expect((globalThis as { window?: unknown }).window).toBeDefined();
   });
 
+  it('makes a top-level function or var a property of the scope, as a browser does', async () => {
+    const declared = new Worker(URL.createObjectURL(new Blob(['function onmessage(e) { postMessage(e.data * 2); }'])));
+    expect(await collect(declared, () => declared.postMessage(21))).toEqual([42]);
+    const shared = new Worker(URL.createObjectURL(new Blob(['var k = 2; self.onmessage = (e) => postMessage([e.data * self.k, globalThis.k, typeof k]);'])));
+    expect(await collect(shared, () => shared.postMessage(21))).toEqual([[42, 2, 'number']]);
+  });
+
+  it('gives the page its values as the page\'s own types, and keeps the page\'s timers, URL and console', async () => {
+    const source = `
+      const buffer = new Uint8Array([1, 2, 3]).buffer;
+      postMessage({ date: new Date(5), map: new Map([[1, 2]]), floats: new Float32Array([1.5]), list: [1, [2]], buffer, error: new RangeError('bad') }, [buffer]);
+      setTimeout(() => postMessage(['timer', typeof URL, typeof console.log, typeof TextEncoder]), 0);
+    `;
+    const worker = new Worker(URL.createObjectURL(new Blob([source])));
+    const got = await collect(worker);
+    // The timer is the page's, so it is not part of what the idle wait covers.
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const [first, second] = got;
+    expect(first).toMatchObject({ date: new Date(5), map: new Map([[1, 2]]), floats: new Float32Array([1.5]), list: [1, [2]] });
+    const message = first as { date: unknown; map: unknown; floats: unknown; buffer: ArrayBuffer; error: unknown };
+    expect(message.date).toBeInstanceOf(Date);
+    expect(message.map).toBeInstanceOf(Map);
+    expect(message.floats).toBeInstanceOf(Float32Array);
+    expect(message.buffer).toBeInstanceOf(ArrayBuffer);
+    expect([...new Uint8Array(message.buffer)]).toEqual([1, 2, 3]);
+    expect(message.error).toBeInstanceOf(RangeError);
+    expect(second).toEqual(['timer', 'function', 'function', 'function']);
+  });
+
   it('looks like a browser worker to a script that asks where it runs: no Node globals, and a global object that holds the language', async () => {
     writeFileSync(join(dir, 'where.js'), 'postMessage({ node: typeof process, load: typeof require, buffer: typeof Buffer, math: globalThis.Math === Math, self: self === globalThis });');
     const worker = new Worker('where.js');

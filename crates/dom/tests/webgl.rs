@@ -225,6 +225,11 @@ fn webgl2_uniform_struct_tail() {
 }
 
 #[test]
+fn webgl2_uniform_struct_types() {
+    run("webgl2_uniform_struct_types", 1.0);
+}
+
+#[test]
 fn webgl2_ubo_range() {
     run("webgl2_ubo_range", 1.0);
 }

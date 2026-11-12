@@ -540,10 +540,17 @@ pub struct GlslIndices {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GlslUniform {
     pub kind: GlslUniformKind,
+    /// The values; a `null` is a NaN (JSON has none).
+    #[serde(deserialize_with = "numbers_or_nan")]
     pub value: Vec<f64>,
     /// The array element the first value goes to, for `name[i]`.
     #[serde(default)]
     pub index: u32,
+}
+
+fn numbers_or_nan<'de, D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<Vec<f64>, D::Error> {
+    let values = Vec::<Option<f64>>::deserialize(deserializer)?;
+    Ok(values.into_iter().map(|v| v.unwrap_or(f64::NAN)).collect())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -984,6 +991,10 @@ struct Rewritten {
     unwritten: Vec<String>,
     /// The structs the shader defines, by name and text (on one line): they go ahead of the uniform block, which may use them.
     structs: Vec<(String, String)>,
+    /// The carriers of the struct uniforms whose layout needs padding (`carrier_of`): they go after `structs`.
+    carriers: Vec<(String, String)>,
+    /// The struct uniforms that arrive in a carrier and are copied into a variable of the page's own type.
+    struct_loads: Vec<UniformDecl>,
     /// The varyings this stage declared, with their locations.
     varyings: Vec<(String, u32, String)>,
     /// The locations of the fragment shader's outputs.
@@ -1056,7 +1067,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         slots,
         blocks,
     } = input;
-    let src = lower_sampler_parameters(&expand_sampler_arrays(&blank_qualifiers(&strip_comments(src))));
+    let src = lower_sampler_parameters(&expand_sampler_arrays(&blank_qualifiers(&strip_comments(src)))?);
     let fragment = stage == ShaderStage::Fragment;
 
     // Directive lines are set apart: removed, or rewritten as code. Code
@@ -1073,6 +1084,8 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         mat_attributes: Vec::new(),
         unwritten: Vec::new(),
         structs: Vec::new(),
+        carriers: Vec::new(),
+        struct_loads: Vec::new(),
         varyings: Vec::new(),
         outputs: Vec::new(),
         uses_frag_coord: false,
@@ -1188,7 +1201,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
     // The prelude is one line of its own, so a line of the page's source is two
     // lines down in the rewritten text.
     let mut prelude = String::new();
-    for (_, text) in &r.structs {
+    for (_, text) in r.structs.iter().chain(&r.carriers) {
         prelude.push_str(text);
     }
     prelude.push_str(&builtin_helpers(&body));
@@ -1268,6 +1281,10 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         let suffix = array.as_ref().map(|n| format!("[{n}]")).unwrap_or_default();
         prelude.push_str(&format!("mat2 {name}{suffix}; "));
     }
+    for u in &r.struct_loads {
+        let suffix = u.array.as_ref().map(|n| format!("[{n}]")).unwrap_or_default();
+        prelude.push_str(&format!("{} {}{suffix}; ", u.ty, u.name));
+    }
     for a in &r.packed {
         prelude.push_str(&format!("{} {}[{}]; ", a.ty, a.name, a.len));
     }
@@ -1340,6 +1357,9 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         wrapper.push_str(&format!(
             "for (int _k_i = 0; _k_i < {len}; _k_i++) {{ {name}[_k_i] = {from}; }} "
         ));
+    }
+    for u in &r.struct_loads {
+        wrapper.push_str(&struct_load(&r.structs, &r.carriers, u));
     }
     for used in &r.blocks {
         wrapper.push_str(&glsl_blocks::loader(&blocks[used.slot], used)?);
@@ -1509,8 +1529,10 @@ fn top_level_items(body: &str) -> Vec<Item> {
 }
 
 /// `body` with its function definitions in an order naga reads: a function after the functions it calls. GLSL lets a
-/// shader declare a function first and define it after its caller; naga needs the callee defined first. The functions
-/// change places among the positions the definitions have; nothing else moves, and a body already in order is left as it is.
+/// shader declare a function first and define it after its caller; naga needs the callee defined first. A caller that
+/// would come before a callee waits, and is written right after the callee's definition: it moves later, never earlier,
+/// so everything it refers to (a `const`, a global, a `#define`) is still above it. Nothing else moves, and a body
+/// already in order is left as it is.
 fn order_functions(body: &str) -> String {
     let items = top_level_items(body);
     let slots: Vec<usize> = (0..items.len()).filter(|&i| items[i].function.is_some()).collect();
@@ -1520,40 +1542,28 @@ fn order_functions(body: &str) -> String {
     if !forward {
         return body.to_string();
     }
-    let mut order: Vec<usize> = Vec::new();
-    let mut state = vec![0u8; items.len()];
-    fn visit(i: usize, items: &[Item], by_name: &dyn Fn(&str) -> Vec<usize>, state: &mut [u8], order: &mut Vec<usize>) -> bool {
-        match state[i] {
-            2 => return true,
-            1 => return false,
-            _ => {}
-        }
-        state[i] = 1;
-        for call in &items[i].calls {
-            for j in by_name(call) {
-                if j != i && !visit(j, items, by_name, state, order) {
-                    return false;
-                }
-            }
-        }
-        state[i] = 2;
-        order.push(i);
-        true
-    }
-    for &i in &slots {
-        if !visit(i, &items, &by_name, &mut state, &mut order) {
-            // A cycle is recursion, which GLSL does not have: leave it for naga to report.
-            return body.to_string();
-        }
-    }
-    let mut next = order.into_iter();
+    let mut emitted = vec![false; items.len()];
+    let ready = |i: usize, emitted: &[bool]| items[i].calls.iter().all(|c| by_name(c).iter().all(|&j| j == i || emitted[j]));
+    let mut pending: Vec<usize> = Vec::new();
     let mut out = String::with_capacity(body.len());
     for (i, item) in items.iter().enumerate() {
-        if slots.contains(&i) {
-            out.push_str(&items[next.next().expect("one function for each slot")].text);
-        } else if !is_prototype(&item.text) {
-            out.push_str(&item.text);
+        if item.function.is_none() {
+            if !is_prototype(&item.text) {
+                out.push_str(&item.text);
+            }
+            continue;
         }
+        pending.push(i);
+        // Each function whose callees are all written goes out, which may let another go.
+        while let Some(at) = pending.iter().position(|&p| ready(p, &emitted)) {
+            let p = pending.remove(at);
+            out.push_str(&items[p].text);
+            emitted[p] = true;
+        }
+    }
+    if !pending.is_empty() {
+        // A cycle is recursion, which GLSL does not have: leave it for naga to report.
+        return body.to_string();
     }
     out
 }
@@ -2196,12 +2206,25 @@ fn declaration(
                     });
                 } else if let Some((_, definition)) = r.structs.iter().find(|(n, _)| *n == ty) {
                     check_uniform_struct(&name, &ty, definition, &r.structs)?;
-                    pad_uniform_struct(&mut r.structs, &ty);
-                    r.uniforms.push(UniformDecl {
-                        name,
-                        ty: ty.clone(),
-                        array,
-                    });
+                    if carrier_of(&r.structs, &mut r.carriers, &ty) {
+                        // The page's struct stays as it is; the uniform buffer holds a padded copy of it.
+                        r.uniforms.push(UniformDecl {
+                            name: format!("{STRUCT_CARRIER_PREFIX}{name}"),
+                            ty: format!("_k_c_{ty}"),
+                            array: array.clone(),
+                        });
+                        r.struct_loads.push(UniformDecl {
+                            name,
+                            ty: ty.clone(),
+                            array,
+                        });
+                    } else {
+                        r.uniforms.push(UniformDecl {
+                            name,
+                            ty: ty.clone(),
+                            array,
+                        });
+                    }
                 } else {
                     return Err(unsupported(format!(
                         "`{name}`: a uniform of type `{ty}` (not a type or a struct this shader defines)"
@@ -2544,7 +2567,8 @@ fn parse_stage(stage: ShaderStage, r: Rewritten) -> std::result::Result<Stage, S
         for m in members {
             let Some(name) = m.name.clone() else { continue };
             if is_struct_uniform(&module, m.ty) {
-                struct_leaves(&module, &name, m.offset, m.ty, &mut uniforms)?;
+                let real = name.strip_prefix(STRUCT_CARRIER_PREFIX).unwrap_or(&name);
+                struct_leaves(&module, real, m.offset, m.ty, &mut uniforms)?;
                 continue;
             }
             let member = member_of(&module, &name, m.offset, m.ty)?;
@@ -2643,7 +2667,11 @@ fn std140_of(structs: &[(String, String)], ty: &str, array: Option<u32>) -> Opti
         let (_, end) = std140_fields(structs, definition)?;
         (16, end.div_ceil(16) * 16)
     } else {
-        let base = ty.trim_start_matches(['i', 'u', 'b']);
+        // `ivec3`, `uvec3` and `bvec3` lay out as `vec3`; `int`, `uint` and `bool` as 4 bytes.
+        let base = ["i", "u", "b"]
+            .iter()
+            .find_map(|p| ty.strip_prefix(p).filter(|rest| rest.starts_with("vec")))
+            .unwrap_or(ty);
         match base {
             "float" | "int" | "uint" | "bool" => (4, 4),
             "vec2" => (8, 8),
@@ -2685,33 +2713,112 @@ fn std140_fields(structs: &[(String, String)], definition: &str) -> Option<(u32,
     Some((widest, end))
 }
 
-/// A struct that is a uniform gets trailing `float`s up to the 16 bytes a std140 block rounds it to. naga lays the
-/// block out with the struct as it is declared, and a back end that sizes the struct by its fields (Metal) would put
-/// what follows an array of them, or the next member of the block, where the page's bytes are not.
-fn pad_uniform_struct(structs: &mut [(String, String)], name: &str) {
-    let Some(at) = structs.iter().position(|(n, _)| n == name) else { return };
+/// The prefix of a struct uniform's name in the uniform buffer, when it arrives in a padded carrier.
+const STRUCT_CARRIER_PREFIX: &str = "_k_u_";
+
+/// The fields of a struct's text: each type with its declarators (name, array length as written).
+type StructFields = Vec<(String, Vec<(String, Option<String>)>)>;
+
+fn struct_fields(definition: &str) -> Option<StructFields> {
+    let body = definition.split_once('{').and_then(|(_, rest)| rest.rsplit_once('}')).map(|(inside, _)| inside)?;
+    let mut out = Vec::new();
+    for field in body.split(';').map(str::trim).filter(|f| !f.is_empty()) {
+        let mut words = field.split_whitespace().filter(|w| !matches!(*w, "highp" | "mediump" | "lowp"));
+        let ty = words.next()?.to_string();
+        let rest = words.collect::<Vec<_>>().join(" ");
+        let declarators = rest
+            .split(',')
+            .map(|d| match d.split_once('[') {
+                Some((name, n)) => (name.trim().to_string(), Some(n.trim_end_matches(|c: char| c == ']' || c.is_whitespace()).to_string())),
+                None => (d.trim().to_string(), None),
+            })
+            .collect();
+        out.push((ty, declarators));
+    }
+    Some(out)
+}
+
+/// The struct `name`, a uniform, needs a carrier when std140 rounds its size up to 16 bytes (or a struct it holds
+/// needs one): naga lays the buffer out with the struct as declared, and a back end that sizes the struct by its
+/// fields (Metal) would put what follows an array of them, or the next member of the buffer, where the page's bytes
+/// are not. The carrier (`_k_c_<name>`) has the same fields, with a nested struct as its own carrier, and trailing
+/// `float`s up to the rounded size; the page's struct is left as it is, since the page may construct it
+/// (`L(vec3(1.0), vec3(0.0))`). Returns whether `name` has a carrier (made if it was not).
+fn carrier_of(structs: &[(String, String)], carriers: &mut Vec<(String, String)>, name: &str) -> bool {
+    let carrier = format!("_k_c_{name}");
+    if carriers.iter().any(|(n, _)| *n == carrier) {
+        return true;
+    }
+    let Some((_, definition)) = structs.iter().find(|(n, _)| n == name) else { return false };
+    let Some(fields) = struct_fields(definition) else { return false };
     // The structs it holds first: its own size depends on theirs.
-    let nested: Vec<String> = structs[at]
-        .1
-        .split(['{', '}', ';'])
-        .filter_map(|f| f.split_whitespace().find(|w| !matches!(*w, "highp" | "mediump" | "lowp")))
-        .filter(|w| structs.iter().any(|(n, _)| n == w))
-        .map(str::to_string)
-        .collect();
-    for inner in nested {
-        if inner != name {
-            pad_uniform_struct(structs, &inner);
+    let mut nested = false;
+    for (ty, _) in &fields {
+        if ty != name && structs.iter().any(|(n, _)| n == ty) {
+            nested |= carrier_of(structs, carriers, ty);
         }
     }
-    let Some((_, end)) = std140_fields(structs, &structs[at].1) else { return };
+    let Some((_, end)) = std140_fields(structs, definition) else { return false };
     let missing = end.div_ceil(16) * 16 - end;
-    if missing == 0 || structs[at].1.contains("_k_pad") {
-        return;
+    if missing == 0 && !nested {
+        return false;
     }
-    let pads: String = (0..missing / 4).map(|i| format!("float _k_pad{i}; ")).collect();
-    let text = &mut structs[at].1;
-    if let Some(close) = text.rfind('}') {
-        text.insert_str(close, &pads);
+    let mut text = format!("struct {carrier} {{ ");
+    for (ty, declarators) in &fields {
+        let held = format!("_k_c_{ty}");
+        let ty = if carriers.iter().any(|(n, _)| *n == held) { held.as_str() } else { ty.as_str() };
+        let names: Vec<String> = declarators
+            .iter()
+            .map(|(n, a)| a.as_ref().map_or_else(|| n.clone(), |a| format!("{n}[{a}]")))
+            .collect();
+        text.push_str(&format!("{ty} {}; ", names.join(", ")));
+    }
+    for i in 0..missing / 4 {
+        text.push_str(&format!("float _k_pad{i}; "));
+    }
+    text.push_str("}; ");
+    carriers.push((carrier, text));
+    true
+}
+
+/// The statements of `main` that copy a struct uniform from its carrier into the variable of the page's type.
+fn struct_load(structs: &[(String, String)], carriers: &[(String, String)], u: &UniformDecl) -> String {
+    let (dest, src) = (u.name.clone(), format!("{STRUCT_CARRIER_PREFIX}{}", u.name));
+    let mut out = String::new();
+    match &u.array {
+        None => copy_struct(structs, carriers, &u.ty, &dest, &src, 0, &mut out),
+        Some(n) => {
+            out.push_str(&format!("for (int _k_j0 = 0; _k_j0 < {n}; _k_j0++) {{ "));
+            copy_struct(structs, carriers, &u.ty, &format!("{dest}[_k_j0]"), &format!("{src}[_k_j0]"), 1, &mut out);
+            out.push_str("} ");
+        }
+    }
+    out
+}
+
+/// `dest.f = src.f` for each field of the struct `ty`, a nested struct that has a carrier field by field.
+fn copy_struct(structs: &[(String, String)], carriers: &[(String, String)], ty: &str, dest: &str, src: &str, depth: usize, out: &mut String) {
+    let Some((_, definition)) = structs.iter().find(|(n, _)| n == ty) else { return };
+    for (field_ty, declarators) in struct_fields(definition).unwrap_or_default() {
+        let nested = carriers.iter().any(|(n, _)| *n == format!("_k_c_{field_ty}"));
+        for (name, array) in declarators {
+            let (d, s) = (format!("{dest}.{name}"), format!("{src}.{name}"));
+            let element = |d: &str, s: &str, depth: usize, out: &mut String| {
+                if nested {
+                    copy_struct(structs, carriers, &field_ty, d, s, depth, out);
+                } else {
+                    out.push_str(&format!("{d} = {s}; "));
+                }
+            };
+            match array {
+                None => element(&d, &s, depth, out),
+                Some(n) => {
+                    out.push_str(&format!("for (int _k_j{depth} = 0; _k_j{depth} < {n}; _k_j{depth}++) {{ "));
+                    element(&format!("{d}[_k_j{depth}]"), &format!("{s}[_k_j{depth}]"), depth + 1, out);
+                    out.push_str("} ");
+                }
+            }
+        }
     }
 }
 
@@ -3524,9 +3631,93 @@ mod tests {
                 })
                 .unwrap_or_else(|| panic!("no struct {name}"))
         };
-        assert_eq!(span_of("S"), 16);
-        assert_eq!(span_of("Shadow"), 32);
+        assert_eq!(span_of("_k_c_S"), 16);
+        assert_eq!(span_of("_k_c_Shadow"), 32);
+        // The page's own structs are as the page declared them.
+        assert_eq!(span_of("S"), 4);
         assert!(t.fragment.uniforms.iter().all(|u| !u.name.contains("_k_pad")));
+    }
+
+    #[test]
+    fn std140_sizes_int_uint_bool_and_their_vectors_like_float() {
+        let none: &[(String, String)] = &[];
+        for (ty, want) in [
+            ("float", (4, 4)),
+            ("int", (4, 4)),
+            ("uint", (4, 4)),
+            ("bool", (4, 4)),
+            ("ivec2", (8, 8)),
+            ("uvec3", (16, 12)),
+            ("bvec4", (16, 16)),
+            ("vec3", (16, 12)),
+            ("mat3", (16, 48)),
+            ("mat3x4", (16, 48)),
+        ] {
+            assert_eq!(std140_of(none, ty, None), Some(want), "{ty}");
+        }
+        assert_eq!(std140_of(none, "nonsense", None), None);
+        assert_eq!(std140_of(none, "ivecs", None), None);
+    }
+
+    #[test]
+    fn a_uniform_struct_with_int_fields_is_padded_and_can_still_be_constructed() {
+        let t = translate(&program(
+            QUAD_ES1,
+            "precision mediump float;\nvarying vec2 v_uv;\n\
+             struct S { vec3 a; int k; vec2 b; }; struct L { vec3 p; vec3 q; };\n\
+             uniform S u_s; uniform L u_l;\n\
+             void main() { L made = L(vec3(1.0), vec3(0.0)); \
+             gl_FragColor = vec4(u_s.a.x + float(u_s.k) + u_s.b.y + u_l.q.x + made.p.x, 0.0, 0.0, 1.0); }",
+        ))
+        .unwrap();
+        let span_of = |name: &str| {
+            t.fragment
+                .module
+                .types
+                .iter()
+                .find_map(|(_, ty)| match (&ty.name, &ty.inner) {
+                    (Some(n), naga::TypeInner::Struct { span, .. }) if n == name => Some(*span),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("no struct {name}"))
+        };
+        // S: vec3 (0..12), int (12..16), vec2 (16..24): 24 bytes, 32 in std140. L: 28, so 32.
+        assert_eq!(span_of("_k_c_S"), 32);
+        assert_eq!(span_of("_k_c_L"), 32);
+        let names: Vec<&str> = t.fragment.uniforms.iter().map(|u| u.name.as_str()).collect();
+        assert!(names.contains(&"u_s.k") && names.contains(&"u_l.q"), "{names:?}");
+    }
+
+    /// The corpus the TS preprocessor reads as well (`packages/scene/test/glsl-cpp-corpus.test.ts`): the two must leave
+    /// the same uniforms declared.
+    #[test]
+    fn the_preprocessor_corpus_leaves_the_uniforms_the_ts_side_expects() {
+        let corpus: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!("../tests/fixtures/glsl-cpp-corpus.json")).unwrap();
+        assert!(corpus.len() >= 8);
+        for case in corpus {
+            let name = case["name"].as_str().unwrap();
+            let fragment = case["fragment"].as_str().unwrap();
+            let vertex = if fragment.contains("#version 300 es") {
+                "#version 300 es\nin vec2 a_pos; void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }"
+            } else {
+                "attribute vec2 a_pos; void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }"
+            };
+            let t = translate(&program(vertex, fragment)).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let got: BTreeMap<String, u64> = t
+                .fragment
+                .uniforms
+                .iter()
+                .map(|u| (u.name.clone(), u.array.map_or(1, |a| u64::from(a.0))))
+                .collect();
+            let want: BTreeMap<String, u64> = case["uniforms"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(k, v)| (k.clone(), v.as_u64().unwrap()))
+                .collect();
+            assert_eq!(got, want, "{name}");
+        }
     }
 
     #[test]
@@ -3869,6 +4060,42 @@ mod tests {
     }
 
     #[test]
+    fn a_sampler_array_has_a_constant_expression_for_its_length_and_its_indices() {
+        let names = |t: &Translated| -> Vec<String> { t.fragment.samplers.iter().map(|s| s.name.clone()).collect() };
+        let t = es3_fragment(
+            "#define N 2\nconst int I = 1; const int J = I - 1;\nuniform sampler2D m[N * 1]; uniform sampler2D k[I + 1];\n\
+             void main() { o = texture(m[I], v_uv) + texture(k[J + N - 2], v_uv) + texture(m[N - 2], v_uv); }",
+        )
+        .unwrap();
+        let got = names(&t);
+        for want in ["_k_sa_m_0", "_k_sa_m_1", "_k_sa_k_0", "_k_sa_k_1"] {
+            assert!(got.iter().any(|n| n == want), "{want} in {got:?}");
+        }
+        // A loop index is not a constant here: said so, naming the array and the index.
+        let e = es3_fragment(
+            "uniform sampler2D m[2];\n\
+             void main() { vec4 c = vec4(0.0); for (int i = 0; i < 2; i++) { c += texture(m[i], v_uv); } o = c; }",
+        )
+        .unwrap_err();
+        assert!(e.contains("unsupported") && e.contains("`m`") && e.contains("[i]") && e.contains("constant"), "{e}");
+        let e = es3_fragment("uniform sampler2D m[2];\nvoid main() { o = texture(m[2], v_uv); }").unwrap_err();
+        assert!(e.contains("unsupported") && e.contains("past"), "{e}");
+    }
+
+    #[test]
+    fn a_function_defined_after_its_caller_keeps_what_it_reads_above_it() {
+        // `b` reads a macro defined between `a` and `b`: the caller moves after `b`, `b` does not move above the macro.
+        let t = es3_fragment(
+            "float b();\nfloat a() { return b(); }\n#define K 2.0\nconst float C = 3.0;\nfloat b() { return K + C; }\n\
+             void main() { o = vec4(a()); }",
+        );
+        assert!(t.is_ok(), "{:?}", t.err());
+        let ordered = order_functions("float b();\nfloat a() { return b(); }\n#define K 2.0\nfloat b() { return K; }\n");
+        let at = |needle: &str| ordered.find(needle).unwrap_or_else(|| panic!("{needle} in {ordered}"));
+        assert!(at("#define K") < at("float b() {") && at("float b() {") < at("float a()"), "{ordered}");
+    }
+
+    #[test]
     fn the_next_level_of_float_texels_averages_blocks_in_floats() {
         let halves: Vec<u8> = [0.0f32, 1.0, 2.0, 4.0]
             .into_iter()
@@ -4158,6 +4385,48 @@ mod tests {
         let prelude = glsl_blocks::prelude(&b, &used);
         assert!(prelude.contains("binding=514) uniform _KB2 { uvec4 _k_ub2[6]; };"), "{prelude}");
         assert!(prelude.contains("vec4 _k_bi2_c; mat2 _k_bi2_m; float _k_bi2_a[3];"), "{prelude}");
+    }
+
+    #[test]
+    fn a_block_of_types_that_lay_out_alike_is_held_by_naga_and_not_copied_in_every_invocation() {
+        let mut lights = array(member("lights", "vec4", 16), 4096, 16);
+        lights.stride = Some(16);
+        let b = block("B", 16 + 4096 * 16, vec![member("count", "float", 0), lights]);
+        assert!(b.native());
+        let used = UsedBlock { slot: 0, instance: None };
+        assert_eq!(glsl_blocks::loader(&b, &used).unwrap(), "");
+        let prelude = glsl_blocks::prelude(&b, &used);
+        assert!(prelude.contains("uniform _KB0 { float count; vec4 lights[4096]; };") && !prelude.contains("_k_ub0"), "{prelude}");
+        // A shader that reads it translates, with the block in the fragment shader's module and no loop over the block.
+        let t = translate(&with_blocks(
+            &format!("{QUAD_ES3}void main() {{ gl_Position = vec4(a_pos, 0.0, 1.0); }}"),
+            "#version 300 es\nprecision highp float; out vec4 o;\nlayout(std140) uniform B { float count; vec4 lights[4096]; };\n\
+             void main() { o = lights[int(count)]; }",
+            vec![b.clone()],
+        ))
+        .unwrap();
+        let module = &t.fragment.module;
+        let held = module
+            .global_variables
+            .iter()
+            .find(|(_, gv)| gv.binding.as_ref().is_some_and(|b| b.binding == BLOCK_BINDING))
+            .map(|(_, gv)| &module.types[gv.ty].inner);
+        let Some(naga::TypeInner::Struct { span, members }) = held else { panic!("no block at the block binding: {held:?}") };
+        assert_eq!(*span, 16 + 4096 * 16);
+        assert_eq!(members.iter().filter_map(|m| m.name.as_deref()).collect::<Vec<_>>(), ["count", "lights"]);
+        // Each of these makes a block carry, as does a struct member: naga and std140 lay them out apart.
+        for (ty, length) in [("mat2", None), ("bool", None), ("mat3x2", None), ("float", Some(3)), ("vec2", Some(2)), ("mat4x2", Some(2))] {
+            let mut m = member("m", ty, 0);
+            m.length = length;
+            m.stride = length.map(|_| 16);
+            assert!(!block("B", 64, vec![m]).native(), "{ty} {length:?}");
+        }
+        for (ty, length) in [("mat4", Some(8)), ("mat3", None), ("ivec3", Some(2)), ("uvec4", None), ("vec2", None), ("mat3x4", Some(2))] {
+            let mut m = member("m", ty, 0);
+            m.length = length;
+            m.stride = length.map(|_| 64);
+            assert!(block("B", 64, vec![m]).native(), "{ty} {length:?}");
+        }
     }
 
     #[test]

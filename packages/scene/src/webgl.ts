@@ -699,6 +699,8 @@ export class WebGLProgram extends WebGLObject {
   blockBindings: number[] = [];
   /** Why the link failed, when it did for a reason other than a missing shader. */
   linkLog = '';
+  /** What a draw records of the program, made once at the link: its content-hashed id and the entry of the recording. */
+  recorded: { id: string; entry: GlslProgram } | null = null;
 }
 
 // ---- reading the source for names ----
@@ -1037,9 +1039,9 @@ const MAX_SAMPLES = 4;
 /**
  * A uniform value as JSON holds it: an infinity (three.js sets a transmissive material's `attenuationDistance` to one) is
  * a number past what a 32-bit float holds, which the replay reads back as the infinity, where JSON.stringify would write
- * null and the scene would not load. A NaN is 0.
+ * null and the scene would not load. A NaN is the one value written as `null`, which the replay reads back as NaN.
  */
-const jsonNumber = (v: number): number => (Number.isNaN(v) ? 0 : v === Infinity ? 1e39 : v === -Infinity ? -1e39 : v);
+const jsonNumber = (v: number): number | null => (Number.isNaN(v) ? null : v === Infinity ? 1e39 : v === -Infinity ? -1e39 : v);
 
 /** The largest point drawn (`ALIASED_POINT_SIZE_RANGE`): `gl_PointSize` is clamped to 1 to this (crates/core/src/glsl.rs, `MAX_POINT_SIZE`). */
 const POINT_SIZE_MAX = 511;
@@ -1324,11 +1326,12 @@ export class WebGLContext {
     return e;
   }
   getSupportedExtensions(): string[] {
-    return this.version === 1 ? ['OES_standard_derivatives', 'WEBGL_depth_texture'] : ['OES_standard_derivatives', 'OES_texture_float_linear', 'EXT_color_buffer_float', 'EXT_color_buffer_half_float', 'EXT_float_blend'];
+    return this.version === 1 ? ['OES_standard_derivatives', 'WEBGL_depth_texture'] : ['OES_texture_float_linear', 'EXT_color_buffer_float', 'EXT_color_buffer_half_float', 'EXT_float_blend'];
   }
   getExtension(name: string): object | null {
     // Derivatives are always available in the translated shaders, and depth textures (core in WebGL 2) in the replay.
-    if (name === 'OES_standard_derivatives') return { FRAGMENT_SHADER_DERIVATIVE_HINT_OES: 0x8b8b };
+    // WebGL 2 has the derivatives in the language and exposes no extension for them, as browsers do not.
+    if (name === 'OES_standard_derivatives' && this.version === 1) return { FRAGMENT_SHADER_DERIVATIVE_HINT_OES: 0x8b8b };
     if (name === 'EXT_color_buffer_float' && this.version === 2) return {};
     // WebGL 2 draws into 16-bit floats with either extension; blending into 32-bit ones needs EXT_float_blend enabled.
     if (name === 'EXT_color_buffer_half_float' && this.version === 2) return { RGBA16F_EXT: 0x881a, RGB16F_EXT: 0x881b, FRAMEBUFFER_ATTACHMENT_COMPONENT_TYPE_EXT: 0x8211, UNSIGNED_NORMALIZED_EXT: 0x8c17 };
@@ -2048,6 +2051,7 @@ export class WebGLContext {
     program.blocks = [];
     program.blockBindings = [];
     program.linkLog = '';
+    program.recorded = null;
     if (!program.linked) return;
     program.vertex = vertex!.source;
     program.fragment = fragment!.source;
@@ -2080,6 +2084,14 @@ export class WebGLContext {
       program.attributes.set(d.name, next);
       take(next, width);
     }
+    if (!program.linked) return;
+    const attributes: Record<string, number> = {};
+    for (const [name, at] of program.attributes) attributes[name] = at;
+    const blocks = program.blocks.map(({ name, size, members }) => ({ name, size, members }));
+    program.recorded = {
+      id: `p${hashOf(JSON.stringify([program.vertex, program.fragment, attributes]))}`,
+      entry: { vertex: program.vertex, fragment: program.fragment, attributes, ...(blocks.length > 0 ? { blocks } : {}) },
+    };
   }
   /** The program's uniform blocks, in GL's order: the vertex shader's, then the fragment shader's that it does not declare. */
   private linkBlocks(program: WebGLProgram): void {
@@ -3702,14 +3714,8 @@ export class WebGLContext {
     this.begin();
 
     // The program, by what it is made of.
-    const attributes: Record<string, number> = {};
-    for (const [name, at] of program.attributes) attributes[name] = at;
-    const programKey = JSON.stringify([program.vertex, program.fragment, attributes]);
-    const programId = `p${hashOf(programKey)}`;
-    if (!this.programs.has(programId)) {
-      const blocks = program.blocks.map(({ name, size, members }) => ({ name, size, members }));
-      this.programs.set(programId, { vertex: program.vertex, fragment: program.fragment, attributes, ...(blocks.length > 0 ? { blocks } : {}) });
-    }
+    const { id: programId, entry } = program.recorded!;
+    if (!this.programs.has(programId)) this.programs.set(programId, entry);
 
     // Vertex data.
     const draw: GlslDraw = {

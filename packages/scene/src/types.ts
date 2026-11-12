@@ -947,7 +947,8 @@ export interface GlslAttribute {
 export interface GlslUniform {
   /** `f` for `uniform*f`, `i` for `uniform*i`, `m` for `uniformMatrix*` (column-major). */
   kind: 'f' | 'i' | 'm';
-  value: number[];
+  /** The values; a NaN is `null`, which JSON can carry. */
+  value: (number | null)[];
   /** The array element the first value goes to. */
   index?: number;
 }

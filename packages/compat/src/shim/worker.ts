@@ -8,7 +8,8 @@
 // that assumes one thread).
 
 import { readFileSync } from 'node:fs';
-import { Script } from 'node:vm';
+import { types } from 'node:util';
+import { createContext, runInContext, Script } from 'node:vm';
 import { resolveDocumentUrl } from '../environment.js';
 import { HARDWARE_CONCURRENCY, projectFileOf } from './web.js';
 
@@ -136,7 +137,7 @@ class Target {
 }
 
 function reportUncaught(error: unknown): void {
-  console.error(`Uncaught ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
+  console.error(`Uncaught ${types.isNativeError(error) ? `${error.name}: ${error.message}` : String(error)}`);
 }
 
 class MessageEventShim extends MessageEvent<unknown> {
@@ -173,7 +174,7 @@ export function cloneMessage(value: unknown, transfer: readonly unknown[] = []):
   const buffers = new Set<Transferable>();
   const moves = new Set<object>();
   for (const item of transfer) {
-    if (item instanceof ArrayBuffer && !(item as Transferable).detached) buffers.add(item as Transferable);
+    if (types.isArrayBuffer(item) && !(item as Transferable).detached) buffers.add(item as Transferable);
     else if (item instanceof MessagePortShim || isCloneable(item)) moves.add(item);
     else throw dataCloneError('Value not transferable.');
   }
@@ -186,11 +187,12 @@ export function cloneMessage(value: unknown, transfer: readonly unknown[] = []):
       seen.set(input, made);
       return made;
     };
-    if (input instanceof ArrayBuffer) return remember(input.slice(0));
+    if (types.isArrayBuffer(input)) return remember(copyBytes(input));
     if (ArrayBuffer.isView(input)) {
       const buffer = copy(input.buffer) as ArrayBuffer;
       if (input instanceof DataView) return remember(new DataView(buffer, input.byteOffset, input.byteLength));
-      const Ctor = input.constructor as new (b: ArrayBuffer, o: number, l: number) => unknown;
+      // The page's own constructor of that name: a worker's script runs in a realm of its own, whose arrays are not the page's.
+      const Ctor = ((globalThis as Record<string, unknown>)[(input as unknown as { [Symbol.toStringTag]: string })[Symbol.toStringTag]] ?? input.constructor) as new (b: ArrayBuffer, o: number, l: number) => unknown;
       return remember(new Ctor(buffer, input.byteOffset, (input as unknown as { length: number }).length));
     }
     if (input instanceof MessagePortShim) {
@@ -198,21 +200,21 @@ export function cloneMessage(value: unknown, transfer: readonly unknown[] = []):
       return remember(input[CLONE](true));
     }
     if (isCloneable(input)) return remember(input[CLONE](moves.has(input)));
-    if (input instanceof Date) return remember(new Date(input.getTime()));
-    if (input instanceof RegExp) return remember(new RegExp(input.source, input.flags));
+    if (types.isDate(input)) return remember(new Date(input.getTime()));
+    if (types.isRegExp(input)) return remember(new RegExp(input.source, input.flags));
     if (input instanceof Blob) return remember(input);
-    if (input instanceof Boolean || input instanceof Number || input instanceof String) return remember(Object(input.valueOf()));
-    if (input instanceof Map) {
+    if (types.isBooleanObject(input) || types.isNumberObject(input) || types.isStringObject(input)) return remember(Object(input.valueOf()));
+    if (types.isMap(input)) {
       const map = remember(new Map());
       for (const [key, item] of input) map.set(copy(key), copy(item));
       return map;
     }
-    if (input instanceof Set) {
+    if (types.isSet(input)) {
       const set = remember(new Set());
       for (const item of input) set.add(copy(item));
       return set;
     }
-    if (input instanceof Error) {
+    if (types.isNativeError(input)) {
       const Ctor = ERROR_TYPES[input.name] ?? Error;
       const error = remember(new Ctor(input.message));
       if (input.stack !== undefined) Object.defineProperty(error, 'stack', { value: input.stack, configurable: true, writable: true });
@@ -238,6 +240,13 @@ export function cloneMessage(value: unknown, transfer: readonly unknown[] = []):
     if (moved instanceof MessagePortShim) ports.push(moved);
   }
   return { value: cloned, ports };
+}
+
+/** A copy of the bytes of an `ArrayBuffer` (of any realm) as one of the page's own. */
+function copyBytes(buffer: ArrayBuffer): ArrayBuffer {
+  const copy = new ArrayBuffer(buffer.byteLength);
+  new Uint8Array(copy).set(new Uint8Array(buffer));
+  return copy;
 }
 
 const transferOf = (options: unknown): unknown[] =>
@@ -355,26 +364,37 @@ const PAGE_ONLY = [
   'process', 'Buffer', 'require', 'module', 'exports', '__dirname', '__filename', 'global',
 ] as const;
 
-/** The language's own globals: a script that tests `globalThis.Math == Math` to find the global object (Closure's `$jscomp.getGlobal`) reads them off the scope. */
-const LANGUAGE_GLOBALS = [
-  'Object', 'Function', 'Array', 'Number', 'parseFloat', 'parseInt', 'Infinity', 'NaN', 'undefined', 'Boolean', 'String', 'Symbol', 'Date', 'Promise', 'RegExp',
-  'Error', 'AggregateError', 'EvalError', 'RangeError', 'ReferenceError', 'SyntaxError', 'TypeError', 'URIError', 'JSON', 'Math', 'Intl', 'ArrayBuffer',
-  'Atomics', 'Uint8Array', 'Int8Array', 'Uint16Array', 'Int16Array', 'Uint32Array', 'Int32Array', 'Float32Array', 'Float64Array', 'Uint8ClampedArray',
-  'BigUint64Array', 'BigInt64Array', 'DataView', 'Map', 'BigInt', 'Set', 'WeakMap', 'WeakSet', 'Proxy', 'Reflect', 'FinalizationRegistry', 'WeakRef',
-  'decodeURI', 'decodeURIComponent', 'encodeURI', 'encodeURIComponent', 'escape', 'unescape', 'eval', 'isFinite', 'isNaN', 'console', 'SharedArrayBuffer',
-  'WebAssembly', 'TextEncoder', 'TextDecoder', 'URL', 'URLSearchParams', 'AbortController', 'AbortSignal', 'Blob', 'structuredClone', 'queueMicrotask',
-  'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'atob', 'btoa', 'performance', 'crypto', 'Event', 'EventTarget', 'MessageChannel', 'MessagePort',
-  'MessageEvent', 'ErrorEvent', 'DOMException', 'Headers', 'Request', 'Response', 'FormData', 'ImageData', 'OffscreenCanvas',
-] as const;
-
-const UNSCOPABLE = Object.fromEntries(
-  ['constructor', 'toString', 'toLocaleString', 'valueOf', 'hasOwnProperty', 'isPrototypeOf', 'propertyIsEnumerable', '__proto__', '__defineGetter__', '__defineSetter__', '__lookupGetter__', '__lookupSetter__'].map((n) => [n, true]),
-);
-
-/** Runs `code` as a classic script with `scope` as its global scope: a free name it assigns lands on `scope`, one it reads is looked up there first. */
+/**
+ * Runs `code` as a classic script with `scope` as its global object: the scope is made the global of a `vm` context, so
+ * a top-level `var` or `function` is a property of it (`self.k`, and `function onmessage` is `onmessage`), and a free
+ * name it assigns lands there too. What the context lacks of the page's globals (`setTimeout`, `URL`, `fetch`, ...) is
+ * the page's own, by `forward`. The script runs on this thread, in the page's microtask queue and on its clock.
+ */
 function runIn(scope: object, code: string, file: string): void {
-  const wrapper = `(function (__scope) { with (__scope) {\n${code}\n} })`;
-  (new Script(wrapper, { filename: file }).runInThisContext() as (s: object) => void).call(scope, scope);
+  new Script(code, { filename: file }).runInContext(scope);
+}
+
+/** The globals of a fresh `vm` context (the ES intrinsics, which a script there has of its own, and no more). */
+let intrinsics: Set<string> | null = null;
+
+/** Gives the worker's global the page's globals it does not have as intrinsics, read from the page when used. */
+function forward(scope: object): void {
+  if (intrinsics === null) {
+    // `console` is an intrinsic of a context that prints nowhere; the page's prints.
+    intrinsics = new Set(runInContext('Object.getOwnPropertyNames(globalThis)', createContext({})) as string[]);
+    intrinsics.delete('console');
+  }
+  for (const name of Object.getOwnPropertyNames(globalThis)) {
+    if (intrinsics.has(name) || name in scope) continue;
+    Object.defineProperty(scope, name, {
+      get: () => (globalThis as Record<string, unknown>)[name],
+      set: (value: unknown) => {
+        Object.defineProperty(scope, name, { value, configurable: true, writable: true, enumerable: false });
+      },
+      configurable: true,
+      enumerable: false,
+    });
+  }
 }
 
 const MODULE_SYNTAX = /(^|[\n;])\s*(import\s*(?:[\w{*$"']|\()|export\s*[{*]|export\s+(?:default|const|let|var|function|class|async))/;
@@ -458,7 +478,7 @@ export class WorkerShim extends Target {
 
   /** The worker's script threw, or a handler did: an `error` event on the Worker, and when nobody handles it, an error on the page. */
   private fail(error: unknown): void {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = types.isNativeError(error) ? error.message : String(error);
     const event = new ErrorEvent('error', { message, error, filename: this.url, cancelable: true });
     this.dispatchEvent(event);
     if (!event.defaultPrevented && this.slotOf('error') === null) reportUncaught(`${message} (in the worker ${this.url.slice(0, 80)})`);
@@ -508,17 +528,14 @@ export class WorkerShim extends Target {
     };
     // A handler that throws is an `error` event on the worker's own scope, then on the Worker.
     scope.onError = (error) => {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = types.isNativeError(error) ? error.message : String(error);
       const own = new ErrorEvent('error', { message, error, cancelable: true });
       scope.dispatchEvent(own);
       if (!own.defaultPrevented) this.fail(error);
     };
-    // What a global object has as properties (a free name falls through to the real global anyway).
-    for (const key of LANGUAGE_GLOBALS) if (key in globalThis) define(key, (globalThis as unknown as Record<string, unknown>)[key]);
     for (const key of PAGE_ONLY) define(key, undefined);
-    define(Symbol.unscopables, UNSCOPABLE);
     define('self', scope);
-    define('globalThis', scope);
+    // `globalThis` is the context's own global, which holds the language's globals and stands for the scope.
     define('name', name);
     define('postMessage', (message: unknown, options?: unknown): void => {
       const { value, ports } = cloneMessage(message, transferOf(options));
@@ -542,6 +559,12 @@ export class WorkerShim extends Target {
     define('navigator', { hardwareConcurrency: HARDWARE_CONCURRENCY, userAgent: 'Kinetograph', language: 'en-US', languages: ['en-US'], onLine: true, platform: '' });
     define('WorkerGlobalScope', WorkerGlobalScopeShim);
     define('DedicatedWorkerGlobalScope', DedicatedWorkerGlobalScopeShim);
+    // A bare `addEventListener(...)` is called with no `this`, which the global of a context has no way to give.
+    for (const key of ['addEventListener', 'removeEventListener', 'dispatchEvent'] as const) define(key, scope[key].bind(scope));
+    forward(scope);
+    const context = createContext(scope);
+    // What a script sees as `self` is the context's global, which stands for the scope: `self instanceof WorkerGlobalScope`.
+    (runInContext('(proto) => Object.setPrototypeOf(globalThis, proto)', context) as (proto: object) => void)(Object.getPrototypeOf(scope) as object);
     return scope;
   }
 }
