@@ -19,18 +19,28 @@ use crate::glsl::{
 
 type R<T> = Result<T, String>;
 
-/// A linked program and its active uniforms (name without `[0]`, size, GL type).
-#[derive(Clone)]
-struct Program {
-    name: u32,
-    uniforms: HashMap<String, (i32, Enum)>,
-    /// The active attributes by name: location and GL type.
-    attribs: HashMap<String, (i32, Enum)>,
+/// An active uniform of a linked program: where it is (of its first element), how many elements, and its GL type.
+#[derive(Clone, Copy)]
+struct UniformInfo {
+    location: i32,
+    size: i32,
+    ty: Enum,
 }
 
-/// A program belongs to the context it was linked in: the vertex source, the fragment source, the attribute locations
-/// and whether the context has float-linear on.
-type ProgramKey = (String, String, Vec<(String, u32)>, angle::Extensions);
+/// A linked program with what the draws look up in it, found once when it was linked (or the first time they are asked
+/// for): its active uniforms by name (without `[0]`), its active attributes (location and GL type), the locations of
+/// array elements past the first, and its uniform block indices.
+struct Program {
+    name: u32,
+    uniforms: HashMap<String, UniformInfo>,
+    attribs: HashMap<String, (i32, Enum)>,
+    indexed: std::cell::RefCell<HashMap<(String, u32), i32>>,
+    blocks: std::cell::RefCell<HashMap<String, Option<u32>>>,
+}
+
+/// A program belongs to the context it was linked in: a hash of the vertex source, the fragment source and the attribute
+/// locations (computed once for each program a frame uses), and the context's extensions.
+type ProgramKey = (u64, angle::Extensions);
 
 /// How many programs a thread keeps for one context before the cache starts over.
 const MAX_PROGRAMS: usize = 256;
@@ -38,7 +48,7 @@ const MAX_PROGRAMS: usize = 256;
 thread_local! {
     /// A program that failed to compile or link is kept as its error, so it is not tried again on every frame.
     static CACHES: std::cell::RefCell<HashMap<angle::Extensions, Cache>> = std::cell::RefCell::new(HashMap::new());
-    static PROGRAMS: std::cell::RefCell<HashMap<ProgramKey, R<Program>>> = std::cell::RefCell::new(HashMap::new());
+    static PROGRAMS: std::cell::RefCell<HashMap<ProgramKey, R<std::rc::Rc<Program>>>> = std::cell::RefCell::new(HashMap::new());
 }
 
 /// What a context keeps from frame to frame: the buffers and the uploaded textures by what they are made from (the same key
@@ -195,6 +205,8 @@ struct Replay<'a> {
     /// the cube or array texture (`targets`): the target's id, to the texture's id and the face or layer.
     parts: HashMap<&'a str, (&'a str, u32)>,
     samplers: Vec<u32>,
+    /// The programs of the recording this frame has looked up, by id.
+    frame_programs: std::cell::RefCell<HashMap<String, R<std::rc::Rc<Program>>>>,
     /// The programs whose uniforms went back to 0 for this frame.
     zeroed: std::collections::HashSet<u32>,
     /// The generic attributes a draw gave a current value, to put back before the next draw.
@@ -251,9 +263,9 @@ fn run(
     // The program cache of this context starts over when it has grown past its bound.
     PROGRAMS.with(|programs| {
         let mut programs = programs.borrow_mut();
-        if programs.keys().filter(|k| k.3 == ext).count() > MAX_PROGRAMS {
+        if programs.keys().filter(|k| k.1 == ext).count() > MAX_PROGRAMS {
             programs.retain(|key, program| {
-                if key.3 != ext {
+                if key.1 != ext {
                     return true;
                 }
                 if let Ok(program) = program {
@@ -306,6 +318,7 @@ fn run(
             })
             .collect(),
         samplers: Vec::new(),
+        frame_programs: std::cell::RefCell::new(HashMap::new()),
         zeroed: std::collections::HashSet::new(),
         // A frame starts with every current attribute value at the default, as a context just made has them.
         const_attrs: u32::MAX,
@@ -855,29 +868,38 @@ impl<'a> Replay<'a> {
         Ok(whole(name, gl::TEXTURE_2D, None))
     }
 
-    fn program(&self, id: &str) -> R<Program> {
+    fn program(&self, id: &str) -> R<std::rc::Rc<Program>> {
+        if let Some(p) = self.frame_programs.borrow().get(id) {
+            return p.clone();
+        }
         let spec = self
             .content
             .programs
             .get(id)
             .ok_or_else(|| format!("no program {id}"))?;
-        let mut attrs: Vec<(String, u32)> = spec
-            .attributes
-            .iter()
-            .map(|(k, v)| (k.clone(), *v))
-            .collect();
+        let mut attrs: Vec<(&String, &u32)> = spec.attributes.iter().collect();
         attrs.sort();
-        let key = (
-            spec.vertex.clone(),
-            spec.fragment.clone(),
-            attrs.clone(),
-            self.ext,
-        );
-        if let Some(p) = PROGRAMS.with(|p| p.borrow().get(&key).cloned()) {
-            return p;
-        }
-        let built = self.link_program(spec, &attrs);
-        PROGRAMS.with(|p| p.borrow_mut().insert(key, built.clone()));
+        // The sources are hashed once for the frame, not cloned and hashed for every draw.
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            (&spec.vertex, &spec.fragment, &attrs).hash(&mut hasher);
+            (hasher.finish(), self.ext)
+        };
+        let cached = PROGRAMS.with(|p| p.borrow().get(&key).cloned());
+        let built = match cached {
+            Some(p) => p,
+            None => {
+                let attrs: Vec<(String, u32)> =
+                    attrs.iter().map(|(k, v)| ((*k).clone(), **v)).collect();
+                let built = self.link_program(spec, &attrs).map(std::rc::Rc::new);
+                PROGRAMS.with(|p| p.borrow_mut().insert(key, built.clone()));
+                built
+            }
+        };
+        self.frame_programs
+            .borrow_mut()
+            .insert(id.to_string(), built.clone());
         built
     }
 
@@ -911,9 +933,14 @@ impl<'a> Replay<'a> {
             .active_uniforms(name)
             .into_iter()
             .map(|u| {
+                let location = gl_.uniform_location(name, &u.name);
                 (
                     u.name.strip_suffix("[0]").unwrap_or(&u.name).to_string(),
-                    (u.size, u.ty),
+                    UniformInfo {
+                        location,
+                        size: u.size,
+                        ty: u.ty,
+                    },
                 )
             })
             .collect();
@@ -926,6 +953,8 @@ impl<'a> Replay<'a> {
             name,
             uniforms,
             attribs,
+            indexed: std::cell::RefCell::new(HashMap::new()),
+            blocks: std::cell::RefCell::new(HashMap::new()),
         })
     }
 
@@ -1168,7 +1197,12 @@ impl<'a> Replay<'a> {
             }
         }
         for (slot, (block, range)) in d.blocks.iter().enumerate() {
-            let Some(index) = gl_.uniform_block_index(program.name, block) else {
+            let index = *program
+                .blocks
+                .borrow_mut()
+                .entry(block.clone())
+                .or_insert_with(|| gl_.uniform_block_index(program.name, block));
+            let Some(index) = index else {
                 continue;
             };
             let buffer = self.buffer(&range.buffer)?;
@@ -1430,24 +1464,25 @@ fn toggle(gl_: &Gl, cap: Enum, on: bool) {
 
 /// One `uniform*` call: the GL type of the uniform says how many components and which function.
 fn set_uniform(gl_: &Gl, program: &Program, name: &str, call: &rec::GlslUniform) -> R<()> {
-    let Some(&(_, ty)) = program.uniforms.get(name) else {
+    let Some(info) = program.uniforms.get(name) else {
         // Not active: the shader does not use it (a driver drops it), which GL allows.
         return Ok(());
     };
-    let location = {
-        let indexed = format!("{name}[{}]", call.index);
-        let direct =
-            gl_.uniform_location(program.name, if call.index == 0 { name } else { &indexed });
-        if direct >= 0 || call.index != 0 {
-            direct
-        } else {
-            gl_.uniform_location(program.name, &format!("{name}[0]"))
-        }
+    let location = if call.index == 0 {
+        info.location
+    } else {
+        *program
+            .indexed
+            .borrow_mut()
+            .entry((name.to_string(), call.index))
+            .or_insert_with(|| {
+                gl_.uniform_location(program.name, &format!("{name}[{}]", call.index))
+            })
     };
     if location < 0 {
         return Ok(());
     }
-    write_uniform(gl_, location, ty, &call.value, name)
+    write_uniform(gl_, location, info.ty, &call.value, name)
 }
 
 /// The GL uniform types (`glGetActiveUniform`), by their names in the ES 3.0 headers.
@@ -1568,23 +1603,16 @@ fn uniform_kind(ty: Enum) -> Option<UniformKind> {
 /// A program is cached across frames and pages, and its uniforms keep their values: before a frame's calls, every active
 /// uniform goes back to 0 (a sampler to unit 0), as in a program that has just linked.
 fn zero_uniforms(gl_: &Gl, program: &Program) -> R<()> {
-    for (name, &(size, ty)) in &program.uniforms {
-        let Some(kind) = uniform_kind(ty) else {
-            return Err(format!("unsupported: uniform {name} of GL type 0x{ty:x}"));
+    for (name, info) in &program.uniforms {
+        let Some(kind) = uniform_kind(info.ty) else {
+            return Err(format!(
+                "unsupported: uniform {name} of GL type 0x{:x}",
+                info.ty
+            ));
         };
-        let width = kind.width();
-        let mut location = gl_.uniform_location(program.name, name);
-        if location < 0 {
-            location = gl_.uniform_location(program.name, &format!("{name}[0]"));
-        }
-        if location >= 0 {
-            write_uniform(
-                gl_,
-                location,
-                ty,
-                &vec![0.0; width * size.max(1) as usize],
-                name,
-            )?;
+        if info.location >= 0 {
+            let zeros = vec![0.0; kind.width() * info.size.max(1) as usize];
+            write_uniform(gl_, info.location, info.ty, &zeros, name)?;
         }
     }
     Ok(())
