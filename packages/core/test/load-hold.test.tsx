@@ -106,4 +106,58 @@ describe('loads the page starts', () => {
     await ids();
     expect(runs).toBe(1);
   });
+
+  it('runs a page that animates and keeps render targets once per frame in a still, as in a render of every frame', async () => {
+    let runs = 0;
+    const Page = () => {
+      useEffect(() => {
+        // A trail: each frame draws a target from the one the frame before drew (the two swap).
+        const gl = document.createElement('canvas').getContext('webgl2')!;
+        const shader = (type: number, source: string) => {
+          const made = gl.createShader(type)!;
+          gl.shaderSource(made, source);
+          gl.compileShader(made);
+          return made;
+        };
+        const program = gl.createProgram()!;
+        gl.attachShader(program, shader(gl.VERTEX_SHADER, '#version 300 es\nin vec2 p;out vec2 uv;void main(){uv=p*.5+.5;gl_Position=vec4(p,0,1);}'));
+        gl.attachShader(program, shader(gl.FRAGMENT_SHADER, '#version 300 es\nprecision highp float;in vec2 uv;uniform sampler2D prev;out vec4 o;void main(){o=texture(prev,uv)+vec4(.1,0,0,0);}'));
+        gl.linkProgram(program);
+        gl.useProgram(program);
+        gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+        const target = () => {
+          const texture = gl.createTexture()!;
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 4, 4, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+          const framebuffer = gl.createFramebuffer()!;
+          gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+          gl.clearColor(0, 0, 0, 1);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          return { texture, framebuffer };
+        };
+        const pair = [target(), target()];
+        let current = 0;
+        const loop = () => {
+          runs++;
+          const from = pair[current]!;
+          current = 1 - current;
+          gl.bindFramebuffer(gl.FRAMEBUFFER, pair[current]!.framebuffer);
+          gl.bindTexture(gl.TEXTURE_2D, from.texture);
+          gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+          requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
+      }, []);
+      return <Rect id="r" width={4} height={4} fill="#fff" />;
+    };
+    root(Page);
+    await createFrameRenderer('T').renderFrame(3);
+    // The page's own state (a count, a rotation) cannot be put back: a render that found the targets after stepping, and
+    // started over, would have run the callbacks twice.
+    expect(runs).toBe(4);
+  });
 });

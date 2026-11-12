@@ -230,6 +230,10 @@ class Renderer implements FrameRenderer {
         // frame looks the same whether the render began there or somewhere later.
         setVirtualFrame(0, config.fps, { deferAnimationFrames: true });
         await this.settle(scene, () => this.update(scene, this.element(component, config, 0)));
+        // A page that animates and holds render targets may make them from what they held (a trail), which only the frames
+        // rendered one after the other give. The page's own state (a rotation its callback adds to) cannot be put back,
+        // so a render that found this out after stepping the callbacks, and started over, would run them twice.
+        if (animationFramesQueued() && glHoldsTargets()) this.historyDependent = true;
       }
       if (gsapIsLoaded() || this.historyDependent) {
         // GSAP's tweens are made by effects, which a frame's render runs: an effect that starts a tween at frame 30 has
