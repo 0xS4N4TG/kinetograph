@@ -1711,8 +1711,23 @@ impl Compositor {
             };
             sampled.push((binding.clone(), texture));
         }
-        // `OES_texture_float_linear`: with it enabled a 32-bit float texture is filtered, where the device can.
+        // `OES_texture_float_linear` is always offered, so a page may enable it; a GPU that cannot filter 32-bit floats
+        // (FLOAT32_FILTERABLE) cannot draw what the page then asks for: that is said, not drawn as black.
         let float_linear = draw.float_linear && self.device.features().contains(wgpu::Features::FLOAT32_FILTERABLE);
+        if draw.float_linear && !float_linear {
+            for (binding, texture) in &sampled {
+                if let Some((state, uploaded)) = texture {
+                    if uploaded.float32 && !nearest_family(state) {
+                        return Err(render_error(format!(
+                            "unsupported: the sampler `{}` reads a 32-bit float texture with a linear filter \
+                             (OES_texture_float_linear), which this GPU cannot do (it lacks FLOAT32_FILTERABLE); \
+                             use NEAREST or a 16-bit float texture",
+                            binding.name
+                        )));
+                    }
+                }
+            }
+        }
         let depths: Vec<bool> = sampled
             .iter()
             .map(|(_, t)| t.as_ref().is_some_and(|(_, u)| u.depth || (u.float32 && !float_linear)))
@@ -2828,9 +2843,9 @@ impl Compositor {
                 (Arc::new(uploaded), &based)
             }
         };
-        // A 32-bit float texture is complete only when it is read `NEAREST` (without `OES_texture_float_linear`); any
-        // other filter makes it incomplete, which samples as opaque black.
-        if texture.float32 && !float_linear && !(state.min == "NEAREST" && state.mag == "NEAREST") {
+        // A 32-bit float texture is complete only when it is read `NEAREST` or `NEAREST_MIPMAP_NEAREST` (without
+        // `OES_texture_float_linear`); any other filter makes it incomplete, which samples as opaque black.
+        if texture.float32 && !float_linear && !nearest_family(state) {
             let black = self.glsl_black(dim);
             let nearest = GlslSampler {
                 min: "NEAREST".into(),
@@ -2839,8 +2854,8 @@ impl Compositor {
             };
             return (black.view.clone(), self.glsl_sampler_for(&nearest, false));
         }
-        // A depth buffer, or float texture, is read texel for texel.
-        if texture.depth || (texture.float32 && !float_linear) {
+        // A depth buffer is read texel for texel.
+        if texture.depth {
             let nearest = GlslSampler {
                 min: "NEAREST".into(),
                 mag: "NEAREST".into(),
@@ -4130,6 +4145,12 @@ fn widen_values(bytes: &[u8], (start, stride, count): (u64, u64, u64), widen: &W
     Ok(out)
 }
 
+/// Filters that take one texel and no blend of two (`NEAREST` magnified, `NEAREST` or `NEAREST_MIPMAP_NEAREST`
+/// minified): the only ones a 32-bit float texture may be read with where it cannot be filtered.
+fn nearest_family(state: &GlslSampler) -> bool {
+    state.mag == "NEAREST" && matches!(state.min.as_str(), "NEAREST" | "NEAREST_MIPMAP_NEAREST")
+}
+
 fn min_filter(name: &str) -> (wgpu::FilterMode, wgpu::MipmapFilterMode, bool) {
     use wgpu::FilterMode::{Linear, Nearest};
     match name {
@@ -4295,6 +4316,26 @@ fn file_stamp(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_float32_texture_is_complete_with_either_nearest_filter_and_not_with_a_linear_one() {
+        let state = |min: &str, mag: &str| GlslSampler {
+            texture: "t".into(),
+            min: min.into(),
+            mag: mag.into(),
+            wrap_s: "REPEAT".into(),
+            wrap_t: "REPEAT".into(),
+            wrap_r: "REPEAT".into(),
+            max_level: None,
+            base_level: 0,
+            compare: None,
+        };
+        assert!(nearest_family(&state("NEAREST", "NEAREST")));
+        assert!(nearest_family(&state("NEAREST_MIPMAP_NEAREST", "NEAREST")));
+        assert!(!nearest_family(&state("NEAREST_MIPMAP_LINEAR", "NEAREST")));
+        assert!(!nearest_family(&state("LINEAR_MIPMAP_NEAREST", "NEAREST")));
+        assert!(!nearest_family(&state("NEAREST", "LINEAR")));
+    }
 
     #[test]
     fn a_program_is_cached_under_its_id_not_its_source() {
