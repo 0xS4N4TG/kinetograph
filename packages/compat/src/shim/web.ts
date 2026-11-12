@@ -156,7 +156,7 @@ class MediaQueryListShim extends BrowserEventTarget {
 
 const MIME: Record<string, string> = {
   '.json': 'application/json', '.txt': 'text/plain', '.csv': 'text/csv', '.html': 'text/html', '.css': 'text/css',
-  '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.js': 'text/javascript', '.svg': 'image/svg+xml', '.xml': 'application/xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.gif': 'image/gif', '.webp': 'image/webp', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.mp4': 'video/mp4',
   '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf',
 };
