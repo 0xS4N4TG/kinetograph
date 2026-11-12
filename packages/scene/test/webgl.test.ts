@@ -1547,8 +1547,23 @@ describe('the recording WebGL context', () => {
       const clear = gl.content().ops[0]!;
       if (clear.op !== 'clear') throw new Error('not a clear');
       expect(gl.content().textures[clear.target!]).toMatchObject({ target: true, colorFormat: 'RGBA16F' });
-      expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL2.RGBA16F, 2, 2, 0, GL.RGBA, GL.FLOAT, new Float32Array(16))).toThrow(WebGLUnsupportedError);
       void cube;
+    });
+
+    it('records a cube map of float faces uploaded from pixels with its floats', () => {
+      const { gl, program } = setup();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      const floats = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_CUBE_MAP, floats);
+      for (let f = 0; f < 6; f += 1) gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X + f, 0, GL2.RGBA16F, 1, 1, 0, GL.RGBA, GL.FLOAT, new Float32Array([f, 0, 0, 1]));
+      gl.texParameteri(GL.TEXTURE_CUBE_MAP, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
+      gl.texParameteri(GL.TEXTURE_CUBE_MAP, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
+      gl.uniform1i(gl.getUniformLocation(program, 'env'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const recorded = Object.values(gl.content().textures).find((t) => t.cube === true);
+      expect(recorded?.faces).toHaveLength(6);
+      expect(recorded?.faces?.every((face) => face.floats !== undefined && face.pixels === undefined)).toBe(true);
     });
 
     it('refuses a sampler that reads the cube map a face of which the draw writes, and a face target of a 2D texture', () => {
@@ -1828,6 +1843,13 @@ describe('the recording WebGL context', () => {
       expect(gl.getUniformLocation(program, 'morphTargetInfluences[4]')).toBeNull();
       gl.uniform1fv(gl.getUniformLocation(program, 'morphTargetInfluences')!, [1, 2, 3, 4]);
       expect(gl.getError()).toBe(GL.NO_ERROR);
+    });
+
+    it('reads a length that is an expression of a macro, as SAOShader writes sampleWeights[ KERNEL_RADIUS + 1 ]', () => {
+      const { gl, program } = linked(`#version 300 es\nin vec2 p;\n#define KERNEL_RADIUS 4\nuniform float sampleWeights[ KERNEL_RADIUS + 1 ];\n${BODY}`);
+      expect(gl.getActiveUniform(program, 0)!.name).toBe('sampleWeights[0]');
+      expect(gl.getActiveUniform(program, 0)!.size).toBe(5);
+      expect(gl.getUniformLocation(program, 'sampleWeights')).not.toBeNull();
     });
 
     it('follows a macro defined as another macro or in parentheses', () => {
@@ -2219,11 +2241,10 @@ describe('the recording WebGL context', () => {
       }
     });
 
-    it('records a cube map of sRGB faces as sRGB, and refuses a float face with pixels', () => {
+    it('records a cube map of sRGB faces as sRGB, and a cube map of float faces with its floats', () => {
       const { gl } = setup();
       const cube = gl.createTexture();
       gl.bindTexture(GL.TEXTURE_CUBE_MAP, cube);
-      expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL2.RGBA16F, 1, 1, 0, GL.RGBA, GL.FLOAT, new Float32Array(4))).toThrow(/^unsupported:.*float pixels/);
       for (let f = 0; f < 6; f += 1) gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X + f, 0, GL2.SRGB8_ALPHA8, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4));
       expect(gl.getError()).toBe(GL.NO_ERROR);
     });
