@@ -670,7 +670,13 @@ export const mediaHost = {
       note(`<audio src="${src ?? ''}">`, 'the file is not in the project, so the element makes no sound');
       throw new DOMException(`The element has no supported sources: ${src ?? '(no src)'}`, 'NotSupportedError');
     }
-    bufferOf(file);
+    try {
+      bufferOf(file);
+    } catch (error) {
+      // A picture with no sound (most `<video>`s a page plays): the element plays on its own clock and adds nothing to the mix.
+      if (error instanceof Error && /has no audio stream$/.test(error.message)) return;
+      throw error;
+    }
     const start = state.playing ? positionOf(element, state) : state.at;
     state.file = file;
     state.playing = true;

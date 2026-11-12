@@ -124,3 +124,16 @@ describe('the order inside a frame', () => {
     button.remove();
   });
 });
+
+describe('a video file with no sound', () => {
+  it('plays on its own clock and adds nothing to the mix, without an error', async () => {
+    setAudioDecoder(() => {
+      throw new Error('beep.wav has no audio stream');
+    });
+    await audio.play();
+    setVirtualFrame(15, 30);
+    expect(audio.paused).toBe(false);
+    expect(audio.currentTime).toBeCloseTo(0.5, 6);
+    expect(media()).toEqual([]);
+  });
+});
