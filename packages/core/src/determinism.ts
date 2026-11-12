@@ -15,6 +15,7 @@
 
 import { animationClockMoved, animationsPending, dispatchPageInput, pageInputDue, resetAnimations, setAnimationClock, tickAnimations } from '@kinetographdev/compat/shim';
 import { setGsapTime } from './gsap-clock.js';
+import { replayPageAudio, resetPageAudio } from './page-audio.js';
 
 /**
  * The real functions, captured when this module is first evaluated (before `installDeterminism`). Bound to the global
@@ -313,6 +314,9 @@ export function resetVirtualClock(options: { keepAnimationFrames?: boolean } = {
   currentFps = 30;
   randomState = INITIAL_SEED;
   timers.clear();
+  // A scene started over on the same page plays its frames again: the page's audio calls of those frames were made.
+  if (options.keepAnimationFrames === true) replayPageAudio();
+  else resetPageAudio();
   if (options.keepAnimationFrames !== true) {
     animationQueue = [];
     // A new render: no Web Animation is left from the last (a scene started over keeps them, as it keeps the callbacks).
