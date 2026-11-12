@@ -4,7 +4,8 @@
 // tests are skipped, with the reason, where it is not there.
 
 import { createRequire } from 'node:module';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { carryDepends, resetCarry } from '../src/shim/webgpu-dawn-carry.js';
 import { hasAddonFunction } from '../src/addon.js';
 import { DAWN_FEATURES, DAWN_LIMITS, DawnCanvasContext, dawnCommandsOf, dawnGlobals, dawnReadCommands, flushDawnCanvases, installDawn, releaseDawn, takeDawnReports } from '../src/shim/webgpu-dawn.js';
 
@@ -132,6 +133,40 @@ describe.skipIf(missing !== null)('WebGPU through Dawn', () => {
     expect(() => dawnReadCommands(context)).toThrow(/read back after the scripts of a frame ran/);
     await flushDawnCanvases();
     expect(dawnReadCommands(context)).toHaveLength(1);
+    device.destroy();
+  });
+
+  it('counts a loaded depth attachment as carried state only when a pipeline of the pass tests depth', async () => {
+    const adapter = await gpu.requestAdapter();
+    const device = await adapter.requestDevice();
+    const module = device.createShaderModule({ code: '@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f { return vec4f(0, 0, 0.5, 1); } @fragment fn fs() -> @location(0) vec4f { return vec4f(1); }' });
+    const pipeline = (depthCompare: string) => device.createRenderPipeline({ layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format: 'rgba8unorm' }] }, primitive: { topology: 'point-list' }, depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare } });
+    const clock = vi.spyOn(performance, 'now');
+    const frames = (compare: string): boolean => {
+      resetCarry();
+      clock.mockReturnValue(0);
+      const draw = pipeline(compare);
+      const color = device.createTexture({ size: [4, 4], format: 'rgba8unorm', usage: g.GPUTextureUsage.RENDER_ATTACHMENT });
+      const depth = device.createTexture({ size: [4, 4], format: 'depth24plus', usage: g.GPUTextureUsage.RENDER_ATTACHMENT });
+
+      for (const [at, load] of [[0, 'clear'], [33, 'load'], [66, 'load']] as const) {
+        clock.mockReturnValue(at);
+        const encoder = device.createCommandEncoder();
+        const pass = encoder.beginRenderPass({
+          colorAttachments: [{ view: color.createView(), loadOp: 'clear', storeOp: 'store' }],
+          depthStencilAttachment: { view: depth.createView(), depthLoadOp: load, depthStoreOp: 'store', depthClearValue: 1 },
+        });
+        pass.setPipeline(draw);
+        pass.draw(1);
+        pass.end();
+        device.queue.submit([encoder.finish()]);
+      }
+      return carryDepends();
+    };
+    // An output pass that loads the depth and draws with the test off reads nothing from it; a pass that tests against it does.
+    expect(frames('always')).toBe(false);
+    expect(frames('less')).toBe(true);
+    clock.mockRestore();
     device.destroy();
   });
 });

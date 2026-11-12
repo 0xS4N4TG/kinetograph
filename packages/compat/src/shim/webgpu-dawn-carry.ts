@@ -34,6 +34,10 @@ const states = new WeakMap<object, State>();
 const views = new WeakMap<object, Any>();
 const groups = new WeakMap<object, { buffers: Any[]; textures: Any[] }>();
 const computePasses = new WeakSet<object>();
+/** Whether a render pipeline tests depth or stencil, so that what a depth attachment was loaded with can change the picture. */
+const testsDepth = new WeakMap<object, boolean>();
+/** A render pass that loaded a depth attachment: the texture and the epoch of its last write before the pass, until a pipeline that tests it is set. */
+const loadedDepth = new WeakMap<object, { texture: Any; written: number }>();
 let flagged = false;
 /** Flagged by something done outside an animation-frame callback (an effect, a render): what a replay of the skipped frames repeats. */
 let flaggedOutside = false;
@@ -171,7 +175,34 @@ export function trackCarry(g: Record<string, Any>, clock: () => number): void {
   wrap(g.GPUBuffer.prototype, 'mapAsync', function ([mode]) {
     if (((mode as number) & 0x02) !== 0) write(this);
   });
-  wrapResult(g.GPUCommandEncoder.prototype, 'beginRenderPass', (_pass, [descriptor]) => {
+  const noteDepthTest = (pipeline: Any, descriptor: Any): void => {
+    const ds = descriptor?.depthStencil;
+    const stencil = [ds?.stencilFront, ds?.stencilBack].some((face) => face !== undefined && (face.compare ?? 'always') !== 'always');
+    testsDepth.set(pipeline, ds !== undefined && ((ds.depthCompare ?? 'always') !== 'always' || stencil));
+  };
+  wrapResult(g.GPUDevice.prototype, 'createRenderPipeline', (pipeline, [descriptor]) => noteDepthTest(pipeline, descriptor));
+  const createAsync = g.GPUDevice.prototype.createRenderPipelineAsync;
+  Object.defineProperty(g.GPUDevice.prototype, 'createRenderPipelineAsync', {
+    value: function (this: Any, descriptor: Any) {
+      return (createAsync.call(this, descriptor) as Promise<Any>).then((pipeline) => {
+        noteDepthTest(pipeline, descriptor);
+        return pipeline;
+      });
+    },
+    writable: true,
+    configurable: true,
+  });
+  wrap(g.GPURenderPassEncoder.prototype, 'setPipeline', function ([pipeline]) {
+    const loaded = loadedDepth.get(this);
+    if (loaded !== undefined && testsDepth.get(pipeline) === true) {
+      loadedDepth.delete(this);
+      // The read is of what the texture held when the pass began: the pass's own store has written it since.
+      const state = stateOf(loaded.texture);
+      if (loaded.written === -Infinity) state.readEmpty = Math.min(state.readEmpty, now());
+      else if (loaded.written < now()) state.stale = true;
+    }
+  });
+  wrapResult(g.GPUCommandEncoder.prototype, 'beginRenderPass', (pass, [descriptor]) => {
     for (const attachment of descriptor.colorAttachments ?? []) {
       if (attachment == null) continue;
       const texture = textureOf(attachment.view);
@@ -182,7 +213,9 @@ export function trackCarry(g: Record<string, Any>, clock: () => number): void {
     const depth = descriptor.depthStencilAttachment;
     if (depth) {
       const texture = textureOf(depth.view);
-      if (depth.depthLoadOp === 'load' || depth.stencilLoadOp === 'load') read(texture);
+      // What the pass loads only matters once a pipeline that tests depth or stencil draws in it: a pass that draws a full-screen
+      // quad with the test off (an output pass) loads a texture it does not read.
+      if (depth.depthLoadOp === 'load' || depth.stencilLoadOp === 'load') loadedDepth.set(pass, { texture, written: stateOf(texture).written });
       if (depth.depthStoreOp === 'store' || depth.stencilStoreOp === 'store') write(texture);
     }
   });
