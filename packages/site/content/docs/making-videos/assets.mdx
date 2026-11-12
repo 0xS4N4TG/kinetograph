@@ -142,7 +142,7 @@ This works for `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, `.avif` and `.svg`. Vid
 ## What works
 
 - Drawn natively: PNG, JPEG, GIF, WebP and SVG pictures, video, and sound files. Image imports and CSS `url()` of project files.
-- Approximated or left out: text inside an SVG picture is not drawn. A remote file is an error, and a video with no named colour space converts differently from Chrome.
+- Approximated or left out: text inside an SVG picture is not drawn. A remote file is read only from what `fetch-deps` downloaded and locked, and a video with no named colour space converts differently from Chrome.
 - `doctor` lists what a project holds that the engine cannot draw. `lint` reports files the project names that are missing.
 
 The full list is in [What works](/docs/compat/#video-and-audio).
