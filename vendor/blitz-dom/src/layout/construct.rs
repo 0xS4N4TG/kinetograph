@@ -1078,7 +1078,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
         let node = &mut nodes[node_id];
 
         // Set layout_parent for node.
-        node.layout_parent.set(Some(parent_id));
+        node.set_layout_parent(parent_id);
 
         match &node.data {
             NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {

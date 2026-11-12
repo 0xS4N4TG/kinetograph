@@ -696,3 +696,24 @@ fn an_inline_block_sits_on_the_line_the_same_whether_its_flex_child_was_measured
     let (got, want) = chain_and_fresh(vec![tree("", ""), tree("font-size: 30px", "display: inline-block")]);
     assert_eq!(got, want);
 }
+
+/// Seed 1052922 (by edits, a jump back), cut down: a block inside inline content (`<b><em><div>`) goes through a frame
+/// where `<b>` is `display: contents`, which makes the page's block lay the `<div>` out as an inline box (width 0
+/// for the empty block), and then back. Nothing damaged the `<div>` but a repaint, and it kept the layout cache of
+/// the first container's algorithm: a width of 0 where the block's container gives it the width of the box.
+#[test]
+fn a_block_whose_container_changed_is_not_laid_out_from_the_cache_of_the_old_container() {
+    let tree = |b: &str, div: &str| {
+        let div = common::el("div", "$0.0.0.0.0.0", div, vec![]);
+        let em = common::el("em", "$0.0.0.0.0", "", vec![div]);
+        let b = common::el("b", "$0.0.0.0", b, vec![em]);
+        fuzz_page(common::el("div", "$0.0", "", vec![common::el("span", "$0.0.0", "", vec![b])]))
+    };
+    let turn = "transform: translate(-8px, -18px) rotate(-10deg) scale(1.3)";
+    let (got, want) = chain_and_fresh(vec![
+        tree("width: 94px", turn),
+        tree("display: contents; position: absolute; width: 94px", &format!("opacity: 0.2; {turn}")),
+        tree("width: 94px", turn),
+    ]);
+    assert_eq!(got, want);
+}

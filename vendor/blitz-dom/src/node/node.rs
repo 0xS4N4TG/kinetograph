@@ -234,6 +234,15 @@ impl Node {
         }
     }
 
+    /// Sets the box that lays this node out. A layout cache holds what the old container's algorithm made of the node
+    /// (an inline box's width, say), and a node an edit did not damage keeps it: it is dropped when the container
+    /// is another.
+    pub fn set_layout_parent(&mut self, parent: NodeId) {
+        if self.layout_parent.replace(Some(parent)) != Some(parent) {
+            self.invalidate_layout_cache();
+        }
+    }
+
     /// Clear this node's taffy layout cache without allocating `LayoutData`
     /// for nodes that have never been laid out.
     #[inline]

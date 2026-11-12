@@ -549,7 +549,7 @@ pub(crate) fn construct_subtree(doc: &mut BaseDocument, node_id: NodeId) {
         // Recurse into newly collected layout children
         for child_id in layout_children.iter().copied() {
             construct_subtree(doc, child_id);
-            doc.nodes[child_id].layout_parent.set(Some(node_id));
+            doc.nodes[child_id].set_layout_parent(node_id);
             if let Some(mut data) = doc.nodes[child_id]
                 .try_stylo_element_data_mut()
                 .and_then(|s| s.get_mut())
