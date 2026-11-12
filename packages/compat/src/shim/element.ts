@@ -419,6 +419,32 @@ export class DomNodeBase {
   }
 }
 
+/** The events a page that waits for a user gesture listens for, and the elements that have such a listener (`doctor`). */
+const GESTURE_EVENTS = new Set(['click', 'pointerdown', 'mousedown', 'touchstart']);
+const gestureListeners = new Set<DomElement>();
+
+/**
+ * What hears a `<video>` or `<audio>` element: the page's audio (core, page-audio.ts) is the host; with none, the element
+ * plays silently. The element's own player (media.ts) owns `paused` and `currentTime` on the virtual clock; the host is
+ * told of what changes so the soundtrack follows.
+ */
+export interface MediaHost {
+  /** Whether the host has no sound running for the element. */
+  paused(element: DomElement): boolean;
+  seek(element: DomElement, time: number): void;
+  play(element: DomElement): void;
+  pause(element: DomElement): void;
+  /** `volume`, `muted`, `loop` or `playbackRate` is about to become `value` (read before the change). */
+  change(element: DomElement, name: 'volume' | 'muted' | 'loop' | 'playbackRate', value: unknown): void;
+}
+let mediaHost: MediaHost | null = null;
+export function setMediaHost(host: MediaHost | null): void {
+  mediaHost = host;
+}
+export function gestureListenerElements(): DomElement[] {
+  return [...gestureListeners];
+}
+
 export class DomElement extends DomNodeBase {
   private listeners = new Map<string, Set<Listener>>();
   private styleObject: CSSStyleDeclarationShim | null = null;
@@ -1420,7 +1446,10 @@ export class DomElement extends DomNodeBase {
   }
   set loop(value: boolean) {
     if (this.player === null) this.plain('loop', value);
-    else this.player.loop = value;
+    else {
+      mediaHost?.change(this, 'loop', value);
+      this.player.loop = value;
+    }
   }
   get autoplay(): boolean {
     return this.mediaProp((p) => p.autoplay, false);
@@ -1434,21 +1463,30 @@ export class DomElement extends DomNodeBase {
   }
   set muted(value: boolean) {
     if (this.player === null) this.plain('muted', value);
-    else this.player.muted = value;
+    else {
+      mediaHost?.change(this, 'muted', value);
+      this.player.muted = value;
+    }
   }
   get volume(): number {
     return this.mediaProp((p) => p.volume, 1);
   }
   set volume(value: number) {
     if (this.player === null) this.plain('volume', value);
-    else this.player.volume = value;
+    else {
+      mediaHost?.change(this, 'volume', value);
+      this.player.volume = value;
+    }
   }
   get playbackRate(): number {
     return this.mediaProp((p) => p.playbackRate, 1);
   }
   set playbackRate(value: number) {
     if (this.player === null) this.plain('playbackRate', value);
-    else this.player.playbackRate = value;
+    else {
+      mediaHost?.change(this, 'playbackRate', value);
+      this.player.playbackRate = value;
+    }
   }
   get defaultPlaybackRate(): number {
     return this.mediaProp((p) => p.defaultPlaybackRate, 1);
@@ -1462,14 +1500,27 @@ export class DomElement extends DomNodeBase {
   }
   set currentTime(value: number) {
     if (this.player === null) this.plainTime = value;
-    else this.player.currentTime = value;
+    else {
+      this.player.currentTime = value;
+      mediaHost?.seek(this, this.player.currentTime);
+    }
   }
   private plainTime = 0;
+  // The player (media.ts) owns where the element is and whether it plays, on the virtual clock. The page's audio
+  // (MediaHost, core/page-audio.ts) is told of each play, pause and seek so the soundtrack hears what the element does.
   async play(): Promise<void> {
-    if (this.player !== null) await this.player.play();
+    if (this.player === null) return;
+    await this.player.play();
+    if (mediaHost === null) return;
+    // Where the player stands (a play from the end starts over), then the sound starts there.
+    if (mediaHost.paused(this)) mediaHost.seek(this, this.player.currentTime);
+    mediaHost.play(this);
   }
   pause(): void {
-    this.player?.pause();
+    if (this.player === null) return;
+    const playing = !this.player.paused;
+    this.player.pause();
+    if (playing) mediaHost?.pause(this);
   }
   load(): void {
     this.player?.load();
@@ -1770,6 +1821,7 @@ export class DomElement extends DomNodeBase {
     let set = this.listeners.get(type);
     if (set === undefined) this.listeners.set(type, (set = new Set()));
     set.add(listener);
+    if (GESTURE_EVENTS.has(type)) gestureListeners.add(this);
   }
   removeEventListener(type: string, listener: Listener | null): void {
     if (listener !== null) this.listeners.get(type)?.delete(listener);

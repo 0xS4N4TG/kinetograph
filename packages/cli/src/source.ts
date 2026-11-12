@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ArtifactRecord, CompositionInfo, FrameRenderer } from '@kinetographdev/core';
-import type { AudioClipJson, LayerName, SequenceJson, Unsupported } from '@kinetographdev/scene';
+import type { AudioClipJson, LayerName, PageAudioOp, SequenceJson, Unsupported } from '@kinetographdev/scene';
 import { bundleProject, type UnsupportedImport } from './bundle.js';
 import { CliError } from './errors.js';
 import { installDynamicImport, installRemotePictures } from './hyperframes/dynamic.js';
@@ -27,6 +27,8 @@ interface ProjectModule extends NetShim {
   setDomAddon(addon: object | null): void;
   setFallbackFont(path: string | null): void;
   setDomEnvironment(environment: { baseDir: string; publicDir?: string }): void;
+  parsePageInput(text: string): unknown[];
+  setPageInput(list: unknown[]): void;
   setWorkerModuleLoader(loader: ((file: string | null, code: string, url: string) => string) | null): void;
   /** Problems with the project's stylesheets (Tailwind that could not be built, a remote font). */
   stylesheetNotes(): string[];
@@ -39,6 +41,8 @@ export interface FrameOutput {
   /** The frame's scene as the addon takes it. */
   sceneJson: string;
   audio: AudioClipJson[];
+  /** What the page did with its `AudioContext` since the last frame (a scene file has none). */
+  pageAudio?: PageAudioOp[];
   /** Every `<Sequence>` in the frame's tree (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §11.4); none for a scene file. */
   sequences?: SequenceJson[];
   /** Layer id to name and source; only in the studio's builds. */
@@ -75,12 +79,15 @@ export interface WorkerSpec {
   /** Undefined: the first composition, as `openSource` opens without `comp`. */
   comp?: string;
   props?: string;
+  input?: string;
   bundleFile: string;
 }
 
 export interface OpenOptions {
   comp?: string;
   props?: string;
+  /** `--input`: the scripted input of an HTML page, JSON or the path of a JSON file. */
+  input?: string;
   /** An already built bundle of the entry (the studio's): used instead of bundling again. */
   bundleFile?: string;
   /** When given, an import of an unsupported package is listed here and stubbed, instead of failing the bundle. */
@@ -265,7 +272,7 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
       entry: absolute,
       baseDir,
       composition,
-      frame: async () => ({ sceneJson: text, audio: [], sequences: [], unsupported: [...notes(text), ...unknown], jsMs: 0, stringifyMs: 0 }),
+      frame: async () => ({ sceneJson: text, audio: [], pageAudio: [], sequences: [], unsupported: [...notes(text), ...unknown], jsMs: 0, stringifyMs: 0 }),
       dispose: () => {},
     };
   }
@@ -276,8 +283,17 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
     options.bundleFile,
     options.unsupportedImports,
     options.prefetch === false ? null : options,
-    options.onBundle && ((file) => options.onBundle!({ entry: absolute, comp: options.comp, props: options.props, bundleFile: file })),
+    options.onBundle && ((file) => options.onBundle!({ entry: absolute, comp: options.comp, props: options.props, input: options.input, bundleFile: file })),
   );
+  if (options.input !== undefined) {
+    if (!isHyperframesEntry(absolute)) throw new CliError('INVALID_ARG', '--input is for an HTML page; a project written in TypeScript listens to its own events');
+    const text = !options.input.trimStart().startsWith('[') && existsSync(options.input) ? readFileSync(options.input, 'utf8') : options.input;
+    try {
+      mod.setPageInput(mod.parsePageInput(text.replace(/^\uFEFF/, '')));
+    } catch (error) {
+      throw new CliError('INVALID_ARG', error instanceof Error ? error.message : String(error));
+    }
+  }
   const compositions = mod.getCompositions();
   if (compositions.length === 0) {
     throw new CliError('NO_COMPOSITIONS', `${entry} registered no compositions: call registerRoot() with a root that renders <Composition>`);
@@ -309,9 +325,9 @@ export async function openSource(entry: string, options: OpenOptions = {}): Prom
       const rendered = nowMs();
       const sceneJson = JSON.stringify(result.scene);
       const unsupported = [...result.unsupported, ...notes(sceneJson)];
-      return { sceneJson, audio: result.audio, sequences: result.sequences, ...(result.names !== undefined ? { names: result.names } : {}), unsupported, jsMs: rendered - started, stringifyMs: nowMs() - rendered };
+      return { sceneJson, audio: result.audio, pageAudio: result.pageAudio, sequences: result.sequences, ...(result.names !== undefined ? { names: result.names } : {}), unsupported, jsMs: rendered - started, stringifyMs: nowMs() - rendered };
     },
-    worker: { entry: absolute, comp: composition.id, props: options.props, bundleFile },
+    worker: { entry: absolute, comp: composition.id, props: options.props, input: options.input, bundleFile },
     notes: () => mod.stylesheetNotes(),
     artifacts: () => mod.getArtifacts(),
     clearArtifacts: () => mod.clearArtifacts(),

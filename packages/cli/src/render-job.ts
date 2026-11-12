@@ -4,7 +4,7 @@ import { clampPcm, hasAudibleClip, hasOnFrame, joinClips, renderAudio } from '@k
 import { resolveSoundSource } from '@kinetographdev/core/sound-source';
 import type { ExportOptions, Renderer, RenderSummary } from '@kinetographdev/native';
 import type { ArtifactRecord } from '@kinetographdev/core';
-import type { AudioClipJson, SceneJson, Unsupported } from '@kinetographdev/scene';
+import type { AudioClipJson, PageAudioOp, SceneJson, Unsupported } from '@kinetographdev/scene';
 import { CHUNK_FRAMES, renderInParallel, type WorkerPool } from './parallel-render.js';
 import { ProfileLog, now, profiling, stage, takeAddon, takeJs, writeShared } from './profile.js';
 import { LeftOutCollector, strictError, type CompatReport } from './compat-report.js';
@@ -257,14 +257,18 @@ export async function renderSource(
     throw error;
   }
   const clipFrames: { frame: number; audio: AudioClipJson[] }[] = [];
+  // What the page did with its AudioContext: the calls every frame returned, once each (workers that replayed the same
+  // frames made the same calls, numbered the same), in the order they were made.
+  const pageAudio = new Map<number, PageAudioOp>();
   const leftOut = new LeftOutCollector();
   let artifactRecords: ArtifactRecord[] = [];
   // Frames the workers did not draw because each was the same as the one before (the writer counts its own).
   let parallelRepeats = 0;
   try {
     const frameAt = (index: number): number => first + index * step;
-    const onFrame = (frame: number, audio: AudioClipJson[], unsupported: Unsupported[]): void => {
+    const onFrame = (frame: number, audio: AudioClipJson[], unsupported: Unsupported[], calls: PageAudioOp[] = []): void => {
       clipFrames.push({ frame, audio });
+      for (const call of calls) pageAudio.set(call.seq, call);
       if (options.strict && unsupported.length > 0) throw strictError(frame, unsupported);
       leftOut.add(frame, unsupported);
     };
@@ -286,9 +290,9 @@ export async function renderSource(
         adaptive: options.adaptiveWorkers,
         count: total,
         push: (index, data) => writer.pushYuv(data, frameAt(index)),
-        onFrame: (index, audio, unsupported, repeated) => {
+        onFrame: (index, audio, unsupported, repeated, calls) => {
           if (repeated) parallelRepeats += 1;
-          onFrame(frameAt(index), audio, unsupported);
+          onFrame(frameAt(index), audio, unsupported, calls);
         },
         onPushed: (index) => {
           drawn = index + 1;
@@ -305,7 +309,7 @@ export async function renderSource(
         const t0 = log ? now() : 0;
         const out = await source.frame(frame);
         const t1 = log ? now() : 0;
-        onFrame(frame, out.audio, out.unsupported ?? []);
+        onFrame(frame, out.audio, out.unsupported ?? [], out.pageAudio);
         const sceneJson = scale !== 1 ? JSON.stringify(scaleScene(JSON.parse(out.sceneJson) as SceneJson, scale)) : out.sceneJson;
         writer.pushFrame(sceneJson, frame, source.baseDir);
         if (log) {
@@ -324,10 +328,10 @@ export async function renderSource(
     const clips = joinClips(clipFrames);
     let summary: RenderSummary;
     // A GIF has no sound. A render whose clips are all muted (or at volume 0) and with no onFrame callback has none either.
-    if (plan.audioCodec !== undefined && (hasAudibleClip(clips) || hasOnFrame(first, last))) {
+    if (plan.audioCodec !== undefined && (hasAudibleClip(clips) || hasOnFrame(first, last) || pageAudio.size > 0)) {
       options.progress?.('mixing audio');
       stage('audio mix start');
-      const pcm = clampPcm(await renderAudio({ fps, first, last, clips, baseDir: source.baseDir, resolveSource: resolveSoundSource }));
+      const pcm = clampPcm(await renderAudio({ fps, first, last, clips, pageAudio: [...pageAudio.values()], baseDir: source.baseDir, resolveSource: resolveSoundSource }));
       stage('audio mix done');
       summary = writer.finish(pcm);
     } else {

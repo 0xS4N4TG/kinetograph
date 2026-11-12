@@ -13,8 +13,9 @@
 // real timer functions are kept here for the shim's own use: the delayRender
 // timeout needs real time to fail, and nothing else may.
 
-import { animationClockMoved, animationsPending, mediaPending, resetAnimations, resetMedia, setAnimationClock, setMediaClock, tickAnimations, tickMedia } from '@kinetographdev/compat/shim';
+import { animationClockMoved, animationsPending, dispatchPageInput, mediaPending, pageInputDue, resetAnimations, resetMedia, setAnimationClock, setMediaClock, tickAnimations, tickMedia } from '@kinetographdev/compat/shim';
 import { setGsapTime } from './gsap-clock.js';
+import { replayPageAudio, resetPageAudio } from './page-audio.js';
 
 /**
  * The real functions, captured when this module is first evaluated (before `installDeterminism`). Bound to the global
@@ -265,6 +266,8 @@ export function setVirtualFrame(frame: number, fps: number, options: VirtualFram
   // The Web Animations update and send their events, as a browser does before the animation-frame callbacks.
   animationClockMoved();
   tickAnimations();
+  // Scripted input (`--input`) of this frame goes out first, so what it starts (a `play()`) is seen by the media tick.
+  dispatchPageInput(frame);
   // Video and audio elements: playback that ended, `timeupdate`, and the video frame callbacks, before the animation frames.
   tickMedia();
   if (options.deferAnimationFrames !== true) runAnimationFrames();
@@ -293,10 +296,11 @@ export function runAnimationFrames(): void {
  * Runs the animation-frame callbacks of frames `from` to `to - 1`, one frame at a time, while any are queued: what a
  * library that advances by the time between frames (Motion) would have seen on the way to `to`, so a frame rendered
  * after a jump is the one a render of every frame gives; the Web Animations update and send their events on each of
- * those frames too. Nothing is rendered; with no callbacks queued and no Web Animation left to move it does nothing.
+ * those frames too, as does the scripted input of a page (`--input`) that comes due on the way. Nothing is rendered; with no
+ * callbacks queued, no Web Animation left to move and no input due it does nothing.
  */
 export function stepAnimationFrames(from: number, to: number, fps: number): void {
-  for (let frame = from; frame < to && (animationQueue.length > 0 || animationsPending() || mediaPending()); frame++) {
+  for (let frame = from; frame < to && (animationQueue.length > 0 || animationsPending() || mediaPending() || pageInputDue(to - 1)); frame++) {
     setVirtualFrame(frame, fps, { deferAnimationFrames: true });
     runAnimationFrames();
   }
@@ -312,6 +316,9 @@ export function resetVirtualClock(options: { keepAnimationFrames?: boolean } = {
   currentFps = 30;
   randomState = INITIAL_SEED;
   timers.clear();
+  // A scene started over on the same page plays its frames again: the page's audio calls of those frames were made.
+  if (options.keepAnimationFrames === true) replayPageAudio();
+  else resetPageAudio();
   if (options.keepAnimationFrames !== true) {
     animationQueue = [];
     // A new render: no Web Animation is left from the last (a scene started over keeps them, as it keeps the callbacks).

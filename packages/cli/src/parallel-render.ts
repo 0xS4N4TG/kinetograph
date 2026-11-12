@@ -4,7 +4,7 @@
 
 import { Worker } from 'node:worker_threads';
 import type { ArtifactRecord } from '@kinetographdev/core';
-import type { AudioClipJson, Unsupported } from '@kinetographdev/scene';
+import type { AudioClipJson, PageAudioOp, Unsupported } from '@kinetographdev/scene';
 import { CliError } from './errors.js';
 import type { ImageFormat } from './image-sequence.js';
 import { ProfileLog, now, profiling, stage } from './profile.js';
@@ -89,6 +89,7 @@ const sameStart = (a: WorkerStart, b: WorkerStart): boolean =>
   a.spec.entry === b.spec.entry &&
   a.spec.bundleFile === b.spec.bundleFile &&
   a.spec.props === b.spec.props &&
+  a.spec.input === b.spec.input &&
   (a.spec.comp === undefined || a.spec.comp === b.spec.comp) &&
   a.devReact === b.devReact &&
   a.preferredEffectBackend === b.preferredEffectBackend;
@@ -148,7 +149,7 @@ export interface ParallelOptions {
    * Called for each frame (by its index) in order, before it is pushed; throwing stops the render.
    * `repeated`: the frame was not drawn, being the same as the one before it.
    */
-  onFrame(index: number, audio: AudioClipJson[], unsupported: Unsupported[], repeated: boolean): void;
+  onFrame(index: number, audio: AudioClipJson[], unsupported: Unsupported[], repeated: boolean, pageAudio: PageAudioOp[]): void;
   /** Called for each frame (by its index) after it is pushed. */
   onPushed?(index: number): void;
   shouldCancel?(): boolean;
@@ -337,7 +338,7 @@ export async function renderInParallel(options: ParallelOptions): Promise<Artifa
         for (let message = arrived.get(nextFrame); message; message = arrived.get(nextFrame)) {
           if (options.shouldCancel?.()) throw new CliError('CANCELLED', 'the render was cancelled');
           arrived.delete(nextFrame);
-          options.onFrame(nextFrame, message.audio, message.unsupported, message.repeated);
+          options.onFrame(nextFrame, message.audio, message.unsupported, message.repeated, message.pageAudio);
           const t = log ? now() : 0;
           options.push(nextFrame, Buffer.from(message.data));
           if (log) pushMs += now() - t;
