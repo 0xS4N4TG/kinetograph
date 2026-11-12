@@ -127,6 +127,31 @@ describe.skipIf(missing !== null)('WebGPU through Dawn, rendered', () => {
     expect(four).toEqual(still);
   });
 
+  it.each(['pingpong-init.html', 'react-pingpong-init.tsx', 'storage-init.html', 'react-storage-init.tsx'])(
+    'draws %s, whose ping-pong the page fills when it mounts, the same alone, in a sequence and in four workers',
+    (name) => {
+      // Nothing is read before it is written, so a frame jumped to cannot see by its textures or buffers alone that the frames before it are missing.
+      const { still, one, four } = hashes(join(fixtures, name), [0, 5, 9], 12);
+      expect(new Set(still).size).toBe(3);
+      expect(one).toEqual(still);
+      expect(four).toEqual(still);
+    },
+  );
+
+  it('says a Dawn page whose state shows only after a jump landed was drawn without its frames before it, and draws the frames after it right', () => {
+    // A ring of three textures that no frame reads before the third: a jump to frame 7 shows nothing of the state carried, frame 9 does.
+    const ring = join(fixtures, 'react-lazy-ring.tsx');
+    const sequence = hashes(ring, [9, 10], 12).one;
+    const loose = drawInOrder(ring, [7, 8, 9, 10]);
+    expect(loose.leftOut).toMatch(/the jump to frame 7 drew it without the frames before it: frames 7 to 8/);
+    expect([loose.md5[9], loose.md5[10]]).toEqual(sequence);
+    // --strict makes it an error, said with the frame it was seen in.
+    const strict = drawInOrder(ring, [7, 8, 9, 10], true);
+    expect(strict.errors[9]).toMatch(/the jump to frame 7 drew it without the frames before it/);
+    // A page that carries nothing says nothing.
+    expect(drawInOrder(join(fixtures, 'stateless.html'), [7, 8, 9]).leftOut).not.toMatch(/without the frames before it/);
+  });
+
   it('shows a WebGPU canvas drawn into a 2D canvas with drawImage', () => {
     const out = join(dir, 'draw-image.png');
     expect(run(['still', join(fixtures, 'draw-image.html'), '0', '-o', out]).status).toBe(0);

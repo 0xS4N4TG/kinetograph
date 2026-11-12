@@ -10,7 +10,7 @@
 //      attach what each sub-frame changes in them.
 
 import type { ReactNode } from 'react';
-import { flushDawnCanvases, noteDawnRewind, releaseDawn, takeDawnReports, glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures } from '@kinetographdev/compat/shim';
+import { dawnDependsOnHistory, flushDawnCanvases, noteDawnRewind, releaseDawn, takeDawnReports, glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures } from '@kinetographdev/compat/shim';
 import { setDefaultStylesheet } from '@kinetographdev/compat/dom';
 import { createSceneRoot, finishIslands, TimelineContext, type LayerNames, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
@@ -141,6 +141,8 @@ class Renderer implements FrameRenderer {
   private trailTo = -1;
   /** A frame that followed a jump depends on the frames before it through a WebGL render target (`glDependsOnHistory`): a jump renders the frames it skips. */
   private historyDependent = false;
+  /** The frame a jump landed on without the frames before it drawn, until a frame says the page's GPU state carries (a Dawn page, `dawnDependsOnHistory`): -1 when none. */
+  private unreplayedJump = -1;
   private disposed = false;
   /** The `renderFrame` call in progress, the one whose renders the open island pass holds (-1: none), and the frame
    *  being rendered: the frame's own renders and its sub-frames are one pass of the islands' documents (compat/dom). */
@@ -258,7 +260,11 @@ class Renderer implements FrameRenderer {
       setVirtualFrame(frame, config.fps, { deferAnimationFrames: true });
       setHistoryMode({ record: true });
       main = await this.settle(scene, () => this.update(scene, this.element(component, config, frame)));
-      if (frame - was > 1 && !gsapIsLoaded() && !this.historyDependent && glDependsOnHistory()) {
+      // A Dawn page whose state carries can show it a frame later than the one a jump landed on (it reads a resource the page made in a frame
+      // the jump skipped, in the frame after): then the frame the jump landed on was drawn without the frames before it, which is said.
+      const late = this.unreplayedJump >= 0 && frame > this.unreplayedJump && dawnDependsOnHistory();
+      if ((frame - was > 1 ? glDependsOnHistory() : late) && !gsapIsLoaded() && !this.historyDependent) {
+        const saidAt = late ? this.unreplayedJump : -1;
         // The frame makes a target from what it held before, and the frames it skipped were not rendered. A frame can
         // only be seen to do that by rendering it, so the composition starts over and renders the frames before it
         // (once: a later jump renders what it skips). A target that no frame writes after frame 0 (an environment map
@@ -277,7 +283,13 @@ class Renderer implements FrameRenderer {
         setHistoryMode({ record: true });
         main = await this.settle(again, () => this.update(again, this.element(component, config, frame)));
         this.lastFrame = frame;
+        // Said after the replay, whose renders start each from what a render says.
+        if (saidAt >= 0) {
+          reportUnsupported('canvas', 'webgpu', 'device', `the page's GPU state carries from frame to frame, and the jump to frame ${saidAt} drew it without the frames before it: frames ${saidAt} to ${frame - 1} are not what a render of every frame draws`);
+        }
       }
+      if (this.historyDependent || gsapIsLoaded()) this.unreplayedJump = -1;
+      else if (frame - was > 1 && this.unreplayedJump < 0) this.unreplayedJump = frame;
     }
     // CSS transitions need the states of the islands before this frame (packages/cli/skills/kinetograph-markup/references/ENGINE.md §7.12). A frame has the
     // same history whichever frames were rendered before it: a sequential render keeps what it has seen, anything
@@ -402,6 +414,7 @@ class Renderer implements FrameRenderer {
       onError: (error) => rejectRenderWaits(error instanceof Error ? error : new Error(String(error))),
     });
     this.lastFrame = -1;
+    this.unreplayedJump = -1;
     resetVirtualClock({ keepAnimationFrames: true });
   }
 

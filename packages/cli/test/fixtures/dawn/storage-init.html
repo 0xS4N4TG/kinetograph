@@ -1,0 +1,41 @@
+<!doctype html><html><head><style>body{margin:0;background:#000}</style></head>
+<body><div id="kg-root" data-composition-id="main" data-width="64" data-height="64" data-duration="12" style="position:relative;width:64px;height:64px;overflow:hidden"><canvas id="c" width="64" height="64"></canvas>
+<script type="module">
+// Two storage buffers of particles the page fills at mount with writeBuffer. Each frame a compute pass reads one and writes the
+// other (a step of a spring), and the dots are drawn from the one it wrote: frame N is N steps. No buffer is read before it is written.
+const canvas = document.getElementById('c');
+const device = await (await navigator.gpu.requestAdapter()).requestDevice();
+const context = canvas.getContext('webgpu');
+const format = 'rgba8unorm';
+context.configure({ device, format, alphaMode: 'opaque' });
+const N = 128;
+const init = new Float32Array(N * 4);
+for (let i = 0; i < N; i++) { const a = i * 2.399963; const r = 0.1 + 0.7 * ((i * 7919) % N) / N; init.set([Math.cos(a) * r, Math.sin(a) * r, -Math.sin(a) * 0.02, Math.cos(a) * 0.02], i * 4); }
+const buf = [0, 1].map(() => device.createBuffer({ size: init.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST }));
+for (const b of buf) device.queue.writeBuffer(b, 0, init);
+const module = device.createShaderModule({ code: `
+  @group(0) @binding(0) var<storage, read> src: array<vec4f>;
+  @group(0) @binding(1) var<storage, read_write> dst: array<vec4f>;
+  @compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id: vec3u) {
+    var v = src[id.x]; let g = -v.xy * 0.05; v.z += g.x; v.w += g.y; v.x += v.z; v.y += v.w; dst[id.x] = v; }` });
+const bgl = device.createBindGroupLayout({ entries: [
+  { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }] });
+const compute = device.createComputePipeline({ layout: device.createPipelineLayout({ bindGroupLayouts: [bgl] }), compute: { module, entryPoint: 'main' } });
+const binds = [0, 1].map((i) => device.createBindGroup({ layout: bgl, entries: [{ binding: 0, resource: { buffer: buf[i] } }, { binding: 1, resource: { buffer: buf[1 - i] } }] }));
+const dots = device.createShaderModule({ code: `
+  @vertex fn vs(@location(0) pos: vec4f) -> @builtin(position) vec4f { return vec4f(pos.xy, 0, 1); }
+  @fragment fn fs() -> @location(0) vec4f { return vec4f(0.4, 0.8, 1.0, 1); }` });
+const dotPipe = device.createRenderPipeline({ layout: 'auto', vertex: { module: dots, entryPoint: 'vs', buffers: [{ arrayStride: 16, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x4' }] }] },
+  fragment: { module: dots, entryPoint: 'fs', targets: [{ format }] }, primitive: { topology: 'point-list' } });
+let cur = 0;
+function frame() {
+  const enc = device.createCommandEncoder();
+  const cp = enc.beginComputePass(); cp.setPipeline(compute); cp.setBindGroup(0, binds[cur]); cp.dispatchWorkgroups(N / 64); cp.end();
+  const sp = enc.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } }] });
+  sp.setPipeline(dotPipe); sp.setVertexBuffer(0, buf[1 - cur]); sp.draw(N); sp.end();
+  device.queue.submit([enc.finish()]);
+  cur = 1 - cur;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></div></body></html>

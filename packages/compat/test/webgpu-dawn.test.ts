@@ -5,9 +5,9 @@
 
 import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
-import { carryDepends, resetCarry } from '../src/shim/webgpu-dawn-carry.js';
+import { carryDepends, carryNeedsReplay, resetCarry } from '../src/shim/webgpu-dawn-carry.js';
 import { hasAddonFunction } from '../src/addon.js';
-import { DAWN_FEATURES, DAWN_LIMITS, DawnCanvasContext, dawnCommandsOf, dawnGlobals, dawnReadCommands, flushDawnCanvases, installDawn, releaseDawn, takeDawnReports } from '../src/shim/webgpu-dawn.js';
+import { DAWN_FEATURES, DAWN_LIMITS, DawnCanvasContext, dawnCommandsOf, dawnGlobals, dawnReadCommands, duringAnimationFrames, flushDawnCanvases, installDawn, releaseDawn, takeDawnReports } from '../src/shim/webgpu-dawn.js';
 
 const missing = ((): string | null => {
   const spec = process.env.KINETOGRAPH_DAWN_MODULE;
@@ -166,6 +166,89 @@ describe.skipIf(missing !== null)('WebGPU through Dawn', () => {
     // An output pass that loads the depth and draws with the test off reads nothing from it; a pass that tests against it does.
     expect(frames('always')).toBe(false);
     expect(frames('less')).toBe(true);
+    clock.mockRestore();
+    device.destroy();
+  });
+  it('decides from the frame alone that a frame reads what an earlier frame wrote and writes a resource that held something, and not for a static texture, a depth buffer or a uniform', async () => {
+    const adapter = await gpu.requestAdapter();
+    const device = await adapter.requestDevice();
+    const U = g.GPUTextureUsage;
+    const module = device.createShaderModule({ code: `
+      @group(0) @binding(0) var src: texture_2d<f32>;
+      @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f { var p = array<vec2f,3>(vec2f(-1,-1), vec2f(3,-1), vec2f(-1,3)); return vec4f(p[i], 0, 1); }
+      @fragment fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f { return textureLoad(src, vec2i(p.xy), 0); }` });
+    const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format: 'rgba8unorm' }] } });
+    const clock = vi.spyOn(performance, 'now');
+    const make = (usage: number, format = 'rgba8unorm') => device.createTexture({ size: [4, 4], format, usage });
+    const fill = (texture: any): void => device.queue.writeTexture({ texture }, new Uint8Array(64).fill(9), { bytesPerRow: 16 }, [4, 4]);
+    const pass = (source: any, target: any, loadOp = 'clear'): void => {
+      const encoder = device.createCommandEncoder();
+      const p = encoder.beginRenderPass({ colorAttachments: [{ view: target.createView(), loadOp, storeOp: 'store' }] });
+      p.setPipeline(pipeline);
+      p.setBindGroup(0, device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: source.createView() }] }));
+      p.draw(3);
+      p.end();
+      device.queue.submit([encoder.finish()]);
+    };
+    /** `build` makes new resources and returns what the page does when it mounts (epoch 0) and in a frame jumped to (epoch 33, nothing drawn between); whether that frame is for a replay. */
+    const replays = (build: () => [() => void, () => void]): boolean => {
+      resetCarry();
+      clock.mockReturnValue(0);
+      const [mount, frame] = build();
+      mount();
+      clock.mockReturnValue(33);
+      frame();
+      return carryNeedsReplay();
+    };
+    const sampled = U.RENDER_ATTACHMENT | U.TEXTURE_BINDING | U.COPY_DST;
+
+    // A ping-pong filled when it mounts: A cleared by a pass, B written from data. The frame reads A and writes B.
+    expect(replays(() => {
+      const [a, b] = [make(sampled), make(sampled)];
+      return [() => { pass(make(sampled), a); fill(b); }, () => pass(a, b)];
+    })).toBe(true);
+    // A static texture that is only read, drawn to a target nothing can sample (a depth buffer, a multisample colour target) that the pass clears.
+    expect(replays(() => {
+      const [still, target] = [make(sampled), make(U.RENDER_ATTACHMENT)];
+      return [() => fill(still), () => pass(still, target)];
+    })).toBe(false);
+    // The same after a frame that drew to the target before: the clear of the target is not what an earlier frame made.
+    expect(replays(() => {
+      const [still, target] = [make(sampled), make(U.RENDER_ATTACHMENT)];
+      return [() => { fill(still); pass(still, target); }, () => pass(still, target)];
+    })).toBe(false);
+    // A static texture, and a uniform buffer the page writes every frame (and a copy of bytes it wrote this frame to another).
+    expect(replays(() => {
+      const still = make(sampled);
+      const uniform = device.createBuffer({ size: 16, usage: g.GPUBufferUsage.UNIFORM | g.GPUBufferUsage.COPY_DST });
+      const staging = device.createBuffer({ size: 16, usage: g.GPUBufferUsage.COPY_SRC | g.GPUBufferUsage.COPY_DST });
+      const target = make(U.RENDER_ATTACHMENT);
+      const frame = (): void => {
+        device.queue.writeBuffer(uniform, 0, new Float32Array(4));
+        device.queue.writeBuffer(staging, 0, new Float32Array(4));
+        const encoder = device.createCommandEncoder();
+        encoder.copyBufferToBuffer(staging, 0, uniform, 0, 16);
+        device.queue.submit([encoder.finish()]);
+        pass(still, target);
+      };
+      return [() => { fill(still); frame(); }, frame];
+    })).toBe(false);
+    // A target a shader can sample, written every frame (a shadow map, a post-processing target), is the cost: the same as a ping-pong
+    // texture to the rule when the frame also reads a texture an earlier frame wrote.
+    expect(replays(() => {
+      const [still, target] = [make(sampled), make(sampled)];
+      return [() => { fill(still); pass(still, target); }, () => pass(still, target)];
+    })).toBe(true);
+    // Written for the first time in the frame, not before: nothing it held can be read.
+    expect(replays(() => {
+      const [still, target] = [make(sampled), make(sampled)];
+      return [() => fill(still), () => pass(still, target)];
+    })).toBe(false);
+    // What a frame does inside an animation-frame callback is stepped by a jump, never replayed.
+    expect(replays(() => {
+      const [a, b] = [make(sampled), make(sampled)];
+      return [() => { pass(make(sampled), a); fill(b); }, () => duringAnimationFrames(() => pass(a, b))];
+    })).toBe(false);
     clock.mockRestore();
     device.destroy();
   });
