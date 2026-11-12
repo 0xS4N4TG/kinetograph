@@ -82,7 +82,7 @@ describe('textures with array layers', () => {
     expect(() => texture.createView({ dimension: '2d', arrayLayerCount: 2 })).toThrow(/one layer/);
     expect(() => texture.createView({ baseArrayLayer: 4 })).toThrow(/baseArrayLayer 4/);
     expect(() => texture.createView({ baseArrayLayer: 3, arrayLayerCount: 2 })).toThrow(/layers 3..5/);
-    expect(() => texture.createView({ dimension: 'cube' })).toThrow(WebGpuUnsupportedError);
+    expect(() => texture.createView({ dimension: '1d' })).toThrow(WebGpuUnsupportedError);
   });
 
   it('records a pass into one layer, and keeps it only when that layer is read', async () => {
@@ -200,6 +200,6 @@ describe('binding a texture array', () => {
     const bind = (view: unknown) => () => device.createBindGroup({ layout, entries: [{ binding: 0, resource: view as never }] });
     expect(bind(texture.createView({ dimension: '2d', baseArrayLayer: 1 }))).not.toThrow();
     expect(bind(texture.createView())).toThrow(/2d one/);
-    expect(() => device.createBindGroupLayout({ entries: [{ binding: 0, visibility: 2, texture: { viewDimension: 'cube' } }] })).toThrow(WebGpuUnsupportedError);
+    expect(() => device.createBindGroupLayout({ entries: [{ binding: 0, visibility: 2, texture: { viewDimension: '1d' } }] })).toThrow(WebGpuUnsupportedError);
   });
 });

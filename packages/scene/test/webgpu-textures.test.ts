@@ -119,7 +119,7 @@ describe('createTexture, createView and createSampler', () => {
     expect(() => t.createView({ baseMipLevel: -1 })).toThrow(/not a whole number/);
     expect(() => t.createView({ arrayLayerCount: 2 })).toThrow(/layers 0..2 of a texture with 1/);
     expect(() => t.createView({ dimension: '2d-array' })).not.toThrow();
-    expect(() => t.createView({ dimension: 'cube' })).toThrow(WebGpuUnsupportedError);
+    expect(() => t.createView({ dimension: '1d' })).toThrow(WebGpuUnsupportedError);
     expect(() => t.createView({ format: 'rgba8unorm-srgb' })).toThrow(WebGpuUnsupportedError);
   });
 
@@ -561,7 +561,7 @@ describe('render passes into textures and sampling them', () => {
     const layout = (entry: object) => () => device.createBindGroupLayout({ entries: [{ binding: 0, visibility: 2, ...entry }] as never });
     expect(layout({ storageTexture: { format: 'rgba8unorm', viewDimension: '2d-array' } })).toThrow(WebGpuUnsupportedError);
     expect(layout({ externalTexture: {} })).toThrow(WebGpuUnsupportedError);
-    expect(layout({ texture: { viewDimension: 'cube' } })).toThrow(/view dimension/);
+    expect(layout({ texture: { viewDimension: '1d' } })).toThrow(/view dimension/);
     expect(layout({ texture: { viewDimension: '2d-array' } })).not.toThrow();
     expect(layout({ texture: { multisampled: true } })).toThrow(/multisampled/);
     expect(layout({ texture: {}, sampler: {} })).toThrow(/exactly one/);

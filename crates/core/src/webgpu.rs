@@ -102,7 +102,7 @@ pub struct BindingLayout {
     /// Of a `storage-texture`: the format the shader declares.
     #[serde(default)]
     pub format: Option<String>,
-    /// Of a `texture`: `2d-array` for a texture array binding; none is `2d`.
+    /// Of a `texture`: `2d-array`, `cube` or `cube-array` for those bindings; none is `2d`.
     #[serde(default)]
     pub view_dimension: Option<String>,
 }
@@ -257,7 +257,7 @@ pub struct TextureView {
     pub base_layer: u32,
     #[serde(default = "one")]
     pub layers: u32,
-    /// `2d-array` for a view of an array; none is a `2d` view of one layer.
+    /// `2d-array` for a view of an array, `cube` or `cube-array` for a cube map's six layers; none is a `2d` view of one layer.
     #[serde(default)]
     pub dimension: Option<String>,
 }
@@ -935,6 +935,10 @@ fn view_of(content: &WebGpuContent, view: &TextureView) -> Result<(), String> {
     match view.dimension.as_deref() {
         None if view.layers != 1 => Err(format!("a 2d view of {} layers of the texture {}; a 2d view has one", view.layers, view.id)),
         None | Some("2d-array") => Ok(()),
+        Some("cube") if view.layers != 6 => Err(format!("a cube view of {} layers of the texture {}; a cube has six", view.layers, view.id)),
+        Some("cube-array") if view.layers % 6 != 0 => Err(format!("a cube-array view of {} layers of the texture {}; it takes a multiple of six", view.layers, view.id)),
+        Some("cube" | "cube-array") if texture.width != texture.height => Err(format!("a cube view of the texture {}, which is {} x {}; it takes a square one", view.id, texture.width, texture.height)),
+        Some("cube" | "cube-array") => Ok(()),
         Some(other) => Err(format!("a view of the texture {} of dimension {other}", view.id)),
     }
 }
@@ -1079,7 +1083,7 @@ fn layout_checks(id: &str, layout: &[BindingLayout], limits: &Limits) -> Result<
         match e.ty.as_str() {
             "uniform" | "read-only-storage" | "sampler" => {}
             "texture" => {
-                if !matches!(e.view_dimension.as_deref(), None | Some("2d") | Some("2d-array")) {
+                if !matches!(e.view_dimension.as_deref(), None | Some("2d" | "2d-array" | "cube" | "cube-array")) {
                     return Err(format!("layout {id}: binding {} is a texture of view dimension {}", e.binding, e.view_dimension.as_deref().unwrap_or("")));
                 }
             }

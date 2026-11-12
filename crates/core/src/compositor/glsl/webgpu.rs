@@ -997,11 +997,7 @@ impl Compositor {
                         "depth" => wgpu::TextureSampleType::Depth,
                         other => return Err(format!("texture sample type {other}")),
                     },
-                    view_dimension: if e.view_dimension.is_some() {
-                        wgpu::TextureViewDimension::D2Array
-                    } else {
-                        wgpu::TextureViewDimension::D2
-                    },
+                    view_dimension: view_dimension(e.view_dimension.as_deref())?,
                     multisampled: false,
                 },
                 "sampler" => wgpu::BindingType::Sampler(
@@ -1287,11 +1283,7 @@ impl Compositor {
                         mip_level_count: Some(v.mips),
                         base_array_layer: v.base_layer,
                         array_layer_count: Some(v.layers),
-                        dimension: Some(if v.dimension.is_some() {
-                            wgpu::TextureViewDimension::D2Array
-                        } else {
-                            wgpu::TextureViewDimension::D2
-                        }),
+                        dimension: Some(view_dimension(v.dimension.as_deref())?),
                         ..Default::default()
                     }))
                 }
@@ -1417,6 +1409,18 @@ fn texel_info(
 }
 
 /// A 2d view of one level and one array layer of `texture`, which a pass draws into.
+/// A recorded view dimension (none is `2d`).
+fn view_dimension(name: Option<&str>) -> Fail<wgpu::TextureViewDimension> {
+    use wgpu::TextureViewDimension as D;
+    Ok(match name {
+        None | Some("2d") => D::D2,
+        Some("2d-array") => D::D2Array,
+        Some("cube") => D::Cube,
+        Some("cube-array") => D::CubeArray,
+        Some(other) => return Err(format!("a view of dimension {other}")),
+    })
+}
+
 fn layer_view(texture: &wgpu::Texture, mip: u32, layer: u32) -> wgpu::TextureView {
     texture.create_view(&wgpu::TextureViewDescriptor {
         base_mip_level: mip,

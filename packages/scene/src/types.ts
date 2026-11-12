@@ -1152,8 +1152,8 @@ export interface WebGpuBindingLayout {
   format?: string;
   /** Of a `texture`: `float` when left out. */
   sampleType?: 'float' | 'unfilterable-float' | 'sint' | 'uint' | 'depth';
-  /** Of a `texture`: `2d-array` for a texture array binding; `2d` when left out. */
-  viewDimension?: '2d-array';
+  /** Of a `texture`: `2d-array`, `cube` or `cube-array` for those bindings; `2d` when left out. */
+  viewDimension?: '2d-array' | 'cube' | 'cube-array';
   /** Of a `sampler`: `filtering` when left out. */
   samplerType?: 'filtering' | 'non-filtering' | 'comparison';
 }
@@ -1165,10 +1165,10 @@ export interface WebGpuTextureView {
   mips: number;
   /** The first array layer of the view; 0 when left out. */
   baseLayer?: number;
-  /** The array layers of a `2d-array` view; 1 when left out. */
+  /** The array layers of a `2d-array`, `cube` (six) or `cube-array` view; 1 when left out. */
   layers?: number;
-  /** `2d-array` for a view of an array; `2d` (one layer) when left out. */
-  dimension?: '2d-array';
+  /** `2d-array` for a view of an array, `cube` or `cube-array` for a cube map's six layers; `2d` (one layer) when left out. */
+  dimension?: '2d-array' | 'cube' | 'cube-array';
 }
 
 export type WebGpuBindEntry =

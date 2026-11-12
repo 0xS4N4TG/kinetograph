@@ -123,3 +123,8 @@ fn webgpu_mrt() {
 fn webgpu_bundle() {
     run("webgpu_bundle", 1.0);
 }
+
+#[test]
+fn webgpu_cube() {
+    run("webgpu_cube", 1.0);
+}

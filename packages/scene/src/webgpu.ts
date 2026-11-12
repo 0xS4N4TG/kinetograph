@@ -491,8 +491,8 @@ export class GPUTextureViewShim extends GpuObject {
     readonly mips: number,
     readonly baseLayer = 0,
     readonly layers = 1,
-    /** `2d-array` is a view of an array (of one layer or more); `2d` is one layer. */
-    readonly dimension: '2d' | '2d-array' = '2d',
+    /** `2d-array` is a view of an array (of one layer or more); `2d` is one layer; `cube` is six layers (a multiple of six for `cube-array`). */
+    readonly dimension: '2d' | '2d-array' | 'cube' | 'cube-array' = '2d',
   ) {
     super('');
   }
@@ -620,13 +620,17 @@ export class GPUTextureShim extends GpuObject {
     const d = descriptor ?? {};
     if (d.format !== undefined && d.format !== this.format) throw this.device.unsupported(`a texture view of format ${d.format} on a ${this.format} texture`);
     const dimension = d.dimension ?? (this.depthOrArrayLayers > 1 ? '2d-array' : '2d');
-    if (dimension !== '2d' && dimension !== '2d-array') throw this.device.unsupported(`a texture view of dimension ${dimension}`);
+    if (dimension !== '2d' && dimension !== '2d-array' && dimension !== 'cube' && dimension !== 'cube-array') throw this.device.unsupported(`a texture view of dimension ${dimension}`);
+    const isCube = dimension === 'cube' || dimension === 'cube-array';
+    if (isCube && this.width !== this.height) throw new TypeError(`createView: a ${dimension} view needs a square texture, this one is ${this.width} x ${this.height}`);
     if (d.aspect !== undefined && d.aspect !== 'all' && !(d.aspect === 'depth-only' && DEPTH_FORMATS.has(this.format))) throw this.device.unsupported(`a texture view of the aspect ${d.aspect}`);
     const baseLayer = whole('createView', 'baseArrayLayer', d.baseArrayLayer ?? 0, 0);
     if (baseLayer >= this.depthOrArrayLayers) throw new RangeError(`OperationError: createView: baseArrayLayer ${baseLayer} of a texture with ${this.depthOrArrayLayers} layers`);
-    const layers = d.arrayLayerCount === undefined ? (dimension === '2d' ? 1 : this.depthOrArrayLayers - baseLayer) : whole('createView', 'arrayLayerCount', d.arrayLayerCount, 1);
+    const layers = d.arrayLayerCount === undefined ? (dimension === '2d' ? 1 : dimension === 'cube' ? 6 : this.depthOrArrayLayers - baseLayer) : whole('createView', 'arrayLayerCount', d.arrayLayerCount, 1);
     if (baseLayer + layers > this.depthOrArrayLayers) throw new RangeError(`OperationError: createView: layers ${baseLayer}..${baseLayer + layers} of a texture with ${this.depthOrArrayLayers}`);
     if (dimension === '2d' && layers !== 1) throw new RangeError('OperationError: createView: a 2d view has one layer; use dimension 2d-array for more');
+    if (dimension === 'cube' && layers !== 6) throw new RangeError(`OperationError: createView: a cube view has six layers, not ${layers}`);
+    if (dimension === 'cube-array' && layers % 6 !== 0) throw new RangeError(`OperationError: createView: a cube-array view has a multiple of six layers, not ${layers}`);
     const base = whole('createView', 'baseMipLevel', d.baseMipLevel ?? 0, 0);
     if (base >= this.mipLevelCount) throw new RangeError(`OperationError: createView: baseMipLevel ${base} of a texture with ${this.mipLevelCount} levels`);
     const count = d.mipLevelCount === undefined ? this.mipLevelCount - base : whole('createView', 'mipLevelCount', d.mipLevelCount, 1);
@@ -2028,9 +2032,9 @@ export class GPUDeviceShim extends EventTarget {
         const sampleType = e.texture.sampleType ?? 'float';
         if (!['float', 'unfilterable-float', 'sint', 'uint', 'depth'].includes(sampleType)) throw this.unsupported(`a texture binding of the sample type ${sampleType}`);
         const viewDimension = e.texture.viewDimension ?? '2d';
-        if (viewDimension !== '2d' && viewDimension !== '2d-array') throw this.unsupported(`a texture binding of the view dimension ${viewDimension}`);
+        if (!['2d', '2d-array', 'cube', 'cube-array'].includes(viewDimension)) throw this.unsupported(`a texture binding of the view dimension ${viewDimension}`);
         if (e.texture.multisampled) throw this.unsupported('a multisampled texture binding');
-        entries.push({ binding: e.binding, visibility, type: 'texture', ...(sampleType === 'float' ? {} : { sampleType: sampleType as 'unfilterable-float' | 'sint' | 'uint' | 'depth' }), ...(viewDimension === '2d' ? {} : { viewDimension }) });
+        entries.push({ binding: e.binding, visibility, type: 'texture', ...(sampleType === 'float' ? {} : { sampleType: sampleType as 'unfilterable-float' | 'sint' | 'uint' | 'depth' }), ...(viewDimension === '2d' ? {} : { viewDimension: viewDimension as 'cube' }) });
       } else if (e.sampler) {
         const type = e.sampler.type ?? 'filtering';
         if (type !== 'filtering' && type !== 'non-filtering' && type !== 'comparison') throw new TypeError(`createBindGroupLayout: sampler type ${type}`);
