@@ -132,3 +132,26 @@ describe('a video element', () => {
     await expect(el.play()).rejects.toMatchObject({ name: 'NotSupportedError' });
   });
 });
+
+describe('an audio element', () => {
+  it('takes its length from the container header when the file has no picture for probeMedia to read', async () => {
+    setProjectFileResolver((src: string) => (src.endsWith('.mp3') ? `/p/${src}` : null));
+    setDomAddon({
+      probeMedia: () => {
+        throw new Error('no video stream');
+      },
+      probeStreams: () => ({ durationInSeconds: 3.5 }),
+    });
+    const el = domElementFor(createHostElement('audio')) as any;
+    el.src = 'a.mp3';
+    await flush();
+    expect(el.duration).toBe(3.5);
+    expect(el.readyState).toBe(4);
+    expect(takeMediaIssues()).toEqual([]);
+    // A video with no picture is still an error.
+    const video = domElementFor(createHostElement('video')) as any;
+    video.src = 'a.mp3';
+    await flush();
+    expect(video.error).not.toBeNull();
+  });
+});
