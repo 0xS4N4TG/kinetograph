@@ -44,9 +44,17 @@ const ALIGNMENTS = new Set(['minUniformBufferOffsetAlignment', 'minStorageBuffer
 
 /**
  * The features every adapter offers: ones Metal, Vulkan and D3D12 all give. A host that lacks one is reported once and the
- * page gets the rest. `timestamp-query` is not offered: a timestamp is real time, which a picture must not depend on.
+ * page gets the rest.
  */
 export const DAWN_FEATURES = ['float32-filterable', 'depth32float-stencil8', 'indirect-first-instance', 'rg11b10ufloat-renderable', 'depth-clip-control'];
+
+/**
+ * `timestamp-query` is offered (three.js's inspector and many pages ask for it) but is never the library's: a real timestamp
+ * is real time, which a picture must not depend on. A timestamp query set is a stand-in, passes ignore their
+ * `timestampWrites` and `resolveQuerySet` of one writes zeros (the engine's other recorder answers the same).
+ */
+const TIMESTAMP = 'timestamp-query';
+const fakeQuerySets = new WeakSet<object>();
 
 const CANVAS_FORMATS = new Set(['rgba8unorm', 'bgra8unorm', 'rgba16float']);
 const RENDER_ATTACHMENT = 0x10;
@@ -124,12 +132,32 @@ function patchDawn(g: Record<string, Any>): void {
   wrap(g.GPUQueue.prototype, 'copyExternalImageToTexture', function (_original, [source, destination, size]) {
     copyExternalImage(this, source, destination, size);
   });
+  wrap(g.GPUDevice.prototype, 'createQuerySet', function (original, [descriptor]) {
+    if (descriptor?.type !== 'timestamp') return original.call(this, descriptor);
+    const set = Object.create(g.GPUQuerySet.prototype, {
+      type: { value: 'timestamp' }, count: { value: descriptor.count }, label: { value: descriptor.label ?? '', writable: true }, destroy: { value: () => undefined }, device: { value: this },
+    });
+    fakeQuerySets.add(set);
+    return set;
+  });
+  for (const name of ['beginRenderPass', 'beginComputePass']) {
+    wrap(g.GPUCommandEncoder.prototype, name, function (original, [descriptor]) {
+      const writes = descriptor?.timestampWrites;
+      if (writes === undefined || !fakeQuerySets.has(writes.querySet)) return original.call(this, descriptor);
+      const { timestampWrites: _dropped, ...rest } = descriptor;
+      return original.call(this, rest);
+    });
+  }
+  wrap(g.GPUCommandEncoder.prototype, 'resolveQuerySet', function (original, [set, first, count, buffer, offset]) {
+    if (!fakeQuerySets.has(set)) return original.call(this, set, first, count, buffer, offset);
+    this.clearBuffer(buffer, offset, count * 8);
+  });
   trackCarry(g, () => performance.now());
 }
 
 /** The adapter the page sees: fixed features, limits and info, and a device that has the real adapter's but those. */
 function fixedAdapter(real: Any): Any {
-  const features = new Set<string>();
+  const features = new Set<string>([TIMESTAMP]);
   for (const feature of DAWN_FEATURES) {
     if (real.features.has(feature)) features.add(feature);
     else report(`this machine's adapter lacks ${feature}, which every adapter offers here; a page that needs it fails to get a device`);
@@ -148,7 +176,7 @@ function fixedAdapter(real: Any): Any {
       if (!Number.isFinite(Number(wanted)) || better) throw new RangeError(`OperationError: requestDevice: the limit ${name} ${String(wanted)} is better than the WebGPU default (${have}), which every device here has`);
       limits[name] = wanted;
     }
-    const device = await real.requestDevice({ label: descriptor?.label, requiredFeatures: [...(descriptor?.requiredFeatures ?? [])], requiredLimits: limits, defaultQueue: descriptor?.defaultQueue });
+    const device = await real.requestDevice({ label: descriptor?.label, requiredFeatures: [...(descriptor?.requiredFeatures ?? [])].filter((f) => f !== TIMESTAMP), requiredLimits: limits, defaultQueue: descriptor?.defaultQueue });
     watch(device);
     return device;
   };
@@ -173,6 +201,7 @@ function watch(device: Any): void {
     report(`${error?.constructor?.name ?? 'GPUError'}: ${String(error?.message ?? error).split('\n')[0]!.slice(0, 300)}`);
   });
   device.lost.then((info: Any) => {
+    devices.delete(device);
     if (info.reason !== 'destroyed') report(`the device was lost (${info.reason}): ${String(info.message).split('\n')[0]}`);
   });
 }
