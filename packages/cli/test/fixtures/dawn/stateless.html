@@ -1,0 +1,33 @@
+<!doctype html><html><head><style>body{margin:0;background:#000}</style></head>
+<body><div id="kg-root" data-composition-id="main" data-width="64" data-height="64" data-duration="10" style="position:relative;width:64px;height:64px;overflow:hidden"><canvas id="c" width="64" height="64"></canvas>
+<script type="module">
+// Stateless: every frame is drawn from the frame number alone (a triangle that turns), with a premultiplied canvas and a clear
+// that is not opaque, so the alpha the read-back takes as it is shows.
+const canvas = document.getElementById('c');
+const device = await (await navigator.gpu.requestAdapter()).requestDevice();
+const context = canvas.getContext('webgpu');
+const format = navigator.gpu.getPreferredCanvasFormat();
+context.configure({ device, format, alphaMode: 'premultiplied' });
+const module = device.createShaderModule({ code: `
+  struct U { turn: f32 }
+  @group(0) @binding(0) var<uniform> u: U;
+  @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+    var p = array<vec2f,3>(vec2f(0, 0.8), vec2f(-0.7, -0.6), vec2f(0.7, -0.6));
+    let c = cos(u.turn); let s = sin(u.turn); let q = p[i];
+    return vec4f(q.x * c - q.y * s, q.x * s + q.y * c, 0, 1); }
+  @fragment fn fs() -> @location(0) vec4f { return vec4f(0.8, 0.4, 0.1, 0.8); }` });
+const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format }] } });
+const uniform = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+const group = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: uniform } }] });
+let n = 0;
+function frame() {
+  device.queue.writeBuffer(uniform, 0, new Float32Array([n * 0.3, 0, 0, 0]));
+  const encoder = device.createCommandEncoder();
+  const pass = encoder.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0.1, b: 0.2, a: 0.5 } }] });
+  pass.setPipeline(pipeline); pass.setBindGroup(0, group); pass.draw(3); pass.end();
+  device.queue.submit([encoder.finish()]);
+  n++;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></div></body></html>

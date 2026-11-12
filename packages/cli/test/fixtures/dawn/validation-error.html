@@ -1,0 +1,8 @@
+<!doctype html><html><head><style>body{margin:0;background:#000}</style></head>
+<body><div id="kg-root" data-composition-id="main" data-width="32" data-height="32" data-duration="2" style="position:relative;width:32px;height:32px;overflow:hidden"><canvas id="c" width="32" height="32"></canvas>
+<script type="module">
+// A validation error nobody catches: a buffer with a usage the device does not have.
+const device = await (await navigator.gpu.requestAdapter()).requestDevice();
+device.createBuffer({ size: 4, usage: 0xffff });
+await device.queue.onSubmittedWorkDone();
+</script></div></body></html>
