@@ -1,0 +1,67 @@
+---
+title: Motion blur
+description: Smear a moving layer along its path, as a camera with an open shutter does, or leave a fading trail behind it.
+---
+
+Add `motionBlur` to the layer that moves. The engine draws it at several moments inside the time the shutter is open and averages the pictures.
+
+```tsx title="src/Whip.tsx"
+import { Layer, Rect, interpolate, useCurrentFrame } from '@kinetographdev/core';
+
+export const Whip = () => {
+  const frame = useCurrentFrame();
+  const x = interpolate(frame, [0, 30], [-300, 1300], { extrapolateRight: 'clamp' });
+  return (
+    <Layer x={x} y={300} motionBlur={{ samples: 12, shutter: 0.5 }}>
+      <Rect width={240} height={120} radius={24} fill="#f6c177" />
+    </Layer>
+  );
+};
+```
+
+<Media src="making-videos/motion-blur-example.mp4" poster="making-videos/motion-blur-example.webp" width={1280} height={720} alt={"A card whips across the frame twice at once, without motion blur and with it."} />
+
+`samples` is how many moments to average (default 8), and `shutter` is how long the shutter is open, in frames (default 0.5, a 180 degree shutter). More samples are smoother and slower.
+
+The layer and everything under it blurs: position, rotation, scale, 3D turns, opacity and effect settings. Put `motionBlur` on the group that moves, so the whole group smears.
+
+## Remotion's components
+
+`CameraMotionBlur` from `@remotion/motion-blur` is the same thing: a `Layer` with `samples` (default 10) and `shutterAngle` in degrees (default 180). `Trail` stacks fainter copies a few frames behind instead:
+
+```tsx title="src/Comet.tsx"
+import { Trail } from '@kinetographdev/core/motion-blur';
+import { Ball } from './Ball';
+
+export const Comet = () => (
+  <Trail layers={6} lagInFrames={1} trailOpacity={0.6}>
+    <Ball />
+  </Trail>
+);
+```
+
+Give the children of a `Trail` no `id`, because they are drawn once for each copy.
+
+## Limits
+
+- Only the layer with `motionBlur` blurs. A camera move is not blurred.
+- A `preserve3d` layer cannot have `motionBlur`. Wrap it in an ordinary `Layer` and blur that.
+
+## Suggested prompt
+
+```txt title="Suggested prompt"
+/kinetograph-markup Add a 180 degree motion blur to the title as it whips in, and compare frames 10 and 11.
+```
+
+## What works
+
+- Drawn natively: `motionBlur` on any layer, `CameraMotionBlur` and `Trail`.
+- Approximated: a still layer carries a small rounding error, as above.
+- Not supported: `HtmlInCanvasMotionBlur` from `@remotion/motion-blur`, and blur of a camera move.
+- Check the result with `strip`. See [What works](/docs/compat/#remotion-packages) and the [scene format](/docs/reference/scene-format/).
+
+## Related topics
+
+- [Compositions and props](/docs/making-videos/compositions/)
+- [Layers](/docs/making-videos/layers/)
+- [What works](/docs/compat/)

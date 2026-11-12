@@ -1,0 +1,71 @@
+---
+title: Make a paper-cut video
+description: Give a video the look of torn paper, photo cut-outs and hand-drawn lines.
+---
+
+<Video name="paper-cut" label="A photo cut-out unfolds on torn paper and a hand-drawn line circles it" />
+
+Ask your agent to use Paper. You get keyword match cuts, photo cut-outs and hand-drawn lines on torn paper.
+
+## Make it
+
+```text title="Suggested prompt"
+Use the paper plugin to make a 6 second paper-cut video. Cut out the photo in public/images/me.png (its background is already removed) on kraft paper with torn edges, and unfold it from a crumpled packet. Then draw a wobbly hand-drawn line round it. Look at the frames, then save it to out/paper.mp4.
+```
+
+## Ask for one of three things
+
+- **Keyword match cuts:** a highlighted word holds still while the page behind it changes.
+- **Cut-outs:** a photo with its background already removed, which can unfold from a crumpled packet.
+- **Hand-drawn lines:** a marker, pencil or brush line round a moving subject.
+
+Paper has five stocks (white, newsprint, kraft, binder and cardboard) and four edge styles (torn, cut, wavy and sticker).
+
+## Prompts that work
+
+```text title="Suggested prompt"
+Use the paper plugin for a match cut on the word "Super Bowl": 10 cuts a second for 3 seconds, on newsprint, with the word highlighted yellow. Use my screenshots in public/images/shots.
+```
+
+### Say these when they matter
+
+| Say | Why |
+| --- | --- |
+| **The stock and the edge** | "Kraft with torn edges" picks the look. |
+| **The keyword, for a match cut** | "Super Bowl" is marked on every page. |
+| **Your own pictures** | Name the files in `public/images/`. A cut-out needs a picture whose background is already removed. |
+| **How fast the cuts go** | "10 cuts a second". |
+
+### Variants
+
+<AccordionGroup>
+  <Accordion title="A line round a moving subject">
+    Ask for a marker, pencil, crayon, scribble or brush line, drawn round a subject that moves, on torn paper. [Scrapline cut-outs](/catalog/scrapline/) is a template that does this.
+  </Accordion>
+  <Accordion title="Paper sounds">
+    Ask for a paper flick on every cut, a crinkle as the packet opens and a soft landing for each cut-out. Paper makes these sounds in code, with no files.
+  </Accordion>
+</AccordionGroup>
+
+### Common mistakes
+
+**Asking for "paper" and nothing else.** The look has five stocks and four edges.
+- **Avoid:** "make it look like paper"
+- **Instead:** "kraft paper, torn edges"
+
+## Review the result
+
+- The paper stock and edges are the ones you asked for.
+- Every cut-out shows its whole subject, with no hard fringe.
+- The keyword is readable on every page.
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="Make a glitch video" icon="route" href="/docs/making/glitch-effects/">
+    Smeared cuts, tape and screen looks.
+  </Card>
+  <Card title="Paper" icon="learn" href="/docs/plugins/paper/">
+    Every component and option.
+  </Card>
+</CardGroup>

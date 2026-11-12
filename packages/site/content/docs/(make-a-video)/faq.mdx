@@ -1,0 +1,74 @@
+---
+title: FAQ
+description: Short answers about cost, code, agents, graphics cards, systems, fonts and moving a Remotion or HyperFrames project.
+---
+
+<Terminal command="npx kinetograph doctor" />
+
+Short answers to the questions people ask most. Each answer links to the page with the details.
+
+## Do I need to write code?
+
+No. Ask your coding agent for the video and it writes the project for you. You can still open the files and change them. See [Make your first video](/docs/getting-started/first-video/).
+
+## Is Kinetograph free?
+
+Yes. It is open source under the Apache License 2.0, free for any use, including commercial. It needs no account, login or API key. Your coding agent's own plan is billed by its maker.
+
+## Can I use Kinetograph commercially?
+
+Yes. The Apache License 2.0 allows commercial use. Third-party footage, fonts and music in library items keep their own terms. See [Use a library item](/docs/library/use-an-item/).
+
+## Which agent should I use?
+
+Any coding agent that works in a folder on your computer. There are setup pages for [Claude Code](/docs/agents/claude-code/), [Codex](/docs/agents/codex/) and [Cursor](/docs/agents/cursor/). Studio's chat starts Claude Code, Codex or Gemini CLI, whichever is installed.
+
+## How do I install it?
+
+Ask your agent, or run `npm install kinetograph` in your project folder. See [Make your first video](/docs/getting-started/first-video/).
+
+## Do I need a graphics card?
+
+No. Kinetograph draws on the GPU when it finds one and on the CPU when it does not, which is slower. `npx kinetograph doctor` shows which one it uses.
+
+## Does it work on Windows and Linux?
+
+Yes: Windows (64-bit), Linux (64-bit Intel or AMD) and Mac with Apple Silicon. On any other system, [build from source](/docs/contributing/build-from-source/). See [Make your first video](/docs/getting-started/first-video/).
+
+## How do I preview and save a video?
+
+`npx kinetograph studio src/index.tsx` opens a preview with a timeline. `npx kinetograph render src/index.tsx` saves an MP4 to `out/renders/`. See [Edit in Studio](/docs/studio/).
+
+## How long does a render take?
+
+It depends on the size, the length and the effects. Look at single frames and a half-size draft first. `npx kinetograph bench` shows where the time goes. See [Fix a slow render or preview](/docs/rendering/slow-renders/).
+
+## Can it add voiceover, music and captions?
+
+Yes. See [Add voice, music and captions](/docs/making/voice-music-captions/).
+
+## Can I use my own fonts?
+
+Yes. Kinetograph reads no system fonts, so a video looks the same on every computer. You register the fonts you use, from Google Fonts or a file in your project. See [Fonts](/docs/making-videos/fonts/).
+
+## Can I use my Remotion or HyperFrames project?
+
+Yes. Both render as they are, with nothing converted. See [Bring a project](/docs/making/bring-a-project/).
+
+## How is it different from Remotion?
+
+Remotion draws frames in a browser. Kinetograph draws them itself, with no browser, and reads the same project. See [Kinetograph vs Remotion and HyperFrames](/docs/compare/).
+
+## Does it send my video anywhere?
+
+No. Kinetograph renders on your computer and sends your video nowhere. Your coding agent may send the frames it looks at to its own model provider.
+
+## Something failed. What do I check first?
+
+Run `npx kinetograph doctor`. Then see [Troubleshooting](/docs/help/).
+
+## Related topics
+
+- [What is Kinetograph?](/docs/)
+- [Choose what to make](/docs/making/)
+- [What works](/docs/compat/)

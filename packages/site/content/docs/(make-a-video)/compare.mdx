@@ -1,0 +1,113 @@
+---
+title: Kinetograph vs Remotion and HyperFrames
+description: How Kinetograph differs from Remotion and HyperFrames, what each does better, and how to move a project across.
+---
+
+<Video name="compare" label="The same title card drawn by Remotion, HyperFrames and Kinetograph" />
+
+Kinetograph runs existing Remotion and HyperFrames projects, and renders them without starting a browser. This page shows the same title card in all three tools and where they differ.
+
+## The same title card, both ways
+
+A Remotion project keeps its `remotion` imports:
+
+```tsx title="src/Title.tsx"
+import { AbsoluteFill, interpolate, useCurrentFrame } from 'remotion';
+
+export const Title = () => {
+  const frame = useCurrentFrame();
+  const width = interpolate(frame, [0, 30], [0, 640], { extrapolateRight: 'clamp' });
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#14171f' }}>
+      <h1 style={{ position: 'absolute', left: 320, top: 200, margin: 0, color: '#fff', fontSize: 96 }}>Hello</h1>
+      <div style={{ position: 'absolute', left: 320, top: 340, height: 12, width, borderRadius: 6, background: '#f6c177' }} />
+    </AbsoluteFill>
+  );
+};
+```
+
+A HyperFrames project is an HTML page with a GSAP timeline:
+
+```html title="index.html"
+<div id="root" data-composition-id="main" data-width="1280" data-height="720" data-duration="2">
+  <h1 id="title" style="position:absolute;left:320px;top:200px;margin:0;color:#fff;font-size:96px">Hello</h1>
+  <div id="bar" style="position:absolute;left:320px;top:340px;height:12px;width:0;border-radius:6px;background:#f6c177"></div>
+</div>
+<script>
+  const tl = gsap.timeline({ paused: true });
+  tl.to('#bar', { width: 640, duration: 1, ease: 'none' });
+  window.__timelines = { main: tl };
+</script>
+```
+
+Kinetograph runs both unchanged:
+
+```sh
+npx kinetograph render src/index.tsx
+npx kinetograph render index.html
+```
+
+You can also write a new project with Kinetograph's own elements, as in [First video](/docs/getting-started/first-video/).
+
+## Where they differ
+
+<Media src="illustrations/render-paths.svg" dark="illustrations/render-paths-dark.svg" width={620} height={504} alt={"Three rows. Remotion: you write TSX and React, a browser draws every frame, you get a video. HyperFrames: you write an HTML page with GSAP, a browser draws every frame, you get a video. Kinetograph: you write TSX or an HTML page, a Rust compositor draws every frame on the GPU, you get a video, with no browser."} />
+
+| | Kinetograph | Remotion | HyperFrames |
+|---|---|---|---|
+| What you write | TSX with Remotion's API and native elements, or an HTML page | TSX with React and its own API | An HTML page with `data-*` attributes and GSAP |
+| What draws the frames | A Rust compositor on the GPU (Metal, Vulkan or D3D12) | A browser | A browser |
+| Browser needed to render | No. Chrome is only a test reference. | Yes | Yes |
+| Render speed | Measured on our machine, below. No comparison is claimed. | Not measured here | Not measured here |
+| Preview | Studio: timeline, props form, chat with your coding agent | Remotion Studio and the Player | `hyperframes preview` |
+| Agents | MCP server and skills | Not covered here | Not covered here |
+| Cloud rendering | None. Run `render` on a machine with a GPU. | Lambda and Cloud Run | Not covered here |
+| Licence | Apache-2.0 | Remotion's own licence. Read it for your company. | Apache-2.0 |
+
+## Speed
+
+These are Kinetograph's own renders, whole `kinetograph render` to H.264, on an Apple M4 laptop (median of 3 runs, measured 1 November 2026, while other jobs ran):
+
+- An unchanged Remotion project: 150 frames at 1200 by 1000 in 1.81 s, 83 frames per second.
+- A reel drawn from shapes: 928 frames at 1080p in 11 s, 81 frames per second, 3.2 times real time.
+- Captions over video: 180 frames at 1080p in 2.06 s, 87 frames per second.
+
+There is no head-to-head benchmark against Remotion or HyperFrames in the repository that holds on the current renderer, so this page makes no "times faster" claim. Measure your own project with `npx kinetograph bench`, and compare it with what you have today. A number from one project does not apply to another.
+
+## What Remotion does better
+
+- **Maturity and ecosystem.** Remotion has years of use, its own packages, templates and community. Kinetograph reimplements the Remotion API from its documentation and covers most of it, but not all. See [Migrate from Remotion](/docs/migrating/remotion/) for the package-by-package list.
+- **Cloud rendering.** `@remotion/lambda` and `@remotion/cloudrun` render in the cloud. Kinetograph has no cloud renderer.
+- **The Player.** `@remotion/player` embeds a video in a web page. Kinetograph has Studio, and no embeddable player.
+- **Browser fidelity.** Anything a browser draws, Remotion draws. Kinetograph draws what its engine supports and reports the rest.
+
+## What HyperFrames does better
+
+- **A browser draws everything a page can hold.** Three.js, for one, runs through Kinetograph's WebGL stand-in, and only what the stand-in cannot draw is reported.
+- **Its own tooling and catalog.** HyperFrames has its own CLI and preview. Kinetograph reads its pages, and uses none of that tooling.
+- **GSAP's `ScrollTrigger` and `Draggable`** don't apply to a Kinetograph render.
+
+## What Kinetograph does better
+
+- **No browser in the render path.** Nothing starts Chrome, so there is no browser to launch, and a frame depends only on the project and its number.
+- **It reads both.** One tool renders a Remotion project and a HyperFrames page.
+- **Studio with an agent chat.** You pick a layer or a span of time and ask your coding agent to change it, and the agent can read and set the props you see. See [Studio](/docs/studio/) and [Use it with your agent](/docs/agents/claude-code/).
+- **Native elements.** Layers, 3D scenes, shaders, effects and motion blur are drawn by the engine, as in [Making videos](/docs/making-videos/compositions/).
+- **Apache-2.0.**
+
+## What Kinetograph does not do
+
+- Cloud rendering, and a Player component.
+- Output in VP8 or AV1, or HLS. The codecs are `h264`, `h265`, `prores`, `vp9` and `gif`.
+- Visual editing of effects in Studio. Set them in code or ask the agent.
+- Anything a browser draws that the engine does not: see [What works](/docs/compat/) for the full list. A frame holding something it cannot draw is drawn without it, or close, and `doctor` lists it, with the frames, rather than leaving it missing without a word.
+
+## Moving a project across
+
+- [Migrate from Remotion](/docs/migrating/remotion/) and [Migrate from HyperFrames](/docs/migrating/hyperframes/) give the steps.
+- Run `npx kinetograph doctor <entry>` first. It lists what the engine cannot draw in your project, and on which frames. Then render with `--strict` so nothing is silently missing.
+- An agent can do it: see [Agent skills](/docs/agents/skills/).
+
+## Related topics
+
+[Compatibility](/docs/compat/), [Make your first video](/docs/getting-started/first-video/) and [Terminology](/docs/terminology/).

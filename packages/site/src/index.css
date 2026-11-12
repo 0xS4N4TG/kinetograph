@@ -278,11 +278,11 @@
 
 /* Landing: caption words resolve one by one, then the tracking box eases onto the hot word. */
 @keyframes kg-in { from { opacity: 0; transform: translateY(0.12em) scale(1.12); filter: blur(3px); } }
-@keyframes kg-box { from { opacity: 0; transform: scale(1.4); } }
 .kg-in { animation: kg-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
-.kg-box { animation: kg-box 0.7s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+@keyframes kg-track { from { opacity: 0; transform: scale(1.4); } }
+.kg-track { animation: kg-track 0.7s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
 @media (prefers-reduced-motion: reduce) {
-  .kg-in, .kg-box { animation: none !important; }
+  .kg-in, .kg-track { animation: none !important; }
 }
 
 /* Catalog showroom motion: transform, opacity and clip-path only, named properties, no ease-in. */
@@ -460,7 +460,7 @@ figure.shiki button[data-checked] {
   --shiki-dark: var(--color-fd-muted-foreground);
 }
 
-/* Docs sidebar: full width at the window edge, with more room at the edges, between links and between groups.
+/* Docs sidebar: full width at the window edge, with more room at the edges, between links and between groups. */
 :root {
   --fd-sidebar-width: 288px;
 }

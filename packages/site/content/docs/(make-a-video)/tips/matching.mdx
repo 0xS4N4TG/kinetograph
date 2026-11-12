@@ -1,0 +1,73 @@
+---
+title: Recreating something you saw
+description: How to give an agent a reference video and get either a match in your own words and brand, or a reusable taste for new videos.
+---
+
+<Video name="taste-match" label="A reference video and the Kinetograph video made to match it" />
+
+Give the agent the reference and say which mode you want. In match mode it builds your video with the reference's timing, layout and look. In taste mode it keeps only the style, so you can make new videos in it. Both use the `kinetograph-taste-clone` skill, and both check each shot against the reference before showing you.
+
+## Base prompt
+
+```text title="Suggested prompt"
+/kinetograph-taste-clone Here is a video: public/refs/reference.mp4. Match its timing, camera moves, layout, type and transitions. Use my words ("Notes that find you") and my logo at public/images/logo.png.
+```
+
+## The knobs that matter
+
+| What to say | Why it matters |
+| --- | --- |
+| **The reference file** | A file you have the right to use. |
+| **The mode** | Match for one video, taste to keep only the style. |
+| **Your words and logo** | The reference's own text and people are always replaced. |
+| **What to leave out** | Say if its content should not carry over. |
+
+## Common failure modes
+
+**Saying it is off.**
+- **Avoid:** "it is not accurate"
+- **Instead:** "the shadow under the card at 0:03 is too hard"
+
+**Keeping the reference's content.**
+- **Avoid:** "make it just like the reference"
+- **Instead:** "match the timing and layout with my words and logo"
+
+**No mode.**
+- **Avoid:** "use this video"
+- **Instead:** "match mode, then save the taste"
+
+## In more detail
+
+It is installed with the other skills by `npx kinetograph skills update`. See the [Taste skill](/docs/agents/taste-clone/) for what it does and the checks it runs, and [Tastes](/docs/tastes/) for the styles that ship. It needs `ffmpeg`, `python3` and, for URLs, `yt-dlp`, and works with Kinetograph, Remotion or any frame-based renderer. It writes `SPEC.md`, a number for every timing and layout value, and builds each shot from it. Downloaded media stays in a git-ignored folder and is never committed.
+
+## Match it with your own words
+
+```txt title="Suggested prompt"
+/kinetograph-taste-clone Here is a video: public/refs/reference.mp4. Match its timing, camera moves, layout, type and transitions. Use my words ("Notes that find you", "Search", "Pin", "Share"), my logo at public/images/logo.svg and my colours #f6f0e4, #1d1a16 and #e0553a. Swap out the reference's own text, logos and people. Show me each shot beside the reference.
+```
+
+Say what to keep ("timing and transitions only"), give your own content, and give a file rather than a link where you can.
+
+## Keep only the taste
+
+```txt title="Suggested prompt"
+/kinetograph-taste-clone Take the taste of public/refs/reference.mp4: palette, type, how text writes on, light and shadow, entrances, transitions and rhythm. Leave out its content. Save it as src/tastes/ledger/ so I can use it for new videos.
+```
+
+Then use it:
+
+```txt title="Suggested prompt"
+/kinetograph-markup Make a 15 second vertical video about our new export feature in the taste at src/tastes/ledger/. Read TASTE.md and taste.json first. The words are "Export in one click".
+```
+
+A taste written from a match that passed its checks is measured. One written from watching alone is a guess, so run a match first when the look has to be exact. `npx kinetograph add <taste>` installs a published taste.
+
+## If the match is off
+
+Say what is wrong with a number or a frame: "the title lands 8 frames late", "the shadow is too hard under the card at 0:03". "Not accurate" gives it nothing to measure.
+
+## Related topics
+
+- [Ask for a great video](/docs/tips/)
+- [Example prompts](/docs/tips/example-prompts/)
+- [Taste skill](/docs/agents/taste-clone/)

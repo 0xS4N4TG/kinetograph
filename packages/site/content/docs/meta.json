@@ -1,1 +1,8 @@
-{"title": "Docs", "pages": ["index", "getting-started", "making-videos", "studio", "rendering", "agents", "tips", "plugins", "migrating", "compare", "---Reference---", "reference", "compat", "speed", "terminology", "internals", "contributing", "changelog"]}
+{
+  "title": "Docs",
+  "pages": [
+    "(make-a-video)",
+    "(studio)",
+    "(developers)"
+  ]
+}

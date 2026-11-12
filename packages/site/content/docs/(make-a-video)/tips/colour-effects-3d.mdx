@@ -1,0 +1,102 @@
+---
+title: Colour, effects and 3D
+description: How to ask for a colour grade, film and print looks, glow and shaders, and 3D with Kinetograph's own scene layer.
+---
+
+<Video name="tips-looks" label="One shot with a warm grade, a VHS look and a 3D move" />
+
+Name the look as a result ("warm highlights, lifted blacks, visible grain"), say which layer it goes on, and ask for a before and after. Effects remove detail, so the picture needs detail to begin with.
+
+## Base prompt
+
+```text title="Suggested prompt"
+/kinetograph-markup Grade the photo warmer with a little more contrast, then add grain at a low strength. Keep the headline text clean: grade only the photo layer. Show frame 0 before and after.
+```
+
+## The knobs that matter
+
+| What to say | Why it matters |
+| --- | --- |
+| **The look as a result** | "Warm highlights, lifted blacks, visible grain" says what you will see. |
+| **Which layer** | Grading the text too is rarely what you want. |
+| **How strong** | A strength or a percentage stops it going too far. |
+| **A before and after** | You see exactly what the look changed. |
+
+## Common failure modes
+
+**Naming a style only.**
+- **Avoid:** "make it cinematic"
+- **Instead:** "warm highlights, lifted blacks, a little grain"
+
+**Grading everything.**
+- **Avoid:** "add a colour grade"
+- **Instead:** "grade only the photo layer"
+
+**No frame check.**
+- **Avoid:** "apply the look and render"
+- **Instead:** "show frame 0 before and after"
+
+## In more detail
+
+## Say what the look does
+
+Ask for the result and the agent picks the effect:
+
+| Ask for | The agent reaches for |
+|---|---|
+| Warmer, more contrast, lifted blacks | `colorGrade`, or `colorCorrection`, `levels` and `curves` |
+| A film stock or a preset look | `lut` with a `.cube` file you supply |
+| Two-tone, thermal, duotone | `gradientMap` |
+| Film grain, print dots, a dot-matrix screen | `grain`, `halftone`, `dotMatrix`, `dither` |
+| Glow, soft bloom | `glow` |
+| Colour fringing, a lens look | `chromaticAberration` |
+| A drop or inner shadow | `dropShadow`, `insetShadow` |
+| A warm flare over a cut | `LightLeak` or `Starburst` |
+
+`npx kinetograph effects` lists every effect. See [Effects](/docs/making-videos/effects/), [Color correction](/docs/making-videos/color-correction/) and [Light leaks](/docs/making-videos/light-leaks/).
+
+```txt title="Suggested prompt"
+/kinetograph-markup Grade the photo warmer with a little more contrast, then add grain at a low strength. Keep the headline text clean: grade only the photo layer. Show frame 0 before and after.
+```
+
+An effect works on the whole layer it sits on, so put the grade on the picture and the text over it stays clean. A glow or shadow reaches past the layer, so leave a margin. To grade a background and leave a person alone, supply the person as a cut-out with alpha and ask for two layers. Pick one rough look, such as halftone or grain, and say why; several at once read as noise.
+
+## Your own shader
+
+A `shader()` effect runs WGSL on its layer, and a `<canvas>` with a WebGL context runs GLSL. A shader written for a browser usually runs as it is. See [Shaders](/docs/making-videos/shaders/).
+
+## Looks from plugins
+
+Four plugins add looks you can ask for by name. Say which plugin, so the agent reads its `SKILL.md`.
+
+- **[VJ](/docs/plugins/vj/):** screen and sensor looks such as `crt`, `vhs` and `thermal`, and boxes and links drawn on whatever moves.
+- **[Paper](/docs/plugins/paper/):** turns a picture with a transparent background into a paper cut-out, and unfolds it from a crumpled packet.
+- **[Hexed](/docs/plugins/hexed/):** rolls a grade, glitch, grain, shake or print look from a seed. The same number gives the same look.
+- **[Kinetic typography](/docs/plugins/kinetic-typography/):** text that moves with the voice. See [Text, captions and code](/docs/tips/text-captions-code/).
+
+```txt title="Suggested prompt"
+/kinetograph-markup Use the paper plugin. Show public/images/me.png, which has a transparent background, as a CutOut with a torn edge on kraft stock, and have it unfold with FoldOut at 0:01. Show a strip.
+```
+
+## Supplied art
+
+Kinetograph draws; it doesn't generate pictures. Put your artwork in `public/images/` and name the files, then ask the agent to animate it: a slow push-in, parallax between cut-outs, a card flip. Use PNG with alpha for cut-outs, and SVG for shapes and icons.
+
+## 3D
+
+Ask for what you want to see. Kinetograph builds it with its own 3D layer and has no Three.js behind it.
+
+- **A flat card turning:** "Flip the card over with a 3D turn and a camera." Good for a card, a phone or a poster.
+- **A real scene:** a `Scene3D` with a camera, lights, shapes, glTF and GLB models and 3D text.
+
+```txt title="Suggested prompt"
+/kinetograph-markup Add a 960 by 540 3D scene on a dark floor: public/models/phone.glb turning 360 degrees over 6 seconds, one key light from the upper left that casts a shadow, a slow camera push-in. Run doctor and tell me if the model uses anything the engine can't read.
+```
+
+Say where the camera starts and ends, how many lights and where, and the model's path and turn. A Three.js project needs to be rebuilt as a `Scene3D`: use `/kinetograph-migrate`. See [Transforms](/docs/making-videos/transforms/#3d-scenes) and [What works](/docs/compat/#3d).
+
+## Related topics
+
+- [Make a glitch video](/docs/making/glitch-effects/)
+- [Effects](/docs/making-videos/effects/)
+- [Canvas and shaders](/docs/making-videos/shaders/)

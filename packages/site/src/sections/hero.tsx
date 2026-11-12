@@ -32,7 +32,7 @@ export function Hero() {
         <div className="mt-8 flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:gap-8">
           <CommandBar command="npx kinetograph render index.tsx -o out.mp4" className={commandBar} />
           <div className="flex gap-8">
-            <a href="#start" className="transition-colors hover:text-cobalt"><Label className="text-ink">Get started</Label></a>
+            <a href="/docs/getting-started/first-video/" className="transition-colors hover:text-cobalt"><Label className="text-ink">Get started</Label></a>
             <a href="#film" className="transition-colors hover:text-cobalt"><Label className="text-ink">Watch the film</Label></a>
           </div>
         </div>

@@ -1,0 +1,107 @@
+---
+title: Tastes
+description: A taste is a reusable style for a reel. See the ones that ship, use one, or make your own from a video.
+---
+
+Pick a ready-made style and your agent makes new videos in it. A taste is a whole look: the colours, fonts and textures, how text enters, how the camera moves, how shots cut and the sound. It is written down in `TASTE.md` (for people and agents) and often `taste.json` (the numbers), so every video in it looks like part of one series.
+
+## The tastes that ship
+
+<TasteGallery />
+
+| Taste | Look | Good for |
+|---|---|---|
+| [Archive](/catalog/archive/) | Period photographs drift in layers under film flicker and dust, with typed dates and captions | History, biography |
+| [Blueprint](/catalog/blueprint/) | White line art draws itself on a cyanotype sheet, with dimension lines, hatching, typed labels and one red stamp | How-it-works explainers, engineering and design histories |
+| [Collage](/catalog/collage/) | Paper cut-outs and torn labels over an old newspaper page, in stop motion | History hooks, documentary openers |
+| [Explainer](/catalog/explainer/) | Cut-out objects on textured paper under big type, one colour for the key word, quick wipes | Business lessons, one-idea brand reels |
+| [Papercut](/catalog/papercut/) | A toy-like paper diorama of cut-paper characters and props, with the camera circling the set | Tech and AI explainers |
+| [Print](/catalog/print/) | Flat inks print in turn over paper, with a dot screen that jumps and slight misregistration | Art, design, culture |
+| [Vox style](/catalog/vox-style/) | Tinted, halftoned photos on grid paper, caps that fill yellow, numbers that roll like an odometer | History and science explainers |
+
+`pale-whip.ts` in [kinetograph-ui](/docs/library/use-an-item/) is another: flat app screens on pale grey with a heavy whip blur. It is not installable with `add`. Each taste has a demo reel in its folder.
+
+## Use one
+
+Install it into your project, then point the agent at it:
+
+```sh
+npx kinetograph add archive
+```
+
+The taste lands in `src/tastes/archive/`, with its `TASTE.md`, components and media.
+
+```txt title="Suggested prompt"
+/kinetograph-markup Make a 20 second vertical video about the first photographs in the taste at src/tastes/archive/. Read TASTE.md first. The words are "Hold still".
+```
+
+## Make your own
+
+The [taste skill](/docs/agents/taste-clone/) turns a reference video into a taste. The worked example is Blueprint, the newest one. It has no source reel, so its numbers are choices; a taste from a reel has the same files with measured numbers.
+
+<Media src="tastes/blueprint.mp4" poster="tastes/blueprint.webp" width={300} height={533} alt={"A four second loop of the Blueprint demo reel: a pen draws a camera and a candle on a blue sheet, dimension lines grow, and a red stamp reads IMAGE INVERTED."} caption="Blueprint, from its demo reel (camera obscura, 18 s)." />
+
+### 1. Ask for the taste
+
+Give the skill the video and say what to keep: the style, not the words or objects. Name the folder.
+
+```txt title="Suggested prompt"
+/kinetograph-taste-clone Here is a reel: <url>. Save its taste as src/tastes/blueprint/. Keep the style, leave out its content, and add a demo reel in that taste.
+```
+
+### 2. It measures, builds and checks
+
+The skill reads every frame, writes the numbers down, builds a demo from them and checks each shot against the reference before it shows you anything. The steps are on the [taste skill](/docs/agents/taste-clone/) page.
+
+### 3. What it produces
+
+```txt
+src/tastes/blueprint/
+├─ TASTE.md        the style in words
+├─ taste.json      the style as numbers
+├─ sheet.tsx       its components
+├─ draw.tsx
+├─ type.tsx
+├─ index.ts        one import
+├─ demo/index.tsx  a demo reel
+└─ tools/          sound, made in code
+```
+
+`taste.json` holds what a new reel needs to match, as numbers:
+
+```json title="taste.json (excerpt)"
+{
+  "palette": { "line": "#f2f8ff", "accent": "#ff6a4d" },
+  "writeOn": {
+    "pen": { "objectPxPerFrame": 30 },
+    "label": { "charsPerFrame": 1.4 }
+  },
+  "transitions": [{ "name": "detailIris", "frames": 22 }],
+  "sound": { "music": { "bpm": 72 }, "mixLufs": -14.7 }
+}
+```
+
+### 4. What it checks
+
+- `npx kinetograph check` and `lint` pass on the demo, and a contact sheet of its frames (`strip`) is read before the render.
+- The sound follows an event map: each picture event has one sound and an offset in frames, and effects sit 3 to 6 dB over the bed.
+- `npx kinetograph audio analyze` reads -15 LUFS within 1 and a true peak under -1 dBTP. Blueprint's demo reads -14.7 and -2.8.
+- Pictures, textures and fonts are public domain, generated or open licence, and credited next to the demo. Blueprint uses none of the first two: its sheet and stamp ink are shaders.
+
+### 5. Use it
+
+```sh
+npx kinetograph add blueprint
+```
+
+```txt title="Suggested prompt"
+/kinetograph-markup Make a 15 second vertical video in the taste at src/tastes/blueprint/ about how a mechanical clock keeps time. Read TASTE.md first.
+```
+
+To share a taste, see [Contributing to the registry](/docs/contributing/registry/). To match a video shot for shot instead, see [Recreating something you saw](/docs/tips/matching/).
+
+## Related topics
+
+- [Use a library item](/docs/library/use-an-item/)
+- [Make a video like one you like](/docs/agents/taste-clone/)
+- [Examples](/docs/examples/)

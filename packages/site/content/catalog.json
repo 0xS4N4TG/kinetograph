@@ -10649,6 +10649,21 @@
       "source": "tastes/archive"
     },
     {
+      "id": "blueprint",
+      "title": "Blueprint",
+      "description": "White line art draws itself on a Prussian-blue cyanotype sheet, with dimension lines, hatching, typed labels and one red stamp.",
+      "hero": {
+        "src": "/catalog/tastes/blueprint/hero.webp",
+        "w": 720,
+        "h": 1280,
+        "from": "tastes/blueprint/demo/out/camera-obscura.mp4",
+        "at": 7.2,
+        "video": "/catalog/tastes/blueprint/hero.mp4",
+        "len": 4
+      },
+      "source": "tastes/blueprint"
+    },
+    {
       "id": "collage",
       "title": "Collage",
       "description": "Paper cut-outs and torn labels sit over an old newspaper page and move in stop motion.",

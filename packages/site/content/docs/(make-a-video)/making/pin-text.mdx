@@ -1,0 +1,73 @@
+---
+title: Pin text to a moving object
+description: Make a label, a picture or an effect follow something that moves in a clip.
+---
+
+<Video name="pin-text" label="A box and the label Look here follow a blacksmith as he works" />
+
+Point your agent at something in a clip and say what should follow it. You get a label, a picture or an effect that follows the object.
+
+## Make it
+
+```text title="Suggested prompt"
+In public/video/clip.mp4, track the sign on the right wall. Then pin the label "Look here" to it and draw it over the clip. Look at the frames, then save it to out/pinned.mp4.
+```
+
+Your agent looks at the first frame and picks the point. It tracks it once and draws the label there on every frame. Rendering never tracks again, so every render comes out the same.
+
+## Ask for one of three things
+
+- **A label or picture on a point.** The point can also move, turn or change size.
+- **Boxes on whatever moves.** Ask your agent to find points automatically.
+- **A picture on a flat surface**, such as a screen or a wall. It sits in perspective. Give four or more points on the surface.
+
+## Prompts that work
+
+```text title="Suggested prompt"
+Find the strongest points on public/video/clip.mp4 automatically and track them. Draw a box and a short label on each one that keeps moving. Use the VJ plugin's boxes.
+```
+
+### Say these when they matter
+
+| Say | Why |
+| --- | --- |
+| **What to follow** | "The sign on the right wall" is a point your agent can find. |
+| **What follows it** | A label, a picture or an effect. |
+| **Whether it should turn or grow** | Otherwise it only moves. |
+| **A surface, for a picture** | "Pin the poster on the screen". |
+
+### Variants
+
+<AccordionGroup>
+  <Accordion title="A poster on a screen">
+    "Pin public/images/poster.png on the screen in the clip. Use the four corners of the screen as points." The picture is warped to sit on the surface.
+  </Accordion>
+  <Accordion title="Handwritten captions on a subject">
+    Ask for hand captions that hang off the tracked subject. They come from the Kinetic typography plugin.
+  </Accordion>
+</AccordionGroup>
+
+### Common mistakes
+
+**Choosing a smooth, empty spot.** The tracker needs texture to hold on to.
+- **Avoid:** "track the blue sky"
+- **Instead:** "track the corner of the sign"
+
+**Expecting a lost track to keep going.** A track stops when the object leaves the frame or is hidden. The label then holds at its last position. Ask for a point with more texture, or a bigger search area.
+
+## Review the result
+
+- The label stays on the object for the whole time it is visible.
+- It turns or grows only if you asked.
+- It holds still, not drifts, after a track is lost.
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="Make a glitch video" icon="route" href="/docs/making/glitch-effects/">
+    Smeared cuts, tape and screen looks.
+  </Card>
+  <Card title="Motion tracking" icon="learn" href="/docs/making-videos/motion-tracking/">
+    Every option of the tracker.
+  </Card>
+</CardGroup>

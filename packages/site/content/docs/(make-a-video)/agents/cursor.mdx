@@ -1,0 +1,82 @@
+---
+title: Make videos with Cursor
+description: Install the Kinetograph skills in Cursor, ask for a video in plain words, then preview it and save the MP4 on your computer.
+---
+
+<Terminal command="npx kinetograph skills update" />
+
+Install the skills and connect the tools, then ask Cursor for a video. Cursor writes the project in your folder, looks at the frames and saves the MP4 on your computer.
+
+```sh
+npx kinetograph skills update
+```
+
+## Before you start
+
+- Cursor, signed in.
+- Node.js 22 or newer.
+
+## Install
+
+Paste this into Cursor and let it do the setup:
+
+```text title="Install prompt"
+Set up Kinetograph (https://github.com/0xS4N4TG/kinetograph) for me by following its AGENTS.md: https://github.com/0xS4N4TG/kinetograph/blob/main/AGENTS.md. Use the prebuilt package and install the Kinetograph agent skills system-wide.
+```
+
+Or install by hand:
+
+The command installs the skills for Claude Code, Codex and Cursor without asking questions.
+
+Then connect the [tools Kinetograph gives your agent](/docs/mcp/). Put this in `.cursor/mcp.json` in the project, or in `~/.cursor/mcp.json` for every project:
+
+```json title=".cursor/mcp.json"
+{
+  "mcpServers": {
+    "kinetograph": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "kinetograph", "mcp"]
+    }
+  }
+}
+```
+
+[Agent skills](/docs/agents/skills/) lists what each skill does.
+
+## Ask for your first video
+
+Open Cursor's agent chat in an empty folder and paste:
+
+```text title="Suggested prompt"
+Make a 5 second title card for my product, check it with strip and lint, and render it to out/title.mp4.
+```
+
+Cursor makes the project, looks at the frames, fixes what is off and saves the MP4. Say what to change in the same chat.
+
+## Preview and render
+
+To reopen the preview with a timeline and a chat, run this in the project folder:
+
+```sh
+npx kinetograph studio src/index.tsx
+```
+
+The preview opens in Studio, where you can also edit the video by hand. To save the MP4 yourself:
+
+```sh
+npx kinetograph render src/index.tsx
+```
+
+You can also ask your agent to render it.
+
+## If something goes wrong
+
+- **Cursor does not see the skills.** Start a new chat. `npx kinetograph doctor` lists each installed skill.
+- **Anything else.** See [Troubleshooting](/docs/help/).
+
+## Related topics
+
+- [Make your first video](/docs/getting-started/first-video/)
+- [Choose what to make](/docs/making/)
+- [Ask for a great video](/docs/tips/)
