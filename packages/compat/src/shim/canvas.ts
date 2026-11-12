@@ -23,6 +23,7 @@ import {
 import { addonFunction, hasAddonFunction } from '../addon.js';
 import { getDomEnvironment } from '../environment.js';
 import type { HostElement } from './host.js';
+import { DawnCanvasContext, dawnCommandsOf, dawnRequested, takeDawnReports } from './webgpu-dawn.js';
 
 export { CANVAS_SOURCE, CanvasContext2D, WebGLContext };
 
@@ -159,7 +160,7 @@ export { DEFAULT_HEIGHT, DEFAULT_WIDTH };
 const contexts = new WeakMap<object, CanvasContext2D>();
 /** The WebGL contexts of canvases in the tree (packages/cli/skills/kinetograph-markup/references/SCENE.md, "glsl"). */
 /** A WebGL or WebGPU context: what a canvas that is drawn by the GPU holds. */
-export type GlRecorder = WebGLContext | GPUCanvasContextShim;
+export type GlRecorder = WebGLContext | GPUCanvasContextShim | DawnCanvasContext;
 const glContexts = new WeakMap<object, GlRecorder>();
 /** Every context made, for `resetCanvasStates` (weakly: a canvas that is gone takes its context with it). */
 const live = new Set<WeakRef<CanvasContext2D | GlRecorder>>();
@@ -192,7 +193,7 @@ const glReports = new Set<string>();
 
 /** What the WebGL recordings made since the last call left out where they are not drawn right, each once. */
 export function takeGlReports(): string[] {
-  const out = [...glReports];
+  const out = [...glReports, ...takeDawnReports()];
   glReports.clear();
   return out;
 }
@@ -254,7 +255,7 @@ export function resetCanvasStates(): void {
 /** The WebGL recording of the canvas on `host`, or null when nothing was drawn on it. */
 export function glContentOf(host: object): ReturnType<WebGLContext['content']> | null {
   const context = glContexts.get(host);
-  return context === undefined || !context.drawn ? null : context.content();
+  return context === undefined || context instanceof DawnCanvasContext || !context.drawn ? null : context.content();
 }
 
 /**
@@ -280,7 +281,8 @@ function contextFor(
     if (store.has(key)) return null;
     let gpu = glStore.get(key);
     if (gpu === undefined) {
-      gpu = createGpuCanvasContext({ size, canvas });
+      // KINETOGRAPH_WEBGPU=dawn: Dawn's own device and a read-back canvas, in place of the recording.
+      gpu = dawnRequested() ? new DawnCanvasContext({ size, canvas }) : createGpuCanvasContext({ size, canvas });
       glStore.set(key, gpu);
       live.add(new WeakRef(gpu));
     }
@@ -318,6 +320,12 @@ export function withCanvasCommands(host: HostElement, props: Record<string, any>
   if (host.type !== 'canvas') return props;
   const gl = glContentOf(host);
   if (gl !== null) return { ...props, 'data-kg-webgl': JSON.stringify(gl) };
+  // A Dawn canvas is the pixels it was read back as, which the painter draws as it draws an `ImageData` put on a 2D canvas.
+  const dawn = glContexts.get(host);
+  if (dawn instanceof DawnCanvasContext) {
+    const drawn = dawnCommandsOf(dawn);
+    return drawn === null ? props : { ...props, 'data-kg-canvas': JSON.stringify(drawn) };
+  }
   const commands = canvasCommandsOf(host);
   if (commands === null) return props;
   // The pictures that more than one command draws are written once, in a table beside the commands.

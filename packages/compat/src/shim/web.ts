@@ -14,6 +14,7 @@ import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageDat
 import { resolveDocumentUrl, resolveProjectFile, resolveCachedRemoteFile, sameOriginPath } from '../environment.js';
 import { netFetch } from './net-store.js';
 import { OffscreenCanvasShim, rasterizeCanvas } from './canvas.js';
+import { dawnGlobals, dawnRequested, installDawn } from './webgpu-dawn.js';
 import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, installDocumentMembers } from './document.js';
 import { AttrShim, NamedNodeMapShim } from './attributes.js';
 import { DomElement, DomFragment, DomNodeBase, DomText, domElementFor, domTextFor, isDomElementShim, selectorContextOf, setImageLoader, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
@@ -683,10 +684,12 @@ export function installDomGlobals(): void {
   define(g, 'WebGLRenderingContext', webglGlobal(1));
   define(g, 'WebGL2RenderingContext', webglGlobal(2));
   // `navigator.gpu` records (packages/scene/src/webgpu.ts); the canvas's 'webgpu' context is made by `getContext`.
-  for (const [name, value] of Object.entries(GPU_GLOBALS)) define(g, name, value);
+  // KINETOGRAPH_WEBGPU=dawn: the page gets Dawn's own objects (webgpu-dawn.ts).
+  const dawn = dawnRequested() ? installDawn({ track: trackPending, rasterize: rasterizeCanvas }) : null;
+  for (const [name, value] of Object.entries(dawn === null ? GPU_GLOBALS : dawnGlobals())) define(g, name, value);
   const navigator = (g.navigator ??= {}) as Record<string, unknown>;
   Object.defineProperty(navigator, 'hardwareConcurrency', { value: HARDWARE_CONCURRENCY, configurable: true, enumerable: true });
-  if (!('gpu' in navigator)) Object.defineProperty(navigator, 'gpu', { value: createGpu({ rasterize: rasterizeCanvas }), configurable: true, enumerable: false });
+  if (!('gpu' in navigator)) Object.defineProperty(navigator, 'gpu', { value: dawn ?? createGpu({ rasterize: rasterizeCanvas }), configurable: true, enumerable: false });
   define(g, 'CanvasGradient', CanvasGradient);
   define(g, 'CanvasPattern', CanvasPattern);
   define(g, 'Path2D', Path2D);

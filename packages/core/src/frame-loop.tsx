@@ -10,7 +10,7 @@
 //      attach what each sub-frame changes in them.
 
 import type { ReactNode } from 'react';
-import { glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures } from '@kinetographdev/compat/shim';
+import { flushDawnCanvases, noteDawnRewind, releaseDawn, glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures } from '@kinetographdev/compat/shim';
 import { setDefaultStylesheet } from '@kinetographdev/compat/dom';
 import { createSceneRoot, finishIslands, TimelineContext, type LayerNames, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
@@ -179,6 +179,7 @@ class Renderer implements FrameRenderer {
     this.disposed = true;
     this.scene?.unmount();
     this.scene = null;
+    releaseDawn();
   }
 
   async renderFrame(frame: number): Promise<FrameResult> {
@@ -209,6 +210,7 @@ class Renderer implements FrameRenderer {
     // which brings a new scene up to it; drawing it here first would be thrown away.
     const replays = !sequential && frame > 0 && transitionWindowSeconds() > 0;
     // React state and virtual timers only move forward. Going back means starting the composition over.
+    if (frame < this.lastFrame) noteDawnRewind();
     if (!replays && (frame < this.lastFrame || this.scene === null)) this.startScene(config);
     if (!sequential) {
       clearHistory();
@@ -499,6 +501,8 @@ class Renderer implements FrameRenderer {
       // last one, by `endGsapSamples`).
       sampleGsapAt(virtualNow() / 1000);
     }
+    // A Dawn canvas is read back to pixels once the page has drawn: only a frame that is read pays for it.
+    if (read) await flushDawnCanvases();
     const tree = read ? scene.snapshot() : null;
     const failure = renderFailure();
     if (failure) throw failure;
