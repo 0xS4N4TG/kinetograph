@@ -2826,6 +2826,17 @@ export class WebGLContext {
     texture.version += 1;
   }
 
+  /**
+   * UNPACK_FLIP_Y_WEBGL and UNPACK_PREMULTIPLY_ALPHA_WEBGL as they apply to an upload from `source`: an ImageBitmap
+   * ignores both (WebGL: the bitmap's own creation options decide), so a page that set them for an earlier upload does
+   * not flip a bitmap's rows (three.js sets them only for sources that are not bitmaps, and leaves them as they were).
+   */
+  private unpackOf(source: unknown): { flipY: boolean; premultiply: boolean } {
+    const Bitmap = (globalThis as { ImageBitmap?: abstract new (...args: never[]) => object }).ImageBitmap;
+    if (Bitmap !== undefined && source instanceof Bitmap) return { flipY: false, premultiply: false };
+    return { flipY: this.flipY, premultiply: this.premultiply };
+  }
+
   /** `texImage2D(target, level, internalformat, width, height, border, format, type, pixels)` or `(…, internalformat, format, type, source)`. */
   texImage2D(target: number, level: number, internalformat: number, ...rest: unknown[]): void {
     if (faceIndex(target) >= 0) return this.texImageFace(target, level, internalformat, rest);
@@ -2907,8 +2918,9 @@ export class WebGLContext {
     this.checkTextureType(type, internalformat);
     texture.floats = null;
     texture.float32 = false;
-    texture.flipY = this.flipY;
-    texture.premultiply = this.premultiply;
+    const unpack = this.unpackOf(rest.length >= 6 ? null : rest[2]);
+    texture.flipY = unpack.flipY;
+    texture.premultiply = unpack.premultiply;
     texture.mipmaps = false;
     texture.layer = null;
     texture.uploaded = true;
@@ -3043,6 +3055,7 @@ export class WebGLContext {
     if (bound === null) return;
     const { texture } = bound;
     if (level !== 0) throw new WebGLUnsupportedError('texSubImage3D above level 0; a 3D or array texture has one level');
+    if (WebGLContext.drawnLayers(texture)) throw new WebGLUnsupportedError('texSubImage3D into a texture a framebuffer drew a layer of; draw into it, or upload the whole texture again');
     if (this.flipY || this.premultiply || texture.depth === 0) return this.fail(GL.INVALID_OPERATION);
     const numbers = [xoffset, yoffset, zoffset, width, height, depth];
     if (!numbers.every((v) => Number.isInteger(v) && v >= 0) || xoffset + width > texture.width || yoffset + height > texture.height || zoffset + depth > texture.depth) return this.fail(GL.INVALID_VALUE);
@@ -3055,7 +3068,6 @@ export class WebGLContext {
         const from = ((z * height + y) * width) * 4;
         held.set(part.subarray(from, from + width * 4), (((zoffset + z) * texture.height + yoffset + y) * texture.width + xoffset) * 4);
       }
-    if (WebGLContext.drawnLayers(texture)) throw new WebGLUnsupportedError('texSubImage3D into a texture a framebuffer drew a layer of; draw into it, or upload the whole texture again');
     }
     texture.version += 1;
   }
@@ -3150,7 +3162,8 @@ export class WebGLContext {
       }
     }
     if (xoffset < 0 || yoffset < 0 || xoffset + width > texture.width || yoffset + height > texture.height) return this.fail(GL.INVALID_VALUE);
-    const flags = { ...(this.flipY ? { flipY: true } : {}), ...(this.premultiply ? { premultiply: true } : {}) };
+    const unpack = this.unpackOf(rest.length >= 5 ? null : rest[2]);
+    const flags = { ...(unpack.flipY ? { flipY: true } : {}), ...(unpack.premultiply ? { premultiply: true } : {}) };
     const json = 'pixels' in part ? { pixels: toBase64(part.pixels) } : part;
     if (texture.drawnAt === texture.version) {
       // The bytes of an upload are RGBA8, which an R8 or RG8 target does not hold.
@@ -3160,7 +3173,7 @@ export class WebGLContext {
       return;
     }
     // Pixels over pixels held here, unflipped and premultiplied alike, are written in place.
-    const inPlace = texture.pixels !== null && texture.patches.length === 0 && !texture.flipY && !this.flipY && texture.premultiply === this.premultiply;
+    const inPlace = texture.pixels !== null && texture.patches.length === 0 && !texture.flipY && !unpack.flipY && texture.premultiply === unpack.premultiply;
     if ('pixels' in part && inPlace) {
       const held = texture.pixels!;
       for (let y = 0; y < height; y += 1) {
@@ -3923,19 +3936,6 @@ export class WebGLContext {
     return id;
   }
 
-  /** A cube map in the recording: its six faces, or none while it is incomplete (it then samples as opaque black). */
-  private cubeJson(cube: WebGLTexture): GlslTexture {
-    if (!this.cubeComplete(cube)) return { cube: true, faces: [] };
-    const faces = cube.faces!.map((f) => ({
-      ...(f.floats !== null
-        ? { floats: toBase64(new Uint8Array(f.floats.buffer, f.floats.byteOffset, f.floats.byteLength)), ...(f.float32 ? { float32: true } : {}) }
-        : f.src !== null ? { src: f.src } : { pixels: toBase64(f.pixels ?? new Uint8Array(0)) }),
-      ...(f.flipY ? { flipY: true } : {}),
-      ...(f.premultiply ? { premultiply: true } : {}),
-    }));
-    return id;
-  }
-
   /** Whether a framebuffer drew in a layer of the 3D or array texture: its layers are render targets from then on. */
   private static drawnLayers(texture: WebGLTexture): boolean {
     return texture.layers?.version === texture.version && texture.layers.textures.some((t) => t.drawnAt === t.version);
@@ -3951,6 +3951,19 @@ export class WebGLContext {
       ...(texture.target === GL2.TEXTURE_2D_ARRAY ? { array: true } : {}),
       targets: texture.layers!.textures.map((t) => this.registerTarget(t)),
     });
+    return id;
+  }
+
+  /** A cube map in the recording: its six faces, or none while it is incomplete (it then samples as opaque black). */
+  private cubeJson(cube: WebGLTexture): GlslTexture {
+    if (!this.cubeComplete(cube)) return { cube: true, faces: [] };
+    const faces = cube.faces!.map((f) => ({
+      ...(f.floats !== null
+        ? { floats: toBase64(new Uint8Array(f.floats.buffer, f.floats.byteOffset, f.floats.byteLength)), ...(f.float32 ? { float32: true } : {}) }
+        : f.src !== null ? { src: f.src } : { pixels: toBase64(f.pixels ?? new Uint8Array(0)) }),
+      ...(f.flipY ? { flipY: true } : {}),
+      ...(f.premultiply ? { premultiply: true } : {}),
+    }));
     return { cube: true, width: cube.faces![0]!.width, height: cube.faces![0]!.width, faces, ...(cube.mipmaps ? { mipmaps: true } : {}), ...(cube.faces![0]!.format === GL2.SRGB8_ALPHA8 ? { srgb: true } : {}) };
   }
 

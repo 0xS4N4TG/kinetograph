@@ -409,6 +409,40 @@ describe('the recording WebGL context', () => {
     expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 1, GL.RGBA, 3, 3, 0, GL.RGBA, GL.UNSIGNED_BYTE, null)).toThrow(/level 1 of 3 x 3/);
   });
 
+  it('uploads an ImageBitmap as the bitmap is, whatever UNPACK_FLIP_Y_WEBGL and UNPACK_PREMULTIPLY_ALPHA_WEBGL say', () => {
+    const picture = { width: 2, height: 1, source: { kind: 'src', src: 'data:image/png;base64,AAAA' } };
+    class FakeBitmap {
+      [Symbol.for('kinetograph.canvasSource')]() {
+        return picture;
+      }
+    }
+    const globals = globalThis as { ImageBitmap?: unknown };
+    const before = globals.ImageBitmap;
+    globals.ImageBitmap = FakeBitmap;
+    try {
+      const { gl, program } = setup();
+      const texture = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, texture);
+      // A page sets these for the uploads of other textures and leaves them on.
+      gl.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, true);
+      gl.pixelStorei(GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 2, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+      gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, GL.RGBA, GL.UNSIGNED_BYTE, new FakeBitmap());
+      // The same state applies to the same picture when it is not a bitmap.
+      globals.ImageBitmap = undefined;
+      gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, GL.RGBA, GL.UNSIGNED_BYTE, new FakeBitmap());
+      gl.uniform1i(gl.getUniformLocation(program, 'tex'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      const content = gl.content();
+      const draw = content.ops.at(-1)!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      const picture1 = { x: 0, y: 0, width: 2, height: 1, src: 'data:image/png;base64,AAAA' };
+      expect(content.textures[draw.units['0']!.texture]!.patches).toEqual([picture1, { ...picture1, flipY: true, premultiply: true }]);
+    } finally {
+      globals.ImageBitmap = before;
+    }
+  });
+
   it('says unsupported, naming what to do, for what it does not draw', () => {
     const { gl } = setup();
     const refused = (fn: () => void): string => {
