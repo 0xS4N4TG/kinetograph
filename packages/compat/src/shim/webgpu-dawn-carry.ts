@@ -10,6 +10,8 @@
 //   - it reads a resource that nothing wrote yet but that something can write (a feedback texture's first read), or
 //   - it writes a resource that an earlier frame read while nothing had written it (the other texture of a ping-pong: a
 //     frame jumped to reads the one the frame before wrote and writes the one an earlier frame read empty), or
+//   - the page reads occlusion query results back (a buffer resolved from an occlusion query set, or a copy of one, is mapped): an
+//     object it draws is hidden or not by what the frame before drew, so the frame before has to be drawn, with its results read, or
 //   - it reads a resource written in an earlier frame and the resource is written again after that read (a ping-pong,
 //     an accumulation, a particle buffer). A resource that is written once and read for ever (a mip chain, a baked
 //     texture, a vertex buffer) is not, and neither is one written in the frame before every read of it (a uniform
@@ -34,6 +36,8 @@ const states = new WeakMap<object, State>();
 const views = new WeakMap<object, Any>();
 const groups = new WeakMap<object, { buffers: Any[]; textures: Any[] }>();
 const computePasses = new WeakSet<object>();
+/** Buffers that hold occlusion query results, or a copy of them: what a page reads from one decides what it draws next. */
+const occlusionResults = new WeakSet<object>();
 /** Whether a render pipeline tests depth or stencil, so that what a depth attachment was loaded with can change the picture. */
 const testsDepth = new WeakMap<object, boolean>();
 /** A render pass that loaded a depth attachment: the texture and the epoch of its last write before the pass, until a pipeline that tests it is set. */
@@ -174,6 +178,11 @@ export function trackCarry(g: Record<string, Any>, clock: () => number): void {
   });
   wrap(g.GPUBuffer.prototype, 'mapAsync', function ([mode]) {
     if (((mode as number) & 0x02) !== 0) write(this);
+    // The results come from the draws of the frame the page maps them in; it uses them in the next one, whichever way that is reached.
+    if (occlusionResults.has(this) && paused === 0) {
+      flagged = true;
+      flaggedOutside = true;
+    }
   });
   const noteDepthTest = (pipeline: Any, descriptor: Any): void => {
     const ds = descriptor?.depthStencil;
@@ -244,12 +253,19 @@ export function trackCarry(g: Record<string, Any>, clock: () => number): void {
   }
   wrap(g.GPUComputePassEncoder.prototype, 'dispatchWorkgroupsIndirect', function ([buffer]) { read(buffer); });
   const copies = g.GPUCommandEncoder.prototype;
-  wrap(copies, 'copyBufferToBuffer', function ([from, , to]) { read(from); write(to); });
+  wrap(copies, 'copyBufferToBuffer', function ([from, , to]) {
+    if (occlusionResults.has(from)) occlusionResults.add(to);
+    read(from);
+    write(to);
+  });
   wrap(copies, 'copyBufferToTexture', function ([from, to]) { read(from.buffer); write(to.texture); });
   wrap(copies, 'copyTextureToBuffer', function ([from, to]) { read(from.texture); write(to.buffer); });
   wrap(copies, 'copyTextureToTexture', function ([from, to]) { read(from.texture); write(to.texture); });
   wrap(copies, 'clearBuffer', function ([buffer]) { write(buffer); });
-  wrap(copies, 'resolveQuerySet', function ([, , , buffer]) { write(buffer); });
+  wrap(copies, 'resolveQuerySet', function ([set, , , buffer]) {
+    if (set?.type === 'occlusion') occlusionResults.add(buffer);
+    write(buffer);
+  });
   wrap(g.GPUQueue.prototype, 'writeBuffer', function ([buffer]) { write(buffer); });
   wrap(g.GPUQueue.prototype, 'writeTexture', function ([destination]) { write(destination.texture); });
 }

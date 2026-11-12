@@ -67,7 +67,7 @@ function drawInOrder(entry: string, frames: number[], strict = false): { md5: Re
       catch (error) { out.errors[frame] = String(error.message); }
     }
     out.leftOut = JSON.stringify(drawer.report());
-    source.dispose();
+    // Answered before the project is disposed: the process ends here (a device being destroyed at exit is not what is tested).
     console.log(JSON.stringify(out));
     process.exit(0);`;
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', script, entry, strict ? 'strict' : 'loose', ...frames.map(String)], { encoding: 'utf8', env });
@@ -108,6 +108,14 @@ describe.skipIf(missing !== null)('WebGPU through Dawn, rendered', () => {
   it('draws a page that keeps a feedback texture and advances particles in a compute pass the same alone and in a sequence', () => {
     const { still, one, four } = hashes(join(fixtures, 'stateful.html'), [0, 5, 8], 9);
     expect(new Set(still).size).toBe(3);
+    expect(one).toEqual(still);
+    expect(four).toEqual(still);
+  });
+
+  it('draws a page that reads occlusion query results back, whose next frame depends on them, the same alone and in a sequence', () => {
+    const { still, one, four } = hashes(join(fixtures, 'occlusion.html'), [3, 6, 9, 11], 12);
+    // The background turns when the small square comes out from behind the large one: the frames are not all the same.
+    expect(new Set(still).size).toBeGreaterThan(1);
     expect(one).toEqual(still);
     expect(four).toEqual(still);
   });
