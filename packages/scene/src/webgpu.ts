@@ -8,8 +8,10 @@
 // or into a 2D texture and compute passes (`dispatchWorkgroups`), `draw` and `drawIndexed`, `writeBuffer`, and textures:
 // `createTexture` (storage textures included), `createView`, `createSampler`, `writeTexture`, `copyExternalImageToTexture`,
 // `copyBufferToTexture`, `copyTextureToTexture`; a depth attachment (`depth16unorm`, `depth24plus`, `depth32float`) with depth
-// state and comparison samplers; multisampled passes; render bundles (their commands run in the pass that executes them). Indirect calls, the stencil, several colour
-// attachments and reading anything back are not recorded: the call throws `WebGpuUnsupportedError` and the frame reports it
+// state and comparison samplers; multisampled passes, several colour attachments, 2d-array, cube and 3d textures, render
+// bundles (their commands run in the pass that executes them), and indirect draws and dispatches (arguments the queue has
+// are read at the submit and recorded as the plain call; arguments a pass wrote are replayed indirect). The stencil and
+// reading anything back are not recorded: the call throws `WebGpuUnsupportedError` and the frame reports it
 // (`WebGpuContent.notes`). Query sets are accepted and measure nothing (`webgpu-queries.ts`).
 //
 // A buffer's bytes are shadowed here, and a submit snapshots the ones its passes only read, so a frame's recording holds
@@ -688,7 +690,8 @@ type PassCommand =
   | { c: 'bind'; index: number; group: GPUBindGroupShim; offsets?: number[] }
   | { c: 'vertex'; slot: number; buffer: GPUBufferShim; offset: number; size?: number }
   | { c: 'index'; buffer: GPUBufferShim; format: string; offset: number; size?: number }
-  | Exclude<WebGpuCommand, { c: 'pipeline' | 'bind' | 'vertex' | 'index' }>;
+  | { c: 'drawIndirect' | 'drawIndexedIndirect'; buffer: GPUBufferShim; offset: number }
+  | Exclude<WebGpuCommand, { c: 'pipeline' | 'bind' | 'vertex' | 'index' | 'drawIndirect' | 'drawIndexedIndirect' }>;
 
 interface TextureRegion {
   texture: GPUTextureShim;
@@ -701,7 +704,8 @@ interface TextureRegion {
 type ComputeRecord =
   | { c: 'pipeline'; pipeline: GPUComputePipelineShim }
   | { c: 'bind'; index: number; group: GPUBindGroupShim; offsets?: number[] }
-  | { c: 'dispatch'; x: number; y: number; z: number };
+  | { c: 'dispatch'; x: number; y: number; z: number }
+  | { c: 'dispatchIndirect'; buffer: GPUBufferShim; offset: number };
 
 type EncodedItem =
   | { kind: 'pass'; attachment: Attachment; commands: PassCommand[] }
@@ -778,9 +782,27 @@ abstract class RenderCommands extends GpuObject {
     this.state.check('drawIndexed', true);
     this.add({ c: 'drawIndexed', indices, instances, first, base, firstInstance });
   }
+  drawIndirect(buffer: GPUBufferShim, offset = 0): void {
+    indirectIn('drawIndirect', buffer, offset, 16);
+    this.state.check('drawIndirect', false);
+    this.add({ c: 'drawIndirect', buffer, offset });
+  }
+  drawIndexedIndirect(buffer: GPUBufferShim, offset = 0): void {
+    indirectIn('drawIndexedIndirect', buffer, offset, 20);
+    this.state.check('drawIndexedIndirect', true);
+    this.add({ c: 'drawIndexedIndirect', buffer, offset });
+  }
   pushDebugGroup(): void {}
   popDebugGroup(): void {}
   insertDebugMarker(): void {}
+}
+
+/** The buffer an indirect call reads its arguments from: made with INDIRECT, with `bytes` at a multiple of 4 inside it. */
+function indirectIn(call: string, buffer: GPUBufferShim, offset: number, bytes: number): void {
+  if (!(buffer instanceof GPUBufferShim)) throw new TypeError(`${call}: 'indirectBuffer' is not a GPUBuffer`);
+  if ((buffer.usage & GPU_BUFFER_USAGE.INDIRECT) === 0) throw new RangeError(`OperationError: ${call}: the buffer was made without GPUBufferUsage.INDIRECT`);
+  if (!Number.isInteger(offset) || offset < 0 || offset % 4 !== 0) throw new RangeError(`OperationError: ${call}: the offset ${String(offset)} is not a multiple of 4`);
+  if (offset + bytes > buffer.size) throw new RangeError(`OperationError: ${call}: the ${bytes} bytes of arguments at ${offset} are past the end of the buffer (${buffer.size} bytes)`);
 }
 
 export class GPURenderPassEncoderShim extends RenderCommands {
@@ -845,12 +867,6 @@ export class GPURenderPassEncoderShim extends RenderCommands {
     this.add({ c: 'blend', color: [r, g, b, a] });
   }
   setStencilReference(): void {}
-  drawIndirect(): never {
-    throw this.encoder.device.unsupported('renderPass.drawIndirect');
-  }
-  drawIndexedIndirect(): never {
-    throw this.encoder.device.unsupported('renderPass.drawIndexedIndirect');
-  }
   /**
    * Runs the bundles' commands here, in order, as if the pass had recorded them; then, as the spec says, the pipeline, bind
    * groups and vertex and index buffers are unset (the viewport, scissor and blend constant are not).
@@ -916,12 +932,6 @@ export class GPURenderBundleEncoderShim extends RenderCommands {
     if (depth?.write && made.depthReadOnly) throw new RangeError('OperationError: setPipeline: the pipeline writes depth and the bundle depth is read-only');
     this.state.pipeline = pipeline;
     this.add({ c: 'pipeline', pipeline });
-  }
-  drawIndirect(): never {
-    throw this.device.unsupported('renderBundle.drawIndirect');
-  }
-  drawIndexedIndirect(): never {
-    throw this.device.unsupported('renderBundle.drawIndexedIndirect');
   }
   finish(descriptor?: { label?: string }): GPURenderBundleShim {
     if (this.ended) throw new Error('InvalidStateError: the render bundle encoder has finished');
@@ -993,8 +1003,12 @@ export class GPUComputePassEncoderShim extends GpuObject {
     this.checkBindings(call);
     this.add({ c: 'dispatch', x: dims[0]!, y: dims[1]!, z: dims[2]! });
   }
-  dispatchWorkgroupsIndirect(): never {
-    throw this.encoder.device.unsupported('computePass.dispatchWorkgroupsIndirect');
+  dispatchWorkgroupsIndirect(buffer: GPUBufferShim, offset = 0): void {
+    const call = 'dispatchWorkgroupsIndirect';
+    if (this.pipeline === null) throw new Error(`InvalidStateError: ${call} before setPipeline`);
+    indirectIn(call, buffer, offset, 12);
+    this.checkBindings(call);
+    this.add({ c: 'dispatchIndirect', buffer, offset });
   }
   /** Every group the pipeline's layout names is set and fits it; no resource is written and used again in one dispatch. */
   private checkBindings(call: string): void {
@@ -1914,6 +1928,24 @@ export class GPUDeviceShim extends EventTarget {
         case 'index':
           out.push({ ...command, buffer: this.bufferId(command.buffer, tables, gpuBuffers, reads) });
           break;
+        case 'drawIndirect':
+        case 'drawIndexedIndirect': {
+          const { buffer, offset } = command;
+          if (buffer.gpu) {
+            out.push({ c: command.c, buffer: this.bufferId(buffer, tables, gpuBuffers, reads), offset });
+            break;
+          }
+          // The arguments are the buffer's bytes as the queue has them now, so the call is the plain draw they describe.
+          const words = new DataView(buffer.data.buffer, buffer.data.byteOffset + offset);
+          const [count, instances, first] = [words.getUint32(0, true), words.getUint32(4, true), words.getUint32(8, true)];
+          const indexed = command.c === 'drawIndexedIndirect';
+          const base = indexed ? words.getInt32(12, true) : 0;
+          const firstInstance = words.getUint32(indexed ? 16 : 12, true);
+          // Without the indirect-first-instance feature a draw with a first instance does nothing.
+          if (firstInstance !== 0) break;
+          out.push(indexed ? { c: 'drawIndexed', indices: count, instances, first, base, firstInstance } : { c: 'draw', vertices: count, instances, first, firstInstance });
+          break;
+        }
         default:
           out.push(command);
       }
@@ -1975,6 +2007,19 @@ export class GPUDeviceShim extends EventTarget {
         case 'dispatch':
           out.push(command);
           break;
+        case 'dispatchIndirect': {
+          const { buffer, offset } = command;
+          if (buffer.gpu) {
+            out.push({ c: 'dispatchIndirect', buffer: this.bufferId(buffer, tables, gpuBuffers, reads), offset });
+            break;
+          }
+          const words = new DataView(buffer.data.buffer, buffer.data.byteOffset + offset);
+          const dims = [words.getUint32(0, true), words.getUint32(4, true), words.getUint32(8, true)];
+          // A count over the device's limit makes the dispatch do nothing.
+          if (dims.some((n) => n > this.limits.maxComputeWorkgroupsPerDimension!)) break;
+          out.push({ c: 'dispatch', x: dims[0]!, y: dims[1]!, z: dims[2]! });
+          break;
+        }
       }
     }
     if (!out.some((c) => c.c === 'dispatch')) return;

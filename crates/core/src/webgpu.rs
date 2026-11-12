@@ -363,6 +363,16 @@ pub enum Command {
         base: i32,
         first_instance: u32,
     },
+    /// An indirect draw of the arguments a pass wrote into `buffer` (a key of `gpu_buffers`): four u32 at `offset`.
+    DrawIndirect {
+        buffer: String,
+        offset: u64,
+    },
+    /// An indirect indexed draw: five words at `offset`.
+    DrawIndexedIndirect {
+        buffer: String,
+        offset: u64,
+    },
     #[serde(rename_all = "camelCase")]
     Viewport {
         x: f32,
@@ -530,6 +540,11 @@ pub enum ComputeCommand {
         x: u32,
         y: u32,
         z: u32,
+    },
+    /// A dispatch of the counts a pass wrote into `buffer` (a key of `gpu_buffers`): three u32 at `offset`.
+    DispatchIndirect {
+        buffer: String,
+        offset: u64,
     },
 }
 
@@ -744,6 +759,8 @@ pub const MAX_STEPS: usize = 4096;
 /// The most dispatches, and the most workgroups all of them together launch, in one frame.
 pub const MAX_DISPATCHES: usize = 4096;
 pub const MAX_WORKGROUPS: u64 = 1 << 26;
+/// The workgroups charged to the frame's budget for a dispatch whose counts a pass wrote.
+pub const INDIRECT_WORKGROUPS: u64 = 1 << 16;
 
 /// How a texture of a format is read by a shader.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -922,6 +939,15 @@ pub fn packed_len(width: u32, height: u32, texel: u64) -> Result<usize, String> 
 pub fn base64_len(base64: &str) -> u64 {
     let padding = base64.bytes().rev().take_while(|b| *b == b'=').count().min(2) as u64;
     (base64.len() as u64 / 4 * 3).saturating_sub(padding)
+}
+
+/// The arguments of an indirect call: `bytes` at a multiple of 4 inside a buffer the GPU writes.
+fn indirect_checks(content: &WebGpuContent, call: &str, buffer: &str, offset: u64, bytes: u64) -> Result<(), String> {
+    let found = content.gpu_buffers.get(buffer).ok_or_else(|| format!("{call}: buffer {buffer} is not one the GPU writes"))?;
+    if offset % 4 != 0 || offset.checked_add(bytes).is_none_or(|end| end > found.size) {
+        return Err(format!("{call}: {bytes} bytes of arguments at {offset} in the buffer {buffer} of {} bytes", found.size));
+    }
+    Ok(())
 }
 
 fn texture_of<'a>(content: &'a WebGpuContent, id: &str) -> Result<&'a Texture, String> {
@@ -1332,8 +1358,11 @@ fn validate_step(content: &WebGpuContent, step: &Step, limits: &Limits, dispatch
                 }
             }
             for command in &pass.commands {
-                if let Command::Bind { index, group, .. } = command {
-                    bind_checks(content, *index, group, limits)?;
+                match command {
+                    Command::Bind { index, group, .. } => bind_checks(content, *index, group, limits)?,
+                    Command::DrawIndirect { buffer, offset } => indirect_checks(content, "drawIndirect", buffer, *offset, 16)?,
+                    Command::DrawIndexedIndirect { buffer, offset } => indirect_checks(content, "drawIndexedIndirect", buffer, *offset, 20)?,
+                    _ => {}
                 }
             }
         }
@@ -1348,6 +1377,21 @@ fn validate_step(content: &WebGpuContent, step: &Step, limits: &Limits, dispatch
                         pipeline = true;
                     }
                     ComputeCommand::Bind { index, group, .. } => bind_checks(content, *index, group, limits)?,
+                    ComputeCommand::DispatchIndirect { buffer, offset } => {
+                        if !pipeline {
+                            return Err("dispatchWorkgroupsIndirect before setPipeline".into());
+                        }
+                        indirect_checks(content, "dispatchWorkgroupsIndirect", buffer, *offset, 12)?;
+                        // The counts are not known until a pass has written them: each is charged a fixed share of the budget.
+                        *dispatches += 1;
+                        *workgroups = workgroups.saturating_add(INDIRECT_WORKGROUPS);
+                        if *dispatches > MAX_DISPATCHES {
+                            return Err(format!("more than {MAX_DISPATCHES} dispatches in a frame"));
+                        }
+                        if *workgroups > MAX_WORKGROUPS {
+                            return Err(format!("the frame's dispatches launch more than {MAX_WORKGROUPS} workgroups"));
+                        }
+                    }
                     ComputeCommand::Dispatch { x, y, z } => {
                         if !pipeline {
                             return Err("dispatchWorkgroups before setPipeline".into());

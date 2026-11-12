@@ -133,3 +133,8 @@ fn webgpu_cube() {
 fn webgpu_volume() {
     run("webgpu_volume", 1.0);
 }
+
+#[test]
+fn webgpu_indirect() {
+    run("webgpu_indirect", 1.0);
+}

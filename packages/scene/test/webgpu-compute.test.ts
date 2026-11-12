@@ -179,12 +179,6 @@ describe('compute pipelines and passes', () => {
     present(device, context, texture);
     expect(computeSteps(context.content().webgpu!)).toHaveLength(0);
   });
-
-  it('says what is not drawn: indirect dispatches', async () => {
-    const { device } = await setup();
-    const pass = device.createCommandEncoder().beginComputePass();
-    expect(() => pass.dispatchWorkgroupsIndirect()).toThrow(WebGpuUnsupportedError);
-  });
 });
 
 describe('the checks a compute call gets on the page side', () => {

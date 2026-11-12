@@ -1224,6 +1224,9 @@ export type WebGpuCommand =
   | { c: 'index'; buffer: string; format: string; offset: number; size?: number }
   | { c: 'draw'; vertices: number; instances: number; first: number; firstInstance: number }
   | { c: 'drawIndexed'; indices: number; instances: number; first: number; base: number; firstInstance: number }
+  /** An indirect draw whose arguments a pass wrote: `buffer` is a key of `gpuBuffers`. (Arguments the CPU knows are recorded as `draw`.) */
+  | { c: 'drawIndirect'; buffer: string; offset: number }
+  | { c: 'drawIndexedIndirect'; buffer: string; offset: number }
   | { c: 'viewport'; x: number; y: number; width: number; height: number; minDepth: number; maxDepth: number }
   | { c: 'scissor'; x: number; y: number; width: number; height: number }
   | { c: 'blend'; color: [number, number, number, number] };
@@ -1248,7 +1251,9 @@ export interface WebGpuPass {
 export type WebGpuComputeCommand =
   | { c: 'pipeline'; id: string }
   | { c: 'bind'; index: number; group: string; offsets?: number[] }
-  | { c: 'dispatch'; x: number; y: number; z: number };
+  | { c: 'dispatch'; x: number; y: number; z: number }
+  /** A dispatch whose counts a pass wrote: `buffer` is a key of `gpuBuffers`. (Counts the CPU knows are recorded as `dispatch`.) */
+  | { c: 'dispatchIndirect'; buffer: string; offset: number };
 
 /** A compute pass: it writes the storage textures and storage buffers its bind groups hold. */
 export interface WebGpuCompute {

@@ -223,6 +223,7 @@ impl Compositor {
                         | wgpu::BufferUsages::STORAGE
                         | wgpu::BufferUsages::VERTEX
                         | wgpu::BufferUsages::INDEX
+                        | wgpu::BufferUsages::INDIRECT
                         | wgpu::BufferUsages::COPY_SRC
                         | wgpu::BufferUsages::COPY_DST,
                     mapped_at_creation: false,
@@ -659,6 +660,18 @@ impl Compositor {
                         *base,
                         *first_instance..first_instance.saturating_add(*instances),
                     );
+                }
+                Command::DrawIndirect { buffer, offset } => {
+                    if !has_pipeline {
+                        return Err("drawIndirect before setPipeline".into());
+                    }
+                    rp.draw_indirect(buffer_in(res, buffer)?, *offset);
+                }
+                Command::DrawIndexedIndirect { buffer, offset } => {
+                    if !has_pipeline || index_size.is_none() {
+                        return Err("drawIndexedIndirect before setPipeline and setIndexBuffer".into());
+                    }
+                    rp.draw_indexed_indirect(buffer_in(res, buffer)?, *offset);
                 }
                 Command::Viewport {
                     x,
@@ -1371,6 +1384,12 @@ fn webgpu_compute(
                     return Err("dispatchWorkgroups before setPipeline".into());
                 }
                 cp.dispatch_workgroups(*x, *y, *z);
+            }
+            wg::ComputeCommand::DispatchIndirect { buffer, offset } => {
+                if !has_pipeline {
+                    return Err("dispatchWorkgroupsIndirect before setPipeline".into());
+                }
+                cp.dispatch_workgroups_indirect(buffer_in(res, buffer)?, *offset);
             }
         }
     }
