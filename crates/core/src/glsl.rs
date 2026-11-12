@@ -979,6 +979,10 @@ struct Rewritten {
     unwritten: Vec<String>,
     /// The structs the shader defines, by name and text (on one line): they go ahead of the uniform block, which may use them.
     structs: Vec<(String, String)>,
+    /// The carriers of the struct uniforms whose layout needs padding (`carrier_of`): they go after `structs`.
+    carriers: Vec<(String, String)>,
+    /// The struct uniforms that arrive in a carrier and are copied into a variable of the page's own type.
+    struct_loads: Vec<UniformDecl>,
     /// The varyings this stage declared, with their locations.
     varyings: Vec<(String, u32, String)>,
     /// The locations of the fragment shader's outputs.
@@ -1068,6 +1072,8 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         mat_attributes: Vec::new(),
         unwritten: Vec::new(),
         structs: Vec::new(),
+        carriers: Vec::new(),
+        struct_loads: Vec::new(),
         varyings: Vec::new(),
         outputs: Vec::new(),
         uses_frag_coord: false,
@@ -1183,7 +1189,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
     // The prelude is one line of its own, so a line of the page's source is two
     // lines down in the rewritten text.
     let mut prelude = String::new();
-    for (_, text) in &r.structs {
+    for (_, text) in r.structs.iter().chain(&r.carriers) {
         prelude.push_str(text);
     }
     prelude.push_str(&builtin_helpers(&body));
@@ -1263,6 +1269,10 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         let suffix = array.as_ref().map(|n| format!("[{n}]")).unwrap_or_default();
         prelude.push_str(&format!("mat2 {name}{suffix}; "));
     }
+    for u in &r.struct_loads {
+        let suffix = u.array.as_ref().map(|n| format!("[{n}]")).unwrap_or_default();
+        prelude.push_str(&format!("{} {}{suffix}; ", u.ty, u.name));
+    }
     for a in &r.packed {
         prelude.push_str(&format!("{} {}[{}]; ", a.ty, a.name, a.len));
     }
@@ -1335,6 +1345,9 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         wrapper.push_str(&format!(
             "for (int _k_i = 0; _k_i < {len}; _k_i++) {{ {name}[_k_i] = {from}; }} "
         ));
+    }
+    for u in &r.struct_loads {
+        wrapper.push_str(&struct_load(&r.structs, &r.carriers, u));
     }
     for used in &r.blocks {
         wrapper.push_str(&glsl_blocks::loader(&blocks[used.slot], used)?);
@@ -2191,12 +2204,25 @@ fn declaration(
                     });
                 } else if let Some((_, definition)) = r.structs.iter().find(|(n, _)| *n == ty) {
                     check_uniform_struct(&name, &ty, definition, &r.structs)?;
-                    pad_uniform_struct(&mut r.structs, &ty);
-                    r.uniforms.push(UniformDecl {
-                        name,
-                        ty: ty.clone(),
-                        array,
-                    });
+                    if carrier_of(&r.structs, &mut r.carriers, &ty) {
+                        // The page's struct stays as it is; the uniform buffer holds a padded copy of it.
+                        r.uniforms.push(UniformDecl {
+                            name: format!("{STRUCT_CARRIER_PREFIX}{name}"),
+                            ty: format!("_k_c_{ty}"),
+                            array: array.clone(),
+                        });
+                        r.struct_loads.push(UniformDecl {
+                            name,
+                            ty: ty.clone(),
+                            array,
+                        });
+                    } else {
+                        r.uniforms.push(UniformDecl {
+                            name,
+                            ty: ty.clone(),
+                            array,
+                        });
+                    }
                 } else {
                     return Err(unsupported(format!(
                         "`{name}`: a uniform of type `{ty}` (not a type or a struct this shader defines)"
@@ -2539,7 +2565,8 @@ fn parse_stage(stage: ShaderStage, r: Rewritten) -> std::result::Result<Stage, S
         for m in members {
             let Some(name) = m.name.clone() else { continue };
             if is_struct_uniform(&module, m.ty) {
-                struct_leaves(&module, &name, m.offset, m.ty, &mut uniforms)?;
+                let real = name.strip_prefix(STRUCT_CARRIER_PREFIX).unwrap_or(&name);
+                struct_leaves(&module, real, m.offset, m.ty, &mut uniforms)?;
                 continue;
             }
             let member = member_of(&module, &name, m.offset, m.ty)?;
@@ -2638,7 +2665,11 @@ fn std140_of(structs: &[(String, String)], ty: &str, array: Option<u32>) -> Opti
         let (_, end) = std140_fields(structs, definition)?;
         (16, end.div_ceil(16) * 16)
     } else {
-        let base = ty.trim_start_matches(['i', 'u', 'b']);
+        // `ivec3`, `uvec3` and `bvec3` lay out as `vec3`; `int`, `uint` and `bool` as 4 bytes.
+        let base = ["i", "u", "b"]
+            .iter()
+            .find_map(|p| ty.strip_prefix(p).filter(|rest| rest.starts_with("vec")))
+            .unwrap_or(ty);
         match base {
             "float" | "int" | "uint" | "bool" => (4, 4),
             "vec2" => (8, 8),
@@ -2680,33 +2711,112 @@ fn std140_fields(structs: &[(String, String)], definition: &str) -> Option<(u32,
     Some((widest, end))
 }
 
-/// A struct that is a uniform gets trailing `float`s up to the 16 bytes a std140 block rounds it to. naga lays the
-/// block out with the struct as it is declared, and a back end that sizes the struct by its fields (Metal) would put
-/// what follows an array of them, or the next member of the block, where the page's bytes are not.
-fn pad_uniform_struct(structs: &mut [(String, String)], name: &str) {
-    let Some(at) = structs.iter().position(|(n, _)| n == name) else { return };
+/// The prefix of a struct uniform's name in the uniform buffer, when it arrives in a padded carrier.
+const STRUCT_CARRIER_PREFIX: &str = "_k_u_";
+
+/// The fields of a struct's text: each type with its declarators (name, array length as written).
+type StructFields = Vec<(String, Vec<(String, Option<String>)>)>;
+
+fn struct_fields(definition: &str) -> Option<StructFields> {
+    let body = definition.split_once('{').and_then(|(_, rest)| rest.rsplit_once('}')).map(|(inside, _)| inside)?;
+    let mut out = Vec::new();
+    for field in body.split(';').map(str::trim).filter(|f| !f.is_empty()) {
+        let mut words = field.split_whitespace().filter(|w| !matches!(*w, "highp" | "mediump" | "lowp"));
+        let ty = words.next()?.to_string();
+        let rest = words.collect::<Vec<_>>().join(" ");
+        let declarators = rest
+            .split(',')
+            .map(|d| match d.split_once('[') {
+                Some((name, n)) => (name.trim().to_string(), Some(n.trim_end_matches(|c: char| c == ']' || c.is_whitespace()).to_string())),
+                None => (d.trim().to_string(), None),
+            })
+            .collect();
+        out.push((ty, declarators));
+    }
+    Some(out)
+}
+
+/// The struct `name`, a uniform, needs a carrier when std140 rounds its size up to 16 bytes (or a struct it holds
+/// needs one): naga lays the buffer out with the struct as declared, and a back end that sizes the struct by its
+/// fields (Metal) would put what follows an array of them, or the next member of the buffer, where the page's bytes
+/// are not. The carrier (`_k_c_<name>`) has the same fields, with a nested struct as its own carrier, and trailing
+/// `float`s up to the rounded size; the page's struct is left as it is, since the page may construct it
+/// (`L(vec3(1.0), vec3(0.0))`). Returns whether `name` has a carrier (made if it was not).
+fn carrier_of(structs: &[(String, String)], carriers: &mut Vec<(String, String)>, name: &str) -> bool {
+    let carrier = format!("_k_c_{name}");
+    if carriers.iter().any(|(n, _)| *n == carrier) {
+        return true;
+    }
+    let Some((_, definition)) = structs.iter().find(|(n, _)| n == name) else { return false };
+    let Some(fields) = struct_fields(definition) else { return false };
     // The structs it holds first: its own size depends on theirs.
-    let nested: Vec<String> = structs[at]
-        .1
-        .split(['{', '}', ';'])
-        .filter_map(|f| f.split_whitespace().find(|w| !matches!(*w, "highp" | "mediump" | "lowp")))
-        .filter(|w| structs.iter().any(|(n, _)| n == w))
-        .map(str::to_string)
-        .collect();
-    for inner in nested {
-        if inner != name {
-            pad_uniform_struct(structs, &inner);
+    let mut nested = false;
+    for (ty, _) in &fields {
+        if ty != name && structs.iter().any(|(n, _)| n == ty) {
+            nested |= carrier_of(structs, carriers, ty);
         }
     }
-    let Some((_, end)) = std140_fields(structs, &structs[at].1) else { return };
+    let Some((_, end)) = std140_fields(structs, definition) else { return false };
     let missing = end.div_ceil(16) * 16 - end;
-    if missing == 0 || structs[at].1.contains("_k_pad") {
-        return;
+    if missing == 0 && !nested {
+        return false;
     }
-    let pads: String = (0..missing / 4).map(|i| format!("float _k_pad{i}; ")).collect();
-    let text = &mut structs[at].1;
-    if let Some(close) = text.rfind('}') {
-        text.insert_str(close, &pads);
+    let mut text = format!("struct {carrier} {{ ");
+    for (ty, declarators) in &fields {
+        let held = format!("_k_c_{ty}");
+        let ty = if carriers.iter().any(|(n, _)| *n == held) { held.as_str() } else { ty.as_str() };
+        let names: Vec<String> = declarators
+            .iter()
+            .map(|(n, a)| a.as_ref().map_or_else(|| n.clone(), |a| format!("{n}[{a}]")))
+            .collect();
+        text.push_str(&format!("{ty} {}; ", names.join(", ")));
+    }
+    for i in 0..missing / 4 {
+        text.push_str(&format!("float _k_pad{i}; "));
+    }
+    text.push_str("}; ");
+    carriers.push((carrier, text));
+    true
+}
+
+/// The statements of `main` that copy a struct uniform from its carrier into the variable of the page's type.
+fn struct_load(structs: &[(String, String)], carriers: &[(String, String)], u: &UniformDecl) -> String {
+    let (dest, src) = (u.name.clone(), format!("{STRUCT_CARRIER_PREFIX}{}", u.name));
+    let mut out = String::new();
+    match &u.array {
+        None => copy_struct(structs, carriers, &u.ty, &dest, &src, 0, &mut out),
+        Some(n) => {
+            out.push_str(&format!("for (int _k_j0 = 0; _k_j0 < {n}; _k_j0++) {{ "));
+            copy_struct(structs, carriers, &u.ty, &format!("{dest}[_k_j0]"), &format!("{src}[_k_j0]"), 1, &mut out);
+            out.push_str("} ");
+        }
+    }
+    out
+}
+
+/// `dest.f = src.f` for each field of the struct `ty`, a nested struct that has a carrier field by field.
+fn copy_struct(structs: &[(String, String)], carriers: &[(String, String)], ty: &str, dest: &str, src: &str, depth: usize, out: &mut String) {
+    let Some((_, definition)) = structs.iter().find(|(n, _)| n == ty) else { return };
+    for (field_ty, declarators) in struct_fields(definition).unwrap_or_default() {
+        let nested = carriers.iter().any(|(n, _)| *n == format!("_k_c_{field_ty}"));
+        for (name, array) in declarators {
+            let (d, s) = (format!("{dest}.{name}"), format!("{src}.{name}"));
+            let element = |d: &str, s: &str, depth: usize, out: &mut String| {
+                if nested {
+                    copy_struct(structs, carriers, &field_ty, d, s, depth, out);
+                } else {
+                    out.push_str(&format!("{d} = {s}; "));
+                }
+            };
+            match array {
+                None => element(&d, &s, depth, out),
+                Some(n) => {
+                    out.push_str(&format!("for (int _k_j{depth} = 0; _k_j{depth} < {n}; _k_j{depth}++) {{ "));
+                    element(&format!("{d}[_k_j{depth}]"), &format!("{s}[_k_j{depth}]"), depth + 1, out);
+                    out.push_str("} ");
+                }
+            }
+        }
     }
 }
 
@@ -3480,9 +3590,61 @@ mod tests {
                 })
                 .unwrap_or_else(|| panic!("no struct {name}"))
         };
-        assert_eq!(span_of("S"), 16);
-        assert_eq!(span_of("Shadow"), 32);
+        assert_eq!(span_of("_k_c_S"), 16);
+        assert_eq!(span_of("_k_c_Shadow"), 32);
+        // The page's own structs are as the page declared them.
+        assert_eq!(span_of("S"), 4);
         assert!(t.fragment.uniforms.iter().all(|u| !u.name.contains("_k_pad")));
+    }
+
+    #[test]
+    fn std140_sizes_int_uint_bool_and_their_vectors_like_float() {
+        let none: &[(String, String)] = &[];
+        for (ty, want) in [
+            ("float", (4, 4)),
+            ("int", (4, 4)),
+            ("uint", (4, 4)),
+            ("bool", (4, 4)),
+            ("ivec2", (8, 8)),
+            ("uvec3", (16, 12)),
+            ("bvec4", (16, 16)),
+            ("vec3", (16, 12)),
+            ("mat3", (16, 48)),
+            ("mat3x4", (16, 48)),
+        ] {
+            assert_eq!(std140_of(none, ty, None), Some(want), "{ty}");
+        }
+        assert_eq!(std140_of(none, "nonsense", None), None);
+        assert_eq!(std140_of(none, "ivecs", None), None);
+    }
+
+    #[test]
+    fn a_uniform_struct_with_int_fields_is_padded_and_can_still_be_constructed() {
+        let t = translate(&program(
+            QUAD_ES1,
+            "precision mediump float;\nvarying vec2 v_uv;\n\
+             struct S { vec3 a; int k; vec2 b; }; struct L { vec3 p; vec3 q; };\n\
+             uniform S u_s; uniform L u_l;\n\
+             void main() { L made = L(vec3(1.0), vec3(0.0)); \
+             gl_FragColor = vec4(u_s.a.x + float(u_s.k) + u_s.b.y + u_l.q.x + made.p.x, 0.0, 0.0, 1.0); }",
+        ))
+        .unwrap();
+        let span_of = |name: &str| {
+            t.fragment
+                .module
+                .types
+                .iter()
+                .find_map(|(_, ty)| match (&ty.name, &ty.inner) {
+                    (Some(n), naga::TypeInner::Struct { span, .. }) if n == name => Some(*span),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("no struct {name}"))
+        };
+        // S: vec3 (0..12), int (12..16), vec2 (16..24): 24 bytes, 32 in std140. L: 28, so 32.
+        assert_eq!(span_of("_k_c_S"), 32);
+        assert_eq!(span_of("_k_c_L"), 32);
+        let names: Vec<&str> = t.fragment.uniforms.iter().map(|u| u.name.as_str()).collect();
+        assert!(names.contains(&"u_s.k") && names.contains(&"u_l.q"), "{names:?}");
     }
 
     #[test]
