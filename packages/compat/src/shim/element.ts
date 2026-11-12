@@ -411,6 +411,19 @@ export class DomNodeBase {
 /** The events a page that waits for a user gesture listens for, and the elements that have such a listener (`doctor`). */
 const GESTURE_EVENTS = new Set(['click', 'pointerdown', 'mousedown', 'touchstart']);
 const gestureListeners = new Set<DomElement>();
+
+/** What plays a `<video>` or `<audio>`: the page's audio (core, page-audio.ts) is the host; with none, an element never plays. */
+export interface MediaHost {
+  paused(element: DomElement): boolean;
+  currentTime(element: DomElement, seeked: number): number;
+  seek(element: DomElement, time: number): void;
+  play(element: DomElement): void;
+  pause(element: DomElement): void;
+}
+let mediaHost: MediaHost | null = null;
+export function setMediaHost(host: MediaHost | null): void {
+  mediaHost = host;
+}
 export function gestureListenerElements(): DomElement[] {
   return [...gestureListeners];
 }
@@ -1328,11 +1341,22 @@ export class DomElement extends DomNodeBase {
     return 4;
   }
   get paused(): boolean {
-    return true;
+    return mediaHost?.paused(this) ?? true;
   }
-  currentTime = 0;
-  async play(): Promise<void> {}
-  pause(): void {}
+  private seeked = 0;
+  get currentTime(): number {
+    return mediaHost?.currentTime(this, this.seeked) ?? this.seeked;
+  }
+  set currentTime(time: number) {
+    this.seeked = time;
+    mediaHost?.seek(this, time);
+  }
+  async play(): Promise<void> {
+    mediaHost?.play(this);
+  }
+  pause(): void {
+    mediaHost?.pause(this);
+  }
   load(): void {}
   async decode(): Promise<void> {
     const load = imageLoads.get(this.host);
