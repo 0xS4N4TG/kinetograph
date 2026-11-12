@@ -2517,17 +2517,16 @@ describe('the recording WebGL context', () => {
 
     it('holds no more than the last frame of a target that each frame clears and draws inside one scissor box', () => {
       const { gl, program } = setup();
-      const { texture } = attach(gl, 8, 4);
+      const { texture, framebuffer: target } = attach(gl, 8, 4);
       const counts: number[] = [];
       for (let frame = 0; frame < 6; frame += 1) {
-        gl.bindFramebuffer(GL.FRAMEBUFFER, gl.getParameter(GL.FRAMEBUFFER_BINDING) ?? null);
+        gl.bindFramebuffer(GL.FRAMEBUFFER, target);
         gl.enable(GL.SCISSOR_TEST);
         gl.scissor(0, 0, 4, 4);
         gl.clearColor(frame / 5, 0, 0, 1);
         gl.clear(GL.COLOR_BUFFER_BIT);
         gl.drawArrays(GL.TRIANGLES, 0, 3);
         gl.disable(GL.SCISSOR_TEST);
-        const target = gl.getParameter(GL.FRAMEBUFFER_BINDING);
         drawCanvasWith(gl, program, texture);
         counts.push(gl.content().ops.length);
         gl.resetState();
