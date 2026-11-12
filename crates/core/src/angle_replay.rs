@@ -555,8 +555,13 @@ impl<'a> Replay<'a> {
             .buffers
             .get(id)
             .ok_or_else(|| format!("no buffer {id}"))?;
-        // The id is a hash of the bytes; the length of the text guards against a recording that reuses one.
-        let key = format!("{id}|{}", b64.len());
+        // The id is the recorder's name, not a promise about the bytes (another scene may reuse it): the text is hashed.
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            b64.hash(&mut h);
+            format!("{id}|{:x}", h.finish())
+        };
         let ext = self.ext;
         if let Some((name, _)) = CACHES.with(|c| {
             c.borrow()
@@ -648,26 +653,53 @@ impl<'a> Replay<'a> {
         Ok(handle)
     }
 
-    /// The key a kept texture goes by: its id, the flags it was uploaded with, and the stamp of each picture file (a
-    /// file that changes on disk is a new texture), as the hand-written replay keys it.
+    /// The key a kept texture goes by: its id and upload flags, and a hash of what it is made from. The id is the
+    /// recorder's name for it, not a promise about its content (two scenes in one process may reuse one), so the content
+    /// is hashed: the pixel or float text and `data:` sources themselves, and for a picture file its canonical path under
+    /// the scene's folder and its stamp (size and modification time), so a file that changes is a new texture.
     fn texture_key(&self, id: &str, t: &GlslTexture) -> String {
-        let stamp = |src: Option<&str>| {
-            src.filter(|s| !s.starts_with("data:"))
-                .map(|s| file_stamp(&self.base_dir.join(s)))
-                .unwrap_or_default()
-        };
-        let mut stamps = stamp(t.src.as_deref());
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        let mut source =
+            |h: &mut std::collections::hash_map::DefaultHasher, src: Option<&str>| match src {
+                Some(s) if s.starts_with("data:") => s.hash(h),
+                Some(s) => {
+                    let path = self.base_dir.join(s);
+                    std::fs::canonicalize(&path).unwrap_or(path.clone()).hash(h);
+                    file_stamp(&path).hash(h);
+                }
+                None => 0u8.hash(h),
+            };
+        (t.width, t.height, t.depth, t.array, t.cube, t.float32).hash(&mut h);
+        t.pixels.hash(&mut h);
+        t.floats.hash(&mut h);
+        source(&mut h, t.src.as_deref());
         for patch in &t.patches {
-            stamps.push('|');
-            stamps.push_str(&stamp(patch.src.as_deref()));
+            (
+                patch.x,
+                patch.y,
+                patch.width,
+                patch.height,
+                patch.flip_y,
+                patch.premultiply,
+            )
+                .hash(&mut h);
+            patch.pixels.hash(&mut h);
+            source(&mut h, patch.src.as_deref());
         }
         for face in &t.faces {
-            stamps.push('|');
-            stamps.push_str(&stamp(face.src.as_deref()));
+            (face.flip_y, face.premultiply, face.float32).hash(&mut h);
+            face.pixels.hash(&mut h);
+            face.floats.hash(&mut h);
+            source(&mut h, face.src.as_deref());
         }
         format!(
-            "{id}|{}|{}|{}|{}|{stamps}",
-            t.flip_y, t.premultiply, t.mipmaps, t.srgb
+            "{id}|{}|{}|{}|{}|{:x}",
+            t.flip_y,
+            t.premultiply,
+            t.mipmaps,
+            t.srgb,
+            h.finish()
         )
     }
 

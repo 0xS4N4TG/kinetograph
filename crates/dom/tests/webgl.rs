@@ -602,3 +602,31 @@ fn threads_painting_at_once_give_the_same_bytes() {
         }
     }
 }
+
+/// The recorder's ids are not promises about content: two scenes in one process that give a texture the same id and different
+/// pixels each show their own (a kept texture is keyed by what it is made from, not by its id).
+#[test]
+fn a_texture_id_reused_with_other_pixels_shows_the_new_pixels() {
+    let (first, w, h) = body_of("webgl_texture");
+    // 4 x 4 RGBA of grey 128, in place of the checker of the case, under the same id.
+    let grey = "gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==";
+    let marker = "\"pixels\":\"";
+    let at = first.find(marker).expect("the case has a texture of pixels") + marker.len();
+    let end = at + first[at..].find('"').unwrap();
+    let second = format!("{}{grey}{}", &first[..at], &first[end..]);
+    let render = |bodies: Vec<&String>| {
+        let bodies: Vec<String> = bodies.into_iter().cloned().collect();
+        std::thread::spawn(move || {
+            bodies.iter().map(|b| paintkit::render_body(b, w, h).1.rgba).collect::<Vec<_>>()
+        })
+        .join()
+        .unwrap()
+    };
+    let one_after_the_other = render(vec![&first, &second]);
+    let alone = render(vec![&second]);
+    assert_ne!(one_after_the_other[0], one_after_the_other[1], "the two textures draw alike");
+    assert!(
+        one_after_the_other[1] == alone[0],
+        "the second scene drew the first one's texture"
+    );
+}
