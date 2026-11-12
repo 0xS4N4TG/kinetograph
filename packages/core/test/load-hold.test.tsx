@@ -5,10 +5,10 @@
 import { Suspense, useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Rect } from '@kinetographdev/react';
-import { resetRenderState } from '../src/assets.js';
+import { PAGE_LOAD_LABEL, continueRender, delayRender, resetRenderState } from '../src/assets.js';
 import { drawWhenSettled } from '../src/canvas-draws.js';
 import { Composition, registerRoot, resetCompositions } from '../src/compositions.js';
-import { installDeterminism, resetVirtualClock, uninstallDeterminism } from '../src/determinism.js';
+import { installDeterminism, realTimers, resetVirtualClock, uninstallDeterminism } from '../src/determinism.js';
 import { createFrameRenderer } from '../src/frame-loop.js';
 import '../src/web-install.js';
 
@@ -85,5 +85,25 @@ describe('loads the page starts', () => {
     root(Missing);
     const { result } = await ids();
     expect(result.unsupported.some((u) => u.property === 'load' && String(u.value).includes('no-such-picture.png'))).toBe(true);
+  });
+
+  it('gives the animation-frame callbacks of a frame one run while the page scripts load, however long that takes', async () => {
+    let runs = 0;
+    const Page = () => {
+      useEffect(() => {
+        const handle = delayRender(PAGE_LOAD_LABEL);
+        const loop = () => {
+          runs++;
+          requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
+        // A read of a file that takes some turns of the event loop: the number of turns is not the page's clock.
+        realTimers.setTimeout(() => continueRender(handle), 60);
+      }, []);
+      return <Rect id="r" width={4} height={4} fill="#fff" />;
+    };
+    root(Page);
+    await ids();
+    expect(runs).toBe(1);
   });
 });
