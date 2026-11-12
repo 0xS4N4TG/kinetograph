@@ -454,6 +454,8 @@ class Runtime {
       const clock = this.videoClock(el, time, fps);
       // The clock the DOM painter draws the video from.
       el.setAttribute('data-kg-video', JSON.stringify(clock.attribute));
+      // A page that plays the element itself (`video.play()`) owns its clock: the virtual clock moves it, not this seek.
+      if (el.player?.paused === false) continue;
       el.currentTime = clock.currentTime;
     }
     this.applyGrading(time);
@@ -470,7 +472,10 @@ class Runtime {
     this.setup();
     this.mount();
     this.seekPage(time, total);
-    for (const el of Array.from(doc().querySelectorAll('video')) as AnyRecord[]) el.currentTime = this.videoClock(el, time, fps).currentTime;
+    for (const el of Array.from(doc().querySelectorAll('video')) as AnyRecord[]) {
+      if (el.player?.paused === false) continue;
+      el.currentTime = this.videoClock(el, time, fps).currentTime;
+    }
   }
 
   /** The clips, the timelines and the page's own drawing at `time`: what a script can see of a frame. */
