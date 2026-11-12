@@ -181,6 +181,11 @@ fn webgl2_front_face() {
 }
 
 #[test]
+fn webgl2_matrix_varying() {
+    angle_only("webgl2_matrix_varying");
+}
+
+#[test]
 fn webgl2_frag_depth_range() {
     angle_only("webgl2_frag_depth_range");
 }

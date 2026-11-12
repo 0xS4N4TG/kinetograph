@@ -3428,6 +3428,10 @@ pub fn next_level_float(texels: &Texels, width: u32, height: u32) -> (Texels, u3
 /// Translates every program of a layer, so that a scene with a shader naga
 /// cannot read fails when it loads.
 pub fn validate(layer_id: &str, content: &GlslContent) -> Result<()> {
+    // ANGLE compiles the page's own GLSL, so what the hand-written translator cannot take is no reason to refuse the scene.
+    if crate::angle::enabled() {
+        return Ok(());
+    }
     for (id, program) in &content.programs {
         translate(program, false, false)
             .map_err(|e| Error::Scene(format!("layer {layer_id:?}: glsl program {id:?}: {e}")))?;
