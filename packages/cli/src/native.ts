@@ -62,9 +62,22 @@ export function native(): Native {
   return loaded;
 }
 
+/** The file `native()` would load, for a child process to load on its own (`doctor`). Throws if the package is missing. */
+export function nativeEntry(): string {
+  return createRequire(import.meta.url).resolve('@kinetographdev/native');
+}
+
+let stubbed = false;
+
+/** Whether a test's stand-in addon is in place, which a child process could not load. */
+export function nativeIsStub(): boolean {
+  return stubbed;
+}
+
 /** Tests put a stand-in addon here. */
 export function setNativeForTests(stub: Native | undefined): void {
   loaded = stub;
+  stubbed = stub !== undefined;
 }
 
 // ---- InspectResult (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §3), which the addon returns as JSON text ----
