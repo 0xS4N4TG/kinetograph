@@ -491,6 +491,8 @@ class Runtime {
       }
       el.setAttribute('data-kg-video', JSON.stringify(clock));
       // The file's time at this instant, as a browser's seek leaves it: `drawImage(video)` reads the frame it names.
+      // A page that plays the element itself (`video.play()`) owns its clock: the virtual clock moves it, not this seek.
+      if (el.player?.paused === false) continue;
       const into = Math.max(0, time - start);
       el.currentTime = sourceOffsetOf(el) + (typeof rate === 'number' ? into * rate : sourceTimeAt(rate, into));
     }
