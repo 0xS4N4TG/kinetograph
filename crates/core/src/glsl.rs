@@ -3647,6 +3647,38 @@ mod tests {
         assert!(names.contains(&"u_s.k") && names.contains(&"u_l.q"), "{names:?}");
     }
 
+    /// The corpus the TS preprocessor reads as well (`packages/scene/test/glsl-cpp-corpus.test.ts`): the two must leave
+    /// the same uniforms declared.
+    #[test]
+    fn the_preprocessor_corpus_leaves_the_uniforms_the_ts_side_expects() {
+        let corpus: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!("../tests/fixtures/glsl-cpp-corpus.json")).unwrap();
+        assert!(corpus.len() >= 8);
+        for case in corpus {
+            let name = case["name"].as_str().unwrap();
+            let fragment = case["fragment"].as_str().unwrap();
+            let vertex = if fragment.contains("#version 300 es") {
+                "#version 300 es\nin vec2 a_pos; void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }"
+            } else {
+                "attribute vec2 a_pos; void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }"
+            };
+            let t = translate(&program(vertex, fragment)).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let got: BTreeMap<String, u64> = t
+                .fragment
+                .uniforms
+                .iter()
+                .map(|u| (u.name.clone(), u.array.map_or(1, |a| u64::from(a.0))))
+                .collect();
+            let want: BTreeMap<String, u64> = case["uniforms"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(k, v)| (k.clone(), v.as_u64().unwrap()))
+                .collect();
+            assert_eq!(got, want, "{name}");
+        }
+    }
+
     #[test]
     fn errors_name_the_line_of_the_source() {
         let e = translate(&program(

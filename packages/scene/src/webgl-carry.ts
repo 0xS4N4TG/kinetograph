@@ -15,6 +15,7 @@
 // Pure functions of the ops and what they name: nothing here reads the context.
 
 import type { GlslDraw, GlslOp, GlslProgram, GlslTexture } from './types.js';
+import { withoutComments } from './glsl-cpp.js';
 
 type Textures = Map<string, GlslTexture>;
 
@@ -78,25 +79,6 @@ function colourOutputs(op: GlslOp): { target: string; level: number }[] {
 
 /** Decodes base64 to bytes. */
 const bytesOf = (base64: string): Uint8Array => new Uint8Array(Buffer.from(base64, 'base64'));
-
-/** The source without its comments, each replaced by spaces so a position in it is a position in the original. */
-function withoutComments(source: string): string {
-  let out = '';
-  for (let i = 0; i < source.length; ) {
-    if (source.startsWith('//', i)) {
-      const end = source.indexOf('\n', i);
-      const stop = end === -1 ? source.length : end;
-      out += ' '.repeat(stop - i);
-      i = stop;
-    } else if (source.startsWith('/*', i)) {
-      const end = source.indexOf('*/', i + 2);
-      const stop = end === -1 ? source.length : end + 2;
-      out += source.slice(i, stop).replace(/[^\n]/g, ' ');
-      i = stop;
-    } else out += source[i++];
-  }
-  return out;
-}
 
 /**
  * The attribute and the literal z in the one `gl_Position = vec4(a, ..., 1.0);` of a vertex shader, when that statement

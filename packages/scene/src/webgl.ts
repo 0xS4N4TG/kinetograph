@@ -721,7 +721,7 @@ function structsOf(code: string, lengthOf: (text: string) => number | null): Map
       const f = /^\s*(?:(?:highp|mediump|lowp)\s+)?(\w+)\s+([\s\S]+)$/.exec(statement);
       if (f === null) continue;
       for (const declarator of f[2]!.split(',')) {
-        const d = /^\s*(\w+)\s*(?:\[\s*(\w+)\s*\])?\s*$/.exec(declarator);
+        const d = /^\s*(\w+)\s*(?:\[\s*([^\]]+?)\s*\])?\s*$/.exec(declarator);
         if (d === null) continue;
         const length = d[2] === undefined ? null : lengthOf(d[2]);
         fields.push({ name: d[1]!, type: f[1]!, length });
@@ -774,7 +774,7 @@ function declarations(source: string, keywords: string[]): Declaration[] {
     if (m === null || !keywords.includes(m[2]!)) continue;
     const location = /location\s*=\s*(\d+)/.exec(m[1] ?? '');
     for (const declarator of m[4]!.split(',')) {
-      const d = /^\s*(\w+)\s*(?:\[\s*(\w+)\s*\])?\s*$/.exec(declarator);
+      const d = /^\s*(\w+)\s*(?:\[\s*([^\]]+?)\s*\])?\s*$/.exec(declarator);
       if (d === null) continue;
       const length = d[2] === undefined ? 1 : lengthOf(d[2]);
       // A length that is not an integer expression of numbers and macros is left to the renderer, which refuses the program.
