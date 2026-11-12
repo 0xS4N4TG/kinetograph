@@ -33,7 +33,7 @@ function splitRules(css: string): string[] {
 }
 
 /** `a: b; c: d` as pairs (a `;` inside parentheses or quotes does not split). */
-function declarations(body: string): [string, string][] {
+export function declarations(body: string): [string, string][] {
   const out: [string, string][] = [];
   let depth = 0;
   let quote = '';

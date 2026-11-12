@@ -23,6 +23,7 @@ import {
 import type { HostElement } from './host.js';
 import { setRawParent } from './host.js';
 import { collectionOf, nodeListOf, type HTMLCollection, type NodeList } from './lists.js';
+import { parseXmlDocument, type XmlDocument } from './xml.js';
 import { cloneHost, createHostElement, createHostText, removeChild, setRemovalHook } from './tree.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -563,23 +564,13 @@ function parseHtmlDocument(markup: string): DocumentShim {
 const PARSER_TYPES = new Set(['text/html', 'text/xml', 'application/xml', 'application/xhtml+xml', 'image/svg+xml']);
 
 export class DOMParserShim {
-  parseFromString(markup: string, type: string): DocumentShim {
+  parseFromString(markup: string, type: string): DocumentShim | XmlDocument {
     if (!PARSER_TYPES.has(String(type))) {
       throw new TypeError(`Failed to execute 'parseFromString' on 'DOMParser': The provided value '${type}' is not a valid enum value of type DOMParserSupportedType.`);
     }
     const text = String(markup);
     if (type === 'text/html') return parseHtmlDocument(text);
-    const doc = new DocumentShim(type);
-    const nodes = parsedNodes(parseHtmlFragment(text.replace(/^\s*<\?xml[^>]*\?>/, ''), type === 'image/svg+xml' || /^\s*<svg[\s>]/i.test(text)));
-    const root = nodes.find((n): n is HostElement => n.kind === 'element');
-    if (root === undefined) {
-      const error = createHostElement('parsererror');
-      adopt(error, createHostText('This page contains the following errors: no root element'));
-      doc.setRoot(error);
-    } else {
-      doc.setRoot(root);
-    }
-    return doc;
+    return parseXmlDocument(text, type);
   }
 }
 
