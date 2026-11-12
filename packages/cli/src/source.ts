@@ -42,7 +42,7 @@ export interface FrameOutput {
   sceneJson: string;
   audio: AudioClipJson[];
   /** What the page did with its `AudioContext` since the last frame (a scene file has none). */
-  pageAudio: PageAudioOp[];
+  pageAudio?: PageAudioOp[];
   /** Every `<Sequence>` in the frame's tree (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §11.4); none for a scene file. */
   sequences?: SequenceJson[];
   /** Layer id to name and source; only in the studio's builds. */
