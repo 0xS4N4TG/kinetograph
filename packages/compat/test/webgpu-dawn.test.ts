@@ -424,6 +424,54 @@ describe.skipIf(missing !== null)('WebGPU through Dawn', () => {
     device.destroy();
   });
 
+  it('keeps the canvas texture from frame to frame, cleared at each frame\'s first use, until the size or the configuration changes', async () => {
+    const adapter = await gpu.requestAdapter();
+    const device = await adapter.requestDevice();
+    let size = { width: 8, height: 4 };
+    const context = new DawnCanvasContext({ size: () => size });
+    context.configure({ device, format: 'rgba8unorm', alphaMode: 'premultiplied' });
+    const pixelAt = async (): Promise<number[]> => {
+      await flushDawnCanvases();
+      const picture = context.picture!;
+      // The straight pixels of the read-back, through the same conversion the copy of a canvas uses.
+      return [...context.pixels().rgba.subarray(0, 4)].concat([picture.width]);
+    };
+    // Frame 1 draws red; frame 2 loads what the canvas holds and draws nothing: it holds transparent black, not frame 1's red.
+    context.resetState();
+    const first = context.getCurrentTexture();
+    let encoder = device.createCommandEncoder();
+    encoder.beginRenderPass({ colorAttachments: [{ view: first.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 1, g: 0, b: 0, a: 1 } }] }).end();
+    device.queue.submit([encoder.finish()]);
+    if (hasAddonFunction('getCanvasPixels')) expect(await pixelAt()).toEqual([255, 0, 0, 255, 8]);
+    else await flushDawnCanvases();
+    context.resetState();
+    const second = context.getCurrentTexture();
+    expect(second).toBe(first);
+    expect(context.getCurrentTexture()).toBe(first);
+    encoder = device.createCommandEncoder();
+    encoder.beginRenderPass({ colorAttachments: [{ view: second.createView(), loadOp: 'load', storeOp: 'store' }] }).end();
+    device.queue.submit([encoder.finish()]);
+    if (hasAddonFunction('getCanvasPixels')) expect(await pixelAt()).toEqual([0, 0, 0, 0, 8]);
+    else await flushDawnCanvases();
+    // A size change makes a new texture, so does a configuration; a frame that draws nothing leaves the texture as it is.
+    context.resetState();
+    size = { width: 4, height: 4 };
+    const resized = context.getCurrentTexture();
+    expect(resized).not.toBe(first);
+    expect(resized.width).toBe(4);
+    context.resetState();
+    context.configure({ device, format: 'rgba8unorm', alphaMode: 'opaque' });
+    expect(context.getCurrentTexture()).not.toBe(resized);
+    // A configuration without RENDER_ATTACHMENT cannot be cleared by a pass: a new texture each frame, as before.
+    context.configure({ device, format: 'rgba8unorm', alphaMode: 'opaque', usage: g.GPUTextureUsage.STORAGE_BINDING });
+    context.resetState();
+    const a = context.getCurrentTexture();
+    context.resetState();
+    expect(context.getCurrentTexture()).not.toBe(a);
+    context.unconfigure();
+    device.destroy();
+  });
+
   it('refuses to read a canvas the frame is still drawing, and reads it once the frame has been read back', async () => {
     const adapter = await gpu.requestAdapter();
     const device = await adapter.requestDevice();

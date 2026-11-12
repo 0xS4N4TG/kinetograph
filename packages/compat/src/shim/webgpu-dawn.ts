@@ -346,6 +346,8 @@ export class DawnCanvasContext {
   private config: { device: Any; format: string; usage: number; alphaMode: string; colorSpace: string; viewFormats: Any } | null = null;
   private texture: Any = null;
   private drawnThisFrame = false;
+  /** The texture holds transparent black for this frame: it is new, or `clear` ran since the frame began. */
+  private cleared = false;
   /** The buffer the texture is copied to: kept from frame to frame while the size is the same. */
   private readback: { buffer: Any; size: number } | null = null;
   /** What the addon holds for this canvas: the key (this thread's, this canvas's) and the newest version put. */
@@ -404,10 +406,16 @@ export class DawnCanvasContext {
       throw error;
     }
     const { width, height } = this.options.size();
+    // The texture is kept from frame to frame while the size and the configuration stay (a configuration or a size change drops it), and
+    // cleared at the first use in a frame: a canvas starts every frame transparent black.
+    if (this.texture !== null && !this.cleared && (config.usage & RENDER_ATTACHMENT) === 0) this.dropTexture();
     if (this.texture === null || this.texture.width !== width || this.texture.height !== height) {
       this.dropTexture();
-      // A new texture is transparent black, as a canvas's is at the start of a frame.
+      // A new texture is transparent black.
       this.texture = config.device.createTexture({ label: 'canvas', size: [Math.max(1, width), Math.max(1, height)], format: config.format, usage: config.usage | COPY_SRC, viewFormats: config.viewFormats });
+      this.cleared = true;
+    } else if (!this.cleared) {
+      this.clear(config.device);
     }
     startsCleared(this.texture);
     this.drawnThisFrame = true;
@@ -421,9 +429,19 @@ export class DawnCanvasContext {
 
   /** The start of a frame's render: the canvas is a new one (a frame is a function of the frame, not of the frames before). */
   resetState(): void {
-    this.dropTexture();
+    this.cleared = false;
     this.drawnThisFrame = false;
     this.picture = null;
+  }
+
+  /** One pass that clears the kept texture to transparent black, the engine's own use of it (not the page's). */
+  private clear(device: Any): void {
+    untracked(() => {
+      const encoder = device.createCommandEncoder();
+      encoder.beginRenderPass({ colorAttachments: [{ view: this.texture.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }] }).end();
+      device.queue.submit([encoder.finish()]);
+    });
+    this.cleared = true;
   }
 
   private dropTexture(): void {
@@ -433,6 +451,7 @@ export class DawnCanvasContext {
       // the device is already destroyed
     }
     this.texture = null;
+    this.cleared = false;
   }
 
   private dropReadback(): void {
