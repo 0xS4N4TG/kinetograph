@@ -98,11 +98,13 @@ export function attributeMapOf(host: object, owner: AttributeOwner): NamedNodeMa
     map = new Proxy(target, {
       get(t, prop, receiver) {
         if (typeof prop === 'string' && /^\d+$/.test(prop)) return t.item(Number(prop)) ?? undefined;
+        // `element.attributes.id` and `attributes['xlink:href']`: an attribute is also a property of the map, unless the map has one of that name.
+        if (typeof prop === 'string' && !Reflect.has(t, prop)) return t.getNamedItem(prop) ?? undefined;
         return Reflect.get(t, prop, receiver === map ? t : receiver);
       },
       has(t, prop) {
         if (typeof prop === 'string' && /^\d+$/.test(prop)) return Number(prop) < t.length;
-        return Reflect.has(t, prop);
+        return Reflect.has(t, prop) || (typeof prop === 'string' && t.getNamedItem(prop) !== null);
       },
     });
     maps.set(host, map);
