@@ -181,6 +181,16 @@ fn webgl2_front_face() {
 }
 
 #[test]
+fn webgl2_frag_depth_range() {
+    angle_only("webgl2_frag_depth_range");
+}
+
+#[test]
+fn webgl2_uniform_default_unset() {
+    angle_only("webgl2_uniform_default_unset");
+}
+
+#[test]
 fn webgl2_front_face_reset() {
     angle_only("webgl2_front_face_reset");
 }
@@ -390,6 +400,9 @@ fn a_frame_does_not_depend_on_what_the_thread_drew_before() {
         ("webgl2_float_blend", "webgl2_msaa_resolve"),
         ("webgl2_float_mipmap", "webgl_gradient"),
         ("webgl2_depth_texture", "webgl2_float_linear"),
+        // State the context keeps: a narrowed depthRange, and the uniforms of a program of the same source.
+        ("webgl2_depth_range_set", "webgl2_frag_depth_range"),
+        ("webgl2_uniform_default_set", "webgl2_uniform_default_unset"),
     ] {
         let ab = render(vec![a, b, a]);
         let ba = render(vec![b, a, b]);

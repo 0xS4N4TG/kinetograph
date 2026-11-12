@@ -166,6 +166,10 @@ struct Replay<'a> {
     /// the cube or array texture (`targets`): the target's id, to the texture's id and the face or layer.
     parts: HashMap<&'a str, (&'a str, u32)>,
     samplers: Vec<u32>,
+    /// The programs whose uniforms went back to 0 for this frame.
+    zeroed: std::collections::HashSet<u32>,
+    /// The generic attributes a draw gave a current value, to put back before the next draw.
+    const_attrs: u32,
     framebuffers: Vec<u32>,
     vao: u32,
     canvas: Canvas,
@@ -235,6 +239,9 @@ fn run(
             })
             .collect(),
         samplers: Vec::new(),
+        zeroed: std::collections::HashSet::new(),
+        // A frame starts with every current attribute value at the default, as a context just made has them.
+        const_attrs: u32::MAX,
         framebuffers: Vec::new(),
         vao: gl_.gen_vertex_array(),
         canvas: Canvas {
@@ -965,12 +972,21 @@ impl<'a> Replay<'a> {
         let dest = d.dest();
         self.bind_dest(&dest)?;
         gl_.use_program(program.name);
+        if self.zeroed.insert(program.name) {
+            zero_uniforms(gl_, &program)?;
+        }
 
         // Vertex input.
         for i in 0..16 {
             gl_.disable_vertex_attrib_array(i);
             gl_.vertex_attrib_divisor(i, 0);
+            // The current value of an attribute without an array is context state: back to the default before a draw
+            // that does not set it.
+            if self.const_attrs & (1 << i) != 0 {
+                gl_.vertex_attrib4f(i, 0.0, 0.0, 0.0, 1.0);
+            }
         }
+        self.const_attrs = 0;
         for (name, a) in &d.attributes {
             // The recorder names the columns of a `mat2`, `mat3` or `mat4` attribute `name[0]`, `name[1]`, ...; GL
             // gives the matrix one name and as many consecutive locations.
@@ -1052,9 +1068,12 @@ impl<'a> Replay<'a> {
                 None => gl_.tex_parameteri(h.target, gl::TEXTURE_COMPARE_MODE, 0),
             }
             gl_.tex_parameteri(h.target, gl::TEXTURE_BASE_LEVEL, s.base_level as i32);
-            if let Some(m) = s.max_level {
-                gl_.tex_parameteri(h.target, gl::TEXTURE_MAX_LEVEL, m as i32);
-            }
+            // The texture keeps what an earlier draw set: no `maxLevel` is the GL default, 1000.
+            gl_.tex_parameteri(
+                h.target,
+                gl::TEXTURE_MAX_LEVEL,
+                s.max_level.map_or(1000, |m| m as i32),
+            );
         }
 
         self.check("textures");
@@ -1120,6 +1139,8 @@ impl<'a> Replay<'a> {
             None => {
                 gl_.disable(gl::DEPTH_TEST);
                 gl_.depth_mask(0);
+                // The recording keeps the range only with the test on; the default is what a draw without it had.
+                gl_.depth_rangef(0.0, 1.0);
             }
         }
         match &d.polygon_offset {
@@ -1241,6 +1262,7 @@ impl<'a> Replay<'a> {
         let gl_ = self.gl;
         if let Some(v) = a.constant {
             gl_.vertex_attrib4f(loc, v[0], v[1], v[2], v[3]);
+            self.const_attrs |= 1 << loc;
             return Ok(());
         }
         let buffer = self.buffer(&a.buffer)?;
@@ -1291,9 +1313,53 @@ fn set_uniform(gl_: &Gl, program: &Program, name: &str, call: &rec::GlslUniform)
     if location < 0 {
         return Ok(());
     }
-    let f: Vec<f32> = call.value.iter().map(|v| *v as f32).collect();
-    let i: Vec<i32> = call.value.iter().map(|v| *v as i32).collect();
-    let u: Vec<u32> = call.value.iter().map(|v| *v as u32).collect();
+    write_uniform(gl_, location, ty, &call.value, name)
+}
+
+/// The numbers one element of a uniform of GL type `ty` takes.
+fn uniform_width(ty: Enum) -> Option<usize> {
+    Some(match ty {
+        0x1406 | 0x1404 | 0x8B56 | 0x1405 | 0x8B5E..=0x8B62 | 0x8DC1..=0x8DD7 => 1,
+        0x8B50 | 0x8B53 | 0x8B57 | 0x8DC6 => 2,
+        0x8B51 | 0x8B54 | 0x8B58 | 0x8DC7 => 3,
+        0x8B52 | 0x8B55 | 0x8B59 | 0x8DC8 | 0x8B5A => 4,
+        0x8B5B => 9,
+        0x8B5C => 16,
+        0x8B65 | 0x8B67 => 6,
+        0x8B66 | 0x8B69 => 8,
+        0x8B68 | 0x8B6A => 12,
+        _ => return None,
+    })
+}
+
+/// A program is cached across frames and pages, and its uniforms keep their values: before a frame's calls, every active
+/// uniform goes back to 0 (a sampler to unit 0), as in a program that has just linked.
+fn zero_uniforms(gl_: &Gl, program: &Program) -> R<()> {
+    for (name, &(size, ty)) in &program.uniforms {
+        let Some(width) = uniform_width(ty) else {
+            return Err(format!("unsupported: uniform {name} of GL type 0x{ty:x}"));
+        };
+        let mut location = gl_.uniform_location(program.name, name);
+        if location < 0 {
+            location = gl_.uniform_location(program.name, &format!("{name}[0]"));
+        }
+        if location >= 0 {
+            write_uniform(
+                gl_,
+                location,
+                ty,
+                &vec![0.0; width * size.max(1) as usize],
+                name,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn write_uniform(gl_: &Gl, location: i32, ty: Enum, value: &[f64], name: &str) -> R<()> {
+    let f: Vec<f32> = value.iter().map(|v| *v as f32).collect();
+    let i: Vec<i32> = value.iter().map(|v| *v as i32).collect();
+    let u: Vec<u32> = value.iter().map(|v| *v as u32).collect();
     match ty {
         0x1406 => gl_.uniform_f(location, 1, &f),
         0x8B50 => gl_.uniform_f(location, 2, &f),
