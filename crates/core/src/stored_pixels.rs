@@ -125,6 +125,11 @@ pub fn end_scene() {
     }
 }
 
+/// How many versions of `key` the store holds (what a host that renders many frames in a row must see stay small).
+pub fn versions(key: &str) -> usize {
+    table().keys().filter(|(k, _)| k == key).count()
+}
+
 /// Forgets every version of `key` (a canvas that is gone).
 pub fn release(key: &str) {
     table().retain(|(k, _), _| k != key);

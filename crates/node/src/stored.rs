@@ -32,3 +32,45 @@ pub fn put(
 pub fn release(key: &str) {
     stored_pixels::release(key);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{PreviewOptions, Renderer};
+
+    /// A scene with one canvas layer that draws version `version` of the picture `key`.
+    fn naming(key: &str, version: u64) -> String {
+        format!(
+            r##"{{"width": 8, "height": 8, "fps": 30, "durationInFrames": 1, "background": "#000000",
+                "layers": [{{"id": "c", "type": "canvas", "width": 8, "height": 8, "commands": [{{"op": "image",
+                  "source": {{"kind": "stored", "key": "{key}", "version": {version}}},
+                  "sx": 0, "sy": 0, "sw": 8, "sh": 8, "dx": 0, "dy": 0, "dw": 8, "dh": 8, "smooth": false}}]}}]}}"##
+        )
+    }
+
+    fn put_picture(key: &str, version: u64) {
+        let bytes: Vec<u8> = (0..8 * 8 * 4).map(|i| if i % 4 == 3 { 255 } else { (version * 8) as u8 }).collect();
+        let picture = StoredPicture { width: 8, height: 8, row_bytes: 32, bgra: false, alpha: StoredAlpha::Opaque, bytes };
+        assert_eq!(stored_pixels::put(key, version, picture), Ok(true));
+    }
+
+    /// `still`, `preview` and `rgba` load a scene each, in the order the host put the pictures it names: the pictures before it are let go,
+    /// as the frame threads let them go. A host that exports an image sequence or scrubs a preview put a picture per frame.
+    #[test]
+    fn stills_previews_and_rgba_frames_do_not_keep_every_picture_put() {
+        let key = "node-test-stills";
+        let mut renderer = Renderer::new(None).unwrap();
+        let mut seen = Vec::new();
+        for version in 1..=24u64 {
+            put_picture(key, version);
+            let scene = naming(key, version);
+            renderer.still(scene.clone(), 0.0, None).unwrap();
+            renderer.preview(scene.clone(), 0.0, Some(PreviewOptions::default()), None).unwrap();
+            seen.push(renderer.rgba(scene, 0.0, None).unwrap().data.to_vec());
+            assert!(stored_pixels::versions(key) <= 2, "{} versions kept after {version} frames", stored_pixels::versions(key));
+        }
+        // The pictures were drawn (each frame holds its own version), not dropped before they were.
+        assert!(seen.windows(2).all(|pair| pair[0] != pair[1]));
+        stored_pixels::release(key);
+    }
+}

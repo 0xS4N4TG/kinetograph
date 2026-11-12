@@ -58,8 +58,9 @@ fn parse_scene(scene_json: &str, base_dir: &Path) -> Result<Scene> {
     Scene::from_json(scene_json, base_dir.to_path_buf()).map_err(from_core)
 }
 
-/// `parse_scene` for the threads that draw frames in the order the host made them: the pictures stored from before the ones the scene
-/// names are let go (`kinetograph_core::stored_pixels`).
+/// `parse_scene` for what draws frames in the order the host made them (the starter and pusher threads, `still`, `preview` and `rgba`): the
+/// pictures stored from before the ones the scene names are let go (`kinetograph_core::stored_pixels`), so that a sequence of stills holds
+/// one picture per canvas, not one per frame.
 fn parse_frame_scene(scene_json: &str, base_dir: &Path) -> Result<Scene> {
     kinetograph_core::stored_pixels::begin_scene();
     let scene = parse_scene(scene_json, base_dir);
@@ -860,7 +861,7 @@ impl Renderer {
         base_dir: Option<String>,
     ) -> Result<Buffer> {
         let frame = count("frame", frame)?;
-        let scene = parse_scene(&scene_json, &resolve_base(base_dir))?;
+        let scene = parse_frame_scene(&scene_json, &resolve_base(base_dir))?;
         let mut gpu = self.shared.idle()?;
         gpu.set_scene(scene).map_err(from_core)?;
         let png = gpu
@@ -882,7 +883,7 @@ impl Renderer {
     ) -> Result<PreviewImage> {
         let frame = count("frame", frame)?;
         let options = options.unwrap_or_default();
-        let scene = parse_scene(&scene_json, &resolve_base(base_dir))?;
+        let scene = parse_frame_scene(&scene_json, &resolve_base(base_dir))?;
         let mut gpu = self.shared.idle()?;
         gpu.set_scene(scene).map_err(from_core)?;
         let rendered = gpu.render_frame(frame).map_err(from_core)?;
@@ -898,7 +899,7 @@ impl Renderer {
         base_dir: Option<String>,
     ) -> Result<RgbaFrame> {
         let frame = count("frame", frame)?;
-        let scene = parse_scene(&scene_json, &resolve_base(base_dir))?;
+        let scene = parse_frame_scene(&scene_json, &resolve_base(base_dir))?;
         let mut gpu = self.shared.idle()?;
         gpu.set_scene(scene).map_err(from_core)?;
         let rendered = gpu.render_frame(frame).map_err(from_core)?;
