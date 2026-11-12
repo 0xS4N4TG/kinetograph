@@ -10,7 +10,7 @@
 //      attach what each sub-frame changes in them.
 
 import type { ReactNode } from 'react';
-import { dawnDependsOnHistory, flushDawnCanvases, noteDawnRewind, releaseDawn, startDawnComposition, takeDawnReports, glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures } from '@kinetographdev/compat/shim';
+import { createDawnScope, dawnDependsOnHistory, enterDawnScope, flushDawnCanvases, noteDawnRewind, releaseDawn, takeDawnReports, glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures } from '@kinetographdev/compat/shim';
 import { setDefaultStylesheet } from '@kinetographdev/compat/dom';
 import { createSceneRoot, finishIslands, TimelineContext, type LayerNames, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
@@ -144,6 +144,8 @@ class Renderer implements FrameRenderer {
   /** The frame a jump landed on without the frames before it drawn, until a frame says the page's GPU state carries (a Dawn page, `dawnDependsOnHistory`): -1 when none. */
   private unreplayedJump = -1;
   private disposed = false;
+  /** What this renderer's WebGPU pages made (devices, canvases, pictures) and what their frames read of each other: its own on a thread that holds several renderers. */
+  private readonly dawn = createDawnScope();
   /** The `renderFrame` call in progress, the one whose renders the open island pass holds (-1: none), and the frame
    *  being rendered: the frame's own renders and its sub-frames are one pass of the islands' documents (compat/dom). */
   private calls = 0;
@@ -157,7 +159,6 @@ class Renderer implements FrameRenderer {
     // Components that call getInputProps() see the props this render was given.
     if (inputProps) setInputProps(inputProps);
     resetTransitionWindow();
-    startDawnComposition();
     const { sync, ready } = resolveComposition(compositionId, { inputProps });
     this.resolved = sync;
     this.readyPromise = ready.then((value) => (this.resolved = value));
@@ -182,16 +183,18 @@ class Renderer implements FrameRenderer {
     this.disposed = true;
     this.scene?.unmount();
     this.scene = null;
-    releaseDawn();
+    releaseDawn(this.dawn);
   }
 
   async renderFrame(frame: number): Promise<FrameResult> {
     this.calls += 1;
     this.target = frame;
     setNetFrame(frame);
+    const leaveDawn = enterDawnScope(this.dawn);
     try {
       return await this.drawFrame(frame);
     } finally {
+      leaveDawn();
       this.closePass();
       this.subFrameLayers = null;
     }

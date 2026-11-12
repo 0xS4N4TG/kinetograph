@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
 import { carryDepends, carryNeedsReplay, resetCarry } from '../src/shim/webgpu-dawn-carry.js';
 import { hasAddonFunction } from '../src/addon.js';
-import { DAWN_FEATURES, DAWN_LIMITS, DawnCanvasContext, dawnCommandsOf, dawnGlobals, dawnReadCommands, duringAnimationFrames, flushDawnCanvases, installDawn, releaseDawn, startDawnComposition, takeDawnReports } from '../src/shim/webgpu-dawn.js';
+import { DAWN_FEATURES, DAWN_LIMITS, DawnCanvasContext, createDawnScope, dawnCommandsOf, dawnGlobals, dawnReadCommands, duringAnimationFrames, enterDawnScope, flushDawnCanvases, installDawn, releaseDawn, takeDawnReports } from '../src/shim/webgpu-dawn.js';
 
 const missing = ((): string | null => {
   const spec = process.env.KINETOGRAPH_DAWN_MODULE;
@@ -88,7 +88,7 @@ describe.skipIf(missing !== null)('WebGPU through Dawn', () => {
     expect(takeDawnReports()).toEqual([]);
   });
 
-  it('forgets what the frames of a composition read of each other when its devices are released, and when a new composition starts', async () => {
+  it('forgets what the frames of a composition read of each other when its devices are released, and starts a renderer without it', async () => {
     const adapter = await gpu.requestAdapter();
     const device = await adapter.requestDevice();
     const clock = vi.spyOn(performance, 'now');
@@ -115,10 +115,56 @@ describe.skipIf(missing !== null)('WebGPU through Dawn', () => {
     step(0);
     step(33);
     expect(carryDepends()).toBe(true);
-    startDawnComposition();
+    // A renderer made now has a state of its own: what the frames of the one before it read is not in it.
+    const leave = enterDawnScope(createDawnScope());
     expect(carryDepends()).toBe(false);
+    leave();
+    expect(carryDepends()).toBe(true);
     clock.mockRestore();
     device.destroy();
+  });
+
+  it('keeps the devices, canvases and pictures of one renderer when another on the same thread releases its own', async () => {
+    const draw = async (device: any, context: DawnCanvasContext, clear: number): Promise<void> => {
+      context.resetState();
+      const encoder = device.createCommandEncoder();
+      encoder.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: clear, g: 0, b: 0, a: 1 } }] }).end();
+      device.queue.submit([encoder.finish()]);
+      await flushDawnCanvases();
+    };
+    const open = async () => {
+      const scope = createDawnScope();
+      const leave = enterDawnScope(scope);
+      const device = await (await gpu.requestAdapter()).requestDevice();
+      let lost = false;
+      void device.lost.then(() => { lost = true; });
+      const context = new DawnCanvasContext({ size: () => ({ width: 4, height: 4 }) });
+      context.configure({ device, format: 'rgba8unorm', alphaMode: 'opaque' });
+      await draw(device, context, 0.5);
+      leave();
+      return { scope, device, context, isLost: () => lost };
+    };
+    const [a, b] = [await open(), await open()];
+    // `release` of B's scope, by the frame loop's `dispose`, destroys B's device and nothing of A's.
+    releaseDawn(b.scope);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(b.isLost()).toBe(true);
+    expect(a.isLost()).toBe(false);
+    // A still draws, and the picture it holds is still there: the same bytes again are "the same picture as the newest version" for the addon.
+    const leave = enterDawnScope(a.scope);
+    await draw(a.device, a.context, 0.5);
+    expect(a.context.drawn).toBe(true);
+    if (hasAddonFunction('putCanvasPixels')) {
+      const kept = JSON.stringify(a.context.picture);
+      await draw(a.device, a.context, 0.5);
+      expect(JSON.stringify(a.context.picture)).toBe(kept);
+      expect(JSON.parse(kept).source.version).toBe(1);
+    }
+    leave();
+    releaseDawn(a.scope);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(a.isLost()).toBe(true);
+    expect(takeDawnReports()).toEqual([]);
   });
 
   it('reads a canvas back as the same bytes each time, and a frame that is not drawn has no picture', async () => {

@@ -56,15 +56,30 @@ const occlusionResults = new WeakSet<object>();
 const testsDepth = new WeakMap<object, boolean>();
 /** A render pass that loaded a depth attachment: the texture and the epoch of its last write before the pass, until a pipeline that tests it is set. */
 const loadedDepth = new WeakMap<object, { texture: Any; written: number }>();
-let flagged = false;
-/** The epoch of the last read of a resource written in an earlier epoch, and of the last GPU write of a resource that held something (`predicted`). */
-let staleReadAt = -Infinity;
-let carryWriteAt = -Infinity;
-/** The third rule above: a frame read what an earlier frame wrote and wrote a resource that held something. Not part of `flagged`: a static page with a shadow map is one. */
-let predicted = false;
-let predictedOutside = false;
-/** Flagged by something done outside an animation-frame callback (an effect, a render): what a replay of the skipped frames repeats. */
-let flaggedOutside = false;
+/** What the frames of one composition read of each other: one per renderer (`DawnScope` in webgpu-dawn.ts), so that two renderers on a thread do not share it. */
+export interface Carry {
+  flagged: boolean;
+  /** Flagged by something done outside an animation-frame callback (an effect, a render): what a replay of the skipped frames repeats. */
+  flaggedOutside: boolean;
+  /** The epoch of the last read of a resource written in an earlier epoch, and of the last GPU write of a resource that held something (`predicted`). */
+  staleReadAt: number;
+  carryWriteAt: number;
+  /** The last rule above: a frame read what an earlier frame wrote and wrote a resource that held something. Not part of `flagged`: a static page with a shadow map is one. */
+  predicted: boolean;
+  predictedOutside: boolean;
+}
+
+export const newCarry = (): Carry => ({ flagged: false, flaggedOutside: false, staleReadAt: -Infinity, carryWriteAt: -Infinity, predicted: false, predictedOutside: false });
+
+/** The carry state of the renderer whose frame is being rendered. */
+let c: Carry = newCarry();
+
+/** Makes `carry` the state the frames being rendered now read and add to; returns the one it replaces. */
+export function useCarry(carry: Carry): Carry {
+  const was = c;
+  c = carry;
+  return was;
+}
 let inCallbacks = 0;
 let paused = 0;
 let now: () => number = () => 0;
@@ -123,19 +138,19 @@ function write(resource: Any, gpu = false, exempt = false): void {
 }
 
 function noteStaleRead(): void {
-  staleReadAt = now();
+  c.staleReadAt = now();
   notePredicted();
 }
 
 function noteCarryWrite(): void {
-  carryWriteAt = now();
+  c.carryWriteAt = now();
   notePredicted();
 }
 
 function notePredicted(): void {
-  if (staleReadAt !== now() || carryWriteAt !== now()) return;
-  predicted = true;
-  if (inCallbacks === 0) predictedOutside = true;
+  if (c.staleReadAt !== now() || c.carryWriteAt !== now()) return;
+  c.predicted = true;
+  if (inCallbacks === 0) c.predictedOutside = true;
 }
 
 /** Whether what a pass or a copy writes can be read by anything but a later pass that loads it (a shader samples it, a copy takes it). */
@@ -147,13 +162,13 @@ export function startsCleared(resource: Any): void {
 }
 
 function flag(): void {
-  flagged = true;
-  if (inCallbacks === 0) flaggedOutside = true;
+  c.flagged = true;
+  if (inCallbacks === 0) c.flaggedOutside = true;
 }
 
 /** Whether a frame read what an earlier frame wrote (by any page code: a jump back cannot rewind it, `noteDawnRewind`). */
 export function carryDepends(): boolean {
-  return flagged;
+  return c.flagged;
 }
 
 /**
@@ -162,7 +177,7 @@ export function carryDepends(): boolean {
  * a page that draws from effects (a React project) has its effects run only when a frame is rendered, so it is replayed.
  */
 export function carryNeedsReplay(): boolean {
-  return flaggedOutside || predictedOutside;
+  return c.flaggedOutside || c.predictedOutside;
 }
 
 /** Runs the animation-frame callbacks of a frame: what they do is not for a replay to repeat. */
@@ -186,11 +201,7 @@ export function untracked<T>(work: () => T): T {
 }
 
 export function resetCarry(): void {
-  flagged = false;
-  flaggedOutside = false;
-  predicted = false;
-  predictedOutside = false;
-  staleReadAt = carryWriteAt = -Infinity;
+  Object.assign(c, newCarry());
 }
 
 function wrap(proto: Any, name: string, before: (this: Any, args: Any[]) => void): void {
@@ -231,8 +242,8 @@ export function trackCarry(g: Record<string, Any>, clock: () => number): void {
     if (((mode as number) & 0x02) !== 0) write(this);
     // The results come from the draws of the frame the page maps them in; it uses them in the next one, whichever way that is reached.
     if (occlusionResults.has(this) && paused === 0) {
-      flagged = true;
-      flaggedOutside = true;
+      c.flagged = true;
+      c.flaggedOutside = true;
     }
   });
   const noteDepthTest = (pipeline: Any, descriptor: Any): void => {

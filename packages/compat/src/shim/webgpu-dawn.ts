@@ -18,7 +18,7 @@ import { threadId } from 'node:worker_threads';
 import { CANVAS_SOURCE, type CanvasCommand, type CanvasSource } from '@kinetographdev/scene';
 import { addonFunction, hasAddonFunction } from '../addon.js';
 import { lap, stamp } from '../profile.js';
-import { trackCarry, carryDepends, carryNeedsReplay, resetCarry, startsCleared, untracked } from './webgpu-dawn-carry.js';
+import { newCarry, trackCarry, carryDepends, carryNeedsReplay, startsCleared, untracked, useCarry, type Carry } from './webgpu-dawn-carry.js';
 
 export { duringAnimationFrames } from './webgpu-dawn-carry.js';
 
@@ -70,22 +70,53 @@ let dawn: { create(flags: string[]): Any; globals: Record<string, Any> } | null 
 let hooks: Hooks | null = null;
 let gpu: Any = null;
 let patched = false;
-const devices = new Set<Any>();
-/** The order devices were made in, and the number of the last (a rewind is exact when the page makes a new one: `noteDawnRewind`). */
-const deviceOrder = new WeakMap<object, number>();
-let deviceCount = 0;
-let rewindAt: number | null = null;
-const reports = new Set<string>();
 
-function report(what: string): void {
-  reports.add(`WebGPU (Dawn): ${what}`);
+/**
+ * What one renderer's pages made with the library: its devices, canvases and the pictures it put in the addon, the errors they raised and
+ * what its frames read of each other. A thread can hold several renderers (a Studio's preview and a render started from it): each has
+ * a scope, which the frame loop enters while it renders a frame (`enterDawnScope`), and releasing one leaves the others' alone.
+ * Frames of two renderers do not overlap (the engine's clock and its page globals are the thread's).
+ */
+export class DawnScope {
+  readonly devices = new Set<Any>();
+  /** The number of devices made, and what a rewind started at (a rewind is exact when the page makes a new one: `noteDawnRewind`). */
+  deviceCount = 0;
+  rewindAt: number | null = null;
+  readonly reports = new Set<string>();
+  readonly contexts = new Set<WeakRef<DawnCanvasContext>>();
+  /** The keys of the pictures the addon holds for these canvases, which `releaseDawn` lets go (a frame is drawn some frames after it is made: not before). */
+  readonly keys = new Set<string>();
+  readonly carry: Carry = newCarry();
+}
+
+const defaultScope = new DawnScope();
+useCarry(defaultScope.carry);
+let scope: DawnScope = defaultScope;
+
+export function createDawnScope(): DawnScope {
+  return new DawnScope();
+}
+
+/** Makes `next` the scope of what runs now (a frame of its renderer); returns what puts the one before back. */
+export function enterDawnScope(next: DawnScope): () => void {
+  const was = scope;
+  const carry = useCarry(next.carry);
+  scope = next;
+  return () => {
+    scope = was;
+    useCarry(carry);
+  };
+}
+
+function report(owner: DawnScope, what: string): void {
+  owner.reports.add(`WebGPU (Dawn): ${what}`);
 }
 
 /** What the library's devices and the canvases made since the last call report, each once (read with the WebGL reports). */
 export function takeDawnReports(): string[] {
   settleRewind();
-  const out = [...reports];
-  reports.clear();
+  const out = [...scope.reports];
+  scope.reports.clear();
   return out;
 }
 
@@ -169,13 +200,16 @@ function patchDawn(g: Record<string, Any>): void {
 
 /** The adapter the page sees: fixed features, limits and info, and a device that has the real adapter's but those. */
 function fixedAdapter(real: Any): Any {
+  const adapterOwner = scope;
   const features = new Set<string>([TIMESTAMP]);
   for (const feature of DAWN_FEATURES) {
     if (real.features.has(feature)) features.add(feature);
-    else report(`this machine's adapter lacks ${feature}, which every adapter offers here; a page that needs it fails to get a device`);
+    else report(adapterOwner, `this machine's adapter lacks ${feature}, which every adapter offers here; a page that needs it fails to get a device`);
   }
   const info = Object.freeze({ vendor: 'kinetograph', architecture: 'dawn', device: '', description: 'Kinetograph (Dawn)', subgroupMinSize: 0, subgroupMaxSize: 0 });
   const requestDevice = async (descriptor: Any = {}): Promise<Any> => {
+    // The scope of the frame that asks: an adapter may be got in one frame and a device asked of it in another.
+    const owner = scope;
     for (const feature of descriptor?.requiredFeatures ?? []) {
       if (!features.has(feature)) throw new TypeError(`requestDevice: the feature ${feature} is not supported`);
     }
@@ -189,7 +223,7 @@ function fixedAdapter(real: Any): Any {
       limits[name] = wanted;
     }
     const device = await real.requestDevice({ label: descriptor?.label, requiredFeatures: [...(descriptor?.requiredFeatures ?? [])].filter((f) => f !== TIMESTAMP), requiredLimits: limits, defaultQueue: descriptor?.defaultQueue });
-    watch(device);
+    watch(device, owner);
     return device;
   };
   return new Proxy(real, {
@@ -206,38 +240,40 @@ function fixedAdapter(real: Any): Any {
 }
 
 /** An uncaptured error and a lost device are the frame's warnings. */
-function watch(device: Any): void {
-  devices.add(device);
-  deviceOrder.set(device, ++deviceCount);
+function watch(device: Any, owner: DawnScope): void {
+  owner.devices.add(device);
+  owner.deviceCount++;
   device.addEventListener('uncapturederror', (event: Any) => {
     const error = event.error;
-    report(`${error?.constructor?.name ?? 'GPUError'}: ${String(error?.message ?? error).split('\n')[0]!.slice(0, 300)}`);
+    report(owner, `${error?.constructor?.name ?? 'GPUError'}: ${String(error?.message ?? error).split('\n')[0]!.slice(0, 300)}`);
   });
   device.lost.then((info: Any) => {
-    devices.delete(device);
-    if (info.reason !== 'destroyed') report(`the device was lost (${info.reason}): ${String(info.message).split('\n')[0]}`);
+    owner.devices.delete(device);
+    if (info.reason !== 'destroyed') report(owner, `the device was lost (${info.reason}): ${String(info.message).split('\n')[0]}`);
   });
 }
 
 /**
- * Destroys every device made, so a long render does not hold them (a scene that is replaced, a renderer that is disposed). What a
- * frame read of an earlier frame's (`webgpu-dawn-carry.ts`) belongs to the devices that are gone, so the next composition on this
- * thread starts without it: it is a fact of one composition, not of the thread.
+ * Destroys the devices of `owner` (a renderer's scope; by default the one of what runs now) and lets go of its canvases and pictures, so a
+ * long render does not hold them (a scene that is replaced, a renderer that is disposed). What its frames read of each other
+ * (`webgpu-dawn-carry.ts`) belonged to those devices. Another renderer's devices, canvases and pictures are not touched.
  */
-export function releaseDawn(): void {
-  resetCarry();
-  for (const device of devices) {
+export function releaseDawn(owner: DawnScope = scope): void {
+  for (const device of owner.devices) {
     try {
       device.destroy();
     } catch {
       // a device that is already gone
     }
   }
-  devices.clear();
-  for (const ref of contexts) ref.deref()?.release();
-  contexts.clear();
-  if (hasAddonFunction('releaseCanvasPixels')) for (const key of keys) addonFunction('releaseCanvasPixels')(key);
-  keys.clear();
+  owner.devices.clear();
+  for (const ref of owner.contexts) ref.deref()?.release();
+  owner.contexts.clear();
+  if (hasAddonFunction('releaseCanvasPixels')) for (const key of owner.keys) addonFunction('releaseCanvasPixels')(key);
+  owner.keys.clear();
+  owner.reports.clear();
+  owner.rewindAt = null;
+  Object.assign(owner.carry, newCarry());
 }
 
 /**
@@ -249,22 +285,17 @@ export function releaseDawn(): void {
  * with the frame (an error under `--strict`). A page whose state does not carry (most) is exact either way.
  */
 export function noteDawnRewind(): void {
-  rewindAt = deviceCount;
+  scope.rewindAt = scope.deviceCount;
 }
 
 /** The end of a frame: a rewind is settled by whether the page made a new device since it (the devices before it are kept to `releaseDawn`: a page may still use one). */
 function settleRewind(): void {
-  if (rewindAt === null) return;
-  const was = rewindAt;
-  rewindAt = null;
-  if (carryDepends() && deviceCount === was) {
-    report('a jump back to an earlier frame on a page whose GPU state carries from frame to frame (a feedback texture, a storage buffer a pass advances) and whose script does not run again (an HTML page) shows the state of the frames already drawn; render forward, or start a new process, for that frame');
+  if (scope.rewindAt === null) return;
+  const was = scope.rewindAt;
+  scope.rewindAt = null;
+  if (carryDepends() && scope.deviceCount === was) {
+    report(scope, 'a jump back to an earlier frame on a page whose GPU state carries from frame to frame (a feedback texture, a storage buffer a pass advances) and whose script does not run again (an HTML page) shows the state of the frames already drawn; render forward, or start a new process, for that frame');
   }
-}
-
-/** A new composition on this thread: nothing of the last one's carried state is its own (`resetCarry`). */
-export function startDawnComposition(): void {
-  resetCarry();
 }
 
 /** Whether a frame read what an earlier frame wrote that only a replay of the frames before it makes (`carryNeedsReplay`). */
@@ -275,15 +306,11 @@ export function dawnDependsOnHistory(): boolean {
 // ----------------------------------------------------------------------------------------------------------------------
 // The canvas
 
-const contexts = new Set<WeakRef<DawnCanvasContext>>();
-
 export interface DawnCanvasOptions {
   size: () => { width: number; height: number };
   canvas?: unknown;
 }
 
-/** The keys of the pictures the addon holds for this thread's canvases, which `releaseDawn` lets go (a frame is drawn some frames after it is made: not before). */
-const keys = new Set<string>();
 let canvasCount = 0;
 
 /**
@@ -304,10 +331,13 @@ export class DawnCanvasContext {
   /** The canvas as the last flush read it, null when nothing was drawn this frame. */
   picture: { width: number; height: number; source: CanvasSource } | null = null;
 
+  /** The renderer's scope this canvas was made in: its device, its pictures, its reports. */
+  private readonly scope = scope;
+
   constructor(private readonly options: DawnCanvasOptions) {
     this.canvas = options.canvas;
-    contexts.add(new WeakRef(this));
-    keys.add(this.key);
+    this.scope.contexts.add(new WeakRef(this));
+    this.scope.keys.add(this.key);
   }
 
   get drawn(): boolean {
@@ -321,7 +351,7 @@ export class DawnCanvasContext {
 
   configure(configuration: Any): void {
     const { device } = configuration ?? {};
-    if (!devices.has(device)) throw new TypeError("configure: 'device' is not a GPUDevice");
+    if (!this.scope.devices.has(device)) throw new TypeError("configure: 'device' is not a GPUDevice");
     const format = configuration.format;
     if (typeof format !== 'string' || !CANVAS_FORMATS.has(format)) throw new TypeError(`configure: the format ${String(format)} is not a canvas format`);
     const colorSpace = configuration.colorSpace ?? 'srgb';
@@ -406,7 +436,7 @@ export class DawnCanvasContext {
     const wide = format === 'rgba16float';
     const rowBytes = width * (wide ? 8 : 4);
     const stride = Math.ceil(rowBytes / 256) * 256;
-    if (this.readback === null || this.readback.size !== stride * height || !devices.has(device)) {
+    if (this.readback === null || this.readback.size !== stride * height || !this.scope.devices.has(device)) {
       this.dropReadback();
       this.readback = { buffer: device.createBuffer({ label: 'canvas readback', size: stride * height, usage: 0x01 | 0x08 /* MAP_READ | COPY_DST */ }), size: stride * height };
     }
@@ -451,9 +481,9 @@ export class DawnCanvasContext {
 
 /** Reads back every canvas drawn this frame: the frame loop awaits it before it reads the tree. */
 export async function flushDawnCanvases(): Promise<void> {
-  for (const ref of contexts) {
+  for (const ref of scope.contexts) {
     const context = ref.deref();
-    if (context === undefined) contexts.delete(ref);
+    if (context === undefined) scope.contexts.delete(ref);
     else await context.flush();
   }
 }
