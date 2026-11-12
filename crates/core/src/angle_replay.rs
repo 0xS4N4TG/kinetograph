@@ -203,6 +203,9 @@ fn run(gl_: &Gl, content: &GlslContent, size: (u32, u32), base_dir: &Path) -> R<
         gl_.request_extension(ext);
     }
     gl_.pixel_storei(0xCF5, 1); // UNPACK_ALIGNMENT
+    if std::env::var_os("KINETOGRAPH_ANGLE_DEBUG").is_some() {
+        gl_.enable(0x92E0); // DEBUG_OUTPUT
+    }
     let mut replay = Replay {
         gl: gl_,
         content,
@@ -242,6 +245,7 @@ impl<'a> Replay<'a> {
         self.make_canvas();
         gl_.bind_vertex_array(self.vao);
         let debug = std::env::var_os("KINETOGRAPH_ANGLE_DEBUG").is_some();
+        let started = std::time::Instant::now();
         for (i, op) in self.content.ops.iter().enumerate() {
             match op {
                 GlslOp::Clear { .. } => self.clear(op)?,
@@ -276,6 +280,11 @@ impl<'a> Replay<'a> {
                 }
             }
         }
+        let timing = std::env::var_os("KINETOGRAPH_ANGLE_TIME").is_some();
+        if timing {
+            gl_.finish();
+        }
+        let ops_done = started.elapsed();
         // Resolve a multisampled drawing buffer, then read it from the bottom row up and turn it over.
         let (w, h) = (self.size.0 as i32, self.size.1 as i32);
         let read = if self.canvas.samples > 0 {
@@ -292,8 +301,19 @@ impl<'a> Replay<'a> {
         gl_.read_buffer(gl::COLOR_ATTACHMENT0);
         let mut bottom_up = vec![0u8; (w * h * 4) as usize];
         gl_.read_pixels((w, h), &mut bottom_up);
+        let read_done = started.elapsed();
         let row = (w * 4) as usize;
-        Ok(bottom_up.chunks(row).rev().flatten().copied().collect())
+        let flipped = bottom_up.chunks(row).rev().flatten().copied().collect();
+        if timing {
+            let end = started.elapsed();
+            eprintln!(
+                "angle-time: ops+finish {:.2} ms, resolve+readback {:.2} ms, flip {:.2} ms",
+                ops_done.as_secs_f64() * 1e3,
+                (read_done - ops_done).as_secs_f64() * 1e3,
+                (end - read_done).as_secs_f64() * 1e3
+            );
+        }
+        Ok(flipped)
     }
 
     fn make_canvas(&mut self) {
@@ -933,12 +953,14 @@ impl<'a> Replay<'a> {
         }
         self.check("uniforms and blocks");
         // Textures.
-        let mut units: Vec<(u32, &'a rec::GlslSampler)> = Vec::new();
+        // Every texture is made before any is bound: making one binds it to the active unit, which would take the unit
+        // of an earlier texture of this loop (a shadow sampler then met a colour texture).
+        let mut units: Vec<(u32, &'a rec::GlslSampler, Handle)> = Vec::new();
         for (unit, s) in &d.units {
-            units.push((unit.parse().map_err(|_| format!("texture unit {unit}"))?, s));
+            let unit = unit.parse().map_err(|_| format!("texture unit {unit}"))?;
+            units.push((unit, s, self.texture(&s.texture)?));
         }
-        for (unit, s) in units {
-            let h = self.texture(&s.texture)?;
+        for (unit, s, h) in units {
             // The recording keeps the sampling state with the unit, not the texture (one texture, bound twice with
             // two filters, is one id), which is what a GL sampler object holds.
             let sampler = gl_.gen_sampler();
@@ -963,6 +985,18 @@ impl<'a> Replay<'a> {
             gl_.active_texture(gl::TEXTURE0 + unit);
             gl_.bind_texture(h.target, h.name);
             gl_.bind_sampler(unit, sampler);
+            // The compare mode is texture state too: the draw-time check of a shadow sampler may read it from there.
+            match &s.compare {
+                Some(f) => {
+                    gl_.tex_parameteri(
+                        h.target,
+                        gl::TEXTURE_COMPARE_MODE,
+                        gl::COMPARE_REF_TO_TEXTURE,
+                    );
+                    gl_.tex_parameteri(h.target, gl::TEXTURE_COMPARE_FUNC, named(f)? as i32);
+                }
+                None => gl_.tex_parameteri(h.target, gl::TEXTURE_COMPARE_MODE, 0),
+            }
             gl_.tex_parameteri(h.target, gl::TEXTURE_BASE_LEVEL, s.base_level as i32);
             if let Some(m) = s.max_level {
                 gl_.tex_parameteri(h.target, gl::TEXTURE_MAX_LEVEL, m as i32);
@@ -1083,6 +1117,50 @@ impl<'a> Replay<'a> {
                 gl_.draw_arrays_instanced(mode, d.first as i32, d.count as i32, d.instances as i32)
             }
             None => gl_.draw_arrays(mode, d.first as i32, d.count as i32),
+        }
+        if std::env::var_os("KINETOGRAPH_ANGLE_DEBUG").is_some() {
+            let e = gl_.get_error();
+            if e != 0 {
+                eprintln!(
+                    "angle: GL error 0x{e:x} at the draw of program {}",
+                    d.program
+                );
+                for (name, (size, ty)) in &program.uniforms {
+                    if matches!(ty, 0x8B5E..=0x8B62 | 0x8DC1..=0x8DD7) {
+                        let unit = d
+                            .uniforms
+                            .get(name)
+                            .and_then(|c| c.first())
+                            .map_or(0.0, |c| c.value[0]);
+                        let bound = d.units.get(&(unit as u32).to_string()).map(|u| {
+                            let t = self.content.textures.get(u.texture.as_str());
+                            (
+                                u.texture.as_str(),
+                                t.map(|t| (t.format, t.depth, t.cube)),
+                                u.compare.as_deref(),
+                            )
+                        });
+                        let loc = gl_.uniform_location(program.name, name);
+                        let loc = if loc < 0 {
+                            gl_.uniform_location(program.name, &format!("{name}[0]"))
+                        } else {
+                            loc
+                        };
+                        let actual = if loc >= 0 {
+                            gl_.uniform_value(program.name, loc)
+                        } else {
+                            -1
+                        };
+                        eprintln!(
+                            "angle:   sampler {name} (type 0x{ty:x}, size {size}) -> unit {unit} (GL says {actual}, location {loc}): {bound:?}"
+                        );
+                    }
+                }
+                eprintln!("angle:   debug log available: {}", gl_.has_debug_log());
+                for m in gl_.debug_messages() {
+                    eprintln!("angle:   message: {m}");
+                }
+            }
         }
         Ok(())
     }

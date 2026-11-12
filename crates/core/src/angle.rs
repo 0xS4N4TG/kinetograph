@@ -235,6 +235,7 @@ struct RawPtr {
     uniform_iv: [unsafe extern "C" fn(i32, i32, *const i32); 4],
     uniform_matrix_fv: [unsafe extern "C" fn(i32, i32, u8, *const f32); 9],
     uniform_uiv: [unsafe extern "C" fn(i32, i32, *const u32); 4],
+    get_uniformiv: unsafe extern "C" fn(u32, i32, *mut i32),
     gen_samplers: unsafe extern "C" fn(i32, *mut u32),
     delete_samplers: unsafe extern "C" fn(i32, *const u32),
     tex_image_3d:
@@ -253,7 +254,20 @@ struct RawPtr {
     draw_elements: unsafe extern "C" fn(Enum, i32, Enum, usize),
     draw_elements_instanced: unsafe extern "C" fn(Enum, i32, Enum, usize, i32),
     request_extension: unsafe extern "C" fn(*const c_char),
+    /// `glGetDebugMessageLogKHR`, which names the rule a failed call broke; absent when ANGLE has no `GL_KHR_debug`.
+    debug_log: Option<DebugLog>,
 }
+
+type DebugLog = unsafe extern "C" fn(
+    u32,
+    i32,
+    *mut Enum,
+    *mut Enum,
+    *mut u32,
+    *mut Enum,
+    *mut i32,
+    *mut c_char,
+) -> u32;
 
 /// A `fn` pointer of the GL entry point `name`.
 macro_rules! load {
@@ -318,6 +332,7 @@ impl RawPtr {
                 load!(lookup, "glUniform3uiv"),
                 load!(lookup, "glUniform4uiv"),
             ],
+            get_uniformiv: load!(lookup, "glGetUniformiv"),
             gen_samplers: load!(lookup, "glGenSamplers"),
             delete_samplers: load!(lookup, "glDeleteSamplers"),
             tex_image_3d: load!(lookup, "glTexImage3D"),
@@ -334,6 +349,11 @@ impl RawPtr {
             draw_elements: load!(lookup, "glDrawElements"),
             draw_elements_instanced: load!(lookup, "glDrawElementsInstanced"),
             request_extension: load!(lookup, "glRequestExtensionANGLE"),
+            debug_log: {
+                let p = lookup("glGetDebugMessageLogKHR");
+                // SAFETY: the address of `glGetDebugMessageLogKHR`, which has this signature in the KHR_debug spec.
+                (!p.is_null()).then(|| unsafe { std::mem::transmute::<*const c_void, DebugLog>(p) })
+            },
         })
     }
 }
@@ -611,6 +631,16 @@ impl Gl {
             )
         }
     }
+    /// The first value of an integer uniform, for diagnosis.
+    pub fn uniform_value(&self, program: u32, location: i32) -> i32 {
+        let mut out = [0i32; 16];
+        // SAFETY: GL writes the uniform's values (at most 16 for the scalar and vector types asked for), into `out`.
+        unsafe { (self.ptr.get_uniformiv)(program, location, out.as_mut_ptr()) };
+        out[0]
+    }
+    pub fn has_debug_log(&self) -> bool {
+        self.ptr.debug_log.is_some()
+    }
     pub fn uniform_u(&self, location: i32, components: usize, values: &[u32]) {
         let n = (values.len() / components) as i32;
         // SAFETY: as `uniform_f`.
@@ -667,6 +697,35 @@ impl Gl {
                 gl::UNSIGNED_BYTE,
                 out.as_mut_ptr().cast(),
             )
+        }
+    }
+    /// The messages ANGLE logged since the last call (`GL_KHR_debug`), each with the rule it names.
+    pub fn debug_messages(&self) -> Vec<String> {
+        let Some(log) = self.ptr.debug_log else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        loop {
+            let (mut source, mut ty, mut id, mut severity, mut len) = (0, 0, 0, 0, 0);
+            let mut text = vec![0u8; 1024];
+            // SAFETY: GL writes one message of at most `text.len()` bytes and the five scalars, all ours.
+            let got = unsafe {
+                log(
+                    1,
+                    1024,
+                    &mut source,
+                    &mut ty,
+                    &mut id,
+                    &mut severity,
+                    &mut len,
+                    text.as_mut_ptr().cast(),
+                )
+            };
+            if got == 0 {
+                return out;
+            }
+            text.truncate((len.max(1) - 1) as usize);
+            out.push(String::from_utf8_lossy(&text).into_owned());
         }
     }
     /// Turns on an extension a WebGL-compatible context keeps off until asked.
@@ -864,14 +923,31 @@ fn create() -> Result<Context, String> {
     );
     let get_proc: GetProc = sym!(b"eglGetProcAddress\0", GetProc);
 
-    let backend = if cfg!(target_os = "macos") {
+    // `KINETOGRAPH_ANGLE_BACKEND=swiftshader` asks for ANGLE's Vulkan backend on SwiftShader, the CPU rasteriser Chrome's
+    // oracle runs on (it needs libvk_swiftshader beside libEGL).
+    let software = std::env::var("KINETOGRAPH_ANGLE_BACKEND").is_ok_and(|v| v == "swiftshader");
+    let backend = if software {
+        EGL_PLATFORM_ANGLE_TYPE_VULKAN
+    } else if cfg!(target_os = "macos") {
         EGL_PLATFORM_ANGLE_TYPE_METAL
     } else if cfg!(windows) {
         EGL_PLATFORM_ANGLE_TYPE_D3D11
     } else {
         EGL_PLATFORM_ANGLE_TYPE_VULKAN
     };
-    let display_attribs: [isize; 3] = [EGL_PLATFORM_ANGLE_TYPE, backend, EGL_NONE as isize];
+    // EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE = EGL_PLATFORM_ANGLE_DEVICE_TYPE_SWIFTSHADER_ANGLE.
+    let device = if software {
+        [0x3209, 0x3487]
+    } else {
+        [EGL_NONE as isize, EGL_NONE as isize]
+    };
+    let display_attribs: [isize; 5] = [
+        EGL_PLATFORM_ANGLE_TYPE,
+        backend,
+        device[0],
+        device[1],
+        EGL_NONE as isize,
+    ];
     // SAFETY: each call below passes pointers to locals that outlive it and attribute lists ended by EGL_NONE; the
     // handles are the ones the previous calls returned and are checked before use.
     unsafe {
