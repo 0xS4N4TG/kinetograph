@@ -1939,7 +1939,8 @@ mod tests {
             texture_format("rgba16float"),
             Ok(wgpu::TextureFormat::Rgba16Float)
         );
-        assert!(texture_format("depth24plus").is_err());
+        assert!(texture_format("depth24plus-stencil8").is_err());
+        assert_eq!(texture_format("depth24plus").unwrap(), wgpu::TextureFormat::Depth24Plus);
         for name in wg::TEXTURE_FORMATS.replace(" and ", ", ").split(", ") {
             assert!(
                 wg::texel_bytes(name).is_some() && texture_format(name).is_ok(),

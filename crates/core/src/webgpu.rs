@@ -1452,7 +1452,7 @@ mod tests {
     fn a_texture_is_checked_for_format_size_levels_and_overflow() {
         assert_eq!(texture_bytes(&texture(8, 4, 3, "rgba8unorm"), 8192), Ok(8 * 4 * 4 + 4 * 2 * 4 + 2 * 4));
         assert_eq!(texture_bytes(&texture(1, 1, 1, "r8unorm"), 8192), Ok(1));
-        assert!(texture_bytes(&texture(8, 4, 1, "depth24plus"), 8192).unwrap_err().contains("format depth24plus"));
+        assert!(texture_bytes(&texture(8, 4, 1, "depth24plus-stencil8"), 8192).unwrap_err().contains("format depth24plus-stencil8"));
         assert!(texture_bytes(&texture(0, 4, 1, "rgba8unorm"), 8192).unwrap_err().contains("sides"));
         assert!(texture_bytes(&texture(8, 8193, 1, "rgba8unorm"), 8192).unwrap_err().contains("sides"));
         assert!(texture_bytes(&texture(8, 4, 0, "rgba8unorm"), 8192).unwrap_err().contains("mip levels"));
@@ -1585,7 +1585,7 @@ mod tests {
     #[test]
     fn a_multisampled_pass_resolves_into_a_texture_of_its_size_and_format() {
         let pass = |target: &str, resolve: Option<&str>| {
-            Step::Render(Pass {
+            Step::Render(Pass { depth: None,
                 target: Some(PassTarget { texture: target.into(), mip: 0 }),
                 resolve: resolve.map(|r| PassTarget { texture: r.into(), mip: 0 }),
                 clear: None,
@@ -1607,7 +1607,7 @@ mod tests {
         for step in [pass("r", Some("m")), pass("m", Some("small")), pass("m", Some("srgb")), pass("r", Some("r"))] {
             assert!(refuse(step).contains("resolves"));
         }
-        let canvas = Step::Render(Pass { target: None, resolve: Some(PassTarget { texture: "r".into(), mip: 0 }), clear: None, commands: Vec::new() });
+        let canvas = Step::Render(Pass { depth: None, target: None, resolve: Some(PassTarget { texture: "r".into(), mip: 0 }), clear: None, commands: Vec::new() });
         assert!(refuse(canvas).contains("resolves the canvas"));
         c.textures.insert("odd".into(), Texture { samples: 3, ..texture(8, 4, 1, "rgba8unorm") });
         assert!(validate(&c, 8192).unwrap_err().contains("3 samples"));
@@ -1616,14 +1616,14 @@ mod tests {
     #[test]
     fn a_pass_target_and_a_bound_view_name_levels_that_exist() {
         let mut c = recording();
-        c.passes.push(Step::Render(Pass { resolve: None,
+        c.passes.push(Step::Render(Pass { depth: None, resolve: None,
             target: Some(PassTarget { texture: "t".into(), mip: 2 }),
             clear: Some([0.0; 4]),
             commands: Vec::new(),
         }));
         assert!(validate(&c, 8192).is_ok());
         refused(
-            Step::Render(Pass { resolve: None,
+            Step::Render(Pass { depth: None, resolve: None,
                 target: Some(PassTarget { texture: "t".into(), mip: 3 }),
                 clear: None,
                 commands: Vec::new(),
@@ -1631,7 +1631,7 @@ mod tests {
             "mip level 3",
         );
         refused(
-            Step::Render(Pass { resolve: None,
+            Step::Render(Pass { depth: None, resolve: None,
                 target: Some(PassTarget { texture: "gone".into(), mip: 0 }),
                 clear: None,
                 commands: Vec::new(),
@@ -1639,7 +1639,7 @@ mod tests {
             "texture gone",
         );
         refused(
-            Step::Render(Pass { resolve: None,
+            Step::Render(Pass { depth: None, resolve: None,
                 target: None,
                 clear: Some([f64::NAN, 0.0, 0.0, 0.0]),
                 commands: Vec::new(),
@@ -1712,7 +1712,7 @@ mod tests {
     fn too_many_steps_are_refused() {
         let mut c = recording();
         for _ in 0..=MAX_STEPS {
-            c.passes.push(Step::Render(Pass { resolve: None, target: None, clear: None, commands: Vec::new() }));
+            c.passes.push(Step::Render(Pass { depth: None, resolve: None, target: None, clear: None, commands: Vec::new() }));
         }
         assert!(validate(&c, 8192).unwrap_err().contains("steps in a frame"));
     }
@@ -1919,7 +1919,7 @@ mod tests {
         assert!(ok(vec![entry(0, 4, "storage-texture", Some("read-write"), Some("r32float"))]).is_ok());
         assert!(ok(vec![entry(0, 4, "storage-texture", Some("read-only"), Some("r32uint"))]).is_ok());
         assert!(layout_err(vec![entry(0, 4, "storage-texture", None, None)]).contains("without a format"));
-        assert!(layout_err(vec![entry(0, 4, "storage-texture", None, Some("depth24plus"))]).contains("format depth24plus"));
+        assert!(layout_err(vec![entry(0, 4, "storage-texture", None, Some("depth24plus-stencil8"))]).contains("format depth24plus-stencil8"));
         assert!(layout_err(vec![entry(0, 4, "storage-texture", None, Some("rgba8unorm-srgb"))]).contains("cannot be a storage texture"));
         assert!(layout_err(vec![entry(0, 4, "storage-texture", None, Some("r8unorm"))]).contains("cannot be a storage texture"));
         assert!(layout_err(vec![entry(0, 4, "storage-texture", Some("read-write"), Some("rgba8unorm"))]).contains("optional feature"));
@@ -2177,7 +2177,8 @@ mod tests {
         assert_eq!(info("rgba8unorm-srgb").storage, Storage::No);
         assert_eq!(info("rgba8uint").sample, Sample::Uint);
         assert_eq!(info("rg32sint").sample, Sample::Sint);
-        assert!(format_info("depth24plus").is_none());
+        assert!(format_info("depth24plus-stencil8").is_none());
+        assert_eq!(format_info("depth24plus").map(|f| (f.bytes, f.sample, f.storage)), Some((4, Sample::Depth, Storage::No)));
         assert!(format_info("bc1-rgba-unorm").is_none());
         assert_eq!(texel_bytes("rgba32uint"), Some(16));
         assert_eq!(texture_bytes(&texture(4, 4, 1, "rgba32float"), 8192), Ok(256));
@@ -2199,7 +2200,7 @@ mod tests {
     fn a_render_pass_binds_groups_the_recording_holds() {
         let mut c = compute_recording();
         let bind = |index: u32, group: &str| {
-            Step::Render(Pass { resolve: None,
+            Step::Render(Pass { depth: None, resolve: None,
                 target: None,
                 clear: None,
                 commands: vec![Command::Bind { index, group: group.into(), offsets: vec![] }],
