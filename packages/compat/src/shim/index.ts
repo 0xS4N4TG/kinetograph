@@ -22,6 +22,7 @@ export {
   IntersectionObserverShim,
   MutationObserverShim,
 } from './observers.js';
+export { mediaPending, resetMedia, setMediaClock, tickMedia } from './media.js';
 export { deliverMediaEvents } from './media-events.js';
 export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf, setRemoteFiles, setRefusedFetchHandler, whenFetchesSettle, trackPending } from './web.js';
 export { setPathMeasure } from './geometry.js';

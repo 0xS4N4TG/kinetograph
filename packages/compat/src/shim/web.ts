@@ -11,6 +11,7 @@ import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, WebGLContext, createGpu, GPU_GLOBALS, pictureOf, type CanvasPicture } from '@kinetographdev/scene';
 import { resolveDocumentUrl, resolveProjectFile, resolveCachedRemoteFile, sameOriginPath } from '../environment.js';
+import { pendingMediaLoads, reportMediaIssue } from './media.js';
 import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas.js';
 import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, XMLSerializerShim, installDocumentMembers } from './document.js';
 import { AttrShim, NamedNodeMapShim } from './attributes.js';
@@ -376,7 +377,7 @@ let inFlight = 0;
 export async function whenFetchesSettle(): Promise<void> {
   for (let quiet = 0; quiet < 2; ) {
     await new Promise<void>((resolve) => setImmediate(resolve));
-    quiet = inFlight === 0 ? quiet + 1 : 0;
+    quiet = inFlight === 0 && pendingMediaLoads() === 0 ? quiet + 1 : 0;
   }
 }
 
@@ -611,6 +612,22 @@ export function installDomGlobals(): void {
   // `navigator.gpu` records (packages/scene/src/webgpu.ts); the canvas's 'webgpu' context is made by `getContext`.
   for (const [name, value] of Object.entries(GPU_GLOBALS)) define(g, name, value);
   const navigator = (g.navigator ??= {}) as Record<string, unknown>;
+  // A camera, a microphone or a screen is not there to capture: the request is refused at once (a page that waits for the
+  // stream would hold the frame for ever) and the page is told why, as a browser with no device does.
+  if (!('mediaDevices' in navigator)) {
+    const refuse = (what: string) => async (): Promise<never> => {
+      const message = `navigator.mediaDevices.${what}: capturing a camera, microphone or screen is not supported; the page draws without it`;
+      reportMediaIssue(message);
+      const error = new Error(message);
+      error.name = 'NotSupportedError';
+      throw error;
+    };
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: Object.assign(new EventTarget(), { getUserMedia: refuse('getUserMedia'), getDisplayMedia: refuse('getDisplayMedia'), enumerateDevices: async () => [], getSupportedConstraints: () => ({}) }),
+      configurable: true,
+      enumerable: false,
+    });
+  }
   if (!('gpu' in navigator)) Object.defineProperty(navigator, 'gpu', { value: createGpu({ rasterize: rasterizeCanvas, info: webgpuDeviceInfo }), configurable: true, enumerable: false });
   define(g, 'CanvasGradient', CanvasGradient);
   define(g, 'CanvasPattern', CanvasPattern);
