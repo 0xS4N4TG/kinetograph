@@ -1652,6 +1652,25 @@ export interface SceneJson {
   layers: LayerJson[];
 }
 
+/** A value in a page's Web Audio call: a number, a string, or an audio file (a decoded buffer) by path. */
+export type PageAudioValue = number | string | boolean | null | { file: string } | PageAudioValue[];
+
+/**
+ * One call a page made on its `AudioContext`, on the virtual clock (`t` seconds, the frame's time), numbered in the
+ * order made (`seq`: the same in every render of the page, so the calls two workers both made are the same calls).
+ * Nodes are named by `id`; `dest` and `listener` are the context's. The mix replays them (packages/audio, page-graph.ts).
+ */
+export type PageAudioOp = { seq: number; t: number } & (
+  | { op: 'new'; id: string; kind: string; args?: PageAudioValue[] }
+  | { op: 'set'; id: string; prop: string; value: PageAudioValue }
+  | { op: 'param'; id: string; name: string; method: string; args: PageAudioValue[] }
+  | { op: 'call'; id: string; method: string; args: PageAudioValue[] }
+  | { op: 'connect'; id: string; to: string; param?: string; output?: number; input?: number }
+  | { op: 'disconnect'; id: string; to?: string }
+  /** A media element (`<audio>`) the page plays: `id` is its output; `play` carries the file and where it starts. */
+  | { op: 'media'; id: string; action: 'play' | 'pause' | 'volume' | 'rate'; file?: string; offset?: number; loop?: boolean; value?: number }
+);
+
 /** AUTHORING.md §6.4. */
 export interface AudioClipJson {
   id: string;
