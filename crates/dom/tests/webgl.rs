@@ -408,6 +408,7 @@ fn a_frame_does_not_depend_on_what_the_thread_drew_before() {
         // State the context keeps: a narrowed depthRange, and the uniforms of a program of the same source.
         ("webgl2_depth_range_set", "webgl2_frag_depth_range"),
         ("webgl2_uniform_default_set", "webgl2_uniform_default_unset"),
+        ("webgl2_uvec_default_set", "webgl2_uvec_default_unset"),
     ] {
         let ab = render(vec![a, b, a]);
         let ba = render(vec![b, a, b]);

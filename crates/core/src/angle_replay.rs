@@ -1316,18 +1316,117 @@ fn set_uniform(gl_: &Gl, program: &Program, name: &str, call: &rec::GlslUniform)
     write_uniform(gl_, location, ty, &call.value, name)
 }
 
-/// The numbers one element of a uniform of GL type `ty` takes.
-fn uniform_width(ty: Enum) -> Option<usize> {
+/// The GL uniform types (`glGetActiveUniform`), by their names in the ES 3.0 headers.
+mod utype {
+    use crate::angle::Enum;
+    pub const FLOAT: Enum = 0x1406;
+    pub const FLOAT_VEC2: Enum = 0x8B50;
+    pub const FLOAT_VEC3: Enum = 0x8B51;
+    pub const FLOAT_VEC4: Enum = 0x8B52;
+    pub const INT: Enum = 0x1404;
+    pub const INT_VEC2: Enum = 0x8B53;
+    pub const INT_VEC3: Enum = 0x8B54;
+    pub const INT_VEC4: Enum = 0x8B55;
+    pub const BOOL: Enum = 0x8B56;
+    pub const BOOL_VEC2: Enum = 0x8B57;
+    pub const BOOL_VEC3: Enum = 0x8B58;
+    pub const BOOL_VEC4: Enum = 0x8B59;
+    pub const FLOAT_MAT2: Enum = 0x8B5A;
+    pub const FLOAT_MAT3: Enum = 0x8B5B;
+    pub const FLOAT_MAT4: Enum = 0x8B5C;
+    pub const FLOAT_MAT2X3: Enum = 0x8B65;
+    pub const FLOAT_MAT2X4: Enum = 0x8B66;
+    pub const FLOAT_MAT3X2: Enum = 0x8B67;
+    pub const FLOAT_MAT3X4: Enum = 0x8B68;
+    pub const FLOAT_MAT4X2: Enum = 0x8B69;
+    pub const FLOAT_MAT4X3: Enum = 0x8B6A;
+    pub const UNSIGNED_INT: Enum = 0x1405;
+    pub const UNSIGNED_INT_VEC2: Enum = 0x8DC6;
+    pub const UNSIGNED_INT_VEC3: Enum = 0x8DC7;
+    pub const UNSIGNED_INT_VEC4: Enum = 0x8DC8;
+}
+
+/// How a uniform of one GL type is written: the function and the numbers one element takes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum UniformKind {
+    Float(usize),
+    Int(usize),
+    Uint(usize),
+    /// `which` indexes `uniform_matrix` (2, 3, 4, 2x3, 2x4, 3x2, 3x4, 4x2, 4x3), `floats` is the element.
+    Matrix {
+        which: usize,
+        floats: usize,
+    },
+    /// A sampler of any dimension: the texture unit, as an int.
+    Sampler,
+}
+
+impl UniformKind {
+    fn width(self) -> usize {
+        match self {
+            UniformKind::Float(n) | UniformKind::Int(n) | UniformKind::Uint(n) => n,
+            UniformKind::Matrix { floats, .. } => floats,
+            UniformKind::Sampler => 1,
+        }
+    }
+}
+
+fn uniform_kind(ty: Enum) -> Option<UniformKind> {
+    use UniformKind as K;
+    use utype::*;
     Some(match ty {
-        0x1406 | 0x1404 | 0x8B56 | 0x1405 | 0x8B5E..=0x8B62 | 0x8DC1..=0x8DD7 => 1,
-        0x8B50 | 0x8B53 | 0x8B57 | 0x8DC6 => 2,
-        0x8B51 | 0x8B54 | 0x8B58 | 0x8DC7 => 3,
-        0x8B52 | 0x8B55 | 0x8B59 | 0x8DC8 | 0x8B5A => 4,
-        0x8B5B => 9,
-        0x8B5C => 16,
-        0x8B65 | 0x8B67 => 6,
-        0x8B66 | 0x8B69 => 8,
-        0x8B68 | 0x8B6A => 12,
+        FLOAT => K::Float(1),
+        FLOAT_VEC2 => K::Float(2),
+        FLOAT_VEC3 => K::Float(3),
+        FLOAT_VEC4 => K::Float(4),
+        INT | BOOL => K::Int(1),
+        INT_VEC2 | BOOL_VEC2 => K::Int(2),
+        INT_VEC3 | BOOL_VEC3 => K::Int(3),
+        INT_VEC4 | BOOL_VEC4 => K::Int(4),
+        UNSIGNED_INT => K::Uint(1),
+        UNSIGNED_INT_VEC2 => K::Uint(2),
+        UNSIGNED_INT_VEC3 => K::Uint(3),
+        UNSIGNED_INT_VEC4 => K::Uint(4),
+        FLOAT_MAT2 => K::Matrix {
+            which: 0,
+            floats: 4,
+        },
+        FLOAT_MAT3 => K::Matrix {
+            which: 1,
+            floats: 9,
+        },
+        FLOAT_MAT4 => K::Matrix {
+            which: 2,
+            floats: 16,
+        },
+        FLOAT_MAT2X3 => K::Matrix {
+            which: 3,
+            floats: 6,
+        },
+        FLOAT_MAT2X4 => K::Matrix {
+            which: 4,
+            floats: 8,
+        },
+        FLOAT_MAT3X2 => K::Matrix {
+            which: 5,
+            floats: 6,
+        },
+        FLOAT_MAT3X4 => K::Matrix {
+            which: 6,
+            floats: 12,
+        },
+        FLOAT_MAT4X2 => K::Matrix {
+            which: 7,
+            floats: 8,
+        },
+        FLOAT_MAT4X3 => K::Matrix {
+            which: 8,
+            floats: 12,
+        },
+        // SAMPLER_2D .. SAMPLER_2D_SHADOW; SAMPLER_2D_ARRAY, its shadow and SAMPLER_CUBE_SHADOW (0x8DC2 and 0x8DC3 are
+        // 1D arrays, which ES has not); the int and unsigned int samplers. The unsigned int vectors (0x8DC6 to 0x8DC8)
+        // sit between them and are not samplers.
+        0x8B5E..=0x8B62 | 0x8DC1 | 0x8DC4 | 0x8DC5 | 0x8DC9..=0x8DD7 => K::Sampler,
         _ => return None,
     })
 }
@@ -1336,9 +1435,10 @@ fn uniform_width(ty: Enum) -> Option<usize> {
 /// uniform goes back to 0 (a sampler to unit 0), as in a program that has just linked.
 fn zero_uniforms(gl_: &Gl, program: &Program) -> R<()> {
     for (name, &(size, ty)) in &program.uniforms {
-        let Some(width) = uniform_width(ty) else {
+        let Some(kind) = uniform_kind(ty) else {
             return Err(format!("unsupported: uniform {name} of GL type 0x{ty:x}"));
         };
+        let width = kind.width();
         let mut location = gl_.uniform_location(program.name, name);
         if location < 0 {
             location = gl_.uniform_location(program.name, &format!("{name}[0]"));
@@ -1360,31 +1460,122 @@ fn write_uniform(gl_: &Gl, location: i32, ty: Enum, value: &[f64], name: &str) -
     let f: Vec<f32> = value.iter().map(|v| *v as f32).collect();
     let i: Vec<i32> = value.iter().map(|v| *v as i32).collect();
     let u: Vec<u32> = value.iter().map(|v| *v as u32).collect();
-    match ty {
-        0x1406 => gl_.uniform_f(location, 1, &f),
-        0x8B50 => gl_.uniform_f(location, 2, &f),
-        0x8B51 => gl_.uniform_f(location, 3, &f),
-        0x8B52 => gl_.uniform_f(location, 4, &f),
-        0x1404 | 0x8B56 => gl_.uniform_i(location, 1, &i),
-        0x8B53 | 0x8B57 => gl_.uniform_i(location, 2, &i),
-        0x8B54 | 0x8B58 => gl_.uniform_i(location, 3, &i),
-        0x8B55 | 0x8B59 => gl_.uniform_i(location, 4, &i),
-        0x1405 => gl_.uniform_u(location, 1, &u),
-        0x8DC6 => gl_.uniform_u(location, 2, &u),
-        0x8DC7 => gl_.uniform_u(location, 3, &u),
-        0x8DC8 => gl_.uniform_u(location, 4, &u),
-        0x8B5A => gl_.uniform_matrix(location, 0, 4, &f),
-        0x8B5B => gl_.uniform_matrix(location, 1, 9, &f),
-        0x8B5C => gl_.uniform_matrix(location, 2, 16, &f),
-        0x8B65 => gl_.uniform_matrix(location, 3, 6, &f),
-        0x8B66 => gl_.uniform_matrix(location, 4, 8, &f),
-        0x8B67 => gl_.uniform_matrix(location, 5, 6, &f),
-        0x8B68 => gl_.uniform_matrix(location, 6, 12, &f),
-        0x8B69 => gl_.uniform_matrix(location, 7, 8, &f),
-        0x8B6A => gl_.uniform_matrix(location, 8, 12, &f),
-        // Samplers: the texture unit.
-        0x8B5E..=0x8B62 | 0x8DC1..=0x8DD7 => gl_.uniform_i(location, 1, &i),
-        _ => return Err(format!("unsupported: uniform {name} of GL type 0x{ty:x}")),
+    match uniform_kind(ty) {
+        Some(UniformKind::Float(n)) => gl_.uniform_f(location, n, &f),
+        Some(UniformKind::Int(n)) => gl_.uniform_i(location, n, &i),
+        Some(UniformKind::Uint(n)) => gl_.uniform_u(location, n, &u),
+        Some(UniformKind::Matrix { which, floats }) => {
+            gl_.uniform_matrix(location, which, floats, &f)
+        }
+        Some(UniformKind::Sampler) => gl_.uniform_i(location, 1, &i),
+        None => return Err(format!("unsupported: uniform {name} of GL type 0x{ty:x}")),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{UniformKind as K, uniform_kind, utype::*};
+
+    /// Every uniform type of ES 3.0 against its enum value in the headers (an unnamed one is a sampler or not a uniform).
+    #[test]
+    fn uniform_types_give_their_component_counts() {
+        let table = [
+            (FLOAT, K::Float(1)),
+            (FLOAT_VEC2, K::Float(2)),
+            (FLOAT_VEC3, K::Float(3)),
+            (FLOAT_VEC4, K::Float(4)),
+            (INT, K::Int(1)),
+            (INT_VEC2, K::Int(2)),
+            (INT_VEC3, K::Int(3)),
+            (INT_VEC4, K::Int(4)),
+            (BOOL, K::Int(1)),
+            (BOOL_VEC2, K::Int(2)),
+            (BOOL_VEC3, K::Int(3)),
+            (BOOL_VEC4, K::Int(4)),
+            (UNSIGNED_INT, K::Uint(1)),
+            (UNSIGNED_INT_VEC2, K::Uint(2)),
+            (UNSIGNED_INT_VEC3, K::Uint(3)),
+            (UNSIGNED_INT_VEC4, K::Uint(4)),
+            (
+                FLOAT_MAT2,
+                K::Matrix {
+                    which: 0,
+                    floats: 4,
+                },
+            ),
+            (
+                FLOAT_MAT3,
+                K::Matrix {
+                    which: 1,
+                    floats: 9,
+                },
+            ),
+            (
+                FLOAT_MAT4,
+                K::Matrix {
+                    which: 2,
+                    floats: 16,
+                },
+            ),
+            (
+                FLOAT_MAT2X3,
+                K::Matrix {
+                    which: 3,
+                    floats: 6,
+                },
+            ),
+            (
+                FLOAT_MAT2X4,
+                K::Matrix {
+                    which: 4,
+                    floats: 8,
+                },
+            ),
+            (
+                FLOAT_MAT3X2,
+                K::Matrix {
+                    which: 5,
+                    floats: 6,
+                },
+            ),
+            (
+                FLOAT_MAT3X4,
+                K::Matrix {
+                    which: 6,
+                    floats: 12,
+                },
+            ),
+            (
+                FLOAT_MAT4X2,
+                K::Matrix {
+                    which: 7,
+                    floats: 8,
+                },
+            ),
+            (
+                FLOAT_MAT4X3,
+                K::Matrix {
+                    which: 8,
+                    floats: 12,
+                },
+            ),
+        ];
+        for (ty, kind) in table {
+            assert_eq!(uniform_kind(ty), Some(kind), "type 0x{ty:x}");
+        }
+        // The samplers (SAMPLER_2D, _3D, _CUBE, _2D_SHADOW, _2D_ARRAY, _2D_ARRAY_SHADOW, _CUBE_SHADOW, the int and unsigned
+        // int ones) read a unit, and the unsigned int vectors between them are not samplers.
+        for ty in [
+            0x8B5E, 0x8B5F, 0x8B60, 0x8B62, 0x8DC1, 0x8DC4, 0x8DC5, 0x8DCA, 0x8DCB, 0x8DCC, 0x8DCF,
+            0x8DD2, 0x8DD3, 0x8DD4, 0x8DD7,
+        ] {
+            assert_eq!(uniform_kind(ty), Some(K::Sampler), "sampler 0x{ty:x}");
+        }
+        assert_eq!(uniform_kind(0x8DC6).map(K::width), Some(2));
+        assert_eq!(uniform_kind(0x8DC7).map(K::width), Some(3));
+        assert_eq!(uniform_kind(0x8DC8).map(K::width), Some(4));
+        assert_eq!(uniform_kind(0x8DC2), None);
+        assert_eq!(uniform_kind(0x1400), None);
+    }
 }
