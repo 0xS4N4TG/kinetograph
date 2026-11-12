@@ -3,8 +3,8 @@ import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * The lockup: the pixel mark (a cobalt rounded square with the mechanism in white dots, a 40-dot grid shown at 40px so each dot is a
- * whole pixel on 1x, 2x and 3x screens; scripts/mark.py draws it from the engine picture) to the left of the wordmark, which is lowercase kinetograph in DM Sans 700 at -0.05em, the full stop
+ * The lockup: the pixel mark (a cobalt rounded square with the mechanism in white dots, drawn on its own grid per screen density (40, 80, 120, 160 dots, shown at 40px) so each dot is
+ * one device pixel; scripts/mark.py draws it from the engine picture) to the left of the wordmark, which is lowercase kinetograph in DM Sans 700 at -0.05em, the full stop
  * in red (its only use of red).
  */
 export function Wordmark({ className, mark = true }: { className?: string; mark?: boolean }) {
@@ -13,7 +13,7 @@ export function Wordmark({ className, mark = true }: { className?: string; mark?
       {mark && (
         <img
           src="/retro/mark-40.png"
-          srcSet="/retro/mark-40.png 1x, /retro/mark-40@2x.png 2x, /retro/mark-40@3x.png 3x"
+          srcSet="/retro/mark-40.png 1x, /retro/mark-40@2x.png 2x, /retro/mark-40@3x.png 3x, /retro/mark-40@4x.png 4x"
           width={40}
           height={40}
           alt=""

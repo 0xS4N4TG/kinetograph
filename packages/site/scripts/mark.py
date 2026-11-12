@@ -22,11 +22,21 @@ GRID = 40  # dots per side, margin included
 MARGIN = 2  # empty dots around the drawing
 BLUR = 8  # source pixels at the 36-dot inner size (scaled for other grids); the drawing is dithered, so blur first or the thin rims drop out
 THRESHOLD = 0.28  # coverage (0..1) at which a dot turns white
+# The 1x mark (40 dots) crops tighter, base dropped, so the mechanism fills the square.
+CROP_1X = (108, 76, 750, 706)
+# Denser grids are drawn almost as the picture is (its own dots are about 4 source pixels): no blur, no cleaning.
+DENSE = dict(threshold=0.4, blur=0, clean=False)
+
+
+def dense(grid):
+    return dots(grid, round(grid * 0.05), **DENSE)
+
+
 # Hand fixes after thresholding, as (x, y, on) in dot coordinates of the final grid.
 FIXES: list[tuple[int, int, bool]] = []
 
 
-def dots(grid=GRID, margin=MARGIN, threshold=THRESHOLD, crop=CROP, fixes=FIXES, blur=BLUR):
+def dots(grid=GRID, margin=MARGIN, threshold=THRESHOLD, crop=CROP, fixes=FIXES, blur=BLUR, clean=True):
     """Return the grid as rows of 0/1."""
     im = Image.open(SRC).convert('L').crop(crop)
     inner = grid - 2 * margin
@@ -43,7 +53,7 @@ def dots(grid=GRID, margin=MARGIN, threshold=THRESHOLD, crop=CROP, fixes=FIXES, 
             if cov[x, y] / 255 >= threshold:
                 rows[y + margin][x + margin] = 1
     # Drop dots with no neighbour: dither leftovers that read as dirt at this size.
-    keep = [[v and any(rows[j][i] for j in range(max(0, y - 1), min(grid, y + 2)) for i in range(max(0, x - 1), min(grid, x + 2)) if (i, j) != (x, y)) for x, v in enumerate(row)] for y, row in enumerate(rows)]
+    keep = rows if not clean else [[v and any(rows[j][i] for j in range(max(0, y - 1), min(grid, y + 2)) for i in range(max(0, x - 1), min(grid, x + 2)) if (i, j) != (x, y)) for x, v in enumerate(row)] for y, row in enumerate(rows)]
     rows = [[1 if v else 0 for v in row] for row in keep]
     for x, y, on in fixes:
         rows[y][x] = 1 if on else 0
@@ -100,15 +110,15 @@ def main():
         return
     pub = ROOT / 'public/retro'
     app = ROOT / 'src/app'
-    # The site mark: 40 dots, shown at 40 CSS px (1x), 80 (2x) and 120 (3x), all exact multiples.
-    rows = dots(GRID)
-    for k in (1, 2, 3):
-        render(rows, k).save(pub / ('mark-40.png' if k == 1 else f'mark-40@{k}x.png'), optimize=True)
-    # Icons: the grid is picked so that one dot is a whole number of pixels.
+    # The site mark, shown at 40 CSS px: each density has its own grid, one dot per device pixel (40, 80, 120, 160).
+    render(dots(40, 1, 0.3, crop=CROP_1X, blur=4), 1).save(pub / 'mark-40.png', optimize=True)
+    for k in (2, 3, 4):
+        render(dense(40 * k), 1).save(pub / f'mark-40@{k}x.png', optimize=True)
+    # Icons: the denser the grid, the more of the real drawing; 32 px keeps the blurred 32-dot version.
     icon(32, dots(32, 2)).save(app / 'icon.png', optimize=True)
-    icon(180, dots(45, 4)).save(app / 'apple-icon.png', optimize=True)
-    icon(192, dots(48, 3)).save(app / 'icon1.png', optimize=True)
-    icon(512, dots(32, 2)).save(app / 'icon2.png', optimize=True)
+    icon(180, dense(180)).save(app / 'apple-icon.png', optimize=True)
+    icon(192, dense(192)).save(app / 'icon1.png', optimize=True)
+    icon(512, dense(128)).save(app / 'icon2.png', optimize=True)
     # 16 px: the hand-reduced drawing above, one dot per pixel.
     write_ico(app / 'favicon.ico', [icon(16, dots16()), icon(32, dots(32, 2)), icon(48, dots(48, 3))])
 
