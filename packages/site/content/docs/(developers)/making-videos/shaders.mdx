@@ -71,8 +71,8 @@ A `<canvas>` with a `webgl`, `webgl2` or `webgpu` context runs on the GPU, so ex
 ## What works
 
 - Drawn natively: Canvas 2D, GLSL, WebGL and WebGL 2 fragment shaders, framebuffers, instancing, depth and stencil, and WebGPU render and compute passes.
-- Approximated: an `rgba16float` or `display-p3` WebGPU canvas is clipped to SDR sRGB.
-- Not supported: WebGL multisampled renderbuffers, `readPixels`, lines, cube textures and float render targets, and several WebGPU features (query sets, render bundles, indirect draws, multisampling, readback).
+- Approximated: the WebGL depth buffer holds 32-bit floats, a depth texture is sampled `NEAREST`, and points are squares of at most 511 px. An `rgba16float` or `display-p3` WebGPU canvas is clipped to SDR sRGB.
+- Not supported: WebGL `readPixels`, instanced points and the other cases under Not drawn in [What works](/docs/compat/#webgl), and several WebGPU features (query sets, render bundles, indirect draws, multisampling, readback).
 - `doctor` lists each of these with its frames, and a project that needs state from earlier frames. See [What works](/docs/compat/#webgl).
 
 ## Related topics
