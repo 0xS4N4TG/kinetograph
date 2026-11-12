@@ -266,7 +266,7 @@ export async function renderSource(
   let parallelRepeats = 0;
   try {
     const frameAt = (index: number): number => first + index * step;
-    const onFrame = (frame: number, audio: AudioClipJson[], unsupported: Unsupported[], calls: PageAudioOp[]): void => {
+    const onFrame = (frame: number, audio: AudioClipJson[], unsupported: Unsupported[], calls: PageAudioOp[] = []): void => {
       clipFrames.push({ frame, audio });
       for (const call of calls) pageAudio.set(call.seq, call);
       if (options.strict && unsupported.length > 0) throw strictError(frame, unsupported);

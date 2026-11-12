@@ -144,7 +144,7 @@ try {
       mark = at;
       const waited = renderer.takeGpuWaitMs();
       const gpuWaitMs = busyMs > 0 ? waited : 0;
-      post({ type: 'frame', frame: index, data, audio: out.audio, pageAudio: out.pageAudio, unsupported: out.unsupported ?? [], repeated: drawn.repeated, busyMs, gpuWaitMs }, [data]);
+      post({ type: 'frame', frame: index, data, audio: out.audio, pageAudio: out.pageAudio ?? [], unsupported: out.unsupported ?? [], repeated: drawn.repeated, busyMs, gpuWaitMs }, [data]);
       if (log && row) {
         const t3 = now();
         log.add({ ...row, finish: t1 - t0, yuv: t2 - t1, post: t3 - t2, t3, ...takeAddon() });
@@ -170,7 +170,7 @@ try {
       if (sequence) {
         // An image file per frame is drawn and encoded whole here, with no frame in flight.
         const data = copy(encodeFrame(renderer, sequence, sceneJson, frame, source.baseDir));
-        post({ type: 'frame', frame: index, data, audio: out.audio, pageAudio: out.pageAudio, unsupported: out.unsupported ?? [], repeated: false, busyMs: 0, gpuWaitMs: 0 }, [data]);
+        post({ type: 'frame', frame: index, data, audio: out.audio, pageAudio: out.pageAudio ?? [], unsupported: out.unsupported ?? [], repeated: false, busyMs: 0, gpuWaitMs: 0 }, [data]);
         continue;
       }
       // The frame before is collected first: its start ran on the addon's own thread while this frame's JS did, and
