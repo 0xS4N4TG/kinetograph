@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
 import { carryDepends, carryNeedsReplay, resetCarry } from '../src/shim/webgpu-dawn-carry.js';
 import { hasAddonFunction } from '../src/addon.js';
-import { DAWN_FEATURES, DAWN_LIMITS, DawnCanvasContext, createDawnScope, dawnCommandsOf, dawnGlobals, dawnReadCommands, duringAnimationFrames, enterDawnScope, flushDawnCanvases, installDawn, releaseDawn, takeDawnReports } from '../src/shim/webgpu-dawn.js';
+import { DAWN_FEATURES, DAWN_LIMITS, DawnCanvasContext, createDawnScope, dawnCommandsOf, dawnGlobals, dawnReadCommands, duringAnimationFrames, enterDawnScope, flushDawnCanvases, installDawn, releaseDawn, setDawnClock, takeDawnReports } from '../src/shim/webgpu-dawn.js';
 
 const missing = ((): string | null => {
   const spec = process.env.KINETOGRAPH_DAWN_MODULE;
@@ -21,6 +21,13 @@ const missing = ((): string | null => {
 })();
 
 if (missing !== null) describe('WebGPU through Dawn', () => it.skip(`skipped: ${missing}`, () => {}));
+
+/** The engine's clock for the carry rules (`setDawnClock`), set by hand: the epoch of the frame a test is in. */
+function engineClock(): { mockReturnValue(at: number): void; mockRestore(): void } {
+  let at = 0;
+  setDawnClock(() => at);
+  return { mockReturnValue: (value) => { at = value; }, mockRestore: () => setDawnClock(() => 0) };
+}
 
 describe.skipIf(missing !== null)('WebGPU through Dawn', () => {
   const gpu = missing === null ? installDawn({ track: (work) => work, rasterize: () => null }) : null;
@@ -91,7 +98,7 @@ describe.skipIf(missing !== null)('WebGPU through Dawn', () => {
   it('forgets what the frames of a composition read of each other when its devices are released, and starts a renderer without it', async () => {
     const adapter = await gpu.requestAdapter();
     const device = await adapter.requestDevice();
-    const clock = vi.spyOn(performance, 'now');
+    const clock = engineClock();
     const buffer = device.createBuffer({ size: 16, usage: g.GPUBufferUsage.STORAGE | g.GPUBufferUsage.COPY_DST });
     const module = device.createShaderModule({ code: '@group(0) @binding(0) var<storage, read_write> b: array<f32>; @compute @workgroup_size(1) fn main() { b[0] = b[0] + 1.0; }' });
     const pipeline = device.createComputePipeline({ layout: 'auto', compute: { module, entryPoint: 'main' } });
@@ -167,6 +174,39 @@ describe.skipIf(missing !== null)('WebGPU through Dawn', () => {
     expect(takeDawnReports()).toEqual([]);
   });
 
+  it('dates what a frame reads and writes by the engine clock, not by the page\'s performance.now', async () => {
+    const adapter = await gpu.requestAdapter();
+    const device = await adapter.requestDevice();
+    const clock = engineClock();
+    // A page that replaced performance.now (or the real one, once the engine's determinism is uninstalled) must not move the frames' dates.
+    const real = performance.now;
+    performance.now = () => 5;
+    try {
+      const U = g.GPUTextureUsage;
+      const make = () => device.createTexture({ size: [4, 4], format: 'rgba8unorm', usage: U.RENDER_ATTACHMENT | U.TEXTURE_BINDING | U.COPY_DST });
+      const [a, b] = [make(), make()];
+      const copy = (): void => {
+        const encoder = device.createCommandEncoder();
+        encoder.copyTextureToTexture({ texture: a }, { texture: b }, [4, 4]);
+        device.queue.submit([encoder.finish()]);
+      };
+      resetCarry();
+      clock.mockReturnValue(0);
+      for (const texture of [a, b]) {
+        const encoder = device.createCommandEncoder();
+        encoder.beginRenderPass({ colorAttachments: [{ view: texture.createView(), loadOp: 'clear', storeOp: 'store' }] }).end();
+        device.queue.submit([encoder.finish()]);
+      }
+      clock.mockReturnValue(33);
+      copy();
+      expect(carryNeedsReplay()).toBe(true);
+    } finally {
+      performance.now = real;
+      clock.mockRestore();
+      device.destroy();
+    }
+  });
+
   it('reads a canvas back as the same bytes each time, and a frame that is not drawn has no picture', async () => {
     const adapter = await gpu.requestAdapter();
     const device = await adapter.requestDevice();
@@ -220,7 +260,7 @@ describe.skipIf(missing !== null)('WebGPU through Dawn', () => {
     const device = await adapter.requestDevice();
     const module = device.createShaderModule({ code: '@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f { return vec4f(0, 0, 0.5, 1); } @fragment fn fs() -> @location(0) vec4f { return vec4f(1); }' });
     const pipeline = (depthCompare: string) => device.createRenderPipeline({ layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format: 'rgba8unorm' }] }, primitive: { topology: 'point-list' }, depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare } });
-    const clock = vi.spyOn(performance, 'now');
+    const clock = engineClock();
     const frames = (compare: string): boolean => {
       resetCarry();
       clock.mockReturnValue(0);
@@ -257,7 +297,7 @@ describe.skipIf(missing !== null)('WebGPU through Dawn', () => {
       @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f { var p = array<vec2f,3>(vec2f(-1,-1), vec2f(3,-1), vec2f(-1,3)); return vec4f(p[i], 0, 1); }
       @fragment fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f { return textureLoad(src, vec2i(p.xy), 0); }` });
     const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format: 'rgba8unorm' }] } });
-    const clock = vi.spyOn(performance, 'now');
+    const clock = engineClock();
     const make = (usage: number, format = 'rgba8unorm') => device.createTexture({ size: [4, 4], format, usage });
     const fill = (texture: any): void => device.queue.writeTexture({ texture }, new Uint8Array(64).fill(9), { bytesPerRow: 16 }, [4, 4]);
     const pass = (source: any, target: any, loadOp = 'clear'): void => {

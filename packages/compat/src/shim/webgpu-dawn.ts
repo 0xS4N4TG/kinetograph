@@ -89,6 +89,17 @@ export class DawnScope {
   readonly carry: Carry = newCarry();
 }
 
+/** The frame's virtual time in milliseconds (the engine's `virtualNow`): what a resource's last write is dated by (`webgpu-dawn-carry.ts`). */
+let clock: () => number = () => 0;
+
+/**
+ * The engine gives the clock itself: the page's `performance.now` is not it (a page can replace it, and once the engine's
+ * determinism is uninstalled it is the real time).
+ */
+export function setDawnClock(now: () => number): void {
+  clock = now;
+}
+
 const defaultScope = new DawnScope();
 useCarry(defaultScope.carry);
 let scope: DawnScope = defaultScope;
@@ -195,7 +206,7 @@ function patchDawn(g: Record<string, Any>): void {
     // A buffer that only query results go to (QUERY_RESOLVE, COPY_SRC) is zero and nothing else writes it; one that can be copied to is cleared.
     if (((buffer.usage ?? 0) & 0x08 /* COPY_DST */) !== 0) this.clearBuffer(buffer, offset, count * 8);
   });
-  trackCarry(g, () => performance.now());
+  trackCarry(g, () => clock());
 }
 
 /** The adapter the page sees: fixed features, limits and info, and a device that has the real adapter's but those. */

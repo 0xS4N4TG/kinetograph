@@ -13,7 +13,7 @@
 // real timer functions are kept here for the shim's own use: the delayRender
 // timeout needs real time to fail, and nothing else may.
 
-import { animationClockMoved, animationsPending, duringAnimationFrames, resetAnimations, setAnimationClock, tickAnimations } from '@kinetographdev/compat/shim';
+import { animationClockMoved, animationsPending, duringAnimationFrames, resetAnimations, setAnimationClock, setDawnClock, tickAnimations } from '@kinetographdev/compat/shim';
 import { setGsapTime } from './gsap-clock.js';
 
 /**
@@ -327,6 +327,8 @@ export function virtualNow(): number {
 
 // `document.timeline` reads the virtual clock, the one `performance.now()` and animation-frame callbacks get.
 setAnimationClock(virtualNow);
+// What a Dawn page's frames are dated by (the carry rules of `webgpu-dawn-carry.ts`): the frame's time, not the page's `performance.now`.
+setDawnClock(virtualNow);
 
 /** The frames per second of the last `setVirtualFrame`. */
 export function virtualFps(): number {

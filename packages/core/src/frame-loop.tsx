@@ -364,6 +364,8 @@ class Renderer implements FrameRenderer {
       this.subFrameLayers = null;
       // What the sub-frames' recordings left out is said too, each once.
       for (const what of takeGlReports()) reportUnsupported('canvas', 'webgl', 'render target', what);
+      // A sub-frame runs the page's GPU calls again: what they got wrong is this frame's, not the next one's.
+      for (const what of takeDawnReports()) reportUnsupported('canvas', 'webgpu', 'device', what);
       const had = new Set(reported.map((item) => JSON.stringify(item)));
       reported = [...reported, ...reportedUnsupported().filter((item) => !had.has(JSON.stringify(item)))];
       restoreGl();

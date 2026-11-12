@@ -197,6 +197,28 @@ describe.skipIf(missing !== null)('WebGPU through Dawn, rendered', () => {
     expect(JSON.parse(r.stdout.trim().split('\n').pop()!)).toEqual([0, 7]);
   });
 
+  it('says an error with the frame whose motion-blur sub-frame made it, not the frame after', () => {
+    const page = join(fixtures, 'react-blur-error.tsx');
+    // The sub-frames of frame 5 run the page's GPU calls again, after the frame's own reports were taken: their errors are said with frame 5.
+    for (const frames of [[3, 4, 5, 6, 7], [3, 4, 5]]) {
+      const strict = drawInOrder(page, frames, true);
+      expect(Object.keys(strict.errors), `frames ${frames}`).toEqual(['5']);
+      expect(strict.errors[5]).toMatch(/frame 5/);
+      expect(strict.errors[5]).toMatch(/WebGPU \(Dawn\): GPUValidationError/);
+    }
+    expect(drawInOrder(page, [3, 4, 5, 6, 7]).leftOut).toMatch(/"firstFrame":5,"lastFrame":5/);
+  });
+
+  it('says an error the page did not catch with its frame, also when nothing waits for its device', () => {
+    // Said by the library at the call that made it: it is the frame's own (it was not seen to arrive later, which is why errors are not scoped per frame).
+    const page = join(fixtures, 'react-late-error.tsx');
+    for (const frames of [[3, 4, 5, 6, 7], [3, 4, 5], [5]]) {
+      const strict = drawInOrder(page, frames, true);
+      expect(Object.keys(strict.errors), `frames ${frames}`).toEqual(['5']);
+      expect(strict.errors[5]).toMatch(/frame 5/);
+    }
+  });
+
   it('says an error the page did not catch with its frame, and --strict fails on it', () => {
     const page = join(fixtures, 'validation-error.html');
     const warned = run(['still', page, '0', '-o', join(dir, 'err.png')]);
