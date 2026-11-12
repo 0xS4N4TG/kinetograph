@@ -72,28 +72,58 @@ fn table() -> std::sync::MutexGuard<'static, Table> {
     STORE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// Whether `old` holds the same picture as the rows of `bytes` (same size, layout and pixels).
+fn same_picture(old: &StoredPicture, width: u32, height: u32, row_bytes: usize, bgra: bool, alpha: StoredAlpha, bytes: &[u8]) -> bool {
+    (old.width, old.height, old.bgra, old.alpha) == (width, height, bgra, alpha)
+        && (0..height as usize).all(|y| old.row(y) == &bytes[y * row_bytes..y * row_bytes + width as usize * 4])
+}
+
+/// The newest version of `key`, held by an `Arc` so that it can be compared without the store's lock.
+fn newest(key: &str) -> Option<Arc<StoredPicture>> {
+    table().iter().filter(|((k, _), _)| k == key).max_by_key(|((_, v), _)| *v).map(|(_, p)| p.clone())
+}
+
+/// Whether `bytes` hold the rows of a `width` x `height` picture of rows of `row_bytes`.
+fn holds_rows(width: usize, height: usize, row_bytes: usize, bytes: &[u8]) -> Result<(), String> {
+    if width == 0 || height == 0 || row_bytes < width * 4 || bytes.len() < row_bytes * (height - 1) + width * 4 {
+        return Err(format!("stored pixels {width}x{height}: {} bytes of rows of {row_bytes} do not hold the picture", bytes.len()));
+    }
+    Ok(())
+}
+
 /// Keeps `picture` as version `version` of `key`, after checking that its bytes hold its rows. `Ok(false)` and nothing kept when
 /// the newest version of `key` is the same picture (the same size, layout and pixels): the host keeps using that one, which
 /// the painter has already made an image of.
 pub fn put(key: &str, version: u64, picture: StoredPicture) -> Result<bool, String> {
-    let (width, height) = (picture.width as usize, picture.height as usize);
-    if width == 0 || height == 0 || picture.row_bytes < width * 4 || picture.bytes.len() < picture.row_bytes * (height - 1) + width * 4 {
-        return Err(format!(
-            "stored pixels {width}x{height}: {} bytes of rows of {} do not hold the picture",
-            picture.bytes.len(),
-            picture.row_bytes
-        ));
-    }
-    let mut table = table();
-    let newest = table.iter().filter(|((k, _), _)| k == key).max_by_key(|((_, v), _)| *v).map(|(_, p)| p);
-    if let Some(old) = newest
-        && (old.width, old.height, old.bgra, old.alpha) == (picture.width, picture.height, picture.bgra, picture.alpha)
-        && (0..height).all(|y| old.row(y) == picture.row(y))
+    holds_rows(picture.width as usize, picture.height as usize, picture.row_bytes, &picture.bytes)?;
+    // Compared on the `Arc` of the newest version, outside the store's lock: a picture of megabytes is not compared while others wait.
+    if let Some(old) = newest(key)
+        && same_picture(&old, picture.width, picture.height, picture.row_bytes, picture.bgra, picture.alpha, &picture.bytes)
     {
         return Ok(false);
     }
-    table.insert((key.to_string(), version), Arc::new(picture));
+    table().insert((key.to_string(), version), Arc::new(picture));
     Ok(true)
+}
+
+/// `put` of rows the caller still owns: they are compared with the newest version as they are, and copied only when they are a new
+/// picture (a canvas that did not change from the frame before costs no copy).
+#[allow(clippy::too_many_arguments)]
+pub fn put_rows(key: &str, version: u64, width: u32, height: u32, row_bytes: usize, bgra: bool, alpha: StoredAlpha, bytes: &[u8]) -> Result<bool, String> {
+    holds_rows(width as usize, height as usize, row_bytes, bytes)?;
+    if let Some(old) = newest(key)
+        && same_picture(&old, width, height, row_bytes, bgra, alpha, bytes)
+    {
+        return Ok(false);
+    }
+    let picture = StoredPicture { width, height, row_bytes, bgra, alpha, bytes: bytes.to_vec() };
+    table().insert((key.to_string(), version), Arc::new(picture));
+    Ok(true)
+}
+
+/// Version `version` of `key`, as put (not noted for `end_scene`: this is the host reading it back).
+pub fn get(key: &str, version: u64) -> Option<Arc<StoredPicture>> {
+    table().get(&(key.to_string(), version)).cloned()
 }
 
 /// Version `version` of `key`, for a scene that names it: kept in the scene, and noted for `end_scene`.
@@ -130,11 +160,6 @@ pub fn versions(key: &str) -> usize {
     table().keys().filter(|(k, _)| k == key).count()
 }
 
-/// Version `version` of `key`, as put (not noted for `end_scene`: this is the host reading it back).
-pub fn get(key: &str, version: u64) -> Option<Arc<StoredPicture>> {
-    table().get(&(key.to_string(), version)).cloned()
-}
-
 /// Forgets every version of `key` (a canvas that is gone).
 pub fn release(key: &str) {
     table().retain(|(k, _), _| k != key);
@@ -154,6 +179,28 @@ mod tests {
         assert_eq!(put("t-a", 2, picture(2, 2, 7)), Ok(false));
         assert_eq!(put("t-a", 2, picture(2, 2, 8)), Ok(true));
         release("t-a");
+    }
+
+    #[test]
+    fn rows_the_caller_owns_are_compared_as_they_are_and_copied_only_when_new() {
+        let rows = vec![7u8; 2 * 2 * 4];
+        assert_eq!(put_rows("t-d", 1, 2, 2, 8, false, StoredAlpha::Opaque, &rows), Ok(true));
+        // The same picture again, also from rows of another stride: nothing is kept.
+        assert_eq!(put_rows("t-d", 2, 2, 2, 8, false, StoredAlpha::Opaque, &rows), Ok(false));
+        let mut padded = vec![0u8; 12 + 8];
+        padded[..8].fill(7);
+        padded[12..].fill(7);
+        assert_eq!(put_rows("t-d", 2, 2, 2, 12, false, StoredAlpha::Opaque, &padded), Ok(false));
+        assert_eq!(versions("t-d"), 1);
+        // Another layout, or other pixels, is a new picture; the bytes are the caller's again afterwards.
+        assert_eq!(put_rows("t-d", 2, 2, 2, 8, true, StoredAlpha::Opaque, &rows), Ok(true));
+        let mut changed = rows.clone();
+        changed[9] = 1;
+        assert_eq!(put_rows("t-d", 3, 2, 2, 8, true, StoredAlpha::Opaque, &changed), Ok(true));
+        assert_eq!(get("t-d", 3).unwrap().bytes, changed);
+        assert!(put_rows("t-d", 4, 4, 4, 16, false, StoredAlpha::Opaque, &rows).is_err());
+        release("t-d");
+        assert!(get("t-d", 3).is_none());
     }
 
     #[test]

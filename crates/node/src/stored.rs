@@ -4,11 +4,11 @@
 use napi::bindgen_prelude::Buffer;
 
 use crate::error::{Result, invalid};
-use kinetograph_core::stored_pixels::{self, StoredAlpha, StoredPicture};
+use kinetograph_core::stored_pixels::{self, StoredAlpha};
 
 /// Keeps `bytes` (rows of `row_bytes`, RGBA8 or BGRA8) as version `version` of the canvas `key`; `alpha` is `opaque`, `premultiplied`
-/// or `straight`. One copy of the bytes is made: the buffer is the caller's again when the call returns. False, and nothing kept, when
-/// the newest version of `key` is the same picture.
+/// or `straight`. The bytes are compared with the newest version as they are, and copied only when they are a new picture: the buffer is
+/// the caller's again when the call returns. False, and nothing kept, when the newest version of `key` is the same picture.
 pub fn put(
     key: &str,
     version: f64,
@@ -25,8 +25,7 @@ pub fn put(
         "straight" => StoredAlpha::Unpremul,
         other => return Err(invalid(format!("putCanvasPixels: alpha is opaque, premultiplied or straight, not {other:?}"))),
     };
-    let picture = StoredPicture { width, height, row_bytes: row_bytes as usize, bgra, alpha, bytes: bytes.to_vec() };
-    stored_pixels::put(key, version as u64, picture).map_err(|e| invalid(format!("putCanvasPixels: {e}")))
+    stored_pixels::put_rows(key, version as u64, width, height, row_bytes as usize, bgra, alpha, bytes).map_err(|e| invalid(format!("putCanvasPixels: {e}")))
 }
 
 /// The rows of version `version` of the canvas `key` as they were put, or none when that version is gone.
@@ -42,6 +41,7 @@ pub fn release(key: &str) {
 mod tests {
     use super::*;
     use crate::{PreviewOptions, Renderer};
+    use kinetograph_core::stored_pixels::StoredPicture;
 
     /// A scene with one canvas layer that draws version `version` of the picture `key`.
     fn naming(key: &str, version: u64) -> String {
@@ -84,7 +84,7 @@ mod tests {
     fn a_picture_put_can_be_read_back_as_put() {
         let key = "node-test-read-back";
         let bytes: Vec<u8> = (0..8 * 8 * 4).map(|i| (i % 251) as u8).collect();
-        assert!(stored_pixels::put(key, 1, StoredPicture { width: 8, height: 8, row_bytes: 32, bgra: false, alpha: StoredAlpha::Premul, bytes: bytes.clone() }).unwrap());
+        assert!(stored_pixels::put_rows(key, 1, 8, 8, 32, false, StoredAlpha::Premul, &bytes).unwrap());
         assert_eq!(pixels(key, 1.0).unwrap().to_vec(), bytes);
         assert!(pixels(key, 2.0).is_none());
         stored_pixels::release(key);
