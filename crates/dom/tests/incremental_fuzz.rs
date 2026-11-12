@@ -717,3 +717,146 @@ fn a_block_whose_container_changed_is_not_laid_out_from_the_cache_of_the_old_con
     ]);
     assert_eq!(got, want);
 }
+
+/// What a box keeps that is not its layout (its stacking context, the hoisted entries it gave an ancestor's stacking
+/// context, the container size a query saw, a transform and the overflow of its content) must not survive the edit
+/// that makes it `display: contents`: the document drawn is the one built from the same request.
+fn becomes_display_contents(style: &str, children: impl Fn() -> Vec<Value>, sheet: Option<&str>) {
+    let tree = |contents: &str| {
+        let owner = el_attrs("div", "$0.0.0", json!({ "class": "cq" }), &format!("{style}; {contents}"), children());
+        let sibling = common::el("div", "$0.0.1", "position: absolute; z-index: 1; left: 30px; top: 8px; width: 60px; height: 20px; background: #a33", vec![]);
+        let mut page = fuzz_page(common::el("div", "$0.0", "", vec![owner, sibling]));
+        if let Some(sheet) = sheet {
+            page["stylesheets"] = json!([SHEET, sheet]);
+        }
+        page
+    };
+    let (got, want) = chain_and_fresh(vec![tree(""), tree("display: contents")]);
+    assert_eq!(got, want);
+}
+
+#[test]
+fn a_stacking_context_is_not_kept_by_a_box_that_becomes_display_contents() {
+    becomes_display_contents(
+        "position: relative; z-index: 2; width: 100px; height: 30px; background: #345",
+        || vec![text("kinet")],
+        None,
+    );
+}
+
+#[test]
+fn the_entries_a_box_gave_an_enclosing_stacking_context_are_not_kept_when_it_becomes_display_contents() {
+    becomes_display_contents(
+        "width: 100px; height: 30px",
+        || vec![common::el("div", "$0.0.0.0", "position: absolute; z-index: 3; left: 5px; top: 5px; width: 40px; height: 20px; background: #3a3", vec![])],
+        None,
+    );
+}
+
+#[test]
+fn a_container_size_is_not_kept_by_a_box_that_becomes_display_contents() {
+    becomes_display_contents(
+        "container-type: inline-size; width: 400px",
+        || vec![el_attrs("span", "$0.0.0.0", json!({ "class": "t" }), "", vec![text("kinet")])],
+        Some("@container (min-width: 300px) { .t { color: #c00 } }"),
+    );
+}
+
+#[test]
+fn a_transform_and_overflow_are_not_kept_by_a_box_that_becomes_display_contents() {
+    becomes_display_contents(
+        "transform: rotate(10deg); overflow: hidden; width: 50px; height: 20px",
+        || vec![text("a long text that does not fit in the box it is in")],
+        None,
+    );
+}
+
+/// Seed 1060260, cut down: an absolutely positioned block after a block in a relative `<span>` is hoisted to the
+/// anonymous block that wraps the `<span>` (the span is inline content, no containing block of its own). The frame
+/// that puts it back in flow builds the parent's layout children again, which frees the anonymous block. Nothing
+/// took the freed block off the box as its containing block, and readback placed the box 16px up from it.
+#[test]
+fn a_box_back_in_flow_does_not_keep_a_freed_anonymous_block_as_its_containing_block() {
+    let tree = |p: &str| {
+        let p = common::el("p", "$0.0.1.0", p, vec![]);
+        let span = el_attrs("span", "$0.0.1", json!({ "class": "rel" }), "", vec![p]);
+        fuzz_page(common::el("div", "$0.0", "", vec![common::el("div", "$0.0.0", "", vec![]), span]))
+    };
+    let (got, want) = chain_and_fresh(vec![tree("position: absolute; left: 108px; top: 139px"), tree("")]);
+    assert_eq!(got, want);
+}
+
+/// Seed 1060462, cut down: a `<span>` holding a block and a text is inside a `display: contents` element inside inline
+/// content, and the frame changes the contents element's `position` (which damages it, not the `<span>`). The `<span>`
+/// is built as a box now, but the paint tree skipped it, as nothing damaged it: it had no paint children, and
+/// its text was not drawn.
+#[test]
+fn a_node_built_again_after_being_inline_content_has_its_paint_children_built() {
+    let tree = |position: &str| {
+        let div = common::el("div", "$0.0.0.0.0.0", "", vec![]);
+        let span = common::el("span", "$0.0.0.0.0", "", vec![div, text("frame")]);
+        let contents = el_attrs("em", "$0.0.0.0", json!({ "class": "contents" }), position, vec![span]);
+        fuzz_page(common::el("div", "$0.0", "", vec![common::el("em", "$0.0.0", "", vec![contents])]))
+    };
+    let (got, want) = chain_and_fresh(vec![tree("position: absolute"), tree("position: static")]);
+    assert_eq!(got, want);
+}
+
+/// Seed 15909, cut down: the text of a table cell in a block in a flex box, and the frame that makes the block a flex
+/// box too. Measuring the block's content again broke the text into lines at another width (it wrapped), and the cell's
+/// final layout was taken from the cache that described the lines of the run before: the text was drawn as two
+/// lines in a cell that is one line tall.
+#[test]
+fn a_cached_final_layout_is_not_taken_for_text_broken_by_a_later_measurement() {
+    let tree = |col: &str| {
+        let td = common::el("td", "$0.0.0.0.0.0", "", vec![text("go gamma")]);
+        let table = common::el("table", "$0.0.0.0.0", "", vec![td]);
+        let col = el_attrs("div", "$0.0.0.0", json!({ "class": "col" }), col, vec![table]);
+        fuzz_page(common::el("div", "$0.0", "", vec![el_attrs("div", "$0.0.0", json!({ "class": "flex" }), "", vec![col])]))
+    };
+    let (got, want) = chain_and_fresh(vec![tree(""), tree("display: flex")]);
+    assert_eq!(got, want);
+}
+
+/// The page of the container query tests: a `.cq` box that is a size container, a `.t` text that is red when the
+/// container is 300px wide or more, in a `.wrap` box of `wrap` width.
+fn container_page(wrap: &str, cq: &str) -> Value {
+    let span = el_attrs("span", "$0.0.0.0.0", json!({ "class": "t" }), "", vec![text("kinet")]);
+    let owner = el_attrs("div", "$0.0.0.0", json!({ "class": "cq" }), &format!("container-type: inline-size; {cq}"), vec![span]);
+    let wrap = common::el("div", "$0.0.0", &format!("width: {wrap}"), vec![owner]);
+    let mut page = fuzz_page(common::el("div", "$0.0", "", vec![wrap]));
+    page["stylesheets"] = json!([SHEET, "@container (min-width: 300px) { .t { color: #c00 } }"]);
+    page
+}
+
+/// A container that stops generating a box (`display: none` here, `display: contents` above) has no size for its
+/// queries: they do not match, as in a document built with it hidden.
+#[test]
+fn a_container_that_becomes_display_none_has_no_size_for_its_queries() {
+    let (got, want) = chain_and_fresh(vec![container_page("400px", ""), container_page("400px", "display: none")]);
+    assert_eq!(got, want);
+}
+
+/// And when its box comes back, the queries see the size it has.
+#[test]
+fn a_container_whose_box_comes_back_is_asked_its_size_again() {
+    let (got, want) = chain_and_fresh(vec![
+        container_page("400px", ""),
+        container_page("400px", "display: contents"),
+        container_page("400px", ""),
+    ]);
+    assert_eq!(got, want);
+    let (got, want) = chain_and_fresh(vec![
+        container_page("400px", ""),
+        container_page("400px", "display: none"),
+        container_page("400px", ""),
+    ]);
+    assert_eq!(got, want);
+}
+
+/// A container whose size changes with no style of its own changing (the box round it is resized).
+#[test]
+fn a_container_resized_by_its_parent_is_asked_its_size_again() {
+    let (got, want) = chain_and_fresh(vec![container_page("400px", ""), container_page("200px", ""), container_page("400px", "")]);
+    assert_eq!(got, want);
+}
