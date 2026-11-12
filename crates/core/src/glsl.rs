@@ -1055,7 +1055,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         slots,
         blocks,
     } = input;
-    let src = lower_sampler_parameters(&expand_sampler_arrays(&blank_qualifiers(&strip_comments(src))));
+    let src = lower_sampler_parameters(&expand_sampler_arrays(&blank_qualifiers(&strip_comments(src)))?);
     let fragment = stage == ShaderStage::Fragment;
 
     // Directive lines are set apart: removed, or rewritten as code. Code

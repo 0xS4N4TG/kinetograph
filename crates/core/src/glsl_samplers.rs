@@ -39,51 +39,23 @@ struct Scope {
 }
 
 /// Arrays of samplers (`uniform sampler2DShadow maps[2];`, which three.js uses for shadow maps), as separate samplers:
-/// `_k_sa_maps_0` and `_k_sa_maps_1`. An element is read by a number (`maps[1]`, which three.js unrolls its loops to);
-/// another index is left for naga to refuse. `glsl::sampler_unit` finds the unit of an element.
-pub(crate) fn expand_sampler_arrays(src: &str) -> String {
+/// `_k_sa_maps_0` and `_k_sa_maps_1`. The length is a constant expression (a number, a macro, a `const int`), and so is
+/// the index of an element (`maps[1]`, which three.js unrolls its loops to; `maps[I]` with a `const int I`); an index
+/// that is not one is refused, naming it. `glsl::sampler_unit` finds the unit of an element.
+pub(crate) fn expand_sampler_arrays(src: &str) -> Result<String, String> {
     if !SAMPLERS.iter().any(|(s, _)| src.contains(s)) || !src.contains('[') {
-        return src.to_string();
+        return Ok(src.to_string());
     }
     let toks = tokenize(src);
     let w = |i: usize| &src[toks[i].start..toks[i].end];
     let mut arrays: HashMap<&str, usize> = HashMap::new();
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
-    for i in 1..toks.len().saturating_sub(5) {
-        let declared = sampler_type(w(i)).is_some()
-            && (i.saturating_sub(2)..i).any(|k| w(k) == "uniform")
-            && toks[i + 1].kind == Kind::Ident
-            && w(i + 2) == "["
-            && toks[i + 3].kind == Kind::Number
-            && w(i + 4) == "]";
-        if !declared {
-            continue;
-        }
-        let Ok(length) = w(i + 3).parse::<usize>() else { continue };
-        let name = w(i + 1);
-        arrays.insert(name, length);
-        if length == 0 {
-            // No sampler at all: the whole declaration goes.
-            let start = (i.saturating_sub(2)..i).find(|k| w(*k) == "uniform").map_or(toks[i].start, |k| toks[k].start);
-            let end = (i + 5..toks.len()).find(|k| w(*k) == ";").map_or(toks[i + 4].end, |k| toks[k].end);
-            edits.push((start, end, String::new()));
-        } else {
-            let elements: Vec<String> = (0..length).map(|k| format!("_k_sa_{name}_{k}")).collect();
-            edits.push((toks[i + 1].start, toks[i + 4].end, elements.join(", ")));
-        }
-    }
-    if arrays.is_empty() {
-        return src.to_string();
-    }
-    // An element is read by a number, or by an expression of macros that is one where it stands (three.js writes
-    // `spotLightMap[ SPOT_LIGHT_MAP_INDEX ]` after a `#define` the unrolled loop made), so the directives are followed.
+    // The macros, and the `const int`s (as macros of their own), of the point a token stands at: the directives are
+    // followed up to its line, so a length or an index written with a macro is read as the shader reads it.
     let mut cpp = Cpp::new();
     let mut line_end = 0;
-    for i in 0..toks.len().saturating_sub(3) {
-        if toks[i].kind != Kind::Ident || w(i + 1) != "[" || !arrays.contains_key(w(i)) || edits.iter().any(|e| toks[i].start >= e.0 && toks[i].end <= e.1) {
-            continue;
-        }
-        // The directives up to this token's line, so the macros are those of this point.
+    let (mut depth, mut consts): (usize, Vec<(String, usize)>) = (0, Vec::new());
+    for i in 0..toks.len() {
         while line_end <= toks[i].start {
             let line_start = line_end;
             line_end = src[line_start..].find('\n').map_or(src.len(), |n| line_start + n + 1);
@@ -91,14 +63,87 @@ pub(crate) fn expand_sampler_arrays(src: &str) -> String {
                 let _ = cpp.directive(directive.trim_end());
             }
         }
+        if !cpp.active() {
+            continue;
+        }
+        match w(i) {
+            "{" => depth += 1,
+            "}" => {
+                depth = depth.saturating_sub(1);
+                while let Some((name, _)) = consts.pop_if(|(_, d)| *d > depth) {
+                    let _ = cpp.directive(&format!("undef {name}"));
+                }
+            }
+            // `const int N = 2 * M;` is a number the index or the length may be written with.
+            "const" => {
+                let mut k = i + 1;
+                while k < toks.len() && matches!(w(k), "highp" | "mediump" | "lowp") {
+                    k += 1;
+                }
+                if k + 3 < toks.len() && matches!(w(k), "int" | "uint") && toks[k + 1].kind == Kind::Ident && w(k + 2) == "=" {
+                    if let Some(end) = (k + 3..toks.len()).find(|&e| w(e) == ";") {
+                        if end > k + 3 {
+                            let name = w(k + 1).to_string();
+                            let value = &src[toks[k + 3].start..toks[end - 1].end];
+                            if cpp.directive(&format!("define {name} ({value})")).is_ok() {
+                                consts.push((name, depth));
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        // A declaration: `uniform sampler2D name[length];`.
+        if sampler_type(w(i)).is_some()
+            && (i.saturating_sub(2)..i).any(|k| w(k) == "uniform")
+            && i + 4 < toks.len()
+            && toks[i + 1].kind == Kind::Ident
+            && w(i + 2) == "["
+        {
+            let Some(close) = (i + 3..toks.len()).find(|&k| w(k) == "]") else { continue };
+            let name = w(i + 1);
+            let written = src[toks[i + 3].start..toks[close.max(i + 4) - 1].end].trim();
+            let Some(length) = (close > i + 3).then(|| cpp.length(written).parse::<usize>().ok()).flatten() else {
+                return Err(format!(
+                    "unsupported: the length of the sampler array `{name}` is `{written}`, which is not a constant (a number, a macro or a `const int`)"
+                ));
+            };
+            arrays.insert(name, length);
+            if length == 0 {
+                // No sampler at all: the whole declaration goes.
+                let start = (i.saturating_sub(2)..i).find(|k| w(*k) == "uniform").map_or(toks[i].start, |k| toks[k].start);
+                let end = (close..toks.len()).find(|k| w(*k) == ";").map_or(toks[close].end, |k| toks[k].end);
+                edits.push((start, end, String::new()));
+            } else {
+                let elements: Vec<String> = (0..length).map(|k| format!("_k_sa_{name}_{k}")).collect();
+                edits.push((toks[i + 1].start, toks[close].end, elements.join(", ")));
+            }
+            continue;
+        }
+        // An element: `name[index]`.
+        if toks[i].kind != Kind::Ident || i + 1 >= toks.len() || w(i + 1) != "[" || !arrays.contains_key(w(i)) || edits.iter().any(|e| toks[i].start >= e.0 && toks[i].end <= e.1) {
+            continue;
+        }
         let Some(close) = (i + 2..toks.len()).find(|&k| w(k) == "]") else { continue };
         if close == i + 2 || (i + 2..close).any(|k| w(k) == "[") {
             continue;
         }
-        let written = src[toks[i + 2].start..toks[close - 1].end].trim();
-        if let Ok(k) = cpp.length(written).parse::<usize>() {
-            edits.push((toks[i].start, toks[close].end, format!("_k_sa_{}_{k}", w(i))));
+        let (name, written) = (w(i), src[toks[i + 2].start..toks[close - 1].end].trim());
+        let length = arrays[name];
+        match cpp.length(written).parse::<usize>() {
+            Ok(k) if k < length => edits.push((toks[i].start, toks[close].end, format!("_k_sa_{name}_{k}"))),
+            Ok(k) => return Err(format!("unsupported: `{name}[{k}]` reads past the sampler array `{name}`, which has {length} elements")),
+            Err(_) => {
+                return Err(format!(
+                    "unsupported: the sampler array `{name}` is read with `[{written}]`, which is not a constant (a number, a macro or a `const int`); \
+                     GLSL ES 3.00 only reads a sampler array at a constant index, so write the loop out"
+                ))
+            }
         }
+    }
+    if arrays.is_empty() {
+        return Ok(src.to_string());
     }
     edits.sort_by_key(|e| e.0);
     let mut out = String::with_capacity(src.len() + 64);
@@ -109,7 +154,7 @@ pub(crate) fn expand_sampler_arrays(src: &str) -> String {
         last = end;
     }
     out.push_str(&src[last..]);
-    out
+    Ok(out)
 }
 
 /// `src` with the sampler parameters of its functions lowered; `src` itself when it has none.
