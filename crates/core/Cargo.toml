@@ -12,6 +12,9 @@ objc2-metal = { version = "0.3" }
 
 # Vulkan: the Skia Graphite context is made on wgpu's VkDevice (`render/skia/vulkan.rs`). `ash` is the version wgpu-hal
 # 30 uses, for the handles and the proc-address calls.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 skia-safe = { version = "0.153.3", features = ["vulkan", "graphite"] }
 ash = { version = "0.38" }

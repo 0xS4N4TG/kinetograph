@@ -707,22 +707,130 @@ pub fn with<T>(f: impl FnOnce(&Gl) -> T) -> Result<T, String> {
     })
 }
 
-fn open(name: &str) -> Result<Library, String> {
-    let dir = std::env::var_os("KINETOGRAPH_ANGLE_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_default();
+/// `KINETOGRAPH_ANGLE_DIR` or the folder beside the addon: always an absolute path. The libraries are loaded by full
+/// path and never by a bare name, so neither the system's search path nor the working directory (a project folder
+/// could hold a planted `libEGL`) decides which ones are loaded.
+fn library_dir() -> Result<PathBuf, String> {
+    match std::env::var_os("KINETOGRAPH_ANGLE_DIR") {
+        Some(dir) => checked_dir(PathBuf::from(dir)),
+        None => addon_dir()
+            .map(|d| d.join("angle"))
+            .ok_or_else(|| "ANGLE is not available: set KINETOGRAPH_ANGLE_DIR to the folder holding libEGL and libGLESv2".to_string()),
+    }
+}
+
+/// The path rule: absolute, and not empty.
+fn checked_dir(dir: PathBuf) -> Result<PathBuf, String> {
+    if dir.as_os_str().is_empty() || !dir.is_absolute() {
+        return Err(format!(
+            "KINETOGRAPH_ANGLE_DIR must be an absolute path, got {:?}",
+            dir.display().to_string()
+        ));
+    }
+    Ok(dir)
+}
+
+/// The folder of the file this code is loaded from (the addon), resolved from the module's own address and not from
+/// the working directory.
+#[cfg(unix)]
+fn addon_dir() -> Option<PathBuf> {
+    let mut info: libc::Dl_info = unsafe { std::mem::zeroed() };
+    // SAFETY: `dladdr` reads the address of a function of this module and fills `info`, which is zeroed and ours;
+    // `dli_fname` is a NUL-terminated path owned by the loader, copied before the call returns.
+    let found = unsafe { libc::dladdr(addon_dir as *const c_void, &mut info) };
+    if found == 0 || info.dli_fname.is_null() {
+        return None;
+    }
+    // SAFETY: non-null and NUL-terminated, see above.
+    let file = unsafe { std::ffi::CStr::from_ptr(info.dli_fname) }
+        .to_string_lossy()
+        .into_owned();
+    let path = PathBuf::from(file);
+    path.is_absolute()
+        .then(|| path.parent().map(PathBuf::from))
+        .flatten()
+}
+
+#[cfg(windows)]
+fn addon_dir() -> Option<PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    unsafe extern "system" {
+        fn GetModuleHandleExW(flags: u32, address: *const c_void, module: *mut *mut c_void) -> i32;
+        fn GetModuleFileNameW(module: *mut c_void, buffer: *mut u16, size: u32) -> u32;
+    }
+    const FROM_ADDRESS: u32 = 0x4 | 0x2; // GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | ..._UNCHANGED_REFCOUNT
+    let mut module = std::ptr::null_mut();
+    let mut buffer = vec![0u16; 32768];
+    // SAFETY: the address is of a function of this module; `module` and `buffer` are ours and `buffer` is as long as
+    // the size passed.
+    let len = unsafe {
+        if GetModuleHandleExW(FROM_ADDRESS, addon_dir as *const c_void, &mut module) == 0 {
+            return None;
+        }
+        GetModuleFileNameW(module, buffer.as_mut_ptr(), buffer.len() as u32)
+    } as usize;
+    let path = PathBuf::from(std::ffi::OsString::from_wide(&buffer[..len]));
+    path.parent().map(PathBuf::from)
+}
+
+fn open(dir: &std::path::Path, name: &str) -> Result<Library, String> {
     let path = dir.join(libloading::library_filename(name));
-    // SAFETY: loading a shared library runs its initialisers; these are ANGLE's own, which do nothing but set up
-    // statics.
-    unsafe { Library::new(&path) }.map_err(|e| format!("cannot load {}: {e}", path.display()))
+    #[cfg(windows)]
+    {
+        use libloading::os::windows::{
+            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR, LOAD_LIBRARY_SEARCH_SYSTEM32, Library as Win,
+        };
+        // SAFETY: loading a shared library runs its initialisers, ANGLE's own. The flags make the loader look in the
+        // library's own folder and System32 only, never in the working directory, for the libraries it names.
+        return unsafe {
+            Win::load_with_flags(
+                &path,
+                LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32,
+            )
+        }
+        .map(Library::from)
+        .map_err(|e| {
+            format!(
+                "ANGLE is not available: cannot load {}: {e}",
+                path.display()
+            )
+        });
+    }
+    #[cfg(not(windows))]
+    {
+        // SAFETY: loading a shared library runs its initialisers, ANGLE's own, which only set up statics. `path` is absolute.
+        unsafe { Library::new(&path) }.map_err(|e| {
+            format!(
+                "ANGLE is not available: cannot load {}: {e}",
+                path.display()
+            )
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::checked_dir;
+    use std::path::PathBuf;
+
+    #[test]
+    fn the_library_folder_must_be_absolute() {
+        assert!(checked_dir(PathBuf::new()).is_err());
+        assert!(checked_dir(PathBuf::from("angle")).is_err());
+        assert!(checked_dir(PathBuf::from("./angle")).is_err());
+        assert!(checked_dir(PathBuf::from("../lib")).is_err());
+        let abs = std::env::temp_dir();
+        assert_eq!(checked_dir(abs.clone()).unwrap(), abs);
+    }
 }
 
 type GetProc = unsafe extern "C" fn(*const c_char) -> *const c_void;
 
 fn create() -> Result<Context, String> {
-    let egl = open("EGL")?;
-    // libEGL loads libGLESv2 itself from its own folder; opening it here keeps it for the life of the context.
-    let gles = open("GLESv2")?;
+    let dir = library_dir()?;
+    // libGLESv2 first, by full path: libEGL then finds it already loaded instead of searching for it.
+    let gles = open(&dir, "GLESv2")?;
+    let egl = open(&dir, "EGL")?;
     macro_rules! sym {
         ($name:literal, $ty:ty) => {
             // SAFETY: the symbol is the EGL 1.5 function of this name with this signature.
