@@ -994,6 +994,17 @@ impl BaseDocument {
             self.deallocate_anonymous_block(nested_id);
         }
 
+        // The out-of-flow boxes its layout hoisted to it are in flow or hoisted to another box now: none of them keeps
+        // a freed block as its containing block (readback would place it from nothing, and the paint tree skip it).
+        let hoisted = std::mem::take(&mut *self.nodes[anon_id].hoisted_children.borrow_mut());
+        for id in hoisted {
+            if let Some(node) = self.nodes.get(id) {
+                if node.oof_containing_block.get() == Some(anon_id) {
+                    node.oof_containing_block.set(None);
+                }
+            }
+        }
+
         self.remove_node_from_tree(anon_id);
     }
 

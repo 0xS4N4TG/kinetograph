@@ -22,6 +22,7 @@ use taffy::{
     compute_oof_layout, prelude::*,
 };
 
+pub(crate) mod cache;
 pub(crate) mod construct;
 pub(crate) mod damage;
 pub(crate) mod inline;
@@ -776,22 +777,21 @@ impl taffy::CacheTree for LayoutPassState<'_> {
         node_id: NodeId,
         inputs: &taffy::LayoutInput,
     ) -> Option<taffy::LayoutOutput> {
-        let cache = &mut self.node_from_id_mut(node_id).try_layout_data_mut()?.cache;
-        let mut output = cache.get(inputs)?;
-        // A measurement keeps only the box's size, not its baselines, so a block whose
-        // first child is measured from the cache (an edited document's boxes are cached)
-        // takes its baseline from a later child. The final layout of the same inputs
-        // keeps them.
-        if inputs.run_mode == RunMode::ComputeSize {
-            let full = cache.get(&taffy::LayoutInput {
-                run_mode: RunMode::PerformLayout,
-                ..*inputs
-            });
-            if let Some(full) = full.filter(|full| full.size == output.size) {
-                output.baselines = full.baselines;
-            }
+        // The text of an inline root was broken into lines by the last run. A final layout that is cached describes
+        // the lines of the run that made it, not those of a measurement at another width made since.
+        if inputs.run_mode == RunMode::PerformLayout
+            && self
+                .node_from_id(node_id)
+                .element_data()
+                .and_then(|element| element.inline_layout_data.as_ref())
+                .is_some_and(|layout| layout.broken_for_measure)
+        {
+            return None;
         }
-        Some(output)
+        self.node_from_id_mut(node_id)
+            .try_layout_data_mut()?
+            .cache
+            .get(inputs)
     }
 
     #[inline]
