@@ -1,6 +1,8 @@
 // The install check of `kinetograph doctor`, run in a child process: loading the addon and opening the GPU are native
 // calls that a driver can kill the process in (an access violation prints nothing). In a child, a crash is an exit code
-// the parent reports, with the stage it died in and a hint.
+// the parent reports, with the stage it died in and a hint. The child runs with the addon's start-up trace
+// (`KINETOGRAPH_TRACE_START`, crates/core/src/trace.rs) and, on Windows, its crash report (`KINETOGRAPH_CRASH_REPORT`,
+// crates/node/src/crash_report.rs), so the parent can say which start-up step was the last one begun and where it died.
 
 import { spawn } from 'node:child_process';
 
@@ -16,6 +18,10 @@ export interface ProbeFailure {
   meaning?: string;
   /** An `error`: what the addon threw. */
   message?: string;
+  /** A crash or a hang in the renderer: the innermost start-up step that had begun and not ended (the addon's trace). */
+  step?: { name: string; detail: string };
+  /** A crash: what the addon's crash report said (Windows), one line each: the code, the place, the module and offset, the stack. */
+  crash?: string[];
 }
 
 export interface ProbeResult {
@@ -23,6 +29,54 @@ export interface ProbeResult {
   renderer: string | null;
   rendererReason: string | null;
   failure?: ProbeFailure;
+  /** The GPU adapters the renderer found (name, backend, type, vendor and device ids, driver), when it got that far. */
+  adapters?: string[];
+  /** The last lines of the start-up trace, when something went wrong (`n start|done|note step detail`). */
+  trace?: string[];
+}
+
+/** One line of the addon's start-up trace. */
+export interface TraceLine {
+  n: number;
+  kind: 'start' | 'done' | 'note';
+  step: string;
+  detail: string;
+}
+
+/** How many trace lines a failed check keeps. */
+const TRACE_KEPT = 60;
+
+/** The addon's trace lines and crash report lines in what the child wrote to stderr; anything else is a driver's. */
+export function parseStderr(text: string): { trace: TraceLine[]; crash: string[] } {
+  const trace: TraceLine[] = [];
+  const crash: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const t = /^kinetograph-trace: (\d+) (start|done|note) (\S+)(?: (.*))?$/.exec(line);
+    if (t) trace.push({ n: Number(t[1]), kind: t[2] as TraceLine['kind'], step: t[3]!, detail: t[4] ?? '' });
+    else if (line.startsWith('kinetograph-crash: ')) crash.push(line.slice('kinetograph-crash: '.length));
+  }
+  return { trace, crash };
+}
+
+/** The innermost step that began and had not ended when the trace stopped; `undefined` when every step ended. */
+export function lastStepStarted(trace: TraceLine[]): { name: string; detail: string } | undefined {
+  const open: TraceLine[] = [];
+  for (const line of trace) {
+    if (line.kind === 'start') open.push(line);
+    else if (line.kind === 'done') {
+      const at = open.map((o) => o.step).lastIndexOf(line.step);
+      if (at >= 0) open.splice(at, 1);
+    }
+  }
+  const last = open.at(-1);
+  return last === undefined ? undefined : { name: last.step, detail: last.detail };
+}
+
+/** The adapters the trace listed, each once (the renderer may try two backend sets). */
+export function adaptersOf(trace: TraceLine[]): string[] {
+  const seen = new Set<string>();
+  for (const line of trace) if (line.kind === 'note' && line.step === 'adapter') seen.add(line.detail.replace(/^#\d+ /, ''));
+  return [...seen];
 }
 
 /** Windows exit codes that a native crash leaves (`NTSTATUS`). */
@@ -66,7 +120,7 @@ export function parseProbeLines(text: string): Record<string, unknown>[] {
  * `{stage, done: true, ...}` after, `{stage, error}` when the addon threw. `ended` is how it exited: `hung` when it was
  * killed for taking too long.
  */
-export function interpret(lines: Record<string, unknown>[], ended: { status: number | null; signal: string | null; hung: boolean }): ProbeResult {
+export function interpret(lines: Record<string, unknown>[], ended: { status: number | null; signal: string | null; hung: boolean }, stderr = ''): ProbeResult {
   let addon: ProbeResult['addon'] | undefined;
   let renderer: string | null = null;
   let rendererReason: string | null = null;
@@ -88,16 +142,26 @@ export function interpret(lines: Record<string, unknown>[], ended: { status: num
       started = stage;
     }
   }
+  const { trace, crash } = parseStderr(stderr);
   const exit = describeExit(ended.status, ended.signal);
   if (ended.hung || exit !== undefined) {
     const finished = addon !== undefined && (!addon.loaded || rendererDone || failure !== undefined);
     const stage: ProbeFailure['stage'] = finished ? 'exit' : (started ?? 'addon');
     failure = ended.hung ? { stage, kind: 'hang' } : { stage, kind: 'crash', code: exit?.code, ...(exit?.meaning ? { meaning: exit.meaning } : {}) };
+    const step = stage === 'renderer' ? lastStepStarted(trace) : undefined;
+    if (step !== undefined) failure.step = step;
+    if (!ended.hung && crash.length > 0) failure.crash = crash;
   }
+  // A renderer that threw has no GPU to blame, but it has a reason: what it says.
+  if (failure?.kind === 'error' && failure.stage === 'renderer') rendererReason = failure.message ?? null;
   if (addon === undefined) {
     addon = { loaded: false, error: failure?.kind === 'error' ? (failure.message ?? 'unknown') : 'the process ended before the addon said it had loaded' };
   }
-  return { addon, renderer, rendererReason, ...(failure ? { failure } : {}) };
+  const adapters = adaptersOf(trace);
+  return {
+    addon, renderer, rendererReason, ...(failure ? { failure } : {}), ...(adapters.length > 0 ? { adapters } : {}),
+    ...(failure && failure.kind !== 'error' && trace.length > 0 ? { trace: trace.slice(-TRACE_KEPT).map((l) => `${l.n} ${l.kind} ${l.step} ${l.detail}`.trimEnd()) } : {}),
+  };
 }
 
 /** What a person can do about `failure`. */
@@ -122,7 +186,12 @@ export function hintFor(failure: ProbeFailure, platform: string = process.platfo
 export function describeFailure(failure: ProbeFailure, platform: string = process.platform): string[] {
   if (failure.kind === 'error') return [`why it could not start: ${failure.message}`];
   const code = failure.code === undefined ? '' : `: ${failure.code}${failure.meaning ? ` (${failure.meaning})` : ''}`;
-  return [`${failure.kind === 'hang' ? 'hung' : 'crashed'}${code}`, `hint: ${hintFor(failure, platform)}`];
+  return [
+    `${failure.kind === 'hang' ? 'hung' : 'crashed'}${code}`,
+    ...(failure.step === undefined ? [] : [`last start-up step begun: ${failure.step.name}${failure.step.detail ? ` ${failure.step.detail}` : ''}`]),
+    ...(failure.crash === undefined ? [] : ['crash report:', ...failure.crash.map((l) => `  ${l}`)]),
+    `hint: ${hintFor(failure, platform)}`,
+  ];
 }
 
 /** The child's program: loads the addon at `process.argv[1]`, opens the renderer, says each step as one JSON line. */
@@ -151,6 +220,9 @@ export function relevantEnv(env: NodeJS.ProcessEnv = process.env): string[] {
 
 export const PROBE_TIMEOUT_MS = 60_000;
 
+/** How much of the child's stderr is kept (characters); the trace of a start is about 10 KB. */
+const STDERR_KEPT = 1_000_000;
+
 /**
  * Loads `addonPath` and opens the renderer in a child process. `onStage` is told each stage before it starts, as the
  * child reaches it. Never rejects: a child that crashes or hangs is a result with a `failure`.
@@ -158,9 +230,14 @@ export const PROBE_TIMEOUT_MS = 60_000;
 export function probeInstall(addonPath: string, onStage: (stage: Stage) => void, timeoutMs: number = PROBE_TIMEOUT_MS): Promise<ProbeResult> {
   return new Promise((resolve) => {
     let out = '';
+    let err = '';
     let hung = false;
     let told = 0;
-    const child = spawn(process.execPath, ['-e', CHILD, addonPath], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
+    const child = spawn(process.execPath, ['-e', CHILD, addonPath], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+      env: { ...process.env, KINETOGRAPH_TRACE_START: '1', KINETOGRAPH_CRASH_REPORT: '1' },
+    });
     const timer = setTimeout(() => {
       hung = true;
       child.kill('SIGKILL');
@@ -176,13 +253,16 @@ export function probeInstall(addonPath: string, onStage: (stage: Stage) => void,
       out += chunk.toString('utf8');
       tell();
     });
+    child.stderr.on('data', (chunk: Buffer) => {
+      if (err.length < STDERR_KEPT) err += chunk.toString('utf8');
+    });
     child.on('error', (error) => {
       clearTimeout(timer);
       resolve({ addon: { loaded: false, error: `cannot start the check process: ${error.message}` }, renderer: null, rendererReason: null });
     });
     child.on('close', (status, signal) => {
       clearTimeout(timer);
-      resolve(interpret(parseProbeLines(out), { status, signal, hung }));
+      resolve(interpret(parseProbeLines(out), { status, signal, hung }, err));
     });
   });
 }
