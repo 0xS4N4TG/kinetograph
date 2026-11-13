@@ -2,7 +2,7 @@
 name: kinetograph-upgrade
 description: Upgrade Kinetograph in a project: the `kinetograph` CLI, its `@kinetographdev/*` packages and plugins together, and the installed agent skills. Use when a command says the CLI or the skills are out of date, when asked to update or bump Kinetograph, or after a version mismatch error.
 metadata:
-  version: "0.3.0"
+  version: "0.4.0-rc.1"
 ---
 
 # Upgrade Kinetograph
