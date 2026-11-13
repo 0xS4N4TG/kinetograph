@@ -877,6 +877,11 @@ impl Compositor {
     /// textures they read (Skia drawing into its target) must come after,
     /// and whatever waits for their results (a readback) too.
     pub fn submit(&self) -> Option<wgpu::SubmissionIndex> {
+        static FIRST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        let first = self.pending.borrow().is_some() && crate::trace::first(&FIRST);
+        if first {
+            crate::trace::start("first-submit", format_args!("{} passes recorded", self.recorded.get()));
+        }
         let timer = crate::profile::start();
         self.uniforms.borrow_mut().upload();
         let encoder = self.pending.borrow_mut().take()?;
@@ -887,6 +892,9 @@ impl Compositor {
         let index = self.queue.submit([finished]);
         crate::profile::add_since("submit_cpu", timer);
         crate::profile::add_value("submit_n", 1.0);
+        if first {
+            crate::trace::done("first-submit", format_args!("ok"));
+        }
         Some(index)
     }
 
@@ -2686,6 +2694,11 @@ impl Compositor {
             padded_row,
             height: canvas_height,
         } = readback;
+        static FIRST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        let first = crate::trace::first(&FIRST);
+        if first {
+            crate::trace::start("first-readback", format_args!("wait for the GPU, map {row_bytes}x{canvas_height} bytes"));
+        }
         let timer = crate::profile::start();
         self.device
             .poll(wgpu::PollType::Wait {
@@ -2697,6 +2710,9 @@ impl Compositor {
             .map_err(|e| Error::Render(format!("readback channel closed: {e}")))?
             .map_err(|e| Error::Render(format!("readback map failed: {e}")))?;
         crate::profile::add_since("rb_wait", timer);
+        if first {
+            crate::trace::done("first-readback", format_args!("ok"));
+        }
 
         let timer = crate::profile::start();
         let mapped = buffer
@@ -2989,7 +3005,8 @@ fn fullscreen_pipeline(
     entry: &str,
     format: wgpu::TextureFormat,
 ) -> wgpu::RenderPipeline {
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+    crate::trace::start("pipeline", format_args!("{entry} {format:?}"));
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(entry),
         layout: Some(layout),
         vertex: wgpu::VertexState {
@@ -3013,7 +3030,9 @@ fn fullscreen_pipeline(
         multisample: wgpu::MultisampleState::default(),
         multiview_mask: None,
         cache: None,
-    })
+    });
+    crate::trace::done("pipeline", format_args!("{entry}"));
+    pipeline
 }
 
 /// The pipeline of one custom shader module (`shader::compose`).
@@ -3488,10 +3507,13 @@ pub(crate) fn shader_source(source: &str) -> String {
 }
 
 fn shader_module(device: &wgpu::Device, label: &str, source: &str) -> wgpu::ShaderModule {
-    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+    crate::trace::start("shader-module", format_args!("{label}"));
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some(label),
         source: wgpu::ShaderSource::Wgsl(shader_source(source).into()),
-    })
+    });
+    crate::trace::done("shader-module", format_args!("{label}"));
+    module
 }
 
 /// The bind group of a custom shader (`shader::compose` declares the
@@ -3536,6 +3558,11 @@ fn shader_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
 /// A linear texture of any size that can be drawn to, read and copied, with
 /// empty bounds.
 pub(crate) fn new_texture(device: &wgpu::Device, width: u32, height: u32) -> Tex {
+    static FIRST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    let first = crate::trace::first(&FIRST);
+    if first {
+        crate::trace::start("first-texture", format_args!("{width}x{height} {LINEAR_FORMAT:?}"));
+    }
     // Skia draws into these too (`render/skia.rs`).
     let texture = crate::render::create_texture(device, &wgpu::TextureDescriptor {
         label: Some("layer"),
@@ -3555,6 +3582,9 @@ pub(crate) fn new_texture(device: &wgpu::Device, width: u32, height: u32) -> Tex
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    if first {
+        crate::trace::done("first-texture", format_args!("ok"));
+    }
     Tex {
         texture,
         view,
