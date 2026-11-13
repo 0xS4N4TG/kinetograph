@@ -1,16 +1,22 @@
 # Clips the docs need
 
 This file is not a docs page: `source.config.ts` builds only `.mdx`. It lists every clip the docs show through
-`<Video name="..." />` (`src/components/docs/video.tsx`). Until the clips are hosted, each shows the placeholder poster
-`public/docs-media/video-placeholder.svg`.
+`<Video name="..." />` (`src/components/docs/video.tsx`).
+
+## How clips are hosted
+
+The clips are the assets of the `docs-media` GitHub release, not files in git. `scripts/fetch-videos.mjs` (run first by
+`npm run build`, or alone as `npm run videos`) copies every asset into `public/docs-video/` (git-ignored), checks each
+size against the release listing and fails the build on a short file. The site then serves `/docs-video/<name>.mp4`
+itself with `Content-Type: video/mp4`; GitHub's own release URLs are `application/octet-stream` attachments, which iOS
+will not play. Files already present are skipped. Set `NEXT_PUBLIC_DOCS_VIDEO_BASE` (trailing slash) to serve from
+another host instead; the fetch is then skipped.
 
 ## How to add a clip
 
-1. Make `<name>.mp4` (H.264, 1280x720, 30 fps) and a poster `<name>.jpg` (the same size, one good frame).
-2. Upload both to the video host, so they stay out of `public/` and out of the Vercel deployment storage. Do not
-   commit MP4s.
-3. Set `NEXT_PUBLIC_DOCS_VIDEO_BASE` (with a trailing slash) at build time. Every clip is then
-   `<base><name>.mp4` and `<base><name>.jpg` (`VIDEO_BASE` in `src/sections/links.ts`).
+1. Make `<name>.mp4` (H.264, 1280x720, 30 fps, fast-start) and a poster `<name>.jpg` (the same size, one good frame).
+2. Upload both to the `docs-media` release (`gh release upload docs-media <files>`). Do not commit MP4s.
+3. Rebuild: the next `npm run build` fetches them.
 
 Targets: 8 seconds or less and 1.5 MB or less for a silent clip, 20 seconds for `what-is-kinetograph`. A silent clip
 (`silent`) autoplays muted and loops. A clip with sound starts on click, so keep its audio at about -16 LUFS. Make the

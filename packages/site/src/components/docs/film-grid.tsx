@@ -3,6 +3,7 @@
 import { PlayIcon, XIcon } from 'lucide-react';
 import { useRef, useState } from 'react';
 
+import { HostedVideo } from '@/components/docs/hosted-video';
 import { FILMS, type Film } from '@/lib/films';
 import { VIDEO_BASE } from '@/sections/links';
 
@@ -69,13 +70,11 @@ export function FilmTile({ film }: { film: Film }) {
           </button>
         </div>
         {open && VIDEO_BASE ? (
-          <video
+          <HostedVideo
             src={`${VIDEO_BASE}films-${film.name}.mp4`}
             poster={`/docs-media/films/${film.name}.webp`}
-            aria-label={film.title}
-            controls
+            label={film.title}
             autoPlay
-            playsInline
             className={`block w-full bg-black ${film.portrait ? 'aspect-[9/16]' : 'aspect-video'}`}
           />
         ) : (
