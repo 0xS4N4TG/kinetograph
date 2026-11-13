@@ -16,7 +16,7 @@ export function Hero() {
     <section id="hero" className="relative">
       <HeroFade>
         <div className={cn(shell, 'flex min-h-[calc(100dvh-56px)] flex-col justify-center gap-[clamp(28px,4vw,52px)] pt-24 pb-10')}>
-          <h1 aria-label="Blazingly fast programmatic video engine." className="flex flex-col gap-[clamp(12px,1.9vw,28px)]">
+          <h1 aria-label="Blazingly fast programmatic video engine." className="flex w-[62%] flex-col gap-[clamp(12px,1.9vw,28px)] md:w-[72%]">
             <FitLine text="BLAZINGLY FAST" r={4.43} step={30} />
             <span className="max-md:hidden">
               <FitLine text="PROGRAMMATIC VIDEO ENGINE." r={8.575} step={15} lead={160} />

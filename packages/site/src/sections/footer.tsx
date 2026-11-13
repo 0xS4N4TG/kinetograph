@@ -8,7 +8,7 @@ export interface FooterColumn {
 
 /**
  * The footer, revealed like a curtain: it sticks to the bottom of the window underneath the page, which is opaque and
- * lifts off it at the end. The giant wordmark is Geist Serif, faint, with the one red full stop. Keep it shorter than the window.
+ * lifts off it at the end. The giant wordmark is DM Sans 700, faint, with the one red full stop. Keep it shorter than the window.
  */
 export function Footer({ columns }: { columns: FooterColumn[] }) {
   return (
@@ -44,7 +44,7 @@ export function Footer({ columns }: { columns: FooterColumn[] }) {
           <BackToTop />
         </div>
         <div aria-hidden className="kg-fit -mb-[0.012em] select-none">
-          <span className="kg-wordmark-fit text-on-field/14" style={{ '--r': 5.805 } as React.CSSProperties}>
+          <span className="kg-wordmark-fit text-on-field/14" style={{ '--r': 5.52 } as React.CSSProperties}>
             <span className="in">
               kinetograph<span className="text-flag/55">.</span>
             </span>

@@ -3,14 +3,23 @@ import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * The lockup: the pixel mark (a cobalt rounded square with the mechanism in white dots, drawn on a 24-dot grid so each dot is a
- * whole pixel) to the left of the wordmark, which is lowercase kinetograph in Geist Serif 600 with no tracking, the full stop
+ * The lockup: the pixel mark (a cobalt rounded square with the mechanism in white dots, drawn on its own grid per screen density (40, 80, 120, 160 dots, shown at 40px) so each dot is
+ * one device pixel; scripts/mark.py draws it from the engine picture) to the left of the wordmark, which is lowercase kinetograph in DM Sans 700 at -0.05em, the full stop
  * in red (its only use of red).
  */
 export function Wordmark({ className, mark = true }: { className?: string; mark?: boolean }) {
   return (
-    <span className={cn('inline-flex items-center gap-[0.4em] font-wordmark font-semibold tracking-normal', className)}>
-      {mark && <img src="/retro/mark-28.png" width={28} height={28} alt="" className="size-7 shrink-0 [image-rendering:pixelated]" />}
+    <span className={cn('inline-flex items-center gap-[0.4em] font-wordmark font-bold tracking-[-0.05em]', className)}>
+      {mark && (
+        <img
+          src="/retro/mark-40.png"
+          srcSet="/retro/mark-40.png 1x, /retro/mark-40@2x.png 2x, /retro/mark-40@3x.png 3x, /retro/mark-40@4x.png 4x"
+          width={40}
+          height={40}
+          alt=""
+          className="size-10 shrink-0 rounded-[22%] [image-rendering:pixelated]"
+        />
+      )}
       <span>
         kinetograph<span className="text-flag">.</span>
       </span>
