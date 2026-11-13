@@ -12,6 +12,7 @@
 //   template   templates/<id>/        index.tsx stays, every other source file goes to scenes/ (what it imports from outside, to scenes/shared/), public/ becomes public/<kind>/<id>/.
 //              A showcase piece (components/showcase/<piece>.tsx) is a template too; its index.tsx is cut from the folder's own.
 //   component  one composition of components/<kind>/: the file that exports its schema becomes index.tsx, with the files it imports.
+//   skill      skills/kinetograph-taste-clone/   every tracked file as it is; `kinetograph skills update` installs it for the agents.
 //   taste      tastes/<dir>/          sources keep their paths, textures and sounds go to public/, TASTE.md (or README.md) becomes the item's TASTE.md.
 // Whatever an item imports from outside its folder (kit/, another taste) is copied under shared/ (scenes/shared/ in a template) and the imports are
 // rewritten. A staticFile path that names a file of the item's public/ is rewritten to where the file installs.
@@ -448,6 +449,17 @@ for (const c of catalog.components) {
 for (const t of catalog.tastes) {
   run(t.id, () => stageTaste(t.id, { type: 'taste', title: t.title, description: t.description }, TASTE_COPY[t.id].dir));
 }
+// An agent skill: the folder is installed by `npx kinetograph skills update`, so a machine fetches these files and not the repo.
+const TASTE_SKILL = 'kinetograph-taste-clone';
+run(TASTE_SKILL, () => {
+  const st = stage(TASTE_SKILL);
+  for (const old of under(`skills/${TASTE_SKILL}`)) {
+    const rel = old.slice(`skills/${TASTE_SKILL}/`.length);
+    if (rel.split('/').some((part) => part.startsWith('.') || part === '__pycache__') || isLink(old)) continue;
+    put(st, rel, { from: old });
+  }
+  return { st, meta: { type: 'skill', title: 'Taste Clone', description: 'Agent skill: clone a reel or reference video 1:1, or distil its style into a taste. Installed with `npx kinetograph skills update`.' } };
+});
 for (const item of readdirSync(work)) {
   const file = join(work, item, 'item.json');
   const meta = JSON.parse(readFileSync(file, 'utf8'));
