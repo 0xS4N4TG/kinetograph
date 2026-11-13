@@ -1,10 +1,14 @@
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { findCommand } from '../src/commands/index.js';
 import { globalSkillFolders, updateSkills } from '../src/commands/skills.js';
 import { addItems } from '../src/registry/install.js';
 import { openRegistry } from '../src/registry/source.js';
+import { run } from '../src/index.js';
+import { skillVersion } from '../src/update-notice.js';
+import { cliVersion } from '../src/version.js';
 
 const scratch = (): string => mkdtempSync(join(tmpdir(), 'kinetograph-skills-test-'));
 
@@ -72,5 +76,38 @@ describe('kinetograph skills update', () => {
     const project = scratch();
     writeFileSync(join(project, 'package.json'), '{}');
     await expect(addItems({ names: ['kinetograph-taste-clone'], dir: project, registry: registry([skillItem]), overwrite: false, yes: false })).rejects.toThrow(/skills update/);
+  });
+
+  it('is a command, and installs the packaged skills with the current version stamp into a fresh home', async () => {
+    expect(findCommand(['skills', 'update'])?.command.name).toBe('skills update');
+    const home = scratch();
+    const folders = globalSkillFolders(home, {});
+    const packaged = readdirSync(new URL('../skills', import.meta.url)).filter((name) => name.startsWith('kinetograph'));
+    expect(packaged).toHaveLength(8);
+    const result = await updateSkills({ folders, registry: registry([]) });
+    for (const folder of folders) {
+      for (const name of packaged) expect(skillVersion(readFileSync(join(folder, name, 'SKILL.md'), 'utf8'))).toBe(cliVersion());
+    }
+    expect(result.failed).toContain('kinetograph-taste-clone not installed');
+  });
+
+  describe('through the CLI', () => {
+    afterEach(() => vi.unstubAllEnvs());
+
+    it('`skills update` writes only into the four skill folders of the home folder', async () => {
+      const home = scratch();
+      const out: string[] = [];
+      vi.stubEnv('HOME', home);
+      vi.stubEnv('USERPROFILE', home);
+      vi.stubEnv('CLAUDE_CONFIG_DIR', '');
+      vi.stubEnv('CODEX_HOME', '');
+      vi.stubEnv('KINETOGRAPH_REGISTRY', join(scratch()));
+      const code = await run(['skills', 'update'], { out: (s) => void out.push(s), err: () => undefined });
+      expect(code).toBe(1);
+      expect(readdirSync(home).sort()).toEqual(['.agents', '.claude', '.codex', '.cursor']);
+      expect(readdirSync(join(home, '.claude'))).toEqual(['skills']);
+      expect(existsSync(join(home, '.claude/skills/kinetograph/SKILL.md'))).toBe(true);
+      expect(out.join('')).toContain('installed kinetograph');
+    });
   });
 });

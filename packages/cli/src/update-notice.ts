@@ -1,4 +1,4 @@
-// Update notices: a newer `kinetograph` on npm, and agent skills installed by `npx skills add` that are older than the CLI.
+// Update notices: a newer `kinetograph` on npm, and agent skills installed by `npx kinetograph skills update` (or `npx skills add`) that are older than the CLI.
 // The only network request is one GET of the registry's `latest` for this package, at most once a day, with no data of
 // the user's. Nothing is ever installed or updated from here. The result and the times notices were shown are kept in
 // `~/.cache/kinetograph/update-check.json`. Quiet when `CI` is set or `KINETOGRAPH_NO_UPDATE_CHECK=1`.

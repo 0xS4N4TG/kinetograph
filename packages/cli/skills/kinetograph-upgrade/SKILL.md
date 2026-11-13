@@ -29,11 +29,11 @@ Ask the user before you change anything: the CLI only prints a notice (once a da
 3. **Upgrade the packages in one command**, so npm resolves them together: `npm install kinetograph@latest` plus every
    `@kinetographdev/*` plugin the project lists, each at `@latest`. Then `npm ls @kinetographdev/core` must show one version;
    a second copy means a plugin is behind (install its newer release, or hold `kinetograph` back).
-4. **Refresh the skills.** `npx skills add 0xS4N4TG/kinetograph` (it asks which agents; `--list` shows what it found). It
-   installs them from the GitHub repo (`packages/cli/skills/`). Install all of them: the skills point to each
-   other. Then `npx kinetograph doctor` again; every skill should say `current`.
+4. **Refresh the skills.** `npx kinetograph skills update` (no questions). It writes every skill of the installed
+   package, and `kinetograph-taste-clone`, into the user-wide skills folders of Claude Code, Codex and Cursor
+   (`~/.claude/skills`, `~/.codex/skills`, `~/.cursor/skills`, `~/.agents/skills`). Then `npx kinetograph doctor` again; every skill should say `current`.
 5. **Check the project.** `npx kinetograph check <entry>` (TSX), `lint`, `doctor <entry>` and `strip` (see
    `kinetograph-render`); `snapshot <entry>` if approved frames exist, to see what moved. Fix what the changelog says
    changed.
 
-Skills from other repos, such as `kinetograph-taste-clone`, update with their own `npx skills add`.
+Skills from other repos update with their own `npx skills add`.
