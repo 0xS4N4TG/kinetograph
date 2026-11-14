@@ -899,15 +899,42 @@ pub fn with<T>(ext: Extensions, f: impl FnOnce(&Gl) -> T) -> Result<T, String> {
     })
 }
 
-/// `KINETOGRAPH_ANGLE_DIR` or the folder beside the addon: always an absolute path. The libraries are loaded by full
-/// path and never by a bare name, so neither the system's search path nor the working directory (a project folder
-/// could hold a planted `libEGL`) decides which ones are loaded.
+/// `KINETOGRAPH_ANGLE_DIR` or the `angle/` folder of the addon's platform package: always an absolute path. The
+/// libraries are loaded by full path and never by a bare name, so neither the system's search path nor the working
+/// directory (a project folder could hold a planted `libEGL`) decides which ones are loaded.
 fn library_dir() -> Result<PathBuf, String> {
     match std::env::var_os("KINETOGRAPH_ANGLE_DIR") {
         Some(dir) => checked_dir(PathBuf::from(dir)),
         None => addon_dir()
-            .map(|d| d.join("angle"))
-            .ok_or_else(|| "ANGLE is not available: set KINETOGRAPH_ANGLE_DIR to the folder holding libEGL and libGLESv2".to_string()),
+            .ok_or_else(|| "ANGLE is not available: set KINETOGRAPH_ANGLE_DIR to the folder holding libEGL and libGLESv2".to_string())
+            .and_then(|d| find_angle(&d)),
+    }
+}
+
+/// The npm platform package this build is, as `scripts/fetch-angle.mjs` names it.
+const PLATFORM: &str = if cfg!(target_os = "macos") {
+    "darwin-arm64"
+} else if cfg!(windows) {
+    "win32-x64-msvc"
+} else {
+    "linux-x64-gnu"
+};
+
+/// The `angle/` folder for an addon in `dir`: beside it when installed (the platform package holds the addon and
+/// `angle/` together), or `npm/<platform>/angle` under `crates/node` when the addon runs from a source checkout.
+fn find_angle(dir: &std::path::Path) -> Result<PathBuf, String> {
+    let installed = dir.join("angle");
+    let checkout = dir.join("npm").join(PLATFORM).join("angle");
+    let has = |d: &PathBuf| d.join(library_file_name("EGL", cfg!(windows))).is_file();
+    if has(&installed) {
+        Ok(installed)
+    } else if has(&checkout) {
+        Ok(checkout)
+    } else {
+        Err(format!(
+            "ANGLE is not available: no libEGL in {} (run `node scripts/fetch-angle.mjs {PLATFORM}` in a source checkout), or set KINETOGRAPH_ANGLE_DIR",
+            installed.display()
+        ))
     }
 }
 
@@ -1012,7 +1039,9 @@ fn open(dir: &std::path::Path, name: &str) -> Result<Library, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Texels, check_upload, checked_dir, gl, library_file_name, upload_len};
+    use super::{
+        PLATFORM, Texels, check_upload, checked_dir, find_angle, gl, library_file_name, upload_len,
+    };
     use std::path::PathBuf;
 
     #[test]
@@ -1040,6 +1069,24 @@ mod tests {
         );
         assert_eq!(upload_len(-1, 4, 1, gl::RGBA, gl::UNSIGNED_BYTE), None);
         assert_eq!(upload_len(4, 4, 1, 0x1234, gl::UNSIGNED_BYTE), None);
+    }
+
+    #[test]
+    fn angle_is_found_beside_the_addon_or_in_the_platform_folder() {
+        let root =
+            std::env::temp_dir().join(format!("kinetograph-angle-find-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let file = library_file_name("EGL", cfg!(windows));
+        assert!(find_angle(&root).is_err());
+        let checkout = root.join("npm").join(PLATFORM).join("angle");
+        std::fs::create_dir_all(&checkout).unwrap();
+        std::fs::write(checkout.join(&file), b"").unwrap();
+        assert_eq!(find_angle(&root).unwrap(), checkout);
+        let installed = root.join("angle");
+        std::fs::create_dir_all(&installed).unwrap();
+        std::fs::write(installed.join(&file), b"").unwrap();
+        assert_eq!(find_angle(&root).unwrap(), installed);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -1096,6 +1143,24 @@ struct Shared {
 fn shared() -> Result<&'static Shared, String> {
     static SHARED: std::sync::OnceLock<Result<Shared, String>> = std::sync::OnceLock::new();
     SHARED.get_or_init(load).as_ref().map_err(Clone::clone)
+}
+
+/// An EGL display that would not start, with what is missing on the platform: the default backend needs a Vulkan
+/// driver on Linux and Direct3D 11 on Windows, and the software one needs `--swiftshader` files beside libEGL.
+fn no_display(what: &str, software: bool) -> String {
+    if software {
+        format!(
+            "{what}: the SwiftShader backend needs libvk_swiftshader and its ICD file beside libEGL (scripts/fetch-angle.mjs --swiftshader)"
+        )
+    } else if cfg!(target_os = "linux") {
+        format!(
+            "{what}: ANGLE's Vulkan backend found no Vulkan driver; install one (Mesa lavapipe: mesa-vulkan-drivers and libvulkan1)"
+        )
+    } else if cfg!(windows) {
+        format!("{what}: ANGLE's Direct3D 11 backend found no device")
+    } else {
+        what.to_string()
+    }
 }
 
 fn load() -> Result<Shared, String> {
@@ -1161,11 +1226,11 @@ fn load() -> Result<Shared, String> {
             display_attribs.as_ptr(),
         );
         if display.is_null() {
-            return Err("ANGLE gave no display".into());
+            return Err(no_display("ANGLE gave no display", software));
         }
         let (mut major, mut minor) = (0, 0);
         if initialize(display, &mut major, &mut minor) == 0 {
-            return Err("eglInitialize failed".into());
+            return Err(no_display("eglInitialize failed", software));
         }
         bind_api(EGL_OPENGL_ES_API);
         // EGL_RENDERABLE_TYPE = ES3, SURFACE_TYPE = PBUFFER, 8 bits a channel.
