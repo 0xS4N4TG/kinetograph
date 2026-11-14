@@ -63,7 +63,6 @@ export const DAWN_FEATURES = ['float32-filterable', 'depth32float-stencil8', 'in
  * `timestampWrites` and `resolveQuerySet` of one writes zeros (the engine's other recorder answers the same).
  */
 const TIMESTAMP = 'timestamp-query';
-const fakeQuerySets = new WeakSet<object>();
 
 const CANVAS_FORMATS = new Set(['rgba8unorm', 'bgra8unorm', 'rgba16float']);
 const RENDER_ATTACHMENT = 0x10;
@@ -72,7 +71,6 @@ const COPY_SRC = 0x01;
 let dawn: { create(flags: string[]): Any; globals: Record<string, Any> } | null = null;
 let hooks: Hooks | null = null;
 let gpu: Any = null;
-let patched = false;
 
 /**
  * What one renderer's pages made with the library: its devices, canvases and the pictures it put in the addon, the errors they raised and
@@ -81,6 +79,8 @@ let patched = false;
  * Frames of two renderers do not overlap (the engine's clock and its page globals are the thread's).
  */
 export class DawnScope {
+  /** The copy of this module that made the scope: its hooks and its clock (the patched library is the process's, the copies' state is not). */
+  readonly host = host;
   readonly devices = new Set<Any>();
   /** A rewind (`noteDawnRewind`) has not been settled yet. */
   rewinding = false;
@@ -95,6 +95,16 @@ export class DawnScope {
 let clock: () => number = () => 0;
 
 /**
+ * What belongs to this copy of the module and not to the process: the hooks into its frame (`installDawn`) and its clock. A project
+ * bundle carries its own copy of this module, while the library and the addon are the process's: a scope remembers its copy's.
+ */
+interface Host {
+  hooks(): Hooks;
+  clock(): number;
+}
+const host: Host = { hooks: () => hooks!, clock: () => clock() };
+
+/**
  * The engine gives the clock itself: the page's `performance.now` is not it (a page can replace it, and once the engine's
  * determinism is uninstalled it is the real time).
  */
@@ -102,9 +112,20 @@ export function setDawnClock(now: () => number): void {
   clock = now;
 }
 
+/**
+ * What every copy of this module in the process shares, because the library is patched once and the addon's store has one set of keys:
+ * the scope that is current, the count of canvases (the addon's picture keys), and the frames entered.
+ */
+interface Shared {
+  scope: DawnScope;
+  canvases: number;
+  entered: number;
+}
+
+const SHARED = Symbol.for('kinetograph.dawn.shared');
 const defaultScope = new DawnScope();
+const shared: Shared = ((globalThis as Any)[SHARED] ??= { scope: defaultScope, canvases: 0, entered: 0 });
 useCarry(defaultScope.carry);
-let scope: DawnScope = defaultScope;
 
 export function createDawnScope(): DawnScope {
   return new DawnScope();
@@ -112,11 +133,13 @@ export function createDawnScope(): DawnScope {
 
 /** Makes `next` the scope of what runs now (a frame of its renderer); returns what puts the one before back. */
 export function enterDawnScope(next: DawnScope): () => void {
-  const was = scope;
+  const was = shared.scope;
   const carry = useCarry(next.carry);
-  scope = next;
+  shared.scope = next;
+  shared.entered++;
   return () => {
-    scope = was;
+    shared.entered--;
+    shared.scope = was;
     useCarry(carry);
   };
 }
@@ -128,8 +151,8 @@ function report(owner: DawnScope, what: string): void {
 /** What the library's devices and the canvases made since the last call report, each once (read with the WebGL reports). */
 export function takeDawnReports(): string[] {
   settleRewind();
-  const out = [...scope.reports];
-  scope.reports.clear();
+  const out = [...shared.scope.reports];
+  shared.scope.reports.clear();
   return out;
 }
 
@@ -188,8 +211,17 @@ function wrap(proto: Any, name: string, fn: (this: Any, original: (...args: Any[
   Object.defineProperty(proto, name, { value: function (this: Any, ...args: Any[]) { return fn.call(this, original, args); }, writable: true, configurable: true });
 }
 
-/** The library's own `mapAsync`, which the readback uses: it is the engine's, not a page's await, so no frame waits on it. */
-let nativeMapAsync: Any = null;
+/**
+ * What patching the library left, kept on the library itself (it is the process's, whichever copy of this module asks): the mark that it
+ * is patched, so that a second copy (a second project's bundle) does not patch it again, the library's own `mapAsync`, which the
+ * readback uses (the engine's, not a page's await, so no frame waits on it), and the timestamp stand-ins.
+ */
+const PATCHED = Symbol.for('kinetograph.dawn.patched');
+interface Patch {
+  nativeMapAsync: Any;
+  fakeQuerySets: WeakSet<object>;
+}
+const patchOf = (g: Record<string, Any>): Patch | undefined => (g.GPUDevice.prototype as Any)[PATCHED];
 
 /** The Dawn globals under their WebGPU names, with this file's canvas context in place of dawn.node's. */
 export function dawnGlobals(): Record<string, unknown> {
@@ -201,21 +233,29 @@ export function installDawn(h: Hooks): Any {
   hooks = h;
   const d = load();
   if (gpu === null) gpu = d.create([]);
-  if (!patched) {
-    patched = true;
-    patchDawn(d.globals);
+  // Once per library: every copy of this module in the process (each project bundle has one) shares the patched classes, which look up the
+  // copy that is current (`shared.scope.host`) at each call. Patched again, each call would pass through every copy's layer and each copy's hooks.
+  if (patchOf(d.globals) === undefined) {
+    const patch: Patch = { nativeMapAsync: null, fakeQuerySets: new WeakSet() };
+    Object.defineProperty(d.globals.GPUDevice.prototype, PATCHED, { value: patch });
+    patchDawn(d.globals, patch);
+  }
+  // What runs outside a frame (the project's own module code) belongs to the project loaded last, as the page globals do.
+  if (shared.entered === 0) {
+    shared.scope = defaultScope;
+    useCarry(defaultScope.carry);
   }
   return gpu;
 }
 
-function patchDawn(g: Record<string, Any>): void {
-  const track = <T,>(p: Promise<T>): Promise<T> => hooks!.track(p);
+function patchDawn(g: Record<string, Any>, patch: Patch): void {
+  const track = <T,>(p: Promise<T>): Promise<T> => shared.scope.host.hooks().track(p);
   // The page's own `await`s on the library: the frame is not read while one is open.
   for (const [cls, name] of [
     ['GPU', 'requestAdapter'], ['GPUDevice', 'createRenderPipelineAsync'], ['GPUDevice', 'createComputePipelineAsync'], ['GPUDevice', 'popErrorScope'],
     ['GPUQueue', 'onSubmittedWorkDone'], ['GPUBuffer', 'mapAsync'], ['GPUShaderModule', 'getCompilationInfo'],
   ] as const) {
-    if (cls === 'GPUBuffer' && name === 'mapAsync') nativeMapAsync = g.GPUBuffer.prototype.mapAsync;
+    if (cls === 'GPUBuffer' && name === 'mapAsync') patch.nativeMapAsync = g.GPUBuffer.prototype.mapAsync;
     wrap(g[cls].prototype, name, function (original, args) { return track(original.apply(this, args)); });
   }
   wrap(g.GPU.prototype, 'getPreferredCanvasFormat', () => 'rgba8unorm');
@@ -230,29 +270,29 @@ function patchDawn(g: Record<string, Any>): void {
     const set = Object.create(g.GPUQuerySet.prototype, {
       type: { value: 'timestamp' }, count: { value: descriptor.count }, label: { value: descriptor.label ?? '', writable: true }, destroy: { value: () => undefined }, device: { value: this },
     });
-    fakeQuerySets.add(set);
+    patch.fakeQuerySets.add(set);
     return set;
   });
   for (const name of ['beginRenderPass', 'beginComputePass']) {
     wrap(g.GPUCommandEncoder.prototype, name, function (original, [descriptor]) {
       const writes = descriptor?.timestampWrites;
-      if (writes === undefined || !fakeQuerySets.has(writes.querySet)) return original.call(this, descriptor);
+      if (writes === undefined || !patch.fakeQuerySets.has(writes.querySet)) return original.call(this, descriptor);
       const { timestampWrites: _dropped, ...rest } = descriptor;
       return original.call(this, rest);
     });
   }
   wrap(g.GPUCommandEncoder.prototype, 'resolveQuerySet', function (original, [set, first, count, buffer, offset]) {
-    if (!fakeQuerySets.has(set)) return original.call(this, set, first, count, buffer, offset);
-    report(scope, 'a timestamp query is a stand-in here: its results are zeros (a real timestamp is real time, which a picture must not depend on)');
+    if (!patch.fakeQuerySets.has(set)) return original.call(this, set, first, count, buffer, offset);
+    report(shared.scope, 'a timestamp query is a stand-in here: its results are zeros (a real timestamp is real time, which a picture must not depend on)');
     // A buffer that only query results go to (QUERY_RESOLVE, COPY_SRC) is zero and nothing else writes it; one that can be copied to is cleared.
     if (((buffer.usage ?? 0) & 0x08 /* COPY_DST */) !== 0) this.clearBuffer(buffer, offset, count * 8);
   });
-  trackCarry(g, () => clock());
+  trackCarry(g, () => shared.scope.host.clock());
 }
 
 /** The adapter the page sees: fixed features, limits and info, and a device that has the real adapter's but those. */
 function fixedAdapter(real: Any): Any {
-  const adapterOwner = scope;
+  const adapterOwner = shared.scope;
   const features = new Set<string>([TIMESTAMP]);
   for (const feature of DAWN_FEATURES) {
     if (real.features.has(feature)) features.add(feature);
@@ -260,7 +300,7 @@ function fixedAdapter(real: Any): Any {
   }
   const requestDevice = async (descriptor: Any = {}): Promise<Any> => {
     // The scope of the frame that asks: an adapter may be got in one frame and a device asked of it in another.
-    const owner = scope;
+    const owner = shared.scope;
     for (const feature of descriptor?.requiredFeatures ?? []) {
       if (!features.has(feature)) throw new TypeError(`requestDevice: the feature ${feature} is not supported`);
     }
@@ -289,7 +329,7 @@ function fixedAdapter(real: Any): Any {
       if (key === 'limits') return { ...DAWN_LIMITS };
       if (key === 'info') return FIXED_INFO;
       if (key === 'isFallbackAdapter') return false;
-      if (key === 'requestDevice') return (descriptor?: Any) => hooks!.track(requestDevice(descriptor));
+      if (key === 'requestDevice') return (descriptor?: Any) => shared.scope.host.hooks().track(requestDevice(descriptor));
       const value = Reflect.get(target, key, target);
       return typeof value === 'function' ? value.bind(target) : value;
     },
@@ -314,7 +354,7 @@ function watch(device: Any, owner: DawnScope): void {
  * long render does not hold them (a scene that is replaced, a renderer that is disposed). What its frames read of each other
  * (`webgpu-dawn-carry.ts`) belonged to those devices. Another renderer's devices, canvases and pictures are not touched.
  */
-export function releaseDawn(owner: DawnScope = scope): void {
+export function releaseDawn(owner: DawnScope = shared.scope): void {
   for (const device of owner.devices) {
     try {
       device.destroy();
@@ -341,12 +381,13 @@ export function releaseDawn(owner: DawnScope = scope): void {
  * with the frame (an error under `--strict`). A page whose state does not carry (most) is exact either way.
  */
 export function noteDawnRewind(): void {
-  scope.rewinding = true;
+  shared.scope.rewinding = true;
   beginRewind();
 }
 
 /** The end of a frame: a rewind is settled by whether the frame used a device that had carried state before it (the devices before it are kept to `releaseDawn`: a page may still use one). */
 function settleRewind(): void {
+  const scope = shared.scope;
   if (!scope.rewinding) return;
   scope.rewinding = false;
   if (stillCarries()) {
@@ -356,7 +397,7 @@ function settleRewind(): void {
 
 /** Whether a page of the renderer in the scope that is current has a Dawn device (its animation-frame loop may be drawing from the tree). */
 export function dawnInUse(): boolean {
-  return scope.devices.size > 0;
+  return shared.scope.devices.size > 0;
 }
 
 /** Whether a frame read what an earlier frame wrote that only a replay of the frames before it makes (`carryNeedsReplay`). */
@@ -371,8 +412,6 @@ export interface DawnCanvasOptions {
   size: () => { width: number; height: number };
   canvas?: unknown;
 }
-
-let canvasCount = 0;
 
 /**
  * The canvas of a Dawn page. The painter takes its read-back as the bytes the texture holds (`putCanvasPixels`): an opaque or
@@ -389,7 +428,7 @@ export class DawnCanvasContext {
   /** The buffer the texture is copied to: kept from frame to frame while the size is the same. */
   private readback: { buffer: Any; size: number } | null = null;
   /** What the addon holds for this canvas: the key (this thread's, this canvas's) and the newest version put. */
-  private readonly key = `dawn:${threadId}:${canvasCount++}`;
+  private readonly key = `dawn:${threadId}:${shared.canvases++}`;
   private version = 0;
   /** The canvas as the last flush read it, null when nothing was drawn this frame. */
   picture: { width: number; height: number; source: CanvasSource } | null = null;
@@ -397,7 +436,7 @@ export class DawnCanvasContext {
   private kept: { stride: number; format: string; alphaMode: string; colorSpace: string; direct: boolean } | null = null;
 
   /** The renderer's scope this canvas was made in: its device, its pictures, its reports. */
-  private readonly scope = scope;
+  private readonly scope = shared.scope;
 
   constructor(private readonly options: DawnCanvasOptions) {
     this.canvas = options.canvas;
@@ -534,7 +573,7 @@ export class DawnCanvasContext {
         encoder.copyTextureToBuffer({ texture: this.texture }, { buffer, bytesPerRow: stride, rowsPerImage: height }, [width, height, 1]);
         device.queue.submit([encoder.finish()]);
       });
-      mapped = nativeMapAsync.call(buffer, 0x01);
+      mapped = patchOf(dawn!.globals)!.nativeMapAsync.call(buffer, 0x01);
     } catch (error) {
       this.dropReadback();
       throw error;
@@ -608,9 +647,10 @@ export async function flushDawnCanvases(): Promise<void> {
   const finishing: (() => Promise<void>)[] = [];
   let failure: unknown;
   try {
-    for (const ref of scope.contexts) {
+    const { contexts } = shared.scope;
+    for (const ref of contexts) {
       const context = ref.deref();
-      if (context === undefined) scope.contexts.delete(ref);
+      if (context === undefined) contexts.delete(ref);
       else {
         const finish = context.begin();
         if (finish !== null) finishing.push(finish);
@@ -626,7 +666,7 @@ export async function flushDawnCanvases(): Promise<void> {
 }
 
 /** On the source a Dawn canvas names: the canvas, so that `copyExternalImageToTexture` can read its pixels. */
-const DAWN_CANVAS = Symbol('kinetograph.dawnCanvas');
+const DAWN_CANVAS = Symbol.for('kinetograph.dawnCanvas');
 
 /**
  * What `drawImage` of a Dawn canvas names: its read-back, which is made after the page's scripts of the frame ran, so the source is
@@ -753,7 +793,7 @@ function pictureBytes(source: Any): { rgba: Uint8Array; width: number; height: n
   const dawnCanvas = (s as { [key: symbol]: DawnCanvasContext | undefined })[DAWN_CANVAS];
   if (dawnCanvas !== undefined) return dawnCanvas.pixels();
   if (s.kind === 'pixels') return { rgba: new Uint8Array(Buffer.from(s.data, 'base64')), width: s.width, height: s.height };
-  const rgba = hooks!.rasterize({ width, height, commands: [{ op: 'image', source: s, sx: 0, sy: 0, sw: width, sh: height, dx: 0, dy: 0, dw: width, dh: height, smooth: false } as CanvasCommand] });
+  const rgba = shared.scope.host.hooks().rasterize({ width, height, commands: [{ op: 'image', source: s, sx: 0, sy: 0, sw: width, sh: height, dx: 0, dy: 0, dw: width, dh: height, smooth: false } as CanvasCommand] });
   if (rgba === null) throw new Error('copyExternalImageToTexture: the pixels of this picture need the native addon');
   return { rgba, width, height };
 }

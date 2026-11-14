@@ -46,18 +46,6 @@ interface State {
   fromCpu: boolean;
 }
 
-const states = new WeakMap<object, State>();
-/** The device that made a texture or a buffer. */
-const owners = new WeakMap<object, object>();
-const views = new WeakMap<object, Any>();
-const groups = new WeakMap<object, { buffers: Any[]; textures: Any[] }>();
-const computePasses = new WeakSet<object>();
-/** Buffers that hold occlusion query results, or a copy of them: what a page reads from one decides what it draws next. */
-const occlusionResults = new WeakSet<object>();
-/** Whether a render pipeline tests depth or stencil, so that what a depth attachment was loaded with can change the picture. */
-const testsDepth = new WeakMap<object, boolean>();
-/** A render pass that loaded a depth attachment: the texture and the epoch of its last write before the pass, until a pipeline that tests it is set. */
-const loadedDepth = new WeakMap<object, { texture: Any; written: number }>();
 /** What the frames of one composition read of each other: one per renderer (`DawnScope` in webgpu-dawn.ts), so that two renderers on a thread do not share it. */
 export interface Carry {
   flagged: boolean;
@@ -81,18 +69,44 @@ export const newCarry = (): Carry => ({
   carriers: new Set(), rewindCarriers: null, used: new Set(),
 });
 
-/** The carry state of the renderer whose frame is being rendered. */
-let c: Carry = newCarry();
+/**
+ * Everything the tracking keeps, process-wide: the library's classes are patched once per process (`webgpu-dawn.ts`), however many copies of this
+ * module there are (each project bundle carries its own), and the patched methods write to one state. Per-copy state would be the first
+ * copy's for the patched methods and the asking copy's for its frame loop (`carryNeedsReplay`).
+ */
+interface Shared {
+  states: WeakMap<object, State>;
+  /** The device that made a texture or a buffer. */
+  owners: WeakMap<object, object>;
+  views: WeakMap<object, Any>;
+  groups: WeakMap<object, { buffers: Any[]; textures: Any[] }>;
+  computePasses: WeakSet<object>;
+  /** Buffers that hold occlusion query results, or a copy of them: what a page reads from one decides what it draws next. */
+  occlusionResults: WeakSet<object>;
+  /** Whether a render pipeline tests depth or stencil, so that what a depth attachment was loaded with can change the picture. */
+  testsDepth: WeakMap<object, boolean>;
+  /** A render pass that loaded a depth attachment: the texture and the epoch of its last write before the pass, until a pipeline that tests it is set. */
+  loadedDepth: WeakMap<object, { texture: Any; written: number }>;
+  /** The carry state of the renderer whose frame is being rendered. */
+  c: Carry;
+  inCallbacks: number;
+  paused: number;
+  now: () => number;
+}
+
+const SHARED = Symbol.for('kinetograph.dawn.carry');
+const S: Shared = ((globalThis as Any)[SHARED] ??= {
+  states: new WeakMap(), owners: new WeakMap(), views: new WeakMap(), groups: new WeakMap(), computePasses: new WeakSet(), occlusionResults: new WeakSet(),
+  testsDepth: new WeakMap(), loadedDepth: new WeakMap(), c: newCarry(), inCallbacks: 0, paused: 0, now: () => 0,
+});
+const { states, owners, views, groups, computePasses, occlusionResults, testsDepth, loadedDepth } = S;
 
 /** Makes `carry` the state the frames being rendered now read and add to; returns the one it replaces. */
 export function useCarry(carry: Carry): Carry {
-  const was = c;
-  c = carry;
+  const was = S.c;
+  S.c = carry;
   return was;
 }
-let inCallbacks = 0;
-let paused = 0;
-let now: () => number = () => 0;
 
 const BUFFER_STORAGE = 0x0080;
 const BUFFER_COPY_DST = 0x0008;
@@ -121,15 +135,15 @@ function stateOf(resource: Any): State {
 }
 
 function read(resource: Any): void {
-  if (paused > 0 || resource == null || typeof resource !== 'object') return;
-  if (c.rewindCarriers !== null) noteUse(resource);
+  if (S.paused > 0 || resource == null || typeof resource !== 'object') return;
+  if (S.c.rewindCarriers !== null) noteUse(resource);
   const state = stateOf(resource);
   if (state.written === -Infinity) {
     if (writable(resource)) {
-      if (state.born < now()) flag(resource);
-      state.readEmpty = Math.min(state.readEmpty, now());
+      if (state.born < S.now()) flag(resource);
+      state.readEmpty = Math.min(state.readEmpty, S.now());
     }
-  } else if (state.written < now()) {
+  } else if (state.written < S.now()) {
     state.stale = true;
     noteStaleRead();
   }
@@ -140,29 +154,29 @@ function read(resource: Any): void {
  * that cannot carry (a clear of an attachment nothing can sample or copy).
  */
 function write(resource: Any, gpu = false, exempt = false): void {
-  if (paused > 0 || resource == null || typeof resource !== 'object') return;
-  if (c.rewindCarriers !== null) noteUse(resource);
+  if (S.paused > 0 || resource == null || typeof resource !== 'object') return;
+  if (S.c.rewindCarriers !== null) noteUse(resource);
   const state = stateOf(resource);
-  if (state.stale || state.readEmpty < now()) flag(resource);
-  if (gpu && !exempt && ((state.written < now() && state.written !== -Infinity) || (state.written === -Infinity && state.born === now()))) noteCarryWrite();
-  state.written = now();
+  if (state.stale || state.readEmpty < S.now()) flag(resource);
+  if (gpu && !exempt && ((state.written < S.now() && state.written !== -Infinity) || (state.written === -Infinity && state.born === S.now()))) noteCarryWrite();
+  state.written = S.now();
   state.fromCpu = !gpu;
 }
 
 function noteStaleRead(): void {
-  c.staleReadAt = now();
+  S.c.staleReadAt = S.now();
   notePredicted();
 }
 
 function noteCarryWrite(): void {
-  c.carryWriteAt = now();
+  S.c.carryWriteAt = S.now();
   notePredicted();
 }
 
 function notePredicted(): void {
-  if (c.staleReadAt !== now() || c.carryWriteAt !== now()) return;
-  c.predicted = true;
-  if (inCallbacks === 0) c.predictedOutside = true;
+  if (S.c.staleReadAt !== S.now() || S.c.carryWriteAt !== S.now()) return;
+  S.c.predicted = true;
+  if (S.inCallbacks === 0) S.c.predictedOutside = true;
 }
 
 /** Whether what a pass or a copy writes can be read by anything but a later pass that loads it (a shader samples it, a copy takes it). */
@@ -170,25 +184,25 @@ const readable = (texture: Any): boolean => ((texture.usage ?? 0) & (TEXTURE_BIN
 
 /** A resource that starts the frame cleared (the canvas's texture): what it holds is not from an earlier frame. */
 export function startsCleared(resource: Any): void {
-  stateOf(resource).written = now();
+  stateOf(resource).written = S.now();
 }
 
 function flag(resource: Any): void {
-  c.flagged = true;
-  if (inCallbacks === 0) c.flaggedOutside = true;
+  S.c.flagged = true;
+  if (S.inCallbacks === 0) S.c.flaggedOutside = true;
   const device = owners.get(resource);
-  if (device !== undefined) c.carriers.add(device);
+  if (device !== undefined) S.c.carriers.add(device);
 }
 
 function noteUse(resource: Any): void {
   const device = owners.get(resource);
-  if (device !== undefined) c.used.add(device);
+  if (device !== undefined) S.c.used.add(device);
 }
 
 /** The frame loop goes back to an earlier frame: what uses a device that carried state from here on is seen (`stillCarries`). */
 export function beginRewind(): void {
-  c.rewindCarriers = new Set(c.carriers);
-  c.used = new Set();
+  S.c.rewindCarriers = new Set(S.c.carriers);
+  S.c.used = new Set();
 }
 
 /**
@@ -197,16 +211,16 @@ export function beginRewind(): void {
  * scope) whichever other devices it made: that one still holds what the frames before the rewind left.
  */
 export function stillCarries(): boolean {
-  const before = c.rewindCarriers;
-  c.rewindCarriers = null;
+  const before = S.c.rewindCarriers;
+  S.c.rewindCarriers = null;
   if (before === null) return false;
-  for (const device of before) if (c.used.has(device)) return true;
+  for (const device of before) if (S.c.used.has(device)) return true;
   return false;
 }
 
 /** Whether a frame read what an earlier frame wrote (by any page code: a jump back cannot rewind it, `beginRewind`). */
 export function carryDepends(): boolean {
-  return c.flagged;
+  return S.c.flagged;
 }
 
 /**
@@ -215,31 +229,31 @@ export function carryDepends(): boolean {
  * a page that draws from effects (a React project) has its effects run only when a frame is rendered, so it is replayed.
  */
 export function carryNeedsReplay(): boolean {
-  return c.flaggedOutside || c.predictedOutside;
+  return S.c.flaggedOutside || S.c.predictedOutside;
 }
 
 /** Runs the animation-frame callbacks of a frame: what they do is not for a replay to repeat. */
 export function duringAnimationFrames(work: () => void): void {
-  inCallbacks++;
+  S.inCallbacks++;
   try {
     work();
   } finally {
-    inCallbacks--;
+    S.inCallbacks--;
   }
 }
 
 /** Runs the engine's own use of a resource (the canvas's readback), which is not the page's. */
 export function untracked<T>(work: () => T): T {
-  paused++;
+  S.paused++;
   try {
     return work();
   } finally {
-    paused--;
+    S.paused--;
   }
 }
 
 export function resetCarry(): void {
-  Object.assign(c, newCarry());
+  Object.assign(S.c, newCarry());
 }
 
 function wrap(proto: Any, name: string, before: (this: Any, args: Any[]) => void): void {
@@ -252,14 +266,14 @@ const textureOf = (view: Any): Any => views.get(view) ?? view;
 
 /** Patches the library's classes so that every use of a texture or a buffer is seen. `clock` is the frame's epoch. */
 export function trackCarry(g: Record<string, Any>, clock: () => number): void {
-  now = clock;
+  S.now = clock;
   const wrapResult = (proto: Any, name: string, after: (this: Any, result: Any, args: Any[]) => void): void => {
     const original = proto[name];
     Object.defineProperty(proto, name, { value: function (this: Any, ...args: Any[]) { const result = original.apply(this, args); after.call(this, result, args); return result; }, writable: true, configurable: true });
   };
   wrapResult(g.GPUDevice.prototype, 'createTexture', function (texture) {
     owners.set(texture, this);
-    stateOf(texture).born = now();
+    stateOf(texture).born = S.now();
   });
   wrapResult(g.GPUTexture.prototype, 'createView', function (view) { views.set(view, this); });
   wrapResult(g.GPUDevice.prototype, 'createBindGroup', (group, [descriptor]) => {
@@ -275,17 +289,17 @@ export function trackCarry(g: Record<string, Any>, clock: () => number): void {
   });
   wrapResult(g.GPUDevice.prototype, 'createBuffer', function (buffer, [descriptor]) {
     owners.set(buffer, this);
-    stateOf(buffer).born = now();
+    stateOf(buffer).born = S.now();
     if (descriptor?.mappedAtCreation) write(buffer);
   });
   wrap(g.GPUBuffer.prototype, 'mapAsync', function ([mode]) {
     if (((mode as number) & 0x02) !== 0) write(this);
     // The results come from the draws of the frame the page maps them in; it uses them in the next one, whichever way that is reached.
-    if (occlusionResults.has(this) && paused === 0) {
-      c.flagged = true;
-      c.flaggedOutside = true;
+    if (occlusionResults.has(this) && S.paused === 0) {
+      S.c.flagged = true;
+      S.c.flaggedOutside = true;
       const device = owners.get(this);
-      if (device !== undefined) c.carriers.add(device);
+      if (device !== undefined) S.c.carriers.add(device);
     }
   });
   const noteDepthTest = (pipeline: Any, descriptor: Any): void => {
@@ -311,8 +325,8 @@ export function trackCarry(g: Record<string, Any>, clock: () => number): void {
       loadedDepth.delete(this);
       // The read is of what the texture held when the pass began: the pass's own store has written it since.
       const state = stateOf(loaded.texture);
-      if (loaded.written === -Infinity) state.readEmpty = Math.min(state.readEmpty, now());
-      else if (loaded.written < now()) state.stale = true;
+      if (loaded.written === -Infinity) state.readEmpty = Math.min(state.readEmpty, S.now());
+      else if (loaded.written < S.now()) state.stale = true;
     }
   });
   wrapResult(g.GPUCommandEncoder.prototype, 'beginRenderPass', (pass, [descriptor]) => {
@@ -360,10 +374,10 @@ export function trackCarry(g: Record<string, Any>, clock: () => number): void {
   /** A copy: what the CPU wrote in this frame, copied, is still the CPU's. */
   const copy = (from: Any, to: Any): void => {
     read(from);
-    const source = paused === 0 && from != null && typeof from === 'object' ? stateOf(from) : null;
-    const cpu = source !== null && source.fromCpu && source.written === now();
+    const source = S.paused === 0 && from != null && typeof from === 'object' ? stateOf(from) : null;
+    const cpu = source !== null && source.fromCpu && source.written === S.now();
     write(to, true, cpu);
-    if (cpu && paused === 0) stateOf(to).fromCpu = true;
+    if (cpu && S.paused === 0) stateOf(to).fromCpu = true;
   };
   wrap(copies, 'copyBufferToBuffer', function ([from, , to]) {
     if (occlusionResults.has(from)) occlusionResults.add(to);
