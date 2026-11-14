@@ -112,6 +112,21 @@ describe.skipIf(missing !== null)('WebGPU through Dawn, rendered', () => {
     expect(plain.status, plain.stderr).toBe(0);
   });
 
+  it('says in `doctor` which backend and adapter Dawn gives, and that there is none when the backend has none', () => {
+    const doctor = (extra: Record<string, string>) => spawnSync(process.execPath, [cli, 'doctor', '--json'], { encoding: 'utf8', env: { ...env, KINETOGRAPH_DAWN_MODULE: '', ...extra } });
+    const found = JSON.parse(doctor({}).stdout);
+    expect(found.dawn.ok, JSON.stringify(found.dawn)).toBe(true);
+    expect(found.dawn.adapter.vendor).not.toBe('');
+    expect(found.dawn.flags[0]).toMatch(/^backend=/);
+    // The backend this platform does not have.
+    const none = JSON.parse(doctor({ KINETOGRAPH_DAWN_BACKEND: process.platform === 'darwin' ? 'vulkan' : 'metal' }).stdout);
+    expect(none.dawn.ok).toBe(false);
+    expect(none.dawn.error).toMatch(/Dawn found no adapter/);
+    // Not the provider: not mentioned.
+    const plain = spawnSync(process.execPath, [cli, 'doctor', '--json'], { encoding: 'utf8', env: { ...process.env, KINETOGRAPH_WEBGPU: '' } });
+    expect(JSON.parse(plain.stdout).dawn).toBeUndefined();
+  });
+
   it('draws a stateless page the same alone, in a sequence and in four workers', () => {
     const { still, one, four } = hashes(join(fixtures, 'stateless.html'), [0, 3, 7], 9);
     expect(new Set(still).size).toBe(3);

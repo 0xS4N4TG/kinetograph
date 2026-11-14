@@ -114,17 +114,19 @@ export function setDawnClock(now: () => number): void {
 
 /**
  * What every copy of this module in the process shares, because the library is patched once and the addon's store has one set of keys:
- * the scope that is current, the count of canvases (the addon's picture keys), and the frames entered.
+ * the scope that is current, the count of canvases (the addon's picture keys), the frames entered, and the adapter that was chosen.
  */
 interface Shared {
   scope: DawnScope;
   canvases: number;
   entered: number;
+  /** The adapter Dawn gave the first request of this process (`DawnAdapter`), which `doctor` says. */
+  adapter: DawnAdapter | null;
 }
 
 const SHARED = Symbol.for('kinetograph.dawn.shared');
 const defaultScope = new DawnScope();
-const shared: Shared = ((globalThis as Any)[SHARED] ??= { scope: defaultScope, canvases: 0, entered: 0 });
+const shared: Shared = ((globalThis as Any)[SHARED] ??= { scope: defaultScope, canvases: 0, entered: 0, adapter: null });
 useCarry(defaultScope.carry);
 
 export function createDawnScope(): DawnScope {
@@ -220,6 +222,8 @@ const PATCHED = Symbol.for('kinetograph.dawn.patched');
 interface Patch {
   nativeMapAsync: Any;
   fakeQuerySets: WeakSet<object>;
+  /** The library's own `requestAdapter`, before this file's: `describeDawn` asks it. */
+  requestAdapter: Any;
 }
 const patchOf = (g: Record<string, Any>): Patch | undefined => (g.GPUDevice.prototype as Any)[PATCHED];
 
@@ -232,11 +236,11 @@ export function dawnGlobals(): Record<string, unknown> {
 export function installDawn(h: Hooks): Any {
   hooks = h;
   const d = load();
-  if (gpu === null) gpu = d.create([]);
+  if (gpu === null) gpu = createGpu(d);
   // Once per library: every copy of this module in the process (each project bundle has one) shares the patched classes, which look up the
   // copy that is current (`shared.scope.host`) at each call. Patched again, each call would pass through every copy's layer and each copy's hooks.
   if (patchOf(d.globals) === undefined) {
-    const patch: Patch = { nativeMapAsync: null, fakeQuerySets: new WeakSet() };
+    const patch: Patch = { nativeMapAsync: null, fakeQuerySets: new WeakSet(), requestAdapter: d.globals.GPU.prototype.requestAdapter };
     Object.defineProperty(d.globals.GPUDevice.prototype, PATCHED, { value: patch });
     patchDawn(d.globals, patch);
   }
@@ -259,8 +263,18 @@ function patchDawn(g: Record<string, Any>, patch: Patch): void {
     wrap(g[cls].prototype, name, function (original, args) { return track(original.apply(this, args)); });
   }
   wrap(g.GPU.prototype, 'getPreferredCanvasFormat', () => 'rgba8unorm');
-  wrap(g.GPU.prototype, 'requestAdapter', function (original, args) {
-    return track((original.apply(this, args) as Promise<Any>).then((adapter) => (adapter === null ? null : fixedAdapter(adapter))));
+  // One adapter policy on every machine, not the page's options (a page asks for 'low-power' or 'high-performance' by taste, and a host with two
+  // GPUs would give each page another one): the best adapter of the backend `dawnFlags` names, else a software one. No adapter is `null`, as the
+  // spec has it (a page may fall back to something else), and a frame warning that says why, which `--strict` fails.
+  wrap(g.GPU.prototype, 'requestAdapter', function (original) {
+    return track(chooseAdapter((options) => original.call(this, options)).then((chosen) => {
+      if (chosen === null) {
+        report(shared.scope, noAdapterMessage());
+        return null;
+      }
+      noteAdapter(chosen);
+      return fixedAdapter(chosen.adapter);
+    }));
   });
   wrap(g.GPUQueue.prototype, 'copyExternalImageToTexture', function (_original, [source, destination, size]) {
     copyExternalImage(this, source, destination, size);
@@ -288,6 +302,116 @@ function patchDawn(g: Record<string, Any>, patch: Patch): void {
     if (((buffer.usage ?? 0) & 0x08 /* COPY_DST */) !== 0) this.clearBuffer(buffer, offset, count * 8);
   });
   trackCarry(g, () => shared.scope.host.clock());
+}
+
+// ----------------------------------------------------------------------------------------------------------------------
+// Which adapter: the backend and the adapter Dawn is asked for, and what it chose
+
+/** The backend each platform's engine path uses (Metal, D3D12, Vulkan): named to Dawn, so that it does not pick another API that is also there (OpenGL ES, D3D11). */
+const DEFAULT_BACKENDS: Record<string, string> = { darwin: 'metal', win32: 'd3d12', linux: 'vulkan' };
+
+/**
+ * The flags `create` of the library is given. The backend is the platform's own (KINETOGRAPH_DAWN_BACKEND replaces it: `metal`, `vulkan`,
+ * `d3d12`, `d3d11`, `opengl`, `opengles`, `webgpu`, `null`), and KINETOGRAPH_DAWN_ADAPTER names one adapter, as the library lists them
+ * when it is given a name it does not know.
+ */
+export function dawnFlags(env: Record<string, string | undefined> = process.env, platform: string = process.platform): string[] {
+  const backend = env.KINETOGRAPH_DAWN_BACKEND || DEFAULT_BACKENDS[platform];
+  const adapter = env.KINETOGRAPH_DAWN_ADAPTER;
+  return [...(backend ? [`backend=${backend}`] : []), ...(adapter ? [`adapter=${adapter}`] : [])];
+}
+
+/** The library lists the backends or the adapters it has when its flags name one it does not know: that list is the answer. */
+function startError(error: unknown): Error {
+  const flags = dawnFlags();
+  return new Error(`KINETOGRAPH_WEBGPU=dawn: Dawn could not start with ${flags.length === 0 ? 'no flags' : flags.join(' ')}: ${String((error as Error).message).split('\n').map((line) => line.trim()).filter(Boolean).join('; ')}`);
+}
+
+function createGpu(d: NonNullable<typeof dawn>): Any {
+  try {
+    return d.create(dawnFlags());
+  } catch (error) {
+    throw startError(error);
+  }
+}
+
+/** What Dawn chose, as `doctor` says it. */
+export interface DawnAdapter {
+  /** The backend Dawn was asked for (the flag), null when none was named. */
+  backend: string | null;
+  vendor: string;
+  architecture: string;
+  device: string;
+  description: string;
+  /** The adapter runs on the CPU (lavapipe, SwiftShader, WARP): the one a host without a GPU has. */
+  software: boolean;
+  /** It was asked for with `forceFallbackAdapter`, after the best adapter was not there. */
+  fallback: boolean;
+}
+
+const SOFTWARE = /llvmpipe|lavapipe|swiftshader|\bwarp\b|basic render|software|\bcpu\b/i;
+
+/** The best adapter of the backend, else a software one, else null. */
+async function chooseAdapter(request: (options: Any) => Promise<Any>): Promise<{ adapter: Any; fallback: boolean } | null> {
+  try {
+    const best = await request({ powerPreference: 'high-performance' });
+    if (best !== null && best !== undefined) return { adapter: best, fallback: false };
+    const software = await request({ forceFallbackAdapter: true });
+    return software === null || software === undefined ? null : { adapter: software, fallback: true };
+  } catch (error) {
+    // The library finds its adapters when the first is asked for, and says so then (a backend or an adapter name it does not know).
+    throw startError(error);
+  }
+}
+
+function describeAdapter({ adapter, fallback }: { adapter: Any; fallback: boolean }): DawnAdapter {
+  const info = adapter.info ?? {};
+  const text = `${info.device ?? ''} ${info.description ?? ''} ${info.architecture ?? ''}`;
+  return {
+    backend: dawnFlags().find((flag) => flag.startsWith('backend='))?.slice('backend='.length) ?? null,
+    vendor: String(info.vendor ?? ''), architecture: String(info.architecture ?? ''), device: String(info.device ?? ''), description: String(info.description ?? ''),
+    software: fallback || info.isFallbackAdapter === true || SOFTWARE.test(text),
+    fallback,
+  };
+}
+
+/** The first adapter this process was given is kept for `doctor`, which says it once. */
+function noteAdapter(chosen: { adapter: Any; fallback: boolean }): void {
+  shared.adapter ??= describeAdapter(chosen);
+}
+
+function noAdapterMessage(): string {
+  const flags = dawnFlags();
+  const hint = process.platform === 'linux'
+    ? 'on Linux that needs a Vulkan driver: a GPU\'s, or Mesa\'s lavapipe (the package mesa-vulkan-drivers) on a host without one'
+    : process.platform === 'win32' ? 'on Windows a Direct3D 12 adapter: a GPU\'s, or WARP' : 'a Metal device';
+  return `Dawn found no adapter (${flags.length === 0 ? 'no flags' : flags.join(' ')}; ${hint}); KINETOGRAPH_DAWN_BACKEND or KINETOGRAPH_DAWN_ADAPTER name another, and unsetting KINETOGRAPH_WEBGPU uses the built-in WebGPU`;
+}
+
+/** The adapter a page was given in this process, or null when none asked yet. */
+export function dawnAdapter(): DawnAdapter | null {
+  return shared.adapter;
+}
+
+export type DawnStatus = { ok: true; flags: string[]; adapter: DawnAdapter } | { ok: false; error: string };
+
+/**
+ * What `doctor` says of Dawn: the adapter this process was given, or the one it would be given, or why there is none (the library is
+ * missing, has no binary here, found no adapter). Asks the library's own `requestAdapter`, not a page's.
+ */
+export async function describeDawn(): Promise<DawnStatus> {
+  const flags = dawnFlags();
+  try {
+    if (shared.adapter !== null) return { ok: true, flags, adapter: shared.adapter };
+    const d = load();
+    const probe = createGpu(d);
+    const request = patchOf(d.globals)?.requestAdapter ?? d.globals.GPU.prototype.requestAdapter;
+    const chosen = await chooseAdapter((options) => request.call(probe, options));
+    if (chosen === null) return { ok: false, error: `KINETOGRAPH_WEBGPU=dawn: ${noAdapterMessage()}` };
+    return { ok: true, flags, adapter: describeAdapter(chosen) };
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
 }
 
 /** The adapter the page sees: fixed features, limits and info, and a device that has the real adapter's but those. */

@@ -5,6 +5,7 @@ import type { Unsupported } from '@kinetographdev/scene';
 import { readFileSync } from 'node:fs';
 import { dirname, relative } from 'node:path';
 import type { UnsupportedImport } from '../bundle.js';
+import { dawnReport } from '../dawn.js';
 import { effectsReport } from '../effects.js';
 import { CliError } from '../errors.js';
 import { native } from '../native.js';
@@ -123,12 +124,14 @@ async function installReport(): Promise<{ data: object; text: string }> {
     }
   }
   const updates = await updateReport(cliVersion());
-  const data = { node: process.version, platform: `${process.platform}-${process.arch}`, addon, renderer, rendererReason, ...updates };
+  const dawn = await dawnReport();
+  const data = { node: process.version, platform: `${process.platform}-${process.arch}`, addon, renderer, rendererReason, ...(dawn === null ? {} : { dawn: dawn.data }), ...updates };
   const text = [
     `node ${data.node} on ${data.platform}`,
     addon.loaded ? `addon: loaded, version ${addon.version}` : `addon: NOT loaded: ${addon.error}`,
     addon.loaded ? `renderer: ${renderer ?? 'could not start'}` : 'renderer: unknown (no addon)',
     ...(rendererReason === null ? [] : [`why not the GPU: ${rendererReason}`]),
+    ...(dawn?.lines ?? []),
     ...formatUpdateReport(updates),
     'kinetograph doctor <entry> reports what a project holds that the engine cannot draw',
   ].join('\n');
@@ -179,7 +182,8 @@ export const doctor: Command = {
       if (notes.length > 0) report.notes = notes;
       // The project's own @remotion/effects: its version against the one the parity run used, and the effects it uses that are not fully supported.
       const effects = source.worker === undefined ? null : effectsReport(dirname(source.entry), readFileSync(source.worker.bundleFile, 'utf8'));
-      const shown = withImports(report, formatReport(report));
+      const dawn = await dawnReport();
+      const shown = withImports(dawn === null ? report : { ...report, dawn: dawn.data }, `${formatReport(report)}${dawn === null ? '' : `\n\n${dawn.lines.join('\n')}`}`);
       const out = effects === null ? shown : { data: { ...shown.data, effects }, text: `${shown.text}\n\n${effects.lines.join('\n')}` };
       return { ...out, ...(report.renderErrors ? { exitCode: 1 } : {}) };
     } catch (error) {
