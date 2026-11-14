@@ -1,11 +1,19 @@
 // For every publishable package directory given (default: all): `npm pack --dry-run` must list LICENSE.md (Apache-2.0), NOTICE, a README and
 // no source, test or source-map files, and every `@kinetographdev/*` or `kinetograph` dependency must be an exact version.
+// A platform package that has an `angle/` folder (scripts/fetch-angle.mjs) must pack both ANGLE libraries and their
+// licence files, and its size is reported. ANGLE is optional: a platform package without the folder passes.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
 
 const dirs = process.argv.slice(2).length
   ? process.argv.slice(2)
-  : ['crates/node', 'packages/scene', 'packages/compat', 'packages/react', 'packages/core', 'packages/audio', 'packages/cli', 'packages/studio', 'packages/plugins/gsap', 'packages/plugins/p5-brush', 'packages/plugins/anime', 'packages/plugins/motion'];
+  : ['crates/node', ...fs.readdirSync('crates/node/npm').map((d) => `crates/node/npm/${d}`), 'packages/scene', 'packages/compat', 'packages/react', 'packages/core', 'packages/audio', 'packages/cli', 'packages/studio', 'packages/plugins/gsap', 'packages/plugins/p5-brush', 'packages/plugins/anime', 'packages/plugins/motion'];
+// The ANGLE files a platform package must carry: libEGL and libGLESv2 under the platform's file names, and the licences.
+const angleFiles = (name) => {
+  const ext = name.includes('darwin') ? 'dylib' : name.includes('win32') ? 'dll' : 'so';
+  return [`libEGL.${ext}`, `libGLESv2.${ext}`, 'ANGLE-LICENSE', 'CHROMIUM-CREDITS.txt', 'SOURCE.txt'];
+};
 let bad = 0;
 for (const dir of dirs) {
   const pkg = JSON.parse(fs.readFileSync(`${dir}/package.json`, 'utf8'));
@@ -19,7 +27,12 @@ for (const dir of dirs) {
   for (const [name, range] of Object.entries({ ...pkg.dependencies, ...pkg.optionalDependencies })) {
     if ((name === 'kinetograph' || name.startsWith('@kinetographdev/')) && !/^\d+\.\d+\.\d+$/.test(range)) problems.push(`${name} is ${range}, not an exact version`);
   }
-  console.log(`${pkg.name}: ${paths.length} files, ${entry.size} bytes packed${problems.length ? '\n  ' + problems.join('\n  ') : ''}`);
+  let angle = '';
+  if (fs.existsSync(`${dir}/angle`)) {
+    for (const f of angleFiles(path.basename(dir))) if (!paths.includes(`angle/${f}`)) problems.push(`angle/${f} is missing from the package`);
+    angle = `, angle/ ${entry.files.filter((f) => f.path.startsWith('angle/')).reduce((n, f) => n + f.size, 0)} bytes unpacked`;
+  }
+  console.log(`${pkg.name}: ${paths.length} files, ${entry.size} bytes packed${angle}${problems.length ? '\n  ' + problems.join('\n  ') : ''}`);
   bad += problems.length;
 }
 process.exit(bad ? 1 : 0);

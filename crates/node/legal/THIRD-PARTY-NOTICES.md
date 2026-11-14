@@ -73,6 +73,17 @@ Not part of the addon and not linked into it: `bin/ffmpeg` is a stand-alone FFmp
 process for H.264 and H.265 encoding. Its licence, sources and build script are described in `FFMPEG-LICENSE.md`; the
 GPL text is `COPYING.GPLv2`.
 
+## ANGLE (BSD-3-Clause), the `angle/` folder
+
+Not part of the addon and not linked into it: `angle/` holds Google's ANGLE, the OpenGL ES library that runs WebGL
+pages when `KINETOGRAPH_WEBGL=angle` is set. The addon opens `libEGL` and `libGLESv2` from this folder at run time, by
+full path, and only then. They are the unchanged files of Chrome for Testing 150.0.7871.124 (`chrome-headless-shell`),
+checked against SHA-256 values by `scripts/fetch-angle.mjs` in <https://github.com/0xS4N4TG/kinetograph>;
+`angle/SOURCE.txt` names the archive and the hashes. The licence is `angle/ANGLE-LICENSE`; the libraries also contain
+third-party code (SPIRV-Tools, glslang and others) whose licences are in `angle/CHROMIUM-CREDITS.txt`. A build made
+with `--swiftshader` adds SwiftShader (Apache-2.0, `angle/SWIFTSHADER-LICENSE`) and the Khronos Vulkan loader
+(`angle/VULKAN-LOADER-LICENSE`).
+
 ## Others
 
 The addon also links Skia (BSD-3-Clause), wgpu, Vello and the other Rust crates listed in `Cargo.lock` of the repository,
