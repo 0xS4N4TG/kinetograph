@@ -18,7 +18,7 @@ export function Footer({ columns }: { columns: FooterColumn[] }) {
         <div className="flex flex-col gap-10 md:flex-row md:justify-between">
           <div className="max-w-[28ch]">
             <Wordmark className="text-[28px] text-on-field" />
-            <p className="mt-4 font-dm text-[16px] leading-snug text-on-field/85">A programmatic video engine in Rust and TypeScript.</p>
+            <p className="mt-4 font-dm text-[16px] leading-snug text-on-field/85">Blazingly fast programmatic video engine.</p>
             <div className="mt-8 max-md:hidden">
               <BackToTop />
             </div>
