@@ -143,22 +143,16 @@ describe.skipIf(missing !== null)('WebGPU through Dawn, rendered', () => {
     expect(four).toEqual(still);
   });
 
-  it('says a frame drawn after a jump on a motion-blurred page that keeps GPU state is not the sequence\'s, and a sequence is not told that', () => {
-    // Each frame's sub-frames draw a step more into the feedback texture; the frames a jump skips are replayed without them.
+  it('draws a motion-blurred page that keeps GPU state the same alone, in a sequence and in four workers: a replayed frame has its sub-frames too', () => {
+    // Each frame's sub-frames draw a step more into the feedback texture, so the frames a jump replays must be given theirs.
     const page = join(fixtures, 'react-blur-feedback.tsx');
-    const sequence = run(['render', page, '--sequence', '--range', '0..12', '--concurrency', '1', '--strict', '-o', join(dir, 'blur-seq')]);
-    expect(sequence.status, sequence.stderr).toBe(0);
-    const still = run(['still', page, '5', '--strict', '-o', join(dir, 'blur-still.png')]);
-    expect(still.status).not.toBe(0);
-    expect(still.stderr).toMatch(/frame 5/);
-    expect(still.stderr).toMatch(/motion-blur sub-frames of this frame draw into GPU state the page keeps from frame to frame/);
-    // Not strict: drawn, and said.
-    const loose = run(['still', page, '5', '-o', join(dir, 'blur-still2.png')]);
-    expect(loose.status).toBe(0);
-    expect(loose.stderr).toMatch(/motion-blur sub-frames of this frame/);
-    // A frame 0 start has no jump to tell of.
-    const first = run(['still', page, '0', '--strict', '-o', join(dir, 'blur-still0.png')]);
-    expect(first.status, first.stderr).toBe(0);
+    const { still, one, four } = hashes(page, [0, 5, 9], 12);
+    expect(new Set(still).size).toBe(3);
+    expect(one).toEqual(still);
+    expect(four).toEqual(still);
+    // Nothing is said of it, so `--strict` passes.
+    const strict = run(['still', page, '5', '--strict', '-o', join(dir, 'blur-still-strict.png')]);
+    expect(strict.status, strict.stderr).toBe(0);
   });
 
   it('draws a React project that draws from a layout effect and keeps a feedback texture the same alone and in a sequence', () => {

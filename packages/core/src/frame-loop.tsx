@@ -143,8 +143,6 @@ class Renderer implements FrameRenderer {
   private historyDependent = false;
   /** The frame a jump landed on without the frames before it drawn, until a frame says the page's GPU state carries (a Dawn page, `dawnDependsOnHistory`): -1 when none. */
   private unreplayedJump = -1;
-  /** A jump skipped frames in this run (replayed or stepped, never with their motion-blur sub-frames). */
-  private jumped = false;
   private disposed = false;
   /** What this renderer's WebGPU pages made (devices, canvases, pictures) and what their frames read of each other: its own on a thread that holds several renderers. */
   private readonly dawn = createDawnScope();
@@ -238,8 +236,7 @@ class Renderer implements FrameRenderer {
       if (fresh && frame > 0) {
         // Whatever the composition sets up when it mounts (an interval, a fetch) starts at frame 0, so a
         // frame looks the same whether the render began there or somewhere later.
-        setVirtualFrame(0, config.fps, { deferAnimationFrames: true });
-        await this.settle(scene, () => this.update(scene, this.element(component, config, 0)));
+        await this.replayFrame(scene, config, component, 0, true);
       }
       if (gsapIsLoaded() || this.historyDependent) {
         // GSAP's tweens are made by effects, which a frame's render runs: an effect that starts a tween at frame 30 has
@@ -248,10 +245,7 @@ class Renderer implements FrameRenderer {
         // A WebGL render target a frame makes from what it held before (a trail) is the same, once a frame has shown it
         // (below): a draw made by a render or an animation-frame callback of a skipped frame is not made unless that
         // frame is rendered.
-        for (let at = was + 1; at < frame; at++) {
-          setVirtualFrame(at, config.fps, { deferAnimationFrames: true });
-          await this.settle(scene, () => this.update(scene, this.element(component, config, at)), true, false);
-        }
+        for (let at = was + 1; at < frame; at++) await this.replayFrame(scene, config, component, at);
       } else if (frame - was > 1 && glHoldsTargets()) {
         // A WebGL render target a frame reads that the frame before wrote is what that frame drew (a ping-pong that swaps
         // its targets each frame), so the frame before this one is rendered too; the frames before that are stepped.
@@ -262,10 +256,7 @@ class Renderer implements FrameRenderer {
         // A Dawn page's loop draws what the tree shows (a react-three-fiber `useFrame`: positions from `useCurrentFrame` through a ref the
         // render sets), and stepping its callbacks alone would run each skipped frame's with the props of the frame before the jump. So each
         // skipped frame is rendered, and its callbacks run with its own props, as in a render of every frame (nothing is read from it).
-        for (let at = was + 1; at < frame; at++) {
-          setVirtualFrame(at, config.fps, { deferAnimationFrames: true });
-          await this.settle(scene, () => this.update(scene, this.element(component, config, at)), true, false);
-        }
+        for (let at = was + 1; at < frame; at++) await this.replayFrame(scene, config, component, at);
       } else {
         // A jump forward gives the animation-frame callbacks the frames it skipped (not rendered), so what is advanced
         // by their time (Motion) shows the same as in a render of every frame.
@@ -288,11 +279,7 @@ class Renderer implements FrameRenderer {
         clearHistory();
         setHistoryMode({ record: false });
         const again = this.scene!;
-        for (let at = 0; at < frame; at++) {
-          setVirtualFrame(at, config.fps, { deferAnimationFrames: true });
-          if (at === 0) await this.settle(again, () => this.update(again, this.element(component, config, 0)));
-          else await this.settle(again, () => this.update(again, this.element(component, config, at)), true, false);
-        }
+        for (let at = 0; at < frame; at++) await this.replayFrame(again, config, component, at, at === 0);
         setVirtualFrame(frame, config.fps, { deferAnimationFrames: true });
         setHistoryMode({ record: true });
         main = await this.settle(again, () => this.update(again, this.element(component, config, frame)));
@@ -304,7 +291,6 @@ class Renderer implements FrameRenderer {
       }
       if (this.historyDependent || gsapIsLoaded()) this.unreplayedJump = -1;
       else if (frame - was > 1 && this.unreplayedJump < 0) this.unreplayedJump = frame;
-      if (frame - was > 1) this.jumped = true;
     }
     // CSS transitions need the states of the islands before this frame (packages/cli/skills/kinetograph-markup/references/ENGINE.md §7.12). A frame has the
     // same history whichever frames were rendered before it: a sequential render keeps what it has seen, anything
@@ -373,11 +359,6 @@ class Renderer implements FrameRenderer {
         treesAt.set(time, tree.layers);
       }
       this.subFrameLayers = null;
-      // A sub-frame draws what the page's effects draw at its time, which moves the GPU state the page keeps from frame to frame (a Dawn feedback
-      // texture) on by steps that the frames a jump skipped were not given: those were not rendered with their sub-frames.
-      if (this.jumped && dawnDependsOnHistory()) {
-        reportUnsupported('canvas', 'webgpu', 'device', "the motion-blur sub-frames of this frame draw into GPU state the page keeps from frame to frame (a feedback texture, a buffer a pass advances), and the frames a jump skipped were drawn without theirs: this frame and the ones after it are not what a render of every frame draws; render forward from frame 0, or leave out the motion blur, for these frames");
-      }
       // What the sub-frames' recordings left out is said too, each once.
       for (const what of takeGlReports()) reportUnsupported('canvas', 'webgl', 'render target', what);
       // A sub-frame runs the page's GPU calls again: what they got wrong is this frame's, not the next one's.
@@ -419,6 +400,39 @@ class Renderer implements FrameRenderer {
     clearReportedUnsupported();
     setReportIsRead(this.rendering === this.target);
     scene.update(element);
+  }
+
+  /**
+   * Renders a frame the loop does not read (one of those a jump skips, or the frame a new scene starts with) so that the page's state is
+   * what a render of every frame has made of it. With a Dawn page that is also its motion-blur sub-frames: in a render of every frame
+   * each frame's sub-frames run the page's effects at their times, and what the effects draw into the GPU state the page keeps (a
+   * feedback texture) is not undone, as a WebGL render target's is (`snapshotGlStates`). `read` draws the frame's tree, for a frame whose
+   * tree the caller has no use for but whose canvases are read back (the frame a scene starts with, as the loop always has).
+   */
+  private async replayFrame(scene: SceneRoot, config: VideoConfig, component: ResolvedComposition['component'], at: number, read = false): Promise<void> {
+    setVirtualFrame(at, config.fps, { deferAnimationFrames: true });
+    const render = () => this.update(scene, this.element(component, config, at));
+    const tree = read ? await this.settle(scene, render) : await this.settle(scene, render, true, false);
+    if (!dawnInUse()) return;
+    // The sub-frame times come from the layers' `motionBlur`, so the tree is read (a pass of the islands' documents is open for it, as it is for a frame's own).
+    this.openPass();
+    const layers = (tree ?? scene.snapshot()).layers;
+    const times = collectMotionTimes(layers, at).filter((time) => time !== at);
+    if (times.length === 0) return;
+    const restoreGl = snapshotGlStates();
+    this.subFrameLayers = collectMotionLayers(layers, at);
+    try {
+      for (const time of times) {
+        setVirtualFrame(time, config.fps, { seedFrame: at, fireTimers: false });
+        sampleGsapAt(time / config.fps);
+        await this.settle(scene, () => this.update(scene, this.element(component, config, time)), false, false);
+      }
+    } finally {
+      this.subFrameLayers = null;
+      restoreGl();
+      endGsapSamples();
+      setVirtualFrame(at, config.fps, { fireTimers: false });
+    }
   }
 
   private startScene(config: VideoConfig): void {
