@@ -1934,6 +1934,7 @@ dependencies = [
  "napi-build",
  "napi-derive",
  "serde_json",
+ "windows-sys",
 ]
 
 [[package]]

@@ -119,8 +119,9 @@ function probeHere(): ProbeResult {
       const started = newRenderer();
       renderer = started.backend();
       rendererReason = started.backendReason();
-    } catch {
-      // No renderer could start (no GPU and no CPU fallback): said below.
+    } catch (error) {
+      // No renderer could start (no GPU and no CPU fallback, or the backend asked for is not in this build): the reason is the error's.
+      rendererReason = error instanceof Error ? error.message : String(error);
     }
   }
   return { addon, renderer, rendererReason };
@@ -144,11 +145,12 @@ async function probeApart(progress: Context['progress']): Promise<ProbeResult> {
 
 /** `doctor` with no entry: what this install can do. */
 async function installReport(context: Context): Promise<{ data: object; text: string; exitCode?: number }> {
-  const { addon, renderer, rendererReason, failure } = nativeIsStub() ? probeHere() : await probeApart(context.progress);
+  const { addon, renderer, rendererReason, failure, adapters, trace } = nativeIsStub() ? probeHere() : await probeApart(context.progress);
   const updates = await updateReport(cliVersion());
   const env = relevantEnv();
   const data = {
     node: process.version, platform: `${process.platform}-${process.arch}`, addon, renderer, rendererReason,
+    ...(adapters ? { adapters } : {}), ...(trace ? { trace } : {}),
     ...(failure ? { failure: failure.kind === 'error' ? failure : { ...failure, hint: hintFor(failure) } } : {}), ...(env.length > 0 ? { env } : {}), ...updates,
   };
   const text = [
@@ -156,8 +158,11 @@ async function installReport(context: Context): Promise<{ data: object; text: st
     ...(env.length > 0 ? [`environment: ${env.join(' ')}`] : []),
     addon.loaded ? `addon: loaded, version ${addon.version}` : `addon: NOT loaded: ${addon.error}`,
     addon.loaded ? `renderer: ${renderer ?? 'could not start'}` : 'renderer: unknown (no addon)',
-    ...(rendererReason === null ? [] : [`why not the GPU: ${rendererReason}`]),
+    // A renderer that threw says it once, below, as `why it could not start`.
+    ...(rendererReason === null || (failure?.kind === 'error' && failure.message === rendererReason) ? [] : [`why not the GPU: ${rendererReason}`]),
+    ...(adapters && (failure !== undefined || renderer === null) ? ['adapters wgpu found:', ...adapters.map((a) => `  ${a}`)] : []),
     ...(failure === undefined ? [] : describeFailure(failure)),
+    ...(trace ? ['start-up trace (last lines):', ...trace.slice(-12).map((l) => `  ${l}`), '  (all of it is in --json)'] : []),
     ...formatUpdateReport(updates),
     'kinetograph doctor <entry> reports what a project holds that the engine cannot draw',
   ].join('\n');

@@ -105,15 +105,20 @@ fn cpu_forced() -> bool {
 /// draws to. `Err` says why not: there is no such GPU API (a Metal or Vulkan device) or the driver lacks what Graphite
 /// needs (`vk_report.rs` names what, on Vulkan).
 fn start_gpu(device: &wgpu::Device, queue: &wgpu::Queue) -> std::result::Result<(Gpu, graphite::Recorder), String> {
+    crate::trace::start("skia-native", format_args!("the GPU API's handles and Graphite's context"));
     let (native, mut ctx) = Native::new(device, queue)?;
+    crate::trace::done("skia-native", format_args!("ok"));
     let no_recorder = || Native::explain(device, "Graphite made a context but no recorder");
+    crate::trace::start("skia-recorders", format_args!("two Graphite recorders"));
     let mut rec = ctx.make_recorder(None).ok_or_else(no_recorder)?;
     let raster = ctx.make_recorder(None).ok_or_else(no_recorder)?;
+    crate::trace::done("skia-recorders", format_args!("ok"));
     // A texture of each format, wrapped as Graphite wraps the real ones: refused by a driver that cannot be drawn to.
     for (format, color_type, space) in [
         (wgpu::TextureFormat::Rgba8Unorm, ColorType::RGBA8888, ColorSpace::new_srgb()),
         (wgpu::TextureFormat::Rgba16Float, ColorType::RGBAF16, ColorSpace::new_srgb_linear()),
     ] {
+        crate::trace::start("skia-probe-texture", format_args!("{format:?}: create and wrap"));
         let texture = Native::create_texture(
             device,
             &wgpu::TextureDescriptor {
@@ -130,6 +135,7 @@ fn start_gpu(device: &wgpu::Device, queue: &wgpu::Queue) -> std::result::Result<
         let step = |what: &str| Native::explain(device, &format!("{what} a {format:?} texture it draws to"));
         let bt = Native::backend_texture(device, &texture, (16, 16), Role::Target).ok_or_else(|| step("the texture is not usable as"))?;
         graphite::surfaces::wrap_backend_texture(&mut rec, &bt, color_type, Some(space), None).ok_or_else(|| step("Graphite refused to wrap"))?;
+        crate::trace::done("skia-probe-texture", format_args!("{format:?}"));
     }
     Ok((Gpu { native, ctx, rec: Rc::new(RefCell::new(raster)) }, rec))
 }
@@ -140,11 +146,19 @@ fn start_gpu(device: &wgpu::Device, queue: &wgpu::Queue) -> std::result::Result<
 pub(in super::super) fn init(device: &wgpu::Device, queue: &wgpu::Queue, scene: &Scene) -> Result<SkiaBackend> {
     let forced = cpu_forced();
     let (started, fallback) = if forced {
+        crate::trace::note("skia-mode", format_args!("CPU: KINETOGRAPH_SKIA_CPU is set, the GPU is not tried"));
         (None, None)
     } else {
+        crate::trace::start("skia-start-gpu", format_args!("trying Graphite on the GPU"));
         match start_gpu(device, queue) {
-            Ok(started) => (Some(started), None),
-            Err(why) => (None, Some(why)),
+            Ok(started) => {
+                crate::trace::done("skia-start-gpu", format_args!("GPU"));
+                (Some(started), None)
+            }
+            Err(why) => {
+                crate::trace::done("skia-start-gpu", format_args!("CPU instead, because: {why}"));
+                (None, Some(why))
+            }
         }
     };
     if started.is_none() {
