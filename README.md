@@ -30,6 +30,7 @@ installs in about a minute with nothing else to set up:
 ```sh
 npm install kinetograph
 npx kinetograph doctor
+npx kinetograph skills update   # agent skills for Claude Code, Codex and Cursor, user-wide
 ```
 
 Building from source is only for working on the engine, or for a platform with no prebuilt package. It needs Rust and

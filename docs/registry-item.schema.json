@@ -16,7 +16,8 @@
       "enum": [
         "component",
         "template",
-        "taste"
+        "taste",
+        "skill"
       ]
     },
     "title": {

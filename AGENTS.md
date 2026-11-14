@@ -20,7 +20,7 @@ Building from source takes 15 to 30 minutes and is only needed to work on the en
    `npx kinetograph doctor` from the clone.
 4. **Ask the user whether to install the agent skills and the MCP server.** They teach you how to write, check and render
    Kinetograph videos:
-   - Skills: `npx skills add 0xS4N4TG/kinetograph` (install all of them; start from `kinetograph`, which says which one to read next)
+   - Skills: `npx kinetograph skills update` (installs all of them user-wide; start from `kinetograph`, which says which one to read next)
    - MCP server, for Claude Code: `claude mcp add kinetograph -- npx -y kinetograph mcp`. Other agents:
      [Use with agents](https://kinetograph.dev/docs/guides/agents/).
 5. Point the user to [First video](https://kinetograph.dev/docs/getting-started/first-video/).

@@ -11,6 +11,7 @@ import { mcp } from './mcp.js';
 import { plugins } from './plugins.js';
 import { render, still } from './render.js';
 import { onion, strip } from './sheets.js';
+import { skills } from './skills.js';
 import { snapshot } from './snapshot.js';
 import { studio } from './studio.js';
 import { track } from './track.js';
@@ -39,6 +40,7 @@ export const commands: Command[] = [
   fetchDeps,
   studio,
   mcp,
+  skills,
 ];
 
 export function findCommand(argv: string[]): { command: Command; rest: string[] } | undefined {
