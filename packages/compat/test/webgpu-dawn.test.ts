@@ -1,7 +1,7 @@
 // The Dawn WebGPU provider (src/shim/webgpu-dawn.ts) on the real library: one adapter on every machine, timestamp queries that
 // measure nothing, errors that become frame warnings, devices that are destroyed when a renderer is disposed. The library is
-// the `webgpu` package (dawn.node), which is not a dependency of the repo: set KINETOGRAPH_DAWN_MODULE to its folder. These
-// tests are skipped, with the reason, where it is not there.
+// the `webgpu` package (dawn.node), an optional dependency of the CLI: found by Node resolution, or set KINETOGRAPH_DAWN_MODULE to its
+// folder. These tests are skipped, with the reason, where it is not there.
 
 import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
@@ -11,8 +11,7 @@ import { hasAddonFunction } from '../src/addon.js';
 import { DAWN_FEATURES, DAWN_LIMITS, DawnCanvasContext, createDawnScope, dawnCommandsOf, dawnGlobals, dawnPictureSource, dawnReadCommands, duringAnimationFrames, enterDawnScope, flushDawnCanvases, installDawn, noteDawnRewind, releaseDawn, setDawnClock, takeDawnReports } from '../src/shim/webgpu-dawn.js';
 
 const missing = ((): string | null => {
-  const spec = process.env.KINETOGRAPH_DAWN_MODULE;
-  if (!spec) return 'KINETOGRAPH_DAWN_MODULE is not set (the folder of the "webgpu" package, dawn.node)';
+  const spec = process.env.KINETOGRAPH_DAWN_MODULE || 'webgpu';
   try {
     createRequire(import.meta.url)(spec);
     return null;

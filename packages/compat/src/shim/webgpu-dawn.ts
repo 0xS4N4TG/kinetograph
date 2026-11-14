@@ -133,14 +133,52 @@ export function takeDawnReports(): string[] {
   return out;
 }
 
+/**
+ * How the host finds the library (`setDawnLoader`): the CLI resolves "webgpu" from its own install, where a bundle in a project's cache
+ * would look from the project. It sits on `globalThis` because the host's copy of this module is not the project bundle's.
+ */
+const LOADER = Symbol.for('kinetograph.dawn.loader');
+
+export function setDawnLoader(fn: (() => unknown) | null): void {
+  (globalThis as Any)[LOADER] = fn;
+}
+
+/** The one message for a library that is missing, has no binary for this platform or does not load: what failed, and what to do. */
+export function dawnLoadMessage(error: unknown, override?: string): string {
+  const e = error as NodeJS.ErrnoException;
+  const first = String(e?.message ?? e).split('\n')[0]!;
+  const head = 'KINETOGRAPH_WEBGPU=dawn: ';
+  const platform = `${process.platform}-${process.platform === 'darwin' ? 'universal' : process.arch}`;
+  const unset = 'Unset KINETOGRAPH_WEBGPU to use the built-in WebGPU.';
+  if (override) return `${head}KINETOGRAPH_DAWN_MODULE=${override} cannot be loaded (${first}). ${unset}`;
+  const notFound = e?.code === 'MODULE_NOT_FOUND' || e?.code === 'ERR_MODULE_NOT_FOUND';
+  if (notFound && /dawn\.node/.test(first)) {
+    return `${head}the "webgpu" package has no Dawn binary for this platform (${platform}); it ships macOS, Linux (glibc) and Windows, each for x64 and arm64. ${unset}`;
+  }
+  if (notFound && /Cannot find (module|package) 'webgpu'/.test(first)) {
+    return `${head}the optional package "webgpu" (Dawn for Node) is not installed. Install it with \`npm install webgpu@${DAWN_PACKAGE_VERSION}\`. ${unset}`;
+  }
+  if (e?.code === 'ERR_DLOPEN_FAILED') {
+    const linux = process.platform === 'linux' ? ' (Linux needs glibc 2.34 or newer; musl, as on Alpine, is not supported)' : '';
+    return `${head}the Dawn binary of the "webgpu" package (${platform}) cannot be loaded on this system${linux}: ${first}. ${unset}`;
+  }
+  return `${head}the "webgpu" package cannot be loaded (${first}). ${unset}`;
+}
+
+/** The version of the "webgpu" package the engine is tested with (the CLI's optional dependency). */
+export const DAWN_PACKAGE_VERSION = '0.6.2';
+
 function load(): NonNullable<typeof dawn> {
   if (dawn !== null) return dawn;
-  const spec = process.env.KINETOGRAPH_DAWN_MODULE || 'webgpu';
+  const override = process.env.KINETOGRAPH_DAWN_MODULE || undefined;
+  let found: Any;
   try {
-    dawn = createRequire(import.meta.url)(spec);
+    found = override ? createRequire(import.meta.url)(override) : typeof (globalThis as Any)[LOADER] === 'function' ? (globalThis as Any)[LOADER]() : createRequire(import.meta.url)('webgpu');
   } catch (error) {
-    throw new Error(`KINETOGRAPH_WEBGPU=dawn needs the "webgpu" package (dawn.node); set KINETOGRAPH_DAWN_MODULE to its folder (${(error as Error).message})`);
+    throw new Error(dawnLoadMessage(error, override));
   }
+  if (typeof found?.create !== 'function' || found.globals === undefined) throw new Error(dawnLoadMessage(new Error('it is not Dawn for Node: it has no create() and globals'), override));
+  dawn = found;
   return dawn!;
 }
 

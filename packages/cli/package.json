@@ -59,6 +59,9 @@
     "typescript": "5.9.3",
     "zod": "4.6.7"
   },
+  "optionalDependencies": {
+    "webgpu": "0.6.2"
+  },
   "engines": {
     "node": ">=22"
   },
