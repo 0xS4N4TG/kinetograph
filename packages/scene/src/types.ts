@@ -1076,10 +1076,11 @@ export interface GlslUpload {
 /**
  * `clear` (and `clearBuffer*`): the colour of the buffers drawn into (`COLOR_BUFFER_BIT`), the depth buffer
  * (`DEPTH_BUFFER_BIT`, to `depth`), the stencil buffer (`STENCIL_BUFFER_BIT`, to `stencil`), or several. Where it
- * clears is given as for a draw.
+ * clears is given as for a draw. `colorMask` and `stencilMask` are the masks the clear went through when they were not full,
+ * and `scissor` the box of the scissor test; ANGLE replays them as GL does, the hand-written replay reports them.
  */
 export type GlslOp =
-  | { op: 'clear'; color?: [number, number, number, number]; depth?: number; stencil?: number; target?: string; level?: number; outputs?: (GlslOutput | null)[]; depthStencil?: string }
+  | { op: 'clear'; color?: [number, number, number, number]; depth?: number; stencil?: number; target?: string; level?: number; outputs?: (GlslOutput | null)[]; depthStencil?: string; colorMask?: [boolean, boolean, boolean, boolean]; stencilMask?: number; scissor?: [number, number, number, number] }
   | ({ op: 'draw' } & GlslDraw)
   | ({ op: 'blit' } & GlslBlit)
   | ({ op: 'upload' } & GlslUpload);

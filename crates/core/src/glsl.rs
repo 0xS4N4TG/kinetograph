@@ -308,6 +308,12 @@ pub enum GlslOp {
         level: u32,
         outputs: Option<Vec<Option<GlslOutput>>>,
         depth_stencil: Option<String>,
+        /// The colour mask the clear went through (`colorMask`), when some channel was off.
+        color_mask: Option<[bool; 4]>,
+        /// The stencil write mask the clear went through, when it was not all ones.
+        stencil_mask: Option<u32>,
+        /// `x, y, width, height` of the scissor test, if it was on and the clear is not drawn as a quad.
+        scissor: Option<[i32; 4]>,
     },
     Draw(Box<GlslDraw>),
     /// `blitFramebuffer`: a rectangle of one buffer copied over a rectangle of
@@ -353,6 +359,12 @@ impl<'a> GlslDest<'a> {
 }
 
 impl GlslOp {
+    /// What a clear leaves of the buffer unwritten: a colour or stencil mask, or a scissor box. Only ANGLE replays one.
+    pub fn clear_is_partial(&self) -> bool {
+        matches!(self, GlslOp::Clear { color_mask, stencil_mask, scissor, .. }
+            if color_mask.is_some() || stencil_mask.is_some() || scissor.is_some())
+    }
+
     /// Where a clear or a draw goes; `None` for the other ops.
     pub fn dest(&self) -> Option<GlslDest<'_>> {
         match self {

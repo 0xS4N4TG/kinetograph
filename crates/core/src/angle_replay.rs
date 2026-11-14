@@ -1096,6 +1096,9 @@ impl<'a> Replay<'a> {
             color,
             depth,
             stencil,
+            color_mask,
+            stencil_mask,
+            scissor,
             ..
         } = op
         else {
@@ -1104,6 +1107,16 @@ impl<'a> Replay<'a> {
         let dest = op.dest().expect("a clear has a destination");
         self.bind_dest(&dest)?;
         self.full_masks();
+        if let Some([r, g, b, a]) = color_mask {
+            self.gl.color_mask(*r as u8, *g as u8, *b as u8, *a as u8);
+        }
+        if let Some(m) = stencil_mask {
+            self.gl.stencil_mask_separate(gl::FRONT_AND_BACK, *m);
+        }
+        if let Some([x, y, w, h]) = scissor {
+            self.gl.enable(gl::SCISSOR_TEST);
+            self.gl.scissor(*x, *y, *w, *h);
+        }
         let mut mask = 0;
         if let Some(c) = color {
             self.gl

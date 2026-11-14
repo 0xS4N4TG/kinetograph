@@ -1841,22 +1841,47 @@ export class WebGLContext {
 
   clear(mask: number): void {
     if (mask & ~(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT | GL.STENCIL_BUFFER_BIT)) return this.fail(GL.INVALID_VALUE);
-    // The depth and stencil buffers are cleared only where there are such buffers, as far as their masks let them be written.
-    const color = (mask & GL.COLOR_BUFFER_BIT) !== 0;
+    // The depth and stencil buffers are cleared only where there are such buffers, as far as their masks let them be written;
+    // the colour only in the channels `colorMask` leaves on (none: the clear writes no colour).
+    const color = (mask & GL.COLOR_BUFFER_BIT) !== 0 && this.colorMaskState.some((on) => on);
     const depth = (mask & GL.DEPTH_BUFFER_BIT) !== 0 && this.hasDepth() && this.depthMaskValue;
     const stencilMask = this.stencilFront.writeMask & STENCIL_MAX;
     const stencil = (mask & GL.STENCIL_BUFFER_BIT) !== 0 && this.hasStencil() && stencilMask !== 0;
     if (!color && !depth && !stencil) return;
-    if (color && this.colorMaskState.some((on) => !on)) throw new WebGLUnsupportedError('clear with a colour mask');
-    if (stencil && stencilMask !== STENCIL_MAX) throw new WebGLUnsupportedError('clearing the stencil buffer through a stencilMask other than 0 or 0xff');
     if (this.framebufferIncomplete()) return;
     const values = {
       ...(color ? { color: [...this.clearColorValue] as [number, number, number, number] } : {}),
       ...(depth ? { depth: this.clearDepthValue } : {}),
       ...(stencil ? { stencil: this.clearStencilValue & STENCIL_MAX } : {}),
     };
+    if (this.maskedClear(color, stencil ? stencilMask : STENCIL_MAX)) return this.pushMaskedClear(values, color, stencil ? stencilMask : STENCIL_MAX);
     if (this.caps.scissor) this.pushScissoredClear(values);
     else this.pushClear(values, color);
+  }
+
+  /** Whether a clear goes through a colour mask with an off channel or a stencil mask that is not all ones: ANGLE's `glClear` takes those, a recorded quad cannot do both with the scissor. */
+  private maskedClear(color: boolean, stencilMask: number): boolean {
+    return (color && this.colorMaskState.some((on) => !on)) || stencilMask !== STENCIL_MAX;
+  }
+
+  /**
+   * A clear through a colour mask or a stencil mask, kept as a clear with its masks (and the scissor box when the test is
+   * on): the replay that has a real `glClear` does it as GL does, the hand-written one reports it. It never hides the draws
+   * before it, since it leaves part of every buffer as it was.
+   */
+  private pushMaskedClear(values: { color?: [number, number, number, number]; depth?: number; stencil?: number }, color: boolean, stencilMask: number, outputs?: (WebGLAttachment | null)[]): void {
+    this.begin();
+    const where = this.dest(values.depth !== undefined || values.stencil !== undefined, outputs);
+    if (where === null) return;
+    const op: GlslOp = {
+      op: 'clear',
+      ...values,
+      ...(color && this.colorMaskState.some((on) => !on) ? { colorMask: [...this.colorMaskState] as [boolean, boolean, boolean, boolean] } : {}),
+      ...(values.stencil !== undefined && stencilMask !== STENCIL_MAX ? { stencilMask } : {}),
+      ...(this.caps.scissor ? { scissor: this.scissorNow() } : {}),
+      ...where,
+    };
+    this.ops.push(op);
   }
 
   /**
@@ -1881,12 +1906,16 @@ export class WebGLContext {
     if (this.version !== 2) return this.fail(GL.INVALID_OPERATION);
     if (buffer === GL2.COLOR) {
       if (!(drawbuffer >= 0 && drawbuffer < MAX_DRAW_BUFFERS) || values.length < 4) return this.fail(GL.INVALID_VALUE);
-      if (this.colorMaskState.some((on) => !on)) throw new WebGLUnsupportedError('clear with a colour mask');
+      if (this.colorMaskState.every((on) => !on)) return;
       if (this.framebufferIncomplete()) return;
       const framebuffer = this.drawFramebuffer;
       const output = framebuffer === null ? (drawbuffer === 0 ? 'canvas' : null) : (this.outputsOf(framebuffer)[drawbuffer] ?? null);
       if (output === null) return;
       const color = values.slice(0, 4).map((v) => Math.min(1, Math.max(0, v))) as [number, number, number, number];
+      if (this.maskedClear(true, STENCIL_MAX)) {
+        const outputs = output === 'canvas' ? undefined : framebuffer === null ? undefined : Array.from({ length: drawbuffer + 1 }, (_, i) => (i === drawbuffer ? (output as WebGLAttachment) : null));
+        return this.pushMaskedClear({ color }, true, STENCIL_MAX, outputs);
+      }
       if (this.caps.scissor) {
         // The attachment alone, at its output's place among the draw buffers.
         const outputs = framebuffer === null ? undefined : Array.from({ length: drawbuffer + 1 }, (_, i) => (i === drawbuffer ? (output as WebGLAttachment) : null));
@@ -1902,9 +1931,9 @@ export class WebGLContext {
     const stencilMask = this.stencilFront.writeMask & STENCIL_MAX;
     const stencil = buffer === GL2.STENCIL && this.hasStencil() && stencilMask !== 0;
     if (!depth && !stencil) return;
-    if (stencil && stencilMask !== STENCIL_MAX) throw new WebGLUnsupportedError('clearing the stencil buffer through a stencilMask other than 0 or 0xff');
     if (this.framebufferIncomplete()) return;
     const value = depth ? { depth: Math.min(1, Math.max(0, values[0]!)) } : { stencil: Math.trunc(values[0]!) & STENCIL_MAX };
+    if (stencil && stencilMask !== STENCIL_MAX) return this.pushMaskedClear(value, false, stencilMask);
     if (this.caps.scissor) this.pushScissoredClear(value);
     else this.pushClear(value, false, []);
   }

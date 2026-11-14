@@ -230,8 +230,28 @@ fn angle_only(name: &str) {
     }
 }
 
+/// A case only ANGLE can draw: with ANGLE it is compared with Chrome as any other; the hand-written replay must stop the
+/// frame with an `unsupported:` error that names the gap, not draw it wrong or crash.
+fn angle_only_reported(name: &str) {
+    if angle_mode() {
+        run(name, 1.0);
+        return;
+    }
+    let (body, w, h) = body_of(name);
+    let error = match paintkit::try_render_body(&body, w, h) {
+        Err(error) => error,
+        Ok(_) => panic!("{name}: the hand-written replay drew a case it cannot draw"),
+    };
+    assert!(error.contains("unsupported:"), "{name}: {error}");
+}
+
 fn angle_mode() -> bool {
     std::env::var("KINETOGRAPH_WEBGL").as_deref() == Ok("angle")
+}
+
+#[test]
+fn webgl2_clear_masks() {
+    angle_only_reported("webgl2_clear_masks");
 }
 
 #[test]

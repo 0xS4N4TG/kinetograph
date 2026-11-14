@@ -257,7 +257,7 @@ function writesOf(op: GlslOp, res: Resources): Write[] {
   for (const { target, level } of colourOutputs(op)) {
     const size = levelSize(res.textures.get(target), level);
     let whole = false;
-    if (op.op === 'clear') whole = op.color !== undefined;
+    if (op.op === 'clear') whole = op.color !== undefined && op.colorMask === undefined && op.scissor === undefined;
     else if (op.op === 'blit') {
       const [x0, y0, x1, y1] = op.to;
       whole = op.aspect === undefined && op.scissor === undefined && size !== null && Math.min(x0, x1) <= 0 && Math.min(y0, y1) <= 0 && Math.max(x0, x1) >= size[0] && Math.max(y0, y1) >= size[1];
@@ -269,7 +269,7 @@ function writesOf(op: GlslOp, res: Resources): Write[] {
   const buffer = depthStencilOf(op);
   if (buffer !== undefined) {
     const kind = res.textures.get(buffer)?.format;
-    const whole = op.op === 'clear' && (kind === 'depth' ? op.depth !== undefined : kind === 'stencil' ? op.stencil !== undefined : op.depth !== undefined && op.stencil !== undefined);
+    const whole = op.op === 'clear' && op.scissor === undefined && op.stencilMask === undefined && (kind === 'depth' ? op.depth !== undefined : kind === 'stencil' ? op.stencil !== undefined : op.depth !== undefined && op.stencil !== undefined);
     const box = clearBoxes.get(op);
     const boxed = op.op === 'draw' && (kind === 'depth' ? op.depth !== undefined : kind === 'stencil' ? op.stencil !== undefined : op.depth !== undefined && op.stencil !== undefined);
     out.push({ id: buffer, key: `${buffer}@ds`, whole, ...(box !== undefined && boxed ? { box } : {}), ...(extentOf(op) !== undefined ? { extent: extentOf(op)! } : {}) });

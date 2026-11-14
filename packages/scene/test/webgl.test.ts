@@ -2630,11 +2630,21 @@ describe('the recording WebGL context', () => {
       expect(gl.content().programs[both.program]!.fragment).toContain('o0 = u_color; o1 = u_color;');
     });
 
-    it('still refuses a clear through a colour mask', () => {
-      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }) });
+    it('keeps a clear through a colour mask, a stencil mask and the scissor box as a clear that carries them', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), attributes: { stencil: true } });
       gl.enable(GL.SCISSOR_TEST);
+      gl.scissor(1, 1, 4, 2);
       gl.colorMask(true, false, true, true);
-      expect(() => gl.clear(GL.COLOR_BUFFER_BIT)).toThrow(/^unsupported:.*colour mask/);
+      gl.stencilMask(0x0f);
+      gl.clear(GL.COLOR_BUFFER_BIT | GL.STENCIL_BUFFER_BIT);
+      expect(gl.content().ops).toEqual([expect.objectContaining({ op: 'clear', colorMask: [true, false, true, true], stencilMask: 0x0f, scissor: [1, 1, 4, 2] })]);
+    });
+
+    it('writes no colour when every colour channel is masked off', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }) });
+      gl.colorMask(false, false, false, false);
+      gl.clear(GL.COLOR_BUFFER_BIT);
+      expect(gl.content().ops).toEqual([]);
     });
   });
 

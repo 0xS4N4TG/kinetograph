@@ -668,6 +668,11 @@ impl Compositor {
             if dead[i] {
                 continue;
             }
+            if op.clear_is_partial() {
+                return Err(render_error(
+                    "unsupported: a clear through a colour mask, a stencil mask or a scissor box (KINETOGRAPH_WEBGL=angle draws it)",
+                ));
+            }
             if let GlslOp::Upload(u) = op {
                 let t = self.glsl_target(&mut targets, content, &u.target, canvas_ds)?;
                 if t.ds.is_some() {
