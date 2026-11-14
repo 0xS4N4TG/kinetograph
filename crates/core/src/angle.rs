@@ -973,6 +973,7 @@ fn addon_dir() -> Option<PathBuf> {
 #[cfg(windows)]
 fn addon_dir() -> Option<PathBuf> {
     use std::os::windows::ffi::OsStringExt;
+    #[link(name = "kernel32")]
     unsafe extern "system" {
         fn GetModuleHandleExW(flags: u32, address: *const c_void, module: *mut *mut c_void) -> i32;
         fn GetModuleFileNameW(module: *mut c_void, buffer: *mut u16, size: u32) -> u32;
