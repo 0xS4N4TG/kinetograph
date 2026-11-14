@@ -2,7 +2,7 @@
 name: kinetograph-create
 description: Start a new Kinetograph project or add to one. Use when the folder has no Kinetograph project yet, when asked for a new video from scratch, or to install a component, template or taste from the registry with `kinetograph init` and `kinetograph add`.
 metadata:
-  version: "0.3.0"
+  version: "0.4.0-rc.1"
 ---
 
 # Create a Kinetograph project
