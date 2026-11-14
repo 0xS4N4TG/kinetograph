@@ -2648,6 +2648,25 @@ describe('the recording WebGL context', () => {
     });
   });
 
+  describe('GLsizei arguments', () => {
+    it('are converted to integers as WebIDL `long` does, so a fractional size reaches the scene as a whole number', () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      const depth = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, depth);
+      gl.texStorage2D(GL.TEXTURE_2D, 1, GL2.DEPTH_COMPONENT24, 211.2, 360.9);
+      const buffer = gl.createRenderbuffer();
+      gl.bindRenderbuffer(GL.RENDERBUFFER, buffer);
+      gl.renderbufferStorage(GL.RENDERBUFFER, GL2.DEPTH_COMPONENT24, -0.5, 7.9);
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.TEXTURE_2D, depth, 0);
+      gl.clear(GL.DEPTH_BUFFER_BIT);
+      const textures = Object.values(gl.content().textures);
+      expect(textures).toHaveLength(1);
+      expect([textures[0]!.width, textures[0]!.height]).toEqual([211, 360]);
+    });
+  });
+
   describe('render targets across frames', () => {
     /** A texture of this size allocated as a render target, with a framebuffer that has it attached and is bound. */
     function attach(gl: WebGLContext, width: number, height: number) {

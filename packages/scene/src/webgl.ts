@@ -1021,6 +1021,13 @@ function newStencil(): StencilState {
 const STENCIL_BITS = 8;
 const STENCIL_MAX = (1 << STENCIL_BITS) - 1;
 
+/**
+ * A GLint or GLsizei argument (WebIDL `long`): the number truncated toward zero and wrapped to 32 bits, NaN and the
+ * infinities 0. A page may pass a fraction (three.js sizes a renderbuffer 0.33 * innerWidth), which GL sees as an integer.
+ */
+const long = (value: unknown): number => Number(value) | 0;
+
+
 interface BlendState {
   srcRgb: number;
   dstRgb: number;
@@ -1563,6 +1570,7 @@ export class WebGLContext {
 
   /** `copyTexImage2D`: the texture level specified empty, of the size copied, then `copyTexSubImage2D` into it. */
   copyTexImage2D(target: number, level: number, internalformat: number, x: number, y: number, width: number, height: number, border: number): void {
+    [x, y, width, height, border] = [x, y, width, height, border].map(long) as [number, number, number, number, number];
     if (border !== 0) return this.fail(GL.INVALID_VALUE);
     if (internalformat !== GL.RGBA && internalformat !== GL2.RGBA8 && internalformat !== GL2.SRGB8_ALPHA8) throw new WebGLUnsupportedError(`copyTexImage2D of the internal format 0x${internalformat.toString(16)}; use RGBA`);
     const before = this.error;
@@ -1577,6 +1585,7 @@ export class WebGLContext {
    * render target from then on, so it lands in order with the draws.
    */
   copyTexSubImage2D(target: number, level: number, xoffset: number, yoffset: number, x: number, y: number, width: number, height: number): void {
+    [xoffset, yoffset, x, y, width, height] = [xoffset, yoffset, x, y, width, height].map(long) as [number, number, number, number, number, number];
     const face = faceIndex(target) >= 0;
     if (!face && target !== GL.TEXTURE_2D) return this.fail(GL.INVALID_ENUM);
     const texture = face ? this.faceTarget(target) : this.bound(target);
@@ -1621,9 +1630,7 @@ export class WebGLContext {
     if (this.framebufferIncomplete()) return;
     // Depth and stencil are copied texel for texel.
     if (mask & (GL.DEPTH_BUFFER_BIT | GL.STENCIL_BUFFER_BIT) && filter !== GL.NEAREST) return this.fail(GL.INVALID_OPERATION);
-    const rects = [sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1].map(Number);
-    if (rects.some((v) => !Number.isFinite(v))) return this.fail(GL.INVALID_VALUE);
-    const [fx0, fy0, fx1, fy1, tx0, ty0, tx1, ty1] = rects.map(Math.trunc);
+    const [fx0, fy0, fx1, fy1, tx0, ty0, tx1, ty1] = [sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1].map(long);
     // Nothing is blitted into a multisampled buffer (the canvas with `antialias`, or a multisampled renderbuffer), and
     // one is read only into a rectangle of its own bounds, as in a browser.
     if (this.samplesOf(draw) > 0) return this.fail(GL.INVALID_OPERATION);
@@ -1698,7 +1705,7 @@ export class WebGLContext {
     return this.viewportBox ?? [0, 0, this.drawingBufferWidth, this.drawingBufferHeight];
   }
   viewport(x: number, y: number, width: number, height: number): void {
-    this.viewportBox = [Math.trunc(x), Math.trunc(y), Math.trunc(width), Math.trunc(height)];
+    this.viewportBox = [long(x), long(y), long(width), long(height)];
   }
   enable(cap: number): void {
     this.setCap(cap, true);
@@ -1738,7 +1745,7 @@ export class WebGLContext {
     }
   }
   scissor(x: number, y: number, width: number, height: number): void {
-    this.scissorBox = [Math.trunc(x), Math.trunc(y), Math.trunc(width), Math.trunc(height)];
+    this.scissorBox = [long(x), long(y), long(width), long(height)];
   }
   blendFunc(src: number, dst: number): void {
     this.blendFuncSeparate(src, dst, src, dst);
@@ -2868,6 +2875,8 @@ export class WebGLContext {
 
   /** `texImage2D(target, level, internalformat, width, height, border, format, type, pixels)` or `(…, internalformat, format, type, source)`. */
   texImage2D(target: number, level: number, internalformat: number, ...rest: unknown[]): void {
+    // The sizes and the border of the long forms (width, height, border, format, type, pixels).
+    if (rest.length >= 6) rest = [long(rest[0]), long(rest[1]), long(rest[2]), ...rest.slice(3)];
     if (faceIndex(target) >= 0) return this.texImageFace(target, level, internalformat, rest);
     const texture = this.bound(target);
     if (texture === null) return;
@@ -3063,6 +3072,7 @@ export class WebGLContext {
 
   /** WebGL 2's `texImage3D(target, level, internalformat, width, height, depth, border, format, type, pixels, srcOffset)` of a `TEXTURE_3D` or `TEXTURE_2D_ARRAY`. */
   texImage3D(target: number, level: number, internalformat: number, width: number, height: number, depth: number, border: number, format: number, type: number, source?: unknown, srcOffset = 0): void {
+    [width, height, depth, border] = [width, height, depth, border].map(long) as [number, number, number, number];
     const bound = this.bound3d(target);
     if (bound === null) return;
     const { texture, limit, side } = bound;
@@ -3080,6 +3090,7 @@ export class WebGLContext {
 
   /** WebGL 2's `texSubImage3D(target, level, xoffset, yoffset, zoffset, width, height, depth, format, type, pixels, srcOffset)`. */
   texSubImage3D(target: number, level: number, xoffset: number, yoffset: number, zoffset: number, width: number, height: number, depth: number, format: number, type: number, source?: unknown, srcOffset = 0): void {
+    [xoffset, yoffset, zoffset, width, height, depth] = [xoffset, yoffset, zoffset, width, height, depth].map(long) as [number, number, number, number, number, number];
     const bound = this.bound3d(target);
     if (bound === null) return;
     const { texture } = bound;
@@ -3103,6 +3114,7 @@ export class WebGLContext {
 
   /** WebGL 2's `texStorage3D`: a 3D or array texture of this size, zeros, of one level (more are refused: only level 0 is held). */
   texStorage3D(target: number, levels: number, internalformat: number, width: number, height: number, depth: number): void {
+    [width, height, depth] = [width, height, depth].map(long) as [number, number, number];
     const bound = this.bound3d(target);
     if (bound === null) return;
     const { texture, limit, side } = bound;
@@ -3149,6 +3161,8 @@ export class WebGLContext {
    * texture made from one) is a patch the renderer lays over the texture's picture.
    */
   texSubImage2D(target: number, level: number, xoffset: number, yoffset: number, ...rest: unknown[]): void {
+    [xoffset, yoffset] = [long(xoffset), long(yoffset)];
+    if (rest.length >= 5) rest = [long(rest[0]), long(rest[1]), ...rest.slice(2)];
     if (faceIndex(target) >= 0) return this.texSubImageFace(target, level, xoffset, yoffset, rest);
     const texture = this.bound(target);
     if (texture === null) return;
@@ -3217,6 +3231,7 @@ export class WebGLContext {
 
   /** WebGL 2's `texStorage2D`: a texture of this size, empty, with `levels` mip levels. */
   texStorage2D(target: number, levels: number, internalformat: number, width: number, height: number): void {
+    [width, height] = [long(width), long(height)];
     const texture = this.bound(target);
     if (texture === null) return;
     levels = Math.trunc(levels); // a GLsizei argument is converted to an integer: three passes log2(size) + 1
@@ -3651,6 +3666,8 @@ export class WebGLContext {
   }
   private storeRenderbuffer(target: number, internalformat: number, width: number, height: number, samples: number): void {
     if (target !== GL.RENDERBUFFER) return this.fail(GL.INVALID_ENUM);
+    width = long(width);
+    height = long(height);
     if (!(width >= 0 && height >= 0)) return this.fail(GL.INVALID_VALUE);
     const renderbuffer = this.renderbuffer;
     if (renderbuffer === null) return this.fail(GL.INVALID_OPERATION);
@@ -3727,10 +3744,12 @@ export class WebGLContext {
   // ---- instanced drawing ----
 
   drawArraysInstanced(mode: number, first: number, count: number, instances: number): void {
+    [first, count, instances] = [first, count, instances].map(long) as [number, number, number];
     if (!(first >= 0 && count >= 0 && instances >= 0)) return this.fail(GL.INVALID_VALUE);
     this.draw(mode, first, count, null, instances);
   }
   drawElementsInstanced(mode: number, count: number, type: number, offset: number, instances: number): void {
+    [count, instances] = [long(count), long(instances)];
     if (!(count >= 0 && offset >= 0 && instances >= 0)) return this.fail(GL.INVALID_VALUE);
     const ty = this.indexType(type);
     if (ty === null) return this.fail(GL.INVALID_ENUM);
@@ -3740,10 +3759,12 @@ export class WebGLContext {
   // ---- drawing ----
 
   drawArrays(mode: number, first: number, count: number): void {
+    [first, count] = [long(first), long(count)];
     if (!(first >= 0 && count >= 0)) return this.fail(GL.INVALID_VALUE);
     this.draw(mode, first, count, null);
   }
   drawElements(mode: number, count: number, type: number, offset: number): void {
+    count = long(count);
     if (!(count >= 0 && offset >= 0)) return this.fail(GL.INVALID_VALUE);
     const ty = this.indexType(type);
     if (ty === null) return this.fail(GL.INVALID_ENUM);

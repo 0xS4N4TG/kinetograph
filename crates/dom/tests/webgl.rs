@@ -163,6 +163,11 @@ fn webgl2_mrt() {
 }
 
 #[test]
+fn webgl2_fractional_sizes() {
+    run("webgl2_fractional_sizes", 1.0);
+}
+
+#[test]
 fn webgl2_depth_texture() {
     run("webgl2_depth_texture", 1.0);
 }
