@@ -35,6 +35,7 @@ use crate::scene3d::environment::Environment;
 use crate::scene3d::model::Model;
 use crate::scene3d::{Resolved3d, Sources3d};
 use crate::text::{LaidOutText, TextEngine};
+use crate::trace;
 use crate::video::{VideoDecoder, Videos, open_video, video_sources};
 use crate::warp;
 
@@ -209,16 +210,19 @@ impl Renderer {
         // Fonts first: nothing is measured before they are registered. All
         // the reading is done before the GPU is touched, so a bad file fails
         // cheaply.
+        trace::start("read-assets", format_args!("fonts and the scene's files"));
         let mut fresh = read_assets(&scene, &Loaded::default(), false)?;
+        trace::done("read-assets", format_args!("ok"));
 
-        let (instance, device, queue) = pollster::block_on(new_gpu()).ok_or_else(|| {
-            Error::Render("no compatible GPU adapter found (Metal on macOS; Vulkan on Linux and Windows, or Direct3D 12 on Windows)".into())
+        let (instance, device, queue) = pollster::block_on(new_gpu()).map_err(|why| {
+            Error::Render(format!("no compatible GPU adapter found: {why} (Metal on macOS; Vulkan on Linux and Windows, or Direct3D 12 on Windows)"))
         })?;
 
         let margin = scene.margin();
         let target_size = (scene.width + 2 * margin, scene.height + 2 * margin);
         // The scene's shaders and tables join below, the way a later
         // scene's do (`set_scene`).
+        trace::start("compositor-new", format_args!("{}x{} margin {margin}: shader modules, pipelines, first texture", scene.width, scene.height));
         let mut compositor = Compositor::new(
             &device,
             &queue,
@@ -228,6 +232,7 @@ impl Renderer {
             &[],
             &HashMap::new(),
         );
+        trace::done("compositor-new", format_args!("ok"));
         compositor.set_srgb_blend(scene.blend_space == crate::scene::BlendSpace::Srgb);
 
         let text = fresh
@@ -265,10 +270,14 @@ impl Renderer {
             skia: None,
             skia_inner: None,
         };
+        trace::start("skia-backend", format_args!("GPU Graphite on the device, or the CPU"));
         renderer.skia = Some(skia::init(&renderer.device, &renderer.queue, &renderer.scene)?);
+        trace::done("skia-backend", format_args!("{}", renderer.backend_description()));
+        trace::start("install-assets", format_args!("fonts, images and the scene's shaders"));
         renderer.install_assets(fresh);
         renderer.add_shaders();
         renderer.add_filter_images();
+        trace::done("install-assets", format_args!("ok"));
         Ok(renderer)
     }
 
@@ -506,8 +515,17 @@ impl Renderer {
     }
 
     pub fn render_frame(&mut self, frame: u32) -> Result<Frame> {
+        static FIRST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        let first = trace::first(&FIRST);
+        if first {
+            trace::start("first-frame", format_args!("frame {frame}: resolve, draw, submit, read back"));
+        }
         let pending = self.start_frame(frame)?;
-        self.finish_frame(pending)
+        let frame = self.finish_frame(pending);
+        if first {
+            trace::done("first-frame", format_args!("ok={}", frame.is_ok()));
+        }
+        frame
     }
 
     /// `render_frame` up to the readback: the GPU works on the frame while
@@ -2242,24 +2260,43 @@ fn new_instance(backends: wgpu::Backends) -> wgpu::Instance {
     })
 }
 
+/// The GPU APIs this build of wgpu has: Metal on macOS, Vulkan elsewhere and Direct3D 12 on Windows.
+fn built_backends() -> wgpu::Backends {
+    if cfg!(target_os = "macos") {
+        wgpu::Backends::METAL
+    } else if cfg!(windows) {
+        wgpu::Backends::VULKAN | wgpu::Backends::DX12
+    } else {
+        wgpu::Backends::VULKAN
+    }
+}
+
 /// The wgpu instance, device and queue. Skia's Graphite shares wgpu's device when that is a Metal one (macOS,
 /// `render/skia/metal.rs`) or a Vulkan one (Linux and Windows, `render/skia/vulkan.rs`), so those come first. Where
 /// there is no such adapter (a Windows machine with no Vulkan driver) wgpu may use any backend that has one, Direct3D 12
 /// with its software adapter (WARP) included, and Skia then draws on the CPU (`render/skia/backend.rs`). An explicit
 /// `WGPU_BACKEND` decides alone. wgpu itself takes a software adapter (lavapipe, WARP) when it is the only one.
-async fn new_gpu() -> Option<(wgpu::Instance, wgpu::Device, wgpu::Queue)> {
+/// `Err` says why no device could be opened, for the last backends tried.
+async fn new_gpu() -> std::result::Result<(wgpu::Instance, wgpu::Device, wgpu::Queue), String> {
     let tries = match wgpu::Backends::from_env() {
         Some(backends) => vec![backends],
         None if cfg!(target_os = "macos") => vec![wgpu::Backends::default()],
         None => vec![wgpu::Backends::VULKAN, wgpu::Backends::PRIMARY],
     };
+    let mut why = String::from("no backend to try");
     for backends in tries {
+        trace::start("create-instance", format_args!("backends={backends:?} built={:?}", built_backends()));
         let instance = new_instance(backends);
-        if let Some((device, queue)) = new_device(&instance).await {
-            return Some((instance, device, queue));
+        trace::done("create-instance", format_args!("backends={backends:?}"));
+        match new_device(&instance, backends).await {
+            Ok((device, queue)) => return Ok((instance, device, queue)),
+            Err(e) if (backends & built_backends()).is_empty() => {
+                why = format!("{e}; this build has no {backends:?} backend (it has {:?})", built_backends());
+            }
+            Err(e) => why = e,
         }
     }
-    None
+    Err(why)
 }
 
 /// The limits and WebGPU features of the device a render opens, as `navigator.gpu` reports them (`webgpu::device_info`),
@@ -2267,37 +2304,61 @@ async fn new_gpu() -> Option<(wgpu::Instance, wgpu::Device, wgpu::Queue)> {
 pub fn webgpu_device_info() -> Option<String> {
     static INFO: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
     INFO.get_or_init(|| {
-        let (_instance, device, _queue) = pollster::block_on(new_gpu())?;
+        let (_instance, device, _queue) = pollster::block_on(new_gpu()).ok()?;
         Some(crate::webgpu::device_info(&device).to_string())
     })
     .clone()
 }
 
+/// One adapter as a line of the start-up trace.
+fn adapter_line(info: &wgpu::AdapterInfo) -> String {
+    format!(
+        "name={:?} backend={:?} type={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?}",
+        info.name, info.backend, info.device_type, info.vendor, info.device, info.driver, info.driver_info
+    )
+}
+
 /// The GPU device: the default adapter, default limits (but up to 16 vertex buffers, as a `glsl` draw gives each
 /// attribute one and a shader may have ten), `CLEAR_TEXTURE` and `PIPELINE_CACHE` when there, plus
 /// `TIMESTAMP_QUERY` when there, for `set_pass_timing`, `FLOAT32_FILTERABLE` when there, so that a WebGPU page may
-/// filter 32-bit float textures, and `FLOAT32_BLENDABLE` when there, for WebGL's `EXT_float_blend`.
-async fn new_device(instance: &wgpu::Instance) -> Option<(wgpu::Device, wgpu::Queue)> {
+/// filter 32-bit float textures, and `FLOAT32_BLENDABLE` when there, for WebGL's `EXT_float_blend`. `Err` says which
+/// step failed. `backends` are the ones `instance` was made for (the trace lists their adapters).
+async fn new_device(instance: &wgpu::Instance, backends: wgpu::Backends) -> std::result::Result<(wgpu::Device, wgpu::Queue), String> {
+    if trace::enabled() {
+        trace::start("enumerate-adapters", format_args!("backends={backends:?}"));
+        let adapters = instance.enumerate_adapters(backends).await;
+        for (i, adapter) in adapters.iter().enumerate() {
+            trace::note("adapter", format_args!("#{i} {}", adapter_line(&adapter.get_info())));
+        }
+        trace::done("enumerate-adapters", format_args!("count={}", adapters.len()));
+    }
+    trace::start("pick-adapter", format_args!("WGPU_ADAPTER_NAME and WGPU_POWER_PREF decide, else the default"));
     let adapter = wgpu::util::initialize_adapter_from_env_or_default(instance, None)
         .await
-        .ok()?;
+        .map_err(|e| format!("no adapter on {backends:?}: {e}"))?;
+    trace::done("pick-adapter", format_args!("{}", adapter_line(&adapter.get_info())));
     let wanted = wgpu::Features::CLEAR_TEXTURE
         | wgpu::Features::PIPELINE_CACHE
         | wgpu::Features::TIMESTAMP_QUERY
         | wgpu::Features::FLOAT32_FILTERABLE
         | wgpu::Features::FLOAT32_BLENDABLE;
-    adapter
+    let features = adapter.features() & wanted;
+    let limits = wgpu::Limits {
+        max_vertex_buffers: adapter.limits().max_vertex_buffers.min(16),
+        ..wgpu::Limits::default()
+    };
+    trace::start("request-device", format_args!("features={features:?} max_vertex_buffers={} other limits default", limits.max_vertex_buffers));
+    let opened = adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: None,
-            required_features: adapter.features() & wanted,
-            required_limits: wgpu::Limits {
-                max_vertex_buffers: adapter.limits().max_vertex_buffers.min(16),
-                ..wgpu::Limits::default()
-            },
+            required_features: features,
+            required_limits: limits,
             ..Default::default()
         })
         .await
-        .ok()
+        .map_err(|e| format!("the adapter {:?} would not open a device: {e}", adapter.get_info().name))?;
+    trace::done("request-device", format_args!("ok"));
+    Ok(opened)
 }
 
 fn geometry_path(geometry: &ResolvedGeometry) -> Result<BezPath> {

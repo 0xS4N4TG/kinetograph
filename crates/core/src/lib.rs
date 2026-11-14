@@ -40,6 +40,7 @@ pub mod scene3d;
 pub mod shader;
 pub mod svg_picture;
 pub mod text;
+pub mod trace;
 pub mod turbulence;
 pub mod uniforms;
 pub mod video;
