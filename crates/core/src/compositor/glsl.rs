@@ -668,6 +668,11 @@ impl Compositor {
             if dead[i] {
                 continue;
             }
+            if op.clear_is_partial() {
+                return Err(render_error(
+                    "unsupported: a clear through a colour mask, a stencil mask or a scissor box (KINETOGRAPH_WEBGL=angle draws it)",
+                ));
+            }
             if let GlslOp::Upload(u) = op {
                 let t = self.glsl_target(&mut targets, content, &u.target, canvas_ds)?;
                 if t.ds.is_some() {
@@ -1501,6 +1506,12 @@ impl Compositor {
                      refuses with INVALID_OPERATION)"
                 ))
             })?;
+            if a.int_constant.is_some() {
+                return Err(render_error(format!(
+                    "unsupported: the attribute `{name}` reads the current value of an integer input \
+                     (vertexAttribI4i, vertexAttribI4ui)"
+                )));
+            }
             // An attribute with a divisor advances for each instance (or each `divisor` of them); a
             // point's attributes all do, as it is an instance itself.
             let per_instance = a.divisor >= 1 && !points;
@@ -1697,6 +1708,13 @@ impl Compositor {
                             state.texture
                         ))
                     })?;
+                    if !texture.calls.is_empty() {
+                        return Err(render_error(format!(
+                            "unsupported: the texture {:?} is made of raw GL texture calls (an integer or compressed \
+                             format, or a part of a mip level), which only the ANGLE replay takes",
+                            state.texture
+                        )));
+                    }
                     let held = texture_dim(texture);
                     if held != binding.dim.base() {
                         return Err(render_error(format!(
@@ -4213,7 +4231,7 @@ fn vertex_format(
         K::Float(c) | K::Int(c) | K::Uint(c) => c,
     });
     if a.integer {
-        if a.ty == GlslType::F32 || a.constant.is_some() {
+        if matches!(a.ty, GlslType::F32 | GlslType::F16) || a.constant.is_some() {
             return Err(render_error(format!(
                 "unsupported: the attribute `{name}` is an integer array of floats or a disabled one"
             )));
@@ -4247,6 +4265,8 @@ fn vertex_format(
         (GlslType::F32, _, 2) => Some(F::Float32x2),
         (GlslType::F32, _, 3) => Some(F::Float32x3),
         (GlslType::F32, _, 4) => Some(F::Float32x4),
+        (GlslType::F16, _, 2) => Some(F::Float16x2),
+        (GlslType::F16, _, 4) => Some(F::Float16x4),
         (GlslType::U8, true, 2) => Some(F::Unorm8x2),
         (GlslType::U8, true, 4) => Some(F::Unorm8x4),
         (GlslType::I8, true, 2) => Some(F::Snorm8x2),
@@ -4294,21 +4314,29 @@ fn widen_values(bytes: &[u8], (start, stride, count): (u64, u64, u64), widen: &W
                     GlslType::I32 | GlslType::F32 => {
                         i64::from(i32::from_le_bytes([b[0], b[1], b[2], b[3]]))
                     }
+                    // Only a float input reads halves; `scaled` below takes the value from `half`.
+                    GlslType::F16 => 0,
                 }
             } else {
                 default
             };
+            let half = (widen.ty == GlslType::F16 && c < size).then(|| {
+                let from = at + c * tsz;
+                f64::from(half::f16::from_le_bytes([bytes[from], bytes[from + 1]]).to_f32())
+            });
             match widen.kind {
                 gl::AttrKind::Float(_) => {
-                    let v = value as f64;
-                    let scaled = if widen.normalized && c < size {
+                    let v = half.unwrap_or(value as f64);
+                    let scaled = if widen.normalized && c < size && half.is_none() {
                         match widen.ty {
                             GlslType::U8 => v / 255.0,
                             GlslType::U16 => v / 65535.0,
                             GlslType::U32 => v / 4_294_967_295.0,
                             GlslType::I8 => (v / 127.0).max(-1.0),
                             GlslType::I16 => (v / 32767.0).max(-1.0),
-                            GlslType::I32 | GlslType::F32 => (v / 2_147_483_647.0).max(-1.0),
+                            GlslType::I32 | GlslType::F32 | GlslType::F16 => {
+                                (v / 2_147_483_647.0).max(-1.0)
+                            }
                         }
                     } else {
                         v

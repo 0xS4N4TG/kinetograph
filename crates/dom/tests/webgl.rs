@@ -163,6 +163,11 @@ fn webgl2_mrt() {
 }
 
 #[test]
+fn webgl2_fractional_sizes() {
+    run("webgl2_fractional_sizes", 1.0);
+}
+
+#[test]
 fn webgl2_depth_texture() {
     run("webgl2_depth_texture", 1.0);
 }
@@ -230,8 +235,65 @@ fn angle_only(name: &str) {
     }
 }
 
+/// A case only ANGLE can draw: with ANGLE it is compared with Chrome as any other; the hand-written replay must stop the
+/// frame with an `unsupported:` error that names the gap, not draw it wrong or crash.
+fn angle_only_reported(name: &str) {
+    if angle_mode() {
+        run(name, 1.0);
+        return;
+    }
+    let (body, w, h) = body_of(name);
+    let error = match paintkit::try_render_body(&body, w, h) {
+        Err(error) => error,
+        Ok(_) => panic!("{name}: the hand-written replay drew a case it cannot draw"),
+    };
+    assert!(error.contains("unsupported:"), "{name}: {error}");
+}
+
 fn angle_mode() -> bool {
     std::env::var("KINETOGRAPH_WEBGL").as_deref() == Ok("angle")
+}
+
+#[test]
+fn webgl2_half_attr() {
+    run("webgl2_half_attr", 1.0);
+}
+
+#[test]
+fn webgl2_int_texture() {
+    angle_only_reported("webgl2_int_texture");
+}
+
+#[test]
+fn webgl2_int_texture_sub() {
+    angle_only_reported("webgl2_int_texture_sub");
+}
+
+#[test]
+fn webgl2_attr_int_constant() {
+    angle_only_reported("webgl2_attr_int_constant");
+}
+
+#[test]
+fn webgl2_tex_levels() {
+    angle_only_reported("webgl2_tex_levels");
+}
+
+#[test]
+fn webgl2_tex_pictures() {
+    angle_only_reported("webgl2_tex_pictures");
+}
+
+#[test]
+fn webgl2_compressed() {
+    // The recording of the case offers the S3TC extension only if the replay takes it here; the hand-written replay takes none,
+    // so its recording paints the page's fallback (magenta).
+    angle_only_reported("webgl2_compressed");
+}
+
+#[test]
+fn webgl2_clear_masks() {
+    angle_only_reported("webgl2_clear_masks");
 }
 
 #[test]

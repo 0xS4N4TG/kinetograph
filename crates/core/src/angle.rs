@@ -187,6 +187,8 @@ entry_points! {
     disable_vertex_attrib_array = "glDisableVertexAttribArray"(i: u32);
     vertex_attrib_divisor = "glVertexAttribDivisor"(i: u32, d: u32);
     vertex_attrib4f = "glVertexAttrib4f"(i: u32, x: f32, y: f32, z: f32, w: f32);
+    vertex_attrib_i4i = "glVertexAttribI4i"(i: u32, x: i32, y: i32, z: i32, w: i32);
+    vertex_attrib_i4ui = "glVertexAttribI4ui"(i: u32, x: u32, y: u32, z: u32, w: u32);
     create_shader = "glCreateShader"(kind: Enum) -> u32;
     compile_shader = "glCompileShader"(s: u32);
     delete_shader = "glDeleteShader"(s: u32);
@@ -255,6 +257,16 @@ struct RawPtr {
     tex_image_2d: unsafe extern "C" fn(Enum, i32, i32, i32, i32, i32, Enum, Enum, *const c_void),
     tex_sub_image_2d:
         unsafe extern "C" fn(Enum, i32, i32, i32, i32, i32, Enum, Enum, *const c_void),
+    tex_sub_image_3d:
+        unsafe extern "C" fn(Enum, i32, i32, i32, i32, i32, i32, i32, Enum, Enum, *const c_void),
+    compressed_tex_image_2d:
+        unsafe extern "C" fn(Enum, i32, Enum, i32, i32, i32, i32, *const c_void),
+    compressed_tex_image_3d:
+        unsafe extern "C" fn(Enum, i32, Enum, i32, i32, i32, i32, i32, *const c_void),
+    compressed_tex_sub_image_2d:
+        unsafe extern "C" fn(Enum, i32, i32, i32, i32, i32, Enum, i32, *const c_void),
+    compressed_tex_sub_image_3d:
+        unsafe extern "C" fn(Enum, i32, i32, i32, i32, i32, i32, i32, Enum, i32, *const c_void),
     gen_renderbuffers: unsafe extern "C" fn(i32, *mut u32),
     delete_renderbuffers: unsafe extern "C" fn(i32, *const u32),
     gen_framebuffers: unsafe extern "C" fn(i32, *mut u32),
@@ -264,6 +276,7 @@ struct RawPtr {
     draw_elements: unsafe extern "C" fn(Enum, i32, Enum, usize),
     draw_elements_instanced: unsafe extern "C" fn(Enum, i32, Enum, usize, i32),
     request_extension: unsafe extern "C" fn(*const c_char),
+    get_string: unsafe extern "C" fn(Enum) -> *const u8,
     /// `glGetDebugMessageLogKHR`, which names the rule a failed call broke; absent when ANGLE has no `GL_KHR_debug`.
     debug_log: Option<DebugLog>,
 }
@@ -349,6 +362,11 @@ impl RawPtr {
             delete_textures: load!(lookup, "glDeleteTextures"),
             tex_image_2d: load!(lookup, "glTexImage2D"),
             tex_sub_image_2d: load!(lookup, "glTexSubImage2D"),
+            tex_sub_image_3d: load!(lookup, "glTexSubImage3D"),
+            compressed_tex_image_2d: load!(lookup, "glCompressedTexImage2D"),
+            compressed_tex_image_3d: load!(lookup, "glCompressedTexImage3D"),
+            compressed_tex_sub_image_2d: load!(lookup, "glCompressedTexSubImage2D"),
+            compressed_tex_sub_image_3d: load!(lookup, "glCompressedTexSubImage3D"),
             gen_renderbuffers: load!(lookup, "glGenRenderbuffers"),
             delete_renderbuffers: load!(lookup, "glDeleteRenderbuffers"),
             gen_framebuffers: load!(lookup, "glGenFramebuffers"),
@@ -358,6 +376,7 @@ impl RawPtr {
             draw_elements: load!(lookup, "glDrawElements"),
             draw_elements_instanced: load!(lookup, "glDrawElementsInstanced"),
             request_extension: load!(lookup, "glRequestExtensionANGLE"),
+            get_string: load!(lookup, "glGetString"),
             debug_log: {
                 let p = lookup("glGetDebugMessageLogKHR");
                 // SAFETY: the address of `glGetDebugMessageLogKHR`, which has this signature in the KHR_debug spec.
@@ -388,23 +407,31 @@ pub struct Texels<'a> {
     pub bytes: &'a [u8],
 }
 
-/// The bytes one texel of `format` and `ty` takes with UNPACK_ALIGNMENT 1 (the replay sets it), for the pairs the replay
-/// uploads.
+/// The bytes one texel of `format` and `ty` takes with UNPACK_ALIGNMENT 1 (the replay sets it): the pairs GL ES 3.0
+/// takes for an upload, with a type that packs the channels into one value taking its own size.
 fn texel_bytes(format: Enum, ty: Enum) -> Option<usize> {
+    match ty {
+        // The channels are packed into one value.
+        0x8363 | 0x8033 | 0x8034 => return Some(2), // UNSIGNED_SHORT_5_6_5, _4_4_4_4, _5_5_5_1
+        0x8368 | 0x8C3B | 0x8C3E => return Some(4), // UNSIGNED_INT_2_10_10_10_REV, _10F_11F_11F_REV, _5_9_9_9_REV
+        0x8DAD => return (format == gl::DEPTH_STENCIL).then_some(8), // FLOAT_32_UNSIGNED_INT_24_8_REV
+        gl::UNSIGNED_INT_24_8 => return (format == gl::DEPTH_STENCIL).then_some(4),
+        _ => {}
+    }
     let components = match format {
-        gl::RGBA => 4,
-        0x1907 => 3, // RGB
-        gl::RG => 2,
-        gl::RED | gl::DEPTH_COMPONENT | gl::DEPTH_STENCIL => 1,
+        gl::RGBA | 0x8D99 => 4,                                        // RGBA_INTEGER
+        0x1907 | 0x8D98 => 3,                                          // RGB, RGB_INTEGER
+        gl::RG | 0x8228 | 0x190A => 2, // RG, RG_INTEGER, LUMINANCE_ALPHA
+        gl::RED | 0x8D94 | 0x1909 | 0x1906 | gl::DEPTH_COMPONENT => 1, // RED, RED_INTEGER, LUMINANCE, ALPHA
         _ => return None,
     };
-    match ty {
-        gl::UNSIGNED_BYTE => Some(components),
-        gl::HALF_FLOAT => Some(components * 2),
-        gl::FLOAT => Some(components * 4),
-        gl::UNSIGNED_INT_24_8 if format == gl::DEPTH_STENCIL => Some(4),
-        _ => None,
-    }
+    let size = match ty {
+        gl::UNSIGNED_BYTE | gl::BYTE => 1,
+        gl::UNSIGNED_SHORT | gl::SHORT | gl::HALF_FLOAT => 2,
+        gl::UNSIGNED_INT | gl::INT | gl::FLOAT => 4,
+        _ => return None,
+    };
+    Some(components * size)
 }
 
 /// The bytes a `w x h x d` upload of `format` and `ty` reads; `None` for a negative size, a pair the replay does not
@@ -415,6 +442,11 @@ fn upload_len(w: i32, h: i32, d: i32, format: Enum, ty: Enum) -> Option<usize> {
         .checked_mul(side(h)?)?
         .checked_mul(side(d)?)?
         .checked_mul(texel_bytes(format, ty)?)
+}
+
+/// A 3D texture or a 2D array: the targets whose uploads have a depth.
+fn is_3d(target: Enum) -> bool {
+    target == gl::TEXTURE_3D || target == gl::TEXTURE_2D_ARRAY
 }
 
 /// An error unless `texels` holds what a `w x h x d` upload reads.
@@ -760,6 +792,179 @@ impl Gl {
         }
         Ok(())
     }
+    /// `glTexImage2D` or `glTexImage3D` (by `target`) of any format and type, at `level`; no texels allocates the level
+    /// empty. `depth` is the layers of a 3D or array texture.
+    pub fn tex_image(
+        &self,
+        target: Enum,
+        level: i32,
+        internal: Enum,
+        (w, h, d): (i32, i32, i32),
+        texels: Option<Texels>,
+    ) -> Result<(), String> {
+        let three = is_3d(target);
+        let (format, ty, data) = match &texels {
+            Some(t) => {
+                check_upload(t, (w, h, if three { d } else { 1 }))?;
+                (t.format, t.ty, t.bytes.as_ptr().cast())
+            }
+            // The format and type of a null upload only have to agree with the internal format.
+            None => (gl::RGBA, gl::UNSIGNED_BYTE, std::ptr::null()),
+        };
+        // SAFETY: `check_upload` found the slice holds the texels GL reads, or there is no data.
+        unsafe {
+            if three {
+                (self.ptr.tex_image_3d)(
+                    target,
+                    level,
+                    internal as i32,
+                    w,
+                    h,
+                    d,
+                    0,
+                    format,
+                    ty,
+                    data,
+                )
+            } else {
+                (self.ptr.tex_image_2d)(target, level, internal as i32, w, h, 0, format, ty, data)
+            }
+        }
+        Ok(())
+    }
+
+    /// `glTexSubImage2D` or `glTexSubImage3D` (by `target`) of the box at `(x, y, z)` of `(w, h, d)` texels.
+    pub fn tex_sub_image(
+        &self,
+        target: Enum,
+        level: i32,
+        (x, y, z): (i32, i32, i32),
+        (w, h, d): (i32, i32, i32),
+        texels: Texels,
+    ) -> Result<(), String> {
+        let three = is_3d(target);
+        check_upload(&texels, (w, h, if three { d } else { 1 }))?;
+        let data = texels.bytes.as_ptr().cast();
+        // SAFETY: `check_upload` found the slice holds the `w * h * d` texels GL reads.
+        unsafe {
+            if three {
+                (self.ptr.tex_sub_image_3d)(
+                    target,
+                    level,
+                    x,
+                    y,
+                    z,
+                    w,
+                    h,
+                    d,
+                    texels.format,
+                    texels.ty,
+                    data,
+                )
+            } else {
+                (self.ptr.tex_sub_image_2d)(
+                    target,
+                    level,
+                    x,
+                    y,
+                    w,
+                    h,
+                    texels.format,
+                    texels.ty,
+                    data,
+                )
+            }
+        }
+        Ok(())
+    }
+
+    /// `glCompressedTexImage2D` or `3D` of the blocks in `bytes`; GL checks that they are the size the format and the
+    /// dimensions make (ANGLE's validation reports it).
+    pub fn compressed_tex_image(
+        &self,
+        target: Enum,
+        level: i32,
+        internal: Enum,
+        (w, h, d): (i32, i32, i32),
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        let size =
+            i32::try_from(bytes.len()).map_err(|_| "compressed texels over 2 GiB".to_string())?;
+        // SAFETY: GL reads `size` bytes, which is the length of `bytes`.
+        unsafe {
+            if is_3d(target) {
+                (self.ptr.compressed_tex_image_3d)(
+                    target,
+                    level,
+                    internal,
+                    w,
+                    h,
+                    d,
+                    0,
+                    size,
+                    bytes.as_ptr().cast(),
+                )
+            } else {
+                (self.ptr.compressed_tex_image_2d)(
+                    target,
+                    level,
+                    internal,
+                    w,
+                    h,
+                    0,
+                    size,
+                    bytes.as_ptr().cast(),
+                )
+            }
+        }
+        Ok(())
+    }
+
+    /// `glCompressedTexSubImage2D` or `3D`.
+    pub fn compressed_tex_sub_image(
+        &self,
+        target: Enum,
+        level: i32,
+        (x, y, z): (i32, i32, i32),
+        (w, h, d): (i32, i32, i32),
+        format: Enum,
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        let size =
+            i32::try_from(bytes.len()).map_err(|_| "compressed texels over 2 GiB".to_string())?;
+        // SAFETY: as `compressed_tex_image`.
+        unsafe {
+            if is_3d(target) {
+                (self.ptr.compressed_tex_sub_image_3d)(
+                    target,
+                    level,
+                    x,
+                    y,
+                    z,
+                    w,
+                    h,
+                    d,
+                    format,
+                    size,
+                    bytes.as_ptr().cast(),
+                )
+            } else {
+                (self.ptr.compressed_tex_sub_image_2d)(
+                    target,
+                    level,
+                    x,
+                    y,
+                    w,
+                    h,
+                    format,
+                    size,
+                    bytes.as_ptr().cast(),
+                )
+            }
+        }
+        Ok(())
+    }
+
     pub fn draw_buffers(&self, buffers: &[Enum]) {
         // SAFETY: GL reads `buffers.len()` enums.
         unsafe { (self.ptr.draw_buffers)(buffers.len() as i32, buffers.as_ptr()) }
@@ -817,6 +1022,17 @@ impl Gl {
             out.push(String::from_utf8_lossy(&text).into_owned());
         }
     }
+    /// The extensions this context can be asked for (`GL_REQUESTABLE_EXTENSIONS_ANGLE`), space separated.
+    pub fn requestable_extensions(&self) -> String {
+        // SAFETY: glGetString returns null or a NUL-terminated string owned by the context, read before the next GL call.
+        let p = unsafe { (self.ptr.get_string)(0x93A8) };
+        if p.is_null() {
+            return String::new();
+        }
+        // SAFETY: `p` is the NUL-terminated string just checked.
+        unsafe { std::ffi::CStr::from_ptr(p.cast()) }.to_string_lossy().into_owned()
+    }
+
     /// Turns on an extension a WebGL-compatible context keeps off until asked.
     pub fn request_extension(&self, name: &str) {
         let Ok(name) = CString::new(name) else { return };
@@ -832,6 +1048,37 @@ struct Context {
     surface: *mut c_void,
     context: *mut c_void,
     make_current: unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> u32,
+    destroy_context: Destroy,
+    destroy_surface: Destroy,
+}
+
+/// One thread at a time in ANGLE. Without this, a run of the cases on four threads failed in different cases each time
+/// (a wrong picture, a failed draw): contexts of one Metal display used from several threads at once are not safe here.
+/// Making, using and destroying a context all hold it.
+static BUSY: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// The contexts alive in the process: made by `create`, gone when their thread ends.
+static LIVE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// A thread's contexts and their pbuffers are destroyed when the thread ends (its `thread_local` is dropped), under the
+/// same lock as every other use of ANGLE. The libraries are never unloaded, so the entry points stay valid.
+impl Drop for Context {
+    fn drop(&mut self) {
+        let _one_at_a_time = BUSY.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        // SAFETY: the handles are the ones `create` made, destroyed once, here, on the thread that made them current; the
+        // context is made not current first (EGL keeps a current context alive until then), and `EGL_NO_*` is null.
+        unsafe {
+            (self.make_current)(
+                self.display,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            (self.destroy_context)(self.display, self.context);
+            (self.destroy_surface)(self.display, self.surface);
+        }
+        LIVE.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 thread_local! {
@@ -876,9 +1123,6 @@ pub struct Extensions {
 
 /// Runs `f` with this thread's context for `ext`, made on first use and made current.
 pub fn with<T>(ext: Extensions, f: impl FnOnce(&Gl) -> T) -> Result<T, String> {
-    // One thread at a time in ANGLE. Without this, a run of the cases on four threads failed in different cases each time
-    // (a wrong picture, a failed draw): contexts of one Metal display used from several threads at once are not safe here.
-    static BUSY: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _one_at_a_time = BUSY.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     CONTEXTS.with(|cell| {
         let mut contexts = cell.borrow_mut();
@@ -1041,7 +1285,8 @@ fn open(dir: &std::path::Path, name: &str) -> Result<Library, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        PLATFORM, Texels, check_upload, checked_dir, find_angle, gl, library_file_name, upload_len,
+        Extensions, LIVE, PLATFORM, Texels, check_upload, checked_dir, find_angle, gl,
+        library_file_name, upload_len, with,
     };
     use std::path::PathBuf;
 
@@ -1117,6 +1362,31 @@ mod tests {
         };
         assert!(check_upload(&ok, (4, 4, 1)).is_ok());
     }
+
+    /// A thread's context and pbuffer are destroyed when the thread ends (needs ANGLE: skipped without it).
+    #[test]
+    fn a_threads_context_is_destroyed_when_the_thread_ends() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let ext = Extensions {
+            float_linear: false,
+            float_blend: false,
+        };
+        if std::thread::spawn(move || with(ext, |_| ()))
+            .join()
+            .unwrap()
+            .is_err()
+        {
+            return;
+        }
+        let before = LIVE.load(SeqCst);
+        std::thread::spawn(move || {
+            with(ext, |_| ()).unwrap();
+            assert!(LIVE.load(SeqCst) > before);
+        })
+        .join()
+        .unwrap();
+        assert_eq!(LIVE.load(SeqCst), before);
+    }
 }
 
 type GetProc = unsafe extern "C" fn(*const c_char) -> *const c_void;
@@ -1125,6 +1395,8 @@ type MakeCurrent = unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *
 type CreateContext =
     unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *const i32) -> *mut c_void;
 type CreatePbuffer = unsafe extern "C" fn(*mut c_void, *mut c_void, *const i32) -> *mut c_void;
+/// `eglDestroyContext` and `eglDestroySurface`: a display and the handle.
+type Destroy = unsafe extern "C" fn(*mut c_void, *mut c_void) -> u32;
 
 /// ANGLE as the process has it: the two libraries (loaded once and never unloaded, so a thread that ends cannot take
 /// them from the contexts of the others), the EGL entry points, and the initialised display and config (as addresses, so
@@ -1136,6 +1408,8 @@ struct Shared {
     create_pbuffer: CreatePbuffer,
     create_context: CreateContext,
     make_current: MakeCurrent,
+    destroy_context: Destroy,
+    destroy_surface: Destroy,
     display: usize,
     config: usize,
 }
@@ -1191,6 +1465,8 @@ fn load() -> Result<Shared, String> {
     let create_pbuffer: CreatePbuffer = sym!(b"eglCreatePbufferSurface\0", CreatePbuffer);
     let create_context: CreateContext = sym!(b"eglCreateContext\0", CreateContext);
     let make_current: MakeCurrent = sym!(b"eglMakeCurrent\0", MakeCurrent);
+    let destroy_context: Destroy = sym!(b"eglDestroyContext\0", Destroy);
+    let destroy_surface: Destroy = sym!(b"eglDestroySurface\0", Destroy);
     let get_proc: GetProc = sym!(b"eglGetProcAddress\0", GetProc);
 
     // `KINETOGRAPH_ANGLE_BACKEND=swiftshader` asks for ANGLE's Vulkan backend on SwiftShader, the CPU rasteriser Chrome's
@@ -1251,6 +1527,8 @@ fn load() -> Result<Shared, String> {
         create_pbuffer,
         create_context,
         make_current,
+        destroy_context,
+        destroy_surface,
         display,
         config,
     })
@@ -1325,11 +1603,65 @@ fn create(ext: Extensions) -> Result<Context, String> {
             break;
         }
     }
+    LIVE.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     Ok(Context {
         gl,
         display,
         surface,
         context,
         make_current,
+        destroy_context: shared.destroy_context,
+        destroy_surface: shared.destroy_surface,
     })
+}
+
+/// The compressed texture formats the raw texture calls can take on this machine, as the WebGL extensions that offer them: the
+/// ones the ANGLE context can be asked for. Empty unless `KINETOGRAPH_WEBGL=angle`, because the hand-written replay takes none.
+pub fn compressed_formats() -> Vec<&'static str> {
+    if !enabled() {
+        return Vec::new();
+    }
+    let ext = Extensions { float_linear: false, float_blend: false };
+    let Ok(have) = with(ext, |gl| gl.requestable_extensions()) else {
+        return Vec::new();
+    };
+    let have: Vec<&str> = have.split_whitespace().collect();
+    let all = |names: &[&str]| names.iter().all(|n| have.contains(n));
+    let mut out = Vec::new();
+    if all(&["GL_EXT_texture_compression_dxt1", "GL_ANGLE_texture_compression_dxt3", "GL_ANGLE_texture_compression_dxt5"]) {
+        out.push("WEBGL_compressed_texture_s3tc");
+    }
+    if all(&["GL_EXT_texture_compression_bptc"]) {
+        out.push("EXT_texture_compression_bptc");
+    }
+    if all(&["GL_EXT_texture_compression_rgtc"]) {
+        out.push("EXT_texture_compression_rgtc");
+    }
+    if all(&["GL_ANGLE_compressed_texture_etc"]) {
+        out.push("WEBGL_compressed_texture_etc");
+    }
+    if all(&["GL_KHR_texture_compression_astc_ldr"]) {
+        out.push("WEBGL_compressed_texture_astc");
+    }
+    out
+}
+
+/// Asks the current context for every compressed texture extension it has (those it lacks leave nothing pending).
+pub(crate) fn request_compressed(gl: &Gl) {
+    for name in [
+        "GL_EXT_texture_compression_dxt1",
+        "GL_ANGLE_texture_compression_dxt3",
+        "GL_ANGLE_texture_compression_dxt5",
+        "GL_EXT_texture_compression_bptc",
+        "GL_EXT_texture_compression_rgtc",
+        "GL_ANGLE_compressed_texture_etc",
+        "GL_KHR_texture_compression_astc_ldr",
+    ] {
+        gl.request_extension(name);
+    }
+    for _ in 0..16 {
+        if gl.get_error() == 0 {
+            break;
+        }
+    }
 }

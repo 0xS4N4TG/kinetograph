@@ -714,6 +714,12 @@ export interface VideoOptions {
 }
 
 /**
+ * The compressed texture extensions (`WEBGL_compressed_texture_s3tc`, ...) the ANGLE WebGL replay takes on this machine; empty
+ * unless `KINETOGRAPH_WEBGL=angle`. The recorder advertises only these, so a page falls back by itself for the rest.
+ */
+export declare function webglCompressedFormats(): Array<string>
+
+/**
  * The limits and WebGPU features of the engine's GPU device, as `navigator.gpu` of a page reports them
  * (`{ features, limits }` as JSON); `null` when there is no GPU. Opens the GPU once, on the first call.
  */

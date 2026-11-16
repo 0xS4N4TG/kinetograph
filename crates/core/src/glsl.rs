@@ -187,6 +187,11 @@ pub struct GlslTexture {
     /// `height` per layer, in order (`framebufferTextureLayer`).
     #[serde(default)]
     pub targets: Vec<String>,
+    /// The texture as raw GL calls, in order, in place of `src`, `pixels`, `floats`, `faces` and `patches` (which
+    /// are then absent): integer and compressed formats, parts of mip levels and the like. `cube`, `depth` and
+    /// `array` give the target the texture is of. The hand-written replay stops the frame at a draw that samples one.
+    #[serde(default)]
+    pub calls: Vec<GlslTexCall>,
 }
 
 /// One face of a cube map.
@@ -282,6 +287,84 @@ pub struct GlslPatch {
     pub premultiply: bool,
 }
 
+/// What a raw texture call does (`GlslTexCall`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum GlslTexOp {
+    /// `texImage2D` or `texImage3D`.
+    Image,
+    /// `texSubImage2D` or `texSubImage3D`.
+    Sub,
+    /// `texStorage2D` or `texStorage3D`.
+    Storage,
+    /// `compressedTexImage2D` or `compressedTexImage3D`.
+    Compressed,
+    /// `compressedTexSubImage2D` or `compressedTexSubImage3D`.
+    CompressedSub,
+    /// `generateMipmap`.
+    Mipmap,
+}
+
+/// One texture call the recorder carries as the page made it (`GlslTexture::calls`): GL's own enums and the bytes
+/// the call reads, with the pixel-store state already applied to them. ANGLE replays it as it is; the hand-written
+/// replay does not take it.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GlslTexCall {
+    pub op: GlslTexOp,
+    /// `TEXTURE_2D`, a cube face (`TEXTURE_CUBE_MAP_POSITIVE_X` and the others), `TEXTURE_3D` or `TEXTURE_2D_ARRAY`.
+    pub target: u32,
+    #[serde(default)]
+    pub level: u32,
+    /// The internal format of `Image`, `Storage` and `Compressed`.
+    #[serde(default)]
+    pub internal: u32,
+    /// The format and data type the bytes are in (`Image`, `Sub`); `format` is the internal format of a
+    /// `CompressedSub`.
+    #[serde(default)]
+    pub format: u32,
+    #[serde(default, rename = "type")]
+    pub ty: u32,
+    /// `Storage`: the mip levels.
+    #[serde(default)]
+    pub levels: u32,
+    #[serde(default)]
+    pub x: u32,
+    #[serde(default)]
+    pub y: u32,
+    #[serde(default)]
+    pub z: u32,
+    #[serde(default)]
+    pub width: u32,
+    #[serde(default)]
+    pub height: u32,
+    /// The layers or depth of a 3D or array texture; 0 for a 2D one.
+    #[serde(default)]
+    pub depth: u32,
+    /// Base64 bytes of exactly the texels the call reads, tightly packed (a null upload has none).
+    pub data: Option<String>,
+    /// Instead of `data`, a picture as the page gave it: a picture file (or `data:` URL), base64 RGBA8, or a child of
+    /// the shader group. It is uploaded as RGBA, UNSIGNED_BYTE.
+    pub src: Option<String>,
+    pub pixels: Option<String>,
+    pub layer: Option<String>,
+    /// `UNPACK_FLIP_Y_WEBGL` and `UNPACK_PREMULTIPLY_ALPHA_WEBGL` for a picture.
+    #[serde(default)]
+    pub flip_y: bool,
+    #[serde(default)]
+    pub premultiply: bool,
+    /// The picture's own size, for the window (a picture file is decoded here; its size is the page's).
+    #[serde(default)]
+    pub picture_width: u32,
+    #[serde(default)]
+    pub picture_height: u32,
+    /// A picture's window: `UNPACK_SKIP_PIXELS` and `UNPACK_SKIP_ROWS`.
+    #[serde(default)]
+    pub skip_pixels: u32,
+    #[serde(default)]
+    pub skip_rows: u32,
+}
+
 /// A colour attachment an op draws into: a target and its mip level.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -308,6 +391,12 @@ pub enum GlslOp {
         level: u32,
         outputs: Option<Vec<Option<GlslOutput>>>,
         depth_stencil: Option<String>,
+        /// The colour mask the clear went through (`colorMask`), when some channel was off.
+        color_mask: Option<[bool; 4]>,
+        /// The stencil write mask the clear went through, when it was not all ones.
+        stencil_mask: Option<u32>,
+        /// `x, y, width, height` of the scissor test, if it was on and the clear is not drawn as a quad.
+        scissor: Option<[i32; 4]>,
     },
     Draw(Box<GlslDraw>),
     /// `blitFramebuffer`: a rectangle of one buffer copied over a rectangle of
@@ -353,6 +442,12 @@ impl<'a> GlslDest<'a> {
 }
 
 impl GlslOp {
+    /// What a clear leaves of the buffer unwritten: a colour or stencil mask, or a scissor box. Only ANGLE replays one.
+    pub fn clear_is_partial(&self) -> bool {
+        matches!(self, GlslOp::Clear { color_mask, stencil_mask, scissor, .. }
+            if color_mask.is_some() || stencil_mask.is_some() || scissor.is_some())
+    }
+
     /// Where a clear or a draw goes; `None` for the other ops.
     pub fn dest(&self) -> Option<GlslDest<'_>> {
         match self {
@@ -466,6 +561,9 @@ pub enum GlslMode {
 pub enum GlslType {
     #[serde(rename = "f32")]
     F32,
+    /// `HALF_FLOAT`: IEEE half floats.
+    #[serde(rename = "f16")]
+    F16,
     #[serde(rename = "u8")]
     U8,
     #[serde(rename = "i8")]
@@ -485,7 +583,7 @@ impl GlslType {
     pub fn size(self) -> u64 {
         match self {
             GlslType::U8 | GlslType::I8 => 1,
-            GlslType::U16 | GlslType::I16 => 2,
+            GlslType::U16 | GlslType::I16 | GlslType::F16 => 2,
             GlslType::F32 | GlslType::U32 | GlslType::I32 => 4,
         }
     }
@@ -523,6 +621,19 @@ pub struct GlslAttribute {
     /// The attribute's array is disabled and it reads the current value (`vertexAttrib4f` and the like), the same for
     /// every vertex. `buffer` then only names the value (no entry of `buffers`), and `size` is 4 of `f32`.
     pub constant: Option<[f32; 4]>,
+    /// As `constant`, for an integer input (`vertexAttribI4i`, `vertexAttribI4ui`): the four values the disabled array
+    /// reads as `ivec4` or `uvec4`. ANGLE replays it; the hand-written replay stops the frame.
+    pub int_constant: Option<GlslIntConstant>,
+}
+
+/// The current value of an integer vertex attribute.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GlslIntConstant {
+    /// `vertexAttribI4ui`: the values are unsigned.
+    #[serde(default)]
+    pub unsigned: bool,
+    pub value: [i64; 4],
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -3367,6 +3478,37 @@ pub fn unpack(rgba: &mut Vec<u8>, width: u32, flip_y: bool, premultiply: bool) {
     }
 }
 
+/// The bytes of base64 text.
+pub fn decode_base64(text: &str) -> std::result::Result<Vec<u8>, String> {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD
+        .decode(text)
+        .map_err(|e| format!("texture data is not base64: {e}"))
+}
+
+/// The `(w, h)` window at `(x, y)` of the RGBA8 picture of `(pw, ph)`; an error when it reaches outside the picture.
+pub fn crop(
+    rgba: &[u8],
+    (pw, ph): (u32, u32),
+    (x, y): (u32, u32),
+    (w, h): (u32, u32),
+) -> std::result::Result<Vec<u8>, String> {
+    let outside =
+        || format!("a window of {w} x {h} at {x}, {y} is outside a picture of {pw} x {ph}");
+    if x.checked_add(w).is_none_or(|e| e > pw) || y.checked_add(h).is_none_or(|e| e > ph) {
+        return Err(outside());
+    }
+    if rgba.len() != pw as usize * ph as usize * 4 {
+        return Err(format!("a picture of {pw} x {ph} has {} bytes", rgba.len()));
+    }
+    let mut out = Vec::with_capacity(w as usize * h as usize * 4);
+    for row in y..y + h {
+        let from = (row as usize * pw as usize + x as usize) * 4;
+        out.extend_from_slice(&rgba[from..from + w as usize * 4]);
+    }
+    Ok(out)
+}
+
 /// The next mip level: 2 x 2 blocks averaged (a side of one stays one).
 pub fn next_level(rgba: &[u8], width: u32, height: u32) -> (Vec<u8>, u32, u32) {
     let (nw, nh) = ((width / 2).max(1), (height / 2).max(1));
@@ -4242,6 +4384,7 @@ mod tests {
             cube: false,
             faces: Vec::new(),
             targets: Vec::new(),
+            calls: Vec::new(),
         };
         let rgba8 = decode_texels(&texture(Some(b64(&[7; 16])), None)).unwrap();
         assert_eq!(rgba8, Texels::Rgba8(vec![7; 16]));

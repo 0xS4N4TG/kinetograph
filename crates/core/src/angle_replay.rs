@@ -155,6 +155,7 @@ fn float_texels(t: &rec::Texels) -> (Enum, Enum, &[u8]) {
 fn type_enum(ty: GlslType) -> Enum {
     match ty {
         GlslType::F32 => gl::FLOAT,
+        GlslType::F16 => gl::HALF_FLOAT,
         GlslType::U8 => gl::UNSIGNED_BYTE,
         GlslType::I8 => gl::BYTE,
         GlslType::U16 => gl::UNSIGNED_SHORT,
@@ -702,6 +703,10 @@ impl<'a> Replay<'a> {
             patch.pixels.hash(&mut h);
             source(&mut h, patch.src.as_deref());
         }
+        for call in &t.calls {
+            format!("{call:?}").hash(&mut h);
+            source(&mut h, call.src.as_deref());
+        }
         for face in &t.faces {
             (face.flip_y, face.premultiply, face.float32).hash(&mut h);
             face.pixels.hash(&mut h);
@@ -738,6 +743,23 @@ impl<'a> Replay<'a> {
             target,
             layer: None,
         };
+        if !t.calls.is_empty() {
+            let target = if t.cube {
+                gl::TEXTURE_CUBE_MAP
+            } else if t.depth == 0 {
+                gl::TEXTURE_2D
+            } else if t.array {
+                gl::TEXTURE_2D_ARRAY
+            } else {
+                gl::TEXTURE_3D
+            };
+            let name = gl_.gen_texture();
+            gl_.bind_texture(target, name);
+            for call in &t.calls {
+                self.texture_call(call)?;
+            }
+            return Ok(whole(name, target, None));
+        }
         let (w, h) = (t.width as i32, t.height as i32);
         if t.target {
             // A render target. Multisampled and stencil-only ones are renderbuffers (not samplable), the rest textures.
@@ -918,6 +940,107 @@ impl<'a> Replay<'a> {
         Ok(whole(name, gl::TEXTURE_2D, None))
     }
 
+    /// One raw texture call (`GlslTexCall`) on the texture bound to its target, as the page made it.
+    fn texture_call(&self, c: &rec::GlslTexCall) -> R<()> {
+        use rec::GlslTexOp as Op;
+        let gl_ = self.gl;
+        let int = |v: u32, what: &str| {
+            i32::try_from(v).map_err(|_| format!("a texture call's {what} is too large"))
+        };
+        let level = int(c.level, "level")?;
+        let size = (
+            int(c.width, "width")?,
+            int(c.height, "height")?,
+            int(c.depth, "depth")?,
+        );
+        let at = (int(c.x, "x")?, int(c.y, "y")?, int(c.z, "z")?);
+        // A compressed format is an extension the context keeps off until asked.
+        let compressed_storage = c.op == Op::Storage
+            && matches!(
+                c.internal,
+                0x83F0..=0x83F3 | 0x8DBB..=0x8DBE | 0x8E8C..=0x8E8F | 0x9270..=0x9279 | 0x93B0..=0x93BD | 0x93D0..=0x93DD
+            );
+        if matches!(c.op, Op::Compressed | Op::CompressedSub) || compressed_storage {
+            angle::request_compressed(gl_);
+        }
+        match c.op {
+            Op::Storage => {
+                let levels = int(c.levels, "level count")?;
+                if matches!(c.target, gl::TEXTURE_3D | gl::TEXTURE_2D_ARRAY) {
+                    gl_.tex_storage_3d(c.target, levels, c.internal, size.0, size.1, size.2);
+                } else {
+                    gl_.tex_storage_2d(c.target, levels, c.internal, size.0, size.1);
+                }
+            }
+            Op::Mipmap => gl_.generate_mipmap(c.target),
+            Op::Image => {
+                let texels = self.call_texels(c)?;
+                let texels = texels.as_ref().map(|(bytes, format, ty)| Texels {
+                    format: *format,
+                    ty: *ty,
+                    bytes,
+                });
+                gl_.tex_image(c.target, level, c.internal, size, texels)?;
+            }
+            Op::Sub => {
+                let (bytes, format, ty) = self
+                    .call_texels(c)?
+                    .ok_or("a texSubImage call without texels")?;
+                gl_.tex_sub_image(
+                    c.target,
+                    level,
+                    at,
+                    size,
+                    Texels {
+                        format,
+                        ty,
+                        bytes: &bytes,
+                    },
+                )?;
+            }
+            Op::Compressed => {
+                let bytes = rec::decode_base64(c.data.as_deref().unwrap_or_default())?;
+                gl_.compressed_tex_image(c.target, level, c.internal, size, &bytes)?;
+            }
+            Op::CompressedSub => {
+                let bytes = rec::decode_base64(c.data.as_deref().unwrap_or_default())?;
+                gl_.compressed_tex_sub_image(c.target, level, at, size, c.format, &bytes)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The bytes a texture call uploads, with their format and type: its `data` as it is, or a picture as RGBA8 (cut
+    /// to the call's window, flipped and premultiplied as the page asked). `None` for an upload of no data.
+    fn call_texels(&self, c: &rec::GlslTexCall) -> R<Option<(Vec<u8>, Enum, Enum)>> {
+        if c.layer.is_some() {
+            return Err(
+                "unsupported: a group layer as texture data is not replayed by ANGLE yet".into(),
+            );
+        }
+        if c.src.is_none() && c.pixels.is_none() {
+            return c
+                .data
+                .as_deref()
+                .map(|d| Ok((rec::decode_base64(d)?, c.format, c.ty)))
+                .transpose();
+        }
+        let (rgba, pw, ph) = rec::decode_picture(
+            c.src.as_deref(),
+            c.pixels.as_deref(),
+            (c.picture_width, c.picture_height),
+            self.base_dir,
+        )?;
+        let mut window = rec::crop(
+            &rgba,
+            (pw, ph),
+            (c.skip_pixels, c.skip_rows),
+            (c.width, c.height),
+        )?;
+        rec::unpack(&mut window, c.width, c.flip_y, c.premultiply);
+        Ok(Some((window, gl::RGBA, gl::UNSIGNED_BYTE)))
+    }
+
     fn program(&self, id: &str) -> R<std::rc::Rc<Program>> {
         if let Some(p) = self.frame_programs.borrow().get(id) {
             return p.clone();
@@ -1096,6 +1219,9 @@ impl<'a> Replay<'a> {
             color,
             depth,
             stencil,
+            color_mask,
+            stencil_mask,
+            scissor,
             ..
         } = op
         else {
@@ -1104,6 +1230,16 @@ impl<'a> Replay<'a> {
         let dest = op.dest().expect("a clear has a destination");
         self.bind_dest(&dest)?;
         self.full_masks();
+        if let Some([r, g, b, a]) = color_mask {
+            self.gl.color_mask(*r as u8, *g as u8, *b as u8, *a as u8);
+        }
+        if let Some(m) = stencil_mask {
+            self.gl.stencil_mask_separate(gl::FRONT_AND_BACK, *m);
+        }
+        if let Some([x, y, w, h]) = scissor {
+            self.gl.enable(gl::SCISSOR_TEST);
+            self.gl.scissor(*x, *y, *w, *h);
+        }
         let mut mask = 0;
         if let Some(c) = color {
             self.gl
@@ -1529,6 +1665,16 @@ impl<'a> Replay<'a> {
         let gl_ = self.gl;
         if let Some(v) = a.constant {
             gl_.vertex_attrib4f(loc, v[0], v[1], v[2], v[3]);
+            self.const_attrs |= 1 << loc;
+            return Ok(());
+        }
+        if let Some(c) = &a.int_constant {
+            let v = c.value;
+            if c.unsigned {
+                gl_.vertex_attrib_i4ui(loc, v[0] as u32, v[1] as u32, v[2] as u32, v[3] as u32);
+            } else {
+                gl_.vertex_attrib_i4i(loc, v[0] as i32, v[1] as i32, v[2] as i32, v[3] as i32);
+            }
             self.const_attrs |= 1 << loc;
             return Ok(());
         }
