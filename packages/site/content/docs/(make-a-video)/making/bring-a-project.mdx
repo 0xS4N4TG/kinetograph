@@ -24,19 +24,26 @@ Both work on the same files.
 
 ## By hand
 
-For a Remotion project, give Kinetograph the file that calls `registerRoot`, usually `src/index.ts`:
+Give Kinetograph the entry. In a Remotion project it is the file that calls `registerRoot`, usually `src/index.ts`. In a HyperFrames project it is the page or its folder.
+
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
 
 ```sh
 npx kinetograph doctor src/index.ts
 npx kinetograph render src/index.ts --comp Main -o out.mp4
 ```
 
-For a HyperFrames project, give it the page or its folder:
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
 
 ```sh
-npx kinetograph doctor index.html
-npx kinetograph render index.html -o out.mp4
+npx kinetograph doctor html/index.html
+npx kinetograph render html/index.html -o out.mp4
 ```
+
+  </Tab>
+</IconTabs>
 
 `doctor` lists what the engine cannot draw and on which frames. Add `--strict` to a render to stop at the first frame with something missing.
 

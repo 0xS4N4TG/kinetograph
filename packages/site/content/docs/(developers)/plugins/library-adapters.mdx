@@ -16,7 +16,7 @@ npm install @kinetographdev/gsap gsap
 <IconTabs>
   <Tab label="Remotion" icon="remotion">
 
-```tsx
+```tsx title="src/scenes/Title.tsx"
 import { useGsapTimeline } from '@kinetographdev/gsap';
 
 const scope = useGsapTimeline((tl) => {
@@ -30,7 +30,7 @@ return <div ref={scope}>{/* elements with className="box" */}</div>;
 
 A HyperFrames page needs no adapter. Build a paused timeline and put it on `window.__timelines`.
 
-```js
+```js title="html/index.html"
 const tl = gsap.timeline({ paused: true });
 tl.fromTo('.box', { y: 120, opacity: 0 }, { y: 0, opacity: 1, stagger: 0.08, ease: 'back.out(1.7)' }, 0.1);
 window.__timelines = { hello: tl };
@@ -49,7 +49,7 @@ npm install @kinetographdev/anime animejs
 
 `useAnimeTimeline(build)` makes a paused timeline and seeks it to the frame's time. `<AnimeTimeline>` is the component form.
 
-```tsx
+```tsx title="src/scenes/Title.tsx"
 import { useAnimeTimeline } from '@kinetographdev/anime';
 
 const scope = useAnimeTimeline((tl) => {
@@ -68,7 +68,7 @@ npm install @kinetographdev/motion motion
 
 Motion's own loop already gives the same frame in a still, in order and in parallel. The package keeps the same project right under Remotion and adds a way that needs no frame loop.
 
-```tsx
+```tsx title="src/scenes/Title.tsx"
 import { MotionFrame, useAnimateAt, useMotionTime, useSpringAt } from '@kinetographdev/motion';
 
 // motion components: Motion's loop is run to the frame's time, from time 0
@@ -94,7 +94,7 @@ npm install @kinetographdev/p5-brush p5.brush
 
 p5.brush keeps state between calls. `<BrushCanvas>` resets it on every frame: it clears the canvas, seeds the random and noise generators, draws and flushes.
 
-```tsx
+```tsx title="src/scenes/Title.tsx"
 import { BrushCanvas } from '@kinetographdev/p5-brush';
 
 <BrushCanvas seed={7} background="#f4efe6" origin="top-left" draw={(brush, frame) => {

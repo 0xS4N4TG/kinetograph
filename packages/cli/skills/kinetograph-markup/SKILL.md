@@ -2,7 +2,7 @@
 name: kinetograph-markup
 description: Write or change a Kinetograph composition: the Remotion API, native elements (Layer, Rect, Text, Image, Camera, Audio), layout, type, fonts, media, effects, Web Audio sound, timing, plugins, and what the engine draws and does not. Use when writing or editing the TSX, HTML or JSON scene of a video.
 metadata:
-  version: "0.3.0"
+  version: "0.4.0-rc.1"
 ---
 
 # Write a composition

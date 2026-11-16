@@ -2,7 +2,7 @@
 name: kinetograph-migrate
 description: Move an existing Remotion project onto Kinetograph so it renders without a browser. Use when the user has a Remotion project (remotion or @remotion/* imports, `remotion render` scripts, @remotion/three, @remotion/player) and wants it to run, preview or render with Kinetograph, or asks what in a Remotion project will not work there.
 metadata:
-  version: "0.3.0"
+  version: "0.4.0-rc.1"
 ---
 
 # Migrate a Remotion project to Kinetograph

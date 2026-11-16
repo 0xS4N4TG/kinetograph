@@ -21,7 +21,8 @@ use style::{
 };
 use style_dom::ElementState;
 use style_traits::ParsingMode;
-use taffy::{Cache, prelude::Layout};
+use crate::layout::cache::Cache;
+use taffy::prelude::Layout;
 use thin_vec::ThinVec;
 use url::Url;
 

@@ -7,7 +7,7 @@ A scene is a JSON object with a size, a frame rate, a length and a list of layer
 
 A layer is one item in it: a shape, text, an image, a group, a video and so on. Layers are listed bottom first. Each has an `id`, a `transform`, an `opacity`, `effects` and more.
 
-```json
+```json title="scene.json"
 { "id": "dot", "type": "shape",
   "shape": { "kind": "ellipse", "width": 40, "height": 40 },
   "fill": "#7aa2f7", "transform": { "x": 500, "y": 280 } }

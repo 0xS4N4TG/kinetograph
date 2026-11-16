@@ -5,7 +5,7 @@ description: The component you pass to registerRoot, which lists the composition
 
 The root is a component that returns your compositions. You hand it to `registerRoot` in the entry point.
 
-```tsx
+```tsx title="src/index.tsx"
 registerRoot(() => (
   <>
     <Composition id="Intro" component={Intro} durationInFrames={90} fps={30} width={1280} height={720} />

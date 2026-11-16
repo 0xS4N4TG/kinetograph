@@ -23,7 +23,9 @@ Points are in the video's own pixels. x goes right, y goes **down**, and 0,0 is 
 
 ## Use it in a composition
 
-```tsx
+`useTrack` and `usePlaneTrack` are for TypeScript projects.
+
+```tsx title="src/scenes/Label.tsx"
 import { useTrack } from '@kinetographdev/core';
 
 const Label = () => {
@@ -67,7 +69,7 @@ npx kinetograph track public/video/clip.mp4 --point 820,540 --point 1250,430 --p
 
 In the composition, `usePlaneTrack()` gives the corners for the current frame, ready for the `cornerPin` effect:
 
-```tsx
+```tsx title="src/scenes/Screen.tsx"
 import { Image, cornerPin, usePlaneTrack } from '@kinetographdev/core';
 
 const Screen = () => {

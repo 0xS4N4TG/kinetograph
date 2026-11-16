@@ -7,9 +7,22 @@ description: How many worker threads draw frames at once during a render.
 
 Without `--concurrency`, the workers are checked after their first few frames. If they spent more than half that time waiting for the GPU, the render is GPU-bound: the workers share one GPU and draw no faster than the main thread alone, so they stop and the main thread draws the rest. A count you set is always used.
 
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
 ```sh
 npx kinetograph render src/index.tsx --concurrency 4
 ```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph render html/index.html --concurrency 4
+```
+
+  </Tab>
+</IconTabs>
 
 Each worker is a full renderer with its own GPU device and layer cache, so memory grows with the number of workers. Workers draw chunks of 60 frames, and the main thread puts them in order for the single encoder.
 

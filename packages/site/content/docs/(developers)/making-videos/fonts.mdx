@@ -60,7 +60,7 @@ For fonts hosted elsewhere, `makeWebFont` from `@kinetographdev/core/fonts` take
 - Drawn natively: Google Fonts, font files, `@font-face`, `FontFace`, variable fonts and `-webkit-text-stroke`, `text-shadow` and `background-clip: text`.
 - Approximated: `monospace` and `ex` can differ from Chrome, and a variable font set per element with `font-variation-settings` can measure wider. Emoji are monochrome.
 - Not supported: system fonts, and `getAvailableFonts()` from `@remotion/google-fonts`.
-- `doctor` lists a character no font has, and a font that did not download (under `stylesheets`). Run `npx kinetograph doctor src/index.tsx` before a long render, and see [What works](/docs/compat/#text-and-fonts).
+- `doctor` lists a character no font has, and a font that did not download (under `stylesheets`). Run `npx kinetograph doctor <entry>` before a long render, and see [What works](/docs/compat/#text-and-fonts).
 
 ## Related topics
 

@@ -3,10 +3,6 @@ title: Doctor
 description: A command that lists what a project holds that the engine cannot draw, before you render.
 ---
 
-<Terminal command="npx kinetograph doctor src/index.tsx" />
-
-`doctor` goes through every frame of a project without the GPU. It reports each element and property the engine cannot draw, and the frames where it happens.
-
 <IconTabs>
   <Tab label="Remotion" icon="remotion">
 
@@ -18,11 +14,13 @@ npx kinetograph doctor src/index.tsx --range 0..120
   <Tab label="HyperFrames" icon="hyperframes">
 
 ```sh
-npx kinetograph doctor my-video
+npx kinetograph doctor html/index.html --range 0..120
 ```
 
   </Tab>
 </IconTabs>
+
+`doctor` goes through every frame of a project without the GPU. It reports each element and property the engine cannot draw, and the frames where it happens.
 
 Unsupported content is drawn without, or approximated, and a warning names it. Nothing falls back to a browser. This is decided frame by frame.
 

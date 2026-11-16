@@ -310,6 +310,13 @@
       "access": "free"
     },
     {
+      "name": "kinetograph-taste-clone",
+      "type": "skill",
+      "title": "Taste Clone",
+      "description": "Agent skill: clone a reel or reference video 1:1, or distil its style into a taste. Installed with `npx kinetograph skills update`.",
+      "access": "free"
+    },
+    {
       "name": "laptop-open",
       "type": "template",
       "title": "Laptop opening",

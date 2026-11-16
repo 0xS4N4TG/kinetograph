@@ -5,7 +5,7 @@ description: The kinetograph field in package.json, a props schema, a Studio pan
 
 A package with a `kinetograph` field in its `package.json` is a plugin. Every key is optional, and paths are relative to the package root.
 
-```json
+```json title="package.json"
 {
   "name": "my-plugin",
   "kinetograph": {
@@ -59,7 +59,7 @@ genomeSchema.meta({ kinetographPanel: 'my-plugin' })
 
 The panel is an ES module named by `kinetograph.panel`. It exports `mount`:
 
-```ts
+```ts title="studio/panel.ts"
 export interface PanelContext {
   value: unknown; // the field's current value
   schema: Record<string, unknown>; // the field's JSON Schema
@@ -85,7 +85,7 @@ export function mount(el: HTMLElement, ctx: PanelContext): {
 
 A plugin can offer tools that a coding agent calls over MCP. Point `tools` at a module that exports a `tools` array.
 
-```ts
+```ts title="tools.ts"
 import { z } from 'zod';
 
 export const tools = [

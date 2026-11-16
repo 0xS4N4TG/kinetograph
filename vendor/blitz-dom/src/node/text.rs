@@ -33,6 +33,9 @@ pub struct TextLayout {
     /// containing block (as `SPAN_*_CB` flags). The inline root claims those boxes in its place.
     /// Set by each `RunMode::PerformLayout` run of inline layout.
     pub span_cb_flags: stylo_taffy::StyleFlags,
+    /// Whether the lines were last broken by a run that was not the final layout (a measurement at another
+    /// width). A cached final layout then does not describe them, and is not taken from the cache.
+    pub broken_for_measure: bool,
 }
 
 impl TextLayout {

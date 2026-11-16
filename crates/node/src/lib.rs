@@ -12,6 +12,8 @@
 
 mod bench;
 mod canvas;
+#[cfg(windows)]
+mod crash_report;
 mod dom;
 mod dom_verify;
 mod error;
@@ -43,6 +45,14 @@ use crate::error::{Code, Result, count, error, from_core, from_render, invalid};
 #[napi]
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+/// Windows: reports a fatal exception (where, in which module, the stack) on stderr when `KINETOGRAPH_CRASH_REPORT` is
+/// set, as the addon loads (`crash_report.rs`).
+#[cfg(windows)]
+#[napi_derive::module_init]
+fn install_crash_report() {
+    crash_report::install_if_asked();
 }
 
 /// `baseDir`, or the current directory.

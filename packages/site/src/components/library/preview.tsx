@@ -10,9 +10,12 @@ export const previewUrl = (name: string) => `${VIDEO_BASE}catalog-${name}.mp4`;
 
 /**
  * An item's preview: a muted loop with the poster under it. Nothing of the clip loads until it scrolls into view, and it
- * pauses when it leaves or when `paused` is set. Under prefers-reduced-motion it stays on the poster. A portrait poster is
- * matted inside the frame, a landscape one fills it.
+ * pauses when it leaves or when `paused` is set. Under prefers-reduced-motion it stays on the poster. A wide poster fills the
+ * frame; a portrait or squarish one is matted inside it, on the frame's own surface (`MATTED`).
  */
+/** Posters narrower than this (width over height) are matted, not cropped to fill a 16:9 frame. */
+export const MATTED = 1.5;
+
 export function Preview({ name, poster, ratio, paused = false, className }: { name: string; poster: string; ratio: number; paused?: boolean; className?: string }) {
   const ref = useRef<HTMLVideoElement>(null);
   const visible = useRef(false);
@@ -54,7 +57,7 @@ export function Preview({ name, poster, ratio, paused = false, className }: { na
       playsInline
       preload="none"
       aria-hidden="true"
-      className={cn('block size-full bg-night', ratio < 1 ? 'object-contain' : 'object-cover', className)}
+      className={cn('block size-full', ratio < MATTED ? 'bg-fd-muted object-contain' : 'bg-night object-cover', className)}
     />
   );
 }

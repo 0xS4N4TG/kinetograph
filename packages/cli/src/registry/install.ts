@@ -179,6 +179,8 @@ export async function addItems(options: AddOptions): Promise<AddResult> {
   const root = findProject(options.dir);
 
   const items = await resolveItems(registry, options.names);
+  const skill = items.find((item) => item.type === 'skill');
+  if (skill) throw new CliError('INVALID_ARG', `${skill.name} is an agent skill, not a project item: install it with \`npx kinetograph skills update\``);
 
   // Every download first, so a missing or altered file stops the install before anything is written.
   const bytes = new Map<string, Uint8Array>();

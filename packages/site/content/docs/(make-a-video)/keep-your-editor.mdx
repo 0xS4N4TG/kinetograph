@@ -3,7 +3,24 @@ title: Keep your editor, render with Kinetograph
 description: What to say to keep editing in Remotion Studio or HyperFrames and render the same project with Kinetograph.
 ---
 
-<Terminal command="npx kinetograph doctor src/index.ts\nnpx kinetograph render src/index.ts --comp Main -o out.mp4" />
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
+```sh
+npx kinetograph doctor src/index.ts
+npx kinetograph render src/index.ts --comp Main -o out.mp4
+```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph doctor html/index.html
+npx kinetograph render html/index.html -o out.mp4
+```
+
+  </Tab>
+</IconTabs>
 
 Keep editing in the tool you know, then render the same files with Kinetograph.
 
@@ -35,7 +52,7 @@ Where the two renders can differ, and the commands for each project type, are on
 
 | What to say | Why it matters |
 | --- | --- |
-| **The entry and the composition** | A project can register several. |
+| **The entry and the composition** | A Remotion project can register several compositions. |
 | **"Keep my editor as it is"** | Nothing is rewritten or converted. |
 | **"Run doctor first"** | You see what is missing before a long render. |
 | **"Render with --strict"** | Stops at the first frame with something unsupported. |

@@ -68,9 +68,18 @@ Studio offers an agent only when its program is already on your computer. Your a
     Run the agent once in a project folder and follow its prompts: `claude`, `codex` or `gemini`. For Claude Code and Codex, finish in your browser.
   </Step>
   <Step title="Open Studio">
-    ```sh
-    npx kinetograph studio src/index.tsx
-    ```
+    <IconTabs>
+      <Tab label="Remotion" icon="remotion">
+        ```sh
+        npx kinetograph studio src/index.tsx
+        ```
+      </Tab>
+      <Tab label="HyperFrames" icon="hyperframes">
+        ```sh
+        npx kinetograph studio html/index.html
+        ```
+      </Tab>
+    </IconTabs>
 
     The first time you use Claude Code or Codex, Studio fetches its adapter with `npx`, so the first message can take a moment longer.
   </Step>
@@ -91,9 +100,22 @@ Press Cmd+K (Ctrl+K elsewhere) to open the command menu and choose **Switch agen
 
 Any agent that speaks the Agent Client Protocol (ACP) over standard input and output works. Give Studio the command that starts it:
 
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
 ```sh
 npx kinetograph studio src/index.tsx --agent "my-agent --acp"
 ```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph studio html/index.html --agent "my-agent --acp"
+```
+
+  </Tab>
+</IconTabs>
 
 It then shows up as **Custom agent**. Studio listens on `127.0.0.1` by default. If you set `--host` so other computers can reach it, the agent is off unless you also pass `--allow-remote-agent`.
 

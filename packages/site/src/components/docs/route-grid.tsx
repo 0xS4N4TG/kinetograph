@@ -30,7 +30,7 @@ export function RouteGrid({ routes }: { routes: Route[] }) {
       {routes.map((r) => (
         <a key={r.title} href={r.href} aria-label={`${r.title}. ${r.bring}`} className="group flex flex-col gap-2 text-fd-foreground no-underline">
           {r.poster && VIDEO_BASE && r.clip && !still ? (
-            <video src={`${VIDEO_BASE}routes-${r.clip}.mp4`} poster={r.poster} autoPlay muted loop playsInline preload="metadata" aria-hidden="true" className={`${box} bg-black`} />
+            <video ref={(v) => void (v && (v.muted = true))} src={`${VIDEO_BASE}routes-${r.clip}.mp4`} poster={r.poster} autoPlay muted loop playsInline preload="metadata" aria-hidden="true" className={`${box} bg-black`} />
           ) : r.poster ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={r.poster} alt="" width={480} height={270} loading="lazy" className={`${box} bg-black`} />

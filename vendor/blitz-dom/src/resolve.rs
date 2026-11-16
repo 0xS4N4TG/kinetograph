@@ -521,9 +521,10 @@ pub(crate) fn construct_subtree(doc: &mut BaseDocument, node_id: NodeId) {
     }
 
     let mut damage = doc.nodes[node_id].damage().unwrap_or(ALL_DAMAGE);
-    let _flags = doc.nodes[node_id].flags;
+    let flags = doc.nodes[node_id].flags;
 
-    if damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) {
+    // A node that was inline content (no box) is built when it is a layout child, damaged or not.
+    if damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) || flags.contains(crate::node::NodeFlags::BOX_DROPPED) {
         //} || flags.contains(NodeFlags::IS_INLINE_ROOT) {
 
         // Deallocate the anonymous blocks created for this node in the
@@ -548,7 +549,7 @@ pub(crate) fn construct_subtree(doc: &mut BaseDocument, node_id: NodeId) {
         // Recurse into newly collected layout children
         for child_id in layout_children.iter().copied() {
             construct_subtree(doc, child_id);
-            doc.nodes[child_id].layout_parent.set(Some(node_id));
+            doc.nodes[child_id].set_layout_parent(node_id);
             if let Some(mut data) = doc.nodes[child_id]
                 .try_stylo_element_data_mut()
                 .and_then(|s| s.get_mut())
@@ -561,6 +562,11 @@ pub(crate) fn construct_subtree(doc: &mut BaseDocument, node_id: NodeId) {
         *doc.nodes[node_id].layout_children.borrow_mut() = Some(layout_children.clone());
         // *doc.nodes[node_id].paint_children.borrow_mut() = Some(layout_children);
 
+        // A node built again with no damage of its own (it was inline content) has no paint children either, and the
+        // paint tree skips a node whose damage lacks this.
+        if flags.contains(crate::node::NodeFlags::BOX_DROPPED) {
+            damage.insert(style::selector_parser::RestyleDamage::REBUILD_STACKING_CONTEXT);
+        }
         damage.remove(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
         // damage.insert(RestyleDamage::RELAYOUT | RestyleDamage::REPAINT);
     } else {

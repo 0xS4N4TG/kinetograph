@@ -1182,6 +1182,7 @@ impl LayoutPassState<'_> {
         if inputs.run_mode == RunMode::PerformLayout {
             inline_layout.span_cb_flags = span_cb_flags;
         }
+        inline_layout.broken_for_measure = inputs.run_mode != RunMode::PerformLayout;
 
         // Put layout back
         self.nodes[node_id]

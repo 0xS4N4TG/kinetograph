@@ -14,6 +14,7 @@ export const illustrations: Record<string, { title: string; build: (alt: string)
   'effects-chain': effectsChain,
   pipeline,
   'project-structure': projectStructure,
+  'project-structure-html': { title: 'An HTML project', build: (alt) => projectStructure.draw(true, alt) },
   'pure-frame': pureFrame,
   'render-options': renderOptions,
   'render-paths': renderPaths,

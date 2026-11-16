@@ -13,6 +13,7 @@ write items. Code: `packages/cli/src/registry/`. Item schema: `docs/registry-ite
 | `component` | `src/components/<name>/` | `index.tsx` exporting the component and its zod schema (`export const <Name>Schema`, or a name ending in `Schema`) |
 | `template` | `src/templates/<name>/` | `index.tsx` that calls `registerRoot` (renders on its own), and the scenes in `scenes/` |
 | `taste` | `src/tastes/<name>/` | `TASTE.md` and whatever else the taste needs (`taste.json`, references) |
+| `skill` | not a project item: `npx kinetograph skills update` writes its files (paths shown as `src/skills/<name>/…`) into the agents' global skills folders | `SKILL.md` |
 
 Assets install to `public/<kind>/<name>/`, where `<kind>` is `images`, `fonts`, `audio` or `video` (the folders
 `kinetograph init` makes). The `<name>` folder keeps `staticFile` paths unique across items:

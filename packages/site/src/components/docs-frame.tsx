@@ -1,3 +1,4 @@
+import type { SidebarPageTreeComponents } from 'fumadocs-ui/components/sidebar/page-tree';
 import { DocsLayout } from 'fumadocs-ui/layouts/docs';
 import { ThemeSwitch } from 'fumadocs-ui/layouts/shared/slots/theme-switch';
 import { RootProvider } from 'fumadocs-ui/provider/next';
@@ -16,12 +17,25 @@ import { Wordmark } from '@/sections/shared';
 /**
  * The frame the docs and the catalog share: the same header (wordmark, Catalog and Docs links, search), the same sidebar and
  * the same content column, so moving between them changes only what is inside. `tree` is the sidebar's page tree; `banner`
- * goes above it (the catalog puts its categories there).
+ * goes above it. `components` replaces how the sidebar draws the tree's nodes (the catalog draws its category list as one).
+ * `wide` gives the content column the whole width beside the sidebar, for a page with no table of contents.
  */
-export async function DocsFrame({ tree, banner, children }: { tree: PageTree.Root; banner?: ReactNode; children: ReactNode }) {
+export async function DocsFrame({
+  tree,
+  banner,
+  components,
+  wide = false,
+  children,
+}: {
+  tree: PageTree.Root;
+  banner?: ReactNode;
+  components?: Partial<SidebarPageTreeComponents>;
+  wide?: boolean;
+  children: ReactNode;
+}) {
   const counts = await repoCounts();
   return (
-    <RootProvider theme={THEME} search={{ options: { type: 'static', api: '/api/search', delayMs: 0 } }}>
+    <RootProvider theme={THEME} i18n={{ translations: { 'Search(search trigger)': 'Search docs' } }} search={{ options: { type: 'static', api: '/api/search', delayMs: 0 } }}>
       <SearchPreload api="/api/search" />
       <DocsLayout
         tree={tree}
@@ -35,6 +49,7 @@ export async function DocsFrame({ tree, banner, children }: { tree: PageTree.Roo
         ]}
         sidebar={{
           banner,
+          components,
           footer: (
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between rounded-lg border bg-fd-secondary/50 py-1.5 pr-1.5 pl-3 text-sm text-fd-muted-foreground">
@@ -61,7 +76,11 @@ export async function DocsFrame({ tree, banner, children }: { tree: PageTree.Roo
           style: {
             gridTemplate: `"sidebar sidebar header toc toc"
 "sidebar sidebar toc-popover toc toc"
-"sidebar sidebar main toc toc" 1fr / 0px var(--fd-sidebar-col) minmax(0, calc(var(--fd-layout-width,97rem) - var(--fd-sidebar-width) - var(--fd-toc-width))) var(--fd-toc-width) minmax(min-content, 1fr)`,
+"sidebar sidebar main toc toc" 1fr / 0px var(--fd-sidebar-col) ${
+              wide
+                ? 'minmax(0, 1fr) 0px 0px'
+                : 'minmax(0, calc(var(--fd-layout-width,97rem) - var(--fd-sidebar-width) - var(--fd-toc-width))) var(--fd-toc-width) minmax(min-content, 1fr)'
+            }`,
           },
         }}
       >

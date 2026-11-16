@@ -35,7 +35,8 @@ use style::values::generics::transform::{Scale, Translate};
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_dom::ElementState;
 use style_traits::values::ToCss;
-use taffy::{Cache, prelude::Layout};
+use crate::layout::cache::Cache;
+use taffy::prelude::Layout;
 use thin_vec::ThinVec;
 
 use super::stylo_data::{ComputedStyleRef, StyloData};
@@ -57,6 +58,11 @@ bitflags! {
         const IS_TABLE_ROOT = 0b00000010;
         /// Whether the node is "in the document" (~= has a parent and isn't a template node)
         const IS_IN_DOCUMENT = 0b00000100;
+        /// Whether construction took the node's box state (layout children, inline layout, anonymous
+        /// blocks) because the node was not a box (inline content, or the pseudo-element of a
+        /// `display: contents` element in inline content). It must be built again if it becomes a box
+        /// (a layout child) without damage of its own to say so.
+        const BOX_DROPPED = 0b00001000;
     }
 }
 
@@ -80,6 +86,7 @@ impl NodeFlags {
     pub fn reset_construction_flags(&mut self) {
         self.remove(Self::IS_INLINE_ROOT);
         self.remove(Self::IS_TABLE_ROOT);
+        self.remove(Self::BOX_DROPPED);
     }
 }
 
@@ -224,6 +231,15 @@ impl Node {
             }
             NodeData::Document(data) => data.layout_data.as_deref_mut(),
             _ => None,
+        }
+    }
+
+    /// Sets the box that lays this node out. A layout cache holds what the old container's algorithm made of the node
+    /// (an inline box's width, say), and a node an edit did not damage keeps it: it is dropped when the container
+    /// is another.
+    pub fn set_layout_parent(&mut self, parent: NodeId) {
+        if self.layout_parent.replace(Some(parent)) != Some(parent) {
+            self.invalidate_layout_cache();
         }
     }
 

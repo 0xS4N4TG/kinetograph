@@ -64,6 +64,19 @@ impl BaseDocument {
         };
         let mut damage = own_damage;
 
+        // A `display: contents` element has no box: what it was laid out as before it was another display is not
+        // left on it, as a document built with it has none (a read of its used `width` says 0px, and a container
+        // query that asks its size, which the last layout gives, finds none).
+        if !own_damage.is_empty()
+            && self.nodes[node_id]
+                .display_style()
+                .is_some_and(|display| display.inside() == DisplayInside::Contents)
+        {
+            let node = &mut self.nodes[node_id];
+            *node.unrounded_layout_mut() = taffy::Layout::new();
+            *node.final_layout_mut() = taffy::Layout::new();
+        }
+
         // Skip subtrees which contain no damage. Anonymous nodes are never
         // skipped themselves because damage marking walks the DOM parent
         // chain, which bypasses anonymous boxes: a damaged node's flagged

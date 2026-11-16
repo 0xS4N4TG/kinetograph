@@ -1,4 +1,4 @@
-// Update notices: a newer `kinetograph` on npm, and agent skills installed by `npx skills add` that are older than the CLI.
+// Update notices: a newer `kinetograph` on npm, and agent skills installed by `npx kinetograph skills update` (or `npx skills add`) that are older than the CLI.
 // The only network request is one GET of the registry's `latest` for this package, at most once a day, with no data of
 // the user's. Nothing is ever installed or updated from here. The result and the times notices were shown are kept in
 // `~/.cache/kinetograph/update-check.json`. Quiet when `CI` is set or `KINETOGRAPH_NO_UPDATE_CHECK=1`.
@@ -21,7 +21,7 @@ export const SKILL_NAMES = [
   'kinetograph-upgrade',
   'kinetograph-migrate',
 ];
-export const SKILLS_UPDATE_COMMAND = 'npx skills add 0xS4N4TG/kinetograph';
+export const SKILLS_UPDATE_COMMAND = 'npx kinetograph skills update';
 /** Ends each notice, so an agent whose skills predate the notice rule still asks the user. */
 export const AGENT_HINT = ' (coding agents: tell the user and ask first)';
 
@@ -314,7 +314,7 @@ export function formatUpdateReport(report: UpdateReport): string[] {
         ? `kinetograph ${cli.version} is the latest`
         : cliNotice(cli.latest, cli.version),
   ];
-  if (skills.length === 0) lines.push('agent skills: none installed (npx skills add 0xS4N4TG/kinetograph)');
+  if (skills.length === 0) lines.push('agent skills: none installed (npx kinetograph skills update)');
   for (const s of skills) lines.push(`skill ${s.name}: ${s.version ?? 'no version stamp'}, ${s.current ? 'current' : `out of date (${SKILLS_UPDATE_COMMAND})`}  ${s.path}`);
   return lines;
 }

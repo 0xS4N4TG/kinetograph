@@ -6,15 +6,15 @@
       "slug": "hexed",
       "title": "Hexed",
       "description": "Roll a look onto any picture or clip. Hexed picks a grade, a print screen, lens effects, tape damage and a camera shake. Keep the parts you like and reroll the rest.",
-      "published": false,
+      "published": true,
       "url": "https://kinetograph.dev/catalog/plugin-hexed/"
     },
     {
       "name": "@kinetographdev/kinetic-typography",
       "slug": "kinetic-typography",
       "title": "Kinetic typography",
-      "description": "Captions that move with the voice, in fourteen ready-made styles. A hook word is set huge, and handwritten captions can follow a tracked subject.",
-      "published": false,
+      "description": "Captions that move with the voice, in fifteen ready-made styles. A hook word is set huge, and handwritten captions can follow a tracked subject.",
+      "published": true,
       "url": "https://kinetograph.dev/catalog/plugin-kinetic-typography/"
     },
     {
@@ -22,7 +22,7 @@
       "slug": "paper",
       "title": "Paper",
       "description": "Give a video the feel of real paper. Keyword match cuts, photo cut-outs that unfold from a crumpled packet, and hand-drawn lines round a moving subject on torn paper.",
-      "published": false,
+      "published": true,
       "url": "https://kinetograph.dev/catalog/plugin-paper/"
     },
     {
@@ -30,7 +30,7 @@
       "slug": "vj",
       "title": "VJ",
       "description": "Make footage look like a CRT, a worn VHS tape, a thermal camera or a 1-bit screen. Track what moves and draw boxes on it, cut a person into a pop-art poster, or fly a camera through clips seen as windows.",
-      "published": false,
+      "published": true,
       "url": "https://kinetograph.dev/catalog/plugin-vj/"
     }
   ]

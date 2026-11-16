@@ -1,8 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { plugins } from './catalog';
-import { pluginSlug, type Item } from './library-core';
+import type { Item } from './library-core';
 
 export interface Step {
   text: string;
@@ -15,19 +14,10 @@ const registry = (name: string) => JSON.parse(readFileSync(join(process.cwd(), '
 const RENDER = 'npx kinetograph render src/index.tsx -o out/video.mp4';
 
 /**
- * The by-hand steps of an item, as the installer sets them up (packages/cli/src/registry/install.ts): where it lands, how
+ * The by-hand steps of a library item (a plugin installs from npm and has none), as the installer sets them up (packages/cli/src/registry/install.ts): where it lands, how
  * to use it and how to render. The component's tag is the first export that reads as a component, from its registry file.
  */
 export function manualSteps(item: Item): Step[] {
-  if (item.type === 'plugin') {
-    const plugin = plugins.find((p) => p.slug === pluginSlug(item))!;
-    return [
-      { text: 'Run this in your project folder.', code: `npm install ${plugin.name}` },
-      { text: 'The package goes in `node_modules/` and is listed in your `package.json` dependencies. `npx kinetograph plugins` lists it with its skill.' },
-      { text: 'Import it in a scene and use it.', code: plugin.examples[0]?.code },
-      { text: 'Render the video.', code: RENDER },
-    ];
-  }
   const add = { text: 'Run this in your project folder.', code: `npx kinetograph add ${item.name}` };
   const files = registry(item.name).files;
   if (item.type === 'template') {

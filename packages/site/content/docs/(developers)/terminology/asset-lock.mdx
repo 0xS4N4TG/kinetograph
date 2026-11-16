@@ -8,7 +8,7 @@ An HTML page can load scripts, modules, pictures, media and fonts from the web. 
 `kinetograph.lock.json` sits beside the entry point. It records the SHA-256 and size of each file at its first download. Every later run checks the cache against it. A file that changed stops the command and names the URL. Commit the file.
 
 ```sh
-npx kinetograph fetch-deps index.html
+npx kinetograph fetch-deps html/index.html
 ```
 
 `fetch-deps` does the download on its own, for CI or a warm cache. `--update` downloads again and accepts changed files. `--offline` on other commands never downloads.

@@ -7,7 +7,8 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "videos": "node scripts/fetch-videos.mjs",
+    "build": "node scripts/fetch-videos.mjs && next build",
     "start": "npx serve out",
     "preview": "npx serve out",
     "catalog": "node scripts/catalog.mjs",
@@ -24,6 +25,7 @@
     "@fontsource-variable/geist-mono": "5.3.0",
     "@fontsource-variable/jetbrains-mono": "5.3.0",
     "@fontsource-variable/newsreader": "5.3.0",
+    "@fontsource-variable/sofia-sans-extra-condensed": "5.3.0",
     "@fontsource/kalam": "5.3.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",

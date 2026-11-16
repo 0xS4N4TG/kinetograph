@@ -3,7 +3,22 @@ title: Fix a slow render or preview
 description: Check with stills and drafts, draw frames in parallel, and find out which stage of a frame is slow.
 ---
 
-<Terminal command="npx kinetograph bench src/index.tsx --frame 30" />
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
+```sh
+npx kinetograph bench src/index.tsx --frame 30
+```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph bench html/index.html --frame 30
+```
+
+  </Tab>
+</IconTabs>
 
 Don't render the whole video to check one thing. Look at the frames you care about, and render a draft before the final.
 
@@ -13,10 +28,24 @@ Don't render the whole video to check one thing. Look at the frames you care abo
 - `render --draft` draws at half size, which is the same as `--scale 0.5`. `still`, `strip` and `onion` take `--scale` too.
 - `render --range 40..90` draws only those frames.
 
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
 ```sh
 npx kinetograph strip src/index.tsx -n 12 --scale 0.5
 npx kinetograph render src/index.tsx --draft --range 0..90
 ```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph strip html/index.html -n 12 --scale 0.5
+npx kinetograph render html/index.html --draft --range 0..90
+```
+
+  </Tab>
+</IconTabs>
 
 ## Draw frames in parallel
 
@@ -24,10 +53,24 @@ npx kinetograph render src/index.tsx --draft --range 0..90
 
 ## Find the slow part
 
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
 ```sh
 npx kinetograph bench src/index.tsx --frame 30
 npx kinetograph bench src/index.tsx --range 40..90
 ```
+
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+```sh
+npx kinetograph bench html/index.html --frame 30
+npx kinetograph bench html/index.html --range 40..90
+```
+
+  </Tab>
+</IconTabs>
 
 `bench` prints the milliseconds each stage of a frame takes, from your code (`js`) to the GPU stages (`raster`, `composite`, `readback`). A large `js` means your component code is slow. A large `raster` or `composite` points at the drawing: big effects, blurs, many layers or big images. Run it as `NODE_ENV=production npx kinetograph bench ...`, because it uses React's development build otherwise.
 

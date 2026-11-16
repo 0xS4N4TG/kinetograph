@@ -7,19 +7,28 @@ You don't have to switch tools. Keep editing in Remotion Studio or in HyperFrame
 
 ## What to run
 
-For a Remotion project, run Kinetograph on the file that calls `registerRoot`, usually `src/index.ts` or `src/index.tsx`. A file that only exports a component, such as `Root.tsx`, isn't an entry.
+<IconTabs>
+  <Tab label="Remotion" icon="remotion">
+
+Run Kinetograph on the file that calls `registerRoot`, usually `src/index.ts` or `src/index.tsx`. A file that only exports a component, such as `Root.tsx`, isn't an entry.
 
 ```sh
 npx remotion studio                                        # edit as before
-npx kinetograph render src/index.ts --comp Main -o out.mp4
+npx kinetograph render src/index.tsx --comp Main -o out.mp4
 ```
 
-For a HyperFrames project, run it on the page or its folder.
+  </Tab>
+  <Tab label="HyperFrames" icon="hyperframes">
+
+Run it on the page or its folder.
 
 ```sh
 npx hyperframes preview                                    # edit as before
 npx kinetograph render index.html -o out.mp4
 ```
+
+  </Tab>
+</IconTabs>
 
 Run `npx kinetograph doctor <entry>` first. It lists what the engine can't draw in your project, and on which frames. Add `--strict` to a render to stop at the first frame with something missing.
 

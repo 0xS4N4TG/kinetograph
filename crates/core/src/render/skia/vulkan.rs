@@ -83,13 +83,18 @@ pub(super) struct Native {
 impl Native {
     /// A Graphite context on `device`'s Vulkan device and `queue`'s queue; `Err` says why there is none (`vk_report`).
     pub(super) fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<(Native, graphite::Context), String> {
+        crate::trace::start("skia-vk-gather", format_args!("the Vulkan handles of wgpu's device, and what the driver offers"));
         // SAFETY: the handles are used only while `device` is alive.
         let Some(report) = (unsafe { gather(device) }) else {
+            crate::trace::done("skia-vk-gather", format_args!("not a Vulkan device"));
             return Err(vk_report::not_vulkan());
         };
+        crate::trace::done("skia-vk-gather", format_args!("ok"));
+        crate::trace::start("skia-vk-context", format_args!("Graphite's Vulkan context on wgpu's device"));
         // SAFETY: the raw handles stay alive as long as the wgpu device and queue, which the renderer holds, and the
         // Graphite context is dropped before them (`SkiaBackend` is a field of the renderer, which owns both).
         let made = unsafe { make_context(device, queue) };
+        crate::trace::done("skia-vk-context", format_args!("{}", if made.is_some() { "ok" } else { "none" }));
         match made {
             Some(ctx) => Ok((Native::touch(device), ctx)),
             None => Err(report.explain("Graphite's Vulkan context factory returned nothing, and it does not say why")),

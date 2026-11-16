@@ -9,7 +9,7 @@ A video is a list of frames. Frames are whole numbers that start at 0. A composi
 
 Inside a component, `useCurrentFrame()` gives the frame being drawn. `useVideoConfig()` gives `fps`, `durationInFrames`, `width` and `height`.
 
-```tsx
+```tsx title="src/scenes/Title.tsx"
 const frame = useCurrentFrame();
 const { fps } = useVideoConfig();
 const seconds = frame / fps;

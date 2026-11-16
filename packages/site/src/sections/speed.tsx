@@ -1,53 +1,126 @@
-import { Label } from '@/sections/shared';
+import { BENCH, SCENES, type Scene } from '@/data/speed';
+import { Heading } from '@/sections/heading';
+import { body, link, section, shell } from '@/sections/shared';
 
-/** Numerals in the heading face: DM Sans 700, tight tracking, tabular so the tiles line up. */
-const numeral = 'font-dm font-bold leading-none tracking-[-0.05em] tabular-nums';
+const scene = (id: string): Scene => {
+  const s = SCENES.find((x) => x.id === id);
+  if (!s) throw new Error(`speed.ts has no scene "${id}"`);
+  return s;
+};
+/** The page prints times to the data's own precision, as the Speed page does. */
+const secs = (n: number) => `${n.toFixed(2)} s`;
+const times = (n: number) => `${n.toFixed(1)}×`;
 
-const tile = 'flex flex-col justify-between border border-cobalt/30 p-[clamp(20px,2.4vw,32px)]';
+/** Dot screens for the bars, from the same ordered dither as the pictures (a 50% and a 25% tile), screened over the field. */
+const screen = (tile: string): React.CSSProperties => ({
+  backgroundColor: 'var(--field)',
+  backgroundImage: `url(/retro/dither-${tile}.png)`,
+  backgroundBlendMode: 'screen',
+  backgroundSize: '28px 28px',
+});
+const sprockets: React.CSSProperties = {
+  backgroundColor: 'var(--field)',
+  backgroundImage: 'url(/retro/sprocket.png)',
+  backgroundBlendMode: 'screen',
+  backgroundSize: '31.5px 45.5px',
+  backgroundRepeat: 'repeat-y',
+};
 
-/** The four small tiles: our own measured renders, whole `kinetograph render` to H.264 MP4. */
-const SMALL = [
-  { big: '87', unit: 'fps', label: 'Captions over video', detail: '180 frames, 1080p, 2.06 s' },
-  { big: '138', unit: 'fps', label: 'A Remotion project, unchanged', detail: '150 frames, 1200×1000, 1.09 s' },
-  { big: '62', unit: 'fps', label: 'A 3D character scene', detail: '180 frames, 1080p, 2.90 s' },
-  { big: '29', unit: 's', label: 'The launch film, 1,184 frames', detail: '39.5 s of 1080p video, 40 fps' },
-] as const;
-
-/** Render speed as a bento: one large tile for the shapes reel, four small ones. */
-export function Speed() {
+/**
+ * The 60-second film's three render times (data/speed.ts) as bars drawn to scale: ours solid, the others in lighter dot
+ * screens, between two columns of film sprocket holes. Labels and values are live text, so the list is its own text alternative.
+ */
+function RenderChart() {
+  const film = scene('film');
+  const rows = [
+    { name: 'Kinetograph', s: film.kinetograph.s, style: { backgroundColor: '#fff' } as React.CSSProperties },
+    { name: 'HyperFrames', s: film.hyperframes!.s, style: screen('half') },
+    { name: 'Remotion', s: film.remotion!.s, style: screen('quarter') },
+  ];
+  const max = Math.max(...rows.map((r) => r.s));
   return (
-    <div id="benchmark" className="mt-14 scroll-mt-8">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:grid-rows-2">
-        <div className={`${tile} min-h-[280px] bg-cobalt text-white dark:bg-[#2238c4] sm:col-span-2 lg:row-span-2`}>
-          <Label className="text-white/75">A reel drawn from shapes</Label>
-          <div className="mt-10">
-            <p className={`${numeral} text-[clamp(88px,15vw,200px)]`}>
-              11<span className="ml-[0.08em] text-[0.4em] tracking-[-0.03em]">s</span>
+    <div className="kg-core kg-core-field flex h-full min-h-[340px] flex-col justify-between gap-10 px-[68px] py-[clamp(24px,3vw,40px)]">
+      <i aria-hidden className="absolute inset-y-0 left-3 w-[31.5px]" style={sprockets} />
+      <i aria-hidden className="absolute inset-y-0 right-3 w-[31.5px]" style={sprockets} />
+      <p className="font-display text-[clamp(30px,2.6vw,38px)] leading-none text-balance">Render time of the <span className="whitespace-nowrap">{film.seconds}-second</span> film</p>
+      <ul className="flex flex-col gap-[clamp(28px,4vw,56px)]">
+        {rows.map((r) => (
+          <li key={r.name}>
+            <p className="flex items-baseline justify-between gap-4">
+              <span className="font-display text-[20px] leading-none tracking-[0.04em] uppercase">{r.name}</span>
+              <span className="font-jb text-[14px]">{secs(r.s)}</span>
             </p>
-            <p className="mt-5 max-w-[22ch] font-dm text-[clamp(20px,2.2vw,28px)] leading-tight font-medium tracking-[-0.02em]">
-              to render 37 seconds of 1080p video.
+            <div aria-hidden className="mt-3 h-[clamp(52px,6vw,88px)]" style={{ width: `${(r.s / max) * 100}%`, ...r.style }} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+const numeral = 'font-display font-normal leading-[0.8]';
+
+/**
+ * Render speed from the measured scenes in data/speed.ts, one scene per number: the film, the paper cut-out video, the
+ * shattering terminal. An asymmetric grid, four cells: the film's time on the cobalt field, a chart of the three engines'
+ * times on that film, two ratios. Each sentence names its video; the run count is in the note under the grid.
+ */
+export function Speed() {
+  const film = scene('film');
+  const paper = scene('papercut');
+  const term = scene('mg1');
+  return (
+    <div id="benchmark" className="mt-[clamp(40px,6vw,88px)] scroll-mt-8">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
+        <div data-reveal className="kg-tray lg:col-span-7">
+          <div className="kg-core kg-core-field flex h-full min-h-[340px] flex-col justify-between gap-12 p-[clamp(24px,3vw,44px)]">
+            <p className={`${numeral} text-[clamp(120px,15vw,230px)]`}>
+              {film.kinetograph.s.toFixed(2)}
+              <span className="ml-[0.1em] text-[0.3em]">s</span>
             </p>
-            <p className="mt-4 font-jb text-[12px] leading-relaxed text-white/75">
-              928 frames, 81 fps, 3.2× real time
+            <div>
+              <p className="max-w-[30ch] font-dm text-[clamp(20px,2vw,26px)] leading-snug font-medium tracking-[-0.01em]">
+                to render the {film.seconds}-second film: {film.frames.toLocaleString('en-US')} frames of 1080p.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div data-reveal style={{ '--i': 1 } as React.CSSProperties} className="kg-tray min-h-[300px] lg:col-span-5 lg:row-span-2">
+          <RenderChart />
+        </div>
+        <div data-reveal style={{ '--i': 2 } as React.CSSProperties} className="kg-tray lg:col-span-4">
+          <div className="kg-core kg-core-card flex h-full flex-col justify-between gap-10 p-[clamp(24px,2.6vw,36px)]">
+            <p className={`${numeral} text-[clamp(80px,8vw,124px)] text-cobalt`}>{times(paper.vsRemotion!.x)}</p>
+            <p className={`${body} max-w-[32ch] text-[16px]`}>
+              faster than Remotion on the {paper.title.toLowerCase()}: {secs(paper.kinetograph.s)} against {secs(paper.remotion!.s)}.
             </p>
           </div>
         </div>
-        {SMALL.map((t) => (
-          <div key={t.label} className={`${tile} min-h-[200px] bg-paper/60 dark:bg-card`}>
-            <p className={`${numeral} text-[clamp(56px,6vw,84px)] text-cobalt`}>
-              {t.big}
-              <span className="ml-[0.12em] text-[0.34em] tracking-[-0.02em]">{t.unit}</span>
+        <div data-reveal style={{ '--i': 3 } as React.CSSProperties} className="kg-tray lg:col-span-3">
+          <div className="kg-core kg-core-card flex h-full flex-col justify-between gap-10 p-[clamp(24px,2.6vw,36px)]">
+            <p className={`${numeral} text-[clamp(80px,8vw,124px)] text-cobalt`}>{times(term.vsHyperframes!.x)}</p>
+            <p className={`${body} text-[16px]`}>
+              faster than HyperFrames on the {term.title.toLowerCase()}. Against Remotion the gap is {times(term.vsRemotion!.x)}.
             </p>
-            <div className="mt-8">
-              <Label className="text-ink">{t.label}</Label>
-              <p className="mt-2 font-jb text-[12px] leading-relaxed text-ink/75">{t.detail}</p>
-            </div>
           </div>
-        ))}
+        </div>
       </div>
-      <p className="mt-4 max-w-[70ch] font-jb text-[11px] leading-relaxed text-ink/60">
-        Apple M4 laptop, whole render to H.264 MP4, median of 3 runs, the Remotion tile measured 9 Nov 2026 on an idle machine, the others 1 Nov 2026 while other jobs ran.
+      <p data-reveal className="mt-6 max-w-[70ch] font-jb text-[12px] leading-relaxed text-ink/70">
+        Each number is one video, not a general claim. {BENCH.machine}, median of {BENCH.n} timed runs after {BENCH.warmups} warm-up, measured {BENCH.date}.{' '}
+        <a className={link} href="/docs/speed/">All {SCENES.length} videos</a>.
       </p>
     </div>
+  );
+}
+
+/** The speed section: its heading, then the numbers. */
+export function SpeedSection() {
+  return (
+    <section id="why" className={`${shell} ${section} scroll-mt-6`}>
+      <div data-reveal>
+        <Heading className="max-w-[16ch]">The renders, and how long they took.</Heading>
+      </div>
+      <Speed />
+    </section>
   );
 }

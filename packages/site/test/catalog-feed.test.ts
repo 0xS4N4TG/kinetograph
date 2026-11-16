@@ -4,17 +4,17 @@ import { describe, expect, it } from 'vitest';
 
 import { catalogFeed, SITE_URL } from '../src/lib/catalog-feed';
 
-const catalog = JSON.parse(readFileSync(join(import.meta.dirname, '../content/catalog.json'), 'utf8')) as { plugins: { slug: string; name: string; title: string; description: string }[] };
+const catalog = JSON.parse(readFileSync(join(import.meta.dirname, '../content/catalog.json'), 'utf8')) as { plugins: { slug: string; name: string; title: string; description: string; published?: boolean }[] };
 
 describe('catalogFeed', () => {
-  it('lists each plugin with only the public fields, unpublished, linking to its page', () => {
+  it('lists each plugin with only the public fields, as published as the catalog says, linking to its page', () => {
     const feed = catalogFeed(catalog.plugins);
     expect(feed.version).toBe(1);
     expect(Object.keys(feed).sort()).toEqual(['plugins', 'version']);
     expect(feed.plugins.map((p) => p.name)).toEqual(catalog.plugins.map((p) => p.name));
     for (const p of feed.plugins) {
       const source = catalog.plugins.find((c) => c.name === p.name)!;
-      expect(p).toEqual({ name: source.name, slug: source.slug, title: source.title, description: source.description, published: false, url: `${SITE_URL}/catalog/plugin-${source.slug}/` });
+      expect(p).toEqual({ name: source.name, slug: source.slug, title: source.title, description: source.description, published: source.published === true, url: `${SITE_URL}/catalog/plugin-${source.slug}/` });
     }
   });
 

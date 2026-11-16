@@ -2,7 +2,7 @@
 name: kinetograph-studio
 description: Open Kinetograph Studio, the local editor with a live preview, timeline, props and presets, export and a chat with the coding agent, and work with the person in it. Use when the person wants to preview or tune a video, mark up frames, give you a span of time, answer a brief, storyboard or review panel, or when a message starts with "Markup notes on".
 metadata:
-  version: "0.3.0"
+  version: "0.4.0-rc.1"
 ---
 
 # Work in Studio
