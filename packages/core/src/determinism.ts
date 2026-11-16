@@ -70,6 +70,8 @@ interface Timer {
 }
 
 let holdProbe: () => boolean = () => false;
+/** True while a hold timer's callback runs: a timeout it sets follows the frame clock (a page's own polling loop would otherwise fire for ever, in no time). */
+let firingHold = false;
 
 /** Says whether the frame being rendered is held open (a `delayRender` handle, a font or an image still loading). */
 export function setHoldProbe(probe: () => boolean): void {
@@ -143,7 +145,7 @@ function addTimer(callback: unknown, delay: unknown, args: unknown[], repeat: bo
     args,
     interval: repeat ? ms : null,
     handle,
-    hold: !repeat && holdProbe(),
+    hold: !repeat && !firingHold && holdProbe(),
   });
   return handle;
 }
@@ -223,7 +225,12 @@ export function fireHoldTimer(): boolean {
   }
   if (best === null) return false;
   timers.delete(best.id);
-  best.callback(...best.args);
+  firingHold = true;
+  try {
+    best.callback(...best.args);
+  } finally {
+    firingHold = false;
+  }
   return true;
 }
 
