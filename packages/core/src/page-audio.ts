@@ -614,34 +614,8 @@ function mediaStateOf(element: MediaElement): MediaState {
   if (state === undefined) {
     state = { id: `m${nextMedia++}`, routed: false, playing: false, at: 0, since: 0, file: null };
     mediaStates.set(element, state);
-    watchMediaProps(element, state);
   }
   return state;
-}
-
-/** `volume`, `muted`, `loop` and `playbackRate` of an element the page plays are watched, so a change while it plays is heard. */
-function watchMediaProps(element: MediaElement, state: MediaState): void {
-  const initial: Record<string, unknown> = { volume: 1, muted: false, loop: false, playbackRate: 1 };
-  for (const name of Object.keys(initial)) {
-    const own = Object.getOwnPropertyDescriptor(element, name);
-    let value: unknown = own !== undefined && 'value' in own ? own.value : initial[name];
-    Object.defineProperty(element, name, {
-      configurable: true,
-      enumerable: true,
-      get: () => value,
-      set: (v: unknown) => {
-        const was = positionOf(element, state);
-        value = v;
-        if (!state.playing) return;
-        if (name === 'volume' || name === 'muted') record({ op: 'media', id: state.id, action: 'volume', value: levelOf(element) });
-        else if (name === 'playbackRate') {
-          state.at = was;
-          state.since = now();
-          record({ op: 'media', id: state.id, action: 'rate', value: Number(v) });
-        }
-      },
-    });
-  }
 }
 
 const levelOf = (element: MediaElement): number => (element.muted === true ? 0 : Number(element.volume ?? 1));
@@ -668,9 +642,20 @@ function sourceOf(element: MediaElement): { src: string | null; file: string | n
 /** The host for the DOM shim's `<audio>` and `<video>` elements' `play`, `pause`, `paused` and `currentTime`. */
 export const mediaHost = {
   paused: (element: MediaElement): boolean => !(mediaStates.get(element)?.playing ?? false),
-  currentTime: (element: MediaElement, seeked: number): number => {
+  /**
+   * `volume`, `muted` or `playbackRate` of an element the page plays is about to change (the element calls this before it
+   * does, so the position and level are read from the old values): a change while it plays is heard.
+   */
+  change(element: MediaElement, name: string, value: unknown): void {
     const state = mediaStates.get(element);
-    return state === undefined ? seeked : positionOf(element, state);
+    if (state === undefined || !state.playing) return;
+    if (name === 'volume') record({ op: 'media', id: state.id, action: 'volume', value: element.muted === true ? 0 : Number(value) });
+    else if (name === 'muted') record({ op: 'media', id: state.id, action: 'volume', value: value === true ? 0 : Number(element.volume ?? 1) });
+    else if (name === 'playbackRate') {
+      state.at = positionOf(element, state);
+      state.since = now();
+      record({ op: 'media', id: state.id, action: 'rate', value: Number(value) });
+    }
   },
   seek(element: MediaElement, time: number): void {
     const state = mediaStateOf(element);
@@ -709,11 +694,9 @@ export const mediaHost = {
       const since = state.since;
       setTimeout(() => {
         if (!state.playing || state.since !== since) return;
+        // The element's own player sends `ended` (compat/shim/media.ts); this only stops the sound's bookkeeping.
         state.playing = false;
         state.at = length;
-        const event = new Event('ended');
-        element.onended?.call(element, event);
-        element.dispatchEvent(event);
       }, due);
     }
   },
