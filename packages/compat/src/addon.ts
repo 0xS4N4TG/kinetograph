@@ -44,6 +44,7 @@ export interface DomAddon {
   readCanvasPicture?(requestJson: string): Uint8Array | null;
   /** The engine device's `{ features, limits }` as JSON, for `navigator.gpu`; null without a GPU. Opens the GPU once. */
   webgpuDeviceInfo?(): string | null;
+  webglCompressedFormats?(): string[];
   /** A Rive file played to a time, as a canvas's commands: `{ src, baseDir, artboard, animation, stateMachine, time, width, height, fit, alignment }` as JSON in, the commands as a JSON array out. */
   riveFrame?(requestJson: string): string;
   riveInfo?(requestJson: string): string;

@@ -21,10 +21,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 const dir = resolve(here, '../tests/webgl');
 
 /** The recording case `source` makes on a drawing buffer of `width` x `height`, with the context attributes of its second line (`// attributes: {...}`). */
+/** The compressed texture extensions the recorded cases are given: the ones ANGLE takes on the M4 (Metal). */
+const compressedFormats = ['WEBGL_compressed_texture_s3tc'];
+
 export function record(source, width, height) {
   const line = source.split('\n')[1] ?? '';
   const attributes = line.startsWith('// attributes: ') ? JSON.parse(line.slice('// attributes: '.length)) : {};
-  const gl = createWebGLContext({ size: () => ({ width, height }), version: source.includes('#version 300 es') ? 2 : 1, attributes });
+  const gl = createWebGLContext({ size: () => ({ width, height }), version: source.includes('#version 300 es') ? 2 : 1, attributes, compressedFormats: () => compressedFormats });
   new Function('gl', 'W', 'H', 'ImageData', source)(gl, width, height, ImageData);
   return gl.content();
 }

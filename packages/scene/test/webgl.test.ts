@@ -3414,4 +3414,55 @@ describe('what a renderer reads of a WebGL 2 context at start-up', () => {
       });
     });
   });
+
+  describe('compressed textures', () => {
+    const withS3tc = (formats: string[]) => createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2, compressedFormats: () => formats });
+
+    it('advertises only the extensions the replay takes, and gives their constants only for those', () => {
+      const none = withS3tc([]);
+      expect(none.getSupportedExtensions().some((n) => n.includes('compressed'))).toBe(false);
+      expect(none.getExtension('WEBGL_compressed_texture_s3tc')).toBeNull();
+      const some = withS3tc(['WEBGL_compressed_texture_s3tc', 'NO_SUCH']);
+      expect(some.getSupportedExtensions()).toContain('WEBGL_compressed_texture_s3tc');
+      expect(some.getSupportedExtensions()).not.toContain('NO_SUCH');
+      expect(some.getExtension('WEBGL_compressed_texture_s3tc')).toMatchObject({ COMPRESSED_RGBA_S3TC_DXT5_EXT: 0x83f3 });
+      expect(some.getExtension('EXT_texture_compression_bptc')).toBeNull();
+    });
+
+    it('carries compressedTexImage2D, a storage of a compressed format and compressedTexSubImage2D as raw calls with the blocks', () => {
+      const gl = withS3tc(['WEBGL_compressed_texture_s3tc']);
+      const ext = gl.getExtension('WEBGL_compressed_texture_s3tc') as { COMPRESSED_RGB_S3TC_DXT1_EXT: number };
+      const t = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, t);
+      gl.texStorage2D(GL.TEXTURE_2D, 2, ext.COMPRESSED_RGB_S3TC_DXT1_EXT, 8, 8);
+      gl.compressedTexSubImage2D(GL.TEXTURE_2D, 1, 0, 0, 4, 4, ext.COMPRESSED_RGB_S3TC_DXT1_EXT, new Uint8Array(16), 8, 8);
+      gl.compressedTexImage2D(GL.TEXTURE_2D, 0, ext.COMPRESSED_RGB_S3TC_DXT1_EXT, 4, 4, 0, new Uint8Array(8).fill(1));
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      gl.compressedTexImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 4, 4, 0, new Uint8Array(8));
+      expect(gl.getError()).toBe(GL.INVALID_ENUM);
+      gl.compressedTexImage2D(GL.TEXTURE_2D, 0, ext.COMPRESSED_RGB_S3TC_DXT1_EXT, 4, 4, 0, new Uint8Array(8), 4, 8);
+      expect(gl.getError()).toBe(GL.INVALID_VALUE);
+      const program = gl.createProgram();
+      for (const [type, source] of [[GL.VERTEX_SHADER, '#version 300 es\nin vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }'], [GL.FRAGMENT_SHADER, '#version 300 es\nprecision highp float; uniform sampler2D t; out vec4 o; void main() { o = texelFetch(t, ivec2(0), 0); }']] as const) {
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source);
+        gl.attachShader(program, shader);
+      }
+      gl.bindAttribLocation(program, 0, 'p');
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(GL.ARRAY_BUFFER, buffer);
+      gl.bufferData(GL.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1]), GL.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, GL.FLOAT, false, 0, 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      const draw = gl.content().ops[0]!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      const calls = gl.content().textures[draw.units['0']!.texture]!.calls!;
+      expect(calls.map((c) => [c.op, c.level ?? 0])).toEqual([['storage', 0], ['compressedSub', 1], ['compressed', 0]]);
+      expect(calls[1]).toMatchObject({ format: ext.COMPRESSED_RGB_S3TC_DXT1_EXT, width: 4, height: 4 });
+      expect(Buffer.from(calls[1]!.data!, 'base64')).toHaveLength(8);
+    });
+  });
 });

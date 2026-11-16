@@ -197,6 +197,19 @@ export function rasterizeCanvas(source: { width: number; height: number; command
   return renderCanvas(source.commands, source, 'rgba');
 }
 
+/** The compressed texture extensions the replay takes on this machine, asked of the addon once (none without it). */
+let compressedList: string[] | null = null;
+function compressedFormats(): string[] {
+  if (compressedList === null) {
+    try {
+      compressedList = hasAddonFunction('webglCompressedFormats') ? (addonFunction('webglCompressedFormats')() as string[]) : [];
+    } catch {
+      compressedList = [];
+    }
+  }
+  return compressedList;
+}
+
 const WEBGL_TYPE = /^(experimental-)?webgl2?$/;
 
 function newGlContext(type: string, size: () => { width: number; height: number }, canvas: unknown, attributes: unknown): WebGLContext {
@@ -206,6 +219,7 @@ function newGlContext(type: string, size: () => { width: number; height: number 
     version: type.endsWith('2') ? 2 : 1,
     attributes: typeof attributes === "object" && attributes !== null ? (attributes as Record<string, unknown>) : undefined,
     rasterize: rasterizeCanvas,
+    compressedFormats,
     report: (what) => glReports.add(what),
   });
   live.add(new WeakRef(context));

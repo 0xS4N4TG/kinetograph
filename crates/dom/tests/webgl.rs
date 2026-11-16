@@ -285,6 +285,13 @@ fn webgl2_tex_pictures() {
 }
 
 #[test]
+fn webgl2_compressed() {
+    // The recording of the case offers the S3TC extension only if the replay takes it here; the hand-written replay takes none,
+    // so its recording paints the page's fallback (magenta).
+    angle_only_reported("webgl2_compressed");
+}
+
+#[test]
 fn webgl2_clear_masks() {
     angle_only_reported("webgl2_clear_masks");
 }

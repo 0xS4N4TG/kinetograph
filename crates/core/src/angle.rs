@@ -276,6 +276,7 @@ struct RawPtr {
     draw_elements: unsafe extern "C" fn(Enum, i32, Enum, usize),
     draw_elements_instanced: unsafe extern "C" fn(Enum, i32, Enum, usize, i32),
     request_extension: unsafe extern "C" fn(*const c_char),
+    get_string: unsafe extern "C" fn(Enum) -> *const u8,
     /// `glGetDebugMessageLogKHR`, which names the rule a failed call broke; absent when ANGLE has no `GL_KHR_debug`.
     debug_log: Option<DebugLog>,
 }
@@ -375,6 +376,7 @@ impl RawPtr {
             draw_elements: load!(lookup, "glDrawElements"),
             draw_elements_instanced: load!(lookup, "glDrawElementsInstanced"),
             request_extension: load!(lookup, "glRequestExtensionANGLE"),
+            get_string: load!(lookup, "glGetString"),
             debug_log: {
                 let p = lookup("glGetDebugMessageLogKHR");
                 // SAFETY: the address of `glGetDebugMessageLogKHR`, which has this signature in the KHR_debug spec.
@@ -1020,6 +1022,17 @@ impl Gl {
             out.push(String::from_utf8_lossy(&text).into_owned());
         }
     }
+    /// The extensions this context can be asked for (`GL_REQUESTABLE_EXTENSIONS_ANGLE`), space separated.
+    pub fn requestable_extensions(&self) -> String {
+        // SAFETY: glGetString returns null or a NUL-terminated string owned by the context, read before the next GL call.
+        let p = unsafe { (self.ptr.get_string)(0x93A8) };
+        if p.is_null() {
+            return String::new();
+        }
+        // SAFETY: `p` is the NUL-terminated string just checked.
+        unsafe { std::ffi::CStr::from_ptr(p.cast()) }.to_string_lossy().into_owned()
+    }
+
     /// Turns on an extension a WebGL-compatible context keeps off until asked.
     pub fn request_extension(&self, name: &str) {
         let Ok(name) = CString::new(name) else { return };
@@ -1536,4 +1549,55 @@ fn create(ext: Extensions) -> Result<Context, String> {
         destroy_context: shared.destroy_context,
         destroy_surface: shared.destroy_surface,
     })
+}
+
+/// The compressed texture formats the raw texture calls can take on this machine, as the WebGL extensions that offer them: the
+/// ones the ANGLE context can be asked for. Empty unless `KINETOGRAPH_WEBGL=angle`, because the hand-written replay takes none.
+pub fn compressed_formats() -> Vec<&'static str> {
+    if !enabled() {
+        return Vec::new();
+    }
+    let ext = Extensions { float_linear: false, float_blend: false };
+    let Ok(have) = with(ext, |gl| gl.requestable_extensions()) else {
+        return Vec::new();
+    };
+    let have: Vec<&str> = have.split_whitespace().collect();
+    let all = |names: &[&str]| names.iter().all(|n| have.contains(n));
+    let mut out = Vec::new();
+    if all(&["GL_EXT_texture_compression_dxt1", "GL_ANGLE_texture_compression_dxt3", "GL_ANGLE_texture_compression_dxt5"]) {
+        out.push("WEBGL_compressed_texture_s3tc");
+    }
+    if all(&["GL_EXT_texture_compression_bptc"]) {
+        out.push("EXT_texture_compression_bptc");
+    }
+    if all(&["GL_EXT_texture_compression_rgtc"]) {
+        out.push("EXT_texture_compression_rgtc");
+    }
+    if all(&["GL_ANGLE_compressed_texture_etc"]) {
+        out.push("WEBGL_compressed_texture_etc");
+    }
+    if all(&["GL_KHR_texture_compression_astc_ldr"]) {
+        out.push("WEBGL_compressed_texture_astc");
+    }
+    out
+}
+
+/// Asks the current context for every compressed texture extension it has (those it lacks leave nothing pending).
+pub(crate) fn request_compressed(gl: &Gl) {
+    for name in [
+        "GL_EXT_texture_compression_dxt1",
+        "GL_ANGLE_texture_compression_dxt3",
+        "GL_ANGLE_texture_compression_dxt5",
+        "GL_EXT_texture_compression_bptc",
+        "GL_EXT_texture_compression_rgtc",
+        "GL_ANGLE_compressed_texture_etc",
+        "GL_KHR_texture_compression_astc_ldr",
+    ] {
+        gl.request_extension(name);
+    }
+    for _ in 0..16 {
+        if gl.get_error() == 0 {
+            break;
+        }
+    }
 }

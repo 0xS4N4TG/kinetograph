@@ -15,7 +15,7 @@ import type { CanvasSource, GlslContent, GlslDraw, GlslProgram, GlslLayer, GlslO
 import { CANVAS_SOURCE, pictureOf, type CanvasPicture } from './canvas.js';
 import { preprocess } from './glsl-cpp.js';
 import { parseBlocks, type BlockInfo, type BlockUniform } from './webgl-blocks.js';
-import { arrayFits, integerSign, isIntegerInternal, texelSize, unpackBytes, type UnpackStore } from './webgl-texraw.js';
+import { arrayFits, COMPRESSED_EXTENSIONS, integerSign, isCompressedInternal, isIntegerInternal, texelSize, unpackBytes, type UnpackStore } from './webgl-texraw.js';
 import { carriedFor, carryOn, dependsOnHistory, emptyCarry, isCanvasOp, MAX_OPS_PER_TARGET, namedBy, noteClearBox, pick, readsLastFrame, type Resources } from './webgl-carry.js';
 
 /** The method a picture of another layer answers a texture upload with (`layerPicture`). */
@@ -991,6 +991,11 @@ export interface WebGLContextOptions {
   rasterize?: (source: Extract<CanvasSource, { kind: 'canvas' }>) => Uint8Array | null;
   /** Told what a recording leaves out where the engine does not draw it right (the frame reports it as unsupported). */
   report?: (what: string) => void;
+  /**
+   * The compressed texture extensions the replay can take on this machine (`WEBGL_compressed_texture_s3tc` and the like). Only those are
+   * advertised, so a page (three.js) that finds one missing falls back by itself. None when absent.
+   */
+  compressedFormats?: () => string[];
 }
 
 interface Capability {
@@ -1191,6 +1196,8 @@ export class WebGLContext {
   private flipY = false;
   private premultiply = false;
   private unpackAlignment = 4;
+  /** The compressed formats the page enabled with `getExtension`: a format is INVALID_ENUM until then. */
+  private readonly compressedEnabled = new Set<number>();
   /** `UNPACK_ROW_LENGTH`, `UNPACK_IMAGE_HEIGHT`, `UNPACK_SKIP_PIXELS`, `UNPACK_SKIP_ROWS` and `UNPACK_SKIP_IMAGES`. */
   private unpackRowLength = 0;
   private unpackImageHeight = 0;
@@ -1391,8 +1398,13 @@ export class WebGLContext {
     this.error = GL.NO_ERROR;
     return e;
   }
+  /** The compressed texture extensions the replay takes here. */
+  private compressedExtensions(): string[] {
+    return (this.options.compressedFormats?.() ?? []).filter((name) => COMPRESSED_EXTENSIONS[name] !== undefined);
+  }
   getSupportedExtensions(): string[] {
-    return this.version === 1 ? ['OES_standard_derivatives', 'WEBGL_depth_texture'] : ['OES_texture_float_linear', 'EXT_color_buffer_float', 'EXT_color_buffer_half_float', 'EXT_float_blend'];
+    const base = this.version === 1 ? ['OES_standard_derivatives', 'WEBGL_depth_texture'] : ['OES_texture_float_linear', 'EXT_color_buffer_float', 'EXT_color_buffer_half_float', 'EXT_float_blend'];
+    return [...base, ...this.compressedExtensions()];
   }
   getExtension(name: string): object | null {
     // Derivatives are always available in the translated shaders, and depth textures (core in WebGL 2) in the replay.
@@ -1411,6 +1423,13 @@ export class WebGLContext {
       return {};
     }
     if (name === 'WEBGL_depth_texture' && this.version === 1) return { UNSIGNED_INT_24_8_WEBGL: GL2.UNSIGNED_INT_24_8 };
+    if (this.compressedExtensions().includes(name)) {
+      for (const value of Object.values(COMPRESSED_EXTENSIONS[name]!)) this.compressedEnabled.add(value);
+      const extension: Record<string, unknown> = { ...COMPRESSED_EXTENSIONS[name]! };
+      // The profiles of ASTC: what the replay's GPU takes.
+      if (name === 'WEBGL_compressed_texture_astc') extension.getSupportedProfiles = () => ['ldr'];
+      return extension;
+    }
     return null;
   }
   getParameter(pname: number): unknown {
@@ -2784,7 +2803,7 @@ export class WebGLContext {
     texture.raw.push(call);
     texture.uploaded = true;
     texture.blank = false;
-    if ((call.op === 'image' || call.op === 'storage') && (call.level ?? 0) === 0) {
+    if ((call.op === 'image' || call.op === 'storage' || call.op === 'compressed') && (call.level ?? 0) === 0) {
       texture.width = call.width ?? 0;
       texture.height = call.height ?? 0;
       texture.depth = call.depth ?? 0;
@@ -3454,7 +3473,7 @@ export class WebGLContext {
   /** WebGL 2's `texStorage3D`: a 3D or array texture of this size, zeros, of one level (more are refused: only level 0 is held). */
   texStorage3D(target: number, levels: number, internalformat: number, width: number, height: number, depth: number): void {
     [width, height, depth] = [width, height, depth].map(long) as [number, number, number];
-    if (this.version === 2 && (this.isRaw(target) || isIntegerInternal(internalformat) || levels > 1)) return this.rawStorage(target, levels, internalformat, [width, height, depth]);
+    if (this.version === 2 && (this.isRaw(target) || isIntegerInternal(internalformat) || isCompressedInternal(internalformat) || levels > 1)) return this.rawStorage(target, levels, internalformat, [width, height, depth]);
     const bound = this.bound3d(target);
     if (bound === null) return;
     const { texture, limit, side } = bound;
@@ -3572,10 +3591,69 @@ export class WebGLContext {
     texture.version += 1;
   }
 
+  /** The bytes of a compressed upload from `data` (elements `srcOffset` to `srcOffset + srcLength`, or to the end); null after the error. */
+  private compressedBytes(data: unknown, srcOffset: unknown, srcLength: unknown): string | null {
+    if (!ArrayBuffer.isView(data)) {
+      this.fail(GL.INVALID_VALUE);
+      return null;
+    }
+    const per = 'BYTES_PER_ELEMENT' in data ? (data as { BYTES_PER_ELEMENT: number }).BYTES_PER_ELEMENT : 1;
+    const from = Number(srcOffset ?? 0) * per;
+    const length = Number(srcLength ?? 0) > 0 ? Number(srcLength) * per : data.byteLength - from;
+    if (!(from >= 0) || !(length >= 0) || from + length > data.byteLength) {
+      this.fail(GL.INVALID_VALUE);
+      return null;
+    }
+    return toBase64(new Uint8Array(data.buffer, data.byteOffset + from, length));
+  }
+
+  /** The compressed formats are made available by the extensions the replay takes: any other is INVALID_ENUM, as without the extension. */
+  private compressedAllowed(internalformat: number): boolean {
+    const names = this.compressedExtensions();
+    if (names.some((n) => Object.values(COMPRESSED_EXTENSIONS[n]!).includes(internalformat)) && this.compressedEnabled.has(internalformat)) return true;
+    this.fail(GL.INVALID_ENUM);
+    return false;
+  }
+
+  /** WebGL 2's `compressedTexImage2D(target, level, internalformat, width, height, border, data[, srcOffset[, srcLength]])`. */
+  compressedTexImage2D(target: number, level: number, internalformat: number, width: number, height: number, border: number, data: unknown, srcOffset?: number, srcLength?: number): void {
+    this.compressedImage(target, level, internalformat, [long(width), long(height)], border, data, srcOffset, srcLength);
+  }
+  /** `compressedTexImage3D(target, level, internalformat, width, height, depth, border, data[, srcOffset[, srcLength]])`. */
+  compressedTexImage3D(target: number, level: number, internalformat: number, width: number, height: number, depth: number, border: number, data: unknown, srcOffset?: number, srcLength?: number): void {
+    this.compressedImage(target, level, internalformat, [long(width), long(height), long(depth)], border, data, srcOffset, srcLength);
+  }
+  private compressedImage(target: number, level: number, internalformat: number, size: number[], border: number, data: unknown, srcOffset: unknown, srcLength: unknown): void {
+    const owner = this.rawOwner(target);
+    if (owner === null) return;
+    if (!this.compressedAllowed(internalformat)) return;
+    if (!Number.isInteger(level) || level < 0 || level > 15 || long(border) !== 0 || !WebGLContext.rawSizes(...size)) return this.fail(GL.INVALID_VALUE);
+    const bytes = this.compressedBytes(data, srcOffset, srcLength);
+    if (bytes === null) return;
+    this.rawPush(owner, { op: 'compressed', target, ...(level === 0 ? {} : { level }), internal: internalformat, width: size[0]!, height: size[1]!, ...(size.length > 2 ? { depth: size[2]! } : {}), data: bytes });
+  }
+  /** `compressedTexSubImage2D(target, level, xoffset, yoffset, width, height, format, data[, srcOffset[, srcLength]])`. */
+  compressedTexSubImage2D(target: number, level: number, xoffset: number, yoffset: number, width: number, height: number, format: number, data: unknown, srcOffset?: number, srcLength?: number): void {
+    this.compressedSub(target, level, [long(xoffset), long(yoffset)], [long(width), long(height)], format, data, srcOffset, srcLength);
+  }
+  /** `compressedTexSubImage3D(target, level, xoffset, yoffset, zoffset, width, height, depth, format, data[, srcOffset[, srcLength]])`. */
+  compressedTexSubImage3D(target: number, level: number, xoffset: number, yoffset: number, zoffset: number, width: number, height: number, depth: number, format: number, data: unknown, srcOffset?: number, srcLength?: number): void {
+    this.compressedSub(target, level, [long(xoffset), long(yoffset), long(zoffset)], [long(width), long(height), long(depth)], format, data, srcOffset, srcLength);
+  }
+  private compressedSub(target: number, level: number, at: number[], size: number[], format: number, data: unknown, srcOffset: unknown, srcLength: unknown): void {
+    const owner = this.rawOwner(target);
+    if (owner === null) return;
+    if (!this.compressedAllowed(format)) return;
+    if (!Number.isInteger(level) || level < 0 || level > 15 || !WebGLContext.rawSizes(...at, ...size)) return this.fail(GL.INVALID_VALUE);
+    const bytes = this.compressedBytes(data, srcOffset, srcLength);
+    if (bytes === null) return;
+    this.rawPush(owner, { op: 'compressedSub', target, ...(level === 0 ? {} : { level }), format, x: at[0]!, y: at[1]!, ...(at.length > 2 ? { z: at[2]! } : {}), width: size[0]!, height: size[1]!, ...(size.length > 2 ? { depth: size[2]! } : {}), data: bytes });
+  }
+
   /** WebGL 2's `texStorage2D`: a texture of this size, empty, with `levels` mip levels. */
   texStorage2D(target: number, levels: number, internalformat: number, width: number, height: number): void {
     [width, height] = [long(width), long(height)];
-    if (this.isRaw(target) || isIntegerInternal(internalformat)) return this.rawStorage(target, levels, internalformat, [width, height]);
+    if (this.isRaw(target) || isIntegerInternal(internalformat) || isCompressedInternal(internalformat)) return this.rawStorage(target, levels, internalformat, [width, height]);
     const texture = this.bound(target);
     if (texture === null) return;
     levels = Math.trunc(levels); // a GLsizei argument is converted to an integer: three passes log2(size) + 1

@@ -954,6 +954,15 @@ impl<'a> Replay<'a> {
             int(c.depth, "depth")?,
         );
         let at = (int(c.x, "x")?, int(c.y, "y")?, int(c.z, "z")?);
+        // A compressed format is an extension the context keeps off until asked.
+        let compressed_storage = c.op == Op::Storage
+            && matches!(
+                c.internal,
+                0x83F0..=0x83F3 | 0x8DBB..=0x8DBE | 0x8E8C..=0x8E8F | 0x9270..=0x9279 | 0x93B0..=0x93BD | 0x93D0..=0x93DD
+            );
+        if matches!(c.op, Op::Compressed | Op::CompressedSub) || compressed_storage {
+            angle::request_compressed(gl_);
+        }
         match c.op {
             Op::Storage => {
                 let levels = int(c.levels, "level count")?;
