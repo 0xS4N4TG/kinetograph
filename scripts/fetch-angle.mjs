@@ -1,5 +1,12 @@
 // Fetches the ANGLE libraries for one platform package from Google's Chrome for Testing downloads (no dependencies).
-//   node scripts/fetch-angle.mjs <darwin-arm64|linux-x64-gnu|win32-x64-msvc> [--swiftshader] [--cache <dir>] [--out <dir>]
+//   node scripts/fetch-angle.mjs <darwin-arm64|linux-x64-gnu|win32-x64-msvc> [--swiftshader] [--source chrome|release] [--cache <dir>] [--out <dir>]
+//
+// SOURCE: where the libraries come from. `chrome` (Chrome for Testing, below) is the default. `release` is our own ANGLE
+// build, the GitHub release in RELEASE (repository 0xS4N4TG/kinetograph-angle, built by that repository's workflow). The one
+// switch is DEFAULT_SOURCE below: change it to 'release' once that release is published (a draft cannot be downloaded
+// without a login), or pass `--source` for one run. The release holds the two libraries, ANGLE's LICENSE and a SOURCE.txt
+// and nothing else: no SwiftShader (its builds turn it off; the darwin one is Metal only and the win32 one Direct3D 11
+// only), so `--swiftshader` needs `--source chrome`.
 //
 // ANGLE is not published on its own. Chrome ships it, and until Chrome 150 the headless shell kept it in separate files
 // (libEGL, libGLESv2); from 151 on (macOS) and 152 on (Linux, Windows) those files are empty stubs and ANGLE is linked
@@ -19,6 +26,41 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 
 export const CHROME = '150.0.7871.124';
+// 'chrome' or 'release'. The one place that decides what a run with no `--source` takes.
+export const DEFAULT_SOURCE = 'chrome';
+
+// Our own build: the draft release of 2026-11-14 (id 445155214) of the ANGLE commit 454620d149. Each platform's archive
+// holds the libraries, LICENSE and SOURCE.txt at its top level. Hashes are from that release's SHA256SUMS.
+export const RELEASE = {
+  repo: '0xS4N4TG/kinetograph-angle',
+  tag: 'angle-454620d149',
+  platforms: {
+    'darwin-arm64': {
+      asset: 'angle-454620d149-darwin-arm64.tar.gz',
+      archive: '65ae61910dc364721bb68c812b5927df33e1a6d7839df8f30c590f6e6aa50d0b',
+      libs: [
+        ['libEGL.dylib', '0afeb443aef7a19fa5edb89961ac214fec078635caab4c963c9c049bf7ddee36'],
+        ['libGLESv2.dylib', '4dde4ec411a33340fac7c551eae69cfd64bfcdcf85cfadce5042e165dd78dbef'],
+      ],
+    },
+    'linux-x64-gnu': {
+      asset: 'angle-454620d149-linux-x64.tar.gz',
+      archive: 'ad57ae94483a2c585dab6d43c868c827dffe7ab546a2a30f39b2edb8871fcffc',
+      libs: [
+        ['libEGL.so', '56ffa31c80cd99a2448d9438937aff96979a77317a1c345a981ff07c52d76e0f'],
+        ['libGLESv2.so', '60240815fcb67e5c145541567a140050dce0ea354fe6c08c546069e7c7647ff3'],
+      ],
+    },
+    'win32-x64-msvc': {
+      asset: 'angle-454620d149-win32-x64.zip',
+      archive: '9288220a7503b646d2d5bac01ee85d147692d3aca40093e0559b56d36f21dd1d',
+      libs: [
+        ['libEGL.dll', '61873082e73799e3df02ee6d39eb5057e23c95df414e5bad736b838a14ec7b7d'],
+        ['libGLESv2.dll', 'ab212e02c97426a3c5172240180c31f22e935b14e8f63dbbb7a4abd338ed9546'],
+      ],
+    },
+  },
+};
 const BASE = 'https://storage.googleapis.com/chrome-for-testing-public';
 
 // `cft` is Chrome for Testing's platform name; each file is `[name, sha256]`.
@@ -101,6 +143,21 @@ function zipRead(zip, entries, name) {
   throw new Error(`${name}: unsupported zip method ${e.method}`);
 }
 
+// The regular files of a .tar.gz by name: Map(name -> bytes). Only what the release's packaging writes (ustar or pax
+// headers, short names); anything else in it is skipped.
+export function tarFiles(gz) {
+  const tar = zlib.gunzipSync(gz);
+  const files = new Map();
+  const field = (at, len) => tar.toString('utf8', at, at + len).replace(/\0.*$/s, '');
+  for (let p = 0; p + 512 <= tar.length && tar[p] !== 0; ) {
+    const size = parseInt(field(p + 124, 12).trim() || '0', 8);
+    const type = String.fromCharCode(tar[p + 156] || 0x30);
+    if (type === '0') files.set(field(p, 100).replace(/^\.\//, ''), tar.subarray(p + 512, p + 512 + size));
+    p += 512 + Math.ceil(size / 512) * 512;
+  }
+  return files;
+}
+
 // A bare file name: no separator, no `..`.
 function safeName(name) {
   if (name !== path.basename(name) || name.includes('..') || name.includes('\\') || name.includes('/') || name === '') {
@@ -109,21 +166,20 @@ function safeName(name) {
   return name;
 }
 
-async function archiveFor(platform, spec, cacheDir) {
-  const file = `chrome-headless-shell-${spec.cft}.zip`;
-  const cached = path.join(cacheDir, `${CHROME}-${file}`);
+// An archive by its URL, from the cache when its hash matches, else downloaded and checked against `hash`.
+async function archiveFor(url, cachedName, hash, cacheDir) {
+  const cached = path.join(cacheDir, cachedName);
   if (fs.existsSync(cached)) {
     const buf = fs.readFileSync(cached);
-    if (sha256(buf) === spec.archive) return buf;
+    if (sha256(buf) === hash) return buf;
     console.log(`${cached} does not match its hash; downloading it again`);
   }
-  const url = `${BASE}/${CHROME}/${spec.cft}/${file}`;
   console.log(`downloading ${url}`);
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}${res.status === 404 ? ' (a release that is still a draft is not public)' : ''}`);
   const buf = Buffer.from(await res.arrayBuffer());
   const got = sha256(buf);
-  if (got !== spec.archive) throw new Error(`${file}: SHA-256 is ${got}, expected ${spec.archive}`);
+  if (got !== hash) throw new Error(`${url}: SHA-256 is ${got}, expected ${hash}`);
   fs.mkdirSync(cacheDir, { recursive: true });
   fs.writeFileSync(`${cached}.part`, buf);
   fs.renameSync(`${cached}.part`, cached);
@@ -141,53 +197,85 @@ function creditsSection(text, heading) {
   return `${heading}\n\n${text.slice(from, to).trim()}\n`;
 }
 
-export async function fetchAngle(platform, { swiftshader = false, cacheDir, outDir } = {}) {
+export async function fetchAngle(platform, { swiftshader = false, source = DEFAULT_SOURCE, cacheDir, outDir } = {}) {
   const spec = PLATFORMS[platform];
   if (!spec) throw new Error(`unknown platform ${JSON.stringify(platform)}; one of ${Object.keys(PLATFORMS).join(', ')}`);
+  if (source !== 'chrome' && source !== 'release') throw new Error(`unknown source ${JSON.stringify(source)}; chrome or release`);
+  if (source === 'release' && swiftshader) throw new Error('--swiftshader needs --source chrome: our ANGLE release has no SwiftShader backend');
+  const own = source === 'release';
   const here = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
   cacheDir ??= path.join(os.homedir(), '.cache', 'kinetograph', 'angle');
   outDir ??= path.join(here, '..', 'crates', 'node', 'npm', platform, 'angle');
-  const wanted = [...spec.libs, ...(swiftshader ? spec.software : [])];
+  const rel = RELEASE.platforms[platform];
+  const wanted = own ? rel.libs : [...spec.libs, ...(swiftshader ? spec.software : [])];
   const top = `chrome-headless-shell-${spec.cft}`;
-  const source = [
-    `ANGLE ${CHROME}`,
-    `Chrome for Testing ${CHROME}, ${top}.zip (${spec.cft})`,
-    `${BASE}/${CHROME}/${spec.cft}/${top}.zip`,
-    `archive sha256 ${spec.archive}`,
-    ...wanted.map(([name, hash]) => `${name} sha256 ${hash}`),
-    '',
-  ].join('\n');
+  const releaseUrl = own ? `https://github.com/${RELEASE.repo}/releases/download/${RELEASE.tag}/${rel.asset}` : '';
+  const sourceText = (own
+    ? [`ANGLE ${RELEASE.tag}`, `${RELEASE.repo} release ${RELEASE.tag}, ${rel.asset}`, releaseUrl, `archive sha256 ${rel.archive}`]
+    : [`ANGLE ${CHROME}`, `Chrome for Testing ${CHROME}, ${top}.zip (${spec.cft})`, `${BASE}/${CHROME}/${spec.cft}/${top}.zip`, `archive sha256 ${spec.archive}`]
+  )
+    .concat(wanted.map(([name, hash]) => `${name} sha256 ${hash}`), '')
+    .join('\n');
 
-  // Files this script manages and does not want now (SwiftShader switched off) are removed, so the folder is exact.
+  // Files this script manages and does not want now (another source, SwiftShader switched off) are removed, so the folder is exact.
   const managed = [...spec.libs, ...spec.software].map(([n]) => n).concat(LICENSES.map(([n]) => n), CREDITS, 'SOURCE.txt');
-  const keep = new Set([...wanted.map(([n]) => n), ...LICENSES.filter(([, , soft]) => !soft || swiftshader).map(([n]) => n), CREDITS, 'SOURCE.txt']);
+  const keep = new Set(
+    own
+      ? [...wanted.map(([n]) => n), 'ANGLE-LICENSE', 'SOURCE.txt']
+      : [...wanted.map(([n]) => n), ...LICENSES.filter(([, , soft]) => !soft || swiftshader).map(([n]) => n), CREDITS, 'SOURCE.txt'],
+  );
 
   const upToDate =
     fs.existsSync(path.join(outDir, 'SOURCE.txt')) &&
-    fs.readFileSync(path.join(outDir, 'SOURCE.txt'), 'utf8') === source &&
+    fs.readFileSync(path.join(outDir, 'SOURCE.txt'), 'utf8').startsWith(sourceText) &&
     [...keep].every((n) => fs.existsSync(path.join(outDir, n))) &&
     wanted.every(([n, h]) => sha256(fs.readFileSync(path.join(outDir, n))) === h) &&
     managed.every((n) => keep.has(n) || !fs.existsSync(path.join(outDir, n)));
   if (upToDate) {
-    console.log(`${outDir} is up to date (ANGLE ${CHROME})`);
+    console.log(`${outDir} is up to date (${own ? RELEASE.tag : `ANGLE ${CHROME}`})`);
     return outDir;
   }
 
-  const zip = await archiveFor(platform, spec, cacheDir);
-  const entries = zipEntries(zip);
   const files = new Map();
-  for (const [name, hash] of wanted) {
-    const data = zipRead(zip, entries, `${top}/${safeName(name)}`);
-    const got = sha256(data);
-    if (got !== hash) throw new Error(`${name}: SHA-256 is ${got}, expected ${hash}`);
-    files.set(name, data);
+  if (own) {
+    const archive = await archiveFor(releaseUrl, `${RELEASE.tag}-${rel.asset}`, rel.archive, cacheDir);
+    let entries;
+    if (rel.asset.endsWith('.zip')) {
+      const zip = zipEntries(archive);
+      entries = new Map([...zip.keys()].map((n) => [n, zipRead(archive, zip, n)]));
+    } else {
+      entries = tarFiles(archive);
+    }
+    const take = (name) => {
+      const data = entries.get(safeName(name));
+      if (!data) throw new Error(`${name} is not in ${rel.asset}`);
+      return data;
+    };
+    for (const [name, hash] of wanted) {
+      const data = take(name);
+      const got = sha256(data);
+      if (got !== hash) throw new Error(`${name}: SHA-256 is ${got}, expected ${hash}`);
+      files.set(name, data);
+    }
+    files.set('ANGLE-LICENSE', take('LICENSE'));
+    // The release's own record of the build (commit, gn arguments, runner image) follows ours.
+    files.set('SOURCE.txt', Buffer.from(`${sourceText}\n${take('SOURCE.txt').toString('utf8')}`));
+  } else {
+    const zip = await archiveFor(`${BASE}/${CHROME}/${spec.cft}/${top}.zip`, `${CHROME}-${top}.zip`, spec.archive, cacheDir);
+    const entries = zipEntries(zip);
+    for (const [name, hash] of wanted) {
+      const data = zipRead(zip, entries, `${top}/${safeName(name)}`);
+      const got = sha256(data);
+      if (got !== hash) throw new Error(`${name}: SHA-256 is ${got}, expected ${hash}`);
+      files.set(name, data);
+    }
+    const credits = zipRead(zip, entries, `${top}/LICENSE.headless_shell`);
+    files.set(CREDITS, credits);
+    for (const [name, heading, soft] of LICENSES) {
+      if (!soft || swiftshader) files.set(name, Buffer.from(creditsSection(credits.toString('utf8'), heading)));
+    }
+    files.set('SOURCE.txt', Buffer.from(sourceText));
   }
-  const credits = zipRead(zip, entries, `${top}/LICENSE.headless_shell`);
-  files.set(CREDITS, credits);
-  for (const [name, heading, soft] of LICENSES) {
-    if (!soft || swiftshader) files.set(name, Buffer.from(creditsSection(credits.toString('utf8'), heading)));
-  }
-  files.set('SOURCE.txt', Buffer.from(source));
 
   fs.mkdirSync(outDir, { recursive: true });
   for (const name of managed) if (!keep.has(name)) fs.rmSync(path.join(outDir, name), { force: true });
@@ -204,14 +292,15 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(im
   };
   const cacheDir = take('--cache');
   const outDir = take('--out');
+  const source = take('--source') ?? DEFAULT_SOURCE;
   const si = args.indexOf('--swiftshader');
   const swiftshader = si >= 0 && !!args.splice(si, 1);
   const [platform] = args;
   if (!platform || args.length !== 1) {
-    console.error('usage: node scripts/fetch-angle.mjs <darwin-arm64|linux-x64-gnu|win32-x64-msvc> [--swiftshader] [--cache <dir>] [--out <dir>]');
+    console.error('usage: node scripts/fetch-angle.mjs <darwin-arm64|linux-x64-gnu|win32-x64-msvc> [--swiftshader] [--source chrome|release] [--cache <dir>] [--out <dir>]');
     process.exit(2);
   }
-  fetchAngle(platform, { swiftshader, cacheDir, outDir }).catch((e) => {
+  fetchAngle(platform, { swiftshader, source, cacheDir, outDir }).catch((e) => {
     console.error(`fetch-angle: ${e.message}`);
     process.exit(1);
   });
