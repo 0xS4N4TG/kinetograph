@@ -10,7 +10,7 @@
 //      attach what each sub-frame changes in them.
 
 import type { ReactNode } from 'react';
-import { createDawnScope, dawnDependsOnHistory, dawnInUse, enterDawnScope, flushDawnCanvases, noteDawnRewind, releaseDawn, takeDawnReports, glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures } from '@kinetographdev/compat/shim';
+import { createDawnScope, dawnDependsOnHistory, dawnInUse, enterDawnScope, flushDawnCanvases, noteDawnRewind, releaseDawn, takeDawnReports, glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, pendingReadbacks, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures } from '@kinetographdev/compat/shim';
 import { setDefaultStylesheet } from '@kinetographdev/compat/dom';
 import { createSceneRoot, finishIslands, TimelineContext, type LayerNames, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
@@ -511,6 +511,8 @@ class Renderer implements FrameRenderer {
       throw renderFailure() ?? error;
     }
     seenLoads = loadsSettled();
+    // The callbacks have run for this tick and only the end of GPU reads is left to wait for: they are not run again for it.
+    let ranForReadbacks = false;
     for (;;) {
       await waitForFonts();
       try {
@@ -521,9 +523,13 @@ class Renderer implements FrameRenderer {
       // Let the state updates that continueRender's callers made reach the reconciler.
       await tick();
       // A script's `<img>` or `new Image()` that has not fired `load` yet holds the frame like a font that is still loading.
-      if (openRenderHandles() > 0 || pendingFontLoads() > 0 || pendingImageLoads() > 0 || pendingFetches() > 0) continue;
+      if (openRenderHandles() > 0 || pendingFontLoads() > 0 || pendingImageLoads() > 0 || pendingFetches() > 0) {
+        if (pendingFetches() > pendingReadbacks() || openRenderHandles() > 0 || pendingFontLoads() > 0 || pendingImageLoads() > 0) ranForReadbacks = false;
+        continue;
+      }
       // A load finished in this frame: what it was for (a Suspense of the page's own) reveals before the frame is read.
       if (loadsSettled() !== seenLoads) {
+        ranForReadbacks = false;
         await runAfterLoads();
         continue;
       }
@@ -534,6 +540,11 @@ class Renderer implements FrameRenderer {
       }
       // requestAnimationFrame callbacks run once the frame has rendered, as a browser runs them before it paints:
       // a library that draws in one after being told what to show (Motion's render step) shows this frame, not the one before.
+      if (ranForReadbacks) {
+        ranForReadbacks = false;
+        if (drawSettled()) continue;
+        break;
+      }
       const made = renderHandlesMade();
       runAnimationFrames();
       // GSAP renders what the frame's own render made (a `from()` is drawn lazily, on the next tick) at the frame's time.
@@ -541,8 +552,12 @@ class Renderer implements FrameRenderer {
       await tick();
       // A callback that started work (a map asking its workers for tiles, a fetch) holds the frame as a handle does: wait
       // for it, and run the callbacks its end asked for, until a pass leaves nothing pending.
-      if (renderHandlesMade() === made && pendingFontLoads() === 0 && pendingImageLoads() === 0 && pendingFetches() === 0) {
+      if (renderHandlesMade() === made && pendingFontLoads() === 0 && pendingImageLoads() === 0 && pendingFetches() === pendingReadbacks()) {
+        // A read of the GPU's results (a timestamp query, a readback) that the callbacks started is waited for, as a browser's frame is
+        // whatever the page awaits, and does not ask for the callbacks again.
+        ranForReadbacks = pendingReadbacks() > 0;
         if (drawSettled()) continue;
+        if (ranForReadbacks) continue;
         break;
       }
     }

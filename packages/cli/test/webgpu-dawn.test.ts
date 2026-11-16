@@ -134,6 +134,15 @@ describe.skipIf(missing !== null)('WebGPU through Dawn, rendered', () => {
     expect(four).toEqual(still);
   });
 
+  it('runs the animation-frame callbacks once per frame on a page that reads the GPU back each frame: the wait for a readback does not run them again', () => {
+    for (const frame of [0, 3]) {
+      const out = join(dir, `readback-loop-${frame}.png`);
+      const r = run(['still', join(fixtures, 'readback-loop.html'), String(frame), '-o', out]);
+      expect(r.status, r.stderr).toBe(0);
+      expect(decodePng(readFileSync(out)).data[0]).toBe(16 * (frame + 1));
+    }
+  });
+
   it('draws a page that keeps a feedback texture and advances particles in a compute pass the same alone and in a sequence', () => {
     const { still, one, four } = hashes(join(fixtures, 'stateful.html'), [0, 5, 8], 9);
     expect(new Set(still).size).toBe(3);

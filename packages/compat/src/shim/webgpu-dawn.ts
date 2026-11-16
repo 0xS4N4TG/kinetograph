@@ -29,6 +29,8 @@ export const dawnRequested = (): boolean => process.env.KINETOGRAPH_WEBGPU === '
 interface Hooks {
   /** A frame waits for this promise (`trackPending`). */
   track<T>(work: Promise<T>): Promise<T>;
+  /** The same for the end of a read of the GPU's results, which is no reason for the frame's callbacks to run again (`trackReadback`). */
+  trackReadback?<T>(work: Promise<T>): Promise<T>;
   /** The pixels of a canvas picture, straight RGBA8 (`rasterizeCanvas`). */
   rasterize(source: { width: number; height: number; commands: CanvasCommand[] }): Uint8Array | null;
 }
@@ -254,13 +256,15 @@ export function installDawn(h: Hooks): Any {
 
 function patchDawn(g: Record<string, Any>, patch: Patch): void {
   const track = <T,>(p: Promise<T>): Promise<T> => shared.scope.host.hooks().track(p);
+  const trackReadback = <T,>(p: Promise<T>): Promise<T> => { const h = shared.scope.host.hooks(); return (h.trackReadback ?? h.track)(p); };
   // The page's own `await`s on the library: the frame is not read while one is open.
   for (const [cls, name] of [
     ['GPU', 'requestAdapter'], ['GPUDevice', 'createRenderPipelineAsync'], ['GPUDevice', 'createComputePipelineAsync'], ['GPUDevice', 'popErrorScope'],
     ['GPUQueue', 'onSubmittedWorkDone'], ['GPUBuffer', 'mapAsync'], ['GPUShaderModule', 'getCompilationInfo'],
   ] as const) {
     if (cls === 'GPUBuffer' && name === 'mapAsync') patch.nativeMapAsync = g.GPUBuffer.prototype.mapAsync;
-    wrap(g[cls].prototype, name, function (original, args) { return track(original.apply(this, args)); });
+    const hold = name === 'mapAsync' || name === 'onSubmittedWorkDone' ? trackReadback : track;
+    wrap(g[cls].prototype, name, function (original, args) { return hold(original.apply(this, args)); });
   }
   wrap(g.GPU.prototype, 'getPreferredCanvasFormat', () => 'rgba8unorm');
   // One adapter policy on every machine, not the page's options (a page asks for 'low-power' or 'high-performance' by taste, and a host with two

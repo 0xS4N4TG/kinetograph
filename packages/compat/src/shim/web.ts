@@ -442,6 +442,27 @@ export function trackPending<T>(work: Promise<T>): Promise<T> {
   });
 }
 
+let readbacksInFlight = 0;
+
+/** The part of `pendingFetches` that is a GPU readback (`trackReadback`). */
+export function pendingReadbacks(): number {
+  return readbacksInFlight;
+}
+
+/**
+ * Counts `work`, the end of a read of the GPU's results (`mapAsync`, `onSubmittedWorkDone`), as a fetch in flight, so a frame waits for it,
+ * but not as a load: nothing waited for here is a reason to run the animation-frame callbacks again (`pendingReadbacks`), as a browser
+ * runs them once per frame whatever the page awaits, so a page that adds to a rotation in one moves by one step per frame.
+ */
+export function trackReadback<T>(work: Promise<T>): Promise<T> {
+  inFlight++;
+  readbacksInFlight++;
+  return work.finally(() => {
+    inFlight--;
+    readbacksInFlight--;
+  });
+}
+
 function makeFetch(real: typeof fetch): typeof fetch {
   const answer = makeAnswer(real);
   return (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
@@ -685,7 +706,7 @@ export function installDomGlobals(): void {
   define(g, 'WebGL2RenderingContext', webglGlobal(2));
   // `navigator.gpu` records (packages/scene/src/webgpu.ts); the canvas's 'webgpu' context is made by `getContext`.
   // KINETOGRAPH_WEBGPU=dawn: the page gets Dawn's own objects (webgpu-dawn.ts).
-  const dawn = dawnRequested() ? installDawn({ track: trackPending, rasterize: rasterizeCanvas }) : null;
+  const dawn = dawnRequested() ? installDawn({ track: trackPending, trackReadback, rasterize: rasterizeCanvas }) : null;
   for (const [name, value] of Object.entries(dawn === null ? GPU_GLOBALS : dawnGlobals())) define(g, name, value);
   const navigator = (g.navigator ??= {}) as Record<string, unknown>;
   Object.defineProperty(navigator, 'hardwareConcurrency', { value: HARDWARE_CONCURRENCY, configurable: true, enumerable: true });
