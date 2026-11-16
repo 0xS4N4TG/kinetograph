@@ -142,6 +142,15 @@ jobs:
           head -c 115200 /dev/zero | "$d"/ffmpeg* -hide_banner -loglevel error -f rawvideo -pix_fmt yuv420p -s 160x120 -framerate 30 -i pipe:0 -c:v libx264 -f mp4 "$RUNNER_TEMP/probe.mp4"
           test -s "$RUNNER_TEMP/probe.mp4"
 
+      # ANGLE (the OpenGL ES library WebGL pages run on with KINETOGRAPH_WEBGL=angle) for the platform package's angle/
+      # folder, where the addon finds it and npm packs it from (ignored by the repository). The source is the one
+      # DEFAULT_SOURCE in scripts/fetch-angle.mjs names; every file is checked against a SHA-256 pinned there.
+      - name: Fetch ANGLE for the platform package
+        shell: bash
+        run: |
+          node scripts/fetch-angle.mjs ${{ matrix.platform }}
+          ls -l crates/node/npm/${{ matrix.platform }}/angle
+
       - run: npm ci
 
       - name: Build the addon (macOS, Linux)
@@ -177,6 +186,43 @@ jobs:
           FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
         run: cargo test --release --target ${{ matrix.target }} -p libmv-sys -p kinetograph-track -p kinetograph-matte --features kinetograph-track/ffmpeg-static,kinetograph-matte/ffmpeg-static -- --nocapture
+
+      # WebGL through ANGLE (crates/dom/tests/webgl.rs, KINETOGRAPH_WEBGL=angle) on ANGLE's SwiftShader backend, the CPU
+      # rasteriser: these runners have no GPU. SwiftShader is not in the platform package (the files are 4 to 16 MB and the
+      # package does not ship them), so they come from Chrome for Testing into a folder of their own. There is no Chrome
+      # here, so a case is held to "drew without an unsupported call"; ANGLE's goldens are Metal's (tests/golden/angle)
+      # and are not compared on this backend.
+      - name: Fetch ANGLE with SwiftShader (for the tests)
+        shell: bash
+        run: node scripts/fetch-angle.mjs ${{ matrix.platform }} --swiftshader --source chrome --out "$RUNNER_TEMP/angle-swiftshader"
+
+      - name: Test WebGL on ANGLE SwiftShader (macOS, Linux)
+        if: runner.os != 'Windows'
+        env:
+          KINETOGRAPH_WEBGL: angle
+          KINETOGRAPH_ANGLE_BACKEND: swiftshader
+          KINETOGRAPH_ANGLE_DIR: ${{ runner.temp }}/angle-swiftshader
+        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --test webgl -- --nocapture
+
+      - name: Test WebGL on ANGLE SwiftShader (Windows)
+        if: runner.os == 'Windows'
+        env:
+          KINETOGRAPH_WEBGL: angle
+          KINETOGRAPH_ANGLE_BACKEND: swiftshader
+          KINETOGRAPH_ANGLE_DIR: ${{ runner.temp }}\angle-swiftshader
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --test webgl -- --nocapture
+
+      # ANGLE on the Mac's own GPU through Metal, from the very files the package ships. Its goldens were recorded on an
+      # M4; this runner's (virtual) GPU may round differently, so a failure here does not fail the build until a run has
+      # shown it holds.
+      - name: Test WebGL on ANGLE Metal (macOS)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        env:
+          KINETOGRAPH_WEBGL: angle
+          KINETOGRAPH_ANGLE_DIR: ${{ github.workspace }}/crates/node/npm/${{ matrix.platform }}/angle
+        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --test webgl -- --nocapture
 
       # ONNX Runtime for the BEN2 step: Microsoft's CPU release, the version and SHA-256 that
       # packages/video-matting/src/registry.ts pins (users get it from the same release on the first use of matting). Its
@@ -251,6 +297,7 @@ jobs:
           path: |
             crates/node/kinetograph.${{ matrix.platform }}.node
             crates/node/npm/${{ matrix.platform }}/bin
+            crates/node/npm/${{ matrix.platform }}/angle
           if-no-files-found: error
 
   smoke:
