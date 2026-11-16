@@ -1035,6 +1035,37 @@ struct Context {
     surface: *mut c_void,
     context: *mut c_void,
     make_current: unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> u32,
+    destroy_context: Destroy,
+    destroy_surface: Destroy,
+}
+
+/// One thread at a time in ANGLE. Without this, a run of the cases on four threads failed in different cases each time
+/// (a wrong picture, a failed draw): contexts of one Metal display used from several threads at once are not safe here.
+/// Making, using and destroying a context all hold it.
+static BUSY: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// The contexts alive in the process: made by `create`, gone when their thread ends.
+static LIVE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// A thread's contexts and their pbuffers are destroyed when the thread ends (its `thread_local` is dropped), under the
+/// same lock as every other use of ANGLE. The libraries are never unloaded, so the entry points stay valid.
+impl Drop for Context {
+    fn drop(&mut self) {
+        let _one_at_a_time = BUSY.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        // SAFETY: the handles are the ones `create` made, destroyed once, here, on the thread that made them current; the
+        // context is made not current first (EGL keeps a current context alive until then), and `EGL_NO_*` is null.
+        unsafe {
+            (self.make_current)(
+                self.display,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            (self.destroy_context)(self.display, self.context);
+            (self.destroy_surface)(self.display, self.surface);
+        }
+        LIVE.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 thread_local! {
@@ -1079,9 +1110,6 @@ pub struct Extensions {
 
 /// Runs `f` with this thread's context for `ext`, made on first use and made current.
 pub fn with<T>(ext: Extensions, f: impl FnOnce(&Gl) -> T) -> Result<T, String> {
-    // One thread at a time in ANGLE. Without this, a run of the cases on four threads failed in different cases each time
-    // (a wrong picture, a failed draw): contexts of one Metal display used from several threads at once are not safe here.
-    static BUSY: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _one_at_a_time = BUSY.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     CONTEXTS.with(|cell| {
         let mut contexts = cell.borrow_mut();
@@ -1215,7 +1243,10 @@ fn open(dir: &std::path::Path, name: &str) -> Result<Library, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Texels, check_upload, checked_dir, gl, library_file_name, upload_len};
+    use super::{
+        Extensions, LIVE, Texels, check_upload, checked_dir, gl, library_file_name, upload_len,
+        with,
+    };
     use std::path::PathBuf;
 
     #[test]
@@ -1272,6 +1303,31 @@ mod tests {
         };
         assert!(check_upload(&ok, (4, 4, 1)).is_ok());
     }
+
+    /// A thread's context and pbuffer are destroyed when the thread ends (needs ANGLE: skipped without it).
+    #[test]
+    fn a_threads_context_is_destroyed_when_the_thread_ends() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let ext = Extensions {
+            float_linear: false,
+            float_blend: false,
+        };
+        if std::thread::spawn(move || with(ext, |_| ()))
+            .join()
+            .unwrap()
+            .is_err()
+        {
+            return;
+        }
+        let before = LIVE.load(SeqCst);
+        std::thread::spawn(move || {
+            with(ext, |_| ()).unwrap();
+            assert!(LIVE.load(SeqCst) > before);
+        })
+        .join()
+        .unwrap();
+        assert_eq!(LIVE.load(SeqCst), before);
+    }
 }
 
 type GetProc = unsafe extern "C" fn(*const c_char) -> *const c_void;
@@ -1280,6 +1336,8 @@ type MakeCurrent = unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *
 type CreateContext =
     unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *const i32) -> *mut c_void;
 type CreatePbuffer = unsafe extern "C" fn(*mut c_void, *mut c_void, *const i32) -> *mut c_void;
+/// `eglDestroyContext` and `eglDestroySurface`: a display and the handle.
+type Destroy = unsafe extern "C" fn(*mut c_void, *mut c_void) -> u32;
 
 /// ANGLE as the process has it: the two libraries (loaded once and never unloaded, so a thread that ends cannot take
 /// them from the contexts of the others), the EGL entry points, and the initialised display and config (as addresses, so
@@ -1291,6 +1349,8 @@ struct Shared {
     create_pbuffer: CreatePbuffer,
     create_context: CreateContext,
     make_current: MakeCurrent,
+    destroy_context: Destroy,
+    destroy_surface: Destroy,
     display: usize,
     config: usize,
 }
@@ -1328,6 +1388,8 @@ fn load() -> Result<Shared, String> {
     let create_pbuffer: CreatePbuffer = sym!(b"eglCreatePbufferSurface\0", CreatePbuffer);
     let create_context: CreateContext = sym!(b"eglCreateContext\0", CreateContext);
     let make_current: MakeCurrent = sym!(b"eglMakeCurrent\0", MakeCurrent);
+    let destroy_context: Destroy = sym!(b"eglDestroyContext\0", Destroy);
+    let destroy_surface: Destroy = sym!(b"eglDestroySurface\0", Destroy);
     let get_proc: GetProc = sym!(b"eglGetProcAddress\0", GetProc);
 
     // `KINETOGRAPH_ANGLE_BACKEND=swiftshader` asks for ANGLE's Vulkan backend on SwiftShader, the CPU rasteriser Chrome's
@@ -1388,6 +1450,8 @@ fn load() -> Result<Shared, String> {
         create_pbuffer,
         create_context,
         make_current,
+        destroy_context,
+        destroy_surface,
         display,
         config,
     })
@@ -1462,11 +1526,14 @@ fn create(ext: Extensions) -> Result<Context, String> {
             break;
         }
     }
+    LIVE.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     Ok(Context {
         gl,
         display,
         surface,
         context,
         make_current,
+        destroy_context: shared.destroy_context,
+        destroy_surface: shared.destroy_surface,
     })
 }
