@@ -60,6 +60,25 @@ use style_dom::ElementState;
 use style::values::computed::text::TextAlign as StyloTextAlign;
 
 impl crate::document::BaseDocument {
+    /// Whether the `@keyframes` of a CSS animation named in `node_id`'s style animate `longhand`. A finished animation
+    /// is dropped from the animation set, but its fill mode still sets the property in the node's computed style.
+    pub fn animates(&self, node_id: NodeId, longhand: style::properties::LonghandId) -> bool {
+        let Some(node) = self.get_node(node_id) else {
+            return false;
+        };
+        let Some(styles) = node.primary_styles() else {
+            return false;
+        };
+        styles.get_ui().animation_name_iter().any(|name| {
+            name.as_atom()
+                .and_then(|atom| self.stylist.lookup_keyframes(atom, node))
+                .is_some_and(|k| {
+                    k.properties_changed
+                        .contains(style::properties::PropertyDeclarationId::Longhand(longhand))
+                })
+        })
+    }
+
     pub fn resolve_stylist(&mut self, now: f64) {
         style::thread_state::enter(ThreadState::LAYOUT);
 
