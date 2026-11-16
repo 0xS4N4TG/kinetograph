@@ -187,6 +187,8 @@ entry_points! {
     disable_vertex_attrib_array = "glDisableVertexAttribArray"(i: u32);
     vertex_attrib_divisor = "glVertexAttribDivisor"(i: u32, d: u32);
     vertex_attrib4f = "glVertexAttrib4f"(i: u32, x: f32, y: f32, z: f32, w: f32);
+    vertex_attrib_i4i = "glVertexAttribI4i"(i: u32, x: i32, y: i32, z: i32, w: i32);
+    vertex_attrib_i4ui = "glVertexAttribI4ui"(i: u32, x: u32, y: u32, z: u32, w: u32);
     create_shader = "glCreateShader"(kind: Enum) -> u32;
     compile_shader = "glCompileShader"(s: u32);
     delete_shader = "glDeleteShader"(s: u32);
@@ -255,6 +257,16 @@ struct RawPtr {
     tex_image_2d: unsafe extern "C" fn(Enum, i32, i32, i32, i32, i32, Enum, Enum, *const c_void),
     tex_sub_image_2d:
         unsafe extern "C" fn(Enum, i32, i32, i32, i32, i32, Enum, Enum, *const c_void),
+    tex_sub_image_3d:
+        unsafe extern "C" fn(Enum, i32, i32, i32, i32, i32, i32, i32, Enum, Enum, *const c_void),
+    compressed_tex_image_2d:
+        unsafe extern "C" fn(Enum, i32, Enum, i32, i32, i32, i32, *const c_void),
+    compressed_tex_image_3d:
+        unsafe extern "C" fn(Enum, i32, Enum, i32, i32, i32, i32, i32, *const c_void),
+    compressed_tex_sub_image_2d:
+        unsafe extern "C" fn(Enum, i32, i32, i32, i32, i32, Enum, i32, *const c_void),
+    compressed_tex_sub_image_3d:
+        unsafe extern "C" fn(Enum, i32, i32, i32, i32, i32, i32, i32, Enum, i32, *const c_void),
     gen_renderbuffers: unsafe extern "C" fn(i32, *mut u32),
     delete_renderbuffers: unsafe extern "C" fn(i32, *const u32),
     gen_framebuffers: unsafe extern "C" fn(i32, *mut u32),
@@ -349,6 +361,11 @@ impl RawPtr {
             delete_textures: load!(lookup, "glDeleteTextures"),
             tex_image_2d: load!(lookup, "glTexImage2D"),
             tex_sub_image_2d: load!(lookup, "glTexSubImage2D"),
+            tex_sub_image_3d: load!(lookup, "glTexSubImage3D"),
+            compressed_tex_image_2d: load!(lookup, "glCompressedTexImage2D"),
+            compressed_tex_image_3d: load!(lookup, "glCompressedTexImage3D"),
+            compressed_tex_sub_image_2d: load!(lookup, "glCompressedTexSubImage2D"),
+            compressed_tex_sub_image_3d: load!(lookup, "glCompressedTexSubImage3D"),
             gen_renderbuffers: load!(lookup, "glGenRenderbuffers"),
             delete_renderbuffers: load!(lookup, "glDeleteRenderbuffers"),
             gen_framebuffers: load!(lookup, "glGenFramebuffers"),
@@ -388,23 +405,31 @@ pub struct Texels<'a> {
     pub bytes: &'a [u8],
 }
 
-/// The bytes one texel of `format` and `ty` takes with UNPACK_ALIGNMENT 1 (the replay sets it), for the pairs the replay
-/// uploads.
+/// The bytes one texel of `format` and `ty` takes with UNPACK_ALIGNMENT 1 (the replay sets it): the pairs GL ES 3.0
+/// takes for an upload, with a type that packs the channels into one value taking its own size.
 fn texel_bytes(format: Enum, ty: Enum) -> Option<usize> {
+    match ty {
+        // The channels are packed into one value.
+        0x8363 | 0x8033 | 0x8034 => return Some(2), // UNSIGNED_SHORT_5_6_5, _4_4_4_4, _5_5_5_1
+        0x8368 | 0x8C3B | 0x8C3E => return Some(4), // UNSIGNED_INT_2_10_10_10_REV, _10F_11F_11F_REV, _5_9_9_9_REV
+        0x8DAD => return (format == gl::DEPTH_STENCIL).then_some(8), // FLOAT_32_UNSIGNED_INT_24_8_REV
+        gl::UNSIGNED_INT_24_8 => return (format == gl::DEPTH_STENCIL).then_some(4),
+        _ => {}
+    }
     let components = match format {
-        gl::RGBA => 4,
-        0x1907 => 3, // RGB
-        gl::RG => 2,
-        gl::RED | gl::DEPTH_COMPONENT | gl::DEPTH_STENCIL => 1,
+        gl::RGBA | 0x8D99 => 4,                                        // RGBA_INTEGER
+        0x1907 | 0x8D98 => 3,                                          // RGB, RGB_INTEGER
+        gl::RG | 0x8228 | 0x190A => 2, // RG, RG_INTEGER, LUMINANCE_ALPHA
+        gl::RED | 0x8D94 | 0x1909 | 0x1906 | gl::DEPTH_COMPONENT => 1, // RED, RED_INTEGER, LUMINANCE, ALPHA
         _ => return None,
     };
-    match ty {
-        gl::UNSIGNED_BYTE => Some(components),
-        gl::HALF_FLOAT => Some(components * 2),
-        gl::FLOAT => Some(components * 4),
-        gl::UNSIGNED_INT_24_8 if format == gl::DEPTH_STENCIL => Some(4),
-        _ => None,
-    }
+    let size = match ty {
+        gl::UNSIGNED_BYTE | gl::BYTE => 1,
+        gl::UNSIGNED_SHORT | gl::SHORT | gl::HALF_FLOAT => 2,
+        gl::UNSIGNED_INT | gl::INT | gl::FLOAT => 4,
+        _ => return None,
+    };
+    Some(components * size)
 }
 
 /// The bytes a `w x h x d` upload of `format` and `ty` reads; `None` for a negative size, a pair the replay does not
@@ -415,6 +440,11 @@ fn upload_len(w: i32, h: i32, d: i32, format: Enum, ty: Enum) -> Option<usize> {
         .checked_mul(side(h)?)?
         .checked_mul(side(d)?)?
         .checked_mul(texel_bytes(format, ty)?)
+}
+
+/// A 3D texture or a 2D array: the targets whose uploads have a depth.
+fn is_3d(target: Enum) -> bool {
+    target == gl::TEXTURE_3D || target == gl::TEXTURE_2D_ARRAY
 }
 
 /// An error unless `texels` holds what a `w x h x d` upload reads.
@@ -760,6 +790,179 @@ impl Gl {
         }
         Ok(())
     }
+    /// `glTexImage2D` or `glTexImage3D` (by `target`) of any format and type, at `level`; no texels allocates the level
+    /// empty. `depth` is the layers of a 3D or array texture.
+    pub fn tex_image(
+        &self,
+        target: Enum,
+        level: i32,
+        internal: Enum,
+        (w, h, d): (i32, i32, i32),
+        texels: Option<Texels>,
+    ) -> Result<(), String> {
+        let three = is_3d(target);
+        let (format, ty, data) = match &texels {
+            Some(t) => {
+                check_upload(t, (w, h, if three { d } else { 1 }))?;
+                (t.format, t.ty, t.bytes.as_ptr().cast())
+            }
+            // The format and type of a null upload only have to agree with the internal format.
+            None => (gl::RGBA, gl::UNSIGNED_BYTE, std::ptr::null()),
+        };
+        // SAFETY: `check_upload` found the slice holds the texels GL reads, or there is no data.
+        unsafe {
+            if three {
+                (self.ptr.tex_image_3d)(
+                    target,
+                    level,
+                    internal as i32,
+                    w,
+                    h,
+                    d,
+                    0,
+                    format,
+                    ty,
+                    data,
+                )
+            } else {
+                (self.ptr.tex_image_2d)(target, level, internal as i32, w, h, 0, format, ty, data)
+            }
+        }
+        Ok(())
+    }
+
+    /// `glTexSubImage2D` or `glTexSubImage3D` (by `target`) of the box at `(x, y, z)` of `(w, h, d)` texels.
+    pub fn tex_sub_image(
+        &self,
+        target: Enum,
+        level: i32,
+        (x, y, z): (i32, i32, i32),
+        (w, h, d): (i32, i32, i32),
+        texels: Texels,
+    ) -> Result<(), String> {
+        let three = is_3d(target);
+        check_upload(&texels, (w, h, if three { d } else { 1 }))?;
+        let data = texels.bytes.as_ptr().cast();
+        // SAFETY: `check_upload` found the slice holds the `w * h * d` texels GL reads.
+        unsafe {
+            if three {
+                (self.ptr.tex_sub_image_3d)(
+                    target,
+                    level,
+                    x,
+                    y,
+                    z,
+                    w,
+                    h,
+                    d,
+                    texels.format,
+                    texels.ty,
+                    data,
+                )
+            } else {
+                (self.ptr.tex_sub_image_2d)(
+                    target,
+                    level,
+                    x,
+                    y,
+                    w,
+                    h,
+                    texels.format,
+                    texels.ty,
+                    data,
+                )
+            }
+        }
+        Ok(())
+    }
+
+    /// `glCompressedTexImage2D` or `3D` of the blocks in `bytes`; GL checks that they are the size the format and the
+    /// dimensions make (ANGLE's validation reports it).
+    pub fn compressed_tex_image(
+        &self,
+        target: Enum,
+        level: i32,
+        internal: Enum,
+        (w, h, d): (i32, i32, i32),
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        let size =
+            i32::try_from(bytes.len()).map_err(|_| "compressed texels over 2 GiB".to_string())?;
+        // SAFETY: GL reads `size` bytes, which is the length of `bytes`.
+        unsafe {
+            if is_3d(target) {
+                (self.ptr.compressed_tex_image_3d)(
+                    target,
+                    level,
+                    internal,
+                    w,
+                    h,
+                    d,
+                    0,
+                    size,
+                    bytes.as_ptr().cast(),
+                )
+            } else {
+                (self.ptr.compressed_tex_image_2d)(
+                    target,
+                    level,
+                    internal,
+                    w,
+                    h,
+                    0,
+                    size,
+                    bytes.as_ptr().cast(),
+                )
+            }
+        }
+        Ok(())
+    }
+
+    /// `glCompressedTexSubImage2D` or `3D`.
+    pub fn compressed_tex_sub_image(
+        &self,
+        target: Enum,
+        level: i32,
+        (x, y, z): (i32, i32, i32),
+        (w, h, d): (i32, i32, i32),
+        format: Enum,
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        let size =
+            i32::try_from(bytes.len()).map_err(|_| "compressed texels over 2 GiB".to_string())?;
+        // SAFETY: as `compressed_tex_image`.
+        unsafe {
+            if is_3d(target) {
+                (self.ptr.compressed_tex_sub_image_3d)(
+                    target,
+                    level,
+                    x,
+                    y,
+                    z,
+                    w,
+                    h,
+                    d,
+                    format,
+                    size,
+                    bytes.as_ptr().cast(),
+                )
+            } else {
+                (self.ptr.compressed_tex_sub_image_2d)(
+                    target,
+                    level,
+                    x,
+                    y,
+                    w,
+                    h,
+                    format,
+                    size,
+                    bytes.as_ptr().cast(),
+                )
+            }
+        }
+        Ok(())
+    }
+
     pub fn draw_buffers(&self, buffers: &[Enum]) {
         // SAFETY: GL reads `buffers.len()` enums.
         unsafe { (self.ptr.draw_buffers)(buffers.len() as i32, buffers.as_ptr()) }

@@ -255,6 +255,26 @@ fn angle_mode() -> bool {
 }
 
 #[test]
+fn webgl2_half_attr() {
+    run("webgl2_half_attr", 1.0);
+}
+
+#[test]
+fn webgl2_int_texture() {
+    angle_only_reported("webgl2_int_texture");
+}
+
+#[test]
+fn webgl2_int_texture_sub() {
+    angle_only_reported("webgl2_int_texture_sub");
+}
+
+#[test]
+fn webgl2_attr_int_constant() {
+    angle_only_reported("webgl2_attr_int_constant");
+}
+
+#[test]
 fn webgl2_clear_masks() {
     angle_only_reported("webgl2_clear_masks");
 }

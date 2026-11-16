@@ -331,6 +331,18 @@ describe('the recording WebGL context', () => {
     expect(Array.from({ length: gl.getProgramParameter(program, GL.ACTIVE_UNIFORMS) as number }, (_, i) => gl.getActiveUniform(program, i)!.name)).toEqual(['high', 't']);
   });
 
+  it('records a HALF_FLOAT vertex attribute as f16 halves, with the stride and offset of the bytes', () => {
+    const { gl } = setup();
+    const at = gl.getAttribLocation(gl.getParameter(GL.CURRENT_PROGRAM) as ReturnType<WebGLContext['createProgram']>, 'p');
+    gl.bufferData(GL.ARRAY_BUFFER, new Uint16Array([0x3c00, 0, 0, 0x3c00, 0x3c00, 0x3c00]), GL.STATIC_DRAW);
+    gl.vertexAttribPointer(at, 2, GL.HALF_FLOAT, false, 4, 0);
+    gl.drawArrays(GL.TRIANGLES, 0, 3);
+    expect(gl.getError()).toBe(GL.NO_ERROR);
+    const draw = gl.content().ops.find((o) => o.op === 'draw')!;
+    if (draw.op !== 'draw') throw new Error('not a draw');
+    expect(draw.attributes.p).toMatchObject({ size: 2, type: 'f16', stride: 4, offset: 0 });
+  });
+
   describe('integer vertex data', () => {
     const attributes = (gl: WebGLContext) => {
       const draw = gl.content().ops.find((o) => o.op === 'draw');
@@ -389,6 +401,29 @@ describe('the recording WebGL context', () => {
       gl.drawArrays(GL.TRIANGLES, 0, 3);
       expect(attributes(gl).joints).toMatchObject({ type: 'u16', normalized: true });
       expect(attributes(gl).joints).not.toHaveProperty('integer');
+    });
+
+    it('carries the current value of an integer attribute (vertexAttribI4i, vertexAttribI4ui), until a float value replaces it', () => {
+      const { gl } = page();
+      gl.disableVertexAttribArray(1);
+      gl.vertexAttribI4i(1, -4, 5, 0, -1);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(attributes(gl).joints).toMatchObject({ integer: true, type: 'i32', intConstant: { value: [-4, 5, 0, -1] } });
+      gl.vertexAttribI4uiv(1, new Uint32Array([1, 2, 3, 4294967295]));
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      const draws = gl.content().ops.filter((o) => o.op === 'draw');
+      const second = draws[1];
+      if (second?.op !== 'draw') throw new Error('not a draw');
+      expect(second.attributes.joints).toMatchObject({ type: 'u32', intConstant: { unsigned: true, value: [1, 2, 3, 4294967295] } });
+      gl.vertexAttrib4f(1, 1, 2, 3, 1);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      const third = gl.content().ops.filter((o) => o.op === 'draw')[2];
+      if (third?.op !== 'draw') throw new Error('not a draw');
+      expect(third.attributes.joints).toMatchObject({ constant: [1, 2, 3, 1] });
+      expect(third.attributes.joints!.intConstant).toBeUndefined();
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      gl.vertexAttribI4i(16, 0, 0, 0, 0);
+      expect(gl.getError()).toBe(GL.INVALID_VALUE);
     });
   });
 
@@ -2117,13 +2152,12 @@ describe('the recording WebGL context', () => {
       expect(color(gl)?.constant).toBeUndefined();
     });
 
-    it('checks the index and the length as WebGL does, and refuses the integer forms', () => {
+    it('checks the index and the length as WebGL does', () => {
       const { gl } = colorContext();
       gl.vertexAttrib4f(16, 0, 0, 0, 0);
       expect(gl.getError()).toBe(GL.INVALID_VALUE);
       gl.vertexAttrib3fv(0, [1, 2]);
       expect(gl.getError()).toBe(GL.INVALID_VALUE);
-      expect(() => gl.vertexAttribI4i()).toThrow(/^unsupported:.*current value of an integer attribute/);
     });
   });
 
@@ -3137,5 +3171,120 @@ describe('what a renderer reads of a WebGL 2 context at start-up', () => {
     for (const name of ['WEBGL_lose_context', 'EXT_texture_filter_anisotropic', 'KHR_parallel_shader_compile', 'NO_SUCH_EXTENSION']) expect(gl.getExtension(name)).toBeNull();
     for (const name of gl.getSupportedExtensions()) expect(gl.getExtension(name)).not.toBeNull();
     expect(gl.getError()).toBe(GL.NO_ERROR);
+  });
+
+  describe('raw texture calls', () => {
+    const page = () => {
+      const gl = createWebGLContext({ size: () => ({ width: 8, height: 4 }), version: 2 });
+      return gl;
+    };
+    const texture = (gl: WebGLContext, id: string) => {
+      const ids = Object.keys(gl.content().textures);
+      expect(ids).toContain(id);
+      return gl.content().textures[id]!;
+    };
+    const drawing = (gl: WebGLContext, sampler: string) => {
+      const program = gl.createProgram();
+      for (const [type, source] of [[GL.VERTEX_SHADER, '#version 300 es\nin vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }'], [GL.FRAGMENT_SHADER, `#version 300 es\nprecision highp float; precision highp int; uniform highp ${sampler} t; out vec4 o; void main() { o = vec4(texelFetch(t, ${sampler.endsWith('Array') || sampler.endsWith('3D') ? 'ivec3(0)' : 'ivec2(0)'}, 0)); }`]] as const) {
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source);
+        gl.attachShader(program, shader);
+      }
+      gl.bindAttribLocation(program, 0, 'p');
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(GL.ARRAY_BUFFER, buffer);
+      gl.bufferData(GL.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1]), GL.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, GL.FLOAT, false, 0, 0);
+      gl.uniform1i(gl.getUniformLocation(program, 't'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+    };
+
+    it('carries an integer texture as its call, with GL\'s own format and type and the bytes of the array', () => {
+      const gl = page();
+      const t = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, t);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL2.R32UI, 2, 2, 0, GL2.RED_INTEGER, GL.UNSIGNED_INT, new Uint32Array([1, 2, 3, 4]));
+      gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
+      gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
+      drawing(gl, 'usampler2D');
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const draw = gl.content().ops[0]!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      const json = texture(gl, draw.units['0']!.texture);
+      expect(json).toMatchObject({ width: 2, height: 2, calls: [{ op: 'image', target: GL.TEXTURE_2D, internal: GL2.R32UI, format: GL2.RED_INTEGER, type: GL.UNSIGNED_INT, width: 2, height: 2 }] });
+      expect(Array.from(new Uint32Array(Uint8Array.from(Buffer.from(json.calls![0]!.data!, 'base64')).buffer))).toEqual([1, 2, 3, 4]);
+      expect(json.pixels).toBeUndefined();
+    });
+
+    it('reads a part of a larger array through UNPACK_ROW_LENGTH and the skips, with the row alignment, into tight bytes', () => {
+      const gl = page();
+      const t = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, t);
+      gl.texStorage2D(GL.TEXTURE_2D, 1, GL2.R8UI, 4, 4);
+      gl.pixelStorei(GL2.UNPACK_ROW_LENGTH, 4);
+      gl.pixelStorei(GL2.UNPACK_SKIP_PIXELS, 1);
+      gl.pixelStorei(GL2.UNPACK_SKIP_ROWS, 1);
+      gl.texSubImage2D(GL.TEXTURE_2D, 0, 1, 1, 2, 2, GL2.RED_INTEGER, GL.UNSIGNED_BYTE, new Uint8Array(16).map((_, i) => 10 + i));
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
+      gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
+      drawing(gl, 'usampler2D');
+      const draw = gl.content().ops[0]!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      const calls = texture(gl, draw.units['0']!.texture).calls!;
+      expect(calls.map((c) => c.op)).toEqual(['storage', 'sub']);
+      expect(calls[0]).toMatchObject({ internal: GL2.R8UI, levels: 1, width: 4, height: 4 });
+      // Row 1 of the source from texel 1, two texels, then row 2: 15 16, 19 20.
+      expect(Array.from(Buffer.from(calls[1]!.data!, 'base64'))).toEqual([15, 16, 19, 20]);
+      expect(calls[1]).toMatchObject({ x: 1, y: 1, width: 2, height: 2, format: GL2.RED_INTEGER, type: GL.UNSIGNED_BYTE });
+    });
+
+    it('carries an integer 2D array made by texImage3D and written by texSubImage3D', () => {
+      const gl = page();
+      const t = gl.createTexture();
+      gl.bindTexture(GL2.TEXTURE_2D_ARRAY, t);
+      gl.texImage3D(GL2.TEXTURE_2D_ARRAY, 0, GL2.RGBA8UI, 1, 1, 2, 0, GL2.RGBA_INTEGER, GL.UNSIGNED_BYTE, new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]));
+      gl.texSubImage3D(GL2.TEXTURE_2D_ARRAY, 0, 0, 0, 1, 1, 1, 1, GL2.RGBA_INTEGER, GL.UNSIGNED_BYTE, new Uint8Array([9, 9, 9, 9]));
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      gl.texParameteri(GL2.TEXTURE_2D_ARRAY, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
+      gl.texParameteri(GL2.TEXTURE_2D_ARRAY, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
+      drawing(gl, 'usampler2DArray');
+      const draw = gl.content().ops[0]!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      const json = texture(gl, draw.units['0']!.texture);
+      expect(json).toMatchObject({ width: 1, height: 1, depth: 2, array: true });
+      expect(json.calls!.map((c) => [c.op, c.target, c.z ?? 0])).toEqual([['image', GL2.TEXTURE_2D_ARRAY, 0], ['sub', GL2.TEXTURE_2D_ARRAY, 1]]);
+    });
+
+    it('sets the errors WebGL sets for the upload: a short array, a wrong array class, an integer sampler reading a float texture', () => {
+      const gl = page();
+      const t = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, t);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL2.R32UI, 2, 2, 0, GL2.RED_INTEGER, GL.UNSIGNED_INT, new Uint32Array(3));
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL2.R32UI, 2, 2, 0, GL2.RED_INTEGER, GL.UNSIGNED_INT, new Int32Array(4));
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL2.R32UI, 2, 2, 1, GL2.RED_INTEGER, GL.UNSIGNED_INT, new Uint32Array(4));
+      expect(gl.getError()).toBe(GL.INVALID_VALUE);
+      const plain = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, plain);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4));
+      drawing(gl, 'usampler2D');
+      expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+      expect(gl.content().ops).toHaveLength(0);
+    });
+
+    it('does not draw into a texture of raw calls', () => {
+      const gl = page();
+      const t = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_2D, t);
+      gl.texImage2D(GL.TEXTURE_2D, 0, GL2.R32UI, 2, 2, 0, GL2.RED_INTEGER, GL.UNSIGNED_INT, null);
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(GL.FRAMEBUFFER, fb);
+      expect(() => gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, t, 0)).toThrow(/^unsupported:.*raw texture calls/);
+    });
   });
 });
